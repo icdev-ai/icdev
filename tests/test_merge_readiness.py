@@ -401,9 +401,20 @@ def test_cli_degrades_honestly_when_the_board_is_unreadable(
         tmp_path, monkeypatch, capsys):
     path = tmp_path / "prs.json"
     path.write_text(json.dumps([_pr()]), encoding="utf-8")
-    monkeypatch.setattr(
-        mr, "linked_pr_urls",
-        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no such table")))
+    # BOTH gatherers, deliberately. `collect_report` reads the board through
+    # `linked_pr_tasks`; `linked_pr_urls` is the older entry point the ladder
+    # still uses. Patching only the latter made this test a no-op that passed
+    # for the WRONG REASON — in an isolated run the board is genuinely
+    # unreadable, so `linked_lookup_ok` was False without the patch doing
+    # anything, while in-suite conftest supplies a SQLite board, the real call
+    # succeeded, and the assertion failed. It was asserting the environment
+    # rather than the behaviour, which is exactly what it looks like when a
+    # test can never go red.
+    def _unreadable(*_a, **_k):
+        raise RuntimeError("no such table")
+
+    monkeypatch.setattr(mr, "linked_pr_tasks", _unreadable)
+    monkeypatch.setattr(mr, "linked_pr_urls", _unreadable)
     rc = mr.main(["--from-json", str(path), "--default-branch", "main", "--json"])
     assert rc == 0
     out = capsys.readouterr()

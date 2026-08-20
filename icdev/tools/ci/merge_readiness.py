@@ -54,6 +54,7 @@ process from the one that runs.
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
 import json
 import pathlib
 import subprocess
@@ -92,6 +93,24 @@ MERGE_STATES: tuple = (
     MERGED, PROTECTED_PATH, LINKED, DRAFT, HELD_LABEL, WRONG_BASE, CONFLICTING,
     NO_CHECKS, CI_FAILED, AWAITING_CI, CHANGES_REQUESTED, BEHIND_MAIN,
     READY, UNKNOWN,
+)
+
+#: The order a HUMAN wants these groups in, which is NOT the ladder order.
+#: The ladder is ordered by what the merger asks FIRST (cheapest refusal wins);
+#: a reader wants what is CLOSEST TO LANDING first. ``ready`` heads the list --
+#: it is literally "awaiting merge" -- and ``behind_main`` follows because it is
+#: the rung that merges cleanly and should not (kpr-stale-02). ``draft``,
+#: ``held_label`` and ``merged`` sink to the bottom: each is somebody having
+#: SAID "not yet", which is an answer and not a question.
+#:
+#: This is presentation only. It never reorders the ladder in
+#: ``classify_merge_readiness`` -- doing that would change which refusal a PR
+#: reports, and the module docstring's rule is that the report describes the
+#: merger's own reasoning.
+ATTENTION_ORDER: tuple = (
+    READY, BEHIND_MAIN, CONFLICTING, CI_FAILED, AWAITING_CI, NO_CHECKS,
+    CHANGES_REQUESTED, PROTECTED_PATH, WRONG_BASE, UNKNOWN,
+    DRAFT, HELD_LABEL, LINKED, MERGED,
 )
 
 #: States in which the pipeline is waiting on something OTHER than a human
@@ -495,6 +514,147 @@ def _pending_names(rollup: List[Dict[str, Any]]) -> str:
 
 
 # ────────────────────────────────────────────────────────────────────────────
+# How long has it been like this? (kpr-watch-03)
+# ────────────────────────────────────────────────────────────────────────────
+#
+# NOTHING PERSISTS A STATE TRANSITION, so "age in state" cannot be read off a
+# ledger — and inventing one would be a table that has to be written before it
+# can be trusted. What CAN be measured, from the record the forge already
+# hands over, is a LOWER BOUND: take the LATEST timestamp of any observable
+# event on the PR, and the state has certainly held since that moment, because
+# nothing has changed since. It may well have held longer. The report says
+# "at least", and never more than it knows.
+#
+# THE LATEST OF ALL OF THEM, not `updatedAt` alone, and this is not
+# defensive coding. `updatedAt` does NOT bump when a check run completes.
+# Measured on this repo 2026-08-19: PR #1817 reported updatedAt=01:10:24Z
+# while one of its own checks completed at 01:11:09Z, 45 seconds LATER. Keying
+# the age on `updatedAt` alone would have claimed the PR had sat unchanged for
+# 45 seconds longer than it had — which turns a lower bound into a guess, in
+# the direction that makes a stuck pipeline look MORE stuck than it is.
+
+#: `gh` renders an absent check timestamp as the Go zero value rather than as
+#: null. Parsed naively it is a real datetime in year 1, which would win no
+#: `max()` — but it WOULD be reported as a basis, and an age of "2025 years"
+#: is the kind of number a reader stops trusting the whole panel over.
+_ZERO_TIME_YEAR = 1
+
+
+def _parse_iso(value: Any) -> Optional[_dt.datetime]:
+    """An ISO-8601 instant as an aware datetime, or None. Never raises.
+
+    None is returned for anything unparseable AND for the Go zero value `gh`
+    emits for a check that has not finished — those are "no timestamp", and a
+    fabricated year-1 datetime is not a better answer than admitting that.
+    """
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip().replace("Z", "+00:00")
+    try:
+        parsed = _dt.datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.year <= _ZERO_TIME_YEAR:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=_dt.timezone.utc)
+    return parsed.astimezone(_dt.timezone.utc)
+
+
+def last_activity(pr: Dict[str, Any]) -> tuple:
+    """``(datetime | None, basis)`` — the most recent observable event on a PR.
+
+    Pure: no clock, no I/O. ``basis`` names WHICH field won, so a reader can
+    tell "the branch was pushed 3h ago" from "a check finished 3h ago", and
+    is ``"unmeasured"`` when nothing parseable was present.
+    """
+    best: Optional[_dt.datetime] = None
+    basis = "unmeasured"
+    for field, label in (("updatedAt", "pr_updated"), ("createdAt", "pr_created")):
+        stamp = _parse_iso(pr.get(field))
+        if stamp is not None and (best is None or stamp > best):
+            best, basis = stamp, label
+    for check in (pr.get("statusCheckRollup") or []):
+        if not isinstance(check, dict):
+            continue
+        for field, label in (("completedAt", "check_completed"),
+                             ("startedAt", "check_started")):
+            stamp = _parse_iso(check.get(field))
+            if stamp is not None and (best is None or stamp > best):
+                best, basis = stamp, label
+    return best, basis
+
+
+def state_age_seconds(pr: Dict[str, Any],
+                      *, now: Optional[_dt.datetime] = None) -> Optional[int]:
+    """A LOWER BOUND on how long this PR has been in its current state.
+
+    ``None`` when no timestamp could be measured — never 0, which would read
+    as "it just changed" and is the one thing an unmeasured PR is not.
+    """
+    stamp, _basis = last_activity(pr)
+    if stamp is None:
+        return None
+    reference = now or _dt.datetime.now(_dt.timezone.utc)
+    if reference.tzinfo is None:
+        reference = reference.replace(tzinfo=_dt.timezone.utc)
+    # A forge clock marginally ahead of ours must not print a negative age.
+    return max(0, int((reference - stamp).total_seconds()))
+
+
+def format_age(seconds: Optional[int]) -> str:
+    """``"3h12m"`` / ``"6d"`` / ``"?"``. One formatter, shared by every surface,
+    so the CLI table and the dashboard panel cannot disagree about a duration."""
+    if seconds is None:
+        return "?"
+    seconds = max(0, int(seconds))
+    if seconds < 60:
+        return "%ds" % seconds
+    minutes = seconds // 60
+    if minutes < 60:
+        return "%dm" % minutes
+    hours, minutes = divmod(minutes, 60)
+    if hours < 24:
+        return "%dh%02dm" % (hours, minutes)
+    days, hours = divmod(hours, 24)
+    return "%dd%02dh" % (days, hours)
+
+
+def group_by_state(report: Dict[str, Any],
+                   *, order: Iterable[str] = ATTENTION_ORDER) -> List[Dict[str, Any]]:
+    """The report's PRs bucketed by ``pipeline_state``, in attention order.
+
+    Grouped on ``pipeline_state`` and NOT on ``state``: ``state`` short-circuits
+    at the ``linked`` rung for every kanban PR, which is exactly the population
+    a reader of this panel cares about, so grouping on it would collapse the
+    whole board into one bucket labelled "a task owns it". ``linked`` stays a
+    COLUMN — the ownership fact — and the group says why the PR is not landing.
+
+    A state with no PRs yields no group. Any state not named in ``order``
+    (a vocabulary that grew without this list) is appended rather than dropped.
+    """
+    wanted = list(order)
+    rows = list(report.get("prs") or [])
+    seen = [r.get("pipeline_state") or r.get("state") for r in rows]
+    for state in seen:
+        if state not in wanted:
+            wanted.append(state)
+    groups: List[Dict[str, Any]] = []
+    for state in wanted:
+        members = [r for r in rows
+                   if (r.get("pipeline_state") or r.get("state")) == state]
+        if not members:
+            continue
+        groups.append({
+            "state": state,
+            "count": len(members),
+            "blocked_on_automation": state in BLOCKED_ON_AUTOMATION,
+            "prs": members,
+        })
+    return groups
+
+
+# ────────────────────────────────────────────────────────────────────────────
 # Report — READ ONLY. Nothing below merges, pushes, un-drafts or closes.
 # ────────────────────────────────────────────────────────────────────────────
 
@@ -542,6 +702,28 @@ def linked_pr_urls(get_connection=None) -> FrozenSet[str]:
     )
 
 
+def linked_pr_tasks(get_connection=None) -> Dict[str, Dict[str, Any]]:
+    """PR url -> ``{"task_id", "task_status"}``. Raises if the board is unreadable.
+
+    ``linked_pr_urls`` above answers the ladder's question ("does ANY task point
+    here?"); this answers the reader's ("WHICH one?"). Kept as two functions
+    rather than one because the ladder must not gain a dependency on a column it
+    does not use — and because a caller with no board still needs the urls.
+    Last writer wins when two tasks name the same PR; the ladder does not care
+    which, and neither does the column.
+    """
+    from tools.ci.pr_watcher import list_pr_tasks  # local: avoids an import cycle
+
+    if get_connection is None:
+        from tools.db.storage import get_connection as get_connection  # type: ignore
+    out: Dict[str, Dict[str, Any]] = {}
+    for task in list_pr_tasks(get_connection):
+        url = (task.get("pr_url") or "").strip()
+        if not url:
+            continue
+        out[url] = {"task_id": task.get("id"),
+                    "task_status": task.get("status")}
+    return out
 def load_protected_paths(config_path=None) -> List[str]:
     """`protected_paths` from args/pr_watcher_config.yaml, or [] if unreadable.
 
@@ -584,6 +766,8 @@ def build_report(
     linked_lookup_ok: bool = True,
     behind_by_url: Optional[Dict[str, Optional[int]]] = None,
     max_behind_commits: int = DEFAULT_MAX_BEHIND_COMMITS,
+    linked_tasks: Optional[Dict[str, Dict[str, Any]]] = None,
+    now: Optional[_dt.datetime] = None,
     protected_paths: Iterable[str] = (),
 ) -> Dict[str, Any]:
     """Classify every PR. Pure — takes data, returns data.
@@ -591,6 +775,21 @@ def build_report(
     ``behind_by_url`` maps PR url -> commits behind base, as
     ``measure_behind_map`` returns it. A url absent from the mapping, or
     mapped to ``None``, is UNMEASURED — reported as such and never as fresh.
+
+    ``linked_tasks`` maps PR url -> ``{"task_id": ..., "task_status": ...}``,
+    which answers the "whether a task points at it" column WITHOUT changing any
+    verdict; ``linked_urls`` remains the authority for the ``linked`` rung, so a
+    caller holding only the urls behaves exactly as it did before.
+
+    TWO VERDICTS PER PR, FROM ONE TABLE (kpr-watch-03). ``state``/``reason``
+    are the merger's verdict, unchanged and authoritative. ``pipeline_state``/
+    ``pipeline_reason`` are the SAME function called with ``linked_urls=()`` —
+    "why would this PR not merge, setting aside who owns it". For an unlinked
+    PR the two are identical by construction (asserted in the tests); for a
+    linked one the second is the diagnosis the ``linked`` rung short-circuits,
+    and without it every kanban PR reports "a task owns it" and nothing about
+    whether it is red, stale, or simply waiting. This is not a second copy of
+    the ladder — it is the one ladder, asked a second question.
 
     ``protected_paths`` (kpr-watch-10) must be passed for the report to
     evaluate the rung the MERGER evaluates. It was not, so a PR the watcher was
@@ -601,18 +800,37 @@ def build_report(
     cannot be more optimistic than the merger either.
     """
     linked = frozenset((u or "").strip() for u in linked_urls)
+    task_map = dict(linked_tasks or {})
     behind_map = dict(behind_by_url or {})
+    reference = now or _dt.datetime.now(_dt.timezone.utc)
     guarded = [p for p in (protected_paths or ()) if str(p or "").strip()]
     rows: List[Dict[str, Any]] = []
     counts: Dict[str, int] = {}
+    pipeline_counts: Dict[str, int] = {}
     for pr in prs:
         url = (pr.get("url") or "").strip()
         behind = behind_map.get(url)
+        changed = _changed_files(pr)
         verdict = classify_merge_readiness(
             pr, default_branch=default_branch, linked_urls=linked,
             behind_by=behind, max_behind_commits=max_behind_commits,
-            changed_files=_changed_files(pr), protected_paths=guarded)
+            changed_files=changed, protected_paths=guarded)
+        # BOTH verdicts get the protected-path inputs (kpr-watch-03 x
+        # kpr-watch-10). The diagnosis asks the SAME ladder "why would this not
+        # merge, setting aside who owns it" — answering that without the rung
+        # the merger actually enforces would reintroduce the exact gap
+        # kpr-watch-10 closed, one column over.
+        diagnosis = (
+            verdict if verdict.state != LINKED else classify_merge_readiness(
+                pr, default_branch=default_branch, linked_urls=(),
+                behind_by=behind, max_behind_commits=max_behind_commits,
+                changed_files=changed, protected_paths=guarded))
         counts[verdict.state] = counts.get(verdict.state, 0) + 1
+        pipeline_counts[diagnosis.state] = pipeline_counts.get(
+            diagnosis.state, 0) + 1
+        stamp, basis = last_activity(pr)
+        age = state_age_seconds(pr, now=reference)
+        task = task_map.get(url) or {}
         rows.append({
             "number": pr.get("number"),
             "url": url,
@@ -621,6 +839,8 @@ def build_report(
             "base": pr.get("baseRefName") or "",
             "state": verdict.state,
             "reason": verdict.reason,
+            "pipeline_state": diagnosis.state,
+            "pipeline_reason": diagnosis.reason,
             "ready": verdict.ready,
             "mergeable": (pr.get("mergeable") or "").upper(),
             "merge_state_status": (pr.get("mergeStateStatus") or "").upper(),
@@ -632,6 +852,14 @@ def build_report(
             "labels": sorted((lbl.get("name") or "").strip()
                              for lbl in (pr.get("labels") or [])),
             "linked": url in linked,
+            "task_id": task.get("task_id"),
+            "task_status": task.get("task_status"),
+            # A LOWER BOUND (see ``last_activity``): None, never 0, when
+            # nothing datable was on the record.
+            "state_age_seconds": age,
+            "state_age_measured": age is not None,
+            "state_age_basis": basis,
+            "last_activity_at": stamp.isoformat() if stamp else None,
         })
     rows.sort(key=lambda r: (r["state"] != READY, r["number"] or 0))
     return {
@@ -642,9 +870,12 @@ def build_report(
         "linked_count": len(linked),
         "max_behind_commits": int(max_behind_commits),
         "behind_measured_count": sum(1 for r in rows if r["behind_measured"]),
+        "age_measured_count": sum(1 for r in rows if r["state_age_measured"]),
+        "generated_at": reference.astimezone(_dt.timezone.utc).isoformat(),
         "total": len(rows),
         "ready": counts.get(READY, 0),
         "counts": dict(sorted(counts.items())),
+        "pipeline_counts": dict(sorted(pipeline_counts.items())),
         "prs": rows,
     }
 
@@ -662,15 +893,16 @@ def render_table(report: Dict[str, Any]) -> str:
     if not report["prs"]:
         return "\n".join(lines)
     lines.append("")
-    lines.append("%-7s %-14s %-7s %-32s %s"
-                 % ("PR", "STATE", "BEHIND", "BRANCH", "REASON"))
-    lines.append("%-7s %-14s %-7s %-32s %s"
-                 % ("-" * 7, "-" * 14, "-" * 7, "-" * 32, "-" * 40))
+    lines.append("%-7s %-14s %-7s %-8s %-32s %s"
+                 % ("PR", "STATE", "BEHIND", "AGE", "BRANCH", "REASON"))
+    lines.append("%-7s %-14s %-7s %-8s %-32s %s"
+                 % ("-" * 7, "-" * 14, "-" * 7, "-" * 8, "-" * 32, "-" * 40))
     for row in report["prs"]:
         # "?" not "0" -- an unmeasured branch must not read as an up-to-date one.
         behind = "?" if row.get("behind_by") is None else str(row["behind_by"])
-        lines.append("%-7s %-14s %-7s %-32s %s" % (
+        lines.append("%-7s %-14s %-7s %-8s %-32s %s" % (
             "#%s" % row["number"], row["state"], behind,
+            format_age(row.get("state_age_seconds")),
             (row["head"] or "?")[:32], row["reason"]))
     lines.append("")
     lines.append("by state: " + ", ".join(
@@ -681,6 +913,128 @@ def render_table(report: Dict[str, Any]) -> str:
            report["default_branch"], report.get("behind_measured_count", 0),
            report["total"]))
     return "\n".join(lines)
+
+
+def render_grouped(report: Dict[str, Any]) -> str:
+    """The same report, bucketed by state so ``ready`` and ``behind_main`` are
+    visible without scrolling past everything that is fine.
+
+    ASCII-only, for the same reason ``render_table`` is: a box-drawing
+    character raises on a cp1252 console.
+    """
+    lines: List[str] = []
+    if not report.get("linked_lookup_ok", True):
+        lines.append(
+            "WARNING: the kanban board was unreadable, so no PR could be "
+            "identified as task-linked. States below are otherwise accurate.")
+    lines.append(
+        "%d open PR(s) against %s -- %d awaiting merge"
+        % (report["total"], report["default_branch"], report["ready"]))
+    groups = group_by_state(report)
+    if not groups:
+        return "\n".join(lines)
+    for group in groups:
+        lines.append("")
+        lines.append("== %s (%d)%s" % (
+            group["state"].upper(), group["count"],
+            "  [waiting on automation]" if group["blocked_on_automation"] else ""))
+        lines.append("   %-7s %-8s %-16s %-30s %s"
+                     % ("PR", "AGE", "TASK", "BRANCH", "REASON"))
+        for row in group["prs"]:
+            lines.append("   %-7s %-8s %-16s %-30s %s" % (
+                "#%s" % row["number"],
+                format_age(row.get("state_age_seconds")),
+                (row.get("task_id") or ("linked" if row.get("linked") else "-"))[:16],
+                (row.get("head") or "?")[:30],
+                (row.get("pipeline_reason") or row.get("reason") or "")[:70],
+            ))
+    lines.append("")
+    lines.append(
+        "age is a LOWER BOUND -- nothing persists a state transition, so it is "
+        "measured from the newest event on the PR; '?' means unmeasured")
+    lines.append(
+        "staleness: refused above %d commit(s) behind %s; measured for %d of %d PR(s)"
+        % (report.get("max_behind_commits", DEFAULT_MAX_BEHIND_COMMITS),
+           report["default_branch"], report.get("behind_measured_count", 0),
+           report["total"]))
+    return "\n".join(lines)
+
+
+def collect_report(
+    *,
+    limit: int = 100,
+    default_branch: Optional[str] = None,
+    from_json: Optional[str] = None,
+    max_behind_commits: Optional[int] = None,
+    measure_behind: bool = True,
+) -> Dict[str, Any]:
+    """Gather the inputs and return the classified report. READ ONLY.
+
+    Extracted from ``main`` (kpr-watch-03) so the CLI, the kanban CLI and the
+    dashboard panel all obtain the report the SAME way. A second caller that
+    re-assembled these inputs by hand is how a surface starts describing a
+    different pipeline from the one that runs -- the same failure mode the
+    module docstring bans for the ladder itself.
+
+    Raises on an input it could not obtain. An empty report and a report that
+    could not be produced are different answers, and only the first is data.
+    """
+    if from_json:
+        path = pathlib.Path(from_json)
+        prs = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(prs, list):
+            raise ValueError("%s does not contain a PR list" % path)
+    else:
+        prs = list_open_prs(limit=limit)
+
+    if not default_branch:
+        from tools.ci.pr_watcher import repo_default_branch  # local: import cycle
+        default_branch = repo_default_branch()
+
+    # FAIL-OPEN and never silent: without the board nothing can be identified as
+    # task-linked, so every PR is classified on its own merits and the caller is
+    # handed `linked_lookup_ok: False` to say so.
+    linked_lookup_ok = True
+    linked_lookup_error = None
+    tasks: Dict[str, Dict[str, Any]] = {}
+    try:
+        tasks = linked_pr_tasks()
+    except Exception as exc:  # noqa: BLE001 - degraded, and the report SAYS it is
+        tasks, linked_lookup_ok = {}, False
+        linked_lookup_error = str(exc)[:300]
+    linked = frozenset(tasks)
+
+    if max_behind_commits is None:
+        max_behind_commits = _configured_max_behind()
+
+    # TWO PHASES -- see main(). The staleness rung is the only one that costs a
+    # forge round-trip, so it is measured only for the PRs a behind-count could
+    # still change the verdict of.
+    # The dashboard surface evaluates the SAME protected-path rung the merger
+    # does (kpr-watch-10). Without it this report answers `linked` for a PR the
+    # watcher is actively refusing — which is the defect kpr-watch-10 closed,
+    # reappearing one surface over. Supplied only when the records carry
+    # `files`, for the reason main() gives.
+    guarded = load_protected_paths() if any("files" in pr for pr in prs) else []
+    report = build_report(
+        prs, default_branch=default_branch, linked_urls=linked,
+        linked_lookup_ok=linked_lookup_ok, linked_tasks=tasks,
+        max_behind_commits=max_behind_commits, protected_paths=guarded)
+    if measure_behind:
+        ready_urls = {r["url"] for r in report["prs"] if r["state"] == READY}
+        if ready_urls:
+            behind = measure_behind_map(
+                [pr for pr in prs if (pr.get("url") or "").strip() in ready_urls],
+                default_branch=default_branch)
+            report = build_report(
+                prs, default_branch=default_branch, linked_urls=linked,
+                linked_lookup_ok=linked_lookup_ok, linked_tasks=tasks,
+                behind_by_url=behind, max_behind_commits=max_behind_commits,
+                protected_paths=guarded)
+    # Why the board was unreadable, not merely that it was. A degraded report
+    # that cannot say what degraded it sends the reader to the wrong fix.
+    report["linked_lookup_error"] = linked_lookup_error
+    return report
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -713,6 +1067,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--no-measure-behind", action="store_true",
                         help="skip the /compare call; every PR then reports its "
                              "staleness as UNMEASURED rather than as fresh")
+    parser.add_argument("--group", action="store_true",
+                        help="bucket the table by state (attention order: ready "
+                             "and behind_main first) instead of one flat list")
     args = parser.parse_args(argv)
 
     if args.state:
@@ -720,72 +1077,35 @@ def main(argv: Optional[List[str]] = None) -> int:
         if bad:
             parser.error("unknown state(s): %s" % ", ".join(bad))
 
-    # ── inputs ────────────────────────────────────────────────────────────
-    if args.from_json:
-        path = pathlib.Path(args.from_json)
-        try:
-            prs = json.loads(path.read_text(encoding="utf-8"))
-        except Exception as exc:  # noqa: BLE001 — reported, never swallowed
-            return _fail(args.json, "cannot read %s: %s" % (path, exc))
-        if not isinstance(prs, list):
-            return _fail(args.json, "%s does not contain a PR list" % path)
-    else:
-        try:
-            prs = list_open_prs(limit=args.limit)
-        except Exception as exc:  # noqa: BLE001
-            return _fail(args.json, "cannot list open PRs: %s" % exc)
-
-    default_branch = args.default_branch
-    if not default_branch:
-        from tools.ci.pr_watcher import repo_default_branch  # local: import cycle
-        default_branch = repo_default_branch()
-
-    linked_lookup_ok = True
+    # ONE gatherer, shared with the dashboard panel and the kanban CLI, so a
+    # surface cannot describe a pipeline this command would report differently.
     try:
-        linked = linked_pr_urls()
-    except Exception as exc:  # noqa: BLE001 — degraded, and it SAYS so
-        linked, linked_lookup_ok = frozenset(), False
-        print("warning: kanban board unreadable (%s)" % exc, file=sys.stderr)
+        report = collect_report(
+            limit=args.limit,
+            default_branch=args.default_branch,
+            from_json=args.from_json,
+            max_behind_commits=args.max_behind,
+            measure_behind=not args.no_measure_behind,
+        )
+    except Exception as exc:  # noqa: BLE001 - reported, never swallowed
+        return _fail(args.json, "cannot produce the report: %s" % exc)
+    if not report.get("linked_lookup_ok", True):
+        print("warning: kanban board unreadable (%s) -- no PR could be "
+              "identified as task-linked"
+              % (report.get("linked_lookup_error") or "no detail"),
+              file=sys.stderr)
 
-    max_behind = args.max_behind
-    if max_behind is None:
-        max_behind = _configured_max_behind()
-
-    # TWO PHASES, because the staleness rung is the only one that costs a forge
-    # round-trip. Classify with what `gh pr list` already gave us, then measure
-    # ONLY the PRs that came back `ready` -- those are the ones whose verdict a
-    # behind-count can still change, and the ones the merger would act on. The
-    # rest keep the refusal the merger reached first.
-    # kpr-watch-10: the report evaluates the SAME protected-path rung the
-    # merger does. Without this it reported `linked` for a PR the watcher was
-    # actively refusing, which is the report describing a policy the merger does
-    # not have. Only supplied when the fetched records actually carry `files` —
-    # a `--from-json` dump taken before that field was fetched cannot answer the
-    # question, and every row failing closed would be noise rather than news.
-    guarded = load_protected_paths() if any("files" in pr for pr in prs) else []
-    report = build_report(prs, default_branch=default_branch,
-                          linked_urls=linked, linked_lookup_ok=linked_lookup_ok,
-                          max_behind_commits=max_behind,
-                          protected_paths=guarded)
-    if not args.no_measure_behind:
-        ready_urls = {r["url"] for r in report["prs"] if r["state"] == READY}
-        if ready_urls:
-            behind = measure_behind_map(
-                [pr for pr in prs if (pr.get("url") or "").strip() in ready_urls],
-                default_branch=default_branch)
-            report = build_report(
-                prs, default_branch=default_branch, linked_urls=linked,
-                linked_lookup_ok=linked_lookup_ok, behind_by_url=behind,
-                max_behind_commits=max_behind, protected_paths=guarded)
     if args.state:
         wanted = set(args.state)
         report["prs"] = [r for r in report["prs"] if r["state"] in wanted]
         report["filtered_to"] = sorted(wanted)
 
     if args.json:
+        if args.group:
+            report["groups"] = group_by_state(report)
         print(json.dumps(report, indent=2))
     else:
-        print(render_table(report))
+        print(render_grouped(report) if args.group else render_table(report))
     return 0
 
 

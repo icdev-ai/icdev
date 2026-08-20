@@ -6731,6 +6731,33 @@ python -m tools.ci.merge_readiness --max-behind 5            # override the thre
 python -m tools.ci.merge_readiness --no-measure-behind       # skip the /compare calls
 python -m tools.ci.merge_readiness --from-json prs.json --default-branch main
 
+# SURFACED (kpr-watch-03) — the same classification where somebody will see it.
+# A report nobody opens is not observability, and for two cards the only place
+# this answer existed was a CLI you had to think to run.
+python -m tools.ci.merge_readiness --group                   # bucketed by state
+python tools/kanban/cli.py --awaiting-merge                  # same view, board CLI
+python tools/kanban/cli.py --awaiting-merge --json
+python tools/kanban/cli.py --awaiting-merge --merge-state behind_main
+python tools/kanban/cli.py --awaiting-merge --no-measure-behind
+# UI: Home (/) -> "Awaiting Merge", a section inside
+# tools/dashboard/templates/_autonomy_status.html — a PANEL on an existing page,
+# NOT a new page, so the 8-point completeness gate does not apply.
+# API: GET /api/merge-readiness. READ ONLY BY CONSTRUCTION — no merge button, no
+# un-draft, and no POST sibling on that path (asserted by AST in
+# tests/test_merge_readiness_surface.py). Cached 120s server-side and the cache
+# AGE is rendered, so a stale answer is never presented as a live one.
+# All three surfaces read `collect_report` — one ladder, one gatherer.
+# Per PR: number, branch, whether a task points at it (`task_id`), the state,
+# the reason, and the age in state.
+# TWO VERDICTS, ONE TABLE: `state` is the merger's verdict; `pipeline_state` is
+# the same function called with `linked_urls=()`, because `state` short-circuits
+# at the `linked` rung for every kanban PR and grouping on it collapsed the
+# whole board into "a task owns it". Identical for an unlinked PR, by test.
+# AGE IS A LOWER BOUND from the NEWEST event on the PR, not from `updatedAt` —
+# which does not bump when a check completes (measured 2026-08-19: #1817's
+# updatedAt was 45s OLDER than its own check's completedAt). Unmeasured prints
+# "?", never 0. Groups are in ATTENTION order (`ready`, `behind_main` first),
+# which is presentation only and never reorders the ladder.
 # MERGE STALL ALARM — eligible-but-unmerged, the signal the MERGER stalled
 # (kpr-watch-02). `merge_readiness` above explains every rung the ladder REFUSES
 # on. This answers the one case where it refuses NOTHING: a PR classified `ready`
