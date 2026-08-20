@@ -166,7 +166,11 @@ def assess_il_suitability(graph: dict, design: dict) -> dict:
 
     passed = sum(1 for f in model_findings if f["status"] == "PASS")
     total = len(model_findings)
-    score = round((passed / total) * 100, 1) if total else 100.0
+    # NOT ASSESSED, never 100.0 (rem-hyg-13). `total` is the number of model
+    # nodes on the design that resolved to a catalogue entry. Zero means the
+    # design names no model — an unstarted canvas — and the old `else 100.0`
+    # certified it as fully IL-suitable at whatever impact level was asked for.
+    score = round((passed / total) * 100, 1) if total else None
 
     return {
         "framework": f"IL Suitability — {il_level}",
@@ -174,7 +178,7 @@ def assess_il_suitability(graph: dict, design: dict) -> dict:
         "il_level": il_level,
         "il_requirements": il_req,
         "score": score,
-        "passed": score >= 100,
+        "passed": (score >= 100) if score is not None else None,
         "assessed_at": _now(),
         "model_findings": model_findings,
         "summary": {"total_models": total, "compliant": passed, "non_compliant": total - passed},
@@ -257,13 +261,23 @@ def run_all(graph: dict, design: dict) -> dict:
                 "status": "unavailable", "reason": str(exc),
             })
 
-    overall_scores = [dod_rai["score"], il_suit["score"], omm["score"]]
-    overall = round(sum(overall_scores) / len(overall_scores), 1)
+    # A framework that could not be assessed contributes NOTHING to the mean —
+    # it is dropped, not counted as a zero and not counted as a hundred
+    # (rem-hyg-13). Averaging an unassessed framework in either direction is a
+    # claim about evidence nobody gathered. When NONE of the three could be
+    # assessed the overall is None, and `overall_passed` is None with it.
+    assessed_scores = [
+        s for s in (dod_rai["score"], il_suit["score"], omm["score"]) if s is not None
+    ]
+    overall = (
+        round(sum(assessed_scores) / len(assessed_scores), 1) if assessed_scores else None
+    )
 
     return {
         "design_id": design.get("id"),
         "overall_score": overall,
-        "overall_passed": overall >= 75,
+        "overall_passed": (overall >= 75) if overall is not None else None,
+        "frameworks_assessed": len(assessed_scores),
         "assessed_at": _now(),
         "dod_rai": dod_rai,
         "il_suitability": il_suit,

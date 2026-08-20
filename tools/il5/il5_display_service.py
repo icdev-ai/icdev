@@ -105,7 +105,10 @@ def render_il5_ui(
     sla_met_count = sum(1 for ev in events if ev.get("sla_met") == 1)
     sla_violated_count = sum(1 for ev in events if ev.get("sla_met") == 0)
     known = sla_met_count + sla_violated_count
-    compliance_pct = round((sla_met_count / known) * 100, 2) if known > 0 else 100.0
+    # NOT ASSESSED, never 100.0 (rem-hyg-13). `known` counts only the events
+    # whose SLA outcome could be decided; zero means nothing in this payload was
+    # decidable, which is not the same claim as "everything met its SLA".
+    compliance_pct = round((sla_met_count / known) * 100, 2) if known > 0 else None
 
     payload: Dict[str, Any] = {
         "component": component,

@@ -185,6 +185,8 @@ body { overflow: hidden; height: 100vh; }
 .score-high   { background:#14532d; color:#4ade80; }
 .score-medium { background:#713f12; color:#fbbf24; }
 .score-low    { background:#7f1d1d; color:#f87171; }
+/* NOT ASSESSED — deliberately grey, so it reads as neither pass nor fail. */
+.score-none   { background:#3f3f46; color:#a1a1aa; }
 
 /* Findings */
 .finding-row { display:flex; gap:7px; align-items:flex-start; padding:5px 12px; font-size:.72rem; border-bottom:1px solid #090e1a; }
@@ -965,14 +967,17 @@ function runGovAssess() {
   saveGraphSilent(function() {
     fetch('/ai-ml/api/designs/'+DESIGN_ID+'/assess-gov',{method:'POST'})
       .then(function(r){return r.json();}). then(function(d){
+        // A null score means NOT ASSESSED, never 100% (rem-hyg-13). Compared
+        // against null explicitly so a MEASURED 0 still renders as a red ring.
         var s=d.overall_score;
+        var pct=function(v){return (v===null||v===undefined)?'n/a':v+'%';};
         var ring=document.getElementById('score-ring');
-        ring.className='score-ring '+(s>=80?'score-high':s>=60?'score-medium':'score-low');
-        ring.textContent=s+'%';
+        ring.className='score-ring '+(s===null||s===undefined?'score-none':s>=80?'score-high':s>=60?'score-medium':'score-low');
+        ring.textContent=pct(s);
         document.getElementById('score-badge').style.display='flex';
-        document.getElementById('score-label').textContent='Governance: '+(d.overall_passed?'PASS':'FAIL');
-        document.getElementById('score-sub').textContent='DoD RAI: '+d.dod_rai.score+'% | IL: '+d.il_suitability.score+'%';
-        toast('Gov Assessment: '+s+'%');
+        document.getElementById('score-label').textContent='Governance: '+(s===null||s===undefined?'NOT ASSESSED':(d.overall_passed?'PASS':'FAIL'));
+        document.getElementById('score-sub').textContent='DoD RAI: '+pct(d.dod_rai.score)+' | IL: '+pct(d.il_suitability.score);
+        toast('Gov Assessment: '+pct(s));
       }).catch(function(){toast('Governance assessment failed');});
   });
 }

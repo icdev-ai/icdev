@@ -546,7 +546,13 @@ def assess_infra_design(graph_data: dict) -> dict:
 
     total_rules = len(INFRA_COMPLIANCE_RULES)
     passed = total_rules - len(findings)
-    score = round((passed / total_rules) * 100, 1) if total_rules else 100.0
+    # NOT ASSESSED, never 100.0 (rem-hyg-13). An empty rulebook means no check
+    # ran, which is the strongest possible reason NOT to publish a compliance
+    # score. INFRA_COMPLIANCE_RULES is non-empty today so this arm is unreached,
+    # and it is corrected anyway: the branch is what a future change filtering
+    # the rulebook by profile or by IL would land on, and it would then start
+    # returning a perfect score for a design nothing was checked against.
+    score = round((passed / total_rules) * 100, 1) if total_rules else None
 
     return {
         "assessed_at": _utcnow_iso(),

@@ -6675,6 +6675,52 @@ python tools/ci/undeclared_import_census.py --changed tools/foo.py --check
 python tools/ci/undeclared_import_census.py --staged          # only what this commit touches
 python tools/ci/undeclared_import_census.py --prune           # drop entries whose site is gone
 
+# A PERFECT SCORE returned when the denominator is empty (rem-hyg-13)
+#
+#     pct = round(within / total_relevant * 100, 1) if total_relevant > 0 else 100.0
+#
+# Nothing was scanned, nothing was assessed, and the page draws a full green bar
+# at 100%. Strictly worse than a missing number: a missing number prompts
+# somebody to go and measure, and a perfect one closes the question. Three of
+# the four defects fixed on 2026-08-20 were this same shape -- rem-hyg-08 (a
+# project card over rows no epic claimed), cch-obs-03/ctx-obs-03 (cache and
+# governance rates nobody had measured), rem-hyg-09 (canvases nobody had
+# assessed).
+#
+# THE FINDING IS A CONJUNCTION: a 100.0 fallback arm AND a body that computes a
+# RATIO. Requiring the ratio is what keeps it high-signal -- `else 100.0` greps
+# to 15 sites and TWO of them are not scores at all
+# (tools/trading/data/fixture_provider.py a synthetic bar price;
+# tools/trading/data/macro_data.py the US Dollar Index, whose BASE IS 100 by
+# definition), and both are excluded by the PREDICATE rather than by a written
+# excuse -- an exemption list is a claim a reviewer must check and a predicate
+# is one the scanner re-derives every run. Parsing to an AST disposes of the
+# third grep hit for free: tools/canvas_compliance/posture.py:260 is a COMMENT
+# inside the rem-hyg-09 fix explaining this very defect.
+# The constant is the FLOAT 100.0 and NEVER the bare int, measured: widening
+# adds ZERO true positives and adds one legitimate site needing an excuse
+# (tools/trading/dashboard/app.py's RSI, which IS 100 with no down moves).
+# The broader `if X else 0` shape is deliberately NOT gated -- 1,167
+# occurrences across 566 files, mostly ordinary counters, and refusing those
+# refuses routine work.
+#
+# THE FIX is the convention already in the tree,
+# tools/quality/component_scorer.py::NOT_ASSESSED -- return None, never a
+# number, and let the renderer say "not assessed". Templates here already tell
+# None from 0.0 (network/compare.html, network/enterprise.html), and a MEASURED
+# 0% must keep rendering as a real red bar.
+#
+# ZERO GRANDFATHERED: all 12 ratio sites were FIXED in the adopting change, so
+# args/perfect_score_census.txt is EMPTY, `perfect_score_max` in
+# args/perfect_score_gate.yaml is 0, and any entry breaches it. That is a
+# stronger posture than the raw-INSERT (219) and undeclared-import (210)
+# censuses could take, and only because the set was small enough to drain.
+python tools/ci/perfect_score_census.py --check               # the gate; exit 1 on a NEW site
+python tools/ci/perfect_score_census.py --json                # full report
+python tools/ci/perfect_score_census.py --changed tools/foo.py --check
+python tools/ci/perfect_score_census.py --staged              # only what this commit touches
+python tools/ci/perfect_score_census.py --prune               # drop entries whose site is gone
+
 # UNGATED test census (rem-tst-01) — which of the backlog modules are GREEN today?
 # The ratchet above stops the ungated census GROWING and the drift reflex watches for
 # regressions inside it, but a promotion batch has to start from a different question:

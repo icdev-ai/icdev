@@ -223,7 +223,12 @@ def get_sla_summary(*, db_path: Optional[Path] = None) -> Dict[str, Any]:
         violated = row["violated"] or 0
         unknown = row["unknown"] or 0
         known = met + violated
-        pct = round((met / known) * 100, 2) if known > 0 else 100.0
+        # NOT ASSESSED, never 100.0 (rem-hyg-13). `known` counts only the events
+        # whose SLA outcome could be decided at all — the docstring above says
+        # so. Zero of them means every ingested event had an unknown
+        # source_published_at, or none were ingested, and the old `else 100.0`
+        # reported perfect IL5 SLA compliance over exactly that absence.
+        pct = round((met / known) * 100, 2) if known > 0 else None
         return {
             "total": total,
             "sla_met": met,

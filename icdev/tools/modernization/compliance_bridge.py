@@ -790,8 +790,15 @@ def generate_ato_impact_report(plan_id, output_dir=None):
         inh = inherited_by_family.get(fam, 0)
         dist = distributed_by_family.get(fam, 0)
         gps = gap_by_family.get(fam, 0)
-        cov = round(((inh - gps) / inh * 100) if inh > 0 else 100.0, 1)
-        lines.append(f"| {fam} | {desc} | {inh} | {dist} | {gps} | {cov}% |")
+        # NOT ASSESSED, never 100.0 (rem-hyg-13). `inh` is the number of
+        # controls this family INHERITS, and `all_families` is the union of the
+        # inherited, distributed and gap keys — so a family that appears only
+        # because it has GAPS arrives here with inh == 0. The old `else 100.0`
+        # printed that family at 100% coverage in an ATO impact report, with its
+        # own gap count sitting in the adjacent column.
+        cov = round((inh - gps) / inh * 100, 1) if inh > 0 else None
+        cov_txt = f"{cov}%" if cov is not None else "not assessed"
+        lines.append(f"| {fam} | {desc} | {inh} | {dist} | {gps} | {cov_txt} |")
 
     lines.append("")
 

@@ -161,7 +161,18 @@ def validate_fips200(project_id, project_dir=None, gate=False, output_dir=None, 
                     gap.append(ctrl_id)
 
             total_implemented += len(implemented)
-            coverage = (len(implemented) + len(not_applicable)) / len(required) * 100 if required else 100.0
+            # NOT ASSESSED, never 100.0 (rem-hyg-13). An area with no required
+            # controls at this baseline has nothing to cover, and the old
+            # `else 100.0` published a fully-covered FIPS 200 requirement area
+            # on the strength of an empty control list — which reads identically
+            # to an area somebody actually implemented. The `status` two lines
+            # below already says `not_applicable`; the NUMBER has to agree with
+            # it, or a reader who sorts on coverage sees the empty areas first.
+            coverage = (
+                (len(implemented) + len(not_applicable)) / len(required) * 100
+                if required
+                else None
+            )
 
             # Determine status
             if not required:
@@ -188,7 +199,7 @@ def validate_fips200(project_id, project_dir=None, gate=False, output_dir=None, 
                 "not_applicable": len(not_applicable),
                 "gap_count": len(gap),
                 "gap_controls": gap,
-                "coverage_pct": round(coverage, 1),
+                "coverage_pct": round(coverage, 1) if coverage is not None else None,
                 "status": status,
             }
             area_results.append(area_result)
@@ -213,7 +224,7 @@ def validate_fips200(project_id, project_dir=None, gate=False, output_dir=None, 
                     len(implemented),
                     len(planned),
                     len(not_applicable),
-                    round(coverage, 1),
+                    round(coverage, 1) if coverage is not None else None,
                     status,
                     json.dumps(gap),
                     now,
@@ -328,7 +339,9 @@ def main():
                     if a["status"] == "not_satisfied"
                     else "N/A"
                 )
-                print(f"{a['requirement_area_name']:<50} {a['family']:<8} {status_icon:<20} {a['coverage_pct']:>7.1f}%")
+                cov = a["coverage_pct"]
+                cov_txt = f"{cov:>7.1f}%" if cov is not None else "not assd"
+                print(f"{a['requirement_area_name']:<50} {a['family']:<8} {status_icon:<20} {cov_txt:>8}")
             print("-" * 80)
             print(
                 f"Summary: {result['areas_satisfied']} satisfied, {result['areas_partially_satisfied']} partial, {result['areas_not_satisfied']} not satisfied"  # noqa: E501
