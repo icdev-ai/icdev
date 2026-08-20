@@ -860,10 +860,26 @@ def _load_safe_dynamic_import_modules() -> frozenset:
 
 
 def _is_safe_dynamic_import(file_path: Optional[str], safe_set: frozenset) -> bool:
-    """True when file_path matches an entry in known_safe_dynamic_import_modules."""
+    """True when file_path matches an entry in known_safe_dynamic_import_modules.
+
+    Separators are normalised with an explicit ``replace`` on BOTH sides rather
+    than ``Path.as_posix()`` on the left, because ``as_posix()`` is
+    host-dependent in exactly the way this comparison must not be: a backslash
+    is a path separator on Windows and a LEGAL FILENAME CHARACTER on POSIX, so
+
+        Path(r"document_intelligence\\search_engine.py").as_posix()
+
+    returns ``document_intelligence/search_engine.py`` on Windows and the string
+    unchanged on Linux. Findings are recorded on a developer's Windows box —
+    ``document_intelligence\\search_engine.py:1315`` is the literal form
+    assessment-300 recorded — while the scanner also runs on the Linux CI
+    runner, so an authorization that was verified locally silently failed to
+    suppress the same finding in CI. The allowlist side was already normalised
+    this way; only the observed path was not.
+    """
     if not file_path or not safe_set:
         return False
-    normalised = Path(file_path).as_posix()
+    normalised = str(file_path).replace("\\", "/")
     return any(normalised.endswith(m.replace("\\", "/")) for m in safe_set)
 
 

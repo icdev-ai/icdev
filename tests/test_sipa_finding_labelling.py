@@ -188,3 +188,146 @@ def test_authorized_modules_actually_perform_a_dynamic_import(allowlist):
         assert "import_module" in text or "__import__" in text, (
             f"{rel} is allowlisted for dynamic_import but performs none"
         )
+
+
+# ---------------------------------------------------------------------------
+# assessment-300 / task-c49fb2727d: the DIC governed-evidence seam
+#
+# `_triaged_modules_are_authorized` above asserts a STRING is in a list, which
+# is not the same claim as "the scanner stops reporting this file". The
+# suppression predicate is what the Genesis self-scan actually consults, so the
+# entry is asserted through it, in the exact backslash form assessment 300
+# recorded (`document_intelligence\search_engine.py:1315`).
+# ---------------------------------------------------------------------------
+
+_DIC_SEARCH_ENGINE_SUFFIX = "document_intelligence/search_engine.py"
+
+#: The form the finding recorded — a Windows-separator path relative to tools/.
+_DIC_SEARCH_ENGINE_RECORDED = r"document_intelligence\search_engine.py"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "tools/document_intelligence/search_engine.py",
+        "document_intelligence/search_engine.py",
+    ],
+)
+def test_dic_search_engine_is_authorized(path, allowlist):
+    """Both path forms: the self-scan reports paths relative to tools/."""
+    assert path in allowlist
+
+
+@pytest.mark.parametrize(
+    "recorded",
+    [
+        _DIC_SEARCH_ENGINE_RECORDED,
+        "tools/" + _DIC_SEARCH_ENGINE_SUFFIX,
+        "icdev/tools/" + _DIC_SEARCH_ENGINE_SUFFIX,
+    ],
+)
+def test_dic_search_engine_finding_is_suppressed_by_the_predicate(recorded, allowlist):
+    """The entry has to fire through the predicate, not merely exist in YAML."""
+    from tools.integrity.scanners import _is_safe_dynamic_import
+
+    assert _is_safe_dynamic_import(recorded, frozenset(allowlist)), (
+        f"{recorded!r} is in known_safe_dynamic_import_modules but the scanner's "
+        "own suppression predicate does not match it"
+    )
+
+
+def test_dic_search_engine_actually_performs_a_dynamic_import():
+    """Guard against authorizing a file that never needed it.
+
+    An allowlist entry for a module with no dynamic import is dead config that
+    silently widens the exemption surface if that file later grows one.
+    """
+    for rel in ("tools/" + _DIC_SEARCH_ENGINE_SUFFIX, "icdev/tools/" + _DIC_SEARCH_ENGINE_SUFFIX):
+        text = (REPO_ROOT / rel).read_text(encoding="utf-8", errors="replace")
+        assert "import_module" in text or "__import__" in text, (
+            f"{rel} is allowlisted for dynamic_import but performs none"
+        )
+
+
+def test_dic_search_engine_entry_matches_only_the_two_mirrored_copies():
+    """Suffix matching is not segment-anchored, so state the tree fact.
+
+    ``document_intelligence/search_engine.py`` is a bare two-segment suffix. The
+    authorization is only as narrow as the set of files it can match, so assert
+    that set rather than asserting the matcher.
+    """
+    import subprocess
+
+    tracked = subprocess.run(
+        ["git", "ls-files"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    ).stdout.splitlines()
+    matched = sorted(p for p in tracked if p.endswith(_DIC_SEARCH_ENGINE_SUFFIX))
+    assert matched == [
+        "icdev/tools/" + _DIC_SEARCH_ENGINE_SUFFIX,
+        "tools/" + _DIC_SEARCH_ENGINE_SUFFIX,
+    ], f"the authorization suffix now reaches unrelated files: {matched}"
+
+
+# ---------------------------------------------------------------------------
+# The suppression predicate must not depend on the host OS
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "recorded",
+    [
+        r"document_intelligence\search_engine.py",
+        r"tools\document_intelligence\search_engine.py",
+        r"icdev\tools\document_intelligence\search_engine.py",
+        "document_intelligence/search_engine.py",
+        "tools/document_intelligence/search_engine.py",
+        "icdev/tools/document_intelligence/search_engine.py",
+    ],
+)
+def test_suppression_is_separator_agnostic_on_every_host(recorded):
+    r"""A Windows-recorded finding must be suppressed by a Linux scanner too.
+
+    `_is_safe_dynamic_import` normalised the observed path with
+    `Path(file_path).as_posix()`, which is HOST-DEPENDENT in exactly the way
+    this comparison must not be: a backslash separates paths on Windows and is
+    a LEGAL FILENAME CHARACTER on POSIX, so
+
+        Path(r"document_intelligence\search_engine.py").as_posix()
+
+    returns `document_intelligence/search_engine.py` on Windows and the string
+    UNCHANGED on Linux.
+
+    Findings are recorded on a developer's Windows box — assessment-300
+    recorded `document_intelligence\search_engine.py:1315` verbatim — while the
+    scanner also runs on the Linux CI runner. So an authorization verified
+    locally silently failed to suppress the same finding in CI, and the only
+    symptom was this suite passing on one host and failing on the other. The
+    allowlist side was already normalised with an explicit `replace`; the
+    observed path was not.
+    """
+    from tools.integrity.scanners import _is_safe_dynamic_import
+
+    allow = frozenset([_DIC_SEARCH_ENGINE_SUFFIX])
+    assert _is_safe_dynamic_import(recorded, allow), (
+        f"{recorded!r} is not suppressed — the predicate is host-dependent again"
+    )
+
+
+@pytest.mark.parametrize(
+    "unrelated",
+    [
+        "tools/other/search_engine.py",
+        "document_intelligence/other.py",
+        r"tools\other\search_engine.py",
+    ],
+)
+def test_separator_normalisation_does_not_widen_the_match(unrelated):
+    """Normalising separators must not turn a narrow suffix into a broad one."""
+    from tools.integrity.scanners import _is_safe_dynamic_import
+
+    assert not _is_safe_dynamic_import(unrelated, frozenset([_DIC_SEARCH_ENGINE_SUFFIX]))
