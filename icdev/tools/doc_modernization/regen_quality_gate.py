@@ -195,7 +195,13 @@ def evaluate_regeneration_quality(
                      #: Explicit, so a reader can tell "checked, found nothing"
                      #: from "there was nothing to check".
                      "sections_examined": len(section_dicts),
-                     "sections_submitted": len(new_sections or [])},
+                     "sections_submitted": len(new_sections or []),
+                     #: The named case: sections WERE drafted and NONE reached
+                     #: the checks. Carried as its own boolean rather than left
+                     #: for a caller to infer from two counts, because the
+                     #: inference is exactly what nobody was doing when a draft
+                     #: whose every section abstained came back `reasons: []`.
+                     "nothing_verifiable": nothing_verifiable},
         "consistency": consistency,
         "claim_preservation": claim_preservation,
     }
