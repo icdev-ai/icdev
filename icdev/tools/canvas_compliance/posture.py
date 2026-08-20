@@ -68,6 +68,23 @@ def _open_canvas_connection(canvas_name: str) -> Any | None:
         return None
 
 
+def _score_or_none(cc, table: str, score_col: str = "score"):
+    """Latest-per-design average, or None when the table holds NO evidence.
+
+    Every caller used to be ``round(_latest_per_design_avg(...), 1)``, and that
+    helper coerces a NULL average to ``0.0`` — so an empty table produced a
+    confident score rather than an absence. For most canvases the number was
+    ``0.0`` (which at least renders as "No data"); for Security it is
+    ``100 - avg(risk)`` and an empty table scored a PERFECT 100.
+
+    Asking for the row count first is what separates "assessed, and the average
+    is zero" from "nothing has ever been assessed" (rem-hyg-09).
+    """
+    if not _has_rows(cc, table):
+        return None
+    return round(_latest_per_design_avg(cc, table, score_col), 1)
+
+
 def _latest_per_design_avg(cc, table: str, score_col: str = "score") -> float:
     q = (
         f"SELECT AVG({score_col}) FROM {table} a1 "  # nosec B608
@@ -82,6 +99,96 @@ def _latest_per_design_avg(cc, table: str, score_col: str = "score") -> float:
     except Exception:
         fallback = cc.execute(f"SELECT AVG({score_col}) FROM {table}").fetchone()  # nosec B608
         return float(fallback[0] or 0)
+
+
+#: Where each canvas's newest evidence timestamp lives. Used ONLY to report
+#: staleness — never to compute a score. A canvas absent from this map reports
+#: ``last_assessed: None``, which the surface renders as "unknown", not "fresh".
+_ASSESSED_AT = {
+    "Security":      ("sc_assessments", "ran_at"),
+    "Network":       ("nc_compliance_checks", "created_at"),
+    "Pipeline":      ("pc_compliance_checks", "created_at"),
+    "Infra":         ("idc_assessments", "created_at"),
+    "Data":          ("dd_assessments", "created_at"),
+    "Boundary":      ("bd_assessments", "created_at"),
+    "Observability": ("od_assessments", "created_at"),
+    "Agentic AI":    ("aadc_assessments", "created_at"),
+    "AI/ML":         ("aiml_assessments", "created_at"),
+    "QDC":           ("qdc_assessments", "created_at"),
+    "Migration":     ("mc_assessments", "created_at"),
+}
+
+
+def _has_rows(cc, table: str) -> bool:
+    """Does this table hold ANY evidence? Fail-closed to False.
+
+    A score derived from SUMs of an empty table is arithmetic on nothing —
+    ``100 - 0 - 0 - 0`` is 100 — so the row count has to be asked separately.
+    An unreadable table is not evidence either, hence False on error.
+    """
+    try:
+        r = cc.execute(f"SELECT COUNT(*) AS c FROM {table}").fetchone()  # nosec B608
+        return int((r["c"] if isinstance(r, dict) else r[0]) or 0) > 0
+    except Exception:
+        return False
+
+
+def _max_ts(cc, table: str, col: str):
+    """Newest value of a timestamp column, or None. Never raises."""
+    try:
+        r = cc.execute(f"SELECT MAX({col}) AS m FROM {table}").fetchone()  # nosec B608
+        value = r["m"] if isinstance(r, dict) else r[0]
+        return str(value) if value else None
+    except Exception:
+        return None
+
+
+def _last_assessed(cc, canvas_name: str):
+    """Newest evidence timestamp as an ISO string, or None if there is none.
+
+    Reported so the surface can render an AGE. Measured on the live board
+    2026-08-20, every canvas was between 33 and 71 days stale and the widget
+    said nothing at all — a score from June was indistinguishable from one taken
+    that morning. None means "no evidence / could not read", which a renderer
+    must show as unknown rather than as fresh.
+    """
+    spec = _ASSESSED_AT.get(canvas_name)
+    if not spec:
+        return None
+    return _max_ts(cc, *spec)
+
+
+def daily_trend(scores) -> tuple[str, Any]:
+    """30-day direction from a list of ``{"score", "date"}`` — like with like.
+
+    This used to be ``scores[0] - scores[-1]`` over rows ordered by timestamp
+    across ALL designs, so a canvas holding one row per design (Boundary: 6
+    rows, 6 designs) had design F's score subtracted from design A's and the
+    difference reported as a trend. That is design-mix noise, and it produces a
+    confident red ▼ from data that never moved.
+
+    Averaging per DAY first makes both ends the same kind of quantity: the mean
+    across whatever designs were assessed that day.
+
+    Returns ``("unmeasured", None)`` when fewer than two DAYS are present.
+    ``flat`` claims a measurement held steady; with one point there was no
+    measurement, and on this board that is the state of every canvas — none has
+    been assessed inside the window at all. The two must not render alike.
+    """
+    by_day: dict = {}
+    for s in scores or []:
+        by_day.setdefault(str(s["date"]), []).append(s["score"])
+    days = sorted(by_day)
+    if len(days) < 2:
+        return "unmeasured", None
+    newest = sum(by_day[days[-1]]) / len(by_day[days[-1]])
+    oldest = sum(by_day[days[0]]) / len(by_day[days[0]])
+    delta = round(newest - oldest, 1)
+    if delta >= 2.0:
+        return "up", delta
+    if delta <= -2.0:
+        return "down", delta
+    return "flat", delta
 
 
 def compute_canvas_posture(conn) -> tuple[list[dict], float]:
@@ -118,7 +225,11 @@ def compute_canvas_posture(conn) -> tuple[list[dict], float]:
                 total_threats = int(cconn.execute(
                     "SELECT COUNT(*) FROM sc_assessments"
                 ).fetchone()[0] or 0)
-                score = round(max(0.0, 100.0 - avg_risk), 1)
+                # NOT ASSESSED, never 100.0 (rem-hyg-09): with no rows the
+                # average risk is 0 and `100 - 0` is a perfect score for a
+                # canvas nobody has assessed. `total_threats` is the row count,
+                # so it already answers "is there evidence".
+                score = round(max(0.0, 100.0 - avg_risk), 1) if total_threats > 0 else None
                 open_f = total_threats
                 closed_f = 0
             elif canvas_name in ("Network", "Pipeline"):
@@ -144,15 +255,22 @@ def compute_canvas_posture(conn) -> tuple[list[dict], float]:
                         f"SELECT COUNT(*) as cnt FROM {findings_tbl} WHERE status != 'open'"  # nosec B608
                     ).fetchone()["cnt"]
                     total_f = open_f + closed_f
-                    score = round((closed_f / total_f * 100) if total_f > 0 else 100.0, 1)
+                    # NOT ASSESSED, never 100.0 (rem-hyg-09). This branch is
+                    # reached when the checks table is empty, and the old
+                    # `else 100.0` then rendered a canvas nobody had ever
+                    # assessed as a full green bar at perfect compliance.
+                    # Measured on the live board: nc_compliance_checks and
+                    # pc_compliance_checks both held ZERO rows and both scored
+                    # 100.0, inflating the headline from 87.9 to 90.7.
+                    score = round(closed_f / total_f * 100, 1) if total_f > 0 else None
             elif canvas_name in ("Infra", "Data"):
                 tbl = "idc_assessments" if canvas_name == "Infra" else "dd_assessments"
-                score = round(_latest_per_design_avg(cconn, tbl), 1)
+                score = _score_or_none(cconn, tbl)
                 open_f = 0
                 closed_f = 0
             elif canvas_name == "Boundary":
                 try:
-                    score = round(_latest_per_design_avg(cconn, "bd_assessments"), 1)
+                    score = _score_or_none(cconn, "bd_assessments")
                     cat_row = cconn.execute(
                         "SELECT SUM(cat1_findings) as c1, SUM(cat2_findings) as c2, "
                         "SUM(cat3_findings) as c3 FROM bd_assessments a1 "
@@ -169,19 +287,19 @@ def compute_canvas_posture(conn) -> tuple[list[dict], float]:
                     open_f = int((row["cat1"] or 0) + (row["cat2"] or 0) + (row["cat3"] or 0))
                 closed_f = 0
             elif canvas_name == "Observability":
-                score = round(_latest_per_design_avg(cconn, "od_assessments"), 1)
+                score = _score_or_none(cconn, "od_assessments")
                 open_f = 0
                 closed_f = 0
             elif canvas_name == "Agentic AI":
-                score = round(_latest_per_design_avg(cconn, "aadc_assessments"), 1)
+                score = _score_or_none(cconn, "aadc_assessments")
                 open_f = 0
                 closed_f = 0
             elif canvas_name == "AI/ML":
-                score = round(_latest_per_design_avg(cconn, "aiml_assessments"), 1)
+                score = _score_or_none(cconn, "aiml_assessments")
                 open_f = 0
                 closed_f = 0
             elif canvas_name == "QDC":
-                score = round(_latest_per_design_avg(cconn, "qdc_assessments"), 1)
+                score = _score_or_none(cconn, "qdc_assessments")
                 open_f = 0
                 closed_f = 0
             elif canvas_name == "Migration":
@@ -196,7 +314,12 @@ def compute_canvas_posture(conn) -> tuple[list[dict], float]:
                     c1 = int(cat_row["c1"] or 0)
                     c2 = int(cat_row["c2"] or 0)
                     c3 = int(cat_row["c3"] or 0)
-                    score = round(max(0.0, 100.0 - c1 * 20 - c2 * 10 - c3 * 5), 1)
+                    # NOT ASSESSED, never 100.0 (rem-hyg-09): every SUM is NULL
+                    # on an empty table, so `100 - 0 - 0 - 0` scored a canvas
+                    # nobody had assessed as PERFECT. mc_assessments held ZERO
+                    # rows on the live board and rendered a full green bar.
+                    score = (round(max(0.0, 100.0 - c1 * 20 - c2 * 10 - c3 * 5), 1)
+                             if _has_rows(cconn, "mc_assessments") else None)
                     open_f = c1 + c2 + c3
                 except Exception:
                     row = cconn.execute(
@@ -206,7 +329,12 @@ def compute_canvas_posture(conn) -> tuple[list[dict], float]:
                     c1 = int(row["cat1"] or 0)
                     c2 = int(row["cat2"] or 0)
                     c3 = int(row["cat3"] or 0)
-                    score = round(max(0.0, 100.0 - c1 * 20 - c2 * 10 - c3 * 5), 1)
+                    # NOT ASSESSED, never 100.0 (rem-hyg-09): every SUM is NULL
+                    # on an empty table, so `100 - 0 - 0 - 0` scored a canvas
+                    # nobody had assessed as PERFECT. mc_assessments held ZERO
+                    # rows on the live board and rendered a full green bar.
+                    score = (round(max(0.0, 100.0 - c1 * 20 - c2 * 10 - c3 * 5), 1)
+                             if _has_rows(cconn, "mc_assessments") else None)
                     open_f = c1 + c2 + c3
                 closed_f = 0
             else:
@@ -218,9 +346,16 @@ def compute_canvas_posture(conn) -> tuple[list[dict], float]:
                     "score": score,
                     "open_findings": open_f,
                     "closed_findings": closed_f,
+                    # When the newest evidence was written, or None if there is
+                    # none. Rendered as an age so a two-month-old score cannot
+                    # look like one taken this morning (rem-hyg-09).
+                    "last_assessed": _last_assessed(cconn, canvas_name),
                 }
             )
-            if score > 0:
+            # `score is None` means NOT ASSESSED and must never be averaged; a
+            # measured 0.0 is likewise excluded, which is the behaviour this
+            # function already had.
+            if score is not None and score > 0:
                 overall_scores.append(score)
         except Exception:
             pass  # Graceful if canvas has no data / table missing
@@ -248,6 +383,11 @@ def compute_canvas_posture(conn) -> tuple[list[dict], float]:
                 "score": stig_score,
                 "open_findings": stig_open,
                 "closed_findings": stig_passed,
+                # These two rows are appended outside the canvas loop, so they
+                # need the field explicitly or they would be the only rows
+                # without one — and a MISSING key renders differently from a
+                # known-absent timestamp (rem-hyg-09).
+                "last_assessed": _max_ts(conn, "govlift_stig_checks", "checked_at"),
             })
             if stig_score > 0:
                 overall_scores.append(stig_score)
@@ -291,6 +431,8 @@ def compute_canvas_posture(conn) -> tuple[list[dict], float]:
                     "score": zig_score,
                     "open_findings": 0,
                     "closed_findings": 0,
+                    "last_assessed": _max_ts(
+                        zconn, "zig_maturity_scores", "assessment_run_at"),
                 })
                 if zig_score > 0:
                     overall_scores.append(zig_score)
