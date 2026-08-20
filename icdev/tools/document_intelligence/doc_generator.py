@@ -926,8 +926,21 @@ def generate_document(
                     f"confirm the successor before publishing."
                 ).strip()
                 if currency_report.get("action") == "abstain":
+                    # DROP THE PROSE, not just the flag. CLAUDE.md describes
+                    # this setting as "`on_deprecated: abstain` drops the
+                    # prose instead" — and it did not. It set `abstained`
+                    # and persisted the sentence naming the deprecated
+                    # entity, which is the exact outcome the currency guard
+                    # exists to prevent: the citation gate skips an
+                    # abstained section (`_section_dicts` drops it), so the
+                    # text shipped unexamined AND unverified.
                     abstained = True
                     confidence = 0.0
+                    raw_text = (
+                        "(Abstained — the draft named deprecated or superseded "
+                        "entities (%s); no replacement was substituted.)"
+                        % (names or "unspecified")
+                    )
 
         # Deterministic placeholder check — unresolved [BRACKETED] tokens
         # force a HITL flag regardless of verifier confidence.
@@ -1300,7 +1313,18 @@ def regenerate_section(
             )
         )
         if currency_tripped and currency_report.get("action") == "abstain":
+            # Same defect as generate_document's band, same fix: the flag alone
+            # left the deprecated sentence in `verified_text`, and every
+            # consumer that trusts `abstained` then skipped it while it shipped.
             abstained = True
+            _deprecated_names = ", ".join(
+                f.get("entity", "") for f in (currency_report.get("findings") or [])
+            )
+            verified_text = (
+                "(Abstained — the draft named deprecated or superseded entities "
+                "(%s); no replacement was substituted.)"
+                % (_deprecated_names or "unspecified")
+            )
 
     citations = [r.citation.to_dict() for r in search_results[:5]] + currency_citations
 

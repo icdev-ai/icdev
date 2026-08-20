@@ -1,0 +1,6 @@
+# rem-tst-05 (contract half) — setting `abstained` must DROP the prose. The
+# shared citation gate SKIPS an abstained section, so a site that sets the flag
+# and leaves live text exempts it from the check AND persists it. Three sites in
+# one module had that shape. Gated structurally so a fourth cannot arrive the
+# same way — by someone setting a flag without knowing a distant consumer reads it.
+tests/docmod/test_abstain_drops_the_prose.py
