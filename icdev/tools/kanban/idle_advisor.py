@@ -242,6 +242,67 @@ def _score_gate(conn, gate: Dict[str, Any]) -> GateCandidate:
     )
 
 
+def _withhold_cause_clause(conn) -> str:
+    """Which withhold cause actually applies — MEASURED, not assumed (rem-hyg-15).
+
+    This branch used to assert "the usual cause is an open PR per task. The
+    unblock is review: merge or close them". On 2026-08-20 it said exactly that
+    for over an hour with ZERO open PRs on the repository: the real cause was
+    three coordination leases whose holding processes had died. An operator
+    following the stated advice goes to a merge queue that is already empty, and
+    the one measurement that would have named the cause is a handful of cheap
+    lookups.
+
+    Reports every cause it can confirm, and says plainly when it can confirm
+    none — an unmeasured guess is what sent the last reader to the wrong place.
+    """
+    try:
+        rows = conn.execute(
+            "SELECT id FROM kanban_tasks WHERE status = 'scheduled'"
+        ).fetchall()
+    except Exception:
+        return "The cause could not be measured."
+    ids = [str(dict(r).get("id")) for r in rows if dict(r).get("id")]
+    if not ids:
+        return "The cause could not be measured."
+
+    live_claim, dead_claim = [], []
+    try:
+        from tools.coordination import leases
+
+        for tid in ids:
+            resource = f"kanban:task:{tid}"
+            if leases.holder(resource) is None:
+                continue
+            # None ("cannot tell") counts as live: see _lease_blocks_dispatch.
+            if leases.holder_is_alive(resource) is False:
+                dead_claim.append(tid)
+            else:
+                live_claim.append(tid)
+    except Exception:
+        pass
+
+    parts = []
+    if dead_claim:
+        parts.append(
+            f"{len(dead_claim)} held by a lease whose holder is GONE "
+            f"({', '.join(sorted(dead_claim)[:3])}) — these are litter and block "
+            "the task permanently; reap with tools.coordination.leases.release_stale"
+        )
+    if live_claim:
+        parts.append(
+            f"{len(live_claim)} claimed by a live session "
+            f"({', '.join(sorted(live_claim)[:3])}) — another worker owns them"
+        )
+    if not parts:
+        return (
+            "No task carries a coordination lease, so the cause is most likely "
+            "an open PR per task — check before acting on that, it is inferred "
+            "rather than measured here."
+        )
+    return "Measured cause: " + "; ".join(parts) + "."
+
+
 def _gate_backlog_clause(conn) -> str:
     """", and N backlog task(s) sit behind M held gate(s)" — or "" when none do.
 
@@ -403,8 +464,8 @@ def diagnose(conn=None, *, stale_heartbeat_hours: float = 2.0) -> Dict[str, Any]
             return _result(
                 REVIEW_BOUND,
                 f"{scheduled} task(s) are scheduled and due but every one was "
-                "withheld at dispatch — the usual cause is an open PR per task. "
-                "The unblock is review: merge or close them"
+                "withheld at dispatch. "
+                + _withhold_cause_clause(conn)
                 + _gate_backlog_clause(conn),
             )
 
