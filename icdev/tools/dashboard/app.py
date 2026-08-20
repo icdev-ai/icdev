@@ -10092,23 +10092,38 @@ def create_app(testing: bool = False) -> Flask:
             _pg = getattr(_c, "_backend", "sqlite") == "postgresql"
             _details = "details::text" if _pg else "details"
             _cut = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-            for _r in _c.execute(
+            # ONE ROW PER TASK, CLASSIFIED BY OUTCOME (rem-hyg-16).
+            #
+            # This used to select the resume/rebase rows and render one line
+            # each, so the panel counted ATTEMPTS and called them RECOVERIES
+            # under a header reading "RECOVERED WITHOUT A HUMAN". The overstate-
+            # ment is structural, not incidental: the resume budget is five, so
+            # a task that retries five times and STILL needs a human contributes
+            # five rows, while a task fixed on the first attempt contributes
+            # one. The worse the outcome, the bigger the number.
+            #
+            # Measured on the live board 2026-08-20: "14 auto-recovered (24h)"
+            # was 14 attempts across SIX tasks, and the two contributing ten of
+            # them had both escalated — the watcher's own "resume cap reached,
+            # manual intervention required". The honest answer was 3 recovered
+            # of 6 attempted. `task-c49fb2727d` was resumed 5 times, escalated,
+            # and then fixed BY HAND.
+            #
+            # `escalate` is the discriminator, and it is the watcher's own
+            # verdict rather than an inference. A later `merge` after an
+            # escalation is a HUMAN's merge, so it must not read as autonomous.
+            _rows = [dict(_r) for _r in _c.execute(
                 f"SELECT action, {_details} AS d, created_at FROM audit_trail "  # nosec B608
-                "WHERE action IN ('pr_watcher.rebase', 'pr_watcher.resume') "
-                "AND created_at >= %s ORDER BY created_at DESC LIMIT 20",
+                "WHERE action IN ('pr_watcher.rebase', 'pr_watcher.resume', "
+                "                 'pr_watcher.escalate', 'pr_watcher.merge') "
+                "AND created_at >= %s ORDER BY created_at",
                 (_cut,),
-            ).fetchall():
-                _d = dict(_r)
-                try:
-                    _payload = json.loads(_d.get("d") or "{}")
-                except (ValueError, TypeError):
-                    _payload = {}
-                pr_recovery.append({
-                    "task_id": _payload.get("task_id"),
-                    "kind": (_d.get("action") or "").split(".")[-1],
-                    "reason": (_payload.get("reason") or "")[:160],
-                    "at": _d.get("created_at"),
-                })
+            ).fetchall()]
+            # ONE definition of "recovered", in tools/dashboard/recovery_summary.py,
+            # so the rule this panel renders is the rule its tests exercise.
+            from tools.dashboard.recovery_summary import summarize_recovery
+
+            pr_recovery = summarize_recovery(_rows)
             _c.close()
         except Exception as _rec_exc:  # noqa: BLE001 — a panel must not 500
             app.logger.debug("autonomy: pr recovery lookup failed: %s", _rec_exc)

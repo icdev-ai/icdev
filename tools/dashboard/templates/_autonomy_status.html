@@ -156,10 +156,22 @@
     // escapeHTML is the file's existing helper — a task id and a reason are
     // DATA, arriving from a branch name and a PR url.
     var kind = (r.kind === 'rebase') ? 'rebased' : 'resumed';
+    // ONE ROW PER TASK, carrying its attempt count and its OUTCOME
+    // (rem-hyg-16). Five rows reading "resumed task-c49fb2727d" looked like
+    // five successes; it was one task retried to the cap and then fixed by
+    // hand. The count makes a retry loop read as a loop.
+    var n = r.attempts || 1;
+    var tries = (n > 1) ? (' ×' + n) : '';
+    var oc = r.outcome === 'recovered'
+      ? { txt: 'recovered', col: '#28a745' }
+      : (r.outcome === 'needed_a_human'
+          ? { txt: 'needed a human', col: '#dc3545' }
+          : { txt: 'still trying', col: '#f59e0b' });
     return ''
       + '<div class="auto-branch-row">'
-      + '  <span class="auto-branch-name">' + escapeHTML(kind + ' ' + (r.task_id || '')) + '</span>'
-      + '  <span class="auto-meta">' + escapeHTML((r.reason || '').slice(0, 90)) + '</span>'
+      + '  <span class="auto-branch-name">' + escapeHTML(kind + ' ' + (r.task_id || '') + tries) + '</span>'
+      + '  <span class="auto-meta" style="color:' + oc.col + ';">' + escapeHTML(oc.txt) + '</span>'
+      + '  <span class="auto-meta">' + escapeHTML((r.reason || '').slice(0, 70)) + '</span>'
       + '</div>';
   }
 
@@ -226,7 +238,23 @@
       if ((tr.total || 0) > 0) {
         bits.push(tr.applied + ' auto-fixed / ' + tr.verification_failed + ' verify-failed / ' + tr.total + ' audited');
       }
-      if (recovery.length) bits.push(recovery.length + ' auto-recovered (24h)');
+      // COUNT OUTCOMES, NOT ATTEMPTS (rem-hyg-16). `recovery.length` was the
+      // number of resume/rebase audit rows, so a task that retried five times
+      // and still needed a human contributed five to a figure labelled
+      // "auto-recovered". Measured 2026-08-20: it read 14 where the honest
+      // answer was 3 recovered of 6 tasks attempted.
+      if (recovery.length) {
+        var _rec = 0, _human = 0, _open = 0;
+        recovery.forEach(function (r) {
+          if (r.outcome === 'recovered') { _rec++; }
+          else if (r.outcome === 'needed_a_human') { _human++; }
+          else { _open++; }
+        });
+        var _bit = _rec + ' of ' + recovery.length + ' auto-recovered (24h)';
+        if (_human) { _bit += ' · ' + _human + ' needed a human'; }
+        if (_open) { _bit += ' · ' + _open + ' still trying'; }
+        bits.push(_bit);
+      }
       if (branches.length) bits.push(branches.length + ' autofix branch' + (branches.length===1?'':'es'));
       if (failures.length) bits.push(failures.length + ' unresolved');
       summaryEl.textContent = bits.join(' · ');
@@ -241,7 +269,9 @@
 
     var html = '';
     if (recovery.length) {
-      html += '<div class="auto-section-title">Recovered without a human (last 24h)</div>';
+      // The old header claimed every row was a recovery. It now says what the
+      // list actually is — attempts, with their outcomes (rem-hyg-16).
+      html += '<div class="auto-section-title">Recovery attempts (last 24h)</div>';
       html += '<div class="auto-card" style="padding:0;">'
            + recovery.map(recoveryRowHTML).join('')
            + '</div>';
