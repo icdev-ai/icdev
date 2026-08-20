@@ -40,7 +40,10 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import dns from 'node:dns';
 import fs from 'node:fs';
+import http from 'node:http';
+import https from 'node:https';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -552,13 +555,293 @@ export function logEnvironmentDiagnostics(opts: EnvDiagnosticsOptions = {}): voi
   }
 }
 
+// ── baseURL reachability — fail fast, once (qa-fail-e2e-baseurl-01) ──────────
+//
+// WHY THIS EXISTS
+// ---------------
+// `.env` carried `ICDEV_DASHBOARD_URL=http://host.docker.internal:5050` — a
+// value that is CORRECT for an agent inside a container reaching the host, and
+// wrong for a test runner ON the host. `playwright.config.ts` read it as
+// `baseURL`, so every `page.goto` spent the full 30s `navigationTimeout` and
+// died with net::ERR_CONNECTION_TIMED_OUT. MEASURED on this box, same three
+// spec files, nothing else changed:
+//
+//   baseURL host.docker.internal:5050   43 of 45 FAILED
+//   baseURL localhost:5050              14 passed, 1 failed
+//
+// So the suite reported a wall of product-looking failures that were one
+// hostname, and burned a 30s timeout per navigation doing it. A suite that
+// cannot reach the app under test must say so ONCE, not 838 times.
+//
+// WHY IT IS ONLY CALLED FROM THE `globalSetup` HOOK
+// ------------------------------------------------
+// `webServer` is a Playwright PLUGIN, and plugin setup runs BEFORE globalSetup
+// (node_modules/playwright/lib/runner/tasks.js::createGlobalSetupTasks). So by
+// the time this runs, a Playwright-managed dashboard is already up — probing
+// here cannot produce a false "unreachable" for a healthy run. Calling it from
+// config load, the way `logEnvironmentDiagnostics` is called, would probe
+// before the server had started and fail every correct local run. Do NOT move
+// it. (CI sets ICDEV_NO_SERVER=1 and starts the dashboard itself, so there this
+// hook is the ONLY reachability guard there is.)
+//
+// Turn it off with ICDEV_E2E_REACHABILITY_CHECK=0 — which SAYS SO on stdout,
+// because a guard that disables itself quietly is the `|| true` defect again.
+
+/** Hostnames that only resolve meaningfully from INSIDE a container. */
+const CONTAINER_GATEWAY_HOSTS = new Set([
+  'host.docker.internal',
+  'gateway.docker.internal',
+  'kubernetes.docker.internal',
+  'host.containers.internal',
+  'host.lima.internal',
+]);
+
+type ReachabilityVerdict = 'reachable' | 'dns_failure' | 'refused' | 'unreachable' | 'bad_url';
+
+export interface ReachabilityResult {
+  verdict: ReachabilityVerdict;
+  url: string;
+  /** Addresses the hostname resolved to, or [] when it did not resolve. */
+  addresses: string[];
+  /** HTTP status when one was received — ANY status means the app answered. */
+  status?: number;
+  /** Human-readable cause, always populated. */
+  detail: string;
+  /** Milliseconds the probe spent. */
+  elapsedMs: number;
+}
+
+/**
+ * Classify a socket-level failure. The three buckets go to different fixes and
+ * are never merged: nothing resolved (`dns_failure`), something resolved and
+ * actively said no (`refused` — a server that is not running), and something
+ * resolved and swallowed the packet (`unreachable` — the wrong host, or a
+ * firewall). `host.docker.internal` is the THIRD case, not the first: on this
+ * box it resolves fine, to the LAN address Docker Desktop writes into hosts,
+ * and the dashboard binds 127.0.0.1 only — so the SYN is dropped and the
+ * connection times out. "Does not resolve" would have been the wrong diagnosis.
+ */
+function classifySocketError(err: NodeJS.ErrnoException): ReachabilityVerdict {
+  switch (err.code) {
+    case 'ENOTFOUND':
+    case 'EAI_AGAIN':
+      return 'dns_failure';
+    case 'ECONNREFUSED':
+      return 'refused';
+    default:
+      return 'unreachable';
+  }
+}
+
+async function resolveAddresses(hostname: string): Promise<string[]> {
+  try {
+    const found = await dns.promises.lookup(hostname, { all: true });
+    return found.map((a) => a.address);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * One HTTP GET. ANY response — 200, 403, 404, 500 — proves the app under test
+ * is answering on this URL, which is the only question being asked here.
+ * Certificate validity deliberately is not: a self-signed cert would otherwise
+ * be reported as "unreachable", which sends the reader to the wrong fix.
+ */
+function probeOnce(url: URL, timeoutMs: number): Promise<{ status: number } | NodeJS.ErrnoException> {
+  return new Promise((resolve) => {
+    const transport = url.protocol === 'https:' ? https : http;
+    const req = transport.request(
+      url,
+      { method: 'GET', timeout: timeoutMs, ...(url.protocol === 'https:' ? { rejectUnauthorized: false } : {}) },
+      (res) => {
+        const status = res.statusCode ?? 0;
+        res.resume(); // drain, we only wanted the status line
+        resolve({ status });
+      },
+    );
+    req.on('timeout', () => {
+      const err: NodeJS.ErrnoException = new Error(`no response within ${timeoutMs}ms`);
+      err.code = 'ETIMEDOUT';
+      req.destroy(err);
+    });
+    req.on('error', (err) => resolve(err as NodeJS.ErrnoException));
+    req.end();
+  });
+}
+
+/**
+ * Probe `url` and report whether the app under test is answering there.
+ * Never throws — the caller decides what an unreachable base URL means.
+ */
+export async function probeBaseUrl(
+  rawUrl: string,
+  opts: { timeoutMs?: number; attempts?: number } = {},
+): Promise<ReachabilityResult> {
+  const timeoutMs = opts.timeoutMs ?? Number(process.env.ICDEV_E2E_REACHABILITY_TIMEOUT_MS ?? 5000);
+  const attempts = Math.max(1, opts.attempts ?? 2);
+  const started = Date.now();
+
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return {
+      verdict: 'bad_url',
+      url: rawUrl,
+      addresses: [],
+      detail: 'not a parseable URL',
+      elapsedMs: Date.now() - started,
+    };
+  }
+
+  const addresses = await resolveAddresses(url.hostname);
+
+  let last: NodeJS.ErrnoException | undefined;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const outcome = await probeOnce(url, timeoutMs);
+    if ('status' in outcome) {
+      return {
+        verdict: 'reachable',
+        url: rawUrl,
+        addresses,
+        status: outcome.status,
+        detail: `HTTP ${outcome.status}`,
+        elapsedMs: Date.now() - started,
+      };
+    }
+    last = outcome;
+  }
+
+  const err = last ?? Object.assign(new Error('no attempt completed'), { code: 'UNKNOWN' });
+  return {
+    verdict: classifySocketError(err),
+    url: rawUrl,
+    addresses,
+    detail: `${err.code ?? 'ERROR'}: ${err.message}`,
+    elapsedMs: Date.now() - started,
+  };
+}
+
+/** The one error message a broken base URL is allowed to produce. */
+function unreachableMessage(result: ReachabilityResult, source: string): string {
+  const host = (() => {
+    try {
+      return new URL(result.url).hostname;
+    } catch {
+      return result.url;
+    }
+  })();
+
+  const lines = [
+    '',
+    `E2E ABORTED — the app under test is not answering at ${result.url}`,
+    '',
+    `  baseURL      : ${result.url}   (from ${source})`,
+    `  verdict      : ${result.verdict}`,
+    `  detail       : ${result.detail}`,
+    `  resolves to  : ${result.addresses.length ? result.addresses.join(', ') : '<did not resolve>'}`,
+    `  probe took   : ${result.elapsedMs}ms`,
+    '',
+  ];
+
+  if (CONTAINER_GATEWAY_HOSTS.has(host)) {
+    lines.push(
+      `  "${host}" is a CONTAINER-TO-HOST gateway name. It is how a process`,
+      '  INSIDE a container reaches the host — it is not how a test runner ON the',
+      '  host reaches the dashboard. This exact value in ICDEV_DASHBOARD_URL is what',
+      '  turned 43 of 45 specs into ERR_CONNECTION_TIMED_OUT (qa-fail-e2e-baseurl-01).',
+      '',
+      '  Fix: set ICDEV_DASHBOARD_URL=http://localhost:5050 in .env, or leave it unset',
+      '  (the config derives http://localhost:$ICDEV_DASHBOARD_PORT). To keep the',
+      '  container value for agents and still run the suite, set the dedicated var:',
+      '',
+      '      ICDEV_E2E_BASE_URL=http://localhost:5050 npx playwright test',
+      '',
+    );
+  } else if (result.verdict === 'refused') {
+    lines.push(
+      '  Nothing is listening there. Start the dashboard, or let Playwright start it',
+      '  (unset ICDEV_NO_SERVER).',
+      '',
+    );
+  } else if (result.verdict === 'dns_failure') {
+    lines.push(`  "${host}" does not resolve on this machine.`, '');
+  } else {
+    lines.push(
+      `  "${host}" resolves but does not accept connections on that port. Check the`,
+      '  dashboard is bound to an address this host can reach (ICDEV_DASHBOARD_HOST)',
+      '  and that a firewall is not dropping the connection.',
+      '',
+    );
+  }
+
+  lines.push(
+    '  Every spec would otherwise fail here, one full navigationTimeout at a time.',
+    '  Skip this check with ICDEV_E2E_REACHABILITY_CHECK=0.',
+    '',
+  );
+  return lines.join('\n');
+}
+
+/** Where the in-force baseURL came from, for the error message. */
+function baseUrlSource(): string {
+  if (process.env.ICDEV_E2E_BASE_URL) return 'ICDEV_E2E_BASE_URL';
+  if (process.env.ICDEV_DASHBOARD_URL) return 'ICDEV_DASHBOARD_URL';
+  return 'derived from ICDEV_DASHBOARD_PORT';
+}
+
+/**
+ * THROWS when the base URL is not answering, so the run reports one cause
+ * instead of N navigation timeouts.
+ *
+ * Deliberately NOT wrapped the way `logEnvironmentDiagnostics` is: diagnostics
+ * must never fail a run, and this must be able to.
+ */
+export async function assertBaseUrlReachable(baseUrl: string | undefined): Promise<void> {
+  if (process.env.ICDEV_E2E_REACHABILITY_CHECK === '0' || process.env.ICDEV_E2E_REACHABILITY_CHECK === 'off') {
+    console.log('  ! E2E baseURL reachability check DISABLED (ICDEV_E2E_REACHABILITY_CHECK=0)');
+    return;
+  }
+  if (!baseUrl) {
+    console.log('  ! E2E baseURL is unset — reachability not checked');
+    return;
+  }
+
+  const result = await probeBaseUrl(baseUrl);
+  if (result.verdict === 'reachable') {
+    console.log(
+      `  ✓ baseURL reachable: ${result.url} → ${result.detail} in ${result.elapsedMs}ms` +
+        (result.addresses.length ? ` (${result.addresses.join(', ')})` : ''),
+    );
+    return;
+  }
+  throw new Error(unreachableMessage(result, baseUrlSource()));
+}
+
+/** Read the baseURL Playwright actually resolved, not a second copy of it. */
+function baseUrlFromConfig(config?: unknown): string | undefined {
+  const projects = (config as { projects?: Array<{ use?: { baseURL?: string } }> } | undefined)?.projects;
+  for (const project of projects ?? []) {
+    if (project?.use?.baseURL) return project.use.baseURL;
+  }
+  const fromConfigUse = (config as { use?: { baseURL?: string } } | undefined)?.use?.baseURL;
+  if (fromConfigUse) return fromConfigUse;
+  return process.env.ICDEV_E2E_BASE_URL || process.env.ICDEV_DASHBOARD_URL || undefined;
+}
+
 /**
  * Playwright's documented hook. `playwright.config.ts` already emits the report
  * at load time — which is what makes `--list` print it, since Playwright skips
- * `globalSetup` when listing — so this is normally a no-op and exists so the
- * diagnostics still run if that call is ever removed.
+ * `globalSetup` when listing — so the diagnostics call is normally a no-op and
+ * exists so they still run if that call is ever removed.
+ *
+ * The reachability assert, by contrast, runs ONLY here and only for a real run:
+ * `--list` collects no tests and navigates nowhere, so refusing to list because
+ * a dashboard is down would be a gate on the wrong thing.
  */
-export default async function globalSetup(): Promise<void> {
+export default async function globalSetup(config?: unknown): Promise<void> {
   logEnvironmentDiagnostics();
+  await assertBaseUrlReachable(baseUrlFromConfig(config));
 }
 // CUI // SP-CTI
