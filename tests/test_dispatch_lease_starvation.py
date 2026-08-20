@@ -168,7 +168,14 @@ def test_a_lease_failure_never_wedges_dispatch(monkeypatch):
     mod.holder = _boom
     mod.holder_is_alive = _boom
     mod.release_stale = _boom
+    # Both bindings, for the reason _install_fake_leases documents: with only
+    # sys.modules patched this assertion passes in-suite against the REAL lease
+    # store, which returns None for an unheld id — the right answer for the
+    # wrong reason, and no failure could ever surface it.
+    import tools.coordination as pkg
+
     monkeypatch.setitem(sys.modules, "tools.coordination.leases", mod)
+    monkeypatch.setattr(pkg, "leases", mod, raising=False)
 
     assert k._lease_blocks_dispatch("t-6") is False
 
@@ -297,3 +304,72 @@ def test_an_unreadable_board_says_so_rather_than_guessing(monkeypatch):
 
     adv = _advisor(monkeypatch, _FakeLeases())
     assert "could not be measured" in adv._withhold_cause_clause(_Boom())
+
+
+# --------------------------------------------------------------------------- #
+# 5. The WIRING — the check must run inside the selection window
+# --------------------------------------------------------------------------- #
+#
+# Everything above tests `_lease_blocks_dispatch` in isolation. None of it fails
+# if the one line that CALLS it is deleted from `_drop_respawn_guarded`, and a
+# guard nothing calls is the exact defect this repository ships most. These two
+# pin the call site.
+def _guarded(monkeypatch, fake, heartbeating=None):
+    """`_drop_respawn_guarded` with its two OTHER guards stubbed to pass.
+
+    The open-PR and recently-completed filters are already covered elsewhere;
+    stubbing them isolates the third cause this card added.
+    """
+    _install_fake_leases(monkeypatch, fake)
+    monkeypatch.setattr(k, "_task_is_heartbeating", lambda tid: (heartbeating or {}).get(tid, False))
+    monkeypatch.setattr(k, "_tasks_with_recent_success", lambda ids: set())
+    monkeypatch.setattr(k, "_open_pr_head_branches", lambda root: set())
+    return k._drop_respawn_guarded
+
+
+def test_the_selection_window_drops_a_lease_held_task(monkeypatch):
+    """The call site. Without it every test above passes and the board stalls."""
+    res = "kanban:task:t-held"
+    fake = _FakeLeases(holders={res: {"pid": 1}}, alive={res: True})
+    drop = _guarded(monkeypatch, fake)
+
+    kept = drop([{"id": "t-held"}, {"id": "t-free"}])
+    assert [t["id"] for t in kept] == ["t-free"], (
+        "a task another session owns must yield its selection slot"
+    )
+
+
+def test_the_starvation_itself_the_filter_runs_BEFORE_the_cap(monkeypatch):
+    """2026-08-20, reproduced.
+
+    Three lease-held tasks sort highest, two dispatchable ones sit behind them,
+    and there are three slots. Filtering before the truncation is the whole
+    fix: `_drop_respawn_guarded` must hand back the two that can RUN, so the
+    `[:available_slots]` cap in `_get_due_tasks` fills with real work instead of
+    with three tasks that will each be skipped.
+
+    All three holders are dead AND not heartbeating — the one-shot seeding
+    scripts — so they are also reaped, which is what makes the block transient
+    rather than permanent.
+    """
+    holders = {f"kanban:task:t-{i}": {"pid": 900 + i} for i in (1, 2, 3)}
+    fake = _FakeLeases(holders=dict(holders), alive={r: False for r in holders})
+    drop = _guarded(monkeypatch, fake)
+
+    due = [{"id": f"t-{i}"} for i in (1, 2, 3)] + [{"id": "t-4"}, {"id": "t-5"}]
+    available_slots = 3
+
+    kept = drop(due)
+    dispatched = kept[:available_slots]
+
+    assert [t["id"] for t in dispatched] == ["t-1", "t-2", "t-3"], (
+        "dead leases are reaped, so those three become dispatchable again"
+    )
+    assert sorted(fake.released) == sorted(holders), "all three stale leases reaped"
+
+    # And with the holders ALIVE, the same window yields to the work behind them
+    # rather than burning all three slots on tasks that cannot run.
+    live = _FakeLeases(holders=dict(holders), alive={r: True for r in holders})
+    kept = _guarded(monkeypatch, live)(due)
+    assert [t["id"] for t in kept[:available_slots]] == ["t-4", "t-5"]
+    assert live.released == []
