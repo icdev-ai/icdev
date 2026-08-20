@@ -6614,6 +6614,53 @@ python tools/ci/red_first_gate.py --gate                     # the merge gate
 python tools/ci/red_first_gate.py --files tests/test_x.py --gate   # prove one file
 python tools/ci/red_first_gate.py --base origin/main --json --out red-first-proof.json
 
+# UNGATED TESTS THAT ARE RED FROM BIRTH (rem-hyg-14) — not only the ones that regressed.
+# tools/genesis/reflexes/ungated_test_drift.py reports TRANSITIONS
+# (`was == 'pass' and now 'fail'`), so a file whose FIRST observation is a failure
+# takes the `was is None` branch, seeds a 'fail' baseline and is never mentioned
+# again: a test broken since the day it was written is structurally invisible to
+# the one reflex watching the ungated backlog. Measured —
+# tests/test_proposals_ptw_blackhat_api.py was 10/20 red from the day it landed
+# (2026-07-07) and stayed red for six weeks. gate_promoter (rem-tst-06) drains the
+# GREEN half of the backlog weekly; this measures the RED half.
+python tools/ci/born_red_survey.py                           # human table
+python tools/ci/born_red_survey.py --json
+python tools/ci/born_red_survey.py --limit 40
+python tools/ci/born_red_survey.py --run 25                  # measure never-observed files now
+python tools/ci/born_red_survey.py --confirm 5               # run the top N at their landing commit
+python tools/ci/born_red_survey.py --out .tmp/born-red.json
+# FIVE states, never merged: born_red (every observation has been a failure — the
+# finding) | regressed (observed passing once; the drift reflex's half, not
+# re-reported here) | history_unknown (failing, no recorded first verdict) |
+# passing (gate_promoter's half) | unobserved — NOBODY HAS EVER RUN IT. The reflex
+# samples 40 files per 6h, so a sweep of the ~1,700-file backlog takes over ten
+# days; measured 2026-08-20 only 209 of the 1,701 had been observed at all, and
+# folding the other 1,492 into "no findings" is the exact reassurance this refuses.
+# born_red_count is None, NEVER 0, on a deployment that has recorded nothing.
+# TWO DURATIONS, never merged: observed_red_days is PROVEN (seen failing then, not
+# seen passing since); file_age_days is an UPPER BOUND. red_days_basis says which
+# the rank used: confirmed_at_birth | file_age_upper_bound | observed_only |
+# refuted_at_birth.
+# --confirm runs the file at the commit that landed it on the default branch
+# (--first-parent: the ADD commit sits on a feature branch whose tree lacks
+# whatever else merged that day, which is exactly how the measured example was
+# green alone and red on main). THREE outcomes and the middle one is its own
+# finding: confirmed_born_red | passed_at_birth (it worked at landing and broke
+# later, SILENTLY — a regression the drift reflex missed because it never observed
+# the pass) | birth_unrunnable (pytest exit 2/3/4/5 on the old tree: a statement
+# about that checkout's dependencies, counted as neither).
+# Measured on the live board 2026-08-20 with --confirm 3: 2 CONFIRMED born red
+# (tests/govcon/test_past_performance_suggester.py since 2026-07-25,
+# tests/dashboard/test_home_tile_gating.py since 2026-08-02) and 1 passed_at_birth
+# (tests/airgap/test_hook_compat_git_blocklist.py). Re-deriving the card's own
+# example at a3741bb11 returns "10 failed, 10 passed" — the 10/20 claim, measured.
+# WRITES NOTHING: the reflex stays the only writer of ungated_test_baseline, whose
+# first_status / ever_passed columns (migration 20260820231102) are the evidence.
+# ever_passed is a LATCH — a later failure never clears it, because that is what
+# separates a regression from a file that has never worked.
+# Report only, deliberately no --gate (kpr-fix-03). Exit 2 = the survey could not
+# be produced, which is never the same as a clean survey.
+
 # CLOSED-CENSUS growth (cef-ci-02) — a closed census may LOSE names, never GAIN one.
 # The ratchet above enforces args/ci_test_backlog.txt by a COUNT, and a count is exactly
 # what an ENUMERATED census exists to distrust. Nothing compared a census against its

@@ -22,6 +22,14 @@ would bury the one line that matters under 87 that do not. The signal here is
 "something that worked yesterday does not work today", because that is the class
 nobody else is watching.
 
+The blind spot that leaves, and where it is covered (rem-hyg-14): a file whose
+FIRST observation is a failure takes the ``was is None`` branch, seeds a 'fail'
+baseline and is never reported again — so a test broken since the day it was
+written is invisible HERE, by design, and would be invisible everywhere if
+nothing else looked. ``tools/ci/born_red_survey.py`` is what looks. This reflex
+records the evidence it needs (``first_status``, and ``ever_passed`` as a latch
+that a later failure never clears) and reports nothing new itself.
+
 Equally deliberate: on a database with no baseline this run SEEDS and reports
 nothing. A fresh worktree or an ephemeral CI database would otherwise make every
 file look like a brand-new regression, and a reflex whose first act is to file
@@ -106,17 +114,54 @@ def _table_exists(conn) -> bool:
         return False
 
 
+def _has_history_columns(conn) -> bool:
+    """Does this deployment carry `first_status` / `ever_passed` yet?
+
+    Read from the live catalogue, never assumed from the DDL: `CREATE TABLE IF
+    NOT EXISTS` never alters an existing table, so an INSERT naming a column the
+    deployed table lacks raises at runtime and is swallowed by the surrounding
+    handler — the exact failure CLAUDE.md's INSERT/schema-parity rule exists for.
+    """
+    from tools.db.storage import get_backend
+
+    try:
+        if get_backend() == "postgresql":
+            rows = conn.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema='public' AND table_name=%s",
+                (TABLE,),
+            ).fetchall()
+            cols = {dict(r)["column_name"] for r in rows}
+        else:
+            rows = conn.execute(f"PRAGMA table_info({TABLE})").fetchall()
+            cols = set()
+            for r in rows:
+                d = dict(r)
+                cols.add(d.get("name") or list(d.values())[1])
+        return {"first_status", "ever_passed"} <= cols
+    except Exception:  # noqa: BLE001 — absence is the answer, not an error
+        return False
+
+
 def _ungated_files() -> List[str]:
-    """Every collectible test module that no CI allowlist runs."""
+    """Every collectible test module that no CI allowlist runs.
+
+    The allowlist is `core.txt` PLUS every `core.d/<task-id>.txt` fragment
+    (tsg-policy-03) — reading only the list files would report a freshly
+    promoted file as ungated and sample it forever.
+    """
     listed = set()
     for name in ("core.txt", "windows.txt"):
         p = BASE_DIR / "args" / "ci_test_files" / name
-        if not p.is_file():
-            continue
-        for line in p.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line and not line.startswith("#"):
-                listed.add(line.split("::")[0].replace("\\", "/"))
+        sources = [p] if p.is_file() else []
+        frag_dir = BASE_DIR / "args" / "ci_test_files" / (p.stem + ".d")
+        if frag_dir.is_dir():
+            sources.extend(sorted(f for f in frag_dir.glob("*.txt") if f.is_file()))
+        for src in sources:
+            for line in src.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    listed.add(line.split("::")[0].replace("\\", "/"))
 
     out = []
     for path in (BASE_DIR / "tests").rglob("test_*.py"):
@@ -220,6 +265,13 @@ def run(payload: dict, ctx: Any = None) -> Dict[str, Any]:
         first_run = not known
         result["baseline_seeded_this_run"] = first_run
 
+        # The born-red columns arrive with migration 20260820231102. A
+        # deployment that has not applied it still records transitions
+        # correctly; it simply records no first-verdict history, which
+        # `born_red_survey` reports as `history_unknown` rather than guessing.
+        history = _has_history_columns(conn)
+        result["history_recorded"] = history
+
         # Least-recently-checked first; never-checked files sort first because
         # they have no row at all.
         unseen = [f for f in files if f not in known]
@@ -248,15 +300,32 @@ def run(payload: dict, ctx: Any = None) -> Dict[str, Any]:
             elif was == "fail" and verdict["status"] == "pass":
                 result["recoveries"].append({"path": rel})
 
+            passed = verdict["status"] == "pass"
+            if history:
+                # first_status is written by the INSERT and never updated: a row
+                # that already exists keeps whatever its first observation was.
+                conn.execute(
+                    f"INSERT OR IGNORE INTO {TABLE} "
+                    "(path, status, first_seen, last_checked, last_detail, "
+                    "first_status, ever_passed) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                    (rel, verdict["status"], now, now, verdict["detail"],
+                     verdict["status"], 1 if passed else 0),
+                )
+            else:
+                conn.execute(
+                    f"INSERT OR IGNORE INTO {TABLE} "
+                    "(path, status, first_seen, last_checked, last_detail) "
+                    "VALUES (%s, %s, %s, %s, %s)",
+                    (rel, verdict["status"], now, now, verdict["detail"]),
+                )
+            # ever_passed is a LATCH — set on a pass, never cleared on a fail.
+            # Clearing it would erase the one fact that separates a regression
+            # from a file that has never worked.
+            set_passed = ", ever_passed = 1" if (history and passed) else ""
             conn.execute(
-                f"INSERT OR IGNORE INTO {TABLE} "
-                "(path, status, first_seen, last_checked, last_detail) "
-                "VALUES (%s, %s, %s, %s, %s)",
-                (rel, verdict["status"], now, now, verdict["detail"]),
-            )
-            conn.execute(
-                f"UPDATE {TABLE} SET status = %s, last_checked = %s, last_detail = %s "
-                "WHERE path = %s",
+                f"UPDATE {TABLE} SET status = %s, last_checked = %s, "
+                f"last_detail = %s{set_passed} WHERE path = %s",
                 (verdict["status"], now, verdict["detail"], rel),
             )
         conn.commit()
