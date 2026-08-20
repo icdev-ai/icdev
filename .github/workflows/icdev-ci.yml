@@ -1004,7 +1004,8 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: route-smoke
+          # Shard-suffixed for the same reason as the three below.
+          name: route-smoke-shard-${{ matrix.shard }}
           path: route-smoke.json
           if-no-files-found: warn
       - name: Run Playwright E2E tests
@@ -1094,7 +1095,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          # Shard-suffixed (crx-test-08). Four E2E shards uploading one
+          # name produced four artifacts called `playwright-report`,
+          # with nothing to say which shard failed.
+          name: playwright-report-shard-${{ matrix.shard }}
           path: |
             .tmp/test_runs/playwright-report/
             .tmp/test_runs/playwright-report-dwo/
@@ -1103,7 +1107,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-artifacts
+          # Shard-suffixed (crx-test-08). Four E2E shards uploading one
+          # name produced four artifacts called `playwright-artifacts`,
+          # with nothing to say which shard failed.
+          name: playwright-artifacts-shard-${{ matrix.shard }}
           path: |
             .tmp/test_runs/playwright-results.json
             .tmp/test_runs/playwright-artifacts/
@@ -1118,7 +1125,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: dwo-vv-screenshots
+          # Shard-suffixed (crx-test-08). Four E2E shards uploading one
+          # name produced four artifacts called `dwo-vv-screenshots`,
+          # with nothing to say which shard failed.
+          name: dwo-vv-screenshots-shard-${{ matrix.shard }}
           path: playwright/screenshots/dwo-*.png
           retention-days: 30
           if-no-files-found: warn
