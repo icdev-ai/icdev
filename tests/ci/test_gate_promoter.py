@@ -108,6 +108,11 @@ def test_a_module_that_fails_ALONE_is_dropped_before_the_suite_run(monkeypatch, 
     assert report["promoted"] == ["b.py"]
     assert [r["file"] for r in report["rejected"]] == ["a.py"]
     assert report["rejected"][0]["phase"] == "alone"
+    # Both were tried alone; only the survivor went on to the expensive run.
+    # Asserting the CALLS, not just the verdict — a phase 1 that quietly stopped
+    # filtering would still produce the verdict above on this fixture.
+    assert sorted(calls["alone"]) == ["a.py", "b.py"]
+    assert calls["suite"] == 1, "exactly one in-suite run, for the survivors"
 
 
 def test_a_FAILED_IN_SUITE_batch_promotes_NOTHING(monkeypatch, tmp_path):
