@@ -10,6 +10,16 @@ Covers:
   * Turns persist to cortex_messages and reload via GET /api/session/<id>.
   * The multi-step-goal (agent) intent is gated behind a confirm affordance —
     never auto-executed.
+
+The blueprint tests below drive ``/cortex/api/chat``, whose routing step asks
+``chat_router.intent_classifier.classify()``. That classifier's low-confidence
+fallback is a live ``cortex.classify`` round-trip, which costs ~0.2s locally and
+~139s on the CI runner (nothing is reachable there, so every connect dies on a
+timeout). Five of those calls made this ONE file 39.0% of the whole gated suite.
+``tests/cortex/conftest.py::_deterministic_intent_classification`` pins that
+fallback to its own air-gap answer for every test in this directory — read its
+docstring before removing it. ``TestIntentRouter`` below cuts deeper still, for
+a different reason (see its docstring).
 """
 from __future__ import annotations
 
