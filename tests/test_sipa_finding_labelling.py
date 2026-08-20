@@ -271,3 +271,63 @@ def test_dic_search_engine_entry_matches_only_the_two_mirrored_copies():
         "icdev/tools/" + _DIC_SEARCH_ENGINE_SUFFIX,
         "tools/" + _DIC_SEARCH_ENGINE_SUFFIX,
     ], f"the authorization suffix now reaches unrelated files: {matched}"
+
+
+# ---------------------------------------------------------------------------
+# The suppression predicate must not depend on the host OS
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "recorded",
+    [
+        r"document_intelligence\search_engine.py",
+        r"tools\document_intelligence\search_engine.py",
+        r"icdev\tools\document_intelligence\search_engine.py",
+        "document_intelligence/search_engine.py",
+        "tools/document_intelligence/search_engine.py",
+        "icdev/tools/document_intelligence/search_engine.py",
+    ],
+)
+def test_suppression_is_separator_agnostic_on_every_host(recorded):
+    """A Windows-recorded finding must be suppressed by a Linux scanner too.
+
+    `_is_safe_dynamic_import` normalised the observed path with
+    `Path(file_path).as_posix()`, which is HOST-DEPENDENT in exactly the way
+    this comparison must not be: a backslash separates paths on Windows and is
+    a LEGAL FILENAME CHARACTER on POSIX, so
+
+        Path(r"document_intelligence\search_engine.py").as_posix()
+
+    returns `document_intelligence/search_engine.py` on Windows and the string
+    UNCHANGED on Linux.
+
+    Findings are recorded on a developer's Windows box — assessment-300
+    recorded `document_intelligence\search_engine.py:1315` verbatim — while the
+    scanner also runs on the Linux CI runner. So an authorization verified
+    locally silently failed to suppress the same finding in CI, and the only
+    symptom was this suite passing on one host and failing on the other. The
+    allowlist side was already normalised with an explicit `replace`; the
+    observed path was not.
+    """
+    from tools.integrity.scanners import _is_safe_dynamic_import
+
+    allow = frozenset([_DIC_SEARCH_ENGINE_SUFFIX])
+    assert _is_safe_dynamic_import(recorded, allow), (
+        f"{recorded!r} is not suppressed — the predicate is host-dependent again"
+    )
+
+
+@pytest.mark.parametrize(
+    "unrelated",
+    [
+        "tools/other/search_engine.py",
+        "document_intelligence/other.py",
+        r"tools\other\search_engine.py",
+    ],
+)
+def test_separator_normalisation_does_not_widen_the_match(unrelated):
+    """Normalising separators must not turn a narrow suffix into a broad one."""
+    from tools.integrity.scanners import _is_safe_dynamic_import
+
+    assert not _is_safe_dynamic_import(unrelated, frozenset([_DIC_SEARCH_ENGINE_SUFFIX]))
