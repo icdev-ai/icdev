@@ -93,6 +93,19 @@ def _stub_persistence(monkeypatch: pytest.MonkeyPatch, recorder: _Recorder) -> N
     monkeypatch.setattr(runner, "_remember_artifacts", lambda *a, **k: None)
     monkeypatch.setattr(runner, "_load_prior_steps", lambda run_id: {})
     monkeypatch.setattr(runner, "_notify_approval_gate", lambda *a, **k: None)
+    # hgx-park-02. `_park_for_approval` (hgx-park-01) replaced the
+    # `_update_step_record` + `_update_run_status` pair above with ONE atomic
+    # write, which closed a real race — and in doing so replaced two seams this
+    # list already stubbed with one it did not, so every template carrying a
+    # `node_type: human` step started reaching the live database from a test
+    # that declares it needs no seeded one.
+    #
+    # It passed everywhere an ambient data/icdev.db happened to hold the studio
+    # tables, and failed where one did not: 43 of these 62 templates fail
+    # against an empty database. That is the whole bug — the test was never
+    # hermetic, so its result described the developer's filesystem rather than
+    # the dispatch order it claims to pin.
+    monkeypatch.setattr(runner, "_park_for_approval", lambda *a, **k: None)
     monkeypatch.setattr(
         runner, "_create_step_record",
         lambda run_id, step_id, *a, **k: f"sr-{step_id}",
@@ -444,3 +457,4 @@ def test_step_events_carry_a_monotonic_sequence_not_a_list_position(monkeypatch)
         assert by_type["step_started"] < by_type["step_done"]
 
     assert all(e["total"] == 5 for e in step_events)
+
