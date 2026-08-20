@@ -62,15 +62,34 @@ class _FakeLeases:
         return True
 
 
-def _patch(monkeypatch, fake, heartbeating):
-    """Route the module's lease import and heartbeat probe at the fakes."""
+def _install_fake_leases(monkeypatch, fake):
+    """Make ``from tools.coordination import leases`` resolve to *fake*.
+
+    BOTH bindings, and the second one is the one that matters. ``from PKG import
+    NAME`` looks at ``getattr(PKG, NAME)`` FIRST and only falls back to
+    ``sys.modules`` when the package carries no such attribute — so patching
+    ``sys.modules`` alone works if and only if nothing has already imported the
+    real submodule in this process. That made these tests pass ALONE and fail
+    IN-SUITE behind any earlier test that touched ``tools.coordination.leases``:
+    green in isolation, silently unpatched against the live lease table in a full
+    run. Setting the package attribute as well makes the fake win in both orders.
+    """
     import types
+
+    import tools.coordination as pkg
 
     mod = types.ModuleType("tools.coordination.leases")
     mod.holder = fake.holder
     mod.holder_is_alive = fake.holder_is_alive
     mod.release_stale = fake.release_stale
     monkeypatch.setitem(sys.modules, "tools.coordination.leases", mod)
+    monkeypatch.setattr(pkg, "leases", mod, raising=False)
+    return mod
+
+
+def _patch(monkeypatch, fake, heartbeating):
+    """Route the module's lease import and heartbeat probe at the fakes."""
+    _install_fake_leases(monkeypatch, fake)
     monkeypatch.setattr(k, "_task_is_heartbeating", lambda tid: heartbeating.get(tid, False))
 
 
@@ -227,14 +246,9 @@ class _AdvConn:
 
 
 def _advisor(monkeypatch, fake):
-    import types
     from tools.kanban import idle_advisor
 
-    mod = types.ModuleType("tools.coordination.leases")
-    mod.holder = fake.holder
-    mod.holder_is_alive = fake.holder_is_alive
-    mod.release_stale = fake.release_stale
-    monkeypatch.setitem(sys.modules, "tools.coordination.leases", mod)
+    _install_fake_leases(monkeypatch, fake)
     return idle_advisor
 
 
@@ -242,21 +256,29 @@ def test_the_diagnosis_names_a_dead_lease_holder(monkeypatch):
     """The message used to assert "the usual cause is an open PR per task" and
     sent a reader to a merge queue that was already empty. It must say what it
     measured."""
-    fake = _FakeLeases(holders={"kanban:task:a": {"pid": 9}}, alive={"kanban:task:a": False})
+    fake = _FakeLeases(
+        holders={"kanban:task:t-dead-1": {"pid": 9}},
+        alive={"kanban:task:t-dead-1": False},
+    )
     adv = _advisor(monkeypatch, fake)
 
-    text = adv._withhold_cause_clause(_AdvConn(["a"]))
-    assert "GONE" in text and "a" in text
+    # NOT "a"/"b" as ids: `"a" in text` is true of almost any English sentence,
+    # so the id assertion passed without the id ever being named.
+    text = adv._withhold_cause_clause(_AdvConn(["t-dead-1"]))
+    assert "GONE" in text and "t-dead-1" in text
     assert "release_stale" in text, "it must name the remedy, not just the symptom"
     assert "usual cause" not in text
 
 
 def test_the_diagnosis_names_a_live_claim(monkeypatch):
-    fake = _FakeLeases(holders={"kanban:task:b": {"pid": 9}}, alive={"kanban:task:b": True})
+    fake = _FakeLeases(
+        holders={"kanban:task:t-live-1": {"pid": 9}},
+        alive={"kanban:task:t-live-1": True},
+    )
     adv = _advisor(monkeypatch, fake)
 
-    text = adv._withhold_cause_clause(_AdvConn(["b"]))
-    assert "live session" in text and "b" in text
+    text = adv._withhold_cause_clause(_AdvConn(["t-live-1"]))
+    assert "live session" in text and "t-live-1" in text
 
 
 def test_with_no_lease_the_open_pr_guess_is_LABELLED_as_inferred(monkeypatch):

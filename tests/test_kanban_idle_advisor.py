@@ -123,11 +123,23 @@ def test_a_pause_sentinel_outranks_everything(conn, monkeypatch):
 
 
 def test_scheduled_but_undispatched_is_review_bound(conn):
-    """The state that cost hours: slots free, work ready, every task has a PR."""
+    """The state that cost hours: slots free, work ready, every task withheld.
+
+    The open-PR explanation survives — it is still the most likely cause when no
+    task carries a lease — but it is now LABELLED as inferred. It used to be
+    asserted as fact ("the usual cause is an open PR per task. The unblock is
+    review: merge or close them") and on 2026-08-20 that sentence ran for an hour
+    against an empty merge queue while three dead leases held the board
+    (rem-hyg-15). A reader who cannot tell a measurement from a guess acts on the
+    guess.
+    """
     _task(conn, "t-1", status="scheduled")
     d = A.diagnose(conn)
     assert d["reason"] == A.REVIEW_BOUND
-    assert "merge or close" in d["detail"]
+    assert "an open PR per task" in d["detail"], "the explanation is still offered"
+    assert "inferred rather than measured" in d["detail"], (
+        "and it is labelled as a guess, because nothing here measured it"
+    )
 
 
 def test_review_bound_also_names_the_gated_backlog_behind_it(conn):
@@ -144,7 +156,7 @@ def test_review_bound_also_names_the_gated_backlog_behind_it(conn):
     _task(conn, "t-3", status="backlog", dep="g-00")
     d = A.diagnose(conn)
     assert d["reason"] == A.REVIEW_BOUND, "precedence is unchanged"
-    assert "merge or close" in d["detail"]
+    assert "an open PR per task" in d["detail"]
     assert "2 backlog task(s) sit behind 1 held gate(s)" in d["detail"]
     assert "g-00" in d["detail"], "name the gate — the operator has to pick one"
 
