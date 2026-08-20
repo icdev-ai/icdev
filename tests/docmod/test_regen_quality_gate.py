@@ -84,14 +84,37 @@ _DDL = [
 ]
 
 
-# Columns generate_document inserts into dic_documents. A fresh worktree's
-# dic_documents (from the consolidated schema) can be a partial subset, so we
-# idempotently ADD any missing ones (the same non-destructive pattern init_db
-# uses) rather than depend on a particular migration state.
-_DIC_DOC_COLS = [
-    ("source_id", "TEXT"), ("content_type", "TEXT"), ("provider", "TEXT"),
-    ("byte_size", "INTEGER"), ("content_sha256", "TEXT"), ("page_count", "INTEGER"),
-]
+def _dic_doc_cols():
+    """Every dic_documents column in `_DDL`, DERIVED rather than re-listed.
+
+    `CREATE TABLE IF NOT EXISTS` never alters an existing table, so on a database
+    that already carries a partial `dic_documents` — which is exactly what CI's
+    consolidated schema provides — the DDL above is a no-op and the INSERT fails
+    on whatever column is missing. The fixture therefore ADDs the missing ones
+    idempotently, the same non-destructive pattern init_db uses.
+
+    This list used to be maintained by hand and had drifted: it omitted
+    `filename`, so this file passed locally (where the table is created fresh,
+    WITH the column) and failed the moment CI ran it — "table dic_documents has
+    no column named filename". Deriving it from `_DDL` means the two cannot
+    disagree again, which is the only reason the hand-written version was wrong.
+    """
+    import re
+
+    ddl = next(d for d in _DDL if "dic_documents" in d)
+    body = ddl[ddl.index("(") + 1: ddl.rindex(")")]
+    cols = []
+    for part in body.split(","):
+        tokens = part.strip().split()
+        if len(tokens) >= 2 and tokens[0] != "PRIMARY":
+            name, typ = tokens[0], tokens[1]
+            if name == "doc_id":       # the primary key always exists
+                continue
+            cols.append((name, typ))
+    return cols
+
+
+_DIC_DOC_COLS = _dic_doc_cols()
 
 
 @pytest.fixture()
