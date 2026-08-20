@@ -403,6 +403,60 @@ def classify_merge_readiness(
         "limit of %d" % (behind_by, default_branch, max_behind_commits))
 
 
+def staleness(
+    behind_by: Optional[int],
+    *,
+    default_branch: str,
+    max_behind_commits: int = DEFAULT_MAX_BEHIND_COMMITS,
+    merge_state_status: str = "",
+) -> tuple:
+    """``(stale, reason)`` — is this branch too far behind? A THIRD AXIS.
+
+    rem-hyg-12. ``classify_merge_readiness`` answers "why is this PR not
+    merging", and its answer is the merger's FIRST refusal — deliberately, so
+    the report describes the merger's own reasoning. That is exactly why a
+    stale branch can go unreported: ``draft``, ``linked``, ``ci_failed`` and
+    every other rung short-circuits BEFORE the staleness rung, so a PR whose
+    state can never be ``behind_main`` renders identically whether it is level
+    with main or 200 commits behind it.
+
+    MEASURED 2026-08-20: #1850 was a ``draft``, ``MERGEABLE``,
+    ``mergeStateStatus=CLEAN``, and 13 commits behind main, with a diff against
+    main of +97/-1691 — one un-draft away from deleting ``posture.py``,
+    ``cortex/metrics.py`` and ``kanban_project_sync.py``. #1845 was ``linked``
+    and 16 behind, which is why its red-first proof compared against an ancient
+    merge base. Neither was ever measured.
+
+    So staleness is reported BESIDE the verdict rather than folded into it. The
+    ladder is untouched and is NOT reordered: a stale draft still reports
+    ``draft``, because that is what the merger saw first and it is true. What
+    changes is that the row also says it is 13 commits behind.
+
+    ``None`` — NEVER ``False`` — when the count could not be measured. The same
+    posture ``behind_by`` already takes, and for the same reason: "measured and
+    level with main" and "nobody looked" justify opposite decisions, and only
+    the first is evidence. The reason is then empty, because a sentence about a
+    branch nobody compared is a sentence about nothing.
+
+    TWO SIGNALS, in the same order the ladder uses them. The forge's own
+    ``mergeStateStatus == BEHIND`` is authoritative when it appears, but it
+    appears only where the base branch has ``required_status_checks.strict``
+    (FALSE on this repo — measured 2026-08-18), so the measured count is the
+    real check and the forge verdict is the belt.
+    """
+    if (merge_state_status or "").strip().upper() == "BEHIND":
+        return True, ("the forge reports mergeStateStatus=BEHIND -- %s requires "
+                      "branches to be up to date" % default_branch)
+    if behind_by is None:
+        return None, ""
+    if behind_by > max_behind_commits:
+        return True, ("%d commit(s) behind %s (limit %d) -- it would re-apply "
+                      "its diff over a tree that has moved on; rebase it"
+                      % (behind_by, default_branch, max_behind_commits))
+    return False, ("%d commit(s) behind %s -- within the limit of %d"
+                   % (behind_by, default_branch, max_behind_commits))
+
+
 # ────────────────────────────────────────────────────────────────────────────
 # Measuring staleness — the ONE impure part, kept out of the table
 # ────────────────────────────────────────────────────────────────────────────
@@ -831,6 +885,15 @@ def build_report(
         stamp, basis = last_activity(pr)
         age = state_age_seconds(pr, now=reference)
         task = task_map.get(url) or {}
+        # A THIRD AXIS (rem-hyg-12), computed for EVERY row and never only for
+        # the ones the ladder let through to the staleness rung. A `draft` or
+        # `linked` PR's state can never be `behind_main` — it short-circuits
+        # earlier, correctly — so without this the report is silent about the
+        # one fact that makes un-drafting it dangerous.
+        stale, stale_reason = staleness(
+            behind, default_branch=default_branch,
+            max_behind_commits=max_behind_commits,
+            merge_state_status=pr.get("mergeStateStatus") or "")
         rows.append({
             "number": pr.get("number"),
             "url": url,
@@ -848,6 +911,10 @@ def build_report(
             # with main are different facts and only one of them is evidence.
             "behind_by": behind,
             "behind_measured": behind is not None,
+            # None, never False — see ``staleness``. True/False is a MEASURED
+            # answer; None is "nobody compared this branch".
+            "stale": stale,
+            "stale_reason": stale_reason,
             "is_draft": bool(pr.get("isDraft")),
             "labels": sorted((lbl.get("name") or "").strip()
                              for lbl in (pr.get("labels") or [])),
@@ -870,6 +937,12 @@ def build_report(
         "linked_count": len(linked),
         "max_behind_commits": int(max_behind_commits),
         "behind_measured_count": sum(1 for r in rows if r["behind_measured"]),
+        # Three counts, not two, and the third is the point (rem-hyg-12): a PR
+        # nobody compared must not be absorbed into "not stale". `stale_count`
+        # is what a reader acts on; `stale_unmeasured_count` is what says how
+        # much of the board that number does not cover.
+        "stale_count": sum(1 for r in rows if r["stale"] is True),
+        "stale_unmeasured_count": sum(1 for r in rows if r["stale"] is None),
         "age_measured_count": sum(1 for r in rows if r["state_age_measured"]),
         "generated_at": reference.astimezone(_dt.timezone.utc).isoformat(),
         "total": len(rows),
@@ -899,7 +972,12 @@ def render_table(report: Dict[str, Any]) -> str:
                  % ("-" * 7, "-" * 14, "-" * 7, "-" * 8, "-" * 32, "-" * 40))
     for row in report["prs"]:
         # "?" not "0" -- an unmeasured branch must not read as an up-to-date one.
+        # A "!" marks a row the staleness axis flags, which for a `draft` or
+        # `linked` PR is the ONLY place the fact appears: its state can never
+        # be `behind_main` (rem-hyg-12).
         behind = "?" if row.get("behind_by") is None else str(row["behind_by"])
+        if row.get("stale") is True:
+            behind = ("%s!" % behind) if behind != "?" else "BEHIND!"
         lines.append("%-7s %-14s %-7s %-8s %-32s %s" % (
             "#%s" % row["number"], row["state"], behind,
             format_age(row.get("state_age_seconds")),
@@ -907,12 +985,31 @@ def render_table(report: Dict[str, Any]) -> str:
     lines.append("")
     lines.append("by state: " + ", ".join(
         "%s=%d" % (k, v) for k, v in report["counts"].items()) or "by state: -")
-    lines.append(
-        "staleness: refused above %d commit(s) behind %s; measured for %d of %d PR(s)"
+    lines.extend(_staleness_footer(report))
+    return "\n".join(lines)
+
+
+def _staleness_footer(report: Dict[str, Any]) -> List[str]:
+    """The staleness summary both renderers print. One copy, so the flat table
+    and the grouped view cannot report different coverage.
+
+    Names the UNMEASURED count explicitly (rem-hyg-12): "2 stale" over a board
+    where five PRs were never compared is a different statement from "2 stale"
+    over a board where all of them were, and a reader cannot tell which without
+    being told."""
+    lines = [
+        "staleness: refused above %d commit(s) behind %s; measured for %d of "
+        "%d PR(s)"
         % (report.get("max_behind_commits", DEFAULT_MAX_BEHIND_COMMITS),
            report["default_branch"], report.get("behind_measured_count", 0),
-           report["total"]))
-    return "\n".join(lines)
+           report["total"])]
+    stale = report.get("stale_count")
+    unmeasured = report.get("stale_unmeasured_count")
+    if stale or unmeasured:
+        lines.append(
+            "  %s behind the limit (marked '!'); %s UNMEASURED -- not the same "
+            "as up to date" % (stale or 0, unmeasured or 0))
+    return lines
 
 
 def render_grouped(report: Dict[str, Any]) -> str:
@@ -948,15 +1045,19 @@ def render_grouped(report: Dict[str, Any]) -> str:
                 (row.get("head") or "?")[:30],
                 (row.get("pipeline_reason") or row.get("reason") or "")[:70],
             ))
+            # rem-hyg-12. This view has no BEHIND column, and it is the one the
+            # kanban CLI and the dashboard read. A `draft` row's reason says
+            # "mark it ready for review to land it" and nothing else -- so a
+            # branch 13 commits behind main renders identically to a fresh one
+            # unless the axis is printed on its own line.
+            if row.get("stale") is True:
+                lines.append("   %-7s %s" % ("", "STALE: " + (
+                    row.get("stale_reason") or "behind the base branch")))
     lines.append("")
     lines.append(
         "age is a LOWER BOUND -- nothing persists a state transition, so it is "
         "measured from the newest event on the PR; '?' means unmeasured")
-    lines.append(
-        "staleness: refused above %d commit(s) behind %s; measured for %d of %d PR(s)"
-        % (report.get("max_behind_commits", DEFAULT_MAX_BEHIND_COMMITS),
-           report["default_branch"], report.get("behind_measured_count", 0),
-           report["total"]))
+    lines.extend(_staleness_footer(report))
     return "\n".join(lines)
 
 
@@ -1007,30 +1108,43 @@ def collect_report(
     if max_behind_commits is None:
         max_behind_commits = _configured_max_behind()
 
-    # TWO PHASES -- see main(). The staleness rung is the only one that costs a
-    # forge round-trip, so it is measured only for the PRs a behind-count could
-    # still change the verdict of.
+    # STALENESS IS MEASURED FOR EVERY OPEN PR (rem-hyg-12), not for the
+    # `ready` subset. This used to run in two phases -- classify, then
+    # `/compare` only the urls already classified `ready` -- which is right for
+    # the MERGER (a non-ready PR will not merge, so the count cannot change its
+    # verdict) and wrong for the REPORT, which is what a human reads BEFORE
+    # deciding to un-draft or merge something. #1850 was a draft, MERGEABLE,
+    # CLEAN, and 13 commits behind main with a diff of +97/-1691 against it;
+    # #1845 was linked and 16 behind. Both short-circuited the ladder before
+    # the staleness rung, so neither was ever measured and the report said
+    # nothing.
+    #
+    # THE LADDER IS NOT REORDERED and no merge verdict moves: every rung above
+    # the staleness one short-circuits, so handing it a count it previously
+    # lacked cannot change a non-ready PR's `state`. That equivalence is
+    # asserted in tests/test_merge_readiness_staleness.py, and it is what
+    # proves the cost optimisation was removed from the REPORT and not from the
+    # MERGER -- `pr_watcher` keeps its own lazy probe, untouched.
+    #
+    # WHAT IT COSTS. One `/compare` per DISTINCT (base, head sha) rather than
+    # per ready PR: on a board of ~15 open PRs that is ~15 calls against a
+    # 5,000/hr budget, and the dashboard's 120s cache means a tab does not pay
+    # it per refresh. `--no-measure-behind` turns the whole thing off, and then
+    # every PR reports UNMEASURED rather than fresh.
     # The dashboard surface evaluates the SAME protected-path rung the merger
     # does (kpr-watch-10). Without it this report answers `linked` for a PR the
     # watcher is actively refusing — which is the defect kpr-watch-10 closed,
     # reappearing one surface over. Supplied only when the records carry
     # `files`, for the reason main() gives.
     guarded = load_protected_paths() if any("files" in pr for pr in prs) else []
+    behind = None
+    if measure_behind and prs:
+        behind = measure_behind_map(prs, default_branch=default_branch)
     report = build_report(
         prs, default_branch=default_branch, linked_urls=linked,
         linked_lookup_ok=linked_lookup_ok, linked_tasks=tasks,
-        max_behind_commits=max_behind_commits, protected_paths=guarded)
-    if measure_behind:
-        ready_urls = {r["url"] for r in report["prs"] if r["state"] == READY}
-        if ready_urls:
-            behind = measure_behind_map(
-                [pr for pr in prs if (pr.get("url") or "").strip() in ready_urls],
-                default_branch=default_branch)
-            report = build_report(
-                prs, default_branch=default_branch, linked_urls=linked,
-                linked_lookup_ok=linked_lookup_ok, linked_tasks=tasks,
-                behind_by_url=behind, max_behind_commits=max_behind_commits,
-                protected_paths=guarded)
+        behind_by_url=behind, max_behind_commits=max_behind_commits,
+        protected_paths=guarded)
     # Why the board was unreadable, not merely that it was. A degraded report
     # that cannot say what degraded it sends the reader to the wrong fix.
     report["linked_lookup_error"] = linked_lookup_error

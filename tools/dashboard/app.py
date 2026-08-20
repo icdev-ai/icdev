@@ -10139,7 +10139,9 @@ def create_app(testing: bool = False) -> Flask:
     # --merge`.
     #
     # CACHED, because the report costs a `gh pr list` (~2s) plus one /compare
-    # call per ready PR, and a dashboard that auto-refreshes would otherwise
+    # call per OPEN PR -- rem-hyg-12; it used to be per READY PR, which is why
+    # a draft 13 commits behind main showed nothing -- and a dashboard that
+    # auto-refreshes would otherwise
     # hammer the forge rate limit on every open tab. The cache serves STALE
     # data with its age attached rather than pretending to be live; the panel
     # renders that age.

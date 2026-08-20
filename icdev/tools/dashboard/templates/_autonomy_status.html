@@ -113,6 +113,12 @@
                   background: rgba(120,120,140,0.2); color: var(--text-muted, #6c6c80); }
   .mr-age { font-family: monospace; font-size: 0.75rem;
             color: var(--text-secondary, #a0a0b8); margin-left: auto; }
+  /* rem-hyg-12: staleness is its own axis, so it gets its own badge rather
+     than a word inside the reason -- a `draft` row's reason is about the
+     draft, and the commits behind main are a separate fact about the same PR. */
+  .mr-stale { font-size: 0.68rem; padding: 0.02rem 0.35rem; border-radius: 3px;
+              background: rgba(255,152,0,0.22); color: #ffb74d;
+              font-family: monospace; white-space: nowrap; }
   .mr-reason { flex-basis: 100%; font-size: 0.75rem; color: var(--text-secondary);
                font-style: italic; word-break: break-word; }
   .mr-error { padding: 0.5rem 0.7rem; font-size: 0.8rem; color: #ff8a80; }
@@ -295,6 +301,18 @@
     // "?" not "0m": an unmeasured age must never read as "it just changed".
     var age = (r.state_age_seconds == null) ? '?' : mrFormatAge(r.state_age_seconds);
     var reason = r.pipeline_reason || r.reason || '';
+    // STALENESS IS ITS OWN AXIS (rem-hyg-12). A `draft` or `linked` PR's state
+    // can never be `behind_main` -- the ladder short-circuits before that rung,
+    // correctly -- so `reason` says "mark it ready for review to land it" and
+    // NOTHING about the 13 commits behind main that would make un-drafting it
+    // revert a day of fixes (#1850, measured 2026-08-20). Rendered explicitly,
+    // and ONLY when measured: `r.stale === true`, never a truthiness test,
+    // because null means nobody compared the branch.
+    var stale = (r.stale === true)
+      ? '<span class="mr-stale" title="' + escapeHTML(r.stale_reason || '')
+        + '">' + escapeHTML(r.behind_by == null ? 'behind'
+                            : (r.behind_by + ' behind')) + '</span>'
+      : '';
     return ''
       + '<div class="mr-row">'
       + '  <a class="mr-num" href="' + escapeHTML(r.url || '#') + '" target="_blank" rel="noopener">#'
@@ -303,6 +321,7 @@
       + '  ' + task
       + '  <span class="mr-age" title="lower bound -- measured from the newest event on the PR">'
       +      escapeHTML(age) + '</span>'
+      + '  ' + stale
       + '  <span class="mr-reason">' + escapeHTML(reason) + '</span>'
       + '</div>';
   }
@@ -369,6 +388,14 @@
       bits.push((payload.total || 0) + ' open');
       bits.push((payload.ready || 0) + ' awaiting merge');
       if (alerting) bits.push(alerting + ' need attention');
+      // rem-hyg-12. Counted across EVERY state, not just the ones the ladder
+      // refuses for staleness -- most stale PRs are draft or linked and report
+      // some other state entirely.
+      if (payload.stale_count) bits.push(payload.stale_count + ' stale');
+      if (payload.stale_unmeasured_count) {
+        // Never folded into "not stale": nobody compared these branches.
+        bits.push(payload.stale_unmeasured_count + ' staleness unmeasured');
+      }
       if (payload.cache_age_seconds != null) {
         bits.push('as of ' + mrFormatAge(payload.cache_age_seconds) + ' ago');
       }
