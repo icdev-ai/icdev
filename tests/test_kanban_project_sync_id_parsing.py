@@ -184,3 +184,22 @@ def test_the_opaque_task_namespace_owns_no_card():
     data = _load_registry()
     prefixes = {str(p.get("task_prefix", "")) for p in (data.get("projects") or [])}
     assert "task-" not in prefixes
+
+
+def test_the_icdev_mirror_carries_the_same_rule():
+    """`tools.` and `icdev.tools.` are SEPARATE module objects, and the fix
+    landed in only one of them.
+
+    The dashboard imports `tools.project.kanban_project_sync`, but a
+    wheel-installed deployment reaches `icdev.tools.…` — so a fix applied to one
+    copy leaves the other still inventing cards, on precisely the deployment
+    nobody is watching. `mirror_parity` catches whole-file drift; this catches
+    the behaviour, which is what actually matters.
+    """
+    import importlib
+
+    mirror = importlib.import_module("icdev.tools.project.kanban_project_sync")
+    for task_id in CULPRITS:
+        assert mirror._parse_task_id(task_id) is None, task_id
+    assert mirror._parse_task_id("ci-fix-27889336050") == ("ci-", "fix")
+    assert mirror._parse_task_id("sim-l0-01") == ("sim-", "l0")
