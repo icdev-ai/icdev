@@ -6,8 +6,21 @@ plain dicts/lists so they are trivially JSON-serialisable for the agent loop.
 
 CLI usage:
     python tools/testing/qa_agent_runner.py --run [--canvas CANVAS_KEY] [--json]
+    python tools/testing/qa_agent_runner.py --run --deadline-seconds 1800 --batch-size 4
     python tools/testing/qa_agent_runner.py --discover-gaps [--json]
     python tools/testing/qa_agent_runner.py --status RUN_ID [--json]
+
+The suite is BATCHED by spec file rather than run as one invocation, because a
+single `npx playwright test` killed at a wall-clock deadline emits no JSON
+report at all — so a partial sweep returned nothing, and `--run` reported one
+synthetic TestFailure(test_name="timeout") whatever the suite actually did.
+Every batch that finishes has a real report, and the spec files that did not
+run are NAMED (`spec_files_not_run` / `spec_files_no_report`) rather than
+silently absent.
+
+Note: Playwright shuts down a webServer it started, so with no dashboard
+already listening each batch pays that startup again. Point the run at a
+running dashboard, or set ICDEV_NO_SERVER=1, to avoid it.
 """
 from __future__ import annotations
 
@@ -32,7 +45,29 @@ logger = logging.getLogger(__name__)
 _QA_SCREENSHOT_DIR = "playwright/screenshots/qa-agent"
 _E2E_SPEC_GLOB = "tests/e2e/*.spec.ts"
 _COMPONENT_REGISTRY_PATH = "args/component_registry.yaml"
-_TIMEOUT_SECONDS = 1200
+
+#: Whole-sweep wall-clock budget. playwright.config.ts records the measured
+#: duration of the full suite in its own comment — "full suite on PostgreSQL
+#: 732 passed, 55 failed, 25 skipped (41.5m)" — against 838 tests at
+#: `workers: 1`, `fullyParallel: false`. The previous 1200s (20 min) was under
+#: half of that, so --run ALWAYS hit subprocess.TimeoutExpired.
+_DEADLINE_SECONDS = 3600
+
+#: Spec files per `npx playwright test` invocation. Each batch writes its own
+#: report, so this is the granularity at which a deadline-bounded sweep still
+#: yields real results.
+_BATCH_SIZE = 6
+
+#: Do not start another batch with less than this much of the deadline left —
+#: it would only be killed, producing no report for those spec files.
+_MIN_BATCH_SECONDS = 90
+
+#: Statuses a run can end in. `no_tests` and `incomplete` exist because the old
+#: code called both of them `passed`.
+STATUS_PASSED = "passed"
+STATUS_FAILED = "failed"
+STATUS_NO_TESTS = "no_tests"
+STATUS_INCOMPLETE = "incomplete"
 
 
 # ---------------------------------------------------------------------------
@@ -61,6 +96,16 @@ class QARunResult:
     screenshot_count: int = 0
     failures: List[TestFailure] = field(default_factory=list)
     report_path: str = ""
+
+    #: Coverage bookkeeping. Three lists, never merged — each sends you to a
+    #: different fix. `not_run` means the deadline stopped us before the batch
+    #: (or mid-batch); `no_report` means the batch RAN and produced nothing
+    #: parseable, which is an infrastructure fault, not missing coverage.
+    spec_files_total: int = 0
+    spec_files_run: List[str] = field(default_factory=list)
+    spec_files_not_run: List[str] = field(default_factory=list)
+    spec_files_no_report: List[str] = field(default_factory=list)
+    batches: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -186,15 +231,79 @@ def _ensure_screenshot_dir(run_id: str) -> Path:
     return d
 
 
+def resolve_spec_files(canvas_filter: Optional[str] = None) -> List[str]:
+    """Return spec paths RELATIVE to the repo root, forward-slashed.
+
+    A bare Playwright argument is a REGEX matched against the test file path,
+    not a path. An absolute Windows path (backslashes, a drive colon) matches
+    nothing: Playwright exits "No tests found" and still writes a 0/0/0 report,
+    which reads exactly like a clean run.
+    """
+    if canvas_filter:
+        pattern = str(PROJECT_ROOT / "tests" / "e2e" / f"*{canvas_filter}*.spec.ts")
+    else:
+        pattern = str(PROJECT_ROOT / _E2E_SPEC_GLOB)
+    return sorted(
+        os.path.relpath(p, str(PROJECT_ROOT)).replace(os.sep, "/")
+        for p in glob.glob(pattern)
+    )
+
+
+def build_playwright_cmd(npx: str, rel_specs: List[str]) -> List[str]:
+    """Build one `npx playwright test` argv for a batch of spec files.
+
+    `--project=chromium` is ONE token on purpose. Split as `--project chromium`,
+    the parser reads every following bare argument as a further PROJECT name,
+    and the run dies with `Project(s) "<spec path>" not found`.
+
+    No `--reporter` override: playwright.config.ts already declares the json
+    reporter (whose output path honours ICDEV_PW_RUN_TAG), and a CLI
+    `--reporter` REPLACES that list rather than adding to it.
+    """
+    return [npx, "playwright", "test", "--project=chromium", *rel_specs]
+
+
+def batch_specs(rel_specs: List[str], batch_size: int) -> List[List[str]]:
+    """Split spec files into fixed-size batches, preserving order."""
+    size = max(1, int(batch_size))
+    return [rel_specs[i:i + size] for i in range(0, len(rel_specs), size)]
+
+
+def derive_status(result: QARunResult) -> str:
+    """Classify a finished run. A run that measured nothing is never `passed`.
+
+    `no_tests` (Playwright matched no test) and `incomplete` (the deadline or a
+    missing report left spec files unmeasured) were both previously reported as
+    `passed`, so a sweep that ran zero tests was indistinguishable from a green
+    one.
+    """
+    if result.failed > 0:
+        return STATUS_FAILED
+    if result.spec_files_not_run or result.spec_files_no_report:
+        return STATUS_INCOMPLETE
+    if result.total == 0:
+        return STATUS_NO_TESTS
+    return STATUS_PASSED
+
+
+def _batch_report_path(run_tag: str) -> Path:
+    """Where playwright.config.ts's json reporter writes for this run tag."""
+    return PROJECT_ROOT / ".tmp" / "test_runs" / f"playwright-results-{run_tag}.json"
+
+
 def run_e2e_suite(
     canvas_filter: Optional[str] = None,
     trigger: str = "manual",
-    timeout_seconds: int = _TIMEOUT_SECONDS,
+    deadline_seconds: int = _DEADLINE_SECONDS,
+    batch_size: int = _BATCH_SIZE,
 ) -> QARunResult:
-    """Execute Playwright via e2e_runner subprocess with --json reporter.
+    """Execute the Playwright E2E suite in deadline-bounded batches.
 
-    Returns a QARunResult with structured failure list.
+    Returns a QARunResult with a structured failure list, the spec files that
+    were measured, and the spec files that were not.
     """
+    import time
+
     run_id = _make_run_id()
     screenshot_dir = _ensure_screenshot_dir(run_id)
 
@@ -204,103 +313,165 @@ def run_e2e_suite(
         canvas_filter=canvas_filter or "",
     )
 
-    npx = _npx_cmd()
-    cmd = [npx, "playwright", "test", "--project", "chromium", "--reporter", "json"]
-
-    if canvas_filter:
-        # Run only spec files matching the canvas key
-        spec_pattern = str(PROJECT_ROOT / "tests" / "e2e" / f"*{canvas_filter}*.spec.ts")
-        matched = glob.glob(spec_pattern)
-        if not matched:
-            logger.warning("qa_agent_runner: no spec files matching canvas '%s'", canvas_filter)
-            result.status = "skipped"
-            return result
-        cmd.extend(matched)
+    rel_specs = resolve_spec_files(canvas_filter)
+    result.spec_files_total = len(rel_specs)
+    if not rel_specs:
+        logger.warning(
+            "qa_agent_runner: no spec files matching canvas '%s'", canvas_filter or "*"
+        )
+        result.status = STATUS_NO_TESTS
+        return result
 
     env = os.environ.copy()
     root_str = str(PROJECT_ROOT)
     existing_pp = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = root_str if not existing_pp else root_str + os.pathsep + existing_pp
-
-    json_output_file = PROJECT_ROOT / ".tmp" / "ace" / "qa" / f"{run_id}-results.json"
-    json_output_file.parent.mkdir(parents=True, exist_ok=True)
-    env["PLAYWRIGHT_JSON_OUTPUT_NAME"] = str(json_output_file)
     env["PLAYWRIGHT_SCREENSHOT_DIR"] = str(screenshot_dir)
 
-    logger.info("qa_agent_runner: starting run_id=%s canvas_filter=%s", run_id, canvas_filter)
-
-    try:
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            env=env,
-            timeout=timeout_seconds,
-            cwd=str(PROJECT_ROOT),
-        )
-    except subprocess.TimeoutExpired:
-        result.status = "failed"
-        result.failures.append(TestFailure(
-            test_name="timeout",
-            error_message=f"Playwright timed out after {timeout_seconds}s",
-            severity="critical",
-        ))
-        return result
-    except FileNotFoundError:
-        result.status = "failed"
-        result.failures.append(TestFailure(
-            test_name="setup",
-            error_message="npx/playwright not found — install Node.js and @playwright/test",
-            severity="critical",
-        ))
-        return result
-
-    raw_json: Optional[str] = None
-    if json_output_file.exists():
-        raw_json = json_output_file.read_text(encoding="utf-8", errors="replace")
-    elif (proc.stdout or "").strip().startswith("{"):
-        raw_json = proc.stdout.strip()
-
-    if raw_json:
-        result.failures = parse_playwright_json(raw_json)
-    elif proc.returncode != 0:
-        error_excerpt = (proc.stderr or proc.stdout or "")[:500]
-        result.failures.append(TestFailure(
-            test_name="playwright_run",
-            error_message=f"Playwright exited {proc.returncode}: {error_excerpt}",
-            severity="critical",
-        ))
-
-    # Count screenshots captured in the run directory
-    result.screenshot_count = len(list(screenshot_dir.glob("*.png")))
-    result.report_path = str(json_output_file)
-
-    if raw_json:
-        try:
-            report = json.loads(raw_json)
-            _tally(report, result)
-        except (json.JSONDecodeError, TypeError):
-            pass
-
-    result.failed = len(result.failures)
-    if result.total == 0 and result.failed > 0:
-        result.total = result.failed
-    result.status = "passed" if result.failed == 0 else "failed"
+    npx = _npx_cmd()
+    batches = batch_specs(rel_specs, batch_size)
+    started = time.time()
+    deadline = started + max(1, int(deadline_seconds))
 
     logger.info(
-        "qa_agent_runner: run_id=%s status=%s total=%d passed=%d failed=%d",
+        "qa_agent_runner: starting run_id=%s canvas_filter=%s specs=%d batches=%d deadline=%ds",
+        run_id, canvas_filter, len(rel_specs), len(batches), deadline_seconds,
+    )
+
+    for idx, batch in enumerate(batches):
+        remaining = deadline - time.time()
+        if remaining < _MIN_BATCH_SECONDS:
+            for pending in batches[idx:]:
+                result.spec_files_not_run.extend(pending)
+            result.batches.append({
+                "batch": idx, "status": "deadline_skipped", "files": list(batch),
+            })
+            break
+
+        run_tag = f"{run_id}-b{idx}"
+        benv = dict(env)
+        benv["ICDEV_PW_RUN_TAG"] = run_tag
+        report_path = _batch_report_path(run_tag)
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+
+        t0 = time.time()
+        try:
+            proc = subprocess.run(
+                build_playwright_cmd(npx, batch),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=benv,
+                timeout=int(remaining),
+                cwd=str(PROJECT_ROOT),
+            )
+        except subprocess.TimeoutExpired:
+            # This batch and everything after it is unmeasured, and each one is
+            # NAMED — a deadline-truncated sweep that reported only what it got
+            # through would read as full coverage.
+            result.spec_files_not_run.extend(batch)
+            for pending in batches[idx + 1:]:
+                result.spec_files_not_run.extend(pending)
+            result.batches.append({
+                "batch": idx, "status": "deadline_killed",
+                "seconds": round(time.time() - t0, 1), "files": list(batch),
+            })
+            break
+        except FileNotFoundError:
+            for pending in batches[idx:]:
+                result.spec_files_not_run.extend(pending)
+            result.failures.append(TestFailure(
+                test_name="setup",
+                error_message="npx/playwright not found — install Node.js and @playwright/test",
+                severity="critical",
+            ))
+            break
+
+        elapsed = round(time.time() - t0, 1)
+        raw_json = _read_batch_report(report_path, proc)
+        if not raw_json:
+            result.spec_files_no_report.extend(batch)
+            result.batches.append({
+                "batch": idx, "status": "no_report", "seconds": elapsed,
+                "returncode": proc.returncode, "files": list(batch),
+                "error": (proc.stderr or proc.stdout or "")[:500],
+            })
+            continue
+
+        try:
+            report = json.loads(raw_json)
+        except (json.JSONDecodeError, TypeError):
+            result.spec_files_no_report.extend(batch)
+            result.batches.append({
+                "batch": idx, "status": "unparseable_report", "seconds": elapsed,
+                "returncode": proc.returncode, "files": list(batch),
+            })
+            continue
+
+        result.failures.extend(parse_playwright_json(raw_json))
+        _tally(report, result)
+        result.spec_files_run.extend(batch)
+        stats = report.get("stats") or {}
+        batch_record = {
+            "batch": idx, "status": "ok", "seconds": elapsed,
+            "returncode": proc.returncode, "files": list(batch),
+            "report_path": str(report_path),
+            "stats": {k: stats.get(k) for k in ("expected", "unexpected", "skipped", "flaky")},
+        }
+        # Report-level errors say WHY a batch ran zero tests — a webServer that
+        # never came up, a config that failed to load. `no_tests` on its own is
+        # a shrug, and these are different fixes from "the suite is empty".
+        errors = [
+            str(e.get("message") or e) for e in (report.get("errors") or [])
+        ]
+        if errors:
+            batch_record["errors"] = errors[:5]
+        result.batches.append(batch_record)
+
+    result.screenshot_count = len(list(screenshot_dir.glob("*.png")))
+    result.report_path = str(write_run_report(result))
+    result.failed = len(result.failures)
+    result.status = derive_status(result)
+
+    logger.info(
+        "qa_agent_runner: run_id=%s status=%s total=%d passed=%d failed=%d "
+        "specs_run=%d/%d not_run=%d no_report=%d",
         run_id, result.status, result.total, result.passed, result.failed,
+        len(result.spec_files_run), result.spec_files_total,
+        len(result.spec_files_not_run), len(result.spec_files_no_report),
     )
     return result
 
 
+def _read_batch_report(report_path: Path, proc: "subprocess.CompletedProcess[str]") -> Optional[str]:
+    """Return a batch's raw JSON report, or None if it produced none."""
+    if report_path.exists():
+        return report_path.read_text(encoding="utf-8", errors="replace")
+    stdout = (proc.stdout or "").strip()
+    return stdout if stdout.startswith("{") else None
+
+
+def write_run_report(result: QARunResult) -> Path:
+    """Persist the aggregated run to .tmp/ace/qa/<run_id>-results.json."""
+    out = PROJECT_ROOT / ".tmp" / "ace" / "qa" / f"{result.run_id}-results.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        out.write_text(json.dumps(result.to_dict(), indent=2), encoding="utf-8")
+    except OSError as exc:
+        logger.error("qa_agent_runner: cannot write run report %s: %s", out, exc)
+    return out
+
+
 def _tally(report: dict, result: QARunResult) -> None:
+    """Accumulate one batch report's stats onto the run total."""
     stats = report.get("stats") or {}
-    result.total = stats.get("expected", 0) + stats.get("unexpected", 0) + stats.get("skipped", 0)
-    result.passed = stats.get("expected", 0)
-    result.skipped = stats.get("skipped", 0)
+    expected = int(stats.get("expected") or 0)
+    unexpected = int(stats.get("unexpected") or 0)
+    skipped = int(stats.get("skipped") or 0)
+    result.total += expected + unexpected + skipped
+    result.passed += expected
+    result.skipped += skipped
 
 
 def parse_playwright_json(raw_json: str) -> List[TestFailure]:
@@ -381,7 +552,10 @@ def file_failure_tasks(
             "id": task_id,
             "title": f"[QA] {f.test_name[:80]}",
             "description": "\n".join(desc_lines),
-            "task_type": "bug",
+            # NOT "bug". create_tasks refuses it outright — VALID_TASK_TYPES is
+            # {build, run, fix, research, deploy, test, chore} and the raise
+            # happens before any insert, so every call filed nothing at all.
+            "task_type": "fix",
             "priority": "critical" if f.severity == "critical" else "high",
             "status": "backlog",
             "idempotency_key": idem_key,
@@ -540,6 +714,15 @@ def main() -> int:
     group.add_argument("--status", metavar="RUN_ID", help="Fetch status of a previous run")
     parser.add_argument("--canvas", metavar="CANVAS_KEY", help="Limit --run to specs matching this canvas key")
     parser.add_argument("--trigger", default="manual", help="Trigger label (default: manual)")
+    parser.add_argument(
+        "--deadline-seconds", type=int, default=_DEADLINE_SECONDS,
+        help=f"Whole-sweep wall-clock budget (default: {_DEADLINE_SECONDS}; "
+             "the full suite measures ~41.5m)",
+    )
+    parser.add_argument(
+        "--batch-size", type=int, default=_BATCH_SIZE,
+        help=f"Spec files per Playwright invocation (default: {_BATCH_SIZE})",
+    )
     parser.add_argument("--json", action="store_true", help="Output JSON")
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
@@ -547,14 +730,31 @@ def main() -> int:
     _setup_logging(args.verbose)
 
     if args.run:
-        result = run_e2e_suite(canvas_filter=args.canvas, trigger=args.trigger)
+        result = run_e2e_suite(
+            canvas_filter=args.canvas,
+            trigger=args.trigger,
+            deadline_seconds=args.deadline_seconds,
+            batch_size=args.batch_size,
+        )
         if args.json:
             print(json.dumps(result.to_dict(), indent=2))
         else:
             print(f"Run {result.run_id}: {result.status} ({result.passed}/{result.total} passed)")
+            print(f"  spec files: {len(result.spec_files_run)}/{result.spec_files_total} measured")
             for f in result.failures:
                 print(f"  FAIL: {f.test_name} — {f.error_message[:120]}")
-        return 0 if result.status == "passed" else 1
+            # Name the unmeasured spec files. A truncated sweep that printed
+            # only what it got through would read as full coverage.
+            for label, files in (
+                ("NOT RUN (deadline)", result.spec_files_not_run),
+                ("NO REPORT", result.spec_files_no_report),
+            ):
+                for path in files:
+                    print(f"  {label}: {path}")
+            for b in result.batches:
+                for err in b.get("errors") or []:
+                    print(f"  BATCH {b['batch']} ERROR: {err[:160]}")
+        return 0 if result.status == STATUS_PASSED else 1
 
     if args.discover_gaps:
         gaps = discover_coverage_gaps()
