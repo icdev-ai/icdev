@@ -45,6 +45,11 @@ jobs:
   test-gates:
     name: Test Gates
     runs-on: ubuntu-latest
+    # Bounded. These jobs inherited GitHub's 360-MINUTE default, and so did
+    # the serial `test` job before them — a hung pytest would have burned six
+    # hours of runner time per shard before anyone saw a red. Measured
+    # 2026-08-20: gates 2m42s, shards 6-7min.
+    timeout-minutes: 20
     needs: lint
     steps:
       # fetch-depth: 0, for the isolation run at the end of this job
@@ -284,6 +289,9 @@ jobs:
   test-shard:
     name: Test Shard ${{ matrix.shard }} of ${{ strategy.job-total }}
     runs-on: ubuntu-latest
+    # See test-gates: 360 minutes was the inherited default. 30 is generous
+    # against a 6-7 minute shard and still bounds a hang.
+    timeout-minutes: 30
     needs: lint
     strategy:
       # A failing shard must NOT cancel its siblings. With fail-fast the first
