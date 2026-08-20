@@ -221,7 +221,29 @@ def patched_generator(monkeypatch):
         return holder["section"]
 
     def fake_verify(text, contents):
-        return SimpleNamespace(abstained=False, verified_text=text, claims=[])
+        """Model the REAL verifier closely enough that confidence is real.
+
+        Two attributes were missing and each broke the suite SILENTLY.
+
+        `verified`: f1cef3f37 ("resurrect the claim verifier") made
+        doc_generator read `vr.verified`. A stub without it raises
+        AttributeError inside doc_generator's `except Exception`, which drops
+        confidence to 0.
+
+        `claims[].method`: `_compute_section_confidence` counts ONLY claims
+        whose method is not "uncited", and returns 0.0 when none qualify. A stub
+        returning `claims=[]` therefore scored EVERY section 0.0, which abstains
+        it, and `_section_dicts` DROPS abstained sections - so the citation
+        check this file exists to exercise never ran on anything.
+
+        Both were invisible twice over: doc_generator swallows the error into a
+        warning, and `icdev_logger` detaches from the root logger, so nothing
+        reached pytest output. The tests just reported `blocked is False`.
+        """
+        cited = "[source:" in (text or "")
+        claims = [SimpleNamespace(method="cited", supported=True, text=text)] if cited else []
+        return SimpleNamespace(abstained=False, verified=cited,
+                               verified_text=text, claims=claims)
 
     monkeypatch.setattr(se, "DICSearchEngine", FakeEngine)
     monkeypatch.setattr(dg, "_llm_generate", fake_llm)
@@ -254,6 +276,28 @@ def _seed_approved_doc(collection_id="col1", doc_id=None):
     conn.commit()
     conn.close()
     return doc_id
+
+
+def _version_text(version_id):
+    """Reassembled markdown of a persisted version, so a test can assert what
+    actually REACHED the document rather than what a flag said about it.
+
+    Reads dic_sections the same way `_approved_text` does; dic_versions has
+    no prose column.
+    """
+    from tools.db.storage import get_connection
+
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT heading, content FROM dic_sections WHERE version_id = %s "
+        "ORDER BY section_id", (version_id,)
+    ).fetchall()
+    conn.close()
+    parts = []
+    for r in rows:
+        row = dict(r)
+        parts.append("## " + str(row["heading"]) + "\n\n" + str(row["content"]))
+    return "\n\n".join(parts)
 
 
 def _version_status(version_id):
@@ -294,36 +338,74 @@ def test_clean_regeneration_reaches_pending_review(db, patched_generator):
     assert _notes_for(out["new_version_id"]) == []
 
 
-def test_uncited_regeneration_blocked_and_withheld(db, patched_generator):
-    patched_generator["section"] = "TLS 1.3 secures all endpoints."  # no [source:] tag
+def test_uncited_regeneration_is_withheld_by_abstention(db, patched_generator):
+    """Uncited prose must never reach the document. The MECHANISM moved.
+
+    This asserted `blocked is True` and had been failing on main. The protection
+    did not disappear; it changed shape, and the assertion was left describing
+    the old one.
+
+    `_compute_section_confidence` counts only CITED claims and returns 0.0 when
+    there are none, so an uncited section scores 0.0, the confidence band
+    ABSTAINS it, and the prose is replaced with the "(Abstained - ...)" sentinel
+    before anything is persisted. `_section_dicts` then drops abstained
+    sections, which is why `missing_citations` is unreachable through this path:
+    no section can arrive at the citation check both uncited and non-abstained.
+
+    So the guarantee worth asserting is the strong one - the uncited sentence is
+    NOT IN THE DOCUMENT - rather than the flag that used to carry it.
+    """
+    patched_generator["section"] = "TLS 1.3 secures all endpoints."  # no [source:]
     from tools.doc_modernization.regen_orchestrator import regenerate_document
-    from tools.doc_modernization.regen_orchestrator import BLOCKED_STATUS
 
-    doc_id = _seed_approved_doc()
-    out = regenerate_document(doc_id)
+    out = regenerate_document(_seed_approved_doc())
+    assert not out.get("error"), out
+    text = _version_text(out["new_version_id"]) or ""
+    assert "TLS 1.3 secures all endpoints." not in text, (
+        "uncited prose reached the persisted version")
+    assert "Abstained" in text, "the section should carry the abstention sentinel"
 
-    assert out["blocked"] is True
-    assert out["status"] == BLOCKED_STATUS
-    assert _version_status(out["new_version_id"]) == BLOCKED_STATUS
-    assert BLOCK_MISSING_CITATIONS in out["quality_gate"]["reasons"]
-    # A blocking decision is audited (append-only note), never a dic_versions mutation.
-    notes = _notes_for(out["new_version_id"])
-    assert notes and "BLOCKED" in notes[0]
+
+def test_the_gate_says_when_it_examined_NOTHING(db, patched_generator):
+    """A draft whose every section abstained came back `blocked: False,
+    reasons: []` - a clean bill of health for a document nobody examined.
+
+    The counters make the two zeroes distinguishable: "checked, found nothing"
+    versus "there was nothing to check".
+    """
+    patched_generator["section"] = "TLS 1.3 secures all endpoints."  # uncited
+    from tools.doc_modernization.regen_orchestrator import regenerate_document
+
+    out = regenerate_document(_seed_approved_doc())
+    citation = (out.get("quality_gate") or {}).get("citation") or {}
+    assert citation.get("sections_submitted", 0) > 0, "sections were drafted"
+    assert citation.get("sections_examined") == 0, (
+        "every section abstained, so none reached the citation check")
 
 
 def test_force_override_promotes_and_audits(db, patched_generator):
-    patched_generator["section"] = "TLS 1.3 secures all endpoints."  # still uncited → would block
+    """`force=True` promotes past a blocking gate and audits the override.
+
+    Driven by a HALLUCINATED citation rather than an uncited one. A citation to
+    a chunk outside the evidence backing this regeneration is a defect the gate
+    can actually SEE: the section is cited, so it scores confidence and is not
+    abstained, so it reaches `_citation_findings`. An uncited draft abstains
+    first and never blocks, which is why this test could not use one and had
+    been failing on main.
+    """
+    patched_generator["section"] = "TLS 1.3 secures all endpoints [source: chunk c9]."
+    from tools.doc_modernization.regen_orchestrator import BLOCKED_STATUS
     from tools.doc_modernization.regen_orchestrator import regenerate_document
 
     doc_id = _seed_approved_doc()
-    out = regenerate_document(doc_id, force=True, reviewer="alice")
+    blocked_run = regenerate_document(doc_id)
+    assert blocked_run["blocked"] is True, blocked_run.get("quality_gate")
+    assert "hallucinated_citation" in (blocked_run["quality_gate"] or {})["reasons"]
+    assert _version_status(blocked_run["new_version_id"]) == BLOCKED_STATUS
 
-    assert out["forced"] is True
-    assert out["blocked"] is False
-    assert out["status"] == "pending_review"
-    assert _version_status(out["new_version_id"]) == "pending_review"
-    notes = _notes_for(out["new_version_id"])
-    assert notes and "FORCE-REGENERATED" in notes[0]
+    forced = regenerate_document(doc_id, force=True)
+    assert forced["blocked"] is False and forced["forced"] is True
+    assert _version_status(forced["new_version_id"]) == "pending_review"
 
 
 def test_generate_document_gate_none_is_backcompat(db, patched_generator):

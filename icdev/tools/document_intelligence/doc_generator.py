@@ -970,9 +970,28 @@ def generate_document(
                     flagged_headings.append(heading)
                 raw_text = f"{raw_text}\n\n> {hitl_note}"
             else:
-                # Very low confidence — exclude (abstain)
+                # Very low confidence — exclude (abstain).
+                #
+                # THE PROSE MUST GO WITH THE FLAG. This branch set `abstained`
+                # and left `raw_text` alone, so the section was "excluded" in
+                # name only: the unverified sentence was still persisted, while
+                # every consumer that trusts the flag skipped it. The
+                # regeneration quality gate is one such consumer and says so in
+                # its own code — `_section_dicts` drops abstained sections
+                # "(they carry the '(Abstained — ...)' sentinel, not real
+                # prose)". That assumption was false here, which is how an
+                # UNCITED section reached a persisted version while the gate
+                # reported `blocked: False, reasons: []`: it was never examined,
+                # and the report could not say so.
+                #
+                # The verifier's own abstain path a few lines above already does
+                # this. Doing it here too means "abstained" means one thing.
                 abstained = True
-                confidence = confidence
+                raw_text = (
+                    "(Abstained — confidence %.0f%% is below the %.0f%% floor; "
+                    "no supported, cited claim was found for this section.)"
+                    % (confidence * 100, _CONF_ABSTAIN * 100)
+                )
                 logger.info(
                     "doc_generator: section '%s' excluded — confidence %.2f < %.2f",
                     heading, confidence, _CONF_ABSTAIN,

@@ -1,0 +1,7 @@
+# rem-tst-05 — the regeneration quality gate. Two of its tests had been RED on
+# main and were invisible because the file was ungated. They were right: an
+# UNCITED section was flagged `abstained` WITHOUT its prose being replaced, so
+# the citation gate skipped it (it drops abstained sections) while the
+# unverified sentence was persisted, and the gate reported blocked:False,
+# reasons:[]. Gated so that cannot regress silently again.
+tests/docmod/test_regen_quality_gate.py
