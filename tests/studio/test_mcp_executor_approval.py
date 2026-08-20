@@ -284,3 +284,59 @@ def test_wait_window_prefers_env_then_policy_then_default(monkeypatch):
     # A typo in an operational knob must not read as a policy refusal.
     monkeypatch.setenv(mcp_executor.APPROVAL_WAIT_ENV, "soon")
     assert mcp_executor.approval_wait_seconds({}) == mcp_executor.DEFAULT_APPROVAL_WAIT
+
+
+# ── The park is ATOMIC (hgx-park-01) ───────────────────────────────────────
+# `test_dispatch_parks_a_pending_human_node_and_blocks` was flaky on the Windows
+# CI runner and nowhere else, failing as `assert 'running' == 'awaiting_approval'`.
+# It was reporting a REAL race, not runner noise: the step row and the run row
+# were written through two functions that each open their own connection and
+# commit separately, so between the two commits the gate said awaiting_approval
+# while the run still said running. The test polls for the gate (which lands
+# first) and then reads the run, so a slow second commit surfaces exactly there.
+#
+# The window is not only a test problem. `get_pending_approvals` joins BOTH
+# statuses, so a just-parked gate is invisible to the HITL surface until the
+# second commit lands — and reordering the writes just moves the window to the
+# other table.
+
+def test_the_park_writes_both_rows_in_one_transaction():
+    """Structural, because the race itself is timing-dependent and a functional
+    test for it would be flaky in exactly the way this replaces.
+
+    If someone splits the park back into `_update_step_record` +
+    `_update_run_status`, the window returns and this fails."""
+    import inspect
+
+    src = inspect.getsource(wr._park_for_approval)
+    assert src.count("get_connection()") == 1, "one connection, or it is not atomic"
+    assert src.count("conn.commit()") == 1, "one commit, or the window returns"
+    assert "studio_workflow_run_steps" in src and "studio_workflow_runs" in src
+
+
+def test_the_park_site_uses_the_atomic_writer():
+    """Pins the CALL, not just the helper's existence — a correct helper nobody
+    calls is the defect this repo ships most."""
+    import inspect
+
+    src = inspect.getsource(wr)
+    i = src.index('if result["status"] == "awaiting_approval":')
+    window = src[i:i + 900]
+    assert "_park_for_approval(" in window
+    assert "_update_run_status(run_id, \"awaiting_approval\")" not in window
+
+
+def test_parking_leaves_both_rows_consistent(run_id, stub_apply):
+    """The invariant the flaky assertion was really asserting: an observer never
+    sees the gate parked while the run still reads running."""
+    thread, _outcome = _dispatch_in_thread(run_id)
+    try:
+        gate = _wait_for_gate(run_id)
+        assert gate["status"] == "awaiting_approval"
+        # Read the run IMMEDIATELY — no settling wait. That is the whole point:
+        # with the writes in one transaction, the gate's visibility implies the
+        # run's.
+        assert _run_status(run_id) == "awaiting_approval"
+    finally:
+        wr.reject_step(_gate_row(run_id)["step_run_id"], reason="test teardown")
+        thread.join(timeout=15)

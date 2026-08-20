@@ -782,6 +782,59 @@ def _create_step_record(run_id: str, step_id: str, step_name: str, tool: str) ->
     return step_run_id
 
 
+def _park_for_approval(run_id: str, step_run_id: str, result: dict) -> None:
+    """Mark the STEP and the RUN `awaiting_approval` in ONE transaction.
+
+    `_update_step_record` and `_update_run_status` each open their own
+    connection and commit separately, so parking through them leaves an
+    observable window in which the gate row says `awaiting_approval` while the
+    run still says `running`.
+
+    That window is not cosmetic. The pending-approval query joins BOTH:
+
+        WHERE r.status = 'awaiting_approval' AND s.status = 'awaiting_approval'
+
+    so a just-parked gate is INVISIBLE to the HITL surface until the second
+    commit lands. Reordering the two writes does not help — it moves the window
+    to the other table and the join misses it either way. Only atomicity closes
+    it.
+
+    It is also what made `test_dispatch_parks_a_pending_human_node_and_blocks`
+    flaky on the Windows CI runner and nowhere else: the test polls for the gate
+    row (which appears first) and then asserts the run status, so a slow commit
+    between the two reads as `assert 'running' == 'awaiting_approval'`. The
+    flake was a real race, reported honestly by the test.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    conn = get_connection()
+    try:
+        conn.execute(
+            """UPDATE studio_workflow_run_steps
+               SET status = %s, exit_code = %s, stdout = %s, stderr = %s,
+                   duration_ms = %s, completed_at = %s
+               WHERE step_run_id = %s""",
+            (
+                result["status"],
+                result.get("exit_code"),
+                result.get("stdout"),
+                result.get("stderr"),
+                result.get("duration_ms", 0),
+                now,
+                step_run_id,
+            ),
+        )
+        conn.execute(
+            """UPDATE studio_workflow_runs
+               SET status = %s, completed_at = %s
+               WHERE run_id = %s""",
+            ("awaiting_approval", now, run_id),
+        )
+        # ONE commit for both rows: an observer sees the park whole, or not yet.
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def _update_step_record(step_run_id: str, result: dict) -> None:
     conn = get_connection()
     try:
@@ -1234,8 +1287,11 @@ def _worker(
                 # Persist the gate state and pause the run. Only THIS branch
                 # parks: `_await_gate` blocks this pool thread, leaving the other
                 # `max_parallel - 1` slots free for sibling branches.
-                _update_step_record(step_run_id, result)
-                _update_run_status(run_id, "awaiting_approval")
+                # ONE transaction, not two: see `_park_for_approval`. Parking
+                # through the two separate writers left a window in which the
+                # gate said `awaiting_approval` and the run still said
+                # `running`, and the pending-approval query joins both.
+                _park_for_approval(run_id, step_run_id, result)
                 _push(run_queue, {
                     "type": "step_awaiting_approval",
                     "run_id": run_id,
