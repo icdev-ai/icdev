@@ -1,0 +1,6 @@
+# rem-tst-06 — the ungated-test promoter. Gated because the safeguard is the
+# only thing standing between this tool and a red `main`: a module must be green
+# BOTH alone and in-suite, a failed batch must promote NOTHING (the failure may
+# be an interaction between two survivors), and the ceiling must only ratchet
+# DOWN. Each of those is one `if` away from being lost.
+tests/ci/test_gate_promoter.py
