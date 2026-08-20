@@ -1,5 +1,6 @@
 """Minimal conftest for worktree task-8a35ad18d2 tests."""
 import os
+import shutil
 import sqlite3
 import sys
 from pathlib import Path
@@ -4511,15 +4512,45 @@ CREATE TABLE IF NOT EXISTS cortex_finding_runs (
 """
 
 
-@pytest.fixture
-def icdev_db(tmp_path):
-    """Temporary SQLite DB for use-case tests; studio tables pre-created."""
-    db_path = tmp_path / "icdev.db"
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
+@pytest.fixture(scope="session")
+def _icdev_db_template(tmp_path_factory):
+    """Build MINIMAL_ICDEV_SCHEMA ONCE per session. Tests copy the file.
+
+    The schema is 290 CREATE TABLE + 111 CREATE INDEX = 401 DDL statements, and
+    `icdev_db` below is requested 719 times across 130 files. Building it per
+    test cost ~1.35s each; copying the finished file costs ~4.6ms. Measured on
+    a Windows workstation, that is ~972s of the suite spent rebuilding a schema
+    that is identical every time.
+
+    ISOLATION IS UNCHANGED, which is the only reason this is safe: every test
+    still gets its OWN database file under its OWN `tmp_path`. A copied file is
+    byte-identical to a freshly built one, so no test can observe the
+    difference — and the guard on this change is that the suite's pass/fail/skip
+    counts must not move.
+
+    Session-scoped `tmp_path_factory`, not a module-level constant, so the
+    template dies with the session and two concurrent runs cannot share it.
+    """
+    path = tmp_path_factory.mktemp("icdev-db-template") / "template.db"
+    conn = sqlite3.connect(str(path))
     conn.executescript(MINIMAL_ICDEV_SCHEMA)
     conn.commit()
     conn.close()
+    return path
+
+
+@pytest.fixture
+def icdev_db(tmp_path, _icdev_db_template):
+    """Temporary SQLite DB for use-case tests; studio tables pre-created.
+
+    Same contract as before — a `Path` to a per-test database carrying the full
+    minimal schema. Only how it is produced changed; see `_icdev_db_template`.
+
+    (The old body set `row_factory` on a connection it then CLOSED, so that line
+    never reached any caller. Dropping it changes nothing observable.)
+    """
+    db_path = tmp_path / "icdev.db"
+    shutil.copyfile(_icdev_db_template, db_path)
     return db_path
 
 
