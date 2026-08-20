@@ -3721,6 +3721,51 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
         ).fetchone()
         prior_status = dict(row)["status"] if row else None
 
+        # ── Un-complete guard (kpr-dup-09) ────────────────────────────────
+        # EVERY guard below protects the transition TO done. Nothing protected
+        # the transition FROM it, so the last writer won — and the last writer
+        # is routinely a stale one.
+        #
+        # MEASURED 2026-08-19. cef-ui-03 was dispatched while `backlog`; its PR
+        # merged mid-flight and pr_watcher marked it `done`; the agent then hit
+        # the verification budget and the scheduler's outcome handler wrote
+        # `backlog` over the completion. Each rollback cascaded a failure_count
+        # reset onto cef-ci-01, and the pair flipped done<->backlog 95 times in
+        # 5.5 hours. Nothing was broken in either writer: pr_watcher was right
+        # that the PR merged, and the scheduler was right that its run ran out
+        # of budget. They were answering different questions about the same row.
+        #
+        # kpr-dup-04 already established the rule — "a background sweep must not
+        # un-complete work that is already on main" — and fixed it for exactly
+        # one caller, `_detect_orphan_done_tasks`. This moves it to the seam
+        # every caller goes through, which is where a rule about a row belongs.
+        #
+        # CANNOT-ANSWER REFUSES THE ROLLBACK, following kpr-dup-04: "between the
+        # two ways of being wrong, rolling back is the one that destroys a
+        # record." A demotion that cannot be justified is not performed.
+        #
+        # `manual` is the escape hatch, and terminal targets are untouched: an
+        # operator re-opening a task, or moving done -> cancelled/archived, is a
+        # decision this guard has no business overriding.
+        if (
+            prior_status == "done"
+            and new_status != "done"
+            and new_status in _UNCOMPLETE_GUARDED_TARGETS
+            and actor not in _UNCOMPLETE_EXEMPT_ACTORS
+        ):
+            verdict, detail = _work_already_landed(task_id)
+            if verdict is not False:
+                logger.warning(
+                    "_move_task: REFUSED un-complete of %s (%s -> %s by %s) — %s",
+                    task_id, prior_status, new_status, actor, detail,
+                )
+                conn.close()
+                _record_status_transition(
+                    task_id, prior_status, f"REFUSED_uncomplete_{new_status}",
+                    actor=actor, reason=f"guard: {detail}"[:400],
+                )
+                return
+
         # Done-transition guard
         if new_status == "done":
             ok, guard_reason = _parent_is_done(task_id)
@@ -4050,6 +4095,49 @@ def _landed_reports(task_ids) -> dict:
     except Exception as exc:  # noqa: BLE001 \u2014 must never break the scheduler
         logger.warning("orphan-done sweep: landed check failed: %s", exc)
         return {}
+
+
+#: Statuses that put a task back into the working queue. Moving a DONE task to
+#: one of these is an un-completion; moving it to `cancelled`/`archived` is an
+#: operator decision and is deliberately not guarded.
+_UNCOMPLETE_GUARDED_TARGETS = frozenset({
+    "backlog", "scheduled", "in_progress", "token_exhausted",
+    "ci_failed", "merge_conflict", "changes_requested", "failed",
+})
+
+#: A human moving a task by hand is making a decision, not losing a race.
+_UNCOMPLETE_EXEMPT_ACTORS = frozenset({"manual", "cli", "operator"})
+
+
+def _work_already_landed(task_id: str):
+    """``(True|None|False, detail)`` — is this task's work on the default branch?
+
+    ``True``  the id is on the branch (merge_ref or subject evidence).
+    ``None``  the check could not answer — treated the SAME as True by the
+              un-complete guard, because a demotion that cannot be justified
+              destroys a record, which is the worse of the two errors
+              (kpr-dup-04's rule, applied at the seam).
+    ``False`` the work is genuinely not there; a rollback is legitimate.
+
+    Never raises: an exception is an unanswerable check, not a licence to
+    un-complete.
+    """
+    try:
+        report = (_landed_reports([task_id]) or {}).get(task_id) or {}
+    except Exception as exc:  # noqa: BLE001 — must never break a status write
+        return None, f"landed check raised ({exc}) — refusing to un-complete"
+    if not report.get("checked"):
+        return None, (
+            "landed check could not verify whether the work is on the default "
+            f"branch ({report.get('reason') or 'no reason given'}) — refusing "
+            "to un-complete"
+        )
+    if report.get("landed"):
+        return True, (
+            "its work is already on the default branch "
+            f"({report.get('confidence') or 'unknown'} evidence)"
+        )
+    return False, "work is not on the default branch"
 
 
 def _detect_orphan_done_tasks() -> list[dict]:
