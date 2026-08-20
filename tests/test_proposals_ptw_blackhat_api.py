@@ -84,14 +84,47 @@ def db(tmp_path, monkeypatch):
     return db_file
 
 
-@pytest.fixture()
-def app(db):
+#: The write routes carry ``@require_role("admin", "capture_mgr", "pm")``, which
+#: reads ``g.current_user`` and 401s when it is absent. This fixture supplies it
+#: the way every other authed blueprint test in the tree does (see
+#: ``tests/cortex/test_rest_api.py::make_client``).
+#:
+#: WHY THIS WAS MISSING (rem-hyg-10). Two PRs landed the same evening on
+#: PARALLEL branches: 90d7b0ecf added RBAC to the proposals write endpoints at
+#: 19:53, and 146cbb77d added this file at 20:56 against a tree that did not yet
+#: have it. Each was green on its own branch and they were jointly broken on
+#: merge — a semantic merge conflict no textual check can see. Ten of the twenty
+#: tests here have returned 401 ever since, and nobody noticed because the file
+#: sits in ``args/ci_test_backlog.txt`` and CI has never run it.
+AUTHED_USER = {"id": "u-test", "role": "capture_mgr", "tenant_id": "t-test"}
+
+
+def _make_app(db, user=AUTHED_USER):
     from tools.dashboard.api.proposals import proposals_api
 
     app = Flask(__name__)
     app.config["TESTING"] = True
     app.register_blueprint(proposals_api)
+
+    @app.before_request
+    def _simulate_auth():
+        if user is not None:
+            g.current_user = dict(user)
+        # user=None: leave g.current_user unset, i.e. an anonymous caller
+
     return app
+
+
+@pytest.fixture()
+def app(db):
+    """An authenticated caller holding a role the write routes accept."""
+    return _make_app(db)
+
+
+@pytest.fixture()
+def anon_app(db):
+    """An ANONYMOUS caller — used to prove the guard still refuses."""
+    return _make_app(db, user=None)
 
 
 def _conn(db_file):
@@ -388,3 +421,51 @@ class TestPtwPriceMasking:
             result = _mask_ptw_sensitive(row)
             assert result["price_estimate_low"] == 100.0
             assert "price_estimate_low_masked" not in result
+
+
+# ── The RBAC guard itself (rem-hyg-10) ───────────────────────────────────
+
+
+#: Every write route on this workspace, with a minimal valid body. Adding a
+#: write route without adding it here is the gap that let the 401s sit unseen.
+_WRITE_ROUTES = [
+    ("post", "/api/proposals/opportunities/opp-1/ptw/vendor-profile", {"vendor_name": "V"}),
+    ("post", "/api/proposals/opportunities/opp-1/ptw/bid-score", {}),
+    ("post", "/api/proposals/opportunities/opp-1/ptw/blackhat", {"competitor_name": "C"}),
+]
+
+
+class TestWriteRoutesRequireARole:
+    """The 401s were a real guard doing its job against a test that never
+    authenticated — so the fix is to authenticate, NOT to relax the routes.
+
+    These assert the guard is still there. Without them, someone "fixing" a
+    future 401 by deleting the decorator would turn every one of the twenty
+    tests above green while opening the endpoints to anonymous callers.
+    """
+
+    @pytest.mark.parametrize(("method", "path", "body"), _WRITE_ROUTES)
+    def test_an_anonymous_caller_is_refused(self, anon_app, method, path, body):
+        with anon_app.test_client() as client:
+            resp = getattr(client, method)(path, json=body)
+        assert resp.status_code == 401, (
+            f"{path} answered {resp.status_code} to an anonymous caller — the "
+            "@require_role guard is gone"
+        )
+
+    @pytest.mark.parametrize(("method", "path", "body"), _WRITE_ROUTES)
+    def test_a_wrong_role_is_refused(self, db, method, path, body):
+        """403, not 401: authenticated but not permitted. The two are different
+        answers and collapsing them hides which one is failing."""
+        app = _make_app(db, user={"id": "u-viewer", "role": "viewer"})
+        with app.test_client() as client:
+            resp = getattr(client, method)(path, json=body)
+        assert resp.status_code == 403, f"{path} let role=viewer through"
+
+    def test_a_read_route_stays_open_to_an_anonymous_caller(self, anon_app):
+        """The GET routes carry no decorator and the ten passing tests above
+        depend on that. Pinning it so a blanket `@require_role` sweep is a
+        deliberate decision rather than a silent one."""
+        with anon_app.test_client() as client:
+            resp = client.get("/api/proposals/opportunities/opp-1/ptw/blackhat")
+        assert resp.status_code == 200
