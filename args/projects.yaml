@@ -4995,6 +4995,9 @@ projects:
   - key: verify
     title: IV&V Regression Suite — E2E + health + pytest
     priority: critical
+  - key: fail
+    title: FAIL - QA-detected failures raised as tasks (qa-fail-*)
+    priority: medium
 - key: zig
   name: NSA ZIG Full Implementation — Zero Trust Implementation Guide
   description: Incorporate all 7 NSA ZIG pillars (published January 2026), 42 target-level
@@ -7958,6 +7961,9 @@ projects:
     priority: medium
   - key: doc
     title: DOC - Chat extension and design-rule documentation
+    priority: medium
+  - key: park
+    title: PARK - approval parking / HITL gate atomicity
     priority: medium
 - key: alrt
   name: 'ALRT - Firing-alerts panel: make a HITL alert say what it needs'
