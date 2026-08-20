@@ -81,6 +81,47 @@ _MEMO_MAX_ENTRIES = 64
 _MEMO_TTL_ENV = "CORTEX_METRICS_MEMO_TTL_SECONDS"
 
 
+#: The three cost bases a governed call can have. They partition the rows the
+#: detail read covered, so a row lands in exactly one.
+COST_BILLED        = "billed_calls"          # cost or tokens actually recorded
+COST_DETERMINISTIC = "deterministic_calls"   # no model call — free BY CONSTRUCTION
+COST_UNCOSTED      = "uncosted_calls"        # no provider, no tokens — never instrumented
+
+
+def classify_cost_basis(cost: float, provider: str,
+                        input_tokens: int, output_tokens: int) -> str:
+    """WHICH KIND OF ZERO is this row? (ctx-obs-03)
+
+    ``cortex_audit`` has no cost COLUMN by design; the figure comes out of
+    ``gates_json``, so an UN-ENRICHED row and a genuinely free one are
+    indistinguishable unless they are counted apart. Measured over 7 days on the
+    live board: 142 rows, every one ``cost_usd=0.0`` with 0 tokens —
+
+        11   provider='deterministic'   no model call happened AT ALL (TRUST
+                                        rule 1 has packs decide without an LLM),
+                                        so $0.00 is CORRECT and says something:
+                                        structurally unbillable.
+        131  no provider, no tokens     NOT a spend of zero. No billing
+                                        instrumentation ever ran on the row.
+
+    One ``$0.0000`` summed across both says "governance is free", when the
+    honest answer is "11 were free by construction and 131 were never costed".
+    The same reasoning cch-prov-03 applied to a local provider's ``usd_saved``,
+    which is ``None`` rather than ``0.00`` for exactly this reason.
+
+    A priced-at-zero call that DID record tokens counts as billed: the
+    accounting ran and produced zero, which is a measurement, unlike a row
+    nothing ever looked at.
+    """
+    if cost > 0:
+        return COST_BILLED
+    if str(provider or "").strip().lower() == "deterministic":
+        return COST_DETERMINISTIC
+    if input_tokens or output_tokens:
+        return COST_BILLED
+    return COST_UNCOSTED
+
+
 def _empty(window_hours: int, *, status: str = "unavailable") -> dict:
     """Skeleton result.
 
@@ -104,6 +145,24 @@ def _empty(window_hours: int, *, status: str = "unavailable") -> dict:
             "calls": 0, "blocked": 0, "block_rate_pct": 0.0,
             "redactions": 0, "cache_hits": 0,
             "cost_usd": 0.0, "avg_latency_ms": 0.0,
+            # WHY the spend figure is what it is (ctx-obs-03).
+            #
+            # These three partition the rows the DETAIL read covered, NOT
+            # `calls` — `calls` is an exact SQL count over the whole window
+            # while cost comes from the bounded gates_json scan, so the three
+            # sum to `detail.rows_scanned` and fall short of `calls` whenever
+            # `detail.truncated` is set. That is the same caveat the existing
+            # cost figure already carries; it is stated here because three
+            # counts that LOOK like a partition invite being summed as one.
+            #
+            # `cost_usd_measurable` is what a renderer must consult before
+            # printing a dollar amount: False means NOT ONE scanned call
+            # carried billing instrumentation, so $0.0000 would be a
+            # fabrication rather than a measurement.
+            "billed_calls": 0,          # cost or tokens actually recorded
+            "deterministic_calls": 0,   # no model call happened — free BY CONSTRUCTION
+            "uncosted_calls": 0,        # no provider, no tokens — never instrumented
+            "cost_usd_measurable": False,
             "input_tokens": 0, "output_tokens": 0, "total_tokens": 0,
             # Chain cost (ctx-obs-02). avg_latency_ms above is the LLM call
             # alone; these three are the governed call around it, and
@@ -381,12 +440,16 @@ def _aggregate(rows, window_hours: int, counts=None, detail_limit: int | None = 
         in_tok = int(gj.get("input_tokens") or 0)
         out_tok = int(gj.get("output_tokens") or 0)
         model = gj.get("model") or "(unknown)"
+        # Read for the cost-attribution split below, NOT for grouping.
+        provider = gj.get("provider") or ""
 
         summ["calls"] += 1
         if blocked:
             summ["blocked"] += 1
         summ["redactions"] += redactions
         summ["cost_usd"] += cost
+
+        summ[classify_cost_basis(cost, provider, in_tok, out_tok)] += 1
         summ["input_tokens"] += in_tok
         summ["output_tokens"] += out_tok
         if cache_hit:
@@ -449,6 +512,15 @@ def _aggregate(rows, window_hours: int, counts=None, detail_limit: int | None = 
         m["total_tokens"] += in_tok + out_tok
 
     summ["cost_usd"] = round(summ["cost_usd"], 6)
+    # A dollar figure is only a MEASUREMENT if something in the window was
+    # actually costed. `deterministic` calls are free by construction and say so
+    # separately; a window of nothing but UNCOSTED rows has no spend to report,
+    # and printing $0.0000 over it claims a measurement that was never taken.
+    # `cost_usd` itself is left as the arithmetic sum so an existing caller is
+    # not silently handed None — the flag is what a renderer consults.
+    summ["cost_usd_measurable"] = bool(
+        summ["billed_calls"] or summ["deterministic_calls"]
+    )
     summ["total_tokens"] = summ["input_tokens"] + summ["output_tokens"]
     summ["avg_latency_ms"] = round(total_latency / latency_n, 1) if latency_n else 0.0
     summ["block_rate_pct"] = (

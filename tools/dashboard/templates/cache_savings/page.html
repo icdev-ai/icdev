@@ -34,11 +34,20 @@
   <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px,1fr)); gap:16px; margin-bottom:24px;">
 
     <div class="card" style="padding:18px; text-align:center;">
+      {# None means the cache was never ASKED in the window — there is no rate.
+         Rendering 0% there says the cache failed every request it was given,
+         which is the opposite of what happened (cch-obs-03). #}
+      {% if stats.summary.hit_rate_pct is none %}
+      <div style="font-size:28px; font-weight:700; color:var(--text-dim);">&mdash;</div>
+      <div style="font-size:12px; color:var(--text-dim); margin-top:4px;">Cache Hit Rate</div>
+      <div style="font-size:11px; color:var(--text-dim); margin-top:6px;">not measured &mdash; no requests in window</div>
+      {% else %}
       <div style="font-size:28px; font-weight:700; color:#22c55e;">{{ stats.summary.hit_rate_pct|round(1) }}%</div>
       <div style="font-size:12px; color:var(--text-dim); margin-top:4px;">Cache Hit Rate</div>
       <div style="height:4px; background:var(--border); border-radius:2px; margin-top:8px;">
         <div style="height:4px; background:#22c55e; border-radius:2px; width:{{ [stats.summary.hit_rate_pct, 100]|min }}%;"></div>
       </div>
+      {% endif %}
     </div>
 
     <div class="card" style="padding:18px; text-align:center;">
@@ -88,9 +97,13 @@
             <td style="padding:8px 14px; color:var(--text-primary); font-family:monospace; font-size:12px;">{{ fn.function }}</td>
             <td style="padding:8px 14px; text-align:right; color:var(--text-dim);">{{ "{:,}".format(fn.total_entries) }}</td>
             <td style="padding:8px 14px; text-align:right;">
+              {% if fn.hit_rate_pct is none %}
+              <span style="color:var(--text-dim);" title="never requested in this window — no rate to report">&mdash;</span>
+              {% else %}
               <span style="color:{% if fn.hit_rate_pct >= 50 %}#22c55e{% elif fn.hit_rate_pct >= 20 %}#f59e0b{% else %}#ef4444{% endif %}; font-weight:600;">
                 {{ fn.hit_rate_pct }}%
               </span>
+              {% endif %}
             </td>
             <td style="padding:8px 14px; text-align:right; color:var(--text-dim);">{{ "{:,}".format(fn.avoided_calls) }}</td>
             <td style="padding:8px 14px; text-align:right; color:#818cf8;">{{ "{:,}".format(fn.cache_read_tokens) }}</td>

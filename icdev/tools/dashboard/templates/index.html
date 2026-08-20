@@ -1109,7 +1109,14 @@ document.addEventListener('DOMContentLoaded', function() {
             + chip(bp.no_cache_hits, 'zero', '#ef4444')
             + chip(bp.unreported, 'unreported', 'var(--text-dim)')
             + chip(bp.no_data, 'no data', 'var(--text-dim)')
-            + '</div>' + top + '</div>';
+            + '</div>' + top
+            // Name what the cap dropped rather than letting 18 counted / 3 shown
+            // read as the whole list (cch-obs-03).
+            + ((bp.total && bp.shown && bp.total > bp.shown)
+                ? '<div style="font-size:10px;color:var(--text-dim);margin-top:3px;">'
+                  + '+' + (bp.total - bp.shown) + ' more not shown</div>'
+                : '')
+            + '</div>';
     }
 
     function renderCacheTile() {
@@ -1132,18 +1139,37 @@ document.addEventListener('DOMContentLoaded', function() {
             // cumulative dollars-saved. It is LOGGED now, so a cold reading
             // means genuinely new or expired rather than "we restarted".
             var cold = (d.state === 'cold' || d.state === 'expired');
-            var hitColor = cold ? 'var(--text-dim,#6c6c80)'
+            // null means the cache was never ASKED in the window, so there is no
+            // rate. `(x || 0).toFixed(1)` turned that into a bold "0.0%", which
+            // says the cache failed every request it was given — the opposite of
+            // what happened (cch-obs-03).
+            var rateMeasured = (d.hit_rate_pct !== null && d.hit_rate_pct !== undefined);
+            var hitText = rateMeasured ? d.hit_rate_pct.toFixed(1) + '%' : '—';
+            var hitColor = (cold || !rateMeasured) ? 'var(--text-dim,#6c6c80)'
                 : (d.hit_rate_pct >= 50) ? '#22c55e'
                 : (d.hit_rate_pct >= 20) ? '#f59e0b' : '#ef4444';
+            // "Entries" was the LIVE (unexpired) count while state_detail said
+            // "every stored entry is past its TTL" — so the card showed 0 beside
+            // a sentence about entries that do exist (11 of them, live-measured)
+            // and were rendered nowhere. Show both, so the sentence has a
+            // referent on screen (cch-obs-03).
+            var liveEntries = d.total_entries || 0;
+            var storedEntries = (d.stored_entries === null || d.stored_entries === undefined)
+                ? null : d.stored_entries;
+            var showStored = (storedEntries !== null && storedEntries > liveEntries);
+            var entriesText = showStored
+                ? liveEntries.toLocaleString() + ' / ' + storedEntries.toLocaleString()
+                : liveEntries.toLocaleString();
+            var entriesLabel = showStored ? 'Entries (live / stored)' : 'Entries';
             if (cold) { statusColor = '#f59e0b'; statusLabel = (d.state === 'cold') ? 'Enabled · cold' : 'Enabled · warming'; }
             el.innerHTML = '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">'
                 + '<span style="width:8px;height:8px;border-radius:50%;background:' + statusColor + ';display:inline-block;flex-shrink:0;"></span>'
                 + '<span style="font-size:11px;color:var(--text-dim);">' + statusLabel + ' &middot; backend: ' + (d.backend || 'unknown') + '</span>'
                 + '</div>'
                 + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">'
-                + '<div><div style="font-size:20px;font-weight:700;color:' + hitColor + ';">' + (d.hit_rate_pct || 0).toFixed(1) + '%</div><div style="font-size:10px;color:var(--text-dim);">Hit Rate</div></div>'
+                + '<div><div style="font-size:20px;font-weight:700;color:' + hitColor + ';">' + hitText + '</div><div style="font-size:10px;color:var(--text-dim);">' + (rateMeasured ? 'Hit Rate' : 'Hit Rate (not measured)') + '</div></div>'
                 + '<div><div style="font-size:20px;font-weight:700;color:#f59e0b;">$' + (d.cost_usd_saved || 0).toFixed(4) + '</div><div style="font-size:10px;color:var(--text-dim);">Saved (USD)</div></div>'
-                + '<div><div style="font-size:16px;font-weight:600;color:var(--accent-blue-light);">' + (d.total_entries || 0).toLocaleString() + '</div><div style="font-size:10px;color:var(--text-dim);">Entries</div></div>'
+                + '<div><div style="font-size:16px;font-weight:600;color:var(--accent-blue-light);">' + entriesText + '</div><div style="font-size:10px;color:var(--text-dim);">' + entriesLabel + '</div></div>'
                 + '<div><div style="font-size:16px;font-weight:600;color:#818cf8;">' + (d.tokens_saved || 0).toLocaleString() + '</div><div style="font-size:10px;color:var(--text-dim);">Read Tokens</div></div>'
                 + '</div>'
                 + (d.state_detail
@@ -1203,10 +1229,25 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             // Governance-first: block rate is the headline health signal.
             var blockColor = (d.block_rate_pct <= 1) ? '#22c55e' : (d.block_rate_pct <= 10) ? '#f59e0b' : '#ef4444';
+            // $0.0000 was two different answers merged (ctx-obs-03): a call that
+            // was free BY CONSTRUCTION (a deterministic pack verdict — no model
+            // was called at all) and a call nothing ever costed. Measured over
+            // 7 days: 11 of the first, 131 of the second, 0 billed. One figure
+            // over both reads as "governance is free"; it is not a measurement
+            // of 142 calls, it is the spend of the 11 that were costed.
+            var costed = (d.billed_calls || 0) + (d.deterministic_calls || 0);
+            var uncosted = d.uncosted_calls || 0;
+            var spendText = d.cost_usd_measurable
+                ? '$' + (d.cost_usd || 0).toFixed(4)
+                : '—';
+            var spendLabel = d.cost_usd_measurable
+                ? (uncosted > 0 ? 'Spend (' + costed + ' of ' + (costed + uncosted) + ' costed)'
+                                : 'Spend (USD)')
+                : 'Spend (not instrumented)';
             el.innerHTML = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">'
                 + '<div><div style="font-size:20px;font-weight:700;color:var(--text-primary);">' + (d.calls || 0).toLocaleString() + '</div><div style="font-size:10px;color:var(--text-dim);">Calls (24h)</div></div>'
                 + '<div><div style="font-size:20px;font-weight:700;color:' + blockColor + ';">' + (d.block_rate_pct || 0).toFixed(1) + '%</div><div style="font-size:10px;color:var(--text-dim);">Block Rate</div></div>'
-                + '<div><div style="font-size:16px;font-weight:600;color:#f59e0b;">$' + (d.cost_usd || 0).toFixed(4) + '</div><div style="font-size:10px;color:var(--text-dim);">Spend (USD)</div></div>'
+                + '<div><div style="font-size:16px;font-weight:600;color:' + (d.cost_usd_measurable ? '#f59e0b' : 'var(--text-dim)') + ';">' + spendText + '</div><div style="font-size:10px;color:var(--text-dim);">' + spendLabel + '</div></div>'
                 + '<div><div style="font-size:16px;font-weight:600;color:var(--accent-blue-light);">' + (d.redactions || 0).toLocaleString() + '</div><div style="font-size:10px;color:var(--text-dim);">Redactions</div></div>'
                 + '</div>'
                 + '<div style="font-size:10px;color:var(--text-dim);margin-bottom:6px;">' + (d.blocked || 0) + ' blocked &middot; ' + (d.cache_hits || 0) + ' facade cache hits</div>'

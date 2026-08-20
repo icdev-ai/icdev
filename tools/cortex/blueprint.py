@@ -214,6 +214,16 @@ def api_metrics_tile():
         "block_rate_pct": s["block_rate_pct"],
         "redactions": s["redactions"],
         "cost_usd": s["cost_usd"],
+        # WHAT THE DOLLAR FIGURE COVERS (ctx-obs-03). $0.0000 is two different
+        # answers merged: a call that was free BY CONSTRUCTION (a deterministic
+        # pack verdict — no model was called, TRUST rule 1) and a call nothing
+        # ever costed. Measured over 7 days on the live board: 11 of the former,
+        # 131 of the latter, 0 billed. Rendering one figure over both says
+        # "governance is free"; these let the tile say which it is.
+        "cost_usd_measurable": s.get("cost_usd_measurable", False),
+        "billed_calls": s.get("billed_calls", 0),
+        "deterministic_calls": s.get("deterministic_calls", 0),
+        "uncosted_calls": s.get("uncosted_calls", 0),
         "cache_hits": s["cache_hits"],
         # calls/blocked/block_rate are exact over the whole window; cost is
         # derived from the bounded gates_json detail read, so say when that read
