@@ -290,7 +290,7 @@ def test_dic_search_engine_entry_matches_only_the_two_mirrored_copies():
     ],
 )
 def test_suppression_is_separator_agnostic_on_every_host(recorded):
-    """A Windows-recorded finding must be suppressed by a Linux scanner too.
+    r"""A Windows-recorded finding must be suppressed by a Linux scanner too.
 
     `_is_safe_dynamic_import` normalised the observed path with
     `Path(file_path).as_posix()`, which is HOST-DEPENDENT in exactly the way
