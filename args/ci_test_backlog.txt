@@ -1425,7 +1425,6 @@ tests/test_proposals_detail_action_bar.py
 tests/test_proposals_detail_ai_drafts_tab.py
 tests/test_proposals_iqe_query_api.py
 tests/test_proposals_list_cui_banner.py
-tests/test_proposals_ptw_blackhat_api.py
 tests/test_prov_recorder.py
 tests/test_provision_db.py
 tests/test_provision_dev_certs.py
