@@ -160,7 +160,6 @@ tests/docmod/test_modernization_ui.py
 tests/docmod/test_ops_ux.py
 tests/docmod/test_pack_generator.py
 tests/docmod/test_pg_fixes_and_flow.py
-tests/docmod/test_regen_quality_gate.py
 tests/docmod/test_reverse_bridge.py
 tests/docmod/test_sop_workflows_pack.py
 tests/docmod/test_standards_catalog.py

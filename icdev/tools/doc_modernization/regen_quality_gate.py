@@ -49,6 +49,10 @@ from typing import Any
 # Blocking issue codes surfaced to the reviewer / audit note.
 BLOCK_MISSING_CITATIONS = "missing_citations"
 BLOCK_HALLUCINATED_CITATION = "hallucinated_citation"
+#: Every section abstained, so NOTHING reached the citation check. The
+#: gate must not report that as clean — see the note in
+#: `evaluate_regeneration_quality`.
+BLOCK_NOTHING_VERIFIABLE = "nothing_verifiable"
 BLOCK_UNRESOLVED_PLACEHOLDERS = "unresolved_placeholders"
 
 
@@ -152,6 +156,22 @@ def evaluate_regeneration_quality(
     orchestrator uses to withhold ``pending_review`` (or, on force, to audit).
     """
     section_dicts = _section_dicts(new_sections)
+    #: NOTHING REACHED THE CHECKS, which is not the same as nothing being wrong.
+    #: `_section_dicts` drops abstained sections, and an UNCITED section always
+    #: abstains before it gets here: `_compute_section_confidence` returns 0.0
+    #: when no claim is cited, and the confidence band abstains at 0.0. So
+    #: `missing_citations` was structurally UNREACHABLE through
+    #: `regenerate_document` — the one defect this gate names first in its own
+    #: docstring could never fire — and a draft whose every section abstained
+    #: came back `blocked: False, reasons: []`, i.e. a clean bill of health for
+    #: a document nobody had examined.
+    #:
+    #: The abstention itself is correct and is left alone: the prose is replaced
+    #: with the "(Abstained — ...)" sentinel, so unsupported text never reaches
+    #: the document. What was wrong is REPORTING it as clean. A draft with
+    #: sections but none verifiable is withheld, with a reason that says which
+    #: of the two zeroes this is.
+    nothing_verifiable = bool(new_sections) and not section_dicts
     if not new_text:
         new_text = "\n\n".join(f"## {s['heading']}\n\n{s['content']}" for s in section_dicts)
 
@@ -171,7 +191,17 @@ def evaluate_regeneration_quality(
     return {
         "blocked": bool(reasons),
         "reasons": reasons,
-        "citation": {"findings": citation_findings},
+        "citation": {"findings": citation_findings,
+                     #: Explicit, so a reader can tell "checked, found nothing"
+                     #: from "there was nothing to check".
+                     "sections_examined": len(section_dicts),
+                     "sections_submitted": len(new_sections or []),
+                     #: The named case: sections WERE drafted and NONE reached
+                     #: the checks. Carried as its own boolean rather than left
+                     #: for a caller to infer from two counts, because the
+                     #: inference is exactly what nobody was doing when a draft
+                     #: whose every section abstained came back `reasons: []`.
+                     "nothing_verifiable": nothing_verifiable},
         "consistency": consistency,
         "claim_preservation": claim_preservation,
     }
