@@ -202,12 +202,33 @@ _DECISION_ROUTES = {
 }
 
 
+#: Routes that MATCH the keyword scan but DECIDE NOTHING, each with the reason
+#: it is not a decision. Enumerated BY NAME rather than matched by pattern, for
+#: the reason every census in this repo is enumerated: a pattern quietly widens,
+#: and the next route that happens to contain the word would inherit the
+#: exemption without anyone reading it.
+#:
+#: This does NOT weaken the guard. A new approve/reject/accept route still fails
+#: unless someone adds it here, and adding a route that takes a disposition to a
+#: list headed "decides nothing" is a claim a reviewer can check in one look.
+_NON_DECISION_KEYWORD_ROUTES = {
+    # cef-ui-01. Here the verb means `cortex.resolve` -- the governed EVIDENCE
+    # seam -- not a HITL disposition. The handler runs a retrieval and renders
+    # verdict, citations and SME advisory; it takes no disposition, writes no
+    # dic_suggestion_decisions row and mutates no document. The collision is on
+    # the WORD: cef-ui-03's own decision route ends in the same verb, where it
+    # means "dispose of this finding".
+    f"{P}/api/docdrift/resolve",
+    f"{P}/api/docdrift/resolve-batch",
+}
+
+
 def test_no_new_approval_path_is_introduced(client):
     app = client.application
     found = {
         str(rule) for rule in app.url_map.iter_rules()
         if any(k in str(rule) for k in ("approve", "reject", "resolve", "accept", "decide"))
-    }
+    } - _NON_DECISION_KEYWORD_ROUTES
     assert found == _DECISION_ROUTES, (
         "the decision-route surface changed - cef-ui-03 requires approve/reject to "
         f"flow through the EXISTING routes.\nadded: {sorted(found - _DECISION_ROUTES)}\n"
@@ -420,3 +441,17 @@ def test_ssp_fragment_review_audit_actually_writes_a_row(db):
     )
     assert entry_id != -1
     assert _audit_rows("ssp_fragment.")
+
+
+def test_every_non_decision_exemption_still_exists(client):
+    """An exemption for a route that no longer exists is stale, and a stale
+    exemption is how a list like this rots into a blanket."""
+    live = {str(rule) for rule in client.application.url_map.iter_rules()}
+    missing = sorted(_NON_DECISION_KEYWORD_ROUTES - live)
+    assert not missing, f"exempted route(s) no longer exist: {missing}"
+
+
+def test_no_exemption_overlaps_the_decision_surface():
+    """The two sets must stay disjoint. A route in both would be exempted from
+    the guard that is supposed to freeze it."""
+    assert not (_NON_DECISION_KEYWORD_ROUTES & _DECISION_ROUTES)
