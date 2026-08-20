@@ -67,6 +67,14 @@ SCHEMA = [
     """CREATE TABLE runtime_invocations (
         id TEXT PRIMARY KEY, surface TEXT NOT NULL, name TEXT NOT NULL,
         started_at TEXT NOT NULL, status TEXT, error_class TEXT)""",
+    # ctx-govern-03's append-only governed-call ledger. cef-ci-01 reads it from
+    # both ends: `function` for the cortex_facade class, and the free-form
+    # `gates_json` blob (parsed in Python, never with dialect JSON SQL) for the
+    # rungs a call actually reached.
+    """CREATE TABLE cortex_audit (
+        id TEXT PRIMARY KEY, session_id TEXT, tenant_id TEXT, classification TEXT,
+        function TEXT, agent_id TEXT, user_id TEXT, gates_json TEXT,
+        outcome TEXT, blocked INTEGER, provenance_id TEXT, created_at TEXT)""",
 ]
 
 CONFIG = {
@@ -403,6 +411,11 @@ def test_report_uses_only_existing_telemetry_tables(conn_factory):
         # migration 341 — the runtime telemetry table, four surfaces older than
         # the extension one hcx-live-02 records dispatches on.
         "runtime_invocations",
+        # ctx-govern-03's governed-call ledger, which cef-ci-01 reads for the
+        # Cortex facade and backend classes. Existing telemetry, not new: the
+        # rung detail rides in the same free-form gates_json blob ctx-obs-02's
+        # timings and trust-kg-03's kg_grounding already use.
+        "cortex_audit",
     }
     report = capcon.collect(conn=conn_factory(), config=CONFIG)
     for cls in report["classes"]:
