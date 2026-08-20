@@ -24,6 +24,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          # No pip caching existed anywhere in this workflow, so every
+          # job paid the full install. (crx-test-05)
+          cache: pip
+          cache-dependency-path: requirements.txt
       - run: pip install ruff
       # NO --fix. An auto-fix step here rewrites the files IN THE RUNNER, so the
       # lint below then passes against a tree nobody committed: the gate goes
@@ -69,6 +73,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          # No pip caching existed anywhere in this workflow, so every
+          # job paid the full install. (crx-test-05)
+          cache: pip
+          cache-dependency-path: requirements.txt
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
@@ -500,6 +508,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          # No pip caching existed anywhere in this workflow, so every
+          # job paid the full install. (crx-test-05)
+          cache: pip
+          cache-dependency-path: requirements.txt
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
@@ -558,6 +570,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          # No pip caching existed anywhere in this workflow, so every
+          # job paid the full install. (crx-test-05)
+          cache: pip
+          cache-dependency-path: requirements.txt
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
@@ -622,6 +638,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          # No pip caching existed anywhere in this workflow, so every
+          # job paid the full install. (crx-test-05)
+          cache: pip
+          cache-dependency-path: requirements.txt
       - run: pip install bandit pip-audit
       - name: SAST (bandit) — 0 high+high findings
         run: bandit -r tools/ -q --severity-level high --confidence-level high
@@ -643,6 +663,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          # No pip caching existed anywhere in this workflow, so every
+          # job paid the full install. (crx-test-05)
+          cache: pip
+          cache-dependency-path: requirements.txt
       - name: Install dependencies
         run: pip install -r requirements.txt
 
@@ -803,6 +827,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          # No pip caching existed anywhere in this workflow, so every
+          # job paid the full install. (crx-test-05)
+          cache: pip
+          cache-dependency-path: requirements.txt
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
