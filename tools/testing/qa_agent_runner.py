@@ -14,16 +14,25 @@ if str(_ICDEV_ROOT) not in sys.path:
 
 # Backward-compat shim — canonical module is icdev/tools/testing/qa_agent_runner.py
 from icdev.tools.testing.qa_agent_runner import (  # noqa: F401
+    STATUS_FAILED,
+    STATUS_INCOMPLETE,
+    STATUS_NO_TESTS,
+    STATUS_PASSED,
     TestFailure,
     QARunResult,
+    batch_specs,
+    build_playwright_cmd,
+    derive_status,
     discover_coverage_gaps,
     generate_spec_stub,
+    resolve_spec_files,
     run_e2e_suite,
     parse_playwright_json,
     file_failure_tasks,
     record_run,
     record_failure,
     get_run_status,
+    write_run_report,
     main,
 )
 

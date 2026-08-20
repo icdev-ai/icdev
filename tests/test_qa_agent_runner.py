@@ -7,6 +7,8 @@ installation or a live PostgreSQL backend.
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -17,14 +19,25 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from icdev.tools.testing.qa_agent_runner import (
+    STATUS_FAILED,
+    STATUS_INCOMPLETE,
+    STATUS_NO_TESTS,
+    STATUS_PASSED,
     QARunResult,
     TestFailure,
+    _DEADLINE_SECONDS,
+    _tally,
+    batch_specs,
+    build_playwright_cmd,
+    derive_status,
     discover_coverage_gaps,
     file_failure_tasks,
     generate_spec_stub,
     parse_playwright_json,
     record_failure,
     record_run,
+    resolve_spec_files,
+    run_e2e_suite,
 )
 
 
@@ -252,6 +265,307 @@ class TestFileFailureTasks(unittest.TestCase):
                 [TestFailure(test_name="X", error_message="fail")], "run-x"
             )
         assert result == []
+
+    def test_task_type_is_accepted_by_the_real_validator(self):
+        """The filed task_type must be one create_tasks will actually accept.
+
+        It hardcoded "bug", which is not in VALID_TASK_TYPES — create_tasks
+        raises before any insert, so file_failure_tasks had never filed a task.
+        Asserted against the live constant, not the literal "fix", so any other
+        rejected value fails here too.
+        """
+        from icdev.tools.kanban.task_factory import VALID_TASK_TYPES
+
+        failures = [TestFailure(test_name="auth > login", error_message="fail")]
+        with patch("tools.kanban.task_factory.create_tasks", return_value=[]) as mock_create:
+            file_failure_tasks(failures, "run-001")
+        spec = mock_create.call_args[0][0][0]
+        assert spec["task_type"] in VALID_TASK_TYPES
+
+    def test_no_failure_spec_uses_the_rejected_bug_type(self):
+        failures = [
+            TestFailure(test_name="a", error_message="x"),
+            TestFailure(test_name="b", error_message="y", severity="critical"),
+        ]
+        with patch("tools.kanban.task_factory.create_tasks", return_value=[]) as mock_create:
+            file_failure_tasks(failures, "run-002")
+        specs = mock_create.call_args[0][0]
+        assert all(s["task_type"] != "bug" for s in specs)
+
+
+# ---------------------------------------------------------------------------
+# build_playwright_cmd — the canvas filter could not run at all
+# ---------------------------------------------------------------------------
+
+class TestBuildPlaywrightCmd(unittest.TestCase):
+    def test_project_flag_is_a_single_token(self):
+        """`--project chromium <spec>` makes Playwright read the spec path as a
+        second PROJECT name and die with `Project(s) "..." not found`."""
+        cmd = build_playwright_cmd("npx", ["tests/e2e/a.spec.ts"])
+        assert "--project=chromium" in cmd
+        assert "--project" not in cmd
+
+    def test_spec_files_follow_the_project_flag(self):
+        cmd = build_playwright_cmd("npx", ["tests/e2e/a.spec.ts", "tests/e2e/b.spec.ts"])
+        assert cmd[:4] == ["npx", "playwright", "test", "--project=chromium"]
+        assert cmd[4:] == ["tests/e2e/a.spec.ts", "tests/e2e/b.spec.ts"]
+
+    def test_does_not_override_the_configs_reporter(self):
+        """A CLI --reporter REPLACES playwright.config.ts's reporter list, which
+        is what writes the ICDEV_PW_RUN_TAG-suffixed json report we read back."""
+        cmd = build_playwright_cmd("npx", ["tests/e2e/a.spec.ts"])
+        assert "--reporter" not in cmd
+        assert not any(a.startswith("--reporter") for a in cmd)
+
+
+# ---------------------------------------------------------------------------
+# resolve_spec_files — a bare Playwright arg is a REGEX, not a path
+# ---------------------------------------------------------------------------
+
+class TestResolveSpecFiles(unittest.TestCase):
+    def test_paths_are_relative_and_forward_slashed(self):
+        """An absolute Windows path (backslashes, a drive colon) matches no test
+        file: Playwright exits "No tests found" and still writes a 0/0/0 report."""
+        specs = resolve_spec_files()
+        assert specs, "expected tests/e2e/*.spec.ts to exist in this checkout"
+        for path in specs:
+            assert not os.path.isabs(path), path
+            assert "\\" not in path, path
+            assert ":" not in path, path
+            assert path.startswith("tests/e2e/"), path
+
+    def test_canvas_filter_narrows_the_set(self):
+        every = resolve_spec_files()
+        filtered = resolve_spec_files("dashboard")
+        assert set(filtered).issubset(set(every))
+        assert all("dashboard" in p for p in filtered)
+
+    def test_unmatched_canvas_returns_empty(self):
+        assert resolve_spec_files("no-such-canvas-zzz") == []
+
+
+# ---------------------------------------------------------------------------
+# batch_specs
+# ---------------------------------------------------------------------------
+
+class TestBatchSpecs(unittest.TestCase):
+    def test_covers_every_spec_exactly_once(self):
+        specs = [f"tests/e2e/{i}.spec.ts" for i in range(13)]
+        batches = batch_specs(specs, 5)
+        assert [s for b in batches for s in b] == specs
+
+    def test_respects_batch_size(self):
+        batches = batch_specs([f"{i}" for i in range(13)], 5)
+        assert [len(b) for b in batches] == [5, 5, 3]
+
+    def test_empty_input_yields_no_batches(self):
+        assert batch_specs([], 5) == []
+
+    def test_zero_batch_size_does_not_loop_forever(self):
+        assert batch_specs(["a", "b"], 0) == [["a"], ["b"]]
+
+
+# ---------------------------------------------------------------------------
+# derive_status — a run that measured nothing is never `passed`
+# ---------------------------------------------------------------------------
+
+class TestDeriveStatus(unittest.TestCase):
+    def test_zero_test_report_is_not_passed(self):
+        """Playwright writes a 0/0/0 report when its path regex matched nothing.
+        Tallied as `passed`, that is indistinguishable from a green suite."""
+        result = QARunResult(spec_files_total=3, spec_files_run=["a", "b", "c"])
+        assert derive_status(result) == STATUS_NO_TESTS
+        assert derive_status(result) != STATUS_PASSED
+
+    def test_unreached_spec_files_make_the_run_incomplete(self):
+        result = QARunResult(total=10, passed=10, spec_files_not_run=["tests/e2e/z.spec.ts"])
+        assert derive_status(result) == STATUS_INCOMPLETE
+
+    def test_missing_report_makes_the_run_incomplete(self):
+        result = QARunResult(total=10, passed=10, spec_files_no_report=["tests/e2e/z.spec.ts"])
+        assert derive_status(result) == STATUS_INCOMPLETE
+
+    def test_failures_win_over_incompleteness(self):
+        result = QARunResult(total=10, passed=9, failed=1, spec_files_not_run=["x"])
+        assert derive_status(result) == STATUS_FAILED
+
+    def test_full_green_sweep_is_passed(self):
+        result = QARunResult(total=10, passed=10, spec_files_total=2, spec_files_run=["a", "b"])
+        assert derive_status(result) == STATUS_PASSED
+
+
+# ---------------------------------------------------------------------------
+# _tally — accumulates ACROSS batches
+# ---------------------------------------------------------------------------
+
+class TestTally(unittest.TestCase):
+    def test_accumulates_across_batches(self):
+        result = QARunResult()
+        _tally({"stats": {"expected": 3, "unexpected": 1, "skipped": 2}}, result)
+        _tally({"stats": {"expected": 5, "unexpected": 0, "skipped": 1}}, result)
+        assert result.total == 12
+        assert result.passed == 8
+        assert result.skipped == 3
+
+    def test_missing_stats_contribute_nothing(self):
+        result = QARunResult()
+        _tally({}, result)
+        assert (result.total, result.passed, result.skipped) == (0, 0, 0)
+
+
+# ---------------------------------------------------------------------------
+# run_e2e_suite — the deadline
+# ---------------------------------------------------------------------------
+
+class TestRunE2ESuiteDeadline(unittest.TestCase):
+    def test_default_deadline_exceeds_the_measured_suite_duration(self):
+        """playwright.config.ts records the full suite at 41.5m on one worker.
+        The old 1200s budget was under half of that, so --run ALWAYS timed out
+        and returned a single synthetic TestFailure(test_name="timeout")."""
+        measured_seconds = 41.5 * 60
+        assert _DEADLINE_SECONDS > measured_seconds
+
+    def test_no_matching_spec_is_no_tests_not_passed(self):
+        result = run_e2e_suite(canvas_filter="no-such-canvas-zzz")
+        assert result.status == STATUS_NO_TESTS
+        assert result.spec_files_total == 0
+
+    def test_deadline_names_every_spec_file_it_did_not_reach(self):
+        """A truncated sweep that reported only its successes reads as full
+        coverage. The unmeasured spec files must come back NAMED."""
+        specs = [f"tests/e2e/s{i}.spec.ts" for i in range(4)]
+        with (
+            patch("icdev.tools.testing.qa_agent_runner.resolve_spec_files", return_value=specs),
+            patch(
+                "icdev.tools.testing.qa_agent_runner.subprocess.run",
+                side_effect=subprocess.TimeoutExpired(cmd="npx", timeout=1),
+            ),
+        ):
+            result = run_e2e_suite(deadline_seconds=600, batch_size=2)
+        assert sorted(result.spec_files_not_run) == sorted(specs)
+        assert result.spec_files_run == []
+        assert result.status == STATUS_INCOMPLETE
+
+    def test_deadline_no_longer_collapses_to_one_synthetic_timeout_failure(self):
+        specs = [f"tests/e2e/s{i}.spec.ts" for i in range(4)]
+        with (
+            patch("icdev.tools.testing.qa_agent_runner.resolve_spec_files", return_value=specs),
+            patch(
+                "icdev.tools.testing.qa_agent_runner.subprocess.run",
+                side_effect=subprocess.TimeoutExpired(cmd="npx", timeout=1),
+            ),
+        ):
+            result = run_e2e_suite(deadline_seconds=600, batch_size=2)
+        assert [f.test_name for f in result.failures] != ["timeout"]
+
+    def test_finished_batches_survive_a_later_deadline_kill(self):
+        """The point of batching: a batch that completed keeps its real report
+        even though the sweep was cut short."""
+        specs = [f"tests/e2e/s{i}.spec.ts" for i in range(4)]
+        report = json.dumps({"stats": {"expected": 2, "unexpected": 0, "skipped": 0}, "suites": []})
+        good = MagicMock(returncode=0, stdout=report, stderr="")
+        calls = {"n": 0}
+
+        def _run(*_a, **_kw):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return good
+            raise subprocess.TimeoutExpired(cmd="npx", timeout=1)
+
+        with (
+            patch("icdev.tools.testing.qa_agent_runner.resolve_spec_files", return_value=specs),
+            patch("icdev.tools.testing.qa_agent_runner.subprocess.run", side_effect=_run),
+        ):
+            result = run_e2e_suite(deadline_seconds=600, batch_size=2)
+
+        assert result.spec_files_run == specs[:2]
+        assert result.spec_files_not_run == specs[2:]
+        assert result.total == 2 and result.passed == 2
+        assert result.status == STATUS_INCOMPLETE
+
+    def test_batch_producing_no_report_is_not_counted_as_coverage(self):
+        specs = ["tests/e2e/s0.spec.ts", "tests/e2e/s1.spec.ts"]
+        empty = MagicMock(returncode=1, stdout="", stderr="boom")
+        with (
+            patch("icdev.tools.testing.qa_agent_runner.resolve_spec_files", return_value=specs),
+            patch("icdev.tools.testing.qa_agent_runner.subprocess.run", return_value=empty),
+        ):
+            result = run_e2e_suite(deadline_seconds=600, batch_size=2)
+        assert result.spec_files_no_report == specs
+        assert result.spec_files_run == []
+        assert result.status == STATUS_INCOMPLETE
+
+    def test_zero_test_batch_carries_the_reason_it_ran_nothing(self):
+        """`no_tests` on its own is a shrug. A webServer that never came up and
+        an empty suite are different fixes, and the report says which."""
+        specs = ["tests/e2e/s0.spec.ts"]
+        report = json.dumps({
+            "stats": {"expected": 0, "unexpected": 0, "skipped": 0},
+            "errors": [{"message": "Error: Timed out waiting 60000ms from config.webServer."}],
+            "suites": [],
+        })
+        proc = MagicMock(returncode=1, stdout=report, stderr="")
+        with (
+            patch("icdev.tools.testing.qa_agent_runner.resolve_spec_files", return_value=specs),
+            patch("icdev.tools.testing.qa_agent_runner.subprocess.run", return_value=proc),
+        ):
+            result = run_e2e_suite(deadline_seconds=600, batch_size=1)
+        assert result.status == STATUS_NO_TESTS
+        assert any("webServer" in e for e in result.batches[0]["errors"])
+
+    def test_run_uses_the_single_token_project_flag(self):
+        specs = ["tests/e2e/s0.spec.ts"]
+        report = json.dumps({"stats": {"expected": 1, "unexpected": 0, "skipped": 0}, "suites": []})
+        proc = MagicMock(returncode=0, stdout=report, stderr="")
+        with (
+            patch("icdev.tools.testing.qa_agent_runner.resolve_spec_files", return_value=specs),
+            patch("icdev.tools.testing.qa_agent_runner.subprocess.run", return_value=proc) as run_mock,
+        ):
+            run_e2e_suite(deadline_seconds=600, batch_size=1)
+        argv = run_mock.call_args[0][0]
+        assert "--project=chromium" in argv
+        assert "--project" not in argv
+        assert argv[-1] == "tests/e2e/s0.spec.ts"
+
+
+# ---------------------------------------------------------------------------
+# CLI surface
+# ---------------------------------------------------------------------------
+
+class TestCLIFlags(unittest.TestCase):
+    def test_deadline_and_batch_size_are_settable(self):
+        from icdev.tools.testing.qa_agent_runner import main
+
+        captured = {}
+
+        def _fake(**kwargs):
+            captured.update(kwargs)
+            return QARunResult(run_id="qa-1", status=STATUS_PASSED)
+
+        argv = [
+            "qa_agent_runner.py", "--run",
+            "--deadline-seconds", "1800", "--batch-size", "3",
+        ]
+        with (
+            patch.object(sys, "argv", argv),
+            patch("icdev.tools.testing.qa_agent_runner.run_e2e_suite", side_effect=_fake),
+        ):
+            rc = main()
+        assert rc == 0
+        assert captured["deadline_seconds"] == 1800
+        assert captured["batch_size"] == 3
+
+    def test_no_tests_run_exits_nonzero(self):
+        from icdev.tools.testing.qa_agent_runner import main
+
+        with (
+            patch.object(sys, "argv", ["qa_agent_runner.py", "--run"]),
+            patch(
+                "icdev.tools.testing.qa_agent_runner.run_e2e_suite",
+                return_value=QARunResult(run_id="qa-1", status=STATUS_NO_TESTS),
+            ),
+        ):
+            assert main() == 1
 
 
 # ---------------------------------------------------------------------------
