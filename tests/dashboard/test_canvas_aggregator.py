@@ -386,22 +386,37 @@ class TestGetCanvasComplianceSummary:
         assert row["closed_findings"] == 1
         assert row["latest_score"] == 50.0    # 1 closed / 2 total * 100
 
-    def test_empty_tables_yield_defaults(self):
+    def test_empty_tables_are_not_assessed(self):
+        """An empty canvas scores NOTHING — never a number (rem-hyg-09).
+
+        This test previously pinned the opposite, and its comment gives the
+        reasoning that made the defect feel correct: "a clean 100 (no risk
+        recorded, no check failed)". No check FAILED because no check RAN.
+
+        Measured on the live board 2026-08-20, three canvases were sitting at a
+        confident 100.0 with zero rows behind them — Network, Pipeline and
+        Migration — rendering full green bars on a COMPLIANCE surface and
+        inflating the headline from 87.9 to 90.7. Security had the same shape
+        (`100 - avg(risk)` over no rows) and was only masked by having real
+        data; the four scoring 0.0 were the same fabrication with a less
+        flattering number.
+
+        `None` is the codebase's existing convention for this — see
+        `tools/quality/component_scorer.py`'s NOT_ASSESSED, which documented
+        this very defect and worked around it downstream.
+        """
         conns = _build_all_conns()
         with _patch_posture(conns):
             result = get_canvas_compliance_summary()
         scores = {r["slug"]: r["latest_score"] for r in result}
-        # An empty canvas is not "unknown" under posture — it scores either a
-        # clean 100 (no risk recorded, no check failed) or 0 (no assessment to
-        # average). Pinning the exact split keeps a silent rule change visible.
         assert scores == {
-            "security": 100.0,      # 100 - avg(risk_score=0)
-            "network": 100.0,       # no checks and no findings
-            "pipeline": 100.0,
-            "infra": 0.0,           # avg(score) over no rows
-            "data": 0.0,
-            "boundary": 0.0,
-            "observability": 0.0,
+            "security": None,
+            "network": None,
+            "pipeline": None,
+            "infra": None,
+            "data": None,
+            "boundary": None,
+            "observability": None,
         }
         for row in result:
             assert row["open_findings"] == 0
