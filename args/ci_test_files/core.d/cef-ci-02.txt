@@ -1,0 +1,25 @@
+# cef-ci-02 — a closed census may lose names and must never gain one.
+#
+# Gated in the PR that makes it pass, per docs/ci/test-gating-policy.md, and in
+# its own fragment so it cannot collide with a sibling's append (tsg-policy-03).
+#
+# This file gates rather than merely running once because it is the guard on the
+# gate that runs everything else. The CEF programme's 19 test files are held in
+# CI by exactly two things: a line in an allowlist, and the rule that
+# args/ci_test_backlog.txt only ever shrinks. The first was checked. The second
+# was policy written in a comment and enforced by a COUNT — and a count is
+# precisely what an enumerated census exists to distrust.
+#
+# Measured on main at 42f7ea894: backlog_max 1711 against 1703 entries. Delete
+# the core.d fragments naming eight gated CEF suites — among them
+# tests/cortex/test_resolve_facade.py and tests/cortex/test_resolve_trust_loop.py,
+# the cortex.resolve() facade and its TRUST loop — append those eight paths to
+# the census, and --check-coverage reports "0 unlisted" and exits 0.
+#
+# The assertions here are deliberately BEHAVIOURAL, not numeric. Pinning
+# backlog_max to 1703 would fail on the good outcome (a PR gating a backlogged
+# file lowers it) and would earn a `|| true` inside a week. What is asserted is
+# that a name added to a closed census is refused and a name removed is not —
+# including the swap case, one line out and one in, where the count is unchanged
+# and the ceiling sees nothing at all.
+tests/test_census_growth.py

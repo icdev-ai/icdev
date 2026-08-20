@@ -10129,6 +10129,79 @@ def create_app(testing: bool = False) -> Flask:
             "pr_recovery": pr_recovery,
         })
 
+    # ── Awaiting Merge panel (kpr-watch-03) ─────────────────────────────────
+    #
+    # A report nobody opens is not observability. kpr-watch-01 built the
+    # decision table and gave it a CLI, and the CLI was the only place the
+    # answer to "why is that PR not merging" existed -- so a PR sitting in
+    # `awaiting_ci` for nine hours, or merging cleanly while 200 commits behind
+    # main, was invisible unless somebody thought to go and look.
+    #
+    # READ ONLY, structurally: this route is GET, it calls `collect_report`,
+    # and there is deliberately no sibling POST. The panel adds a way to SEE
+    # what the automation is doing, not a second way to act -- merging stays
+    # with pr_watcher and with the gated `kanban/cli.py --set-status done
+    # --merge`.
+    #
+    # CACHED, because the report costs a `gh pr list` (~2s) plus one /compare
+    # call per ready PR, and a dashboard that auto-refreshes would otherwise
+    # hammer the forge rate limit on every open tab. The cache serves STALE
+    # data with its age attached rather than pretending to be live; the panel
+    # renders that age.
+    _MERGE_READINESS_CACHE: dict = {"report": None, "at": 0.0, "error": None}
+    _MERGE_READINESS_TTL = 120.0
+    _merge_readiness_lock = threading.Lock()
+
+    @app.route("/api/merge-readiness")
+    def api_merge_readiness():
+        """GET /api/merge-readiness -- the kpr-watch-01 classification, grouped.
+
+        Never merges, pushes, un-drafts or closes.
+
+        Three answers, kept apart because each sends a reader somewhere else:
+          * ok=True, total>0  -- here is the board
+          * ok=True, total=0  -- nothing is open (`visible` False, panel hides)
+          * ok=False          -- the report COULD NOT BE PRODUCED (no gh, no
+                                 auth, no network). NEVER an empty table, which
+                                 would read as "everything has landed".
+        """
+        from tools.ci import merge_readiness as _mr
+
+        now = time.time()
+        with _merge_readiness_lock:
+            # One clock, one condition: a FAILED fetch also stamps `at`, so a
+            # forge that is down is retried once per TTL and not once per tab.
+            if (now - _MERGE_READINESS_CACHE["at"]) >= _MERGE_READINESS_TTL:
+                try:
+                    _MERGE_READINESS_CACHE["report"] = _mr.collect_report()
+                    _MERGE_READINESS_CACHE["error"] = None
+                except Exception as _exc:  # noqa: BLE001 -- a panel must not 500
+                    # The LAST GOOD report is kept and served with its age, but
+                    # the error rides along: a stale answer presented as current
+                    # is the failure this whole card exists to stop.
+                    _MERGE_READINESS_CACHE["error"] = str(_exc)[:300]
+                    app.logger.debug("merge-readiness: %s", _exc)
+                _MERGE_READINESS_CACHE["at"] = now
+            report = _MERGE_READINESS_CACHE["report"]
+            error = _MERGE_READINESS_CACHE["error"]
+            cached_at = _MERGE_READINESS_CACHE["at"]
+
+        if report is None:
+            return jsonify({
+                "ok": False, "visible": True, "error": error or "unavailable",
+                "groups": [], "total": 0, "ready": 0,
+            })
+        payload = dict(report)
+        payload["ok"] = error is None
+        payload["error"] = error
+        payload["groups"] = _mr.group_by_state(report)
+        payload["cache_age_seconds"] = int(max(0, now - cached_at))
+        # Hide only on a KNOWN-EMPTY board. A failed report stays visible and
+        # says why -- an observability panel that hides when it breaks is the
+        # exact shape of the defect it was built to catch.
+        payload["visible"] = bool(payload["total"]) or error is not None
+        return jsonify(payload)
+
     @app.route("/digital-twin")
     def digital_twin_roadmap_legacy():
         """Legacy route — project moved inline under /kanban. Redirect to

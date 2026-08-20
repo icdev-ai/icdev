@@ -98,6 +98,62 @@ python tools/awareness/capability_consumption.py --gate                  # exit 
 # A missing table reports telemetry_available:false — never a misleading zero.
 # Config: args/capability_consumption.yaml
 
+# The Cortex federation layer is UNDER that gate (#cef-ci-01)
+python tools/awareness/capability_consumption.py --class cortex_backend --json
+python tools/awareness/capability_consumption.py --class cortex_facade --json
+python tools/workflow/coherence_checker.py --check capability_liveness --gate
+python tools/workflow/coherence_checker.py --check substrate_liveness --gate
+# Three rungs (`currency` cef-bck-01, `external` cef-bck-02, `sme` cef-bck-03)
+# behind one governed facade (`cortex.resolve`, cef-rsv-01), all registered in
+# CORTEX_BACKENDS, importable, weighted in args/cortex_config.yaml — and
+# reachable only if something ASKS. Exactly the shape that shipped three times
+# as a reflex before it got a check.
+#
+# CONSUMPTION IS `used`, NEVER `consulted`, and the difference is the whole
+# design. A governed call now records which rungs it reached on its existing
+# append-only `cortex_audit` row, under `gates_json.backends` — the same
+# free-form blob ctx-obs-02's timings and trust-kg-03's kg_grounding ride in,
+# so NO new table and NO migration. Three lists, never merged:
+#   used       the rung RETURNED A HIT. The only one counted as consumption.
+#   consulted  the rung set the call ASKED — a read of `resolve.backends` in
+#              args/cortex_config.yaml. Counting it would have reported 5 of the
+#              7 rungs live on a board where 4 of those 5 die on every call.
+#   failed     the rung DIED. Not consumption, and not inertness either: a rung
+#              that is reached and broken must not read the same as one nothing
+#              ever wired.
+# `sme` counts on the same terms as the rest. Its hits are excluded from
+# citations and can never move a verdict (TRUST rule 1) — that is CITABILITY,
+# not reachability, and conflating them makes the one advisory backend
+# permanently unmeasurable.
+#
+# MEASURED on the live board 2026-08-19, and the numbers in
+# args/liveness_gate.yaml ARE the measurement, not a chosen allowance:
+#   cortex_backend  7 declared, 1 consumed. `currency` answers; rag/dic/graph/kb
+#                   are ROUTED AND FAILING (embeddings 401 on this host, `kb`
+#                   carries the known `column "use_count" does not exist`
+#                   defect) and appear in extra.consulted_never_used AND
+#                   extra.failed_events; `external`/`sme` are NEVER ROUTED, on
+#                   purpose, and appear in extra.opt_in_only. Do NOT "drain"
+#                   those two by adding them to search.fan_out.backends — that
+#                   is an egress decision and an evidence-ranking decision
+#                   respectively. The repair is a caller.
+#   cortex_facade   9 declared, 5 consumed (resolve 127, classify 65, complete
+#                   37, search 26, extract 22). ask/reason/govern/agent have
+#                   never been invoked through the governed door. A BLOCKED call
+#                   still counts — the verb ran and the TRUST chain refused it.
+#                   `cortex.verify` shows up under undeclared_units_observed: 29
+#                   audit rows under an operation CORTEX_FACADES does not
+#                   declare. Reported, never folded into either count.
+#
+# Declarations are read from source with `ast`, never imported: `tools.cortex`
+# pulls in the retrieval stack and the LLM router, so an importing probe would
+# go UNMEASURABLE on precisely the deployment where a backend is broken.
+# NOT drained by this card, and pre-existing: `mcp_dispatch_tool` is 468 over a
+# 467 budget because cef-rsv-01 registered the `cortex_resolve` MCP tool and
+# only 4 tools in the whole 472-entry registry have ever been dispatched through
+# the Studio gate. Raising that budget is forbidden; the repair is routing the
+# other MCP entry points through the same audit.
+
 # Substrate probe — does the thing you are about to design against HAVE ROWS? (#trust-disc-04)
 python tools/awareness/capability_consumption.py --probe-plan <plan.md> --substrate-gate  # BEFORE writing code
 python tools/awareness/capability_consumption.py --probe-substrate kg_ontology            # one table
@@ -357,6 +413,64 @@ python tools/cache_savings/by_provider.py --provider anthropic --json
 # called search() with NO clearance, so a synthesized answer could be composed
 # over evidence search() itself would have withheld.
 
+# DocDrift SHOWS the verdict — and shows an unknown as a finding (#cef-ui-01)
+# A library, no CLI. Import it:
+#   from icdev.tools.document_intelligence.docdrift_evidence import (
+#       attach_resolutions, resolve_finding, resolve_findings, run_stats)
+#   page = attach_resolutions(acoic.list_drift_events())   # one view per finding
+#   view = resolve_finding("TLS 1.1", advisory=True)       # governed cortex.resolve
+# Toggle: `cortex.enabled` in args/dic_docdrift_config.yaml — DEFAULT **ON**,
+# and that is the one place this seam differs from cef-di-01/03/04/05. Those
+# four MIGRATED a working retrieval path, so `false` restores a chain that
+# already existed. This one has no legacy path: nothing on
+# /document-intelligence/docdrift had ever shown a verdict, a citation or a
+# reason, so shipping it off would declare a capability nothing consumes.
+# Off does NOT hide the panel — it makes every finding read `not_resolved`.
+#
+# THREE AXES, AND KEEPING THEM APART IS THE ENTIRE FEATURE.
+#  * `state` reads the DETERMINISTIC verdict and NOTHING else:
+#    current | deprecated | superseded | unknown | not_resolved | refused.
+#    `finding_state(verdict, verdict_source)` has no `backend_errors`
+#    parameter, so an outage has no route by which to become a verdict.
+#  * `evidence_health` reads `backend_errors` and NOTHING else:
+#    ok | degraded | failed | unmeasured. It is a SEPARATE field because the
+#    live board proves the two move independently — measured 2026-08-18,
+#    `TLS 1.1` resolves **superseded** (crypto_protocols, rule:crypto-tls-02,
+#    successor "TLS 1.2 or higher (prefer TLS 1.3)") while FOUR of five
+#    backends time out. The verdict came from a pack reading a rulebook, so it
+#    is exactly as good as it looks, and the sweep is exactly as degraded as it
+#    looks. One field cannot say both.
+#  * `advisory` carries the `sme` rung's OPINION, last, indented, dashed and
+#    muted under a header that says it is not evidence. FOUR states, and the
+#    first three are all an empty list: `not_consulted` (nobody asked — `sme`
+#    is deliberately absent from `resolve.backends`, so a default deployment's
+#    advisory list is structurally always empty and rendering it as "no
+#    concerns" would be a fabrication), `unavailable` (asked, the rung ERRORED
+#    — what THIS deployment returns today, `generative_intelligence` monthly
+#    budget spent at 420,375/400,000), `no_opinion`, `opinion`.
+#
+# `not_resolved` and `unmeasured` are the two values that had to exist. Without
+# them a finding nobody has checked renders identically to one checked and
+# found current — the defect the card was written for. The page states both in
+# words ("Nobody has asked yet. This is not a clean bill of health").
+# An `unknown` NEVER renders as a shrug: `unknown_reasons()` carries
+# no_pack_matched / no_evidence / backends_failed / packs_failed through with
+# labels, because those are four different fixes. Live proof that this is not
+# theoretical: `TLS 1.3` returns unknown with TEN corpus citations and no pack
+# assessment — a naive page would draw "10 citations, no problems found".
+#
+# Resolutions are ON DEMAND and PERSISTED (`dic_docdrift_resolutions`,
+# migration 20260819020723): one costs 10-12s against five backends and the
+# board holds 72 findings, so resolving on render would take minutes.
+# `max_resolves_per_batch` (default 8) bounds "resolve all" and the deferred
+# entities come back NAMED in `skipped` — a truncated sweep reporting only its
+# successes reads as full coverage.
+# `advisory.enabled` is a DEFAULT (off), overridable per request; set
+# `advisory.allow_request_override: false` on a deployment that must guarantee
+# no model call reaches this page whatever a request body says.
+# API: POST /document-intelligence/api/docdrift/resolve{,-batch}
+# UI:  /document-intelligence/docdrift
+
 # HITL approve/reject for a resolve-produced proposal — EXISTING routes (#cef-ui-03)
 # No CLI and NO NEW ROUTE. The decision surface is frozen at the eight routes
 # `tests/docmod/test_hitl_decision_wiring.py::_DECISION_ROUTES` enumerates; a
@@ -538,6 +652,29 @@ python tools/hooks/fire_rate_survey.py --gate --max-fire-rate 0.01
 # Corpus is the Claude Code transcripts; hook_events stores tool-input KEY NAMES
 # only, so it cannot drive a replay and reports itself unusable.
 
+# Is a task's status OSCILLATING — two writers taking turns? (kpr-watch-11)
+python -m tools.kanban.status_churn --json
+python -m tools.kanban.status_churn --window-hours 6
+python -m tools.kanban.status_churn --min-returns 5
+# On 2026-08-19 cef-ui-03 flipped done<->backlog 95 times in 5.5 hours:
+# pr_watcher completed it (its PR had merged), the scheduler demoted it (its run
+# had run out of budget). EVERY INDIVIDUAL TRANSITION WAS LEGITIMATE, so no
+# per-move guard could see it — the board read `scheduled` throughout and the
+# scheduler reported `idle`. kpr-dup-09 fixed that mechanism; this detects the
+# SHAPE, so the next pair of writers that disagree is visible in minutes.
+# A RETURN is a PAIR (`A -> B` then `B -> A`), NOT "changed status a lot" — a
+# task progressing backlog->scheduled->in_progress->pr_opened->done produces
+# none. CONTESTED (2+ writers) is separated from single-writer churn and sorted
+# FIRST: a fight needs a rule about who owns the row, a retry loop needs a
+# budget. Measured live: 34 oscillating, only 3 contested — and one of those
+# (prop-vv-02, scheduler vs stale-reaper) nobody knew about.
+# SURVEYED BEFORE THRESHOLDING over 15,879 transitions: >=1 return is ROUTINE
+# (11.9% of tasks), >=10 is 1.09% — below the 1.63% this file already calls
+# refusing routine work — and still catches the 316-return cases.
+# UNMEASURABLE, never a clean zero, on a board with no transitions in the
+# window. Report only; it measures the BOARD, not a diff, so a --gate would
+# fail commits for a condition the committer did not cause.
+
 # Would that check have been RIGHT to refuse? Surveyed; answer is NO (kpr-fix-03)
 python -m tools.kanban.landed_dispatch_survey --json
 python -m tools.kanban.landed_dispatch_survey --window-days 30
@@ -616,6 +753,29 @@ python tools/ci/undeclared_import_census.py --prune          # drop entries whos
 # 210 sites grandfathered BY NAME in args/undeclared_import_census.txt;
 # `undeclared_max` in args/undeclared_import_gate.yaml may only go DOWN.
 
+# Promote an ungated test module — but only if it is green BOTH WAYS (rem-tst-06)
+python -m tools.ci.gate_promoter --plan --limit 10        # candidates, runs nothing
+python -m tools.ci.gate_promoter --limit 10               # verify, report only
+python -m tools.ci.gate_promoter --limit 10 --apply       # write + ratchet
+# `ungated_test_census.py` measures which of the ~1,700 ungated modules pass and
+# deliberately promotes nothing. NOTHING consumed that measurement: the snapshot
+# was three days stale when this shipped, and the backlog shrank only when a
+# human hand-moved a file. A measurement nobody acts on is the same defect as a
+# capability nobody calls.
+# THE SAFEGUARD IS THE POINT. The census runs each module ALONE, and green-alone
+# is NOT green-in-suite — four cortex/dashboard modules flipped on run order via
+# a shared app singleton, and kpr-watch-03 (2026-08-19) failed in CI, passed
+# alone, and read as flake when it was an order dependency. So a module is
+# promoted only when it passes ALONE (re-verified, never trusted from the
+# census) AND IN-SUITE appended to the gated set in ONE process.
+# FAIL-CLOSED ON THE BATCH: an in-suite failure promotes NOTHING from that
+# batch. The culprit may be an INTERACTION between two survivors, so promoting
+# "the innocent ones" could ship exactly the interacting pair — re-run with a
+# smaller --limit to isolate. Writes a PER-RUN core.d fragment (never core.txt),
+# and RATCHETS backlog_max DOWN; it can never raise it. Never a gate.
+# Weekly via .github/workflows/gate-promoter.yml, which opens a PR rather than
+# pushing — the promotion is then proved by the same gated suite it modifies.
+
 # Red-first proof — did the changed test actually go RED? (trust-disc-01)
 python tools/ci/red_first_gate.py --gate                 # the merge gate (0 clean / 1 finding / 2 could-not-run)
 python tools/ci/red_first_gate.py                        # report only, always exit 0
@@ -626,6 +786,39 @@ python tools/ci/red_first_gate.py --json --out red-first-proof.json
 # recorded RED. Exempt a file with a WRITTEN REASON in args/red_first_gate.yaml;
 # never `mode: advisory` and never a shell neutraliser.
 
+# A closed census may LOSE names and must never GAIN one (cef-ci-02)
+python tools/ci/census_growth.py --check           # the gate (0 clean / 1 gained / 2 could-not-compare)
+python tools/ci/census_growth.py --json
+python tools/ci/census_growth.py --base origin/main --root .
+# `gated_test_list.py --check-coverage` enforces args/ci_test_backlog.txt by a
+# COUNT, and a count is exactly what an ENUMERATED census exists to distrust —
+# that file's own comment says so ("a bare count can be held constant while the
+# set churns"). Identity was tracked and never RATCHETED: nothing compared a
+# closed census against its previous self, so the ceiling's slack was the whole
+# guard. Measured on main at 42f7ea894 the slack was 8 slots (`backlog_max` 1711
+# against 1703 entries, while `skip_max` was 81 against 81) — enough to delete
+# the core.d fragments naming eight gated CEF suites, among them
+# tests/cortex/test_resolve_facade.py and test_resolve_trust_loop.py, append
+# those paths to the census, and have --check-coverage report "0 unlisted" and
+# exit 0. `backlog_max` is now 1703; the SET rule is what actually closes it.
+# Set-compares args/ci_test_backlog.txt and args/ci_skip_census.txt vs the MERGE
+# BASE. Catches the SWAP a ceiling structurally cannot — one line out, one in,
+# count unchanged, a suite gone from CI.
+# Deliberately NOT a tighter ceiling: "ceiling must equal the count" red-lights
+# main whenever two concurrent PRs each gate a backlogged file and each lower it
+# by one, and census deletions land ~5x/day here. Set monotonicity has no such
+# interaction — two PRs that each gained nothing merge to a tree that gained
+# nothing. Do NOT "fix" this by tightening the ceiling instead.
+# SURVEYED BEFORE ARMING: every commit touching args/ci_test_backlog.txt since
+# adoption (ceb10709b) is +0 — 35 commits, 150 deletions, ZERO additions, so it
+# refuses nothing the census's history contains. args/ci_skip_census.txt has had
+# no post-adoption commit, so its rate reports UNMEASURABLE, never a clean zero.
+# A census ABSENT at the base is `introduced`, not grown. Exit 2 (needs
+# fetch-depth: 0) stays red — a gate that could not run is not one that found
+# nothing. args/undeclared_import_census.txt and args/kanban_raw_insert_census.txt
+# are the same discipline and are deliberately NOT registered: unrelated to test
+# gating and unsurveyed. Adding one is a `CENSUSES` entry plus its own survey.
+
 # Which open PRs are awaiting merge, and WHY is each one not merging? (kpr-watch-01)
 python -m tools.ci.merge_readiness --json          # every open PR, task-linked or not
 python -m tools.ci.merge_readiness                 # human table
@@ -633,6 +826,10 @@ python -m tools.ci.merge_readiness --state awaiting_ci --state conflicting
 python -m tools.ci.merge_readiness --from-json prs.json --default-branch main
 python -m tools.ci.merge_readiness --state behind_main       # the stale ones
 python -m tools.ci.merge_readiness --no-measure-behind       # skip the /compare calls
+python -m tools.ci.merge_readiness --group                   # bucketed by state
+python tools/kanban/cli.py --awaiting-merge                  # same view, board CLI
+python tools/kanban/cli.py --awaiting-merge --merge-state behind_main --json
+# UI: Home (/) -> "Awaiting Merge"   API: GET /api/merge-readiness (no POST sibling)
 # READ-ONLY: it never merges, pushes, un-drafts or closes. `pr_watcher`'s unlinked
 # sweep and this report read the SAME pure function,
 # classify_merge_readiness(pr, *, default_branch, linked_urls, behind_by) ->
@@ -665,6 +862,40 @@ python -m tools.ci.merge_readiness --no-measure-behind       # skip the /compare
 # goes to the existing `_maybe_rebase` path (same ownership refusal, same
 # per-base-era budget) and raises a HITL alert when that declines; an UNLINKED
 # PR is reported and LEFT ALONE, because the sweep never pushes.
+#
+# SURFACED (kpr-watch-03) — a report nobody opens is not observability, and for
+# two cards the only place this answer existed was a CLI somebody had to think
+# to run. Now: the "Awaiting Merge" panel on Home (a section inside
+# templates/_autonomy_status.html, NOT a new page, so the 8-point page gate does
+# not apply) and `python tools/kanban/cli.py --awaiting-merge`. Both read
+# `collect_report`, the SAME gatherer `python -m tools.ci.merge_readiness`
+# reads — one ladder, one gatherer, three surfaces.
+# READ ONLY BY CONSTRUCTION: no merge button, no un-draft, and the route is GET
+# with no POST sibling (asserted in tests/test_merge_readiness_surface.py).
+# TWO VERDICTS PER PR, FROM ONE TABLE. `state` is the merger's, unchanged and
+# authoritative. `pipeline_state` is the same function called with
+# `linked_urls=()` — "why would this not merge, setting aside who owns it" —
+# because `state` short-circuits at the `linked` rung for EVERY kanban PR,
+# which is the exact population the panel is for; grouping on it collapsed the
+# board into one bucket labelled "a task owns it". For an UNLINKED PR the two
+# are identical by construction and a test asserts it, which is what proves
+# this is not a second copy of the ladder.
+# AGE IS A LOWER BOUND, and it is NOT `updatedAt`. Nothing persists a state
+# transition, so the age is measured from the NEWEST observable event on the
+# PR and reported as "it has been like this at LEAST this long". `updatedAt`
+# does not bump when a check completes — measured 2026-08-19, PR #1817 reported
+# updatedAt=01:10:24Z while its own check completed at 01:11:09Z, 45s LATER —
+# so keying on it alone overstates the age, in the direction that makes a stuck
+# pipeline look MORE stuck. `gh` renders an unfinished check's timestamp as the
+# Go zero value, which parses to a real year-1 datetime; it is rejected, not
+# min()-ed away. Unmeasured is `None` and prints "?", NEVER 0.
+# Groups are in ATTENTION order (`ready`, `behind_main` first — the two states
+# the card names), which is deliberately NOT the ladder order; presentation
+# only, in ATTENTION_ORDER beside the ladder, and it never reorders the ladder.
+# The panel hides ONLY on a known-empty board: a failed report stays visible and
+# says why, because a panel that disappears when it breaks is indistinguishable
+# from a clean board. Cached 120s server-side (a `gh pr list` plus a /compare
+# per ready PR), and the cache AGE is rendered — never presented as live.
 
 # A PR that IS eligible and STILL open — the merger has stalled (kpr-watch-02)
 python -m tools.ci.merge_stall                     # human table

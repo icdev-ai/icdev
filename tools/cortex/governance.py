@@ -685,6 +685,72 @@ def _accounting_fields(result, report) -> dict:
     return out
 
 
+def _backend_fields(result) -> dict:
+    """Which Cortex backends this call REACHED, for the audit row (cef-ci-01).
+
+    Three lists, kept apart because each answers a different question and
+    merging them is how a federation layer becomes the next declared-but-never-
+    consumed capability:
+
+    ``used``       a backend that actually RETURNED a hit. This is the ONLY one
+                   ``capability_consumption``'s ``cortex_backend`` probe counts
+                   as consumption.
+    ``consulted``  the rung set the call ASKED. On the resolve path that is a
+                   read of ``resolve.backends`` in args/cortex_config.yaml, so
+                   it is a statement about the CONFIG, not about the platform —
+                   counting it as consumption would report every declared rung
+                   live on a deployment where none of them ever answered.
+    ``failed``     a rung that DIED. An outage is not a measurement about the
+                   corpus and it is not consumption either; it is recorded so a
+                   backend that is only ever reached and only ever broken does
+                   not read as inert.
+
+    Never raises: this is audit bookkeeping on the governed hot path, and a
+    result shape it does not recognise reports empty lists rather than taking
+    the call down. Empty means NOT RECORDED, which is why the probe reads a
+    lifetime window — rows written before this card carry no ``backends`` key
+    at all, so every backend necessarily reads zero on the day it lands.
+    """
+    used: set = set()
+    consulted: set = set()
+    failed: set = set()
+    try:
+        meta = getattr(result, "metadata", None)
+        if isinstance(meta, dict):
+            # The resolve path (resolver.resolve) computes this from the hits
+            # themselves; the router records its own decision under `router`.
+            used.update(str(b or "") for b in (meta.get("backends_used") or ()))
+            router = meta.get("router")
+            if isinstance(router, dict):
+                consulted.update(str(b or "") for b in (router.get("backends") or ()))
+        consulted.update(
+            str(b or "") for b in (getattr(result, "backends_consulted", None) or ())
+        )
+        # The search path returns a BackendResults — a list of
+        # CortexSearchResult, each stamped with the backend that produced it.
+        if isinstance(result, (list, tuple)):
+            for hit in result:
+                backend = getattr(hit, "backend", "")
+                if backend:
+                    used.add(str(backend))
+        for err in (getattr(result, "errors", None)
+                    or getattr(result, "backend_errors", None) or ()):
+            name = err.get("backend") if isinstance(err, dict) else getattr(err, "backend", "")
+            # A pack failure is stamped `pack:<id>`, not a CORTEX_BACKENDS name.
+            if name and not str(name).startswith("pack:"):
+                failed.add(str(name))
+    except Exception as exc:  # noqa: BLE001 — bookkeeping never breaks a call
+        logger.debug("cortex backend accounting skipped: %s", exc)
+        return {"backends": {"used": [], "consulted": [], "failed": []}}
+    return {
+        "backends": {
+            "used": sorted(used - {""}),
+            "consulted": sorted(consulted - {""}),
+            "failed": sorted(failed - {""}),
+        }
+    }
+
+
 # ---------------------------------------------------------------------------
 # Pipeline
 # ---------------------------------------------------------------------------
@@ -835,6 +901,11 @@ class GovernancePipeline:
             # without a schema migration. This is INSERT-only; the append-only
             # audit invariant is untouched.
             payload.update(_accounting_fields(result, report))
+            # Which rungs the federation layer actually reached
+            # (cef-ci-01). Carried in the same free-form gates_json
+            # blob as the timings and the KG detail, for the same
+            # reason: no new table, no migration, INSERT-only.
+            payload.update(_backend_fields(result))
             _gate_record_audit(payload)
         except Exception as exc:  # audit stub must never mask the real outcome
             logger.error("cortex governance audit record failed: %s", exc)

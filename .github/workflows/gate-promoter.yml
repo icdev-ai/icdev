@@ -1,0 +1,117 @@
+# CUI // SP-CTI
+name: Ungated Test Promotion
+
+# WHY THIS IS SCHEDULED. `ungated_test_census.py` measures which of the ~1,700
+# ungated modules pass, and nothing consumed that measurement — the committed
+# snapshot was three days stale when this was written, and the backlog shrank
+# only when a human hand-moved a file. A measurement nobody acts on is the same
+# defect as a capability nobody calls.
+#
+# WHY IT OPENS A PR RATHER THAN PUSHING. Promotion edits the allowlist that
+# decides what gates `main`. That edit gets reviewed like any other, and the PR
+# itself runs the full gated suite WITH the promoted modules in it — so the
+# change is proved by the same pipeline it modifies before anyone merges it.
+on:
+  schedule:
+    # Weekly, deliberately: the in-suite verification is one process over the
+    # whole gated set (~36 min today), and a promoted module joins every future
+    # run. Little and often beats a sweep — CLAUDE.md's rule is one file at a
+    # time, and a bulk add is what turns `main` red and gets the gate disabled.
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "How many modules to consider this run"
+        required: false
+        default: "10"
+      apply:
+        description: "Write the fragment and ratchet (false = report only)"
+        required: false
+        default: "true"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  promote:
+    name: Promote modules green BOTH alone and in-suite
+    runs-on: ubuntu-latest
+    if: github.repository == 'icdev-ai/icdev'
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The promoter branches off this checkout; a shallow clone cannot.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Refresh the ungated census
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          ICDEV_STORAGE_BACKEND: sqlite
+        # The promoter re-verifies every candidate itself, so a stale census can
+        # never promote anything — but a stale census HIDES candidates that have
+        # since gone green, which is the slow half of the problem.
+        run: |
+          python tools/ci/ungated_test_census.py --json > census.new.json || true
+          if [ -s census.new.json ]; then
+            mv census.new.json docs/testing/ungated_test_census.json
+          else
+            echo "census refresh produced nothing — using the committed snapshot"
+          fi
+
+      - name: Promote (green alone AND in-suite)
+        id: promote
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          ICDEV_STORAGE_BACKEND: sqlite
+        run: |
+          LIMIT="${{ github.event.inputs.limit || '10' }}"
+          APPLY=""
+          if [ "${{ github.event.inputs.apply || 'true' }}" = "true" ]; then
+            APPLY="--apply"
+          fi
+          python -m tools.ci.gate_promoter --limit "$LIMIT" $APPLY --json > promotion.json
+          python -m tools.ci.gate_promoter --limit "$LIMIT" --plan
+          # An empty `promoted` is a perfectly good outcome: nothing was
+          # verifiably safe this week. That is information, not a failure.
+          COUNT=$(python -c "import json;print(len(json.load(open('promotion.json')).get('promoted') or []))")
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "promoted $COUNT module(s)"
+
+      - name: Open a PR when something was promoted
+        if: steps.promote.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          BRANCH="chore/gate-promote-$(date -u +%Y%m%dT%H%M%SZ)"
+          git config user.name "icdev-bot"
+          git config user.email "noreply@icdev.ai"
+          git checkout -b "$BRANCH"
+          python tools/ci/gate_promoter_report.py --from promotion.json \
+            --commit-message commit_msg.txt --pr-body pr_body.md
+          git add args/ci_test_files/core.d args/ci_test_backlog.txt \
+                  args/test_gating_gate.yaml docs/testing/ungated_test_census.json
+          git commit -F commit_msg.txt
+          git push -u origin "$BRANCH"
+          gh pr create \
+            --title "chore(ci): promote ungated modules verified green both ways" \
+            --body-file pr_body.md
+
+      - name: Upload the promotion report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: promotion-report
+          path: promotion.json
+          if-no-files-found: ignore

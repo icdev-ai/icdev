@@ -151,9 +151,19 @@ stay fixed:
     are present, `grounding.grounding_warning` is a non-empty string (the
     model-generated-guidance warning). This proves the TRUST wiring is live even
     when the LLM is unavailable (the fallback text is also assessed).
-22. Screenshot / capture the AI-assist response as
+22. Close the session out. `PATCH /migration-canvas/api/network-migration/<session_id>`
+    with body `{"status": "archived"}` and assert HTTP 200. Do this whether or not
+    the preceding assertions passed: step 19 created a real row on the real board,
+    and a session left `in_progress` is flagged by the NMCE genesis reflex as a
+    stalled cutover seven days later, raising a kanban card that burns an agent
+    session. Four accumulated this way between 2026-08-09 and 2026-08-14 after 36
+    earlier ones had to be archived by hand. `archived` is the terminal status
+    every active-session query already agrees on
+    (`NET_SESSION_TERMINAL_STATUSES`), and the PATCH writes a
+    `net_session_status_changed` audit row, so the close is evidenced.
+23. Screenshot / capture the AI-assist response as
     `playwright/screenshots/mdc-e2e-5-ai-grounding.png`.
-23. Check the browser console — assert no JavaScript errors accumulated across the
+24. Check the browser console — assert no JavaScript errors accumulated across the
     session.
 
 ## Expected Results
@@ -167,6 +177,9 @@ stay fixed:
   `[]` (cnr-mdc-01).
 - The network AI assistant attaches a `grounding` verdict with a warning flag when
   responses are uncited (cnr-mdc-03 / TRUST invariant).
+- The session opened in Scenario 5 is left `archived`, not `in_progress` — the run
+  creates a real board row and must not leave it behind as a false stale-migration
+  finding for the NMCE reflex.
 - No JavaScript console errors across the session.
 - Every failed assertion produces an actionable DOM snapshot + `-FAIL` screenshot.
 

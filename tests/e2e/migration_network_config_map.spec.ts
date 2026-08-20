@@ -6,6 +6,7 @@
 // and preview the converted target config, and download it.
 
 import { test, expect } from '@playwright/test';
+import { archiveNetSessions } from './fixtures/migration_cleanup';
 
 const CUI_BANNER = 'CUI // SP-CTI';
 const SCREENSHOT_DIR = '.tmp/test_runs/screenshots';
@@ -52,6 +53,26 @@ async function answerAllYes(page: any) {
 }
 
 test.describe('Network Migration Wizard — Config Mapping Lifecycle', () => {
+  // The wizard creates a real session on the board. Archive it again, or every
+  // run leaves an `in_progress` row the NMCE reflex flags as a stalled cutover
+  // seven days later. `authState` is captured while the test still has an
+  // authenticated page, because afterAll has no test-scoped `request` fixture
+  // and /migration-canvas/api/* 401s an anonymous one.
+  let createdSessionId: string | null = null;
+  let authState: any = null;
+
+  test.afterAll(async ({ playwright }, testInfo) => {
+    await archiveNetSessions(
+      playwright,
+      testInfo,
+      [createdSessionId],
+      'migration_network_config_map.spec',
+      authState,
+    );
+    createdSessionId = null;
+    authState = null;
+  });
+
   test('full lifecycle: create session, import config, map, apply, preview, download', async ({ page }) => {
     // Step 1: Navigate to new migration wizard.
     await page.goto('/migration-canvas/network-migration/new');
@@ -91,13 +112,21 @@ test.describe('Network Migration Wizard — Config Mapping Lifecycle', () => {
     await page.waitForTimeout(1000);
 
     const url = page.url();
+    // Record the session before asserting anything about it: a failure here is
+    // exactly when residue is most likely, and afterAll can only clean up what
+    // it was told about.
+    const created = url.split('/').pop() || '';
+    if (created.startsWith('nmig')) {
+      createdSessionId = created;
+      authState = await page.context().storageState();
+    }
     expect(url).toMatch(/\/migration-canvas\/network-migration\/(nmig|new)/);
     // The wizard may redirect to a real session id or stay on /new; both are OK if config import UI appears.
     const afterCreateText = await page.textContent('body');
     expect(afterCreateText).toContain('Step 2 — Config / Diagram Import');
 
     // Step 1 COA recommendation should default to side-by-side parallel.
-    const sessionId = url.split('/').pop() || '';
+    const sessionId = created;
     if (sessionId && sessionId.startsWith('nmig')) {
       const recResponse = await page.request.get(
         `/migration-canvas/api/network-migration/${sessionId}/recommend-coa`

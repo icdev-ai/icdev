@@ -713,6 +713,9 @@ function refreshDashboard() {
     if (window.refreshProjectsInFlight) window.refreshProjectsInFlight();
     // Refresh autonomous recovery panel (reusable partial in _autonomy_status.html)
     if (window.refreshAutonomyStatus) window.refreshAutonomyStatus();
+    // Refresh Awaiting Merge panel (same partial; the API caches for 120s, so
+    // the auto-refresh loop cannot hammer the forge)
+    if (window.refreshMergeReadiness) window.refreshMergeReadiness();
     // Refresh charts (re-trigger the chart loader in the scripts block)
     if (window._loadCharts) window._loadCharts();
     // Refresh monitor tiles
@@ -810,6 +813,7 @@ document.addEventListener('DOMContentLoaded', function() {
         .catch(function() {});
     if (window.refreshProjectsInFlight) window.refreshProjectsInFlight();
     if (window.refreshAutonomyStatus)   window.refreshAutonomyStatus();
+    if (window.refreshMergeReadiness)   window.refreshMergeReadiness();
     _startAutoRefresh();
 });
 </script>

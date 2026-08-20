@@ -96,6 +96,24 @@ backlog_file: args/ci_test_backlog.txt
 # THIS NUMBER MAY ONLY GO DOWN. Lower it when you gate files; never raise it to
 # get a commit through. Raising it is the visible, reviewable act of deciding to
 # take on more untested-in-CI surface, and it should be argued for in the PR.
+#
+# 1711 -> 1703 on 2026-08-19 (cef-ci-02). NOT a reconciliation: the census had
+# already shrunk to 1703 and the ceiling had not followed, because deleting a
+# census line is what a PR must do to gate a file while lowering the ceiling is
+# a second step it can forget. "No headroom, deliberately" had quietly become
+# eight slots, and eight is enough — demonstrated on this tree: delete the
+# core.d fragments naming eight gated CEF suites (including
+# tests/cortex/test_resolve_facade.py and test_resolve_trust_loop.py), append
+# those paths here, and --check-coverage reported "1711 grandfathered (ceiling
+# 1711), 0 unlisted" and exited 0.
+#
+# THE CEILING IS NOT WHAT CLOSES THAT HOLE, and must not be made to. "Ceiling
+# must equal the count" red-lights main whenever two concurrent PRs each gate a
+# backlogged file and each lower it by one — a race that lands about five times
+# a day here. The enforcement is set monotonicity, in
+# tools/ci/census_growth.py: this census may lose names and never gain one,
+# whatever the ceiling says. The ceiling stays as a second, independent barrier
+# for a file ALREADY named here that someone un-gates.
 backlog_max: 1702
 
 # --------------------------------------------------------------------------- #

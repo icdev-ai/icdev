@@ -90,6 +90,28 @@ classes:
       runtime_invocations. Ten declared; before hcx-live-02 nothing counted a
       dispatch at all, so a point with no call site read exactly like a point on
       the chat hot path.
+  cortex_backend:
+    enabled: true
+    description: >-
+      Cortex retrieval rungs declared in CORTEX_BACKENDS (tools/cortex/
+      schemas.py). Consumption is a governed call whose append-only cortex_audit
+      row records the rung under gates_json.backends.used — a rung that actually
+      RETURNED A HIT. Never `consulted`: that list is a read of
+      resolve.backends in args/cortex_config.yaml, so counting it would report
+      every declared rung live on a deployment where not one of them ever
+      answered. `sme` counts on the same terms as the rest — its hits are
+      excluded from citations and can never move a verdict, which is a statement
+      about citability, not about whether the rung was reached.
+  cortex_facade:
+    enabled: true
+    description: >-
+      Governed Cortex verbs declared in CORTEX_FACADES (tools/cortex/api.py).
+      Consumption is a cortex_audit row with function = 'cortex.<verb>', written
+      by the @_governed_facade wrapper every verb runs through — so the
+      declaration and the telemetry are the same seam read from both ends. A
+      BLOCKED call still counts: the verb was invoked and the TRUST chain
+      refused it, and that is consumption, reported separately under
+      extra.blocked_events.
 
 # ---------------------------------------------------------------------------
 # Substrate probing (#trust-disc-04)
@@ -184,6 +206,48 @@ substrates:
       board at declaration time. Listed because the failure mode is silent: every
       caller degrades to "no answer", which is indistinguishable from "nothing to
       report".
+  - ref: cortex_audit
+    note: >-
+      The append-only governed-call ledger (one row per Cortex verb invocation,
+      written by GovernancePipeline._audit). Declared here because cef-ci-01
+      made it a MEASUREMENT substrate as well as a compliance one: both the
+      cortex_facade and cortex_backend capability classes count through it, so
+      an empty cortex_audit does not mean "Cortex is idle" — it means the
+      liveness gate covering the whole federation layer is blind. 306 rows on
+      the live board at declaration time.
+  - ref: cortex_entity_findings
+    note: >-
+      The cross-source conflicts and gaps a resolution DETECTED (cef-ui-02,
+      migration 20260819030255), projected out of the request that produced them
+      so a human can adjudicate them on the Explorer. Load-bearing on a READ
+      path: the surface renders from this table alone and an empty one is
+      rendered as `unmeasured`, never as a clean bill of health. `absent` here
+      means the migration has not run on this deployment, which is a different
+      fix from `empty` (resolve.persist_findings off, or no resolution yet).
+  - ref: cortex_finding_runs
+    note: >-
+      The DENOMINATOR for the table above — one upserted row per tenant, bumped
+      on EVERY resolution including the clean ones. It is what makes "your
+      sources agree" distinguishable from "nothing ever looked", so a zero here
+      turns every finding count on the Explorer into an unanswerable question
+      rather than a low number.
+  - ref: databridge_agent_access_log
+    note: >-
+      Every DataBridge broker call, allowed or denied (cef-fnd-03, migration
+      20260817010532). The `external` Cortex rung reaches an authorized outside
+      source through that broker and nowhere else, so this table is the only
+      record that an outbound fetch happened at all. Empty means no agent has
+      ever fetched — which for the one rung that leaves the boundary is a
+      security-relevant fact, not a quiet default.
+  - ref: db_connections
+    note: >-
+      The ENDPOINT rows the broker resolves a connector against (seeded from
+      args/databridge_connections.yaml by tools/databridge/seed_connections.py).
+      Declared apart from the access log because the failure modes are
+      different and both were live: a grant with no connection row is authorized
+      and unreachable, and a connection row whose auth_secret_ref does not
+      resolve is reachable and unusable. Empty here is why the `external` rung
+      answers nothing while every config file reads correct.
   - ref: docmod_defacto_standards
     note: >-
       Learned de-facto standards. THE case cef-fnd-04 was opened for: 0 rows, and
