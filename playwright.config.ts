@@ -31,7 +31,31 @@ const RUN_TAG = process.env.ICDEV_PW_RUN_TAG ? `-${process.env.ICDEV_PW_RUN_TAG}
 //
 //   ICDEV_DASHBOARD_PORT=5090 ICDEV_PG_DATABASE=icdev_e2e npx playwright test
 const PORT = process.env.ICDEV_DASHBOARD_PORT || '5050';
-const DASHBOARD_URL = process.env.ICDEV_DASHBOARD_URL || `http://localhost:${PORT}`;
+
+// Base URL under test — and ONE VARIABLE WAS ANSWERING TWO QUESTIONS
+// (qa-fail-e2e-baseurl-01).
+//
+// `ICDEV_DASHBOARD_URL` means "how does a process reach the dashboard", and
+// `.env` set it to `http://host.docker.internal:5050` — deliberately, and
+// correctly, for an agent running INSIDE a container. This config then read the
+// same variable as the URL a test runner ON the host navigates to, which that
+// value can never be. Every `page.goto` burned the full 30s navigationTimeout
+// and died with net::ERR_CONNECTION_TIMED_OUT. MEASURED, same three specs,
+// nothing else changed: 43 of 45 FAILED on host.docker.internal:5050 against
+// 14 passed / 1 failed on localhost:5050.
+//
+// `ICDEV_E2E_BASE_URL` is the answer to the SECOND question only, so a
+// deployment can keep the container gateway for agents and still run the suite:
+//
+//   ICDEV_E2E_BASE_URL=http://localhost:5050 npx playwright test
+//
+// `ICDEV_DASHBOARD_URL` is still honoured after it — pointing the suite at a
+// remote dashboard that way is a legitimate use and removing it would break
+// setups that do. What stops a wrong value costing 838 test failures is not
+// precedence but globalSetup's reachability assert, which fails the run ONCE
+// and names this exact case.
+const DASHBOARD_URL =
+  process.env.ICDEV_E2E_BASE_URL || process.env.ICDEV_DASHBOARD_URL || `http://localhost:${PORT}`;
 
 /**
  * ICDEV™ Playwright Test Configuration
