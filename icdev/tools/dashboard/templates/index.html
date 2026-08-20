@@ -1109,7 +1109,14 @@ document.addEventListener('DOMContentLoaded', function() {
             + chip(bp.no_cache_hits, 'zero', '#ef4444')
             + chip(bp.unreported, 'unreported', 'var(--text-dim)')
             + chip(bp.no_data, 'no data', 'var(--text-dim)')
-            + '</div>' + top + '</div>';
+            + '</div>' + top
+            // Name what the cap dropped rather than letting 18 counted / 3 shown
+            // read as the whole list (cch-obs-03).
+            + ((bp.total && bp.shown && bp.total > bp.shown)
+                ? '<div style="font-size:10px;color:var(--text-dim);margin-top:3px;">'
+                  + '+' + (bp.total - bp.shown) + ' more not shown</div>'
+                : '')
+            + '</div>';
     }
 
     function renderCacheTile() {
@@ -1132,18 +1139,37 @@ document.addEventListener('DOMContentLoaded', function() {
             // cumulative dollars-saved. It is LOGGED now, so a cold reading
             // means genuinely new or expired rather than "we restarted".
             var cold = (d.state === 'cold' || d.state === 'expired');
-            var hitColor = cold ? 'var(--text-dim,#6c6c80)'
+            // null means the cache was never ASKED in the window, so there is no
+            // rate. `(x || 0).toFixed(1)` turned that into a bold "0.0%", which
+            // says the cache failed every request it was given — the opposite of
+            // what happened (cch-obs-03).
+            var rateMeasured = (d.hit_rate_pct !== null && d.hit_rate_pct !== undefined);
+            var hitText = rateMeasured ? d.hit_rate_pct.toFixed(1) + '%' : '—';
+            var hitColor = (cold || !rateMeasured) ? 'var(--text-dim,#6c6c80)'
                 : (d.hit_rate_pct >= 50) ? '#22c55e'
                 : (d.hit_rate_pct >= 20) ? '#f59e0b' : '#ef4444';
+            // "Entries" was the LIVE (unexpired) count while state_detail said
+            // "every stored entry is past its TTL" — so the card showed 0 beside
+            // a sentence about entries that do exist (11 of them, live-measured)
+            // and were rendered nowhere. Show both, so the sentence has a
+            // referent on screen (cch-obs-03).
+            var liveEntries = d.total_entries || 0;
+            var storedEntries = (d.stored_entries === null || d.stored_entries === undefined)
+                ? null : d.stored_entries;
+            var showStored = (storedEntries !== null && storedEntries > liveEntries);
+            var entriesText = showStored
+                ? liveEntries.toLocaleString() + ' / ' + storedEntries.toLocaleString()
+                : liveEntries.toLocaleString();
+            var entriesLabel = showStored ? 'Entries (live / stored)' : 'Entries';
             if (cold) { statusColor = '#f59e0b'; statusLabel = (d.state === 'cold') ? 'Enabled · cold' : 'Enabled · warming'; }
             el.innerHTML = '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">'
                 + '<span style="width:8px;height:8px;border-radius:50%;background:' + statusColor + ';display:inline-block;flex-shrink:0;"></span>'
                 + '<span style="font-size:11px;color:var(--text-dim);">' + statusLabel + ' &middot; backend: ' + (d.backend || 'unknown') + '</span>'
                 + '</div>'
                 + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">'
-                + '<div><div style="font-size:20px;font-weight:700;color:' + hitColor + ';">' + (d.hit_rate_pct || 0).toFixed(1) + '%</div><div style="font-size:10px;color:var(--text-dim);">Hit Rate</div></div>'
+                + '<div><div style="font-size:20px;font-weight:700;color:' + hitColor + ';">' + hitText + '</div><div style="font-size:10px;color:var(--text-dim);">' + (rateMeasured ? 'Hit Rate' : 'Hit Rate (not measured)') + '</div></div>'
                 + '<div><div style="font-size:20px;font-weight:700;color:#f59e0b;">$' + (d.cost_usd_saved || 0).toFixed(4) + '</div><div style="font-size:10px;color:var(--text-dim);">Saved (USD)</div></div>'
-                + '<div><div style="font-size:16px;font-weight:600;color:var(--accent-blue-light);">' + (d.total_entries || 0).toLocaleString() + '</div><div style="font-size:10px;color:var(--text-dim);">Entries</div></div>'
+                + '<div><div style="font-size:16px;font-weight:600;color:var(--accent-blue-light);">' + entriesText + '</div><div style="font-size:10px;color:var(--text-dim);">' + entriesLabel + '</div></div>'
                 + '<div><div style="font-size:16px;font-weight:600;color:#818cf8;">' + (d.tokens_saved || 0).toLocaleString() + '</div><div style="font-size:10px;color:var(--text-dim);">Read Tokens</div></div>'
                 + '</div>'
                 + (d.state_detail
@@ -1203,10 +1229,25 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             // Governance-first: block rate is the headline health signal.
             var blockColor = (d.block_rate_pct <= 1) ? '#22c55e' : (d.block_rate_pct <= 10) ? '#f59e0b' : '#ef4444';
+            // $0.0000 was two different answers merged (ctx-obs-03): a call that
+            // was free BY CONSTRUCTION (a deterministic pack verdict — no model
+            // was called at all) and a call nothing ever costed. Measured over
+            // 7 days: 11 of the first, 131 of the second, 0 billed. One figure
+            // over both reads as "governance is free"; it is not a measurement
+            // of 142 calls, it is the spend of the 11 that were costed.
+            var costed = (d.billed_calls || 0) + (d.deterministic_calls || 0);
+            var uncosted = d.uncosted_calls || 0;
+            var spendText = d.cost_usd_measurable
+                ? '$' + (d.cost_usd || 0).toFixed(4)
+                : '—';
+            var spendLabel = d.cost_usd_measurable
+                ? (uncosted > 0 ? 'Spend (' + costed + ' of ' + (costed + uncosted) + ' costed)'
+                                : 'Spend (USD)')
+                : 'Spend (not instrumented)';
             el.innerHTML = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">'
                 + '<div><div style="font-size:20px;font-weight:700;color:var(--text-primary);">' + (d.calls || 0).toLocaleString() + '</div><div style="font-size:10px;color:var(--text-dim);">Calls (24h)</div></div>'
                 + '<div><div style="font-size:20px;font-weight:700;color:' + blockColor + ';">' + (d.block_rate_pct || 0).toFixed(1) + '%</div><div style="font-size:10px;color:var(--text-dim);">Block Rate</div></div>'
-                + '<div><div style="font-size:16px;font-weight:600;color:#f59e0b;">$' + (d.cost_usd || 0).toFixed(4) + '</div><div style="font-size:10px;color:var(--text-dim);">Spend (USD)</div></div>'
+                + '<div><div style="font-size:16px;font-weight:600;color:' + (d.cost_usd_measurable ? '#f59e0b' : 'var(--text-dim)') + ';">' + spendText + '</div><div style="font-size:10px;color:var(--text-dim);">' + spendLabel + '</div></div>'
                 + '<div><div style="font-size:16px;font-weight:600;color:var(--accent-blue-light);">' + (d.redactions || 0).toLocaleString() + '</div><div style="font-size:10px;color:var(--text-dim);">Redactions</div></div>'
                 + '</div>'
                 + '<div style="font-size:10px;color:var(--text-dim);margin-bottom:6px;">' + (d.blocked || 0) + ' blocked &middot; ' + (d.cache_hits || 0) + ' facade cache hits</div>'
@@ -1468,13 +1509,39 @@ window._loadCharts = function() {
                         var row = Math.floor(i / COLS);
                         var xOff = col * colW;
                         var y = PAD_T + row * (BAR_H + GAP);
-                        var barW = c.score > 0 ? Math.max(2, (c.score / 100) * plotW) : 0;
-                        var clr = c.score >= 80 ? '#28a745' : c.score >= 60 ? '#ffc107' : c.score > 0 ? '#dc3545' : '#3a3a4a';
+                        // `score === null` is NOT ASSESSED (rem-hyg-09). Three
+                        // canvases used to reach here at a fabricated 100.0 —
+                        // Network and Pipeline through an `else 100.0` on an
+                        // empty checks table, Migration through `100 - 0 - 0 - 0`
+                        // over NULL sums — and rendered a full green bar for a
+                        // canvas nobody had ever assessed. On a COMPLIANCE
+                        // surface that is the most expensive possible lie.
+                        var assessed = (c.score !== null && c.score !== undefined);
+                        var barW = (assessed && c.score > 0) ? Math.max(2, (c.score / 100) * plotW) : 0;
+                        var clr = !assessed ? '#3a3a4a'
+                            : c.score >= 80 ? '#28a745' : c.score >= 60 ? '#ffc107' : c.score > 0 ? '#dc3545' : '#3a3a4a';
+                        // Age of the newest evidence. Measured 2026-08-20 every
+                        // canvas was 33-71 days stale and the widget said
+                        // nothing, so a June score looked like this morning's.
+                        var ageTxt = '';
+                        if (c.last_assessed) {
+                            var ms = Date.now() - Date.parse(String(c.last_assessed).replace(' ', 'T'));
+                            if (!isNaN(ms)) {
+                                var days = Math.floor(ms / 86400000);
+                                if (days >= 1) { ageTxt = days + 'd'; }
+                            }
+                        }
                         parts.push('<text x="' + (xOff + LABEL_W - 5) + '" y="' + (y + BAR_H / 2 + 4) + '" text-anchor="end" font-size="11" fill="#aaa" font-family="inherit">' + c.name + '</text>');
                         parts.push('<rect x="' + (xOff + LABEL_W) + '" y="' + y + '" width="' + plotW + '" height="' + BAR_H + '" fill="rgba(255,255,255,0.04)" rx="3"/>');
                         if (barW > 0) {
                             parts.push('<rect x="' + (xOff + LABEL_W) + '" y="' + y + '" width="' + barW + '" height="' + BAR_H + '" fill="' + clr + '" rx="3"/>');
-                            parts.push('<text x="' + (xOff + LABEL_W + barW + 5) + '" y="' + (y + BAR_H / 2 + 4) + '" font-size="11" fill="#ccc" font-family="inherit">' + c.score + '</text>');
+                            // A stale score is dimmed and carries its age, so an
+                            // old number cannot pass for a current one.
+                            var stale = ageTxt && parseInt(ageTxt, 10) >= 30;
+                            parts.push('<text x="' + (xOff + LABEL_W + barW + 5) + '" y="' + (y + BAR_H / 2 + 4) + '" font-size="11" fill="' + (stale ? '#8a8a99' : '#ccc') + '" font-family="inherit">' + c.score
+                                + (ageTxt ? '<tspan font-size="9" fill="' + (stale ? '#c9803a' : '#777') + '"> ' + ageTxt + '</tspan>' : '') + '</text>');
+                        } else if (!assessed) {
+                            parts.push('<text x="' + (xOff + LABEL_W + 7) + '" y="' + (y + BAR_H / 2 + 4) + '" font-size="10" fill="#c9803a" font-family="inherit">Not assessed</text>');
                         } else {
                             parts.push('<text x="' + (xOff + LABEL_W + 7) + '" y="' + (y + BAR_H / 2 + 4) + '" font-size="10" fill="#555" font-family="inherit">No data</text>');
                         }
@@ -1490,11 +1557,20 @@ window._loadCharts = function() {
                         if (!trendEl || !td.canvases) return;
                         var html = '';
                         td.canvases.forEach(function(c) {
-                            var arrow = '—', color = '#888', sign = '';
+                            // FOUR states, not two (rem-hyg-09). `unmeasured`
+                            // means fewer than two DAYS of assessments in the
+                            // 30-day window — which is every canvas on this
+                            // board today — and used to render as a flat "—",
+                            // identical to "measured, unchanged". A trend nobody
+                            // measured must not look like a trend that held
+                            // steady. `delta` is null there, never 0.0.
+                            var arrow = '—', color = '#888', sign = '', title = ' 30d trend';
                             if (c.direction === 'up') { arrow = '▲'; color = '#28a745'; sign = '+'; }
                             else if (c.direction === 'down') { arrow = '▼'; color = '#dc3545'; }
-                            var deltaStr = c.delta !== 0 ? (sign + c.delta.toFixed(1)) : '';
-                            html += '<span style="font-size:11px;color:' + color + ';white-space:nowrap;padding:2px 5px;background:rgba(0,0,0,0.15);border-radius:3px;" title="' + c.name + ' 30d trend">' +
+                            else if (c.direction === 'unmeasured') { arrow = '·'; color = '#6c6c80'; title = ' — no assessments in the last 30 days'; }
+                            var deltaStr = (c.delta !== null && c.delta !== undefined && c.delta !== 0)
+                                ? (sign + c.delta.toFixed(1)) : '';
+                            html += '<span style="font-size:11px;color:' + color + ';white-space:nowrap;padding:2px 5px;background:rgba(0,0,0,0.15);border-radius:3px;" title="' + c.name + title + '">' +
                                 '<span style="font-size:9px;color:#aaa;margin-right:2px;">' + c.name + '</span>' +
                                 arrow + (deltaStr ? ' ' + deltaStr : '') +
                                 '</span>';

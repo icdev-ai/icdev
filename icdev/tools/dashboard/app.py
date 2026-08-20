@@ -3396,11 +3396,11 @@ def create_app(testing: bool = False) -> Flask:
         results = []
         for canvas_name, module_name, table, score_col, ts_col, mode in _TREND_CANVASES:
             if mode == "skip" or not module_name:
-                results.append({"name": canvas_name, "scores": [], "direction": "flat", "delta": 0.0})
+                results.append({"name": canvas_name, "scores": [], "direction": "unmeasured", "delta": None})
                 continue
             cconn = _trend_canvas_conn(module_name)
             if not cconn:
-                results.append({"name": canvas_name, "scores": [], "direction": "flat", "delta": 0.0})
+                results.append({"name": canvas_name, "scores": [], "direction": "unmeasured", "delta": None})
                 continue
             try:
                 ph = sql_placeholder(cconn)
@@ -3416,19 +3416,14 @@ def create_app(testing: bool = False) -> Flask:
                     raw = float(r["raw_score"] or 0)
                     s = round(max(0.0, 100.0 - raw), 1) if mode == "inverted" else round(raw, 1)
                     scores.append({"score": s, "date": r["day"]})
-                direction = "flat"
-                delta = 0.0
-                if len(scores) >= 2:
-                    latest = scores[0]["score"]
-                    oldest = scores[-1]["score"]
-                    delta = round(latest - oldest, 1)
-                    if delta >= 2.0:
-                        direction = "up"
-                    elif delta <= -2.0:
-                        direction = "down"
+                # COMPARE LIKE WITH LIKE (rem-hyg-09) — one definition, in
+                # tools/canvas_compliance/posture.py, so the rule the tests
+                # exercise is the rule this route runs.
+                from tools.canvas_compliance.posture import daily_trend
+                direction, delta = daily_trend(scores)
                 results.append({"name": canvas_name, "scores": scores, "direction": direction, "delta": delta})
             except Exception:
-                results.append({"name": canvas_name, "scores": [], "direction": "flat", "delta": 0.0})
+                results.append({"name": canvas_name, "scores": [], "direction": "unmeasured", "delta": None})
             finally:
                 try:
                     cconn.close()
@@ -3457,9 +3452,9 @@ def create_app(testing: bool = False) -> Flask:
                 finally:
                     zconn.close()
             else:
-                results.append({"name": "Zero Trust", "scores": [], "direction": "flat", "delta": 0.0})
+                results.append({"name": "Zero Trust", "scores": [], "direction": "unmeasured", "delta": None})
         except Exception:
-            results.append({"name": "Zero Trust", "scores": [], "direction": "flat", "delta": 0.0})
+            results.append({"name": "Zero Trust", "scores": [], "direction": "unmeasured", "delta": None})
 
         # AI-ify trend — per-scan average composite_score grouped by day
         try:
@@ -3489,7 +3484,7 @@ def create_app(testing: bool = False) -> Flask:
             finally:
                 aconn.close()
         except Exception:
-            results.append({"name": "AI-ify", "scores": [], "direction": "flat", "delta": 0.0})
+            results.append({"name": "AI-ify", "scores": [], "direction": "unmeasured", "delta": None})
 
         _CANVAS_TREND_CACHE["entry"] = {"ts": _now, "data": results}
         return jsonify({"canvases": results})

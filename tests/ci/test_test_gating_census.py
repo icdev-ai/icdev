@@ -317,9 +317,17 @@ def test_the_test_job_actually_runs_the_census():
             assert "|| true" not in line and "continue-on-error" not in line
 
     doc = yaml.safe_load(text)
-    steps = doc["jobs"]["test"]["steps"]
+    # The census runs ONCE, in `test-gates` — it is a whole-tree sweep, so
+    # running it per shard would pay for it N times for one answer. `test` is
+    # now an aggregator, so "is it in the required job" is asked in two parts:
+    # the census is in test-gates, AND the required check depends on test-gates.
+    steps = doc["jobs"]["test-gates"]["steps"]
     assert any("--check-coverage" in str(s.get("run", "")) for s in steps), (
-        "the census must run in the REQUIRED `test` job, not an advisory one"
+        "the census must run in `test-gates`, not an advisory job"
+    )
+    assert "test-gates" in doc["jobs"]["test"]["needs"], (
+        "the REQUIRED `test` check must depend on the job carrying the census — "
+        "otherwise the ratchet runs but cannot block a merge"
     )
 
 

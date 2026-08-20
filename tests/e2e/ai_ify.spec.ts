@@ -3,9 +3,23 @@
 // renders, the guided scan wizard is present, the scan API rejects empty input,
 // and the legacy /ai-augmentation route redirects to /ai-ify.
 
-import { test, expect } from '@playwright/test';
+// `test`/`expect` come from ./fixtures/auth, not @playwright/test: the scan POST
+// below 403s CSRF_FAILED against a locally started dashboard otherwise, because
+// ICDEV_DASHBOARD_DEV_AUTOLOGIN gives every request a cookie session and
+// `csrf_protect` then demands a token the raw APIRequestContext does not carry.
+// CI hides it with ICDEV_AUTH_BYPASS. See that file for why. tsh-e2e-01-d2.
+import { test, expect } from './fixtures/auth';
 
-const BASE  = process.env.ICDEV_DASHBOARD_URL || 'http://localhost:5050';
+// Same precedence as `playwright.config.ts`'s DASHBOARD_URL, deliberately: this
+// spec-local constant is NOT covered by globalSetup's reachability assert, which
+// probes the CONFIGURED baseURL. Reading ICDEV_DASHBOARD_URL alone meant a run
+// launched with ICDEV_E2E_BASE_URL still sent these five tests at the container
+// gateway and burned a timeout each, with nothing failing once to say why
+// (qa-fail-e2e-baseurl-01).
+const BASE  =
+  process.env.ICDEV_E2E_BASE_URL ||
+  process.env.ICDEV_DASHBOARD_URL ||
+  `http://localhost:${process.env.ICDEV_DASHBOARD_PORT || '5050'}`;
 const AIIFY = `${BASE}/ai-ify/`;
 
 test.describe('AI-ify Canvas', () => {
@@ -67,8 +81,10 @@ test.describe('AI-ify Canvas', () => {
     await expect(widget.first()).toBeAttached();
   });
 
-  test('scan API returns 400 for empty input_ref', async ({ page }) => {
-    const resp = await page.request.post(`${BASE}/ai-ify/api/scan`, {
+  test('scan API returns 400 for empty input_ref', async ({ request }) => {
+    // Relative path on purpose: `request` is bootstrapped against Playwright's
+    // configured baseURL, and that is the origin its CSRF cookie belongs to.
+    const resp = await request.post('/ai-ify/api/scan', {
       data: { input_type: 'local_path', input_ref: '', il_level: 'il4' },
     });
     expect(resp.status()).toBe(400);

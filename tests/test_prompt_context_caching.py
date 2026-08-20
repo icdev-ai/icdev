@@ -318,12 +318,25 @@ class TestCacheSavingsDashboard:
             )
 
     def test_hit_rate_pct_range(self):
-        """hit_rate_pct must be between 0.0 and 100.0."""
+        """hit_rate_pct is a percentage in [0, 100], or None when unmeasured.
+
+        None is not a gap in the contract, it IS the contract (cch-obs-03): with
+        hit_count == miss_count == 0 the cache was never asked, so there is no
+        rate — and a hard 0.0 renders as "0.0% Hit Rate", which says the cache
+        failed every request it was given.
+
+        This assertion used to demand a number and passed anyway, because in a
+        test environment the cache table is absent and `get_savings_stats`
+        returns its skeleton (0.0). It would have failed on any deployment where
+        the table exists and traffic is quiet — which is the live board.
+        """
         from tools.cache_savings.savings import get_savings_stats
 
         rate = get_savings_stats()["summary"].get("hit_rate_pct", -1)
+        if rate is None:
+            return
         assert isinstance(rate, (int, float)) and 0.0 <= rate <= 100.0, (
-            f"hit_rate_pct must be in [0, 100], got: {rate!r}"
+            f"hit_rate_pct must be in [0, 100] or None, got: {rate!r}"
         )
 
 

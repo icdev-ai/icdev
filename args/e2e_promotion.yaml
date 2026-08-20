@@ -1,0 +1,26 @@
+# Claims for the E2E promotion survey (crx-test-06).
+#
+# These are CLAIMS, not a schema dump: each one is a fact about how the CI
+# workflow is wired today, kept out of the code so a rename does not need a code
+# change. `tools/ci/e2e_flake_survey.py` falls back to the same values.
+
+# The required-check name branch protection would match on.
+check_name: "E2E (Playwright)"
+
+# How a POST-unblock run is recognised. Structural on purpose: it is read off
+# the run being classified, so it cannot drift the way a hardcoded cutoff date
+# or commit sha would. Before crx-test-05 the E2E job was unsharded and declared
+# `needs: [test]`; after it, E2E fans out across `E2E Shard k of N`.
+shard_job_pattern: '^E2E Shard \d+ of \d+$'
+
+# Post-unblock runs that must be EXERCISED (ran to a success/failure verdict —
+# skipped and cancelled do not count) before the promotion is supported.
+#
+# 20 is the plan's figure and it is a floor on the SAMPLE, not on the flake
+# rate: the bar for promotion is ZERO failures, so raising this number makes the
+# evidence stronger and never weaker. Do NOT lower it to reach `supported`
+# sooner, and do NOT respond to a `blocked` verdict by raising it — a failure
+# does not stop being a failure because more runs are averaged over it.
+min_runs: 20
+
+workflow: "icdev-ci.yml"

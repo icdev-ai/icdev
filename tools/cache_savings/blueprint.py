@@ -104,6 +104,13 @@ def api_cache_savings_tile():
                  "cached_share_pct": p["cached_share_pct"], "calls": p["calls"]}
                 for p in (bp_stats.get("providers") or [])[:3]
             ],
+            # How many the cap dropped. The chips above count EVERY provider
+            # (measured: "1 unreported, 17 no data") while this list shows three,
+            # so without this the reader sees 18 counted and 3 named and cannot
+            # tell whether the rest were omitted or never existed. CLAUDE.md:
+            # silent truncation reads as "covered everything" when it did not.
+            "shown": min(3, len(bp_stats.get("providers") or [])),
+            "total": len(bp_stats.get("providers") or []),
         }
     except Exception as exc:  # noqa: BLE001
         logger.warning("per-provider cache tile block unavailable: %s", exc)

@@ -24,6 +24,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          # No pip caching existed anywhere in this workflow, so every
+          # job paid the full install. (crx-test-05)
+          cache: pip
+          cache-dependency-path: requirements.txt
       - run: pip install ruff
       # NO --fix. An auto-fix step here rewrites the files IN THE RUNNER, so the
       # lint below then passes against a tree nobody committed: the gate goes
@@ -36,9 +40,20 @@ jobs:
         run: python -m ruff check tools/ tests/ --select E,F,W --ignore E402,E501,E701,E702,E721,E722,E731,E741,F404
 
   # ── Tier 1: Unit Tests (pure Python — no LLM) ───────────────────────────
-  test:
-    name: Test
+  # ── Tier 1: the gates that run ONCE, not once per shard ──────────────────
+  # These were steps of the old monolithic `test` job. Sharding the pytest run
+  # would have run every one of them N times for one answer; they are whole-tree
+  # or whole-diff checks and none of them is per-file. `fetch-depth: 0` stays
+  # here because red_first_gate, isolation_run and census_growth all need the
+  # merge base and all exit 2 (red, "could not run") without it.
+  test-gates:
+    name: Test Gates
     runs-on: ubuntu-latest
+    # Bounded. These jobs inherited GitHub's 360-MINUTE default, and so did
+    # the serial `test` job before them — a hung pytest would have burned six
+    # hours of runner time per shard before anyone saw a red. Measured
+    # 2026-08-20: gates 2m42s, shards 6-7min.
+    timeout-minutes: 20
     needs: lint
     steps:
       # fetch-depth: 0, for the isolation run at the end of this job
@@ -58,6 +73,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          # No pip caching existed anywhere in this workflow, so every
+          # job paid the full install. (crx-test-05)
+          cache: pip
+          cache-dependency-path: requirements.txt
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
@@ -223,98 +242,6 @@ jobs:
       - name: Undeclared-import census
         working-directory: ${{ github.workspace }}
         run: python tools/ci/undeclared_import_census.py --check
-      - name: Run core unit tests
-        working-directory: ${{ github.workspace }}
-        run: |
-          _abort() {
-            echo "CI: abort signal received — terminating pytest children"
-            # Kill direct children of this shell (pytest, coverage, etc.)
-            children=$(ps -o pid= --ppid $$ 2>/dev/null || true)
-            for child in $children; do
-              kill "$child" 2>/dev/null || true
-            done
-            kill -- -$$ 2>/dev/null || true
-          }
-          trap _abort SIGTERM SIGINT
-          # No temp file: a `/tmp` path means one thing to bash and another to
-          # Python on the Windows runner, and RUNNER_TEMP is a backslash path.
-          # Read the resolver's stdout straight into an array instead.
-          CI_TESTS=()
-          while IFS= read -r line; do
-            if [ -n "$line" ]; then CI_TESTS+=("$line"); fi
-          # `| tr -d` is belt-and-braces: the resolver forces LF on every platform,
-          # but a stray CR is invisible in a log and makes pytest report
-          # "file or directory not found" for a file that plainly exists.
-          done < <(python tools/ci/gated_test_list.py --print --list core | tr -d '\015')
-          # Belt-and-braces after the --check step: process substitution hides
-          # python's exit status, and an empty array would make the line below
-          # `pytest -v --tb=short -x`, i.e. collect the WHOLE suite — the opposite
-          # of a shrunk gate, but just as wrong, and it would run for over an hour
-          # before anyone noticed.
-          if [ "${#CI_TESTS[@]}" -eq 0 ]; then
-            echo "::error::resolved CI test list is empty — refusing to run pytest"
-            exit 1
-          fi
-          echo "Running ${#CI_TESTS[@]} gated test targets from args/ci_test_files/core.txt"
-          # --junitxml feeds the runtime half of the skip census in the next step
-          # (trust-disc-03). Workspace-relative on purpose: a $RUNNER_TEMP path is
-          # a backslash path on the Windows runner and a /tmp path means one thing
-          # to bash and another to Python, and this file is handed between both.
-          mkdir -p .tmp
-          pytest "${CI_TESTS[@]}" -v --tb=short -x --junitxml=.tmp/ci-junit.xml
-      # trust-disc-03, runtime half. The static census above reads source text and
-      # therefore cannot see a skip raised from a conftest fixture, a plugin, or a
-      # rebound alias — all three silence a gated file without its own source
-      # saying so. This reads what the run ACTUALLY skipped out of the JUnit XML
-      # and prints it per file, so the gated suite's skip count is a number in the
-      # log of every build rather than a thing nobody has ever looked at.
-      #
-      # SURVEYED BEFORE ARMING, per the CLAUDE.md rule that a check enabled without
-      # a measured fire rate is unmeasured rather than proven. Full gated allowlist
-      # run 2026-08-15 (240 targets, 6,864 collected, 9m36s): 45 skipped (0.66%),
-      # and every one attributed to a file that owns a registered site — ZERO
-      # unaccounted, so `--check` refuses nothing that exists today. The measurement
-      # also showed why attribution is per FILE and not per site:
-      # tests/test_ski_roles_lifecycle.py produced 37 of those 45 skips, 82% of the
-      # total, from exactly 2 static sites — one parametrized guard over a skill
-      # pack that is not vendored.
-      #
-      # `if: always()` because a suite that failed still skipped, and the skip
-      # count is often how you find out WHY it failed.
-      - name: Skip census (runtime)
-        if: always()
-        working-directory: ${{ github.workspace }}
-        run: python tools/ci/skip_census.py --from-report .tmp/ci-junit.xml --check
-      # trust-disc-02. The step above is the IN-SUITE half: every gated module in
-      # one process, in one fixed order (the order of core.txt). This is the ALONE
-      # half, and the two catch different defects.
-      #
-      # There is no test-order randomisation and no isolation run anywhere else in
-      # this pipeline — not here, not in pytest.ini (absent), not in pyproject.toml.
-      # So an order-dependent pass is INVISIBLE: a file is green because of what
-      # ran before it, and stays green until an unrelated allowlist edit reshuffles
-      # the run, at which point it presents as a failure in whatever PR happened to
-      # move the list. Four files had exactly that shape in a single session
-      # (tests/cortex/test_chat_routing.py failed alone; test_chat_turn_connections
-      # .py, test_blueprint_routes.py and tests/test_cnr_mission_canvas.py failed
-      # in-suite), all four registering a blueprint onto the shared
-      # tools.dashboard.app singleton behind an `if "x" not in app.blueprints`
-      # guard that skips only when the blueprint is already there — i.e. never in
-      # the case that fails.
-      #
-      # Scope is the files THIS PR touched, so the marginal cost is one extra
-      # process per changed test file and a PR that changes no test pays nothing.
-      # Only files that are in an allowlist can fail the job: those are already
-      # green in-suite, so a standalone failure is real news. A changed file in no
-      # allowlist has never gated a merge and may be red for reasons that predate
-      # the PR, so it is run and reported as a warning instead — failing on those
-      # would red-light PRs for pre-existing debt, and this step would acquire a
-      # `|| true` within a week.
-      #
-      # Exit codes: 0 clean or nothing changed, 1 a gated file fails alone, 2 the
-      # changed set could not be resolved (shallow checkout — see fetch-depth
-      # above). All three are honoured by not swallowing the status. Do NOT add
-      # `|| true`: a gate whose exit code the shell discards is decoration.
       - name: Isolation run — changed test files, alone
         working-directory: ${{ github.workspace }}
         run: python tools/ci/isolation_run.py --run
@@ -354,6 +281,214 @@ jobs:
   # `continue-on-error` is NOT used, because a job that cannot go red is not a
   # gate, it is decoration. Promote it by adding the check to branch protection
   # once it has a clean run history; nothing in this file needs to change.
+
+  # ── Tier 1: the gated pytest run, sharded across runners ────────────────
+  # 31m15s of the old 33m43s `Test` job was this one pytest call over 436 files.
+  #
+  # BIN-PACKED BY MEASURED DURATION, not file count (crx-test-07).
+  # Round-robin balanced the COUNT (111/111/110/110) and said nothing about
+  # runtime: on the first merged sharded run shard 1 took 17m01s against
+  # 5m59s/5m43s/6m36s, because it drew the repo-wide scanners. `partition()`
+  # now packs against args/ci_test_timings/, refreshed weekly by
+  # .github/workflows/shard-timings.yml from these very artifacts. Do NOT
+  # respond to a slow shard by raising N -- an unbalanced partition wastes a
+  # 5th and 6th runner the same way it wastes the current three, and
+  # `shard_timings.py --balance` reports the makespan floor that says
+  # whether more runners could help at all.
+  #
+  # SHARDED ACROSS RUNNERS, not with pytest-xdist inside one. The parallelisation
+  # spike measured the blocker: 138 test files write the ambient
+  # cwd/data/icdev.db through a bare get_connection(), and xdist workers all
+  # share one working directory. A shard per runner has its own filesystem, so
+  # that hazard does not arise and no quarantine markers are needed.
+  #
+  # A 4-shard characterisation over the real list (each shard in its own process
+  # with its own ICDEV_DB_PATH, run WITHOUT -x so one pass surfaces every
+  # order-dependent file rather than one per shard) produced ZERO failures.
+  test-shard:
+    name: Test Shard ${{ matrix.shard }} of ${{ strategy.job-total }}
+    runs-on: ubuntu-latest
+    # See test-gates: 360 minutes was the inherited default. 30 is generous
+    # against a 6-7 minute shard and still bounds a hang.
+    timeout-minutes: 30
+    needs: lint
+    strategy:
+      # A failing shard must NOT cancel its siblings. With fail-fast the first
+      # failure hides the other three, so a PR breaking tests in three shards
+      # costs three round trips. `-x` is kept WITHIN a shard, so the fast-abort
+      # semantics of today are unchanged; you simply learn about up to N
+      # failures per run instead of exactly one.
+      fail-fast: false
+      matrix:
+        # The ONLY place N appears; `strategy.job-total` derives the rest.
+        shard: [1, 2, 3, 4]
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      ICDEV_STORAGE_BACKEND: sqlite
+    steps:
+      # Default depth-1: no step in this job reads git history. The gates job
+      # is the one that needs fetch-depth: 0.
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -e . 2>/dev/null || true
+      - name: Resolve gated test list (shard)
+        working-directory: ${{ github.workspace }}
+        # Belt-and-braces: `--check` validates the FULL list (floor, duplicates,
+        # existence) and then asserts this shard is non-empty. The floor is
+        # never divided by N — a derived per-shard floor would be strictly
+        # weaker than the whole-list one.
+        #
+        # `--check` also prints WHICH partition it cut (crx-test-07):
+        # bin-packed against args/ci_test_timings/, or round-robin because
+        # no usable snapshot was found. A silent fallback to round-robin
+        # looks exactly like the balanced run it is not, so it is a line in
+        # every build log rather than something inferred from the wall
+        # clock afterwards.
+        run: |
+          python tools/ci/gated_test_list.py --check --list core \
+            --shard ${{ matrix.shard }}/${{ strategy.job-total }}
+      - name: Run core unit tests (shard)
+        working-directory: ${{ github.workspace }}
+        run: |
+          _abort() {
+            echo "CI: abort signal received — terminating pytest children"
+            # Kill direct children of this shell (pytest, coverage, etc.)
+            children=$(ps -o pid= --ppid $$ 2>/dev/null || true)
+            for child in $children; do
+              kill "$child" 2>/dev/null || true
+            done
+            kill -- -$$ 2>/dev/null || true
+          }
+          trap _abort SIGTERM SIGINT
+          # No temp file: a `/tmp` path means one thing to bash and another to
+          # Python on the Windows runner, and RUNNER_TEMP is a backslash path.
+          # Read the resolver's stdout straight into an array instead.
+          CI_TESTS=()
+          while IFS= read -r line; do
+            if [ -n "$line" ]; then CI_TESTS+=("$line"); fi
+          # `| tr -d` is belt-and-braces: the resolver forces LF on every platform,
+          # but a stray CR is invisible in a log and makes pytest report
+          # "file or directory not found" for a file that plainly exists.
+          done < <(python tools/ci/gated_test_list.py --print --list core --shard ${{ matrix.shard }}/${{ strategy.job-total }} | tr -d '\015')
+          # Belt-and-braces after the --check step: process substitution hides
+          # python's exit status, and an empty array would make the line below
+          # `pytest -v --tb=short -x`, i.e. collect the WHOLE suite — the opposite
+          # of a shrunk gate, but just as wrong, and it would run for over an hour
+          # before anyone noticed.
+          if [ "${#CI_TESTS[@]}" -eq 0 ]; then
+            echo "::error::shard ${{ matrix.shard }}/${{ strategy.job-total }} resolved to ZERO targets — refusing to run pytest"
+            exit 1
+          fi
+          echo "Shard ${{ matrix.shard }}/${{ strategy.job-total }}: ${#CI_TESTS[@]} of the gated targets from args/ci_test_files/core.txt"
+          # --junitxml feeds the runtime half of the skip census in the next step
+          # (trust-disc-03). Workspace-relative on purpose: a $RUNNER_TEMP path is
+          # a backslash path on the Windows runner and a /tmp path means one thing
+          # to bash and another to Python, and this file is handed between both.
+          mkdir -p .tmp
+          pytest "${CI_TESTS[@]}" --tb=short -x --durations=25 \
+            --junitxml=.tmp/ci-junit-shard-${{ matrix.shard }}.xml
+      # trust-disc-03, runtime half. The static census above reads source text and
+      # therefore cannot see a skip raised from a conftest fixture, a plugin, or a
+      # rebound alias — all three silence a gated file without its own source
+      # saying so. This reads what the run ACTUALLY skipped out of the JUnit XML
+      # and prints it per file, so the gated suite's skip count is a number in the
+      # log of every build rather than a thing nobody has ever looked at.
+      #
+      # SURVEYED BEFORE ARMING, per the CLAUDE.md rule that a check enabled without
+      # a measured fire rate is unmeasured rather than proven. Full gated allowlist
+      # run 2026-08-15 (240 targets, 6,864 collected, 9m36s): 45 skipped (0.66%),
+      # and every one attributed to a file that owns a registered site — ZERO
+      # unaccounted, so `--check` refuses nothing that exists today. The measurement
+      # also showed why attribution is per FILE and not per site:
+      # tests/test_ski_roles_lifecycle.py produced 37 of those 45 skips, 82% of the
+      # total, from exactly 2 static sites — one parametrized guard over a skill
+      # pack that is not vendored.
+      #
+      # `if: always()` because a suite that failed still skipped, and the skip
+      # count is often how you find out WHY it failed.
+      - name: Upload shard JUnit XML
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          # The shard suffix is mandatory, not cosmetic: upload-artifact@v4
+          # REJECTS a duplicate artifact name (v3 merged them), so a shared
+          # name would fail every shard but the first.
+          name: ci-junit-shard-${{ matrix.shard }}
+          path: .tmp/ci-junit-shard-${{ matrix.shard }}.xml
+          if-no-files-found: warn
+      - name: Skip census (runtime)
+        if: always()
+        working-directory: ${{ github.workspace }}
+        run: python tools/ci/skip_census.py --from-report .tmp/ci-junit-shard-${{ matrix.shard }}.xml --check
+      # trust-disc-02. The step above is the IN-SUITE half: every gated module in
+      # one process, in one fixed order (the order of core.txt). This is the ALONE
+      # half, and the two catch different defects.
+      #
+      # There is no test-order randomisation and no isolation run anywhere else in
+      # this pipeline — not here, not in pytest.ini (absent), not in pyproject.toml.
+      # So an order-dependent pass is INVISIBLE: a file is green because of what
+      # ran before it, and stays green until an unrelated allowlist edit reshuffles
+      # the run, at which point it presents as a failure in whatever PR happened to
+      # move the list. Four files had exactly that shape in a single session
+      # (tests/cortex/test_chat_routing.py failed alone; test_chat_turn_connections
+      # .py, test_blueprint_routes.py and tests/test_cnr_mission_canvas.py failed
+      # in-suite), all four registering a blueprint onto the shared
+      # tools.dashboard.app singleton behind an `if "x" not in app.blueprints`
+      # guard that skips only when the blueprint is already there — i.e. never in
+      # the case that fails.
+      #
+      # Scope is the files THIS PR touched, so the marginal cost is one extra
+      # process per changed test file and a PR that changes no test pays nothing.
+      # Only files that are in an allowlist can fail the job: those are already
+      # green in-suite, so a standalone failure is real news. A changed file in no
+      # allowlist has never gated a merge and may be red for reasons that predate
+      # the PR, so it is run and reported as a warning instead — failing on those
+      # would red-light PRs for pre-existing debt, and this step would acquire a
+      # `|| true` within a week.
+      #
+      # Exit codes: 0 clean or nothing changed, 1 a gated file fails alone, 2 the
+      # changed set could not be resolved (shallow checkout — see fetch-depth
+      # above). All three are honoured by not swallowing the status. Do NOT add
+      # `|| true`: a gate whose exit code the shell discards is decoration.
+
+  # ── The REQUIRED check. Aggregator only: no checkout, no install. ───────
+  # Branch protection requires a check literally named `Test`, and three jobs
+  # (`e2e`, `docker-build`, `two-tier-build`) declare `needs: [test]`. Keeping
+  # the job id `test` and the name `Test` means neither has to change and there
+  # is no flag day: an already-open PR that has not rebased keeps running the
+  # old monolithic job, which also reports a check named `Test`.
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: [test-gates, test-shard]
+    # MANDATORY. Without it GitHub SKIPS this job when a dependency fails, and a
+    # skipped check is not accepted by branch protection — the PR would sit on
+    # "Expected — Waiting for status" forever with no red anywhere.
+    if: always()
+    timeout-minutes: 5
+    steps:
+      - name: Assert every gated-test job succeeded
+        env:
+          GATES: ${{ needs.test-gates.result }}
+          SHARDS: ${{ needs.test-shard.result }}
+        run: |
+          echo "test-gates=$GATES  test-shard=$SHARDS"
+          # `!= success`, NEVER `== failure`. For a matrix job the result is a
+          # single aggregated value, and a CANCELLED shard is not `failure` — so
+          # enumerating failure would go GREEN on a suite that never finished.
+          if [ "$GATES" != "success" ] || [ "$SHARDS" != "success" ]; then
+            echo "::error::Test failed — test-gates=$GATES, test-shard=$SHARDS"
+            exit 1
+          fi
+          echo "Test: gates green, every shard green."
+
   test-windows:
     name: Test (Windows)
     runs-on: windows-latest
@@ -391,6 +526,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          # No pip caching existed anywhere in this workflow, so every
+          # job paid the full install. (crx-test-05)
+          cache: pip
+          cache-dependency-path: requirements.txt
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
@@ -449,6 +588,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          # No pip caching existed anywhere in this workflow, so every
+          # job paid the full install. (crx-test-05)
+          cache: pip
+          cache-dependency-path: requirements.txt
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
@@ -513,6 +656,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          # No pip caching existed anywhere in this workflow, so every
+          # job paid the full install. (crx-test-05)
+          cache: pip
+          cache-dependency-path: requirements.txt
       - run: pip install bandit pip-audit
       - name: SAST (bandit) — 0 high+high findings
         run: bandit -r tools/ -q --severity-level high --confidence-level high
@@ -534,6 +681,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          # No pip caching existed anywhere in this workflow, so every
+          # job paid the full install. (crx-test-05)
+          cache: pip
+          cache-dependency-path: requirements.txt
       - name: Install dependencies
         run: pip install -r requirements.txt
 
@@ -584,11 +735,27 @@ jobs:
         continue-on-error: true
 
   # ── Tier 2: E2E Playwright Tests ─────────────────────────────────────────
-  e2e:
-    name: E2E (Playwright)
+  # ── Tier 2: E2E, sharded and NO LONGER BEHIND `test` ─────────────────────
+  # `needs: [test]` cost ~17.5 min of pure wall-clock: E2E waited for a 34-minute
+  # unit run it does not depend on, purely as a "don't spend runner minutes on a
+  # red tree" heuristic. It now starts with the unit shards. The trade is
+  # explicit: a PR with failing unit tests also spends E2E minutes.
+  #
+  # SHARDED, not multi-worker. playwright.config.ts keeps `workers: 1` and
+  # `fullyParallel: false` — the Gov/DoD audit-traceability rule — because
+  # `--shard` splits the suite ACROSS jobs while leaving order WITHIN a shard
+  # deterministic, and every spec still runs exactly once. Raising `workers`
+  # would interleave specs in one process against one shared dashboard server
+  # and one database; sharding gives each shard its own of both.
+  e2e-shard:
+    name: E2E Shard ${{ matrix.shard }} of ${{ strategy.job-total }}
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: lint
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     env:
       ICDEV_STORAGE_BACKEND: postgresql
       ICDEV_PG_HOST: localhost
@@ -678,6 +845,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          # No pip caching existed anywhere in this workflow, so every
+          # job paid the full install. (crx-test-05)
+          cache: pip
+          cache-dependency-path: requirements.txt
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -851,7 +1022,8 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: route-smoke
+          # Shard-suffixed for the same reason as the three below.
+          name: route-smoke-shard-${{ matrix.shard }}
           path: route-smoke.json
           if-no-files-found: warn
       - name: Run Playwright E2E tests
@@ -863,7 +1035,7 @@ jobs:
             kill -- -$$ 2>/dev/null || true
           }
           trap _abort SIGTERM SIGINT
-          npx playwright test
+          npx playwright test --shard=${{ matrix.shard }}/${{ strategy.job-total }}
       - name: Run DWO V&V specs (dwo-vv-03-d5)
         # The three DWO V&V specs live in tests/e2e/ and are collected by the
         # sweep above, but each self-skips unless its own env var is set. They are
@@ -941,7 +1113,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          # Shard-suffixed (crx-test-08). Four E2E shards uploading one
+          # name produced four artifacts called `playwright-report`,
+          # with nothing to say which shard failed.
+          name: playwright-report-shard-${{ matrix.shard }}
           path: |
             .tmp/test_runs/playwright-report/
             .tmp/test_runs/playwright-report-dwo/
@@ -950,7 +1125,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-artifacts
+          # Shard-suffixed (crx-test-08). Four E2E shards uploading one
+          # name produced four artifacts called `playwright-artifacts`,
+          # with nothing to say which shard failed.
+          name: playwright-artifacts-shard-${{ matrix.shard }}
           path: |
             .tmp/test_runs/playwright-results.json
             .tmp/test_runs/playwright-artifacts/
@@ -965,12 +1143,43 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: dwo-vv-screenshots
+          # Shard-suffixed (crx-test-08). Four E2E shards uploading one
+          # name produced four artifacts called `dwo-vv-screenshots`,
+          # with nothing to say which shard failed.
+          name: dwo-vv-screenshots-shard-${{ matrix.shard }}
           path: playwright/screenshots/dwo-*.png
           retention-days: 30
           if-no-files-found: warn
 
   # ── Tier 3: Docker Build (main branch only) ─────────────────────────────
+  # ── The E2E aggregator. Keeps the check name `E2E (Playwright)` ─────────
+  # Same construction as `test`, for the same reasons: `if: always()` (a skipped
+  # check is not accepted by branch protection) and `!= success` (a CANCELLED
+  # shard is not `failure`, so enumerating failure would go green on a suite
+  # that never finished).
+  #
+  # This is the check to promote to REQUIRED once the flake rate is measured.
+  # It is NOT required yet: E2E has run 25/25 green, but only ever AFTER `test`
+  # passed, so it has never been exercised on a branch with failing unit tests.
+  # Unblocking it above changes that population — measure it before arming.
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    needs: [e2e-shard]
+    if: always()
+    timeout-minutes: 5
+    steps:
+      - name: Assert every E2E shard succeeded
+        env:
+          SHARDS: ${{ needs.e2e-shard.result }}
+        run: |
+          echo "e2e-shard=$SHARDS"
+          if [ "$SHARDS" != "success" ]; then
+            echo "::error::E2E failed — e2e-shard=$SHARDS"
+            exit 1
+          fi
+          echo "E2E: every shard green."
+
   docker-build:
     name: Docker Build
     runs-on: ubuntu-latest

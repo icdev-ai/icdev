@@ -776,6 +776,91 @@ python -m tools.ci.gate_promoter --limit 10 --apply       # write + ratchet
 # Weekly via .github/workflows/gate-promoter.yml, which opens a PR rather than
 # pushing — the promotion is then proved by the same gated suite it modifies.
 
+# The gated pytest run is SHARDED across runners (crx-test-05)
+python tools/ci/gated_test_list.py --print --list core --shard 2/4   # this shard's targets
+python tools/ci/gated_test_list.py --check --list core --shard 2/4   # validate, then narrow
+# `Test` (33m43s, of which 31m15s was ONE pytest call over 438 files) is now an
+# AGGREGATOR over `test-gates` + a 4-way `test-shard` matrix, and `E2E
+# (Playwright)` is an aggregator over `e2e-shard`. Both keep their exact check
+# NAMES, so branch protection and the three `needs: [test]` jobs need no edit.
+# SHARDED ACROSS RUNNERS, never pytest-xdist: 138 test files write the ambient
+# cwd/data/icdev.db through a bare get_connection() and xdist workers share one
+# working directory (crx-test-03 spike). A shard per runner has its own
+# filesystem, so the hazard does not arise and no quarantine markers are needed.
+# BIN-PACKED BY MEASURED DURATION (crx-test-07), never contiguous chunks (they
+# group tests/cortex/* -- 44 files -- into one shard) and never builtin `hash()`:
+# PYTHONHASHSEED is randomised per process, so a hash partition puts a file in
+# shard 2 on one runner and shard 4 on another -- some files run twice, others
+# never, and the run reports GREEN. See the crx-test-07 block below.
+# The floor / duplicate / existence checks always read the FULL list. A derived
+# per-shard floor is strictly weaker: a 110-file shard could lose 90 files and
+# still clear a floor of 20. `--shard` REFUSES --check-coverage /
+# --prune-backlog -- sharding a census silently shrinks the backlog ratchet.
+# BOTH AGGREGATOR INVARIANTS FAIL *GREEN* IF WRONG, so both are pinned by tests
+# in tests/ci/test_gated_test_list.py: `if: always()` (without it GitHub SKIPS
+# the aggregator when a dependency fails, and a skipped check is never accepted
+# by branch protection -- the PR waits forever with no red anywhere) and
+# `!= success`, NEVER `== failure` (a CANCELLED shard is not `failure`, so
+# enumerating failure reports green on a suite that never finished).
+# E2E no longer waits for `test` (`needs: lint`), which alone removed ~17.5 min
+# of wall clock. playwright.config.ts KEEPS workers:1 and fullyParallel:false --
+# the Gov/DoD audit-traceability decision -- because --shard splits ACROSS jobs
+# while leaving order WITHIN a shard deterministic.
+# Files that must share a process: args/ci_test_files/shard_pins.txt.
+
+# The shards are BIN-PACKED by measured duration, not file count (crx-test-07)
+python tools/ci/shard_timings.py --show                              # what the loader merges
+python tools/ci/shard_timings.py --balance --shards 4                # the partition it produces
+python tools/ci/shard_timings.py --balance --shards 4 --no-timings   # the crx-test-05 baseline
+python tools/ci/gated_test_list.py --check --list core --shard 2/4 --no-timings
+python tools/ci/shard_timings.py --from-junit '.tmp/junit/shard*/*.xml' --source github-run-N --write
+# Round-robin balanced FILE COUNT (111/111/110/110) and said NOTHING about
+# runtime. Measured on the first merged sharded pipeline (run 32352491214,
+# 2026-08-20): shard 1 17m01s, shard 2 5m59s, shard 3 5m43s, shard 4 6m36s -- so
+# `Test` cost 17 minutes to do ~7 minutes of work while three runners idled for
+# ten of them, because shard 1 drew the repo-wide scanners whose cost is
+# superlinear in tree size. `partition()` now does greedy longest-first bin
+# packing over the per-file snapshot in args/ci_test_timings/.
+# READ FROM THE JUNIT XML, never `--durations`: that flag prints a truncated
+# top-25 of CALL time, while pytest's default junit_duration_report is `total`
+# -- and the four worst offenders spent 82.6s/33.3s/32.5s/26.8s in SETUP ALONE.
+# TWO PROPERTIES ASSERTED, because violating either reports GREEN. `partition()`
+# computes the WHOLE partition and checks multiset equality before handing back
+# one shard, so a dropped file is caught on the runner that would otherwise
+# silently skip it; and no builtin `hash()` anywhere. Floor / duplicate /
+# existence still read the FULL list.
+# A FILE ABSENT FROM THE SNAPSHOT IS NEVER DROPPED -- it is weighted at the
+# MEDIAN of the measured entries. Median rather than zero (zero declares a new
+# test free and lets any number pile onto one shard); median rather than mean
+# (the mean is dragged by the very scanners that caused the imbalance). Nothing
+# measured degrades to round-robin, and a MALFORMED snapshot degrades the same
+# way with a `::warning::` and never an error -- this directory governs how FAST
+# the gate runs, never what it COVERS, and a `Test` that goes red over a
+# malformed JSON file is a check people learn to bypass.
+# DO NOT RESPOND TO A SLOW SHARD BY RAISING N. `--balance` reports
+# `lower_bound_seconds`, the heaviest single INDIVISIBLE unit, which a partition
+# can never beat. Measured 2026-08-20 it is 699.2s of a 1791.2s suite --
+# tests/cortex/test_chat_routing.py, 39% of the entire gated run in FOUR tests
+# (278.8 + 141.4 + 139.5 + 139.4s, all four network-timeout-shaped). The busiest
+# shard is already AT that floor: `Test` goes 17min -> ~12min, NOT the ~8-9min a
+# count-based estimate predicts, and a 5th and 6th runner would idle exactly the
+# way three do today. Splitting that file is crx-test-08, not more shards.
+# PACKING IS LESS STABLE THAN ROUND-ROBIN, and that is its real cost. Round-robin
+# reshuffled only the TAIL on an append; greedy packing cascades, because every
+# unit sorted after a new one depends on the running loads -- measured
+# 2026-08-20, adding two test files moved ~50 of the other 442 between shards.
+# Nothing is lost (the assertion above covers that) but a file's NEIGHBOURS
+# change, so an order-dependent pass surfaces in whatever PR moved the list. The
+# mitigations are unchanged: isolation_run.py runs a changed file ALONE, the
+# shard runs it IN-SUITE, and a PR's own `Test` runs the exact partition it will
+# merge with. Fix it by making the test self-sufficient, never by pinning it.
+# `snapshot.json` is owned by the weekly .github/workflows/shard-timings.yml,
+# which reads the newest SUCCESSFUL ICDEV CI run on the default branch (a failed
+# run's shards abort at `-x`, so its JUnit is a PARTIAL measurement) and opens a
+# PR. A task correcting one weight writes its own
+# args/ci_test_timings/<task-id>.json; snapshots merge newest-`generated_at`-wins
+# per path, the same collision-free discipline core.d/ gave core.txt.
+
 # Red-first proof — did the changed test actually go RED? (trust-disc-01)
 python tools/ci/red_first_gate.py --gate                 # the merge gate (0 clean / 1 finding / 2 could-not-run)
 python tools/ci/red_first_gate.py                        # report only, always exit 0
@@ -983,6 +1068,39 @@ python -c "from icdev.tools.databridge import broker; print(broker.list_availabl
 #  * rss_connector does not extend saas_base and so fetched with NO egress guard,
 #    while being the one connector an agent can reach through the broker.
 # Every call, allowed or denied, writes one databridge_agent_access_log row.
+
+# Is `E2E (Playwright)` reliable enough to be REQUIRED? Surveyed; answer is NOT YET (crx-test-06)
+python tools/ci/e2e_flake_survey.py --json
+python tools/ci/e2e_flake_survey.py --limit 100
+python tools/ci/e2e_flake_survey.py --from-json runs.json       # offline replay
+# E2E showed 25/25 green and that number could not support a promotion. Until
+# crx-test-05 the job declared `needs: [test]`, so it ONLY ever ran on branches
+# whose unit suite had ALREADY passed and GitHub SKIPPED it on the rest: the
+# sample was drawn from the healthiest branches in the population, and the
+# unhealthy ones were absent from the DENOMINATOR -- the one place an absence is
+# invisible. Measured 2026-08-19 over 40 runs: 27 success, 0 failure, and 10
+# SKIPPED. Counting those 10 as "did not fail" is what turned selection bias
+# into evidence of reliability.
+# The population is split STRUCTURALLY, never by a cutoff date: a post-unblock
+# run carries an `E2E Shard k of N` job, which is a fact about the run itself and
+# cannot drift when somebody reruns an old branch.
+# FIVE outcomes, never merged: success | failure (the only flake signal) |
+# cancelled (an infrastructure event, a verdict about neither) | skipped (NEVER
+# RAN) | in_progress. `flake_rate` is None -- NEVER 0.0 -- when nothing was
+# exercised, because "measured clean" and "never measured" justify opposite
+# decisions. The biased pre-unblock block is REPORTED but its state is forced to
+# `biased_ineligible`, so it cannot print a verdict a reader would quote.
+# Promotion needs BOTH >=20 exercised post-unblock runs AND zero failures. A
+# failure does not stop being a failure because more runs are averaged over it --
+# never raise `min_runs` to clear a `blocked` verdict, and never lower it to
+# reach `supported` sooner. Claims: args/e2e_promotion.yaml.
+# REPORT ONLY, deliberately no --gate (kpr-fix-03: a survey with a --gate earns
+# itself a `|| true`). Exit 2 = the survey could not be produced, which is never
+# the same as a clean survey.
+# Promotion also needs `E2E (Playwright)` added to the hardcoded required-check
+# names in tools/dashboard/static/js/task_pipeline.js and
+# tools/kanban/seed_ahx_arr_clx.py, or the board's own "CI is green" predicate
+# disagrees with GitHub's.
 
 # GEPA Optimizer — Genome Evolution Pressure Analyzer (MCP tool: gepa_optimizer)
 python tools/skills/gepa_optimizer.py --json           # Run optimization pass (prune low-fitness genome entries)

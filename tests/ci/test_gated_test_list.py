@@ -32,6 +32,7 @@ from tools.ci.gated_test_list import (
     LISTS,
     AllowlistError,
     check,
+    shard,
     extract_chains,
     list_path,
     parse,
@@ -41,7 +42,10 @@ from tools.ci.gated_test_list import (
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "icdev-ci.yml"
-GATED_JOBS = ("test", "test-windows")
+# The jobs that actually RUN pytest. `test` is now an aggregator with no
+# checkout and no pytest call (crx-test-05), so asserting against it would
+# pass vacuously — every "no inline list" check would hold on an empty body.
+GATED_JOBS = ("test-shard", "test-windows")
 
 
 @pytest.fixture(scope="module")
@@ -179,7 +183,7 @@ def test_no_inline_pytest_list_in_the_workflow(workflow_text: str):
 
 
 @pytest.mark.parametrize(
-    "job,list_name", [("test", "core"), ("test-windows", "windows")]
+    "job,list_name", [("test-shard", "core"), ("test-windows", "windows")]
 )
 def test_gated_jobs_resolve_their_list_and_check_it(job: str, list_name: str,
                                                     workflow_text: str):
@@ -261,3 +265,230 @@ def test_packaged_copy_is_present_and_parses(name: str):
     mirrored = ROOT / "icdev" / "data" / "args" / "ci_test_files" / LISTS[name]
     assert mirrored.is_file()
     assert len(parse(mirrored.read_text(encoding="utf-8"))) >= FLOORS[name]
+
+
+# ── Sharding (crx-test-05) ─────────────────────────────────────────────────
+# The `Test` check was 33m43s, 31m15s of it one pytest call over 436 files.
+# Sharding splits that across runners. These pin the properties that make the
+# split SAFE — a partition bug here silently stops running tests, which is the
+# one failure this module exists to prevent.
+_SHARD_NS = (1, 2, 3, 4, 6, 8)
+
+
+def _entries():
+    return resolve("core")
+
+
+@pytest.mark.parametrize("n", _SHARD_NS)
+def test_shards_are_a_partition(n):
+    """Every file runs exactly once: union == input, and pairwise disjoint.
+
+    Both halves matter and they fail differently. A gap means files silently
+    stop being tested — the gate shrinks and nothing says so. An overlap means
+    a file runs twice, which wastes time AND breaks the JUnit union argument
+    the per-shard skip census rests on.
+    """
+    entries = _entries()
+    parts = [shard(entries, k, n) for k in range(1, n + 1)]
+    assert sum(len(p) for p in parts) == len(entries), "a file was dropped or duplicated"
+    union = set()
+    for p in parts:
+        assert not (union & set(p)), "shards overlap — a file would run twice"
+        union |= set(p)
+    assert union == set(entries)
+
+
+@pytest.mark.parametrize("n", _SHARD_NS)
+def test_shards_are_count_balanced(n):
+    """Round-robin balances counts to +/-1. Count is the only duration proxy
+    available until per-file timings are recorded, so an imbalance here is an
+    imbalance in wall-clock."""
+    entries = _entries()
+    sizes = [len(shard(entries, k, n)) for k in range(1, n + 1)]
+    assert max(sizes) - min(sizes) <= 1
+
+
+@pytest.mark.parametrize("n", _SHARD_NS)
+def test_a_shard_preserves_resolve_order(n):
+    """A shard is a SUBSEQUENCE of the resolved list, so within a shard pytest
+    still sees the documented order. Reordering would be a second, invisible
+    variable on top of the split."""
+    entries = _entries()
+    for k in range(1, n + 1):
+        part = shard(entries, k, n)
+        assert part == [e for e in entries if e in set(part)]
+
+
+def test_sharding_is_stable_across_PROCESSES():
+    """THE PYTHONHASHSEED REGRESSION. If the partition ever used the builtin
+    `hash()`, two shard jobs in two processes would disagree about which files
+    belong to them and files would silently go unrun. Same-process equality
+    cannot catch that; two interpreters can."""
+    import json
+    import os
+
+    code = (
+        "import json,sys;"
+        "sys.path.insert(0, r'%s');"
+        "from tools.ci.gated_test_list import resolve, shard;"
+        "e=resolve('core');"
+        "print(json.dumps([shard(e,k,4) for k in range(1,5)]))"
+    ) % str(repo_root())
+    runs = []
+    for seed in ("0", "12345"):
+        env = dict(os.environ, PYTHONHASHSEED=seed)
+        out = subprocess.run([sys.executable, "-c", code], capture_output=True,
+                             text=True, encoding="utf-8", errors="replace",
+                             timeout=300, env=env, check=True).stdout
+        runs.append(json.loads(out))
+    assert runs[0] == runs[1], "the partition depends on PYTHONHASHSEED"
+
+
+def test_a_pinned_group_lands_in_one_shard():
+    """The escape hatch for order dependence. No pins are needed today — a
+    4-shard characterisation over the real list produced ZERO order-dependent
+    failures — but the mechanism must work the day one is."""
+    entries = ["a.py", "b.py", "c.py", "d.py", "e.py", "f.py"]
+    groups = [["a.py", "d.py", "f.py"]]
+    parts = [shard(entries, k, 3, groups) for k in range(1, 4)]
+    home = [p for p in parts if "a.py" in p][0]
+    assert {"a.py", "d.py", "f.py"} <= set(home)
+    assert sum(len(p) for p in parts) == len(entries)
+
+
+def test_an_out_of_range_shard_raises():
+    entries = _entries()
+    for bad in ((0, 4), (5, 4), (1, 0)):
+        with pytest.raises(ValueError):
+            shard(entries, *bad)
+
+
+def test_check_validates_the_FULL_list_not_the_shard():
+    """The floor guards against the allowlist silently shrinking. A correct
+    73-file shard of a 438-entry list must not be measured against a floor
+    meant for 438 — and a DERIVED per-shard floor would be strictly weaker (a
+    110-file shard could lose 90 files and still clear a floor of 20)."""
+    report = check("core", shard_spec=(1, 6))
+    assert report["ok"], report["errors"]
+    assert report["shard"] == "1/6"
+    assert report["shard_count"] < report["total_count"]
+    assert report["floor"] == FLOORS["core"]
+
+
+def test_an_unsharded_check_is_unchanged():
+    """Back-compat: every existing caller passes no shard and must see exactly
+    what it saw before, with no shard keys in the report."""
+    report = check("core")
+    assert "shard" not in report and "shard_count" not in report
+    assert report["count"] == len(_entries())
+
+
+# --------------------------------------------------------------------------- #
+# 6. The aggregator wiring (crx-test-05)
+#
+# `Test` and `E2E (Playwright)` are REQUIRED check names. Sharding split the work
+# across matrix jobs and left a job whose only purpose is to carry that name and
+# report the shards' verdict. Every failure mode of that pattern is silently
+# GREEN, which is why it is pinned here rather than left to review.
+# --------------------------------------------------------------------------- #
+AGGREGATORS = {
+    "test": ("Test", ("test-gates", "test-shard")),
+    "e2e": ("E2E (Playwright)", ("e2e-shard",)),
+}
+
+
+@pytest.mark.parametrize("job", sorted(AGGREGATORS))
+def test_aggregator_preserves_its_required_check_name(job: str, workflow_text: str):
+    """Branch protection matches on the check NAME, not the job id."""
+    expected_name, _ = AGGREGATORS[job]
+    doc = yaml.safe_load(workflow_text)
+    assert doc["jobs"][job]["name"] == expected_name
+
+
+@pytest.mark.parametrize("job", sorted(AGGREGATORS))
+def test_aggregator_runs_even_when_a_dependency_fails(job: str, workflow_text: str):
+    """`if: always()` is MANDATORY, and its absence is invisible.
+
+    Without it GitHub SKIPS the aggregator when a dependency fails. A skipped
+    check is not a failed one — branch protection never receives a verdict, and
+    the PR sits on "Expected — Waiting for status" with no red anywhere.
+    """
+    doc = yaml.safe_load(workflow_text)
+    assert str(doc["jobs"][job].get("if", "")).strip() == "always()"
+
+
+@pytest.mark.parametrize("job", sorted(AGGREGATORS))
+def test_aggregator_needs_every_job_it_reports_on(job: str, workflow_text: str):
+    _, required_needs = AGGREGATORS[job]
+    doc = yaml.safe_load(workflow_text)
+    needs = doc["jobs"][job]["needs"]
+    needs = [needs] if isinstance(needs, str) else list(needs)
+    assert set(required_needs) <= set(needs)
+
+
+@pytest.mark.parametrize("job", sorted(AGGREGATORS))
+def test_aggregator_asserts_success_rather_than_enumerating_failure(
+    job: str, workflow_text: str
+):
+    """`!= success`, NEVER `== failure`.
+
+    For a matrix job `needs.<job>.result` is a single aggregated value, and a
+    CANCELLED shard is not `failure` — so enumerating failure reports GREEN on a
+    suite that never finished. Every dependency's result must be checked.
+    """
+    doc = yaml.safe_load(workflow_text)
+    body = "\n".join(str(s.get("run", "")) for s in doc["jobs"][job]["steps"])
+    assert '!= "success"' in body, job
+    assert '== "failure"' not in body, (
+        f"{job} enumerates failure; a cancelled shard would report green"
+    )
+    _, required_needs = AGGREGATORS[job]
+    env = {}
+    for step in doc["jobs"][job]["steps"]:
+        env.update(step.get("env") or {})
+    referenced = " ".join(str(v) for v in env.values())
+    for dep in required_needs:
+        assert f"needs.{dep}.result" in referenced, (
+            f"{job} does not read {dep}'s result — that job could fail unnoticed"
+        )
+
+
+@pytest.mark.parametrize("job", ["test-shard", "e2e-shard"])
+def test_shard_matrix_is_contiguous_and_one_based(job: str, workflow_text: str):
+    """`strategy.job-total` derives N from this list, so a gap in it silently
+    drops test files from the run: shard 3 of 4 would be computed while only
+    three jobs exist."""
+    doc = yaml.safe_load(workflow_text)
+    shards = doc["jobs"][job]["strategy"]["matrix"]["shard"]
+    assert shards == list(range(1, len(shards) + 1)), shards
+
+
+@pytest.mark.parametrize("job", ["test-shard", "e2e-shard"])
+def test_a_failing_shard_does_not_cancel_its_siblings(job: str, workflow_text: str):
+    """With fail-fast the first failure hides the other shards, so a PR breaking
+    tests in three shards costs three round trips instead of one."""
+    doc = yaml.safe_load(workflow_text)
+    assert doc["jobs"][job]["strategy"]["fail-fast"] is False
+
+
+def test_e2e_no_longer_waits_for_the_unit_suite(workflow_text: str):
+    """The unblock is the single largest wall-clock win in crx-test-05 and is one
+    edit away from being silently reverted by a merge."""
+    doc = yaml.safe_load(workflow_text)
+    needs = doc["jobs"]["e2e-shard"]["needs"]
+    needs = [needs] if isinstance(needs, str) else list(needs)
+    assert "test" not in needs and "test-shard" not in needs, (
+        "e2e-shard is behind the unit suite again — that costs ~17.5 min of "
+        "pure wall-clock on every PR"
+    )
+
+
+def test_downstream_jobs_still_gate_on_the_aggregator(workflow_text: str):
+    """docker-build and two-tier-build must NOT build from a red tree. They
+    declare `needs: [test]`; keeping the aggregator's job id `test` is what
+    makes that keep meaning "the whole unit suite passed"."""
+    doc = yaml.safe_load(workflow_text)
+    for job in ("docker-build", "two-tier-build"):
+        needs = doc["jobs"][job]["needs"]
+        needs = [needs] if isinstance(needs, str) else list(needs)
+        assert "test" in needs, job

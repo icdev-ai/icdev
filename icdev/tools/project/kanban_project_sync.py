@@ -65,6 +65,48 @@ _TASK_ID_RE = re.compile(
 #      "task-abc"  → parts=['task','abc']    ✗ (only 2)
 _MIN_PARTS = 3
 
+# An epic key that is a HEX TOKEN rather than a name (rem-hyg-08).
+#
+# THE BUG THIS EXISTS FOR. The tail test below is `parts[-1].isdigit()` with no
+# bound on its length, and a hex token is all digits about 2% of the time. Of
+# the 416 opaque `task-<hex>` rows on the live board, THREE ended in an
+# all-digit hex segment:
+#
+#     task-0a4389596f-79141324
+#     task-3bc9eb0918-12704769
+#     task-3bc9eb0918-79410283
+#
+# Those three parsed as prefix=`task-`, epic=<hex parent id>, N=<hex tail>, so
+# this module invented two "epics" named after hex parent ids and registered an
+# entire "Task Project" card. Its epic LIKE patterns then claimed 83 rows while
+# the other 333 matched nothing, producing a coverage warning nobody could
+# resolve -- `task-<hex>` is what the dashboard's create-task API and
+# `awareness/suggested_card_writer` generate, and was never card work.
+#
+# WHY NOT `task_identity.classify_shape`, which draws almost this line already
+# (and whose own comment names the bug: "The 1-3 digit bound is what separates
+# -01 from a 10-character hex token that happens to be all digits"). Because the
+# two answer DIFFERENT questions. classify_shape asks "is this ROW card work",
+# for enforcement. This asks "does this ID reveal a real project namespace", for
+# registration. Gating here on classify_shape was measured and would have killed
+# three LEGITIMATE epics -- `cdh-gap`, `ci-fix`, `mc-reflex` -- whose ids carry
+# machine tails (`ci-fix-27889336050` is a GitHub Actions run id) but whose
+# prefix+epic namespace is real and wanted. The discriminator is the EPIC
+# SEGMENT, not the tail.
+#
+# MEASURED before adoption, against the live board and the committed registry:
+# of 1,602 registered epics this rejects EXACTLY the two bogus ones, and `task-`
+# is the only prefix that stops being auto-created.
+#
+# Requires a digit, so an all-letter word that happens to be hex-legal
+# (`decade`, `facade`, `added`) is never mistaken for a token.
+_HEX_TOKEN_RE = re.compile(r"^(?=.*\d)[0-9a-f]{8,}$")
+
+
+def _is_hex_token(epic: str) -> bool:
+    """Is this "epic key" actually a hex id fragment? See :data:`_HEX_TOKEN_RE`."""
+    return bool(_HEX_TOKEN_RE.match(epic))
+
 
 def _parse_task_id(task_id: str) -> Optional[tuple[str, str]]:
     """Return (prefix_with_dash, epic_key) or None if id doesn't match."""
@@ -77,6 +119,11 @@ def _parse_task_id(task_id: str) -> Optional[tuple[str, str]]:
     # Second-to-last is the epic key (must be alphanumeric)
     epic = parts[-2]
     if not re.match(r"^[a-z0-9]+$", epic):
+        return None
+    # ...and must be a NAME, not a hex id fragment. A card whose epics are hex
+    # tokens counts an arbitrary slice of an opaque namespace and warns forever
+    # about the rest.
+    if _is_hex_token(epic):
         return None
     prefix = "-".join(parts[:-2]) + "-"  # e.g. "sim-" or "ad710-"
     return prefix, epic

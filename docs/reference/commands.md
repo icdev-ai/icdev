@@ -6548,6 +6548,19 @@ python tools/ci/gated_test_list.py --check --list core       # validate: empty/s
 python tools/ci/gated_test_list.py --print --list windows    # resolved targets, one per line
 python tools/ci/gated_test_list.py --list core --json        # full report (count, floor, missing, duplicates)
 python tools/ci/gated_test_list.py --extract-workflow .github/workflows/icdev-ci.yml --job test --min-targets 2
+
+# E2E promotion survey (crx-test-06) — is `E2E (Playwright)` fit to be REQUIRED?
+# Answer today: NOT YET. Report only, no --gate; exit 2 = could not be produced.
+python tools/ci/e2e_flake_survey.py                          # human table, both populations
+python tools/ci/e2e_flake_survey.py --json                   # machine-readable + verdict
+python tools/ci/e2e_flake_survey.py --limit 100              # runs to examine
+python tools/ci/e2e_flake_survey.py --from-json runs.json    # offline replay of a saved payload
+# The 25/25 green was selection bias: pre-crx-test-05 E2E declared `needs: [test]`
+# and was SKIPPED whenever the unit suite failed (10 of 40 runs, measured
+# 2026-08-19), so the failures were missing from the DENOMINATOR. Population is
+# split structurally on the presence of an `E2E Shard k of N` job; success /
+# failure / cancelled / skipped / in_progress are never merged; flake_rate is
+# None (never 0.0) when nothing was exercised. Claims: args/e2e_promotion.yaml.
 python tools/git/ci_test_list_merge_rehearsal.py             # inline vs external vs external-union, both merge paths
 python tools/git/ci_test_list_merge_rehearsal.py --branches 5 --gate
 python tools/git/ci_test_list_merge_rehearsal.py --repo .    # rehearse against a CLONE of this repo + the real list
@@ -7064,3 +7077,60 @@ python tools/ci/sibling_hold_survey.py --open-only
 # posture, each behind a sibling the forge would refuse to merge.
 # An unavailable corpus exits 2; a survey nobody could run is not a clean survey.
 ```
+
+## Shard timing snapshot — bin-pack the gated run by MEASURED duration (crx-test-07)
+
+```bash
+python tools/ci/gated_test_list.py --print --list core --shard 2/4   # this shard's targets
+python tools/ci/gated_test_list.py --check --list core --shard 2/4   # validate, then narrow
+python tools/ci/gated_test_list.py --check --list core --shard 2/4 --no-timings  # round-robin baseline
+python tools/ci/shard_timings.py --show                              # what the loader merges
+python tools/ci/shard_timings.py --balance --shards 4                # the partition it produces
+python tools/ci/shard_timings.py --balance --shards 4 --no-timings   # the crx-test-05 baseline
+python tools/ci/shard_timings.py --from-junit '.tmp/junit/shard*/*.xml' --source github-run-N --write
+```
+
+crx-test-05 partitioned ROUND-ROBIN, which balances FILE COUNT (111/111/110/110)
+and says NOTHING about runtime. Measured on the first merged sharded pipeline
+(run 32352491214, 2026-08-20): shard 1 **17m01s**, shard 2 5m59s, shard 3 5m43s,
+shard 4 6m36s. `Test` cost 17 minutes to do ~7 minutes of work and three runners
+idled for ten of them, because shard 1 drew the repo-wide scanners whose cost is
+superlinear in tree size. `partition()` now does greedy longest-first bin packing
+over `args/ci_test_timings/`.
+
+READ FROM THE JUNIT XML, not `--durations`. That flag prints a truncated top-25
+of CALL time; pytest's default `junit_duration_report` is `total`, so setup is
+included — and the four worst offenders on shard 1 spent 82.6s, 33.3s, 32.5s and
+26.8s in SETUP alone.
+
+TWO PROPERTIES ASSERTED, because violating either reports GREEN. `partition()`
+computes the WHOLE partition and checks multiset equality before returning one
+shard, so a dropped file is caught on the runner that would otherwise silently
+skip it; and nothing anywhere uses builtin `hash()`, because PYTHONHASHSEED is
+randomised per process, so a hash partition puts a file in shard 2 on one runner
+and shard 4 on another. The floor, duplicate and existence checks still read the
+FULL list.
+
+A FILE ABSENT FROM THE SNAPSHOT IS NEVER DROPPED — it is weighted at the MEDIAN
+of the measured entries. Median rather than zero (zero declares a new test free
+and lets any number pile onto one shard); median rather than mean (the mean is
+dragged by the very scanners that caused the imbalance). With nothing measured
+it degrades to round-robin, and a malformed snapshot degrades the same way with
+a `::warning::` — this directory governs how FAST the gate runs, never what it
+COVERS, so it may not turn `Test` red.
+
+DO NOT RESPOND TO A SLOW SHARD BY RAISING N. `--balance` reports
+`lower_bound_seconds`, the heaviest single INDIVISIBLE unit; a partition can
+never finish faster than that. Measured 2026-08-20 it is **699.2s of a 1791.2s
+suite** — `tests/cortex/test_chat_routing.py`, 39% of the whole gated run in
+four tests (278.8s + 141.4s + 139.5s + 139.4s). The busiest shard is already AT
+that floor, so a 5th and 6th runner would idle exactly the way three do today.
+Splitting that file is `crx-test-08`, not more shards.
+
+`snapshot.json` is owned by the weekly `.github/workflows/shard-timings.yml`,
+which reads the newest SUCCESSFUL `ICDEV CI` run on the default branch (a failed
+run's shards abort at `-x`, so its JUnit is a partial measurement) and opens a
+PR. A task correcting one file's weight writes its own
+`args/ci_test_timings/<task-id>.json` instead; snapshots merge
+newest-`generated_at`-wins per path, the same collision-free discipline `core.d/`
+gave `core.txt`.
