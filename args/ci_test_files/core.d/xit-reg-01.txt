@@ -1,0 +1,5 @@
+# xit-reg-01 - the ICDEV[domain] split seeder and the repo-registry parking
+# assertion it relies on. test_repo_registry.py leaves the backlog census here
+# because this PR is the one that makes its new assertion pass.
+tests/kanban/test_repo_registry.py
+tests/kanban/test_seed_parent_split.py

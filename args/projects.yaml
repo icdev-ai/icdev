@@ -8708,3 +8708,157 @@ projects:
   - key: lrn
     title: LRN - incident becomes a standing verified claim
     priority: medium
+- key: xit
+  name: XIT - ICDEV[domain] split, the ICDEV[IT] side
+  description: 'ICDEV[IT] is the first DOMAIN of a shared, domain-neutral core, and a
+    second parent ICDEV[FT] (financial trading, private repo) is the second. This card
+    is the ICDEV[IT] half of that programme: declare the domain contract
+    (icdev_domain.yaml + icdev/core/*), make tools.X and icdev.tools.X the SAME module
+    object with a meta-path finder, ratchet the 2,054 self-rooting Path(__file__) sites by
+    census, partition the 531-table schema by an ownership manifest, guard the PUBLIC repo
+    against any FathomDesk/broker-credential resurrection, register the sibling repos on
+    the board BEFORE they exist, then migrate FathomDesk (tools/trading, 87k lines, 137
+    live ad_* tables) OUT of this repo one gate family per PR. Programme doc:
+    docs/programmes/icdev-domain-split.md. SCOPE BOUNDARY: nothing here builds trading
+    code; every xit- PR must leave every existing gate green and may only LOWER a census
+    max.'
+  task_prefix: xit-
+  default_open: true
+  briefs:
+  - 'DECL: the contract. icdev/core/{paths,domain,context,shim,sensitivity,schema}.py and
+    an icdev_domain.yaml for ICDEV[IT] itself, so IT loads through the same declaration FT
+    will. The finder in tools/__init__.py is the one change that fixes the module-identity
+    trap AND makes the generated icdev/tools mirror unnecessary (xit-decl-01..04).'
+  - 'LEAK: this repo is PUBLIC. A gate that refuses tools/trading resurrection, ad_* data
+    dumps and broker-key patterns at pre-commit and in CI, armed with a planted-key negative
+    control (xit-leak-01).'
+  - 'REG: the three programme cards, the external-repo entries for icdev_core/icdev_ft
+    (root_env unset => parked, the CONCORD precedent) and the create_tasks seeder
+    (xit-reg-01).'
+  - 'CORE: the in-repo extraction phases 1-2 - per-package git mv into icdev/tools/,
+    sensitivity rewiring, multi-dir MigrationRunner, reflex packs, registry-only dashboard
+    composition, GENESIS_APPS to a root_env yaml.'
+  - 'CUT/RM/GEN: FathomDesk cutover (freeze, DDL-enumerated export, manifest diff == 0,
+    dual-run) and removal from IT one gate family per PR; GENESIS_APPS/launcher
+    decoupling.'
+  epics:
+  - key: gate
+    title: Manual Gate
+    priority: high
+  - key: decl
+    title: DECL - domain contract, namespace identity, self-root census, schema ownership
+    priority: critical
+  - key: leak
+    title: LEAK - public-repo leakage gate
+    priority: critical
+  - key: reg
+    title: REG - cards, external repos, seeder
+    priority: high
+  - key: core
+    title: CORE - in-repo extraction phases 1-2
+    priority: high
+  - key: cut
+    title: CUT - FathomDesk cutover
+    priority: high
+  - key: rm
+    title: RM - remove FathomDesk from IT per gate family
+    priority: high
+  - key: gen
+    title: GEN - GENESIS_APPS and launcher decoupling
+    priority: medium
+- key: xcore
+  name: XCORE - icdev-core, the domain-neutral kernel
+  description: 'The shared core both parents install: storage + migrations, LLMRouter,
+    RAG, knowledge graph, Cortex, kanban/scheduler/runner/pr_watcher, genesis CORE reflexes,
+    agent adapters, MCP base servers, memory, TRUST, CI gates, component registry, scaffold
+    engine, forge_validator. Namespace stays icdev.tools.*; distribution name icdev-core.
+    Carved into its own repo at programme phase P3 (after the in-repo xit-core phases);
+    until then xcore- tasks are parked because ICDEV_KANBAN_REPO_CORE is unset. Programme
+    doc: docs/programmes/icdev-domain-split.md.'
+  task_prefix: xcore-
+  default_open: true
+  briefs:
+  - 'BOOT: git subtree split of the core portions + tests/core/, CI copied from the
+    required jobs, pyproject for icdev-core, bootstrap CLAUDE.md generated per domain.'
+  - 'API/COMPAT/PIN: core_api_manifest.json + semver, a core-compat CI matrix {it, ft}
+    that installs the PR SHA into each parent and runs its declared compat suite, and the
+    pin bump in each parent.'
+  epics:
+  - key: gate
+    title: Manual Gate
+    priority: high
+  - key: boot
+    title: BOOT - carve the core repository
+    priority: critical
+  - key: api
+    title: API - core API manifest and semver
+    priority: high
+  - key: compat
+    title: COMPAT - core-compat CI matrix over both parents
+    priority: high
+  - key: pin
+    title: PIN - parents consume a pinned icdev-core
+    priority: medium
+- key: xft
+  name: XFT - ICDEV[FT], the financial-trading parent
+  description: 'A second PARENT (not a child app) in a separate PRIVATE repo: ingests open
+    research (arXiv q-fin/cs.LG, OpenAlex, SSRN-open, EDGAR, FRED) into a knowledge base
+    and knowledge graph with a finance ontology, and builds STANDALONE trading systems
+    (momentum, mean-reversion, factor, regime, options, RL) that are backtested,
+    paper-traded and - behind a human approval gate with kill-switch - run live. Every
+    generated component cites the research claims it derives from and promotion is
+    provenance-gated. FathomDesk migrates in minus its SaaS layers. Tasks here are
+    EXTERNAL-repo tasks: parked until ICDEV_KANBAN_REPO_FT is set, and live-trading code
+    is never built unattended. Design detail lives in the FT repo; programme doc:
+    docs/programmes/icdev-domain-split.md.'
+  task_prefix: xft-
+  default_open: true
+  briefs:
+  - 'BOOT/UX/UI: bootstrap the repo from the domain template; design-first professional UI
+    (IA + tokens + component inventory + four hi-fi mockups BEFORE a line of UI code),
+    React/TS SPA over a FastAPI API, Node at build time only.'
+  - 'ING/ONTO: the missing arXiv PDF downloader feeding ingest_file, kb_* tables, the
+    finance.ttl ontology loaded into kg_ontology (probe first - it is EMPTY today).'
+  - 'SPEC/TMPL/BT: declarative strategy spec (pydantic = OpenAPI = form schema), the
+    momentum template generating a standalone system repo with provenance.json, and an
+    event-driven backtester with look-ahead guards, walk-forward and multi-asset calendars.'
+  - 'SAFE/RL/DATA: assert_may_trade on EVERY order path (the live-mode gate is consumed by
+    zero code sites today), kill-switch consumption test, gymnasium MarketEnv + trainer +
+    policy runner, and the FathomDesk data import.'
+  epics:
+  - key: gate
+    title: Manual Gate
+    priority: high
+  - key: boot
+    title: BOOT - repo bootstrap, domain declaration, own PostgreSQL database
+    priority: critical
+  - key: ux
+    title: UX - design deliverables before code
+    priority: high
+  - key: ui
+    title: UI - React/TS SPA and FastAPI API
+    priority: high
+  - key: ing
+    title: ING - research ingestion pipeline
+    priority: high
+  - key: onto
+    title: ONTO - finance ontology and knowledge graph
+    priority: high
+  - key: spec
+    title: SPEC - strategy specification schema and intake
+    priority: high
+  - key: tmpl
+    title: TMPL - system templates and generator
+    priority: high
+  - key: bt
+    title: BT - backtest engine and evaluation
+    priority: high
+  - key: safe
+    title: SAFE - live authorization gate and kill switch
+    priority: critical
+  - key: rl
+    title: RL - market environment, trainer, policy runner
+    priority: high
+  - key: data
+    title: DATA - FathomDesk data migration
+    priority: medium

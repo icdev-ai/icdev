@@ -28,6 +28,20 @@ repos:
   concord:
     base_branch: main
     root_env: ICDEV_KANBAN_REPO_CONCORD
+  # ICDEV[domain] split (xit-reg-01, docs/programmes/icdev-domain-split.md). Two
+  # sibling repos that do NOT exist yet. Registered BEFORE they exist, on the
+  # CONCORD precedent: an unregistered xcore-/xft- task would resolve to the
+  # ICDev default and the dispatcher would build a core-extraction or a
+  # trading-system task inside this checkout. Both env vars stay UNSET until
+  # programme phase P5, so matching tasks are parked, never built here.
+  #   $env:ICDEV_KANBAN_REPO_CORE = "C:/ai/icdev-core"
+  #   $env:ICDEV_KANBAN_REPO_FT   = "C:/ai/icdev_ft"
+  icdev_core:
+    base_branch: main
+    root_env: ICDEV_KANBAN_REPO_CORE
+  icdev_ft:
+    base_branch: main
+    root_env: ICDEV_KANBAN_REPO_FT
 
 # Longest matching prefix wins. These are the premium/external product streams
 # that must NOT run through ICDev's build+validate+merge pipeline.
@@ -68,3 +82,8 @@ prefixes:
   # this file by design: tools/bom/ genuinely builds in ICDev and must go through
   # ICDev's gates.
   cncd: concord
+  # ICDEV[domain] split. `xit-` (the ICDEV[IT] side of the programme) is
+  # deliberately ABSENT: it genuinely builds in ICDev and must go through
+  # ICDev's gates. `xcore-` and `xft-` build in the two sibling repos above.
+  xcore: icdev_core
+  xft: icdev_ft
