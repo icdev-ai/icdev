@@ -8134,65 +8134,14 @@ def create_app(testing: bool = False) -> Flask:
 
     # ── Genesis v2.0 — Autonomous Research Lab Dashboard ──────────────────────
 
-    # Registry of all Genesis-enabled apps (app_key → config)
-    GENESIS_APPS = {
-        "icdev": {
-            "name": "ICDEV™",
-            "root": str(BASE_DIR),
-            "daemon": "tools/genesis/daemon.py",
-            "promoter": "tools/genesis/promoter.py",
-            "env_var": "ICDEV_GENESIS_ENABLED",
-            "db": str(BASE_DIR / "data" / "icdev.db"),
-        },
-        "govchain": {
-            "name": "GovChain",
-            "root": str(Path(BASE_DIR).parent / "govchain"),
-            "daemon": "tools/genesis/daemon.py",
-            "promoter": None,
-            "env_var": "GOVCHAIN_GENESIS_ENABLED",
-            "db": str(Path(BASE_DIR).parent / "govchain" / "data" / "govchain.db"),
-        },
-        "govproposal": {
-            "name": "GovProposal",
-            "root": str(Path(BASE_DIR).parent / "GovProposal"),
-            "daemon": "tools/genesis/daemon.py",
-            "promoter": None,
-            "env_var": "GOVPROPOSAL_GENESIS_ENABLED",
-            "db": str(Path(BASE_DIR).parent / "GovProposal" / "data" / "govproposal.db"),
-        },
-        "trading-engine": {
-            "name": "Trading Engine",
-            "root": str(Path(BASE_DIR).parent / "trading-engine"),
-            "daemon": "tools/genesis/daemon.py",
-            "promoter": None,
-            "env_var": "TRADING_GENESIS_ENABLED",
-            "db": str(Path(BASE_DIR).parent / "trading-engine" / "data" / "trading-engine.db"),
-        },
-        "trading-strategy": {
-            "name": "Trading Strategy",
-            "root": str(Path(BASE_DIR).parent / "Trading_Strategy"),
-            "daemon": "tools/genesis/daemon.py",
-            "promoter": "tools/genesis/promoter.py",
-            "env_var": "TRADING_GENESIS_ENABLED",
-            "db": str(Path(BASE_DIR).parent / "Trading_Strategy" / "data" / "trading_strategy.db"),
-        },
-        "ninjaflow": {
-            "name": "NinjaFlow",
-            "root": str(Path(BASE_DIR).parent / "ninjaflow-ai" / "ninjaflow-ai"),
-            "daemon": "tools/genesis/daemon.py",
-            "promoter": None,
-            "env_var": "NINJAFLOW_GENESIS_ENABLED",
-            "db": str(Path(BASE_DIR).parent / "ninjaflow-ai" / "ninjaflow-ai" / "data" / "ninjaflow-ai.db"),
-        },
-        "signalforge": {
-            "name": "SignalForge",
-            "root": str(Path(BASE_DIR).parent / "signalforge"),
-            "daemon": "tools/genesis/daemon.py",
-            "promoter": None,
-            "env_var": "SIGNALFORGE_GENESIS_ENABLED",
-            "db": str(Path(BASE_DIR).parent / "signalforge" / "data" / "signalforge.db"),
-        },
-    }
+    # Registry of all Genesis-enabled apps (app_key -> config), read from
+    # args/genesis_apps.yaml (xit-gen-01). Same shape the routes below always
+    # consumed; roots come from each app's root_env with a sibling-directory
+    # fallback, and an app that is not on this machine is `available: False`.
+    from tools.genesis.apps_registry import load_genesis_apps as _load_genesis_apps
+    from tools.genesis.apps_registry import root_missing as _genesis_root_missing
+
+    GENESIS_APPS = _load_genesis_apps(BASE_DIR)
 
     def _genesis_app(app_key):
         """Get Genesis app config, default to icdev."""
@@ -8203,6 +8152,9 @@ def create_app(testing: bool = False) -> Flask:
         import subprocess as _sp
 
         cfg = _genesis_app(app_key)
+        missing = _genesis_root_missing(cfg)
+        if missing is not None:
+            return missing
         app_root = cfg["root"]
         daemon_path = cfg["daemon"]
         env = {
@@ -8479,6 +8431,9 @@ def create_app(testing: bool = False) -> Flask:
         try:
             import subprocess
 
+            _missing = _genesis_root_missing(cfg)
+            if _missing is not None:
+                return jsonify(_missing), 404
             _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONPATH": cfg["root"]}
             result = subprocess.run(
                 [sys.executable, cfg["promoter"], "--stats", "--json"],
@@ -8622,6 +8577,9 @@ def create_app(testing: bool = False) -> Flask:
         try:
             import subprocess as _sp
 
+            _missing = _genesis_root_missing(cfg)
+            if _missing is not None:
+                return jsonify(_missing), 404
             _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONPATH": cfg["root"]}
             result = _sp.run(
                 [sys.executable, cfg["promoter"], "--promote", gkp_id, "--json"],
@@ -8664,6 +8622,9 @@ def create_app(testing: bool = False) -> Flask:
         try:
             import subprocess as _sp
 
+            _missing = _genesis_root_missing(cfg)
+            if _missing is not None:
+                return jsonify(_missing), 404
             _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONPATH": cfg["root"]}
             result = _sp.run(
                 [sys.executable, cfg["promoter"], "--reject", gkp_id, "--reason", reason, "--json"],
@@ -8702,6 +8663,9 @@ def create_app(testing: bool = False) -> Flask:
         try:
             import subprocess as _sp
 
+            _missing = _genesis_root_missing(cfg)
+            if _missing is not None:
+                return jsonify(_missing), 404
             _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONPATH": cfg["root"]}
             result = _sp.run(
                 [sys.executable, cfg["promoter"], "--auto-promote", "--json"],
