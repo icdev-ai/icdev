@@ -182,3 +182,30 @@ def test_ci_and_coherence_consume_the_check():
     assert "python tools/db/schema_ownership.py --check" in ci
     src = (REPO_ROOT / "tools" / "workflow" / "coherence_checker.py").read_text(encoding="utf-8")
     assert '"schema_ownership": check_schema_ownership' in textwrap.dedent(src)
+
+
+# --------------------------------------------------------------------------- #
+# a derived dump is not a declaring source
+# --------------------------------------------------------------------------- #
+def test_the_consolidated_snapshot_is_not_a_declaring_source():
+    """tools/db/schema/pg_consolidated.sql REPEATS every table the canonical
+    database has, filed under tools/db/. Read as a declaring source it resolves
+    each of them to package:db (core) whenever the real declaring package has no
+    `packages` entry -- measured 2026-08-21 on a regenerated snapshot, 383
+    canvas tables (aadc_*, aiml_*, ...) changed owner it -> core in the
+    manifests with nothing else in the tree having moved.
+    """
+    assert so.is_declaring_source("tools/db/schema/pg_consolidated.sql") is False
+    assert so.is_declaring_source("tools/db/schema/pg_consolidated.sql".replace("/", "\\")) is False
+    assert so.is_declaring_source("tools/agentic_ai_canvas/db/init_db.py") is True
+    # still SCANNED -- a table only the canonical database has must get an owner
+    rels = {p.relative_to(REPO_ROOT).as_posix() for p in so.ddl_sources(REPO_ROOT)}
+    assert "tools/db/schema/pg_consolidated.sql" in rels
+    # but it names no package, so a table it alone declares resolves by rule/default
+    assert so._declaring_packages({"tools/db/schema/pg_consolidated.sql"}) == []
+    assert so._declaring_packages({"tools/db/schema/pg_consolidated.sql", "tools/agentic_ai_canvas/db/init_db.py"}) == ["agentic_ai_canvas"]
+    # the live resolution: a canvas table keeps its canvas owner
+    rules = so.load_rules(REPO_ROOT)
+    created, _ = so.scan_tables(so.ddl_sources(REPO_ROOT), REPO_ROOT)
+    owner, how = so.assign_owner("aadc_artifacts", created["aadc_artifacts"], rules)
+    assert (owner, how.startswith("package:db")) == ("it", False), (owner, how)
