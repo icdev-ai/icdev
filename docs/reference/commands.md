@@ -1938,7 +1938,9 @@ python tools/ontology/schema_extractor.py --dry-run --json
 python tools/ontology/ontology_catalog.py --validate --json
 
 # Build ontology federation
-python tools/ontology/federation.py --build --json
+python tools/ontology/federation.py --build-federation --json
+python tools/ontology/federation.py --build-federation --no-builtin --json          # only <parent>/args/ontology/*.ttl (ICDEV[FT])
+python tools/ontology/federation.py --build-federation --ttl-dir path/to/ttl --json
 
 # Query ontology
 python tools/ontology/ontology_catalog.py --query "AWS VPC" --json
@@ -2154,6 +2156,23 @@ ICDEV_STORAGE_BACKEND=postgresql ICDEV_PG_NO_FALLBACK=1 \
 
 Config lives in `args/genesis_config.yaml` under `self_monitor.board_throughput`
 (`enabled`, `window_hours`, `min_active_tasks`, `cooldown_hours`, `severity`).
+
+### Regenerating the PostgreSQL schema snapshot (2026-08-21)
+
+`tools/db/schema/pg_consolidated.sql` is what `bootstrap_pg.py` loads into a FRESH
+database, and bootstrap MARKS every migration `<= through_version` applied without
+running it -- so a column a marked migration adds exists on a fresh database only
+if the snapshot carries it. Four weeks stale it was short 173 columns across 102
+tables, and nothing in CI could see it (the CI database is built by init_db and
+only marked). Runbook: `docs/database/pg-snapshot-regeneration.md`.
+
+```bash
+python tools/db/regen_pg_snapshot.py dump --out .tmp/canonical.sql                     # schema-only, native or docker exec
+python tools/db/regen_pg_snapshot.py diff --reference <dsn> --candidate <dsn>          # read-only; exit 1 unless superset
+python tools/db/regen_pg_snapshot.py diff --reference <dsn> --candidate <dsn> --emit-alters .tmp/carry.sql
+python tools/db/regen_pg_snapshot.py compose --dump .tmp/scratch.sql --previous tools/db/schema/pg_consolidated.sql     --carry-columns .tmp/carry.sql --out tools/db/schema/pg_consolidated.sql --generated 2026-08-21
+pytest tests/db/test_pg_bootstrap_baseline.py tests/db/test_regen_pg_snapshot.py -q
+```
 Env overrides win over YAML: `ICDEV_BOARD_STALL_ENABLED`,
 `ICDEV_BOARD_STALL_WINDOW_HOURS`, `ICDEV_BOARD_STALL_MIN_ACTIVE`,
 `ICDEV_BOARD_STALL_COOLDOWN_HOURS`, `ICDEV_BOARD_STALL_SEVERITY`.

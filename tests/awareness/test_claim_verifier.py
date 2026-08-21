@@ -205,6 +205,7 @@ def test_the_two_sides_are_different_callables():
     "cache_unlogged_is_measured",
     "recovery_counts_outcomes_not_attempts",
     "repetition_is_not_corroboration",
+    "approval_park_is_whole",
 ])
 def test_every_seeded_claim_is_a_defect_that_actually_happened(claim_id):
     """Seeding only from PROVEN defects is what stops this becoming another

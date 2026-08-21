@@ -8,20 +8,42 @@ tables:
   _documents_nn_check: it
   _projects_nn_check: it
   _tasks_nn_check: it
+  aac_audit_log: it
+  aac_hitl_decisions: it
+  aac_innovation_bridge: it
+  aac_opportunities: it
+  aac_roadmaps: it
+  aac_scans: it
+  aac_scores: it
+  aadc_agent_simulations: it
   aadc_aimc_model_refs: it
   aadc_artifacts: it
   aadc_assessments: it
+  aadc_ato_reports: it
   aadc_audit: it
   aadc_checkpoints: it
+  aadc_compliance: it
   aadc_confidence_events: it
   aadc_cost_estimates: it
+  aadc_deploy_gates: it
+  aadc_design_events: it
   aadc_design_links: it
   aadc_design_versions: it
   aadc_designs: it
   aadc_gate_configs: it
+  aadc_governance: it
+  aadc_impact_reports: it
+  aadc_lifecycle_states: it
+  aadc_lint_reports: it
   aadc_loop_links: it
   aadc_parallel_groups: it
+  aadc_pattern_reports: it
+  aadc_red_team_reports: it
+  aadc_regulatory_gaps: it
+  aadc_review_comments: it
   aadc_risk_items: it
+  aadc_safety_graphs: it
+  aadc_scorecard_snapshots: it
   aadc_simulations: it
   aadc_snippets: it
   aadc_templates: it
@@ -29,8 +51,13 @@ tables:
   aadc_twin_snapshots: it
   aadc_versions: it
   aadc_workflow_links: it
+  abac_decisions: it
   ace_colearning_suggestions: it
-  ad_: ft
+  ace_policy_generations: it
+  ace_preflight_calibration: it
+  ace_preflight_decisions: it
+  ace_qa_failures: it
+  ace_qa_runs: it
   ad_alert_delivery_channels: ft
   ad_alert_rules: ft
   ad_alerts_log: ft
@@ -172,6 +199,7 @@ tables:
   ad_users: ft
   ad_watchlists: ft
   ad_xp_events: ft
+  aggregation_events: it
   ai_accountability_appeals: it
   ai_appeals: it
   ai_bom: it
@@ -182,9 +210,18 @@ tables:
   ai_oversight_plans: it
   ai_reassessment_schedule: it
   ai_use_case_inventory: it
+  aiify_audit_log: it
+  aiify_hitl_decisions: it
   aiify_innovation_bridge: it
+  aiify_opportunities: it
+  aiify_posture_snapshots: it
   aiify_prd_provenance: it
+  aiify_roadmaps: it
+  aiify_scans: it
   aiify_schema_migrations: it
+  aiify_scores: it
+  aimc_deployment: it
+  aimc_models: it
   aiml_artifacts: it
   aiml_assessments: it
   aiml_audit: it
@@ -196,9 +233,29 @@ tables:
   aiml_templates: it
   aiml_twin_snapshots: it
   aiml_versions: it
-  already: it
-  and: it
+  aisg_agent_designs: it
+  aisg_api_tokens: it
+  aisg_audit: it
+  aisg_compliance_checks: it
+  aisg_executive_summaries: it
+  aisg_knowledge_handoffs: it
+  aisg_learning_tracks: it
+  aisg_patterns: it
+  aisg_request_log: it
+  aisg_roadmaps: it
+  aisg_roi_events: it
+  aisg_roi_tracking: it
+  aisg_skill_usage: it
+  aisg_skills: it
+  aisg_sprints: it
+  aisg_track_progress: it
+  aisg_training_labels: it
+  aisg_wizard_sessions: it
+  api_keys: it
   app_blueprints: it
+  appforge_audit: it
+  appforge_challenges: it
+  appforge_reflex_state: it
   approval_items: it
   approval_workflows: it
   atlas_assessments: it
@@ -208,7 +265,13 @@ tables:
   ato_packages: it
   ato_simulation_runs: it
   ato_system_registry: it
+  attack_graph_edges: it
+  attack_graph_nodes: it
   autoresearch_experiments: it
+  awareness_component_health: it
+  awareness_kg_edges: it
+  awareness_kg_nodes: it
+  battle_state_snapshots: it
   bd_alerts: it
   bd_assessments: it
   bd_audit: it
@@ -244,7 +307,6 @@ tables:
   bom_sources: it
   bom_taxonomy_nodes: it
   bom_taxonomy_versions: it
-  boundaries: it
   boundary_assessments: it
   boundary_designs: it
   boundary_impact_assessments: it
@@ -252,10 +314,16 @@ tables:
   boundary_telemetry_events: it
   boundary_telemetry_watermarks: it
   build_items: it
-  calls: it
   capture_strategy: it
   cato_evidence: it
   cato_evidence_stream: it
+  ccc_audit: it
+  ccc_capacity_plans: it
+  ccc_circuits: it
+  ccc_cross_connects: it
+  ccc_dwdm_spans: it
+  ccc_loa_requests: it
+  ccc_xc_order_events: it
   cf_app_dependencies: it
   cf_applications: it
   cf_ato_phases: it
@@ -283,9 +351,13 @@ tables:
   cmmc_domains: it
   cmmc_practice_gaps: it
   cmmc_systems: it
+  cmmi_level3_assessments: it
   coa_comparisons: it
   coa_definitions: it
   coa_records: it
+  column_mask_audit: it
+  companion_sync_audit: it
+  companion_sync_reflex_state: it
   compliance_artifacts: it
   compliance_controls: it
   compliance_detection_log: it
@@ -299,6 +371,7 @@ tables:
   compliance_twin_violations: it
   conflict_predictions: it
   constitutional_audit_log: it
+  contact_submissions: it
   container_metrics: it
   control_crosswalk: it
   control_mappings: it
@@ -341,10 +414,37 @@ tables:
   cve_triage: it
   cwk_coworkers: it
   cwk_sessions: it
+  daemon_checkpoints: it
   dat_ingestion_log: it
+  data_designs: it
+  data_edges: it
+  data_nodes: it
   data_residency_zones: it
+  data_twin_snapshots: it
+  dd_assessments: it
+  dd_audit: it
+  dd_collab_sessions: it
+  dd_data_contracts: it
+  dd_explore_profiles: it
+  dd_explore_sessions: it
+  dd_field_mappings: it
+  dd_freshness_runs: it
+  dd_lineage: it
+  dd_mapping_sessions: it
+  dd_mapping_transforms: it
+  dd_migration_jobs: it
+  dd_pii_scans: it
+  dd_quality_rules: it
+  dd_quality_runs: it
+  dd_query_history: it
+  dd_snippets: it
+  dd_templates: it
+  dd_versions: it
+  ddc_runbook_executions: it
+  ddc_runbooks: it
+  ddc_sop_approvals: it
+  ddc_sops: it
   decision_records: it
-  declarations: it
   demo_compliance_controls: it
   demo_compliance_frameworks: it
   dep_health_filed: it
@@ -354,23 +454,64 @@ tables:
   detector_findings: it
   detector_runs: it
   dh_enrichment_cache: it
+  dib_nodes: it
+  dib_supply_edges: it
+  dic_acoic_impacts: it
+  dic_acoic_regen_queue: it
+  dic_chat_memory: it
+  dic_chunk_links: it
   dic_claims: it
+  dic_collections: it
   dic_community_summaries: it
   dic_cross_references: it
+  dic_doc_freshness: it
   dic_doc_views: it
   dic_docdrift_resolutions: it
+  dic_documents: it
+  dic_drift_events: it
   dic_edit_history: it
+  dic_finetune_jobs: it
+  dic_finetune_models: it
+  dic_freshness_scans: it
+  dic_ft_datasets: it
+  dic_ft_jobs: it
+  dic_ft_models: it
   dic_generated_outputs: it
+  dic_handoff_items: it
+  dic_handoff_sessions: it
+  dic_ingest_jobs: it
   dic_presence_sessions: it
   dic_processed_canvas_events: it
+  dic_review_notes: it
   dic_section_annotations: it
   dic_section_locks: it
+  dic_sections: it
+  dic_ssp_fragments: it
   dic_suggestion_decisions: it
   dic_suggestions: it
+  dic_team_access: it
+  dic_versions: it
   digital_thread_links: it
-  directly: it
+  diplomatic_summaries: it
   disa_threat_signatures: it
   divergence_idea_scores: it
+  dm_audit: it
+  dm_catalog_entries: it
+  dm_contract_test_runs: it
+  dm_contracts: it
+  dm_csp_sync_log: it
+  dm_data_contracts: it
+  dm_data_products: it
+  dm_domain_maturity: it
+  dm_domains: it
+  dm_governance_policies: it
+  dm_input_ports: it
+  dm_opa_policies: it
+  dm_output_ports: it
+  dm_policy_audit_log: it
+  dm_ports: it
+  dm_product_slas: it
+  dm_product_subscriptions: it
   docmod_catalog_audit: it
   docmod_catalog_entries: it
   docmod_defacto_standards: it
@@ -382,8 +523,16 @@ tables:
   docmod_scan_runs: it
   document_aggregation_findings: it
   documents: it
+  domain_coverage: it
   doors_requirements: it
   draft_generation_jobs: it
+  dsoc_audit: it
+  dsoc_bgp_hijacks: it
+  dsoc_flowspec_rules: it
+  dsoc_mitigations: it
+  dsoc_rtbh_entries: it
+  dsoc_scrubbing_centers: it
+  dsoc_threats: it
   dynamic_findings: it
   emass_sync_log: it
   emass_systems: it
@@ -393,14 +542,41 @@ tables:
   evidence: it
   evidence_items: it
   example_entity: it
+  fa_achievements: it
   fa_assessment_items: it
   fa_assignments: it
   fa_certificate_evidence: it
+  fa_certificates: it
+  fa_challenge_entries: it
+  fa_challenges: it
+  fa_competency_edges: it
+  fa_competency_levels: it
+  fa_daily_logins: it
+  fa_guild_members: it
+  fa_guilds: it
   fa_instructor_audit: it
   fa_instructor_reviews: it
+  fa_leaderboard_cache: it
+  fa_mission_ontology: it
+  fa_mission_progress: it
+  fa_mission_steps: it
+  fa_missions: it
+  fa_oracle_convergence_events: it
+  fa_oracle_predictions: it
+  fa_skill_nodes: it
   fa_step_assessment_policy: it
   fa_step_attempts: it
+  fa_step_ontology: it
+  fa_step_progress: it
+  fa_user_achievements: it
+  fa_user_competencies: it
+  fa_user_skills: it
+  fa_users: it
+  fa_workflow_submissions: it
   fa_xp_ledger: it
+  fabric_assets: it
+  fabric_audit: it
+  fabric_shares: it
   fairness_assessments: it
   federal_ip_space_definitions: it
   federal_peering_requests: it
@@ -408,8 +584,13 @@ tables:
   fedramp_ato_packages: it
   fedramp_controls: it
   fedramp_families: it
+  field_filter_audit: it
   filed: it
   filed_routes: it
+  fine_tuning_datasets: it
+  finetune_eval_results: it
+  finetune_jobs: it
+  finetune_metrics: it
   fips199_categorizations: it
   fips200_assessments: it
   firmware_sbom_records: it
@@ -418,35 +599,107 @@ tables:
   flaky_tasks_filed: it
   forecast_audit: it
   forecast_jobs: it
+  formal_verification_results: it
   foundry_concepts: it
   foundry_outcomes: it
   foundry_runs: it
   foundry_signals: it
   foundry_specs: it
   foundry_tasks_emitted: it
+  fr_requirements: it
+  fr_sessions: it
+  fr_streams: it
   framework_applicability: it
   framework_catalog_versions: it
   framework_profiles: it
   gao_ai_assessments: it
   gate_failures: it
+  gd_ai_artifacts: it
+  gd_ai_judge_evals: it
+  gd_ai_leaderboard: it
+  gd_ai_llmops_events: it
+  gd_ai_rounds: it
+  gd_ai_teams: it
+  gd_ai_tournaments: it
+  gd_ai_training_pairs: it
   geoint_events: it
+  ghost_track_predictions: it
+  github_inbox: it
+  govchain_asset_transitions: it
+  govchain_assets: it
+  govchain_pending_operations: it
   govcon_awards: it
   govcon_clause_risk_assessments: it
   govcon_prior_submissions: it
+  goveval_results: it
+  govlift_ato_boundaries: it
+  govlift_audit_log: it
+  govlift_compliance_artifacts: it
+  govlift_dependencies: it
+  govlift_dependency_graph: it
+  govlift_integrations: it
+  govlift_intel_signals: it
+  govlift_intel_templates: it
+  govlift_marketplace_items: it
+  govlift_marketplace_templates: it
+  govlift_migrations: it
+  govlift_playbook_templates: it
+  govlift_recovery_decisions: it
+  govlift_rollback_events: it
+  govlift_runbook_executions: it
   govlift_runbook_step_results: it
+  govlift_runbook_steps: it
+  govlift_runbook_templates: it
+  govlift_runbooks: it
+  govlift_simulation_steps: it
+  govlift_simulations: it
+  govlift_step_executions: it
+  govlift_stig_checks: it
+  govlift_supply_chain_risks: it
+  govlift_waves: it
+  govlift_workload_metadata: it
+  govlift_workloads: it
   gsa_market_rates: it
   gsa_schedule_rates: it
+  harness_eval: it
   harness_trace_recommendations: it
   hipaa_assessments: it
+  historical_cases: it
+  hitl_items: it
   hitrust_assessments: it
+  idc_assessments: it
+  idc_audit: it
+  idc_collab_sessions: it
+  idc_infra_resources: it
+  idc_infra_snapshots: it
+  idc_migration_baselines: it
+  idc_runbooks: it
+  idc_snippets: it
+  idc_sops: it
+  idc_templates: it
   idc_twin_snapshots: it
   idc_twin_violations: it
+  idc_versions: it
   idp_rule_exemptions: it
   idp_scorecard_history: it
+  idr_analyses: it
+  idr_artifacts: it
+  idr_conflicts: it
+  idr_publish_audit: it
+  idr_sessions: it
+  idr_uploads: it
   igce_calibration_log: it
   igce_estimate_line_items: it
   igce_estimates: it
-  instead: it
+  il5_ingestion_log: it
+  infra_canvas_designs: it
+  infra_designs: it
+  innov_assessments: it
+  innov_comments: it
+  innov_ideas: it
+  innov_lessons: it
+  innov_metrics: it
+  innov_pilots: it
   intake_conversation: it
   intake_documents: it
   intake_gaps: it
@@ -462,6 +715,7 @@ tables:
   ivv_assessments: it
   ivv_certifications: it
   ivv_findings: it
+  iw_twin_snapshots: it
   legacy_apis: it
   legacy_applications: it
   legacy_apps: it
@@ -474,6 +728,9 @@ tables:
   local_repositories: it
   local_role_assignments: it
   local_service_accounts: it
+  mac_violations: it
+  markitdown_conversions: it
+  mattermost_inbox: it
   mc_ai_opportunities: it
   mc_app_data_sources: it
   mc_app_dependencies: it
@@ -533,7 +790,8 @@ tables:
   mc_workload_validations: it
   mcip_dat_events: it
   mcip_dti_scores: it
-  means: it
+  mdc_inventory: it
+  mdc_readiness: it
   mfa_attempts: it
   mi_budget_cycles: it
   mi_goal_alignments: it
@@ -551,6 +809,20 @@ tables:
   migration_plans: it
   migration_progress: it
   migration_tasks: it
+  mission_assessments: it
+  mission_audit: it
+  mission_canvas_alerts: it
+  mission_canvas_evidence: it
+  mission_canvas_sessions: it
+  mission_canvas_twins: it
+  mission_designs: it
+  mission_evidence: it
+  mission_narratives: it
+  mission_portfolios: it
+  mission_security_posture: it
+  mission_templates: it
+  mission_twin_snapshots: it
+  mission_versions: it
   mitre_coverage: it
   mkt_feedback: it
   mkt_licenses: it
@@ -563,7 +835,6 @@ tables:
   monte_carlo_runs: it
   mosa_assessments: it
   mosa_modularity_metrics: it
-  names: it
   narrative_approvals: it
   nc_advisories: it
   nc_advisory_assessments: it
@@ -609,8 +880,13 @@ tables:
   nc_cross_connects: it
   nc_customers: it
   nc_design_patterns: it
+  nc_design_snapshots: it
   nc_device_geo: it
   nc_device_profiles: it
+  nc_diagram_analyses: it
+  nc_diagram_exports: it
+  nc_diagram_findings: it
+  nc_diagram_uploads: it
   nc_discovery_configs: it
   nc_discovery_diffs: it
   nc_discovery_scans: it
@@ -633,6 +909,7 @@ tables:
   nc_intent_validations: it
   nc_interconnects: it
   nc_ipam_blocks: it
+  nc_lab_clones: it
   nc_lab_runs: it
   nc_lab_tests: it
   nc_lessons_learned: it
@@ -682,6 +959,10 @@ tables:
   nc_safe_bridge: it
   nc_sdc_assessments: it
   nc_security_domain_policies: it
+  nc_simulation_artifacts: it
+  nc_simulation_results: it
+  nc_simulation_runs: it
+  nc_simulation_sessions: it
   nc_sites: it
   nc_standards_checks: it
   nc_stencil_libraries: it
@@ -694,6 +975,7 @@ tables:
   nc_tech_radar: it
   nc_template_docs: it
   nc_templates: it
+  nc_topologies: it
   nc_topology_snapshots: it
   nc_traffic_flows: it
   nc_triage_queue: it
@@ -707,15 +989,23 @@ tables:
   ndc_agent_actions: it
   ndc_audit: it
   ndc_bgp_events: it
+  ndc_container_nodes: it
   ndc_designs: it
   ndc_isp_telemetry: it
   ndc_runbooks: it
+  ndc_sop_approval_log: it
+  ndc_sops: it
   ndc_stig_findings: it
   ndc_syslog_events: it
   ndc_tccm_requests: it
+  ndc_topologies: it
   ndc_traffic_flows: it
   ndc_xd_requests: it
+  network_twin_snapshots: it
+  ni_analyses: it
   ni_device_configs: it
+  ni_devices: it
+  ni_state_snapshots: it
   nist_800_207_assessments: it
   nist_800_207_sections: it
   nist_800_218_sections: it
@@ -723,7 +1013,16 @@ tables:
   nist_ai_rmf_assessments: it
   nist_controls: it
   nist_csf_20_sections: it
+  noc_alarms: it
+  noc_audit: it
+  noc_incidents: it
+  noc_maintenance_windows: it
+  noc_mops: it
+  noc_rfcs: it
+  noc_sla_records: it
+  notifications: it
   observability_designs: it
+  observability_nodes: it
   od_assessments: it
   od_audit: it
   od_collab_sessions: it
@@ -731,6 +1030,7 @@ tables:
   od_templates: it
   od_ttp_coverage: it
   od_versions: it
+  odc_designs: it
   odc_gap_scores: it
   odc_mitre_techniques: it
   odc_otel_events: it
@@ -738,6 +1038,7 @@ tables:
   odc_sdc_verifications: it
   odc_sops: it
   odc_technique_coverage: it
+  odc_twin_snapshots: it
   ohc_adapter_health_log: it
   ohc_adapter_status: it
   ohc_data_drift_events: it
@@ -745,16 +1046,41 @@ tables:
   ohc_experiment_runs: it
   ohc_experiments: it
   ohc_model_registry: it
+  ohc_ops_metrics: it
+  ohc_runbooks: it
   omb_m25_21_assessments: it
   omb_m26_04_assessments: it
-  or: it
+  opportunity_pipeline_runs: it
+  order: it
   oscal_artifacts: it
   oscal_validation_log: it
+  osint_feeds: it
+  osint_privacy_audit: it
   osint_signals: it
   owasp_asi_assessments: it
   owasp_llm_assessments: it
   page_agent_routes: it
+  pc_audit: it
+  pc_boundaries: it
+  pc_change_requests: it
+  pc_collab_sessions: it
+  pc_compliance_checks: it
+  pc_compliance_findings: it
+  pc_project_pipelines: it
+  pc_projects: it
+  pc_snippets: it
+  pc_stages: it
+  pc_templates: it
+  pc_versions: it
   pci_dss_assessments: it
+  pdc_simulations: it
+  pdc_snapshots: it
+  pdc_sops: it
+  peering_ix: it
+  peering_peers: it
+  peering_policies: it
+  peering_prefixes: it
+  peering_requests: it
   pg_ai_clause_compliance: it
   pg_amendment_diffs: it
   pg_bid_decision_outcomes: it
@@ -802,7 +1128,12 @@ tables:
   pg_win_loss_lessons: it
   pg_win_loss_records: it
   pg_win_themes: it
+  pgv_initiative_viability: it
+  pgv_procurement_vehicles: it
+  pgv_vehicle_match: it
   pi_compliance_tracking: it
+  pipeline_snapshots: it
+  pipelines: it
   platform_connector_fetches: it
   pma_action_items: it
   pma_collection_requirements: it
@@ -810,11 +1141,14 @@ tables:
   pma_int_gaps: it
   pma_meeting_logs: it
   pma_personnel: it
+  pmc_audit: it
   poam_items: it
   posts: it
   proc_igce_line_items: it
   proc_procurements: it
   proc_vendor_quotes: it
+  procurement_vehicles: it
+  product_intel_runs: it
   project_constitutions: it
   project_controls: it
   project_framework_status: it
@@ -862,6 +1196,7 @@ tables:
   qdc_cross_canvas_links: it
   qdc_designs: it
   qdc_gate_results: it
+  qdc_metrics: it
   qdc_runbooks: it
   qdc_simulations: it
   qdc_snippets: it
@@ -870,9 +1205,10 @@ tables:
   qdc_twin_snapshots: it
   qdc_uqs_history: it
   qdc_versions: it
+  rate_limits: it
   readiness_scores: it
-  reconciles: it
   red_team_results: it
+  regulatory_foresight_signals: it
   rfi_capability_gaps: it
   rfi_company_style_guide: it
   rfi_gap_task_links: it
@@ -884,7 +1220,10 @@ tables:
   rfp_requirement_patterns: it
   rfp_shall_statements: it
   risk_monitor_history: it
+  rls_audit: it
+  rmf_workflow_stages: it
   route_perf: it
+  safety_circuit_events: it
   sag_profiles: it
   sag_skill_registry: it
   sag_standing_goals: it
@@ -892,6 +1231,7 @@ tables:
   sam_gov_api_quota: it
   sam_gov_opportunities: it
   sam_gov_quota_events: it
+  satellite_imagery_metadata: it
   sb_note_attributes: it
   sb_note_parents: it
   sb_notes: it
@@ -904,39 +1244,183 @@ tables:
   sbom_dependencies__old: it
   sbom_records: it
   sbom_signatures: it
+  sc_assessments: it
+  sc_assets: it
+  sc_audit: it
+  sc_controls: it
+  sc_data_flows: it
+  sc_remediation_plans: it
+  sc_snippets: it
+  sc_templates: it
+  sc_threats: it
+  sc_trust_boundaries: it
+  sc_versions: it
   schedule_log: it
   scout_audit: it
   scout_scans: it
   scrm_assessments: it
+  sdc_attack_snapshots: it
+  sdc_demo_runs: it
+  sdc_designs: it
+  sdc_rag_attack_techniques: it
+  sdc_rag_stigs: it
+  sdc_sops: it
+  security_context_log: it
+  security_designs: it
   security_findings: it
+  security_nodes: it
   security_scan_results: it
+  servicenow_change_tickets: it
+  sg_aircraft_tracks: it
+  sg_analyst_annotations: it
+  sg_aoi_hits: it
+  sg_areas_of_interest: it
+  sg_attack_techniques: it
+  sg_bayesian_war_posteriors: it
+  sg_bda_assessments: it
+  sg_cascade_results: it
+  sg_ccir_trigger_events: it
+  sg_coa_decisions: it
+  sg_coa_entries: it
+  sg_coas: it
+  sg_corpus_documents: it
+  sg_cve_feed: it
+  sg_darkweb_signals: it
+  sg_dat_backchannel: it
+  sg_dat_cables: it
+  sg_dat_dti_snapshots: it
+  sg_dat_unsc_events: it
+  sg_disruption_results: it
+  sg_disruption_scenarios: it
+  sg_economic_signals: it
+  sg_entities: it
+  sg_eo_signals: it
+  sg_exercise_assessments: it
+  sg_f3ead_targets: it
+  sg_frontline_segments: it
+  sg_ghost_precedents: it
+  sg_ghost_signals: it
+  sg_ghost_tracks: it
+  sg_ground_vehicle_events: it
+  sg_hitl_queue: it
+  sg_humanitarian_corridors: it
+  sg_information_scores: it
+  sg_information_signals: it
+  sg_infrastructure_signals: it
+  sg_intel_calendar: it
+  sg_intel_import_log: it
+  sg_intelligence_briefs: it
+  sg_intelligence_briefs_war_council: it
+  sg_interdiction_results: it
   sg_intsum_grounding_audit: it
+  sg_intsum_paragraphs: it
+  sg_intsums: it
+  sg_ipb_sessions: it
+  sg_ipb_steps: it
+  sg_isr_assets: it
+  sg_isr_requirements: it
+  sg_iw_cascade_events: it
+  sg_iw_effects: it
+  sg_iw_events: it
+  sg_iw_indicators: it
+  sg_iw_observations: it
+  sg_kg_edges: it
+  sg_kg_nodes: it
+  sg_leadership_briefs: it
+  sg_logistics_nodes: it
+  sg_mett_tc: it
+  sg_military_signal_scores: it
+  sg_nash_scenarios: it
+  sg_ooda_assessments: it
+  sg_ooda_cycle_log: it
+  sg_ooda_events: it
+  sg_opencti_indicators: it
   sg_opord_grounding_audit: it
+  sg_opords: it
+  sg_orbat_entries: it
+  sg_orbat_snapshots: it
   sg_orbat_strengths: it
+  sg_orbat_units: it
+  sg_osint_normalized: it
+  sg_osint_results: it
+  sg_pattern_events: it
+  sg_pattern_learner_log: it
+  sg_pattern_matches: it
+  sg_pir_ccir: it
+  sg_pir_gaps: it
+  sg_pmesii_events: it
+  sg_procurement_velocity: it
+  sg_red_cell_analyses: it
+  sg_reflex_cooldowns: it
+  sg_sanctions_evasion_events: it
+  sg_satellite_passes: it
+  sg_sc_edges: it
+  sg_sc_nodes: it
+  sg_scenarios: it
+  sg_sigint_events: it
+  sg_simulation_results: it
+  sg_socmint_signals: it
+  sg_source_reports: it
+  sg_sources: it
+  sg_strike_events: it
+  sg_supply_cascade_results: it
+  sg_supply_edges: it
+  sg_supply_nodes: it
+  sg_supply_signals: it
+  sg_sync_matrices: it
+  sg_target_events: it
+  sg_theaters: it
+  sg_tracks: it
+  sg_transshipment_hubs: it
+  sg_tte_estimates: it
+  sg_uas_tracks: it
+  sg_vessel_tracks: it
+  sg_war_council_briefs: it
+  sg_war_endurance_results: it
+  sg_war_kg_edges: it
+  sg_war_kg_nodes: it
+  sg_war_readiness_events: it
+  sg_wargame_turns: it
+  sg_wargames: it
+  sg_wri_assessments: it
   shap_attributions: it
+  shap_attributions_archive: it
   sharepoint_documents: it
   sharepoint_items: it
   sharepoint_lists: it
   sharepoint_sites: it
   showcase_apps: it
+  showcase_demo_runs: it
   siem_delivery_log: it
   siem_events: it
-  silently: it
   simulation_results: it
   simulation_results_new: it
   simulation_results_old: it
   simulation_scenarios: it
+  skype_inbox: it
+  slides_audit: it
+  slides_decks: it
   slides_schema_migrations: it
+  slides_slides: it
   slides_templates: it
   soar_playbook_audit: it
   soar_playbook_runs: it
   soc2_assessments: it
   spec_registry: it
+  sre_incident_events: it
+  sre_incidents: it
+  sre_runbook_executions: it
+  sre_runbooks: it
+  sre_slo_measurements: it
+  sre_slos: it
   sso_providers: it
   sso_sessions: it
   ssp_controls: it
   ssp_documents: it
   stig_findings: it
+  strategos_darkweb_signals: it
+  strategos_signals: it
+  subscriptions: it
   supplemental_refinements: it
   supplemental_state_snapshots: it
   supply_chain_dependencies: it
@@ -951,21 +1435,49 @@ tables:
   sync_state: it
   sysml_elements: it
   sysml_relationships: it
-  table_match: it
+  teams_inbox: it
+  tech_radar_entries: it
+  tech_radar_history: it
+  telegram_inbox: it
+  tenants: it
   test_results: it
   test_runs: it
-  that: it
+  th_briefings: it
+  th_hypotheses: it
+  th_patterns: it
+  th_themes: it
   threat_findings: it
   threat_models: it
   topic_clusters: it
+  topologies: it
+  topology_edges: it
+  topology_nodes: it
   tour_config: it
+  trading_daemon_audit: ft
+  trading_daemon_reflex_state: ft
   translation_dependency_mappings: it
   translation_jobs: it
   translation_units: it
   translation_validations: it
   trust_deltas: it
+  ttx_api_log: it
+  ttx_formation_plan: it
+  ttx_inject_templates: it
+  ttx_injects: it
+  ttx_leaderboard: it
+  ttx_registrations: it
+  ttx_responses: it
+  ttx_scenarios: it
+  ttx_scores: it
+  ttx_sessions: it
+  ttx_team_members: it
+  ttx_teams: it
   twin_compat_reports: it
+  usage_aggregates: it
   usage_daily_rollup: it
+  usage_events: it
+  usage_records: it
+  verify_loop_runs: it
   voc_documents: it
   voc_job_statements: it
   vulnerability_records: it
@@ -977,16 +1489,33 @@ tables:
   wfc_chain_phases: it
   wfc_process_chains: it
   wfc_template_library: it
+  wfc_workflow_form_nodes: it
+  wfl_committee_reviews: it
+  wfl_completeness_reviews: it
+  wfl_credentialing_applications: it
+  wfl_credentialing_approvals: it
+  wfl_credentialing_audit: it
+  wfl_network_agreement_approvals: it
+  wfl_network_agreement_reviews: it
+  wfl_provider_setups: it
+  wfl_psv_verifications: it
+  wiki_compile_log: it
+  wiki_memory_edges: it
+  wiki_pages: it
   win_loss_analysis_runs: it
   win_loss_feature_impacts: it
-  with: it
+  wne_artifacts: it
+  wne_sessions: it
   xai_assessments: it
   zig_access_certifications: it
+  zig_activities: it
+  zig_activity_completions: it
   zig_adaptive_access_policy: it
   zig_app_access_decisions: it
   zig_app_behavior_baseline: it
   zig_app_monitoring_events: it
   zig_automation_feedback: it
+  zig_capabilities: it
   zig_continuous_ato: it
   zig_dast_gate_results: it
   zig_dast_scans: it
@@ -1005,6 +1534,7 @@ tables:
   zig_entitlement_findings: it
   zig_federation_trusts: it
   zig_lateral_movement_events: it
+  zig_maturity_scores: it
   zig_mdm_enrollments: it
   zig_mfa_challenges: it
   zig_mfa_enrollments: it
@@ -1014,12 +1544,14 @@ tables:
   zig_pam_sessions: it
   zig_pam_vault: it
   zig_patch_compliance: it
+  zig_pillars: it
   zig_quarantine: it
   zig_sdn_intents: it
   zig_sdn_posture: it
   zig_segmentation_evaluations: it
   zig_segmentation_policies: it
   zig_soar_executions: it
+  zig_targets: it
   zig_taxii_exchanges: it
   zig_threat_hunts: it
   zig_ti_indicators: it
