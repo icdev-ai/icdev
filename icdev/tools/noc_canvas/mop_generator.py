@@ -4,10 +4,14 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.noc_canvas.mop_generator")
 
 _MOP_STEP_KEYS = {"step", "action", "rollback", "timeout_min", "verification"}
 
@@ -50,11 +54,74 @@ _TEMPLATE_STEPS = [
 ]
 
 
+#: Seconds a REQUEST may spend waiting on the model before falling back.
+#:
+#: `generate_mop` runs inside `POST /api/noc/mops/generate`, and `router.invoke`
+#: has no timeout of its own: `LLMRequest` carries max_tokens and effort but no
+#: deadline. An unreachable provider therefore does not fail fast — it blocks on
+#: the network. That costs ~0.2s on a developer machine, where the connection is
+#: refused immediately, and MINUTES on a CI runner or an air-gapped host, where
+#: it is dropped and the client waits out its own socket timeout.
+#:
+#: The `except Exception` below was always correct and never reached, because a
+#: hang is not an exception. The fallback needs a clock, not a broader catch.
+#: Override with ICDEV_NOC_MOP_LLM_TIMEOUT.
+MOP_LLM_TIMEOUT_SECONDS = float(
+    os.environ.get("ICDEV_NOC_MOP_LLM_TIMEOUT", "8") or 8
+)
+
+
+def _invoke_bounded(prompt: str, timeout: float):
+    """Call the model, or give up. Returns the raw text, or None.
+
+    The worker is a DAEMON thread and is deliberately abandoned on timeout:
+    Python cannot kill a thread, so the request stops WAITING while the call
+    finishes in the background and its result is discarded. That is the same
+    cooperative bound the SAG dispatch layer documents for `stop_event`, and it
+    is what makes this safe to put in a request path — the handler returns on
+    the clock whatever the provider does.
+    """
+    import concurrent.futures
+
+    def _call():
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        router = LLMRouter()
+        resp = router.invoke(
+            "narrative_generation",
+            LLMRequest(messages=[{"role": "user", "content": prompt}],
+                       max_tokens=1500),
+        )
+        return resp.content or ""
+
+    pool = concurrent.futures.ThreadPoolExecutor(
+        max_workers=1, thread_name_prefix="noc-mop-llm")
+    try:
+        future = pool.submit(_call)
+        return future.result(timeout=timeout)
+    except concurrent.futures.TimeoutError:
+        logger.warning(
+            "noc mop: model did not answer within %.1fs — falling back to the "
+            "template. The request is bounded on purpose; see "
+            "MOP_LLM_TIMEOUT_SECONDS.", timeout)
+        return None
+    except Exception as exc:  # noqa: BLE001 — a model is a layer, not a dep
+        logger.info("noc mop: model unavailable (%s) — using the template",
+                    type(exc).__name__)
+        return None
+    finally:
+        # Do NOT wait: shutdown(wait=True) would re-introduce the hang this
+        # function exists to remove.
+        pool.shutdown(wait=False)
+
+
 def generate_mop(rfc: dict, context: str = "") -> dict:
     """Generate MOP steps from RFC metadata.
 
-    Attempts LLM generation; falls back to template skeleton on failure.
-    Returns a dict with keys: mop_id, mop_number, steps, generated_by, ai_prompt.
+    Attempts LLM generation under a BOUNDED wait; falls back to the template
+    skeleton on failure OR on timeout. Returns a dict with keys: mop_id,
+    mop_number, steps, generated_by, ai_prompt.
     """
     mop_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
@@ -71,22 +138,16 @@ def generate_mop(rfc: dict, context: str = "") -> dict:
     )
 
     steps = None
-    try:
-        from tools.llm.router import LLMRouter
-        from tools.llm.provider import LLMRequest
-        router = LLMRouter()
-        resp = router.invoke(
-            "narrative_generation",
-            LLMRequest(messages=[{"role": "user", "content": prompt}], max_tokens=1500),
-        )
-        raw = resp.content or ""
-        # Extract JSON array from response
-        start = raw.find("[")
-        end = raw.rfind("]") + 1
-        if start >= 0 and end > start:
-            steps = json.loads(raw[start:end])
-    except Exception:
-        pass
+    raw = _invoke_bounded(prompt, MOP_LLM_TIMEOUT_SECONDS)
+    if raw:
+        try:
+            # Extract JSON array from response
+            start = raw.find("[")
+            end = raw.rfind("]") + 1
+            if start >= 0 and end > start:
+                steps = json.loads(raw[start:end])
+        except Exception:  # noqa: BLE001 — a malformed answer is a template case
+            steps = None
 
     if not steps:
         steps = _TEMPLATE_STEPS[:]
