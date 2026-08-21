@@ -500,6 +500,40 @@ CREATE TABLE IF NOT EXISTS kanban_status_transitions (
     reason       TEXT,
     recorded_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
+-- autonomy-act-02 / migration 20260821050135. The detector-consuming reflex's
+-- projection: one row per (detector, subject, fingerprint), upserted, NOT
+-- append-only — and its per-detector denominator.
+CREATE TABLE IF NOT EXISTS detector_findings (
+    finding_id      TEXT PRIMARY KEY,
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    detector        TEXT NOT NULL,
+    subject         TEXT NOT NULL DEFAULT '',
+    fingerprint     TEXT NOT NULL DEFAULT '',
+    title           TEXT NOT NULL DEFAULT '',
+    priority        TEXT NOT NULL DEFAULT 'medium',
+    evidence_json   TEXT NOT NULL DEFAULT '{}',
+    derivation      TEXT NOT NULL DEFAULT '',
+    status          TEXT NOT NULL DEFAULT 'active',
+    seen_count      INTEGER NOT NULL DEFAULT 1,
+    card_count      INTEGER NOT NULL DEFAULT 0,
+    task_id         TEXT,
+    first_seen_at   TIMESTAMP,
+    last_seen_at    TIMESTAMP,
+    cleared_at      TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS detector_runs (
+    detector            TEXT PRIMARY KEY,
+    classification      TEXT NOT NULL DEFAULT 'CUI',
+    runs                INTEGER NOT NULL DEFAULT 0,
+    measurable_runs     INTEGER NOT NULL DEFAULT 0,
+    last_state          TEXT NOT NULL DEFAULT '',
+    last_reason         TEXT NOT NULL DEFAULT '',
+    last_findings       INTEGER,
+    last_summary_json   TEXT NOT NULL DEFAULT '{}',
+    last_run_at         TIMESTAMP,
+    last_measurable_at  TIMESTAMP
+);
 -- Operator alert surface (mirrors tools/db/init_icdev_db.py::alerts).
 CREATE TABLE IF NOT EXISTS alerts (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,

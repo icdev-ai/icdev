@@ -1,0 +1,2 @@
+# autonomy-act-02 — the detector-consuming reflex, gated in the PR that adds it.
+tests/kanban/test_detector_findings.py

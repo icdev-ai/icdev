@@ -647,6 +647,33 @@ reflexes:
       threshold: 0
       operator: gte
 
+  detector_findings_reflex:
+    enabled: true
+    risk_tier: green
+    schedule: "every 6h"
+    interval_seconds: 21600
+    # born_red_survey resolves a landing commit per born-red file (measured
+    # 32s on the live board with 3 findings); the other two are sub-second.
+    timeout_seconds: 600
+    # Cards one run may seed, across all detectors, worst-first. The remainder
+    # is projected, reported as `cards_deferred`, and arrives next cycle.
+    max_cards_per_run: 6
+    # HITL quarantine by default: each finding is a pipeline behaviour a human
+    # decides about. `backlog` hands them to the autonomous runner instead.
+    seed_status: suggested
+    detectors:
+      status_churn:
+        window_hours: 24
+        min_returns: 10      # surveyed in tools/kanban/status_churn.py — re-survey before lowering
+      born_red: {}
+      recovery:
+        window_hours: 24     # the Autonomous Recovery panel's window
+    description: "autonomy-act-02: run status_churn, born_red_survey and recovery_summary; project findings into detector_findings (deduped on the finding, seen_count on recurrence) and file one evidence-carrying card per NEW finding via task_factory"
+    success_metric:
+      name: findings_seen
+      threshold: 0
+      operator: gte
+
   critical_task_watchdog_reflex:
     enabled: true
     risk_tier: green
