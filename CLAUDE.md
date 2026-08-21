@@ -1558,6 +1558,8 @@ from tools.llm.router import LLMRouter
 
 The root `tools/` package is a backward-compatibility shim (`tools/__init__.py`) that redirects `tools.xxx` to `icdev.tools.xxx`. Existing scripts continue to work, but all new code must use `icdev.tools.*`.
 
+**In a source checkout the two spellings are ONE module object (xit-decl-02).** `tools/__init__.py` installs `icdev/core/shim.py`, a meta-path finder that answers `icdev.tools.X` with the object already bound to `tools.X` — so a monkeypatch on either spelling lands on the code under test, and a module-level singleton exists once. The physical file is the one under `tools/` (aliasing the other way would re-root 2,054 `Path(__file__)` sites onto the packaged copies under `icdev/`). Five `tools/` files are tiny shims over a real implementation that lives only in `icdev/tools/` (`llm/agent_loop`, `showcase/synthetic_data_engine`, `testing/qa_agent_runner`, `testing/selector_healer`, `billing/tier`) and resolve to that file under both names. The finder never installs in the wheel or beside a project's own `tools/` package. Pinned by `tests/test_namespace_identity.py`.
+
 **Test environments:** `tests/conftest.py` automatically injects the repo root into `sys.path` and forces `ICDEV_STORAGE_BACKEND=sqlite`. If you see `ModuleNotFoundError: No module named 'icdev'`, the repo root is not on `PYTHONPATH` and the package is not installed in editable mode.
 
 ### Databases & Storage

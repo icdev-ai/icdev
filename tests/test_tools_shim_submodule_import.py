@@ -20,6 +20,7 @@ depend on which spelling the code under test happened to use.
 from __future__ import annotations
 
 import importlib
+from pathlib import Path
 
 import pytest
 
@@ -28,8 +29,13 @@ def test_plain_import_as_resolves():
     """The form that used to raise ImportError."""
     import tools.db.storage as storage
 
-    assert storage.__name__ == "icdev.tools.db.storage"
+    # xit-decl-02: the NAME is an implementation detail of which tree is
+    # physical; the contract is one object under both names (tested below)
+    # and that it is this checkout's storage.py, not a stale packaged copy.
+    assert storage.__name__ in ("tools.db.storage", "icdev.tools.db.storage")
     assert hasattr(storage, "get_connection")
+    repo_root = Path(__file__).resolve().parents[1]
+    assert Path(storage.__file__).resolve() == repo_root / "tools" / "db" / "storage.py"
 
 
 def test_from_import_still_resolves():

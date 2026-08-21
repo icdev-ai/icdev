@@ -460,18 +460,19 @@ def _run_one_turn(prompt: str = PROMPT) -> _Turn:
 # 0. The hygiene this file's correctness rests on
 # ---------------------------------------------------------------------------
 def test_the_alias_hygiene_this_file_depends_on_is_real():
-    """``tools.X`` and ``icdev.tools.X`` really are two objects for agent_runtime.
+    """``tools.X`` and ``icdev.tools.X`` are ONE object for agent_runtime.
 
-    Asserted rather than commented. If the packaging ever collapses them the
-    ``_patch_every_alias`` calls become redundant and this test says so; and if
-    it ever SPLITS ``db.storage`` -- one shared object today -- the ``live_db``
-    fixture would start patching a module nothing reads, and every assertion in
-    this file would be measuring a no-op while the code under test wrote to the
-    live board.
+    Asserted rather than commented. xit-decl-02 collapsed the two spellings
+    onto one module object (icdev/core/shim.py), which is what makes a
+    monkeypatch on either spelling reach the code under test. If the packaging
+    ever SPLITS them again, ``_patch_every_alias`` would be patching a module
+    nothing reads, and every assertion in this file would be measuring a no-op
+    while the code under test wrote to the live board -- so the split must
+    fail here first.
     """
     project = _aliases("agent_runtime.project_context")
-    assert len(project) == 2, (
-        "expected two distinct module objects for agent_runtime.project_context; "
+    assert len(project) == 1, (
+        "expected ONE module object for agent_runtime.project_context; "
         f"got {[m.__file__ for m in project]}"
     )
     for mod in project:
