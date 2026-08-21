@@ -1,0 +1,5 @@
+# autonomy-wire-01 — TOOL_EXECUTE_AFTER had a subscribed handler and NO
+# dispatcher, so the awareness auto-reindex had never once fired. Pins that the
+# point is dispatched, that it is observe-only (a post-hook must not rewrite the
+# output), and that it fires only for a tool that actually RAN.
+tests/agent_runtime/test_tool_execute_after_dispatch.py

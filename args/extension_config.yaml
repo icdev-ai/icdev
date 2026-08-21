@@ -50,13 +50,25 @@ extensions:
       allow_modification: false      # Post-hooks observe only by default
       max_handlers: 20
       timeout_ms: 5000
+    # DISABLED, and this is the honest outcome rather than an accommodation
+    # (autonomy-wire-01). Measured 2026-08-21: `ExtensionPoint.CHAT_MESSAGE_BEFORE`
+    # and `CHAT_MESSAGE_AFTER` have ZERO call sites in the whole tree — not a
+    # dispatch, and not even a registered handler. Declaring a hook point nothing
+    # can ever reach makes the platform look more extensible than it is, and it
+    # pinned `extension_hook_point` at 2 permanently inert units that no amount
+    # of traffic could drain.
+    #
+    # Re-enable in the SAME change that adds the dispatch to the chat path, not
+    # before: a point is declared when something calls it. Wiring the chat hot
+    # path is a behavioural decision with its own latency and ordering
+    # questions, and was deliberately not made here.
     chat_message_before:
-      enabled: true
+      enabled: false
       allow_modification: true
       max_handlers: 20
       timeout_ms: 5000
     chat_message_after:
-      enabled: true
+      enabled: false
       allow_modification: true       # Can add CUI markings to responses
       max_handlers: 20
       timeout_ms: 5000
