@@ -1022,10 +1022,10 @@ def _register_process_identity() -> None:
     start; the record is observability, not authorization.
     """
     try:
-        import os as _os
+        # DISTINCT PER PROCESS (autonomy-sid-01) — see the scheduler.
+        from tools.coordination.service_identity import claim_service_identity
 
-        _os.environ.setdefault("ICDEV_SESSION_ID", "genesis-daemon")
-        _os.environ.setdefault("ICDEV_AGENT", "genesis")
+        claim_service_identity("genesis-daemon", "genesis")
         from tools.coordination import session_registry as _reg
 
         _reg.register(intent="genesis daemon — running due reflexes")
