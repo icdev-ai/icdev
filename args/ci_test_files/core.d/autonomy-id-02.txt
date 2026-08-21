@@ -1,0 +1,5 @@
+# autonomy-id-02 — a process is stale only if code IT EXECUTES changed.
+# Pins the two invariants that fail GREEN if broken: staleness is keyed on the
+# process's own import closure (a tip-keyed detector fires on every merge and
+# gets ignored), and `unmeasurable` never folds into `current`.
+tests/awareness/test_code_staleness.py
