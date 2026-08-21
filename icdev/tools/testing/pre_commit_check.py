@@ -298,6 +298,42 @@ def _run_skip_census(root: Path = BASE_DIR) -> bool:
     return False
 
 
+# ---------------------------------------------------------------------------
+# Domain leak gate (xit-leak-01)
+# ---------------------------------------------------------------------------
+DOMAIN_LEAK_TOOL = Path("tools") / "ci" / "domain_leak_gate.py"
+
+
+def _run_domain_leak_gate(root: Path = BASE_DIR) -> bool:
+    """Refuse a commit that stages a broker credential, an ad_* dump, or (once
+    armed) a file under a removed trading path. This repository is PUBLIC.
+
+    Returns True (allow) whenever the gate cannot be resolved -- CI runs the
+    same check and will not be so forgiving.
+    """
+    tool = BASE_DIR / DOMAIN_LEAK_TOOL
+    if not tool.is_file():
+        return True
+    try:
+        result = subprocess.run(
+            [sys.executable, str(tool), "--check", "--staged", "--root", str(root)],
+            capture_output=True, text=True, cwd=str(root), timeout=120,
+            encoding="utf-8", errors="replace",
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(f"[pre-commit] Domain leak gate: SKIPPED -- could not run ({exc})")
+        return True
+    if result.returncode == 0:
+        print("[pre-commit] Domain leak gate: OK")
+        return True
+    print("[pre-commit] BLOCKED: this commit would publish trading-domain material or a broker credential.")
+    if result.stdout and result.stdout.strip():
+        print(result.stdout.strip())
+    if result.stderr and result.stderr.strip():
+        print(result.stderr.strip())
+    return False
+
+
 def _run_blueprint_import_check() -> bool:
     """Run the coherence blueprint_imports check."""
     print("[pre-commit] Checking blueprint imports...")
@@ -457,6 +493,11 @@ def main() -> int:
     # paths is in scope, so a commit touching no gated test pays one subprocess
     # and no scan.
     if any(f.endswith(".py") for f in staged) and not _run_skip_census():
+        failed = True
+
+    # Domain leak gate -- every staged file, any suffix. Its --staged mode is
+    # one subprocess and a regex pass over the staged paths only.
+    if not _run_domain_leak_gate():
         failed = True
 
     # Always run blueprint import check when Python files change

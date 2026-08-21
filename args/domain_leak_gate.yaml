@@ -1,0 +1,66 @@
+# CUI // SP-CTI
+# Domain Leak Gate (xit-leak-01)
+#
+# THE POLICY THIS ENCODES
+# -----------------------
+# This repository is PUBLIC. The ICDEV[domain] split moves the trading domain
+# (FathomDesk: tools/trading, tools/market_intel, the trading/fathomdesk/options
+# args, 137 live ad_* tables) to a PRIVATE sibling repository
+# (docs/programmes/icdev-domain-split.md). Two things must never land here
+# afterwards: the code coming back (a stale branch rebased after the removal, a
+# `git checkout <old-ref> -- tools/trading`, a dump of an ad_* table) and a
+# broker credential of any shape.
+#
+# TWO HALVES, ARMED AT DIFFERENT TIMES
+#   patterns.mode: enforce  -- from day one. SURVEYED 2026-08-21 over every
+#                              tracked file: 0 hits for every rule, so arming
+#                              refuses nothing that exists. The rules live in
+#                              tools/security/secret_detector.py (category
+#                              broker_credential), one table for every scanner.
+#   paths.mode: report      -- until the removal lands. The denied paths are
+#                              legitimately present today; `enforce` would fail
+#                              every commit. The flip is ONE line, in the
+#                              removal PR (xit-rm-*), where it is reviewable.
+#
+# Gate:  python tools/ci/domain_leak_gate.py --check            (CI security job)
+#        python tools/ci/domain_leak_gate.py --staged --check   (pre-commit)
+# Stand down: ICDEV_DOMAIN_LEAK_GUARD=0 -- never a shell neutraliser.
+
+domain_leak_gate:
+  paths:
+    mode: report            # report | enforce  -- flips to enforce in xit-rm-*
+    deny:
+      - tools/trading/**
+      - tools/market_intel/**
+      - tools/fathomdesk/**
+      - icdev/tools/trading/**
+      - icdev/tools/market_intel/**
+      - icdev/tools/fathomdesk/**
+      - apps/fathomdesk/**
+      - args/trading*.yaml
+      - args/fathomdesk*.yaml
+      - args/options_*.yaml
+      - args/llm_config_trading.yaml
+
+  # A DATA file (.sql/.dump/.csv/.tsv/.txt) carrying an ad_* table dump.
+  # Source files mentioning `INSERT INTO ad_` are the domain's own writers and
+  # are covered by the path rule, not this one.
+  sql_markers:
+    - "COPY ad_"
+    - "INSERT INTO ad_"
+
+  patterns:
+    mode: enforce           # report | enforce
+
+  # An ALLOW entry asserts a match is CORRECT here and needs a written reason.
+  allow:
+    - path: tests/ci/test_domain_leak_gate.py
+      reason: >-
+        the gate's own tests plant deliberately fake broker key shapes as the
+        negative control that proves the rules fire.
+    - path: tools/security/secret_detector.py
+      reason: >-
+        the pattern table names the shapes it detects.
+    - path: icdev/tools/security/secret_detector.py
+      reason: >-
+        packaged mirror of the pattern table.
