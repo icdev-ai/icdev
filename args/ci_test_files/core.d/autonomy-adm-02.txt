@@ -1,0 +1,5 @@
+# autonomy-adm-02 — a task that cannot get a worktree must not build in the
+# SHARED CHECKOUT. The guard replaces a silent `else str(BASE_DIR)` downgrade
+# that dispatched an autonomous worker into C:/AI/ICDev, observed live on
+# 2026-08-20 for rem-hyg-18.
+tests/kanban/test_worktree_dispatch_isolation.py
