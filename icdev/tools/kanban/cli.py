@@ -904,6 +904,12 @@ def cmd_build_model(model: str, json_out: bool) -> int:
 
 
 def main():
+    # xit-decl-01: the board CLI moves rows; refuse when the process env names a
+    # database this parent did not declare (two parents share one shell).
+    from icdev.core.context import assert_identity
+
+    assert_identity(anchor=__file__)
+
     from tools.kanban.requeue import REQUEUE_STATUSES
 
     parser = argparse.ArgumentParser(

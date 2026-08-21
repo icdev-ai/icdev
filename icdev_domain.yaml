@@ -1,0 +1,76 @@
+# CUI // SP-CTI
+# ICDEV[domain] declaration for THIS parent — ICDEV[IT].
+#
+# Every ICDEV parent carries one of these at its repository root. The core
+# (icdev/core/*) reads it to learn which domain it is serving, where that
+# domain's data lives, which database it may touch and which sensitivity model
+# its egress and row-security gates enforce. ICDEV[IT] is the FIRST domain of
+# the core, and this file is what lets the second parent (ICDEV[FT]) be a
+# sibling rather than a fork: it changes the values here and nothing in the
+# core. Programme: docs/programmes/icdev-domain-split.md (xit-decl-01).
+#
+# The domain KEY is derived from the FILE the core finds, never from an
+# environment variable, so two parents on one machine cannot cross-load.
+# Values here reproduce today's constants exactly; changing one changes the
+# running system, so treat this file the way you treat args/llm_config.yaml.
+
+schema_version: 1
+
+domain:
+  key: it
+  name: "ICDEV[IT]"
+  # Prefix of every environment variable the core reads for this parent.
+  # ICDEV[FT] declares FIN; the core then reads FIN_PG_DATABASE, FIN_DB_PATH...
+  env_prefix: ICDEV
+
+paths:
+  data: data
+  forge: [goals, args, context, hardprompts]
+
+db:
+  backend: postgresql
+  # The env vars the core consults, named in full so a reader can grep them.
+  name_env: ICDEV_PG_DATABASE
+  dsn_env: ICDEV_DATABASE_URL
+  sqlite_path_env: ICDEV_DB_PATH
+  # The ONLY PostgreSQL database names this parent may open. The identity
+  # check (icdev.core.context.assert_identity) REFUSES to start a dashboard,
+  # daemon, migration or board CLI whose process env names another database.
+  # Measured 2026-08-21: .env, CI (icdev-ci.yml) and docker-compose all use
+  # `icdev`. ICDEV[FT] declares [icdev_ft] and a separate PostgreSQL role.
+  databases: [icdev]
+  migrations: [tools/db/migrations]
+
+sensitivity:
+  column: classification
+  labels_file: args/classification_profiles.yaml
+  default: public
+  egress_restricted: [cui, cui_sp_cti, secret, itar]
+  levels: [IL2, IL4, IL5, IL6]
+
+components: args/component_registry.yaml
+
+reflexes:
+  # Reflex packs are introduced by xit-core-*; until then the genesis daemon
+  # reads tools/genesis/daemon.py::REFLEX_NAMES as it always has.
+  packs: []
+
+dashboard:
+  port: 5050
+  blueprints: registry
+
+kanban:
+  board: it
+  external_repos: args/kanban_external_repos.yaml
+
+mcp:
+  servers: [core, compliance, devsecops, builder, knowledge, maintenance]
+
+trust:
+  citation_required: true
+  promotion_gates: [coherence, gated_tests]
+
+ci:
+  gated_lists: args/ci_test_files
+  compat_suite: args/ci_test_files/core_compat.txt
+  census_dir: args

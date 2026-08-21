@@ -1023,6 +1023,10 @@ def _register_process_identity() -> None:
 
 
 def main() -> None:
+    # xit-decl-01: a daemon bound to another parent's database must not start.
+    from icdev.core.context import assert_identity
+
+    assert_identity(anchor=__file__)
     """CLI entry point."""
     _register_process_identity()
     config = GenesisDaemon.load_config()

@@ -1,0 +1,3 @@
+# xit-decl-01 - the ICDEV[domain] declaration, the shared root resolver and the
+# process-identity check that refuses another parent's database.
+tests/core/test_domain_declaration.py
