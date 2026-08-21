@@ -139,7 +139,6 @@ tests/databridge/test_iris_connector.py
 tests/databridge/test_servicenow_itsm_connector.py
 tests/databridge/test_vault_resolver.py
 tests/db/test_mvs_audit_03_p1_gaps.py
-tests/db/test_pg_bootstrap_baseline.py
 tests/db/test_shadowed_migration_audit.py
 tests/db/test_shadowed_migration_replay.py
 tests/docmod/test_architecture_patterns_pack.py

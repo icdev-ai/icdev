@@ -16,6 +16,13 @@ THE RULE FOR ADDING ONE. ``reported`` and ``derived`` must not share code. If
 the verifier calls what the surface calls, it proves the function is
 deterministic — which was never in question. Every defect below survived
 because one computation was trusted twice.
+
+AND IT CITES ITS INCIDENT (autonomy-lrn-01). Every claim carries an
+``Incident`` naming the card(s) that fixed the defect it was learned from. A
+claim is seeded from a VERIFIED FACT — the card is done and the id is on main,
+checked by ``tools/awareness/incident_claims.py`` — never from a pattern in the
+system's own reported history. ``python tools/awareness/claim_verifier.py
+--incidents`` names the window's fixed incidents that still have NO claim.
 """
 
 from __future__ import annotations
@@ -24,7 +31,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 
-from tools.awareness.claim_verifier import Claim, independent_observations
+from tools.awareness.claim_verifier import Claim, Incident, independent_observations
 
 
 def _conn():
@@ -313,6 +320,64 @@ def _no_stuck_writer(reported: Dict[str, str], derived: Dict[str, str]) -> bool:
     return "stuck_writer" not in (derived or {}).values()
 
 
+# --------------------------------------------------------------------------- #
+# 5. An approval park is WHOLE, at every site  (hgx-park-01 + rem-hyg-19)
+# --------------------------------------------------------------------------- #
+#: THE INCIDENT THIS MODULE'S PROVENANCE RULE WAS WRITTEN FOR. hgx-park-01 made
+#: `workflow_runner._park_for_approval` commit the gate row and the run row in
+#: ONE transaction and pinned it with structural tests reading THAT function's
+#: source. `mcp_executor.open_approval_gate` had the identical two-commit
+#: defect, kept failing `assert 'running' == 'awaiting_approval'` on the Windows
+#: runner, and was read as flake until rem-hyg-19 — weeks later.
+#:
+#: A claim over the DATA has no second-site blind spot: whichever function
+#: parks, a gate row awaiting a decision under a run that does not read
+#: `awaiting_approval` (or a parked run with no pending gate) is the half-commit,
+#: observed. The reported side is the HITL surface's own list of pending gates;
+#: the derived side reads the RUN table and joins across, sharing no code.
+#:
+#: Measured 2026-08-21: this board has never held a parked gate (121 step rows,
+#: none awaiting), so the claim reads UNMEASURABLE today — never `agrees`.
+def _reported_pending_gates() -> List[str]:
+    """What the HITL surface lists as awaiting a decision (step ids)."""
+    from tools.studio.workflow_runner import get_pending_approvals
+    return sorted(get_pending_approvals())
+
+
+def _derived_pending_gates() -> List[str]:
+    """From the RUN side: pending gates under PARKED runs, plus a sentinel for
+    every parked run that has no pending gate at all. Raw SQL, no runner code."""
+    conn = _conn()
+    try:
+        whole = conn.execute(
+            "SELECT s.step_run_id AS g FROM studio_workflow_runs r "
+            "JOIN studio_workflow_run_steps s ON s.run_id = r.run_id "
+            "WHERE r.status = 'awaiting_approval' AND s.status = 'awaiting_approval'"
+        ).fetchall()
+        gateless = conn.execute(
+            "SELECT r.run_id AS g FROM studio_workflow_runs r "
+            "WHERE r.status = 'awaiting_approval' AND NOT EXISTS ("
+            "  SELECT 1 FROM studio_workflow_run_steps s "
+            "  WHERE s.run_id = r.run_id AND s.status = 'awaiting_approval')"
+        ).fetchall()
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+    out = [str(dict(r)["g"]) for r in whole]
+    out += [f"run-without-gate:{dict(r)['g']}" for r in gateless]
+    return sorted(out)
+
+
+def _park_is_whole(reported: List[str], derived: List[str]) -> bool:
+    """Every gate the surface shows sits under a parked run, and every parked
+    run shows a gate. A gate in `reported` missing from `derived` is the first
+    half of a two-commit park; a `run-without-gate:` sentinel is the other
+    order. Either one is the defect, whichever site wrote it."""
+    return set(reported or []) == set(derived or [])
+
+
 REGISTRY: List[Claim] = [
     Claim(
         claim_id="posture_score_needs_evidence",
@@ -327,6 +392,8 @@ REGISTRY: List[Claim] = [
         agree=_scored_implies_evidence,
         tier="propose",
         tags=["compliance", "rem-hyg-09"],
+        incident=Incident(["rem-hyg-09"], "2026-08-20",
+                          "posture returns None, never 100.0, for a canvas with no rows"),
     ),
     Claim(
         claim_id="cache_unlogged_is_measured",
@@ -340,6 +407,8 @@ REGISTRY: List[Claim] = [
         derived=_actual_unlogged,
         tier="propose",
         tags=["cache", "cch-obs-03"],
+        incident=Incident(["cch-obs-03"], "2026-08-20",
+                          "`unlogged` is read from pg_class.relpersistence"),
     ),
     Claim(
         claim_id="recovery_counts_outcomes_not_attempts",
@@ -353,6 +422,8 @@ REGISTRY: List[Claim] = [
         derived=_derived_recoveries,
         tier="propose",
         tags=["autonomy", "rem-hyg-16"],
+        incident=Incident(["rem-hyg-16"], "2026-08-20",
+                          "the recovery panel counts tasks that merged un-escalated"),
     ),
     Claim(
         claim_id="repetition_is_not_corroboration",
@@ -366,6 +437,28 @@ REGISTRY: List[Claim] = [
         derived=_derived_series_health,
         agree=_no_stuck_writer,
         tier="propose",
-        tags=["evidence-quality"],
+        tags=["evidence-quality", "rem-hyg-17"],
+        incident=Incident(["rem-hyg-17"], "2026-08-20",
+                          "this claim's own first live run: narrowed to output "
+                          "frozen while its INPUT moved"),
+    ),
+    Claim(
+        claim_id="approval_park_is_whole",
+        description=(
+            "A Studio approval gate awaiting a decision must sit under a run "
+            "that reads awaiting_approval, and a parked run must show a gate. "
+            "The park was TWO commits at two sites: hgx-park-01 made "
+            "workflow_runner._park_for_approval atomic and its structural tests "
+            "read that function; mcp_executor.open_approval_gate kept the "
+            "defect for weeks, read as Windows flake, until rem-hyg-19."
+        ),
+        reported=_reported_pending_gates,
+        derived=_derived_pending_gates,
+        agree=_park_is_whole,
+        tier="propose",
+        tags=["studio", "hitl", "hgx-park-01", "rem-hyg-19"],
+        incident=Incident(["hgx-park-01", "rem-hyg-19"], "2026-08-20",
+                          "both park sites commit the gate row and the run row "
+                          "in one transaction"),
     ),
 ]
