@@ -71,26 +71,41 @@ def test_the_heartbeat_cannot_kill_the_loop():
 # --------------------------------------------------------------------------- #
 # 2. The behaviour it protects
 # --------------------------------------------------------------------------- #
-def test_heartbeat_refreshes_an_existing_row(monkeypatch, tmp_path):
-    """The point of the call: an existing session stays ACTIVE."""
-    import os
+def test_heartbeat_refreshes_an_existing_row(monkeypatch):
+    """The point of the call: an existing session stays ACTIVE.
 
+    SELF-CONTAINED, and it was not the first time. This test passed alone and
+    failed IN-SUITE on CI, because `get_session_id()` reads CLAUDE_SESSION_ID
+    BEFORE ICDEV_SESSION_ID — so an earlier test leaving CLAUDE_SESSION_ID set
+    made register() and heartbeat() write under a different id than the one this
+    test asserted on. `monkeypatch` (not bare os.environ) so the change is
+    undone afterwards: the original also leaked ICDEV_SESSION_ID into every test
+    that ran after it.
+
+    It asserts on the id the resolver ACTUALLY returns rather than a hardcoded
+    string, which removes the coupling entirely — the invariant is "heartbeat
+    refreshes MY row", whatever mine is called.
+    """
+    from tools.airgap.hook_compat import get_session_id
     from tools.coordination import session_registry as reg
 
-    os.environ["ICDEV_SESSION_ID"] = "heartbeat-probe"
-    os.environ["ICDEV_AGENT"] = "test"
+    monkeypatch.delenv("CLAUDE_SESSION_ID", raising=False)
+    monkeypatch.setenv("ICDEV_SESSION_ID", "heartbeat-probe")
+    monkeypatch.setenv("ICDEV_AGENT", "test")
     try:
         import tools.airgap.hook_compat as hc
-        hc._session_id = None
+        monkeypatch.setattr(hc, "_session_id", None, raising=False)
     except Exception:  # noqa: BLE001
         pass
 
+    sid = get_session_id()
     assert reg.register(intent="probe").get("ok")
     assert reg.heartbeat() is True, (
         "heartbeat did not refresh a row that register() had just written"
     )
-    assert any(dict(r).get("session_id") == "heartbeat-probe"
-               for r in reg.list_active())
+    assert any(dict(r).get("session_id") == sid for r in reg.list_active()), (
+        f"the session {sid!r} that heartbeat() just refreshed is not active"
+    )
 
 
 def test_heartbeat_registers_when_the_row_is_missing():
