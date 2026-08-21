@@ -46,10 +46,14 @@ def test_the_live_app_answers_404_for_every_removed_route():
     with app.test_client() as c:
         # the app may send an unauthenticated request for an UNKNOWN page to /login (302) before it 404s;
         # what matters is that a removed route is treated exactly like a path that never existed
-        unknown = c.get("/fathomdesk-never-existed-xyz")
-        baseline = (unknown.status_code, unknown.headers.get("Location", "").split("?")[0])
+        # ... and an unknown /api/* path gets the API's own answer (401), so the baseline is per prefix
+        def answer(path: str) -> tuple[int, str]:
+            r = c.get(path)
+            return r.status_code, r.headers.get("Location", "").split("?")[0]
+
+        baselines = {"/api/": answer("/api/never-existed-xyz"), "": answer("/fathomdesk-never-existed-xyz")}
         for route in GONE:
             path = route.replace("<ticker>", "SPY")
-            r = c.get(path)
-            got = (r.status_code, r.headers.get("Location", "").split("?")[0])
-            assert got == baseline, f"{path} answered {got}; an unknown path answers {baseline} -- the route is still served"
+            baseline = baselines["/api/"] if path.startswith("/api/") else baselines[""]
+            got = answer(path)
+            assert got == baseline, f"{path} answered {got}; an unknown path of that kind answers {baseline} -- the route is still served"
