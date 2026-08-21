@@ -180,9 +180,11 @@ def test_context_round_trip():
 def test_shim_and_canonical_schemas_are_identical_source():
     import pathlib
 
-    import icdev.tools.cortex.schemas as canonical
-
-    canonical_src = pathlib.Path(canonical.__file__).read_text(encoding="utf-8")
-    repo_root = pathlib.Path(canonical.__file__).resolve().parents[3]
+    # xit-decl-02: `icdev.tools.cortex.schemas` is the SAME module object as
+    # `tools.cortex.schemas` in a checkout, so its __file__ lives under tools/.
+    # Mirror parity is a statement about two FILES; read both from the repo
+    # root rather than deriving one path from a module's location.
+    repo_root = pathlib.Path(__file__).resolve().parents[2]
+    canonical_src = (repo_root / "icdev" / "tools" / "cortex" / "schemas.py").read_text(encoding="utf-8")
     shim_src = (repo_root / "tools" / "cortex" / "schemas.py").read_text(encoding="utf-8")
     assert canonical_src == shim_src

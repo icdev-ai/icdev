@@ -69,24 +69,20 @@ def test_monkeypatch_on_either_spelling_is_seen_by_the_other(monkeypatch):
 
 
 @pytest.mark.parametrize("dotted", ["llm.agent_loop", "billing.tier"])
-def test_backcompat_shims_resolve_to_the_real_implementation(dotted):
-    """tools/<x>.py is a tiny shim; the real module is the mirror copy."""
+def test_backcompat_shims_are_one_object_too_and_it_is_the_real_one(dotted):
+    """tools/<x>.py is a tiny shim; BOTH names resolve to the real mirror module.
+
+    The parent package is aliased, so its child ATTRIBUTE can hold only one
+    module; if the shim loaded as its own module, a string-path monkeypatch
+    (which walks attributes) and a `from icdev.tools.x import f` (which reads
+    sys.modules) would disagree about which object is live.
+    """
     real = importlib.import_module(f"icdev.tools.{dotted}")
     via_shim = importlib.import_module(f"tools.{dotted}")
+    assert via_shim is real
     assert "icdev" in Path(real.__file__).resolve().relative_to(REPO_ROOT).parts
-    # the shim re-exports the real symbols, so they are shared
-    import types
-
-    names = list(
-        getattr(via_shim, "__all__", None) or getattr(real, "__all__", None) or [
-            n for n in dir(real)
-            if not n.startswith("_") and n != "annotations"
-            and not isinstance(getattr(real, n), types.ModuleType)
-        ]
-    )[:5]
-    assert names, dotted
-    for n in names:
-        assert getattr(via_shim, n, None) is getattr(real, n), f"{dotted}.{n}"
+    parent = importlib.import_module("icdev.tools." + dotted.rsplit(".", 1)[0])
+    assert getattr(parent, dotted.rsplit(".", 1)[1]) is real
 
 
 def test_mirror_only_and_shim_cases_resolve_in_the_mirror_explicitly(tmp_path):

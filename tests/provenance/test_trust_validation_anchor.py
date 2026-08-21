@@ -194,14 +194,16 @@ def test_every_alias_is_pinned(db):
         finally:
             conn.close()
 
-    # And the two namespaces really are separate objects, which is why both
-    # had to be named.
+    # xit-decl-02: the two namespaces are ONE module object in a checkout
+    # (icdev/core/shim.py), so pinning either spelling pins both. Naming both
+    # above is now belt-and-braces rather than load-bearing; this assertion is
+    # what tells the next reader which world they are in.
     a = importlib.import_module("tools.provenance.registry")
     b = importlib.import_module("icdev.tools.provenance.registry")
-    assert a is not b, (
-        "tools.provenance.registry and its icdev mirror resolved to one object — "
-        "if that ever becomes true this test is over-specified, but the reverse "
-        "assumption is what lets a fake go uninstalled"
+    assert a is b, (
+        "tools.provenance.registry and its icdev mirror resolved to two objects — "
+        "the checkout alias finder is not installed, and a fake on one spelling "
+        "would go uninstalled for callers of the other"
     )
 
 

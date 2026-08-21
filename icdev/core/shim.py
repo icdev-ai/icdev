@@ -44,8 +44,12 @@ THREE CASES ARE NOT ALIASED:
 * no ``tools.<rest>`` module exists — 66 files exist only in the mirror;
 * ``tools/<rest>.py`` is a BACK-COMPAT SHIM onto its own mirror twin (a
   5-line ``tools/billing/tier.py`` over a 34-line implementation; ``llm/
-  agent_loop.py`` 98 over 2,775). Aliasing those would make the real module
-  import its own shim while half-initialised. Five exist.
+  agent_loop.py`` 98 over 2,775). Five exist. For these the REAL module is
+  the mirror copy, and BOTH names resolve to it -- ``tools.llm.agent_loop``
+  included -- so the shim file is never executed as a module of its own.
+  Letting it load separately left the aliased parent package carrying
+  whichever child was imported last as its attribute while sys.modules held
+  both, and a monkeypatch that walks attributes landed on the wrong one.
 
 For the last two the finder resolves the ``icdev/tools/`` file EXPLICITLY
 rather than returning None: once a parent package is aliased its ``__path__``
@@ -182,8 +186,44 @@ class IcdevToolsAliasFinder(importlib.abc.MetaPathFinder):
         search = [str(self.mirror_dir.joinpath(*parts[:-1]))]
         return importlib.machinery.PathFinder.find_spec(fullname, search)
 
+    def _alias_spec(self, fullname: str, module: ModuleType, target_name: str):
+        spec = importlib.machinery.ModuleSpec(
+            fullname,
+            _AliasLoader(module, target_name),
+            origin=getattr(module, "__file__", None),
+            is_package=hasattr(module, "__path__"),
+        )
+        if hasattr(module, "__path__"):
+            spec.submodule_search_locations = list(module.__path__)
+        spec.has_location = bool(spec.origin)
+        self.aliased.add(fullname)
+        return spec
+
     # -- MetaPathFinder ----------------------------------------------------
     def find_spec(self, fullname, path=None, target=None):  # noqa: ARG002
+        if fullname.startswith(PHYSICAL_PREFIX + "."):
+            # The SHIM case, from the other side: ``tools/<rest>.py`` is a tiny
+            # re-export of ``icdev.tools.<rest>``. If the shim file were allowed
+            # to load as its own module, the aliased parent package would carry
+            # whichever child was imported LAST as its attribute while
+            # sys.modules held both -- and a monkeypatch that walks attributes
+            # (pytest's string form) would land on a different object from the
+            # one ``from icdev.tools.x import f`` resolves. Observed:
+            # tests/studio/test_agent_tool_gate.py importing the real module at
+            # collection made tests/agent_runtime/test_event_recorder.py's
+            # patches invisible. So the shim name resolves to the REAL module
+            # too: one object under both names, for every module.
+            rest = fullname[len(PHYSICAL_PREFIX) + 1:]
+            if rest and self._is_shim(rest):
+                canonical = f"{CANONICAL_PREFIX}.{rest}"
+                try:
+                    module = importlib.import_module(canonical)
+                except ModuleNotFoundError as exc:
+                    if exc.name and (exc.name == canonical or canonical.startswith(exc.name + ".")):
+                        return None
+                    raise
+                return self._alias_spec(fullname, module, canonical)
+            return None
         if not fullname.startswith(CANONICAL_PREFIX + "."):
             return None
         rest = fullname[len(CANONICAL_PREFIX) + 1:]
@@ -205,17 +245,7 @@ class IcdevToolsAliasFinder(importlib.abc.MetaPathFinder):
             if exc.name and (exc.name == physical_name or physical_name.startswith(exc.name + ".")):
                 return None
             raise
-        spec = importlib.machinery.ModuleSpec(
-            fullname,
-            _AliasLoader(module, physical_name),
-            origin=getattr(module, "__file__", None),
-            is_package=hasattr(module, "__path__"),
-        )
-        if hasattr(module, "__path__"):
-            spec.submodule_search_locations = list(module.__path__)
-        spec.has_location = bool(spec.origin)
-        self.aliased.add(fullname)
-        return spec
+        return self._alias_spec(fullname, module, physical_name)
 
 
 def _siblings(tools_dir: Path, icdev_dir: Path) -> bool:
