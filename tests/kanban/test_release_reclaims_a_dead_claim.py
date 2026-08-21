@@ -21,6 +21,12 @@ applied to the second caller, not a new mechanism.
 THE LINE THAT MUST NOT MOVE: a claim whose holder is still RUNNING is left
 alone. Stealing it is exactly the duplicate-build race the claim exists to
 prevent, so the tests assert the negative as hard as the positive.
+
+AND A DEAD PID IS NOT DEAD WORK (autonomy-adm-03). ``release_stale`` reads only
+the pid, and the pid on a runner's lease is the dispatcher's, which exits after
+handing off while the worker heartbeats on under another pid. The fallback now
+asks the shared two-signal verdict (``tools.kanban.lease_liveness``) and
+refuses, with the reason, while the task is heartbeating.
 """
 from __future__ import annotations
 
@@ -30,6 +36,7 @@ import pytest
 
 import tools.coordination.leases as leases
 from tools.kanban import cli
+from tools.kanban import lease_liveness as ll
 
 
 @pytest.fixture
@@ -37,15 +44,34 @@ def resource():
     return cli._task_lease_resource("kpr-dup-08")
 
 
-def _stub(monkeypatch, *, release_ok, stale_ok, holder_before, holder_after):
-    calls = {"release": 0, "release_stale": 0}
-    seq = iter([holder_before, holder_after])
+_DERIVE = object()   # pid_alive follows the holder: ALIVE -> True, DEAD -> False
 
-    monkeypatch.setattr(leases, "release", lambda r: (
-        calls.__setitem__("release", calls["release"] + 1) or release_ok))
-    monkeypatch.setattr(leases, "release_stale", lambda r: (
-        calls.__setitem__("release_stale", calls["release_stale"] + 1) or stale_ok))
-    monkeypatch.setattr(leases, "holder", lambda r: next(seq, holder_after))
+
+def _stub(monkeypatch, *, release_ok, stale_ok, holder_before, holder_after,
+          pid_alive=_DERIVE, heartbeating=False):
+    """Script the lease layer. ``holder`` answers *holder_before* until the
+    stale reclaim has run, then *holder_after* — the verdict reads the holder
+    too, so a fixed two-read sequence would hand it the AFTER state."""
+    calls = {"release": 0, "release_stale": 0}
+    state = {"reclaimed": False}
+
+    def _release(r):
+        calls["release"] += 1
+        return release_ok
+
+    def _release_stale(r):
+        calls["release_stale"] += 1
+        state["reclaimed"] = True
+        return stale_ok
+
+    monkeypatch.setattr(leases, "release", _release)
+    monkeypatch.setattr(leases, "release_stale", _release_stale)
+    monkeypatch.setattr(leases, "holder",
+                        lambda r: holder_after if state["reclaimed"] else holder_before)
+    if pid_alive is _DERIVE:
+        pid_alive = (holder_before is ALIVE) if holder_before is not None else None
+    monkeypatch.setattr(leases, "holder_is_alive", lambda r: pid_alive)
+    monkeypatch.setattr(ll, "task_is_heartbeating", lambda tid: heartbeating)
     return calls
 
 
@@ -73,10 +99,34 @@ def test_a_LIVE_holder_is_never_stolen(monkeypatch, capsys):
                   holder_before=ALIVE, holder_after=ALIVE)
     rc = cli.cmd_release("kpr-dup-08", json_out=False)
     assert rc == 1, "a live claim must be a refusal, not a success"
-    assert calls["release_stale"] == 1
+    assert calls["release_stale"] == 0, (
+        "the verdict refuses BEFORE the lease layer is asked to reap")
     out = capsys.readouterr().out
     assert "STILL CLAIMED" in out and "LIVE" in out
     assert "local-other" in out
+
+
+def test_a_dead_pid_with_a_HEARTBEATING_task_is_never_stolen(monkeypatch, capsys):
+    """autonomy-adm-03. The dispatcher's pid is gone; the worker is building
+    the task right now. The old fallback reclaimed this on request."""
+    calls = _stub(monkeypatch, release_ok=False, stale_ok=True,
+                  holder_before=DEAD, holder_after=None, heartbeating=True)
+    rc = cli.cmd_release("kpr-dup-08", json_out=False)
+    assert rc == 1, "a heartbeating task is live work — refusal, not a reclaim"
+    assert calls["release_stale"] == 0, "release_stale must not even be attempted"
+    out = capsys.readouterr().out
+    assert "STILL CLAIMED" in out and "HEARTBEATING" in out
+    assert "28076" in out, "say which pid is gone, and why that is not enough"
+
+
+def test_an_unknowable_pid_is_treated_as_alive(monkeypatch, capsys):
+    """holder_is_alive() is None — no psutil, no pid on the lease. Reaping on
+    an unknown is how a live worker loses its lease."""
+    calls = _stub(monkeypatch, release_ok=False, stale_ok=True,
+                  holder_before=DEAD, holder_after=None, pid_alive=None)
+    assert cli.cmd_release("kpr-dup-08", json_out=False) == 1
+    assert calls["release_stale"] == 0
+    assert "STILL CLAIMED" in capsys.readouterr().out
 
 
 def test_the_own_session_path_still_works_without_the_fallback(monkeypatch):
@@ -108,11 +158,34 @@ def test_json_reports_which_of_the_two_paths_ran(monkeypatch, capsys):
     assert payload["reclaimed_from_exited_session"] is True
     assert payload["prior_holder"] == "local-4babee2f3e5d"
     assert payload["still_held_by"] is None
+    assert payload["lease_state"] == "litter"
+    assert payload["worker_heartbeating"] is False
+
+
+def test_json_reports_a_heartbeating_refusal_as_such(monkeypatch, capsys):
+    _stub(monkeypatch, release_ok=False, stale_ok=True,
+          holder_before=DEAD, holder_after=DEAD, heartbeating=True)
+    cli.cmd_release("kpr-dup-08", json_out=True)
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["released"] is False
+    assert payload["lease_state"] == "working"
+    assert payload["worker_heartbeating"] is True
 
 
 def test_the_resource_name_is_the_shared_one():
     """Same seam the seeder and the runner use, or the release frees nothing."""
     assert cli._task_lease_resource("kpr-dup-08") == "kanban:task:kpr-dup-08"
+
+
+def test_the_fallback_asks_the_shared_verdict_not_the_pid_alone():
+    """Pins the consolidation: cmd_release must reach release_stale ONLY via
+    lease_liveness.reap_if_litter, never call it directly."""
+    import inspect
+
+    src = inspect.getsource(cli.cmd_release)
+    body = src.split('"""')[2]          # after the docstring, which names the old path
+    assert "reap_if_litter" in body
+    assert "release_stale" not in body
 
 
 def test_release_stale_refuses_a_live_holder_at_the_lease_layer():

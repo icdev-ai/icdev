@@ -266,18 +266,25 @@ def _withhold_cause_clause(conn) -> str:
     if not ids:
         return "The cause could not be measured."
 
-    live_claim, dead_claim = [], []
+    # ONE verdict, shared with the dispatch reaper and `cli --release`
+    # (autonomy-adm-03). This clause used to read the holder's pid on its own and
+    # call every dead pid "litter ... reap with release_stale" — advice that, for
+    # a task whose worker had outlived its dispatcher's pid, told the operator to
+    # free a lease guarding live work. A dead pid is not dead work.
+    live_claim, working_claim, dead_claim = [], [], []
     try:
-        from tools.coordination import leases
+        from tools.kanban import lease_liveness
 
         for tid in ids:
-            resource = f"kanban:task:{tid}"
-            if leases.holder(resource) is None:
+            verdict = lease_liveness.task_lease_verdict(tid)
+            if verdict.state == lease_liveness.STATE_FREE:
                 continue
-            # None ("cannot tell") counts as live: see _lease_blocks_dispatch.
-            if leases.holder_is_alive(resource) is False:
+            if verdict.state == lease_liveness.STATE_LITTER:
                 dead_claim.append(tid)
+            elif verdict.state == lease_liveness.STATE_WORKING:
+                working_claim.append(tid)
             else:
+                # live, including "cannot tell" — never reported as reapable.
                 live_claim.append(tid)
     except Exception:
         pass
@@ -285,9 +292,18 @@ def _withhold_cause_clause(conn) -> str:
     parts = []
     if dead_claim:
         parts.append(
-            f"{len(dead_claim)} held by a lease whose holder is GONE "
-            f"({', '.join(sorted(dead_claim)[:3])}) — these are litter and block "
-            "the task permanently; reap with tools.coordination.leases.release_stale"
+            f"{len(dead_claim)} held by a lease whose holder is GONE and whose "
+            f"task is not heartbeating ({', '.join(sorted(dead_claim)[:3])}) — "
+            "these are litter and block the task permanently; reap with "
+            "tools.kanban.lease_liveness.reap_if_litter (it re-checks both "
+            "signals; tools.coordination.leases.release_stale alone reads only "
+            "the pid)"
+        )
+    if working_claim:
+        parts.append(
+            f"{len(working_claim)} whose holder pid is gone but whose task IS "
+            f"heartbeating ({', '.join(sorted(working_claim)[:3])}) — the worker "
+            "outlived the process that took the lease; live work, do not reap"
         )
     if live_claim:
         parts.append(
