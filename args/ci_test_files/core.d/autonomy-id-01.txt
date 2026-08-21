@@ -1,0 +1,6 @@
+# autonomy-id-01 — a running process records WHICH CODE it is running.
+# Pins the two invariants that fail GREEN if broken: the boot reading is frozen
+# (code_reload.pull_if_safe moves HEAD under a live daemon, so a re-read would
+# report "current" at the exact moment it went stale), and UNKNOWN never reads
+# as CURRENT.
+tests/coordination/test_code_identity.py
