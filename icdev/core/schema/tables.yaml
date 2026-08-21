@@ -6,35 +6,10 @@
 # get_canvas_connection. `declared_in` lists up to four declaring sources.
 rls_exempt: []
 tables:
-  DDL: core
-  SQL: core
+  a2a_discovery_registry: core
   a2a_task_artifacts: core
   a2a_task_history: core
   a2a_tasks: core
-  aac_audit_log: core
-  aac_hitl_decisions: core
-  aac_innovation_bridge: core
-  aac_opportunities: core
-  aac_roadmaps: core
-  aac_scans: core
-  aac_scores: core
-  aadc_agent_simulations: core
-  aadc_ato_reports: core
-  aadc_compliance: core
-  aadc_deploy_gates: core
-  aadc_design_events: core
-  aadc_governance: core
-  aadc_impact_reports: core
-  aadc_lifecycle_states: core
-  aadc_lint_reports: core
-  aadc_pattern_reports: core
-  aadc_red_team_reports: core
-  aadc_regulatory_gaps: core
-  aadc_review_comments: core
-  aadc_safety_graphs: core
-  aadc_scorecard_snapshots: core
-  abac_decisions: core
-  above: core
   ace_agent_workflows: core
   ace_artifacts: core
   ace_audit_log: core
@@ -68,6 +43,7 @@ tables:
   agent_hitl_pending: core
   agent_improvement_artifacts: core
   agent_loop_checkpoints: core
+  agent_loop_sessions: core
   agent_mailbox: core
   agent_memory: core
   agent_memory_transfer_log: core
@@ -83,51 +59,16 @@ tables:
   agent_token_usage: core
   agent_topology_snapshots: core
   agent_trust_scores: core
+  agent_unattended_sessions: core
   agent_vetoes: core
   agent_wakes: core
   agent_workflows: core
   agentic_fitness_assessments: core
   agents: core
-  aggregation_events: core
   ai_telemetry: core
-  aiify_audit_log: core
-  aiify_hitl_decisions: core
-  aiify_opportunities: core
-  aiify_posture_snapshots: core
-  aiify_roadmaps: core
-  aiify_scans: core
-  aiify_scores: core
-  aimc_deployment: core
-  aimc_models: core
-  aisg_agent_designs: core
-  aisg_api_tokens: core
-  aisg_audit: core
-  aisg_compliance_checks: core
-  aisg_executive_summaries: core
-  aisg_knowledge_handoffs: core
-  aisg_learning_tracks: core
-  aisg_patterns: core
-  aisg_request_log: core
-  aisg_roadmaps: core
-  aisg_roi_events: core
-  aisg_roi_tracking: core
-  aisg_skill_usage: core
-  aisg_skills: core
-  aisg_sprints: core
-  aisg_track_progress: core
-  aisg_training_labels: core
-  aisg_wizard_sessions: core
   alerts: core
   anvil_critique_findings: core
   anvil_critique_sessions: core
-  anywhere: core
-  api_keys: core
-  appforge_audit: core
-  appforge_challenges: core
-  appforge_reflex_state: core
-  assessment_id: core
-  attack_graph_edges: core
-  attack_graph_nodes: core
   audit: core
   audit_chain_genesis: core
   audit_platform: core
@@ -139,20 +80,13 @@ tables:
   autonomy_behavior_log: core
   autonomy_observations: core
   autonomy_trust_state: core
-  awareness_component_health: core
-  awareness_kg_edges: core
-  awareness_kg_nodes: core
   awareness_learned_edges: core
   awareness_run_log: core
   batch_run_steps: core
   batch_runs: core
-  battle_state_snapshots: core
   bayesian_experiment_scores: core
   bayesian_teaching_scores: core
   blueprint_digests: core
-  bodies: core
-  by: core
-  can: core
   canvas_access_grants: core
   canvas_ai_decisions: core
   canvas_events: core
@@ -164,13 +98,6 @@ tables:
   canvas_projects: core
   capability_evaluations: core
   capability_genome: core
-  ccc_audit: core
-  ccc_capacity_plans: core
-  ccc_circuits: core
-  ccc_cross_connects: core
-  ccc_dwdm_spans: core
-  ccc_loa_requests: core
-  ccc_xc_order_events: core
   centralized_logs: core
   chat_contexts: core
   chat_corrections: core
@@ -187,21 +114,15 @@ tables:
   ci_event_queue: core
   ci_pipeline_runs: core
   ci_worktrees: core
-  cmmi_level3_assessments: core
   code_quality_findings: core
   code_quality_metrics: core
   code_reviews: core
   codebase_index: core
   codebase_qa_cache: core
   coherence_baseline: core
-  column_mask_audit: core
-  columns: core
-  companion_sync_audit: core
-  companion_sync_reflex_state: core
   component_audit_log: core
   component_heal_log: core
   confabulation_checks: core
-  contact_submissions: core
   context_pressure_events: core
   cortex_audit: core
   cortex_chat_sessions: core
@@ -224,7 +145,6 @@ tables:
   credential_broker_log: core
   cross_agency_transfers: core
   cross_pollination_proposals: core
-  daemon_checkpoints: core
   daily_logs: core
   dashboard_api_keys: core
   dashboard_auth_log: core
@@ -232,10 +152,6 @@ tables:
   dashboard_users: core
   dashboard_users_new: core
   data_classifications: core
-  data_designs: core
-  data_edges: core
-  data_nodes: core
-  data_twin_snapshots: core
   databridge_agent_access_log: core
   db_agents: core
   db_connections: core
@@ -258,30 +174,7 @@ tables:
   db_streams: core
   db_sync_log: core
   dd_anomaly_runs: core
-  dd_assessments: core
-  dd_audit: core
-  dd_collab_sessions: core
-  dd_explore_profiles: core
-  dd_explore_sessions: core
-  dd_field_mappings: core
   dd_freshness_alerts: core
-  dd_freshness_runs: core
-  dd_lineage: core
-  dd_mapping_sessions: core
-  dd_mapping_transforms: core
-  dd_migration_jobs: core
-  dd_pii_scans: core
-  dd_quality_rules: core
-  dd_quality_runs: core
-  dd_query_history: core
-  dd_snippets: core
-  dd_templates: core
-  dd_versions: core
-  ddc_runbook_executions: core
-  ddc_runbooks: core
-  ddc_sop_approvals: core
-  ddc_sops: core
-  definitions: core
   dependency_inventory: core
   dependency_vulnerabilities: core
   deployments: core
@@ -293,57 +186,7 @@ tables:
   deviation_rule_events: core
   devsecops_pipeline_audit: core
   devsecops_profiles: core
-  dib_nodes: core
-  dib_supply_edges: core
-  dic_acoic_impacts: core
-  dic_acoic_regen_queue: core
-  dic_chat_memory: core
-  dic_chunk_links: core
-  dic_collections: core
-  dic_doc_freshness: core
-  dic_documents: core
-  dic_drift_events: core
-  dic_finetune_jobs: core
-  dic_finetune_models: core
-  dic_freshness_scans: core
-  dic_ft_datasets: core
-  dic_ft_jobs: core
-  dic_ft_models: core
-  dic_handoff_items: core
-  dic_handoff_sessions: core
-  dic_ingest_jobs: core
-  dic_review_notes: core
-  dic_sections: core
-  dic_ssp_fragments: core
-  dic_team_access: core
-  dic_versions: core
-  diplomatic_summaries: core
   dispatcher_mode_overrides: core
-  dm_audit: core
-  dm_catalog_entries: core
-  dm_contract_test_runs: core
-  dm_contracts: core
-  dm_csp_sync_log: core
-  dm_data_contracts: core
-  dm_data_products: core
-  dm_domain_maturity: core
-  dm_domains: core
-  dm_governance_policies: core
-  dm_input_ports: core
-  dm_opa_policies: core
-  dm_output_ports: core
-  dm_policy_audit_log: core
-  dm_ports: core
-  dm_product_slas: core
-  dm_product_subscriptions: core
-  domain_coverage: core
-  dsoc_audit: core
-  dsoc_bgp_hijacks: core
-  dsoc_flowspec_rules: core
-  dsoc_mitigations: core
-  dsoc_rtbh_entries: core
-  dsoc_scrubbing_centers: core
-  dsoc_threats: core
   egress_policy_audit: core
   encryption_key_history: core
   encryption_key_log: core
@@ -351,58 +194,17 @@ tables:
   entity_currency: core
   evolution_audit: core
   evolution_reflex_state: core
-  execution: core
   experiment_candidates: core
   experiment_landscapes: core
   experiment_programs: core
   experiment_results: core
   extension_execution_log: core
   extension_registry: core
-  fa_achievements: core
-  fa_certificates: core
-  fa_challenge_entries: core
-  fa_challenges: core
-  fa_competency_edges: core
-  fa_competency_levels: core
-  fa_daily_logins: core
-  fa_guild_members: core
-  fa_guilds: core
-  fa_leaderboard_cache: core
-  fa_mission_ontology: core
-  fa_mission_progress: core
-  fa_mission_steps: core
-  fa_missions: core
-  fa_oracle_convergence_events: core
-  fa_oracle_predictions: core
-  fa_skill_nodes: core
-  fa_step_ontology: core
-  fa_step_progress: core
-  fa_user_achievements: core
-  fa_user_competencies: core
-  fa_user_skills: core
-  fa_users: core
-  fa_workflow_submissions: core
-  fabric_assets: core
-  fabric_audit: core
-  fabric_shares: core
   failure_log: core
-  field_filter_audit: core
   finding_approvals: core
-  finding_ids: core
   finding_replay_attempts: core
-  findings: core
-  fine_tuning_datasets: core
-  finetune_eval_results: core
-  finetune_jobs: core
-  finetune_metrics: core
-  foo: core
-  for: core
   forge_hub_ratings: core
   forge_hub_trust_scores: core
-  formal_verification_results: core
-  fr_requirements: core
-  fr_sessions: core
-  fr_streams: core
   ft_active_models: core
   ft_dataset_examples: core
   ft_datasets: core
@@ -420,14 +222,6 @@ tables:
   ft_trajectories: core
   ft_trajectory_steps: core
   gateway_rate_limits: core
-  gd_ai_artifacts: core
-  gd_ai_judge_evals: core
-  gd_ai_leaderboard: core
-  gd_ai_llmops_events: core
-  gd_ai_rounds: core
-  gd_ai_teams: core
-  gd_ai_tournaments: core
-  gd_ai_training_pairs: core
   genesis_audit: core
   genesis_audit_log: core
   genesis_convergence_log: core
@@ -446,84 +240,22 @@ tables:
   genesis_stagnation_log: core
   genesis_tool_patterns: core
   genome_versions: core
-  ghost_track_predictions: core
-  github_inbox: core
   gitlab_inbox: core
   gitlab_pipeline_runs: core
   gitlab_task_claims: core
-  govchain_asset_transitions: core
-  govchain_assets: core
-  govchain_pending_operations: core
-  goveval_results: core
-  govlift_ato_boundaries: core
-  govlift_audit_log: core
-  govlift_compliance_artifacts: core
-  govlift_dependencies: core
-  govlift_dependency_graph: core
-  govlift_integrations: core
-  govlift_intel_signals: core
-  govlift_intel_templates: core
-  govlift_marketplace_items: core
-  govlift_marketplace_templates: core
-  govlift_migrations: core
-  govlift_playbook_templates: core
-  govlift_recovery_decisions: core
-  govlift_rollback_events: core
-  govlift_runbook_executions: core
-  govlift_runbook_steps: core
-  govlift_runbook_templates: core
-  govlift_runbooks: core
-  govlift_simulation_steps: core
-  govlift_simulations: core
-  govlift_step_executions: core
-  govlift_stig_checks: core
-  govlift_supply_chain_risks: core
-  govlift_waves: core
-  govlift_workload_metadata: core
-  govlift_workloads: core
   group_members: core
   group_roles: core
   groups: core
-  harness_eval: core
-  has: core
+  h: core
   heartbeat_checks: core
-  historical_cases: core
   hitl_intake_pending: core
-  hitl_items: core
   hook_events: core
   icd_documents: core
   icdev_capability_map: core
   icdev_qa_messages: core
   icdev_qa_sessions: core
-  idc_assessments: core
-  idc_audit: core
-  idc_collab_sessions: core
-  idc_infra_resources: core
-  idc_infra_snapshots: core
-  idc_migration_baselines: core
-  idc_runbooks: core
-  idc_snippets: core
-  idc_sops: core
-  idc_templates: core
-  idc_versions: core
-  idr_analyses: core
-  idr_artifacts: core
-  idr_conflicts: core
-  idr_publish_audit: core
-  idr_sessions: core
-  idr_uploads: core
-  il5_ingestion_log: core
-  in: core
   indicator_baselines: core
   indicator_scores: core
-  infra_canvas_designs: core
-  infra_designs: core
-  innov_assessments: core
-  innov_comments: core
-  innov_ideas: core
-  innov_lessons: core
-  innov_metrics: core
-  innov_pilots: core
   innovation_competitor_scans: core
   innovation_feedback: core
   innovation_signal: core
@@ -539,9 +271,7 @@ tables:
   integrity_capabilities: core
   integrity_findings: core
   integrity_verdicts: core
-  is: core
   isa_agreements: core
-  iw_twin_snapshots: core
   kanban_alert_queue: core
   kanban_board_settings: core
   kanban_executions: core
@@ -580,7 +310,6 @@ tables:
   llm_response_cache: core
   llm_rl_qtable: core
   log_health_metrics: core
-  mac_violations: core
   maintenance_audits: core
   marketplace_assets: core
   marketplace_dependencies: core
@@ -590,12 +319,7 @@ tables:
   marketplace_reviews: core
   marketplace_scan_results: core
   marketplace_versions: core
-  match: core
-  matches: core
-  mattermost_inbox: core
   mcp_tool_registry: core
-  mdc_inventory: core
-  mdc_readiness: core
   memory_access_log: core
   memory_buffer: core
   memory_consolidation_log: core
@@ -603,56 +327,12 @@ tables:
   memory_entries: core
   memory_fts: core
   metric_snapshots: core
-  migration: core
-  mission_assessments: core
-  mission_audit: core
-  mission_canvas_alerts: core
-  mission_canvas_evidence: core
-  mission_canvas_sessions: core
-  mission_canvas_twins: core
-  mission_designs: core
-  mission_evidence: core
-  mission_narratives: core
-  mission_portfolios: core
-  mission_security_posture: core
-  mission_templates: core
-  mission_twin_snapshots: core
-  mission_versions: core
   module_budget_periods: core
   module_budget_usage: core
-  nc_design_snapshots: core
-  nc_lab_clones: core
-  nc_simulation_artifacts: core
-  nc_simulation_results: core
-  nc_simulation_runs: core
-  nc_simulation_sessions: core
-  nc_topologies: core
-  ndc_container_nodes: core
-  ndc_sop_approval_log: core
-  ndc_sops: core
-  ndc_topologies: core
-  network_twin_snapshots: core
-  never: core
-  ni_analyses: core
-  ni_devices: core
-  ni_state_snapshots: core
   nlq_queries: core
-  noc_alarms: core
-  noc_audit: core
-  noc_incidents: core
-  noc_maintenance_windows: core
-  noc_mops: core
-  noc_rfcs: core
-  noc_sla_records: core
   notification_escalations: core
   notification_log: core
   notification_preferences: core
-  notifications: core
-  observability_nodes: core
-  odc_designs: core
-  odc_twin_snapshots: core
-  ohc_ops_metrics: core
-  ohc_runbooks: core
   ontology_alignments: core
   ontology_catalog: core
   ontology_classes: core
@@ -661,49 +341,16 @@ tables:
   ontology_subclass_closure: core
   openclaw_exports: core
   openclaw_imports: core
-  opportunity_pipeline_runs: core
   oracle_convergence_events: core
   oracle_health_history: core
   oracle_lens_state: core
   oracle_predictions: core
   oracle_remediation_proposals: core
-  order: core
-  osint_feeds: core
-  osint_privacy_audit: core
   otel_spans: core
+  otel_spans_archive: core
   outcome_verification_log: core
-  pattern: core
-  pc_audit: core
-  pc_boundaries: core
-  pc_change_requests: core
-  pc_collab_sessions: core
-  pc_compliance_checks: core
-  pc_compliance_findings: core
-  pc_project_pipelines: core
-  pc_projects: core
-  pc_snippets: core
-  pc_stages: core
-  pc_templates: core
-  pc_versions: core
-  pdc_simulations: core
-  pdc_snapshots: core
-  pdc_sops: core
-  peering_ix: core
-  peering_peers: core
-  peering_policies: core
-  peering_prefixes: core
-  peering_requests: core
-  per_scanner: core
-  pgv_initiative_viability: core
-  pgv_procurement_vehicles: core
-  pgv_vehicle_match: core
-  pipeline_snapshots: core
-  pipelines: core
-  pmc_audit: core
   pr_intelligence_reports: core
   pr_merge_eligibility_events: core
-  procurement_vehicles: core
-  product_intel_runs: core
   production_audits: core
   projects: core
   prompt_ab_tests: core
@@ -714,15 +361,18 @@ tables:
   propagation_log: core
   propagation_verifications: core
   prov_activities: core
+  prov_activities_archive: core
   prov_entities: core
+  prov_entities_archive: core
   prov_relations: core
-  qdc_metrics: core
+  prov_relations_archive: core
   quality_gkps: core
   quality_snapshots: core
   quality_trends: core
   rag_chunk_summaries: core
   rag_chunks: core
   rag_citations: core
+  rag_compliance_corpus: core
   rag_evaluation_campaigns: core
   rag_evaluation_results: core
   rag_evaluations: core
@@ -733,12 +383,9 @@ tables:
   rag_provenance_ledger: core
   rag_queries: core
   rag_retrieval_log: core
-  rate_limits: core
   redaction_audit: core
   redaction_registry: core
   reflex_observations: core
-  regardless: core
-  regulatory_foresight_signals: core
   remediation_actions: core
   remediation_audit_log: core
   remote_agent_sessions: core
@@ -757,194 +404,41 @@ tables:
   research_signals: core
   research_trends: core
   research_verticals: core
-  result: core
   review_board_audit: core
   review_board_findings: core
   review_board_health_history: core
   review_board_reflex_state: core
   review_board_remediation_log: core
   review_traceability: core
-  rls_audit: core
-  rmf_workflow_stages: core
   runtime_feedback: core
   runtime_invocations: core
   safe_decomposition: core
-  safety_circuit_events: core
   sandbox_execution_log: core
-  satellite_imagery_metadata: core
-  sc_assessments: core
-  sc_assets: core
-  sc_audit: core
-  sc_controls: core
-  sc_data_flows: core
-  sc_remediation_plans: core
-  sc_snippets: core
-  sc_templates: core
-  sc_threats: core
-  sc_trust_boundaries: core
-  sc_versions: core
   scaffold_runs: core
-  scans: core
   schema_migrations: core
-  sdc_attack_snapshots: core
   sdc_compliance_timeline: core
-  sdc_demo_runs: core
-  sdc_designs: core
-  sdc_rag_attack_techniques: core
-  sdc_rag_stigs: core
   sdc_roi_metrics: core
-  sdc_sops: core
   sdc_workflow_step_runs: core
-  security_context_log: core
-  security_designs: core
   security_framework_status: core
-  security_nodes: core
   security_policies: core
-  sel: core
   self_heal_project_patterns: core
   self_healing_events: core
   self_healing_patterns: core
-  servicenow_change_tickets: core
   session_purposes: core
   session_risk_log: core
-  sg_aircraft_tracks: core
-  sg_analyst_annotations: core
-  sg_aoi_hits: core
-  sg_areas_of_interest: core
-  sg_attack_techniques: core
-  sg_bayesian_war_posteriors: core
-  sg_bda_assessments: core
-  sg_cascade_results: core
-  sg_ccir_trigger_events: core
-  sg_coa_decisions: core
-  sg_coa_entries: core
   sg_coa_options: core
-  sg_coas: core
   sg_conflict_events: core
-  sg_corpus_documents: core
-  sg_cve_feed: core
-  sg_darkweb_signals: core
-  sg_dat_backchannel: core
-  sg_dat_cables: core
-  sg_dat_dti_snapshots: core
-  sg_dat_unsc_events: core
-  sg_disruption_results: core
-  sg_disruption_scenarios: core
-  sg_economic_signals: core
-  sg_entities: core
-  sg_eo_signals: core
-  sg_exercise_assessments: core
-  sg_f3ead_targets: core
-  sg_frontline_segments: core
-  sg_ghost_precedents: core
-  sg_ghost_signals: core
-  sg_ghost_tracks: core
-  sg_ground_vehicle_events: core
   sg_hitl_items: core
-  sg_hitl_queue: core
-  sg_humanitarian_corridors: core
-  sg_information_scores: core
-  sg_information_signals: core
-  sg_infrastructure_signals: core
-  sg_intel_calendar: core
-  sg_intel_import_log: core
-  sg_intelligence_briefs: core
-  sg_intelligence_briefs_war_council: core
-  sg_interdiction_results: core
-  sg_intsum_paragraphs: core
-  sg_intsums: core
-  sg_ipb_sessions: core
-  sg_ipb_steps: core
-  sg_isr_assets: core
-  sg_isr_requirements: core
-  sg_iw_cascade_events: core
-  sg_iw_effects: core
-  sg_iw_events: core
-  sg_iw_indicators: core
-  sg_iw_observations: core
-  sg_kg_edges: core
-  sg_kg_nodes: core
-  sg_leadership_briefs: core
-  sg_logistics_nodes: core
-  sg_mett_tc: core
-  sg_military_signal_scores: core
-  sg_nash_scenarios: core
-  sg_ooda_assessments: core
-  sg_ooda_cycle_log: core
-  sg_ooda_events: core
-  sg_opencti_indicators: core
-  sg_opords: core
-  sg_orbat_entries: core
-  sg_orbat_snapshots: core
-  sg_orbat_units: core
-  sg_osint_normalized: core
-  sg_osint_results: core
-  sg_pattern_events: core
-  sg_pattern_learner_log: core
-  sg_pattern_matches: core
-  sg_pir_ccir: core
-  sg_pir_gaps: core
   sg_pir_requirements: core
-  sg_pmesii_events: core
   sg_prioritized_signals: core
-  sg_procurement_velocity: core
   sg_raw_signals: core
   sg_raw_signals_audit: core
-  sg_red_cell_analyses: core
   sg_red_cell_assessments: core
-  sg_reflex_cooldowns: core
-  sg_sanctions_evasion_events: core
-  sg_satellite_passes: core
-  sg_sc_edges: core
-  sg_sc_nodes: core
-  sg_scenarios: core
-  sg_sigint_events: core
-  sg_simulation_results: core
   sg_sio_assessments: core
-  sg_socmint_signals: core
-  sg_source_reports: core
-  sg_sources: core
-  sg_strike_events: core
-  sg_supply_cascade_results: core
-  sg_supply_edges: core
-  sg_supply_nodes: core
-  sg_supply_signals: core
-  sg_sync_matrices: core
-  sg_target_events: core
-  sg_theaters: core
-  sg_tracks: core
-  sg_transshipment_hubs: core
-  sg_tte_estimates: core
-  sg_uas_tracks: core
-  sg_vessel_tracks: core
-  sg_war_council_briefs: core
-  sg_war_endurance_results: core
-  sg_war_kg_edges: core
-  sg_war_kg_nodes: core
-  sg_war_readiness_events: core
-  sg_wargame_turns: core
-  sg_wargames: core
-  sg_wri_assessments: core
-  showcase_demo_runs: core
-  skype_inbox: core
-  slides_audit: core
-  slides_decks: core
-  slides_slides: core
   smart_encoding_dictionary: core
-  so: core
   source_citation_registry: core
-  sre_incident_events: core
-  sre_incidents: core
-  sre_runbook_executions: core
-  sre_runbooks: core
-  sre_slo_measurements: core
-  sre_slos: core
   staging_environments: core
   statement: core
-  statements: core
-  still: core
-  strategos_darkweb_signals: core
-  strategos_signals: core
   stub_detection_results: core
   studio_automation_runs: core
   studio_automations: core
@@ -963,49 +457,17 @@ tables:
   studio_workflow_runs: core
   studio_workflow_triggers: core
   studio_workflows: core
-  subscriptions: core
   system_cards: core
   t: core
   t_new: core
-  table_ok: core
   tasks: core
-  teams_inbox: core
-  tech_radar_entries: core
-  tech_radar_history: core
-  telegram_inbox: core
   tenant_component_overrides: core
   tenant_llm_keys: core
   tenant_zone_assignments: core
-  tenants: core
-  text: core
-  th_briefings: core
-  th_hypotheses: core
-  th_patterns: core
-  th_themes: core
   thread_heatmap_snapshots: core
   tool_chain_events: core
-  topologies: core
-  topology_edges: core
-  topology_nodes: core
-  trading_daemon_audit: core
-  trading_daemon_reflex_state: core
   tsp_documents: core
-  ttx_api_log: core
-  ttx_formation_plan: core
-  ttx_inject_templates: core
-  ttx_injects: core
-  ttx_leaderboard: core
-  ttx_registrations: core
-  ttx_responses: core
-  ttx_scenarios: core
-  ttx_scores: core
-  ttx_sessions: core
-  ttx_team_members: core
-  ttx_teams: core
   ungated_test_baseline: core
-  usage_aggregates: core
-  usage_events: core
-  usage_records: core
   use_case_chains: core
   use_case_overrides: core
   user_challenges: core
@@ -1021,7 +483,6 @@ tables:
   user_relationship_interactions: core
   user_relationships: core
   users: core
-  verify_loop_runs: core
   vsm_dora_snapshots: core
   vsm_stage_events: core
   watchdog_alerts: core
@@ -1052,22 +513,9 @@ tables:
   wg_style_guide_locks: core
   wg_style_guides: core
   wg_style_profiles: core
-  wiki_compile_log: core
-  wiki_memory_edges: core
-  wiki_pages: core
-  will: core
-  wne_artifacts: core
-  wne_sessions: core
   workflow_acceptance_criteria: core
   workflow_handoffs: core
   workflow_loops: core
   workflow_reconciliations: core
   workflow_replay_sessions: core
   workflow_tasks: core
-  y: core
-  zig_activities: core
-  zig_activity_completions: core
-  zig_capabilities: core
-  zig_maturity_scores: core
-  zig_pillars: core
-  zig_targets: core

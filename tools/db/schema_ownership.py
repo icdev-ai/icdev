@@ -71,7 +71,19 @@ CORE_MANIFEST_RELPATH = Path("icdev") / "core" / "schema" / "tables.yaml"
 DOMAIN_MANIFEST_RELPATH = Path("tools") / "db" / "schema" / "tables.yaml"
 OWNERS = ("core", "it", "ft")
 
-_CREATE_RE = re.compile(r"CREATE\s+(?:VIRTUAL\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:\"?\w+\"?\.)?\"?(\w+)\"?", re.I)
+#: A declaration's name is FOLLOWED by its column list (or AS / LIKE / USING) --
+#: optionally across a Python string-concatenation boundary, which is how
+#: tools/testing/visual_regression.py declares filed_routes. Without the
+#: lookahead, prose such as "CREATE TABLE execution on a non-empty DB" and a
+#: docstring's `CREATE TABLE IF NOT EXISTS\n    findings = ...` produced 49
+#: phantom tables (`above`, `already`, `and`, `from`, `public`, ...) that the
+#: manifests then listed as owned. Measured 2026-08-21: the lookahead drops
+#: exactly those 49 and no table the canonical database has.
+_CREATE_RE = re.compile(
+    r"CREATE\s+(?:VIRTUAL\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:\"?\w+\"?\.)?\"?(\w+)\"?"
+    r"(?=\s*\"?\s*\"?\s*(?:\(|AS\b|LIKE\b|USING\b))",
+    re.I,
+)
 _TOUCH_RE = re.compile(
     r"(?:ALTER\s+TABLE|DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?)(?:ONLY\s+)?(?:\"?\w+\"?\.)?\"?(\w+)\"?", re.I
 )
@@ -80,6 +92,25 @@ _NOISE = {"if", "not", "exists", "table", "only"}
 
 
 # ── inventory ────────────────────────────────────────────────────────────────
+#: Derived artefacts that REPEAT declarations made elsewhere. They are SCANNED
+#: (a table only the canonical database has must still get an owner, and a
+#: changed snapshot must still be checked) but they never name a DECLARING
+#: PACKAGE: the consolidated PG snapshot is a pg_dump filed under tools/db/, so
+#: read as a declaring file every table it repeats resolved to `package:db`
+#: (core) whenever its real declaring package had no `packages` entry. Measured
+#: 2026-08-21: 540 tables in the checked-in manifests were core for that reason
+#: alone, and a regenerated snapshot that now contains the canvas tables moved
+#: 383 more (aadc_*, aiml_*, ...) it -> core with nothing else in the tree
+#: having changed. A table the snapshot alone declares resolves by prefix rule
+#: or `default`, never by the snapshot's location.
+_DERIVED_SOURCES = ("tools/db/schema/pg_consolidated.sql",)
+
+
+def is_declaring_source(rel_path: str) -> bool:
+    """May this file's PACKAGE decide a table's owner? False for a derived dump."""
+    return rel_path.replace("\\", "/") not in _DERIVED_SOURCES
+
+
 def ddl_sources(repo: Path = REPO) -> list[Path]:
     out: list[Path] = []
     for base in (repo / "tools",):
@@ -127,6 +158,8 @@ def load_rules(repo: Path = REPO) -> dict:
 def _declaring_packages(files: set[str]) -> list[str]:
     pkgs = []
     for f in sorted(files):
+        if not is_declaring_source(f):
+            continue
         parts = f.split("/")
         if len(parts) >= 2 and parts[0] == "tools":
             if parts[1] == "db" and len(parts) >= 3 and parts[2] == "migrations":

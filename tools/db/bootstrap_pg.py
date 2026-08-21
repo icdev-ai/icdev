@@ -27,17 +27,23 @@ the snapshot (302-310) — including 306, whose absent ``inputs_json`` column ma
 every workflow-run POST return 500 and the DWO V&V specs fail in CI while
 passing locally against a fully-migrated database.
 
-Regenerate the snapshot after schema changes land in the canonical DB:
+Regenerate the snapshot with ``tools/db/regen_pg_snapshot.py`` -- NEVER with a
+bare ``pg_dump > pg_consolidated.sql``. The snapshot is not only a dump: it
+carries tables the canonical database does not have, a hand-maintained
+``ICDEV ADDITIVE SECTION`` tail, and columns that tail used to add; a straight
+re-dump drops all three silently (it dropped twelve tables once). The runbook
+is ``docs/database/pg-snapshot-regeneration.md``.
 
-    docker exec -e PGPASSWORD=$PW icdev-postgres pg_dump --schema-only \
-        --no-owner --no-privileges --no-comments -U icdev -d icdev \
-        > tools/db/schema/pg_consolidated.sql
-
-then bump ``through_version`` in ``pg_consolidated.meta.json`` to the highest
-migration on disk at that moment. Leaving it stale is safe (the surplus
-migrations simply re-run, and every post-snapshot migration is idempotent on
-PostgreSQL); raising it past what the dump actually contains is the failure
-mode, and is what ``tests/db/test_pg_bootstrap_baseline.py`` guards.
+Regenerate it whenever the canonical schema moves -- left stale, the file is
+wrong in a way nothing in CI can see: the CI database is built by init_db and
+only MARKED here, so the snapshot's contents are exercised by nothing. Measured
+2026-08-21, four weeks stale, a fresh database was short 173 columns across
+102 tables, 128 of them with no ALTER anywhere in the tree. Then bump
+``through_version`` in ``pg_consolidated.meta.json`` to the highest LEGACY
+migration on disk. Leaving it stale-low is safe (the surplus migrations simply
+re-run, and every post-snapshot migration is idempotent on PostgreSQL); raising
+it past what the dump actually contains is the failure mode, and is what
+``tests/db/test_pg_bootstrap_baseline.py`` guards.
 
 Usage:
     python tools/db/bootstrap_pg.py            # load schema + mark migrations applied
@@ -47,6 +53,7 @@ Usage:
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -174,6 +181,85 @@ def _table_count(cur) -> int:
     return cur.fetchone()[0]
 
 
+#: Statements per transaction while loading the snapshot. Bounds the locks one
+#: transaction holds well under a stock server's 6,400-slot lock table.
+LOAD_BATCH = 200
+#: Present from the first committed batch until the bookkeeping is written.
+PARTIAL_SENTINEL = "schema_bootstrap_partial"
+
+_DOLLAR_TAG_RE = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$")
+
+
+def split_statements(sql: str) -> list:
+    """Top-level statements of a pg_dump, in order.
+
+    A statement ends at a ';' that is outside parentheses, outside a
+    single-quoted string, outside a ``--`` comment and outside a dollar-quoted
+    body (``$$ ... $$`` / ``$tag$ ... $tag$``) -- the function bodies pg_dump
+    emits contain ';' on their own lines. Comments between statements travel
+    with the statement that follows them.
+    """
+    out, buf = [], []
+    depth = 0
+    in_quote = False
+    dollar = None
+    i, n = 0, len(sql)
+    while i < n:
+        ch = sql[i]
+        if dollar is not None:
+            if sql.startswith(dollar, i):
+                buf.append(dollar)
+                i += len(dollar)
+                dollar = None
+            else:
+                buf.append(ch)
+                i += 1
+            continue
+        if in_quote:
+            buf.append(ch)
+            if ch == "'":
+                if i + 1 < n and sql[i + 1] == "'":
+                    buf.append("'")
+                    i += 2
+                    continue
+                in_quote = False
+            i += 1
+            continue
+        if ch == "-" and sql.startswith("--", i):
+            j = sql.find("\n", i)
+            j = n if j < 0 else j
+            buf.append(sql[i:j])
+            i = j
+            continue
+        if ch == "$":
+            m = _DOLLAR_TAG_RE.match(sql, i)
+            if m:
+                dollar = m.group(0)
+                buf.append(dollar)
+                i += len(dollar)
+                continue
+        if ch == "'":
+            in_quote = True
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        elif ch == ";" and depth <= 0:
+            buf.append(ch)
+            stmt = "".join(buf).strip()
+            if stmt:
+                out.append(stmt)
+            buf = []
+            i += 1
+            continue
+        buf.append(ch)
+        i += 1
+    tail = "".join(buf).strip()
+    if tail and any(line.strip() and not line.strip().startswith("--") for line in tail.splitlines()):
+        out.append(tail)
+    return out
+
+
 def check() -> dict:
     conn = _raw_pg_conn()
     try:
@@ -184,7 +270,10 @@ def check() -> dict:
         if cur.fetchone()[0]:
             cur.execute("SELECT count(*) FROM public.schema_migrations")
             applied = cur.fetchone()[0]
-        return {"tables": n, "migrations_applied": applied, "bootstrapped": n > 100}
+        cur.execute(f"SELECT to_regclass('public.{PARTIAL_SENTINEL}')")
+        partial = cur.fetchone()[0] is not None
+        return {"tables": n, "migrations_applied": applied, "bootstrapped": n > 100 and not partial,
+                "partial": partial}
     finally:
         conn.close()
 
@@ -227,15 +316,46 @@ def bootstrap() -> dict:
         finally:
             conn.close()
 
+    if state.get("partial"):
+        raise SystemExit(
+            "a previous bootstrap of this database stopped part-way (the "
+            f"{PARTIAL_SENTINEL} sentinel is present). It holds some of the schema and none "
+            "of the migration bookkeeping, so marking it would leave a database that claims "
+            "to be current and is not. Drop and recreate it, then bootstrap again."
+        )
+
     sql = _strip_psql_meta(SCHEMA_FILE.read_text(encoding="utf-8-sig"))  # utf-8-sig strips any BOM
 
     conn = _raw_pg_conn()
     try:
         cur = conn.cursor()
-        # Load the entire consolidated schema as one batch (psycopg2 sends it via
-        # the simple-query protocol when there are no params).
-        cur.execute(sql)
+        # Loaded in BATCHES, each its own transaction -- NOT as one statement.
+        # One transaction locks every object it creates until commit, and
+        # PostgreSQL's lock table is max_locks_per_transaction x max_connections
+        # (64 x 100 = 6,400 slots on a stock server). The regenerated snapshot
+        # (1,818 tables, 2,732 indexes, 3,032 ALTERs) overflowed that on the CI
+        # service container with `out of shared memory / increase
+        # max_locks_per_transaction` while loading fine on a developer instance
+        # with max_connections=300 -- exactly the kind of "works here" a fresh
+        # deployment on a stock server would hit first. The sentinel table is
+        # committed BEFORE the first batch and dropped after the bookkeeping, so
+        # a load that dies between them is detectable (see check()).
+        cur.execute(f"CREATE TABLE IF NOT EXISTS public.{PARTIAL_SENTINEL} (started_at TIMESTAMPTZ DEFAULT now())")
+        cur.execute(f"INSERT INTO public.{PARTIAL_SENTINEL} DEFAULT VALUES")
         conn.commit()
+        statements = split_statements(sql)
+        for start in range(0, len(statements), LOAD_BATCH):
+            batch = statements[start:start + LOAD_BATCH]
+            try:
+                cur.execute("\n".join(batch))
+                conn.commit()
+            except Exception as exc:
+                conn.rollback()
+                raise SystemExit(
+                    f"[bootstrap_pg] snapshot load failed in batch {start // LOAD_BATCH + 1} "
+                    f"(statements {start + 1}-{start + len(batch)} of {len(statements)}): {exc}\n"
+                    f"The database is PARTIAL and is marked so; drop and recreate it before retrying."
+                ) from exc
 
         # The dump sets search_path='' for safety; restore it so unqualified
         # names resolve for the migration bookkeeping below.
@@ -257,6 +377,9 @@ def bootstrap() -> dict:
                 "VALUES (%s, %s, '', 0) ON CONFLICT (version) DO NOTHING",
                 (v, f"squashed-{v}"),
             )
+        conn.commit()
+        # Bookkeeping written: the load is whole. Only now does the sentinel go.
+        cur.execute(f"DROP TABLE IF EXISTS public.{PARTIAL_SENTINEL}")
         conn.commit()
         table_count = _table_count(cur)
     finally:
