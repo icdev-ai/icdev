@@ -213,6 +213,16 @@ REFLEX_NAMES = [
     # named non-findings, never cards -- on the live board it evaluates 3
     # providers and files 0.
     "cache_regression_reflex",
+    # autonomy-act-01: tools/awareness/claim_verifier.py (rem-hyg-17) verifies
+    # what a surface CLAIMS against an independently derived fact -- and was
+    # consumed by nobody: no reflex, no scheduler, no daemon imported it, so it
+    # ran only when a human typed the command. Registration is TWO places
+    # (this list AND args/genesis_config.yaml) and missing either makes it
+    # silently inert -- the omission test_reflex_registration.py exists to
+    # catch. Report + propose tiers only; restore is autonomy-act-03. A cycle
+    # that measures zero claims reports `unmeasurable`, never ok, and its
+    # per-claim verdicts are what the `verified_claim` capability class reads.
+    "claim_verifier_reflex",
 ]
 
 # Backward-compat aliases for module-level access used by other code

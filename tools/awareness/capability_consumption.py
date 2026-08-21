@@ -1267,6 +1267,126 @@ def probe_cortex_facade(
     return res
 
 
+#: The reflex whose persisted run details carry per-claim verdicts
+#: (tools/genesis/reflexes/claim_verifier_reflex.py, autonomy-act-01).
+CLAIM_VERIFIER_REFLEX = "claim_verifier_reflex"
+#: Verdicts that count as a claim having been VERIFIED. `unmeasurable` is a
+#: verdict the verifier emits, and it is exactly NOT consumption: the claim was
+#: attempted and nothing was measured. Kept as literals rather than imported so
+#: a probe of the verifier cannot be rewritten by the verifier.
+_CLAIM_MEASURED_VERDICTS = ("agrees", "disagrees")
+
+
+def probe_verified_claim(conn, since: datetime, threshold: int, max_listed: int) -> ClassResult:
+    """Registered claims (tools.awareness.claims.REGISTRY) vs claims VERIFIED.
+
+    The claim verifier (rem-hyg-17) is the platform's verified-fact learner and
+    for its first day it was consumed by nobody -- no reflex, no scheduler, no
+    daemon imported it, and it was not registered here, the gate that exists to
+    catch exactly that. The immune system was not covered by the immune system.
+
+    Consumption is a claim that PRODUCED A MEASURED VERDICT (``agrees`` or
+    ``disagrees``) on a daemon-dispatched run. The daemon persists each
+    completed run's ``details`` on its ``genesis_audit`` row, and the reflex
+    puts a flat ``{claim_id: verdict}`` map there under ``verdicts`` -- existing
+    telemetry, no new table. Parsed in Python, never with dialect JSON SQL.
+
+    Three things that are NOT consumption and are kept apart in ``extra``:
+
+    * an ``unmeasurable`` verdict -- the claim was attempted and nothing was
+      measured (``extra.unmeasurable_events``). A verifier that runs every six
+      hours and measures nothing must read as inert, not as busy;
+    * a human running the CLI -- nothing records that, on purpose. This class
+      measures AUTONOMOUS consumption, which is the thing that was missing;
+    * a completed run the daemon chose not to persist. ``DaemonBase`` suppresses
+      the audit row when ``metric_value == 0``, and the reflex's metric is the
+      count of measured claims -- so a zero-claim cycle leaves no row here by
+      construction, which is the correct reading.
+    """
+    res = ClassResult(
+        capability_class="verified_claim",
+        declaration_source="tools.awareness.claims.REGISTRY",
+        telemetry_table=f"genesis_audit (reflex_name = {CLAIM_VERIFIER_REFLEX}, details.verdicts)",
+    )
+    try:
+        from tools.awareness.claims import REGISTRY
+
+        declared = [str(c.claim_id) for c in REGISTRY]
+    except Exception as exc:  # noqa: BLE001
+        return _unmeasured(
+            "verified_claim", res.declaration_source, res.telemetry_table,
+            f"declaration source unreadable: {exc}",
+        )
+
+    # Cross-reference, not a second copy of probe_reflex: a claim can only be
+    # consumed if the reflex that verifies it is dispatchable at all.
+    try:
+        from tools.genesis.daemon import REFLEX_NAMES
+
+        res.extra["reflex_registered"] = CLAIM_VERIFIER_REFLEX in REFLEX_NAMES
+    except Exception as exc:  # noqa: BLE001
+        res.extra["reflex_registered"] = None
+        res.extra["reflex_registered_error"] = str(exc)[:200]
+
+    from tools.db.storage import table_exists
+
+    if not table_exists(conn, "genesis_audit"):
+        return _unmeasured(
+            "verified_claim", res.declaration_source, res.telemetry_table,
+            "genesis_audit does not exist",
+        )
+    try:
+        bound = _window_bound(conn, "genesis_audit", "created_at", since)
+        rows = conn.execute(
+            "SELECT details FROM genesis_audit "
+            "WHERE reflex_name = %s AND created_at IS NOT NULL AND created_at >= %s "
+            "AND details IS NOT NULL",
+            (CLAIM_VERIFIER_REFLEX, bound),
+        ).fetchall()
+    except Exception as exc:  # noqa: BLE001
+        _rollback(conn)
+        return _unmeasured(
+            "verified_claim", res.declaration_source, res.telemetry_table,
+            f"query failed: {exc}",
+        )
+
+    counts: Dict[str, int] = {}
+    unmeasurable: Dict[str, int] = {}
+    cycles = 0
+    unparseable = 0
+    for row in rows:
+        raw = dict(row).get("details")
+        try:
+            details = json.loads(raw) if isinstance(raw, (str, bytes)) else raw
+        except Exception:  # noqa: BLE001
+            unparseable += 1
+            continue
+        verdicts = (details or {}).get("verdicts") if isinstance(details, dict) else None
+        if not isinstance(verdicts, dict):
+            unparseable += 1
+            continue
+        cycles += 1
+        for claim_id, verdict in verdicts.items():
+            key = str(claim_id)
+            if str(verdict) in _CLAIM_MEASURED_VERDICTS:
+                counts[key] = counts.get(key, 0) + 1
+            else:
+                unmeasurable[key] = unmeasurable.get(key, 0) + 1
+
+    res = _finish(res, declared, counts, threshold, max_listed)
+    res.extra["cycles_in_window"] = cycles
+    res.extra["unparseable_rows"] = unparseable
+    res.extra["unmeasurable_events"] = {
+        k: unmeasurable[k] for k in sorted(unmeasurable)[:max_listed]
+    }
+    # Declared, attempted, and never once measured: reached and broken, which is
+    # a different repair from never reached.
+    res.extra["attempted_never_measured"] = sorted(
+        c for c in declared if counts.get(c, 0) <= threshold and unmeasurable.get(c, 0) > 0
+    )[:max_listed]
+    return res
+
+
 PROBES: Dict[str, Callable[..., ClassResult]] = {
     "reflex": probe_reflex,
     "mcp_dispatch_tool": probe_mcp_dispatch_tool,
@@ -1278,6 +1398,7 @@ PROBES: Dict[str, Callable[..., ClassResult]] = {
     "extension_hook_point": probe_extension_hook_point,
     "cortex_backend": probe_cortex_backend,
     "cortex_facade": probe_cortex_facade,
+    "verified_claim": probe_verified_claim,
 }
 
 

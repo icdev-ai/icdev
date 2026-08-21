@@ -214,6 +214,20 @@ python tools/awareness/claim_verifier.py --claim posture_score_needs_evidence
 # clean" can never be confused with "it does nothing" -- and today's fixes gain
 # a LIVE regression guard their fixture-based unit tests cannot provide.
 # Report only, no --gate (kpr-fix-03). Registry: tools/awareness/claims.py
+# IT RUNS ON ITS OWN, and its own inertness goes red (autonomy-act-01). It was
+# consumed by NOBODY for its first day -- no reflex, scheduler or daemon imported
+# it. Now the `claim_verifier_reflex` genesis reflex (6h, green; registered in
+# BOTH daemon.REFLEX_NAMES and args/genesis_config.yaml) acts by the claim's own
+# tier -- report states, propose seeds ONE card carrying both derivations,
+# restore is DEFERRED to autonomy-act-03 and named, never dropped -- and a cycle
+# measuring zero claims reports `unmeasurable`, never ok.
+python tools/genesis/daemon.py --reflex claim_verifier_reflex --json     # one cycle, through the daemon
+python tools/awareness/capability_consumption.py --class verified_claim --json
+# Consumption is a MEASURED verdict (agrees|disagrees) on a daemon-dispatched
+# run, read from the per-claim `verdicts` map on genesis_audit.details -- no new
+# table. `unmeasurable` is reported under extra.unmeasurable_events and never
+# counted; a human running the CLI records nothing, on purpose. Budget 0 in
+# args/liveness_gate.yaml: a verifier nobody runs FAILS capability_liveness.
 
 # Is intervention actually FALLING? The AUTONOMY card held to its own standard (autonomy-lrn-02)
 python -m tools.awareness.autonomy_loop                  # human report, 7-day window
