@@ -1,0 +1,190 @@
+# CUI // SP-CTI
+"""Two claims authored from confirmed incidents (autonomy-cov-01).
+
+autonomy-lrn-01 made the gap measurable and deliberately closed none of it:
+115 done `fix` cards in 14 days, 5 guarded, 110 UNGUARDED — 4.3% coverage.
+Nothing seeds a claim automatically, because the two derivations must not share
+code and only whoever understands the defect can write the second one.
+
+A THIRD CLAIM WAS AUTHORED AND WITHDRAWN, which is the part worth recording.
+`done_is_not_reversed` was written for kpr-dup-09 (a task flipping done<->backlog
+95 times in 5.5 hours). Run against the live board it DISAGREED on 276 tasks —
+far too many for that defect. Inspecting two of them showed the real cause: the
+board's final move to `done` was never RECORDED. `aca-hyg-06`'s last logged
+transition is `in_progress -> needs_decomposition`, six minutes before the board
+says done; `ace-chat-04`'s is `done -> needs_decomposition`, ten minutes before.
+
+That is an INCOMPLETE TRANSITION LOG — a writer bypassing `_move_task` — not two
+writers fighting. Shipping the claim with kpr-dup-09's description over that
+evidence would have been the exact over-claiming this registry exists to catch,
+and it would have fired 276 times on day one until somebody switched it off.
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from tools.awareness import claims as C  # noqa: E402
+from tools.awareness.claim_verifier import UNMEASURABLE, Claim, verify  # noqa: E402
+
+
+def _claim(claim_id: str) -> Claim:
+    return next(c for c in C.REGISTRY if c.claim_id == claim_id)
+
+
+# --------------------------------------------------------------------------- #
+# 1. Both claims are registered, cited, and independently derived
+# --------------------------------------------------------------------------- #
+def test_both_claims_cite_an_incident_that_actually_happened():
+    """Seeding only from PROVEN defects is what stops this becoming another
+    capability that reports clean because it does nothing."""
+    for claim_id, task_id in (
+        ("held_task_lease_has_a_live_holder", "rem-hyg-15"),
+        ("dispatchable_task_has_no_open_pr", "rem-hyg-18"),
+    ):
+        claim = _claim(claim_id)
+        assert claim.incident is not None, f"{claim_id} cites no incident"
+        assert task_id in claim.incident.task_ids
+        assert claim.incident.observed_on
+        assert claim.incident.fixed_by
+
+
+def test_the_two_sides_share_no_implementation():
+    """If the verifier calls what the surface calls, it proves the function is
+    deterministic — which was never in question."""
+    for claim_id in ("held_task_lease_has_a_live_holder",
+                     "dispatchable_task_has_no_open_pr"):
+        claim = _claim(claim_id)
+        assert claim.reported is not claim.derived
+        assert claim.reported.__code__ is not claim.derived.__code__
+
+
+# --------------------------------------------------------------------------- #
+# 2. The lease claim — cannot-tell counts as ALIVE
+# --------------------------------------------------------------------------- #
+def test_a_holder_that_cannot_be_tested_counts_as_alive(monkeypatch):
+    """`holder_is_alive` returns None when it cannot tell, and treating that as
+    dead is precisely how a live worker loses its lease — the error rem-hyg-15
+    made on its first probe, reaping a lease whose task had heartbeat four
+    seconds earlier."""
+    from tools.coordination import leases
+
+    monkeypatch.setattr(C, "_reported_task_leases", lambda: ["kanban:task:t-1"])
+    monkeypatch.setattr(leases, "holder_is_alive", lambda _r: None)
+
+    assert C._derived_leases_with_a_live_holder() == ["kanban:task:t-1"]
+
+
+def test_a_dead_pid_that_is_still_heartbeating_counts_as_alive(monkeypatch):
+    """A dead pid is not dead work: the lease records the DISPATCHING pid, which
+    exits after handoff. adm-03 requires the heartbeat as a second signal."""
+    from tools.coordination import leases
+
+    monkeypatch.setattr(C, "_reported_task_leases", lambda: ["kanban:task:t-2"])
+    monkeypatch.setattr(leases, "holder_is_alive", lambda _r: False)
+    monkeypatch.setattr(C, "_task_is_heartbeating", lambda _t: True)
+
+    assert C._derived_leases_with_a_live_holder() == ["kanban:task:t-2"]
+
+
+def test_a_dead_pid_with_no_heartbeat_is_the_finding(monkeypatch):
+    """Both signals gone. This is the lease that pinned three tasks while the
+    board reported idle with free capacity."""
+    from tools.coordination import leases
+
+    monkeypatch.setattr(C, "_reported_task_leases", lambda: ["kanban:task:t-3"])
+    monkeypatch.setattr(leases, "holder_is_alive", lambda _r: False)
+    monkeypatch.setattr(C, "_task_is_heartbeating", lambda _t: False)
+
+    assert C._derived_leases_with_a_live_holder() == []
+
+
+def test_an_unreadable_heartbeat_assumes_alive(monkeypatch):
+    def _boom(_t):
+        raise RuntimeError("board unreachable")
+
+    monkeypatch.setattr("tools.kanban.lease_liveness.task_is_heartbeating", _boom)
+    assert C._task_is_heartbeating("t-4") is True
+
+
+def test_no_leases_held_is_unmeasurable_not_agreement(monkeypatch):
+    """`[] == []` compares nothing. A board with no leases held has not been
+    checked — it has nothing to check."""
+    monkeypatch.setattr(C, "_reported_task_leases", lambda: [])
+    monkeypatch.setattr(C, "_derived_leases_with_a_live_holder", lambda: [])
+
+    claim = _claim("held_task_lease_has_a_live_holder")
+    result = verify(Claim(
+        claim_id=claim.claim_id, description=claim.description,
+        reported=C._reported_task_leases,
+        derived=C._derived_leases_with_a_live_holder,
+        agree=claim.agree, tier=claim.tier,
+    ))
+    assert result.verdict == UNMEASURABLE
+
+
+# --------------------------------------------------------------------------- #
+# 3. The dispatch claim — an unreachable forge is not "no open PRs"
+# --------------------------------------------------------------------------- #
+def test_an_unreachable_forge_is_none_never_an_empty_answer(monkeypatch):
+    """Returning [] would say "no dispatchable task has a PR", which reports
+    every board clean whenever `gh` is unavailable."""
+    monkeypatch.setattr(C, "_reported_dispatchable_tasks", lambda: ["t-1"])
+
+    class _Fail:
+        returncode = 1
+        stdout = ""
+
+    monkeypatch.setattr("subprocess.run", lambda *_a, **_k: _Fail())
+    assert C._derived_tasks_without_an_open_pr() is None
+
+
+def test_a_task_with_an_open_pr_is_dropped_from_the_derived_set(monkeypatch):
+    monkeypatch.setattr(C, "_reported_dispatchable_tasks", lambda: ["t-1", "t-2"])
+
+    class _Ok:
+        returncode = 0
+        stdout = '[{"headRefName": "kanban/t-2"}]'
+
+    monkeypatch.setattr("subprocess.run", lambda *_a, **_k: _Ok())
+    assert C._derived_tasks_without_an_open_pr() == ["t-1"]
+
+
+def test_a_pr_on_an_unrelated_branch_does_not_match(monkeypatch):
+    """The branch must be this task's own `kanban/<id>`, not merely contain it."""
+    monkeypatch.setattr(C, "_reported_dispatchable_tasks", lambda: ["t-1"])
+
+    class _Ok:
+        returncode = 0
+        stdout = '[{"headRefName": "feat/t-1-something-else"}]'
+
+    monkeypatch.setattr("subprocess.run", lambda *_a, **_k: _Ok())
+    assert C._derived_tasks_without_an_open_pr() == ["t-1"]
+
+
+def test_an_unreadable_board_is_none_on_both_sides(monkeypatch):
+    def _boom():
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(C, "_reported_dispatchable_tasks", _boom)
+    try:
+        got = C._derived_tasks_without_an_open_pr()
+    except RuntimeError:
+        got = "raised"
+    assert got in (None, "raised")
+
+
+# --------------------------------------------------------------------------- #
+# 4. The withdrawn claim must not come back without its evidence
+# --------------------------------------------------------------------------- #
+def test_the_withdrawn_claim_is_not_in_the_registry():
+    """`done_is_not_reversed` disagreed on 276 tasks because the transition log
+    is INCOMPLETE, not because tasks left `done`. Re-adding it with kpr-dup-09's
+    description would assert something the evidence does not support — and it
+    would fire 276 times on day one."""
+    assert "done_is_not_reversed" not in {c.claim_id for c in C.REGISTRY}
