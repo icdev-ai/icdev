@@ -151,6 +151,29 @@ grandfathered:
   # extra.not_measurable_by_design, so the exclusion is visible rather than a
   # quietly shrunken denominator. Widening require_approval_tiers RAISES the
   # declared count; wire the gate before that lands, do not raise this.
+  #
+  # WHY IT IS STILL 25 AFTER rem-cap-04 WIRED IT, measured 2026-08-21 — read
+  # this before "wiring" it again. The gate is wired AND reachable. What it
+  # lacks is TRAFFIC, and that is a property of this deployment rather than a
+  # defect in the gate:
+  #
+  #   runtime_invocations surface='agent'   1,489 rows
+  #   ...of which are TOOL CALLS                0
+  #
+  # Every one of those 1,489 is a whole TASK RUN — `name` holds a kanban task
+  # id (autonomy-lrn-01, ctx-trust-01), `arg_keys` is NULL and `duration_ms`
+  # runs to twenty minutes. They are claude-CLI subprocess dispatches, and D394
+  # spawns that CLI with `--dangerously-skip-permissions`: a separate process,
+  # into which no in-process Python gate can be inserted. The surface the
+  # approval gate actually guards — the SAG in-process tool loop through
+  # tools/agent_runtime/dispatch.py — carries essentially no traffic here, which
+  # is the reachability doc's Finding 1 and Finding 3 confirmed on live data.
+  #
+  # So the count cannot move by improving the gate. It moves when the SAG tool
+  # loop is used, or not at all. Do NOT lower this by widening
+  # require_approval_tiers, and do NOT "fix" it by touching the adapter flag —
+  # that is a separately argued decision (D394) which the reachability doc
+  # explicitly puts out of scope.
   agent_approval_rule: 25
 
   # 5 RBAC roles in the D261 role_tool_matrix, 1 seen in an MCPToolAuthorizer
