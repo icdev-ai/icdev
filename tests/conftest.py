@@ -343,6 +343,24 @@ CREATE TABLE IF NOT EXISTS kanban_tasks (
     completed_via_bypass  INTEGER DEFAULT 0,
     due_date              TEXT,
     sla_hours             INTEGER,
+    -- Columns the CANONICAL SEEDER writes. `tools/kanban/task_factory.py::
+    -- create_tasks` is the sanctioned board writer, and its INSERT names every
+    -- one of these. They were absent here, so any test that seeded through the
+    -- seeder died on `table kanban_tasks has no column named loop_type` -- the
+    -- INSERT lists columns in order and SQLite reports only the FIRST it does
+    -- not know, which is why one missing name stood in for eight. Types and
+    -- defaults are copied from the canonical DDL in tools/kanban/init_db.py;
+    -- a minimal schema that cannot accept the canonical seeder's own row makes
+    -- "route your writes through create_tasks" untestable, which is the
+    -- opposite of what that rule is for.
+    source_doc_id         TEXT,
+    source_collection_id  TEXT,
+    max_retries           INTEGER DEFAULT 5,
+    idempotency_key       TEXT,
+    max_runtime_seconds   INTEGER,
+    acceptance_criteria   TEXT,
+    loop_type             TEXT DEFAULT 'deterministic',
+    adversarial_enabled   INTEGER DEFAULT 0,
     -- RLS columns. get_connection() attaches the global row-level-security
     -- predicate, which filters on `classification`; without it every read of
     -- this table through get_connection() dies with

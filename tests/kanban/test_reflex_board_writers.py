@@ -162,7 +162,33 @@ def test_converted_module_carries_no_raw_board_insert(module):
 # the seeder change that made the conversion possible
 # --------------------------------------------------------------------------- #
 
-def test_create_tasks_persists_scheduled_at():
+@pytest.fixture
+def _isolated_board(icdev_db, monkeypatch):
+    """Point ``get_connection()`` at the per-test board conftest builds.
+
+    The two tests below said in their own docstring that they ran "against the
+    isolated SQLite board conftest provides" and NEVER REQUESTED IT. Nothing
+    redirected ``get_connection()``, so both seeded through the canonical
+    seeder into the AMBIENT ``data/icdev.db`` — the live board — and then ran
+    ``DELETE FROM kanban_tasks`` against it in their teardown. A skipped
+    teardown (``-x``, an interrupt) stranded the rows on the real board.
+
+    That is also why they were RED: the ambient board is an old table, and
+    ``CREATE TABLE IF NOT EXISTS`` never alters one, so it never gained
+    ``loop_type`` / ``adversarial_enabled`` and the seeder's INSERT — which
+    names both — died there. The failure was reported as a missing column when
+    the defect was a test writing somewhere it never meant to.
+
+    ``get_connection()`` resolves ``ICDEV_DB_PATH`` at CALL time, so this one
+    redirect covers the seeder's own connection as well as the assertions'
+    (opx-kan-02, the pattern tests/kanban/test_done_verification.py uses).
+    """
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
+    return icdev_db
+
+
+def test_create_tasks_persists_scheduled_at(_isolated_board):
     """Round-trip against the isolated SQLite board conftest provides."""
     from tools.db.storage import get_connection
 
@@ -187,7 +213,7 @@ def test_create_tasks_persists_scheduled_at():
         conn.close()
 
 
-def test_create_tasks_leaves_scheduled_at_null_when_unset():
+def test_create_tasks_leaves_scheduled_at_null_when_unset(_isolated_board):
     """The new field must not invent a schedule for the callers that had none."""
     from tools.db.storage import get_connection
 
