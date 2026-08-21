@@ -727,7 +727,7 @@ reflexes:
       operator: gte
 
   pmo_option_tracker:
-    enabled: true
+    enabled: false   # ICDEV[FT] cutover P3 (2026-08-21): FathomDesk data moved to icdev_ft; IT's copy is frozen (kill switch tripped) and must not drift during the dual run
     risk_tier: yellow
     schedule: "daily 06:30"
     interval_seconds: 86400
@@ -739,7 +739,7 @@ reflexes:
       operator: gte
 
   pmo_weekly_report:
-    enabled: true
+    enabled: false   # ICDEV[FT] cutover P3 (2026-08-21): FathomDesk data moved to icdev_ft; IT's copy is frozen (kill switch tripped) and must not drift during the dual run
     risk_tier: yellow
     # hgx-obs-02: was "every Monday at 07:00", which parse_schedule does not
     # match — it returned None, so this reflex had no entry in daemon.schedules
@@ -1524,7 +1524,7 @@ reflexes:
   # ── FathomDesk Trap Scenarios (Phase 7.10 integration-01) ─────────────────────
 
   fathomdesk_trap_scenarios:
-    enabled: true
+    enabled: false   # ICDEV[FT] cutover P3 (2026-08-21): FathomDesk data moved to icdev_ft; IT's copy is frozen (kill switch tripped) and must not drift during the dual run
     risk_tier: green
     schedule: "every 1h"
     interval_seconds: 3600  # 1 hour — match trap_scanner 15m cadence × 4
@@ -1541,7 +1541,7 @@ reflexes:
   # ── FathomDesk Trap Sweep (Phase 7.12 ad712-trap-02) ──────────────────────────
 
   fathomdesk_trap_sweep:
-    enabled: true
+    enabled: false   # ICDEV[FT] cutover P3 (2026-08-21): FathomDesk data moved to icdev_ft; IT's copy is frozen (kill switch tripped) and must not drift during the dual run
     risk_tier: green
     schedule: "every 4h"
     interval_seconds: 14400  # 4 hours — COOLDOWN_HOURS=4 per ad712-trap-02
@@ -1555,7 +1555,7 @@ reflexes:
   # ── FathomDesk P/C Ratio History (fdmm-pcr-04) ────────────────────────────
 
   fathomdesk_pc_ratio:
-    enabled: true
+    enabled: false   # ICDEV[FT] cutover P3 (2026-08-21): FathomDesk data moved to icdev_ft; IT's copy is frozen (kill switch tripped) and must not drift during the dual run
     risk_tier: green
     schedule: "daily 06:00"
     interval_seconds: 86400  # 24 hours — CBOE data is end-of-day
