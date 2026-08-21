@@ -1,0 +1,6 @@
+# autonomy-id-03 — /start must DEFER to the supervisor, not race it.
+# Pins the two invariants that fail GREEN if broken: `ensure` never starts a
+# CHILD or a second supervisor (a duplicate looks like a successful start), and
+# `unknown` is never treated as `down` (starting on uncertainty is how
+# duplicates begin).
+tests/genesis/test_supervisor_status.py

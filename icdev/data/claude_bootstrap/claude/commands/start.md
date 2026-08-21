@@ -17,10 +17,31 @@ PORTAL_PORT: 8443
 
 > **Windows PowerShell note:** All commands below use PowerShell syntax. Set `$env:PYTHONPATH = "C:\AI\ICDev"` before any `python` call that imports `tools.*` or `icdev.*`. Use `2>$null` (not `2>/dev/null`), `Start-Sleep -Seconds N` (not `sleep N`), `Start-Process` (not `nohup`), and `Stop-Process` (not `pkill`).
 
-0. Kill all running Python processes to ensure a clean start:
+0. **Check what is already running before killing anything** (autonomy-id-03):
    ```powershell
-   taskkill /f /im python.exe 2>$null; echo "Cleared Python processes"
+   $env:PYTHONPATH = "C:\AI\ICDev"
+   python tools/genesis/supervisor_status.py
    ```
+   If the supervisor is **UP**, skip the teardown entirely and go to step 1 — its
+   children are healthy and step 8 will defer to it.
+
+   > **Do NOT run `taskkill /f /im python.exe`.** It has already taken out
+   > unrelated tooling on this machine once, and — because the supervisor is
+   > itself `python.exe` — it kills the one process that would have restarted
+   > everything else, turning a "clean start" into six dead services and no
+   > supervisor. If a specific process must go, confirm its exact command line
+   > with `Get-CimInstance Win32_Process -Filter "ProcessId=<id>"` first, then
+   > `Stop-Process -Id <that exact PID> -Force`. Never by name, never by filter.
+
+   Only if the supervisor is **DOWN** and you need a clean slate, stop its
+   children by verified PID:
+   ```powershell
+   python tools/genesis/supervisor_status.py --json | ConvertFrom-Json |
+     ForEach-Object { $_.children } | ForEach-Object { $_.pids } |
+     ForEach-Object { Get-CimInstance Win32_Process -Filter "ProcessId=$_" } |
+     Format-Table ProcessId, CommandLine -AutoSize
+   ```
+   Review that list, then stop only the PIDs you intend to.
 
 0. Clear stale PostgreSQL backend connections left over from killed processes (prevents lock pile-up on `kanban_tasks`).
    Write and run a temp script:
@@ -79,7 +100,10 @@ except Exception as e:
    python .tmp\pg_cleanup.py
    ```
 
-0. Reset any stuck IN PROGRESS tasks back to backlog (orphaned by the taskkill above).
+0. Reset any stuck IN PROGRESS tasks back to backlog (orphaned by a previous
+   unclean shutdown). Skip this if the supervisor was UP in step 0 — those
+   tasks have live workers, and resetting them re-dispatches work already in
+   flight.
    Write a temp script then run it (avoids PowerShell quote-escaping issues with `python -c`):
    ```powershell
    $env:PYTHONPATH = "C:\AI\ICDev"
@@ -165,51 +189,49 @@ with get_connection() as conn:
    echo "Poll trigger PID: $($pt.Id)"
    ```
 
-8. Always start the Kanban Scheduler fresh (kill any stale instance first, then launch):
+8. **Kanban Scheduler, PR Watcher and Genesis Daemon — defer to the supervisor** (autonomy-id-03).
+
+   These three are **supervised children**, not standalone services.
+   `tools/genesis/launch.py` -> `launcher.main()` holds a pid lock, starts six
+   services, and restarts any that die on a 30s loop. Starting one beside a live
+   supervisor creates a duplicate that is reaped and **exits silently** — and the
+   `-RedirectStandardOutput` that started it **truncates the log you would then
+   read**, so a healthy supervised pair looks like a total failure. Measured
+   2026-08-20: manually started PIDs were dead inside 20s while the supervisor's
+   own children were alive and dispatching work.
+
    ```powershell
-   Get-Process python -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like "*kanban_scheduler*" } | Stop-Process -Force -ErrorAction SilentlyContinue
-   Start-Sleep -Seconds 1
    $env:PYTHONPATH = "C:\AI\ICDev"
-   $ks = Start-Process python -ArgumentList "tools/genesis/kanban_scheduler.py" -RedirectStandardOutput ".tmp/kanban_scheduler.log" -RedirectStandardError ".tmp/kanban_scheduler_err.log" -WindowStyle Hidden -PassThru
-   echo "Kanban scheduler PID: $($ks.Id)"
+   python tools/genesis/supervisor_status.py --ensure
+   python tools/genesis/supervisor_status.py
    ```
 
-8b. Always start the PR Watcher fresh (autonomous kanban-PR merge, gated on the enforced done-verification). Kill any stale/duplicate instance first, then launch. It loads `.env` itself (so `KANBAN_PIPELINE_ENFORCE` is honored), but two instances would race on auto-merge — always dedup:
+   `--ensure` starts **the supervisor** when none is running, and **defers**
+   when one is (or when its state cannot be determined — starting on uncertainty
+   is how duplicates begin). It never starts an individual child.
+
+   > **Never `Stop-Process` these by name or `Where-Object` filter.** That is what
+   > produced three concurrent `pr_watcher` processes racing on auto-merge. Let
+   > the supervisor own its children; it stops them by verified PID.
+
+9. **Prove liveness from the record, never from `.tmp/*.log`.**
+
+   The supervisor and `/start` write to **different paths** — the supervisor logs
+   the genesis daemon to `.tmp/genesis/daemon.log`, while `/start` used
+   `.tmp/genesis_daemon.log`. Tailing the second while the first is being written
+   shows nothing, and "no log output" reads as "the daemon is dead". An empty log
+   is not evidence.
+
    ```powershell
-   Get-Process python -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like "*pr_watcher*" } | Stop-Process -Force -ErrorAction SilentlyContinue
-   Start-Sleep -Seconds 1
    $env:PYTHONPATH = "C:\AI\ICDev"
-   $pw = Start-Process python -ArgumentList "tools/ci/pr_watcher.py","--daemon","--interval","30" -RedirectStandardOutput ".tmp/pr_watcher.log" -RedirectStandardError ".tmp/pr_watcher_err.log" -WindowStyle Hidden -PassThru
-   Set-Content ".tmp/pr_watcher.pid" -Value $pw.Id -Encoding ascii
-   echo "PR watcher PID: $($pw.Id)"
+   python tools/genesis/supervisor_status.py          # supervisor + children + code identity
+   python -m tools.coordination.code_identity         # which code each process is running
+   python tools/awareness/code_staleness.py           # is any of it superseded?
    ```
 
-9. Check if the Genesis daemon (awareness, heal, scout, ingest, and 90+ other reflexes) is running. Note: `failure_triage` and `oracle_triage` are NOT daemon-dispatched — see `tests/test_reflex_registration.py` EXEMPT.
-   Write a temp check script (avoids PowerShell quote-escaping):
-   ```powershell
-   @'
-import os, pathlib
-pid_file = pathlib.Path('.tmp/genesis/daemon.pid')
-if pid_file.exists():
-    pid = pid_file.read_text().strip()
-    try:
-        os.kill(int(pid), 0)
-        print('RUNNING', pid)
-    except Exception:
-        print('NOT_RUNNING')
-else:
-    print('NOT_RUNNING')
-'@ | Set-Content .tmp\check_daemon.py
-   python .tmp\check_daemon.py
-   ```
-
-   If **NOT_RUNNING**: start it (Task Scheduler will handle it on next reboot; start manually now):
-   ```powershell
-   New-Item -ItemType Directory -Force -Path .tmp\genesis | Out-Null
-   $env:PYTHONPATH = "C:\AI\ICDev"
-   $gd = Start-Process python -ArgumentList "tools/genesis/daemon.py" -RedirectStandardOutput ".tmp/genesis_daemon.log" -RedirectStandardError ".tmp/genesis_daemon_err.log" -WindowStyle Hidden -PassThru
-   echo "Genesis daemon PID: $($gd.Id)"
-   ```
+   Reflex liveness comes from `genesis_reflex_state.last_run_at`, not from a log
+   file. Note: `failure_triage` and `oracle_triage` are NOT daemon-dispatched —
+   see `tests/test_reflex_registration.py` EXEMPT.
 
 10. Report to the user:
    > **Note:** The Kanban Scheduler is always explicitly restarted by `/start` using `python -m tools.genesis.kanban_scheduler`.
@@ -229,7 +251,9 @@ else:
    - To stop poll trigger: `Get-Process python | Where-Object { $_.CommandLine -like "*poll_trigger*" } | Stop-Process -Force`
    - To stop kanban scheduler: `Get-Process python | Where-Object { $_.CommandLine -like "*kanban_scheduler*" } | Stop-Process -Force`
    - To stop genesis daemon: `Get-Process python | Where-Object { $_.CommandLine -like "*daemon.py*" } | Stop-Process -Force`
-   - To stop all Python processes: `taskkill /f /im python.exe 2>$null`
+   - To stop everything: stop the SUPERVISOR (its pid is in
+     `.tmp/genesis/launcher.pid`), which stops its children with it.
+     Never `taskkill /f /im python.exe` — see step 0.
 
 ## Kanban Auto-Pickup
 
