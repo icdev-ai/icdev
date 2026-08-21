@@ -239,3 +239,75 @@ def test_the_posture_guard_ignores_canvases_it_has_no_table_for():
     from tools.awareness.claims import _scored_implies_evidence
 
     assert _scored_implies_evidence(["GovLift", "Zero Trust"], []) is True
+
+
+# --------------------------------------------------------------------------- #
+# 8. The narrowing: identical output is only STUCK if the input moved
+# --------------------------------------------------------------------------- #
+class _SeriesConn:
+    """Answers MIN(assessed_at) on the series and MAX(updated_at) on the input."""
+
+    def __init__(self, series_start, input_changed_at):
+        self._start, self._input = series_start, input_changed_at
+
+    def execute(self, sql, *_a, **_k):
+        self._last = "MAX(" in sql
+        return self
+
+    def fetchone(self):
+        return {"t": self._input if self._last else self._start}
+
+
+def test_identical_output_with_an_unchanged_input_is_not_stuck():
+    """THE false positive this claim produced on its first live run.
+
+    odc_gap_scores: 91 rows over a month, one value, one subject — and
+    `observability_designs.updated_at` is 2026-06-28, unchanged since creation.
+    A 6-hourly snapshot of an unchanged subject SHOULD repeat itself. Flagging
+    it accuses a reflex that is working.
+    """
+    from tools.awareness.claims import _input_changed_since_series_start
+
+    conn = _SeriesConn("2026-07-18T00:00:00", "2026-06-28T02:42:53")
+    assert _input_changed_since_series_start(conn, "s", "i", "updated_at") is False
+
+
+def test_identical_output_after_the_input_moved_is_stuck():
+    """The case worth catching: the subject changed and the answer did not."""
+    from tools.awareness.claims import _input_changed_since_series_start
+
+    conn = _SeriesConn("2026-07-18T00:00:00", "2026-08-01T12:00:00")
+    assert _input_changed_since_series_start(conn, "s", "i", "updated_at") is True
+
+
+def test_an_unreadable_input_never_manufactures_a_finding():
+    """Fail-safe to "unchanged": accusing a working reflex is how a check earns
+    itself a `|| true`."""
+    from tools.awareness.claims import _input_changed_since_series_start
+
+    class _Boom:
+        def execute(self, *_a, **_k):
+            raise RuntimeError("no such table")
+
+    assert _input_changed_since_series_start(_Boom(), "s", "i", "c") is False
+
+
+def test_only_a_stuck_writer_counts_as_disagreement():
+    """The two sides differ by construction whenever a series repeats — the
+    reported side is what a ROW COUNT concludes. Demanding equality would flag
+    every legitimate snapshot series."""
+    from tools.awareness.claims import _no_stuck_writer
+
+    assert _no_stuck_writer({"t": "well_corroborated"}, {"t": "stable_input"}) is True
+    assert _no_stuck_writer({"t": "well_corroborated"}, {"t": "well_corroborated"}) is True
+    assert _no_stuck_writer({"t": "well_corroborated"}, {"t": "stuck_writer"}) is False
+
+
+def test_a_series_naming_no_input_cannot_be_registered():
+    """Every registered series must name an input, or the narrowed rule silently
+    reverts to the false-positive behaviour."""
+    from tools.awareness.claims import _STUCK_SERIES
+
+    for entry in _STUCK_SERIES:
+        assert len(entry) == 6, f"series {entry[:2]} names no input signal"
+        assert entry[4] and entry[5], entry

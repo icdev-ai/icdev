@@ -187,21 +187,64 @@ def _recovery_rows() -> List[Dict[str, Any]]:
 # --------------------------------------------------------------------------- #
 # 4. Repetition is not corroboration — a stuck writer  (the trap itself)
 # --------------------------------------------------------------------------- #
-#: A series is SUSPECT when it holds many rows carrying almost no distinct
-#: facts. Measured 2026-08-20: odc_gap_scores held 91 rows spanning a month with
-#: ONE distinct value for ONE subject — a single stuck writer that any
-#: row-counting confidence model would rate as extremely well corroborated.
+#: A long series carrying one distinct value is SUSPECT — but only against its
+#: INPUT. This claim's first live run was a FALSE POSITIVE, and narrowing it is
+#: the fix.
+#:
+#: It flagged odc_gap_scores: 91 rows spanning 2026-07-18..08-20 with ONE
+#: distinct value for ONE subject. That is a genuine snapshot series — the
+#: `odc_coverage_refresh` reflex recomputes coverage every 6h and persists the
+#: result — and `observability_designs.updated_at` is 2026-06-28, UNCHANGED
+#: since creation. Identical output from identical input is a correctly working
+#: historian, not a stuck writer. (The 0 covered_count is real too: `covered`
+#: requires EVERY required signal source present, and across 1,820 technique
+#: rows the design has 546 partial and 1,274 gap.)
+#:
+#: So output-identity ALONE cannot discriminate. The stuck case is output that
+#: did not move WHILE THE INPUT DID — an answer frozen against a subject that
+#: changed. That needs the input, so each series names one.
+#:
+#: Narrowing it here rather than leaving it in place is the same discipline the
+#: repo applies to arming any check: a rule that fires on correct behaviour
+#: refuses routine work, and that is how a check earns itself a `|| true`.
 _STUCK_MIN_ROWS = 20
+#: (canvas, series table, subject col, value col, input table, input time col)
 _STUCK_SERIES = [
-    ("Observability", "odc_gap_scores", "design_id", "overall_gap_score"),
+    ("Observability", "odc_gap_scores", "design_id", "overall_gap_score",
+     "observability_designs", "updated_at"),
 ]
+
+
+def _input_changed_since_series_start(cc, series_table: str, input_table: str,
+                                      input_col: str) -> bool:
+    """Did the INPUT move after the series began repeating itself?
+
+    Fail-safe to False — "the input never changed" — so an unreadable input can
+    never manufacture a stuck-writer finding. A false positive here accuses a
+    correctly working reflex, which is exactly what this claim did on its first
+    live run.
+    """
+    try:
+        first = cc.execute(
+            f"SELECT MIN(assessed_at) AS t FROM {series_table}"  # nosec B608
+        ).fetchone()
+        latest_input = cc.execute(
+            f"SELECT MAX({input_col}) AS t FROM {input_table}"  # nosec B608
+        ).fetchone()
+        started = dict(first).get("t")
+        changed = dict(latest_input).get("t")
+        if not started or not changed:
+            return False
+        return str(changed) > str(started)
+    except Exception:
+        return False
 
 
 def _reported_series_health() -> Dict[str, str]:
     """What the row count alone would say about each series."""
     from tools.canvas_compliance.posture import _open_canvas_connection
     out: Dict[str, str] = {}
-    for canvas, table, _subj, _val in _STUCK_SERIES:
+    for canvas, table, _subj, _val, _itbl, _icol in _STUCK_SERIES:
         cc = _open_canvas_connection(canvas)
         if cc is None:
             continue
@@ -223,7 +266,7 @@ def _derived_series_health() -> Dict[str, str]:
     """What INDEPENDENT observations say — distinct (subject, value) pairs."""
     from tools.canvas_compliance.posture import _open_canvas_connection
     out: Dict[str, str] = {}
-    for canvas, table, subj, val in _STUCK_SERIES:
+    for canvas, table, subj, val, input_table, input_col in _STUCK_SERIES:
         cc = _open_canvas_connection(canvas)
         if cc is None:
             continue
@@ -234,10 +277,16 @@ def _derived_series_health() -> Dict[str, str]:
             n = len(rows)
             distinct = independent_observations(
                 [{"s": dict(r).get("s"), "v": dict(r).get("v")} for r in rows], "s", "v")
-            if n >= _STUCK_MIN_ROWS and distinct <= 1:
-                out[table] = "stuck_writer"
+            if n < _STUCK_MIN_ROWS:
+                out[table] = "sparse"
+            elif distinct > 1:
+                out[table] = "well_corroborated"
             else:
-                out[table] = "well_corroborated" if n >= _STUCK_MIN_ROWS else "sparse"
+                # One value across a long series. STUCK only if the input moved;
+                # otherwise a snapshot writer faithfully reporting an unchanged
+                # subject, which is what odc_gap_scores actually is.
+                out[table] = ("stuck_writer" if _input_changed_since_series_start(
+                    cc, table, input_table, input_col) else "stable_input")
         except Exception:
             continue
         finally:
@@ -246,6 +295,22 @@ def _derived_series_health() -> Dict[str, str]:
             except Exception:
                 pass
     return out
+
+
+def _no_stuck_writer(reported: Dict[str, str], derived: Dict[str, str]) -> bool:
+    """Only a STUCK WRITER is a finding.
+
+    The two sides differ by construction whenever a series repeats: the reported
+    side is what a ROW COUNT alone would conclude ("well_corroborated"), the
+    derived side is what INDEPENDENT observation concludes. Demanding equality
+    would flag every legitimate snapshot series — which is precisely the false
+    positive this claim produced on its first live run, against a reflex doing
+    its job.
+
+    So the disagreement is narrowed to the case that is actually wrong: an
+    output frozen while its input moved.
+    """
+    return "stuck_writer" not in (derived or {}).values()
 
 
 REGISTRY: List[Claim] = [
@@ -299,6 +364,7 @@ REGISTRY: List[Claim] = [
         ),
         reported=_reported_series_health,
         derived=_derived_series_health,
+        agree=_no_stuck_writer,
         tier="propose",
         tags=["evidence-quality"],
     ),
