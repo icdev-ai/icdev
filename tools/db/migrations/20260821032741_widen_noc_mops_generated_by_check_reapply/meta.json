@@ -1,0 +1,7 @@
+{
+  "description": "Re-apply migration 278: widen noc_mops.generated_by CHECK to include 'ai_template' (278 was recorded-but-dropped by the sqlite engine default)",
+  "date": "2026-08-21",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

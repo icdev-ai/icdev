@@ -1,0 +1,41 @@
+-- Migration: 20260821032741_widen_noc_mops_generated_by_check_reapply
+-- CUI // SP-CTI
+--
+-- RE-APPLY migration 278. That migration is RECORDED AS APPLIED on both the
+-- canonical `icdev` board and the `icdev_e2e` E2E database, and on neither one
+-- did it take effect: `noc_mops_generated_by_check` still reads
+--
+--     CHECK (generated_by = ANY (ARRAY['manual','ai']))
+--
+-- measured 2026-08-21. `migration_runner._detect_engine`'s own docstring names
+-- the mechanism — "defaulting to sqlite while connected to PostgreSQL is silent
+-- data loss: `_filter_sql` drops every `@pg-only` statement, and the migration
+-- is then recorded as applied". 278 is entirely `@pg-only`, so it was reduced
+-- to nothing and stamped. That detection has since been fixed, but the stamped
+-- row means 278 can never run again — a correction has to be a NEW migration,
+-- which is what this is.
+--
+-- What it costs while it is missing: `mop_generator.generate_mop` records
+-- generated_by='ai_template' on the deterministic no-LLM fallback (the common
+-- CI / air-gap path). The narrow CHECK rejects it, `save_mop` swallows the
+-- CheckViolation in a try-both-placeholder-styles loop and raises a generic
+-- RuntimeError, and POST /api/noc/mops/generate returns 500. That is E2E
+-- failure `noc_canvas.spec.ts:120` in the 2026-08-21 full smoke, reproduced
+-- directly at docs/testing/e2e-full-smoke-2026-08-21.md.
+--
+-- Enum source of truth: MOP_GENERATED_BY in tools/noc_canvas/constants.py. The
+-- source tree was already correct everywhere — constants, the canvas DDL in
+-- tools/noc_canvas/db/init_db.py, the pg_consolidated.sql baseline and 278
+-- itself all carry 'ai_template'. Only the live databases are behind.
+--
+-- Idempotent: DROP ... IF EXISTS then ADD, so re-running is a no-op and a
+-- database that DID get 278 is unchanged.
+--
+-- PG-only: SQLite's noc_mops has no CHECK on generated_by and cannot ALTER a
+-- CHECK constraint in place.
+
+-- @pg-only
+ALTER TABLE noc_mops DROP CONSTRAINT IF EXISTS noc_mops_generated_by_check;
+ALTER TABLE noc_mops ADD CONSTRAINT noc_mops_generated_by_check
+    CHECK (generated_by = ANY (ARRAY['manual'::text, 'ai'::text, 'ai_template'::text]));
+-- @all
