@@ -40,7 +40,7 @@ Checks:
                       ceiling in args/board_writer_gate.yaml may only go DOWN (rem-hyg-05)
  27. schema_ownership — every table created under tools/ has exactly ONE owner (core | it | ft) in the generated
                       manifests; a migration here may only touch owners args/schema_ownership_gate.yaml allows (xit-decl-04)
- 28. self_rooting — a NEW module that computes the REPO ROOT from its own location fails; the 1,362 that
+ 28. self_rooting — a NEW module that computes the REPO ROOT from its own location fails; the 1,369 that
                       existed at adoption are grandfathered BY NAME in args/self_root_census.txt and the ceiling in
                       args/self_root_gate.yaml may only go DOWN (xit-decl-03)
 
@@ -10003,7 +10003,7 @@ def check_schema_ownership(changed_files: Optional[List[Path]] = None) -> Cohere
 def check_self_rooting(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
     """xit-decl-03 -- a NEW module that computes the repo root from its own location.
 
-    1,362 modules under tools/ derive an args/, data/, context/ or database
+    1,369 modules under tools/ derive an args/, data/, context/ or database
     path from ``Path(__file__).resolve().parent.parent.parent`` (measured
     2026-08-21). Each is a hard-coded claim about where the file sits; the claim
     is true until the file moves and then silently wrong -- which is what the

@@ -273,7 +273,7 @@ jobs:
       # nest of os.path.dirname) and reads args/ data/ or the database relative
       # to it. True today, silently false the moment the file moves -- which is
       # what the ICDEV[domain] split does to every kernel package. The one
-      # resolver is icdev/core/paths.py::repo_root(); the 1,362 sites that
+      # resolver is icdev/core/paths.py::repo_root(); the 1,369 sites that
       # existed at adoption are grandfathered by name in
       # args/self_root_census.txt; `self_root_max` may only go DOWN. Module-local
       # paths and the sys.path bootstrap idiom are NOT sites.

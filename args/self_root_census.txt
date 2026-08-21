@@ -1375,3 +1375,10 @@ tools/writing/llm_judge.py::<module>::BASE_DIR
 tools/writing/standards_validator.py::<module>::inline-1
 tools/writing/structure_enforcer.py::<module>::inline-1
 tools/writing/style_guide.py::<module>::_ROOT
+tools/awareness/autonomy_loop.py::<module>::_BASE
+tools/awareness/restore_acts.py::<module>::_BASE
+tools/db/migration_drift.py::<module>::_BASE
+tools/db/regen_pg_snapshot.py::<module>::BASE_DIR
+tools/genesis/deployment_freshness.py::<module>::_BASE
+tools/genesis/reflexes/claim_verifier_reflex.py::<module>::BASE_DIR
+tools/genesis/reflexes/detector_findings_reflex.py::<module>::BASE_DIR

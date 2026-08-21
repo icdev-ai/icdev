@@ -1016,7 +1016,7 @@ python tools/ci/self_root_census.py --json
 python tools/ci/self_root_census.py --prune
 #     BASE_DIR = Path(__file__).resolve().parent.parent.parent
 #     CFG = BASE_DIR / "args" / "x.yaml"
-# 1,362 such sites in 1,315 files (measured 2026-08-21). Each is a private,
+# 1,369 such sites in 1,315 files (measured 2026-08-21). Each is a private,
 # hard-coded claim about where the file sits; true today, silently wrong the
 # moment the file moves -- which is what the ICDEV[domain] split does to every
 # kernel package. THE FIX: `from icdev.core.paths import repo_root;
