@@ -964,6 +964,40 @@ def _clear_timeout_count(task_id: str):
 
 # Track worktree paths: {task_id: worktree_path_str}
 _worktrees: Dict[str, str] = {}
+
+
+def _work_dir_for(task_id: str) -> str:
+    """Where this task's work actually is — surviving a scheduler restart.
+
+    `_worktrees` is an in-memory dict, and the scheduler RE-EXECS ITSELF
+    routinely: `code_reload.restart_if_code_changed` runs in its poll loop, so
+    every merge that touches its import closure replaces the process and empties
+    this map while tasks are still in flight.
+
+    The old expression was ``_worktrees.get(task_id) or str(BASE_DIR)``, and the
+    fallback is not harmless. `_verify_claimed_files_exist` asks whether the
+    files the agent SAID it wrote exist under this directory. An agent works in
+    its own worktree on its own branch, so under BASE_DIR none of its new files
+    exist, `existing == 0`, and correct work is rejected as a PHANTOM
+    COMPLETION. The verdict is confidently wrong and the cause — a restart
+    minutes earlier — appears nowhere in it.
+
+    So rebuild from the deterministic path before falling back. The worktree is
+    named from the task id, so it can be recovered without any in-memory state;
+    BASE_DIR remains only for a task that genuinely has no worktree directory.
+    """
+    known = _worktrees.get(task_id)
+    if known:
+        return known
+    try:
+        path = _task_worktree_path(task_id)
+        if path.is_dir():
+            # Repopulate: later checks in the same run then agree with this one.
+            _worktrees[task_id] = str(path)
+            return str(path)
+    except Exception:  # noqa: BLE001 — recovery is best-effort, never fatal
+        pass
+    return str(BASE_DIR)
 # Snapshot of main's HEAD SHA captured at dispatch time for each task.
 # Verification uses this as the baseline (not current main) so agent commits
 # stay visible even if main advances between dispatch and verification.
@@ -6939,7 +6973,7 @@ def _git_worktree_has_real_changes(task_id: str) -> Tuple[bool, str]:
     import subprocess as _sp
 
     branch_name = f"kanban/{task_id}"
-    work_dir = _worktrees.get(task_id) or str(BASE_DIR)
+    work_dir = _work_dir_for(task_id)
     dispatch_baseline = _dispatch_main_heads.get(task_id, None)
 
     # 1. branch commits with file changes since dispatch
@@ -7287,7 +7321,7 @@ def _run_verify_checks(task_id, claude_output):
 
     # Check 4 — OPT-76 phantom guard: extract every path the agent
     # claims to have touched and verify at least SOME of them exist.
-    work_dir_for_check = _worktrees.get(task_id) or str(BASE_DIR)
+    work_dir_for_check = _work_dir_for(task_id)
     claimed_paths = _extract_claimed_file_paths(claude_output)
 
     # Check 4a: If the task description mentions file creation but the
@@ -7384,7 +7418,7 @@ def _run_verify_checks(task_id, claude_output):
                 if main_advanced:
                     # Check if the worktree has uncommitted changes — if clean
                     # AND main advanced, the agent's work likely merged already.
-                    work_dir_for_check = _worktrees.get(task_id) or str(BASE_DIR)
+                    work_dir_for_check = _work_dir_for(task_id)
                     dirty = _sp.run(
                         ["git", "status", "--porcelain"],
                         capture_output=True, text=True, encoding="utf-8", errors="replace",
@@ -8154,7 +8188,7 @@ def _verify_task_completed(task_id, claude_output):
     )
     _budget_remaining = _get_task_timeout(task_id) - _budget_elapsed
 
-    work_dir = _worktrees.get(task_id) or str(BASE_DIR)
+    work_dir = _work_dir_for(task_id)
 
     if not verified and not _is_phantom:
         # guard-budget: skip remediation (and re-verification) if total elapsed
@@ -10421,7 +10455,7 @@ def _check_completed():
                 # self-debug reflex: timeouts are their own recurrence class
                 try:
                     from tools.workflow.self_debug import check_and_diagnose
-                    work_dir = _worktrees.get(task_id) or str(BASE_DIR)
+                    work_dir = _work_dir_for(task_id)
                     check_and_diagnose(task_id, _timeout_reason, work_dir)
                 except Exception as exc:
                     logger.warning("self_debug reflex error on timeout for %s: %s", task_id, exc)
