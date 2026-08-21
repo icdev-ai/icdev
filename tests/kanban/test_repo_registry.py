@@ -93,3 +93,20 @@ def test_shipped_registry_marks_prem_external():
         assert rr.resolve_task_repo(tid).is_external is True, tid
     # A normal ICDev task stays ICDev.
     assert rr.resolve_task_repo("ctx-core-01").is_external is False
+
+
+def test_shipped_registry_parks_parent_split_streams(monkeypatch):
+    # xit-reg-01: the ICDEV[domain] split registers its two sibling repos BEFORE
+    # they exist (the CONCORD precedent). With their root env vars unset an
+    # xcore-/xft- task must resolve EXTERNAL and NOT dispatchable, so the
+    # dispatcher parks it instead of building core-extraction or trading-system
+    # work inside this checkout. xit- genuinely builds here and stays ICDev.
+    monkeypatch.delenv("ICDEV_KANBAN_REPO_CORE", raising=False)
+    monkeypatch.delenv("ICDEV_KANBAN_REPO_FT", raising=False)
+    for tid, repo in (("xcore-boot-01", "icdev_core"), ("xft-ing-01", "icdev_ft"),
+                      ("xft-safe-01-d2", "icdev_ft")):
+        t = rr.resolve_task_repo(tid)
+        assert t.is_external is True, tid
+        assert t.name == repo, tid
+        assert t.dispatchable is False, tid
+    assert rr.resolve_task_repo("xit-decl-01").is_external is False

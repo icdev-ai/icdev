@@ -238,7 +238,6 @@ tests/kanban/test_pipeline.py
 tests/kanban/test_pipeline_enforce.py
 tests/kanban/test_pipeline_enforce_mode.py
 tests/kanban/test_pr_base_guard.py
-tests/kanban/test_repo_registry.py
 tests/kanban/test_scheduler_hardened.py
 tests/kanban/test_scheduler_pause_controls.py
 tests/kanban/test_state_machine.py
