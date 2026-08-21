@@ -8692,6 +8692,27 @@ projects:
   - 'LRN: learning. An incident becomes a standing claim with two independent
     derivations, so a defect that actually happened gains a LIVE regression guard its
     fixture-based unit test cannot provide. Repetition is not corroboration.'
+  - 'DEP: deployment liveness. A merged fix is not a live fix. Measured 2026-08-20
+    the checkout serving the board was 22 commits behind origin/main with nothing
+    reporting it, so capabilities that had passed CI and merged were simply not
+    running. Covers schema drift (compare migration SETS, never maxima - the legacy
+    numeric ids sort above the timestamp ones lexicographically), a pending migration
+    becoming a card that says what to do, and a freshness probe that asks the existing
+    pull path in dry-run rather than reimplementing its safety rules.'
+  - 'SID: service identity. Two schedulers were indistinguishable to the coordination
+    lease, so one could take a lease the other believed it held. Keyed as <name>-<pid>
+    because os.execv re-exec KEEPS the pid - a restart-based key would have changed
+    identity on every code reload, which is the event the lease most needs to survive.'
+  - 'COV: coverage. Drain the unguarded-incident backlog by authoring standing claims
+    for defects that actually happened. The WITHDRAWAL is the result worth keeping: a
+    drafted claim disagreed on 276 tasks and was withdrawn rather than weakened, because
+    its cause was an incomplete transition log and not the two-writer conflict it
+    asserted. A claim retuned until it agrees is a test quietly weakened to match broken
+    code.'
+  - 'WIRE: consume what is declared. TOOL_EXECUTE_AFTER had a registered handler and NO
+    dispatcher - the extension point was declared, importable and never fired. The same
+    declared-but-unconsumed defect this card was written about, found inside the
+    dispatch path itself. Observe-only: the after-hook may not alter a result.'
   epics:
   - key: gate
     title: Manual Gate
