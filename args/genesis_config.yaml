@@ -668,6 +668,11 @@ reflexes:
       born_red: {}
       recovery:
         window_hours: 24     # the Autonomous Recovery panel's window
+      migration_drift:
+        # The branch this deployment is meant to be running. A migration that
+        # merged and was never applied leaves its capability INERT here: the
+        # code is present, the schema is not, and every test stays green.
+        ref: origin/main
     description: "autonomy-act-02: run status_churn, born_red_survey and recovery_summary; project findings into detector_findings (deduped on the finding, seen_count on recurrence) and file one evidence-carrying card per NEW finding via task_factory"
     success_metric:
       name: findings_seen
