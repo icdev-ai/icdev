@@ -441,3 +441,78 @@ def test_reflex_seeds_only_through_the_canonical_seeder():
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             assert "INSERT INTO KANBAN_TASKS" not in " ".join(node.value.upper().split())
     assert "from tools.kanban.task_factory import create_tasks" in src
+
+
+# --------------------------------------------------------------------------
+# the 30s idle-in-transaction timeout (measured 2026-08-21: the survey took
+# 26.6s and passed, 32s and the session was killed mid-run)
+# --------------------------------------------------------------------------
+class _TxnRecorder:
+    """Delegates to a real connection and records transaction boundaries."""
+
+    def __init__(self, inner):
+        self._inner = inner
+        self.events: list = []
+
+    def execute(self, sql, params=None):
+        self.events.append("execute")
+        return self._inner.execute(sql, params)
+
+    def commit(self):
+        self.events.append("commit")
+        return self._inner.commit()
+
+    def rollback(self):
+        self.events.append("rollback")
+        return self._inner.rollback()
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+
+def test_born_red_ends_its_read_transaction_before_the_survey(conn, monkeypatch):
+    import tools.ci.born_red_survey as brs
+
+    conn.execute(
+        "CREATE TABLE ungated_test_baseline (path TEXT PRIMARY KEY, status TEXT, "
+        "first_seen TEXT, last_checked TEXT, last_detail TEXT, first_status TEXT, "
+        "ever_passed INTEGER)")
+    conn.commit()
+    rec = _TxnRecorder(conn)
+    seen_at_survey: dict = {}
+
+    def _fake_survey(**kwargs):
+        seen_at_survey["events"] = list(rec.events)
+        return {"state": "clean", "findings": [], "observed": 0}
+
+    monkeypatch.setattr(brs, "survey", _fake_survey)
+    res = df.run_born_red(rec, {})
+    assert res["state"] == "clean"
+    events = seen_at_survey["events"]
+    assert "execute" in events, "the baseline was read through the handed-in connection"
+    assert events[-1] == "rollback", (
+        "the read transaction must be CLOSED before the survey leaves for git — "
+        f"got {events}")
+
+
+def test_each_detector_is_committed_before_the_next_runs(conn, seeded):
+    order: list = []
+
+    def _first(conn_, cfg):
+        order.append(("first", list(rec.events)))
+        return df._result("findings", [_finding(df.DETECTOR_STATUS_CHURN, "t-1")])
+
+    def _second(conn_, cfg):
+        order.append(("second", list(rec.events)))
+        return df._result("clean", [])
+
+    rec = _TxnRecorder(conn)
+    df.consume({}, conn=rec, runners={"status_churn": _first, "recovery": _second})
+    events_before_second = order[1][1]
+    assert "commit" in events_before_second, (
+        "the first detector's projection must be durable before the second detector "
+        f"runs — got {events_before_second}")
+    # and a dry run still closes each detector's read transaction
+    rec2 = _TxnRecorder(conn)
+    df.consume({}, conn=rec2, seed=False, runners={"status_churn": _first, "recovery": _second})
+    assert "commit" not in rec2.events and rec2.events.count("rollback") >= 2

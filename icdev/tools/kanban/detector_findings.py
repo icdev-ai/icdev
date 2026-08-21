@@ -327,6 +327,23 @@ def run_status_churn(conn, cfg: Mapping[str, Any]) -> dict:
     return _result(RUN_FINDINGS if findings else RUN_CLEAN, findings, summary=summary)
 
 
+def end_read_txn(conn) -> None:
+    """Close the implicit transaction a read opened, without writing anything.
+
+    psycopg2 opens a transaction on the first execute and leaves it open until
+    commit/rollback. The connection string sets
+    ``idle_in_transaction_session_timeout`` (ICDEV_PG_IDLE_TXN_TIMEOUT_MS,
+    default 30s), so a session that READS and then sits in git for 32s is
+    KILLED mid-run — measured 2026-08-21: the born-red survey took 26.6s and
+    passed, 32s and died with "could not receive data from server". A read
+    that is finished must not hold a transaction across work that does no SQL.
+    """
+    try:
+        conn.rollback()
+    except Exception:  # noqa: BLE001 — a backend with no transaction to end
+        pass
+
+
 def run_born_red(conn, cfg: Mapping[str, Any]) -> dict:
     from tools.ci.born_red_survey import SurveyError, load_observations, survey
 
@@ -337,6 +354,9 @@ def run_born_red(conn, cfg: Mapping[str, Any]) -> dict:
         observations = load_observations(conn)
     except SurveyError as exc:
         return _result(RUN_UNMEASURABLE, reason=str(exc))
+    # The survey does git work for tens of seconds and no SQL at all; the
+    # transaction the read above opened must not sit idle across it.
+    end_read_txn(conn)
     report = survey(observations=observations)
     summary = {k: v for k, v in report.items() if k != "findings"}
     if report.get("state") == "unmeasurable":
@@ -383,10 +403,12 @@ def run_recovery(conn, cfg: Mapping[str, Any]) -> dict:
     return _result(RUN_FINDINGS if findings else RUN_CLEAN, findings, summary=summary)
 
 
+#: Cheap, SQL-only detectors first; the one that leaves the database for tens
+#: of seconds last, with everything before it already committed.
 DEFAULT_RUNNERS: Dict[str, Callable[[Any, Mapping[str, Any]], dict]] = {
     DETECTOR_STATUS_CHURN: run_status_churn,
-    DETECTOR_BORN_RED: run_born_red,
     DETECTOR_RECOVERY: run_recovery,
+    DETECTOR_BORN_RED: run_born_red,
 }
 
 #: One line per detector, for the card: what it measures and where it came from.
@@ -603,6 +625,7 @@ def consume(config: Optional[Mapping[str, Any]] = None, *, conn=None, seed: bool
                 f"{FINDINGS_TABLE}/{RUNS_TABLE} absent — migration {MIGRATION} has not "
                 "run on this database; nothing projected, nothing seeded")
             return report
+        end_read_txn(conn)
 
         candidates: List[dict] = []   # {"finding", "existing", "revision"}
         for name, runner in runners.items():
@@ -669,6 +692,12 @@ def consume(config: Optional[Mapping[str, Any]] = None, *, conn=None, seed: bool
             if seed:
                 _record_run(conn, name, state, entry["reason"], entry["findings"],
                             entry["summary"], now_iso)
+                # One detector's projection is durable before the next detector
+                # runs — so a slow detector that gets the session killed cannot
+                # take a finished detector's rows down with it.
+                conn.commit()
+            else:
+                end_read_txn(conn)
 
         # Worst first, then oldest-known first. Bounded, and the bound is REPORTED.
         candidates.sort(key=lambda c: (
