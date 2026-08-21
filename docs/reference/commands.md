@@ -2744,6 +2744,18 @@ python tools/awareness/capability_consumption.py --probe-diff origin/main --json
 # exits 0: 1,320 of 1,775 tables on the live board are empty, so a prober that cannot
 # tell a fresh worktree from an unwired writer fabricates findings by the thousand.
 
+# Restore tier, enumerated (autonomy-act-03) — claim_verifier's `restore` tier is a CLOSED
+# set of three mechanical, individually verifiable, reversible acts. Every act runs
+# prove -> audit -> apply -> confirm: the `awareness.restore_act` intent row is written
+# to audit_trail BEFORE the act (raise_on_error=True; no row, no act), and an effect that
+# cannot be re-read is `applied_unconfirmed`, never `applied`. No act edits a claim.
+python tools/awareness/restore_acts.py --list                                                      # The three acts and how each is undone
+python tools/awareness/restore_acts.py --plan [--json]                                             # Re-prove every candidate; ACTS NOTHING; states what it measured
+python tools/awareness/restore_acts.py --apply reap_dead_lease --target <task-id>                  # Holder pid PROVABLY dead AND task not heartbeating; cannot-tell is alive
+python tools/awareness/restore_acts.py --apply prune_gone_census_entry --target <census entry>     # One line, one enumerated census, only when the named file is gone
+python tools/awareness/restore_acts.py --apply restart_stale_daemon --target tools.genesis.daemon  # Terminate one stale supervised child; supervisor must be UP to restart it
+python tools/awareness/restore_acts.py --apply <act> --target <t> --dry-run [--root <checkout>]    # Prove only: no audit row, no act
+
 # Gate Sentinel Shape (kax-exec-04) — a task whose id is `<card>-gate-<n>` is filtered
 # out of promote_backlog_to_scheduled by tools/kanban/gates.py::is_manual_gate, so work
 # wearing that id is UNDISPATCHABLE and nothing goes red (tsg-gate-01 sat in backlog

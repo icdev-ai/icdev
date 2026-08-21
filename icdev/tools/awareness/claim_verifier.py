@@ -81,8 +81,11 @@ UNMEASURABLE = "unmeasurable"
 TIER = {
     "report": "state the disagreement, showing BOTH derivations",
     "restore": "re-establish an invariant by a mechanical, individually "
-               "verifiable act (reap a provably dead lease; drop a census entry "
-               "whose file is gone). Never a change of meaning.",
+               "verifiable act from the CLOSED set in "
+               "tools/awareness/restore_acts.py::ACTS (reap a provably dead "
+               "lease; drop a census entry whose file is gone; restart a "
+               "provably stale daemon via the supervisor). Each writes its "
+               "audit row BEFORE acting. Never a change of meaning.",
     "propose": "seed a card carrying the evidence. A human decides.",
 }
 #: Deliberately absent: anything that edits the claim, the threshold or the
