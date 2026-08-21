@@ -1265,6 +1265,22 @@ class DaemonBase(abc.ABC):
                     except Exception as _cr_exc:  # noqa: BLE001 — watching must not kill the daemon
                         print(f"WARN: code-change check failed: {_cr_exc}")
 
+                # Say we are still alive (autonomy-id-01 follow-up).
+                # `session_registry.register` runs once at boot and the row goes
+                # stale after SESSION_TTL_SECONDS (900s), so a daemon that only
+                # registered DISAPPEARS from `list_active()` — and with it from
+                # the fleet code-identity view — while still running. That is
+                # backwards: the longer a process runs without restarting, the
+                # more certain it is to vanish, and a long-running process is
+                # exactly the one whose code version matters most because it is
+                # the most likely to be stale.
+                try:
+                    from tools.coordination import session_registry as _sreg
+
+                    _sreg.heartbeat()
+                except Exception:  # noqa: BLE001 — liveness reporting is not a dep
+                    pass
+
                 # Sleep in small increments for responsive shutdown
                 for _ in range(check_interval):
                     if self._shutdown_event.is_set():

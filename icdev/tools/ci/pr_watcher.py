@@ -3545,6 +3545,14 @@ class PRWatcher:
         iteration = 0
         while True:
             iteration += 1
+            # Keep the session row fresh — see tools/daemon/base.py for why a
+            # boot-only registration makes a long-running process disappear.
+            try:
+                from tools.coordination import session_registry as _sreg
+
+                _sreg.heartbeat()
+            except Exception:  # noqa: BLE001 — liveness reporting is not a dep
+                pass
             try:
                 report = self.poll_once()
                 logger.info(
