@@ -208,3 +208,45 @@ def test_the_module_kills_nothing():
     body = src.split('"""', 2)[-1]  # drop the module docstring, which discusses it
     for forbidden in ("taskkill", "kill_process", "terminate(", "Stop-Process"):
         assert forbidden not in body, f"the reporter reached for {forbidden}"
+
+
+def test_a_shell_that_merely_mentions_a_service_is_not_counted(monkeypatch):
+    """THE false positive this reporter shipped on its first live run.
+
+    `find_pids_by_cmdline` substring-matches the whole joined command line across
+    processes of ANY name, so the fragment "pr_watcher" also matches
+    `bash -c '... pr_watcher ...'` — a diagnostic shell that merely typed it.
+    Unfiltered, this reporter told a human there were THREE pr_watchers racing on
+    auto-merge when there was one, plus two greps of its own.
+
+    `launcher._kill_stale_instances` already excludes those (it measured five
+    matches, four of them shells). The reporter must use the SAME exclusion, not
+    a second copy of the rule — a reporter that disagrees with the killer
+    describes a fleet the launcher does not have.
+    """
+    import tools.compat.platform_utils as pu
+    from tools.genesis import launcher
+
+    monkeypatch.setattr(pu, "find_pids_by_cmdline", lambda _m: [111, 222])
+    # 222 only matches because the fragment appears after `-c`.
+    monkeypatch.setattr(launcher, "_is_inline_snippet",
+                        lambda pid, _frag: pid == 222)
+
+    kids = {c["name"]: c for c in ss.children()}
+    for c in kids.values():
+        assert c["pids"] == [111], (
+            f"{c['name']} counted a shell that merely mentioned it: {c['pids']}"
+        )
+
+
+def test_the_reporter_and_the_killer_share_one_exclusion():
+    """Not a second copy: `_is_inline_snippet` is imported, never reimplemented.
+    Six enforcement sites re-deriving one predicate is how a reporter comes to
+    describe a policy the system does not have (the deps.py lesson)."""
+    import inspect
+
+    src = inspect.getsource(ss.children)
+    assert "_is_inline_snippet" in src
+    assert "def _is_inline_snippet" not in inspect.getsource(ss), (
+        "the exclusion was reimplemented instead of imported"
+    )

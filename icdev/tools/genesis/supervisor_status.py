@@ -152,8 +152,20 @@ def children(services=SERVICES) -> List[Dict[str, Any]]:
     """
     try:
         from tools.compat.platform_utils import find_pids_by_cmdline
+        # THE SAME EXCLUSION THE KILLER USES, not a second copy.
+        # `find_pids_by_cmdline` substring-matches the whole joined command line
+        # across processes of ANY name, so the fragment "pr_watcher" also matches
+        # a shell that merely TYPED it — `bash -c '... pr_watcher ...'`.
+        # `launcher._kill_stale_instances` already guards against that (it
+        # measured the same thing: five matches, four of them diagnostic shells).
+        # This reporter did not, and on its first live run it told a human there
+        # were THREE pr_watchers racing on auto-merge when there was one, plus
+        # two greps of its own. Over-reporting a hazard is the same defect as
+        # under-reporting one: a claim whose evidence nothing re-derived.
+        from tools.genesis.launcher import _is_inline_snippet
     except Exception:  # noqa: BLE001
         find_pids_by_cmdline = None
+        _is_inline_snippet = None
 
     identities = _identity_rows()
     out = []
@@ -163,7 +175,10 @@ def children(services=SERVICES) -> List[Dict[str, Any]]:
             pids = None
         else:
             try:
-                pids = sorted(find_pids_by_cmdline(svc.match))
+                found = find_pids_by_cmdline(svc.match)
+                if _is_inline_snippet is not None:
+                    found = [p for p in found if not _is_inline_snippet(p, svc.match)]
+                pids = sorted(found)
             except Exception:  # noqa: BLE001
                 pids = None
         ident = next((row for module, row in identities.items()
