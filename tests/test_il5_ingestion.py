@@ -412,7 +412,13 @@ class TestGetSLASummary:
         with patch("tools.il5.ingestion.get_connection", return_value=_UnclosableConn(mem_db)):
             summary = get_sla_summary()
         assert summary["total"] == 0
-        assert summary["compliance_pct"] == 100.0
+        # NOT ASSESSED, never 100.0 (rem-hyg-13). This assertion used to demand
+        # the defect: an empty store reporting PERFECT IL5 SLA compliance, which
+        # renders identically to a store somebody actually met every deadline
+        # in. `None` is the only honest answer over an empty denominator, and it
+        # is checked with `is None` rather than for falsiness so that a MEASURED
+        # 0.0 — a real finding — can never satisfy this test.
+        assert summary["compliance_pct"] is None
 
 
 # ═══════════════════════════════════════════════════════════════════════
