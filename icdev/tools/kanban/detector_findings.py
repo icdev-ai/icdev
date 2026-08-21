@@ -14,6 +14,13 @@ tools/kanban:
     recovery_summary  (rem-hyg-16)    retry ATTEMPTS miscounted as recoveries.
                                       The panel claimed 331; 46 of 86 were real.
 
+A fourth joined them (autonomy-dep-02):
+
+    migration_drift   (autonomy-dep-01) a migration on the default branch that
+                                      was never applied HERE. Found id-01's own
+                                      migration pending, which is why that card
+                                      recorded nothing after it merged.
+
 Each was built because a human found the defect BY HAND, and each then sat
 waiting for a human to run it by hand — declared-but-unconsumed, this
 platform's signature defect, reaching its own self-observation layer. This
@@ -35,7 +42,8 @@ finding is FIRST seen, and again only if it RECURS after its card was closed
 second lock, inside ``create_tasks`` itself.
 
 UNMEASURABLE CLEARS NOTHING. status_churn on an idle board, born_red_survey on
-an unmigrated baseline, recovery_summary with no audit rows — each reports
+an unmigrated baseline, recovery_summary with no audit rows, migration_drift on
+a database with no migration history — each reports
 that it could not measure, and a run that could not measure must not be read
 as "the finding is gone". Only a MEASURABLE run that no longer reports a
 finding clears it. ``detector_runs`` is the denominator that keeps "never
@@ -70,7 +78,9 @@ MIGRATION = "20260821050135_detector_findings_projection"
 DETECTOR_STATUS_CHURN = "status_churn"
 DETECTOR_BORN_RED = "born_red"
 DETECTOR_RECOVERY = "recovery"
-DETECTORS = (DETECTOR_STATUS_CHURN, DETECTOR_BORN_RED, DETECTOR_RECOVERY)
+DETECTOR_MIGRATION_DRIFT = "migration_drift"
+DETECTORS = (DETECTOR_STATUS_CHURN, DETECTOR_BORN_RED, DETECTOR_RECOVERY,
+             DETECTOR_MIGRATION_DRIFT)
 
 #: detector_runs.last_state — and the per-detector ``state`` in a report.
 RUN_FINDINGS = "findings"
@@ -403,12 +413,73 @@ def run_recovery(conn, cfg: Mapping[str, Any]) -> dict:
     return _result(RUN_FINDINGS if findings else RUN_CLEAN, findings, summary=summary)
 
 
+def migration_drift_findings(report: Mapping[str, Any]) -> List[Finding]:
+    """migration_drift.drift() -> findings. ONE finding, not one per migration.
+
+    A deployment is either running the merged schema or it is not; three
+    pending migrations are one condition with three names, and filing three
+    cards would put the same repair in the queue three times. The migrations
+    are carried in the evidence and named in the advice.
+    """
+    pending = list(report.get("pending") or [])
+    if not pending:
+        return []
+    names = [str(p.get("name") or p.get("version")) for p in pending]
+    ref = str(report.get("ref") or "origin/main")
+    advice = (
+        f"{len(names)} migration(s) are on {ref} and NOT applied here: "
+        f"{', '.join(names)}. Until they are, any capability depending on their "
+        "schema is INERT on this deployment — its code is present, its tables or "
+        "columns are not, and its tests can be green the whole time. That is how "
+        "autonomy-id-01 recorded nothing after it merged. Apply with "
+        "`python tools/db/migrate.py --up` (preview with --dry-run) from a "
+        "checkout that actually CONTAINS them: migrate.py reads the FILESYSTEM, "
+        "so a checkout behind the branch reports `Pending: 0` and applies "
+        "nothing — check `python tools/genesis/deployment_freshness.py` first. "
+        "Applying is a deployment act and is deliberately not automated."
+    )
+    # The FINGERPRINT is the set of pending versions: while the same migrations
+    # stay pending this is the SAME finding (seen_count rises, no second card),
+    # and a different set is genuinely a new condition worth its own.
+    versions = sorted(str(p.get("version")) for p in pending)
+    return [Finding(
+        DETECTOR_MIGRATION_DRIFT, subject=str(report.get("root") or "deployment"),
+        fingerprint="|".join(versions),
+        title=f"{len(names)} merged migration(s) are not applied on this deployment",
+        priority="high", task_type="chore",
+        evidence={k: v for k, v in report.items() if k != "applied_not_on_branch"},
+        derivation="python tools/db/migration_drift.py --json",
+        advice=advice,
+    )]
+
+
+def run_migration_drift(conn, cfg: Mapping[str, Any]) -> dict:
+    from tools.db.migration_drift import CURRENT, UNMEASURABLE, drift
+
+    # The drift check shells out to git; do not hold a read transaction across it.
+    end_read_txn(conn)
+    report = drift(ref=str(cfg.get("ref") or "origin/main"), conn=conn)
+    summary = {k: v for k, v in report.items() if k != "pending"}
+    if report.get("state") == UNMEASURABLE:
+        # A fresh database, an unreadable branch, an unreachable
+        # schema_migrations. UNMEASURABLE CLEARS NOTHING — a run that could not
+        # look must never read as "the migrations arrived".
+        return _result(RUN_UNMEASURABLE,
+                       reason=str(report.get("reason") or "drift not measurable"),
+                       summary=summary)
+    if report.get("state") == CURRENT:
+        return _result(RUN_CLEAN, summary=summary)
+    findings = migration_drift_findings(report)
+    return _result(RUN_FINDINGS if findings else RUN_CLEAN, findings, summary=summary)
+
+
 #: Cheap, SQL-only detectors first; the one that leaves the database for tens
 #: of seconds last, with everything before it already committed.
 DEFAULT_RUNNERS: Dict[str, Callable[[Any, Mapping[str, Any]], dict]] = {
     DETECTOR_STATUS_CHURN: run_status_churn,
     DETECTOR_RECOVERY: run_recovery,
     DETECTOR_BORN_RED: run_born_red,
+    DETECTOR_MIGRATION_DRIFT: run_migration_drift,
 }
 
 #: One line per detector, for the card: what it measures and where it came from.
@@ -422,6 +493,10 @@ DETECTOR_BLURB = {
     DETECTOR_RECOVERY: ("recovery_summary (rem-hyg-16) — pr_watcher audit rows collapsed "
                         "to ONE outcome per task. `escalate` is the watcher's own "
                         "'manual intervention required' and outranks a later merge."),
+    DETECTOR_MIGRATION_DRIFT: (
+        "migration_drift (autonomy-dep-01) — a migration that is on the default "
+        "branch and NOT applied to this deployment. Its capability is inert here: "
+        "the code merged, the schema did not, and every test stays green."),
 }
 
 
