@@ -144,15 +144,112 @@ def _load_yaml_raw() -> tuple[dict, str]:
     return data, text
 
 
+_HEADER = ("# CUI // SP-CTI\n#\n"
+           "# Auto-managed by tools/project/kanban_project_sync.py\n"
+           "# Human edits to name/description/briefs are preserved.\n\n")
+
+
+def _split_project_blocks(text: str) -> tuple:
+    """``(preamble, {key: block_text})`` — the file split at each ``- key:``.
+
+    Every project entry starts with ``- key:`` at column 0, so the file is a
+    preamble followed by one contiguous block per project. Splitting there lets
+    an unchanged project be written back BYTE-FOR-BYTE.
+    """
+    preamble: list = []
+    blocks: dict = {}
+    current_key = None
+    current: list = []
+    for line in text.splitlines(keepends=True):
+        if line.startswith("- key:"):
+            if current_key is not None:
+                blocks[current_key] = "".join(current)
+            current_key = line.split(":", 1)[1].strip()
+            current = [line]
+        elif current_key is None:
+            preamble.append(line)
+        else:
+            current.append(line)
+    if current_key is not None:
+        blocks[current_key] = "".join(current)
+    return "".join(preamble), blocks
+
+
+def _render_project(entry: dict) -> str:
+    """One project entry, rendered in the file's own style."""
+    import yaml
+
+    return yaml.dump([entry], default_flow_style=False, allow_unicode=True,
+                     sort_keys=False)
+
+
+def compose(data: dict, original_text: str, changed_keys: set) -> str:
+    """Rebuild the file, re-rendering ONLY the projects that changed.
+
+    THE DEFECT THIS REPLACES. The writer used to ``yaml.dump`` the WHOLE
+    document. That round-trip is not stable — it reflows block scalars, quoting
+    and line wrapping — so a write that changed NOTHING semantically still
+    produced +2,174 / -1,599 lines (measured 2026-08-21 on the live file), and
+    adding one project rewrote all 165.
+
+    That is not cosmetic. ``args/projects.yaml`` is TRACKED, and
+    ``code_reload.pull_if_safe`` refuses to pull when an incoming file is also
+    locally modified. Every project-card registration edits this file upstream,
+    so a locally-rewritten copy clashes with essentially every merge — and this
+    writer runs on task creation, so the local side is re-dirtied continuously.
+    Measured the same day: the deployment had been frozen 22 commits behind
+    origin/main, blocked by this one file, with every merged fix absent from the
+    running services while every board and CI signal stayed green.
+
+    Preserving unchanged blocks makes the diff proportional to the change, which
+    is what makes it reviewable and committable — and a commit is what clears
+    the block.
+    """
+    preamble, blocks = _split_project_blocks(original_text)
+    if not preamble.strip():
+        preamble = _HEADER + "projects:\n"
+    out = [preamble]
+    for entry in data.get("projects") or []:
+        key = str(entry.get("key") or "").strip()
+        if key and key not in changed_keys and key in blocks:
+            out.append(blocks[key])          # verbatim — never re-rendered
+        else:
+            out.append(_render_project(entry))
+    return "".join(out)
+
+
+def _write_text(text: str) -> None:
+    """Atomic write via temp-file rename."""
+    tmp = tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", dir=_PROJECTS_YAML.parent,
+        prefix=".projects_tmp_", suffix=".yaml", delete=False
+    )
+    try:
+        tmp.write(text)
+        tmp.flush()
+        tmp.close()
+        os.replace(tmp.name, _PROJECTS_YAML)
+    except Exception:
+        try:
+            os.unlink(tmp.name)
+        except Exception:
+            pass
+        raise
+
+
 def _write_yaml(data: dict) -> None:
-    """Atomic write of projects.yaml via temp-file rename."""
+    """Atomic write of projects.yaml — WHOLE-DOCUMENT render.
+
+    Kept for a caller with no original text to preserve. Prefer :func:`compose`
+    + :func:`_write_text`, which keeps unchanged blocks byte-for-byte; see that
+    docstring for why the difference froze a deployment.
+    """
     try:
         import yaml
     except ImportError:
         return
     text = yaml.dump(data, default_flow_style=False, allow_unicode=True, sort_keys=False)
-    # Preserve the CUI header comment
-    header = "# CUI // SP-CTI\n#\n# Auto-managed by tools/project/kanban_project_sync.py\n# Human edits to name/description/briefs are preserved.\n\n"
+    header = _HEADER
     tmp = tempfile.NamedTemporaryFile(
         mode="w", encoding="utf-8", dir=_PROJECTS_YAML.parent,
         prefix=".projects_tmp_", suffix=".yaml", delete=False
@@ -232,7 +329,7 @@ def sync_projects(dry_run: bool = False) -> dict:
     if not db_map:
         return {"new_projects": [], "updated_projects": [], "unchanged": 0, "written": False}
 
-    data, _ = _load_yaml_raw()
+    data, original_text = _load_yaml_raw()
     projects: list = data.get("projects", [])
 
     # Build lookup: prefix -> project entry (by REFERENCE, not index). Indices
@@ -317,7 +414,14 @@ def sync_projects(dry_run: bool = False) -> dict:
     written = False
     if changed and not dry_run:
         data["projects"] = projects
-        _write_yaml(data)
+        # Re-render ONLY the projects this run touched; every other block is
+        # written back byte-for-byte. See compose() for why: a whole-document
+        # yaml.dump reflows the file even when nothing changed, and this file is
+        # tracked, so the churn clashes with every incoming merge and froze the
+        # deployment 22 commits behind.
+        changed_keys = {str(p.get("key") or "").strip() for p in new_projects}
+        changed_keys |= {str(u.get("key") or "").strip() for u in updated_projects}
+        _write_text(compose(data, original_text, changed_keys))
         written = True
 
     return {

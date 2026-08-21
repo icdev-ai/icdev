@@ -156,7 +156,8 @@ def _run_git(args, root, timeout=120):
 
 
 def pull_if_safe(root: Optional[Path] = None, *, runner=None,
-                 min_interval: float = MIN_PULL_INTERVAL_SECONDS) -> Dict[str, Any]:
+                 min_interval: float = MIN_PULL_INTERVAL_SECONDS,
+                 dry_run: bool = False) -> Dict[str, Any]:
     """Fast-forward the working copy, but ONLY when nothing local can be lost.
 
     THE GAP THIS CLOSES. restart_if_code_changed watches mtimes on disk, and a
@@ -180,9 +181,14 @@ def pull_if_safe(root: Optional[Path] = None, *, runner=None,
     global _last_pull
     root = root or _repo_root()
     now = time.time()
-    if now - _last_pull < min_interval:
-        return {"pulled": False, "reason": "throttled"}
-    _last_pull = now
+    # A DRY RUN NEVER CONSUMES THE THROTTLE. `dry_run` exists so a reporter can
+    # ask "would this pull, and if not why" through THIS function rather than
+    # re-deriving the predicate — and a reporter that spent the throttle window
+    # would starve the real updater it exists to describe (autonomy-dep-03).
+    if not dry_run:
+        if now - _last_pull < min_interval:
+            return {"pulled": False, "reason": "throttled"}
+        _last_pull = now
 
     run = runner or (lambda args, **kw: _run_git(args, root, **kw))
     try:
@@ -223,6 +229,12 @@ def pull_if_safe(root: Optional[Path] = None, *, runner=None,
                 "modified: %s", len(clash), ", ".join(clash[:3]))
             return {"pulled": False, "reason": "local changes would be lost",
                     "conflicts": clash}
+
+        if dry_run:
+            # Everything the guard checks has passed. Report that, and touch
+            # nothing.
+            return {"pulled": False, "reason": "would pull", "dry_run": True,
+                    "incoming": len(arriving)}
 
         ff = run(["merge", "--ff-only", "origin/main"])
         if getattr(ff, "returncode", 1) != 0:

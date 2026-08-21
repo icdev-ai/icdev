@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict Qap9jwGnwjCLnf0yuzwfDjdGVcjK3amQNXgGbTCQZ4s0nx7szFJkVZl8XRi6Q9N
+\restrict sYSIUc4R2tnaW2aBCif1I2zNUEkwzGDjC3favDIfzC0keLz5xjLRfHuWSrpsscE
 
 -- Dumped from database version 16.13 (Debian 16.13-1.pgdg12+1)
 -- Dumped by pg_dump version 16.13 (Debian 16.13-1.pgdg12+1)
@@ -33,6 +33,33 @@ CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 
 
 --
+-- Name: bd_audit_immutable(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.bd_audit_immutable() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+                    BEGIN
+                        RAISE EXCEPTION 'Audit records are immutable — NIST AU-6';
+                    END;
+                    $$;
+
+
+--
+-- Name: dd_audit_immutable(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.dd_audit_immutable() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+                    BEGIN
+                        RAISE EXCEPTION 'Audit records are immutable — NIST AU-6';
+                        RETURN NULL;
+                    END;
+                    $$;
+
+
+--
 -- Name: match_memories(public.vector, double precision, integer, text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -59,6 +86,19 @@ $$;
 
 
 --
+-- Name: nc_audit_immutable(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.nc_audit_immutable() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+                    BEGIN
+                        RAISE EXCEPTION 'Audit records are immutable — NIST AU-6';
+                    END;
+                    $$;
+
+
+--
 -- Name: prevent_audit_mutation(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -69,6 +109,19 @@ BEGIN
     RAISE EXCEPTION 'audit_platform is append-only';
 END;
 $$;
+
+
+--
+-- Name: sc_audit_immutable(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sc_audit_immutable() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+                    BEGIN
+                        RAISE EXCEPTION 'Audit records are immutable — NIST AU-6';
+                    END;
+                    $$;
 
 
 SET default_tablespace = '';
@@ -209,6 +262,22 @@ CREATE SEQUENCE geo_spacial.satellite_imagery_metadata_id_seq
 --
 
 ALTER SEQUENCE geo_spacial.satellite_imagery_metadata_id_seq OWNED BY geo_spacial.satellite_imagery_metadata.id;
+
+
+--
+-- Name: a2a_discovery_registry; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.a2a_discovery_registry (
+    agent_id text NOT NULL,
+    name text NOT NULL,
+    host text DEFAULT 'localhost'::text NOT NULL,
+    port integer NOT NULL,
+    capabilities text DEFAULT '[]'::text NOT NULL,
+    status text DEFAULT 'active'::text NOT NULL,
+    registered_at text NOT NULL,
+    last_seen text
+);
 
 
 --
@@ -592,6 +661,56 @@ CREATE TABLE public.aadc_agent_simulations (
 
 
 --
+-- Name: aadc_aimc_model_refs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aadc_aimc_model_refs (
+    id text NOT NULL,
+    aadc_design_id text NOT NULL,
+    aadc_node_id text NOT NULL,
+    aimc_model_id text NOT NULL,
+    aimc_design_id text,
+    notes text DEFAULT ''::text,
+    created_at text NOT NULL
+);
+
+
+--
+-- Name: aadc_artifacts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aadc_artifacts (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    artifact_type text NOT NULL,
+    title text NOT NULL,
+    content_json text DEFAULT '{}'::text,
+    content_md text DEFAULT ''::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: aadc_assessments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aadc_assessments (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    score real DEFAULT 0.0,
+    nist_rmf_score real DEFAULT 0.0,
+    owasp_score real DEFAULT 0.0,
+    omb_compliant integer DEFAULT 0,
+    autonomy_max integer DEFAULT 0,
+    safety_impacting integer DEFAULT 0,
+    rights_impacting integer DEFAULT 0,
+    findings_json text DEFAULT '[]'::text,
+    atlas_threats text DEFAULT '[]'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
 -- Name: aadc_ato_reports; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -610,6 +729,20 @@ CREATE TABLE public.aadc_ato_reports (
 
 
 --
+-- Name: aadc_audit; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aadc_audit (
+    id text NOT NULL,
+    design_id text,
+    action text NOT NULL,
+    detail text DEFAULT ''::text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
 -- Name: aadc_compliance; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -621,6 +754,59 @@ CREATE TABLE public.aadc_compliance (
     created_at text DEFAULT CURRENT_TIMESTAMP,
     classification character varying(50) DEFAULT 'CUI'::character varying
 );
+
+
+--
+-- Name: aadc_confidence_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aadc_confidence_events (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    node_id text,
+    score real NOT NULL,
+    threshold real NOT NULL,
+    decision text NOT NULL,
+    detail text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text NOT NULL
+);
+
+
+--
+-- Name: aadc_cost_estimates; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aadc_cost_estimates (
+    id integer NOT NULL,
+    design_id text NOT NULL,
+    model_breakdown text DEFAULT '{}'::text,
+    total_per_run real DEFAULT 0,
+    total_monthly real DEFAULT 0,
+    runs_per_month integer DEFAULT 1000,
+    optimization_hints text DEFAULT '[]'::text,
+    generated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: aadc_cost_estimates_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.aadc_cost_estimates_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: aadc_cost_estimates_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.aadc_cost_estimates_id_seq OWNED BY public.aadc_cost_estimates.id;
 
 
 --
@@ -673,6 +859,76 @@ CREATE SEQUENCE public.aadc_design_events_id_seq
 --
 
 ALTER SEQUENCE public.aadc_design_events_id_seq OWNED BY public.aadc_design_events.id;
+
+
+--
+-- Name: aadc_design_links; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aadc_design_links (
+    id integer NOT NULL,
+    src_design_id text NOT NULL,
+    tgt_design_id text NOT NULL,
+    link_type text DEFAULT 'calls'::text,
+    link_label text DEFAULT ''::text,
+    auto_detected integer DEFAULT 0,
+    metadata_json text DEFAULT '{}'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: aadc_design_links_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.aadc_design_links_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: aadc_design_links_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.aadc_design_links_id_seq OWNED BY public.aadc_design_links.id;
+
+
+--
+-- Name: aadc_designs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aadc_designs (
+    id text NOT NULL,
+    name text NOT NULL,
+    description text DEFAULT ''::text,
+    domain text DEFAULT ''::text,
+    classification text DEFAULT 'CUI'::text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    template_id text,
+    project_id text,
+    autonomy_max integer DEFAULT 0,
+    safety_impacting integer DEFAULT 0,
+    rights_impacting integer DEFAULT 0,
+    hitl_required integer DEFAULT 0,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: aadc_gate_configs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aadc_gate_configs (
+    design_id text NOT NULL,
+    threshold real DEFAULT 0.70 NOT NULL,
+    low_confidence_action text DEFAULT 'escalate'::text NOT NULL,
+    updated_at text NOT NULL
+);
 
 
 --
@@ -734,6 +990,19 @@ CREATE TABLE public.aadc_lint_reports (
     report_json text DEFAULT '{}'::text NOT NULL,
     created_at text DEFAULT CURRENT_TIMESTAMP,
     classification character varying(50) DEFAULT 'CUI'::character varying
+);
+
+
+--
+-- Name: aadc_loop_links; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aadc_loop_links (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    loop_id text NOT NULL,
+    phase text DEFAULT 'plan'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
 );
 
 
@@ -803,6 +1072,29 @@ CREATE TABLE public.aadc_review_comments (
 
 
 --
+-- Name: aadc_risk_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aadc_risk_items (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    title text DEFAULT ''::text NOT NULL,
+    description text DEFAULT ''::text,
+    risk_category text DEFAULT 'operational'::text,
+    severity text DEFAULT 'MEDIUM'::text,
+    likelihood text DEFAULT 'MEDIUM'::text,
+    impact text DEFAULT 'MEDIUM'::text,
+    status text DEFAULT 'open'::text,
+    owner text DEFAULT ''::text,
+    mitigation text DEFAULT ''::text,
+    finding_id text DEFAULT ''::text,
+    node_id text DEFAULT ''::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
 -- Name: aadc_safety_graphs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -830,6 +1122,118 @@ CREATE TABLE public.aadc_scorecard_snapshots (
     snapshot_json text DEFAULT '{}'::text NOT NULL,
     created_at text DEFAULT CURRENT_TIMESTAMP,
     classification character varying(50) DEFAULT 'CUI'::character varying
+);
+
+
+--
+-- Name: aadc_simulations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aadc_simulations (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    baseline_snap_id text,
+    delta_graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    verdict text DEFAULT 'unknown'::text NOT NULL,
+    findings_json text DEFAULT '[]'::text,
+    diff_json text DEFAULT '{}'::text,
+    created_by text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: aadc_snippets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aadc_snippets (
+    id text NOT NULL,
+    name text NOT NULL,
+    category text DEFAULT 'general'::text,
+    description text DEFAULT ''::text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    node_count integer DEFAULT 0,
+    tags text DEFAULT '[]'::text,
+    is_builtin integer DEFAULT 1,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: aadc_templates; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aadc_templates (
+    id text NOT NULL,
+    name text NOT NULL,
+    category text DEFAULT 'general'::text,
+    description text DEFAULT ''::text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    compliance_badges text DEFAULT '{}'::text,
+    autonomy_max integer DEFAULT 0,
+    tags text DEFAULT '[]'::text,
+    is_builtin integer DEFAULT 1,
+    created_by text DEFAULT 'system'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: aadc_threat_models; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aadc_threat_models (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    stride_json text DEFAULT '[]'::text NOT NULL,
+    atlas_threats text DEFAULT '[]'::text NOT NULL,
+    threat_count integer DEFAULT 0,
+    high_count integer DEFAULT 0,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: aadc_twin_snapshots; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aadc_twin_snapshots (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    label text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    node_count integer DEFAULT 0,
+    edge_count integer DEFAULT 0,
+    created_by text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: aadc_versions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aadc_versions (
+    id text NOT NULL,
+    design_id text,
+    version_number integer DEFAULT 1 NOT NULL,
+    graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    change_summary text DEFAULT ''::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: aadc_workflow_links; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aadc_workflow_links (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    wf_instance_id text NOT NULL,
+    status text DEFAULT 'pending'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    resolved_at text
 );
 
 
@@ -870,6 +1274,20 @@ ALTER SEQUENCE public.abac_decisions_id_seq OWNED BY public.abac_decisions.id;
 
 
 --
+-- Name: ace_agent_workflows; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ace_agent_workflows (
+    id text NOT NULL,
+    instance_id text NOT NULL,
+    name text DEFAULT ''::text NOT NULL,
+    state text DEFAULT 'pending'::text NOT NULL,
+    config_json text DEFAULT '{}'::text NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+
+--
 -- Name: ace_artifacts; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -898,7 +1316,8 @@ CREATE TABLE public.ace_audit_log (
     detail text DEFAULT ''::text NOT NULL,
     actor text DEFAULT 'system'::text NOT NULL,
     classification text DEFAULT 'CUI'::text NOT NULL,
-    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    control_refs text DEFAULT ''::text NOT NULL
 );
 
 
@@ -923,6 +1342,21 @@ ALTER SEQUENCE public.ace_audit_log_id_seq OWNED BY public.ace_audit_log.id;
 
 
 --
+-- Name: ace_coworker_memory; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ace_coworker_memory (
+    id text NOT NULL,
+    role_id text NOT NULL,
+    fact_type text DEFAULT 'observation'::text NOT NULL,
+    content text NOT NULL,
+    confidence real DEFAULT 0.8 NOT NULL,
+    source_task_id text DEFAULT ''::text NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+
+--
 -- Name: ace_coworkers; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -936,8 +1370,78 @@ CREATE TABLE public.ace_coworkers (
     assigned_step text DEFAULT ''::text,
     last_active_at text,
     created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    CONSTRAINT ace_coworkers_state_check CHECK ((state = ANY (ARRAY['idle'::text, 'active'::text, 'busy'::text, 'offline'::text, 'suspended'::text])))
+    trust_score real DEFAULT 0.5,
+    CONSTRAINT ace_coworkers_state_check CHECK ((state = ANY (ARRAY['idle'::text, 'active'::text, 'busy'::text, 'offline'::text, 'suspended'::text, 'working'::text, 'hitl_pending'::text, 'done'::text, 'failed'::text])))
 );
+
+
+--
+-- Name: ace_event_results; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ace_event_results (
+    id integer NOT NULL,
+    event_id integer,
+    role_id text NOT NULL,
+    instance_id text NOT NULL,
+    status text DEFAULT 'dispatched'::text NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+
+--
+-- Name: ace_event_results_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.ace_event_results_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: ace_event_results_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.ace_event_results_id_seq OWNED BY public.ace_event_results.id;
+
+
+--
+-- Name: ace_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ace_events (
+    id integer NOT NULL,
+    topic text NOT NULL,
+    source_canvas text DEFAULT ''::text NOT NULL,
+    source_id text DEFAULT ''::text NOT NULL,
+    payload_json text DEFAULT '{}'::text NOT NULL,
+    processed integer DEFAULT 0 NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+
+--
+-- Name: ace_events_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.ace_events_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: ace_events_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.ace_events_id_seq OWNED BY public.ace_events.id;
 
 
 --
@@ -955,7 +1459,8 @@ CREATE TABLE public.ace_instances (
     created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
     completed_at text,
-    CONSTRAINT ace_instances_state_check CHECK ((state = ANY (ARRAY['pending'::text, 'active'::text, 'paused'::text, 'complete'::text, 'failed'::text, 'cancelled'::text])))
+    webhook_url text,
+    CONSTRAINT ace_instances_state_check CHECK ((state = ANY (ARRAY['assembling'::text, 'pending'::text, 'active'::text, 'paused'::text, 'complete'::text, 'failed'::text, 'cancelled'::text, 'archived'::text])))
 );
 
 
@@ -973,6 +1478,232 @@ CREATE TABLE public.ace_messages (
     metadata_json text DEFAULT '{}'::text NOT NULL,
     created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
+
+
+--
+-- Name: ace_policy_generations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ace_policy_generations (
+    generation_id text NOT NULL,
+    generation_n integer DEFAULT 1 NOT NULL,
+    source_artifacts text DEFAULT '[]'::text NOT NULL,
+    base_config_json text DEFAULT '{}'::text NOT NULL,
+    applied_config_json text DEFAULT '{}'::text NOT NULL,
+    applied_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    subtask_id text,
+    workflow_id text,
+    project_id text,
+    rolled_back_at text,
+    rolled_back_by text,
+    rollback_reason text
+);
+
+
+--
+-- Name: ace_preflight_calibration; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ace_preflight_calibration (
+    topic text NOT NULL,
+    false_positive_rate real DEFAULT 0.0,
+    false_negative_rate real DEFAULT 0.0,
+    total_decisions integer DEFAULT 0,
+    suppressed_keywords text DEFAULT '[]'::text,
+    added_keywords text DEFAULT '[]'::text,
+    authority_topic_active integer DEFAULT 1,
+    updated_at text DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+
+--
+-- Name: ace_preflight_decisions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ace_preflight_decisions (
+    id text NOT NULL,
+    topic text NOT NULL,
+    subtask_id text,
+    workflow_id text,
+    project_id text,
+    prediction text NOT NULL,
+    outcome text,
+    matched_keywords text DEFAULT '[]'::text,
+    risky_keywords text DEFAULT '[]'::text,
+    blocked_at text,
+    resolved_at text,
+    resolution text,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT ace_preflight_decisions_outcome_check CHECK ((outcome = ANY (ARRAY['true_positive'::text, 'false_positive'::text, 'true_negative'::text, 'false_negative'::text, 'unknown'::text]))),
+    CONSTRAINT ace_preflight_decisions_prediction_check CHECK ((prediction = ANY (ARRAY['blocked'::text, 'allowed'::text])))
+);
+
+
+--
+-- Name: ace_qa_failures; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ace_qa_failures (
+    id text NOT NULL,
+    run_id text NOT NULL,
+    test_name text DEFAULT ''::text NOT NULL,
+    spec_file text DEFAULT ''::text NOT NULL,
+    error_message text DEFAULT ''::text NOT NULL,
+    screenshot_path text DEFAULT ''::text NOT NULL,
+    severity text DEFAULT 'medium'::text NOT NULL,
+    kanban_task_id text DEFAULT ''::text NOT NULL,
+    healing_attempted integer DEFAULT 0 NOT NULL,
+    healing_succeeded integer DEFAULT 0 NOT NULL,
+    healed_selector text DEFAULT ''::text NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+
+--
+-- Name: ace_qa_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ace_qa_runs (
+    id text NOT NULL,
+    trigger text DEFAULT ''::text NOT NULL,
+    trigger_ref text DEFAULT ''::text NOT NULL,
+    canvas_filter text DEFAULT ''::text NOT NULL,
+    started_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    completed_at text,
+    status text DEFAULT 'running'::text NOT NULL,
+    total_tests integer DEFAULT 0 NOT NULL,
+    passed integer DEFAULT 0 NOT NULL,
+    failed integer DEFAULT 0 NOT NULL,
+    screenshot_count integer DEFAULT 0 NOT NULL,
+    report_path text DEFAULT ''::text NOT NULL
+);
+
+
+--
+-- Name: ace_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ace_sessions (
+    session_id text NOT NULL,
+    instance_id text NOT NULL,
+    conversation_history jsonb DEFAULT '[]'::jsonb NOT NULL,
+    resume_token text NOT NULL,
+    last_user_message text,
+    last_agent_message text,
+    turn_count integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: ace_skill_candidates; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ace_skill_candidates (
+    id text NOT NULL,
+    role_id text NOT NULL,
+    source_role text DEFAULT ''::text NOT NULL,
+    instance_id text DEFAULT ''::text NOT NULL,
+    candidate_yaml text DEFAULT ''::text NOT NULL,
+    trust_tier text DEFAULT 'yellow'::text NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    sipa_verdict text,
+    sipa_score real,
+    rejection_reason text,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    resolved_at text,
+    CONSTRAINT ace_skill_candidates_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'promoted'::text, 'rejected'::text, 'skipped'::text])))
+);
+
+
+--
+-- Name: ace_step_audit_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ace_step_audit_log (
+    id text NOT NULL,
+    step_id text NOT NULL,
+    tool text NOT NULL,
+    trust_tier text NOT NULL,
+    success integer NOT NULL,
+    skipped integer DEFAULT 0 NOT NULL,
+    error text,
+    duration_ms double precision,
+    created_at text NOT NULL
+);
+
+
+--
+-- Name: ace_team_suggestions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ace_team_suggestions (
+    id text NOT NULL,
+    context_id text DEFAULT ''::text NOT NULL,
+    user_id text DEFAULT 'system'::text NOT NULL,
+    project_id text DEFAULT ''::text NOT NULL,
+    problem_text text DEFAULT ''::text NOT NULL,
+    proposed_roles_json text DEFAULT '[]'::text NOT NULL,
+    sme_gaps_json text DEFAULT '[]'::text NOT NULL,
+    state text DEFAULT 'proposed'::text NOT NULL,
+    instance_id text DEFAULT ''::text NOT NULL,
+    decline_reason text DEFAULT ''::text NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    decided_at text,
+    CONSTRAINT ace_team_suggestions_state_check CHECK ((state = ANY (ARRAY['proposed'::text, 'approved'::text, 'declined'::text, 'expired'::text, 'launched'::text])))
+);
+
+
+--
+-- Name: ace_trust_ledger; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ace_trust_ledger (
+    id text NOT NULL,
+    role_id text NOT NULL,
+    delta real NOT NULL,
+    reason text NOT NULL,
+    new_score real NOT NULL,
+    source_task_id text DEFAULT ''::text NOT NULL,
+    recorded_at text DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+
+--
+-- Name: ace_webhook_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ace_webhook_log (
+    id integer NOT NULL,
+    instance_id text NOT NULL,
+    url text NOT NULL,
+    status_code integer,
+    response text,
+    attempt_count integer DEFAULT 0 NOT NULL,
+    last_attempted_at text,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+
+--
+-- Name: ace_webhook_log_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.ace_webhook_log_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: ace_webhook_log_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.ace_webhook_log_id_seq OWNED BY public.ace_webhook_log.id;
 
 
 --
@@ -2772,7 +3503,9 @@ CREATE TABLE public.ad_quality_scores (
     implied_roe real,
     roe_gap real,
     nav_quadrant text,
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    model_version text,
+    updated_at text
 );
 
 
@@ -3567,7 +4300,8 @@ CREATE TABLE public.ad_ticker_performance (
     p10y real,
     p20y real,
     refreshed_at text DEFAULT now() NOT NULL,
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    is_anomaly integer DEFAULT 0
 );
 
 
@@ -3994,6 +4728,68 @@ CREATE TABLE public.ad_xp_events (
 
 
 --
+-- Name: agent_a2a_tasks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_a2a_tasks (
+    id text NOT NULL,
+    reflex_name text NOT NULL,
+    skill_id text NOT NULL,
+    agent_url text NOT NULL,
+    task_id text NOT NULL,
+    status text DEFAULT 'submitted'::text NOT NULL,
+    input_data text,
+    result text,
+    error text,
+    submitted_at text NOT NULL,
+    updated_at text NOT NULL
+);
+
+
+--
+-- Name: agent_approval_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_approval_log (
+    id integer NOT NULL,
+    decided_at text NOT NULL,
+    session_id text,
+    actor text NOT NULL,
+    tool_name text NOT NULL,
+    tier text NOT NULL,
+    rule text,
+    decision text NOT NULL,
+    reason text,
+    mode text,
+    arg_keys text,
+    input_sha256 text,
+    detail text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: agent_approval_log_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.agent_approval_log_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: agent_approval_log_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.agent_approval_log_id_seq OWNED BY public.agent_approval_log.id;
+
+
+--
 -- Name: agent_benchmark_results; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4058,6 +4854,93 @@ ALTER SEQUENCE public.agent_collaboration_history_id_seq OWNED BY public.agent_c
 
 
 --
+-- Name: agent_coordination; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_coordination (
+    id text NOT NULL,
+    namespace text DEFAULT ''::text NOT NULL,
+    key text NOT NULL,
+    value_json text DEFAULT 'null'::text NOT NULL,
+    posted_by text DEFAULT ''::text NOT NULL,
+    created_at text DEFAULT now() NOT NULL,
+    updated_at text DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: agent_eval_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_eval_runs (
+    id text NOT NULL,
+    run_id text NOT NULL,
+    eval_name text NOT NULL,
+    session_id text,
+    passed integer,
+    expected_outcome text,
+    actual_outcome text,
+    expected_tools_json text,
+    actual_tools_json text,
+    eval_id text,
+    run_at text DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: agent_evals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_evals (
+    id text NOT NULL,
+    session_id text NOT NULL,
+    outcome text DEFAULT ''::text NOT NULL,
+    done integer DEFAULT 0 NOT NULL,
+    turns_used integer DEFAULT 0 NOT NULL,
+    efficiency_score real DEFAULT 0.0 NOT NULL,
+    total_tool_calls integer DEFAULT 0 NOT NULL,
+    error_tool_calls integer DEFAULT 0 NOT NULL,
+    tool_error_rate real DEFAULT 0.0 NOT NULL,
+    unique_tools_json text DEFAULT '[]'::text NOT NULL,
+    tool_precision real DEFAULT 0.0 NOT NULL,
+    total_cost_usd real DEFAULT 0.0 NOT NULL,
+    total_input_tokens integer DEFAULT 0 NOT NULL,
+    total_output_tokens integer DEFAULT 0 NOT NULL,
+    reasoning_coverage real DEFAULT 0.0 NOT NULL,
+    avg_reasoning_chars real DEFAULT 0.0 NOT NULL,
+    has_error_recovery_reasoning integer DEFAULT 0 NOT NULL,
+    plan_stated integer DEFAULT 0 NOT NULL,
+    scope_violations integer DEFAULT 0 NOT NULL,
+    trust_denials integer DEFAULT 0 NOT NULL,
+    llm_grade_json text,
+    reasoning_style text DEFAULT ''::text NOT NULL,
+    graded_at text DEFAULT now() NOT NULL,
+    grading_version text DEFAULT '1.0'::text NOT NULL,
+    session_model_id text DEFAULT ''::text,
+    grader_model_id text DEFAULT ''::text
+);
+
+
+--
+-- Name: agent_execution_traces; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_execution_traces (
+    trace_id text NOT NULL,
+    task_id text NOT NULL,
+    task_type text DEFAULT ''::text NOT NULL,
+    skill_used text DEFAULT ''::text NOT NULL,
+    outcome text DEFAULT 'unknown'::text NOT NULL,
+    events_json text DEFAULT '[]'::text NOT NULL,
+    lesson_pattern text DEFAULT ''::text NOT NULL,
+    improvement_notes text DEFAULT ''::text NOT NULL,
+    started_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    completed_at text DEFAULT ''::text NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+
+--
 -- Name: agent_executions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4099,6 +4982,91 @@ CREATE SEQUENCE public.agent_executions_id_seq
 --
 
 ALTER SEQUENCE public.agent_executions_id_seq OWNED BY public.agent_executions.id;
+
+
+--
+-- Name: agent_findings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_findings (
+    finding_id text NOT NULL,
+    rule_id text NOT NULL,
+    rule_version text NOT NULL,
+    severity text NOT NULL,
+    title text NOT NULL,
+    session_id text,
+    actor text,
+    project_id text,
+    event_ids text DEFAULT '[]'::text NOT NULL,
+    tags text DEFAULT '[]'::text NOT NULL,
+    enforced boolean DEFAULT false NOT NULL,
+    decision text DEFAULT 'observed'::text NOT NULL,
+    tenant_id text DEFAULT ''::text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: agent_hitl_pending; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_hitl_pending (
+    id text NOT NULL,
+    session_id text DEFAULT ''::text NOT NULL,
+    instance_id text DEFAULT ''::text NOT NULL,
+    coworker_id text DEFAULT ''::text NOT NULL,
+    tool_name text DEFAULT ''::text NOT NULL,
+    tool_input_json text DEFAULT '{}'::text NOT NULL,
+    detail text DEFAULT ''::text NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    created_at text DEFAULT now() NOT NULL,
+    resolved_at text,
+    CONSTRAINT agent_hitl_pending_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text, 'timed_out'::text])))
+);
+
+
+--
+-- Name: agent_improvement_artifacts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_improvement_artifacts (
+    artifact_id text NOT NULL,
+    task_type text NOT NULL,
+    skill_used text DEFAULT ''::text NOT NULL,
+    generation_n integer DEFAULT 1 NOT NULL,
+    improvement_text text NOT NULL,
+    composite_score real DEFAULT 0.0 NOT NULL,
+    baseline_score real DEFAULT 0.0 NOT NULL,
+    evidence_traces text DEFAULT '[]'::text NOT NULL,
+    applied_count integer DEFAULT 0 NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    applied_at text,
+    gepa_decision text,
+    gepa_decided_at text
+);
+
+
+--
+-- Name: agent_loop_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_loop_sessions (
+    session_id text NOT NULL,
+    instance_id text DEFAULT ''::text NOT NULL,
+    coworker_id text DEFAULT ''::text NOT NULL,
+    llm_function text DEFAULT ''::text NOT NULL,
+    result_subtype text DEFAULT ''::text NOT NULL,
+    turns integer DEFAULT 0 NOT NULL,
+    total_input_tokens integer DEFAULT 0 NOT NULL,
+    total_output_tokens integer DEFAULT 0 NOT NULL,
+    total_cost_usd real DEFAULT 0.0 NOT NULL,
+    messages_json text DEFAULT '[]'::text NOT NULL,
+    system_prompt text DEFAULT ''::text NOT NULL,
+    created_at text DEFAULT now() NOT NULL,
+    updated_at text DEFAULT now() NOT NULL
+);
 
 
 --
@@ -4209,6 +5177,39 @@ CREATE TABLE public.agent_scoped_memory (
 
 
 --
+-- Name: agent_session_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_session_events (
+    event_id text NOT NULL,
+    session_id text NOT NULL,
+    seq integer NOT NULL,
+    event_type text NOT NULL,
+    occurred_at text NOT NULL,
+    payload_hash text NOT NULL,
+    payload_json text,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    correlation_id text
+);
+
+
+--
+-- Name: agent_session_policy_state; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_session_policy_state (
+    session_id text NOT NULL,
+    state_key text NOT NULL,
+    state_value text,
+    updated_at text,
+    tenant_id text DEFAULT ''::text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
 -- Name: agent_sessions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4221,7 +5222,11 @@ CREATE TABLE public.agent_sessions (
     started_at text,
     last_heartbeat text,
     current_intent text,
-    status text DEFAULT 'active'::text
+    status text DEFAULT 'active'::text,
+    module text,
+    code_version text,
+    code_version_source text,
+    code_dirty integer
 );
 
 
@@ -4344,7 +5349,9 @@ CREATE TABLE public.agent_token_usage (
     duration_ms integer DEFAULT 0,
     cost_estimate_usd real DEFAULT 0.0,
     classification text DEFAULT 'CUI'::text,
-    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    user_id text,
+    api_key_source text DEFAULT 'config'::text
 );
 
 
@@ -4404,6 +5411,24 @@ CREATE TABLE public.agent_trust_scores (
 
 
 --
+-- Name: agent_unattended_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_unattended_sessions (
+    session_id text NOT NULL,
+    unattended integer DEFAULT 0 NOT NULL,
+    source text,
+    actor text,
+    reason text,
+    inbox text,
+    tenant_id text DEFAULT ''::text,
+    classification text DEFAULT 'CUI'::text,
+    set_at text,
+    updated_at text
+);
+
+
+--
 -- Name: agent_vetoes; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4447,6 +5472,26 @@ CREATE SEQUENCE public.agent_vetoes_id_seq
 --
 
 ALTER SEQUENCE public.agent_vetoes_id_seq OWNED BY public.agent_vetoes.id;
+
+
+--
+-- Name: agent_wakes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_wakes (
+    wake_id text NOT NULL,
+    session_id text NOT NULL,
+    kind text NOT NULL,
+    state text NOT NULL,
+    fire_at text,
+    job_id text,
+    event_key text,
+    note text,
+    tenant_id text DEFAULT ''::text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text,
+    updated_at text
+);
 
 
 --
@@ -4868,7 +5913,9 @@ CREATE TABLE public.ai_telemetry (
     classification text DEFAULT 'CUI'::text,
     logged_at text,
     created_at text DEFAULT now() NOT NULL,
-    security_context text DEFAULT 'CUI'::text
+    security_context text DEFAULT 'CUI'::text,
+    cache_creation_input_tokens integer DEFAULT 0 NOT NULL,
+    cache_read_input_tokens integer DEFAULT 0 NOT NULL
 );
 
 
@@ -5067,6 +6114,44 @@ ALTER SEQUENCE public.aiify_posture_snapshots_id_seq OWNED BY public.aiify_postu
 
 
 --
+-- Name: aiify_prd_provenance; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aiify_prd_provenance (
+    id integer NOT NULL,
+    roadmap_id text NOT NULL,
+    phase_id text NOT NULL,
+    ai_boosted integer DEFAULT 0 NOT NULL,
+    generation_model text,
+    citation_valid integer DEFAULT 1 NOT NULL,
+    citation_report jsonb,
+    evidence_sources jsonb,
+    provenance jsonb,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: aiify_prd_provenance_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.aiify_prd_provenance_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: aiify_prd_provenance_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.aiify_prd_provenance_id_seq OWNED BY public.aiify_prd_provenance.id;
+
+
+--
 -- Name: aiify_roadmaps; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5147,6 +6232,16 @@ ALTER SEQUENCE public.aiify_scans_scan_id_seq OWNED BY public.aiify_scans.scan_i
 
 
 --
+-- Name: aiify_schema_migrations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aiify_schema_migrations (
+    version text NOT NULL,
+    applied_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
 -- Name: aiify_scores; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5215,6 +6310,203 @@ CREATE TABLE public.aimc_models (
     metric_value text NOT NULL,
     created_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying
+);
+
+
+--
+-- Name: aiml_artifacts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aiml_artifacts (
+    id text NOT NULL,
+    design_id text,
+    artifact_type text NOT NULL,
+    title text NOT NULL,
+    content_json text DEFAULT '{}'::text,
+    format text DEFAULT 'json'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: aiml_assessments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aiml_assessments (
+    id text NOT NULL,
+    design_id text,
+    framework_id text NOT NULL,
+    framework_name text NOT NULL,
+    findings_json text DEFAULT '[]'::text,
+    score real DEFAULT 0.0,
+    passed integer DEFAULT 0,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: aiml_audit; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aiml_audit (
+    id integer NOT NULL,
+    design_id text,
+    user_id text DEFAULT 'system'::text,
+    action text NOT NULL,
+    detail text DEFAULT ''::text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: aiml_audit_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.aiml_audit_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: aiml_audit_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.aiml_audit_id_seq OWNED BY public.aiml_audit.id;
+
+
+--
+-- Name: aiml_designs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aiml_designs (
+    id text NOT NULL,
+    name text NOT NULL,
+    description text DEFAULT ''::text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}'::text NOT NULL,
+    template_id text,
+    classification text DEFAULT 'CUI'::text,
+    il_level text DEFAULT 'IL4'::text,
+    primary_use_case text DEFAULT ''::text,
+    adaptation_strategy text DEFAULT 'prompt'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: aiml_edges; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aiml_edges (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    source_node_id text NOT NULL,
+    target_node_id text NOT NULL,
+    edge_type text DEFAULT 'data-flow'::text,
+    label text DEFAULT ''::text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: aiml_nodes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aiml_nodes (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    node_type text NOT NULL,
+    label text DEFAULT ''::text,
+    x real DEFAULT 0,
+    y real DEFAULT 0,
+    width real DEFAULT 160,
+    height real DEFAULT 60,
+    classification text DEFAULT 'CUI'::text,
+    properties_json text DEFAULT '{}'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: aiml_simulations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aiml_simulations (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    baseline_snap_id text,
+    delta_graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    verdict text DEFAULT 'unknown'::text NOT NULL,
+    findings_json text DEFAULT '[]'::text,
+    diff_json text DEFAULT '{}'::text,
+    created_by text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: aiml_snippets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aiml_snippets (
+    id text NOT NULL,
+    name text NOT NULL,
+    category text DEFAULT 'general'::text,
+    description text DEFAULT ''::text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    tags text DEFAULT '[]'::text
+);
+
+
+--
+-- Name: aiml_templates; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aiml_templates (
+    id text NOT NULL,
+    name text NOT NULL,
+    category text DEFAULT 'general'::text,
+    description text DEFAULT ''::text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}'::text NOT NULL,
+    il_level text DEFAULT 'IL4'::text,
+    tags text DEFAULT '[]'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: aiml_twin_snapshots; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aiml_twin_snapshots (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    label text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    node_count integer DEFAULT 0,
+    edge_count integer DEFAULT 0,
+    created_by text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: aiml_versions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aiml_versions (
+    id text NOT NULL,
+    design_id text,
+    version_number integer NOT NULL,
+    graph_json text NOT NULL,
+    change_summary text DEFAULT ''::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
 );
 
 
@@ -5743,7 +7035,7 @@ CREATE TABLE public.api_keys (
     expires_at timestamp with time zone,
     last_used_at timestamp with time zone,
     classification character varying(50) DEFAULT 'CUI'::character varying,
-    CONSTRAINT api_keys_status_check CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'revoked'::character varying, 'expired'::character varying])::text[])))
+    CONSTRAINT api_keys_status_check CHECK (((status)::text = ANY (ARRAY[('active'::character varying)::text, ('revoked'::character varying)::text, ('expired'::character varying)::text])))
 );
 
 
@@ -5808,6 +7100,33 @@ CREATE TABLE public.appforge_reflex_state (
     last_error text,
     updated_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying
+);
+
+
+--
+-- Name: approval_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.approval_items (
+    item_id text NOT NULL,
+    session_id text,
+    origin text NOT NULL,
+    tool_name text NOT NULL,
+    tier text NOT NULL,
+    title text NOT NULL,
+    body text,
+    inbox text,
+    state text NOT NULL,
+    resolution text,
+    resolved_by text,
+    resolved_at text,
+    expires_at text,
+    rule text,
+    arg_keys text,
+    input_sha256 text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text
 );
 
 
@@ -6037,6 +7356,20 @@ CREATE TABLE public.attack_graph_nodes (
 
 
 --
+-- Name: audit_chain_genesis; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.audit_chain_genesis (
+    chain_start_id integer NOT NULL,
+    hash_algorithm text DEFAULT 'sha256'::text NOT NULL,
+    note text,
+    tenant_id text DEFAULT ''::text,
+    classification text DEFAULT 'CUI'::text,
+    recorded_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
 -- Name: audit_platform; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -6092,7 +7425,7 @@ CREATE TABLE public.audit_trail (
     hash text,
     previous_hash text,
     signature text,
-    CONSTRAINT audit_trail_event_type_check CHECK ((event_type = ANY (ARRAY['project_created'::text, 'project_updated'::text, 'code_generated'::text, 'code_reviewed'::text, 'code_approved'::text, 'code_rejected'::text, 'test_written'::text, 'test_executed'::text, 'test_passed'::text, 'test_failed'::text, 'security_scan'::text, 'vulnerability_found'::text, 'vulnerability_resolved'::text, 'compliance_check'::text, 'ssp_generated'::text, 'poam_generated'::text, 'stig_checked'::text, 'sbom_generated'::text, 'deployment_initiated'::text, 'deployment_succeeded'::text, 'deployment_failed'::text, 'rollback_executed'::text, 'decision_made'::text, 'approval_granted'::text, 'approval_denied'::text, 'agent_task_submitted'::text, 'agent_task_completed'::text, 'agent_task_failed'::text, 'self_heal_triggered'::text, 'pattern_detected'::text, 'knowledge_recorded'::text, 'config_changed'::text, 'secret_rotated'::text, 'cssp_assessed'::text, 'cssp_report_generated'::text, 'cssp_evidence_collected'::text, 'ir_plan_generated'::text, 'siem_config_generated'::text, 'xacta_sync'::text, 'xacta_sync_completed'::text, 'xacta_export'::text, 'maintenance_audit'::text, 'dependency_scanned'::text, 'vulnerability_checked'::text, 'remediation_applied'::text, 'sla_violation'::text, 'fedramp_assessed'::text, 'cmmc_assessed'::text, 'oscal_generated'::text, 'emass_sync'::text, 'emass_push'::text, 'emass_pull'::text, 'cato_evidence_collected'::text, 'classification_changed'::text, 'crosswalk_mapped'::text, 'pi_compliance_updated'::text, 'model_imported'::text, 'model_synced'::text, 'model_snapshot'::text, 'digital_thread_linked'::text, 'des_assessed'::text, 'reqif_imported'::text, 'xmi_imported'::text, 'code_from_model'::text, 'model_from_code'::text, 'legacy_analyzed'::text, 'migration_assessed'::text, 'migration_planned'::text, 'migration_task_completed'::text, 'migration_code_generated'::text, 'schema_migrated'::text, 'service_extracted'::text, 'strangler_fig_cutover'::text, 'intake_session_created'::text, 'intake_session_resumed'::text, 'intake_session_completed'::text, 'requirement_captured'::text, 'requirement_refined'::text, 'requirement_approved'::text, 'gap_detected'::text, 'ambiguity_detected'::text, 'readiness_scored'::text, 'decomposition_generated'::text, 'document_uploaded'::text, 'document_extracted'::text, 'bdd_criteria_generated'::text, 'boundary_assessed'::text, 'boundary_impact_red'::text, 'boundary_alternative_generated'::text, 'ato_system_registered'::text, 'isa_created'::text, 'isa_expired'::text, 'isa_renewed'::text, 'scrm_assessed'::text, 'cve_triaged'::text, 'cve_impact_propagated'::text, 'supply_chain_risk_escalated'::text, 'simulation_created'::text, 'simulation_completed'::text, 'monte_carlo_completed'::text, 'coa_generated'::text, 'coa_alternative_generated'::text, 'coa_compared'::text, 'coa_selected'::text, 'coa_rejected'::text, 'coa_presented'::text, 'integration_configured'::text, 'integration_sync_push'::text, 'integration_sync_pull'::text, 'integration_sync_error'::text, 'reqif_exported'::text, 'approval_submitted'::text, 'approval_reviewed'::text, 'approval_approved'::text, 'approval_rejected'::text, 'approval_escalated'::text, 'rtm_generated'::text, 'rtm_gap_detected'::text, 'hook_event_logged'::text, 'agent_execution_started'::text, 'agent_execution_completed'::text, 'agent_execution_failed'::text, 'agent_execution_retried'::text, 'nlq_query_executed'::text, 'nlq_query_blocked'::text, 'worktree_created'::text, 'worktree_cleaned'::text, 'gitlab_task_claimed'::text, 'gitlab_task_completed'::text, 'gitlab_task_failed'::text, 'agentic_fitness_assessed'::text, 'child_app_generated'::text, 'agentic_scaffolded'::text, 'agentic_code_generated'::text, 'governance_validated'::text, 'agentic_test_generated'::text, 'fips199_categorized'::text, 'fips200_assessed'::text, 'security_categorization_completed'::text, 'baseline_selected'::text, 'marketplace_asset_published'::text, 'marketplace_asset_installed'::text, 'marketplace_asset_uninstalled'::text, 'marketplace_asset_updated'::text, 'marketplace_asset_deprecated'::text, 'marketplace_asset_revoked'::text, 'marketplace_review_submitted'::text, 'marketplace_review_completed'::text, 'marketplace_scan_completed'::text, 'marketplace_federation_sync'::text, 'marketplace_rating_submitted'::text, 'compliance_detected'::text, 'compliance_confirmed'::text, 'multi_regime_assessed'::text, 'multi_regime_gate_evaluated'::text, 'data_category_assigned'::text, 'data_category_detected'::text, 'framework_applicability_set'::text, 'iso_bridge_mapped'::text, 'cjis_assessed'::text, 'hipaa_assessed'::text, 'hitrust_assessed'::text, 'soc2_assessed'::text, 'pci_dss_assessed'::text, 'iso27001_assessed'::text, 'remote_binding_created'::text, 'remote_binding_provisioned'::text, 'remote_binding_revoked'::text, 'remote_command_received'::text, 'remote_command_rejected'::text, 'remote_command_completed'::text, 'remote_response_filtered'::text, 'spec_quality_check'::text, 'spec_consistency_check'::text, 'constitution_added'::text, 'constitution_removed'::text, 'constitution_defaults_loaded'::text, 'clarification_analyzed'::text, 'spec.init'::text, 'spec.register'::text, 'heartbeat_check_warning'::text, 'heartbeat_check_critical'::text, 'auto_resolution_started'::text, 'auto_resolution_completed'::text, 'auto_resolution_failed'::text, 'auto_resolution_escalated'::text, 'critique_session_created'::text, 'critique_completed'::text, 'critique_revision_requested'::text])))
+    CONSTRAINT audit_trail_event_type_check CHECK ((event_type = ANY (ARRAY['project_created'::text, 'project_updated'::text, 'code_generated'::text, 'code_reviewed'::text, 'code_approved'::text, 'code_rejected'::text, 'test_written'::text, 'test_executed'::text, 'test_passed'::text, 'test_failed'::text, 'security_scan'::text, 'vulnerability_found'::text, 'vulnerability_resolved'::text, 'compliance_check'::text, 'ssp_generated'::text, 'poam_generated'::text, 'stig_checked'::text, 'sbom_generated'::text, 'sbom_revised'::text, 'sbom_corrected'::text, 'migration_canvas'::text, 'supplemental_state'::text, 'deployment_initiated'::text, 'deployment_succeeded'::text, 'deployment_failed'::text, 'rollback_executed'::text, 'decision_made'::text, 'approval_granted'::text, 'approval_denied'::text, 'agent_task_submitted'::text, 'agent_task_completed'::text, 'agent_task_failed'::text, 'self_heal_triggered'::text, 'pattern_detected'::text, 'knowledge_recorded'::text, 'config_changed'::text, 'secret_rotated'::text, 'intake_session_created'::text, 'intake_session_resumed'::text, 'intake_session_completed'::text, 'requirement_captured'::text, 'requirement_refined'::text, 'requirement_approved'::text, 'gap_detected'::text, 'ambiguity_detected'::text, 'readiness_scored'::text, 'complexity_scored'::text, 'decomposition_generated'::text, 'document_uploaded'::text, 'document_extracted'::text, 'bdd_criteria_generated'::text, 'boundary_assessed'::text, 'boundary_impact_red'::text, 'boundary_alternative_generated'::text, 'ato_system_registered'::text, 'isa_created'::text, 'isa_expired'::text, 'isa_renewed'::text, 'scrm_assessed'::text, 'cve_triaged'::text, 'cve_impact_propagated'::text, 'supply_chain_risk_escalated'::text, 'simulation_created'::text, 'simulation_completed'::text, 'monte_carlo_completed'::text, 'coa_generated'::text, 'coa_alternative_generated'::text, 'coa_compared'::text, 'coa_selected'::text, 'coa_rejected'::text, 'coa_presented'::text, 'integration_configured'::text, 'integration_sync_push'::text, 'integration_sync_pull'::text, 'integration_sync_error'::text, 'reqif_exported'::text, 'approval_submitted'::text, 'approval_reviewed'::text, 'approval_approved'::text, 'approval_rejected'::text, 'approval_escalated'::text, 'rtm_generated'::text, 'rtm_gap_detected'::text, 'hook_event_logged'::text, 'agent_execution_started'::text, 'agent_execution_completed'::text, 'agent_execution_failed'::text, 'agent_execution_retried'::text, 'nlq_query_executed'::text, 'nlq_query_blocked'::text, 'worktree_created'::text, 'worktree_cleaned'::text, 'gitlab_task_claimed'::text, 'gitlab_task_completed'::text, 'gitlab_task_failed'::text, 'bedrock_invoked'::text, 'bedrock_fallback'::text, 'bedrock_rate_limited'::text, 'workflow_created'::text, 'workflow_completed'::text, 'workflow_failed'::text, 'subtask_dispatched'::text, 'subtask_completed'::text, 'subtask_failed'::text, 'agent_health_stale'::text, 'agent_veto_issued'::text, 'agent_veto_overridden'::text, 'agent_collaboration_started'::text, 'agent_collaboration_completed'::text, 'agent_message_sent'::text, 'agent_memory_stored'::text, 'agent_memory_recalled'::text, 'agent_escalation_created'::text, 'remote_binding_created'::text, 'remote_binding_provisioned'::text, 'remote_binding_revoked'::text, 'remote_command_received'::text, 'remote_command_rejected'::text, 'remote_command_completed'::text, 'remote_response_filtered'::text, 'spec_quality_check'::text, 'spec_consistency_check'::text, 'constitution_added'::text, 'constitution_removed'::text, 'constitution_defaults_loaded'::text, 'clarification_analyzed'::text, 'spec.init'::text, 'spec.register'::text, 'heartbeat_check_warning'::text, 'heartbeat_check_critical'::text, 'auto_resolution_started'::text, 'auto_resolution_completed'::text, 'auto_resolution_failed'::text, 'auto_resolution_escalated'::text, 'translation.job_created'::text, 'translation.job_completed'::text, 'translation.job_failed'::text, 'translation.extract'::text, 'translation.type_check'::text, 'translation.unit_translated'::text, 'translation.unit_mocked'::text, 'translation.unit_failed'::text, 'translation.repair_attempted'::text, 'translation.repair_succeeded'::text, 'translation.validation_passed'::text, 'translation.validation_failed'::text, 'translation.compliance_checked'::text, 'translation.assembly_completed'::text, 'chat.context_created'::text, 'chat.context_closed'::text, 'chat.context_archived'::text, 'chat.message_sent'::text, 'chat.message_received'::text, 'chat.intervention_requested'::text, 'chat.intervention_applied'::text, 'chat.agent_loop_started'::text, 'chat.agent_loop_completed'::text, 'chat.agent_loop_error'::text, 'extension.registered'::text, 'extension.unregistered'::text, 'extension.dispatched'::text, 'extension.completed'::text, 'extension.error'::text, 'extension.timeout'::text, 'memory.consolidation_checked'::text, 'memory.consolidation_executed'::text, 'memory.consolidation_skipped'::text, 'trace.span_exported'::text, 'trace.batch_exported'::text, 'prov.entity_created'::text, 'prov.activity_recorded'::text, 'prov.relation_established'::text, 'shap.analysis_completed'::text, 'shap.analysis_failed'::text, 'xai.assessment_completed'::text, 'xai.gate_evaluated'::text, 'critique_session_created'::text, 'critique_completed'::text, 'critique_revision_requested'::text, 'session.purpose_declared'::text, 'child_app_generated'::text, 'child_app_registered'::text, 'review_board.scan_completed'::text, 'review_board.finding_created'::text, 'review_board.remediation_completed'::text, 'review_board.remediation_failed'::text, 'review_board.escalation_created'::text, 'review_board.health_scored'::text, 'review_board.circuit_breaker_tripped'::text, 'review_board.report_generated'::text, 'openclaw_skill_imported'::text, 'openclaw_skill_promoted'::text, 'openclaw_skill_rejected'::text, 'openclaw_skill_exported'::text, 'openclaw_export_approved'::text, 'openclaw_export_rejected'::text, 'openclaw_quarantine_expired'::text, 'workflow_replay_started'::text, 'workflow_replay_completed'::text, 'workflow_replay_failed'::text, 'workflow_step_skipped'::text, 'workflow_resume_point_identified'::text, 'finding_approval'::text, 'poam.bulk_revert'::text, 'poam.bulk_remediate'::text, 'poam.bulk_file_github_issues'::text, 'poam.auto_remediate.remediated'::text, 'poam.auto_remediate.approved'::text, 'poam.auto_remediate.skipped'::text, 'poam.auto_remediate.failed'::text, 'cross_agency_transfer_initiated'::text, 'cross_agency_transfer_completed'::text, 'cross_agency_transfer_failed'::text, 'cross_agency_transfer_rejected'::text, 'pir_alert_generated'::text, 'code.validation'::text, 'pipeline.run_started'::text, 'pipeline.run_completed'::text, 'pipeline.run_failed'::text, 'pipeline.confidence_gate_passed'::text, 'pipeline.confidence_gate_failed'::text, 'pipeline.output_validated'::text, 'pipeline.output_rejected'::text, 'integrity_promoted'::text, 'integrity_rejected'::text, 'govcon.ai_clause'::text, 'govcon.amendment'::text, 'govcon.award_tracking'::text, 'govcon.capability_map'::text, 'govcon.capture_strategy'::text, 'govcon.clause_risk'::text, 'govcon.cluster'::text, 'govcon.cmmc_supply_chain'::text, 'govcon.color_review'::text, 'govcon.compliance_matrix'::text, 'govcon.extract'::text, 'govcon.far_dfars_verification'::text, 'govcon.gap_analysis'::text, 'govcon.key_personnel'::text, 'govcon.knowledge_base'::text, 'govcon.lifecycle'::text, 'govcon.pipeline'::text, 'govcon.procurement_vehicle'::text, 'govcon.program_bridge'::text, 'govcon.question_export'::text, 'govcon.question_generator'::text, 'govcon.reflex_sandbox'::text, 'govcon.response_draft'::text, 'govcon.scan'::text, 'govcon.telco_rfp'::text, 'govcon.win_theme'::text, 'benchmark.store'::text, 'bid_scoring.calibrate'::text, 'bid_scoring.compute_weights'::text, 'blueprint.exported'::text, 'blueprint.generated'::text, 'capability.enrich'::text, 'cost_volume.generate'::text, 'gsa_rate.add'::text, 'gsa_rate.seed'::text, 'idiq.team_created'::text, 'igce.add_line'::text, 'igce.calibrate'::text, 'igce.category_updated'::text, 'igce.created'::text, 'igce.generate'::text, 'igce.updated'::text, 'lcat.store'::text, 'market_rate.add'::text, 'procurement.created'::text, 'procurement.linked_to_initiative'::text, 'proposal.maturity_assessed'::text, 'pwin.compute'::text, 'quote.created'::text, 'talent.add_posting'::text, 'talent.velocity'::text, 'teaming.add_partner'::text, 'teaming.oci_screen'::text, 'teaming.score_partner'::text, 'llm.context_compressed'::text, 'sbom.distributed'::text, 'sbom.distribution_denied'::text, 'dic.hitl_decision'::text, 'dic.ssp_fragment.review'::text, 'awareness.restore_act'::text])))
 );
 
 
@@ -6487,6 +7820,283 @@ ALTER SEQUENCE public.bayesian_teaching_scores_id_seq OWNED BY public.bayesian_t
 
 
 --
+-- Name: bd_alerts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bd_alerts (
+    id text NOT NULL,
+    design_id text,
+    isa_id text,
+    alert_type text NOT NULL,
+    severity text DEFAULT 'medium'::text,
+    days_until_expiry integer,
+    message text NOT NULL,
+    acknowledged integer DEFAULT 0,
+    acknowledged_by text DEFAULT ''::text,
+    acknowledged_at text DEFAULT ''::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: bd_assessments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bd_assessments (
+    id text NOT NULL,
+    design_id text,
+    assessment_type text DEFAULT 'full'::text NOT NULL,
+    findings_json text DEFAULT '[]'::text,
+    score real DEFAULT 0,
+    grade text DEFAULT 'N/A'::text,
+    cat1_findings integer DEFAULT 0,
+    cat2_findings integer DEFAULT 0,
+    cat3_findings integer DEFAULT 0,
+    nist_coverage_json text DEFAULT '{}'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: bd_audit; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bd_audit (
+    id integer NOT NULL,
+    design_id text,
+    "user" text DEFAULT ''::text,
+    action text NOT NULL,
+    detail text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: bd_audit_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.bd_audit_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: bd_audit_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.bd_audit_id_seq OWNED BY public.bd_audit.id;
+
+
+--
+-- Name: bd_authorized_components; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bd_authorized_components (
+    id text NOT NULL,
+    component_type text DEFAULT 'airgap_bundle'::text NOT NULL,
+    name text NOT NULL,
+    version text DEFAULT ''::text,
+    bundle_path text DEFAULT ''::text,
+    sha256_manifest text DEFAULT ''::text,
+    sbom_path text DEFAULT ''::text,
+    impact_levels text DEFAULT '[]'::text,
+    file_count integer DEFAULT 0,
+    sbom_count integer DEFAULT 0,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    registered_by text DEFAULT 'icdev-airgap-engine'::text,
+    status text DEFAULT 'authorized'::text,
+    notes text DEFAULT ''::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT bd_authorized_components_status_check CHECK ((status = ANY (ARRAY['authorized'::text, 'revoked'::text, 'pending'::text])))
+);
+
+
+--
+-- Name: bd_collab_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bd_collab_sessions (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    user_id text NOT NULL,
+    user_name text DEFAULT ''::text NOT NULL,
+    color text DEFAULT '#3498db'::text NOT NULL,
+    joined_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    last_seen text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    is_active integer DEFAULT 1 NOT NULL
+);
+
+
+--
+-- Name: bd_isa_tracker; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bd_isa_tracker (
+    id text NOT NULL,
+    design_id text,
+    interconnection_id text NOT NULL,
+    isa_doc_id text,
+    status text DEFAULT 'draft'::text,
+    expiry_date text,
+    review_date text,
+    owner text,
+    notes text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    isa_expiry_date text
+);
+
+
+--
+-- Name: bd_snippets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bd_snippets (
+    id text NOT NULL,
+    name text NOT NULL,
+    category text,
+    description text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}'::text NOT NULL,
+    tags text DEFAULT '[]'::text
+);
+
+
+--
+-- Name: bd_templates; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bd_templates (
+    id text NOT NULL,
+    name text NOT NULL,
+    category text,
+    description text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}'::text NOT NULL,
+    tags text DEFAULT '[]'::text
+);
+
+
+--
+-- Name: bd_versions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bd_versions (
+    id text NOT NULL,
+    design_id text,
+    version_number integer NOT NULL,
+    graph_json text DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}'::text NOT NULL,
+    change_summary text DEFAULT ''::text,
+    user_id text DEFAULT ''::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: bdc_runbooks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bdc_runbooks (
+    id text NOT NULL,
+    design_id text,
+    title text NOT NULL,
+    trigger_event text DEFAULT 'boundary_breach'::text NOT NULL,
+    severity text DEFAULT 'high'::text,
+    description text DEFAULT ''::text,
+    steps_json text DEFAULT '[]'::text,
+    owner text DEFAULT ''::text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: bdc_sops; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bdc_sops (
+    id text NOT NULL,
+    title text NOT NULL,
+    sop_type text DEFAULT 'custom'::text NOT NULL,
+    description text DEFAULT ''::text,
+    purpose text DEFAULT ''::text,
+    scope text DEFAULT ''::text,
+    steps text DEFAULT '[]'::text,
+    nist_controls text DEFAULT '[]'::text,
+    owner text DEFAULT ''::text,
+    reviewer text DEFAULT ''::text,
+    approval_status text DEFAULT 'draft'::text NOT NULL,
+    version text DEFAULT '1.0'::text,
+    next_review_date text DEFAULT ''::text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    approved_by text DEFAULT ''::text,
+    approved_at text DEFAULT ''::text,
+    rejected_reason text DEFAULT ''::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: bi_dashboards; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bi_dashboards (
+    id text NOT NULL,
+    title text NOT NULL,
+    owner_id text DEFAULT ''::text,
+    tiles_json text DEFAULT '[]'::text,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    tenant_id text DEFAULT 'default'::text,
+    classification text DEFAULT 'CUI'::text
+);
+
+
+--
+-- Name: bi_data_sources; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bi_data_sources (
+    id text NOT NULL,
+    name text NOT NULL,
+    source_type text DEFAULT 'upload'::text,
+    columns_json text DEFAULT '[]'::text,
+    dimensions_json text DEFAULT '[]'::text,
+    measures_json text DEFAULT '[]'::text,
+    rows_json text DEFAULT '[]'::text,
+    row_count integer DEFAULT 0,
+    created_at timestamp with time zone DEFAULT now(),
+    tenant_id text DEFAULT 'default'::text,
+    classification text DEFAULT 'CUI'::text,
+    CONSTRAINT bi_data_sources_source_type_check CHECK ((source_type = ANY (ARRAY['upload'::text, 'iqe'::text])))
+);
+
+
+--
+-- Name: bi_generation_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bi_generation_log (
+    id text NOT NULL,
+    dashboard_id text DEFAULT ''::text,
+    prompt text NOT NULL,
+    structure_json text DEFAULT '{}'::text,
+    method text DEFAULT 'heuristic'::text,
+    accepted integer DEFAULT 1,
+    created_at timestamp with time zone DEFAULT now(),
+    tenant_id text DEFAULT 'default'::text,
+    classification text DEFAULT 'CUI'::text,
+    CONSTRAINT bi_generation_log_method_check CHECK ((method = ANY (ARRAY['llm'::text, 'llm_retry'::text, 'heuristic'::text])))
+);
+
+
+--
 -- Name: blueprint_digests; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -6505,6 +8115,526 @@ CREATE TABLE public.blueprint_digests (
     classification character varying(50) DEFAULT 'CUI'::character varying,
     CONSTRAINT blueprint_digests_entity_type_check CHECK ((entity_type = ANY (ARRAY['genome'::text, 'marketplace_asset'::text, 'child_app'::text, 'capability'::text, 'propagation'::text]))),
     CONSTRAINT blueprint_digests_verification_result_check CHECK ((verification_result = ANY (ARRAY['pass'::text, 'fail'::text, NULL::text])))
+);
+
+
+--
+-- Name: bom_architecture_components; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bom_architecture_components (
+    component_id text NOT NULL,
+    project_id text NOT NULL,
+    source_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    baseline_label text DEFAULT ''::text NOT NULL,
+    node_id text DEFAULT ''::text NOT NULL,
+    label text DEFAULT ''::text NOT NULL,
+    label_norm text DEFAULT ''::text NOT NULL,
+    function_slug text DEFAULT ''::text NOT NULL,
+    zone text DEFAULT ''::text NOT NULL,
+    shape text DEFAULT ''::text NOT NULL,
+    claimed_qty numeric(18,4) DEFAULT 1 NOT NULL,
+    locator text DEFAULT ''::text NOT NULL,
+    raw_text text DEFAULT ''::text NOT NULL
+);
+
+
+--
+-- Name: bom_audit; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bom_audit (
+    audit_id text NOT NULL,
+    project_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    actor text DEFAULT ''::text NOT NULL,
+    action text NOT NULL,
+    entity_type text DEFAULT ''::text NOT NULL,
+    entity_id text DEFAULT ''::text NOT NULL,
+    before_json jsonb,
+    after_json jsonb,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: bom_cells; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bom_cells (
+    cell_id text NOT NULL,
+    source_id text NOT NULL,
+    project_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    sheet text DEFAULT ''::text NOT NULL,
+    locator text NOT NULL,
+    row_idx integer,
+    col_idx integer,
+    value_text text,
+    value_num numeric(18,4),
+    formula text,
+    number_format text
+);
+
+
+--
+-- Name: bom_cluster_members; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bom_cluster_members (
+    cluster_id text NOT NULL,
+    line_id text NOT NULL,
+    project_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    role text DEFAULT 'duplicate'::text NOT NULL,
+    match_confidence real DEFAULT 0.0 NOT NULL,
+    matched_by text DEFAULT 'exact_part'::text NOT NULL,
+    CONSTRAINT bom_cluster_members_matched_by_check CHECK ((matched_by = ANY (ARRAY['exact_part'::text, 'trigram'::text, 'function'::text, 'llm'::text, 'human'::text]))),
+    CONSTRAINT bom_cluster_members_role_check CHECK ((role = ANY (ARRAY['winner'::text, 'duplicate'::text, 'variant'::text, 'excluded'::text])))
+);
+
+
+--
+-- Name: bom_clusters; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bom_clusters (
+    cluster_id text NOT NULL,
+    project_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    function_slug text DEFAULT ''::text NOT NULL,
+    winner_line_id text,
+    qty_policy text DEFAULT 'max'::text NOT NULL,
+    resolved_qty numeric(18,4),
+    resolved_unit_price numeric(18,4),
+    resolved_price_basis text DEFAULT 'unknown'::text NOT NULL,
+    price_min numeric(18,4),
+    price_max numeric(18,4),
+    status text DEFAULT 'pending_review'::text NOT NULL,
+    match_confidence real DEFAULT 0.0 NOT NULL,
+    rationale text DEFAULT ''::text NOT NULL,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT bom_clusters_resolved_price_basis_check CHECK ((resolved_price_basis = ANY (ARRAY['quoted'::text, 'street'::text, 'msrp'::text, 'budgetary'::text, 'rom'::text, 'unknown'::text]))),
+    CONSTRAINT bom_clusters_status_check CHECK ((status = ANY (ARRAY['parsed'::text, 'clustered'::text, 'pending_review'::text, 'accepted'::text, 'overridden'::text, 'rejected'::text, 'suppressed'::text])))
+);
+
+
+--
+-- Name: bom_coverage; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bom_coverage (
+    coverage_id text NOT NULL,
+    project_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    baseline_label text DEFAULT ''::text NOT NULL,
+    component_id text,
+    line_id text,
+    direction text NOT NULL,
+    matched_by text DEFAULT ''::text NOT NULL,
+    confidence real DEFAULT 0.0 NOT NULL
+);
+
+
+--
+-- Name: bom_findings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bom_findings (
+    finding_id text NOT NULL,
+    project_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    finding_type text NOT NULL,
+    kind text DEFAULT 'defect'::text NOT NULL,
+    severity text DEFAULT 'medium'::text NOT NULL,
+    title text NOT NULL,
+    detail text DEFAULT ''::text NOT NULL,
+    options_json jsonb,
+    impact_usd numeric(18,4),
+    detector text DEFAULT 'deterministic'::text NOT NULL,
+    evidence_json jsonb,
+    disposition text DEFAULT 'open'::text NOT NULL,
+    disposed_by text,
+    disposed_at timestamp without time zone,
+    disposition_note text DEFAULT ''::text NOT NULL,
+    fingerprint text DEFAULT ''::text NOT NULL,
+    first_seen_snapshot text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT bom_findings_detector_check CHECK ((detector = ANY (ARRAY['deterministic'::text, 'llm_assisted'::text]))),
+    CONSTRAINT bom_findings_disposition_check CHECK ((disposition = ANY (ARRAY['open'::text, 'accepted'::text, 'waived'::text, 'fixed'::text, 'not_an_issue'::text]))),
+    CONSTRAINT bom_findings_finding_type_check CHECK ((finding_type = ANY (ARRAY['intra_doc_double_count'::text, 'hardcoded_rollup'::text, 'stale_rollup'::text, 'unpriced_line_zeroed'::text, 'arithmetic_mismatch'::text, 'price_basis_undeclared'::text, 'price_basis_mismatch'::text, 'capex_opex_conflation'::text, 'duplicate_representation'::text, 'asset_count_disputed'::text, 'inventory_incomplete'::text, 'unbooked_asset'::text, 'unverified_existing_asset'::text, 'unfunded_refresh_reserve'::text, 'no_replacement_price_basis'::text, 'schedule_blocker'::text, 'unblocks_now'::text, 'sequencing_absent'::text, 'unfunded_component'::text, 'unjustified_line'::text, 'scope_declared_unpriced'::text, 'scope_declared_undesigned'::text, 'scope_priced_only_by_weak_source'::text, 'baseline_asset_gap'::text, 'open_decision'::text, 'price_spread'::text, 'authoritative_conflict'::text, 'reopened_decision'::text, 'hidden_content'::text, 'deleted_content'::text, 'unresolved_placeholder'::text, 'budget_variance'::text, 'taxonomy_divergence'::text]))),
+    CONSTRAINT bom_findings_kind_check CHECK ((kind = ANY (ARRAY['defect'::text, 'risk'::text, 'decision'::text, 'opportunity'::text]))),
+    CONSTRAINT bom_findings_severity_check CHECK ((severity = ANY (ARRAY['critical'::text, 'high'::text, 'medium'::text, 'low'::text, 'info'::text])))
+);
+
+
+--
+-- Name: bom_inventory_assets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bom_inventory_assets (
+    asset_id text NOT NULL,
+    project_id text NOT NULL,
+    source_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    serial text NOT NULL,
+    manufacturer_norm text DEFAULT ''::text NOT NULL,
+    model_raw text DEFAULT ''::text NOT NULL,
+    model_key text DEFAULT ''::text NOT NULL,
+    warranty_end timestamp without time zone,
+    locator text DEFAULT ''::text NOT NULL,
+    raw_text text DEFAULT ''::text NOT NULL
+);
+
+
+--
+-- Name: bom_line_blocks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bom_line_blocks (
+    block_id text NOT NULL,
+    project_id text NOT NULL,
+    line_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    block_key text NOT NULL,
+    block_type text NOT NULL
+);
+
+
+--
+-- Name: bom_lines; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bom_lines (
+    line_id text NOT NULL,
+    line_hash text NOT NULL,
+    project_id text NOT NULL,
+    source_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    source_document text DEFAULT ''::text NOT NULL,
+    source_sheet text DEFAULT ''::text NOT NULL,
+    source_locator text DEFAULT ''::text NOT NULL,
+    raw_text text DEFAULT ''::text NOT NULL,
+    description_raw text DEFAULT ''::text NOT NULL,
+    description_norm text DEFAULT ''::text NOT NULL,
+    manufacturer_raw text DEFAULT ''::text NOT NULL,
+    manufacturer_norm text DEFAULT ''::text NOT NULL,
+    part_number_raw text,
+    part_number_norm text,
+    function_slug text DEFAULT ''::text NOT NULL,
+    category_id text,
+    category_confidence real DEFAULT 0.0 NOT NULL,
+    qty numeric(18,4),
+    uom text DEFAULT ''::text NOT NULL,
+    unit_price numeric(18,4),
+    extended_price numeric(18,4),
+    computed_extended numeric(18,4),
+    discount_pct numeric(9,6),
+    price_basis text DEFAULT 'unknown'::text NOT NULL,
+    price_missing boolean DEFAULT false NOT NULL,
+    source_formula text,
+    value_is_formula boolean DEFAULT false NOT NULL,
+    is_recurring boolean DEFAULT false NOT NULL,
+    recurrence_period text DEFAULT 'one_time'::text NOT NULL,
+    term_months integer,
+    cost_type text DEFAULT 'unknown'::text NOT NULL,
+    option_group_id text,
+    option_label text,
+    is_alternative boolean DEFAULT false NOT NULL,
+    wave_label text DEFAULT ''::text NOT NULL,
+    wave_order integer DEFAULT 100 NOT NULL,
+    unblocks text DEFAULT ''::text NOT NULL,
+    lead_time_days integer,
+    needed_by timestamp without time zone,
+    is_enabler boolean DEFAULT false NOT NULL,
+    line_kind text DEFAULT 'extracted'::text NOT NULL,
+    derivation text DEFAULT ''::text NOT NULL,
+    existing_asset boolean DEFAULT false NOT NULL,
+    asset_disposition text DEFAULT 'unknown'::text NOT NULL,
+    claimed_qty numeric(18,4),
+    verified_qty numeric(18,4),
+    warranty_end timestamp without time zone,
+    replacement_unit_price numeric(18,4),
+    refresh_reserve_usd numeric(18,4),
+    avoided_capex_usd numeric(18,4),
+    cluster_id text,
+    role_in_cluster text,
+    confidence real DEFAULT 1.0 NOT NULL,
+    status text DEFAULT 'parsed'::text NOT NULL,
+    suppressed_by text,
+    superseded_by text,
+    notes text DEFAULT ''::text NOT NULL,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT bom_lines_asset_disposition_check CHECK ((asset_disposition = ANY (ARRAY['repurpose'::text, 'refresh_reserve'::text, 'replace_now'::text, 'retire'::text, 'unknown'::text]))),
+    CONSTRAINT bom_lines_cost_type_check CHECK ((cost_type = ANY (ARRAY['capex'::text, 'opex'::text, 'unknown'::text]))),
+    CONSTRAINT bom_lines_line_kind_check CHECK ((line_kind = ANY (ARRAY['extracted'::text, 'reserve'::text, 'contingency'::text, 'placeholder'::text]))),
+    CONSTRAINT bom_lines_price_basis_check CHECK ((price_basis = ANY (ARRAY['quoted'::text, 'street'::text, 'msrp'::text, 'budgetary'::text, 'rom'::text, 'unknown'::text]))),
+    CONSTRAINT bom_lines_recurrence_period_check CHECK ((recurrence_period = ANY (ARRAY['one_time'::text, 'month'::text, 'quarter'::text, 'year'::text]))),
+    CONSTRAINT bom_lines_role_in_cluster_check CHECK ((role_in_cluster = ANY (ARRAY['winner'::text, 'duplicate'::text, 'variant'::text, 'excluded'::text, ''::text]))),
+    CONSTRAINT bom_lines_status_check CHECK ((status = ANY (ARRAY['parsed'::text, 'clustered'::text, 'pending_review'::text, 'accepted'::text, 'overridden'::text, 'rejected'::text, 'suppressed'::text])))
+);
+
+
+--
+-- Name: bom_match_decisions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bom_match_decisions (
+    decision_id text NOT NULL,
+    project_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    pair_key text NOT NULL,
+    a_line_hash text NOT NULL,
+    b_line_hash text NOT NULL,
+    verdict text NOT NULL,
+    canonical_line_hash text,
+    confidence real DEFAULT 0.0 NOT NULL,
+    decided_by text DEFAULT 'llm'::text NOT NULL,
+    decided_by_user text,
+    reason text DEFAULT ''::text NOT NULL,
+    llm_proposal_json jsonb,
+    decided_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT bom_match_decisions_decided_by_check CHECK ((decided_by = ANY (ARRAY['human'::text, 'llm'::text, 'deterministic'::text]))),
+    CONSTRAINT bom_match_decisions_verdict_check CHECK ((verdict = ANY (ARRAY['same_item'::text, 'same_function_different_item'::text, 'alternative_of'::text, 'component_of'::text, 'different'::text, 'insufficient_evidence'::text])))
+);
+
+
+--
+-- Name: bom_option_groups; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bom_option_groups (
+    group_id text NOT NULL,
+    project_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    label text DEFAULT ''::text NOT NULL,
+    scope text DEFAULT 'line'::text NOT NULL,
+    detected_by text DEFAULT 'human'::text NOT NULL,
+    selected_option_label text,
+    selected_by text,
+    selected_at timestamp without time zone,
+    min_total numeric(18,4),
+    max_total numeric(18,4),
+    rationale text DEFAULT ''::text NOT NULL,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT bom_option_groups_detected_by_check CHECK ((detected_by = ANY (ARRAY['heading'::text, 'versus'::text, 'structural'::text, 'baseline'::text, 'human'::text]))),
+    CONSTRAINT bom_option_groups_scope_check CHECK ((scope = ANY (ARRAY['line'::text, 'table'::text, 'architecture'::text])))
+);
+
+
+--
+-- Name: bom_option_members; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bom_option_members (
+    member_id text NOT NULL,
+    group_id text NOT NULL,
+    project_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    option_label text NOT NULL,
+    line_id text,
+    source_id text
+);
+
+
+--
+-- Name: bom_projects; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bom_projects (
+    project_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    name text NOT NULL,
+    intent_text text DEFAULT ''::text NOT NULL,
+    winner_policy_json jsonb,
+    budget_floor numeric(18,4),
+    budget_ceiling numeric(18,4),
+    currency text DEFAULT 'USD'::text NOT NULL,
+    active_taxonomy_id text,
+    selected_baseline text,
+    status text DEFAULT 'active'::text NOT NULL,
+    created_by text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: bom_rollup_edges; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bom_rollup_edges (
+    edge_id text NOT NULL,
+    source_id text NOT NULL,
+    project_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    target_cell_id text NOT NULL,
+    consumed_cell_id text NOT NULL,
+    fn text DEFAULT 'SUM'::text NOT NULL,
+    is_hardcoded boolean DEFAULT false NOT NULL
+);
+
+
+--
+-- Name: bom_scope_coverage; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bom_scope_coverage (
+    id text NOT NULL,
+    scope_id text NOT NULL,
+    project_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    line_id text,
+    component_id text,
+    matched_by text DEFAULT ''::text NOT NULL,
+    confidence real DEFAULT 0.0 NOT NULL
+);
+
+
+--
+-- Name: bom_scope_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bom_scope_items (
+    scope_id text NOT NULL,
+    project_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    label text NOT NULL,
+    description text DEFAULT ''::text NOT NULL,
+    capabilities jsonb,
+    status text DEFAULT 'declared'::text NOT NULL,
+    wave_label text DEFAULT ''::text NOT NULL,
+    wave_order integer DEFAULT 100 NOT NULL,
+    declared_by text DEFAULT ''::text NOT NULL,
+    priced_total numeric(18,4),
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT bom_scope_items_status_check CHECK ((status = ANY (ARRAY['declared'::text, 'designed'::text, 'priced'::text, 'funded'::text, 'deferred'::text])))
+);
+
+
+--
+-- Name: bom_snapshots; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bom_snapshots (
+    snapshot_id text NOT NULL,
+    project_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    label text DEFAULT ''::text NOT NULL,
+    content_json jsonb,
+    content_sha256 text NOT NULL,
+    totals_json jsonb,
+    exported_at timestamp without time zone,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: bom_sources; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bom_sources (
+    source_id text NOT NULL,
+    project_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    filename text NOT NULL,
+    content_sha256 text NOT NULL,
+    media_type text DEFAULT ''::text NOT NULL,
+    source_version integer DEFAULT 1 NOT NULL,
+    role text DEFAULT 'bom_claim'::text NOT NULL,
+    role_confidence real DEFAULT 0.0 NOT NULL,
+    role_set_by text DEFAULT 'default'::text NOT NULL,
+    credibility_tier text DEFAULT 'unknown'::text NOT NULL,
+    authority_rank integer DEFAULT 0 NOT NULL,
+    credibility_set_by text DEFAULT 'default'::text NOT NULL,
+    credibility_rationale text DEFAULT ''::text NOT NULL,
+    credibility_signals jsonb,
+    derived_from text,
+    content_fingerprint text,
+    representation text DEFAULT ''::text NOT NULL,
+    fidelity integer DEFAULT 0 NOT NULL,
+    price_basis_default text DEFAULT 'unknown'::text NOT NULL,
+    as_of_date timestamp without time zone,
+    doc_metadata jsonb,
+    warnings jsonb,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT bom_sources_credibility_set_by_check CHECK ((credibility_set_by = ANY (ARRAY['human'::text, 'ai_proposed'::text, 'default'::text]))),
+    CONSTRAINT bom_sources_credibility_tier_check CHECK ((credibility_tier = ANY (ARRAY['authoritative'::text, 'corroborated'::text, 'working'::text, 'draft'::text, 'derived'::text, 'unknown'::text]))),
+    CONSTRAINT bom_sources_price_basis_default_check CHECK ((price_basis_default = ANY (ARRAY['quoted'::text, 'street'::text, 'msrp'::text, 'budgetary'::text, 'rom'::text, 'unknown'::text]))),
+    CONSTRAINT bom_sources_role_check CHECK ((role = ANY (ARRAY['bom_claim'::text, 'inventory_truth'::text, 'quote'::text, 'baseline_architecture'::text, 'narrative'::text, 'diagram'::text, 'derived'::text]))),
+    CONSTRAINT bom_sources_role_set_by_check CHECK ((role_set_by = ANY (ARRAY['human'::text, 'ai_proposed'::text, 'default'::text])))
+);
+
+
+--
+-- Name: bom_taxonomy_nodes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bom_taxonomy_nodes (
+    node_id text NOT NULL,
+    taxonomy_id text NOT NULL,
+    project_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    parent_node_id text,
+    label text NOT NULL,
+    definition text DEFAULT ''::text NOT NULL,
+    sort_order integer DEFAULT 0 NOT NULL
+);
+
+
+--
+-- Name: bom_taxonomy_versions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bom_taxonomy_versions (
+    taxonomy_id text NOT NULL,
+    project_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    version integer DEFAULT 1 NOT NULL,
+    status text DEFAULT 'draft'::text NOT NULL,
+    derived_from_intent text DEFAULT ''::text NOT NULL,
+    approved_by text,
+    approved_at timestamp without time zone,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT bom_taxonomy_versions_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'approved'::text, 'superseded'::text])))
+);
+
+
+--
+-- Name: boundary_designs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.boundary_designs (
+    id text NOT NULL,
+    name text NOT NULL,
+    description text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}'::text NOT NULL,
+    template_id text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
 );
 
 
@@ -7923,6 +10053,8 @@ CREATE TABLE public.child_capabilities (
     source text DEFAULT 'inherited'::text,
     learned_at text DEFAULT now(),
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    metadata text,
+    updated_at text,
     CONSTRAINT child_capabilities_source_check CHECK ((source = ANY (ARRAY['inherited'::text, 'learned'::text, 'propagated'::text, 'manual'::text]))),
     CONSTRAINT child_capabilities_status_check CHECK ((status = ANY (ARRAY['active'::text, 'deprecated'::text, 'testing'::text, 'pending'::text])))
 );
@@ -8179,6 +10311,33 @@ ALTER SEQUENCE public.cjis_assessments_id_seq OWNED BY public.cjis_assessments.i
 
 
 --
+-- Name: cli_llm_jobs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cli_llm_jobs (
+    id text NOT NULL,
+    function text DEFAULT ''::text NOT NULL,
+    prompt text DEFAULT ''::text NOT NULL,
+    system_prompt text DEFAULT ''::text,
+    model_id text,
+    backend text DEFAULT 'auto'::text,
+    status text DEFAULT 'pending'::text NOT NULL,
+    result text,
+    error text,
+    context_id text,
+    input_tokens integer DEFAULT 0,
+    output_tokens integer DEFAULT 0,
+    tenant_id text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text,
+    updated_at text,
+    claimed_at text,
+    completed_at text,
+    CONSTRAINT cli_llm_jobs_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'running'::text, 'done'::text, 'error'::text])))
+);
+
+
+--
 -- Name: cloud_provider_status; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -8260,49 +10419,26 @@ ALTER SEQUENCE public.cmmc_assessments_id_seq OWNED BY public.cmmc_assessments.i
 
 
 --
--- Name: cmmc_systems; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.cmmc_systems (
-    id                   text        NOT NULL,
-    name                 text        NOT NULL,
-    classification       text        NOT NULL DEFAULT 'CUI'::text,
-    boundary             text,
-    level                integer,
-    system_owner         text,
-    authorizing_official text,
-    tenant_id            text        NOT NULL DEFAULT 'default'::text,
-    created_at           timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    updated_at           timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT cmmc_systems_pkey PRIMARY KEY (id),
-    CONSTRAINT cmmc_systems_classification_check CHECK ((classification = ANY (ARRAY['CUI'::text, 'SECRET'::text, 'TOP SECRET'::text, 'UNCLASSIFIED'::text]))),
-    CONSTRAINT cmmc_systems_level_check CHECK ((level = ANY (ARRAY[1, 2, 3])))
-);
-CREATE INDEX idx_cmmc_systems_classification ON public.cmmc_systems USING btree (classification);
-CREATE INDEX idx_cmmc_systems_tenant ON public.cmmc_systems USING btree (tenant_id);
-
-
---
 -- Name: cmmc_practice_gaps; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.cmmc_practice_gaps (
-    id                  integer     NOT NULL,
-    assessment_id       integer     NOT NULL,
-    practice_id         text        NOT NULL,
-    domain              text        NOT NULL,
-    status              text        NOT NULL DEFAULT 'gap'::text,
-    gap_description     text,
-    remediation_notes   text,
-    tenant_id           text        NOT NULL DEFAULT 'default'::text,
-    created_at          timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT cmmc_practice_gaps_pkey PRIMARY KEY (id),
-    CONSTRAINT cmmc_practice_gaps_status_check CHECK ((status = ANY (ARRAY['gap'::text, 'partial'::text, 'met'::text, 'not_applicable'::text]))),
-    CONSTRAINT cmmc_practice_gaps_assessment_practice_uniq UNIQUE (assessment_id, practice_id)
+    id integer NOT NULL,
+    assessment_id integer NOT NULL,
+    practice_id text NOT NULL,
+    domain text NOT NULL,
+    status text DEFAULT 'gap'::text NOT NULL,
+    gap_description text,
+    remediation_notes text,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT cmmc_practice_gaps_status_check CHECK ((status = ANY (ARRAY['gap'::text, 'partial'::text, 'met'::text, 'not_applicable'::text])))
 );
-CREATE INDEX idx_cmmc_gaps_assessment ON public.cmmc_practice_gaps USING btree (assessment_id);
-CREATE INDEX idx_cmmc_gaps_domain ON public.cmmc_practice_gaps USING btree (domain);
-CREATE INDEX idx_cmmc_gaps_tenant ON public.cmmc_practice_gaps USING btree (tenant_id);
+
+
+--
+-- Name: cmmc_practice_gaps_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
 
 CREATE SEQUENCE public.cmmc_practice_gaps_id_seq
     AS integer
@@ -8311,7 +10447,33 @@ CREATE SEQUENCE public.cmmc_practice_gaps_id_seq
     NO MINVALUE
     NO MAXVALUE
     CACHE 1;
+
+
+--
+-- Name: cmmc_practice_gaps_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
 ALTER SEQUENCE public.cmmc_practice_gaps_id_seq OWNED BY public.cmmc_practice_gaps.id;
+
+
+--
+-- Name: cmmc_systems; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cmmc_systems (
+    id text NOT NULL,
+    name text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    boundary text,
+    level integer,
+    system_owner text,
+    authorizing_official text,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT cmmc_systems_classification_check CHECK ((classification = ANY (ARRAY['CUI'::text, 'SECRET'::text, 'TOP SECRET'::text, 'UNCLASSIFIED'::text]))),
+    CONSTRAINT cmmc_systems_level_check CHECK ((level = ANY (ARRAY[1, 2, 3])))
+);
 
 
 --
@@ -8551,6 +10713,17 @@ CREATE TABLE public.codebase_qa_cache (
 
 
 --
+-- Name: coherence_baseline; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.coherence_baseline (
+    check_id text NOT NULL,
+    violations_json text DEFAULT '[]'::text NOT NULL,
+    updated_at text NOT NULL
+);
+
+
+--
 -- Name: column_mask_audit; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -8730,6 +10903,25 @@ ALTER SEQUENCE public.compliance_evidence_chain_id_seq OWNED BY public.complianc
 
 
 --
+-- Name: compliance_gates; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.compliance_gates (
+    id text NOT NULL,
+    gate_name text DEFAULT ''::text NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    triggered_at timestamp with time zone DEFAULT now() NOT NULL,
+    project_id text DEFAULT ''::text NOT NULL,
+    notes text DEFAULT ''::text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI // SP-CTI'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT compliance_gates_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'pass'::text, 'fail'::text, 'error'::text, 'skipped'::text])))
+);
+
+
+--
 -- Name: compliance_snapshots; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -8807,6 +10999,146 @@ CREATE TABLE public.compliance_templates (
     created_at text DEFAULT now(),
     updated_at text DEFAULT now(),
     CONSTRAINT compliance_templates_template_type_check CHECK ((template_type = ANY (ARRAY['ssp_section'::text, 'poam'::text, 'narrative'::text, 'control_set'::text, 'checklist'::text])))
+);
+
+
+--
+-- Name: compliance_twin_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.compliance_twin_runs (
+    snapshot_id text NOT NULL,
+    framework text NOT NULL,
+    project_id text,
+    triggered_by text DEFAULT 'genesis_reflex'::text,
+    started_at text NOT NULL,
+    completed_at text,
+    total_controls integer DEFAULT 0,
+    satisfied integer DEFAULT 0,
+    partially_satisfied integer DEFAULT 0,
+    not_satisfied integer DEFAULT 0,
+    not_applicable integer DEFAULT 0,
+    not_assessed integer DEFAULT 0,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT now()
+);
+
+
+--
+-- Name: compliance_twin_snapshots; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.compliance_twin_snapshots (
+    id integer NOT NULL,
+    snapshot_id text NOT NULL,
+    project_id text NOT NULL,
+    framework text NOT NULL,
+    control_id text NOT NULL,
+    implementation_status text NOT NULL,
+    evidence_ref text,
+    score real DEFAULT 0.0,
+    assessor text DEFAULT 'icdev-compliance-engine'::text,
+    notes text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT now(),
+    CONSTRAINT compliance_twin_snapshots_implementation_status_check CHECK ((implementation_status = ANY (ARRAY['not_assessed'::text, 'satisfied'::text, 'partially_satisfied'::text, 'not_satisfied'::text, 'not_applicable'::text, 'risk_accepted'::text]))),
+    CONSTRAINT compliance_twin_snapshots_score_check CHECK (((score >= (0.0)::double precision) AND (score <= (1.0)::double precision)))
+);
+
+
+--
+-- Name: compliance_twin_snapshots_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.compliance_twin_snapshots_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: compliance_twin_snapshots_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.compliance_twin_snapshots_id_seq OWNED BY public.compliance_twin_snapshots.id;
+
+
+--
+-- Name: compliance_twin_violations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.compliance_twin_violations (
+    id integer NOT NULL,
+    snapshot_id text NOT NULL,
+    project_id text NOT NULL,
+    framework text NOT NULL,
+    control_id text NOT NULL,
+    violation_type text NOT NULL,
+    severity text DEFAULT 'moderate'::text,
+    details text,
+    poam_id integer,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT now(),
+    CONSTRAINT compliance_twin_violations_severity_check CHECK ((severity = ANY (ARRAY['critical'::text, 'high'::text, 'moderate'::text, 'low'::text, 'informational'::text]))),
+    CONSTRAINT compliance_twin_violations_violation_type_check CHECK ((violation_type = ANY (ARRAY['not_satisfied'::text, 'partially_satisfied'::text, 'missing_evidence'::text, 'stale_evidence'::text, 'overdue_assessment'::text, 'cross_framework_drift'::text])))
+);
+
+
+--
+-- Name: compliance_twin_violations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.compliance_twin_violations_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: compliance_twin_violations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.compliance_twin_violations_id_seq OWNED BY public.compliance_twin_violations.id;
+
+
+--
+-- Name: component_audit_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.component_audit_log (
+    id text NOT NULL,
+    event_type text NOT NULL,
+    actor text DEFAULT 'system'::text NOT NULL,
+    tenant_id text,
+    component_key text,
+    profile_name text,
+    details text DEFAULT '{}'::text,
+    classification text DEFAULT 'CUI'::text,
+    recorded_at text DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: component_heal_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.component_heal_log (
+    id text NOT NULL,
+    component_id text NOT NULL,
+    failure_type text NOT NULL,
+    attempt_count integer DEFAULT 0 NOT NULL,
+    last_attempt_at text,
+    next_retry_at text,
+    status text DEFAULT 'pending'::text NOT NULL,
+    trust_tier text,
+    created_at text DEFAULT now(),
+    CONSTRAINT component_heal_log_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'retrying'::text, 'resolved'::text, 'escalated'::text, 'exhausted'::text])))
 );
 
 
@@ -8965,6 +11297,7 @@ CREATE TABLE public.control_crosswalk (
     mapping_type text DEFAULT 'equivalent'::text,
     notes text,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    created_at text,
     CONSTRAINT control_crosswalk_mapping_type_check CHECK ((mapping_type = ANY (ARRAY['equivalent'::text, 'partial'::text, 'overlay'::text, 'additional'::text])))
 );
 
@@ -9025,6 +11358,162 @@ ALTER SEQUENCE public.control_narratives_id_seq OWNED BY public.control_narrativ
 
 
 --
+-- Name: cortex_audit; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cortex_audit (
+    id text NOT NULL,
+    session_id text,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    function text DEFAULT 'cortex'::text NOT NULL,
+    agent_id text,
+    user_id text,
+    gates_json jsonb,
+    outcome text DEFAULT 'pass'::text NOT NULL,
+    blocked boolean DEFAULT false NOT NULL,
+    provenance_id text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT cortex_audit_outcome_check CHECK ((outcome = ANY (ARRAY['pass'::text, 'warn'::text, 'fail'::text, 'blocked'::text])))
+);
+
+
+--
+-- Name: cortex_chat_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cortex_chat_sessions (
+    session_id text NOT NULL,
+    user_id text,
+    mode text DEFAULT 'ask'::text NOT NULL,
+    domain text DEFAULT 'general'::text NOT NULL,
+    title text,
+    status text DEFAULT 'active'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: cortex_entity_findings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cortex_entity_findings (
+    finding_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    finding_type text DEFAULT 'gap'::text NOT NULL,
+    entity_key text DEFAULT ''::text NOT NULL,
+    entity_label text DEFAULT ''::text NOT NULL,
+    entity_type text DEFAULT ''::text NOT NULL,
+    conflict_kind text DEFAULT ''::text NOT NULL,
+    reasons_json text DEFAULT '[]'::text NOT NULL,
+    values_json text DEFAULT '[]'::text NOT NULL,
+    sides_json text DEFAULT '[]'::text NOT NULL,
+    backends_json text DEFAULT '[]'::text NOT NULL,
+    backends_failed_json text DEFAULT '[]'::text NOT NULL,
+    cross_backend integer DEFAULT 0 NOT NULL,
+    citations_json text DEFAULT '[]'::text NOT NULL,
+    uncited_sides_json text DEFAULT '[]'::text NOT NULL,
+    citation_basis text DEFAULT ''::text NOT NULL,
+    subject_entity text DEFAULT ''::text NOT NULL,
+    subject_verdict text DEFAULT ''::text NOT NULL,
+    provenance_id text DEFAULT ''::text NOT NULL,
+    seen_count integer DEFAULT 1 NOT NULL,
+    first_seen_at timestamp without time zone,
+    last_seen_at timestamp without time zone
+);
+
+
+--
+-- Name: cortex_finding_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cortex_finding_runs (
+    tenant_id text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    resolutions integer DEFAULT 0 NOT NULL,
+    conflicts_seen integer DEFAULT 0 NOT NULL,
+    gaps_seen integer DEFAULT 0 NOT NULL,
+    clean_resolutions integer DEFAULT 0 NOT NULL,
+    last_run_at timestamp without time zone
+);
+
+
+--
+-- Name: cortex_messages; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cortex_messages (
+    message_id text NOT NULL,
+    session_id text,
+    turn_number integer DEFAULT 0 NOT NULL,
+    role text DEFAULT 'user'::text NOT NULL,
+    content text,
+    facade text,
+    grounded integer DEFAULT 0 NOT NULL,
+    confidence text,
+    citations text,
+    governance text,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: cortex_search_history; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cortex_search_history (
+    query_id text NOT NULL,
+    session_id text,
+    user_id text,
+    mode text DEFAULT 'search'::text NOT NULL,
+    domain text DEFAULT 'general'::text NOT NULL,
+    query_text text,
+    strategy text,
+    result_count integer DEFAULT 0 NOT NULL,
+    grounded integer DEFAULT 0 NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: cortex_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cortex_sessions (
+    id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    user_id text,
+    domain text,
+    air_gap boolean DEFAULT false NOT NULL,
+    status text DEFAULT 'active'::text NOT NULL,
+    metadata_json jsonb,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: coworker_dic_contexts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.coworker_dic_contexts (
+    id text NOT NULL,
+    instance_id text,
+    collection_id text NOT NULL,
+    attached_at text DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+
+--
 -- Name: cpmp_budget_allocations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -9044,6 +11533,7 @@ CREATE TABLE public.cpmp_budget_allocations (
     justification text DEFAULT ''::text NOT NULL,
     created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    tenant_id text,
     CONSTRAINT cpmp_budget_allocations_status_check CHECK ((status = ANY (ARRAY['active'::text, 'depleted'::text, 'deferred'::text, 'cancelled'::text]))),
     CONSTRAINT cpmp_budget_allocations_tier_check CHECK ((tier = ANY (ARRAY['tier_1'::text, 'tier_2'::text])))
 );
@@ -9060,7 +11550,8 @@ CREATE TABLE public.cpmp_budget_obligations (
     description text DEFAULT ''::text NOT NULL,
     reference_id text,
     recorded_by text,
-    recorded_at text DEFAULT CURRENT_TIMESTAMP NOT NULL
+    recorded_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    tenant_id text
 );
 
 
@@ -9080,6 +11571,7 @@ CREATE TABLE public.cpmp_budget_tier_history (
     reason text DEFAULT ''::text NOT NULL,
     actor text,
     created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    tenant_id text,
     CONSTRAINT cpmp_budget_tier_history_event_type_check CHECK ((event_type = ANY (ARRAY['allocation_created'::text, 'tier_transition'::text, 'status_change'::text, 'obligation_recorded'::text])))
 );
 
@@ -9106,6 +11598,7 @@ CREATE TABLE public.cpmp_cdrl_generations (
     metadata text DEFAULT '{}'::text,
     created_at text DEFAULT now(),
     classification text DEFAULT 'CUI'::text,
+    tenant_id text,
     CONSTRAINT cpmp_cdrl_generations_status_check CHECK ((status = ANY (ARRAY['generated'::text, 'reviewed'::text, 'approved'::text, 'submitted'::text, 'failed'::text])))
 );
 
@@ -9130,8 +11623,8 @@ CREATE TABLE public.cpmp_clins (
     created_at text DEFAULT now(),
     updated_at text DEFAULT now(),
     classification text DEFAULT 'CUI'::text,
-    tenant_id text,
     obligated_value real DEFAULT 0.0,
+    tenant_id text,
     CONSTRAINT cpmp_clins_clin_type_check CHECK ((clin_type = ANY (ARRAY['labor'::text, 'materials'::text, 'travel'::text, 'odc'::text, 'subcontract'::text, 'fixed_price'::text]))),
     CONSTRAINT cpmp_clins_status_check CHECK ((status = ANY (ARRAY['active'::text, 'fully_funded'::text, 'expended'::text, 'deobligated'::text])))
 );
@@ -9258,6 +11751,7 @@ CREATE TABLE public.cpmp_cor_access_log (
     metadata text DEFAULT '{}'::text,
     created_at text DEFAULT now(),
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text,
     CONSTRAINT cpmp_cor_access_log_action_check CHECK ((action = ANY (ARRAY['view_contract'::text, 'view_deliverables'::text, 'view_evm'::text, 'view_cpars'::text, 'view_subcontractors'::text, 'export_report'::text])))
 );
 
@@ -9312,6 +11806,7 @@ CREATE TABLE public.cpmp_cpars_assessments (
     created_at text DEFAULT now(),
     updated_at text DEFAULT now(),
     classification text DEFAULT 'CUI'::text,
+    tenant_id text,
     CONSTRAINT cpmp_cpars_assessments_overall_rating_check CHECK ((overall_rating = ANY (ARRAY['exceptional'::text, 'very_good'::text, 'satisfactory'::text, 'marginal'::text, 'unsatisfactory'::text]))),
     CONSTRAINT cpmp_cpars_assessments_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'submitted'::text, 'government_review'::text, 'contested'::text, 'final'::text])))
 );
@@ -9347,6 +11842,7 @@ CREATE TABLE public.cpmp_deliverables (
     created_at text DEFAULT now(),
     updated_at text DEFAULT now(),
     classification text DEFAULT 'CUI'::text,
+    tenant_id text,
     CONSTRAINT cpmp_deliverables_deliverable_type_check CHECK ((deliverable_type = ANY (ARRAY['cdrl'::text, 'report'::text, 'software'::text, 'documentation'::text, 'test_result'::text, 'plan'::text, 'data'::text, 'other'::text]))),
     CONSTRAINT cpmp_deliverables_frequency_check CHECK ((frequency = ANY (ARRAY['one_time'::text, 'weekly'::text, 'biweekly'::text, 'monthly'::text, 'quarterly'::text, 'semi_annual'::text, 'annual'::text, 'as_needed'::text, 'event_driven'::text]))),
     CONSTRAINT cpmp_deliverables_status_check CHECK ((status = ANY (ARRAY['not_started'::text, 'in_progress'::text, 'draft_complete'::text, 'internal_review'::text, 'submitted'::text, 'government_review'::text, 'accepted'::text, 'rejected'::text, 'resubmitted'::text, 'overdue'::text])))
@@ -9388,6 +11884,7 @@ CREATE TABLE public.cpmp_evm_periods (
     metadata text DEFAULT '{}'::text,
     created_at text DEFAULT now(),
     classification text DEFAULT 'CUI'::text,
+    tenant_id text,
     CONSTRAINT cpmp_evm_periods_source_check CHECK ((source = ANY (ARRAY['manual'::text, 'calculated'::text, 'imported'::text])))
 );
 
@@ -9406,6 +11903,7 @@ CREATE TABLE public.cpmp_milestone_deps (
     notes text,
     created_at timestamp with time zone DEFAULT now(),
     classification text DEFAULT 'CUI'::text,
+    tenant_id text,
     CONSTRAINT cpmp_milestone_deps_dep_type_check CHECK ((dep_type = ANY (ARRAY['finish_to_start'::text, 'start_to_start'::text, 'finish_to_finish'::text, 'start_to_finish'::text])))
 );
 
@@ -9431,6 +11929,7 @@ CREATE TABLE public.cpmp_milestones (
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
     classification text DEFAULT 'CUI'::text,
+    tenant_id text,
     CONSTRAINT cpmp_milestones_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'in_progress'::text, 'complete'::text, 'missed'::text, 'on_hold'::text])))
 );
 
@@ -9462,6 +11961,7 @@ CREATE TABLE public.cpmp_negative_events (
     created_at text DEFAULT now(),
     updated_at text DEFAULT now(),
     classification text DEFAULT 'CUI'::text,
+    tenant_id text,
     CONSTRAINT cpmp_negative_events_corrective_action_status_check CHECK ((corrective_action_status = ANY (ARRAY['open'::text, 'in_progress'::text, 'completed'::text, 'verified'::text]))),
     CONSTRAINT cpmp_negative_events_event_type_check CHECK ((event_type = ANY (ARRAY['delinquent_delivery'::text, 'cost_overrun'::text, 'quality_rejection'::text, 'cybersecurity_breach'::text, 'flowdown_failure'::text, 'safety_violation'::text, 'compliance_violation'::text, 'cure_notice'::text, 'show_cause'::text, 'stop_work'::text, 'termination_default'::text, 'fraud_waste_abuse'::text]))),
     CONSTRAINT cpmp_negative_events_severity_check CHECK ((severity = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text, 'critical'::text])))
@@ -9527,6 +12027,7 @@ CREATE TABLE public.cpmp_risks (
     schedule_impact_days integer,
     review_date text,
     closed_date text,
+    tenant_id text,
     CONSTRAINT cpmp_risks_category_check CHECK ((category = ANY (ARRAY['cost'::text, 'schedule'::text, 'technical'::text, 'cyber'::text, 'supply_chain'::text, 'compliance'::text, 'staffing'::text, 'other'::text]))),
     CONSTRAINT cpmp_risks_impact_check CHECK (((impact >= 1) AND (impact <= 5))),
     CONSTRAINT cpmp_risks_probability_check CHECK (((probability >= 1) AND (probability <= 5))),
@@ -9564,7 +12065,8 @@ CREATE TABLE public.cpmp_sam_contract_awards (
     raw_json text,
     metadata text DEFAULT '{}'::text,
     discovered_at text DEFAULT now(),
-    classification text DEFAULT 'CUI'::text
+    classification text DEFAULT 'CUI'::text,
+    tenant_id text
 );
 
 
@@ -9601,6 +12103,7 @@ CREATE TABLE public.cpmp_small_business_plan (
     created_at text DEFAULT now(),
     updated_at text DEFAULT now(),
     classification text DEFAULT 'CUI'::text,
+    tenant_id text,
     CONSTRAINT cpmp_small_business_plan_report_type_check CHECK ((report_type = ANY (ARRAY['isr'::text, 'ssr'::text]))),
     CONSTRAINT cpmp_small_business_plan_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'submitted'::text, 'accepted'::text, 'rejected'::text])))
 );
@@ -9621,7 +12124,8 @@ CREATE TABLE public.cpmp_status_history (
     metadata text DEFAULT '{}'::text,
     created_at text DEFAULT now(),
     classification character varying(50) DEFAULT 'CUI'::character varying,
-    CONSTRAINT cpmp_status_history_entity_type_check CHECK ((entity_type = ANY (ARRAY['contract'::text, 'clin'::text, 'wbs'::text, 'deliverable'::text, 'subcontractor'::text, 'evm_baseline'::text, 'cpars_assessment'::text, 'negative_event'::text])))
+    tenant_id text,
+    CONSTRAINT cpmp_status_history_entity_type_check CHECK ((entity_type = ANY (ARRAY['contract'::text, 'clin'::text, 'wbs'::text, 'deliverable'::text, 'subcontractor'::text, 'evm_baseline'::text, 'cpars_assessment'::text, 'negative_event'::text, 'contract_mod'::text])))
 );
 
 
@@ -9674,6 +12178,7 @@ CREATE TABLE public.cpmp_subcontractors (
     created_at text DEFAULT now(),
     updated_at text DEFAULT now(),
     classification text DEFAULT 'CUI'::text,
+    tenant_id text,
     CONSTRAINT cpmp_subcontractors_business_size_check CHECK ((business_size = ANY (ARRAY['large'::text, 'small'::text, 'sdb'::text, 'wosb'::text, 'hubzone'::text, 'sdvosb'::text, '8a'::text]))),
     CONSTRAINT cpmp_subcontractors_performance_rating_check CHECK ((performance_rating = ANY (ARRAY['exceptional'::text, 'very_good'::text, 'satisfactory'::text, 'marginal'::text, 'unsatisfactory'::text]))),
     CONSTRAINT cpmp_subcontractors_status_check CHECK ((status = ANY (ARRAY['active'::text, 'inactive'::text, 'terminated'::text, 'pending'::text]))),
@@ -9708,6 +12213,7 @@ CREATE TABLE public.cpmp_wbs (
     created_at text DEFAULT now(),
     updated_at text DEFAULT now(),
     classification text DEFAULT 'CUI'::text,
+    tenant_id text,
     CONSTRAINT cpmp_wbs_status_check CHECK ((status = ANY (ARRAY['not_started'::text, 'in_progress'::text, 'complete'::text, 'on_hold'::text, 'cancelled'::text])))
 );
 
@@ -9756,6 +12262,26 @@ CREATE TABLE public.creative_feature_gaps (
     discovered_at text NOT NULL,
     classification text DEFAULT 'CUI'::text,
     CONSTRAINT creative_feature_gaps_status_check CHECK ((status = ANY (ARRAY['identified'::text, 'validated'::text, 'spec_generated'::text, 'addressed'::text, 'rejected'::text])))
+);
+
+
+--
+-- Name: creative_gap; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.creative_gap (
+    id text NOT NULL,
+    concept_id text,
+    source_ref text,
+    gap_type text DEFAULT 'feature_gap'::text,
+    score real DEFAULT 0.0,
+    rank integer,
+    content_hash text NOT NULL,
+    metadata text DEFAULT '{}'::text,
+    classification text DEFAULT 'CUI'::text,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    CONSTRAINT creative_gap_gap_type_check CHECK ((gap_type = ANY (ARRAY['feature_gap'::text, 'ux_gap'::text, 'integration_gap'::text, 'performance_gap'::text, 'security_gap'::text, 'compliance_gap'::text, 'documentation_gap'::text, 'other'::text])))
 );
 
 
@@ -10394,7 +12920,7 @@ CREATE TABLE public.dashboard_users (
     classification character varying(50) DEFAULT 'CUI'::character varying,
     clearance_level text DEFAULT 'CUI'::text NOT NULL,
     compartments text DEFAULT '[]'::text NOT NULL,
-    CONSTRAINT dashboard_users_role_check CHECK ((role = ANY (ARRAY['admin'::text, 'pm'::text, 'developer'::text, 'isso'::text, 'co'::text, 'cor'::text, 'bd'::text, 'capture_mgr'::text, 'contract_mgr'::text, 'reviewer'::text]))),
+    CONSTRAINT dashboard_users_role_check CHECK ((role = ANY (ARRAY['admin'::text, 'pm'::text, 'developer'::text, 'isso'::text, 'co'::text, 'cor'::text, 'migration_engineer'::text, 'component_admin'::text, 'auditor'::text, 'ciso'::text, 'bd'::text, 'capture_mgr'::text, 'contract_mgr'::text, 'reviewer'::text]))),
     CONSTRAINT dashboard_users_status_check CHECK ((status = ANY (ARRAY['active'::text, 'suspended'::text])))
 );
 
@@ -10414,6 +12940,8 @@ CREATE TABLE public.data_classifications (
     notes text,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    subcategory text,
+    confidence real,
     CONSTRAINT data_classifications_source_check CHECK ((source = ANY (ARRAY['manual'::text, 'auto_detected'::text, 'inherited'::text, 'policy'::text])))
 );
 
@@ -10439,6 +12967,22 @@ ALTER SEQUENCE public.data_classifications_id_seq OWNED BY public.data_classific
 
 
 --
+-- Name: data_designs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.data_designs (
+    id text NOT NULL,
+    name text NOT NULL,
+    description text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}'::text NOT NULL,
+    template_id text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
 -- Name: data_edges; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -10451,7 +12995,9 @@ CREATE TABLE public.data_edges (
     label text DEFAULT ''::text,
     metadata text DEFAULT '{}'::text,
     classification text DEFAULT 'CUI'::text,
-    created_at text
+    created_at text,
+    source_node_id text DEFAULT ''::text,
+    target_node_id text DEFAULT ''::text
 );
 
 
@@ -10467,7 +13013,10 @@ CREATE TABLE public.data_nodes (
     label text DEFAULT ''::text,
     metadata text DEFAULT '{}'::text,
     classification text DEFAULT 'CUI'::text,
-    created_at text
+    created_at text,
+    x real DEFAULT 0,
+    y real DEFAULT 0,
+    properties_json text DEFAULT '{}'::text
 );
 
 
@@ -10484,6 +13033,45 @@ CREATE TABLE public.data_twin_snapshots (
     classification text DEFAULT 'CUI'::text,
     created_at text
 );
+
+
+--
+-- Name: databridge_agent_access_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.databridge_agent_access_log (
+    id bigint NOT NULL,
+    agent_id text DEFAULT 'unknown'::text NOT NULL,
+    connector_name text DEFAULT ''::text NOT NULL,
+    table_name text DEFAULT ''::text NOT NULL,
+    decision text DEFAULT 'denied'::text NOT NULL,
+    reason text DEFAULT ''::text NOT NULL,
+    rows_returned integer DEFAULT 0 NOT NULL,
+    redactions_applied integer DEFAULT 0 NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT databridge_agent_access_log_decision_check CHECK ((decision = ANY (ARRAY['allowed'::text, 'denied'::text])))
+);
+
+
+--
+-- Name: databridge_agent_access_log_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.databridge_agent_access_log_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: databridge_agent_access_log_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.databridge_agent_access_log_id_seq OWNED BY public.databridge_agent_access_log.id;
 
 
 --
@@ -10985,6 +13573,162 @@ ALTER SEQUENCE public.db_sync_log_id_seq OWNED BY public.db_sync_log.id;
 
 
 --
+-- Name: dd_anomaly_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dd_anomaly_runs (
+    id text NOT NULL,
+    profile_id text,
+    findings_json text,
+    overall_risk text,
+    classification text,
+    created_at text
+);
+
+
+--
+-- Name: dd_assessments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dd_assessments (
+    id text NOT NULL,
+    design_id text,
+    assessment_type text NOT NULL,
+    findings_json text DEFAULT '[]'::text,
+    score real DEFAULT 0,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: dd_audit; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dd_audit (
+    id integer NOT NULL,
+    design_id text,
+    "user" text,
+    action text NOT NULL,
+    detail text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: dd_audit_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.dd_audit_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: dd_audit_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.dd_audit_id_seq OWNED BY public.dd_audit.id;
+
+
+--
+-- Name: dd_collab_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dd_collab_sessions (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    user_id text NOT NULL,
+    user_name text DEFAULT ''::text NOT NULL,
+    color text DEFAULT '#3498db'::text NOT NULL,
+    joined_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    last_seen text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    is_active integer DEFAULT 1 NOT NULL
+);
+
+
+--
+-- Name: dd_data_contracts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dd_data_contracts (
+    id text NOT NULL,
+    design_id text,
+    name text NOT NULL,
+    version text DEFAULT '1.0.0'::text,
+    schema_json text DEFAULT '{}'::text,
+    sla_json text DEFAULT '{}'::text,
+    status text DEFAULT 'draft'::text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: dd_explore_profiles; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dd_explore_profiles (
+    id text NOT NULL,
+    design_id text,
+    session_id text,
+    db_conn_json text DEFAULT '{}'::text,
+    profile_json text DEFAULT '{}'::text,
+    table_count integer DEFAULT 0,
+    anomaly_json text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: dd_explore_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dd_explore_sessions (
+    id text NOT NULL,
+    design_id text,
+    "user" text DEFAULT ''::text,
+    db_conn_json text DEFAULT '{}'::text,
+    status text DEFAULT 'completed'::text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: dd_field_mappings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dd_field_mappings (
+    id text NOT NULL,
+    session_id text NOT NULL,
+    source_field text NOT NULL,
+    source_type text DEFAULT ''::text,
+    source_path text DEFAULT ''::text,
+    target_field text NOT NULL,
+    target_type text DEFAULT ''::text,
+    target_path text DEFAULT ''::text,
+    confidence real DEFAULT 0.0 NOT NULL,
+    match_method text DEFAULT 'name'::text,
+    status text DEFAULT 'pending'::text NOT NULL,
+    transform_expr text DEFAULT ''::text,
+    notes text DEFAULT ''::text,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT dd_field_mappings_match_method_check CHECK ((match_method = ANY (ARRAY['name'::text, 'semantic'::text, 'type'::text, 'combined'::text, 'manual'::text]))),
+    CONSTRAINT dd_field_mappings_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'confirmed'::text, 'rejected'::text, 'needs_review'::text])))
+);
+
+
+--
 -- Name: dd_freshness_alerts; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -11018,6 +13762,93 @@ CREATE TABLE public.dd_freshness_runs (
 
 
 --
+-- Name: dd_lineage; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dd_lineage (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    source_node_id text NOT NULL,
+    target_node_id text NOT NULL,
+    lineage_type text DEFAULT 'flow'::text,
+    column_name text DEFAULT ''::text,
+    transform_desc text DEFAULT ''::text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: dd_mapping_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dd_mapping_sessions (
+    id text NOT NULL,
+    name text DEFAULT 'Untitled Mapping'::text NOT NULL,
+    source_format text DEFAULT 'json_schema'::text NOT NULL,
+    target_format text DEFAULT 'sql_ddl'::text NOT NULL,
+    source_schema_json text DEFAULT '{}'::text,
+    target_schema_json text DEFAULT '{}'::text,
+    status text DEFAULT 'pending'::text NOT NULL,
+    field_count integer DEFAULT 0,
+    confirmed_count integer DEFAULT 0,
+    rejected_count integer DEFAULT 0,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    created_by text DEFAULT ''::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT dd_mapping_sessions_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'ingested'::text, 'suggested'::text, 'complete'::text, 'error'::text])))
+);
+
+
+--
+-- Name: dd_mapping_transforms; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dd_mapping_transforms (
+    id text NOT NULL,
+    session_id text NOT NULL,
+    artifact_type text DEFAULT 'sql'::text NOT NULL,
+    artifact_text text DEFAULT ''::text NOT NULL,
+    field_count integer DEFAULT 0,
+    generated_by text DEFAULT 'ai'::text,
+    model_used text DEFAULT ''::text,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT dd_mapping_transforms_artifact_type_check CHECK ((artifact_type = ANY (ARRAY['sql'::text, 'python'::text, 'dbt'::text, 'xslt'::text])))
+);
+
+
+--
+-- Name: dd_migration_jobs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dd_migration_jobs (
+    id text NOT NULL,
+    design_id text,
+    source_type text NOT NULL,
+    target_type text NOT NULL,
+    migration_tool text DEFAULT 'dms'::text,
+    status text DEFAULT 'pending'::text,
+    row_count_source integer DEFAULT 0,
+    row_count_target integer DEFAULT 0,
+    validation_query text DEFAULT ''::text,
+    validation_status text DEFAULT 'pending'::text,
+    config_json text DEFAULT '{}'::text,
+    notes text DEFAULT ''::text,
+    started_at text,
+    completed_at text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT dd_migration_jobs_migration_tool_check CHECK ((migration_tool = ANY (ARRAY['dms'::text, 'sct'::text, 'pgloader'::text, 'mongodump'::text, 'snapshot_restore'::text, 'aws_glue'::text, 'manual'::text, 'other'::text]))),
+    CONSTRAINT dd_migration_jobs_source_type_check CHECK ((source_type = ANY (ARRAY['oracle'::text, 'mysql'::text, 'mssql'::text, 'mongodb'::text, 'elasticsearch'::text, 'redis'::text, 'postgres'::text, 's3'::text, 'cassandra'::text, 'dynamodb'::text, 'other'::text]))),
+    CONSTRAINT dd_migration_jobs_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'running'::text, 'validating'::text, 'complete'::text, 'failed'::text, 'paused'::text]))),
+    CONSTRAINT dd_migration_jobs_validation_status_check CHECK ((validation_status = ANY (ARRAY['pending'::text, 'pass'::text, 'fail'::text, 'skipped'::text])))
+);
+
+
+--
 -- Name: dd_pii_scans; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -11026,9 +13857,182 @@ CREATE TABLE public.dd_pii_scans (
     design_id text,
     overall_risk text DEFAULT 'none'::text,
     findings_json text DEFAULT '[]'::text,
-    scanned_at text NOT NULL,
+    scanned_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
     tenant_id text DEFAULT 'default'::text NOT NULL,
     classification text DEFAULT 'CUI'::text NOT NULL
+);
+
+
+--
+-- Name: dd_quality_rules; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dd_quality_rules (
+    id text NOT NULL,
+    design_id text,
+    name text NOT NULL,
+    table_name text NOT NULL,
+    column_name text DEFAULT ''::text,
+    check_type text NOT NULL,
+    threshold real DEFAULT 90.0,
+    params_json text DEFAULT '{}'::text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    enabled integer DEFAULT 1,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT dd_quality_rules_check_type_check CHECK ((check_type = ANY (ARRAY['completeness'::text, 'uniqueness'::text, 'range'::text, 'pattern'::text, 'freshness'::text])))
+);
+
+
+--
+-- Name: dd_quality_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dd_quality_runs (
+    id text NOT NULL,
+    rule_id text,
+    db_conn_json text DEFAULT '{}'::text,
+    passed integer DEFAULT 0,
+    actual_value real DEFAULT 0.0,
+    threshold real DEFAULT 0.0,
+    detail text DEFAULT ''::text,
+    reflex_run integer DEFAULT 0,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: dd_query_history; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dd_query_history (
+    id text NOT NULL,
+    design_id text,
+    "user" text DEFAULT ''::text,
+    sql_text text NOT NULL,
+    db_conn_json text DEFAULT '{}'::text,
+    row_count integer DEFAULT 0,
+    exec_ms integer DEFAULT 0,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: dd_snippets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dd_snippets (
+    id text NOT NULL,
+    name text NOT NULL,
+    category text,
+    description text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}'::text NOT NULL,
+    tags text DEFAULT '[]'::text
+);
+
+
+--
+-- Name: dd_templates; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dd_templates (
+    id text NOT NULL,
+    name text NOT NULL,
+    category text,
+    description text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}'::text NOT NULL,
+    tags text DEFAULT '[]'::text
+);
+
+
+--
+-- Name: dd_versions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dd_versions (
+    id text NOT NULL,
+    design_id text,
+    version_number integer NOT NULL,
+    graph_json text DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}'::text NOT NULL,
+    change_summary text DEFAULT ''::text,
+    user_id text DEFAULT ''::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: ddc_runbook_executions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ddc_runbook_executions (
+    id text NOT NULL,
+    runbook_id text,
+    triggered_by text DEFAULT ''::text,
+    status text DEFAULT 'in_progress'::text,
+    notes text DEFAULT ''::text,
+    started_at text DEFAULT CURRENT_TIMESTAMP,
+    completed_at text
+);
+
+
+--
+-- Name: ddc_runbooks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ddc_runbooks (
+    id text NOT NULL,
+    title text NOT NULL,
+    category text DEFAULT 'general'::text,
+    severity text DEFAULT 'medium'::text,
+    description text DEFAULT ''::text,
+    trigger_condition text DEFAULT ''::text,
+    steps_json text DEFAULT '[]'::text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    status text DEFAULT 'active'::text,
+    linked_design_id text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: ddc_sop_approvals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ddc_sop_approvals (
+    id text NOT NULL,
+    sop_id text,
+    reviewer text NOT NULL,
+    action text NOT NULL,
+    comment text DEFAULT ''::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: ddc_sops; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ddc_sops (
+    id text NOT NULL,
+    title text NOT NULL,
+    category text DEFAULT 'general'::text,
+    description text DEFAULT ''::text,
+    purpose text DEFAULT ''::text,
+    scope text DEFAULT ''::text,
+    steps_json text DEFAULT '[]'::text,
+    references_json text DEFAULT '[]'::text,
+    version text DEFAULT '1.0'::text,
+    status text DEFAULT 'draft'::text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    linked_design_id text,
+    owner text DEFAULT ''::text,
+    reviewer text DEFAULT ''::text,
+    approver text DEFAULT ''::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
 );
 
 
@@ -11237,6 +14241,49 @@ CREATE TABLE public.des_execution_events (
 
 
 --
+-- Name: detector_findings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.detector_findings (
+    finding_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    detector text NOT NULL,
+    subject text DEFAULT ''::text NOT NULL,
+    fingerprint text DEFAULT ''::text NOT NULL,
+    title text DEFAULT ''::text NOT NULL,
+    priority text DEFAULT 'medium'::text NOT NULL,
+    evidence_json text DEFAULT '{}'::text NOT NULL,
+    derivation text DEFAULT ''::text NOT NULL,
+    status text DEFAULT 'active'::text NOT NULL,
+    seen_count integer DEFAULT 1 NOT NULL,
+    card_count integer DEFAULT 0 NOT NULL,
+    task_id text,
+    first_seen_at timestamp without time zone,
+    last_seen_at timestamp without time zone,
+    cleared_at timestamp without time zone
+);
+
+
+--
+-- Name: detector_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.detector_runs (
+    detector text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    runs integer DEFAULT 0 NOT NULL,
+    measurable_runs integer DEFAULT 0 NOT NULL,
+    last_state text DEFAULT ''::text NOT NULL,
+    last_reason text DEFAULT ''::text NOT NULL,
+    last_findings integer,
+    last_summary_json text DEFAULT '{}'::text NOT NULL,
+    last_run_at timestamp without time zone,
+    last_measurable_at timestamp without time zone
+);
+
+
+--
 -- Name: dev_profile_detections; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -11304,10 +14351,10 @@ CREATE TABLE public.dev_profiles (
 
 CREATE TABLE public.developer_scorecards (
     id text NOT NULL,
-    project_id text NOT NULL,
+    project_id text,
     actor text,
-    overall_score real NOT NULL,
-    letter_grade text NOT NULL,
+    overall_score real,
+    letter_grade text,
     code_quality_score real,
     security_score real,
     compliance_score real,
@@ -11316,6 +14363,8 @@ CREATE TABLE public.developer_scorecards (
     dimension_details text,
     classification text DEFAULT 'CUI // SP-CTI'::text,
     created_at text DEFAULT now(),
+    component_id text,
+    evaluated_at text,
     CONSTRAINT developer_scorecards_letter_grade_check CHECK ((letter_grade = ANY (ARRAY['A'::text, 'B'::text, 'C'::text, 'D'::text, 'F'::text])))
 );
 
@@ -11511,14 +14560,6 @@ CREATE TABLE public.dic_acoic_regen_queue (
 -- Name: dic_chat_memory; Type: TABLE; Schema: public; Owner: -
 --
 
--- Turn-based schema, kept in sync with
--- tools/document_intelligence/chat_memory.py::_TURN_TABLE_DDL.
---
--- This consolidation previously carried the legacy message-log shape from
--- migration 191 (memory_id/role/content/token_count), which NO code consumes.
--- chat_memory.record_turn() writes the turn shape below, so every write failed
--- and was swallowed. Migration 264 fixed that for migrated databases but was
--- never folded in here, so a FRESH bootstrap still produced the broken table.
 CREATE TABLE public.dic_chat_memory (
     turn_id text NOT NULL,
     session_id text NOT NULL,
@@ -11553,7 +14594,8 @@ CREATE TABLE public.dic_chunk_links (
     section text,
     created_at text NOT NULL,
     tenant_id text,
-    classification text
+    classification text,
+    chunk_hash text
 );
 
 
@@ -11569,7 +14611,44 @@ CREATE TABLE public.dic_collections (
     retention_days integer DEFAULT 90,
     classification text DEFAULT 'CUI'::text,
     tenant_id text DEFAULT 'default'::text,
-    created_at timestamp with time zone DEFAULT now()
+    created_at timestamp with time zone DEFAULT now(),
+    review_interval_days integer DEFAULT 90,
+    tags text DEFAULT ''::text
+);
+
+
+--
+-- Name: dic_community_summaries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dic_community_summaries (
+    summary_id text NOT NULL,
+    community_id text NOT NULL,
+    summary_text text NOT NULL,
+    citations_list text DEFAULT '[]'::text,
+    model_version text DEFAULT ''::text,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    tenant_id text DEFAULT 'default'::text,
+    classification text DEFAULT 'CUI'::text
+);
+
+
+--
+-- Name: dic_cross_references; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dic_cross_references (
+    id text NOT NULL,
+    source_doc_id text NOT NULL,
+    source_section text DEFAULT ''::text,
+    target_doc_ref text NOT NULL,
+    target_doc_id text,
+    target_section text DEFAULT ''::text,
+    ref_text text DEFAULT ''::text,
+    tenant_id text DEFAULT 'default'::text,
+    classification text DEFAULT 'CUI'::text,
+    extracted_at timestamp with time zone DEFAULT now()
 );
 
 
@@ -11584,6 +14663,58 @@ CREATE TABLE public.dic_doc_freshness (
     reason text,
     source_event text,
     updated_at text NOT NULL,
+    tenant_id text,
+    classification text,
+    score real,
+    last_notified_at text
+);
+
+
+--
+-- Name: dic_doc_views; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dic_doc_views (
+    view_id text NOT NULL,
+    doc_id text NOT NULL,
+    user_id text DEFAULT 'anonymous'::text NOT NULL,
+    collection_id text DEFAULT 'default'::text NOT NULL,
+    viewed_at timestamp with time zone DEFAULT now(),
+    tenant_id text DEFAULT 'default'::text,
+    classification text DEFAULT 'CUI'::text
+);
+
+
+--
+-- Name: dic_docdrift_resolutions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dic_docdrift_resolutions (
+    resolution_id text NOT NULL,
+    entity text NOT NULL,
+    entity_key text NOT NULL,
+    question text,
+    state text NOT NULL,
+    verdict text,
+    verdict_source text,
+    superseded_by text,
+    replacement_source text,
+    grounded integer DEFAULT 0 NOT NULL,
+    evidence_health text,
+    citation_count integer DEFAULT 0 NOT NULL,
+    citations_json text,
+    gaps_json text,
+    conflicts_json text,
+    assessments_json text,
+    backend_errors_json text,
+    backends_consulted_json text,
+    advisory_state text,
+    advisory_json text,
+    resolution_text text,
+    provenance_id text,
+    error text,
+    duration_ms integer,
+    resolved_at text NOT NULL,
     tenant_id text,
     classification text
 );
@@ -11609,7 +14740,13 @@ CREATE TABLE public.dic_documents (
     tenant_id text,
     classification text,
     owner_id text,
-    summary text DEFAULT ''
+    summary text DEFAULT ''::text,
+    template_type text,
+    writeguard_mode text DEFAULT 'default'::text,
+    source_wg_result_id text,
+    source_idr_session_id text,
+    origin text,
+    status text
 );
 
 
@@ -11627,6 +14764,26 @@ CREATE TABLE public.dic_drift_events (
     processed integer DEFAULT 0 NOT NULL,
     tenant_id text,
     classification text
+);
+
+
+--
+-- Name: dic_edit_history; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dic_edit_history (
+    edit_id text NOT NULL,
+    section_id text NOT NULL,
+    doc_id text,
+    version_id text,
+    editor text NOT NULL,
+    content_before text,
+    content_after text,
+    char_delta integer,
+    diff_summary text,
+    edited_at text NOT NULL,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text
 );
 
 
@@ -11796,6 +14953,24 @@ CREATE TABLE public.dic_ft_models (
 
 
 --
+-- Name: dic_generated_outputs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dic_generated_outputs (
+    id text NOT NULL,
+    output_type text NOT NULL,
+    collection_id text NOT NULL,
+    content_json text DEFAULT '{}'::text,
+    provider text DEFAULT ''::text,
+    status text DEFAULT 'done'::text,
+    audio_path text,
+    created_at timestamp with time zone DEFAULT now(),
+    tenant_id text DEFAULT 'default'::text,
+    classification text DEFAULT 'CUI'::text
+);
+
+
+--
 -- Name: dic_handoff_items; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -11869,6 +15044,34 @@ CREATE TABLE public.dic_ingest_jobs (
 
 
 --
+-- Name: dic_presence_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dic_presence_sessions (
+    session_key text NOT NULL,
+    doc_id text NOT NULL,
+    user_id text NOT NULL,
+    joined_at text NOT NULL,
+    last_seen text NOT NULL,
+    expires_at text NOT NULL,
+    active_section_id text,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text
+);
+
+
+--
+-- Name: dic_processed_canvas_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dic_processed_canvas_events (
+    event_id text NOT NULL,
+    processed_at text NOT NULL,
+    processor text DEFAULT 'dic_integration'::text NOT NULL
+);
+
+
+--
 -- Name: dic_review_notes; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -11881,6 +15084,44 @@ CREATE TABLE public.dic_review_notes (
     created_at text NOT NULL,
     tenant_id text,
     classification text
+);
+
+
+--
+-- Name: dic_section_annotations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dic_section_annotations (
+    ann_id text NOT NULL,
+    section_id text NOT NULL,
+    doc_id text NOT NULL,
+    selected_text text DEFAULT ''::text NOT NULL,
+    category text NOT NULL,
+    comment text NOT NULL,
+    author text DEFAULT 'reviewer'::text NOT NULL,
+    status text DEFAULT 'open'::text NOT NULL,
+    resolution_note text,
+    resolved_by text,
+    resolved_at text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text NOT NULL,
+    updated_at text
+);
+
+
+--
+-- Name: dic_section_locks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dic_section_locks (
+    lock_id text NOT NULL,
+    section_id text NOT NULL,
+    locked_by text NOT NULL,
+    locked_at text NOT NULL,
+    expires_at text NOT NULL,
+    doc_id text,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text
 );
 
 
@@ -11900,7 +15141,10 @@ CREATE TABLE public.dic_sections (
     created_at text NOT NULL,
     created_by text,
     tenant_id text,
-    classification text
+    classification text,
+    assigned_to text,
+    reviewed_by text,
+    reviewed_at text
 );
 
 
@@ -11933,6 +15177,44 @@ CREATE TABLE public.dic_ssp_fragments (
 
 
 --
+-- Name: dic_suggestion_decisions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dic_suggestion_decisions (
+    decision_id text NOT NULL,
+    suggestion_id text NOT NULL,
+    decision text NOT NULL,
+    decided_by text,
+    decided_at text NOT NULL,
+    note text,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text NOT NULL
+);
+
+
+--
+-- Name: dic_suggestions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dic_suggestions (
+    suggestion_id text NOT NULL,
+    section_id text,
+    doc_id text,
+    collection_id text,
+    trigger_event_id text,
+    canvas_source text DEFAULT 'unknown'::text NOT NULL,
+    suggested_content text DEFAULT ''::text NOT NULL,
+    current_content text,
+    rationale text,
+    status text DEFAULT 'pending'::text NOT NULL,
+    created_at text NOT NULL,
+    updated_at text,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text NOT NULL
+);
+
+
+--
 -- Name: dic_team_access; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -11943,7 +15225,8 @@ CREATE TABLE public.dic_team_access (
     role text DEFAULT 'viewer'::text NOT NULL,
     granted_by text DEFAULT ''::text,
     tenant_id text DEFAULT 'default'::text,
-    created_at timestamp with time zone DEFAULT now()
+    created_at timestamp with time zone DEFAULT now(),
+    classification text DEFAULT 'CUI'::text
 );
 
 
@@ -12028,24 +15311,585 @@ CREATE TABLE public.dispatcher_mode_overrides (
 
 
 --
+-- Name: dm_audit; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dm_audit (
+    id integer NOT NULL,
+    domain_id text,
+    product_id text,
+    "user" text DEFAULT ''::text,
+    action text NOT NULL,
+    detail text DEFAULT ''::text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: dm_audit_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.dm_audit_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: dm_audit_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.dm_audit_id_seq OWNED BY public.dm_audit.id;
+
+
+--
+-- Name: dm_catalog_entries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dm_catalog_entries (
+    id text NOT NULL,
+    product_id text,
+    catalog_name text NOT NULL,
+    tags_json text DEFAULT '[]'::text,
+    metadata_json text DEFAULT '{}'::text,
+    lineage_json text DEFAULT '{}'::text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: dm_contract_test_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dm_contract_test_runs (
+    id text NOT NULL,
+    contract_id text,
+    passed integer DEFAULT 0,
+    error_count integer DEFAULT 0,
+    warnings integer DEFAULT 0,
+    result_json text DEFAULT '{}'::text,
+    method text DEFAULT 'internal'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: dm_contracts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dm_contracts (
+    id text NOT NULL,
+    product_id text,
+    title text NOT NULL,
+    version text DEFAULT '1.0.0'::text,
+    schema_json text DEFAULT '{}'::text,
+    schema_type text DEFAULT 'json'::text,
+    sla_json text DEFAULT '{}'::text,
+    quality_rules_json text DEFAULT '[]'::text,
+    status text DEFAULT 'draft'::text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: dm_csp_sync_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dm_csp_sync_log (
+    id text NOT NULL,
+    provider text NOT NULL,
+    domain_id text DEFAULT ''::text,
+    product_id text DEFAULT ''::text,
+    operation text NOT NULL,
+    status text NOT NULL,
+    synced_count integer DEFAULT 0,
+    error_detail text DEFAULT ''::text,
+    created_at text NOT NULL
+);
+
+
+--
+-- Name: dm_data_contracts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dm_data_contracts (
+    id text NOT NULL,
+    domain_id text DEFAULT ''::text,
+    product_id text DEFAULT ''::text,
+    name text NOT NULL,
+    contract_yaml text DEFAULT ''::text,
+    version text DEFAULT '1.0.0'::text,
+    status text DEFAULT 'draft'::text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: dm_data_products; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dm_data_products (
+    id text NOT NULL,
+    domain_id text,
+    name text NOT NULL,
+    description text DEFAULT ''::text,
+    owner text DEFAULT ''::text,
+    owner_team text DEFAULT ''::text,
+    version text DEFAULT '1.0.0'::text,
+    availability_sla real DEFAULT 99.9,
+    latency_sla_ms integer DEFAULT 500,
+    status text DEFAULT 'draft'::text,
+    sla_tier text DEFAULT 'bronze'::text,
+    output_port_type text DEFAULT 'table'::text,
+    discoverability_score integer DEFAULT 0,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: dm_domain_maturity; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dm_domain_maturity (
+    id text NOT NULL,
+    domain_id text,
+    maturity_level integer DEFAULT 0 NOT NULL,
+    scores_json text DEFAULT '{}'::text,
+    assessed_by text DEFAULT ''::text,
+    notes text DEFAULT ''::text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: dm_domains; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dm_domains (
+    id text NOT NULL,
+    name text NOT NULL,
+    description text DEFAULT ''::text,
+    owner text DEFAULT ''::text,
+    owner_team text DEFAULT ''::text,
+    owner_email text DEFAULT ''::text,
+    steward text DEFAULT ''::text,
+    bounded_context text DEFAULT ''::text,
+    maturity_level integer DEFAULT 0,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    status text DEFAULT 'active'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: dm_governance_policies; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dm_governance_policies (
+    id text NOT NULL,
+    name text NOT NULL,
+    policy_type text DEFAULT 'opa'::text,
+    rules_json text DEFAULT '[]'::text,
+    applies_to text DEFAULT 'all'::text,
+    status text DEFAULT 'active'::text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: dm_input_ports; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dm_input_ports (
+    id text NOT NULL,
+    product_id text,
+    name text NOT NULL,
+    port_type text DEFAULT 'cdc'::text,
+    schema_json text DEFAULT '{}'::text,
+    source_system text DEFAULT ''::text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: dm_opa_policies; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dm_opa_policies (
+    id text NOT NULL,
+    domain_id text,
+    name text NOT NULL,
+    rego_text text DEFAULT ''::text,
+    policy_path text DEFAULT 'datamesh/allow'::text,
+    enabled integer DEFAULT 1,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: dm_output_ports; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dm_output_ports (
+    id text NOT NULL,
+    product_id text,
+    name text NOT NULL,
+    port_type text DEFAULT 'api'::text,
+    schema_json text DEFAULT '{}'::text,
+    endpoint text DEFAULT ''::text,
+    sla_json text DEFAULT '{}'::text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: dm_policy_audit_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dm_policy_audit_log (
+    id text NOT NULL,
+    policy_id text,
+    "user" text DEFAULT 'system'::text,
+    resource text DEFAULT '{}'::text,
+    decision integer DEFAULT 0,
+    reason text DEFAULT ''::text,
+    method text DEFAULT 'local'::text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
 -- Name: dm_ports; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.dm_ports (
     id text NOT NULL,
-    product_id text,
+    product_id text NOT NULL,
     name text NOT NULL,
-    port_type text DEFAULT 'input'::text NOT NULL,
-    transport_type text DEFAULT 'api'::text,
+    port_type text DEFAULT 'output'::text NOT NULL,
     schema_json text DEFAULT '{}'::text,
-    endpoint text DEFAULT ''::text,
     source_system text DEFAULT ''::text,
+    endpoint text DEFAULT ''::text,
     sla_json text DEFAULT '{}'::text,
-    tenant_id text DEFAULT 'default'::text NOT NULL,
-    classification text DEFAULT 'CUI'::text NOT NULL,
-    created_at text DEFAULT now() NOT NULL,
-    CONSTRAINT dm_ports_port_type_check CHECK ((port_type = ANY (ARRAY['input'::text, 'output'::text])))
+    protocol text DEFAULT ''::text,
+    status text DEFAULT 'active'::text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
 );
+
+
+--
+-- Name: dm_product_slas; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dm_product_slas (
+    id text NOT NULL,
+    product_id text,
+    sla_type text NOT NULL,
+    target_value real DEFAULT 0.0,
+    unit text DEFAULT ''::text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: dm_product_subscriptions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dm_product_subscriptions (
+    id text NOT NULL,
+    product_id text,
+    subscriber text NOT NULL,
+    purpose text DEFAULT ''::text,
+    status text DEFAULT 'pending'::text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: docmod_catalog_audit; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.docmod_catalog_audit (
+    id text NOT NULL,
+    entry_id text NOT NULL,
+    event_type text NOT NULL,
+    actor text DEFAULT 'system'::text NOT NULL,
+    details text DEFAULT '{}'::text,
+    recorded_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text
+);
+
+
+--
+-- Name: docmod_catalog_entries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.docmod_catalog_entries (
+    entry_id text NOT NULL,
+    domain text NOT NULL,
+    category text NOT NULL,
+    vendor text,
+    product text NOT NULL,
+    model_family text,
+    version text,
+    status text DEFAULT 'approved'::text NOT NULL,
+    eol_date text,
+    eos_date text,
+    replacement_entry_id text,
+    metadata_json text DEFAULT '{}'::text,
+    tags_json text DEFAULT '[]'::text,
+    source text DEFAULT 'manual'::text NOT NULL,
+    is_builtin integer DEFAULT 0 NOT NULL,
+    created_by text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text,
+    CONSTRAINT docmod_catalog_entries_source_check CHECK ((source = ANY (ARRAY['manual'::text, 'imported'::text, 'promoted_from_defacto'::text]))),
+    CONSTRAINT docmod_catalog_entries_status_check CHECK ((status = ANY (ARRAY['approved'::text, 'deprecated'::text, 'retired'::text])))
+);
+
+
+--
+-- Name: docmod_defacto_standards; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.docmod_defacto_standards (
+    id text NOT NULL,
+    domain text NOT NULL,
+    category text NOT NULL,
+    vendor text,
+    product text NOT NULL,
+    version text,
+    deploy_count integer DEFAULT 0 NOT NULL,
+    weighted_score real DEFAULT 0.0 NOT NULL,
+    share_pct real DEFAULT 0.0 NOT NULL,
+    computed_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text,
+    source_feed text DEFAULT ''::text,
+    evidence_kind text DEFAULT ''::text
+);
+
+
+--
+-- Name: docmod_doc_scan_state; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.docmod_doc_scan_state (
+    doc_id text NOT NULL,
+    last_version_id text,
+    last_evidence_hash text,
+    last_scanned_at timestamp without time zone,
+    open_findings integer DEFAULT 0 NOT NULL,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text
+);
+
+
+--
+-- Name: docmod_eol_products; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.docmod_eol_products (
+    id text NOT NULL,
+    product text NOT NULL,
+    cycle text NOT NULL,
+    eol_date text,
+    eos_date text,
+    latest_version text,
+    lts integer DEFAULT 0 NOT NULL,
+    source text DEFAULT 'endoflife.date'::text NOT NULL,
+    synced_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text,
+    CONSTRAINT docmod_eol_products_source_check CHECK ((source = ANY (ARRAY['endoflife.date'::text, 'seed'::text, 'manual'::text])))
+);
+
+
+--
+-- Name: docmod_findings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.docmod_findings (
+    finding_id text NOT NULL,
+    run_id text NOT NULL,
+    doc_id text NOT NULL,
+    version_id text,
+    chunk_link_id text,
+    section_heading text,
+    page integer,
+    pack_id text NOT NULL,
+    entity_label text NOT NULL,
+    entity_type text NOT NULL,
+    finding_type text NOT NULL,
+    currency_verdict text DEFAULT 'unknown'::text NOT NULL,
+    severity text DEFAULT 'medium'::text NOT NULL,
+    rationale text,
+    evidence_json text DEFAULT '[]'::text,
+    recommended_replacement text,
+    replacement_evidence_json text DEFAULT '[]'::text,
+    confidence real DEFAULT 0.0 NOT NULL,
+    state text DEFAULT 'open'::text NOT NULL,
+    redline_suggestion_id text,
+    prediction_id text,
+    dedupe_key text NOT NULL,
+    supersedes_id text,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT docmod_findings_currency_verdict_check CHECK ((currency_verdict = ANY (ARRAY['current'::text, 'deprecated'::text, 'eol'::text, 'retired'::text, 'divergent'::text, 'unknown'::text]))),
+    CONSTRAINT docmod_findings_severity_check CHECK ((severity = ANY (ARRAY['critical'::text, 'high'::text, 'medium'::text, 'low'::text, 'info'::text]))),
+    CONSTRAINT docmod_findings_state_check CHECK ((state = ANY (ARRAY['open'::text, 'redline_drafted'::text, 'accepted'::text, 'rejected'::text, 'resolved'::text, 'superseded'::text, 'stale'::text])))
+);
+
+
+--
+-- Name: docmod_nist_pubs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.docmod_nist_pubs (
+    id text NOT NULL,
+    pub_id text NOT NULL,
+    latest_revision text,
+    revision_num integer,
+    title text,
+    url text,
+    published_date text,
+    source text DEFAULT 'nist.gov'::text NOT NULL,
+    synced_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text,
+    CONSTRAINT docmod_nist_pubs_source_check CHECK ((source = ANY (ARRAY['nist.gov'::text, 'seed'::text, 'manual'::text])))
+);
+
+
+--
+-- Name: docmod_scan_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.docmod_scan_runs (
+    run_id text NOT NULL,
+    scope_type text DEFAULT 'all'::text NOT NULL,
+    scope_id text,
+    pack_ids text DEFAULT '[]'::text,
+    evidence_hash text,
+    docs_scanned integer DEFAULT 0 NOT NULL,
+    findings_new integer DEFAULT 0 NOT NULL,
+    findings_resolved integer DEFAULT 0 NOT NULL,
+    started_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    finished_at timestamp without time zone,
+    triggered_by text DEFAULT 'manual'::text NOT NULL,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text,
+    CONSTRAINT docmod_scan_runs_scope_type_check CHECK ((scope_type = ANY (ARRAY['all'::text, 'collection'::text, 'doc'::text]))),
+    CONSTRAINT docmod_scan_runs_triggered_by_check CHECK ((triggered_by = ANY (ARRAY['manual'::text, 'reflex'::text, 'daemon'::text, 'api'::text])))
+);
+
+
+--
+-- Name: document_aggregation_findings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.document_aggregation_findings (
+    id text NOT NULL,
+    surface text NOT NULL,
+    document_id text NOT NULL,
+    rule_id text NOT NULL,
+    derived_classification text NOT NULL,
+    matched_elements text,
+    content_signature text NOT NULL,
+    resolution text,
+    resolved_by text,
+    resolved_at text,
+    resolution_comment text,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT document_aggregation_findings_resolution_check CHECK ((resolution = 'override'::text))
+);
+
+
+--
+-- Name: documents; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.documents (
+    id text NOT NULL,
+    tenant_id text NOT NULL,
+    name text DEFAULT ''::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    status text DEFAULT 'active'::text,
+    file_path text,
+    mime_type text,
+    file_hash text,
+    created_by text,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    CONSTRAINT documents_classification_check CHECK ((classification = ANY (ARRAY['PUBLIC'::text, 'CUI'::text, 'ECI'::text, 'SECRET'::text, 'TOP SECRET'::text, 'TOP SECRET//SCI'::text]))),
+    CONSTRAINT documents_status_check CHECK ((status = ANY (ARRAY['active'::text, 'archived'::text, 'deleted'::text])))
+);
+
+
+--
+-- Name: domain_coverage; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.domain_coverage (
+    id integer NOT NULL,
+    domain_category text NOT NULL,
+    pattern_id text NOT NULL,
+    frequency integer DEFAULT 0 NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    best_coverage real DEFAULT 0.0 NOT NULL,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT domain_coverage_best_coverage_check CHECK (((best_coverage >= (0.0)::double precision) AND (best_coverage <= (1.0)::double precision))),
+    CONSTRAINT domain_coverage_classification_check CHECK ((classification = ANY (ARRAY['UNCLASSIFIED'::text, 'CUI'::text, 'SECRET'::text, 'TOP SECRET'::text])))
+);
+
+
+--
+-- Name: domain_coverage_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.domain_coverage_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: domain_coverage_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.domain_coverage_id_seq OWNED BY public.domain_coverage.id;
 
 
 --
@@ -12402,6 +16246,31 @@ ALTER SEQUENCE public.dsoc_threats_id_seq OWNED BY public.dsoc_threats.id;
 
 
 --
+-- Name: dynamic_findings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dynamic_findings (
+    id text NOT NULL,
+    finding_key text NOT NULL,
+    detector text DEFAULT ''::text NOT NULL,
+    title text DEFAULT ''::text NOT NULL,
+    severity text DEFAULT 'medium'::text NOT NULL,
+    target text DEFAULT ''::text NOT NULL,
+    status text DEFAULT 'unconfirmed'::text NOT NULL,
+    reproduction text DEFAULT ''::text,
+    discriminating integer DEFAULT 0 NOT NULL,
+    last_outcome text DEFAULT ''::text NOT NULL,
+    last_replayed_at text,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    created_at text,
+    updated_at text,
+    CONSTRAINT dynamic_findings_classification_check CHECK ((classification = ANY (ARRAY['PUBLIC'::text, 'CUI'::text, 'ECI'::text, 'SECRET'::text, 'TOP SECRET'::text, 'TOP SECRET//SCI'::text]))),
+    CONSTRAINT dynamic_findings_status_check CHECK ((status = ANY (ARRAY['unconfirmed'::text, 'confirmed'::text, 'remediated'::text])))
+);
+
+
+--
 -- Name: egress_policy_audit; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -12574,6 +16443,76 @@ CREATE TABLE public.encryption_keys (
 
 
 --
+-- Name: entitlements; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.entitlements (
+    id bigint NOT NULL,
+    principal_id text NOT NULL,
+    entitlement text NOT NULL,
+    risk_level text DEFAULT 'standard'::text NOT NULL,
+    granted_by text,
+    granted_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone,
+    last_used_at timestamp with time zone,
+    revoked_at timestamp with time zone,
+    revoked_by text,
+    status text DEFAULT 'active'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    tenant_id text,
+    CONSTRAINT entitlements_risk_level_check CHECK ((risk_level = ANY (ARRAY['privileged'::text, 'standard'::text, 'external'::text]))),
+    CONSTRAINT entitlements_status_check CHECK ((status = ANY (ARRAY['active'::text, 'revoked'::text, 'expired'::text])))
+);
+
+
+--
+-- Name: entitlements_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.entitlements_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: entitlements_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.entitlements_id_seq OWNED BY public.entitlements.id;
+
+
+--
+-- Name: entity_currency; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.entity_currency (
+    record_id text NOT NULL,
+    entity_type text NOT NULL,
+    namespace text DEFAULT ''::text NOT NULL,
+    entity_key text NOT NULL,
+    entity_label text,
+    entity_version text DEFAULT ''::text NOT NULL,
+    verdict text NOT NULL,
+    superseded_by text,
+    source text NOT NULL,
+    source_kind text DEFAULT 'derived'::text NOT NULL,
+    as_of text NOT NULL,
+    observed_at text NOT NULL,
+    confidence real DEFAULT 0.0 NOT NULL,
+    eol_date text,
+    eos_date text,
+    provenance_table text,
+    provenance_id text,
+    provenance_json text DEFAULT '{}'::text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL
+);
+
+
+--
 -- Name: eu_ai_act_assessments; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -12616,6 +16555,26 @@ CREATE SEQUENCE public.eu_ai_act_assessments_id_seq
 --
 
 ALTER SEQUENCE public.eu_ai_act_assessments_id_seq OWNED BY public.eu_ai_act_assessments.id;
+
+
+--
+-- Name: evidence_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.evidence_items (
+    id text NOT NULL,
+    control_id text NOT NULL,
+    framework text DEFAULT 'soc2'::text NOT NULL,
+    tenant_id text NOT NULL,
+    evidence_type text,
+    source_table text,
+    source_row_id text,
+    summary text,
+    collected_at text DEFAULT now() NOT NULL,
+    collector text DEFAULT 'auto'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    CONSTRAINT evidence_items_evidence_type_check CHECK ((evidence_type = ANY (ARRAY['log'::text, 'config'::text, 'test_result'::text, 'screenshot'::text, 'policy'::text])))
+);
 
 
 --
@@ -12861,6 +16820,128 @@ CREATE SEQUENCE public.fa_achievements_id_seq
 --
 
 ALTER SEQUENCE public.fa_achievements_id_seq OWNED BY public.fa_achievements.id;
+
+
+--
+-- Name: fa_assessment_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.fa_assessment_items (
+    id integer NOT NULL,
+    step_id integer NOT NULL,
+    item_key text NOT NULL,
+    prompt text NOT NULL,
+    options_json text DEFAULT '[]'::text NOT NULL,
+    correct_index integer DEFAULT 0 NOT NULL,
+    explanation text,
+    difficulty text DEFAULT 'core'::text,
+    is_active integer DEFAULT 1 NOT NULL,
+    classification text DEFAULT 'CUI'::text,
+    tenant_id text,
+    created_at text DEFAULT now()
+);
+
+
+--
+-- Name: fa_assessment_items_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.fa_assessment_items_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: fa_assessment_items_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.fa_assessment_items_id_seq OWNED BY public.fa_assessment_items.id;
+
+
+--
+-- Name: fa_assignments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.fa_assignments (
+    id integer NOT NULL,
+    assignment_type text DEFAULT 'mission'::text NOT NULL,
+    mission_id integer,
+    track_key text,
+    target_type text DEFAULT 'learner'::text NOT NULL,
+    target_user_id integer,
+    target_role text,
+    due_at text,
+    note text,
+    assigned_by text NOT NULL,
+    status text DEFAULT 'open'::text NOT NULL,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: fa_assignments_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.fa_assignments_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: fa_assignments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.fa_assignments_id_seq OWNED BY public.fa_assignments.id;
+
+
+--
+-- Name: fa_certificate_evidence; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.fa_certificate_evidence (
+    id integer NOT NULL,
+    cert_id integer NOT NULL,
+    user_id integer NOT NULL,
+    evidence_type text NOT NULL,
+    ref_id integer,
+    label text NOT NULL,
+    detail text,
+    demonstrated_at text,
+    score integer,
+    classification text DEFAULT 'CUI'::text,
+    tenant_id text,
+    created_at text DEFAULT now()
+);
+
+
+--
+-- Name: fa_certificate_evidence_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.fa_certificate_evidence_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: fa_certificate_evidence_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.fa_certificate_evidence_id_seq OWNED BY public.fa_certificate_evidence.id;
 
 
 --
@@ -13148,6 +17229,85 @@ ALTER SEQUENCE public.fa_guilds_id_seq OWNED BY public.fa_guilds.id;
 
 
 --
+-- Name: fa_instructor_audit; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.fa_instructor_audit (
+    id integer NOT NULL,
+    action text NOT NULL,
+    actor text NOT NULL,
+    actor_role text,
+    subject_type text,
+    subject_id text,
+    detail_json text DEFAULT '{}'::text,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: fa_instructor_audit_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.fa_instructor_audit_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: fa_instructor_audit_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.fa_instructor_audit_id_seq OWNED BY public.fa_instructor_audit.id;
+
+
+--
+-- Name: fa_instructor_reviews; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.fa_instructor_reviews (
+    id integer NOT NULL,
+    user_id integer NOT NULL,
+    mission_id integer,
+    step_id integer,
+    assignment_id integer,
+    verdict text NOT NULL,
+    override_score integer,
+    prior_score integer,
+    comment text,
+    reviewer text NOT NULL,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: fa_instructor_reviews_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.fa_instructor_reviews_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: fa_instructor_reviews_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.fa_instructor_reviews_id_seq OWNED BY public.fa_instructor_reviews.id;
+
+
+--
 -- Name: fa_leaderboard_cache; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -13328,7 +17488,9 @@ CREATE TABLE public.fa_missions (
     classification text DEFAULT 'CUI'::text NOT NULL,
     ontology_id text DEFAULT ''::text,
     domain_classes_json text DEFAULT '[]'::text,
-    competency text DEFAULT ''::text
+    competency text DEFAULT ''::text,
+    objective text,
+    learning_objective text
 );
 
 
@@ -13431,6 +17593,86 @@ ALTER SEQUENCE public.fa_skill_nodes_id_seq OWNED BY public.fa_skill_nodes.id;
 
 
 --
+-- Name: fa_step_assessment_policy; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.fa_step_assessment_policy (
+    id integer NOT NULL,
+    step_id integer NOT NULL,
+    policy text DEFAULT 'practice'::text NOT NULL,
+    items_per_attempt integer,
+    pass_threshold_pct integer,
+    max_attempts integer,
+    updated_at text,
+    created_at text DEFAULT now()
+);
+
+
+--
+-- Name: fa_step_assessment_policy_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.fa_step_assessment_policy_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: fa_step_assessment_policy_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.fa_step_assessment_policy_id_seq OWNED BY public.fa_step_assessment_policy.id;
+
+
+--
+-- Name: fa_step_attempts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.fa_step_attempts (
+    id integer NOT NULL,
+    user_id integer NOT NULL,
+    step_id integer NOT NULL,
+    kind text DEFAULT 'attempt'::text NOT NULL,
+    attempt_num integer DEFAULT 1 NOT NULL,
+    policy text DEFAULT 'practice'::text NOT NULL,
+    served_json text DEFAULT '[]'::text NOT NULL,
+    answers_json text,
+    score_pct integer,
+    passed integer,
+    closed_at text,
+    reason text,
+    actor text,
+    classification text DEFAULT 'CUI'::text,
+    tenant_id text,
+    created_at text DEFAULT now()
+);
+
+
+--
+-- Name: fa_step_attempts_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.fa_step_attempts_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: fa_step_attempts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.fa_step_attempts_id_seq OWNED BY public.fa_step_attempts.id;
+
+
+--
 -- Name: fa_step_ontology; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -13439,7 +17681,8 @@ CREATE TABLE public.fa_step_ontology (
     step_id integer NOT NULL,
     ontology_id text NOT NULL,
     step_class text,
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    competency_class text
 );
 
 
@@ -13685,6 +17928,46 @@ ALTER SEQUENCE public.fa_workflow_submissions_id_seq OWNED BY public.fa_workflow
 
 
 --
+-- Name: fa_xp_ledger; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.fa_xp_ledger (
+    id integer NOT NULL,
+    user_id integer NOT NULL,
+    xp_delta integer NOT NULL,
+    reason text NOT NULL,
+    source_type text,
+    source_id integer,
+    is_attendance integer DEFAULT 0 NOT NULL,
+    verified integer DEFAULT 1 NOT NULL,
+    note text,
+    created_at text DEFAULT now(),
+    classification text DEFAULT 'CUI'::text,
+    tenant_id text
+);
+
+
+--
+-- Name: fa_xp_ledger_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.fa_xp_ledger_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: fa_xp_ledger_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.fa_xp_ledger_id_seq OWNED BY public.fa_xp_ledger.id;
+
+
+--
 -- Name: fabric_assets; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -13812,10 +18095,15 @@ ALTER SEQUENCE public.failure_log_id_seq OWNED BY public.failure_log.id;
 CREATE TABLE public.fairness_assessments (
     id integer NOT NULL,
     project_id text NOT NULL,
-    assessment_data text NOT NULL,
+    assessment_data text,
     overall_score real DEFAULT 0.0,
     created_at text DEFAULT now(),
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    dimension text,
+    status text,
+    evidence text,
+    score real,
+    assessed_at text
 );
 
 
@@ -13890,27 +18178,20 @@ ALTER SEQUENCE public.fedramp_assessments_id_seq OWNED BY public.fedramp_assessm
 --
 
 CREATE TABLE public.fedramp_ato_packages (
-    id                   TEXT        NOT NULL,
-    system_name          TEXT        NOT NULL,
-    ato_status           TEXT        NOT NULL DEFAULT 'in_progress'
-                         CHECK (ato_status IN (
-                             'in_progress', 'authorized', 'conditional',
-                             'denied', 'expired'
-                         )),
-    authorization_date   DATE,
-    expiry_date          DATE,
-    package_type         TEXT        DEFAULT 'moderate'
-                         CHECK (package_type IN ('low', 'moderate', 'high')),
-    authorizing_official TEXT,
-    notes                TEXT        NOT NULL DEFAULT '',
-    tenant_id            TEXT        NOT NULL DEFAULT 'default',
-    classification       TEXT        NOT NULL DEFAULT 'CUI // SP-CTI',
-    created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    id text NOT NULL,
+    system_name text NOT NULL,
+    ato_status text DEFAULT 'in_progress'::text NOT NULL,
+    authorization_date text,
+    expiry_date text,
+    package_type text DEFAULT 'moderate'::text,
+    authorizing_official text,
+    notes text DEFAULT ''::text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fedramp_ato_packages_ato_status_check CHECK ((ato_status = ANY (ARRAY['in_progress'::text, 'authorized'::text, 'conditional'::text, 'denied'::text, 'expired'::text]))),
+    CONSTRAINT fedramp_ato_packages_package_type_check CHECK ((package_type = ANY (ARRAY['low'::text, 'moderate'::text, 'high'::text])))
 );
-
-ALTER TABLE ONLY public.fedramp_ato_packages
-    ADD CONSTRAINT fedramp_ato_packages_pkey PRIMARY KEY (id);
 
 
 --
@@ -13918,27 +18199,21 @@ ALTER TABLE ONLY public.fedramp_ato_packages
 --
 
 CREATE TABLE public.fedramp_controls (
-    id                     TEXT        NOT NULL,
-    package_id             TEXT        NOT NULL REFERENCES public.fedramp_ato_packages(id) ON DELETE CASCADE,
-    control_id             TEXT        NOT NULL,
-    control_name           TEXT        NOT NULL DEFAULT '',
-    implementation_status  TEXT        NOT NULL DEFAULT 'not_implemented'
-                           CHECK (implementation_status IN (
-                               'implemented', 'partially_implemented',
-                               'planned', 'not_implemented', 'not_applicable'
-                           )),
-    implementation_origin  TEXT        NOT NULL DEFAULT 'service_provider'
-                           CHECK (implementation_origin IN (
-                               'service_provider', 'customer', 'hybrid', 'inherited'
-                           )),
-    responsible_role       TEXT        NOT NULL DEFAULT '',
-    implementation_detail  TEXT        NOT NULL DEFAULT '',
-    assessment_date        DATE,
-    assessed_by            TEXT        NOT NULL DEFAULT '',
-    tenant_id              TEXT        NOT NULL DEFAULT 'default',
-    classification         TEXT        NOT NULL DEFAULT 'CUI // SP-CTI',
-    created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    id text NOT NULL,
+    package_id text NOT NULL,
+    control_id text NOT NULL,
+    control_name text DEFAULT ''::text,
+    implementation_status text DEFAULT 'not_implemented'::text NOT NULL,
+    implementation_origin text DEFAULT 'service_provider'::text,
+    responsible_role text DEFAULT ''::text,
+    implementation_detail text DEFAULT ''::text,
+    assessment_date text,
+    assessed_by text DEFAULT ''::text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fedramp_controls_implementation_origin_check CHECK ((implementation_origin = ANY (ARRAY['service_provider'::text, 'customer'::text, 'hybrid'::text, 'inherited'::text]))),
+    CONSTRAINT fedramp_controls_implementation_status_check CHECK ((implementation_status = ANY (ARRAY['implemented'::text, 'partially_implemented'::text, 'planned'::text, 'not_implemented'::text, 'not_applicable'::text])))
 );
 
 
@@ -13999,6 +18274,28 @@ CREATE TABLE public.finding_approvals (
 
 
 --
+-- Name: finding_replay_attempts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.finding_replay_attempts (
+    id text NOT NULL,
+    finding_id text NOT NULL,
+    finding_key text DEFAULT ''::text NOT NULL,
+    outcome text DEFAULT 'error'::text NOT NULL,
+    target text DEFAULT ''::text NOT NULL,
+    purpose text DEFAULT 'confirm'::text NOT NULL,
+    predicate_json text DEFAULT ''::text,
+    observations_json text DEFAULT ''::text,
+    detail text DEFAULT ''::text,
+    duration_ms integer DEFAULT 0 NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    created_at text,
+    CONSTRAINT finding_replay_attempts_classification_check CHECK ((classification = ANY (ARRAY['PUBLIC'::text, 'CUI'::text, 'ECI'::text, 'SECRET'::text, 'TOP SECRET'::text, 'TOP SECRET//SCI'::text])))
+);
+
+
+--
 -- Name: fine_tuning_datasets; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -14036,26 +18333,56 @@ ALTER SEQUENCE public.fine_tuning_datasets_id_seq OWNED BY public.fine_tuning_da
 
 
 --
+-- Name: finetune_eval_results; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.finetune_eval_results (
+    id bigint NOT NULL,
+    job_id text NOT NULL,
+    benchmark_name text NOT NULL,
+    score real,
+    delta real,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+
+--
+-- Name: finetune_eval_results_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.finetune_eval_results_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: finetune_eval_results_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.finetune_eval_results_id_seq OWNED BY public.finetune_eval_results.id;
+
+
+--
 -- Name: finetune_jobs; Type: TABLE; Schema: public; Owner: -
--- Platform-level fine-tuning job tracking (render_handler_service notification chain).
--- Distinct from dic_finetune_jobs which tracks DIC-canvas fine-tuning runs.
 --
 
 CREATE TABLE public.finetune_jobs (
-    id             TEXT        PRIMARY KEY,
-    model_base     TEXT,
-    status         TEXT        NOT NULL DEFAULT 'queued'
-                   CHECK (status IN ('queued', 'running', 'completed', 'failed', 'cancelled')),
-    epochs         INTEGER     DEFAULT 0,
-    started_at     TEXT,
-    completed_at   TEXT,
-    tenant_id      TEXT        NOT NULL DEFAULT 'default',
-    classification TEXT        NOT NULL DEFAULT 'CUI',
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    id text NOT NULL,
+    model_base text,
+    status text DEFAULT 'queued'::text NOT NULL,
+    epochs integer DEFAULT 0,
+    started_at text,
+    completed_at text,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT finetune_jobs_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'running'::text, 'completed'::text, 'failed'::text, 'cancelled'::text])))
 );
-
-CREATE INDEX IF NOT EXISTS idx_finetune_jobs_status ON public.finetune_jobs(status);
-CREATE INDEX IF NOT EXISTS idx_finetune_jobs_tenant ON public.finetune_jobs(tenant_id);
 
 
 --
@@ -14063,37 +18390,34 @@ CREATE INDEX IF NOT EXISTS idx_finetune_jobs_tenant ON public.finetune_jobs(tena
 --
 
 CREATE TABLE public.finetune_metrics (
-    id             BIGSERIAL   PRIMARY KEY,
-    job_id         TEXT        NOT NULL REFERENCES public.finetune_jobs(id),
-    metric_name    TEXT        NOT NULL,
-    value          REAL,
-    epoch          INTEGER     DEFAULT 0,
-    tenant_id      TEXT        NOT NULL DEFAULT 'default',
-    classification TEXT        NOT NULL DEFAULT 'CUI',
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    id bigint NOT NULL,
+    job_id text NOT NULL,
+    metric_name text NOT NULL,
+    value real,
+    epoch integer DEFAULT 0,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
-
-CREATE INDEX IF NOT EXISTS idx_finetune_metrics_job   ON public.finetune_metrics(job_id);
-CREATE INDEX IF NOT EXISTS idx_finetune_metrics_epoch ON public.finetune_metrics(epoch);
 
 
 --
--- Name: finetune_eval_results; Type: TABLE; Schema: public; Owner: -
+-- Name: finetune_metrics_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
-CREATE TABLE public.finetune_eval_results (
-    id             BIGSERIAL   PRIMARY KEY,
-    job_id         TEXT        NOT NULL REFERENCES public.finetune_jobs(id),
-    benchmark_name TEXT        NOT NULL,
-    score          REAL,
-    delta          REAL,
-    tenant_id      TEXT        NOT NULL DEFAULT 'default',
-    classification TEXT        NOT NULL DEFAULT 'CUI',
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+CREATE SEQUENCE public.finetune_metrics_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
 
-CREATE INDEX IF NOT EXISTS idx_finetune_eval_job   ON public.finetune_eval_results(job_id);
-CREATE INDEX IF NOT EXISTS idx_finetune_eval_score ON public.finetune_eval_results(score);
+
+--
+-- Name: finetune_metrics_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.finetune_metrics_id_seq OWNED BY public.finetune_metrics.id;
 
 
 --
@@ -14238,6 +18562,43 @@ CREATE TABLE public.firmware_vex_records (
 
 
 --
+-- Name: forecast_audit; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.forecast_audit (
+    id text NOT NULL,
+    job_id text NOT NULL,
+    event_type text NOT NULL,
+    actor text DEFAULT 'system'::text,
+    details jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp with time zone DEFAULT now(),
+    classification text DEFAULT 'CUI'::text
+);
+
+
+--
+-- Name: forecast_jobs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.forecast_jobs (
+    id text NOT NULL,
+    source text DEFAULT 'manual'::text NOT NULL,
+    context text DEFAULT ''::text,
+    input_rows integer NOT NULL,
+    input_summary jsonb DEFAULT '{}'::jsonb,
+    status text DEFAULT 'pending'::text NOT NULL,
+    prediction jsonb DEFAULT '{}'::jsonb,
+    model_id text DEFAULT 'timesfm-2.5-200m'::text,
+    error_message text DEFAULT ''::text,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    completed_at timestamp with time zone,
+    classification text DEFAULT 'CUI'::text,
+    tenant_id text
+);
+
+
+--
 -- Name: forge_hub_ratings; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -14312,6 +18673,240 @@ CREATE TABLE public.formal_verification_results (
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     classification character varying(50) DEFAULT 'CUI'::character varying
 );
+
+
+--
+-- Name: foundry_concepts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.foundry_concepts (
+    id bigint NOT NULL,
+    run_id text NOT NULL,
+    name text NOT NULL,
+    slug text NOT NULL,
+    problem_statement text,
+    proposed_capability text,
+    target_users text,
+    cluster_signal_ids text DEFAULT '[]'::text,
+    novelty_score real DEFAULT 0.0,
+    market_score real DEFAULT 0.0,
+    fit_score real DEFAULT 0.0,
+    effort_estimate real DEFAULT 0.0,
+    compliance_risk real DEFAULT 0.0,
+    composite_score real DEFAULT 0.0,
+    status text DEFAULT 'proposed'::text NOT NULL,
+    reject_reason text,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    created_by text DEFAULT 'system'::text NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT foundry_concepts_reject_reason_check CHECK (((reject_reason IS NULL) OR (reject_reason = ANY (ARRAY['duplicate'::text, 'low_novelty'::text, 'low_score'::text, 'cod_reject'::text, 'vv_fail'::text])))),
+    CONSTRAINT foundry_concepts_status_check CHECK ((status = ANY (ARRAY['proposed'::text, 'scored'::text, 'approved'::text, 'rejected'::text, 'shipped'::text, 'failed'::text])))
+);
+
+
+--
+-- Name: foundry_concepts_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.foundry_concepts_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: foundry_concepts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.foundry_concepts_id_seq OWNED BY public.foundry_concepts.id;
+
+
+--
+-- Name: foundry_outcomes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.foundry_outcomes (
+    id bigint NOT NULL,
+    concept_id integer NOT NULL,
+    outcome text NOT NULL,
+    metric real,
+    detail text DEFAULT '{}'::text,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT foundry_outcomes_outcome_check CHECK ((outcome = ANY (ARRAY['shipped'::text, 'vv_pass'::text, 'vv_fail'::text, 'abandoned'::text])))
+);
+
+
+--
+-- Name: foundry_outcomes_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.foundry_outcomes_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: foundry_outcomes_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.foundry_outcomes_id_seq OWNED BY public.foundry_outcomes.id;
+
+
+--
+-- Name: foundry_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.foundry_runs (
+    id bigint NOT NULL,
+    cycle_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    harvested integer DEFAULT 0 NOT NULL,
+    concepts_proposed integer DEFAULT 0 NOT NULL,
+    concepts_approved integer DEFAULT 0 NOT NULL,
+    tasks_emitted integer DEFAULT 0 NOT NULL,
+    status text DEFAULT 'running'::text NOT NULL,
+    detail text DEFAULT '{}'::text,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT foundry_runs_status_check CHECK ((status = ANY (ARRAY['running'::text, 'completed'::text, 'failed'::text, 'deferred'::text, 'rate_limited'::text, 'circuit_open'::text])))
+);
+
+
+--
+-- Name: foundry_runs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.foundry_runs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: foundry_runs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.foundry_runs_id_seq OWNED BY public.foundry_runs.id;
+
+
+--
+-- Name: foundry_signals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.foundry_signals (
+    id bigint NOT NULL,
+    run_id text NOT NULL,
+    source_engine text NOT NULL,
+    source_ref text NOT NULL,
+    theme text,
+    raw_score real DEFAULT 0.0,
+    keywords text DEFAULT '[]'::text,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    content_hash text,
+    CONSTRAINT foundry_signals_source_engine_check CHECK ((source_engine = ANY (ARRAY['innovation'::text, 'creative'::text, 'research'::text, 'genesis'::text, 'rfi'::text, 'telemetry'::text])))
+);
+
+
+--
+-- Name: foundry_signals_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.foundry_signals_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: foundry_signals_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.foundry_signals_id_seq OWNED BY public.foundry_signals.id;
+
+
+--
+-- Name: foundry_specs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.foundry_specs (
+    id bigint NOT NULL,
+    concept_id integer NOT NULL,
+    spec_md text NOT NULL,
+    canvas_contract text DEFAULT '{}'::text,
+    task_count integer DEFAULT 0 NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+
+--
+-- Name: foundry_specs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.foundry_specs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: foundry_specs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.foundry_specs_id_seq OWNED BY public.foundry_specs.id;
+
+
+--
+-- Name: foundry_tasks_emitted; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.foundry_tasks_emitted (
+    id bigint NOT NULL,
+    concept_id integer NOT NULL,
+    kanban_task_id text NOT NULL,
+    epic text,
+    seq integer DEFAULT 0 NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+
+--
+-- Name: foundry_tasks_emitted_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.foundry_tasks_emitted_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: foundry_tasks_emitted_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.foundry_tasks_emitted_id_seq OWNED BY public.foundry_tasks_emitted.id;
 
 
 --
@@ -14956,6 +19551,23 @@ ALTER SEQUENCE public.gao_ai_assessments_id_seq OWNED BY public.gao_ai_assessmen
 
 
 --
+-- Name: gate_failures; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.gate_failures (
+    id text NOT NULL,
+    gate_id text NOT NULL,
+    criterion text DEFAULT ''::text NOT NULL,
+    detail text DEFAULT ''::text NOT NULL,
+    severity text DEFAULT 'warning'::text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI // SP-CTI'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT gate_failures_severity_check CHECK ((severity = ANY (ARRAY['critical'::text, 'high'::text, 'warning'::text, 'info'::text])))
+);
+
+
+--
 -- Name: gd_ai_artifacts; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -15258,7 +19870,9 @@ CREATE TABLE public.gd_ai_training_pairs (
     ft_dataset_id text,
     created_at text NOT NULL,
     game_key text DEFAULT 'gameday'::text NOT NULL,
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    tournament_id text,
+    artifact_type text
 );
 
 
@@ -15366,14 +19980,14 @@ CREATE TABLE public.genesis_convergence_log (
 
 CREATE TABLE public.genesis_designs (
     id text NOT NULL,
-    name text NOT NULL DEFAULT '',
-    status text NOT NULL DEFAULT 'pending',
+    name text DEFAULT ''::text NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
     current_phase text,
-    detail_json text DEFAULT '{}',
-    tenant_id text NOT NULL DEFAULT 'default',
-    classification character varying(50) DEFAULT 'CUI'::character varying,
-    created_at text NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at text NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    detail_json text DEFAULT '{}'::text,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT genesis_designs_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'running'::text, 'completed'::text, 'failed'::text, 'cancelled'::text])))
 );
 
@@ -15475,17 +20089,48 @@ CREATE TABLE public.genesis_learned_goals (
 --
 
 CREATE TABLE public.genesis_outputs (
-    id             text NOT NULL,
-    reflex_name    text NOT NULL,
-    output_type    text NOT NULL,
-    output_ref     text,
-    summary        text,
-    created_at     text NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    id text NOT NULL,
+    reflex_name text NOT NULL,
+    output_type text NOT NULL,
+    output_ref text,
+    summary text,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    classification text DEFAULT 'CUI'::text
 );
 
-CREATE INDEX idx_go_reflex_name ON public.genesis_outputs (reflex_name);
-CREATE INDEX idx_go_created_at  ON public.genesis_outputs (created_at);
+
+--
+-- Name: genesis_phase_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.genesis_phase_log (
+    id integer NOT NULL,
+    design_id text NOT NULL,
+    phase text NOT NULL,
+    status text NOT NULL,
+    started_at text,
+    completed_at text
+);
+
+
+--
+-- Name: genesis_phase_log_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.genesis_phase_log_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: genesis_phase_log_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.genesis_phase_log_id_seq OWNED BY public.genesis_phase_log.id;
 
 
 --
@@ -15497,47 +20142,6 @@ CREATE TABLE public.genesis_reflex_log (
     reflex_name text NOT NULL,
     ran_at text NOT NULL,
     result_json text,
-    classification character varying(50) DEFAULT 'CUI'::character varying
-);
-
-
---
--- Name: genesis_phase_log; Type: TABLE; Schema: public; Owner: -
--- Phase execution log for Genesis design runs (migration 188, NIST AU — append-only).
---
-
-CREATE TABLE public.genesis_phase_log (
-    id             BIGSERIAL   PRIMARY KEY,
-    design_id      TEXT        NOT NULL,
-    phase          TEXT        NOT NULL,
-    status         TEXT        NOT NULL DEFAULT 'running'
-                   CHECK (status IN ('running', 'completed', 'failed', 'skipped')),
-    started_at     TEXT,
-    completed_at   TEXT,
-    detail_json    TEXT        DEFAULT '{}',
-    tenant_id      TEXT        NOT NULL DEFAULT 'default',
-    classification TEXT        NOT NULL DEFAULT 'CUI',
-    created_at     TEXT        NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT genesis_phase_log_design_id_phase_key UNIQUE (design_id, phase)
-);
-
-CREATE INDEX IF NOT EXISTS idx_gpl_design_id    ON public.genesis_phase_log (design_id);
-CREATE INDEX IF NOT EXISTS idx_gpl_completed_at ON public.genesis_phase_log (completed_at);
-CREATE INDEX IF NOT EXISTS idx_gpl_tenant       ON public.genesis_phase_log (tenant_id);
-
-
---
--- Name: genesis_reflexes; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.genesis_reflexes (
-    id text NOT NULL,
-    design_id text NOT NULL,
-    name text NOT NULL,
-    confidence real NOT NULL DEFAULT 0.0,
-    fired_at text NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    result_json text DEFAULT '{}',
-    tenant_id text NOT NULL DEFAULT 'default',
     classification character varying(50) DEFAULT 'CUI'::character varying
 );
 
@@ -15561,6 +20165,22 @@ CREATE TABLE public.genesis_reflex_state (
     last_error text,
     updated_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying
+);
+
+
+--
+-- Name: genesis_reflexes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.genesis_reflexes (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    name text NOT NULL,
+    confidence real DEFAULT 0.0 NOT NULL,
+    fired_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    result_json text DEFAULT '{}'::text,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL
 );
 
 
@@ -15625,6 +20245,28 @@ CREATE TABLE public.genome_versions (
 
 
 --
+-- Name: geoint_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.geoint_events (
+    id text NOT NULL,
+    source text NOT NULL,
+    event_type text,
+    title text,
+    description text,
+    lat double precision,
+    lon double precision,
+    magnitude double precision,
+    severity text DEFAULT 'medium'::text,
+    country text,
+    occurred_at text,
+    fetched_at text,
+    raw_json text,
+    classification text DEFAULT 'CUI'::text
+);
+
+
+--
 -- Name: ghost_track_predictions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -15663,6 +20305,38 @@ CREATE SEQUENCE public.ghost_track_predictions_id_seq
 --
 
 ALTER SEQUENCE public.ghost_track_predictions_id_seq OWNED BY public.ghost_track_predictions.id;
+
+
+--
+-- Name: github_inbox; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.github_inbox (
+    comment_id integer NOT NULL,
+    message_json text NOT NULL,
+    issue_number integer,
+    user_login text,
+    text text,
+    processed_at text,
+    error text,
+    created_at text DEFAULT now()
+);
+
+
+--
+-- Name: gitlab_inbox; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.gitlab_inbox (
+    note_id integer NOT NULL,
+    message_json text NOT NULL,
+    issue_iid integer,
+    author_username text,
+    text text,
+    processed_at text,
+    error text,
+    created_at text DEFAULT now()
+);
 
 
 --
@@ -16116,6 +20790,23 @@ CREATE TABLE public.govlift_runbook_executions (
 
 
 --
+-- Name: govlift_runbook_step_results; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.govlift_runbook_step_results (
+    id text NOT NULL,
+    execution_id text NOT NULL,
+    runbook_id text NOT NULL,
+    step_num integer NOT NULL,
+    step_name text DEFAULT ''::text,
+    status text DEFAULT 'pending'::text,
+    output text DEFAULT ''::text,
+    started_at text,
+    completed_at text
+);
+
+
+--
 -- Name: govlift_runbook_steps; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -16151,6 +20842,7 @@ CREATE TABLE public.govlift_runbook_templates (
     author text DEFAULT ''::text,
     steps_json text DEFAULT '[]'::text,
     created_at text DEFAULT now(),
+    estimated_min integer,
     CONSTRAINT govlift_runbook_templates_category_check CHECK ((category = ANY (ARRAY['stig_remediation'::text, 'cloud_migration'::text, 'security_hardening'::text, 'compliance_audit'::text, 'disaster_recovery'::text, 'network_configuration'::text])))
 );
 
@@ -16169,6 +20861,7 @@ CREATE TABLE public.govlift_runbooks (
     created_at text,
     updated_at text,
     classification text DEFAULT 'CUI'::text,
+    template_id text DEFAULT ''::text NOT NULL,
     CONSTRAINT govlift_runbooks_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'active'::text, 'archived'::text])))
 );
 
@@ -16632,6 +21325,8 @@ CREATE TABLE public.hook_events (
     classification text DEFAULT 'CUI'::text,
     signature text,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    severity text,
+    message text,
     CONSTRAINT hook_events_hook_type_check CHECK ((hook_type = ANY (ARRAY['pre_tool_use'::text, 'post_tool_use'::text, 'notification'::text, 'stop'::text, 'subagent_stop'::text, 'twin_drift'::text])))
 );
 
@@ -16695,7 +21390,9 @@ CREATE TABLE public.icdev_capability_map (
     coverage_score real DEFAULT 0.0 NOT NULL,
     matched_keywords text DEFAULT '[]'::text,
     mapped_at text NOT NULL,
-    classification text DEFAULT 'CUI'::text
+    classification text DEFAULT 'CUI'::text,
+    grade text,
+    metadata text
 );
 
 
@@ -16969,6 +21666,209 @@ CREATE TABLE public.idc_versions (
     user_id text DEFAULT ''::text,
     created_at text DEFAULT CURRENT_TIMESTAMP,
     classification character varying(50) DEFAULT 'CUI'::character varying
+);
+
+
+--
+-- Name: idp_rule_exemptions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.idp_rule_exemptions (
+    id text NOT NULL,
+    exemption_key text NOT NULL,
+    scorecard_key text NOT NULL,
+    rule_identifier text NOT NULL,
+    component_key text NOT NULL,
+    event text NOT NULL,
+    status text NOT NULL,
+    event_index integer DEFAULT 1 NOT NULL,
+    reason text NOT NULL,
+    requested_by text NOT NULL,
+    decided_by text,
+    decision_reason text,
+    auto_approved integer DEFAULT 0 NOT NULL,
+    self_approved integer DEFAULT 0 NOT NULL,
+    expires_on text,
+    notified text,
+    recorded_at text NOT NULL,
+    tenant_id text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: idp_scorecard_history; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.idp_scorecard_history (
+    id text NOT NULL,
+    run_id text NOT NULL,
+    scorecard_key text NOT NULL,
+    component_key text NOT NULL,
+    evaluated_at text NOT NULL,
+    window_start text NOT NULL,
+    window_label text NOT NULL,
+    ladder_level text,
+    level_rank integer DEFAULT 0 NOT NULL,
+    score real DEFAULT 0 NOT NULL,
+    earned_weight integer DEFAULT 0 NOT NULL,
+    total_weight integer DEFAULT 0 NOT NULL,
+    failing_rules integer DEFAULT 0 NOT NULL,
+    rule_outcomes text,
+    tenant_id text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: idr_analyses; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.idr_analyses (
+    id text NOT NULL,
+    session_id text NOT NULL,
+    upload_id text,
+    analysis_type text DEFAULT 'diagram_analysis'::text NOT NULL,
+    result_ref_id text,
+    status text DEFAULT 'pending'::text NOT NULL,
+    error_msg text,
+    tenant_id text,
+    created_at timestamp with time zone DEFAULT now(),
+    classification text DEFAULT 'CUI'::text,
+    result_json text
+);
+
+
+--
+-- Name: idr_artifacts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.idr_artifacts (
+    id text NOT NULL,
+    session_id text NOT NULL,
+    dic_doc_id text,
+    dic_version_id text,
+    format text NOT NULL,
+    file_path text,
+    wg_result_id text,
+    published_at timestamp without time zone,
+    tenant_id text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    classification text DEFAULT 'CUI'::text,
+    CONSTRAINT idr_artifacts_format_check CHECK ((format = ANY (ARRAY['html'::text, 'docx'::text, 'pdf'::text])))
+);
+
+
+--
+-- Name: idr_conflicts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.idr_conflicts (
+    id text NOT NULL,
+    session_id text NOT NULL,
+    node_label text NOT NULL,
+    conflict_type text NOT NULL,
+    source_a text NOT NULL,
+    source_a_value text,
+    source_b text NOT NULL,
+    source_b_value text,
+    resolved_by text,
+    resolution text,
+    resolution_notes text,
+    resolved_at timestamp without time zone,
+    tenant_id text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    classification text DEFAULT 'CUI'::text,
+    CONSTRAINT idr_conflicts_conflict_type_check CHECK ((conflict_type = ANY (ARRAY['node_type'::text, 'property'::text, 'missing_in_source'::text, 'topology_discrepancy'::text, 'boundary_discrepancy'::text]))),
+    CONSTRAINT idr_conflicts_resolution_check CHECK ((resolution = ANY (ARRAY['a'::text, 'b'::text, 'manual'::text])))
+);
+
+
+--
+-- Name: idr_publish_audit; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.idr_publish_audit (
+    id text NOT NULL,
+    session_id text NOT NULL,
+    gate text NOT NULL,
+    reviewer text,
+    findings text,
+    tenant_id text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT idr_publish_audit_gate_check CHECK ((gate = ANY (ARRAY['citation_guard'::text, 'claim_guard'::text, 'constitution_guard'::text, 'cove_guard'::text, 'kg_guard'::text, 'placeholder_guard'::text, 'structure_guard'::text])))
+);
+
+
+--
+-- Name: idr_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.idr_sessions (
+    id text NOT NULL,
+    title text NOT NULL,
+    domain text DEFAULT 'network'::text NOT NULL,
+    doc_type text DEFAULT 'runbook'::text NOT NULL,
+    template_id text,
+    stage integer DEFAULT 0 NOT NULL,
+    status text DEFAULT 'setup'::text NOT NULL,
+    dic_collection_id text,
+    ace_instance_id text,
+    topology_id text,
+    wg_result_id text,
+    created_by text,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    suggested_classification text,
+    suggested_classification_confidence real,
+    prior_docs_context text,
+    last_source_hash text,
+    source_hash_checked_at timestamp with time zone,
+    final_doc_text text,
+    conflicts_resolved boolean DEFAULT false,
+    dic_doc_id text,
+    source_dic_doc_id text,
+    CONSTRAINT idr_sessions_domain_check CHECK ((domain = ANY (ARRAY['network'::text, 'security'::text, 'devops'::text, 'developer'::text, 'compliance'::text, 'standard_guide'::text]))),
+    CONSTRAINT idr_sessions_stage_check CHECK (((stage >= 0) AND (stage <= 8))),
+    CONSTRAINT idr_sessions_status_check CHECK ((status = ANY (ARRAY['setup'::text, 'ingesting'::text, 'analyzing'::text, 'conflicts'::text, 'synthesizing'::text, 'generating'::text, 'writeguard'::text, 'reviewing'::text, 'publishing'::text, 'published'::text, 'failed'::text])))
+);
+
+
+--
+-- Name: idr_uploads; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.idr_uploads (
+    upload_id text NOT NULL,
+    session_id text NOT NULL,
+    collection_id text NOT NULL,
+    filename text NOT NULL,
+    filepath text,
+    doc_id text,
+    version_id text,
+    provider text,
+    content_type text,
+    byte_size bigint,
+    chunks integer DEFAULT 0,
+    chunks_embedded integer DEFAULT 0,
+    kg_entities integer DEFAULT 0,
+    status text DEFAULT 'pending'::text NOT NULL,
+    errors_json text,
+    created_at text NOT NULL,
+    tenant_id text,
+    classification text,
+    id text,
+    upload_type text DEFAULT 'doc'::text,
+    file_path text,
+    file_hash text,
+    dic_doc_id text,
+    extracted_from_doc_id text,
+    error_msg text,
+    uploaded_at timestamp with time zone DEFAULT now()
 );
 
 
@@ -17342,6 +22242,26 @@ CREATE TABLE public.innovation_feedback (
 
 
 --
+-- Name: innovation_signal; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.innovation_signal (
+    id text NOT NULL,
+    concept_id text,
+    signal_type text DEFAULT 'opportunity'::text,
+    source_ref text,
+    score real DEFAULT 0.0,
+    rank integer,
+    content_hash text NOT NULL,
+    metadata text DEFAULT '{}'::text,
+    classification text DEFAULT 'CUI'::text,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    CONSTRAINT innovation_signal_signal_type_check CHECK ((signal_type = ANY (ARRAY['opportunity'::text, 'trend'::text, 'threat'::text, 'technology'::text, 'regulatory'::text, 'other'::text])))
+);
+
+
+--
 -- Name: innovation_signals; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -17368,6 +22288,8 @@ CREATE TABLE public.innovation_signals (
     boundary_tier text,
     classification text DEFAULT 'CUI'::text,
     created_at text,
+    raw_score real,
+    keywords text,
     CONSTRAINT innovation_signals_boundary_tier_check CHECK (((boundary_tier IS NULL) OR (boundary_tier = ANY (ARRAY['GREEN'::text, 'YELLOW'::text, 'ORANGE'::text, 'RED'::text])))),
     CONSTRAINT innovation_signals_gotcha_layer_check CHECK (((gotcha_layer IS NULL) OR (gotcha_layer = ANY (ARRAY['goal'::text, 'tool'::text, 'arg'::text, 'context'::text, 'hardprompt'::text])))),
     CONSTRAINT innovation_signals_status_check CHECK ((status = ANY (ARRAY['new'::text, 'scored'::text, 'triaged'::text, 'approved'::text, 'suggested'::text, 'blocked'::text, 'logged'::text, 'solution_generated'::text, 'published'::text]))),
@@ -17464,6 +22386,61 @@ CREATE TABLE public.innovation_triage_log (
     CONSTRAINT innovation_triage_log_result_check CHECK ((result = ANY (ARRAY['pass'::text, 'block'::text, 'warn'::text]))),
     CONSTRAINT innovation_triage_log_stage_check CHECK (((stage >= 1) AND (stage <= 5)))
 );
+
+
+--
+-- Name: insider_risk_baselines; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.insider_risk_baselines (
+    account_id text NOT NULL,
+    typical_hours text DEFAULT '[]'::text,
+    event_count integer DEFAULT 0,
+    distinct_events integer DEFAULT 0,
+    export_count integer DEFAULT 0,
+    first_seen text,
+    last_seen text,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: insider_risk_scores; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.insider_risk_scores (
+    id integer NOT NULL,
+    account_id text NOT NULL,
+    risk_score real NOT NULL,
+    risk_band text NOT NULL,
+    rules_fired text DEFAULT '[]'::text,
+    details_json text DEFAULT '{}'::text,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: insider_risk_scores_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.insider_risk_scores_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: insider_risk_scores_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.insider_risk_scores_id_seq OWNED BY public.insider_risk_scores.id;
 
 
 --
@@ -18252,7 +23229,9 @@ CREATE TABLE public.kanban_executions (
     output_summary text,
     executor_url text,
     created_at text DEFAULT CURRENT_TIMESTAMP,
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    run_summary text,
+    run_metadata text
 );
 
 
@@ -18325,6 +23304,20 @@ CREATE TABLE public.kanban_task_revivals (
 
 
 --
+-- Name: kanban_task_subscriptions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.kanban_task_subscriptions (
+    id text NOT NULL,
+    task_id text NOT NULL,
+    channel text NOT NULL,
+    target text NOT NULL,
+    events text DEFAULT 'done,token_exhausted'::text NOT NULL,
+    created_at text DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: kanban_task_tags; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -18375,6 +23368,23 @@ CREATE TABLE public.kanban_tasks (
     project_id text,
     tags text,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    source_doc_id text,
+    source_collection_id text,
+    loop_type text DEFAULT 'deterministic'::text,
+    adversarial_enabled integer DEFAULT 0,
+    idempotency_key text,
+    max_runtime_seconds integer,
+    last_heartbeat_at text,
+    max_retries integer DEFAULT 5,
+    last_run_summary text,
+    last_run_metadata text,
+    acceptance_criteria text,
+    triage_prompt text,
+    due_date text,
+    sla_hours integer,
+    execution_seconds real,
+    dispatch_pid integer,
+    dispatch_pid_started_at text,
     CONSTRAINT kanban_tasks_priority_check CHECK ((priority = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text, 'critical'::text]))),
     CONSTRAINT kanban_tasks_status_check CHECK ((status = ANY (ARRAY['backlog'::text, 'scheduled'::text, 'in_progress'::text, 'done'::text, 'token_exhausted'::text, 'suggested'::text, 'decomposed'::text, 'validating'::text, 'needs_decomposition'::text, 'pr_opened'::text, 'ci_failed'::text, 'merge_conflict'::text, 'changes_requested'::text, 'failed'::text]))),
     CONSTRAINT kanban_tasks_task_type_check CHECK ((task_type = ANY (ARRAY['build'::text, 'run'::text, 'fix'::text, 'research'::text, 'deploy'::text, 'test'::text, 'chore'::text])))
@@ -18427,15 +23437,15 @@ CREATE TABLE public.kanban_verifications (
     e2e_passed integer,
     e2e_errors text,
     companion_synced integer,
-    review_passed integer,
-    review_findings text,
-    pytest_ran integer DEFAULT 0,
     created_at text DEFAULT CURRENT_TIMESTAMP,
     remediation_attempted integer DEFAULT 0,
     remediation_success integer,
     remediation_type text,
     dispatch_source text DEFAULT 'unknown'::text,
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    review_passed integer,
+    review_findings text,
+    pytest_ran integer DEFAULT 0
 );
 
 
@@ -18835,6 +23845,26 @@ ALTER SEQUENCE public.llm_chain_telemetry_id_seq OWNED BY public.llm_chain_telem
 
 
 --
+-- Name: llm_context_compression_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.llm_context_compression_log (
+    id text NOT NULL,
+    session_id text,
+    content_type text DEFAULT 'text'::text NOT NULL,
+    method text NOT NULL,
+    original_tokens integer DEFAULT 0 NOT NULL,
+    compressed_tokens integer DEFAULT 0 NOT NULL,
+    compression_ratio real DEFAULT 1.0 NOT NULL,
+    reversible boolean DEFAULT true NOT NULL,
+    budget_tokens integer,
+    duration_ms integer DEFAULT 0,
+    headroom_available boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: llm_cost_alerts; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -18986,7 +24016,7 @@ CREATE TABLE public.llm_judge_evaluations (
 -- Name: llm_response_cache; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE UNLOGGED TABLE public.llm_response_cache (
+CREATE TABLE public.llm_response_cache (
     cache_key text NOT NULL,
     function text NOT NULL,
     model_id text NOT NULL,
@@ -19370,6 +24400,1576 @@ CREATE TABLE public.marketplace_versions (
 
 
 --
+-- Name: markitdown_conversions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.markitdown_conversions (
+    conversion_id text NOT NULL,
+    source text NOT NULL,
+    doc_id text,
+    collection_id text NOT NULL,
+    provider text,
+    created_by text,
+    tenant_id text,
+    classification text,
+    success integer DEFAULT 1 NOT NULL,
+    created_at text NOT NULL
+);
+
+
+--
+-- Name: mattermost_inbox; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mattermost_inbox (
+    post_id text NOT NULL,
+    message_json text NOT NULL,
+    channel_id text,
+    user_id text,
+    text text,
+    processed_at text,
+    error text,
+    created_at text DEFAULT now()
+);
+
+
+--
+-- Name: mc_ai_opportunities; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_ai_opportunities (
+    id text NOT NULL,
+    project_id text NOT NULL,
+    app_id text,
+    component_name text NOT NULL,
+    opportunity_title text NOT NULL,
+    aws_ai_service text NOT NULL,
+    benefit_category text DEFAULT 'efficiency'::text,
+    effort_days integer DEFAULT 0,
+    status text DEFAULT 'identified'::text,
+    notes text DEFAULT ''::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT mc_ai_opportunities_benefit_category_check CHECK ((benefit_category = ANY (ARRAY['search'::text, 'nlq'::text, 'pipeline'::text, 'caching'::text, 'ux'::text, 'analytics'::text, 'security'::text, 'efficiency'::text]))),
+    CONSTRAINT mc_ai_opportunities_status_check CHECK ((status = ANY (ARRAY['identified'::text, 'scoped'::text, 'in_progress'::text, 'complete'::text, 'deferred'::text])))
+);
+
+
+--
+-- Name: mc_app_data_sources; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_app_data_sources (
+    id text NOT NULL,
+    app_id text,
+    source_type text,
+    host text,
+    port integer,
+    database_name text,
+    schema_version text,
+    estimated_size_gb real,
+    replication_lag_seconds integer,
+    migration_method text,
+    migration_status text DEFAULT 'pending'::text,
+    notes text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT mc_app_data_sources_migration_method_check CHECK ((migration_method = ANY (ARRAY['dump_restore'::text, 'cdc'::text, 'replication'::text, 'manual'::text]))),
+    CONSTRAINT mc_app_data_sources_source_type_check CHECK ((source_type = ANY (ARRAY['postgresql'::text, 'mysql'::text, 'oracle'::text, 'mssql'::text, 'mongodb'::text, 'redis'::text, 'elasticsearch'::text, 's3'::text, 'sftp'::text, 'api'::text])))
+);
+
+
+--
+-- Name: mc_app_inventory; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_app_inventory (
+    id text NOT NULL,
+    session_id text,
+    name text NOT NULL,
+    version text,
+    language text,
+    framework text,
+    app_type text,
+    owner text,
+    team text,
+    criticality text,
+    environment text,
+    stig_category text,
+    license_type text,
+    license_expiry text,
+    source_repo text,
+    artifact_url text,
+    dependencies_json text DEFAULT '[]'::text,
+    migration_strategy text,
+    migration_status text DEFAULT 'pending'::text,
+    notes text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT mc_app_inventory_app_type_check CHECK ((app_type = ANY (ARRAY['web'::text, 'api'::text, 'batch'::text, 'database'::text, 'middleware'::text, 'desktop'::text, 'mobile'::text, 'iot'::text, 'saas'::text]))),
+    CONSTRAINT mc_app_inventory_criticality_check CHECK ((criticality = ANY (ARRAY['mission_critical'::text, 'high'::text, 'medium'::text, 'low'::text]))),
+    CONSTRAINT mc_app_inventory_environment_check CHECK ((environment = ANY (ARRAY['production'::text, 'staging'::text, 'development'::text]))),
+    CONSTRAINT mc_app_inventory_migration_strategy_check CHECK ((migration_strategy = ANY (ARRAY['rehost'::text, 'replatform'::text, 'refactor'::text, 'rearchitect'::text, 'repurchase'::text, 'retire'::text, 'retain'::text]))),
+    CONSTRAINT mc_app_inventory_stig_category_check CHECK ((stig_category = ANY (ARRAY['cat1'::text, 'cat2'::text, 'cat3'::text, 'na'::text])))
+);
+
+
+--
+-- Name: mc_app_migration_steps; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_app_migration_steps (
+    id text NOT NULL,
+    app_id text,
+    step_order integer,
+    phase text,
+    action text,
+    command text,
+    expected_output text,
+    timeout_seconds integer,
+    status text DEFAULT 'pending'::text,
+    executed_at text,
+    result text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT mc_app_migration_steps_phase_check CHECK ((phase = ANY (ARRAY['pre'::text, 'cutover'::text, 'post'::text, 'rollback'::text])))
+);
+
+
+--
+-- Name: mc_assessments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_assessments (
+    id text NOT NULL,
+    design_id text,
+    assessment_type text DEFAULT 'full'::text NOT NULL,
+    findings_json text DEFAULT '[]'::text,
+    score real DEFAULT 0,
+    grade text DEFAULT 'N/A'::text,
+    cat1_findings integer DEFAULT 0,
+    cat2_findings integer DEFAULT 0,
+    cat3_findings integer DEFAULT 0,
+    readiness_score real DEFAULT 0,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: mc_audit; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_audit (
+    id integer NOT NULL,
+    design_id text,
+    "user" text DEFAULT ''::text,
+    action text NOT NULL,
+    detail text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: mc_audit_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.mc_audit_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: mc_audit_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.mc_audit_id_seq OWNED BY public.mc_audit.id;
+
+
+--
+-- Name: mc_cloud_instances; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_cloud_instances (
+    id integer NOT NULL,
+    provider text NOT NULL,
+    instance_type text NOT NULL,
+    family text DEFAULT ''::text NOT NULL,
+    vcpus integer DEFAULT 0 NOT NULL,
+    ram_gb real DEFAULT 0 NOT NULL,
+    local_storage_gb real DEFAULT 0,
+    storage_type text DEFAULT ''::text,
+    network_gbps real DEFAULT 0,
+    premium_disk_opt integer DEFAULT 0,
+    cost_tier text DEFAULT 'medium'::text,
+    govcloud integer DEFAULT 0,
+    il_support text DEFAULT '[]'::text,
+    use_case_tags text DEFAULT '[]'::text,
+    eol_status text DEFAULT 'active'::text,
+    compliance_certs text DEFAULT '{}'::text,
+    source text DEFAULT 'seed'::text,
+    last_refreshed_at text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    pricing_model text DEFAULT 'on_demand'::text,
+    spot_price real,
+    reserved_1yr_price real,
+    reserved_3yr_price real,
+    savings_plan_price real,
+    interruption_rate text DEFAULT ''::text
+);
+
+
+--
+-- Name: mc_cloud_instances_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.mc_cloud_instances_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: mc_cloud_instances_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.mc_cloud_instances_id_seq OWNED BY public.mc_cloud_instances.id;
+
+
+--
+-- Name: mc_compliance_checks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_compliance_checks (
+    id text NOT NULL,
+    session_id text,
+    design_id text,
+    il_level text NOT NULL,
+    target_env text NOT NULL,
+    migration_type text,
+    status text DEFAULT 'pass'::text,
+    findings_json text DEFAULT '[]'::text,
+    frameworks_json text DEFAULT '[]'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT mc_compliance_checks_status_check CHECK ((status = ANY (ARRAY['pass'::text, 'warn'::text, 'block'::text])))
+);
+
+
+--
+-- Name: mc_data_migration; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_data_migration (
+    id text NOT NULL,
+    session_id text,
+    app_id text,
+    source_type text,
+    source_host text,
+    source_db text,
+    source_schema text,
+    target_type text,
+    target_host text,
+    target_db text,
+    target_schema text,
+    migration_method text,
+    estimated_size_gb real,
+    estimated_duration_minutes integer,
+    validation_query text,
+    validation_status text DEFAULT 'pending'::text,
+    cutover_type text,
+    rollback_procedure text,
+    status text DEFAULT 'planned'::text,
+    started_at text,
+    completed_at text,
+    notes text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT mc_data_migration_cutover_type_check CHECK ((cutover_type = ANY (ARRAY['offline'::text, 'online_with_cdc'::text, 'snapshot'::text]))),
+    CONSTRAINT mc_data_migration_migration_method_check CHECK ((migration_method = ANY (ARRAY['dump_restore'::text, 'cdc'::text, 'pgloader'::text, 'mysqldump'::text, 'mongodump'::text, 'rsync'::text, 'aws_dms'::text]))),
+    CONSTRAINT mc_data_migration_source_type_check CHECK ((source_type = ANY (ARRAY['postgresql'::text, 'mysql'::text, 'oracle'::text, 'mssql'::text, 'mongodb'::text, 'redis'::text, 'files'::text, 's3'::text])))
+);
+
+
+--
+-- Name: mc_migration_waves; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_migration_waves (
+    id text NOT NULL,
+    session_id text NOT NULL,
+    wave_number integer NOT NULL,
+    name text NOT NULL,
+    cutover_date text,
+    status text DEFAULT 'planned'::text,
+    server_ids_json text DEFAULT '[]'::text,
+    notes text,
+    created_at text NOT NULL,
+    classification text DEFAULT 'CUI'::text,
+    app_count integer DEFAULT 0,
+    app_names text DEFAULT '[]'::text,
+    CONSTRAINT mc_migration_waves_status_check CHECK ((status = ANY (ARRAY['planned'::text, 'in_progress'::text, 'complete'::text, 'blocked'::text])))
+);
+
+
+--
+-- Name: mc_net_ai_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_net_ai_sessions (
+    id text NOT NULL,
+    session_id text NOT NULL,
+    role text DEFAULT 'engineer'::text NOT NULL,
+    message text NOT NULL,
+    model_used text DEFAULT ''::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: mc_net_coa_questions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_net_coa_questions (
+    id text NOT NULL,
+    session_id text NOT NULL,
+    question_key text NOT NULL,
+    question_text text NOT NULL,
+    default_answer integer,
+    user_answer integer,
+    coa_a_weight real DEFAULT 0,
+    coa_b_weight real DEFAULT 0,
+    coa_c_weight real DEFAULT 0,
+    ai_relevance text DEFAULT ''::text
+);
+
+
+--
+-- Name: mc_net_compat_checks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_net_compat_checks (
+    id integer NOT NULL,
+    session_id text NOT NULL,
+    category text DEFAULT 'hardware'::text NOT NULL,
+    check_name text NOT NULL,
+    expected text DEFAULT ''::text,
+    actual text DEFAULT ''::text,
+    severity text DEFAULT 'cat2'::text,
+    status text DEFAULT 'pending'::text,
+    override_reason text DEFAULT ''::text,
+    auto_detected integer DEFAULT 1,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: mc_net_compat_checks_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.mc_net_compat_checks_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: mc_net_compat_checks_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.mc_net_compat_checks_id_seq OWNED BY public.mc_net_compat_checks.id;
+
+
+--
+-- Name: mc_net_config_map; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_net_config_map (
+    id text NOT NULL,
+    session_id text NOT NULL,
+    src_section_type text NOT NULL,
+    src_stanza_text text NOT NULL,
+    src_lines_json text DEFAULT '[]'::text,
+    tgt_section_type text DEFAULT ''::text,
+    tgt_stanza_text text DEFAULT ''::text,
+    mapping_action text DEFAULT 'direct'::text NOT NULL,
+    confidence real DEFAULT 0,
+    ai_rationale text DEFAULT ''::text,
+    ai_question_key text DEFAULT ''::text,
+    status text DEFAULT 'pending'::text NOT NULL,
+    reviewer_note text DEFAULT ''::text,
+    applied_to_target integer DEFAULT 0,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT mc_net_config_map_mapping_action_check CHECK ((mapping_action = ANY (ARRAY['direct'::text, 'rename'::text, 'merge'::text, 'split'::text, 'remove'::text, 'manual'::text, 'skip'::text]))),
+    CONSTRAINT mc_net_config_map_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text, 'skipped'::text, 'needs_review'::text])))
+);
+
+
+--
+-- Name: mc_net_config_questions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_net_config_questions (
+    id text NOT NULL,
+    session_id text NOT NULL,
+    question_key text NOT NULL,
+    question_text text NOT NULL,
+    default_answer integer,
+    user_answer integer,
+    ai_relevance text DEFAULT ''::text
+);
+
+
+--
+-- Name: mc_net_config_validation; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_net_config_validation (
+    id text NOT NULL,
+    session_id text NOT NULL,
+    device_id text,
+    run_at text NOT NULL,
+    diff_summary text DEFAULT '{}'::text,
+    completeness_score real DEFAULT 0,
+    status text DEFAULT 'pending'::text,
+    CONSTRAINT mc_net_config_validation_status_check CHECK ((status = ANY (ARRAY['pass'::text, 'partial'::text, 'fail'::text, 'pending'::text])))
+);
+
+
+--
+-- Name: mc_net_cutover_steps; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_net_cutover_steps (
+    id integer NOT NULL,
+    session_id text NOT NULL,
+    seq_no integer DEFAULT 0,
+    circuit_id text DEFAULT ''::text,
+    interface text DEFAULT ''::text,
+    description text DEFAULT ''::text,
+    drain_action text DEFAULT ''::text,
+    cutover_action text DEFAULT ''::text,
+    verify_action text DEFAULT ''::text,
+    rollback_action text DEFAULT ''::text,
+    duration_min integer DEFAULT 5,
+    executed_at text DEFAULT ''::text,
+    status text DEFAULT 'pending'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: mc_net_cutover_steps_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.mc_net_cutover_steps_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: mc_net_cutover_steps_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.mc_net_cutover_steps_id_seq OWNED BY public.mc_net_cutover_steps.id;
+
+
+--
+-- Name: mc_net_eol_data; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_net_eol_data (
+    id text NOT NULL,
+    vendor text NOT NULL,
+    model_pattern text NOT NULL,
+    eol_date text,
+    eos_date text,
+    eosm_date text,
+    source text DEFAULT 'static_seed'::text,
+    synced_at text NOT NULL
+);
+
+
+--
+-- Name: mc_net_erb_metadata; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_net_erb_metadata (
+    id text NOT NULL,
+    session_id text NOT NULL,
+    change_type text DEFAULT 'hardware_replacement'::text,
+    risk_tier text DEFAULT 'medium'::text,
+    business_justification text DEFAULT ''::text,
+    impact_summary text DEFAULT ''::text,
+    rollback_plan text DEFAULT ''::text,
+    mw_start text DEFAULT ''::text,
+    mw_end text DEFAULT ''::text,
+    go_nogo_criteria text DEFAULT '{}'::text,
+    requestor text DEFAULT ''::text,
+    sop_id text DEFAULT ''::text,
+    approval_status text DEFAULT 'draft'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: mc_net_parallel_timelines; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_net_parallel_timelines (
+    id text NOT NULL,
+    session_id text NOT NULL,
+    milestone_name text NOT NULL,
+    description text DEFAULT ''::text,
+    days_before_cutover integer DEFAULT 0,
+    phase text DEFAULT 'pre_migration'::text NOT NULL,
+    owner text DEFAULT ''::text,
+    duration_hours integer DEFAULT 1,
+    status text DEFAULT 'planned'::text,
+    notes text DEFAULT ''::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: mc_net_port_map; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_net_port_map (
+    id integer NOT NULL,
+    session_id text NOT NULL,
+    src_interface text NOT NULL,
+    src_speed_gbps real DEFAULT 0,
+    src_media text DEFAULT ''::text,
+    src_optic_type text DEFAULT ''::text,
+    src_ip_address text DEFAULT ''::text,
+    src_description text DEFAULT ''::text,
+    src_circuit_id text DEFAULT ''::text,
+    tgt_interface text DEFAULT ''::text,
+    tgt_speed_gbps real DEFAULT 0,
+    tgt_optic_required text DEFAULT ''::text,
+    optic_change integer DEFAULT 0,
+    speed_mismatch integer DEFAULT 0,
+    cable_id text DEFAULT ''::text,
+    far_end_device text DEFAULT ''::text,
+    far_end_port text DEFAULT ''::text,
+    notes text DEFAULT ''::text,
+    status text DEFAULT 'pending'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: mc_net_port_map_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.mc_net_port_map_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: mc_net_port_map_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.mc_net_port_map_id_seq OWNED BY public.mc_net_port_map.id;
+
+
+--
+-- Name: mc_net_protocol_plans; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_net_protocol_plans (
+    id text NOT NULL,
+    session_id text NOT NULL,
+    protocol text NOT NULL,
+    src_config_json text DEFAULT '{}'::text,
+    tgt_config_json text DEFAULT '{}'::text,
+    migration_steps_json text DEFAULT '[]'::text,
+    risk_level text DEFAULT 'medium'::text,
+    ai_notes text DEFAULT ''::text,
+    status text DEFAULT 'draft'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    variant text DEFAULT 'standard'::text,
+    advanced_config text DEFAULT '{}'::text
+);
+
+
+--
+-- Name: mc_net_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_net_sessions (
+    id text NOT NULL,
+    design_id text,
+    src_model text DEFAULT 'MX10003'::text NOT NULL,
+    tgt_model text DEFAULT 'MX304'::text NOT NULL,
+    src_device_name text DEFAULT ''::text,
+    tgt_device_name text DEFAULT ''::text,
+    src_site text DEFAULT ''::text,
+    tgt_site text DEFAULT ''::text,
+    src_config_raw text DEFAULT ''::text,
+    config_parsed integer DEFAULT 0,
+    readiness_score real DEFAULT 0,
+    status text DEFAULT 'in_progress'::text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    tgt_engine_count text DEFAULT ''::text,
+    tgt_blade_type text DEFAULT ''::text,
+    tgt_connector_type text DEFAULT ''::text,
+    tgt_fiber_mode text DEFAULT ''::text,
+    tgt_connector_style text DEFAULT ''::text,
+    tgt_re_count text DEFAULT ''::text,
+    tgt_line_cards text DEFAULT '[]'::text,
+    tgt_pigtail_ports text DEFAULT '[]'::text,
+    tgt_vrf_loopbacks text DEFAULT '[]'::text,
+    tgt_special_options text DEFAULT '{}'::text,
+    topology_id text DEFAULT ''::text,
+    target_config text DEFAULT ''::text,
+    engineer_context text DEFAULT ''::text,
+    recommended_coa text DEFAULT ''::text,
+    selected_coa text DEFAULT ''::text,
+    coa_rationale text DEFAULT ''::text,
+    topology_json text DEFAULT ''::text,
+    topology_neighbors_json text DEFAULT ''::text
+);
+
+
+--
+-- Name: mc_net_test_cases; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_net_test_cases (
+    id integer NOT NULL,
+    session_id text NOT NULL,
+    phase text DEFAULT 'pre'::text NOT NULL,
+    seq_no integer DEFAULT 0,
+    test_name text NOT NULL,
+    procedure text DEFAULT ''::text,
+    expected_result text DEFAULT ''::text,
+    actual_result text DEFAULT ''::text,
+    passed integer,
+    notes text DEFAULT ''::text,
+    executed_at text DEFAULT ''::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: mc_net_test_cases_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.mc_net_test_cases_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: mc_net_test_cases_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.mc_net_test_cases_id_seq OWNED BY public.mc_net_test_cases.id;
+
+
+--
+-- Name: mc_net_topology_neighbors; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_net_topology_neighbors (
+    id text NOT NULL,
+    session_id text NOT NULL,
+    neighbor_name text DEFAULT ''::text,
+    neighbor_ip text DEFAULT ''::text,
+    relationship text DEFAULT ''::text,
+    source_interface text DEFAULT ''::text,
+    is_discovered integer DEFAULT 0,
+    notes text DEFAULT ''::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: mc_oracle_predictions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_oracle_predictions (
+    id text NOT NULL,
+    design_id text,
+    lens_id text DEFAULT 'migration'::text NOT NULL,
+    title text,
+    description text,
+    confidence real DEFAULT 0,
+    severity text DEFAULT 'info'::text,
+    category text DEFAULT ''::text,
+    recommendations text DEFAULT '[]'::text,
+    data_json text DEFAULT '{}'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: mc_project_phase_sops; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_project_phase_sops (
+    id text NOT NULL,
+    phase_id text NOT NULL,
+    project_id text NOT NULL,
+    sop_source text DEFAULT 'mc'::text NOT NULL,
+    sop_id text NOT NULL,
+    sop_title text DEFAULT ''::text,
+    relevance_note text DEFAULT ''::text,
+    display_order integer DEFAULT 0,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT mc_project_phase_sops_sop_source_check CHECK ((sop_source = ANY (ARRAY['mc'::text, 'ddc'::text, 'idc'::text, 'ndc'::text])))
+);
+
+
+--
+-- Name: mc_project_phases; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_project_phases (
+    id text NOT NULL,
+    project_id text NOT NULL,
+    phase_num integer NOT NULL,
+    title text NOT NULL,
+    description text DEFAULT ''::text,
+    wave_num integer DEFAULT 1,
+    duration_days integer DEFAULT 0,
+    maintenance_window text DEFAULT ''::text,
+    rollback_criteria text DEFAULT ''::text,
+    depends_on_phase_id text,
+    status text DEFAULT 'planned'::text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT mc_project_phases_status_check CHECK ((status = ANY (ARRAY['planned'::text, 'in_progress'::text, 'completed'::text, 'rolled_back'::text])))
+);
+
+
+--
+-- Name: mc_projects; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_projects (
+    id text NOT NULL,
+    name text NOT NULL,
+    description text DEFAULT ''::text,
+    customer text DEFAULT ''::text,
+    owner text DEFAULT ''::text,
+    status text DEFAULT 'draft'::text,
+    classification text DEFAULT 'CUI'::text,
+    impact_level text DEFAULT 'IL4'::text,
+    mc_session_id text,
+    ddc_design_id text,
+    idc_design_id text,
+    ndc_topology_id text,
+    source_stack_json text DEFAULT '[]'::text,
+    target_stack_json text DEFAULT '[]'::text,
+    notes text DEFAULT ''::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT mc_projects_classification_check CHECK ((classification = ANY (ARRAY['PUBLIC'::text, 'CUI'::text, 'SECRET'::text, 'TS'::text]))),
+    CONSTRAINT mc_projects_impact_level_check CHECK ((impact_level = ANY (ARRAY['IL2'::text, 'IL4'::text, 'IL5'::text, 'IL6'::text]))),
+    CONSTRAINT mc_projects_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'in_review'::text, 'approved'::text, 'active'::text, 'complete'::text, 'archived'::text])))
+);
+
+
+--
+-- Name: mc_refactor_jobs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_refactor_jobs (
+    id text NOT NULL,
+    project_id text NOT NULL,
+    app_id text,
+    component_name text NOT NULL,
+    refactor_type text NOT NULL,
+    source_tech text DEFAULT ''::text,
+    target_tech text DEFAULT ''::text,
+    source_language text DEFAULT ''::text,
+    target_language text DEFAULT ''::text,
+    source_path text DEFAULT ''::text,
+    output_path text DEFAULT ''::text,
+    params_json text DEFAULT '{}'::text,
+    status text DEFAULT 'queued'::text,
+    result_summary text DEFAULT ''::text,
+    artifacts_json text DEFAULT '[]'::text,
+    error_message text DEFAULT ''::text,
+    triggered_by text DEFAULT 'auto'::text,
+    phase_id text,
+    ai_opp_id text,
+    started_at text,
+    completed_at text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT mc_refactor_jobs_refactor_type_check CHECK ((refactor_type = ANY (ARRAY['version_upgrade'::text, 'framework_migration'::text, 'db_ddl_generation'::text, 'code_scaffold'::text, 'language_translation'::text, 'ai_integration'::text]))),
+    CONSTRAINT mc_refactor_jobs_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'running'::text, 'completed'::text, 'failed'::text, 'skipped'::text])))
+);
+
+
+--
+-- Name: mc_runbooks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_runbooks (
+    id text NOT NULL,
+    design_id text,
+    title text NOT NULL,
+    trigger_event text DEFAULT 'migration_issue'::text NOT NULL,
+    severity text DEFAULT 'high'::text,
+    description text DEFAULT ''::text,
+    steps_json text DEFAULT '[]'::text,
+    owner text DEFAULT ''::text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: mc_server_dependencies; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_server_dependencies (
+    id text NOT NULL,
+    session_id text NOT NULL,
+    source_server_id text NOT NULL,
+    target_server_id text NOT NULL,
+    dep_type text DEFAULT 'network'::text,
+    direction text DEFAULT 'bidirectional'::text,
+    notes text,
+    created_at text NOT NULL,
+    CONSTRAINT mc_server_dependencies_dep_type_check CHECK ((dep_type = ANY (ARRAY['network'::text, 'application'::text, 'database'::text, 'auth'::text, 'storage'::text]))),
+    CONSTRAINT mc_server_dependencies_direction_check CHECK ((direction = ANY (ARRAY['inbound'::text, 'outbound'::text, 'bidirectional'::text])))
+);
+
+
+--
+-- Name: mc_snippets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_snippets (
+    id text NOT NULL,
+    name text NOT NULL,
+    category text,
+    description text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    tags text DEFAULT '[]'::text
+);
+
+
+--
+-- Name: mc_sops; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_sops (
+    id text NOT NULL,
+    title text NOT NULL,
+    sop_type text DEFAULT 'custom'::text NOT NULL,
+    description text DEFAULT ''::text,
+    purpose text DEFAULT ''::text,
+    scope text DEFAULT ''::text,
+    steps text DEFAULT '[]'::text,
+    nist_controls text DEFAULT '[]'::text,
+    owner text DEFAULT ''::text,
+    reviewer text DEFAULT ''::text,
+    approval_status text DEFAULT 'draft'::text NOT NULL,
+    version text DEFAULT '1.0'::text,
+    next_review_date text DEFAULT ''::text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    approved_by text DEFAULT ''::text,
+    approved_at text DEFAULT ''::text,
+    rejected_reason text DEFAULT ''::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: mc_srv_compat_checks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_srv_compat_checks (
+    id integer NOT NULL,
+    session_id text NOT NULL,
+    category text DEFAULT 'compute'::text NOT NULL,
+    check_name text NOT NULL,
+    expected text DEFAULT ''::text,
+    actual text DEFAULT ''::text,
+    severity text DEFAULT 'cat2'::text,
+    status text DEFAULT 'pending'::text,
+    override_reason text DEFAULT ''::text,
+    auto_detected integer DEFAULT 1,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: mc_srv_compat_checks_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.mc_srv_compat_checks_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: mc_srv_compat_checks_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.mc_srv_compat_checks_id_seq OWNED BY public.mc_srv_compat_checks.id;
+
+
+--
+-- Name: mc_srv_cutover_steps; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_srv_cutover_steps (
+    id integer NOT NULL,
+    session_id text NOT NULL,
+    phase text DEFAULT 'cutover'::text NOT NULL,
+    seq_no integer DEFAULT 0,
+    description text DEFAULT ''::text,
+    action text DEFAULT ''::text,
+    verify_action text DEFAULT ''::text,
+    rollback_action text DEFAULT ''::text,
+    owner text DEFAULT ''::text,
+    duration_min integer DEFAULT 5,
+    executed_at text DEFAULT ''::text,
+    status text DEFAULT 'pending'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: mc_srv_cutover_steps_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.mc_srv_cutover_steps_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: mc_srv_cutover_steps_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.mc_srv_cutover_steps_id_seq OWNED BY public.mc_srv_cutover_steps.id;
+
+
+--
+-- Name: mc_srv_dependencies; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_srv_dependencies (
+    id integer NOT NULL,
+    session_id text NOT NULL,
+    dep_hostname text NOT NULL,
+    dep_ip text DEFAULT ''::text,
+    dep_role text DEFAULT ''::text,
+    dep_type text DEFAULT 'inbound'::text,
+    dep_port integer DEFAULT 0,
+    dep_protocol text DEFAULT 'tcp'::text,
+    criticality text DEFAULT 'medium'::text,
+    migration_order integer DEFAULT 0,
+    notes text DEFAULT ''::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: mc_srv_dependencies_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.mc_srv_dependencies_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: mc_srv_dependencies_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.mc_srv_dependencies_id_seq OWNED BY public.mc_srv_dependencies.id;
+
+
+--
+-- Name: mc_srv_erb_metadata; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_srv_erb_metadata (
+    id text NOT NULL,
+    session_id text NOT NULL,
+    change_type text DEFAULT 'server_migration'::text,
+    risk_tier text DEFAULT 'medium'::text,
+    business_justification text DEFAULT ''::text,
+    technical_summary text DEFAULT ''::text,
+    impact_summary text DEFAULT ''::text,
+    rollback_plan text DEFAULT ''::text,
+    mw_start text DEFAULT ''::text,
+    mw_end text DEFAULT ''::text,
+    go_nogo_criteria text DEFAULT '{}'::text,
+    requestor text DEFAULT ''::text,
+    approver text DEFAULT ''::text,
+    approval_status text DEFAULT 'draft'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: mc_srv_hypervisor_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_srv_hypervisor_sessions (
+    id text NOT NULL,
+    session_id text NOT NULL,
+    adapter_type text NOT NULL,
+    host text NOT NULL,
+    datacenter text DEFAULT ''::text,
+    cluster text DEFAULT ''::text,
+    pulled_at text NOT NULL,
+    vm_count integer DEFAULT 0,
+    status text DEFAULT 'ok'::text,
+    error_msg text,
+    CONSTRAINT mc_srv_hypervisor_sessions_adapter_type_check CHECK ((adapter_type = ANY (ARRAY['vmware'::text, 'hyperv'::text, 'nutanix'::text])))
+);
+
+
+--
+-- Name: mc_srv_inventory; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_srv_inventory (
+    id integer NOT NULL,
+    session_id text NOT NULL,
+    vcpus integer DEFAULT 0,
+    ram_gb real DEFAULT 0,
+    disk_count integer DEFAULT 0,
+    total_disk_gb real DEFAULT 0,
+    disk_type text DEFAULT ''::text,
+    nic_count integer DEFAULT 0,
+    primary_nic_gbps real DEFAULT 0,
+    os_family text DEFAULT ''::text,
+    os_name text DEFAULT ''::text,
+    os_arch text DEFAULT ''::text,
+    bios_type text DEFAULT ''::text,
+    virtualization_ext integer DEFAULT 0,
+    raw_export_json text DEFAULT '{}'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    hostname text,
+    ip_address text,
+    os text,
+    cpu_cores integer,
+    disk_gb real,
+    environment text,
+    status text,
+    tags text,
+    source_format text,
+    imported_at text
+);
+
+
+--
+-- Name: mc_srv_inventory_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.mc_srv_inventory_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: mc_srv_inventory_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.mc_srv_inventory_id_seq OWNED BY public.mc_srv_inventory.id;
+
+
+--
+-- Name: mc_srv_nic_map; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_srv_nic_map (
+    id integer NOT NULL,
+    session_id text NOT NULL,
+    src_nic text NOT NULL,
+    src_speed_gbps real DEFAULT 0,
+    src_mac text DEFAULT ''::text,
+    src_vlan text DEFAULT ''::text,
+    src_ip text DEFAULT ''::text,
+    src_subnet text DEFAULT ''::text,
+    src_description text DEFAULT ''::text,
+    tgt_nic text DEFAULT ''::text,
+    tgt_speed_gbps real DEFAULT 0,
+    tgt_vlan text DEFAULT ''::text,
+    tgt_ip text DEFAULT ''::text,
+    ip_change integer DEFAULT 0,
+    requires_dhcp integer DEFAULT 0,
+    notes text DEFAULT ''::text,
+    status text DEFAULT 'pending'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: mc_srv_nic_map_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.mc_srv_nic_map_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: mc_srv_nic_map_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.mc_srv_nic_map_id_seq OWNED BY public.mc_srv_nic_map.id;
+
+
+--
+-- Name: mc_srv_performance; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_srv_performance (
+    id integer NOT NULL,
+    session_id text NOT NULL,
+    cpu_avg_pct real DEFAULT 0,
+    cpu_peak_pct real DEFAULT 0,
+    ram_avg_pct real DEFAULT 0,
+    ram_peak_pct real DEFAULT 0,
+    disk_iops_avg real DEFAULT 0,
+    disk_iops_peak real DEFAULT 0,
+    net_mbps_avg real DEFAULT 0,
+    net_mbps_peak real DEFAULT 0,
+    sample_period_days integer DEFAULT 30,
+    source text DEFAULT 'manual'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: mc_srv_performance_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.mc_srv_performance_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: mc_srv_performance_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.mc_srv_performance_id_seq OWNED BY public.mc_srv_performance.id;
+
+
+--
+-- Name: mc_srv_post_migration_tests; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_srv_post_migration_tests (
+    id text NOT NULL,
+    session_id text NOT NULL,
+    run_at text NOT NULL,
+    check_type text NOT NULL,
+    target text NOT NULL,
+    status text NOT NULL,
+    detail text,
+    elapsed_ms integer,
+    CONSTRAINT mc_srv_post_migration_tests_status_check CHECK ((status = ANY (ARRAY['pass'::text, 'fail'::text, 'skip'::text, 'error'::text])))
+);
+
+
+--
+-- Name: mc_srv_rightsizing; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_srv_rightsizing (
+    id integer NOT NULL,
+    session_id text NOT NULL,
+    recommended_instance_id integer,
+    rank integer DEFAULT 1,
+    cost_tier text DEFAULT 'medium'::text,
+    rationale text DEFAULT ''::text,
+    vcpu_req real DEFAULT 0,
+    ram_req_gb real DEFAULT 0,
+    disk_req_gb real DEFAULT 0,
+    iops_req real DEFAULT 0,
+    net_req_mbps real DEFAULT 0,
+    headroom_factor real DEFAULT 1.2,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: mc_srv_rightsizing_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.mc_srv_rightsizing_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: mc_srv_rightsizing_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.mc_srv_rightsizing_id_seq OWNED BY public.mc_srv_rightsizing.id;
+
+
+--
+-- Name: mc_srv_services; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_srv_services (
+    id integer NOT NULL,
+    session_id text NOT NULL,
+    service_name text NOT NULL,
+    service_role text DEFAULT ''::text,
+    port integer DEFAULT 0,
+    protocol text DEFAULT 'tcp'::text,
+    status text DEFAULT 'running'::text,
+    auto_detected integer DEFAULT 0,
+    notes text DEFAULT ''::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: mc_srv_services_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.mc_srv_services_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: mc_srv_services_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.mc_srv_services_id_seq OWNED BY public.mc_srv_services.id;
+
+
+--
+-- Name: mc_srv_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_srv_sessions (
+    id text NOT NULL,
+    design_id text,
+    migration_type text DEFAULT 'p2v_cloud'::text NOT NULL,
+    src_hostname text DEFAULT ''::text,
+    src_ip text DEFAULT ''::text,
+    src_os text DEFAULT ''::text,
+    src_os_version text DEFAULT ''::text,
+    src_hypervisor text DEFAULT ''::text,
+    src_datacenter text DEFAULT ''::text,
+    tgt_platform text DEFAULT ''::text NOT NULL,
+    tgt_region text DEFAULT ''::text,
+    tgt_account_id text DEFAULT ''::text,
+    tgt_instance_id integer,
+    readiness_score real DEFAULT 0,
+    status text DEFAULT 'in_progress'::text,
+    notes text DEFAULT ''::text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: mc_srv_storage_map; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_srv_storage_map (
+    id integer NOT NULL,
+    session_id text NOT NULL,
+    src_disk text NOT NULL,
+    src_size_gb real DEFAULT 0,
+    src_type text DEFAULT ''::text,
+    src_mount text DEFAULT ''::text,
+    src_filesystem text DEFAULT ''::text,
+    src_used_gb real DEFAULT 0,
+    tgt_volume text DEFAULT ''::text,
+    tgt_size_gb real DEFAULT 0,
+    tgt_type text DEFAULT ''::text,
+    tgt_iops_provisioned integer DEFAULT 0,
+    size_increase_pct real DEFAULT 0,
+    notes text DEFAULT ''::text,
+    status text DEFAULT 'pending'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: mc_srv_storage_map_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.mc_srv_storage_map_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: mc_srv_storage_map_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.mc_srv_storage_map_id_seq OWNED BY public.mc_srv_storage_map.id;
+
+
+--
+-- Name: mc_srv_test_cases; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_srv_test_cases (
+    id integer NOT NULL,
+    session_id text NOT NULL,
+    phase text DEFAULT 'post'::text NOT NULL,
+    seq_no integer DEFAULT 0,
+    test_name text NOT NULL,
+    procedure text DEFAULT ''::text,
+    expected_result text DEFAULT ''::text,
+    actual_result text DEFAULT ''::text,
+    passed integer,
+    notes text DEFAULT ''::text,
+    executed_at text DEFAULT ''::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: mc_srv_test_cases_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.mc_srv_test_cases_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: mc_srv_test_cases_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.mc_srv_test_cases_id_seq OWNED BY public.mc_srv_test_cases.id;
+
+
+--
+-- Name: mc_templates; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_templates (
+    id text NOT NULL,
+    name text NOT NULL,
+    category text,
+    description text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    tags text DEFAULT '[]'::text
+);
+
+
+--
+-- Name: mc_versions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_versions (
+    id text NOT NULL,
+    design_id text,
+    version_number integer NOT NULL,
+    graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    change_summary text DEFAULT ''::text,
+    user_id text DEFAULT ''::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: mc_wave_backout; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_wave_backout (
+    id text NOT NULL,
+    session_id text NOT NULL,
+    wave_id text NOT NULL,
+    snapshot_prerequisites text DEFAULT '[]'::text,
+    decision_points text DEFAULT '[]'::text,
+    go_no_go_criteria text DEFAULT '[]'::text,
+    recovery_steps text DEFAULT '[]'::text,
+    approved integer DEFAULT 0,
+    approved_by text,
+    approved_at text,
+    created_at text NOT NULL,
+    updated_at text NOT NULL,
+    classification text DEFAULT 'CUI'::text
+);
+
+
+--
+-- Name: mc_wave_close_overrides; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_wave_close_overrides (
+    id text NOT NULL,
+    session_id text NOT NULL,
+    wave_id text NOT NULL,
+    override_user text NOT NULL,
+    reason text NOT NULL,
+    failing_json text DEFAULT '[]'::text,
+    created_at text NOT NULL,
+    classification text DEFAULT 'CUI'::text
+);
+
+
+--
+-- Name: mc_wave_plans; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_wave_plans (
+    id text NOT NULL,
+    design_id text,
+    wave_number integer DEFAULT 1 NOT NULL,
+    name text DEFAULT 'Wave 1'::text NOT NULL,
+    description text DEFAULT ''::text,
+    node_ids_json text DEFAULT '[]'::text,
+    strategy text DEFAULT 'rehost'::text,
+    status text DEFAULT 'planned'::text,
+    estimated_hours real DEFAULT 0,
+    risk_score real DEFAULT 0,
+    start_date text DEFAULT ''::text,
+    end_date text DEFAULT ''::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: mc_workload_validations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mc_workload_validations (
+    id text NOT NULL,
+    session_id text NOT NULL,
+    wave_id text NOT NULL,
+    workload_id text NOT NULL,
+    workload_name text,
+    check_type text NOT NULL,
+    status text NOT NULL,
+    detail text,
+    run_at text NOT NULL,
+    classification text DEFAULT 'CUI'::text,
+    CONSTRAINT mc_workload_validations_status_check CHECK ((status = ANY (ARRAY['pass'::text, 'fail'::text, 'skip'::text, 'error'::text, 'pending'::text])))
+);
+
+
+--
+-- Name: mcip_dat_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mcip_dat_events (
+    id text NOT NULL,
+    source_type text NOT NULL,
+    content_hash text NOT NULL,
+    sender text DEFAULT 'unknown'::text NOT NULL,
+    recipient text DEFAULT 'unknown'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    tension_signal real DEFAULT 0.0 NOT NULL,
+    ingested_at text NOT NULL
+);
+
+
+--
+-- Name: mcip_dti_scores; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mcip_dti_scores (
+    id text NOT NULL,
+    score real NOT NULL,
+    cable_sub real DEFAULT 0.0 NOT NULL,
+    unsc_sub real DEFAULT 0.0 NOT NULL,
+    backchannel_sub real DEFAULT 0.0 NOT NULL,
+    event_count integer DEFAULT 0 NOT NULL,
+    computed_at text NOT NULL
+);
+
+
+--
 -- Name: mcp_tool_registry; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -19650,7 +26250,13 @@ CREATE TABLE public.memory_entries (
     people text[],
     entry_date date,
     classification text DEFAULT 'CUI'::text,
-    compartment text DEFAULT ''::text
+    compartment text DEFAULT ''::text,
+    tier text DEFAULT 'episodic'::text,
+    session_ref text,
+    distilled integer DEFAULT 0,
+    trace_id text,
+    metadata text,
+    CONSTRAINT memory_entries_tier_check CHECK ((tier = ANY (ARRAY['procedural'::text, 'episodic'::text, 'semantic'::text])))
 );
 
 
@@ -19708,6 +26314,234 @@ CREATE SEQUENCE public.metric_snapshots_id_seq
 --
 
 ALTER SEQUENCE public.metric_snapshots_id_seq OWNED BY public.metric_snapshots.id;
+
+
+--
+-- Name: mi_budget_cycles; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mi_budget_cycles (
+    id text NOT NULL,
+    name text NOT NULL,
+    fiscal_year integer NOT NULL,
+    budget_type text DEFAULT 'annual'::text,
+    total_budget_usd real,
+    allocated_usd real DEFAULT 0,
+    committed_usd real DEFAULT 0,
+    spent_usd real DEFAULT 0,
+    status text DEFAULT 'planning'::text,
+    notes text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT mi_budget_cycles_budget_type_check CHECK ((budget_type = ANY (ARRAY['annual'::text, 'multi_year'::text, 'emergency'::text, 'supplemental'::text]))),
+    CONSTRAINT mi_budget_cycles_status_check CHECK ((status = ANY (ARRAY['planning'::text, 'approved'::text, 'executing'::text, 'closed'::text])))
+);
+
+
+--
+-- Name: mi_goal_alignments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mi_goal_alignments (
+    id text NOT NULL,
+    goal_id text,
+    opportunity_id text,
+    alignment_score real DEFAULT 0.0,
+    alignment_reason text,
+    computed_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: mi_goal_chat_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mi_goal_chat_log (
+    id text NOT NULL,
+    user_input text NOT NULL,
+    parsed_goals text,
+    goals_created text,
+    llm_model text,
+    confidence real,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: mi_goals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mi_goals (
+    id text NOT NULL,
+    title text NOT NULL,
+    description text,
+    category text DEFAULT 'infrastructure'::text,
+    horizon_years integer DEFAULT 5,
+    target_year integer,
+    priority text DEFAULT 'medium'::text,
+    source text DEFAULT 'manual'::text,
+    owner text,
+    status text DEFAULT 'active'::text,
+    success_criteria text,
+    kpis text,
+    tags text,
+    created_by text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT mi_goals_category_check CHECK ((category = ANY (ARRAY['infrastructure'::text, 'platform'::text, 'security'::text, 'compliance'::text, 'cost'::text, 'cloud'::text, 'network'::text, 'application'::text, 'data'::text, 'workforce'::text]))),
+    CONSTRAINT mi_goals_priority_check CHECK ((priority = ANY (ARRAY['critical'::text, 'high'::text, 'medium'::text, 'low'::text]))),
+    CONSTRAINT mi_goals_source_check CHECK ((source = ANY (ARRAY['manual'::text, 'chat'::text, 'yaml'::text, 'oracle'::text]))),
+    CONSTRAINT mi_goals_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'active'::text, 'achieved'::text, 'deferred'::text, 'cancelled'::text])))
+);
+
+
+--
+-- Name: mi_opportunities; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mi_opportunities (
+    id text NOT NULL,
+    title text NOT NULL,
+    description text,
+    opportunity_type text DEFAULT 'technology_refresh'::text,
+    source_canvas text,
+    source_entity_id text,
+    source_entity_name text,
+    affected_systems text,
+    current_platform text,
+    target_platform text,
+    app_profile text DEFAULT ''::text,
+    eol_urgency_score real DEFAULT 0.0,
+    goal_alignment_score real DEFAULT 0.0,
+    business_value_score real DEFAULT 0.0,
+    risk_score real DEFAULT 0.0,
+    effort_score real DEFAULT 0.0,
+    compliance_score real DEFAULT 0.0,
+    composite_score real DEFAULT 0.0,
+    eol_date text,
+    estimated_effort_days integer,
+    estimated_cost_usd real,
+    priority text DEFAULT 'medium'::text,
+    status text DEFAULT 'identified'::text,
+    linked_goal_ids text,
+    linked_wishlist_ids text,
+    notes text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT mi_opportunities_opportunity_type_check CHECK ((opportunity_type = ANY (ARRAY['eol_replacement'::text, 'technology_refresh'::text, 'vendor_consolidation'::text, 'cloud_migration'::text, 'platform_modernization'::text, 'security_uplift'::text, 'cost_optimization'::text, 'compliance_remediation'::text, 'network_redesign'::text, 'application_migration'::text, 'data_migration'::text, 'capacity_expansion'::text]))),
+    CONSTRAINT mi_opportunities_priority_check CHECK ((priority = ANY (ARRAY['critical'::text, 'high'::text, 'medium'::text, 'low'::text]))),
+    CONSTRAINT mi_opportunities_status_check CHECK ((status = ANY (ARRAY['identified'::text, 'scored'::text, 'strategy_generated'::text, 'planned'::text, 'in_progress'::text, 'completed'::text, 'deferred'::text, 'rejected'::text])))
+);
+
+
+--
+-- Name: mi_roadmaps; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mi_roadmaps (
+    id text NOT NULL,
+    name text NOT NULL,
+    description text,
+    horizon_years integer DEFAULT 5,
+    wave_count integer DEFAULT 0,
+    opportunities_count integer DEFAULT 0,
+    estimated_duration_months integer,
+    estimated_total_cost_usd real,
+    payload text,
+    status text DEFAULT 'draft'::text,
+    generated_at text DEFAULT CURRENT_TIMESTAMP,
+    approved_at text,
+    approved_by text,
+    CONSTRAINT mi_roadmaps_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'reviewed'::text, 'approved'::text, 'executing'::text, 'completed'::text])))
+);
+
+
+--
+-- Name: mi_scans; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mi_scans (
+    id text NOT NULL,
+    scan_type text DEFAULT 'full'::text,
+    airgap_mode integer DEFAULT 0,
+    canvases_scanned text,
+    opportunities_found integer DEFAULT 0,
+    opportunities_new integer DEFAULT 0,
+    duration_ms integer,
+    status text DEFAULT 'running'::text,
+    error_msg text,
+    details text,
+    started_at text DEFAULT CURRENT_TIMESTAMP,
+    completed_at text,
+    CONSTRAINT mi_scans_scan_type_check CHECK ((scan_type = ANY (ARRAY['full'::text, 'canvas'::text, 'eol'::text, 'goal_alignment'::text, 'budget'::text]))),
+    CONSTRAINT mi_scans_status_check CHECK ((status = ANY (ARRAY['running'::text, 'completed'::text, 'failed'::text, 'partial'::text])))
+);
+
+
+--
+-- Name: mi_strategies; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mi_strategies (
+    id text NOT NULL,
+    opportunity_id text,
+    strategy_type text NOT NULL,
+    title text,
+    rationale text,
+    target_platform text,
+    estimated_effort_days integer,
+    estimated_cost_usd real,
+    risk_level text,
+    pros text,
+    cons text,
+    prerequisites text,
+    cutover_hours_estimate real,
+    sla_compliant integer DEFAULT 1,
+    recommended integer DEFAULT 0,
+    status text DEFAULT 'generated'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT mi_strategies_risk_level_check CHECK ((risk_level = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text, 'critical'::text]))),
+    CONSTRAINT mi_strategies_status_check CHECK ((status = ANY (ARRAY['generated'::text, 'reviewed'::text, 'approved'::text, 'executing'::text, 'completed'::text]))),
+    CONSTRAINT mi_strategies_strategy_type_check CHECK ((strategy_type = ANY (ARRAY['rehost'::text, 'replatform'::text, 'refactor'::text, 'rebuild'::text, 'replace'::text, 'retire'::text, 'retain'::text, 'rip_and_replace'::text, 'graceful_migration'::text, 'parallel_run'::text, 'phased_cutover'::text, 'forklift'::text, 'consolidate'::text])))
+);
+
+
+--
+-- Name: mi_wishlist; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mi_wishlist (
+    id text NOT NULL,
+    title text NOT NULL,
+    description text,
+    item_type text DEFAULT 'hardware'::text,
+    vendor text,
+    product_model text,
+    quantity integer DEFAULT 1,
+    unit_cost_usd real,
+    total_cost_usd real,
+    fiscal_year integer,
+    quarter text,
+    budget_category text DEFAULT 'capex'::text,
+    current_eol_date text,
+    replacement_urgency text DEFAULT 'planned'::text,
+    linked_opportunity_id text,
+    linked_goal_ids text,
+    priority text DEFAULT 'medium'::text,
+    status text DEFAULT 'wishlist'::text,
+    requestor text,
+    justification text,
+    tags text,
+    notes text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT mi_wishlist_budget_category_check CHECK ((budget_category = ANY (ARRAY['capex'::text, 'opex'::text, 'r_and_d'::text, 'security'::text, 'compliance'::text]))),
+    CONSTRAINT mi_wishlist_item_type_check CHECK ((item_type = ANY (ARRAY['hardware'::text, 'software_license'::text, 'cloud_service'::text, 'professional_services'::text, 'training'::text, 'security_tool'::text, 'network_equipment'::text, 'storage'::text, 'compute'::text, 'managed_service'::text, 'subscription'::text, 'other'::text]))),
+    CONSTRAINT mi_wishlist_priority_check CHECK ((priority = ANY (ARRAY['critical'::text, 'high'::text, 'medium'::text, 'low'::text]))),
+    CONSTRAINT mi_wishlist_quarter_check CHECK ((quarter = ANY (ARRAY['Q1'::text, 'Q2'::text, 'Q3'::text, 'Q4'::text, NULL::text]))),
+    CONSTRAINT mi_wishlist_replacement_urgency_check CHECK ((replacement_urgency = ANY (ARRAY['immediate'::text, 'urgent'::text, 'planned'::text, 'future'::text]))),
+    CONSTRAINT mi_wishlist_status_check CHECK ((status = ANY (ARRAY['wishlist'::text, 'budgeted'::text, 'approved'::text, 'ordered'::text, 'delivered'::text, 'cancelled'::text])))
+);
 
 
 --
@@ -19777,6 +26611,24 @@ CREATE TABLE public.migration_assessments (
     CONSTRAINT migration_assessments_assessment_scope_check CHECK ((assessment_scope = ANY (ARRAY['application'::text, 'component'::text, 'database'::text, 'api'::text]))),
     CONSTRAINT migration_assessments_ato_impact_check CHECK ((ato_impact = ANY (ARRAY['none'::text, 'low'::text, 'medium'::text, 'high'::text, 'critical'::text]))),
     CONSTRAINT migration_assessments_recommended_strategy_check CHECK ((recommended_strategy = ANY (ARRAY['rehost'::text, 'replatform'::text, 'refactor'::text, 'rearchitect'::text, 'repurchase'::text, 'retire'::text, 'retain'::text])))
+);
+
+
+--
+-- Name: migration_designs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.migration_designs (
+    id text NOT NULL,
+    name text NOT NULL,
+    description text,
+    migration_type text DEFAULT 'application'::text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    template_id text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    network_session_id text
 );
 
 
@@ -20156,6 +27008,22 @@ CREATE TABLE public.mission_versions (
 
 
 --
+-- Name: mitre_coverage; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mitre_coverage (
+    id text NOT NULL,
+    technique_id text NOT NULL,
+    signal_source text NOT NULL,
+    state text NOT NULL,
+    last_observed_at text NOT NULL,
+    project_id text NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT mitre_coverage_state_check CHECK ((state = ANY (ARRAY['none'::text, 'partial'::text, 'full'::text, 'false_positive'::text])))
+);
+
+
+--
 -- Name: model_cards; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -20421,6 +27289,7 @@ CREATE TABLE public.module_budget_usage (
     model_id text,
     details_json text,
     created_at text DEFAULT ''::text NOT NULL,
+    cost_basis text,
     CONSTRAINT module_budget_usage_module_name_check CHECK ((module_name = ANY (ARRAY['generative_intelligence'::text, 'predictive_analysis'::text]))),
     CONSTRAINT module_budget_usage_resource_type_check CHECK ((resource_type = ANY (ARRAY['usd'::text, 'tokens'::text, 'operations'::text])))
 );
@@ -20566,6 +27435,815 @@ CREATE TABLE public.narrative_approvals (
 
 
 --
+-- Name: nc_advisories; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_advisories (
+    id integer NOT NULL,
+    cve_id character varying(50),
+    vendor character varying(100),
+    title text,
+    affected_models_json jsonb,
+    affected_versions_json jsonb,
+    severity character varying(20) DEFAULT 'medium'::character varying NOT NULL,
+    cvss_score double precision,
+    advisory_text text,
+    source_doc_hash character varying(64),
+    source_doc_format character varying(20),
+    extraction_confidence double precision,
+    status character varying(30) DEFAULT 'open'::character varying NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    published_date text,
+    total_devices integer DEFAULT 0,
+    impacted_devices integer DEFAULT 0,
+    remediation_pct real DEFAULT 0.0,
+    data_source text DEFAULT 'manual'::text,
+    hitl_status text DEFAULT 'pending'::text,
+    hitl_approved_by text,
+    hitl_approved_at text,
+    description text,
+    remediation_guidance text,
+    CONSTRAINT nc_advisories_data_source_check CHECK ((data_source = ANY (ARRAY['manual'::text, 'nqe'::text, 'nvd'::text, 'vendor'::text]))),
+    CONSTRAINT nc_advisories_hitl_status_check CHECK ((hitl_status = ANY (ARRAY['approved'::text, 'pending'::text, 'rejected'::text]))),
+    CONSTRAINT nc_advisories_severity_check CHECK (((severity)::text = ANY (ARRAY[('critical'::character varying)::text, ('high'::character varying)::text, ('medium'::character varying)::text, ('low'::character varying)::text, ('informational'::character varying)::text]))),
+    CONSTRAINT nc_advisories_status_check CHECK (((status)::text = ANY (ARRAY[('excepted'::character varying)::text, ('in-progress'::character varying)::text, ('mitigated'::character varying)::text, ('open'::character varying)::text, ('verified'::character varying)::text])))
+);
+
+
+--
+-- Name: nc_advisories_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.nc_advisories_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: nc_advisories_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.nc_advisories_id_seq OWNED BY public.nc_advisories.id;
+
+
+--
+-- Name: nc_advisory_assessments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_advisory_assessments (
+    id integer NOT NULL,
+    advisory_id integer NOT NULL,
+    network_id character varying(100),
+    fwd_snapshot_id character varying(100),
+    data_source character varying(20) DEFAULT 'icdev-internal'::character varying NOT NULL,
+    nql_total text,
+    nql_impacted text,
+    nql_ai_generated text,
+    nql_template_based text,
+    total_devices integer,
+    impacted_count integer,
+    impacted_devices_json jsonb,
+    raw_response_total_json jsonb,
+    raw_response_impacted_json jsonb,
+    raw_response_hash character varying(64),
+    ai_confidence double precision,
+    cross_validation_delta_pct double precision,
+    cross_validation_warning boolean DEFAULT false,
+    approved_by character varying(200),
+    approved_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT nc_advisory_assessments_data_source_check CHECK (((data_source)::text = ANY (ARRAY[('fwd-live'::character varying)::text, ('icdev-internal'::character varying)::text])))
+);
+
+
+--
+-- Name: nc_advisory_assessments_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.nc_advisory_assessments_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: nc_advisory_assessments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.nc_advisory_assessments_id_seq OWNED BY public.nc_advisory_assessments.id;
+
+
+--
+-- Name: nc_agreement_amendments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_agreement_amendments (
+    id text NOT NULL,
+    agreement_id text NOT NULL,
+    amendment_number integer DEFAULT 1 NOT NULL,
+    changes_json text DEFAULT '{}'::text NOT NULL,
+    amended_by text DEFAULT ''::text NOT NULL,
+    reason text DEFAULT ''::text,
+    effective_date text DEFAULT ''::text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_ai_history; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_ai_history (
+    id text NOT NULL,
+    description text NOT NULL,
+    short_desc text NOT NULL,
+    node_count integer DEFAULT 0,
+    edge_count integer DEFAULT 0,
+    provider text DEFAULT ''::text,
+    is_migration integer DEFAULT 0,
+    graph_json text,
+    created_at text NOT NULL
+);
+
+
+--
+-- Name: nc_alert_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_alert_events (
+    id text NOT NULL,
+    rule_id text,
+    rule_name text,
+    severity text,
+    message text NOT NULL,
+    entity_type text,
+    entity_id text,
+    acknowledged integer DEFAULT 0,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_alert_rules; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_alert_rules (
+    id text NOT NULL,
+    name text NOT NULL,
+    metric text NOT NULL,
+    operator text DEFAULT 'gt'::text,
+    threshold real NOT NULL,
+    severity text DEFAULT 'warning'::text,
+    enabled integer DEFAULT 1,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_alt_criteria; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_alt_criteria (
+    id text NOT NULL,
+    project_id text,
+    name text NOT NULL,
+    weight_pct integer DEFAULT 20,
+    sort_order integer DEFAULT 0,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_alternatives; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_alternatives (
+    id text NOT NULL,
+    project_id text,
+    option_name text NOT NULL,
+    description text,
+    is_recommended integer DEFAULT 0,
+    scores_json text DEFAULT '{}'::text,
+    total_score real DEFAULT 0,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_ato_packages; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_ato_packages (
+    id text NOT NULL,
+    topology_id text,
+    region_id text,
+    system_name text NOT NULL,
+    classification text DEFAULT 'CUI'::text,
+    regimes text DEFAULT '["fisma_high","stig"]'::text,
+    package_json text DEFAULT '{}'::text NOT NULL,
+    summary_json text DEFAULT '{}'::text NOT NULL,
+    overall_readiness text DEFAULT 'RED'::text,
+    stig_pass_rate real DEFAULT 0,
+    compliance_score real DEFAULT 0,
+    created_by text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_attack_surface; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_attack_surface (
+    id text NOT NULL,
+    advisory_id text,
+    cve_id text NOT NULL,
+    device_name text NOT NULL,
+    ip text,
+    exposure_type text DEFAULT 'direct'::text NOT NULL,
+    criticality integer DEFAULT 3 NOT NULL,
+    reachable integer DEFAULT 0 NOT NULL,
+    bgp_exposed integer DEFAULT 0 NOT NULL,
+    surface_score real DEFAULT 0.0 NOT NULL,
+    nqe_source text,
+    nessus_plugin text,
+    assessed_at text DEFAULT CURRENT_TIMESTAMP,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    device_id text,
+    nessus_scan_id text,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT nc_attack_surface_criticality_check CHECK (((criticality >= 1) AND (criticality <= 5))),
+    CONSTRAINT nc_attack_surface_exposure_type_check CHECK ((exposure_type = ANY (ARRAY['combined'::text, 'local'::text, 'network'::text, 'unknown'::text]))),
+    CONSTRAINT nc_attack_surface_nqe_source_check CHECK ((nqe_source = ANY (ARRAY['llm_translation'::text, 'local_heuristic'::text, 'local_mapping'::text, 'nqe_api'::text]))),
+    CONSTRAINT nc_attack_surface_surface_score_check CHECK (((surface_score >= (0.0)::double precision) AND (surface_score <= (1.0)::double precision)))
+);
+
+
+--
+-- Name: nc_audit; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_audit (
+    id integer NOT NULL,
+    action text NOT NULL,
+    entity_type text,
+    entity_id text,
+    details text,
+    user_id text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    ts text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_audit_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.nc_audit_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: nc_audit_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.nc_audit_id_seq OWNED BY public.nc_audit.id;
+
+
+--
+-- Name: nc_backups; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_backups (
+    id text NOT NULL,
+    backup_type text DEFAULT 'manual'::text,
+    file_path text NOT NULL,
+    file_size_bytes integer DEFAULT 0,
+    includes_json text DEFAULT '[]'::text,
+    notes text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    file_hash text
+);
+
+
+--
+-- Name: nc_board_reviews; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_board_reviews (
+    id text NOT NULL,
+    project_id text,
+    board_id text,
+    phase integer DEFAULT 1,
+    status text DEFAULT 'pending'::text,
+    scheduled_date text,
+    presented_date text,
+    decision text,
+    decision_notes text,
+    conditions text DEFAULT '[]'::text,
+    reviewer_names text DEFAULT '[]'::text,
+    package_json text DEFAULT '{}'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_bom_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_bom_items (
+    id text NOT NULL,
+    project_id text,
+    category text DEFAULT 'hardware'::text,
+    vendor text,
+    model text,
+    part_number text,
+    description text,
+    quantity integer DEFAULT 1,
+    unit_cost real DEFAULT 0,
+    extended_cost real DEFAULT 0,
+    annual_maint real DEFAULT 0,
+    license_cost real DEFAULT 0,
+    lead_time_days integer DEFAULT 0,
+    contract_vehicle text,
+    notes text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_boundaries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_boundaries (
+    id text NOT NULL,
+    topology_id text,
+    label text DEFAULT 'Enclave'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text,
+    color text DEFAULT '#e94560'::text,
+    fill_opacity real DEFAULT 0.08,
+    node_ids text DEFAULT '[]'::text,
+    stig_tags text DEFAULT '[]'::text,
+    pos_x real DEFAULT 0,
+    pos_y real DEFAULT 0,
+    width real DEFAULT 400,
+    height real DEFAULT 300,
+    snap_grid integer DEFAULT 10,
+    notes text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_bw_simulations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_bw_simulations (
+    id text NOT NULL,
+    topology_id text,
+    topology_name text,
+    params_json text DEFAULT '{}'::text,
+    result_json text DEFAULT '{}'::text,
+    overall_health text DEFAULT 'ok'::text,
+    bottleneck_count integer DEFAULT 0,
+    warning_count integer DEFAULT 0,
+    total_links integer DEFAULT 0,
+    avg_util_pct real DEFAULT 0,
+    ran_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_cables; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_cables (
+    id text NOT NULL,
+    topology_id text,
+    cable_id text NOT NULL,
+    cable_type text,
+    src_device text,
+    src_port text,
+    dst_device text,
+    dst_port text,
+    patch_panel text,
+    length_m real,
+    status text DEFAULT 'active'::text,
+    notes text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_capacity_projections; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_capacity_projections (
+    id text NOT NULL,
+    project_id text,
+    metric_name text NOT NULL,
+    current_value real DEFAULT 0,
+    year1_value real DEFAULT 0,
+    year3_value real DEFAULT 0,
+    year5_value real DEFAULT 0,
+    growth_rate_pct real DEFAULT 20,
+    threshold_pct real DEFAULT 80,
+    notes text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_carrier_availability; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_carrier_availability (
+    id text NOT NULL,
+    carrier text NOT NULL,
+    path_name text,
+    service_type text,
+    available_bandwidth text,
+    lead_time_days integer DEFAULT 30,
+    monthly_cost_est real DEFAULT 0,
+    contract_term text,
+    notes text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_case_history; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_case_history (
+    id integer NOT NULL,
+    workflow_id text,
+    from_state text NOT NULL,
+    to_state text NOT NULL,
+    changed_by text,
+    comment text,
+    changed_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_case_history_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.nc_case_history_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: nc_case_history_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.nc_case_history_id_seq OWNED BY public.nc_case_history.id;
+
+
+--
+-- Name: nc_case_workflows; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_case_workflows (
+    id text NOT NULL,
+    project_id text,
+    current_state text DEFAULT 'concept'::text,
+    lifecycle_json text NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_change_request_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_change_request_items (
+    id text NOT NULL,
+    cr_id text,
+    topology_id text,
+    action_type text NOT NULL,
+    entity_id text NOT NULL,
+    entity_type text DEFAULT 'node'::text,
+    entity_label text,
+    before_json text DEFAULT '{}'::text,
+    after_json text DEFAULT '{}'::text,
+    justification text,
+    created_by text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_change_requests; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_change_requests (
+    id text NOT NULL,
+    topology_id text,
+    title text NOT NULL,
+    description text,
+    status text DEFAULT 'draft'::text,
+    submitter_name text,
+    submitted_at text,
+    document_json text DEFAULT '{}'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_circuits; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_circuits (
+    id text NOT NULL,
+    topology_id text,
+    circuit_id text NOT NULL,
+    carrier text,
+    circuit_type text,
+    bandwidth text,
+    handoff_a text,
+    handoff_z text,
+    customer text,
+    site text,
+    monthly_cost_usd real DEFAULT 0,
+    contract_start text,
+    contract_end text,
+    sla_uptime_pct real DEFAULT 99.9,
+    install_status text DEFAULT 'planned'::text,
+    notes text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_collab_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_collab_sessions (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    user_id text NOT NULL,
+    user_name text DEFAULT ''::text NOT NULL,
+    color text DEFAULT '#3498db'::text NOT NULL,
+    joined_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    last_seen text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    is_active integer DEFAULT 1 NOT NULL
+);
+
+
+--
+-- Name: nc_collected_configs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_collected_configs (
+    id text NOT NULL,
+    device_ip text NOT NULL,
+    hostname text,
+    profile_id text,
+    command_name text NOT NULL,
+    output_text text NOT NULL,
+    parsed_json text DEFAULT '{}'::text,
+    collected_at text DEFAULT CURRENT_TIMESTAMP,
+    topology_id text
+);
+
+
+--
+-- Name: nc_compliance_checks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_compliance_checks (
+    id text NOT NULL,
+    topology_id text,
+    check_type text NOT NULL,
+    passed integer DEFAULT 0,
+    failed integer DEFAULT 0,
+    findings_json text DEFAULT '[]'::text,
+    ran_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_compliance_findings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_compliance_findings (
+    id text NOT NULL,
+    topology_id text,
+    audit_id text,
+    rule_id text NOT NULL,
+    regime text NOT NULL,
+    severity text DEFAULT 'CAT2'::text,
+    title text NOT NULL,
+    description text,
+    affected_entity text,
+    affected_type text,
+    status text DEFAULT 'open'::text,
+    fix_action text,
+    remediated_at text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_compliance_history; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_compliance_history (
+    id text NOT NULL,
+    project_id text,
+    compliance_pct integer,
+    open_findings integer DEFAULT 0,
+    cat1_count integer DEFAULT 0,
+    recorded_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_compliance_profiles; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_compliance_profiles (
+    id text NOT NULL,
+    topology_id text,
+    regimes text DEFAULT '["fisma_high"]'::text,
+    classification text DEFAULT 'CUI'::text,
+    environment text DEFAULT 'IL4'::text,
+    auto_audit integer DEFAULT 1,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_config_review_findings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_config_review_findings (
+    id text NOT NULL,
+    review_id text NOT NULL,
+    category text NOT NULL,
+    severity text DEFAULT 'info'::text,
+    title text NOT NULL,
+    detail text,
+    remediation text,
+    sample_config_snippet text,
+    references_json text DEFAULT '[]'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_config_reviews; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_config_reviews (
+    id text NOT NULL,
+    title text,
+    vendor text NOT NULL,
+    role_key text NOT NULL,
+    answers_json text DEFAULT '{}'::text,
+    config_text_hash text NOT NULL,
+    status text DEFAULT 'draft'::text,
+    result_json text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    config_text text DEFAULT ''::text
+);
+
+
+--
+-- Name: nc_connectivity_patterns; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_connectivity_patterns (
+    id text NOT NULL,
+    csp_pair text NOT NULL,
+    pattern_key text NOT NULL,
+    label text NOT NULL,
+    description text,
+    resiliency text DEFAULT 'high'::text,
+    cost_tier text DEFAULT 'medium'::text,
+    use_cases text DEFAULT '[]'::text,
+    node_types text DEFAULT '[]'::text,
+    sop_refs text DEFAULT '[]'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_consolidation_analysis; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_consolidation_analysis (
+    id text NOT NULL,
+    topo_id text NOT NULL,
+    current_device_count integer DEFAULT 0,
+    final_device_count integer DEFAULT 0,
+    devices_removed integer DEFAULT 0,
+    rack_units_freed integer DEFAULT 0,
+    power_saved_watts integer DEFAULT 0,
+    capex_delta real DEFAULT 0,
+    opex_annual_delta real DEFAULT 0,
+    tco_3yr_delta real DEFAULT 0,
+    bw_increase_pct real DEFAULT 0,
+    spof_count_before integer DEFAULT 0,
+    spof_count_after integer DEFAULT 0,
+    stig_compliance_before real DEFAULT 0,
+    stig_compliance_after real DEFAULT 0,
+    analysis_json text DEFAULT '{}'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_cross_connects; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_cross_connects (
+    id text NOT NULL,
+    topology_id text,
+    xconn_id text NOT NULL,
+    facility text,
+    meet_me_room text,
+    src_device text,
+    src_port text,
+    dst_device text,
+    dst_port text,
+    media_type text DEFAULT 'SMF'::text,
+    bandwidth text,
+    provider_a text,
+    provider_z text,
+    loa_status text DEFAULT 'pending'::text,
+    monthly_cost_usd real DEFAULT 0,
+    install_date text,
+    status text DEFAULT 'planned'::text,
+    notes text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_customers; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_customers (
+    id text NOT NULL,
+    name text NOT NULL,
+    customer_type text DEFAULT 'customer'::text,
+    contact_name text,
+    contact_email text,
+    contract_ref text,
+    notes text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_design_patterns; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_design_patterns (
+    id text NOT NULL,
+    name text NOT NULL,
+    category text NOT NULL,
+    description text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    is_builtin integer DEFAULT 0,
+    tags text DEFAULT '[]'::text,
+    created_by text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
 -- Name: nc_design_snapshots; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -20585,6 +28263,608 @@ CREATE TABLE public.nc_design_snapshots (
 
 
 --
+-- Name: nc_device_geo; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_device_geo (
+    id text NOT NULL,
+    topology_id text,
+    node_id text,
+    label text,
+    site_name text,
+    latitude real,
+    longitude real,
+    city text,
+    state text,
+    country text DEFAULT 'US'::text,
+    facility text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_device_profiles; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_device_profiles (
+    id text NOT NULL,
+    vendor text NOT NULL,
+    platform text NOT NULL,
+    description text,
+    commands_json text DEFAULT '{}'::text NOT NULL,
+    is_builtin integer DEFAULT 0,
+    created_by text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_diagram_analyses; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_diagram_analyses (
+    id text NOT NULL,
+    upload_id text NOT NULL,
+    industry text NOT NULL,
+    frameworks_json text DEFAULT '[]'::text,
+    cloud_providers_json text DEFAULT '[]'::text,
+    topology_mode text DEFAULT 'unknown'::text,
+    status text DEFAULT 'pending'::text NOT NULL,
+    result_json text DEFAULT '{}'::text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_diagram_exports; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_diagram_exports (
+    id text NOT NULL,
+    analysis_id text NOT NULL,
+    export_type text DEFAULT 'drawio'::text NOT NULL,
+    file_path text NOT NULL,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_diagram_findings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_diagram_findings (
+    id text NOT NULL,
+    analysis_id text NOT NULL,
+    tab text NOT NULL,
+    severity text DEFAULT 'info'::text NOT NULL,
+    title text NOT NULL,
+    detail text,
+    remediation text,
+    references_json text DEFAULT '[]'::text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_diagram_uploads; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_diagram_uploads (
+    id text NOT NULL,
+    filename text NOT NULL,
+    format text NOT NULL,
+    file_path text NOT NULL,
+    file_hash text NOT NULL,
+    page_count integer DEFAULT 1,
+    topology_id text,
+    uploaded_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_discovery_configs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_discovery_configs (
+    id text NOT NULL,
+    name text NOT NULL,
+    profile_id text,
+    targets text DEFAULT '[]'::text NOT NULL,
+    credential_ref text,
+    method text DEFAULT 'ssh'::text,
+    read_only integer DEFAULT 1,
+    rate_limit_per_sec real DEFAULT 1.0,
+    max_concurrent integer DEFAULT 5,
+    timeout_per_cmd integer DEFAULT 10,
+    timeout_per_device integer DEFAULT 60,
+    hop_limit integer DEFAULT 2,
+    max_devices integer DEFAULT 100,
+    whitelist_subnets text DEFAULT '[]'::text,
+    blacklist_subnets text DEFAULT '[]'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_discovery_diffs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_discovery_diffs (
+    id text NOT NULL,
+    scan_id text,
+    topology_id text,
+    diff_json text DEFAULT '{}'::text NOT NULL,
+    drift_score real DEFAULT 0,
+    matched integer DEFAULT 0,
+    designed_only integer DEFAULT 0,
+    discovered_only integer DEFAULT 0,
+    with_drift integer DEFAULT 0,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_discovery_scans; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_discovery_scans (
+    id text NOT NULL,
+    topology_id text,
+    name text NOT NULL,
+    method text DEFAULT 'snmp'::text NOT NULL,
+    targets text DEFAULT '[]'::text NOT NULL,
+    config_json text DEFAULT '{}'::text,
+    status text DEFAULT 'pending'::text,
+    devices_json text DEFAULT '[]'::text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    stats_json text DEFAULT '{}'::text,
+    error text,
+    started_at text,
+    completed_at text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_documents; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_documents (
+    id text NOT NULL,
+    file_name text NOT NULL,
+    file_path text,
+    file_hash text NOT NULL,
+    file_size_bytes integer DEFAULT 0,
+    doc_type text DEFAULT 'general'::text,
+    extracted_text text DEFAULT ''::text,
+    page_count integer DEFAULT 0,
+    provider_used text DEFAULT ''::text,
+    topology_id text,
+    project_id text DEFAULT 'default'::text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    status text DEFAULT 'pending'::text,
+    error text,
+    ingested_at text DEFAULT CURRENT_TIMESTAMP,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT nc_documents_doc_type_check CHECK ((doc_type = ANY (ARRAY['runbook'::text, 'sop'::text, 'as_built'::text, 'change_request'::text, 'ip_plan'::text, 'design_doc'::text, 'general'::text]))),
+    CONSTRAINT nc_documents_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'ingested'::text, 'failed'::text])))
+);
+
+
+--
+-- Name: nc_enclave_snippets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_enclave_snippets (
+    id text NOT NULL,
+    name text NOT NULL,
+    category text DEFAULT 'Enclave'::text NOT NULL,
+    description text,
+    classification_level text DEFAULT 'CUI'::text,
+    impact_level text DEFAULT 'IL4'::text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    stig_controls text DEFAULT '[]'::text,
+    tags text DEFAULT '[]'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_exception_approvals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_exception_approvals (
+    id integer NOT NULL,
+    exception_id integer NOT NULL,
+    approver character varying(200) NOT NULL,
+    approver_role character varying(100) NOT NULL,
+    decision character varying(20) NOT NULL,
+    conditions text,
+    notes text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT nc_exception_approvals_decision_check CHECK (((decision)::text = ANY (ARRAY[('approved'::character varying)::text, ('denied'::character varying)::text, ('conditional'::character varying)::text])))
+);
+
+
+--
+-- Name: nc_exception_approvals_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.nc_exception_approvals_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: nc_exception_approvals_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.nc_exception_approvals_id_seq OWNED BY public.nc_exception_approvals.id;
+
+
+--
+-- Name: nc_exceptions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_exceptions (
+    id integer NOT NULL,
+    advisory_id integer,
+    remediation_action_id integer,
+    device_name character varying(200) NOT NULL,
+    exception_type character varying(40) NOT NULL,
+    justification text NOT NULL,
+    compensating_controls text,
+    risk_acceptance_level character varying(20) DEFAULT 'medium'::character varying NOT NULL,
+    expiry_date date,
+    filed_by character varying(200),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    device_id text,
+    risk_level text DEFAULT 'medium'::text,
+    isso_approved integer DEFAULT 0,
+    isso_approved_by text,
+    isso_approved_at text,
+    issm_approved integer DEFAULT 0,
+    issm_approved_by text,
+    issm_approved_at text,
+    ao_approved integer DEFAULT 0,
+    ao_approved_by text,
+    ao_approved_at text,
+    status text DEFAULT 'pending'::text,
+    updated_at text,
+    CONSTRAINT nc_exceptions_exception_type_check CHECK (((exception_type)::text = ANY (ARRAY[('operational-necessity'::character varying)::text, ('risk-acceptance'::character varying)::text, ('temporary-deviation'::character varying)::text, ('vendor-constraint'::character varying)::text]))),
+    CONSTRAINT nc_exceptions_risk_acceptance_level_check CHECK (((risk_acceptance_level)::text = ANY (ARRAY[('critical'::character varying)::text, ('high'::character varying)::text, ('medium'::character varying)::text, ('low'::character varying)::text]))),
+    CONSTRAINT nc_exceptions_risk_level_check CHECK ((risk_level = ANY (ARRAY['critical'::text, 'high'::text, 'low'::text, 'medium'::text]))),
+    CONSTRAINT nc_exceptions_status_check CHECK ((status = ANY (ARRAY['expired'::text, 'fully-approved'::text, 'issm-approved'::text, 'isso-approved'::text, 'pending'::text, 'rejected'::text])))
+);
+
+
+--
+-- Name: nc_exceptions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.nc_exceptions_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: nc_exceptions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.nc_exceptions_id_seq OWNED BY public.nc_exceptions.id;
+
+
+--
+-- Name: nc_facilities; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_facilities (
+    id text NOT NULL,
+    name text NOT NULL,
+    facility_type text DEFAULT 'datacenter'::text,
+    address text,
+    city text,
+    state text,
+    country text DEFAULT 'US'::text,
+    operator text,
+    total_racks integer DEFAULT 0,
+    used_racks integer DEFAULT 0,
+    total_power_kw real DEFAULT 0,
+    used_power_kw real DEFAULT 0,
+    total_cooling_tons real DEFAULT 0,
+    used_cooling_tons real DEFAULT 0,
+    ups_capacity_kva real DEFAULT 0,
+    ups_load_kva real DEFAULT 0,
+    ups_runtime_min real DEFAULT 15,
+    generator_kw real DEFAULT 0,
+    generator_load_kw real DEFAULT 0,
+    generator_fuel_hours real DEFAULT 0,
+    notes text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_favorites; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_favorites (
+    id text NOT NULL,
+    entity_type text NOT NULL,
+    entity_id text NOT NULL,
+    label text,
+    user_id text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_fiber_inventory; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_fiber_inventory (
+    id text NOT NULL,
+    path_name text NOT NULL,
+    path_a text,
+    path_z text,
+    fiber_type text DEFAULT 'SMF'::text,
+    total_strands integer DEFAULT 0,
+    lit_strands integer DEFAULT 0,
+    available_strands integer DEFAULT 0,
+    total_lambdas integer DEFAULT 0,
+    active_lambdas integer DEFAULT 0,
+    available_lambdas integer DEFAULT 0,
+    per_lambda_gbps real DEFAULT 100,
+    conduit_ducts integer DEFAULT 0,
+    conduit_used integer DEFAULT 0,
+    diverse_path integer DEFAULT 0,
+    notes text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_flow_walkthrough_steps; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_flow_walkthrough_steps (
+    id text NOT NULL,
+    flow_id text NOT NULL,
+    step_number integer NOT NULL,
+    node_id text DEFAULT ''::text,
+    node_label text DEFAULT ''::text,
+    action_type text NOT NULL,
+    security_detail text DEFAULT '{}'::text,
+    network_detail text DEFAULT '{}'::text,
+    narrative text DEFAULT ''::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT nc_flow_walkthrough_steps_action_type_check CHECK ((action_type = ANY (ARRAY['originate'::text, 'route_lookup'::text, 'security_inspect'::text, 'encrypt_vpn'::text, 'decrypt_vpn'::text, 'tls_inspect'::text, 'authenticate'::text, 'authorize'::text, 'load_balance'::text, 'failover_check'::text, 'dns_resolve'::text, 'nat_translate'::text, 'deliver'::text, 'custom'::text])))
+);
+
+
+--
+-- Name: nc_groups; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_groups (
+    id text NOT NULL,
+    topology_id text,
+    parent_id text,
+    csp text,
+    group_type text DEFAULT 'full'::text,
+    label text NOT NULL,
+    description text,
+    auto_nodes_json text DEFAULT '[]'::text,
+    pos_x real DEFAULT 0,
+    pos_y real DEFAULT 0,
+    width real DEFAULT 400,
+    height real DEFAULT 300,
+    color text,
+    collapsed integer DEFAULT 0,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_hardware_profiles; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_hardware_profiles (
+    id text NOT NULL,
+    vendor text NOT NULL,
+    model text NOT NULL,
+    model_family text,
+    device_type text NOT NULL,
+    form_factor text DEFAULT 'rack'::text,
+    rack_units integer DEFAULT 1,
+    weight_kg real,
+    depth_mm integer,
+    width_mm integer,
+    height_mm integer,
+    power_typical_w integer,
+    power_max_w integer,
+    psu_count integer DEFAULT 2,
+    psu_type text,
+    operating_temp_min_c integer DEFAULT 0,
+    operating_temp_max_c integer DEFAULT 40,
+    humidity_min_pct integer DEFAULT 10,
+    humidity_max_pct integer DEFAULT 85,
+    airflow_direction text,
+    altitude_max_m integer DEFAULT 3000,
+    acoustic_dba real,
+    throughput_gbps real,
+    pps_mpps real,
+    routing_table_size integer,
+    arp_table_size integer,
+    mac_table_size integer,
+    nat_sessions integer,
+    vpn_tunnels integer,
+    vlan_count integer,
+    ports_json text DEFAULT '[]'::text,
+    components_json text DEFAULT '[]'::text,
+    mgmt_ports_json text DEFAULT '[]'::text,
+    os_options text DEFAULT '[]'::text,
+    license_model text,
+    eol_date text,
+    eos_date text,
+    replacement_cost real,
+    annual_maintenance_pct real DEFAULT 0.15,
+    datasheet_url text,
+    image_url text,
+    tags text DEFAULT '[]'::text,
+    is_builtin integer DEFAULT 0,
+    created_by text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_ingestion_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_ingestion_log (
+    id text NOT NULL,
+    channel text NOT NULL,
+    file_name text,
+    file_type text,
+    file_hash text,
+    source_adapter text,
+    status text DEFAULT 'started'::text,
+    result_json text DEFAULT '{}'::text,
+    error text,
+    topology_id text,
+    project_id text DEFAULT 'default'::text,
+    user_id text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    completed_at text,
+    CONSTRAINT nc_ingestion_log_channel_check CHECK ((channel = ANY (ARRAY['api'::text, 'upload'::text, 'folder_watch'::text, 'nms_pull'::text]))),
+    CONSTRAINT nc_ingestion_log_status_check CHECK ((status = ANY (ARRAY['started'::text, 'completed'::text, 'failed'::text])))
+);
+
+
+--
+-- Name: nc_innovation_ideas; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_innovation_ideas (
+    id text NOT NULL,
+    title text NOT NULL,
+    description text,
+    category text DEFAULT 'improvement'::text,
+    submitted_by text,
+    impact_score integer DEFAULT 0,
+    feasibility_score integer DEFAULT 0,
+    cost_score integer DEFAULT 0,
+    total_score real DEFAULT 0,
+    status text DEFAULT 'submitted'::text,
+    project_id text,
+    votes integer DEFAULT 0,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_intent_constraints; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_intent_constraints (
+    id text NOT NULL,
+    policy_id text,
+    constraint_type text NOT NULL,
+    severity text DEFAULT 'CAT2'::text,
+    rule_json text DEFAULT '{}'::text NOT NULL,
+    description text,
+    is_active integer DEFAULT 1,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_intent_policies; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_intent_policies (
+    id text NOT NULL,
+    topology_id text,
+    name text NOT NULL,
+    description text,
+    is_active integer DEFAULT 1,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    rule_json text,
+    severity text
+);
+
+
+--
+-- Name: nc_intent_validations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_intent_validations (
+    id text NOT NULL,
+    topology_id text,
+    policy_id text,
+    total_constraints integer DEFAULT 0,
+    passed integer DEFAULT 0,
+    failed integer DEFAULT 0,
+    violations_json text DEFAULT '[]'::text,
+    ran_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_interconnects; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_interconnects (
+    id text NOT NULL,
+    src_project_id text,
+    src_topology_id text,
+    src_node_id text,
+    dst_project_id text,
+    dst_topology_id text,
+    dst_node_id text,
+    circuit_id text,
+    protocol text,
+    bandwidth text,
+    notes text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_ipam_blocks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_ipam_blocks (
+    id text NOT NULL,
+    topology_id text,
+    network text NOT NULL,
+    address_family text DEFAULT 'ipv4'::text,
+    vlan_id integer,
+    vrf text DEFAULT 'global'::text,
+    description text,
+    site_id text,
+    gateway text,
+    gateway_v6 text,
+    utilization_pct real DEFAULT 0,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
 -- Name: nc_lab_clones; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -20598,6 +28878,1031 @@ CREATE TABLE public.nc_lab_clones (
     classification text DEFAULT 'UNCLASSIFIED'::text,
     lab_backend text,
     lab_project_id text
+);
+
+
+--
+-- Name: nc_lab_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_lab_runs (
+    id text NOT NULL,
+    topology_id text NOT NULL,
+    name text DEFAULT ''::text NOT NULL,
+    backend text DEFAULT 'stub'::text,
+    status text DEFAULT 'running'::text,
+    gns3_project_id text DEFAULT ''::text,
+    started_at text DEFAULT CURRENT_TIMESTAMP,
+    stopped_at text
+);
+
+
+--
+-- Name: nc_lab_tests; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_lab_tests (
+    id text NOT NULL,
+    project_id text,
+    test_name text NOT NULL,
+    category text DEFAULT 'functional'::text,
+    methodology text,
+    result text DEFAULT 'pending'::text,
+    measurements text DEFAULT '{}'::text,
+    firmware_versions text DEFAULT '{}'::text,
+    notes text,
+    tested_by text,
+    tested_at text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_lessons_learned; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_lessons_learned (
+    id text NOT NULL,
+    project_id text,
+    title text NOT NULL,
+    category text DEFAULT 'technical'::text,
+    what_happened text,
+    root_cause text,
+    lesson text,
+    recommendation text,
+    submitted_by text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_maintenance_windows; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_maintenance_windows (
+    id text NOT NULL,
+    site text NOT NULL,
+    start_utc text NOT NULL,
+    end_utc text NOT NULL,
+    recurrence text DEFAULT 'none'::text NOT NULL,
+    blackout_days_json text DEFAULT '[]'::text NOT NULL,
+    notes text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT nc_maintenance_windows_recurrence_check CHECK ((recurrence = ANY (ARRAY['biweekly'::text, 'monthly'::text, 'none'::text, 'weekly'::text])))
+);
+
+
+--
+-- Name: nc_mc_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_mc_runs (
+    id text NOT NULL,
+    scenario_id text,
+    topology_id text,
+    iterations integer DEFAULT 1000,
+    result_json text DEFAULT '{}'::text,
+    ai_recommendations text,
+    ran_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_mc_scenarios; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_mc_scenarios (
+    id text NOT NULL,
+    topology_id text,
+    name text NOT NULL,
+    scenario_type text DEFAULT 'random'::text,
+    description text,
+    config_json text DEFAULT '{}'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_migration_phases; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_migration_phases (
+    id text NOT NULL,
+    project_id text,
+    phase_num integer NOT NULL,
+    title text NOT NULL,
+    description text,
+    duration_days integer DEFAULT 0,
+    parallel_run integer DEFAULT 0,
+    rollback_criteria text,
+    maintenance_window text,
+    dependencies text DEFAULT '[]'::text,
+    status text DEFAULT 'planned'::text,
+    classification text DEFAULT 'CUI'::text,
+    impact_level text DEFAULT 'IL4'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    properties_json text DEFAULT '{}'::text,
+    CONSTRAINT nc_migration_phases_classification_check CHECK ((classification = ANY (ARRAY['PUBLIC'::text, 'CUI'::text, 'SECRET'::text, 'TS'::text]))),
+    CONSTRAINT nc_migration_phases_impact_level_check CHECK ((impact_level = ANY (ARRAY['IL2'::text, 'IL4'::text, 'IL5'::text, 'IL6'::text])))
+);
+
+
+--
+-- Name: nc_module_inventory; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_module_inventory (
+    id text NOT NULL,
+    device_label text NOT NULL,
+    topology_id text,
+    slot_number text NOT NULL,
+    module_type text,
+    is_empty integer DEFAULT 1,
+    compatible_modules text DEFAULT '[]'::text,
+    notes text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_naming_conventions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_naming_conventions (
+    id text NOT NULL,
+    name text NOT NULL,
+    description text,
+    pattern text NOT NULL,
+    fields_json text DEFAULT '[]'::text NOT NULL,
+    separator text DEFAULT ''::text,
+    max_length integer DEFAULT 63,
+    case_rule text DEFAULT 'upper'::text,
+    example text,
+    is_builtin integer DEFAULT 0,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_naming_sequences; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_naming_sequences (
+    id text NOT NULL,
+    convention_id text,
+    scope_key text NOT NULL,
+    topology_id text,
+    current_value integer DEFAULT 0
+);
+
+
+--
+-- Name: nc_netbox_config; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_netbox_config (
+    id text DEFAULT 'default'::text NOT NULL,
+    url text DEFAULT ''::text NOT NULL,
+    token text DEFAULT ''::text NOT NULL,
+    site_filter text DEFAULT ''::text,
+    timeout_sec integer DEFAULT 15,
+    auto_sync integer DEFAULT 0,
+    last_tested text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_netbox_objects; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_netbox_objects (
+    id text NOT NULL,
+    topology_id text,
+    netbox_id integer NOT NULL,
+    netbox_resource text NOT NULL,
+    canvas_node_id text,
+    last_synced text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_netbox_sync_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_netbox_sync_log (
+    id text NOT NULL,
+    direction text NOT NULL,
+    resource text NOT NULL,
+    topology_id text,
+    status text DEFAULT 'ok'::text,
+    records_in integer DEFAULT 0,
+    records_out integer DEFAULT 0,
+    error_msg text,
+    ran_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_nms_connections; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_nms_connections (
+    id text NOT NULL,
+    adapter_name text NOT NULL,
+    display_name text,
+    connection_json text DEFAULT '{}'::text,
+    last_sync_at text,
+    last_sync_status text DEFAULT 'never'::text,
+    enabled integer DEFAULT 1,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_notifications; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_notifications (
+    id text NOT NULL,
+    project_id text,
+    event_type text NOT NULL,
+    title text NOT NULL,
+    body text,
+    is_read integer DEFAULT 0,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_nqe_audit_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_nqe_audit_log (
+    id integer NOT NULL,
+    session_id character varying(100),
+    user_session text,
+    action character varying(50) NOT NULL,
+    input_text text,
+    nql_generated text,
+    fwd_snapshot_id character varying(100),
+    data_source character varying(20),
+    result_summary text,
+    raw_response_hash character varying(64),
+    confidence double precision,
+    advisory_id integer,
+    assessment_id integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    user_confirmed boolean,
+    row_count integer,
+    CONSTRAINT nc_nqe_audit_log_action_check CHECK (((action)::text = ANY (ARRAY[('approve'::character varying)::text, ('assess'::character varying)::text, ('explain'::character varying)::text, ('export'::character varying)::text, ('plan_create'::character varying)::text, ('predict'::character varying)::text, ('run'::character varying)::text, ('simulate'::character varying)::text, ('translate'::character varying)::text, ('triage_approve'::character varying)::text, ('triage_score'::character varying)::text, ('upload'::character varying)::text])))
+);
+
+
+--
+-- Name: nc_nqe_audit_log_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.nc_nqe_audit_log_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: nc_nqe_audit_log_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.nc_nqe_audit_log_id_seq OWNED BY public.nc_nqe_audit_log.id;
+
+
+--
+-- Name: nc_nqe_cache; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_nqe_cache (
+    id integer NOT NULL,
+    nql_hash character varying(64) NOT NULL,
+    network_id character varying(100),
+    result_json jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: nc_nqe_cache_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.nc_nqe_cache_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: nc_nqe_cache_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.nc_nqe_cache_id_seq OWNED BY public.nc_nqe_cache.id;
+
+
+--
+-- Name: nc_objects; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_objects (
+    id text NOT NULL,
+    topology_id text,
+    object_type text NOT NULL,
+    label text,
+    config_json text DEFAULT '{}'::text,
+    pos_x real DEFAULT 0,
+    pos_y real DEFAULT 0
+);
+
+
+--
+-- Name: nc_packet_captures; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_packet_captures (
+    id text NOT NULL,
+    link_id text NOT NULL,
+    lab_run_id text,
+    topology_id text,
+    src_label text DEFAULT ''::text,
+    dst_label text DEFAULT ''::text,
+    protocol text DEFAULT ''::text,
+    status text DEFAULT 'running'::text,
+    size_bytes integer DEFAULT 0,
+    sha256 text DEFAULT ''::text,
+    expiry_at text,
+    backend_ref text DEFAULT '{}'::text,
+    pcap_data bytea,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    stopped_at text
+);
+
+
+--
+-- Name: nc_partners; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_partners (
+    id text NOT NULL,
+    name text NOT NULL,
+    partner_type text DEFAULT 'isp'::text NOT NULL,
+    asn integer,
+    noc_email text DEFAULT ''::text,
+    noc_phone text DEFAULT ''::text,
+    legal_entity text DEFAULT ''::text,
+    contract_manager text DEFAULT ''::text,
+    status text DEFAULT 'active'::text NOT NULL,
+    notes text DEFAULT ''::text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT nc_partners_partner_type_check CHECK ((partner_type = ANY (ARRAY['isp'::text, 'carrier'::text, 'cloud'::text, 'content'::text, 'enterprise'::text, 'ix'::text]))),
+    CONSTRAINT nc_partners_status_check CHECK ((status = ANY (ARRAY['active'::text, 'suspended'::text, 'terminated'::text])))
+);
+
+
+--
+-- Name: nc_patch_plans; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_patch_plans (
+    id text NOT NULL,
+    plan_id text NOT NULL,
+    batch_id text NOT NULL,
+    advisory_id text NOT NULL,
+    cve_id text,
+    device_name text NOT NULL,
+    site text,
+    scheduled_at text,
+    window_id text,
+    risk_reduction real DEFAULT 0.0 NOT NULL,
+    simulation_status text DEFAULT 'pending'::text NOT NULL,
+    simulation_json text,
+    approved_by text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    action text,
+    blast_radius_json text,
+    CONSTRAINT nc_patch_plans_simulation_status_check CHECK ((simulation_status = ANY (ARRAY['fail'::text, 'pass'::text, 'pending'::text, 'skipped'::text, 'warn'::text])))
+);
+
+
+--
+-- Name: nc_peering_agreements; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_peering_agreements (
+    id text NOT NULL,
+    peer_name text NOT NULL,
+    peer_asn text,
+    our_asn text,
+    peering_type text DEFAULT 'settlement_free'::text,
+    routing_method text DEFAULT 'bgp'::text,
+    status text DEFAULT 'evaluation'::text,
+    purpose text,
+    purpose_category text DEFAULT 'connectivity'::text,
+    business_justification text,
+    locations text DEFAULT '[]'::text,
+    port_speed text,
+    contract_start text,
+    contract_end text,
+    monthly_cost real DEFAULT 0,
+    traffic_commit text,
+    ratio_limit text,
+    sla_latency_ms real,
+    sla_packet_loss real,
+    sla_uptime_pct real DEFAULT 99.9,
+    noc_contact text,
+    noc_email text,
+    noc_phone text,
+    legal_entity text,
+    notes text,
+    project_id text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    partner_id text,
+    approver_name text DEFAULT ''::text,
+    approver_role text DEFAULT ''::text,
+    approved_at text DEFAULT ''::text
+);
+
+
+--
+-- Name: nc_peering_evaluations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_peering_evaluations (
+    id text NOT NULL,
+    peer_name text NOT NULL,
+    peer_asn text,
+    traffic_volume real DEFAULT 0,
+    geographic_overlap text DEFAULT 'medium'::text,
+    noc_quality text DEFAULT 'unknown'::text,
+    network_capacity text DEFAULT 'unknown'::text,
+    prefix_count integer DEFAULT 0,
+    peering_policy text,
+    score real DEFAULT 0,
+    recommendation text DEFAULT 'evaluate'::text,
+    notes text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_peering_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_peering_sessions (
+    id text NOT NULL,
+    agreement_id text,
+    location text NOT NULL,
+    routing_method text DEFAULT 'bgp'::text,
+    our_ip text,
+    peer_ip text,
+    our_ipv6 text,
+    peer_ipv6 text,
+    our_asn text,
+    peer_asn text,
+    prefix_limit integer,
+    md5_enabled integer DEFAULT 0,
+    local_pref integer,
+    med integer,
+    communities text DEFAULT '[]'::text,
+    static_routes text DEFAULT '[]'::text,
+    status text DEFAULT 'planned'::text,
+    port_speed text,
+    notes text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_peering_traffic; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_peering_traffic (
+    id text NOT NULL,
+    session_id text,
+    inbound_mbps real DEFAULT 0,
+    outbound_mbps real DEFAULT 0,
+    ratio real DEFAULT 1.0,
+    measurement text DEFAULT 'peak'::text,
+    measured_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_phase_documents; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_phase_documents (
+    id text NOT NULL,
+    phase_id text,
+    project_id text,
+    doc_source text NOT NULL,
+    doc_id text NOT NULL,
+    doc_title text,
+    doc_type text,
+    relevance_note text,
+    display_order integer DEFAULT 0,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT nc_phase_documents_doc_source_check CHECK ((doc_source = ANY (ARRAY['document'::text, 'runbook'::text, 'sop'::text, 'external'::text])))
+);
+
+
+--
+-- Name: nc_phase_infoboxes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_phase_infoboxes (
+    id text NOT NULL,
+    topo_id text NOT NULL,
+    phase_key text NOT NULL,
+    box_id text NOT NULL,
+    override_json text DEFAULT '{}'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_poam_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_poam_items (
+    id integer NOT NULL,
+    poam_id character varying(30) NOT NULL,
+    advisory_id integer,
+    assessment_id integer,
+    weakness_name text NOT NULL,
+    weakness_description text,
+    severity character varying(20) DEFAULT 'medium'::character varying NOT NULL,
+    detection_source character varying(200),
+    scheduled_completion date,
+    milestone_changes text,
+    status character varying(30) DEFAULT 'open'::character varying NOT NULL,
+    responsible_party character varying(200),
+    resources_required text,
+    estimated_cost numeric(12,2),
+    raw_risk character varying(20),
+    residual_risk character varying(20),
+    remediation_plan text,
+    poam_notes text,
+    closed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT nc_poam_items_severity_check CHECK (((severity)::text = ANY (ARRAY[('critical'::character varying)::text, ('high'::character varying)::text, ('medium'::character varying)::text, ('low'::character varying)::text, ('informational'::character varying)::text]))),
+    CONSTRAINT nc_poam_items_status_check CHECK (((status)::text = ANY (ARRAY[('cancelled'::character varying)::text, ('completed'::character varying)::text, ('delayed'::character varying)::text, ('in-progress'::character varying)::text, ('open'::character varying)::text])))
+);
+
+
+--
+-- Name: nc_poam_items_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.nc_poam_items_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: nc_poam_items_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.nc_poam_items_id_seq OWNED BY public.nc_poam_items.id;
+
+
+--
+-- Name: nc_poam_status_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_poam_status_log (
+    id integer NOT NULL,
+    poam_id integer NOT NULL,
+    old_status character varying(30),
+    new_status character varying(30) NOT NULL,
+    note text,
+    updated_by character varying(200),
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: nc_poam_status_log_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.nc_poam_status_log_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: nc_poam_status_log_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.nc_poam_status_log_id_seq OWNED BY public.nc_poam_status_log.id;
+
+
+--
+-- Name: nc_port_inventory; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_port_inventory (
+    id text NOT NULL,
+    device_label text NOT NULL,
+    topology_id text,
+    total_ports integer DEFAULT 0,
+    used_ports integer DEFAULT 0,
+    port_breakdown text DEFAULT '{}'::text,
+    last_updated text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_project_milestones; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_project_milestones (
+    id text NOT NULL,
+    project_id text,
+    title text NOT NULL,
+    due_date text,
+    status text DEFAULT 'pending'::text,
+    predecessor_id text,
+    notes text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_project_notes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_project_notes (
+    id text NOT NULL,
+    project_id text,
+    author text,
+    body text NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_project_phases; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_project_phases (
+    id text NOT NULL,
+    project_id text,
+    phase_num integer NOT NULL,
+    phase_name text NOT NULL,
+    status text DEFAULT 'pending'::text,
+    entered_at text,
+    completed_at text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_project_templates; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_project_templates (
+    id text NOT NULL,
+    name text NOT NULL,
+    description text,
+    structure_json text DEFAULT '{}'::text NOT NULL,
+    created_by text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_project_topologies; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_project_topologies (
+    project_id text NOT NULL,
+    topology_id text NOT NULL,
+    assignee text DEFAULT ''::text
+);
+
+
+--
+-- Name: nc_projects; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_projects (
+    id text NOT NULL,
+    name text NOT NULL,
+    customer_id text,
+    description text,
+    status text DEFAULT 'draft'::text,
+    owner text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    selected_coa integer DEFAULT 0,
+    coa_feedback text DEFAULT ''::text,
+    coa_json text DEFAULT '{}'::text
+);
+
+
+--
+-- Name: nc_query_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_query_log (
+    id text NOT NULL,
+    topology_id text,
+    question text NOT NULL,
+    intent text DEFAULT 'general'::text,
+    answer text DEFAULT ''::text,
+    engine text DEFAULT ''::text,
+    ts text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_racks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_racks (
+    id text NOT NULL,
+    facility_id text,
+    rack_name text NOT NULL,
+    total_ru integer DEFAULT 42,
+    used_ru integer DEFAULT 0,
+    reserved_ru integer DEFAULT 0,
+    power_circuit_a text,
+    power_circuit_b text,
+    max_power_kw real DEFAULT 5.0,
+    current_power_kw real DEFAULT 0,
+    weight_capacity_lbs real DEFAULT 2500,
+    current_weight_lbs real DEFAULT 0,
+    notes text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_refresh_plans; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_refresh_plans (
+    id text NOT NULL,
+    project_id text,
+    device_label text NOT NULL,
+    old_model text,
+    eol_date text,
+    priority text DEFAULT 'medium'::text,
+    replacement_model text,
+    replacement_cost real DEFAULT 0,
+    target_year integer,
+    status text DEFAULT 'planned'::text,
+    notes text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_remediation_actions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_remediation_actions (
+    id integer NOT NULL,
+    project_id text,
+    device_name text NOT NULL,
+    action_type text NOT NULL,
+    current_version text,
+    target_version text,
+    advisory_id integer,
+    status text DEFAULT 'pending'::text NOT NULL,
+    notes text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT nc_remediation_actions_action_type_check CHECK ((action_type = ANY (ARRAY['patch'::text, 'firmware_update'::text, 'config_change'::text, 'replace'::text, 'decommission'::text]))),
+    CONSTRAINT nc_remediation_actions_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'simulated'::text, 'approved'::text, 'rejected'::text, 'applied'::text, 'rolled_back'::text])))
+);
+
+
+--
+-- Name: nc_remediation_actions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.nc_remediation_actions_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: nc_remediation_actions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.nc_remediation_actions_id_seq OWNED BY public.nc_remediation_actions.id;
+
+
+--
+-- Name: nc_remediation_status_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_remediation_status_log (
+    id integer NOT NULL,
+    action_id integer NOT NULL,
+    old_status character varying(40),
+    new_status character varying(40) NOT NULL,
+    note text,
+    updated_by character varying(200),
+    nql_verification_run text,
+    verification_result_hash character varying(64),
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: nc_remediation_status_log_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.nc_remediation_status_log_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: nc_remediation_status_log_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.nc_remediation_status_log_id_seq OWNED BY public.nc_remediation_status_log.id;
+
+
+--
+-- Name: nc_replacement_map; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_replacement_map (
+    id text NOT NULL,
+    old_vendor text NOT NULL,
+    old_model text NOT NULL,
+    new_vendor text NOT NULL,
+    new_model text NOT NULL,
+    new_cost real DEFAULT 0,
+    migration_effort text DEFAULT 'medium'::text,
+    notes text,
+    is_builtin integer DEFAULT 0,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_resource_plan; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_resource_plan (
+    id text NOT NULL,
+    project_id text,
+    phase text,
+    role text NOT NULL,
+    name text,
+    hours real DEFAULT 0,
+    rate_per_hour real DEFAULT 0,
+    is_contractor integer DEFAULT 0,
+    skill_requirements text,
+    notes text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_review_boards; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_review_boards (
+    id text NOT NULL,
+    name text NOT NULL,
+    short_name text NOT NULL,
+    description text,
+    required_for_status text,
+    is_optional integer DEFAULT 0,
+    sort_order integer DEFAULT 0,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_risks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_risks (
+    id text NOT NULL,
+    project_id text,
+    title text NOT NULL,
+    category text DEFAULT 'technical'::text,
+    probability text DEFAULT 'medium'::text,
+    impact text DEFAULT 'medium'::text,
+    risk_score integer DEFAULT 0,
+    mitigation text,
+    owner text,
+    status text DEFAULT 'open'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_routing_entries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_routing_entries (
+    id text NOT NULL,
+    device_ip text NOT NULL,
+    hostname text,
+    prefix text NOT NULL,
+    next_hop text,
+    protocol text,
+    metric integer DEFAULT 0,
+    admin_distance integer DEFAULT 0,
+    interface text,
+    vrf text DEFAULT 'default'::text,
+    address_family text DEFAULT 'ipv4'::text,
+    collected_at text DEFAULT CURRENT_TIMESTAMP,
+    topology_id text
+);
+
+
+--
+-- Name: nc_safe_bridge; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_safe_bridge (
+    id text NOT NULL,
+    project_id text,
+    session_id text,
+    safe_feature_id text,
+    roi_json text DEFAULT '{}'::text,
+    justification text,
+    alternatives text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_sdc_assessments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_sdc_assessments (
+    topology_id text NOT NULL,
+    design_id text,
+    assessment_id text,
+    risk_score real DEFAULT 0,
+    posture_grade text DEFAULT ''::text,
+    cat1_count integer DEFAULT 0,
+    updated_at text
+);
+
+
+--
+-- Name: nc_security_domain_policies; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_security_domain_policies (
+    id text NOT NULL,
+    topology_id text NOT NULL,
+    node_id text NOT NULL,
+    domain_type text NOT NULL,
+    domain_label text DEFAULT ''::text,
+    security_policy text DEFAULT '{}'::text,
+    routing_policy text DEFAULT '{}'::text,
+    vpn_policy text DEFAULT '{}'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT nc_security_domain_policies_domain_type_check CHECK ((domain_type = ANY (ARRAY['on_prem'::text, 'nipr'::text, 'sipr'::text, 'bcap_vdms'::text, 'bcap_vdss'::text, 'csp_il2'::text, 'csp_il4'::text, 'csp_il5'::text, 'csp_il6'::text, 'internet'::text, 'inter_csp'::text, 'dmz'::text, 'custom'::text])))
 );
 
 
@@ -20659,6 +29964,189 @@ CREATE TABLE public.nc_simulation_sessions (
 
 
 --
+-- Name: nc_sites; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_sites (
+    id text NOT NULL,
+    customer_id text,
+    name text NOT NULL,
+    address text,
+    city text,
+    state text,
+    country text DEFAULT 'US'::text,
+    site_type text DEFAULT 'office'::text,
+    classification text DEFAULT 'public'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_standards_checks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_standards_checks (
+    id text NOT NULL,
+    project_id text,
+    standard text NOT NULL,
+    check_item text NOT NULL,
+    status text DEFAULT 'pending'::text,
+    deviation_reason text,
+    waiver_ref text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_stencil_libraries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_stencil_libraries (
+    id text NOT NULL,
+    vendor text NOT NULL,
+    name text NOT NULL,
+    category text DEFAULT ''::text,
+    source_url text DEFAULT ''::text,
+    raw_format text DEFAULT 'vssx'::text,
+    shape_count integer DEFAULT 0,
+    imported_at text DEFAULT now()
+);
+
+
+--
+-- Name: nc_stencil_shapes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_stencil_shapes (
+    id text NOT NULL,
+    library_id text NOT NULL,
+    name text NOT NULL,
+    name_u text DEFAULT ''::text,
+    category text DEFAULT ''::text,
+    icon_data text,
+    icon_type text DEFAULT 'png'::text,
+    metadata_json text DEFAULT '{}'::text,
+    CONSTRAINT nc_stencil_shapes_icon_type_check CHECK ((icon_type = ANY (ARRAY['png'::text, 'svg'::text, 'emf'::text, 'none'::text])))
+);
+
+
+--
+-- Name: nc_step_persona_responses; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_step_persona_responses (
+    id text NOT NULL,
+    step_id text NOT NULL,
+    persona_id text NOT NULL,
+    narrative text DEFAULT ''::text,
+    detail_json text DEFAULT '{}'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT nc_step_persona_responses_persona_id_check CHECK ((persona_id = ANY (ARRAY['seceng'::text, 'neteng'::text, 'cloudarch'::text, 'compofficer'::text, 'appdev'::text, 'missionowner'::text, 'ciso'::text])))
+);
+
+
+--
+-- Name: nc_stig_imports; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_stig_imports (
+    id text NOT NULL,
+    topology_id text,
+    filename text NOT NULL,
+    format text NOT NULL,
+    stig_name text,
+    stig_version text,
+    total_hosts integer DEFAULT 0,
+    matched_hosts integer DEFAULT 0,
+    result_json text DEFAULT '{}'::text,
+    imported_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_subnet_calc_history; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_subnet_calc_history (
+    id text NOT NULL,
+    project_id text NOT NULL,
+    cidr text NOT NULL,
+    network_addr text,
+    broadcast text,
+    first_host text,
+    last_host text,
+    total_hosts integer,
+    usable_hosts integer,
+    prefix_len integer,
+    subnet_mask text,
+    wildcard_mask text,
+    address_family text DEFAULT 'ipv4'::text,
+    ip_class text,
+    notes text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_tags; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_tags (
+    id text NOT NULL,
+    entity_type text NOT NULL,
+    entity_id text NOT NULL,
+    tag text NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_tech_radar; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_tech_radar (
+    id text NOT NULL,
+    technology text NOT NULL,
+    ring text DEFAULT 'assess'::text,
+    category text DEFAULT 'networking'::text,
+    description text,
+    moved_from text,
+    updated_by text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_template_docs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_template_docs (
+    id text NOT NULL,
+    template_id text NOT NULL,
+    doc_type text DEFAULT 'sop'::text NOT NULL,
+    title text NOT NULL,
+    body_markdown text DEFAULT ''::text NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_templates; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_templates (
+    id text NOT NULL,
+    name text NOT NULL,
+    category text,
+    description text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    thumbnail_svg text,
+    tags text DEFAULT '[]'::text
+);
+
+
+--
 -- Name: nc_topologies; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -20669,6 +30157,191 @@ CREATE TABLE public.nc_topologies (
     created_at text DEFAULT now(),
     updated_at text DEFAULT now(),
     classification character varying(50) DEFAULT 'CUI'::character varying
+);
+
+
+--
+-- Name: nc_topology_snapshots; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_topology_snapshots (
+    id text NOT NULL,
+    topo_id text NOT NULL,
+    phase_id text,
+    label text,
+    graph_json text NOT NULL,
+    created_at text DEFAULT now()
+);
+
+
+--
+-- Name: nc_traffic_flows; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_traffic_flows (
+    id text NOT NULL,
+    topology_id text NOT NULL,
+    name text NOT NULL,
+    description text DEFAULT ''::text,
+    source_zone text NOT NULL,
+    destination_zone text NOT NULL,
+    application_type text NOT NULL,
+    protocols text DEFAULT '[]'::text,
+    classification text DEFAULT 'NIPR'::text,
+    path_nodes text DEFAULT '[]'::text,
+    phase_id text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT nc_traffic_flows_application_type_check CHECK ((application_type = ANY (ARRAY['sso_saml'::text, 'sso_oauth'::text, 'api_rest'::text, 'rdp'::text, 'ssh'::text, 'https_web'::text, 'ipsec_tunnel'::text, 'bgp'::text, 'dns'::text, 'custom'::text]))),
+    CONSTRAINT nc_traffic_flows_classification_check CHECK ((classification = ANY (ARRAY['NIPR'::text, 'SIPR'::text, 'IL2'::text, 'IL4'::text, 'IL5'::text, 'IL6'::text])))
+);
+
+
+--
+-- Name: nc_triage_queue; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_triage_queue (
+    id text DEFAULT md5((random())::text) NOT NULL,
+    advisory_id text NOT NULL,
+    priority_score real NOT NULL,
+    kev_exploited integer DEFAULT 0 NOT NULL,
+    asset_criticality_norm real DEFAULT 0.0 NOT NULL,
+    network_exposure_norm real DEFAULT 0.0 NOT NULL,
+    temporal_urgency real DEFAULT 0.0 NOT NULL,
+    rank integer,
+    rationale_json text,
+    status text DEFAULT 'pending'::text NOT NULL,
+    auto_approved integer DEFAULT 0 NOT NULL,
+    approved_by text,
+    approved_at text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT nc_triage_queue_priority_score_check CHECK (((priority_score >= (0.0)::double precision) AND (priority_score <= (1.0)::double precision))),
+    CONSTRAINT nc_triage_queue_status_check CHECK ((status = ANY (ARRAY['approved'::text, 'deferred'::text, 'pending'::text, 'scheduled'::text])))
+);
+
+
+--
+-- Name: nc_users; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_users (
+    id text NOT NULL,
+    username text NOT NULL,
+    display_name text,
+    password_hash text NOT NULL,
+    role text DEFAULT 'editor'::text,
+    is_active integer DEFAULT 1,
+    last_login text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_versions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_versions (
+    id text NOT NULL,
+    topology_id text,
+    version_num integer NOT NULL,
+    label text,
+    phase text,
+    graph_json text NOT NULL,
+    created_by text,
+    notes text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_vuln_findings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_vuln_findings (
+    id text NOT NULL,
+    host_id text,
+    scan_id text,
+    plugin_id text DEFAULT ''::text,
+    plugin_name text DEFAULT ''::text,
+    severity integer DEFAULT 0,
+    severity_label text DEFAULT 'info'::text,
+    risk_factor text DEFAULT 'none'::text,
+    cve text DEFAULT ''::text,
+    cvss_base_score text DEFAULT ''::text,
+    port text DEFAULT ''::text,
+    protocol text DEFAULT ''::text,
+    synopsis text DEFAULT ''::text,
+    description text DEFAULT ''::text,
+    solution text DEFAULT ''::text,
+    plugin_output text DEFAULT ''::text
+);
+
+
+--
+-- Name: nc_vuln_hosts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_vuln_hosts (
+    id text NOT NULL,
+    scan_id text,
+    ip text NOT NULL,
+    fqdn text DEFAULT ''::text,
+    netbios text DEFAULT ''::text,
+    os text DEFAULT ''::text,
+    cnt_critical integer DEFAULT 0,
+    cnt_high integer DEFAULT 0,
+    cnt_medium integer DEFAULT 0,
+    cnt_low integer DEFAULT 0,
+    cnt_info integer DEFAULT 0,
+    node_id text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: nc_vuln_predictions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_vuln_predictions (
+    id text NOT NULL,
+    advisory_id text NOT NULL,
+    assessment_id text,
+    risk_score_composite real NOT NULL,
+    risk_score_30d real NOT NULL,
+    risk_score_90d real NOT NULL,
+    trend text NOT NULL,
+    confidence real NOT NULL,
+    cvss_base real,
+    exploit_weight real,
+    patch_lag_norm real,
+    impacted_trend real,
+    model_version text DEFAULT '1.0'::text NOT NULL,
+    predicted_at text DEFAULT CURRENT_TIMESTAMP,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT nc_vuln_predictions_confidence_check CHECK (((confidence >= (0.0)::double precision) AND (confidence <= (1.0)::double precision))),
+    CONSTRAINT nc_vuln_predictions_risk_score_30d_check CHECK (((risk_score_30d >= (0.0)::double precision) AND (risk_score_30d <= (1.0)::double precision))),
+    CONSTRAINT nc_vuln_predictions_risk_score_90d_check CHECK (((risk_score_90d >= (0.0)::double precision) AND (risk_score_90d <= (1.0)::double precision))),
+    CONSTRAINT nc_vuln_predictions_risk_score_composite_check CHECK (((risk_score_composite >= (0.0)::double precision) AND (risk_score_composite <= (1.0)::double precision))),
+    CONSTRAINT nc_vuln_predictions_trend_check CHECK ((trend = ANY (ARRAY['rising'::text, 'stable'::text, 'declining'::text])))
+);
+
+
+--
+-- Name: nc_vuln_scans; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.nc_vuln_scans (
+    id text NOT NULL,
+    topology_id text,
+    scan_name text DEFAULT ''::text NOT NULL,
+    policy text DEFAULT ''::text,
+    scan_start text DEFAULT ''::text,
+    scan_end text DEFAULT ''::text,
+    file_name text DEFAULT ''::text,
+    host_count integer DEFAULT 0,
+    created_at text DEFAULT CURRENT_TIMESTAMP
 );
 
 
@@ -20685,6 +30358,25 @@ CREATE TABLE public.ndc_container_nodes (
     properties text NOT NULL,
     created_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying
+);
+
+
+--
+-- Name: ndc_runbooks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ndc_runbooks (
+    id text NOT NULL,
+    title text NOT NULL,
+    trigger_event text DEFAULT 'link_failure'::text NOT NULL,
+    severity text DEFAULT 'high'::text NOT NULL,
+    owner text,
+    topology_id text,
+    description text,
+    steps_json text DEFAULT '[]'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
 );
 
 
@@ -20725,7 +30417,8 @@ CREATE TABLE public.ndc_sops (
     approver text,
     approved_at text,
     created_at text DEFAULT CURRENT_TIMESTAMP,
-    updated_at text DEFAULT CURRENT_TIMESTAMP
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    csp text DEFAULT 'multi'::text
 );
 
 
@@ -20780,6 +30473,22 @@ CREATE TABLE public.ni_analyses (
 
 
 --
+-- Name: ni_device_configs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ni_device_configs (
+    id text NOT NULL,
+    device_id text,
+    config_type text NOT NULL,
+    config_text text NOT NULL,
+    config_hash text NOT NULL,
+    source text,
+    version integer DEFAULT 1,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
 -- Name: ni_devices; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -20805,7 +30514,12 @@ CREATE TABLE public.ni_devices (
     notes text,
     created_at text DEFAULT now(),
     updated_at text DEFAULT now(),
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    downstream_count integer,
+    properties_json text,
+    annual_maintenance_cost real,
+    criticality_score real DEFAULT 0,
+    rack_location text
 );
 
 
@@ -21301,6 +31015,8 @@ CREATE TABLE public.notification_log (
     error text,
     created_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    body text,
+    tenant_id text,
     CONSTRAINT notification_log_severity_check CHECK ((severity = ANY (ARRAY['info'::text, 'warning'::text, 'error'::text, 'critical'::text])))
 );
 
@@ -21318,6 +31034,22 @@ CREATE TABLE public.notifications (
     read boolean DEFAULT false,
     created_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying
+);
+
+
+--
+-- Name: observability_designs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.observability_designs (
+    id text NOT NULL,
+    name text NOT NULL,
+    description text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    template_id text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
 );
 
 
@@ -21340,6 +31072,132 @@ CREATE TABLE public.observability_nodes (
 
 
 --
+-- Name: od_assessments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.od_assessments (
+    id text NOT NULL,
+    design_id text,
+    assessment_type text NOT NULL,
+    findings_json text DEFAULT '[]'::text,
+    score real DEFAULT 0,
+    grade text DEFAULT 'F'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: od_audit; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.od_audit (
+    id integer NOT NULL,
+    design_id text,
+    actor text,
+    action text NOT NULL,
+    detail text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: od_audit_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.od_audit_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: od_audit_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.od_audit_id_seq OWNED BY public.od_audit.id;
+
+
+--
+-- Name: od_collab_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.od_collab_sessions (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    user_id text NOT NULL,
+    user_name text DEFAULT ''::text NOT NULL,
+    color text DEFAULT '#3498db'::text NOT NULL,
+    joined_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    last_seen text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    is_active integer DEFAULT 1 NOT NULL
+);
+
+
+--
+-- Name: od_snippets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.od_snippets (
+    id text NOT NULL,
+    name text NOT NULL,
+    category text,
+    description text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    tags text DEFAULT '[]'::text
+);
+
+
+--
+-- Name: od_templates; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.od_templates (
+    id text NOT NULL,
+    name text NOT NULL,
+    category text,
+    description text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    tags text DEFAULT '[]'::text
+);
+
+
+--
+-- Name: od_ttp_coverage; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.od_ttp_coverage (
+    id text NOT NULL,
+    ttp_id text NOT NULL,
+    design_id text DEFAULT ''::text,
+    state text NOT NULL,
+    sigma_match integer DEFAULT 0 NOT NULL,
+    baseline_match integer DEFAULT 0 NOT NULL,
+    detail text DEFAULT '{}'::text,
+    verified_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT od_ttp_coverage_state_check CHECK ((state = ANY (ARRAY['full'::text, 'partial'::text, 'none'::text])))
+);
+
+
+--
+-- Name: od_versions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.od_versions (
+    id text NOT NULL,
+    design_id text,
+    version_number integer NOT NULL,
+    graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    change_summary text DEFAULT ''::text,
+    user_id text DEFAULT ''::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
 -- Name: odc_designs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -21355,6 +31213,163 @@ CREATE TABLE public.odc_designs (
 
 
 --
+-- Name: odc_gap_scores; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.odc_gap_scores (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    total_techniques integer DEFAULT 0 NOT NULL,
+    covered_count integer DEFAULT 0 NOT NULL,
+    partial_count integer DEFAULT 0 NOT NULL,
+    gap_count integer DEFAULT 0 NOT NULL,
+    overall_gap_score real DEFAULT 0.0 NOT NULL,
+    by_tactic text DEFAULT '{}'::text NOT NULL,
+    assessed_at text NOT NULL
+);
+
+
+--
+-- Name: odc_mitre_techniques; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.odc_mitre_techniques (
+    id text NOT NULL,
+    technique_id text NOT NULL,
+    name text NOT NULL,
+    tactic text DEFAULT ''::text NOT NULL,
+    sigma_template text DEFAULT ''::text NOT NULL,
+    ingested_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: odc_otel_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.odc_otel_events (
+    id integer NOT NULL,
+    design_id text NOT NULL,
+    trace_id text DEFAULT ''::text NOT NULL,
+    span_id text DEFAULT ''::text NOT NULL,
+    event_name text NOT NULL,
+    technique_id text DEFAULT ''::text NOT NULL,
+    signal_source text DEFAULT ''::text NOT NULL,
+    attributes text DEFAULT '{}'::text NOT NULL,
+    received_at text NOT NULL
+);
+
+
+--
+-- Name: odc_otel_events_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.odc_otel_events_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: odc_otel_events_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.odc_otel_events_id_seq OWNED BY public.odc_otel_events.id;
+
+
+--
+-- Name: odc_runbooks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.odc_runbooks (
+    id text NOT NULL,
+    title text NOT NULL,
+    category text DEFAULT 'general'::text NOT NULL,
+    trigger_condition text DEFAULT ''::text,
+    severity text DEFAULT 'medium'::text NOT NULL,
+    description text DEFAULT ''::text,
+    steps text DEFAULT '[]'::text,
+    nist_controls text DEFAULT '[]'::text,
+    tags text DEFAULT '[]'::text,
+    owner text DEFAULT ''::text,
+    estimated_duration_min integer DEFAULT 30,
+    last_executed_at text DEFAULT ''::text,
+    execution_count integer DEFAULT 0,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT odc_runbooks_severity_check CHECK ((severity = ANY (ARRAY['critical'::text, 'high'::text, 'medium'::text, 'low'::text])))
+);
+
+
+--
+-- Name: odc_sdc_verifications; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.odc_sdc_verifications (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    ttp_list text DEFAULT '[]'::text NOT NULL,
+    covered_ttps text DEFAULT '[]'::text NOT NULL,
+    partial_ttps text DEFAULT '[]'::text NOT NULL,
+    gap_ttps text DEFAULT '[]'::text NOT NULL,
+    coverage_pct real DEFAULT 0.0 NOT NULL,
+    verified_at text NOT NULL,
+    topology_id text DEFAULT ''::text,
+    siem_node_id text DEFAULT ''::text,
+    forward_status text DEFAULT ''::text
+);
+
+
+--
+-- Name: odc_sops; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.odc_sops (
+    id text NOT NULL,
+    title text NOT NULL,
+    sop_type text DEFAULT 'custom'::text NOT NULL,
+    description text DEFAULT ''::text,
+    purpose text DEFAULT ''::text,
+    scope text DEFAULT ''::text,
+    steps text DEFAULT '[]'::text,
+    nist_controls text DEFAULT '[]'::text,
+    owner text DEFAULT ''::text,
+    reviewer text DEFAULT ''::text,
+    approval_status text DEFAULT 'draft'::text NOT NULL,
+    approved_by text DEFAULT ''::text,
+    approved_at text DEFAULT ''::text,
+    rejected_reason text DEFAULT ''::text,
+    version text DEFAULT '1.0'::text,
+    next_review_date text DEFAULT ''::text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT odc_sops_approval_status_check CHECK ((approval_status = ANY (ARRAY['draft'::text, 'pending_review'::text, 'approved'::text, 'rejected'::text])))
+);
+
+
+--
+-- Name: odc_technique_coverage; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.odc_technique_coverage (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    technique_id text NOT NULL,
+    coverage_state text NOT NULL,
+    signal_sources_present text DEFAULT '[]'::text NOT NULL,
+    signal_sources_missing text DEFAULT '[]'::text NOT NULL,
+    gap_score real DEFAULT 0.0 NOT NULL,
+    assessed_at text NOT NULL,
+    CONSTRAINT odc_technique_coverage_coverage_state_check CHECK ((coverage_state = ANY (ARRAY['covered'::text, 'partial'::text, 'gap'::text])))
+);
+
+
+--
 -- Name: odc_twin_snapshots; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -21365,7 +31380,144 @@ CREATE TABLE public.odc_twin_snapshots (
     service_count integer DEFAULT 0 NOT NULL,
     coverage_score real DEFAULT 0.0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    coverage_basis text,
+    payload_json text
+);
+
+
+--
+-- Name: ohc_adapter_health_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ohc_adapter_health_log (
+    id text NOT NULL,
+    adapter_name text NOT NULL,
+    status text NOT NULL,
+    latency_ms integer DEFAULT 0,
+    error_msg text DEFAULT ''::text,
+    checked_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: ohc_adapter_status; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ohc_adapter_status (
+    id text NOT NULL,
+    adapter_name text NOT NULL,
+    adapter_type text NOT NULL,
+    domain text NOT NULL,
+    available integer DEFAULT 0,
+    version text DEFAULT ''::text,
+    endpoint text DEFAULT ''::text,
+    last_probe text,
+    probe_result text DEFAULT '{}'::text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: ohc_data_drift_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ohc_data_drift_events (
+    id text NOT NULL,
+    dataset_name text NOT NULL,
+    drift_type text NOT NULL,
+    drift_score real NOT NULL,
+    threshold real DEFAULT 0.3,
+    passed integer DEFAULT 1,
+    details_json text DEFAULT '{}'::text,
+    source_adapter text DEFAULT 'evidently'::text,
+    classification text DEFAULT 'CUI'::text,
+    detected_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: ohc_dataset_versions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ohc_dataset_versions (
+    id text NOT NULL,
+    name text NOT NULL,
+    version text DEFAULT '1'::text NOT NULL,
+    description text DEFAULT ''::text,
+    path text DEFAULT ''::text,
+    size_bytes integer DEFAULT 0,
+    row_count integer DEFAULT 0,
+    schema_json text DEFAULT '{}'::text,
+    drift_score real DEFAULT 0.0,
+    quality_score real DEFAULT 1.0,
+    tags_json text DEFAULT '{}'::text,
+    source_adapter text DEFAULT 'internal'::text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: ohc_experiment_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ohc_experiment_runs (
+    id text NOT NULL,
+    experiment_id text NOT NULL,
+    run_name text DEFAULT ''::text,
+    status text DEFAULT 'running'::text,
+    start_time text DEFAULT CURRENT_TIMESTAMP,
+    end_time text,
+    duration_ms integer,
+    params_json text DEFAULT '{}'::text,
+    metrics_json text DEFAULT '{}'::text,
+    tags_json text DEFAULT '{}'::text,
+    artifacts_json text DEFAULT '[]'::text,
+    source_adapter text DEFAULT 'internal'::text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: ohc_experiments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ohc_experiments (
+    id text NOT NULL,
+    name text NOT NULL,
+    description text DEFAULT ''::text,
+    tags_json text DEFAULT '{}'::text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: ohc_model_registry; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ohc_model_registry (
+    id text NOT NULL,
+    name text NOT NULL,
+    version text DEFAULT '1'::text NOT NULL,
+    stage text DEFAULT 'none'::text NOT NULL,
+    description text DEFAULT ''::text,
+    run_id text,
+    artifact_path text DEFAULT ''::text,
+    model_type text DEFAULT 'llm'::text,
+    framework text DEFAULT ''::text,
+    metrics_json text DEFAULT '{}'::text,
+    tags_json text DEFAULT '{}'::text,
+    source_adapter text DEFAULT 'internal'::text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
 );
 
 
@@ -21758,7 +31910,10 @@ CREATE TABLE public.oracle_predictions (
     scoring_weights text DEFAULT '{}'::text,
     outcome text DEFAULT 'pending'::text,
     outcome_at text,
-    classification text DEFAULT 'CUI'::text NOT NULL
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    status text,
+    suggested_action text,
+    expires_at text
 );
 
 
@@ -21899,6 +32054,25 @@ CREATE TABLE public.osint_privacy_audit (
 
 
 --
+-- Name: osint_signals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.osint_signals (
+    id text NOT NULL,
+    source text NOT NULL,
+    title text,
+    description text,
+    ioc_type text,
+    ioc_value text,
+    severity text DEFAULT 'medium'::text,
+    tags text,
+    published_at text,
+    fetched_at text,
+    classification text DEFAULT 'CUI // SP-CTI'::text
+);
+
+
+--
 -- Name: otel_spans; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -21919,6 +32093,30 @@ CREATE TABLE public.otel_spans (
     project_id text,
     classification text DEFAULT 'CUI'::text,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: otel_spans_archive; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.otel_spans_archive (
+    id text,
+    trace_id text,
+    parent_span_id text,
+    name text,
+    kind text,
+    start_time text,
+    end_time text,
+    duration_ms integer,
+    status_code text,
+    status_message text,
+    attributes text,
+    events text,
+    agent_id text,
+    project_id text,
+    classification text,
+    created_at timestamp without time zone
 );
 
 
@@ -22015,6 +32213,232 @@ CREATE TABLE public.owasp_llm_assessments (
 
 
 --
+-- Name: pc_audit; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pc_audit (
+    id integer NOT NULL,
+    action text NOT NULL,
+    entity_type text,
+    entity_id text,
+    details text,
+    user_id text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    ts text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: pc_audit_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.pc_audit_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: pc_audit_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.pc_audit_id_seq OWNED BY public.pc_audit.id;
+
+
+--
+-- Name: pc_boundaries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pc_boundaries (
+    id text NOT NULL,
+    pipeline_id text,
+    label text DEFAULT 'Stage Boundary'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text,
+    color text DEFAULT '#e94560'::text,
+    fill_opacity real DEFAULT 0.08,
+    node_ids text DEFAULT '[]'::text,
+    boundary_type text DEFAULT 'security_zone'::text,
+    pos_x real DEFAULT 0,
+    pos_y real DEFAULT 0,
+    width real DEFAULT 400,
+    height real DEFAULT 300,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: pc_change_requests; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pc_change_requests (
+    id text NOT NULL,
+    pipeline_id text,
+    cr_number text,
+    cr_type text DEFAULT 'modify'::text,
+    status text DEFAULT 'draft'::text,
+    markup_json text DEFAULT '[]'::text,
+    created_by text,
+    approved_by text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: pc_collab_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pc_collab_sessions (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    user_id text NOT NULL,
+    user_name text DEFAULT ''::text NOT NULL,
+    color text DEFAULT '#3498db'::text NOT NULL,
+    joined_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    last_seen text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    is_active integer DEFAULT 1 NOT NULL
+);
+
+
+--
+-- Name: pc_compliance_checks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pc_compliance_checks (
+    id text NOT NULL,
+    pipeline_id text,
+    check_type text NOT NULL,
+    passed integer DEFAULT 0,
+    failed integer DEFAULT 0,
+    findings_json text DEFAULT '[]'::text,
+    ran_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: pc_compliance_findings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pc_compliance_findings (
+    id text NOT NULL,
+    pipeline_id text,
+    audit_id text,
+    rule_id text NOT NULL,
+    framework text NOT NULL,
+    severity text DEFAULT 'CAT2'::text,
+    title text NOT NULL,
+    description text,
+    affected_entity text,
+    affected_type text,
+    status text DEFAULT 'open'::text,
+    fix_action text,
+    remediated_at text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: pc_project_pipelines; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pc_project_pipelines (
+    project_id text NOT NULL,
+    pipeline_id text NOT NULL
+);
+
+
+--
+-- Name: pc_projects; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pc_projects (
+    id text NOT NULL,
+    name text NOT NULL,
+    description text,
+    status text DEFAULT 'draft'::text,
+    owner text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: pc_snippets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pc_snippets (
+    id text NOT NULL,
+    name text NOT NULL,
+    category text DEFAULT 'DevSecOps'::text NOT NULL,
+    description text,
+    classification_level text DEFAULT 'CUI'::text,
+    impact_level text DEFAULT 'IL4'::text,
+    slsa_level text DEFAULT 'L1'::text,
+    ssdf_practices text DEFAULT '[]'::text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    tags text DEFAULT '[]'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: pc_stages; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pc_stages (
+    id text NOT NULL,
+    pipeline_id text,
+    parent_id text,
+    stage_type text NOT NULL,
+    label text NOT NULL,
+    description text,
+    auto_nodes_json text DEFAULT '[]'::text,
+    pos_x real DEFAULT 0,
+    pos_y real DEFAULT 0,
+    width real DEFAULT 300,
+    height real DEFAULT 200,
+    color text,
+    collapsed integer DEFAULT 0,
+    parallel integer DEFAULT 0,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: pc_templates; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pc_templates (
+    id text NOT NULL,
+    name text NOT NULL,
+    category text,
+    description text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    thumbnail_svg text,
+    tags text DEFAULT '[]'::text
+);
+
+
+--
+-- Name: pc_versions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pc_versions (
+    id text NOT NULL,
+    pipeline_id text,
+    version_num integer NOT NULL,
+    label text,
+    graph_json text NOT NULL,
+    created_by text,
+    notes text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
 -- Name: pci_dss_assessments; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -22056,6 +32480,71 @@ CREATE SEQUENCE public.pci_dss_assessments_id_seq
 --
 
 ALTER SEQUENCE public.pci_dss_assessments_id_seq OWNED BY public.pci_dss_assessments.id;
+
+
+--
+-- Name: pdc_simulations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pdc_simulations (
+    id text NOT NULL,
+    pipeline_id text,
+    baseline_snap_id text,
+    delta_graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    verdict text DEFAULT 'unknown'::text NOT NULL,
+    antipatterns_json text DEFAULT '[]'::text,
+    slsa_json text DEFAULT '{}'::text,
+    compliance_json text DEFAULT '{}'::text,
+    diff_json text DEFAULT '{}'::text,
+    critical_count integer DEFAULT 0,
+    high_count integer DEFAULT 0,
+    medium_count integer DEFAULT 0,
+    created_by text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: pdc_snapshots; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pdc_snapshots (
+    id text NOT NULL,
+    pipeline_id text,
+    label text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    node_count integer DEFAULT 0,
+    edge_count integer DEFAULT 0,
+    created_by text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: pdc_sops; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pdc_sops (
+    id text NOT NULL,
+    title text NOT NULL,
+    sop_type text DEFAULT 'custom'::text NOT NULL,
+    description text DEFAULT ''::text,
+    purpose text DEFAULT ''::text,
+    scope text DEFAULT ''::text,
+    steps text,
+    nist_controls text,
+    owner text DEFAULT ''::text,
+    reviewer text DEFAULT ''::text,
+    approval_status text DEFAULT 'draft'::text,
+    version text DEFAULT '1.0'::text,
+    approved_by text,
+    approved_at text,
+    next_review_date text,
+    rejected_reason text DEFAULT ''::text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
 
 
 --
@@ -22205,6 +32694,11 @@ CREATE TABLE public.pg_ai_clause_compliance (
     created_at text NOT NULL,
     updated_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text,
+    artifact_type text,
+    artifact_status text,
+    artifact_content text,
+    source_tool text,
     CONSTRAINT pg_ai_clause_compliance_clause_type_check CHECK ((clause_type = ANY (ARRAY['gsar_552_239_7001'::text, 'omb_m26_04'::text, 'omb_m25_21'::text]))),
     CONSTRAINT pg_ai_clause_compliance_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'generated'::text, 'reviewed'::text, 'attached'::text])))
 );
@@ -22225,6 +32719,7 @@ CREATE TABLE public.pg_amendment_diffs (
     re_extracted integer DEFAULT 0 NOT NULL,
     created_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text,
     CONSTRAINT pg_amendment_diffs_diff_type_check CHECK ((diff_type = ANY (ARRAY['added'::text, 'removed'::text, 'modified'::text])))
 );
 
@@ -22242,6 +32737,7 @@ CREATE TABLE public.pg_bid_decision_outcomes (
     notes text,
     created_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text,
     CONSTRAINT pg_bid_decision_outcomes_outcome_check CHECK ((outcome = ANY (ARRAY['won'::text, 'lost'::text, 'no_award'::text, 'cancelled'::text, 'withdrawn'::text])))
 );
 
@@ -22260,6 +32756,7 @@ CREATE TABLE public.pg_bid_decisions (
     decided_by text DEFAULT 'autonomous'::text,
     created_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text,
     CONSTRAINT pg_bid_decisions_decision_check CHECK ((decision = ANY (ARRAY['bid'::text, 'no_bid'::text, 'pending'::text, 'deferred'::text])))
 );
 
@@ -22278,7 +32775,28 @@ CREATE TABLE public.pg_capture_activities (
     status text DEFAULT 'pending'::text,
     created_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text,
     CONSTRAINT pg_capture_activities_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'in_progress'::text, 'completed'::text, 'cancelled'::text])))
+);
+
+
+--
+-- Name: pg_capture_gate_decisions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pg_capture_gate_decisions (
+    id text NOT NULL,
+    capture_plan_id text NOT NULL,
+    opportunity_id text,
+    from_phase text NOT NULL,
+    to_phase text NOT NULL,
+    decision text NOT NULL,
+    rationale text,
+    decided_by text,
+    gate_criteria_met text,
+    created_at text DEFAULT (now())::text NOT NULL,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text
 );
 
 
@@ -22298,6 +32816,8 @@ CREATE TABLE public.pg_capture_plans (
     created_at text NOT NULL,
     updated_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text,
+    current_phase text DEFAULT 'qualify'::text,
     CONSTRAINT pg_capture_plans_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'active'::text, 'completed'::text, 'abandoned'::text])))
 );
 
@@ -22322,6 +32842,9 @@ CREATE TABLE public.pg_cmmc_supply_chain (
     flow_down_generated integer DEFAULT 0,
     checked_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text,
+    created_at text,
+    updated_at text,
     CONSTRAINT pg_cmmc_supply_chain_assessment_type_check CHECK ((assessment_type = ANY (ARRAY['self'::text, 'c3pao'::text, 'dibcac'::text]))),
     CONSTRAINT pg_cmmc_supply_chain_compliance_status_check CHECK ((compliance_status = ANY (ARRAY['compliant'::text, 'poam'::text, 'non_compliant'::text, 'unknown'::text, 'expired'::text]))),
     CONSTRAINT pg_cmmc_supply_chain_poam_status_check CHECK ((poam_status = ANY (ARRAY['none'::text, 'open'::text, 'closed'::text]))),
@@ -22369,6 +32892,7 @@ CREATE TABLE public.pg_compliance_matrix (
     created_at text NOT NULL,
     updated_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text,
     CONSTRAINT pg_compliance_matrix_compliance_status_check CHECK ((compliance_status = ANY (ARRAY['addressed'::text, 'partial'::text, 'gap'::text, 'na'::text]))),
     CONSTRAINT pg_compliance_matrix_source_section_check CHECK ((source_section = ANY (ARRAY['L'::text, 'M'::text, 'C'::text, 'attachment'::text, 'amendment'::text])))
 );
@@ -22399,6 +32923,7 @@ CREATE TABLE public.pg_cost_volumes (
     created_at text NOT NULL,
     updated_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text,
     CONSTRAINT pg_cost_volumes_contract_type_check CHECK ((contract_type = ANY (ARRAY['ffp'::text, 't_and_m'::text, 'cpff'::text, 'cpaf'::text, 'idiq'::text, 'hybrid'::text]))),
     CONSTRAINT pg_cost_volumes_pricing_strategy_check CHECK ((pricing_strategy = ANY (ARRAY['lpta'::text, 'best_value'::text, 'tradeoff'::text]))),
     CONSTRAINT pg_cost_volumes_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'reviewed'::text, 'approved'::text, 'submitted'::text])))
@@ -22423,6 +32948,7 @@ CREATE TABLE public.pg_crm_accounts (
     created_at text NOT NULL,
     updated_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text,
     CONSTRAINT pg_crm_accounts_account_type_check CHECK ((account_type = ANY (ARRAY['government'::text, 'prime'::text, 'subcontractor'::text, 'partner'::text, 'other'::text]))),
     CONSTRAINT pg_crm_accounts_status_check CHECK ((status = ANY (ARRAY['active'::text, 'inactive'::text, 'prospect'::text])))
 );
@@ -22446,6 +32972,7 @@ CREATE TABLE public.pg_crm_contacts (
     created_at text NOT NULL,
     updated_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text,
     CONSTRAINT pg_crm_contacts_influence_level_check CHECK ((influence_level = ANY (ARRAY['decision_maker'::text, 'influencer'::text, 'evaluator'::text, 'end_user'::text, 'unknown'::text])))
 );
 
@@ -22464,7 +32991,8 @@ CREATE TABLE public.pg_crm_engagement_scores (
     opportunity_count integer DEFAULT 0,
     win_rate real,
     created_at text NOT NULL,
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text
 );
 
 
@@ -22483,6 +33011,7 @@ CREATE TABLE public.pg_crm_interactions (
     interaction_date text NOT NULL,
     created_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text,
     CONSTRAINT pg_crm_interactions_interaction_type_check CHECK ((interaction_type = ANY (ARRAY['meeting'::text, 'call'::text, 'email'::text, 'conference'::text, 'site_visit'::text, 'rfi_response'::text, 'industry_day'::text, 'other'::text])))
 );
 
@@ -22537,7 +33066,8 @@ CREATE TABLE public.pg_lcat_allocations (
     annual_cost real,
     basis_of_estimate text,
     created_at text NOT NULL,
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text
 );
 
 
@@ -22578,7 +33108,8 @@ CREATE TABLE public.pg_proposal_genesis_audit (
     hash text,
     previous_hash text,
     signature text,
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text
 );
 
 
@@ -22590,7 +33121,8 @@ CREATE TABLE public.pg_proposal_genesis_config (
     key text NOT NULL,
     value text NOT NULL,
     updated_at text NOT NULL,
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text
 );
 
 
@@ -22612,7 +33144,8 @@ CREATE TABLE public.pg_proposal_genesis_state (
     last_metric_value real,
     last_error text,
     updated_at text NOT NULL,
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text
 );
 
 
@@ -22636,7 +33169,8 @@ CREATE TABLE public.pg_proposal_quality_scores (
     findings text,
     check_details text,
     created_at text NOT NULL,
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text
 );
 
 
@@ -22653,6 +33187,7 @@ CREATE TABLE public.pg_pulse_proposal_links (
     relevance_score real DEFAULT 0.0,
     created_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text,
     CONSTRAINT pg_pulse_proposal_links_link_type_check CHECK ((link_type = ANY (ARRAY['article_to_proposal'::text, 'capability_to_article'::text, 'cdrl_to_case_study'::text])))
 );
 
@@ -22736,6 +33271,7 @@ CREATE TABLE public.pg_review_findings (
     created_at text NOT NULL,
     resolved_at text,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text,
     CONSTRAINT pg_review_findings_category_check CHECK ((category = ANY (ARRAY['compliance'::text, 'persuasion'::text, 'readability'::text, 'formatting'::text, 'pricing'::text, 'strategy'::text]))),
     CONSTRAINT pg_review_findings_resolution_status_check CHECK ((resolution_status = ANY (ARRAY['open'::text, 'addressed'::text, 'deferred'::text, 'wontfix'::text]))),
     CONSTRAINT pg_review_findings_review_type_check CHECK ((review_type = ANY (ARRAY['blue'::text, 'pink'::text, 'red'::text, 'green'::text, 'gold'::text]))),
@@ -22780,6 +33316,7 @@ CREATE TABLE public.pg_talent_signals (
     signal_type text,
     created_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text,
     CONSTRAINT pg_talent_signals_signal_type_check CHECK ((signal_type = ANY (ARRAY['velocity_spike'::text, 'role_cluster'::text, 'new_capability'::text, 'pricing_intel'::text, 'general'::text])))
 );
 
@@ -22798,7 +33335,8 @@ CREATE TABLE public.pg_talent_velocity (
     dominant_location text,
     dominant_clearance text,
     created_at text NOT NULL,
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text
 );
 
 
@@ -22837,6 +33375,7 @@ CREATE TABLE public.pg_teaming_assessments (
     recommendation text,
     created_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text,
     CONSTRAINT pg_teaming_assessments_recommendation_check CHECK ((recommendation = ANY (ARRAY['strong_fit'::text, 'good_fit'::text, 'marginal'::text, 'not_recommended'::text])))
 );
 
@@ -22858,6 +33397,7 @@ CREATE TABLE public.pg_teaming_partners (
     created_at text NOT NULL,
     updated_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text,
     CONSTRAINT pg_teaming_partners_partner_type_check CHECK ((partner_type = ANY (ARRAY['prime'::text, 'subcontractor'::text, 'consultant'::text, 'technology_partner'::text, 'mentor_protege'::text]))),
     CONSTRAINT pg_teaming_partners_status_check CHECK ((status = ANY (ARRAY['active'::text, 'inactive'::text, 'prospect'::text])))
 );
@@ -22883,6 +33423,7 @@ CREATE TABLE public.pg_teaming_workshare (
     created_at text NOT NULL,
     updated_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text,
     CONSTRAINT pg_teaming_workshare_oci_risk_check CHECK ((oci_risk = ANY (ARRAY['none'::text, 'low'::text, 'medium'::text, 'high'::text, 'disqualifying'::text]))),
     CONSTRAINT pg_teaming_workshare_status_check CHECK ((status = ANY (ARRAY['proposed'::text, 'agreed'::text, 'contracted'::text, 'disputed'::text]))),
     CONSTRAINT pg_teaming_workshare_ta_status_check CHECK ((ta_status = ANY (ARRAY['none'::text, 'draft'::text, 'negotiating'::text, 'executed'::text, 'expired'::text])))
@@ -22902,6 +33443,7 @@ CREATE TABLE public.pg_theme_tracking (
     reviewer_notes text,
     checked_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text,
     CONSTRAINT pg_theme_tracking_implementation_status_check CHECK ((implementation_status = ANY (ARRAY['pending'::text, 'implemented'::text, 'partial'::text, 'missing'::text])))
 );
 
@@ -22934,6 +33476,7 @@ CREATE TABLE public.pg_win_loss_lessons (
     applied integer DEFAULT 0 NOT NULL,
     created_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text,
     CONSTRAINT pg_win_loss_lessons_category_check CHECK ((category = ANY (ARRAY['technical'::text, 'management'::text, 'pricing'::text, 'past_performance'::text, 'compliance'::text, 'staffing'::text, 'other'::text])))
 );
 
@@ -22953,6 +33496,9 @@ CREATE TABLE public.pg_win_loss_records (
     lessons_learned text,
     created_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text,
+    bid_decision_id text,
+    debrief_notes text,
     CONSTRAINT pg_win_loss_records_outcome_check CHECK ((outcome = ANY (ARRAY['won'::text, 'lost'::text, 'no_award'::text, 'cancelled'::text])))
 );
 
@@ -22960,31 +33506,6 @@ CREATE TABLE public.pg_win_loss_records (
 --
 -- Name: pg_win_themes; Type: TABLE; Schema: public; Owner: -
 --
-
--- prem-pstaff-01: bid-side person -> LCAT registry. Evidence is mandatory (CHECK).
-CREATE TABLE IF NOT EXISTS public.proposal_key_personnel (
-    id text NOT NULL,
-    opportunity_id text NOT NULL,
-    person_ref text NOT NULL,
-    name text NOT NULL,
-    proposed_lcat text NOT NULL,
-    qualification_verdict text NOT NULL,
-    evidence_json text NOT NULL,
-    source text,
-    key_person integer DEFAULT 0 NOT NULL,
-    gaps_json text DEFAULT '[]'::text NOT NULL,
-    tenant_id text DEFAULT 'default'::text NOT NULL,
-    classification text DEFAULT 'CUI'::text NOT NULL,
-    created_at timestamp without time zone,
-    updated_at timestamp without time zone,
-    CONSTRAINT proposal_key_personnel_pkey PRIMARY KEY (id),
-    CONSTRAINT proposal_key_personnel_opp_person_key UNIQUE (opportunity_id, person_ref),
-    CONSTRAINT proposal_key_personnel_verdict_check CHECK ((qualification_verdict = ANY (ARRAY['qualified'::text, 'gap'::text, 'exceeds'::text]))),
-    CONSTRAINT proposal_key_personnel_source_check CHECK ((source IS NULL OR (source = ANY (ARRAY['compass'::text, 'manual'::text, 'resume_match'::text, 'scraped'::text])))),
-    CONSTRAINT proposal_key_personnel_evidence_check CHECK (((evidence_json <> ''::text) AND (evidence_json <> '[]'::text)))
-);
-CREATE INDEX IF NOT EXISTS idx_pkp_opportunity ON public.proposal_key_personnel(opportunity_id);
-CREATE INDEX IF NOT EXISTS idx_pkp_verdict ON public.proposal_key_personnel(qualification_verdict);
 
 CREATE TABLE public.pg_win_themes (
     id text NOT NULL,
@@ -22999,8 +33520,10 @@ CREATE TABLE public.pg_win_themes (
     created_at text NOT NULL,
     updated_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text,
+    keywords text,
     CONSTRAINT pg_win_themes_status_check CHECK ((status = ANY (ARRAY['active'::text, 'archived'::text, 'superseded'::text]))),
-    CONSTRAINT pg_win_themes_theme_type_check CHECK ((theme_type = ANY (ARRAY['win_theme'::text, 'discriminator'::text, 'ghost_strategy'::text])))
+    CONSTRAINT pg_win_themes_theme_type_check CHECK ((theme_type = ANY (ARRAY['win_theme'::text, 'discriminator'::text, 'ghost'::text])))
 );
 
 
@@ -23107,6 +33630,99 @@ ALTER SEQUENCE public.pi_compliance_tracking_id_seq OWNED BY public.pi_complianc
 
 
 --
+-- Name: pipeline_snapshots; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pipeline_snapshots (
+    id text NOT NULL,
+    pipeline_id text NOT NULL,
+    snapshot_type text DEFAULT 'baseline'::text NOT NULL,
+    label text,
+    nodes_json text DEFAULT '[]'::text NOT NULL,
+    edges_json text DEFAULT '[]'::text NOT NULL,
+    meta_json text DEFAULT '{}'::text NOT NULL,
+    created_by text,
+    created_at text NOT NULL
+);
+
+
+--
+-- Name: pipelines; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pipelines (
+    id text NOT NULL,
+    name text NOT NULL,
+    description text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    template_id text,
+    classification text DEFAULT 'public'::text,
+    target_csp text DEFAULT 'generic'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: platform_connector_fetches; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.platform_connector_fetches (
+    id text NOT NULL,
+    platform text NOT NULL,
+    query text NOT NULL,
+    adapter text,
+    item_count integer DEFAULT 0,
+    error text,
+    fetched_at text NOT NULL,
+    metadata text
+);
+
+
+--
+-- Name: pma_credential_alerts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pma_credential_alerts (
+    id text NOT NULL,
+    person_id text NOT NULL,
+    alert_type text NOT NULL,
+    expiry_date text,
+    days_warning integer DEFAULT 90 NOT NULL,
+    status text DEFAULT 'open'::text NOT NULL,
+    created_at text DEFAULT now() NOT NULL,
+    severity text,
+    CONSTRAINT pma_credential_alerts_status_check CHECK ((status = ANY (ARRAY['open'::text, 'acknowledged'::text, 'resolved'::text])))
+);
+
+
+--
+-- Name: pma_personnel; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pma_personnel (
+    id text NOT NULL,
+    contract_id text DEFAULT ''::text NOT NULL,
+    name text DEFAULT ''::text NOT NULL,
+    lcat text DEFAULT ''::text NOT NULL,
+    clearance_level text,
+    poly_type text,
+    poly_expiry text,
+    certifications text DEFAULT '{}'::text NOT NULL,
+    key_person integer DEFAULT 0 NOT NULL,
+    backup_person_id text,
+    status text DEFAULT 'active'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    created_at text DEFAULT now() NOT NULL,
+    updated_at text DEFAULT now() NOT NULL,
+    role text,
+    secret_expiry text,
+    ts_expiry text,
+    CONSTRAINT pma_personnel_status_check CHECK ((status = ANY (ARRAY['active'::text, 'departing'::text, 'vacant'::text])))
+);
+
+
+--
 -- Name: pmc_audit; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -23206,6 +33822,47 @@ CREATE TABLE public.pr_intelligence_reports (
     created_at text DEFAULT now(),
     CONSTRAINT pr_intelligence_reports_overall_status_check CHECK ((overall_status = ANY (ARRAY['pass'::text, 'warn'::text, 'fail'::text])))
 );
+
+
+--
+-- Name: pr_merge_eligibility_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pr_merge_eligibility_events (
+    id integer NOT NULL,
+    pr_url text NOT NULL,
+    pr_number integer,
+    head_sha text,
+    head_ref text,
+    state text NOT NULL,
+    eligible integer DEFAULT 0 NOT NULL,
+    door text,
+    reason text,
+    observed_at timestamp without time zone NOT NULL,
+    recorded_by text,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text
+);
+
+
+--
+-- Name: pr_merge_eligibility_events_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.pr_merge_eligibility_events_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: pr_merge_eligibility_events_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.pr_merge_eligibility_events_id_seq OWNED BY public.pr_merge_eligibility_events.id;
 
 
 --
@@ -23729,6 +34386,7 @@ CREATE TABLE public.proposal_amendments (
     classification text DEFAULT 'CUI'::text,
     created_at text DEFAULT now(),
     changed_requirement_ids text,
+    tenant_id text,
     CONSTRAINT proposal_amendments_source_type_check CHECK ((source_type = ANY (ARRAY['file'::text, 'text'::text])))
 );
 
@@ -23778,7 +34436,8 @@ CREATE TABLE public.proposal_competitors (
     notes text,
     classification text DEFAULT 'CUI'::text,
     created_at text DEFAULT now(),
-    updated_at text DEFAULT now()
+    updated_at text DEFAULT now(),
+    tenant_id text
 );
 
 
@@ -23801,8 +34460,33 @@ CREATE TABLE public.proposal_compliance_matrix (
     classification text DEFAULT 'CUI'::text,
     created_at text DEFAULT now(),
     updated_at text DEFAULT now(),
+    tenant_id text,
     CONSTRAINT proposal_compliance_matrix_compliance_status_check CHECK ((compliance_status = ANY (ARRAY['compliant'::text, 'partial'::text, 'non_compliant'::text, 'not_applicable'::text, 'not_addressed'::text]))),
     CONSTRAINT proposal_compliance_matrix_requirement_type_check CHECK ((requirement_type = ANY (ARRAY['L'::text, 'M'::text, 'N'::text, 'other'::text])))
+);
+
+
+--
+-- Name: proposal_key_personnel; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.proposal_key_personnel (
+    id text NOT NULL,
+    opportunity_id text NOT NULL,
+    person_ref text NOT NULL,
+    name text NOT NULL,
+    proposed_lcat text NOT NULL,
+    qualification_verdict text DEFAULT 'qualified'::text NOT NULL,
+    evidence_json text NOT NULL,
+    source text,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    key_person integer DEFAULT 0 NOT NULL,
+    gaps_json text DEFAULT '[]'::text NOT NULL,
+    CONSTRAINT proposal_key_personnel_evidence_check CHECK (((evidence_json <> ''::text) AND (evidence_json <> '[]'::text))),
+    CONSTRAINT proposal_key_personnel_verdict_check CHECK ((qualification_verdict = ANY (ARRAY['qualified'::text, 'gap'::text, 'exceeds'::text])))
 );
 
 
@@ -23827,6 +34511,7 @@ CREATE TABLE public.proposal_knowledge_base (
     created_at text DEFAULT now() NOT NULL,
     updated_at text DEFAULT now() NOT NULL,
     classification text DEFAULT 'CUI'::text,
+    tenant_id text,
     CONSTRAINT proposal_knowledge_base_category_check CHECK ((category = ANY (ARRAY['capability_description'::text, 'approach'::text, 'staffing'::text, 'tools_used'::text, 'past_performance'::text, 'risk_mitigation'::text, 'transition_plan'::text, 'quality_assurance'::text, 'management_approach'::text, 'product_overview'::text, 'integrated_solution'::text, 'customer_value'::text, 'differentiator'::text, 'other'::text]))),
     CONSTRAINT proposal_knowledge_base_domain_check CHECK ((domain = ANY (ARRAY['devsecops'::text, 'ai_ml'::text, 'ato_rmf'::text, 'cloud'::text, 'security'::text, 'compliance'::text, 'agile'::text, 'data'::text, 'management'::text, 'general'::text]))),
     CONSTRAINT proposal_knowledge_base_status_check CHECK ((status = ANY (ARRAY['active'::text, 'archived'::text, 'draft'::text]))),
@@ -23880,6 +34565,7 @@ CREATE TABLE public.proposal_opportunities (
     ptw_high real,
     capture_phase text,
     compartments text DEFAULT '[]'::text NOT NULL,
+    tenant_id text,
     CONSTRAINT proposal_opportunities_bid_decision_check CHECK ((bid_decision = ANY (ARRAY['go'::text, 'no_go'::text, 'pending'::text]))),
     CONSTRAINT proposal_opportunities_domain_check CHECK ((domain = ANY (ARRAY['devsecops'::text, 'ai_ml'::text, 'ato_rmf'::text, 'cloud'::text, 'security'::text, 'compliance'::text, 'agile'::text, 'data'::text, 'management'::text, 'general'::text]))),
     CONSTRAINT proposal_opportunities_proposal_type_check CHECK ((proposal_type = ANY (ARRAY['FFP'::text, 'T_AND_M'::text, 'CPFF'::text, 'CPIF'::text, 'IDIQ_TO'::text, 'BPA_CALL'::text, 'other'::text]))),
@@ -23903,7 +34589,8 @@ CREATE TABLE public.proposal_question_responses (
     impact_notes text,
     recorded_by text,
     classification text DEFAULT 'CUI'::text,
-    created_at text DEFAULT now()
+    created_at text DEFAULT now(),
+    tenant_id text
 );
 
 
@@ -23930,6 +34617,7 @@ CREATE TABLE public.proposal_questions (
     classification text DEFAULT 'CUI'::text,
     created_at text DEFAULT now(),
     updated_at text DEFAULT now(),
+    tenant_id text,
     CONSTRAINT proposal_questions_category_check CHECK ((category = ANY (ARRAY['scope'::text, 'evaluation_criteria'::text, 'technical_requirements'::text, 'contract_terms'::text, 'compliance_security'::text, 'small_business'::text]))),
     CONSTRAINT proposal_questions_priority_check CHECK ((priority = ANY (ARRAY['high'::text, 'medium'::text, 'low'::text]))),
     CONSTRAINT proposal_questions_source_check CHECK ((source = ANY (ARRAY['auto'::text, 'manual'::text]))),
@@ -23957,9 +34645,32 @@ CREATE TABLE public.proposal_review_findings (
     created_at text DEFAULT now(),
     resolved_evidence text,
     closure_approved_by text,
-    CONSTRAINT proposal_review_findings_finding_type_check CHECK ((finding_type = ANY (ARRAY['compliance_gap'::text, 'content_weakness'::text, 'competitive_risk'::text, 'formatting'::text, 'pricing_concern'::text, 'technical_error'::text, 'missing_content'::text, 'invalid_citation'::text, 'other'::text]))),
+    tenant_id text,
+    CONSTRAINT proposal_review_findings_finding_type_check CHECK ((finding_type = ANY (ARRAY['compliance_gap'::text, 'content_weakness'::text, 'competitive_risk'::text, 'formatting'::text, 'pricing_concern'::text, 'technical_error'::text, 'missing_content'::text, 'other'::text]))),
     CONSTRAINT proposal_review_findings_severity_check CHECK ((severity = ANY (ARRAY['critical'::text, 'major'::text, 'minor'::text, 'observation'::text]))),
     CONSTRAINT proposal_review_findings_status_check CHECK ((status = ANY (ARRAY['open'::text, 'in_progress'::text, 'resolved'::text, 'deferred'::text, 'wont_fix'::text])))
+);
+
+
+--
+-- Name: proposal_reviewer_assignments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.proposal_reviewer_assignments (
+    id text NOT NULL,
+    review_id text NOT NULL,
+    reviewer text NOT NULL,
+    assigned_by text NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    notes text,
+    assigned_at text DEFAULT now(),
+    accepted_at text,
+    rejected_at text,
+    rejection_reason text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT now(),
+    tenant_id text,
+    CONSTRAINT proposal_reviewer_assignments_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'accepted'::text, 'rejected'::text, 'in_progress'::text, 'completed'::text, 'reassigned'::text])))
 );
 
 
@@ -23982,8 +34693,9 @@ CREATE TABLE public.proposal_reviews (
     classification text DEFAULT 'CUI'::text,
     created_at text DEFAULT now(),
     executive_summary text,
+    tenant_id text,
     CONSTRAINT proposal_reviews_overall_rating_check CHECK ((overall_rating = ANY (ARRAY['pass'::text, 'pass_with_findings'::text, 'major_rework'::text, 'fail'::text]))),
-    CONSTRAINT proposal_reviews_review_type_check CHECK ((review_type = ANY (ARRAY['pink_team'::text, 'red_team'::text, 'gold_team'::text, 'white_glove'::text, 'internal'::text]))),
+    CONSTRAINT proposal_reviews_review_type_check CHECK ((review_type = ANY (ARRAY['pink_team'::text, 'red_team'::text, 'gold_team'::text, 'white_team'::text, 'white_glove'::text, 'internal'::text]))),
     CONSTRAINT proposal_reviews_status_check CHECK ((status = ANY (ARRAY['scheduled'::text, 'in_progress'::text, 'completed'::text, 'cancelled'::text])))
 );
 
@@ -24051,6 +34763,7 @@ CREATE TABLE public.proposal_section_drafts (
     created_at text DEFAULT now() NOT NULL,
     updated_at text DEFAULT now(),
     classification text DEFAULT 'CUI'::text,
+    tenant_id text,
     CONSTRAINT proposal_section_drafts_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'reviewed'::text, 'approved'::text, 'rejected'::text])))
 );
 
@@ -24083,6 +34796,7 @@ CREATE TABLE public.proposal_sections (
     classification text DEFAULT 'CUI'::text,
     created_at text DEFAULT now(),
     updated_at text DEFAULT now(),
+    tenant_id text,
     CONSTRAINT proposal_sections_priority_check CHECK ((priority = ANY (ARRAY['critical_path'::text, 'high'::text, 'standard'::text, 'supporting'::text]))),
     CONSTRAINT proposal_sections_status_check CHECK ((status = ANY (ARRAY['not_started'::text, 'outlining'::text, 'drafting'::text, 'internal_review'::text, 'pink_team_ready'::text, 'pink_team_review'::text, 'rework_pink'::text, 'red_team_ready'::text, 'red_team_review'::text, 'rework_red'::text, 'gold_team_ready'::text, 'gold_team_review'::text, 'white_glove'::text, 'final'::text, 'submitted'::text])))
 );
@@ -24105,7 +34819,8 @@ CREATE TABLE public.proposal_shred_items (
     notes text,
     classification text DEFAULT 'CUI'::text,
     created_at text DEFAULT now(),
-    updated_at text DEFAULT now()
+    updated_at text DEFAULT now(),
+    tenant_id text
 );
 
 
@@ -24123,6 +34838,7 @@ CREATE TABLE public.proposal_status_history (
     reason text,
     created_at text DEFAULT now(),
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text,
     CONSTRAINT proposal_status_history_entity_type_check CHECK ((entity_type = ANY (ARRAY['opportunity'::text, 'volume'::text, 'section'::text, 'review'::text, 'finding'::text, 'compliance_item'::text, 'question'::text, 'amendment'::text])))
 );
 
@@ -24163,7 +34879,8 @@ CREATE TABLE public.proposal_teaming_partners (
     notes text,
     classification text DEFAULT 'CUI'::text,
     created_at text DEFAULT now(),
-    updated_at text DEFAULT now()
+    updated_at text DEFAULT now(),
+    tenant_id text
 );
 
 
@@ -24179,7 +34896,8 @@ CREATE TABLE public.proposal_versions (
     snapshot_json text,
     created_by text,
     classification text DEFAULT 'CUI'::text,
-    created_at text DEFAULT now()
+    created_at text DEFAULT now(),
+    tenant_id text
 );
 
 
@@ -24201,6 +34919,7 @@ CREATE TABLE public.proposal_volumes (
     classification text DEFAULT 'CUI'::text,
     created_at text DEFAULT now(),
     updated_at text DEFAULT now(),
+    tenant_id text,
     CONSTRAINT proposal_volumes_status_check CHECK ((status = ANY (ARRAY['not_started'::text, 'in_progress'::text, 'review'::text, 'final'::text]))),
     CONSTRAINT proposal_volumes_volume_type_check CHECK (((volume_type IS NULL) OR (volume_type = ANY (ARRAY['technical'::text, 'management'::text, 'past_performance'::text, 'cost'::text, 'staffing'::text]))))
 );
@@ -24227,6 +34946,26 @@ CREATE TABLE public.prov_activities (
 
 
 --
+-- Name: prov_activities_archive; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.prov_activities_archive (
+    id text,
+    activity_type text,
+    label text,
+    start_time text,
+    end_time text,
+    attributes text,
+    trace_id text,
+    span_id text,
+    agent_id text,
+    project_id text,
+    classification text,
+    created_at timestamp without time zone
+);
+
+
+--
 -- Name: prov_entities; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -24247,6 +34986,26 @@ CREATE TABLE public.prov_entities (
 
 
 --
+-- Name: prov_entities_archive; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.prov_entities_archive (
+    id text,
+    entity_type text,
+    label text,
+    content_hash text,
+    content text,
+    attributes text,
+    trace_id text,
+    span_id text,
+    agent_id text,
+    project_id text,
+    classification text,
+    created_at timestamp without time zone
+);
+
+
+--
 -- Name: prov_relations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -24260,6 +35019,23 @@ CREATE TABLE public.prov_relations (
     project_id text,
     classification text DEFAULT 'CUI'::text,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: prov_relations_archive; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.prov_relations_archive (
+    id integer,
+    relation_type text,
+    subject_id text,
+    object_id text,
+    attributes text,
+    trace_id text,
+    project_id text,
+    classification text,
+    created_at timestamp without time zone
 );
 
 
@@ -24333,7 +35109,9 @@ CREATE TABLE public.pulse_demand_signals (
     article_generated integer DEFAULT 0,
     created_at text DEFAULT now() NOT NULL,
     updated_at text DEFAULT now(),
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    sam_opportunity_ids text,
+    status text
 );
 
 
@@ -24439,6 +35217,7 @@ CREATE TABLE public.pulse_posts (
     wp_post_id integer,
     generated_video_wp_url text,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    seo_score real,
     CONSTRAINT pulse_posts_hero_image_method_check CHECK ((hero_image_method = ANY (ARRAY['sdxl_turbo'::text, 'svg'::text, 'manual'::text, NULL::text]))),
     CONSTRAINT pulse_posts_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'staged'::text, 'review'::text, 'approved'::text, 'published'::text, 'archived'::text])))
 );
@@ -24520,6 +35299,116 @@ CREATE TABLE public.pulse_topic_clusters (
 
 
 --
+-- Name: qdc_assessments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.qdc_assessments (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    assessment_type text DEFAULT 'quality'::text,
+    findings_json text DEFAULT '[]'::text,
+    score real DEFAULT 0.0,
+    uqs_score real DEFAULT 0.0,
+    uqs_breakdown text DEFAULT '{}'::text,
+    sa11_mapping text DEFAULT '{}'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: qdc_audit; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.qdc_audit (
+    id text NOT NULL,
+    design_id text,
+    "user" text,
+    action text,
+    detail text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: qdc_collab_ops; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.qdc_collab_ops (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    seq integer DEFAULT 0 NOT NULL,
+    session_id text,
+    user_id text,
+    operation text DEFAULT '{}'::text NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: qdc_collab_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.qdc_collab_sessions (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    user_id text NOT NULL,
+    user_name text DEFAULT ''::text NOT NULL,
+    color text DEFAULT '#2196f3'::text NOT NULL,
+    joined_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    last_seen text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    is_active integer DEFAULT 1 NOT NULL
+);
+
+
+--
+-- Name: qdc_cross_canvas_links; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.qdc_cross_canvas_links (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    source_canvas text NOT NULL,
+    source_design_id text,
+    quality_score real DEFAULT 0.0,
+    last_synced text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: qdc_designs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.qdc_designs (
+    id text NOT NULL,
+    name text NOT NULL,
+    description text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    template_id text,
+    project_id text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: qdc_gate_results; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.qdc_gate_results (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    gate_id text NOT NULL,
+    sa11_control text,
+    status text DEFAULT 'skip'::text,
+    evidence_json text DEFAULT '{}'::text,
+    oscal_artifact text DEFAULT '{}'::text,
+    executed_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
 -- Name: qdc_metrics; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -24554,6 +35443,160 @@ ALTER SEQUENCE public.qdc_metrics_id_seq OWNED BY public.qdc_metrics.id;
 
 
 --
+-- Name: qdc_runbooks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.qdc_runbooks (
+    id text NOT NULL,
+    name text NOT NULL,
+    trigger_gate text,
+    steps_json text DEFAULT '[]'::text,
+    body_markdown text DEFAULT ''::text,
+    auto_executable integer DEFAULT 0,
+    confidence_threshold real DEFAULT 0.7,
+    last_run text,
+    run_count integer DEFAULT 0,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: qdc_simulations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.qdc_simulations (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    baseline_snap_id text,
+    delta_graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    verdict text DEFAULT 'unknown'::text NOT NULL,
+    findings_json text DEFAULT '[]'::text,
+    diff_json text DEFAULT '{}'::text,
+    created_by text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: qdc_snippets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.qdc_snippets (
+    id text NOT NULL,
+    name text NOT NULL,
+    category text,
+    description text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    node_count integer DEFAULT 0,
+    tags text DEFAULT '[]'::text
+);
+
+
+--
+-- Name: qdc_sops; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.qdc_sops (
+    id text NOT NULL,
+    sop_number text NOT NULL,
+    title text NOT NULL,
+    version integer DEFAULT 1,
+    frequency text,
+    audience text,
+    body_markdown text DEFAULT ''::text,
+    approval_status text DEFAULT 'draft'::text,
+    approved_by text,
+    approved_at text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: qdc_templates; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.qdc_templates (
+    id text NOT NULL,
+    name text NOT NULL,
+    category text,
+    description text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    compliance_target text,
+    tags text DEFAULT '[]'::text
+);
+
+
+--
+-- Name: qdc_twin_snapshots; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.qdc_twin_snapshots (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    label text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    node_count integer DEFAULT 0,
+    edge_count integer DEFAULT 0,
+    created_by text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: qdc_uqs_history; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.qdc_uqs_history (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    uqs_score real DEFAULT 0.0,
+    dimension_scores text DEFAULT '{}'::text,
+    computed_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: qdc_versions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.qdc_versions (
+    id text NOT NULL,
+    design_id text,
+    version_number integer NOT NULL,
+    graph_json text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    change_summary text DEFAULT ''::text,
+    user_id text DEFAULT ''::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: rag_chunk_summaries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.rag_chunk_summaries (
+    id text NOT NULL,
+    content text NOT NULL,
+    content_hash text DEFAULT ''::text NOT NULL,
+    embedding bytea,
+    level integer DEFAULT 1 NOT NULL,
+    parent_chunk_id text,
+    child_ids text DEFAULT '[]'::text NOT NULL,
+    source_type text DEFAULT ''::text NOT NULL,
+    source_id text DEFAULT ''::text NOT NULL,
+    source_table text DEFAULT ''::text NOT NULL,
+    metadata text DEFAULT '{}'::text,
+    tenant_id text DEFAULT ''::text,
+    project_id text DEFAULT ''::text,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
 -- Name: rag_chunks; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -24581,68 +35624,12 @@ CREATE TABLE public.rag_chunks (
 
 
 --
--- Name: rag_provenance_ledger; Type: TABLE; Schema: public; Owner: -
--- Append-only AIA chain-of-custody ledger (D-AIDP, NIST AU-3). trust-cite-04:
--- materialized here so fresh-PG bootstrap has it (bootstrap_pg marks migrations
--- applied, so migration 250 alone would not reach a fresh database).
---
-
-CREATE TABLE IF NOT EXISTS public.rag_provenance_ledger (
-    id SERIAL PRIMARY KEY,
-    chunk_uuid text NOT NULL,
-    parent_doc_uuid text,
-    sha256_hash text,
-    token_count integer DEFAULT 0,
-    classification_label text,
-    version_tree_ref text,
-    model_id text,
-    hyperparams_json text DEFAULT '{}'::text,
-    prompt_sha256 text,
-    signature text,
-    event_type text NOT NULL DEFAULT 'ingest'::text,
-    ingest_timestamp timestamp without time zone,
-    retrieval_log_id integer,
-    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT rag_provenance_ledger_event_type_check CHECK ((event_type = ANY (ARRAY['ingest'::text, 'chain_of_custody'::text, 'retrieval'::text])))
-);
-
-CREATE INDEX IF NOT EXISTS idx_rag_prov_chunk ON public.rag_provenance_ledger(chunk_uuid);
-CREATE INDEX IF NOT EXISTS idx_rag_prov_parent_doc ON public.rag_provenance_ledger(parent_doc_uuid);
-CREATE INDEX IF NOT EXISTS idx_rag_prov_event_type ON public.rag_provenance_ledger(event_type);
-CREATE INDEX IF NOT EXISTS idx_rag_prov_retrieval_log ON public.rag_provenance_ledger(retrieval_log_id);
-
---
--- Name: rag_queries; Type: TABLE; Schema: public; Owner: -
--- RAG knowledge search requests + lifecycle. Queried by
--- notification_service/render_handler_service.py; materialized here so fresh-PG
--- bootstrap has it (bootstrap_pg marks migrations applied, so migration 252
--- alone would not reach a fresh database).
---
-
-CREATE TABLE IF NOT EXISTS public.rag_queries (
-    id text PRIMARY KEY,
-    query_text text NOT NULL,
-    lens text DEFAULT 'default'::text,
-    status text DEFAULT 'pending'::text,
-    agent_id text,
-    tenant_id text DEFAULT ''::text,
-    classification text DEFAULT 'CUI'::text,
-    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    completed_at timestamp without time zone,
-    CONSTRAINT rag_queries_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'running'::text, 'done'::text, 'failed'::text])))
-);
-
-CREATE INDEX IF NOT EXISTS idx_rag_queries_status ON public.rag_queries(status);
-CREATE INDEX IF NOT EXISTS idx_rag_queries_agent ON public.rag_queries(agent_id);
-
---
 -- Name: rag_citations; Type: TABLE; Schema: public; Owner: -
--- Source citations attached to a rag_queries result.
 --
 
-CREATE TABLE IF NOT EXISTS public.rag_citations (
-    id BIGSERIAL PRIMARY KEY,
-    query_id text NOT NULL REFERENCES public.rag_queries(id),
+CREATE TABLE public.rag_citations (
+    id bigint NOT NULL,
+    query_id text NOT NULL,
     source_doc text NOT NULL,
     citation_text text,
     confidence real DEFAULT 0.0,
@@ -24651,7 +35638,43 @@ CREATE TABLE IF NOT EXISTS public.rag_citations (
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_rag_citations_query ON public.rag_citations(query_id);
+
+--
+-- Name: rag_citations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.rag_citations_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: rag_citations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.rag_citations_id_seq OWNED BY public.rag_citations.id;
+
+
+--
+-- Name: rag_compliance_corpus; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.rag_compliance_corpus (
+    doc_id text NOT NULL,
+    regime text NOT NULL,
+    control_id text DEFAULT ''::text NOT NULL,
+    family text DEFAULT ''::text NOT NULL,
+    title text DEFAULT ''::text NOT NULL,
+    body text DEFAULT ''::text NOT NULL,
+    source_document text DEFAULT ''::text NOT NULL,
+    source_file text DEFAULT ''::text NOT NULL,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text,
+    loaded_at text NOT NULL
+);
 
 
 --
@@ -24723,6 +35746,9 @@ CREATE TABLE public.rag_ingestion_log (
     correlation_id text DEFAULT ''::text,
     classification text DEFAULT 'CUI'::text NOT NULL,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    status text,
+    started_at text,
+    completed_at text,
     CONSTRAINT rag_ingestion_log_ingestion_mode_check CHECK ((ingestion_mode = ANY (ARRAY['realtime'::text, 'batch'::text, 'manual'::text])))
 );
 
@@ -24838,6 +35864,68 @@ CREATE TABLE public.rag_pdf_documents (
 
 
 --
+-- Name: rag_provenance_ledger; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.rag_provenance_ledger (
+    id integer NOT NULL,
+    chunk_uuid text NOT NULL,
+    parent_doc_uuid text,
+    sha256_hash text,
+    token_count integer DEFAULT 0,
+    classification_label text,
+    version_tree_ref text,
+    model_id text,
+    hyperparams_json text DEFAULT '{}'::text,
+    prompt_sha256 text,
+    signature text,
+    event_type text DEFAULT 'ingest'::text NOT NULL,
+    ingest_timestamp timestamp without time zone,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    retrieval_log_id integer,
+    CONSTRAINT rag_provenance_ledger_event_type_check CHECK ((event_type = ANY (ARRAY['ingest'::text, 'chain_of_custody'::text, 'retrieval'::text])))
+);
+
+
+--
+-- Name: rag_provenance_ledger_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.rag_provenance_ledger_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: rag_provenance_ledger_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.rag_provenance_ledger_id_seq OWNED BY public.rag_provenance_ledger.id;
+
+
+--
+-- Name: rag_queries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.rag_queries (
+    id text NOT NULL,
+    query_text text NOT NULL,
+    lens text DEFAULT 'default'::text,
+    status text DEFAULT 'pending'::text,
+    agent_id text,
+    tenant_id text DEFAULT ''::text,
+    classification text DEFAULT 'CUI'::text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    completed_at timestamp without time zone,
+    CONSTRAINT rag_queries_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'running'::text, 'done'::text, 'failed'::text])))
+);
+
+
+--
 -- Name: rag_retrieval_log; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -24893,7 +35981,7 @@ CREATE TABLE public.rate_limits (
     window_type character varying(12) NOT NULL,
     request_count integer DEFAULT 0 NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying,
-    CONSTRAINT rate_limits_window_type_check CHECK (((window_type)::text = ANY ((ARRAY['minute'::character varying, 'hour'::character varying, 'day'::character varying])::text[])))
+    CONSTRAINT rate_limits_window_type_check CHECK (((window_type)::text = ANY (ARRAY[('minute'::character varying)::text, ('hour'::character varying)::text, ('day'::character varying)::text])))
 );
 
 
@@ -24994,7 +36082,8 @@ CREATE TABLE public.redaction_audit (
     hash text,
     previous_hash text,
     signature text,
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    action text
 );
 
 
@@ -25683,6 +36772,165 @@ ALTER SEQUENCE public.review_traceability_id_seq OWNED BY public.review_traceabi
 
 
 --
+-- Name: rfi_capability_gaps; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.rfi_capability_gaps (
+    content_hash text NOT NULL,
+    capability_need text DEFAULT ''::text NOT NULL,
+    keywords text DEFAULT '[]'::text NOT NULL,
+    domain text,
+    frequency integer DEFAULT 1 NOT NULL,
+    velocity real DEFAULT 0.0 NOT NULL,
+    best_coverage real DEFAULT 0.0 NOT NULL,
+    priority real DEFAULT 0.0 NOT NULL,
+    is_high_demand integer DEFAULT 0 NOT NULL,
+    rfi_refs text DEFAULT '[]'::text NOT NULL,
+    prediction_id text,
+    status text DEFAULT 'open'::text NOT NULL,
+    first_seen text NOT NULL,
+    last_seen text NOT NULL,
+    metadata text DEFAULT '{}'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text
+);
+
+
+--
+-- Name: rfi_company_style_guide; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.rfi_company_style_guide (
+    id integer NOT NULL,
+    name text DEFAULT 'default'::text NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    tone text DEFAULT 'formal'::text NOT NULL,
+    forbidden_phrases text DEFAULT '[]'::text NOT NULL,
+    required_headings text DEFAULT '[]'::text NOT NULL,
+    compliance_notes text DEFAULT ''::text NOT NULL,
+    sample_writing text DEFAULT ''::text NOT NULL,
+    words_per_page integer DEFAULT 250 NOT NULL,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now()
+);
+
+
+--
+-- Name: rfi_company_style_guide_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.rfi_company_style_guide_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: rfi_company_style_guide_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.rfi_company_style_guide_id_seq OWNED BY public.rfi_company_style_guide.id;
+
+
+--
+-- Name: rfi_gap_task_links; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.rfi_gap_task_links (
+    id text NOT NULL,
+    gap_hash text DEFAULT ''::text NOT NULL,
+    task_id text DEFAULT ''::text NOT NULL,
+    route text DEFAULT 'direct'::text NOT NULL,
+    emitted_at text NOT NULL,
+    classification text DEFAULT 'CUI'::text
+);
+
+
+--
+-- Name: rfi_session_uploads; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.rfi_session_uploads (
+    id text NOT NULL,
+    session_id text NOT NULL,
+    filename text NOT NULL,
+    file_path text NOT NULL,
+    upload_type text DEFAULT 'past_performance'::text NOT NULL,
+    extracted_text text,
+    file_size integer,
+    created_at text NOT NULL
+);
+
+
+--
+-- Name: rfi_workbench_exports; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.rfi_workbench_exports (
+    id text NOT NULL,
+    session_id text NOT NULL,
+    export_format text NOT NULL,
+    file_path text,
+    exported_at text NOT NULL
+);
+
+
+--
+-- Name: rfi_workbench_sections; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.rfi_workbench_sections (
+    id text NOT NULL,
+    session_id text NOT NULL,
+    part text NOT NULL,
+    item_number text NOT NULL,
+    title text NOT NULL,
+    topic text,
+    question_text text,
+    content text DEFAULT ''::text,
+    ai_draft text DEFAULT ''::text,
+    status text DEFAULT 'pending'::text NOT NULL,
+    hitl_action text,
+    hitl_comment text DEFAULT ''::text,
+    writeguard_result text,
+    writeguard_score real,
+    generation_count integer DEFAULT 0,
+    created_at text NOT NULL,
+    updated_at text NOT NULL,
+    requirements text DEFAULT '[]'::text,
+    word_limit integer,
+    page_limit real,
+    engine_weights text
+);
+
+
+--
+-- Name: rfi_workbench_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.rfi_workbench_sessions (
+    id text NOT NULL,
+    rfi_number text,
+    rfi_title text,
+    profile_name text DEFAULT 'own_company'::text,
+    upload_filename text,
+    parsed_data text,
+    status text DEFAULT 'draft'::text NOT NULL,
+    total_sections integer DEFAULT 0,
+    approved_sections integer DEFAULT 0,
+    created_at text NOT NULL,
+    updated_at text NOT NULL,
+    ace_instance_id text,
+    style_guide_overrides text DEFAULT '{}'::text,
+    page_limit integer,
+    words_per_page integer,
+    engine_weights text
+);
+
+
+--
 -- Name: rfp_requirement_patterns; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -25704,6 +36952,7 @@ CREATE TABLE public.rfp_requirement_patterns (
     last_seen text NOT NULL,
     metadata text DEFAULT '{}'::text,
     classification text DEFAULT 'CUI'::text,
+    tenant_id text,
     CONSTRAINT rfp_requirement_patterns_domain_category_check CHECK ((domain_category = ANY (ARRAY['devsecops'::text, 'ai_ml'::text, 'ato_rmf'::text, 'cloud'::text, 'security'::text, 'compliance'::text, 'agile'::text, 'data'::text, 'management'::text, 'other'::text]))),
     CONSTRAINT rfp_requirement_patterns_status_check CHECK ((status = ANY (ARRAY['new'::text, 'mapped'::text, 'gap_identified'::text, 'addressed'::text])))
 );
@@ -25726,6 +36975,7 @@ CREATE TABLE public.rfp_shall_statements (
     content_hash text NOT NULL,
     extracted_at text NOT NULL,
     classification text DEFAULT 'CUI'::text,
+    tenant_id text,
     CONSTRAINT rfp_shall_statements_domain_category_check CHECK (((domain_category IS NULL) OR (domain_category = ANY (ARRAY['devsecops'::text, 'ai_ml'::text, 'ato_rmf'::text, 'cloud'::text, 'security'::text, 'compliance'::text, 'agile'::text, 'data'::text, 'management'::text, 'other'::text])))),
     CONSTRAINT rfp_shall_statements_statement_type_check CHECK ((statement_type = ANY (ARRAY['shall'::text, 'must'::text, 'will'::text, 'required'::text, 'other'::text])))
 );
@@ -25829,6 +37079,32 @@ CREATE TABLE public.runtime_feedback (
 
 
 --
+-- Name: runtime_invocations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.runtime_invocations (
+    id text NOT NULL,
+    surface text NOT NULL,
+    name text NOT NULL,
+    session_id text,
+    project_id text,
+    parent_id text,
+    started_at text NOT NULL,
+    completed_at text,
+    duration_ms integer,
+    status text DEFAULT 'running'::text NOT NULL,
+    error_class text,
+    error_message text,
+    arg_keys text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    correlation_id text,
+    arg_values text,
+    result_preview text
+);
+
+
+--
 -- Name: safe_decomposition; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -25897,6 +37173,68 @@ ALTER SEQUENCE public.safety_circuit_events_id_seq OWNED BY public.safety_circui
 
 
 --
+-- Name: sag_skill_registry; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sag_skill_registry (
+    name text NOT NULL,
+    artifact_id text,
+    skill_dir text,
+    session_id text DEFAULT ''::text,
+    model text DEFAULT ''::text,
+    approved_by text DEFAULT ''::text,
+    status text DEFAULT 'active'::text,
+    pinned integer DEFAULT 0,
+    use_count integer DEFAULT 0,
+    last_activity_at text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text,
+    updated_at text
+);
+
+
+--
+-- Name: sag_standing_goals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sag_standing_goals (
+    goal_id text NOT NULL,
+    user_id text DEFAULT 'default'::text NOT NULL,
+    tenant_id text DEFAULT ''::text,
+    classification text DEFAULT 'CUI'::text,
+    title text NOT NULL,
+    detail text DEFAULT ''::text,
+    status text DEFAULT 'pending'::text,
+    priority integer DEFAULT 50,
+    progress integer DEFAULT 0,
+    context_id text DEFAULT ''::text,
+    session_id text DEFAULT ''::text,
+    tags_json text DEFAULT '[]'::text,
+    metadata_json text DEFAULT '{}'::text,
+    blocked_reason text DEFAULT ''::text,
+    created_at text,
+    updated_at text,
+    activated_at text,
+    completed_at text
+);
+
+
+--
+-- Name: sag_user_profiles; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sag_user_profiles (
+    user_id text NOT NULL,
+    tenant_id text DEFAULT ''::text NOT NULL,
+    classification text DEFAULT 'CUI'::text,
+    preferences_json text DEFAULT '{}'::text,
+    facts_json text DEFAULT '[]'::text,
+    profile text DEFAULT ''::text,
+    updated_at text
+);
+
+
+--
 -- Name: sam_gov_api_quota; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -25939,7 +37277,8 @@ CREATE TABLE public.sam_gov_opportunities (
     metadata text DEFAULT '{}'::text,
     first_seen text NOT NULL,
     last_synced text NOT NULL,
-    classification text DEFAULT 'CUI'::text
+    classification text DEFAULT 'CUI'::text,
+    tenant_id text
 );
 
 
@@ -26050,6 +37389,80 @@ CREATE TABLE public.sbom_access_decisions (
 
 
 --
+-- Name: sbom_components; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sbom_components (
+    id text NOT NULL,
+    component_name text NOT NULL,
+    version text,
+    vendor text,
+    component_type text,
+    purl text,
+    license text,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    created_at text DEFAULT (now())::text,
+    updated_at text DEFAULT (now())::text,
+    producer text,
+    hash_value text,
+    hash_algorithm text,
+    identifiers_json text DEFAULT '{}'::text NOT NULL,
+    unknown_fields_json text DEFAULT '{}'::text NOT NULL,
+    withheld_fields_json text DEFAULT '{}'::text NOT NULL,
+    tenant_id text,
+    CONSTRAINT sbom_components_component_type_check CHECK ((component_type = ANY (ARRAY['library'::text, 'framework'::text, 'container'::text, 'os'::text, 'firmware'::text, 'device'::text, 'application'::text, 'service'::text, 'other'::text])))
+);
+
+
+--
+-- Name: sbom_conformance_assessments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sbom_conformance_assessments (
+    id text NOT NULL,
+    sbom_record_id integer,
+    project_id text,
+    document_path text,
+    document_sha256 text NOT NULL,
+    format_name text,
+    format_version text,
+    component_count integer DEFAULT 0 NOT NULL,
+    data_fields_met integer DEFAULT 0 NOT NULL,
+    data_fields_partial integer DEFAULT 0 NOT NULL,
+    data_fields_gap integer DEFAULT 0 NOT NULL,
+    practices_met integer DEFAULT 0 NOT NULL,
+    practices_partial integer DEFAULT 0 NOT NULL,
+    practices_gap integer DEFAULT 0 NOT NULL,
+    weighted_score real DEFAULT 0.0 NOT NULL,
+    conformant integer DEFAULT 0 NOT NULL,
+    elements_json text DEFAULT '[]'::text NOT NULL,
+    validator_version text,
+    standard_version text,
+    assessed_at text DEFAULT (now())::text,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    tenant_id text
+);
+
+
+--
+-- Name: sbom_dependencies; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sbom_dependencies (
+    id text NOT NULL,
+    sbom_record_id integer NOT NULL,
+    parent_component_id text NOT NULL,
+    child_component_id text NOT NULL,
+    relationship_type text DEFAULT 'depends_on'::text NOT NULL,
+    scope text,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    tenant_id text,
+    created_at text DEFAULT (now())::text,
+    CONSTRAINT sbom_dependencies_relationship_type_check CHECK ((relationship_type = ANY (ARRAY['depends_on'::text, 'optional_depends_on'::text])))
+);
+
+
+--
 -- Name: sbom_records; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -26062,7 +37475,22 @@ CREATE TABLE public.sbom_records (
     component_count integer,
     vulnerability_count integer,
     generated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    sbom_author text,
+    author_signature text,
+    signature_algorithm text,
+    data_format_name text,
+    data_format_version text,
+    generation_context text,
+    tool_name text,
+    tool_version text,
+    sbom_version text,
+    serial_number text,
+    supersedes_sbom_id integer,
+    tenant_id text,
+    content_digest text,
+    source_revision text,
+    revision_reason text
 );
 
 
@@ -26102,6 +37530,229 @@ CREATE TABLE public.sbom_signatures (
     signed_at timestamp without time zone NOT NULL,
     signer text DEFAULT 'icdev-sbom-identity-provider'::text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying
+);
+
+
+--
+-- Name: sc_assessments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sc_assessments (
+    id text NOT NULL,
+    design_id text,
+    assessment_type text NOT NULL,
+    trigger_source text,
+    source_entity_id text,
+    total_threats integer DEFAULT 0,
+    total_controls integer DEFAULT 0,
+    risk_score real DEFAULT 0,
+    posture_grade text DEFAULT 'F'::text,
+    findings_json text DEFAULT '[]'::text,
+    recommendations_json text DEFAULT '[]'::text,
+    ran_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: sc_assets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sc_assets (
+    id text NOT NULL,
+    design_id text,
+    asset_type text NOT NULL,
+    label text,
+    description text,
+    classification text DEFAULT 'CUI'::text,
+    config_json text DEFAULT '{}'::text,
+    pos_x real DEFAULT 0,
+    pos_y real DEFAULT 0,
+    source_node_id text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: sc_audit; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sc_audit (
+    id integer NOT NULL,
+    action text NOT NULL,
+    entity_type text,
+    entity_id text,
+    details text,
+    user_id text,
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    ts text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: sc_audit_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.sc_audit_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: sc_audit_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.sc_audit_id_seq OWNED BY public.sc_audit.id;
+
+
+--
+-- Name: sc_controls; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sc_controls (
+    id text NOT NULL,
+    design_id text,
+    control_family text NOT NULL,
+    control_id text NOT NULL,
+    title text NOT NULL,
+    description text,
+    implementation_status text DEFAULT 'planned'::text,
+    implementation_notes text,
+    mitigates_threats text DEFAULT '[]'::text,
+    protects_assets text DEFAULT '[]'::text,
+    evidence_json text DEFAULT '{}'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: sc_data_flows; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sc_data_flows (
+    id text NOT NULL,
+    design_id text,
+    source_asset_id text,
+    target_asset_id text,
+    label text,
+    protocol text,
+    data_classification text DEFAULT 'CUI'::text,
+    encrypted integer DEFAULT 0,
+    authenticated integer DEFAULT 0,
+    crosses_boundary integer DEFAULT 0,
+    ports text DEFAULT '[]'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: sc_remediation_plans; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sc_remediation_plans (
+    id text NOT NULL,
+    design_id text,
+    assessment_id text,
+    title text NOT NULL,
+    priority text DEFAULT 'medium'::text,
+    status text DEFAULT 'open'::text,
+    remediation_steps text DEFAULT '[]'::text,
+    estimated_effort text,
+    assigned_to text,
+    target_date text,
+    completed_at text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: sc_snippets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sc_snippets (
+    id text NOT NULL,
+    name text NOT NULL,
+    category text,
+    description text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}'::text NOT NULL,
+    tags text DEFAULT '[]'::text
+);
+
+
+--
+-- Name: sc_templates; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sc_templates (
+    id text NOT NULL,
+    name text NOT NULL,
+    category text,
+    description text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}'::text NOT NULL,
+    thumbnail_svg text,
+    tags text DEFAULT '[]'::text
+);
+
+
+--
+-- Name: sc_threats; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sc_threats (
+    id text NOT NULL,
+    design_id text,
+    threat_category text NOT NULL,
+    mitre_technique text,
+    mitre_tactic text,
+    title text NOT NULL,
+    description text,
+    likelihood text DEFAULT 'medium'::text,
+    impact text DEFAULT 'medium'::text,
+    risk_score real DEFAULT 0,
+    affected_assets text DEFAULT '[]'::text,
+    status text DEFAULT 'open'::text,
+    is_stale integer DEFAULT 0,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: sc_trust_boundaries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sc_trust_boundaries (
+    id text NOT NULL,
+    design_id text,
+    label text NOT NULL,
+    boundary_type text DEFAULT 'network'::text,
+    classification text DEFAULT 'CUI'::text,
+    il_level text DEFAULT 'IL4'::text,
+    color text DEFAULT '#e94560'::text,
+    fill_opacity real DEFAULT 0.08,
+    contained_assets text DEFAULT '[]'::text,
+    pos_x real DEFAULT 0,
+    pos_y real DEFAULT 0,
+    width real DEFAULT 400,
+    height real DEFAULT 300,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: sc_versions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sc_versions (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    version_number integer NOT NULL,
+    graph_json text NOT NULL,
+    change_summary text DEFAULT ''::text,
+    user_id text DEFAULT ''::text,
+    created_at text NOT NULL
 );
 
 
@@ -26241,7 +37892,11 @@ CREATE TABLE public.sdc_attack_snapshots (
     nodes_json text DEFAULT '[]'::text,
     edges_json text DEFAULT '[]'::text,
     created_at text DEFAULT now(),
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    design_id text,
+    label text,
+    node_count integer,
+    path_count integer
 );
 
 
@@ -26367,6 +38022,34 @@ CREATE TABLE public.sdc_roi_metrics (
 
 
 --
+-- Name: sdc_sops; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sdc_sops (
+    id text NOT NULL,
+    title text NOT NULL,
+    sop_type text NOT NULL,
+    description text,
+    purpose text,
+    scope text,
+    steps text DEFAULT '[]'::text,
+    nist_controls text DEFAULT '[]'::text,
+    owner text,
+    reviewer text,
+    approval_status text DEFAULT 'draft'::text,
+    approved_by text,
+    approved_at text,
+    rejected_reason text,
+    version text DEFAULT '1.0'::text,
+    next_review_date text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT sdc_sops_approval_status_check CHECK ((approval_status = ANY (ARRAY['draft'::text, 'pending_review'::text, 'approved'::text, 'rejected'::text])))
+);
+
+
+--
 -- Name: security_context_log; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -26404,6 +38087,38 @@ ALTER SEQUENCE public.security_context_log_id_seq OWNED BY public.security_conte
 
 
 --
+-- Name: security_designs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.security_designs (
+    id text NOT NULL,
+    name text NOT NULL,
+    description text,
+    graph_json text DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}'::text NOT NULL,
+    template_id text,
+    source_topology_id text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: security_framework_status; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.security_framework_status (
+    id text NOT NULL,
+    project_id text NOT NULL,
+    framework text NOT NULL,
+    enabled integer DEFAULT 1,
+    inherited_from_parent integer DEFAULT 1,
+    last_verified timestamp without time zone,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
 -- Name: security_nodes; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -26418,6 +38133,27 @@ CREATE TABLE public.security_nodes (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying
+);
+
+
+--
+-- Name: security_policies; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.security_policies (
+    id text NOT NULL,
+    policy_type text NOT NULL,
+    classification text DEFAULT 'CUI'::text,
+    clearance_ceiling text DEFAULT 'SECRET'::text,
+    default_classification text DEFAULT 'CUI'::text,
+    required_markings text,
+    mfa_required integer DEFAULT 1,
+    session_timeout_minutes integer DEFAULT 30,
+    encryption_at_rest integer DEFAULT 1,
+    encryption_in_transit integer DEFAULT 1,
+    immutable_audit integer DEFAULT 1,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
 );
 
 
@@ -26861,7 +38597,8 @@ CREATE TABLE public.sg_coa_options (
     status text DEFAULT 'active'::text NOT NULL,
     created_at text NOT NULL,
     updated_at text NOT NULL,
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    resource_allocation text
 );
 
 
@@ -27662,7 +39399,10 @@ CREATE TABLE public.sg_intsum_paragraphs (
     heading text NOT NULL,
     content text NOT NULL,
     created_at text NOT NULL,
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    grounded integer,
+    require_citations integer,
+    citations text
 );
 
 
@@ -27681,6 +39421,8 @@ CREATE TABLE public.sg_intsums (
     model_used text,
     latency_ms integer DEFAULT 0,
     created_at text NOT NULL,
+    grounding_status text,
+    grounding_json text,
     CONSTRAINT sg_intsums_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'approved'::text, 'distributed'::text])))
 );
 
@@ -27871,7 +39613,8 @@ CREATE TABLE public.sg_kg_edges (
     target_id text NOT NULL,
     relation text,
     weight real DEFAULT 1.0 NOT NULL,
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    created_at text
 );
 
 
@@ -27904,7 +39647,8 @@ CREATE TABLE public.sg_kg_nodes (
     node_type text NOT NULL,
     label text NOT NULL,
     metadata text DEFAULT '{}'::text NOT NULL,
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    created_at text
 );
 
 
@@ -28199,6 +39943,25 @@ CREATE TABLE public.sg_orbat_snapshots (
     snapshot_json text NOT NULL,
     snapped_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying
+);
+
+
+--
+-- Name: sg_orbat_strengths; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sg_orbat_strengths (
+    id text NOT NULL,
+    unit_name text NOT NULL,
+    unit_id text,
+    conflict_id text,
+    side text,
+    strength integer DEFAULT 0,
+    equipment text,
+    status text DEFAULT 'active'::text,
+    updated_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT sg_orbat_strengths_side_check CHECK ((side = ANY (ARRAY['blue'::text, 'red'::text, 'neutral'::text, NULL::text])))
 );
 
 
@@ -29462,6 +41225,28 @@ CREATE TABLE public.shap_attributions (
 
 
 --
+-- Name: shap_attributions_archive; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.shap_attributions_archive (
+    id integer,
+    trace_id text,
+    tool_name text,
+    shapley_value real,
+    coalition_size integer,
+    confidence_low real,
+    confidence_high real,
+    outcome_metric text,
+    outcome_value real,
+    analysis_params text,
+    agent_id text,
+    project_id text,
+    classification text,
+    analyzed_at timestamp without time zone
+);
+
+
+--
 -- Name: shap_attributions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -29479,6 +41264,75 @@ CREATE SEQUENCE public.shap_attributions_id_seq
 --
 
 ALTER SEQUENCE public.shap_attributions_id_seq OWNED BY public.shap_attributions.id;
+
+
+--
+-- Name: sharepoint_documents; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sharepoint_documents (
+    id text NOT NULL,
+    site_id text NOT NULL,
+    path text DEFAULT ''::text NOT NULL,
+    size integer DEFAULT 0,
+    mime_type text DEFAULT ''::text,
+    content_hash text DEFAULT ''::text
+);
+
+
+--
+-- Name: sharepoint_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sharepoint_items (
+    id text NOT NULL,
+    list_id text NOT NULL,
+    title text DEFAULT ''::text NOT NULL,
+    payload text,
+    modified_at text
+);
+
+
+--
+-- Name: sharepoint_lists; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sharepoint_lists (
+    id text NOT NULL,
+    site_id text NOT NULL,
+    name text DEFAULT ''::text NOT NULL,
+    item_count integer DEFAULT 0
+);
+
+
+--
+-- Name: sharepoint_sites; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sharepoint_sites (
+    id text NOT NULL,
+    url text NOT NULL,
+    title text DEFAULT ''::text NOT NULL,
+    last_modified text
+);
+
+
+--
+-- Name: showcase_apps; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.showcase_apps (
+    id text NOT NULL,
+    name text NOT NULL,
+    category text DEFAULT ''::text NOT NULL,
+    description text DEFAULT ''::text NOT NULL,
+    status text DEFAULT 'draft'::text NOT NULL,
+    slug text,
+    metadata text DEFAULT '{}'::text NOT NULL,
+    created_at text DEFAULT (now())::text,
+    updated_at text DEFAULT (now())::text,
+    CONSTRAINT showcase_apps_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text, 'archived'::text])))
+);
 
 
 --
@@ -29529,9 +41383,9 @@ CREATE TABLE public.simulation_results (
     delta_pct real,
     confidence real DEFAULT 0.0,
     impact_tier text,
-    details text,
-    visualizations text,
-    calculated_at text DEFAULT now(),
+    details jsonb,
+    visualizations jsonb,
+    calculated_at text DEFAULT (now())::text,
     classification character varying(50) DEFAULT 'CUI'::character varying,
     CONSTRAINT simulation_results_dimension_check CHECK ((dimension = ANY (ARRAY['architecture'::text, 'compliance'::text, 'supply_chain'::text, 'schedule'::text, 'cost'::text, 'risk'::text, 'resource_allocation'::text, 'quality'::text]))),
     CONSTRAINT simulation_results_impact_tier_check CHECK ((impact_tier = ANY (ARRAY['GREEN'::text, 'YELLOW'::text, 'ORANGE'::text, 'RED'::text])))
@@ -29577,6 +41431,23 @@ CREATE TABLE public.simulation_scenarios (
     completed_at text,
     CONSTRAINT simulation_scenarios_scenario_type_check CHECK ((scenario_type = ANY (ARRAY['what_if'::text, 'coa_comparison'::text, 'risk_monte_carlo'::text, 'schedule_impact'::text, 'cost_impact'::text, 'compliance_impact'::text, 'supply_chain_disruption'::text, 'architecture_change'::text, 'compound'::text]))),
     CONSTRAINT simulation_scenarios_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'running'::text, 'completed'::text, 'failed'::text, 'archived'::text])))
+);
+
+
+--
+-- Name: skype_inbox; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.skype_inbox (
+    activity_id text NOT NULL,
+    message_json text NOT NULL,
+    conversation_id text,
+    service_url text,
+    sender_id text,
+    text text,
+    processed_at text,
+    error text,
+    created_at text DEFAULT now()
 );
 
 
@@ -29630,9 +41501,18 @@ CREATE TABLE public.slides_decks (
     error_message text,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     completed_at timestamp without time zone,
-    CONSTRAINT slides_decks_deck_type_check CHECK ((deck_type = ANY (ARRAY['executive_overview'::text, 'canvas_deep_dive'::text, 'govcon_proposal'::text, 'compliance_briefing'::text, 'weekly_status'::text, 'custom'::text]))),
-    CONSTRAINT slides_decks_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'running'::text, 'completed'::text, 'failed'::text, 'auto'::text]))),
-    CONSTRAINT slides_decks_theme_check CHECK ((theme = ANY (ARRAY['midnight_executive'::text, 'govcon_proposal'::text, 'compliance_briefing'::text])))
+    tone text DEFAULT 'professional'::text,
+    occasion text,
+    target_audience text,
+    citation_style text DEFAULT 'inline_links'::text,
+    output_formats jsonb DEFAULT '["pptx"]'::jsonb,
+    pdf_path text,
+    html_path text,
+    enable_rich_diagrams boolean DEFAULT false,
+    audience_mode text,
+    CONSTRAINT chk_deck_type CHECK ((deck_type = ANY (ARRAY['executive_overview'::text, 'canvas_deep_dive'::text, 'govcon_proposal'::text, 'compliance_briefing'::text, 'weekly_status'::text, 'custom'::text, 'general_presentation'::text, 'pitch_deck'::text, 'template_fill'::text]))),
+    CONSTRAINT chk_theme CHECK ((theme = ANY (ARRAY['midnight_executive'::text, 'govcon_proposal'::text, 'compliance_briefing'::text, 'fun_fiesta'::text, 'creative_aurora'::text, 'adventurous_outdoor'::text, 'minimal_mono'::text, 'bold_neon'::text, 'investment_deck'::text]))),
+    CONSTRAINT slides_decks_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'running'::text, 'gathering'::text, 'planning'::text, 'generating'::text, 'graphics'::text, 'building'::text, 'completed'::text, 'degraded'::text, 'template'::text, 'failed'::text, 'auto'::text])))
 );
 
 
@@ -29657,6 +41537,16 @@ ALTER SEQUENCE public.slides_decks_deck_id_seq OWNED BY public.slides_decks.deck
 
 
 --
+-- Name: slides_schema_migrations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.slides_schema_migrations (
+    version integer NOT NULL,
+    applied_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
 -- Name: slides_slides; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -29671,7 +41561,12 @@ CREATE TABLE public.slides_slides (
     image_path text,
     image_prompt text,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT slides_slides_slide_type_check CHECK ((slide_type = ANY (ARRAY['title'::text, 'agenda'::text, 'content'::text, 'two_column'::text, 'quote'::text, 'data'::text, 'outro'::text])))
+    citations jsonb DEFAULT '[]'::jsonb,
+    mermaid_code text,
+    three_scene_config jsonb,
+    excalidraw_elements jsonb,
+    provenance text DEFAULT 'llm'::text,
+    CONSTRAINT chk_slide_type CHECK ((slide_type = ANY (ARRAY['title'::text, 'agenda'::text, 'content'::text, 'two_column'::text, 'quote'::text, 'data'::text, 'outro'::text, 'mermaid_diagram'::text, 'three_animation'::text, 'excalidraw_sketch'::text, 'card_grid'::text, 'table'::text])))
 );
 
 
@@ -29693,6 +41588,40 @@ CREATE SEQUENCE public.slides_slides_slide_id_seq
 --
 
 ALTER SEQUENCE public.slides_slides_slide_id_seq OWNED BY public.slides_slides.slide_id;
+
+
+--
+-- Name: slides_templates; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.slides_templates (
+    template_id integer NOT NULL,
+    filename text NOT NULL,
+    path text NOT NULL,
+    slide_count integer DEFAULT 0,
+    shape_map_json jsonb DEFAULT '[]'::jsonb,
+    uploaded_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: slides_templates_template_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.slides_templates_template_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: slides_templates_template_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.slides_templates_template_id_seq OWNED BY public.slides_templates.template_id;
 
 
 --
@@ -29729,6 +41658,68 @@ CREATE SEQUENCE public.smart_encoding_dictionary_id_seq
 --
 
 ALTER SEQUENCE public.smart_encoding_dictionary_id_seq OWNED BY public.smart_encoding_dictionary.id;
+
+
+--
+-- Name: soar_playbook_audit; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.soar_playbook_audit (
+    id integer NOT NULL,
+    run_id text NOT NULL,
+    playbook_id text,
+    step_id text,
+    action text,
+    kind text,
+    status text NOT NULL,
+    detail text,
+    actor text,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: soar_playbook_audit_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.soar_playbook_audit_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: soar_playbook_audit_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.soar_playbook_audit_id_seq OWNED BY public.soar_playbook_audit.id;
+
+
+--
+-- Name: soar_playbook_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.soar_playbook_runs (
+    run_id text NOT NULL,
+    playbook_id text NOT NULL,
+    finding_type text,
+    entity text,
+    severity text,
+    status text DEFAULT 'running'::text NOT NULL,
+    current_step_index integer DEFAULT 0 NOT NULL,
+    context_json text DEFAULT '{}'::text,
+    results_json text DEFAULT '[]'::text,
+    actor text,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
+);
 
 
 --
@@ -29948,6 +41939,46 @@ CREATE TABLE public.sre_slos (
 
 
 --
+-- Name: sso_providers; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sso_providers (
+    id text NOT NULL,
+    tenant_id text NOT NULL,
+    name text NOT NULL,
+    protocol text NOT NULL,
+    entity_id text,
+    metadata_url text,
+    client_id text,
+    client_secret_enc text,
+    attr_mapping text,
+    claims_mapping text,
+    enabled integer DEFAULT 1 NOT NULL,
+    created_at text DEFAULT now() NOT NULL,
+    updated_at text DEFAULT now() NOT NULL,
+    CONSTRAINT sso_providers_protocol_check CHECK ((protocol = ANY (ARRAY['saml'::text, 'oidc'::text])))
+);
+
+
+--
+-- Name: sso_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sso_sessions (
+    id text NOT NULL,
+    tenant_id text NOT NULL,
+    provider_id text NOT NULL,
+    user_id text,
+    name_id text,
+    session_index text,
+    id_token text,
+    access_token_enc text,
+    created_at text DEFAULT now() NOT NULL,
+    expires_at text
+);
+
+
+--
 -- Name: ssp_documents; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -30154,6 +42185,7 @@ CREATE TABLE public.studio_automation_runs (
     started_at text DEFAULT now(),
     completed_at text,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text,
     CONSTRAINT studio_automation_runs_status_check CHECK ((status = ANY (ARRAY['triggered'::text, 'running'::text, 'success'::text, 'failed'::text, 'skipped'::text])))
 );
 
@@ -30172,7 +42204,8 @@ CREATE TABLE public.studio_automations (
     enabled integer DEFAULT 1,
     created_by text,
     created_at text DEFAULT now(),
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text
 );
 
 
@@ -30188,7 +42221,8 @@ CREATE TABLE public.studio_case_history (
     changed_by text,
     changed_at text DEFAULT now(),
     comment text,
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text
 );
 
 
@@ -30201,7 +42235,8 @@ CREATE TABLE public.studio_case_types (
     name text NOT NULL,
     lifecycle_json text NOT NULL,
     created_at text DEFAULT now(),
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text
 );
 
 
@@ -30223,6 +42258,7 @@ CREATE TABLE public.studio_cases (
     due_date text,
     form_submission_id text,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text,
     CONSTRAINT studio_cases_priority_check CHECK ((priority = ANY (ARRAY['critical'::text, 'high'::text, 'medium'::text, 'low'::text])))
 );
 
@@ -30240,7 +42276,27 @@ CREATE TABLE public.studio_dashboards (
     created_at text DEFAULT now(),
     updated_at text DEFAULT now(),
     shared integer DEFAULT 0,
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text
+);
+
+
+--
+-- Name: studio_event_sources; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.studio_event_sources (
+    source_id text NOT NULL,
+    name text NOT NULL,
+    kind text NOT NULL,
+    config_json text,
+    enabled integer DEFAULT 1,
+    created_by text,
+    created_at text,
+    classification text DEFAULT 'CUI'::text,
+    tenant_id text,
+    max_il text DEFAULT 'IL2'::text,
+    CONSTRAINT studio_event_sources_kind_check CHECK ((kind = ANY (ARRAY['gateway_channel'::text, 'canvas_bus'::text, 'schedule'::text, 'manual'::text])))
 );
 
 
@@ -30254,7 +42310,8 @@ CREATE TABLE public.studio_form_submissions (
     data_json text NOT NULL,
     submitted_by text,
     submitted_at text DEFAULT now(),
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text
 );
 
 
@@ -30273,7 +42330,69 @@ CREATE TABLE public.studio_forms (
     version integer DEFAULT 1,
     status text DEFAULT 'draft'::text,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text,
     CONSTRAINT studio_forms_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text, 'archived'::text])))
+);
+
+
+--
+-- Name: studio_mcp_dispatch_audit; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.studio_mcp_dispatch_audit (
+    audit_id text NOT NULL,
+    run_id text,
+    step_id text,
+    tool text NOT NULL,
+    params_sha256 text NOT NULL,
+    principal_id text,
+    tenant_id text,
+    caller_il text,
+    caller_roles text,
+    caller_source text,
+    decision text NOT NULL,
+    reason text NOT NULL,
+    detail text,
+    classification text NOT NULL,
+    recorded_at text NOT NULL,
+    CONSTRAINT studio_mcp_dispatch_audit_decision_check CHECK ((decision = ANY (ARRAY['allowed'::text, 'refused'::text, 'pending_approval'::text])))
+);
+
+
+--
+-- Name: studio_run_memory; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.studio_run_memory (
+    run_id text NOT NULL,
+    key text NOT NULL,
+    value_json text NOT NULL,
+    updated_at text DEFAULT now(),
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    tenant_id text
+);
+
+
+--
+-- Name: studio_trigger_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.studio_trigger_events (
+    event_id text NOT NULL,
+    source_id text,
+    trigger_id text,
+    event_type text,
+    payload_json text,
+    matched integer DEFAULT 0 NOT NULL,
+    reason text,
+    run_id text,
+    received_at text,
+    classification text DEFAULT 'CUI'::text,
+    workflow_id text,
+    outcome text,
+    idempotency_key text,
+    envelope_id text,
+    tenant_id text
 );
 
 
@@ -30290,7 +42409,8 @@ CREATE TABLE public.studio_workflow_heal_log (
     diagnosis text,
     suggested_action text,
     created_at text,
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    tenant_id text
 );
 
 
@@ -30332,6 +42452,8 @@ CREATE TABLE public.studio_workflow_run_steps (
     started_at text DEFAULT now(),
     completed_at text,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    attempts integer DEFAULT 1,
+    tenant_id text,
     CONSTRAINT studio_workflow_run_steps_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'running'::text, 'success'::text, 'failed'::text, 'skipped'::text, 'timeout'::text, 'awaiting_approval'::text, 'approved'::text, 'rejected'::text])))
 );
 
@@ -30351,7 +42473,30 @@ CREATE TABLE public.studio_workflow_runs (
     project_id text DEFAULT 'default'::text,
     summary_json text,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    resumed_from_run_id text,
+    inputs_json text,
+    tenant_id text,
     CONSTRAINT studio_workflow_runs_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'running'::text, 'success'::text, 'failed'::text, 'cancelled'::text, 'awaiting_approval'::text])))
+);
+
+
+--
+-- Name: studio_workflow_triggers; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.studio_workflow_triggers (
+    trigger_id text NOT NULL,
+    source_id text NOT NULL,
+    workflow_id text NOT NULL,
+    event_type text,
+    filter_json text,
+    input_mapping_json text,
+    enabled integer DEFAULT 1,
+    created_at text,
+    classification text DEFAULT 'CUI'::text,
+    tenant_id text,
+    workflow_il text DEFAULT 'IL6'::text,
+    project_id text DEFAULT 'default'::text
 );
 
 
@@ -30370,7 +42515,11 @@ CREATE TABLE public.studio_workflows (
     updated_at text DEFAULT now(),
     version integer DEFAULT 1,
     shared integer DEFAULT 0,
-    classification character varying(50) DEFAULT 'CUI'::character varying
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    style_fingerprint text,
+    regen_artifact_path text,
+    source_doc_text text,
+    tenant_id text
 );
 
 
@@ -30392,8 +42541,47 @@ CREATE TABLE public.subscriptions (
     status character varying(16) DEFAULT 'active'::character varying NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying,
-    CONSTRAINT subscriptions_status_check CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'expired'::character varying, 'cancelled'::character varying])::text[]))),
-    CONSTRAINT subscriptions_tier_check CHECK (((tier)::text = ANY ((ARRAY['starter'::character varying, 'professional'::character varying, 'enterprise'::character varying])::text[])))
+    CONSTRAINT subscriptions_status_check CHECK (((status)::text = ANY (ARRAY[('active'::character varying)::text, ('expired'::character varying)::text, ('cancelled'::character varying)::text]))),
+    CONSTRAINT subscriptions_tier_check CHECK (((tier)::text = ANY (ARRAY[('starter'::character varying)::text, ('professional'::character varying)::text, ('enterprise'::character varying)::text])))
+);
+
+
+--
+-- Name: supplemental_refinements; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.supplemental_refinements (
+    id text NOT NULL,
+    cycle_id text NOT NULL,
+    provider text NOT NULL,
+    action text NOT NULL,
+    target text DEFAULT ''::text,
+    actor text DEFAULT 'system'::text,
+    details text DEFAULT '{}'::text,
+    audit_entry_id integer,
+    classification text DEFAULT 'CUI'::text,
+    tenant_id text,
+    created_at text NOT NULL
+);
+
+
+--
+-- Name: supplemental_state_snapshots; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.supplemental_state_snapshots (
+    id text NOT NULL,
+    cycle_id text NOT NULL,
+    kind text DEFAULT 'open'::text NOT NULL,
+    label text DEFAULT ''::text,
+    actor text DEFAULT 'system'::text,
+    checkpoint_id text,
+    state_json text NOT NULL,
+    state_hash text NOT NULL,
+    audit_entry_id integer,
+    classification text DEFAULT 'CUI'::text,
+    tenant_id text,
+    created_at text NOT NULL
 );
 
 
@@ -30445,6 +42633,24 @@ ALTER SEQUENCE public.supply_chain_dependencies_id_seq OWNED BY public.supply_ch
 
 
 --
+-- Name: supply_chain_risk_scores; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.supply_chain_risk_scores (
+    id text NOT NULL,
+    sbom_id text NOT NULL,
+    risk_level text,
+    exploitability text,
+    patch_available integer DEFAULT 0 NOT NULL,
+    last_assessed text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    created_at text DEFAULT (now())::text,
+    CONSTRAINT supply_chain_risk_scores_exploitability_check CHECK ((exploitability = ANY (ARRAY['functional'::text, 'poc'::text, 'unproven'::text, 'not_defined'::text]))),
+    CONSTRAINT supply_chain_risk_scores_risk_level_check CHECK ((risk_level = ANY (ARRAY['critical'::text, 'high'::text, 'medium'::text, 'low'::text, 'none'::text])))
+);
+
+
+--
 -- Name: supply_chain_vendors; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -30469,6 +42675,24 @@ CREATE TABLE public.supply_chain_vendors (
     CONSTRAINT supply_chain_vendors_scrm_risk_tier_check CHECK ((scrm_risk_tier = ANY (ARRAY['low'::text, 'moderate'::text, 'high'::text, 'critical'::text]))),
     CONSTRAINT supply_chain_vendors_section_889_status_check CHECK ((section_889_status = ANY (ARRAY['compliant'::text, 'under_review'::text, 'prohibited'::text, 'exempt'::text]))),
     CONSTRAINT supply_chain_vendors_vendor_type_check CHECK ((vendor_type = ANY (ARRAY['cots'::text, 'gots'::text, 'oss'::text, 'saas'::text, 'paas'::text, 'iaas'::text, 'contractor'::text, 'subcontractor'::text, 'defense_contractor'::text])))
+);
+
+
+--
+-- Name: supply_chain_vulnerabilities; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.supply_chain_vulnerabilities (
+    id text NOT NULL,
+    sbom_id text NOT NULL,
+    cve_id text NOT NULL,
+    cvss_score real DEFAULT 0.0 NOT NULL,
+    severity text,
+    affected_versions text,
+    fixed_version text,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    created_at text DEFAULT (now())::text,
+    CONSTRAINT supply_chain_vulnerabilities_severity_check CHECK ((severity = ANY (ARRAY['critical'::text, 'high'::text, 'medium'::text, 'low'::text, 'informational'::text, 'none'::text])))
 );
 
 
@@ -30734,6 +42958,38 @@ ALTER SEQUENCE public.system_cards_id_seq OWNED BY public.system_cards.id;
 
 
 --
+-- Name: tasks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tasks (
+    id text NOT NULL,
+    title text NOT NULL,
+    status text DEFAULT 'pending'::text,
+    priority text DEFAULT 'medium'::text,
+    assigned_agent text,
+    project_id text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    completed_at timestamp without time zone
+);
+
+
+--
+-- Name: teams_inbox; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.teams_inbox (
+    message_id text NOT NULL,
+    message_json text NOT NULL,
+    channel_id text,
+    sender_id text,
+    text text,
+    processed_at text,
+    error text,
+    created_at text DEFAULT now()
+);
+
+
+--
 -- Name: tech_radar_entries; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -30787,83 +43043,17 @@ CREATE TABLE public.telegram_inbox (
 
 
 --
--- Name: teams_inbox; Type: TABLE; Schema: public; Owner: -
+-- Name: tenant_component_overrides; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE public.teams_inbox (
-    message_id   text NOT NULL,
-    message_json text NOT NULL,
-    channel_id   text,
-    sender_id    text,
-    text         text,
-    processed_at text,
-    error        text,
-    created_at   text DEFAULT now()
-);
-
-
---
--- Name: mattermost_inbox; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.mattermost_inbox (
-    post_id      text NOT NULL,
-    message_json text NOT NULL,
-    channel_id   text,
-    user_id      text,
-    text         text,
-    processed_at text,
-    error        text,
-    created_at   text DEFAULT now()
-);
-
-
---
--- Name: github_inbox; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.github_inbox (
-    comment_id   integer NOT NULL,
-    message_json text NOT NULL,
-    issue_number integer,
-    user_login   text,
-    text         text,
-    processed_at text,
-    error        text,
-    created_at   text DEFAULT now()
-);
-
-
---
--- Name: gitlab_inbox; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.gitlab_inbox (
-    note_id          integer NOT NULL,
-    message_json     text NOT NULL,
-    issue_iid        integer,
-    author_username  text,
-    text             text,
-    processed_at     text,
-    error            text,
-    created_at       text DEFAULT now()
-);
-
-
---
--- Name: skype_inbox; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.skype_inbox (
-    activity_id     text NOT NULL,
-    message_json    text NOT NULL,
-    conversation_id text,
-    service_url     text,
-    sender_id       text,
-    text            text,
-    processed_at    text,
-    error           text,
-    created_at      text DEFAULT now()
+CREATE TABLE public.tenant_component_overrides (
+    id text NOT NULL,
+    tenant_id text NOT NULL,
+    component_key text NOT NULL,
+    enabled integer DEFAULT 1 NOT NULL,
+    updated_by text DEFAULT 'system'::text,
+    updated_at text DEFAULT now() NOT NULL,
+    CONSTRAINT tenant_component_overrides_enabled_check CHECK ((enabled = ANY (ARRAY[0, 1])))
 );
 
 
@@ -30883,8 +43073,8 @@ CREATE TABLE public.tenant_llm_keys (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying,
-    CONSTRAINT tenant_llm_keys_provider_check CHECK (((provider)::text = ANY ((ARRAY['anthropic'::character varying, 'openai'::character varying, 'bedrock'::character varying, 'ollama'::character varying, 'vllm'::character varying])::text[]))),
-    CONSTRAINT tenant_llm_keys_status_check CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'revoked'::character varying])::text[])))
+    CONSTRAINT tenant_llm_keys_provider_check CHECK (((provider)::text = ANY (ARRAY[('anthropic'::character varying)::text, ('openai'::character varying)::text, ('bedrock'::character varying)::text, ('ollama'::character varying)::text, ('vllm'::character varying)::text]))),
+    CONSTRAINT tenant_llm_keys_status_check CHECK (((status)::text = ANY (ARRAY[('active'::character varying)::text, ('revoked'::character varying)::text])))
 );
 
 
@@ -30913,9 +43103,9 @@ CREATE TABLE public.tenants (
     approved_by character varying(128),
     approved_at timestamp with time zone,
     classification character varying(50) DEFAULT 'CUI'::character varying,
-    CONSTRAINT tenants_impact_level_check CHECK (((impact_level)::text = ANY ((ARRAY['IL2'::character varying, 'IL4'::character varying, 'IL5'::character varying, 'IL6'::character varying])::text[]))),
-    CONSTRAINT tenants_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'provisioning'::character varying, 'active'::character varying, 'suspended'::character varying, 'deactivated'::character varying, 'deleted'::character varying])::text[]))),
-    CONSTRAINT tenants_tier_check CHECK (((tier)::text = ANY ((ARRAY['starter'::character varying, 'professional'::character varying, 'enterprise'::character varying])::text[])))
+    CONSTRAINT tenants_impact_level_check CHECK (((impact_level)::text = ANY (ARRAY[('IL2'::character varying)::text, ('IL4'::character varying)::text, ('IL5'::character varying)::text, ('IL6'::character varying)::text]))),
+    CONSTRAINT tenants_status_check CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('provisioning'::character varying)::text, ('active'::character varying)::text, ('suspended'::character varying)::text, ('deactivated'::character varying)::text, ('deleted'::character varying)::text]))),
+    CONSTRAINT tenants_tier_check CHECK (((tier)::text = ANY (ARRAY[('starter'::character varying)::text, ('professional'::character varying)::text, ('enterprise'::character varying)::text])))
 );
 
 
@@ -31327,6 +43517,37 @@ ALTER SEQUENCE public.translation_validations_id_seq OWNED BY public.translation
 
 
 --
+-- Name: trust_deltas; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.trust_deltas (
+    delta_id text NOT NULL,
+    artifact_id text NOT NULL,
+    artifact_type text,
+    stage text NOT NULL,
+    gate text,
+    before_hash text NOT NULL,
+    after_hash text NOT NULL,
+    before_text text,
+    after_text text,
+    findings_before text,
+    findings_after text,
+    findings_before_n integer DEFAULT 0,
+    findings_after_n integer DEFAULT 0,
+    spans text,
+    actor text,
+    rationale text,
+    disposition text DEFAULT 'pending'::text NOT NULL,
+    approval_item_id text,
+    supersedes_delta_id text,
+    session_id text,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
 -- Name: tsp_documents; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -31363,7 +43584,9 @@ CREATE TABLE public.ttx_api_log (
     result_hash text,
     called_at text DEFAULT now() NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying,
-    tenant_id text
+    tenant_id text,
+    token_count integer,
+    cost_usd real
 );
 
 
@@ -31389,16 +43612,6 @@ ALTER SEQUENCE public.ttx_api_log_log_id_seq OWNED BY public.ttx_api_log.log_id;
 
 --
 -- Name: ttx_formation_plan; Type: TABLE; Schema: public; Owner: -
---
--- UNWIRED BY DESIGN (gdx-dead-02, 2026-08-01). No module in tools/, icdev/ or apps/
--- reads or writes this table, and no migration creates it -- it exists only in this
--- consolidated snapshot. It backs the designed-but-unbuilt GameDay registration /
--- snake-draft team formation feature, together with ttx_registrations and the
--- register.html / registrations.html templates. Retained deliberately rather than
--- dropped: see docs/features/phase-wge-wargame-enhancements.md
--- ("Registration & team formation: designed, not built"). Wiring is carded as gdx-reg-01.
--- Do not treat the absence of queries as drift, and do not extend this table without
--- also landing a migration -- fresh databases do not have it.
 --
 
 CREATE TABLE public.ttx_formation_plan (
@@ -31484,7 +43697,6 @@ CREATE TABLE public.ttx_injects (
     depends_on_slug text,
     state text DEFAULT 'pending'::text NOT NULL,
     config_json text DEFAULT '{}'::text,
-    ontology_tags_json text DEFAULT '{}'::text,
     dispatched_at text,
     closed_at text,
     created_at text DEFAULT now() NOT NULL,
@@ -31534,18 +43746,6 @@ ALTER SEQUENCE public.ttx_leaderboard_lb_id_seq OWNED BY public.ttx_leaderboard.
 
 --
 -- Name: ttx_registrations; Type: TABLE; Schema: public; Owner: -
---
--- UNWIRED BY DESIGN (gdx-dead-02, 2026-08-01). No module in tools/, icdev/ or apps/
--- reads or writes this table, and no migration creates it -- it exists only in this
--- consolidated snapshot. It backs the designed-but-unbuilt GameDay registration /
--- snake-draft team formation feature, together with ttx_formation_plan and the
--- register.html / registrations.html templates. The implementation that once used it
--- (apps/ai_gameday/registration.py) was deleted by penta-gd-03 as unreachable code.
--- Retained deliberately rather than dropped: see
--- docs/features/phase-wge-wargame-enhancements.md
--- ("Registration & team formation: designed, not built"). Wiring is carded as gdx-reg-01.
--- NOTE: this table is NOT evidence of NIST AC-2 account-management coverage -- nothing
--- writes to it. That control gap is documented in the feature doc.
 --
 
 CREATE TABLE public.ttx_registrations (
@@ -31717,7 +43917,6 @@ CREATE TABLE public.ttx_sessions (
     started_at text,
     ended_at text,
     config_json text DEFAULT '{}'::text,
-    ontology_tags_json text DEFAULT '{}'::text,
     created_at text DEFAULT now() NOT NULL,
     world_state_json text DEFAULT '{}'::text,
     name text DEFAULT ''::text,
@@ -31822,6 +44021,41 @@ ALTER SEQUENCE public.ttx_teams_team_id_seq OWNED BY public.ttx_teams.team_id;
 
 
 --
+-- Name: twin_compat_reports; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.twin_compat_reports (
+    id text NOT NULL,
+    target_id text NOT NULL,
+    source_canvas text,
+    target_preset text,
+    verdict text,
+    blocker_count integer DEFAULT 0 NOT NULL,
+    content_hash text NOT NULL,
+    report_json text NOT NULL,
+    tenant_id text,
+    classification text DEFAULT 'CUI'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: ungated_test_baseline; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ungated_test_baseline (
+    path text NOT NULL,
+    status text NOT NULL,
+    first_seen text,
+    last_checked text,
+    last_detail text,
+    classification text DEFAULT 'CUI'::text,
+    first_status text,
+    ever_passed integer
+);
+
+
+--
 -- Name: usage_aggregates; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -31854,7 +44088,14 @@ CREATE TABLE public.usage_events (
     ip_hash text,
     feature_tag text,
     occurred_at text NOT NULL,
-    classification text DEFAULT 'CUI // SP-CTI'::text
+    classification text DEFAULT 'CUI // SP-CTI'::text,
+    tenant_id text,
+    event_type text,
+    quantity real,
+    model text,
+    canvas_key text,
+    metadata text,
+    recorded_at text
 );
 
 
@@ -31950,6 +44191,210 @@ CREATE TABLE public.use_case_overrides (
 
 
 --
+-- Name: user_challenges; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.user_challenges (
+    id text NOT NULL,
+    user_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    challenge_key text,
+    custom_description text,
+    severity text DEFAULT 'medium'::text NOT NULL,
+    status text DEFAULT 'active'::text NOT NULL,
+    created_at text DEFAULT (now() AT TIME ZONE 'UTC'::text) NOT NULL,
+    CONSTRAINT user_challenges_severity_check CHECK ((severity = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text]))),
+    CONSTRAINT user_challenges_status_check CHECK ((status = ANY (ARRAY['active'::text, 'resolved'::text])))
+);
+
+
+--
+-- Name: user_clearances; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.user_clearances (
+    id text NOT NULL,
+    user_id text NOT NULL,
+    user_name text,
+    clearance_level text DEFAULT 'CUI'::text NOT NULL,
+    effective_date timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    expires_at timestamp without time zone,
+    granted_by text,
+    project_id text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: user_daily_briefings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.user_daily_briefings (
+    id text NOT NULL,
+    user_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    briefing_date text NOT NULL,
+    content_json text DEFAULT '{}'::text NOT NULL,
+    delivery_channels text DEFAULT '["dashboard"]'::text NOT NULL,
+    delivery_status_json text DEFAULT '{}'::text NOT NULL,
+    opened_at text,
+    created_at text DEFAULT (now() AT TIME ZONE 'UTC'::text) NOT NULL
+);
+
+
+--
+-- Name: user_identity_profiles; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.user_identity_profiles (
+    user_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    full_name text,
+    work_email text,
+    title text,
+    seniority_tier text,
+    department text,
+    timezone text DEFAULT 'UTC'::text NOT NULL,
+    work_start text DEFAULT '09:00'::text NOT NULL,
+    work_end text DEFAULT '18:00'::text NOT NULL,
+    focus_block text DEFAULT 'am'::text NOT NULL,
+    meeting_heavy_days text DEFAULT '[]'::text NOT NULL,
+    briefing_time text DEFAULT '08:00'::text NOT NULL,
+    delivery_channels text DEFAULT '["dashboard"]'::text NOT NULL,
+    comm_style integer DEFAULT 3 NOT NULL,
+    org_name text,
+    org_industry text,
+    org_size text,
+    team_mission text,
+    profile_summary text,
+    context_complete integer DEFAULT 0 NOT NULL,
+    created_at text DEFAULT (now() AT TIME ZONE 'UTC'::text) NOT NULL,
+    updated_at text DEFAULT (now() AT TIME ZONE 'UTC'::text) NOT NULL,
+    CONSTRAINT user_identity_profiles_focus_block_check CHECK ((focus_block = ANY (ARRAY['am'::text, 'pm'::text, 'none'::text]))),
+    CONSTRAINT user_identity_profiles_seniority_tier_check CHECK ((seniority_tier = ANY (ARRAY['ic'::text, 'lead'::text, 'manager'::text, 'director'::text, 'executive'::text])))
+);
+
+
+--
+-- Name: user_integrations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.user_integrations (
+    id text NOT NULL,
+    user_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    service text NOT NULL,
+    access_token_enc text,
+    refresh_token_enc text,
+    token_expiry text,
+    scopes text,
+    metadata_json text DEFAULT '{}'::text NOT NULL,
+    status text DEFAULT 'active'::text NOT NULL,
+    last_sync_at text,
+    created_at text DEFAULT (now() AT TIME ZONE 'UTC'::text) NOT NULL,
+    CONSTRAINT user_integrations_service_check CHECK ((service = ANY (ARRAY['gmail'::text, 'gcal'::text, 'slack'::text, 'github'::text, 'gitlab'::text, 'jira'::text, 'linear'::text, 'notion'::text]))),
+    CONSTRAINT user_integrations_status_check CHECK ((status = ANY (ARRAY['active'::text, 'revoked'::text, 'error'::text])))
+);
+
+
+--
+-- Name: user_knowledge_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.user_knowledge_items (
+    id text NOT NULL,
+    user_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    source_type text NOT NULL,
+    source_url text,
+    title text,
+    raw_content text,
+    summary text,
+    tags text DEFAULT '[]'::text,
+    status text DEFAULT 'pending'::text,
+    error_msg text,
+    created_at text DEFAULT now(),
+    indexed_at text,
+    CONSTRAINT user_knowledge_items_source_type_check CHECK ((source_type = ANY (ARRAY['url'::text, 'file'::text, 'text'::text, 'github'::text, 'jira'::text]))),
+    CONSTRAINT user_knowledge_items_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'processing'::text, 'done'::text, 'error'::text])))
+);
+
+
+--
+-- Name: user_objectives; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.user_objectives (
+    id text NOT NULL,
+    user_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    title text NOT NULL,
+    description text,
+    horizon text,
+    metric text,
+    status text DEFAULT 'active'::text NOT NULL,
+    sort_order integer DEFAULT 0 NOT NULL,
+    created_at text DEFAULT (now() AT TIME ZONE 'UTC'::text) NOT NULL,
+    last_auto_update text,
+    auto_progress_pct integer DEFAULT 0,
+    CONSTRAINT user_objectives_horizon_check CHECK ((horizon = ANY (ARRAY['week'::text, 'quarter'::text, 'long_term'::text]))),
+    CONSTRAINT user_objectives_status_check CHECK ((status = ANY (ARRAY['active'::text, 'done'::text, 'dropped'::text])))
+);
+
+
+--
+-- Name: user_preferences; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.user_preferences (
+    user_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    onboarding_state text DEFAULT '{}'::text NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: user_relationship_interactions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.user_relationship_interactions (
+    id text NOT NULL,
+    relationship_id text NOT NULL,
+    user_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    interaction_date text NOT NULL,
+    title text NOT NULL,
+    notes text,
+    action_items text DEFAULT '[]'::text,
+    follow_up_date text,
+    interaction_type text DEFAULT 'meeting'::text,
+    created_at text DEFAULT now(),
+    CONSTRAINT user_relationship_interactions_interaction_type_check CHECK ((interaction_type = ANY (ARRAY['meeting'::text, 'email'::text, 'call'::text, 'delivery'::text, 'review'::text, 'other'::text])))
+);
+
+
+--
+-- Name: user_relationships; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.user_relationships (
+    id text NOT NULL,
+    user_id text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    name text NOT NULL,
+    title text,
+    email text,
+    org text,
+    relationship_type text,
+    notes text,
+    last_contact_at text,
+    created_at text DEFAULT (now() AT TIME ZONE 'UTC'::text) NOT NULL,
+    CONSTRAINT user_relationships_relationship_type_check CHECK ((relationship_type = ANY (ARRAY['boss'::text, 'direct'::text, 'peer'::text, 'stakeholder'::text, 'customer'::text, 'vendor'::text, 'other'::text])))
+);
+
+
+--
 -- Name: users; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -31967,9 +44412,9 @@ CREATE TABLE public.users (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     last_login timestamp with time zone,
     classification character varying(50) DEFAULT 'CUI'::character varying,
-    CONSTRAINT users_auth_method_check CHECK (((auth_method)::text = ANY ((ARRAY['api_key'::character varying, 'oauth'::character varying, 'cac_piv'::character varying, 'saml'::character varying])::text[]))),
-    CONSTRAINT users_role_check CHECK (((role)::text = ANY ((ARRAY['tenant_admin'::character varying, 'developer'::character varying, 'compliance_officer'::character varying, 'auditor'::character varying, 'viewer'::character varying])::text[]))),
-    CONSTRAINT users_status_check CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'suspended'::character varying, 'deactivated'::character varying])::text[])))
+    CONSTRAINT users_auth_method_check CHECK (((auth_method)::text = ANY (ARRAY[('api_key'::character varying)::text, ('oauth'::character varying)::text, ('cac_piv'::character varying)::text, ('saml'::character varying)::text]))),
+    CONSTRAINT users_role_check CHECK (((role)::text = ANY (ARRAY[('tenant_admin'::character varying)::text, ('developer'::character varying)::text, ('compliance_officer'::character varying)::text, ('auditor'::character varying)::text, ('viewer'::character varying)::text]))),
+    CONSTRAINT users_status_check CHECK (((status)::text = ANY (ARRAY[('active'::character varying)::text, ('suspended'::character varying)::text, ('deactivated'::character varying)::text])))
 );
 
 
@@ -32066,6 +44511,75 @@ CREATE TABLE public.vsm_stage_events (
     created_at text DEFAULT now(),
     CONSTRAINT vsm_stage_events_event_type_check CHECK ((event_type = ANY (ARRAY['started'::text, 'completed'::text, 'failed'::text, 'blocked'::text]))),
     CONSTRAINT vsm_stage_events_stage_check CHECK ((stage = ANY (ARRAY['architect'::text, 'trace'::text, 'link'::text, 'assemble'::text, 'stress_test'::text])))
+);
+
+
+--
+-- Name: watchdog_alerts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.watchdog_alerts (
+    id integer NOT NULL,
+    task_id text NOT NULL,
+    task_title text NOT NULL,
+    priority text NOT NULL,
+    dispatch_source text,
+    alerted_at text NOT NULL
+);
+
+
+--
+-- Name: watchdog_alerts_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.watchdog_alerts_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: watchdog_alerts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.watchdog_alerts_id_seq OWNED BY public.watchdog_alerts.id;
+
+
+--
+-- Name: watchdog_state; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.watchdog_state (
+    key text NOT NULL,
+    value text NOT NULL,
+    updated_at text NOT NULL
+);
+
+
+--
+-- Name: web_fetch_provenance; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.web_fetch_provenance (
+    id text NOT NULL,
+    citation_id text,
+    requested_url text NOT NULL,
+    final_url text,
+    http_status integer,
+    content_hash text NOT NULL,
+    content_type text,
+    content_length integer,
+    etag text,
+    last_modified text,
+    fetched_at text NOT NULL,
+    fetcher text,
+    classification text DEFAULT 'CUI'::text,
+    project_id text,
+    tenant_id text DEFAULT ''::text,
+    metadata text DEFAULT '{}'::text
 );
 
 
@@ -32389,6 +44903,322 @@ CREATE TABLE public.wf_templates (
     created_at text DEFAULT now() NOT NULL,
     updated_at text DEFAULT now() NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying
+);
+
+
+--
+-- Name: wfc_branding; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.wfc_branding (
+    id text NOT NULL,
+    entity_type text NOT NULL,
+    entity_id text NOT NULL,
+    org_name text,
+    logo_data text,
+    primary_color text DEFAULT '#1a365d'::text,
+    secondary_color text DEFAULT '#c8a951'::text,
+    header_html text,
+    footer_html text,
+    show_classification integer DEFAULT 1,
+    created_at text DEFAULT now(),
+    updated_at text DEFAULT now(),
+    CONSTRAINT wfc_branding_entity_type_check CHECK ((entity_type = ANY (ARRAY['form'::text, 'workflow'::text])))
+);
+
+
+--
+-- Name: wfc_chain_phases; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.wfc_chain_phases (
+    id text NOT NULL,
+    chain_id text NOT NULL,
+    phase_number integer NOT NULL,
+    name text NOT NULL,
+    team_name text,
+    team_role text,
+    workflow_ids text DEFAULT '[]'::text NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    unlock_threshold integer DEFAULT 100 NOT NULL,
+    handoff_checklist text DEFAULT '[]'::text NOT NULL,
+    style_fingerprint text,
+    regen_artifact_path text,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    handoff_brief text,
+    workflow_snapshot_yaml text,
+    CONSTRAINT wfc_chain_phases_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'active'::text, 'in_progress'::text, 'complete'::text])))
+);
+
+
+--
+-- Name: wfc_process_chains; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.wfc_process_chains (
+    id text NOT NULL,
+    name text NOT NULL,
+    description text,
+    industry text,
+    status text DEFAULT 'draft'::text NOT NULL,
+    created_by text,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT wfc_process_chains_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'active'::text, 'completed'::text])))
+);
+
+
+--
+-- Name: wfc_template_library; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.wfc_template_library (
+    id text NOT NULL,
+    name text NOT NULL,
+    description text,
+    industry text,
+    doc_type text,
+    template_yaml text,
+    step_count integer DEFAULT 0,
+    usage_count integer DEFAULT 0,
+    created_at text,
+    updated_at text
+);
+
+
+--
+-- Name: wfc_workflow_form_nodes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.wfc_workflow_form_nodes (
+    id text NOT NULL,
+    workflow_id text NOT NULL,
+    node_key text NOT NULL,
+    form_id text NOT NULL,
+    node_label text,
+    required_before_next integer DEFAULT 1,
+    created_at text DEFAULT now()
+);
+
+
+--
+-- Name: wfl_committee_reviews; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.wfl_committee_reviews (
+    id text NOT NULL,
+    application_id text NOT NULL,
+    committee_chair_id text DEFAULT 'chair'::text NOT NULL,
+    status text DEFAULT 'in_progress'::text NOT NULL,
+    decision text,
+    decision_rationale text DEFAULT ''::text NOT NULL,
+    checklist_json text DEFAULT '{}'::text NOT NULL,
+    adverse_findings_addressed text DEFAULT '{}'::text NOT NULL,
+    conditions_json text DEFAULT '[]'::text NOT NULL,
+    votes_for integer DEFAULT 0 NOT NULL,
+    votes_against integer DEFAULT 0 NOT NULL,
+    votes_abstain integer DEFAULT 0 NOT NULL,
+    quorum_met integer DEFAULT 0 NOT NULL,
+    meeting_date text DEFAULT ''::text NOT NULL,
+    completed_at text,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    CONSTRAINT wfl_committee_reviews_decision_check CHECK ((decision = ANY (ARRAY['approved'::text, 'approved_with_conditions'::text, 'deferred'::text, 'denied'::text]))),
+    CONSTRAINT wfl_committee_reviews_status_check CHECK ((status = ANY (ARRAY['in_progress'::text, 'completed'::text])))
+);
+
+
+--
+-- Name: wfl_completeness_reviews; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.wfl_completeness_reviews (
+    id text NOT NULL,
+    application_id text NOT NULL,
+    reviewer_id text DEFAULT 'coordinator'::text NOT NULL,
+    status text DEFAULT 'in_progress'::text NOT NULL,
+    checklist_json text DEFAULT '{}'::text NOT NULL,
+    overall_notes text DEFAULT ''::text NOT NULL,
+    deficiency_count integer DEFAULT 0 NOT NULL,
+    completed_at text,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    CONSTRAINT wfl_completeness_reviews_status_check CHECK ((status = ANY (ARRAY['in_progress'::text, 'passed'::text, 'failed'::text])))
+);
+
+
+--
+-- Name: wfl_credentialing_applications; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.wfl_credentialing_applications (
+    id text NOT NULL,
+    applicant_name text NOT NULL,
+    npi text NOT NULL,
+    application_type text NOT NULL,
+    supporting_documents text DEFAULT '[]'::text NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    submitted_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    CONSTRAINT wfl_credentialing_applications_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'under_review'::text, 'approved'::text, 'rejected'::text])))
+);
+
+
+--
+-- Name: wfl_credentialing_approvals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.wfl_credentialing_approvals (
+    id text NOT NULL,
+    application_id text NOT NULL,
+    medical_director_id text DEFAULT 'medical_director'::text NOT NULL,
+    status text DEFAULT 'in_progress'::text NOT NULL,
+    decision text,
+    decision_rationale text DEFAULT ''::text NOT NULL,
+    checklist_json text DEFAULT '{}'::text NOT NULL,
+    approval_conditions_json text DEFAULT '[]'::text NOT NULL,
+    committee_recommendation_acknowledged integer DEFAULT 0 NOT NULL,
+    effective_date text DEFAULT ''::text NOT NULL,
+    expiration_date text DEFAULT ''::text NOT NULL,
+    completed_at text,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    CONSTRAINT wfl_credentialing_approvals_decision_check CHECK ((decision = ANY (ARRAY['approved'::text, 'approved_with_conditions'::text, 'denied'::text, 'deferred'::text]))),
+    CONSTRAINT wfl_credentialing_approvals_status_check CHECK ((status = ANY (ARRAY['in_progress'::text, 'completed'::text])))
+);
+
+
+--
+-- Name: wfl_credentialing_audit; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.wfl_credentialing_audit (
+    id integer NOT NULL,
+    application_id text,
+    event_type text NOT NULL,
+    actor text DEFAULT 'system'::text,
+    detail text DEFAULT ''::text,
+    classification text DEFAULT 'CUI // SP-CTI'::text NOT NULL,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+
+--
+-- Name: wfl_credentialing_audit_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.wfl_credentialing_audit_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: wfl_credentialing_audit_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.wfl_credentialing_audit_id_seq OWNED BY public.wfl_credentialing_audit.id;
+
+
+--
+-- Name: wfl_network_agreement_approvals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.wfl_network_agreement_approvals (
+    id text NOT NULL,
+    application_id text NOT NULL,
+    network_director_id text DEFAULT 'network_director'::text NOT NULL,
+    status text DEFAULT 'in_progress'::text NOT NULL,
+    decision text,
+    decision_rationale text DEFAULT ''::text NOT NULL,
+    checklist_json text DEFAULT '{}'::text NOT NULL,
+    enrollment_notes_json text DEFAULT '[]'::text NOT NULL,
+    directory_effective_date text DEFAULT ''::text NOT NULL,
+    claims_effective_date text DEFAULT ''::text NOT NULL,
+    completed_at text,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    CONSTRAINT wfl_network_agreement_approvals_decision_check CHECK ((decision = ANY (ARRAY['approved'::text, 'rejected'::text]))),
+    CONSTRAINT wfl_network_agreement_approvals_status_check CHECK ((status = ANY (ARRAY['in_progress'::text, 'completed'::text])))
+);
+
+
+--
+-- Name: wfl_network_agreement_reviews; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.wfl_network_agreement_reviews (
+    id text NOT NULL,
+    application_id text NOT NULL,
+    contracting_officer_id text DEFAULT 'contracting_officer'::text NOT NULL,
+    status text DEFAULT 'in_progress'::text NOT NULL,
+    decision text,
+    decision_rationale text DEFAULT ''::text NOT NULL,
+    checklist_json text DEFAULT '{}'::text NOT NULL,
+    agreement_conditions_json text DEFAULT '[]'::text NOT NULL,
+    network_type text DEFAULT 'medical'::text NOT NULL,
+    agreement_effective_date text DEFAULT ''::text NOT NULL,
+    agreement_expiration_date text DEFAULT ''::text NOT NULL,
+    completed_at text,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    CONSTRAINT wfl_network_agreement_reviews_decision_check CHECK ((decision = ANY (ARRAY['executed'::text, 'rejected'::text, 'deferred'::text]))),
+    CONSTRAINT wfl_network_agreement_reviews_status_check CHECK ((status = ANY (ARRAY['in_progress'::text, 'completed'::text])))
+);
+
+
+--
+-- Name: wfl_provider_setups; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.wfl_provider_setups (
+    id text NOT NULL,
+    application_id text NOT NULL,
+    operations_staff_id text DEFAULT 'operations_staff'::text NOT NULL,
+    status text DEFAULT 'in_progress'::text NOT NULL,
+    decision text,
+    completion_notes text DEFAULT ''::text NOT NULL,
+    checklist_json text DEFAULT '{}'::text NOT NULL,
+    system_load_notes_json text DEFAULT '[]'::text NOT NULL,
+    directory_load_date text DEFAULT ''::text NOT NULL,
+    claims_load_date text DEFAULT ''::text NOT NULL,
+    portal_load_date text DEFAULT ''::text NOT NULL,
+    completed_at text,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    CONSTRAINT wfl_provider_setups_decision_check CHECK ((decision = ANY (ARRAY['completed'::text, 'failed'::text]))),
+    CONSTRAINT wfl_provider_setups_status_check CHECK ((status = ANY (ARRAY['in_progress'::text, 'completed'::text])))
+);
+
+
+--
+-- Name: wfl_psv_verifications; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.wfl_psv_verifications (
+    id text NOT NULL,
+    application_id text NOT NULL,
+    verifier_id text DEFAULT 'specialist'::text NOT NULL,
+    status text DEFAULT 'in_progress'::text NOT NULL,
+    verification_json text DEFAULT '{}'::text NOT NULL,
+    overall_notes text DEFAULT ''::text NOT NULL,
+    deficiency_count integer DEFAULT 0 NOT NULL,
+    completed_at text,
+    created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    CONSTRAINT wfl_psv_verifications_status_check CHECK ((status = ANY (ARRAY['in_progress'::text, 'passed'::text, 'failed'::text])))
 );
 
 
@@ -32817,6 +45647,7 @@ CREATE TABLE public.workflow_acceptance_criteria (
     verified_at text,
     created_at text NOT NULL,
     classification character varying(50) DEFAULT 'CUI'::character varying,
+    cot_config text,
     CONSTRAINT workflow_acceptance_criteria_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'pass'::text, 'fail'::text, 'skip'::text])))
 );
 
@@ -32934,6 +45765,155 @@ CREATE TABLE public.xai_assessments (
     agent_id text,
     classification text DEFAULT 'CUI'::text,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: zig_activities; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.zig_activities (
+    id text NOT NULL,
+    capability_id text NOT NULL,
+    phase text NOT NULL,
+    title text NOT NULL,
+    description text,
+    nist_control_ref text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT zig_activities_phase_check CHECK ((phase = ANY (ARRAY['discovery'::text, 'phase1'::text, 'phase2'::text])))
+);
+
+
+--
+-- Name: zig_activity_completions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.zig_activity_completions (
+    id integer NOT NULL,
+    activity_id text NOT NULL,
+    target_id text DEFAULT 'icdev-self'::text NOT NULL,
+    status text DEFAULT 'not_started'::text NOT NULL,
+    evidence_note text,
+    completed_by text,
+    completed_at text,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT zig_activity_completions_status_check CHECK ((status = ANY (ARRAY['not_started'::text, 'in_progress'::text, 'complete'::text])))
+);
+
+
+--
+-- Name: zig_activity_completions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.zig_activity_completions_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: zig_activity_completions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.zig_activity_completions_id_seq OWNED BY public.zig_activity_completions.id;
+
+
+--
+-- Name: zig_capabilities; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.zig_capabilities (
+    id text NOT NULL,
+    pillar_slug text NOT NULL,
+    title text NOT NULL,
+    phase text NOT NULL,
+    maturity_level text NOT NULL,
+    description text,
+    nist_controls text DEFAULT '[]'::text,
+    target_fy2027 integer DEFAULT 1,
+    implementation_status text DEFAULT 'not_started'::text,
+    evidence_note text,
+    updated_at text DEFAULT CURRENT_TIMESTAMP,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT zig_capabilities_implementation_status_check CHECK ((implementation_status = ANY (ARRAY['not_started'::text, 'planned'::text, 'in_progress'::text, 'implemented'::text]))),
+    CONSTRAINT zig_capabilities_maturity_level_check CHECK ((maturity_level = ANY (ARRAY['basic'::text, 'intermediate'::text, 'advanced'::text]))),
+    CONSTRAINT zig_capabilities_phase_check CHECK ((phase = ANY (ARRAY['discovery'::text, 'phase1'::text, 'phase2'::text])))
+);
+
+
+--
+-- Name: zig_maturity_scores; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.zig_maturity_scores (
+    id integer NOT NULL,
+    pillar_slug text NOT NULL,
+    score real DEFAULT 0.0 NOT NULL,
+    maturity_level text,
+    capability_count integer DEFAULT 0,
+    activity_count integer DEFAULT 0,
+    complete_activities integer DEFAULT 0,
+    assessment_run_at text DEFAULT CURRENT_TIMESTAMP,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    target_id text
+);
+
+
+--
+-- Name: zig_maturity_scores_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.zig_maturity_scores_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: zig_maturity_scores_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.zig_maturity_scores_id_seq OWNED BY public.zig_maturity_scores.id;
+
+
+--
+-- Name: zig_pillars; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.zig_pillars (
+    slug text NOT NULL,
+    name text NOT NULL,
+    full_name text,
+    pillar_weight real DEFAULT 0.14,
+    icon text,
+    color text,
+    csi_url text,
+    description text,
+    ficam_components text DEFAULT '[]'::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: zig_targets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.zig_targets (
+    id text NOT NULL,
+    name text NOT NULL,
+    description text,
+    system_type text DEFAULT 'general'::text,
+    classification text DEFAULT 'CUI'::text,
+    status text DEFAULT 'active'::text,
+    pillar_focus text DEFAULT ''::text,
+    created_at text DEFAULT CURRENT_TIMESTAMP,
+    updated_at text DEFAULT CURRENT_TIMESTAMP
 );
 
 
@@ -33155,10 +46135,24 @@ ALTER TABLE ONLY public.aac_scores ALTER COLUMN score_id SET DEFAULT nextval('pu
 
 
 --
+-- Name: aadc_cost_estimates id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aadc_cost_estimates ALTER COLUMN id SET DEFAULT nextval('public.aadc_cost_estimates_id_seq'::regclass);
+
+
+--
 -- Name: aadc_design_events id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.aadc_design_events ALTER COLUMN id SET DEFAULT nextval('public.aadc_design_events_id_seq'::regclass);
+
+
+--
+-- Name: aadc_design_links id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aadc_design_links ALTER COLUMN id SET DEFAULT nextval('public.aadc_design_links_id_seq'::regclass);
 
 
 --
@@ -33173,6 +46167,27 @@ ALTER TABLE ONLY public.abac_decisions ALTER COLUMN id SET DEFAULT nextval('publ
 --
 
 ALTER TABLE ONLY public.ace_audit_log ALTER COLUMN id SET DEFAULT nextval('public.ace_audit_log_id_seq'::regclass);
+
+
+--
+-- Name: ace_event_results id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ace_event_results ALTER COLUMN id SET DEFAULT nextval('public.ace_event_results_id_seq'::regclass);
+
+
+--
+-- Name: ace_events id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ace_events ALTER COLUMN id SET DEFAULT nextval('public.ace_events_id_seq'::regclass);
+
+
+--
+-- Name: ace_webhook_log id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ace_webhook_log ALTER COLUMN id SET DEFAULT nextval('public.ace_webhook_log_id_seq'::regclass);
 
 
 --
@@ -33285,6 +46300,13 @@ ALTER TABLE ONLY public.ad_regime_premiums ALTER COLUMN id SET DEFAULT nextval('
 --
 
 ALTER TABLE ONLY public.ad_signal_validation ALTER COLUMN id SET DEFAULT nextval('public.ad_signal_validation_id_seq'::regclass);
+
+
+--
+-- Name: agent_approval_log id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_approval_log ALTER COLUMN id SET DEFAULT nextval('public.agent_approval_log_id_seq'::regclass);
 
 
 --
@@ -33414,6 +46436,13 @@ ALTER TABLE ONLY public.aiify_posture_snapshots ALTER COLUMN id SET DEFAULT next
 
 
 --
+-- Name: aiify_prd_provenance id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aiify_prd_provenance ALTER COLUMN id SET DEFAULT nextval('public.aiify_prd_provenance_id_seq'::regclass);
+
+
+--
 -- Name: aiify_roadmaps id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -33432,6 +46461,13 @@ ALTER TABLE ONLY public.aiify_scans ALTER COLUMN scan_id SET DEFAULT nextval('pu
 --
 
 ALTER TABLE ONLY public.aiify_scores ALTER COLUMN score_id SET DEFAULT nextval('public.aiify_scores_score_id_seq'::regclass);
+
+
+--
+-- Name: aiml_audit id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aiml_audit ALTER COLUMN id SET DEFAULT nextval('public.aiml_audit_id_seq'::regclass);
 
 
 --
@@ -33516,6 +46552,13 @@ ALTER TABLE ONLY public.batch_run_steps ALTER COLUMN id SET DEFAULT nextval('pub
 --
 
 ALTER TABLE ONLY public.bayesian_teaching_scores ALTER COLUMN id SET DEFAULT nextval('public.bayesian_teaching_scores_id_seq'::regclass);
+
+
+--
+-- Name: bd_audit id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bd_audit ALTER COLUMN id SET DEFAULT nextval('public.bd_audit_id_seq'::regclass);
 
 
 --
@@ -33673,6 +46716,13 @@ ALTER TABLE ONLY public.cmmc_assessments ALTER COLUMN id SET DEFAULT nextval('pu
 
 
 --
+-- Name: cmmc_practice_gaps id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cmmc_practice_gaps ALTER COLUMN id SET DEFAULT nextval('public.cmmc_practice_gaps_id_seq'::regclass);
+
+
+--
 -- Name: cmmi_level3_assessments id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -33719,6 +46769,20 @@ ALTER TABLE ONLY public.compliance_evidence_chain ALTER COLUMN id SET DEFAULT ne
 --
 
 ALTER TABLE ONLY public.compliance_template_ratings ALTER COLUMN id SET DEFAULT nextval('public.compliance_template_ratings_id_seq'::regclass);
+
+
+--
+-- Name: compliance_twin_snapshots id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.compliance_twin_snapshots ALTER COLUMN id SET DEFAULT nextval('public.compliance_twin_snapshots_id_seq'::regclass);
+
+
+--
+-- Name: compliance_twin_violations id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.compliance_twin_violations ALTER COLUMN id SET DEFAULT nextval('public.compliance_twin_violations_id_seq'::regclass);
 
 
 --
@@ -33834,6 +46898,13 @@ ALTER TABLE ONLY public.data_classifications ALTER COLUMN id SET DEFAULT nextval
 
 
 --
+-- Name: databridge_agent_access_log id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.databridge_agent_access_log ALTER COLUMN id SET DEFAULT nextval('public.databridge_agent_access_log_id_seq'::regclass);
+
+
+--
 -- Name: db_forge_promotions id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -33866,6 +46937,13 @@ ALTER TABLE ONLY public.db_mapping_log ALTER COLUMN id SET DEFAULT nextval('publ
 --
 
 ALTER TABLE ONLY public.db_sync_log ALTER COLUMN id SET DEFAULT nextval('public.db_sync_log_id_seq'::regclass);
+
+
+--
+-- Name: dd_audit id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dd_audit ALTER COLUMN id SET DEFAULT nextval('public.dd_audit_id_seq'::regclass);
 
 
 --
@@ -33932,6 +47010,20 @@ ALTER TABLE ONLY public.digital_thread_links ALTER COLUMN id SET DEFAULT nextval
 
 
 --
+-- Name: dm_audit id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dm_audit ALTER COLUMN id SET DEFAULT nextval('public.dm_audit_id_seq'::regclass);
+
+
+--
+-- Name: domain_coverage id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.domain_coverage ALTER COLUMN id SET DEFAULT nextval('public.domain_coverage_id_seq'::regclass);
+
+
+--
 -- Name: dsoc_audit id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -33995,6 +47087,13 @@ ALTER TABLE ONLY public.emass_systems ALTER COLUMN id SET DEFAULT nextval('publi
 
 
 --
+-- Name: entitlements id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.entitlements ALTER COLUMN id SET DEFAULT nextval('public.entitlements_id_seq'::regclass);
+
+
+--
 -- Name: eu_ai_act_assessments id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -34013,6 +47112,27 @@ ALTER TABLE ONLY public.extension_execution_log ALTER COLUMN id SET DEFAULT next
 --
 
 ALTER TABLE ONLY public.fa_achievements ALTER COLUMN id SET DEFAULT nextval('public.fa_achievements_id_seq'::regclass);
+
+
+--
+-- Name: fa_assessment_items id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fa_assessment_items ALTER COLUMN id SET DEFAULT nextval('public.fa_assessment_items_id_seq'::regclass);
+
+
+--
+-- Name: fa_assignments id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fa_assignments ALTER COLUMN id SET DEFAULT nextval('public.fa_assignments_id_seq'::regclass);
+
+
+--
+-- Name: fa_certificate_evidence id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fa_certificate_evidence ALTER COLUMN id SET DEFAULT nextval('public.fa_certificate_evidence_id_seq'::regclass);
 
 
 --
@@ -34072,6 +47192,20 @@ ALTER TABLE ONLY public.fa_guilds ALTER COLUMN id SET DEFAULT nextval('public.fa
 
 
 --
+-- Name: fa_instructor_audit id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fa_instructor_audit ALTER COLUMN id SET DEFAULT nextval('public.fa_instructor_audit_id_seq'::regclass);
+
+
+--
+-- Name: fa_instructor_reviews id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fa_instructor_reviews ALTER COLUMN id SET DEFAULT nextval('public.fa_instructor_reviews_id_seq'::regclass);
+
+
+--
 -- Name: fa_leaderboard_cache id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -34111,6 +47245,20 @@ ALTER TABLE ONLY public.fa_missions ALTER COLUMN id SET DEFAULT nextval('public.
 --
 
 ALTER TABLE ONLY public.fa_skill_nodes ALTER COLUMN id SET DEFAULT nextval('public.fa_skill_nodes_id_seq'::regclass);
+
+
+--
+-- Name: fa_step_assessment_policy id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fa_step_assessment_policy ALTER COLUMN id SET DEFAULT nextval('public.fa_step_assessment_policy_id_seq'::regclass);
+
+
+--
+-- Name: fa_step_attempts id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fa_step_attempts ALTER COLUMN id SET DEFAULT nextval('public.fa_step_attempts_id_seq'::regclass);
 
 
 --
@@ -34163,6 +47311,13 @@ ALTER TABLE ONLY public.fa_workflow_submissions ALTER COLUMN id SET DEFAULT next
 
 
 --
+-- Name: fa_xp_ledger id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fa_xp_ledger ALTER COLUMN id SET DEFAULT nextval('public.fa_xp_ledger_id_seq'::regclass);
+
+
+--
 -- Name: fabric_audit id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -34212,6 +47367,20 @@ ALTER TABLE ONLY public.fine_tuning_datasets ALTER COLUMN id SET DEFAULT nextval
 
 
 --
+-- Name: finetune_eval_results id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.finetune_eval_results ALTER COLUMN id SET DEFAULT nextval('public.finetune_eval_results_id_seq'::regclass);
+
+
+--
+-- Name: finetune_metrics id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.finetune_metrics ALTER COLUMN id SET DEFAULT nextval('public.finetune_metrics_id_seq'::regclass);
+
+
+--
 -- Name: fips199_categorizations id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -34230,6 +47399,48 @@ ALTER TABLE ONLY public.fips200_assessments ALTER COLUMN id SET DEFAULT nextval(
 --
 
 ALTER TABLE ONLY public.forge_hub_ratings ALTER COLUMN id SET DEFAULT nextval('public.forge_hub_ratings_id_seq'::regclass);
+
+
+--
+-- Name: foundry_concepts id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.foundry_concepts ALTER COLUMN id SET DEFAULT nextval('public.foundry_concepts_id_seq'::regclass);
+
+
+--
+-- Name: foundry_outcomes id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.foundry_outcomes ALTER COLUMN id SET DEFAULT nextval('public.foundry_outcomes_id_seq'::regclass);
+
+
+--
+-- Name: foundry_runs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.foundry_runs ALTER COLUMN id SET DEFAULT nextval('public.foundry_runs_id_seq'::regclass);
+
+
+--
+-- Name: foundry_signals id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.foundry_signals ALTER COLUMN id SET DEFAULT nextval('public.foundry_signals_id_seq'::regclass);
+
+
+--
+-- Name: foundry_specs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.foundry_specs ALTER COLUMN id SET DEFAULT nextval('public.foundry_specs_id_seq'::regclass);
+
+
+--
+-- Name: foundry_tasks_emitted id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.foundry_tasks_emitted ALTER COLUMN id SET DEFAULT nextval('public.foundry_tasks_emitted_id_seq'::regclass);
 
 
 --
@@ -34359,6 +47570,13 @@ ALTER TABLE ONLY public.genesis_audit_log ALTER COLUMN id SET DEFAULT nextval('p
 
 
 --
+-- Name: genesis_phase_log id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.genesis_phase_log ALTER COLUMN id SET DEFAULT nextval('public.genesis_phase_log_id_seq'::regclass);
+
+
+--
 -- Name: ghost_track_predictions id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -34468,6 +47686,13 @@ ALTER TABLE ONLY public.innov_metrics ALTER COLUMN id SET DEFAULT nextval('publi
 --
 
 ALTER TABLE ONLY public.innov_pilots ALTER COLUMN id SET DEFAULT nextval('public.innov_pilots_id_seq'::regclass);
+
+
+--
+-- Name: insider_risk_scores id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.insider_risk_scores ALTER COLUMN id SET DEFAULT nextval('public.insider_risk_scores_id_seq'::regclass);
 
 
 --
@@ -34653,6 +47878,118 @@ ALTER TABLE ONLY public.marketplace_embeddings ALTER COLUMN id SET DEFAULT nextv
 
 
 --
+-- Name: mc_audit id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_audit ALTER COLUMN id SET DEFAULT nextval('public.mc_audit_id_seq'::regclass);
+
+
+--
+-- Name: mc_cloud_instances id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_cloud_instances ALTER COLUMN id SET DEFAULT nextval('public.mc_cloud_instances_id_seq'::regclass);
+
+
+--
+-- Name: mc_net_compat_checks id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_compat_checks ALTER COLUMN id SET DEFAULT nextval('public.mc_net_compat_checks_id_seq'::regclass);
+
+
+--
+-- Name: mc_net_cutover_steps id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_cutover_steps ALTER COLUMN id SET DEFAULT nextval('public.mc_net_cutover_steps_id_seq'::regclass);
+
+
+--
+-- Name: mc_net_port_map id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_port_map ALTER COLUMN id SET DEFAULT nextval('public.mc_net_port_map_id_seq'::regclass);
+
+
+--
+-- Name: mc_net_test_cases id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_test_cases ALTER COLUMN id SET DEFAULT nextval('public.mc_net_test_cases_id_seq'::regclass);
+
+
+--
+-- Name: mc_srv_compat_checks id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_compat_checks ALTER COLUMN id SET DEFAULT nextval('public.mc_srv_compat_checks_id_seq'::regclass);
+
+
+--
+-- Name: mc_srv_cutover_steps id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_cutover_steps ALTER COLUMN id SET DEFAULT nextval('public.mc_srv_cutover_steps_id_seq'::regclass);
+
+
+--
+-- Name: mc_srv_dependencies id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_dependencies ALTER COLUMN id SET DEFAULT nextval('public.mc_srv_dependencies_id_seq'::regclass);
+
+
+--
+-- Name: mc_srv_inventory id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_inventory ALTER COLUMN id SET DEFAULT nextval('public.mc_srv_inventory_id_seq'::regclass);
+
+
+--
+-- Name: mc_srv_nic_map id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_nic_map ALTER COLUMN id SET DEFAULT nextval('public.mc_srv_nic_map_id_seq'::regclass);
+
+
+--
+-- Name: mc_srv_performance id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_performance ALTER COLUMN id SET DEFAULT nextval('public.mc_srv_performance_id_seq'::regclass);
+
+
+--
+-- Name: mc_srv_rightsizing id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_rightsizing ALTER COLUMN id SET DEFAULT nextval('public.mc_srv_rightsizing_id_seq'::regclass);
+
+
+--
+-- Name: mc_srv_services id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_services ALTER COLUMN id SET DEFAULT nextval('public.mc_srv_services_id_seq'::regclass);
+
+
+--
+-- Name: mc_srv_storage_map id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_storage_map ALTER COLUMN id SET DEFAULT nextval('public.mc_srv_storage_map_id_seq'::regclass);
+
+
+--
+-- Name: mc_srv_test_cases id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_test_cases ALTER COLUMN id SET DEFAULT nextval('public.mc_srv_test_cases_id_seq'::regclass);
+
+
+--
 -- Name: mcp_tool_registry id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -34786,6 +48123,90 @@ ALTER TABLE ONLY public.mosa_assessments ALTER COLUMN id SET DEFAULT nextval('pu
 
 
 --
+-- Name: nc_advisories id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_advisories ALTER COLUMN id SET DEFAULT nextval('public.nc_advisories_id_seq'::regclass);
+
+
+--
+-- Name: nc_advisory_assessments id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_advisory_assessments ALTER COLUMN id SET DEFAULT nextval('public.nc_advisory_assessments_id_seq'::regclass);
+
+
+--
+-- Name: nc_audit id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_audit ALTER COLUMN id SET DEFAULT nextval('public.nc_audit_id_seq'::regclass);
+
+
+--
+-- Name: nc_case_history id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_case_history ALTER COLUMN id SET DEFAULT nextval('public.nc_case_history_id_seq'::regclass);
+
+
+--
+-- Name: nc_exception_approvals id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_exception_approvals ALTER COLUMN id SET DEFAULT nextval('public.nc_exception_approvals_id_seq'::regclass);
+
+
+--
+-- Name: nc_exceptions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_exceptions ALTER COLUMN id SET DEFAULT nextval('public.nc_exceptions_id_seq'::regclass);
+
+
+--
+-- Name: nc_nqe_audit_log id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_nqe_audit_log ALTER COLUMN id SET DEFAULT nextval('public.nc_nqe_audit_log_id_seq'::regclass);
+
+
+--
+-- Name: nc_nqe_cache id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_nqe_cache ALTER COLUMN id SET DEFAULT nextval('public.nc_nqe_cache_id_seq'::regclass);
+
+
+--
+-- Name: nc_poam_items id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_poam_items ALTER COLUMN id SET DEFAULT nextval('public.nc_poam_items_id_seq'::regclass);
+
+
+--
+-- Name: nc_poam_status_log id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_poam_status_log ALTER COLUMN id SET DEFAULT nextval('public.nc_poam_status_log_id_seq'::regclass);
+
+
+--
+-- Name: nc_remediation_actions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_remediation_actions ALTER COLUMN id SET DEFAULT nextval('public.nc_remediation_actions_id_seq'::regclass);
+
+
+--
+-- Name: nc_remediation_status_log id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_remediation_status_log ALTER COLUMN id SET DEFAULT nextval('public.nc_remediation_status_log_id_seq'::regclass);
+
+
+--
 -- Name: nist_800_207_assessments id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -34835,6 +48256,20 @@ ALTER TABLE ONLY public.noc_audit ALTER COLUMN id SET DEFAULT nextval('public.no
 
 
 --
+-- Name: od_audit id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.od_audit ALTER COLUMN id SET DEFAULT nextval('public.od_audit_id_seq'::regclass);
+
+
+--
+-- Name: odc_otel_events id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.odc_otel_events ALTER COLUMN id SET DEFAULT nextval('public.odc_otel_events_id_seq'::regclass);
+
+
+--
 -- Name: omb_m25_21_assessments id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -34877,6 +48312,13 @@ ALTER TABLE ONLY public.owasp_asi_assessments ALTER COLUMN id SET DEFAULT nextva
 
 
 --
+-- Name: pc_audit id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pc_audit ALTER COLUMN id SET DEFAULT nextval('public.pc_audit_id_seq'::regclass);
+
+
+--
 -- Name: pci_dss_assessments id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -34902,6 +48344,13 @@ ALTER TABLE ONLY public.pmc_audit ALTER COLUMN id SET DEFAULT nextval('public.pm
 --
 
 ALTER TABLE ONLY public.poam_items ALTER COLUMN id SET DEFAULT nextval('public.poam_items_id_seq'::regclass);
+
+
+--
+-- Name: pr_merge_eligibility_events id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pr_merge_eligibility_events ALTER COLUMN id SET DEFAULT nextval('public.pr_merge_eligibility_events_id_seq'::regclass);
 
 
 --
@@ -34975,6 +48424,13 @@ ALTER TABLE ONLY public.qdc_metrics ALTER COLUMN id SET DEFAULT nextval('public.
 
 
 --
+-- Name: rag_citations id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rag_citations ALTER COLUMN id SET DEFAULT nextval('public.rag_citations_id_seq'::regclass);
+
+
+--
 -- Name: rag_ingestion_log id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -34993,6 +48449,13 @@ ALTER TABLE ONLY public.rag_kg_backfill_cursor ALTER COLUMN id SET DEFAULT nextv
 --
 
 ALTER TABLE ONLY public.rag_parent_cache ALTER COLUMN id SET DEFAULT nextval('public.rag_parent_cache_id_seq'::regclass);
+
+
+--
+-- Name: rag_provenance_ledger id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rag_provenance_ledger ALTER COLUMN id SET DEFAULT nextval('public.rag_provenance_ledger_id_seq'::regclass);
 
 
 --
@@ -35045,6 +48508,13 @@ ALTER TABLE ONLY public.review_traceability ALTER COLUMN id SET DEFAULT nextval(
 
 
 --
+-- Name: rfi_company_style_guide id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rfi_company_style_guide ALTER COLUMN id SET DEFAULT nextval('public.rfi_company_style_guide_id_seq'::regclass);
+
+
+--
 -- Name: rls_audit id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -35077,6 +48547,13 @@ ALTER TABLE ONLY public.sbd_assessments ALTER COLUMN id SET DEFAULT nextval('pub
 --
 
 ALTER TABLE ONLY public.sbom_records ALTER COLUMN id SET DEFAULT nextval('public.sbom_records_id_seq'::regclass);
+
+
+--
+-- Name: sc_audit id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sc_audit ALTER COLUMN id SET DEFAULT nextval('public.sc_audit_id_seq'::regclass);
 
 
 --
@@ -35318,10 +48795,24 @@ ALTER TABLE ONLY public.slides_slides ALTER COLUMN slide_id SET DEFAULT nextval(
 
 
 --
+-- Name: slides_templates template_id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slides_templates ALTER COLUMN template_id SET DEFAULT nextval('public.slides_templates_template_id_seq'::regclass);
+
+
+--
 -- Name: smart_encoding_dictionary id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.smart_encoding_dictionary ALTER COLUMN id SET DEFAULT nextval('public.smart_encoding_dictionary_id_seq'::regclass);
+
+
+--
+-- Name: soar_playbook_audit id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.soar_playbook_audit ALTER COLUMN id SET DEFAULT nextval('public.soar_playbook_audit_id_seq'::regclass);
 
 
 --
@@ -35493,6 +48984,20 @@ ALTER TABLE ONLY public.usage_records ALTER COLUMN id SET DEFAULT nextval('publi
 
 
 --
+-- Name: watchdog_alerts id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.watchdog_alerts ALTER COLUMN id SET DEFAULT nextval('public.watchdog_alerts_id_seq'::regclass);
+
+
+--
+-- Name: wfl_credentialing_audit id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wfl_credentialing_audit ALTER COLUMN id SET DEFAULT nextval('public.wfl_credentialing_audit_id_seq'::regclass);
+
+
+--
 -- Name: wg_analysis_findings id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -35511,6 +49016,20 @@ ALTER TABLE ONLY public.wiki_compile_log ALTER COLUMN id SET DEFAULT nextval('pu
 --
 
 ALTER TABLE ONLY public.wiki_pages ALTER COLUMN id SET DEFAULT nextval('public.wiki_pages_id_seq'::regclass);
+
+
+--
+-- Name: zig_activity_completions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.zig_activity_completions ALTER COLUMN id SET DEFAULT nextval('public.zig_activity_completions_id_seq'::regclass);
+
+
+--
+-- Name: zig_maturity_scores id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.zig_maturity_scores ALTER COLUMN id SET DEFAULT nextval('public.zig_maturity_scores_id_seq'::regclass);
 
 
 --
@@ -35565,6 +49084,14 @@ ALTER TABLE ONLY geo_spacial.satellite_imagery_metadata
 
 ALTER TABLE ONLY geo_spacial.satellite_imagery_metadata
     ADD CONSTRAINT satellite_imagery_metadata_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: a2a_discovery_registry a2a_discovery_registry_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.a2a_discovery_registry
+    ADD CONSTRAINT a2a_discovery_registry_pkey PRIMARY KEY (agent_id);
 
 
 --
@@ -35664,6 +49191,30 @@ ALTER TABLE ONLY public.aadc_agent_simulations
 
 
 --
+-- Name: aadc_aimc_model_refs aadc_aimc_model_refs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aadc_aimc_model_refs
+    ADD CONSTRAINT aadc_aimc_model_refs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: aadc_artifacts aadc_artifacts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aadc_artifacts
+    ADD CONSTRAINT aadc_artifacts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: aadc_assessments aadc_assessments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aadc_assessments
+    ADD CONSTRAINT aadc_assessments_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: aadc_ato_reports aadc_ato_reports_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -35672,11 +49223,35 @@ ALTER TABLE ONLY public.aadc_ato_reports
 
 
 --
+-- Name: aadc_audit aadc_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aadc_audit
+    ADD CONSTRAINT aadc_audit_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: aadc_compliance aadc_compliance_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.aadc_compliance
     ADD CONSTRAINT aadc_compliance_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: aadc_confidence_events aadc_confidence_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aadc_confidence_events
+    ADD CONSTRAINT aadc_confidence_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: aadc_cost_estimates aadc_cost_estimates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aadc_cost_estimates
+    ADD CONSTRAINT aadc_cost_estimates_pkey PRIMARY KEY (id);
 
 
 --
@@ -35693,6 +49268,38 @@ ALTER TABLE ONLY public.aadc_deploy_gates
 
 ALTER TABLE ONLY public.aadc_design_events
     ADD CONSTRAINT aadc_design_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: aadc_design_links aadc_design_links_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aadc_design_links
+    ADD CONSTRAINT aadc_design_links_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: aadc_design_links aadc_design_links_src_design_id_tgt_design_id_link_type_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aadc_design_links
+    ADD CONSTRAINT aadc_design_links_src_design_id_tgt_design_id_link_type_key UNIQUE (src_design_id, tgt_design_id, link_type);
+
+
+--
+-- Name: aadc_designs aadc_designs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aadc_designs
+    ADD CONSTRAINT aadc_designs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: aadc_gate_configs aadc_gate_configs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aadc_gate_configs
+    ADD CONSTRAINT aadc_gate_configs_pkey PRIMARY KEY (design_id);
 
 
 --
@@ -35728,6 +49335,14 @@ ALTER TABLE ONLY public.aadc_lint_reports
 
 
 --
+-- Name: aadc_loop_links aadc_loop_links_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aadc_loop_links
+    ADD CONSTRAINT aadc_loop_links_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: aadc_pattern_reports aadc_pattern_reports_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -35760,6 +49375,14 @@ ALTER TABLE ONLY public.aadc_review_comments
 
 
 --
+-- Name: aadc_risk_items aadc_risk_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aadc_risk_items
+    ADD CONSTRAINT aadc_risk_items_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: aadc_safety_graphs aadc_safety_graphs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -35776,11 +49399,75 @@ ALTER TABLE ONLY public.aadc_scorecard_snapshots
 
 
 --
+-- Name: aadc_simulations aadc_simulations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aadc_simulations
+    ADD CONSTRAINT aadc_simulations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: aadc_snippets aadc_snippets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aadc_snippets
+    ADD CONSTRAINT aadc_snippets_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: aadc_templates aadc_templates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aadc_templates
+    ADD CONSTRAINT aadc_templates_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: aadc_threat_models aadc_threat_models_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aadc_threat_models
+    ADD CONSTRAINT aadc_threat_models_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: aadc_twin_snapshots aadc_twin_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aadc_twin_snapshots
+    ADD CONSTRAINT aadc_twin_snapshots_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: aadc_versions aadc_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aadc_versions
+    ADD CONSTRAINT aadc_versions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: aadc_workflow_links aadc_workflow_links_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aadc_workflow_links
+    ADD CONSTRAINT aadc_workflow_links_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: abac_decisions abac_decisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.abac_decisions
     ADD CONSTRAINT abac_decisions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ace_agent_workflows ace_agent_workflows_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ace_agent_workflows
+    ADD CONSTRAINT ace_agent_workflows_pkey PRIMARY KEY (id);
 
 
 --
@@ -35800,11 +49487,35 @@ ALTER TABLE ONLY public.ace_audit_log
 
 
 --
+-- Name: ace_coworker_memory ace_coworker_memory_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ace_coworker_memory
+    ADD CONSTRAINT ace_coworker_memory_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: ace_coworkers ace_coworkers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.ace_coworkers
     ADD CONSTRAINT ace_coworkers_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ace_event_results ace_event_results_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ace_event_results
+    ADD CONSTRAINT ace_event_results_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ace_events ace_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ace_events
+    ADD CONSTRAINT ace_events_pkey PRIMARY KEY (id);
 
 
 --
@@ -35821,6 +49532,102 @@ ALTER TABLE ONLY public.ace_instances
 
 ALTER TABLE ONLY public.ace_messages
     ADD CONSTRAINT ace_messages_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ace_policy_generations ace_policy_generations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ace_policy_generations
+    ADD CONSTRAINT ace_policy_generations_pkey PRIMARY KEY (generation_id);
+
+
+--
+-- Name: ace_preflight_calibration ace_preflight_calibration_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ace_preflight_calibration
+    ADD CONSTRAINT ace_preflight_calibration_pkey PRIMARY KEY (topic);
+
+
+--
+-- Name: ace_preflight_decisions ace_preflight_decisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ace_preflight_decisions
+    ADD CONSTRAINT ace_preflight_decisions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ace_qa_failures ace_qa_failures_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ace_qa_failures
+    ADD CONSTRAINT ace_qa_failures_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ace_qa_runs ace_qa_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ace_qa_runs
+    ADD CONSTRAINT ace_qa_runs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ace_sessions ace_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ace_sessions
+    ADD CONSTRAINT ace_sessions_pkey PRIMARY KEY (session_id);
+
+
+--
+-- Name: ace_sessions ace_sessions_resume_token_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ace_sessions
+    ADD CONSTRAINT ace_sessions_resume_token_key UNIQUE (resume_token);
+
+
+--
+-- Name: ace_skill_candidates ace_skill_candidates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ace_skill_candidates
+    ADD CONSTRAINT ace_skill_candidates_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ace_step_audit_log ace_step_audit_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ace_step_audit_log
+    ADD CONSTRAINT ace_step_audit_log_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ace_team_suggestions ace_team_suggestions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ace_team_suggestions
+    ADD CONSTRAINT ace_team_suggestions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ace_trust_ledger ace_trust_ledger_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ace_trust_ledger
+    ADD CONSTRAINT ace_trust_ledger_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ace_webhook_log ace_webhook_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ace_webhook_log
+    ADD CONSTRAINT ace_webhook_log_pkey PRIMARY KEY (id);
 
 
 --
@@ -37136,6 +50943,22 @@ ALTER TABLE ONLY public.ad_xp_events
 
 
 --
+-- Name: agent_a2a_tasks agent_a2a_tasks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_a2a_tasks
+    ADD CONSTRAINT agent_a2a_tasks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: agent_approval_log agent_approval_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_approval_log
+    ADD CONSTRAINT agent_approval_log_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: agent_benchmark_results agent_benchmark_results_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -37152,6 +50975,38 @@ ALTER TABLE ONLY public.agent_collaboration_history
 
 
 --
+-- Name: agent_coordination agent_coordination_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_coordination
+    ADD CONSTRAINT agent_coordination_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: agent_eval_runs agent_eval_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_eval_runs
+    ADD CONSTRAINT agent_eval_runs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: agent_evals agent_evals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_evals
+    ADD CONSTRAINT agent_evals_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: agent_execution_traces agent_execution_traces_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_execution_traces
+    ADD CONSTRAINT agent_execution_traces_pkey PRIMARY KEY (trace_id);
+
+
+--
 -- Name: agent_executions agent_executions_execution_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -37165,6 +51020,38 @@ ALTER TABLE ONLY public.agent_executions
 
 ALTER TABLE ONLY public.agent_executions
     ADD CONSTRAINT agent_executions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: agent_findings agent_findings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_findings
+    ADD CONSTRAINT agent_findings_pkey PRIMARY KEY (finding_id);
+
+
+--
+-- Name: agent_hitl_pending agent_hitl_pending_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_hitl_pending
+    ADD CONSTRAINT agent_hitl_pending_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: agent_improvement_artifacts agent_improvement_artifacts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_improvement_artifacts
+    ADD CONSTRAINT agent_improvement_artifacts_pkey PRIMARY KEY (artifact_id);
+
+
+--
+-- Name: agent_loop_sessions agent_loop_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_loop_sessions
+    ADD CONSTRAINT agent_loop_sessions_pkey PRIMARY KEY (session_id);
 
 
 --
@@ -37213,6 +51100,22 @@ ALTER TABLE ONLY public.agent_scoped_memory
 
 ALTER TABLE ONLY public.agent_scoped_memory
     ADD CONSTRAINT agent_scoped_memory_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: agent_session_events agent_session_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_session_events
+    ADD CONSTRAINT agent_session_events_pkey PRIMARY KEY (event_id);
+
+
+--
+-- Name: agent_session_policy_state agent_session_policy_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_session_policy_state
+    ADD CONSTRAINT agent_session_policy_state_pkey PRIMARY KEY (session_id, state_key);
 
 
 --
@@ -37288,11 +51191,27 @@ ALTER TABLE ONLY public.agent_trust_scores
 
 
 --
+-- Name: agent_unattended_sessions agent_unattended_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_unattended_sessions
+    ADD CONSTRAINT agent_unattended_sessions_pkey PRIMARY KEY (session_id);
+
+
+--
 -- Name: agent_vetoes agent_vetoes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.agent_vetoes
     ADD CONSTRAINT agent_vetoes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: agent_wakes agent_wakes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_wakes
+    ADD CONSTRAINT agent_wakes_pkey PRIMARY KEY (wake_id);
 
 
 --
@@ -37456,6 +51375,14 @@ ALTER TABLE ONLY public.aiify_posture_snapshots
 
 
 --
+-- Name: aiify_prd_provenance aiify_prd_provenance_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aiify_prd_provenance
+    ADD CONSTRAINT aiify_prd_provenance_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: aiify_roadmaps aiify_roadmaps_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -37480,6 +51407,14 @@ ALTER TABLE ONLY public.aiify_scans
 
 
 --
+-- Name: aiify_schema_migrations aiify_schema_migrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aiify_schema_migrations
+    ADD CONSTRAINT aiify_schema_migrations_pkey PRIMARY KEY (version);
+
+
+--
 -- Name: aiify_scores aiify_scores_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -37501,6 +51436,94 @@ ALTER TABLE ONLY public.aimc_deployment
 
 ALTER TABLE ONLY public.aimc_models
     ADD CONSTRAINT aimc_models_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: aiml_artifacts aiml_artifacts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aiml_artifacts
+    ADD CONSTRAINT aiml_artifacts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: aiml_assessments aiml_assessments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aiml_assessments
+    ADD CONSTRAINT aiml_assessments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: aiml_audit aiml_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aiml_audit
+    ADD CONSTRAINT aiml_audit_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: aiml_designs aiml_designs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aiml_designs
+    ADD CONSTRAINT aiml_designs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: aiml_edges aiml_edges_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aiml_edges
+    ADD CONSTRAINT aiml_edges_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: aiml_nodes aiml_nodes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aiml_nodes
+    ADD CONSTRAINT aiml_nodes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: aiml_simulations aiml_simulations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aiml_simulations
+    ADD CONSTRAINT aiml_simulations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: aiml_snippets aiml_snippets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aiml_snippets
+    ADD CONSTRAINT aiml_snippets_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: aiml_templates aiml_templates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aiml_templates
+    ADD CONSTRAINT aiml_templates_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: aiml_twin_snapshots aiml_twin_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aiml_twin_snapshots
+    ADD CONSTRAINT aiml_twin_snapshots_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: aiml_versions aiml_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aiml_versions
+    ADD CONSTRAINT aiml_versions_pkey PRIMARY KEY (id);
 
 
 --
@@ -37720,6 +51743,14 @@ ALTER TABLE ONLY public.appforge_reflex_state
 
 
 --
+-- Name: approval_items approval_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.approval_items
+    ADD CONSTRAINT approval_items_pkey PRIMARY KEY (item_id);
+
+
+--
 -- Name: approval_workflows approval_workflows_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -37797,6 +51828,14 @@ ALTER TABLE ONLY public.attack_graph_edges
 
 ALTER TABLE ONLY public.attack_graph_nodes
     ADD CONSTRAINT attack_graph_nodes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: audit_chain_genesis audit_chain_genesis_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audit_chain_genesis
+    ADD CONSTRAINT audit_chain_genesis_pkey PRIMARY KEY (chain_start_id);
 
 
 --
@@ -37952,11 +51991,339 @@ ALTER TABLE ONLY public.bayesian_teaching_scores
 
 
 --
+-- Name: bd_alerts bd_alerts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bd_alerts
+    ADD CONSTRAINT bd_alerts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: bd_assessments bd_assessments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bd_assessments
+    ADD CONSTRAINT bd_assessments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: bd_audit bd_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bd_audit
+    ADD CONSTRAINT bd_audit_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: bd_authorized_components bd_authorized_components_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bd_authorized_components
+    ADD CONSTRAINT bd_authorized_components_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: bd_collab_sessions bd_collab_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bd_collab_sessions
+    ADD CONSTRAINT bd_collab_sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: bd_isa_tracker bd_isa_tracker_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bd_isa_tracker
+    ADD CONSTRAINT bd_isa_tracker_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: bd_snippets bd_snippets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bd_snippets
+    ADD CONSTRAINT bd_snippets_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: bd_templates bd_templates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bd_templates
+    ADD CONSTRAINT bd_templates_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: bd_versions bd_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bd_versions
+    ADD CONSTRAINT bd_versions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: bdc_runbooks bdc_runbooks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bdc_runbooks
+    ADD CONSTRAINT bdc_runbooks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: bdc_sops bdc_sops_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bdc_sops
+    ADD CONSTRAINT bdc_sops_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: bi_dashboards bi_dashboards_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bi_dashboards
+    ADD CONSTRAINT bi_dashboards_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: bi_data_sources bi_data_sources_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bi_data_sources
+    ADD CONSTRAINT bi_data_sources_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: bi_generation_log bi_generation_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bi_generation_log
+    ADD CONSTRAINT bi_generation_log_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: blueprint_digests blueprint_digests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.blueprint_digests
     ADD CONSTRAINT blueprint_digests_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: bom_architecture_components bom_architecture_components_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bom_architecture_components
+    ADD CONSTRAINT bom_architecture_components_pkey PRIMARY KEY (component_id);
+
+
+--
+-- Name: bom_audit bom_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bom_audit
+    ADD CONSTRAINT bom_audit_pkey PRIMARY KEY (audit_id);
+
+
+--
+-- Name: bom_cells bom_cells_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bom_cells
+    ADD CONSTRAINT bom_cells_pkey PRIMARY KEY (cell_id);
+
+
+--
+-- Name: bom_cells bom_cells_source_id_sheet_locator_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bom_cells
+    ADD CONSTRAINT bom_cells_source_id_sheet_locator_key UNIQUE (source_id, sheet, locator);
+
+
+--
+-- Name: bom_cluster_members bom_cluster_members_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bom_cluster_members
+    ADD CONSTRAINT bom_cluster_members_pkey PRIMARY KEY (cluster_id, line_id);
+
+
+--
+-- Name: bom_clusters bom_clusters_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bom_clusters
+    ADD CONSTRAINT bom_clusters_pkey PRIMARY KEY (cluster_id);
+
+
+--
+-- Name: bom_coverage bom_coverage_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bom_coverage
+    ADD CONSTRAINT bom_coverage_pkey PRIMARY KEY (coverage_id);
+
+
+--
+-- Name: bom_findings bom_findings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bom_findings
+    ADD CONSTRAINT bom_findings_pkey PRIMARY KEY (finding_id);
+
+
+--
+-- Name: bom_findings bom_findings_project_id_fingerprint_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bom_findings
+    ADD CONSTRAINT bom_findings_project_id_fingerprint_key UNIQUE (project_id, fingerprint);
+
+
+--
+-- Name: bom_inventory_assets bom_inventory_assets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bom_inventory_assets
+    ADD CONSTRAINT bom_inventory_assets_pkey PRIMARY KEY (asset_id);
+
+
+--
+-- Name: bom_inventory_assets bom_inventory_assets_source_id_serial_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bom_inventory_assets
+    ADD CONSTRAINT bom_inventory_assets_source_id_serial_key UNIQUE (source_id, serial);
+
+
+--
+-- Name: bom_line_blocks bom_line_blocks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bom_line_blocks
+    ADD CONSTRAINT bom_line_blocks_pkey PRIMARY KEY (block_id);
+
+
+--
+-- Name: bom_lines bom_lines_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bom_lines
+    ADD CONSTRAINT bom_lines_pkey PRIMARY KEY (line_id);
+
+
+--
+-- Name: bom_lines bom_lines_project_id_line_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bom_lines
+    ADD CONSTRAINT bom_lines_project_id_line_hash_key UNIQUE (project_id, line_hash);
+
+
+--
+-- Name: bom_match_decisions bom_match_decisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bom_match_decisions
+    ADD CONSTRAINT bom_match_decisions_pkey PRIMARY KEY (decision_id);
+
+
+--
+-- Name: bom_option_groups bom_option_groups_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bom_option_groups
+    ADD CONSTRAINT bom_option_groups_pkey PRIMARY KEY (group_id);
+
+
+--
+-- Name: bom_option_members bom_option_members_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bom_option_members
+    ADD CONSTRAINT bom_option_members_pkey PRIMARY KEY (member_id);
+
+
+--
+-- Name: bom_projects bom_projects_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bom_projects
+    ADD CONSTRAINT bom_projects_pkey PRIMARY KEY (project_id);
+
+
+--
+-- Name: bom_rollup_edges bom_rollup_edges_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bom_rollup_edges
+    ADD CONSTRAINT bom_rollup_edges_pkey PRIMARY KEY (edge_id);
+
+
+--
+-- Name: bom_scope_coverage bom_scope_coverage_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bom_scope_coverage
+    ADD CONSTRAINT bom_scope_coverage_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: bom_scope_items bom_scope_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bom_scope_items
+    ADD CONSTRAINT bom_scope_items_pkey PRIMARY KEY (scope_id);
+
+
+--
+-- Name: bom_snapshots bom_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bom_snapshots
+    ADD CONSTRAINT bom_snapshots_pkey PRIMARY KEY (snapshot_id);
+
+
+--
+-- Name: bom_sources bom_sources_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bom_sources
+    ADD CONSTRAINT bom_sources_pkey PRIMARY KEY (source_id);
+
+
+--
+-- Name: bom_sources bom_sources_project_id_content_sha256_source_version_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bom_sources
+    ADD CONSTRAINT bom_sources_project_id_content_sha256_source_version_key UNIQUE (project_id, content_sha256, source_version);
+
+
+--
+-- Name: bom_taxonomy_nodes bom_taxonomy_nodes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bom_taxonomy_nodes
+    ADD CONSTRAINT bom_taxonomy_nodes_pkey PRIMARY KEY (node_id);
+
+
+--
+-- Name: bom_taxonomy_versions bom_taxonomy_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bom_taxonomy_versions
+    ADD CONSTRAINT bom_taxonomy_versions_pkey PRIMARY KEY (taxonomy_id);
+
+
+--
+-- Name: boundary_designs boundary_designs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.boundary_designs
+    ADD CONSTRAINT boundary_designs_pkey PRIMARY KEY (id);
 
 
 --
@@ -38568,6 +52935,14 @@ ALTER TABLE ONLY public.cjis_assessments
 
 
 --
+-- Name: cli_llm_jobs cli_llm_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cli_llm_jobs
+    ADD CONSTRAINT cli_llm_jobs_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: cloud_provider_status cloud_provider_status_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -38605,6 +52980,30 @@ ALTER TABLE ONLY public.cmmc_assessments
 
 ALTER TABLE ONLY public.cmmc_assessments
     ADD CONSTRAINT cmmc_assessments_project_id_practice_id_key UNIQUE (project_id, practice_id);
+
+
+--
+-- Name: cmmc_practice_gaps cmmc_practice_gaps_assessment_id_practice_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cmmc_practice_gaps
+    ADD CONSTRAINT cmmc_practice_gaps_assessment_id_practice_id_key UNIQUE (assessment_id, practice_id);
+
+
+--
+-- Name: cmmc_practice_gaps cmmc_practice_gaps_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cmmc_practice_gaps
+    ADD CONSTRAINT cmmc_practice_gaps_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: cmmc_systems cmmc_systems_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cmmc_systems
+    ADD CONSTRAINT cmmc_systems_pkey PRIMARY KEY (id);
 
 
 --
@@ -38672,6 +53071,14 @@ ALTER TABLE ONLY public.codebase_qa_cache
 
 
 --
+-- Name: coherence_baseline coherence_baseline_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.coherence_baseline
+    ADD CONSTRAINT coherence_baseline_pkey PRIMARY KEY (check_id);
+
+
+--
 -- Name: column_mask_audit column_mask_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -38720,6 +53127,14 @@ ALTER TABLE ONLY public.compliance_evidence_chain
 
 
 --
+-- Name: compliance_gates compliance_gates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.compliance_gates
+    ADD CONSTRAINT compliance_gates_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: compliance_snapshots compliance_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -38749,6 +53164,54 @@ ALTER TABLE ONLY public.compliance_template_ratings
 
 ALTER TABLE ONLY public.compliance_templates
     ADD CONSTRAINT compliance_templates_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: compliance_twin_runs compliance_twin_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.compliance_twin_runs
+    ADD CONSTRAINT compliance_twin_runs_pkey PRIMARY KEY (snapshot_id);
+
+
+--
+-- Name: compliance_twin_snapshots compliance_twin_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.compliance_twin_snapshots
+    ADD CONSTRAINT compliance_twin_snapshots_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: compliance_twin_snapshots compliance_twin_snapshots_snapshot_id_project_id_framework__key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.compliance_twin_snapshots
+    ADD CONSTRAINT compliance_twin_snapshots_snapshot_id_project_id_framework__key UNIQUE (snapshot_id, project_id, framework, control_id);
+
+
+--
+-- Name: compliance_twin_violations compliance_twin_violations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.compliance_twin_violations
+    ADD CONSTRAINT compliance_twin_violations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: component_audit_log component_audit_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.component_audit_log
+    ADD CONSTRAINT component_audit_log_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: component_heal_log component_heal_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.component_heal_log
+    ADD CONSTRAINT component_heal_log_pkey PRIMARY KEY (id);
 
 
 --
@@ -38813,6 +53276,70 @@ ALTER TABLE ONLY public.control_narratives
 
 ALTER TABLE ONLY public.control_narratives
     ADD CONSTRAINT control_narratives_project_id_control_id_key UNIQUE (project_id, control_id);
+
+
+--
+-- Name: cortex_audit cortex_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cortex_audit
+    ADD CONSTRAINT cortex_audit_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: cortex_chat_sessions cortex_chat_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cortex_chat_sessions
+    ADD CONSTRAINT cortex_chat_sessions_pkey PRIMARY KEY (session_id);
+
+
+--
+-- Name: cortex_entity_findings cortex_entity_findings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cortex_entity_findings
+    ADD CONSTRAINT cortex_entity_findings_pkey PRIMARY KEY (finding_id);
+
+
+--
+-- Name: cortex_finding_runs cortex_finding_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cortex_finding_runs
+    ADD CONSTRAINT cortex_finding_runs_pkey PRIMARY KEY (tenant_id);
+
+
+--
+-- Name: cortex_messages cortex_messages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cortex_messages
+    ADD CONSTRAINT cortex_messages_pkey PRIMARY KEY (message_id);
+
+
+--
+-- Name: cortex_search_history cortex_search_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cortex_search_history
+    ADD CONSTRAINT cortex_search_history_pkey PRIMARY KEY (query_id);
+
+
+--
+-- Name: cortex_sessions cortex_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cortex_sessions
+    ADD CONSTRAINT cortex_sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: coworker_dic_contexts coworker_dic_contexts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.coworker_dic_contexts
+    ADD CONSTRAINT coworker_dic_contexts_pkey PRIMARY KEY (id);
 
 
 --
@@ -39029,6 +53556,14 @@ ALTER TABLE ONLY public.creative_competitors
 
 ALTER TABLE ONLY public.creative_feature_gaps
     ADD CONSTRAINT creative_feature_gaps_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: creative_gap creative_gap_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.creative_gap
+    ADD CONSTRAINT creative_gap_pkey PRIMARY KEY (id);
 
 
 --
@@ -39280,6 +53815,14 @@ ALTER TABLE ONLY public.data_classifications
 
 
 --
+-- Name: data_designs data_designs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.data_designs
+    ADD CONSTRAINT data_designs_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: data_edges data_edges_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -39301,6 +53844,14 @@ ALTER TABLE ONLY public.data_nodes
 
 ALTER TABLE ONLY public.data_twin_snapshots
     ADD CONSTRAINT data_twin_snapshots_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: databridge_agent_access_log databridge_agent_access_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.databridge_agent_access_log
+    ADD CONSTRAINT databridge_agent_access_log_pkey PRIMARY KEY (id);
 
 
 --
@@ -39528,6 +54079,70 @@ ALTER TABLE ONLY public.db_sync_log
 
 
 --
+-- Name: dd_anomaly_runs dd_anomaly_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dd_anomaly_runs
+    ADD CONSTRAINT dd_anomaly_runs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dd_assessments dd_assessments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dd_assessments
+    ADD CONSTRAINT dd_assessments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dd_audit dd_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dd_audit
+    ADD CONSTRAINT dd_audit_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dd_collab_sessions dd_collab_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dd_collab_sessions
+    ADD CONSTRAINT dd_collab_sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dd_data_contracts dd_data_contracts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dd_data_contracts
+    ADD CONSTRAINT dd_data_contracts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dd_explore_profiles dd_explore_profiles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dd_explore_profiles
+    ADD CONSTRAINT dd_explore_profiles_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dd_explore_sessions dd_explore_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dd_explore_sessions
+    ADD CONSTRAINT dd_explore_sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dd_field_mappings dd_field_mappings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dd_field_mappings
+    ADD CONSTRAINT dd_field_mappings_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: dd_freshness_alerts dd_freshness_alerts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -39544,11 +54159,123 @@ ALTER TABLE ONLY public.dd_freshness_runs
 
 
 --
+-- Name: dd_lineage dd_lineage_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dd_lineage
+    ADD CONSTRAINT dd_lineage_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dd_mapping_sessions dd_mapping_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dd_mapping_sessions
+    ADD CONSTRAINT dd_mapping_sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dd_mapping_transforms dd_mapping_transforms_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dd_mapping_transforms
+    ADD CONSTRAINT dd_mapping_transforms_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dd_migration_jobs dd_migration_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dd_migration_jobs
+    ADD CONSTRAINT dd_migration_jobs_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: dd_pii_scans dd_pii_scans_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.dd_pii_scans
     ADD CONSTRAINT dd_pii_scans_pkey PRIMARY KEY (scan_id);
+
+
+--
+-- Name: dd_quality_rules dd_quality_rules_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dd_quality_rules
+    ADD CONSTRAINT dd_quality_rules_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dd_quality_runs dd_quality_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dd_quality_runs
+    ADD CONSTRAINT dd_quality_runs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dd_query_history dd_query_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dd_query_history
+    ADD CONSTRAINT dd_query_history_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dd_snippets dd_snippets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dd_snippets
+    ADD CONSTRAINT dd_snippets_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dd_templates dd_templates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dd_templates
+    ADD CONSTRAINT dd_templates_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dd_versions dd_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dd_versions
+    ADD CONSTRAINT dd_versions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ddc_runbook_executions ddc_runbook_executions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ddc_runbook_executions
+    ADD CONSTRAINT ddc_runbook_executions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ddc_runbooks ddc_runbooks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ddc_runbooks
+    ADD CONSTRAINT ddc_runbooks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ddc_sop_approvals ddc_sop_approvals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ddc_sop_approvals
+    ADD CONSTRAINT ddc_sop_approvals_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ddc_sops ddc_sops_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ddc_sops
+    ADD CONSTRAINT ddc_sops_pkey PRIMARY KEY (id);
 
 
 --
@@ -39613,6 +54340,22 @@ ALTER TABLE ONLY public.des_compliance
 
 ALTER TABLE ONLY public.des_execution_events
     ADD CONSTRAINT des_execution_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: detector_findings detector_findings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.detector_findings
+    ADD CONSTRAINT detector_findings_pkey PRIMARY KEY (finding_id);
+
+
+--
+-- Name: detector_runs detector_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.detector_runs
+    ADD CONSTRAINT detector_runs_pkey PRIMARY KEY (detector);
 
 
 --
@@ -39736,11 +54479,43 @@ ALTER TABLE ONLY public.dic_collections
 
 
 --
+-- Name: dic_community_summaries dic_community_summaries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dic_community_summaries
+    ADD CONSTRAINT dic_community_summaries_pkey PRIMARY KEY (summary_id);
+
+
+--
+-- Name: dic_cross_references dic_cross_references_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dic_cross_references
+    ADD CONSTRAINT dic_cross_references_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: dic_doc_freshness dic_doc_freshness_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.dic_doc_freshness
     ADD CONSTRAINT dic_doc_freshness_pkey PRIMARY KEY (doc_id);
+
+
+--
+-- Name: dic_doc_views dic_doc_views_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dic_doc_views
+    ADD CONSTRAINT dic_doc_views_pkey PRIMARY KEY (view_id);
+
+
+--
+-- Name: dic_docdrift_resolutions dic_docdrift_resolutions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dic_docdrift_resolutions
+    ADD CONSTRAINT dic_docdrift_resolutions_pkey PRIMARY KEY (resolution_id);
 
 
 --
@@ -39757,6 +54532,14 @@ ALTER TABLE ONLY public.dic_documents
 
 ALTER TABLE ONLY public.dic_drift_events
     ADD CONSTRAINT dic_drift_events_pkey PRIMARY KEY (event_id);
+
+
+--
+-- Name: dic_edit_history dic_edit_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dic_edit_history
+    ADD CONSTRAINT dic_edit_history_pkey PRIMARY KEY (edit_id);
 
 
 --
@@ -39808,6 +54591,14 @@ ALTER TABLE ONLY public.dic_ft_models
 
 
 --
+-- Name: dic_generated_outputs dic_generated_outputs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dic_generated_outputs
+    ADD CONSTRAINT dic_generated_outputs_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: dic_handoff_items dic_handoff_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -39832,11 +54623,43 @@ ALTER TABLE ONLY public.dic_ingest_jobs
 
 
 --
+-- Name: dic_presence_sessions dic_presence_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dic_presence_sessions
+    ADD CONSTRAINT dic_presence_sessions_pkey PRIMARY KEY (session_key);
+
+
+--
+-- Name: dic_processed_canvas_events dic_processed_canvas_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dic_processed_canvas_events
+    ADD CONSTRAINT dic_processed_canvas_events_pkey PRIMARY KEY (event_id);
+
+
+--
 -- Name: dic_review_notes dic_review_notes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.dic_review_notes
     ADD CONSTRAINT dic_review_notes_pkey PRIMARY KEY (note_id);
+
+
+--
+-- Name: dic_section_annotations dic_section_annotations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dic_section_annotations
+    ADD CONSTRAINT dic_section_annotations_pkey PRIMARY KEY (ann_id);
+
+
+--
+-- Name: dic_section_locks dic_section_locks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dic_section_locks
+    ADD CONSTRAINT dic_section_locks_pkey PRIMARY KEY (lock_id);
 
 
 --
@@ -39853,6 +54676,22 @@ ALTER TABLE ONLY public.dic_sections
 
 ALTER TABLE ONLY public.dic_ssp_fragments
     ADD CONSTRAINT dic_ssp_fragments_pkey PRIMARY KEY (fragment_id);
+
+
+--
+-- Name: dic_suggestion_decisions dic_suggestion_decisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dic_suggestion_decisions
+    ADD CONSTRAINT dic_suggestion_decisions_pkey PRIMARY KEY (decision_id);
+
+
+--
+-- Name: dic_suggestions dic_suggestions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dic_suggestions
+    ADD CONSTRAINT dic_suggestions_pkey PRIMARY KEY (suggestion_id);
 
 
 --
@@ -39904,11 +54743,259 @@ ALTER TABLE ONLY public.dispatcher_mode_overrides
 
 
 --
+-- Name: dm_audit dm_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dm_audit
+    ADD CONSTRAINT dm_audit_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dm_catalog_entries dm_catalog_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dm_catalog_entries
+    ADD CONSTRAINT dm_catalog_entries_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dm_contract_test_runs dm_contract_test_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dm_contract_test_runs
+    ADD CONSTRAINT dm_contract_test_runs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dm_contracts dm_contracts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dm_contracts
+    ADD CONSTRAINT dm_contracts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dm_csp_sync_log dm_csp_sync_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dm_csp_sync_log
+    ADD CONSTRAINT dm_csp_sync_log_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dm_data_contracts dm_data_contracts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dm_data_contracts
+    ADD CONSTRAINT dm_data_contracts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dm_data_products dm_data_products_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dm_data_products
+    ADD CONSTRAINT dm_data_products_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dm_domain_maturity dm_domain_maturity_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dm_domain_maturity
+    ADD CONSTRAINT dm_domain_maturity_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dm_domains dm_domains_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dm_domains
+    ADD CONSTRAINT dm_domains_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dm_governance_policies dm_governance_policies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dm_governance_policies
+    ADD CONSTRAINT dm_governance_policies_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dm_input_ports dm_input_ports_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dm_input_ports
+    ADD CONSTRAINT dm_input_ports_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dm_opa_policies dm_opa_policies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dm_opa_policies
+    ADD CONSTRAINT dm_opa_policies_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dm_output_ports dm_output_ports_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dm_output_ports
+    ADD CONSTRAINT dm_output_ports_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dm_policy_audit_log dm_policy_audit_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dm_policy_audit_log
+    ADD CONSTRAINT dm_policy_audit_log_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: dm_ports dm_ports_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.dm_ports
     ADD CONSTRAINT dm_ports_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dm_product_slas dm_product_slas_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dm_product_slas
+    ADD CONSTRAINT dm_product_slas_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dm_product_subscriptions dm_product_subscriptions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dm_product_subscriptions
+    ADD CONSTRAINT dm_product_subscriptions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: docmod_catalog_audit docmod_catalog_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.docmod_catalog_audit
+    ADD CONSTRAINT docmod_catalog_audit_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: docmod_catalog_entries docmod_catalog_entries_domain_category_vendor_product_versi_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.docmod_catalog_entries
+    ADD CONSTRAINT docmod_catalog_entries_domain_category_vendor_product_versi_key UNIQUE (domain, category, vendor, product, version);
+
+
+--
+-- Name: docmod_catalog_entries docmod_catalog_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.docmod_catalog_entries
+    ADD CONSTRAINT docmod_catalog_entries_pkey PRIMARY KEY (entry_id);
+
+
+--
+-- Name: docmod_defacto_standards docmod_defacto_standards_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.docmod_defacto_standards
+    ADD CONSTRAINT docmod_defacto_standards_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: docmod_doc_scan_state docmod_doc_scan_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.docmod_doc_scan_state
+    ADD CONSTRAINT docmod_doc_scan_state_pkey PRIMARY KEY (doc_id);
+
+
+--
+-- Name: docmod_eol_products docmod_eol_products_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.docmod_eol_products
+    ADD CONSTRAINT docmod_eol_products_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: docmod_eol_products docmod_eol_products_product_cycle_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.docmod_eol_products
+    ADD CONSTRAINT docmod_eol_products_product_cycle_key UNIQUE (product, cycle);
+
+
+--
+-- Name: docmod_findings docmod_findings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.docmod_findings
+    ADD CONSTRAINT docmod_findings_pkey PRIMARY KEY (finding_id);
+
+
+--
+-- Name: docmod_nist_pubs docmod_nist_pubs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.docmod_nist_pubs
+    ADD CONSTRAINT docmod_nist_pubs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: docmod_nist_pubs docmod_nist_pubs_pub_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.docmod_nist_pubs
+    ADD CONSTRAINT docmod_nist_pubs_pub_id_key UNIQUE (pub_id);
+
+
+--
+-- Name: docmod_scan_runs docmod_scan_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.docmod_scan_runs
+    ADD CONSTRAINT docmod_scan_runs_pkey PRIMARY KEY (run_id);
+
+
+--
+-- Name: document_aggregation_findings document_aggregation_findings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.document_aggregation_findings
+    ADD CONSTRAINT document_aggregation_findings_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: documents documents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.documents
+    ADD CONSTRAINT documents_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: domain_coverage domain_coverage_domain_category_pattern_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.domain_coverage
+    ADD CONSTRAINT domain_coverage_domain_category_pattern_id_key UNIQUE (domain_category, pattern_id);
+
+
+--
+-- Name: domain_coverage domain_coverage_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.domain_coverage
+    ADD CONSTRAINT domain_coverage_pkey PRIMARY KEY (id);
 
 
 --
@@ -40016,6 +55103,14 @@ ALTER TABLE ONLY public.dsoc_threats
 
 
 --
+-- Name: dynamic_findings dynamic_findings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dynamic_findings
+    ADD CONSTRAINT dynamic_findings_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: egress_policy_audit egress_policy_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -40072,6 +55167,30 @@ ALTER TABLE ONLY public.encryption_keys
 
 
 --
+-- Name: entitlements entitlements_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.entitlements
+    ADD CONSTRAINT entitlements_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: entitlements entitlements_principal_id_entitlement_tenant_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.entitlements
+    ADD CONSTRAINT entitlements_principal_id_entitlement_tenant_id_key UNIQUE (principal_id, entitlement, tenant_id);
+
+
+--
+-- Name: entity_currency entity_currency_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.entity_currency
+    ADD CONSTRAINT entity_currency_pkey PRIMARY KEY (record_id);
+
+
+--
 -- Name: eu_ai_act_assessments eu_ai_act_assessments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -40085,6 +55204,14 @@ ALTER TABLE ONLY public.eu_ai_act_assessments
 
 ALTER TABLE ONLY public.eu_ai_act_assessments
     ADD CONSTRAINT eu_ai_act_assessments_project_id_requirement_id_key UNIQUE (project_id, requirement_id);
+
+
+--
+-- Name: evidence_items evidence_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.evidence_items
+    ADD CONSTRAINT evidence_items_pkey PRIMARY KEY (id);
 
 
 --
@@ -40181,6 +55308,38 @@ ALTER TABLE ONLY public.fa_achievements
 
 ALTER TABLE ONLY public.fa_achievements
     ADD CONSTRAINT fa_achievements_slug_key UNIQUE (slug);
+
+
+--
+-- Name: fa_assessment_items fa_assessment_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fa_assessment_items
+    ADD CONSTRAINT fa_assessment_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: fa_assessment_items fa_assessment_items_step_id_item_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fa_assessment_items
+    ADD CONSTRAINT fa_assessment_items_step_id_item_key_key UNIQUE (step_id, item_key);
+
+
+--
+-- Name: fa_assignments fa_assignments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fa_assignments
+    ADD CONSTRAINT fa_assignments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: fa_certificate_evidence fa_certificate_evidence_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fa_certificate_evidence
+    ADD CONSTRAINT fa_certificate_evidence_pkey PRIMARY KEY (id);
 
 
 --
@@ -40304,6 +55463,22 @@ ALTER TABLE ONLY public.fa_guilds
 
 
 --
+-- Name: fa_instructor_audit fa_instructor_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fa_instructor_audit
+    ADD CONSTRAINT fa_instructor_audit_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: fa_instructor_reviews fa_instructor_reviews_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fa_instructor_reviews
+    ADD CONSTRAINT fa_instructor_reviews_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: fa_leaderboard_cache fa_leaderboard_cache_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -40405,6 +55580,30 @@ ALTER TABLE ONLY public.fa_skill_nodes
 
 ALTER TABLE ONLY public.fa_skill_nodes
     ADD CONSTRAINT fa_skill_nodes_slug_key UNIQUE (slug);
+
+
+--
+-- Name: fa_step_assessment_policy fa_step_assessment_policy_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fa_step_assessment_policy
+    ADD CONSTRAINT fa_step_assessment_policy_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: fa_step_assessment_policy fa_step_assessment_policy_step_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fa_step_assessment_policy
+    ADD CONSTRAINT fa_step_assessment_policy_step_id_key UNIQUE (step_id);
+
+
+--
+-- Name: fa_step_attempts fa_step_attempts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fa_step_attempts
+    ADD CONSTRAINT fa_step_attempts_pkey PRIMARY KEY (id);
 
 
 --
@@ -40512,6 +55711,14 @@ ALTER TABLE ONLY public.fa_workflow_submissions
 
 
 --
+-- Name: fa_xp_ledger fa_xp_ledger_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fa_xp_ledger
+    ADD CONSTRAINT fa_xp_ledger_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: fabric_assets fabric_assets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -40568,6 +55775,14 @@ ALTER TABLE ONLY public.fedramp_assessments
 
 
 --
+-- Name: fedramp_ato_packages fedramp_ato_packages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fedramp_ato_packages
+    ADD CONSTRAINT fedramp_ato_packages_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: fedramp_controls fedramp_controls_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -40592,11 +55807,43 @@ ALTER TABLE ONLY public.finding_approvals
 
 
 --
+-- Name: finding_replay_attempts finding_replay_attempts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.finding_replay_attempts
+    ADD CONSTRAINT finding_replay_attempts_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: fine_tuning_datasets fine_tuning_datasets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.fine_tuning_datasets
     ADD CONSTRAINT fine_tuning_datasets_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: finetune_eval_results finetune_eval_results_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.finetune_eval_results
+    ADD CONSTRAINT finetune_eval_results_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: finetune_jobs finetune_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.finetune_jobs
+    ADD CONSTRAINT finetune_jobs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: finetune_metrics finetune_metrics_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.finetune_metrics
+    ADD CONSTRAINT finetune_metrics_pkey PRIMARY KEY (id);
 
 
 --
@@ -40640,6 +55887,22 @@ ALTER TABLE ONLY public.firmware_vex_records
 
 
 --
+-- Name: forecast_audit forecast_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.forecast_audit
+    ADD CONSTRAINT forecast_audit_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: forecast_jobs forecast_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.forecast_jobs
+    ADD CONSTRAINT forecast_jobs_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: forge_hub_ratings forge_hub_ratings_connector_id_user_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -40669,6 +55932,62 @@ ALTER TABLE ONLY public.forge_hub_trust_scores
 
 ALTER TABLE ONLY public.formal_verification_results
     ADD CONSTRAINT formal_verification_results_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: foundry_concepts foundry_concepts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.foundry_concepts
+    ADD CONSTRAINT foundry_concepts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: foundry_concepts foundry_concepts_slug_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.foundry_concepts
+    ADD CONSTRAINT foundry_concepts_slug_key UNIQUE (slug);
+
+
+--
+-- Name: foundry_outcomes foundry_outcomes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.foundry_outcomes
+    ADD CONSTRAINT foundry_outcomes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: foundry_runs foundry_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.foundry_runs
+    ADD CONSTRAINT foundry_runs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: foundry_signals foundry_signals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.foundry_signals
+    ADD CONSTRAINT foundry_signals_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: foundry_specs foundry_specs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.foundry_specs
+    ADD CONSTRAINT foundry_specs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: foundry_tasks_emitted foundry_tasks_emitted_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.foundry_tasks_emitted
+    ADD CONSTRAINT foundry_tasks_emitted_pkey PRIMARY KEY (id);
 
 
 --
@@ -40872,6 +56191,14 @@ ALTER TABLE ONLY public.gao_ai_assessments
 
 
 --
+-- Name: gate_failures gate_failures_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.gate_failures
+    ADD CONSTRAINT gate_failures_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: gd_ai_artifacts gd_ai_artifacts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -41032,6 +56359,22 @@ ALTER TABLE ONLY public.genesis_learned_goals
 
 
 --
+-- Name: genesis_outputs genesis_outputs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.genesis_outputs
+    ADD CONSTRAINT genesis_outputs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: genesis_phase_log genesis_phase_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.genesis_phase_log
+    ADD CONSTRAINT genesis_phase_log_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: genesis_reflex_log genesis_reflex_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -41040,19 +56383,19 @@ ALTER TABLE ONLY public.genesis_reflex_log
 
 
 --
--- Name: genesis_reflexes genesis_reflexes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.genesis_reflexes
-    ADD CONSTRAINT genesis_reflexes_pkey PRIMARY KEY (id);
-
-
---
 -- Name: genesis_reflex_state genesis_reflex_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.genesis_reflex_state
     ADD CONSTRAINT genesis_reflex_state_pkey PRIMARY KEY (reflex_name);
+
+
+--
+-- Name: genesis_reflexes genesis_reflexes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.genesis_reflexes
+    ADD CONSTRAINT genesis_reflexes_pkey PRIMARY KEY (id);
 
 
 --
@@ -41088,11 +56431,35 @@ ALTER TABLE ONLY public.genome_versions
 
 
 --
+-- Name: geoint_events geoint_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.geoint_events
+    ADD CONSTRAINT geoint_events_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: ghost_track_predictions ghost_track_predictions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.ghost_track_predictions
     ADD CONSTRAINT ghost_track_predictions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: github_inbox github_inbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_inbox
+    ADD CONSTRAINT github_inbox_pkey PRIMARY KEY (comment_id);
+
+
+--
+-- Name: gitlab_inbox gitlab_inbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.gitlab_inbox
+    ADD CONSTRAINT gitlab_inbox_pkey PRIMARY KEY (note_id);
 
 
 --
@@ -41285,6 +56652,14 @@ ALTER TABLE ONLY public.govlift_rollback_events
 
 ALTER TABLE ONLY public.govlift_runbook_executions
     ADD CONSTRAINT govlift_runbook_executions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: govlift_runbook_step_results govlift_runbook_step_results_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.govlift_runbook_step_results
+    ADD CONSTRAINT govlift_runbook_step_results_pkey PRIMARY KEY (id);
 
 
 --
@@ -41624,6 +56999,70 @@ ALTER TABLE ONLY public.idc_versions
 
 
 --
+-- Name: idp_rule_exemptions idp_rule_exemptions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.idp_rule_exemptions
+    ADD CONSTRAINT idp_rule_exemptions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: idp_scorecard_history idp_scorecard_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.idp_scorecard_history
+    ADD CONSTRAINT idp_scorecard_history_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: idr_analyses idr_analyses_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.idr_analyses
+    ADD CONSTRAINT idr_analyses_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: idr_artifacts idr_artifacts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.idr_artifacts
+    ADD CONSTRAINT idr_artifacts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: idr_conflicts idr_conflicts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.idr_conflicts
+    ADD CONSTRAINT idr_conflicts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: idr_publish_audit idr_publish_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.idr_publish_audit
+    ADD CONSTRAINT idr_publish_audit_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: idr_sessions idr_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.idr_sessions
+    ADD CONSTRAINT idr_sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: idr_uploads idr_uploads_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.idr_uploads
+    ADD CONSTRAINT idr_uploads_pkey PRIMARY KEY (upload_id);
+
+
+--
 -- Name: il5_ingestion_log il5_ingestion_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -41728,6 +57167,14 @@ ALTER TABLE ONLY public.innovation_feedback
 
 
 --
+-- Name: innovation_signal innovation_signal_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.innovation_signal
+    ADD CONSTRAINT innovation_signal_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: innovation_signals innovation_signals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -41765,6 +57212,22 @@ ALTER TABLE ONLY public.innovation_trends
 
 ALTER TABLE ONLY public.innovation_triage_log
     ADD CONSTRAINT innovation_triage_log_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: insider_risk_baselines insider_risk_baselines_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.insider_risk_baselines
+    ADD CONSTRAINT insider_risk_baselines_pkey PRIMARY KEY (account_id);
+
+
+--
+-- Name: insider_risk_scores insider_risk_scores_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.insider_risk_scores
+    ADD CONSTRAINT insider_risk_scores_pkey PRIMARY KEY (id);
 
 
 --
@@ -42040,6 +57503,14 @@ ALTER TABLE ONLY public.kanban_task_revivals
 
 
 --
+-- Name: kanban_task_subscriptions kanban_task_subscriptions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.kanban_task_subscriptions
+    ADD CONSTRAINT kanban_task_subscriptions_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: kanban_task_tags kanban_task_tags_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -42221,6 +57692,14 @@ ALTER TABLE ONLY public.legacy_dependencies
 
 ALTER TABLE ONLY public.llm_chain_telemetry
     ADD CONSTRAINT llm_chain_telemetry_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: llm_context_compression_log llm_context_compression_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.llm_context_compression_log
+    ADD CONSTRAINT llm_context_compression_log_pkey PRIMARY KEY (id);
 
 
 --
@@ -42432,6 +57911,502 @@ ALTER TABLE ONLY public.marketplace_versions
 
 
 --
+-- Name: markitdown_conversions markitdown_conversions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.markitdown_conversions
+    ADD CONSTRAINT markitdown_conversions_pkey PRIMARY KEY (conversion_id);
+
+
+--
+-- Name: mattermost_inbox mattermost_inbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mattermost_inbox
+    ADD CONSTRAINT mattermost_inbox_pkey PRIMARY KEY (post_id);
+
+
+--
+-- Name: mc_ai_opportunities mc_ai_opportunities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_ai_opportunities
+    ADD CONSTRAINT mc_ai_opportunities_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_app_data_sources mc_app_data_sources_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_app_data_sources
+    ADD CONSTRAINT mc_app_data_sources_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_app_inventory mc_app_inventory_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_app_inventory
+    ADD CONSTRAINT mc_app_inventory_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_app_migration_steps mc_app_migration_steps_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_app_migration_steps
+    ADD CONSTRAINT mc_app_migration_steps_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_assessments mc_assessments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_assessments
+    ADD CONSTRAINT mc_assessments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_audit mc_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_audit
+    ADD CONSTRAINT mc_audit_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_cloud_instances mc_cloud_instances_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_cloud_instances
+    ADD CONSTRAINT mc_cloud_instances_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_compliance_checks mc_compliance_checks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_compliance_checks
+    ADD CONSTRAINT mc_compliance_checks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_data_migration mc_data_migration_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_data_migration
+    ADD CONSTRAINT mc_data_migration_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_migration_waves mc_migration_waves_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_migration_waves
+    ADD CONSTRAINT mc_migration_waves_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_net_ai_sessions mc_net_ai_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_ai_sessions
+    ADD CONSTRAINT mc_net_ai_sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_net_coa_questions mc_net_coa_questions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_coa_questions
+    ADD CONSTRAINT mc_net_coa_questions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_net_coa_questions mc_net_coa_questions_session_id_question_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_coa_questions
+    ADD CONSTRAINT mc_net_coa_questions_session_id_question_key_key UNIQUE (session_id, question_key);
+
+
+--
+-- Name: mc_net_compat_checks mc_net_compat_checks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_compat_checks
+    ADD CONSTRAINT mc_net_compat_checks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_net_config_map mc_net_config_map_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_config_map
+    ADD CONSTRAINT mc_net_config_map_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_net_config_questions mc_net_config_questions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_config_questions
+    ADD CONSTRAINT mc_net_config_questions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_net_config_questions mc_net_config_questions_session_id_question_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_config_questions
+    ADD CONSTRAINT mc_net_config_questions_session_id_question_key_key UNIQUE (session_id, question_key);
+
+
+--
+-- Name: mc_net_config_validation mc_net_config_validation_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_config_validation
+    ADD CONSTRAINT mc_net_config_validation_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_net_cutover_steps mc_net_cutover_steps_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_cutover_steps
+    ADD CONSTRAINT mc_net_cutover_steps_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_net_eol_data mc_net_eol_data_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_eol_data
+    ADD CONSTRAINT mc_net_eol_data_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_net_erb_metadata mc_net_erb_metadata_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_erb_metadata
+    ADD CONSTRAINT mc_net_erb_metadata_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_net_parallel_timelines mc_net_parallel_timelines_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_parallel_timelines
+    ADD CONSTRAINT mc_net_parallel_timelines_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_net_port_map mc_net_port_map_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_port_map
+    ADD CONSTRAINT mc_net_port_map_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_net_protocol_plans mc_net_protocol_plans_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_protocol_plans
+    ADD CONSTRAINT mc_net_protocol_plans_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_net_protocol_plans mc_net_protocol_plans_session_id_protocol_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_protocol_plans
+    ADD CONSTRAINT mc_net_protocol_plans_session_id_protocol_key UNIQUE (session_id, protocol);
+
+
+--
+-- Name: mc_net_sessions mc_net_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_sessions
+    ADD CONSTRAINT mc_net_sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_net_test_cases mc_net_test_cases_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_test_cases
+    ADD CONSTRAINT mc_net_test_cases_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_net_topology_neighbors mc_net_topology_neighbors_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_topology_neighbors
+    ADD CONSTRAINT mc_net_topology_neighbors_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_oracle_predictions mc_oracle_predictions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_oracle_predictions
+    ADD CONSTRAINT mc_oracle_predictions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_project_phase_sops mc_project_phase_sops_phase_id_sop_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_project_phase_sops
+    ADD CONSTRAINT mc_project_phase_sops_phase_id_sop_id_key UNIQUE (phase_id, sop_id);
+
+
+--
+-- Name: mc_project_phase_sops mc_project_phase_sops_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_project_phase_sops
+    ADD CONSTRAINT mc_project_phase_sops_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_project_phases mc_project_phases_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_project_phases
+    ADD CONSTRAINT mc_project_phases_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_projects mc_projects_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_projects
+    ADD CONSTRAINT mc_projects_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_refactor_jobs mc_refactor_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_refactor_jobs
+    ADD CONSTRAINT mc_refactor_jobs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_runbooks mc_runbooks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_runbooks
+    ADD CONSTRAINT mc_runbooks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_server_dependencies mc_server_dependencies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_server_dependencies
+    ADD CONSTRAINT mc_server_dependencies_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_snippets mc_snippets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_snippets
+    ADD CONSTRAINT mc_snippets_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_sops mc_sops_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_sops
+    ADD CONSTRAINT mc_sops_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_srv_compat_checks mc_srv_compat_checks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_compat_checks
+    ADD CONSTRAINT mc_srv_compat_checks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_srv_cutover_steps mc_srv_cutover_steps_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_cutover_steps
+    ADD CONSTRAINT mc_srv_cutover_steps_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_srv_dependencies mc_srv_dependencies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_dependencies
+    ADD CONSTRAINT mc_srv_dependencies_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_srv_erb_metadata mc_srv_erb_metadata_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_erb_metadata
+    ADD CONSTRAINT mc_srv_erb_metadata_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_srv_hypervisor_sessions mc_srv_hypervisor_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_hypervisor_sessions
+    ADD CONSTRAINT mc_srv_hypervisor_sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_srv_inventory mc_srv_inventory_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_inventory
+    ADD CONSTRAINT mc_srv_inventory_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_srv_nic_map mc_srv_nic_map_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_nic_map
+    ADD CONSTRAINT mc_srv_nic_map_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_srv_performance mc_srv_performance_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_performance
+    ADD CONSTRAINT mc_srv_performance_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_srv_post_migration_tests mc_srv_post_migration_tests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_post_migration_tests
+    ADD CONSTRAINT mc_srv_post_migration_tests_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_srv_rightsizing mc_srv_rightsizing_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_rightsizing
+    ADD CONSTRAINT mc_srv_rightsizing_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_srv_services mc_srv_services_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_services
+    ADD CONSTRAINT mc_srv_services_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_srv_sessions mc_srv_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_sessions
+    ADD CONSTRAINT mc_srv_sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_srv_storage_map mc_srv_storage_map_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_storage_map
+    ADD CONSTRAINT mc_srv_storage_map_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_srv_test_cases mc_srv_test_cases_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_test_cases
+    ADD CONSTRAINT mc_srv_test_cases_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_templates mc_templates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_templates
+    ADD CONSTRAINT mc_templates_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_versions mc_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_versions
+    ADD CONSTRAINT mc_versions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_wave_backout mc_wave_backout_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_wave_backout
+    ADD CONSTRAINT mc_wave_backout_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_wave_close_overrides mc_wave_close_overrides_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_wave_close_overrides
+    ADD CONSTRAINT mc_wave_close_overrides_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_wave_plans mc_wave_plans_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_wave_plans
+    ADD CONSTRAINT mc_wave_plans_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mc_workload_validations mc_workload_validations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_workload_validations
+    ADD CONSTRAINT mc_workload_validations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mcip_dat_events mcip_dat_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mcip_dat_events
+    ADD CONSTRAINT mcip_dat_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mcip_dti_scores mcip_dti_scores_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mcip_dti_scores
+    ADD CONSTRAINT mcip_dti_scores_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: mcp_tool_registry mcp_tool_registry_name_source_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -42520,6 +58495,78 @@ ALTER TABLE ONLY public.metric_snapshots
 
 
 --
+-- Name: mi_budget_cycles mi_budget_cycles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mi_budget_cycles
+    ADD CONSTRAINT mi_budget_cycles_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mi_goal_alignments mi_goal_alignments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mi_goal_alignments
+    ADD CONSTRAINT mi_goal_alignments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mi_goal_chat_log mi_goal_chat_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mi_goal_chat_log
+    ADD CONSTRAINT mi_goal_chat_log_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mi_goals mi_goals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mi_goals
+    ADD CONSTRAINT mi_goals_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mi_opportunities mi_opportunities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mi_opportunities
+    ADD CONSTRAINT mi_opportunities_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mi_roadmaps mi_roadmaps_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mi_roadmaps
+    ADD CONSTRAINT mi_roadmaps_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mi_scans mi_scans_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mi_scans
+    ADD CONSTRAINT mi_scans_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mi_strategies mi_strategies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mi_strategies
+    ADD CONSTRAINT mi_strategies_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mi_wishlist mi_wishlist_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mi_wishlist
+    ADD CONSTRAINT mi_wishlist_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: migration_artifacts migration_artifacts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -42541,6 +58588,14 @@ ALTER TABLE ONLY public.migration_assessments
 
 ALTER TABLE ONLY public.migration_assessments
     ADD CONSTRAINT migration_assessments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: migration_designs migration_designs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.migration_designs
+    ADD CONSTRAINT migration_designs_pkey PRIMARY KEY (id);
 
 
 --
@@ -42712,6 +58767,14 @@ ALTER TABLE ONLY public.mission_versions
 
 
 --
+-- Name: mitre_coverage mitre_coverage_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mitre_coverage
+    ADD CONSTRAINT mitre_coverage_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: model_cards model_cards_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -42848,6 +58911,318 @@ ALTER TABLE ONLY public.narrative_approvals
 
 
 --
+-- Name: nc_advisories nc_advisories_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_advisories
+    ADD CONSTRAINT nc_advisories_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_advisory_assessments nc_advisory_assessments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_advisory_assessments
+    ADD CONSTRAINT nc_advisory_assessments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_agreement_amendments nc_agreement_amendments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_agreement_amendments
+    ADD CONSTRAINT nc_agreement_amendments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_ai_history nc_ai_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_ai_history
+    ADD CONSTRAINT nc_ai_history_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_alert_events nc_alert_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_alert_events
+    ADD CONSTRAINT nc_alert_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_alert_rules nc_alert_rules_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_alert_rules
+    ADD CONSTRAINT nc_alert_rules_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_alt_criteria nc_alt_criteria_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_alt_criteria
+    ADD CONSTRAINT nc_alt_criteria_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_alternatives nc_alternatives_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_alternatives
+    ADD CONSTRAINT nc_alternatives_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_ato_packages nc_ato_packages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_ato_packages
+    ADD CONSTRAINT nc_ato_packages_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_attack_surface nc_attack_surface_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_attack_surface
+    ADD CONSTRAINT nc_attack_surface_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_audit nc_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_audit
+    ADD CONSTRAINT nc_audit_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_backups nc_backups_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_backups
+    ADD CONSTRAINT nc_backups_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_board_reviews nc_board_reviews_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_board_reviews
+    ADD CONSTRAINT nc_board_reviews_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_bom_items nc_bom_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_bom_items
+    ADD CONSTRAINT nc_bom_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_boundaries nc_boundaries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_boundaries
+    ADD CONSTRAINT nc_boundaries_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_bw_simulations nc_bw_simulations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_bw_simulations
+    ADD CONSTRAINT nc_bw_simulations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_cables nc_cables_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_cables
+    ADD CONSTRAINT nc_cables_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_capacity_projections nc_capacity_projections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_capacity_projections
+    ADD CONSTRAINT nc_capacity_projections_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_carrier_availability nc_carrier_availability_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_carrier_availability
+    ADD CONSTRAINT nc_carrier_availability_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_case_history nc_case_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_case_history
+    ADD CONSTRAINT nc_case_history_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_case_workflows nc_case_workflows_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_case_workflows
+    ADD CONSTRAINT nc_case_workflows_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_change_request_items nc_change_request_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_change_request_items
+    ADD CONSTRAINT nc_change_request_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_change_requests nc_change_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_change_requests
+    ADD CONSTRAINT nc_change_requests_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_circuits nc_circuits_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_circuits
+    ADD CONSTRAINT nc_circuits_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_collab_sessions nc_collab_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_collab_sessions
+    ADD CONSTRAINT nc_collab_sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_collected_configs nc_collected_configs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_collected_configs
+    ADD CONSTRAINT nc_collected_configs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_compliance_checks nc_compliance_checks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_compliance_checks
+    ADD CONSTRAINT nc_compliance_checks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_compliance_findings nc_compliance_findings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_compliance_findings
+    ADD CONSTRAINT nc_compliance_findings_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_compliance_history nc_compliance_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_compliance_history
+    ADD CONSTRAINT nc_compliance_history_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_compliance_profiles nc_compliance_profiles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_compliance_profiles
+    ADD CONSTRAINT nc_compliance_profiles_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_compliance_profiles nc_compliance_profiles_topology_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_compliance_profiles
+    ADD CONSTRAINT nc_compliance_profiles_topology_id_key UNIQUE (topology_id);
+
+
+--
+-- Name: nc_config_review_findings nc_config_review_findings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_config_review_findings
+    ADD CONSTRAINT nc_config_review_findings_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_config_reviews nc_config_reviews_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_config_reviews
+    ADD CONSTRAINT nc_config_reviews_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_connectivity_patterns nc_connectivity_patterns_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_connectivity_patterns
+    ADD CONSTRAINT nc_connectivity_patterns_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_consolidation_analysis nc_consolidation_analysis_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_consolidation_analysis
+    ADD CONSTRAINT nc_consolidation_analysis_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_consolidation_analysis nc_consolidation_analysis_topo_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_consolidation_analysis
+    ADD CONSTRAINT nc_consolidation_analysis_topo_id_key UNIQUE (topo_id);
+
+
+--
+-- Name: nc_cross_connects nc_cross_connects_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_cross_connects
+    ADD CONSTRAINT nc_cross_connects_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_customers nc_customers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_customers
+    ADD CONSTRAINT nc_customers_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_design_patterns nc_design_patterns_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_design_patterns
+    ADD CONSTRAINT nc_design_patterns_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: nc_design_snapshots nc_design_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -42856,11 +59231,675 @@ ALTER TABLE ONLY public.nc_design_snapshots
 
 
 --
+-- Name: nc_device_geo nc_device_geo_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_device_geo
+    ADD CONSTRAINT nc_device_geo_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_device_profiles nc_device_profiles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_device_profiles
+    ADD CONSTRAINT nc_device_profiles_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_diagram_analyses nc_diagram_analyses_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_diagram_analyses
+    ADD CONSTRAINT nc_diagram_analyses_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_diagram_exports nc_diagram_exports_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_diagram_exports
+    ADD CONSTRAINT nc_diagram_exports_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_diagram_findings nc_diagram_findings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_diagram_findings
+    ADD CONSTRAINT nc_diagram_findings_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_diagram_uploads nc_diagram_uploads_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_diagram_uploads
+    ADD CONSTRAINT nc_diagram_uploads_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_discovery_configs nc_discovery_configs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_discovery_configs
+    ADD CONSTRAINT nc_discovery_configs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_discovery_diffs nc_discovery_diffs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_discovery_diffs
+    ADD CONSTRAINT nc_discovery_diffs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_discovery_scans nc_discovery_scans_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_discovery_scans
+    ADD CONSTRAINT nc_discovery_scans_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_documents nc_documents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_documents
+    ADD CONSTRAINT nc_documents_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_enclave_snippets nc_enclave_snippets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_enclave_snippets
+    ADD CONSTRAINT nc_enclave_snippets_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_exception_approvals nc_exception_approvals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_exception_approvals
+    ADD CONSTRAINT nc_exception_approvals_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_exceptions nc_exceptions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_exceptions
+    ADD CONSTRAINT nc_exceptions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_facilities nc_facilities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_facilities
+    ADD CONSTRAINT nc_facilities_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_favorites nc_favorites_entity_type_entity_id_user_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_favorites
+    ADD CONSTRAINT nc_favorites_entity_type_entity_id_user_id_key UNIQUE (entity_type, entity_id, user_id);
+
+
+--
+-- Name: nc_favorites nc_favorites_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_favorites
+    ADD CONSTRAINT nc_favorites_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_fiber_inventory nc_fiber_inventory_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_fiber_inventory
+    ADD CONSTRAINT nc_fiber_inventory_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_flow_walkthrough_steps nc_flow_walkthrough_steps_flow_id_step_number_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_flow_walkthrough_steps
+    ADD CONSTRAINT nc_flow_walkthrough_steps_flow_id_step_number_key UNIQUE (flow_id, step_number);
+
+
+--
+-- Name: nc_flow_walkthrough_steps nc_flow_walkthrough_steps_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_flow_walkthrough_steps
+    ADD CONSTRAINT nc_flow_walkthrough_steps_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_groups nc_groups_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_groups
+    ADD CONSTRAINT nc_groups_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_hardware_profiles nc_hardware_profiles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_hardware_profiles
+    ADD CONSTRAINT nc_hardware_profiles_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_hardware_profiles nc_hardware_profiles_vendor_model_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_hardware_profiles
+    ADD CONSTRAINT nc_hardware_profiles_vendor_model_key UNIQUE (vendor, model);
+
+
+--
+-- Name: nc_ingestion_log nc_ingestion_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_ingestion_log
+    ADD CONSTRAINT nc_ingestion_log_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_innovation_ideas nc_innovation_ideas_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_innovation_ideas
+    ADD CONSTRAINT nc_innovation_ideas_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_intent_constraints nc_intent_constraints_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_intent_constraints
+    ADD CONSTRAINT nc_intent_constraints_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_intent_policies nc_intent_policies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_intent_policies
+    ADD CONSTRAINT nc_intent_policies_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_intent_validations nc_intent_validations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_intent_validations
+    ADD CONSTRAINT nc_intent_validations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_interconnects nc_interconnects_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_interconnects
+    ADD CONSTRAINT nc_interconnects_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_ipam_blocks nc_ipam_blocks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_ipam_blocks
+    ADD CONSTRAINT nc_ipam_blocks_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: nc_lab_clones nc_lab_clones_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.nc_lab_clones
     ADD CONSTRAINT nc_lab_clones_pkey PRIMARY KEY (clone_id);
+
+
+--
+-- Name: nc_lab_runs nc_lab_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_lab_runs
+    ADD CONSTRAINT nc_lab_runs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_lab_tests nc_lab_tests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_lab_tests
+    ADD CONSTRAINT nc_lab_tests_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_lessons_learned nc_lessons_learned_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_lessons_learned
+    ADD CONSTRAINT nc_lessons_learned_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_maintenance_windows nc_maintenance_windows_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_maintenance_windows
+    ADD CONSTRAINT nc_maintenance_windows_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_mc_runs nc_mc_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_mc_runs
+    ADD CONSTRAINT nc_mc_runs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_mc_scenarios nc_mc_scenarios_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_mc_scenarios
+    ADD CONSTRAINT nc_mc_scenarios_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_migration_phases nc_migration_phases_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_migration_phases
+    ADD CONSTRAINT nc_migration_phases_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_module_inventory nc_module_inventory_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_module_inventory
+    ADD CONSTRAINT nc_module_inventory_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_naming_conventions nc_naming_conventions_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_naming_conventions
+    ADD CONSTRAINT nc_naming_conventions_name_key UNIQUE (name);
+
+
+--
+-- Name: nc_naming_conventions nc_naming_conventions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_naming_conventions
+    ADD CONSTRAINT nc_naming_conventions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_naming_sequences nc_naming_sequences_convention_id_scope_key_topology_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_naming_sequences
+    ADD CONSTRAINT nc_naming_sequences_convention_id_scope_key_topology_id_key UNIQUE (convention_id, scope_key, topology_id);
+
+
+--
+-- Name: nc_naming_sequences nc_naming_sequences_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_naming_sequences
+    ADD CONSTRAINT nc_naming_sequences_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_netbox_config nc_netbox_config_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_netbox_config
+    ADD CONSTRAINT nc_netbox_config_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_netbox_objects nc_netbox_objects_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_netbox_objects
+    ADD CONSTRAINT nc_netbox_objects_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_netbox_sync_log nc_netbox_sync_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_netbox_sync_log
+    ADD CONSTRAINT nc_netbox_sync_log_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_nms_connections nc_nms_connections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_nms_connections
+    ADD CONSTRAINT nc_nms_connections_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_notifications nc_notifications_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_notifications
+    ADD CONSTRAINT nc_notifications_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_nqe_audit_log nc_nqe_audit_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_nqe_audit_log
+    ADD CONSTRAINT nc_nqe_audit_log_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_nqe_cache nc_nqe_cache_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_nqe_cache
+    ADD CONSTRAINT nc_nqe_cache_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_objects nc_objects_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_objects
+    ADD CONSTRAINT nc_objects_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_packet_captures nc_packet_captures_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_packet_captures
+    ADD CONSTRAINT nc_packet_captures_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_partners nc_partners_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_partners
+    ADD CONSTRAINT nc_partners_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_patch_plans nc_patch_plans_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_patch_plans
+    ADD CONSTRAINT nc_patch_plans_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_peering_agreements nc_peering_agreements_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_peering_agreements
+    ADD CONSTRAINT nc_peering_agreements_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_peering_evaluations nc_peering_evaluations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_peering_evaluations
+    ADD CONSTRAINT nc_peering_evaluations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_peering_sessions nc_peering_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_peering_sessions
+    ADD CONSTRAINT nc_peering_sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_peering_traffic nc_peering_traffic_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_peering_traffic
+    ADD CONSTRAINT nc_peering_traffic_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_phase_documents nc_phase_documents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_phase_documents
+    ADD CONSTRAINT nc_phase_documents_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_phase_infoboxes nc_phase_infoboxes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_phase_infoboxes
+    ADD CONSTRAINT nc_phase_infoboxes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_phase_infoboxes nc_phase_infoboxes_topo_id_phase_key_box_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_phase_infoboxes
+    ADD CONSTRAINT nc_phase_infoboxes_topo_id_phase_key_box_id_key UNIQUE (topo_id, phase_key, box_id);
+
+
+--
+-- Name: nc_poam_items nc_poam_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_poam_items
+    ADD CONSTRAINT nc_poam_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_poam_items nc_poam_items_poam_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_poam_items
+    ADD CONSTRAINT nc_poam_items_poam_id_key UNIQUE (poam_id);
+
+
+--
+-- Name: nc_poam_status_log nc_poam_status_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_poam_status_log
+    ADD CONSTRAINT nc_poam_status_log_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_port_inventory nc_port_inventory_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_port_inventory
+    ADD CONSTRAINT nc_port_inventory_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_project_milestones nc_project_milestones_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_project_milestones
+    ADD CONSTRAINT nc_project_milestones_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_project_notes nc_project_notes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_project_notes
+    ADD CONSTRAINT nc_project_notes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_project_phases nc_project_phases_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_project_phases
+    ADD CONSTRAINT nc_project_phases_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_project_templates nc_project_templates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_project_templates
+    ADD CONSTRAINT nc_project_templates_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_project_topologies nc_project_topologies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_project_topologies
+    ADD CONSTRAINT nc_project_topologies_pkey PRIMARY KEY (project_id, topology_id);
+
+
+--
+-- Name: nc_projects nc_projects_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_projects
+    ADD CONSTRAINT nc_projects_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_query_log nc_query_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_query_log
+    ADD CONSTRAINT nc_query_log_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_racks nc_racks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_racks
+    ADD CONSTRAINT nc_racks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_refresh_plans nc_refresh_plans_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_refresh_plans
+    ADD CONSTRAINT nc_refresh_plans_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_remediation_actions nc_remediation_actions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_remediation_actions
+    ADD CONSTRAINT nc_remediation_actions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_remediation_status_log nc_remediation_status_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_remediation_status_log
+    ADD CONSTRAINT nc_remediation_status_log_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_replacement_map nc_replacement_map_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_replacement_map
+    ADD CONSTRAINT nc_replacement_map_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_resource_plan nc_resource_plan_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_resource_plan
+    ADD CONSTRAINT nc_resource_plan_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_review_boards nc_review_boards_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_review_boards
+    ADD CONSTRAINT nc_review_boards_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_risks nc_risks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_risks
+    ADD CONSTRAINT nc_risks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_routing_entries nc_routing_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_routing_entries
+    ADD CONSTRAINT nc_routing_entries_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_safe_bridge nc_safe_bridge_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_safe_bridge
+    ADD CONSTRAINT nc_safe_bridge_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_sdc_assessments nc_sdc_assessments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_sdc_assessments
+    ADD CONSTRAINT nc_sdc_assessments_pkey PRIMARY KEY (topology_id);
+
+
+--
+-- Name: nc_security_domain_policies nc_security_domain_policies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_security_domain_policies
+    ADD CONSTRAINT nc_security_domain_policies_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_security_domain_policies nc_security_domain_policies_topology_id_node_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_security_domain_policies
+    ADD CONSTRAINT nc_security_domain_policies_topology_id_node_id_key UNIQUE (topology_id, node_id);
 
 
 --
@@ -42896,11 +59935,211 @@ ALTER TABLE ONLY public.nc_simulation_sessions
 
 
 --
+-- Name: nc_sites nc_sites_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_sites
+    ADD CONSTRAINT nc_sites_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_standards_checks nc_standards_checks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_standards_checks
+    ADD CONSTRAINT nc_standards_checks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_stencil_libraries nc_stencil_libraries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_stencil_libraries
+    ADD CONSTRAINT nc_stencil_libraries_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_stencil_shapes nc_stencil_shapes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_stencil_shapes
+    ADD CONSTRAINT nc_stencil_shapes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_step_persona_responses nc_step_persona_responses_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_step_persona_responses
+    ADD CONSTRAINT nc_step_persona_responses_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_step_persona_responses nc_step_persona_responses_step_id_persona_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_step_persona_responses
+    ADD CONSTRAINT nc_step_persona_responses_step_id_persona_id_key UNIQUE (step_id, persona_id);
+
+
+--
+-- Name: nc_stig_imports nc_stig_imports_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_stig_imports
+    ADD CONSTRAINT nc_stig_imports_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_subnet_calc_history nc_subnet_calc_history_cidr_project_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_subnet_calc_history
+    ADD CONSTRAINT nc_subnet_calc_history_cidr_project_id_key UNIQUE (cidr, project_id);
+
+
+--
+-- Name: nc_subnet_calc_history nc_subnet_calc_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_subnet_calc_history
+    ADD CONSTRAINT nc_subnet_calc_history_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_tags nc_tags_entity_type_entity_id_tag_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_tags
+    ADD CONSTRAINT nc_tags_entity_type_entity_id_tag_key UNIQUE (entity_type, entity_id, tag);
+
+
+--
+-- Name: nc_tags nc_tags_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_tags
+    ADD CONSTRAINT nc_tags_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_tech_radar nc_tech_radar_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_tech_radar
+    ADD CONSTRAINT nc_tech_radar_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_template_docs nc_template_docs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_template_docs
+    ADD CONSTRAINT nc_template_docs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_templates nc_templates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_templates
+    ADD CONSTRAINT nc_templates_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: nc_topologies nc_topologies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.nc_topologies
     ADD CONSTRAINT nc_topologies_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_topology_snapshots nc_topology_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_topology_snapshots
+    ADD CONSTRAINT nc_topology_snapshots_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_traffic_flows nc_traffic_flows_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_traffic_flows
+    ADD CONSTRAINT nc_traffic_flows_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_triage_queue nc_triage_queue_advisory_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_triage_queue
+    ADD CONSTRAINT nc_triage_queue_advisory_id_key UNIQUE (advisory_id);
+
+
+--
+-- Name: nc_triage_queue nc_triage_queue_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_triage_queue
+    ADD CONSTRAINT nc_triage_queue_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_users nc_users_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_users
+    ADD CONSTRAINT nc_users_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_users nc_users_username_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_users
+    ADD CONSTRAINT nc_users_username_key UNIQUE (username);
+
+
+--
+-- Name: nc_versions nc_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_versions
+    ADD CONSTRAINT nc_versions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_vuln_findings nc_vuln_findings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_vuln_findings
+    ADD CONSTRAINT nc_vuln_findings_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_vuln_hosts nc_vuln_hosts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_vuln_hosts
+    ADD CONSTRAINT nc_vuln_hosts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_vuln_predictions nc_vuln_predictions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_vuln_predictions
+    ADD CONSTRAINT nc_vuln_predictions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: nc_vuln_scans nc_vuln_scans_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_vuln_scans
+    ADD CONSTRAINT nc_vuln_scans_pkey PRIMARY KEY (id);
 
 
 --
@@ -42917,6 +60156,14 @@ ALTER TABLE ONLY public.ndc_container_nodes
 
 ALTER TABLE ONLY public.ndc_container_nodes
     ADD CONSTRAINT ndc_container_nodes_pkey PRIMARY KEY (node_id);
+
+
+--
+-- Name: ndc_runbooks ndc_runbooks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ndc_runbooks
+    ADD CONSTRAINT ndc_runbooks_pkey PRIMARY KEY (id);
 
 
 --
@@ -42957,6 +60204,14 @@ ALTER TABLE ONLY public.network_twin_snapshots
 
 ALTER TABLE ONLY public.ni_analyses
     ADD CONSTRAINT ni_analyses_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ni_device_configs ni_device_configs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ni_device_configs
+    ADD CONSTRAINT ni_device_configs_pkey PRIMARY KEY (id);
 
 
 --
@@ -43168,11 +60423,75 @@ ALTER TABLE ONLY public.notifications
 
 
 --
+-- Name: observability_designs observability_designs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.observability_designs
+    ADD CONSTRAINT observability_designs_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: observability_nodes observability_nodes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.observability_nodes
     ADD CONSTRAINT observability_nodes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: od_assessments od_assessments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.od_assessments
+    ADD CONSTRAINT od_assessments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: od_audit od_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.od_audit
+    ADD CONSTRAINT od_audit_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: od_collab_sessions od_collab_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.od_collab_sessions
+    ADD CONSTRAINT od_collab_sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: od_snippets od_snippets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.od_snippets
+    ADD CONSTRAINT od_snippets_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: od_templates od_templates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.od_templates
+    ADD CONSTRAINT od_templates_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: od_ttp_coverage od_ttp_coverage_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.od_ttp_coverage
+    ADD CONSTRAINT od_ttp_coverage_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: od_versions od_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.od_versions
+    ADD CONSTRAINT od_versions_pkey PRIMARY KEY (id);
 
 
 --
@@ -43184,11 +60503,163 @@ ALTER TABLE ONLY public.odc_designs
 
 
 --
+-- Name: odc_gap_scores odc_gap_scores_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.odc_gap_scores
+    ADD CONSTRAINT odc_gap_scores_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: odc_mitre_techniques odc_mitre_techniques_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.odc_mitre_techniques
+    ADD CONSTRAINT odc_mitre_techniques_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: odc_mitre_techniques odc_mitre_techniques_technique_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.odc_mitre_techniques
+    ADD CONSTRAINT odc_mitre_techniques_technique_id_key UNIQUE (technique_id);
+
+
+--
+-- Name: odc_otel_events odc_otel_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.odc_otel_events
+    ADD CONSTRAINT odc_otel_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: odc_runbooks odc_runbooks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.odc_runbooks
+    ADD CONSTRAINT odc_runbooks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: odc_sdc_verifications odc_sdc_verifications_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.odc_sdc_verifications
+    ADD CONSTRAINT odc_sdc_verifications_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: odc_sops odc_sops_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.odc_sops
+    ADD CONSTRAINT odc_sops_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: odc_technique_coverage odc_technique_coverage_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.odc_technique_coverage
+    ADD CONSTRAINT odc_technique_coverage_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: odc_twin_snapshots odc_twin_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.odc_twin_snapshots
     ADD CONSTRAINT odc_twin_snapshots_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ohc_adapter_health_log ohc_adapter_health_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ohc_adapter_health_log
+    ADD CONSTRAINT ohc_adapter_health_log_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ohc_adapter_status ohc_adapter_status_adapter_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ohc_adapter_status
+    ADD CONSTRAINT ohc_adapter_status_adapter_name_key UNIQUE (adapter_name);
+
+
+--
+-- Name: ohc_adapter_status ohc_adapter_status_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ohc_adapter_status
+    ADD CONSTRAINT ohc_adapter_status_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ohc_data_drift_events ohc_data_drift_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ohc_data_drift_events
+    ADD CONSTRAINT ohc_data_drift_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ohc_dataset_versions ohc_dataset_versions_name_version_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ohc_dataset_versions
+    ADD CONSTRAINT ohc_dataset_versions_name_version_key UNIQUE (name, version);
+
+
+--
+-- Name: ohc_dataset_versions ohc_dataset_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ohc_dataset_versions
+    ADD CONSTRAINT ohc_dataset_versions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ohc_experiment_runs ohc_experiment_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ohc_experiment_runs
+    ADD CONSTRAINT ohc_experiment_runs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ohc_experiments ohc_experiments_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ohc_experiments
+    ADD CONSTRAINT ohc_experiments_name_key UNIQUE (name);
+
+
+--
+-- Name: ohc_experiments ohc_experiments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ohc_experiments
+    ADD CONSTRAINT ohc_experiments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ohc_model_registry ohc_model_registry_name_version_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ohc_model_registry
+    ADD CONSTRAINT ohc_model_registry_name_version_key UNIQUE (name, version);
+
+
+--
+-- Name: ohc_model_registry ohc_model_registry_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ohc_model_registry
+    ADD CONSTRAINT ohc_model_registry_pkey PRIMARY KEY (id);
 
 
 --
@@ -43376,6 +60847,14 @@ ALTER TABLE ONLY public.osint_privacy_audit
 
 
 --
+-- Name: osint_signals osint_signals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.osint_signals
+    ADD CONSTRAINT osint_signals_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: otel_spans otel_spans_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -43416,6 +60895,102 @@ ALTER TABLE ONLY public.owasp_llm_assessments
 
 
 --
+-- Name: pc_audit pc_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pc_audit
+    ADD CONSTRAINT pc_audit_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: pc_boundaries pc_boundaries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pc_boundaries
+    ADD CONSTRAINT pc_boundaries_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: pc_change_requests pc_change_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pc_change_requests
+    ADD CONSTRAINT pc_change_requests_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: pc_collab_sessions pc_collab_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pc_collab_sessions
+    ADD CONSTRAINT pc_collab_sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: pc_compliance_checks pc_compliance_checks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pc_compliance_checks
+    ADD CONSTRAINT pc_compliance_checks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: pc_compliance_findings pc_compliance_findings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pc_compliance_findings
+    ADD CONSTRAINT pc_compliance_findings_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: pc_project_pipelines pc_project_pipelines_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pc_project_pipelines
+    ADD CONSTRAINT pc_project_pipelines_pkey PRIMARY KEY (project_id, pipeline_id);
+
+
+--
+-- Name: pc_projects pc_projects_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pc_projects
+    ADD CONSTRAINT pc_projects_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: pc_snippets pc_snippets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pc_snippets
+    ADD CONSTRAINT pc_snippets_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: pc_stages pc_stages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pc_stages
+    ADD CONSTRAINT pc_stages_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: pc_templates pc_templates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pc_templates
+    ADD CONSTRAINT pc_templates_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: pc_versions pc_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pc_versions
+    ADD CONSTRAINT pc_versions_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: pci_dss_assessments pci_dss_assessments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -43429,6 +61004,30 @@ ALTER TABLE ONLY public.pci_dss_assessments
 
 ALTER TABLE ONLY public.pci_dss_assessments
     ADD CONSTRAINT pci_dss_assessments_project_id_requirement_id_key UNIQUE (project_id, requirement_id);
+
+
+--
+-- Name: pdc_simulations pdc_simulations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pdc_simulations
+    ADD CONSTRAINT pdc_simulations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: pdc_snapshots pdc_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pdc_snapshots
+    ADD CONSTRAINT pdc_snapshots_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: pdc_sops pdc_sops_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pdc_sops
+    ADD CONSTRAINT pdc_sops_pkey PRIMARY KEY (id);
 
 
 --
@@ -43525,6 +61124,14 @@ ALTER TABLE ONLY public.pg_bid_decisions
 
 ALTER TABLE ONLY public.pg_capture_activities
     ADD CONSTRAINT pg_capture_activities_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: pg_capture_gate_decisions pg_capture_gate_decisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pg_capture_gate_decisions
+    ADD CONSTRAINT pg_capture_gate_decisions_pkey PRIMARY KEY (id);
 
 
 --
@@ -43864,6 +61471,46 @@ ALTER TABLE ONLY public.pi_compliance_tracking
 
 
 --
+-- Name: pipeline_snapshots pipeline_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pipeline_snapshots
+    ADD CONSTRAINT pipeline_snapshots_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: pipelines pipelines_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pipelines
+    ADD CONSTRAINT pipelines_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: platform_connector_fetches platform_connector_fetches_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_connector_fetches
+    ADD CONSTRAINT platform_connector_fetches_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: pma_credential_alerts pma_credential_alerts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pma_credential_alerts
+    ADD CONSTRAINT pma_credential_alerts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: pma_personnel pma_personnel_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pma_personnel
+    ADD CONSTRAINT pma_personnel_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: pmc_audit pmc_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -43885,6 +61532,14 @@ ALTER TABLE ONLY public.poam_items
 
 ALTER TABLE ONLY public.pr_intelligence_reports
     ADD CONSTRAINT pr_intelligence_reports_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: pr_merge_eligibility_events pr_merge_eligibility_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pr_merge_eligibility_events
+    ADD CONSTRAINT pr_merge_eligibility_events_pkey PRIMARY KEY (id);
 
 
 --
@@ -44096,6 +61751,22 @@ ALTER TABLE ONLY public.proposal_compliance_matrix
 
 
 --
+-- Name: proposal_key_personnel proposal_key_personnel_person_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.proposal_key_personnel
+    ADD CONSTRAINT proposal_key_personnel_person_unique UNIQUE (opportunity_id, person_ref);
+
+
+--
+-- Name: proposal_key_personnel proposal_key_personnel_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.proposal_key_personnel
+    ADD CONSTRAINT proposal_key_personnel_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: proposal_knowledge_base proposal_knowledge_base_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -44133,6 +61804,14 @@ ALTER TABLE ONLY public.proposal_questions
 
 ALTER TABLE ONLY public.proposal_review_findings
     ADD CONSTRAINT proposal_review_findings_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: proposal_reviewer_assignments proposal_reviewer_assignments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.proposal_reviewer_assignments
+    ADD CONSTRAINT proposal_reviewer_assignments_pkey PRIMARY KEY (id);
 
 
 --
@@ -44312,6 +61991,62 @@ ALTER TABLE ONLY public.pulse_topic_clusters
 
 
 --
+-- Name: qdc_assessments qdc_assessments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.qdc_assessments
+    ADD CONSTRAINT qdc_assessments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: qdc_audit qdc_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.qdc_audit
+    ADD CONSTRAINT qdc_audit_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: qdc_collab_ops qdc_collab_ops_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.qdc_collab_ops
+    ADD CONSTRAINT qdc_collab_ops_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: qdc_collab_sessions qdc_collab_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.qdc_collab_sessions
+    ADD CONSTRAINT qdc_collab_sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: qdc_cross_canvas_links qdc_cross_canvas_links_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.qdc_cross_canvas_links
+    ADD CONSTRAINT qdc_cross_canvas_links_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: qdc_designs qdc_designs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.qdc_designs
+    ADD CONSTRAINT qdc_designs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: qdc_gate_results qdc_gate_results_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.qdc_gate_results
+    ADD CONSTRAINT qdc_gate_results_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: qdc_metrics qdc_metrics_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -44320,11 +62055,99 @@ ALTER TABLE ONLY public.qdc_metrics
 
 
 --
+-- Name: qdc_runbooks qdc_runbooks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.qdc_runbooks
+    ADD CONSTRAINT qdc_runbooks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: qdc_simulations qdc_simulations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.qdc_simulations
+    ADD CONSTRAINT qdc_simulations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: qdc_snippets qdc_snippets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.qdc_snippets
+    ADD CONSTRAINT qdc_snippets_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: qdc_sops qdc_sops_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.qdc_sops
+    ADD CONSTRAINT qdc_sops_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: qdc_templates qdc_templates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.qdc_templates
+    ADD CONSTRAINT qdc_templates_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: qdc_twin_snapshots qdc_twin_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.qdc_twin_snapshots
+    ADD CONSTRAINT qdc_twin_snapshots_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: qdc_uqs_history qdc_uqs_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.qdc_uqs_history
+    ADD CONSTRAINT qdc_uqs_history_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: qdc_versions qdc_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.qdc_versions
+    ADD CONSTRAINT qdc_versions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: rag_chunk_summaries rag_chunk_summaries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rag_chunk_summaries
+    ADD CONSTRAINT rag_chunk_summaries_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: rag_chunks rag_chunks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.rag_chunks
     ADD CONSTRAINT rag_chunks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: rag_citations rag_citations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rag_citations
+    ADD CONSTRAINT rag_citations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: rag_compliance_corpus rag_compliance_corpus_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rag_compliance_corpus
+    ADD CONSTRAINT rag_compliance_corpus_pkey PRIMARY KEY (doc_id);
 
 
 --
@@ -44381,6 +62204,22 @@ ALTER TABLE ONLY public.rag_parent_cache
 
 ALTER TABLE ONLY public.rag_pdf_documents
     ADD CONSTRAINT rag_pdf_documents_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: rag_provenance_ledger rag_provenance_ledger_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rag_provenance_ledger
+    ADD CONSTRAINT rag_provenance_ledger_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: rag_queries rag_queries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rag_queries
+    ADD CONSTRAINT rag_queries_pkey PRIMARY KEY (id);
 
 
 --
@@ -44664,6 +62503,70 @@ ALTER TABLE ONLY public.review_traceability
 
 
 --
+-- Name: rfi_capability_gaps rfi_capability_gaps_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rfi_capability_gaps
+    ADD CONSTRAINT rfi_capability_gaps_pkey PRIMARY KEY (content_hash);
+
+
+--
+-- Name: rfi_company_style_guide rfi_company_style_guide_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rfi_company_style_guide
+    ADD CONSTRAINT rfi_company_style_guide_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: rfi_gap_task_links rfi_gap_task_links_gap_hash_task_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rfi_gap_task_links
+    ADD CONSTRAINT rfi_gap_task_links_gap_hash_task_id_key UNIQUE (gap_hash, task_id);
+
+
+--
+-- Name: rfi_gap_task_links rfi_gap_task_links_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rfi_gap_task_links
+    ADD CONSTRAINT rfi_gap_task_links_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: rfi_session_uploads rfi_session_uploads_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rfi_session_uploads
+    ADD CONSTRAINT rfi_session_uploads_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: rfi_workbench_exports rfi_workbench_exports_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rfi_workbench_exports
+    ADD CONSTRAINT rfi_workbench_exports_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: rfi_workbench_sections rfi_workbench_sections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rfi_workbench_sections
+    ADD CONSTRAINT rfi_workbench_sections_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: rfi_workbench_sessions rfi_workbench_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rfi_workbench_sessions
+    ADD CONSTRAINT rfi_workbench_sessions_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: rfp_requirement_patterns rfp_requirement_patterns_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -44712,6 +62615,14 @@ ALTER TABLE ONLY public.runtime_feedback
 
 
 --
+-- Name: runtime_invocations runtime_invocations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.runtime_invocations
+    ADD CONSTRAINT runtime_invocations_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: safe_decomposition safe_decomposition_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -44725,6 +62636,30 @@ ALTER TABLE ONLY public.safe_decomposition
 
 ALTER TABLE ONLY public.safety_circuit_events
     ADD CONSTRAINT safety_circuit_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sag_skill_registry sag_skill_registry_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sag_skill_registry
+    ADD CONSTRAINT sag_skill_registry_pkey PRIMARY KEY (name);
+
+
+--
+-- Name: sag_standing_goals sag_standing_goals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sag_standing_goals
+    ADD CONSTRAINT sag_standing_goals_pkey PRIMARY KEY (goal_id);
+
+
+--
+-- Name: sag_user_profiles sag_user_profiles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sag_user_profiles
+    ADD CONSTRAINT sag_user_profiles_pkey PRIMARY KEY (user_id, tenant_id);
 
 
 --
@@ -44784,6 +62719,38 @@ ALTER TABLE ONLY public.sbom_access_decisions
 
 
 --
+-- Name: sbom_components sbom_components_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sbom_components
+    ADD CONSTRAINT sbom_components_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sbom_conformance_assessments sbom_conformance_assessments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sbom_conformance_assessments
+    ADD CONSTRAINT sbom_conformance_assessments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sbom_dependencies sbom_dependencies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sbom_dependencies
+    ADD CONSTRAINT sbom_dependencies_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sbom_dependencies sbom_dependencies_sbom_record_id_parent_component_id_child__key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sbom_dependencies
+    ADD CONSTRAINT sbom_dependencies_sbom_record_id_parent_component_id_child__key UNIQUE (sbom_record_id, parent_component_id, child_component_id, relationship_type);
+
+
+--
 -- Name: sbom_records sbom_records_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -44797,6 +62764,94 @@ ALTER TABLE ONLY public.sbom_records
 
 ALTER TABLE ONLY public.sbom_signatures
     ADD CONSTRAINT sbom_signatures_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sc_assessments sc_assessments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sc_assessments
+    ADD CONSTRAINT sc_assessments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sc_assets sc_assets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sc_assets
+    ADD CONSTRAINT sc_assets_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sc_audit sc_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sc_audit
+    ADD CONSTRAINT sc_audit_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sc_controls sc_controls_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sc_controls
+    ADD CONSTRAINT sc_controls_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sc_data_flows sc_data_flows_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sc_data_flows
+    ADD CONSTRAINT sc_data_flows_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sc_remediation_plans sc_remediation_plans_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sc_remediation_plans
+    ADD CONSTRAINT sc_remediation_plans_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sc_snippets sc_snippets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sc_snippets
+    ADD CONSTRAINT sc_snippets_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sc_templates sc_templates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sc_templates
+    ADD CONSTRAINT sc_templates_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sc_threats sc_threats_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sc_threats
+    ADD CONSTRAINT sc_threats_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sc_trust_boundaries sc_trust_boundaries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sc_trust_boundaries
+    ADD CONSTRAINT sc_trust_boundaries_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sc_versions sc_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sc_versions
+    ADD CONSTRAINT sc_versions_pkey PRIMARY KEY (id);
 
 
 --
@@ -44904,6 +62959,14 @@ ALTER TABLE ONLY public.sdc_roi_metrics
 
 
 --
+-- Name: sdc_sops sdc_sops_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sdc_sops
+    ADD CONSTRAINT sdc_sops_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: security_context_log security_context_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -44912,11 +62975,51 @@ ALTER TABLE ONLY public.security_context_log
 
 
 --
+-- Name: security_designs security_designs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.security_designs
+    ADD CONSTRAINT security_designs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: security_framework_status security_framework_status_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.security_framework_status
+    ADD CONSTRAINT security_framework_status_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: security_framework_status security_framework_status_project_id_framework_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.security_framework_status
+    ADD CONSTRAINT security_framework_status_project_id_framework_key UNIQUE (project_id, framework);
+
+
+--
 -- Name: security_nodes security_nodes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.security_nodes
     ADD CONSTRAINT security_nodes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: security_policies security_policies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.security_policies
+    ADD CONSTRAINT security_policies_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: security_policies security_policies_policy_type_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.security_policies
+    ADD CONSTRAINT security_policies_policy_type_key UNIQUE (policy_type);
 
 
 --
@@ -45568,6 +63671,14 @@ ALTER TABLE ONLY public.sg_orbat_snapshots
 
 
 --
+-- Name: sg_orbat_strengths sg_orbat_strengths_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sg_orbat_strengths
+    ADD CONSTRAINT sg_orbat_strengths_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: sg_orbat_units sg_orbat_units_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -45992,6 +64103,46 @@ ALTER TABLE ONLY public.shap_attributions
 
 
 --
+-- Name: sharepoint_documents sharepoint_documents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sharepoint_documents
+    ADD CONSTRAINT sharepoint_documents_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sharepoint_items sharepoint_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sharepoint_items
+    ADD CONSTRAINT sharepoint_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sharepoint_lists sharepoint_lists_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sharepoint_lists
+    ADD CONSTRAINT sharepoint_lists_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sharepoint_sites sharepoint_sites_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sharepoint_sites
+    ADD CONSTRAINT sharepoint_sites_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: showcase_apps showcase_apps_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.showcase_apps
+    ADD CONSTRAINT showcase_apps_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: showcase_demo_runs showcase_demo_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -46024,6 +64175,14 @@ ALTER TABLE ONLY public.simulation_scenarios
 
 
 --
+-- Name: skype_inbox skype_inbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.skype_inbox
+    ADD CONSTRAINT skype_inbox_pkey PRIMARY KEY (activity_id);
+
+
+--
 -- Name: slides_audit slides_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -46040,11 +64199,27 @@ ALTER TABLE ONLY public.slides_decks
 
 
 --
+-- Name: slides_schema_migrations slides_schema_migrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slides_schema_migrations
+    ADD CONSTRAINT slides_schema_migrations_pkey PRIMARY KEY (version);
+
+
+--
 -- Name: slides_slides slides_slides_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.slides_slides
     ADD CONSTRAINT slides_slides_pkey PRIMARY KEY (slide_id);
+
+
+--
+-- Name: slides_templates slides_templates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slides_templates
+    ADD CONSTRAINT slides_templates_pkey PRIMARY KEY (template_id);
 
 
 --
@@ -46069,6 +64244,22 @@ ALTER TABLE ONLY public.smart_encoding_dictionary
 
 ALTER TABLE ONLY public.smart_encoding_dictionary
     ADD CONSTRAINT smart_encoding_dictionary_tag_value_key UNIQUE (tag_value);
+
+
+--
+-- Name: soar_playbook_audit soar_playbook_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.soar_playbook_audit
+    ADD CONSTRAINT soar_playbook_audit_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: soar_playbook_runs soar_playbook_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.soar_playbook_runs
+    ADD CONSTRAINT soar_playbook_runs_pkey PRIMARY KEY (run_id);
 
 
 --
@@ -46149,6 +64340,22 @@ ALTER TABLE ONLY public.sre_slo_measurements
 
 ALTER TABLE ONLY public.sre_slos
     ADD CONSTRAINT sre_slos_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sso_providers sso_providers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sso_providers
+    ADD CONSTRAINT sso_providers_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sso_sessions sso_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sso_sessions
+    ADD CONSTRAINT sso_sessions_pkey PRIMARY KEY (id);
 
 
 --
@@ -46248,6 +64455,14 @@ ALTER TABLE ONLY public.studio_dashboards
 
 
 --
+-- Name: studio_event_sources studio_event_sources_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.studio_event_sources
+    ADD CONSTRAINT studio_event_sources_pkey PRIMARY KEY (source_id);
+
+
+--
 -- Name: studio_form_submissions studio_form_submissions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -46261,6 +64476,30 @@ ALTER TABLE ONLY public.studio_form_submissions
 
 ALTER TABLE ONLY public.studio_forms
     ADD CONSTRAINT studio_forms_pkey PRIMARY KEY (form_id);
+
+
+--
+-- Name: studio_mcp_dispatch_audit studio_mcp_dispatch_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.studio_mcp_dispatch_audit
+    ADD CONSTRAINT studio_mcp_dispatch_audit_pkey PRIMARY KEY (audit_id);
+
+
+--
+-- Name: studio_run_memory studio_run_memory_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.studio_run_memory
+    ADD CONSTRAINT studio_run_memory_pkey PRIMARY KEY (run_id, key);
+
+
+--
+-- Name: studio_trigger_events studio_trigger_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.studio_trigger_events
+    ADD CONSTRAINT studio_trigger_events_pkey PRIMARY KEY (event_id);
 
 
 --
@@ -46288,6 +64527,14 @@ ALTER TABLE ONLY public.studio_workflow_runs
 
 
 --
+-- Name: studio_workflow_triggers studio_workflow_triggers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.studio_workflow_triggers
+    ADD CONSTRAINT studio_workflow_triggers_pkey PRIMARY KEY (trigger_id);
+
+
+--
 -- Name: studio_workflows studio_workflows_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -46301,6 +64548,22 @@ ALTER TABLE ONLY public.studio_workflows
 
 ALTER TABLE ONLY public.subscriptions
     ADD CONSTRAINT subscriptions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: supplemental_refinements supplemental_refinements_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.supplemental_refinements
+    ADD CONSTRAINT supplemental_refinements_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: supplemental_state_snapshots supplemental_state_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.supplemental_state_snapshots
+    ADD CONSTRAINT supplemental_state_snapshots_pkey PRIMARY KEY (id);
 
 
 --
@@ -46320,6 +64583,14 @@ ALTER TABLE ONLY public.supply_chain_dependencies
 
 
 --
+-- Name: supply_chain_risk_scores supply_chain_risk_scores_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.supply_chain_risk_scores
+    ADD CONSTRAINT supply_chain_risk_scores_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: supply_chain_vendors supply_chain_vendors_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -46333,6 +64604,14 @@ ALTER TABLE ONLY public.supply_chain_vendors
 
 ALTER TABLE ONLY public.supply_chain_vendors
     ADD CONSTRAINT supply_chain_vendors_project_id_vendor_name_key UNIQUE (project_id, vendor_name);
+
+
+--
+-- Name: supply_chain_vulnerabilities supply_chain_vulnerabilities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.supply_chain_vulnerabilities
+    ADD CONSTRAINT supply_chain_vulnerabilities_pkey PRIMARY KEY (id);
 
 
 --
@@ -46424,6 +64703,22 @@ ALTER TABLE ONLY public.system_cards
 
 
 --
+-- Name: tasks tasks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tasks
+    ADD CONSTRAINT tasks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: teams_inbox teams_inbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.teams_inbox
+    ADD CONSTRAINT teams_inbox_pkey PRIMARY KEY (message_id);
+
+
+--
 -- Name: tech_radar_entries tech_radar_entries_name_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -46456,43 +64751,19 @@ ALTER TABLE ONLY public.telegram_inbox
 
 
 --
--- Name: teams_inbox teams_inbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: tenant_component_overrides tenant_component_overrides_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.teams_inbox
-    ADD CONSTRAINT teams_inbox_pkey PRIMARY KEY (message_id);
-
-
---
--- Name: mattermost_inbox mattermost_inbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.mattermost_inbox
-    ADD CONSTRAINT mattermost_inbox_pkey PRIMARY KEY (post_id);
+ALTER TABLE ONLY public.tenant_component_overrides
+    ADD CONSTRAINT tenant_component_overrides_pkey PRIMARY KEY (id);
 
 
 --
--- Name: github_inbox github_inbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: tenant_component_overrides tenant_component_overrides_tenant_id_component_key_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.github_inbox
-    ADD CONSTRAINT github_inbox_pkey PRIMARY KEY (comment_id);
-
-
---
--- Name: gitlab_inbox gitlab_inbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.gitlab_inbox
-    ADD CONSTRAINT gitlab_inbox_pkey PRIMARY KEY (note_id);
-
-
---
--- Name: skype_inbox skype_inbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.skype_inbox
-    ADD CONSTRAINT skype_inbox_pkey PRIMARY KEY (activity_id);
+ALTER TABLE ONLY public.tenant_component_overrides
+    ADD CONSTRAINT tenant_component_overrides_tenant_id_component_key_key UNIQUE (tenant_id, component_key);
 
 
 --
@@ -46656,6 +64927,14 @@ ALTER TABLE ONLY public.translation_validations
 
 
 --
+-- Name: trust_deltas trust_deltas_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trust_deltas
+    ADD CONSTRAINT trust_deltas_pkey PRIMARY KEY (delta_id);
+
+
+--
 -- Name: tsp_documents tsp_documents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -46808,6 +65087,30 @@ ALTER TABLE ONLY public.ttx_teams
 
 
 --
+-- Name: twin_compat_reports twin_compat_reports_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.twin_compat_reports
+    ADD CONSTRAINT twin_compat_reports_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ungated_test_baseline ungated_test_baseline_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ungated_test_baseline
+    ADD CONSTRAINT ungated_test_baseline_pkey PRIMARY KEY (path);
+
+
+--
+-- Name: genesis_phase_log uq_genesis_phase_log_design_id_phase; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.genesis_phase_log
+    ADD CONSTRAINT uq_genesis_phase_log_design_id_phase UNIQUE (design_id, phase);
+
+
+--
 -- Name: usage_aggregates usage_aggregates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -46845,6 +65148,110 @@ ALTER TABLE ONLY public.use_case_chains
 
 ALTER TABLE ONLY public.use_case_overrides
     ADD CONSTRAINT use_case_overrides_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: user_challenges user_challenges_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_challenges
+    ADD CONSTRAINT user_challenges_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: user_clearances user_clearances_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_clearances
+    ADD CONSTRAINT user_clearances_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: user_clearances user_clearances_user_id_project_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_clearances
+    ADD CONSTRAINT user_clearances_user_id_project_id_key UNIQUE (user_id, project_id);
+
+
+--
+-- Name: user_daily_briefings user_daily_briefings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_daily_briefings
+    ADD CONSTRAINT user_daily_briefings_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: user_daily_briefings user_daily_briefings_user_id_tenant_id_briefing_date_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_daily_briefings
+    ADD CONSTRAINT user_daily_briefings_user_id_tenant_id_briefing_date_key UNIQUE (user_id, tenant_id, briefing_date);
+
+
+--
+-- Name: user_identity_profiles user_identity_profiles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_identity_profiles
+    ADD CONSTRAINT user_identity_profiles_pkey PRIMARY KEY (user_id, tenant_id);
+
+
+--
+-- Name: user_integrations user_integrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_integrations
+    ADD CONSTRAINT user_integrations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: user_integrations user_integrations_user_id_tenant_id_service_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_integrations
+    ADD CONSTRAINT user_integrations_user_id_tenant_id_service_key UNIQUE (user_id, tenant_id, service);
+
+
+--
+-- Name: user_knowledge_items user_knowledge_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_knowledge_items
+    ADD CONSTRAINT user_knowledge_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: user_objectives user_objectives_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_objectives
+    ADD CONSTRAINT user_objectives_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: user_preferences user_preferences_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_preferences
+    ADD CONSTRAINT user_preferences_pkey PRIMARY KEY (user_id);
+
+
+--
+-- Name: user_relationship_interactions user_relationship_interactions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_relationship_interactions
+    ADD CONSTRAINT user_relationship_interactions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: user_relationships user_relationships_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_relationships
+    ADD CONSTRAINT user_relationships_pkey PRIMARY KEY (id);
 
 
 --
@@ -46901,6 +65308,30 @@ ALTER TABLE ONLY public.vsm_dora_snapshots
 
 ALTER TABLE ONLY public.vsm_stage_events
     ADD CONSTRAINT vsm_stage_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: watchdog_alerts watchdog_alerts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.watchdog_alerts
+    ADD CONSTRAINT watchdog_alerts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: watchdog_state watchdog_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.watchdog_state
+    ADD CONSTRAINT watchdog_state_pkey PRIMARY KEY (key);
+
+
+--
+-- Name: web_fetch_provenance web_fetch_provenance_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.web_fetch_provenance
+    ADD CONSTRAINT web_fetch_provenance_pkey PRIMARY KEY (id);
 
 
 --
@@ -47053,6 +65484,134 @@ ALTER TABLE ONLY public.wf_teams
 
 ALTER TABLE ONLY public.wf_templates
     ADD CONSTRAINT wf_templates_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: wfc_branding wfc_branding_entity_type_entity_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wfc_branding
+    ADD CONSTRAINT wfc_branding_entity_type_entity_id_key UNIQUE (entity_type, entity_id);
+
+
+--
+-- Name: wfc_branding wfc_branding_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wfc_branding
+    ADD CONSTRAINT wfc_branding_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: wfc_chain_phases wfc_chain_phases_chain_id_phase_number_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wfc_chain_phases
+    ADD CONSTRAINT wfc_chain_phases_chain_id_phase_number_key UNIQUE (chain_id, phase_number);
+
+
+--
+-- Name: wfc_chain_phases wfc_chain_phases_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wfc_chain_phases
+    ADD CONSTRAINT wfc_chain_phases_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: wfc_process_chains wfc_process_chains_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wfc_process_chains
+    ADD CONSTRAINT wfc_process_chains_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: wfc_template_library wfc_template_library_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wfc_template_library
+    ADD CONSTRAINT wfc_template_library_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: wfc_workflow_form_nodes wfc_workflow_form_nodes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wfc_workflow_form_nodes
+    ADD CONSTRAINT wfc_workflow_form_nodes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: wfl_committee_reviews wfl_committee_reviews_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wfl_committee_reviews
+    ADD CONSTRAINT wfl_committee_reviews_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: wfl_completeness_reviews wfl_completeness_reviews_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wfl_completeness_reviews
+    ADD CONSTRAINT wfl_completeness_reviews_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: wfl_credentialing_applications wfl_credentialing_applications_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wfl_credentialing_applications
+    ADD CONSTRAINT wfl_credentialing_applications_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: wfl_credentialing_approvals wfl_credentialing_approvals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wfl_credentialing_approvals
+    ADD CONSTRAINT wfl_credentialing_approvals_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: wfl_credentialing_audit wfl_credentialing_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wfl_credentialing_audit
+    ADD CONSTRAINT wfl_credentialing_audit_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: wfl_network_agreement_approvals wfl_network_agreement_approvals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wfl_network_agreement_approvals
+    ADD CONSTRAINT wfl_network_agreement_approvals_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: wfl_network_agreement_reviews wfl_network_agreement_reviews_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wfl_network_agreement_reviews
+    ADD CONSTRAINT wfl_network_agreement_reviews_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: wfl_provider_setups wfl_provider_setups_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wfl_provider_setups
+    ADD CONSTRAINT wfl_provider_setups_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: wfl_psv_verifications wfl_psv_verifications_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wfl_psv_verifications
+    ADD CONSTRAINT wfl_psv_verifications_pkey PRIMARY KEY (id);
 
 
 --
@@ -47240,6 +65799,54 @@ ALTER TABLE ONLY public.xai_assessments
 
 
 --
+-- Name: zig_activities zig_activities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.zig_activities
+    ADD CONSTRAINT zig_activities_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: zig_activity_completions zig_activity_completions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.zig_activity_completions
+    ADD CONSTRAINT zig_activity_completions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: zig_capabilities zig_capabilities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.zig_capabilities
+    ADD CONSTRAINT zig_capabilities_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: zig_maturity_scores zig_maturity_scores_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.zig_maturity_scores
+    ADD CONSTRAINT zig_maturity_scores_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: zig_pillars zig_pillars_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.zig_pillars
+    ADD CONSTRAINT zig_pillars_pkey PRIMARY KEY (slug);
+
+
+--
+-- Name: zig_targets zig_targets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.zig_targets
+    ADD CONSTRAINT zig_targets_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: zta_cls_posture_log zta_cls_posture_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -47400,6 +66007,34 @@ CREATE INDEX idx_aadc_agent_simulations_design ON public.aadc_agent_simulations 
 
 
 --
+-- Name: idx_aadc_aimc_refs_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aadc_aimc_refs_design ON public.aadc_aimc_model_refs USING btree (aadc_design_id);
+
+
+--
+-- Name: idx_aadc_aimc_refs_model; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aadc_aimc_refs_model ON public.aadc_aimc_model_refs USING btree (aimc_model_id);
+
+
+--
+-- Name: idx_aadc_artifact_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aadc_artifact_design ON public.aadc_artifacts USING btree (design_id);
+
+
+--
+-- Name: idx_aadc_assess_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aadc_assess_design ON public.aadc_assessments USING btree (design_id);
+
+
+--
 -- Name: idx_aadc_ato_reports_design; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -47418,6 +66053,13 @@ CREATE INDEX idx_aadc_compliance_key ON public.aadc_compliance USING btree (proj
 --
 
 CREATE INDEX idx_aadc_compliance_project ON public.aadc_compliance USING btree (project_id);
+
+
+--
+-- Name: idx_aadc_cost_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aadc_cost_design ON public.aadc_cost_estimates USING btree (design_id);
 
 
 --
@@ -47470,10 +66112,31 @@ CREATE INDEX idx_aadc_lifecycle_design ON public.aadc_lifecycle_states USING btr
 
 
 --
+-- Name: idx_aadc_links_src; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aadc_links_src ON public.aadc_design_links USING btree (src_design_id);
+
+
+--
+-- Name: idx_aadc_links_tgt; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aadc_links_tgt ON public.aadc_design_links USING btree (tgt_design_id);
+
+
+--
 -- Name: idx_aadc_lint_design; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_aadc_lint_design ON public.aadc_lint_reports USING btree (design_id);
+
+
+--
+-- Name: idx_aadc_looplink_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aadc_looplink_design ON public.aadc_loop_links USING btree (design_id);
 
 
 --
@@ -47505,6 +66168,20 @@ CREATE INDEX idx_aadc_review_design ON public.aadc_review_comments USING btree (
 
 
 --
+-- Name: idx_aadc_risk_items_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aadc_risk_items_design ON public.aadc_risk_items USING btree (design_id);
+
+
+--
+-- Name: idx_aadc_risk_items_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aadc_risk_items_status ON public.aadc_risk_items USING btree (status);
+
+
+--
 -- Name: idx_aadc_safety_graphs_design; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -47516,6 +66193,41 @@ CREATE INDEX idx_aadc_safety_graphs_design ON public.aadc_safety_graphs USING bt
 --
 
 CREATE INDEX idx_aadc_scorecard_design ON public.aadc_scorecard_snapshots USING btree (design_id);
+
+
+--
+-- Name: idx_aadc_simulations_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aadc_simulations_design ON public.aadc_simulations USING btree (design_id);
+
+
+--
+-- Name: idx_aadc_threat_models_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aadc_threat_models_design ON public.aadc_threat_models USING btree (design_id);
+
+
+--
+-- Name: idx_aadc_twin_snapshots_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aadc_twin_snapshots_design ON public.aadc_twin_snapshots USING btree (design_id);
+
+
+--
+-- Name: idx_aadc_ver_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aadc_ver_design ON public.aadc_versions USING btree (design_id);
+
+
+--
+-- Name: idx_aadc_wflink_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aadc_wflink_design ON public.aadc_workflow_links USING btree (design_id);
 
 
 --
@@ -47547,6 +66259,27 @@ CREATE INDEX idx_ace_coworkers_instance ON public.ace_coworkers USING btree (ins
 
 
 --
+-- Name: idx_ace_event_results_event; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ace_event_results_event ON public.ace_event_results USING btree (event_id);
+
+
+--
+-- Name: idx_ace_events_processed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ace_events_processed ON public.ace_events USING btree (processed);
+
+
+--
+-- Name: idx_ace_events_topic; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ace_events_topic ON public.ace_events USING btree (topic);
+
+
+--
 -- Name: idx_ace_messages_instance; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -47554,10 +66287,122 @@ CREATE INDEX idx_ace_messages_instance ON public.ace_messages USING btree (insta
 
 
 --
+-- Name: idx_ace_qa_failures_run; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ace_qa_failures_run ON public.ace_qa_failures USING btree (run_id);
+
+
+--
+-- Name: idx_ace_qa_failures_severity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ace_qa_failures_severity ON public.ace_qa_failures USING btree (severity);
+
+
+--
+-- Name: idx_ace_qa_runs_started; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ace_qa_runs_started ON public.ace_qa_runs USING btree (started_at);
+
+
+--
+-- Name: idx_ace_qa_runs_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ace_qa_runs_status ON public.ace_qa_runs USING btree (status);
+
+
+--
+-- Name: idx_ace_sessions_instance; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ace_sessions_instance ON public.ace_sessions USING btree (instance_id);
+
+
+--
+-- Name: idx_ace_sessions_resume; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ace_sessions_resume ON public.ace_sessions USING btree (resume_token);
+
+
+--
+-- Name: idx_ace_sessions_token; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ace_sessions_token ON public.ace_sessions USING btree (resume_token);
+
+
+--
+-- Name: idx_ace_skill_cand_role; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ace_skill_cand_role ON public.ace_skill_candidates USING btree (role_id);
+
+
+--
+-- Name: idx_ace_skill_cand_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ace_skill_cand_status ON public.ace_skill_candidates USING btree (status);
+
+
+--
+-- Name: idx_ace_skill_candidates_role; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ace_skill_candidates_role ON public.ace_skill_candidates USING btree (role_id);
+
+
+--
+-- Name: idx_ace_skill_candidates_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ace_skill_candidates_status ON public.ace_skill_candidates USING btree (status);
+
+
+--
+-- Name: idx_ace_suggestions_context; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ace_suggestions_context ON public.ace_team_suggestions USING btree (context_id);
+
+
+--
+-- Name: idx_ace_suggestions_state; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ace_suggestions_state ON public.ace_team_suggestions USING btree (state);
+
+
+--
+-- Name: idx_ace_webhook_log_instance; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ace_webhook_log_instance ON public.ace_webhook_log USING btree (instance_id);
+
+
+--
+-- Name: idx_ace_workflows_instance; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ace_workflows_instance ON public.ace_agent_workflows USING btree (instance_id);
+
+
+--
 -- Name: idx_ach_node; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_ach_node ON public.awareness_component_health USING btree (node_id, probed_at);
+
+
+--
+-- Name: idx_acm_role; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_acm_role ON public.ace_coworker_memory USING btree (role_id);
 
 
 --
@@ -48352,6 +67197,34 @@ CREATE INDEX idx_ad_xp_events_user ON public.ad_xp_events USING btree (user_id);
 
 
 --
+-- Name: idx_aer_run_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aer_run_id ON public.agent_eval_runs USING btree (run_id, run_at);
+
+
+--
+-- Name: idx_aet_outcome; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aet_outcome ON public.agent_execution_traces USING btree (outcome);
+
+
+--
+-- Name: idx_aet_task_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aet_task_id ON public.agent_execution_traces USING btree (task_id);
+
+
+--
+-- Name: idx_aet_task_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aet_task_type ON public.agent_execution_traces USING btree (task_type);
+
+
+--
 -- Name: idx_ag_edges_dst; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -48387,6 +67260,62 @@ CREATE INDEX idx_ag_nodes_classification ON public.attack_graph_nodes USING btre
 
 
 --
+-- Name: idx_agcoord_ns; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agcoord_ns ON public.agent_coordination USING btree (namespace);
+
+
+--
+-- Name: idx_agcoord_ns_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_agcoord_ns_key ON public.agent_coordination USING btree (namespace, key);
+
+
+--
+-- Name: idx_agent_approval_actor; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_approval_actor ON public.agent_approval_log USING btree (actor);
+
+
+--
+-- Name: idx_agent_approval_decided; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_approval_decided ON public.agent_approval_log USING btree (decided_at);
+
+
+--
+-- Name: idx_agent_approval_decision_tier; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_approval_decision_tier ON public.agent_approval_log USING btree (decision, tier);
+
+
+--
+-- Name: idx_agent_approval_tool; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_approval_tool ON public.agent_approval_log USING btree (tool_name);
+
+
+--
+-- Name: idx_agent_evals_outcome; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_evals_outcome ON public.agent_evals USING btree (outcome, graded_at);
+
+
+--
+-- Name: idx_agent_evals_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_evals_session ON public.agent_evals USING btree (session_id);
+
+
+--
 -- Name: idx_agent_exec_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -48398,6 +67327,27 @@ CREATE INDEX idx_agent_exec_id ON public.agent_executions USING btree (execution
 --
 
 CREATE INDEX idx_agent_exec_status ON public.agent_executions USING btree (status);
+
+
+--
+-- Name: idx_agent_findings_decision_severity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_findings_decision_severity ON public.agent_findings USING btree (decision, severity);
+
+
+--
+-- Name: idx_agent_findings_rule; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_findings_rule ON public.agent_findings USING btree (rule_id, created_at);
+
+
+--
+-- Name: idx_agent_findings_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_findings_session ON public.agent_findings USING btree (session_id, created_at);
 
 
 --
@@ -48429,10 +67379,94 @@ CREATE INDEX idx_agent_mem_type ON public.agent_memory USING btree (memory_type)
 
 
 --
+-- Name: idx_agent_session_events_correlation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_session_events_correlation ON public.agent_session_events USING btree (correlation_id);
+
+
+--
+-- Name: idx_agent_session_events_seq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_agent_session_events_seq ON public.agent_session_events USING btree (session_id, seq);
+
+
+--
+-- Name: idx_agent_session_events_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_session_events_session ON public.agent_session_events USING btree (session_id);
+
+
+--
+-- Name: idx_agent_session_events_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_session_events_tenant ON public.agent_session_events USING btree (tenant_id, occurred_at);
+
+
+--
+-- Name: idx_agent_session_policy_state_updated; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_session_policy_state_updated ON public.agent_session_policy_state USING btree (updated_at);
+
+
+--
+-- Name: idx_agent_unattended_sessions_unattended; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_unattended_sessions_unattended ON public.agent_unattended_sessions USING btree (unattended);
+
+
+--
+-- Name: idx_agent_wakes_event; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_wakes_event ON public.agent_wakes USING btree (state, event_key);
+
+
+--
+-- Name: idx_agent_wakes_job; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_wakes_job ON public.agent_wakes USING btree (state, job_id);
+
+
+--
+-- Name: idx_agent_wakes_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_wakes_session ON public.agent_wakes USING btree (session_id, state);
+
+
+--
+-- Name: idx_agent_wakes_timer; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_wakes_timer ON public.agent_wakes USING btree (state, kind, fire_at);
+
+
+--
 -- Name: idx_agg_feature_date; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_agg_feature_date ON public.usage_aggregates USING btree (feature_tag, date);
+
+
+--
+-- Name: idx_agg_findings_doc; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agg_findings_doc ON public.document_aggregation_findings USING btree (surface, document_id);
+
+
+--
+-- Name: idx_agg_findings_signature; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agg_findings_signature ON public.document_aggregation_findings USING btree (content_signature);
 
 
 --
@@ -48468,6 +67502,27 @@ CREATE INDEX idx_aggregation_events_tenant ON public.aggregation_events USING bt
 --
 
 CREATE INDEX idx_aggregation_events_user ON public.aggregation_events USING btree (user_id);
+
+
+--
+-- Name: idx_ahp_coworker; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ahp_coworker ON public.agent_hitl_pending USING btree (coworker_id);
+
+
+--
+-- Name: idx_ahp_instance; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ahp_instance ON public.agent_hitl_pending USING btree (instance_id);
+
+
+--
+-- Name: idx_ahp_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ahp_status ON public.agent_hitl_pending USING btree (status);
 
 
 --
@@ -48653,6 +67708,27 @@ CREATE INDEX idx_ai_telemetry_project ON public.ai_telemetry USING btree (projec
 
 
 --
+-- Name: idx_aia_gepa_decided_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aia_gepa_decided_at ON public.agent_improvement_artifacts USING btree (gepa_decided_at);
+
+
+--
+-- Name: idx_aia_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aia_status ON public.agent_improvement_artifacts USING btree (status);
+
+
+--
+-- Name: idx_aia_task_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aia_task_type ON public.agent_improvement_artifacts USING btree (task_type);
+
+
+--
 -- Name: idx_aimc_deployment_key; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -48685,6 +67761,62 @@ CREATE INDEX idx_aimc_models_metric_key ON public.aimc_models USING btree (proje
 --
 
 CREATE INDEX idx_aimc_models_project ON public.aimc_models USING btree (project_id);
+
+
+--
+-- Name: idx_aiml_artifacts_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aiml_artifacts_design ON public.aiml_artifacts USING btree (design_id);
+
+
+--
+-- Name: idx_aiml_assessments_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aiml_assessments_design ON public.aiml_assessments USING btree (design_id);
+
+
+--
+-- Name: idx_aiml_edges_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aiml_edges_design ON public.aiml_edges USING btree (design_id);
+
+
+--
+-- Name: idx_aiml_nodes_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aiml_nodes_design ON public.aiml_nodes USING btree (design_id);
+
+
+--
+-- Name: idx_aiml_nodes_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aiml_nodes_type ON public.aiml_nodes USING btree (node_type);
+
+
+--
+-- Name: idx_aiml_simulations_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aiml_simulations_design ON public.aiml_simulations USING btree (design_id);
+
+
+--
+-- Name: idx_aiml_twin_snapshots_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aiml_twin_snapshots_design ON public.aiml_twin_snapshots USING btree (design_id);
+
+
+--
+-- Name: idx_aiml_versions_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_aiml_versions_design ON public.aiml_versions USING btree (design_id);
 
 
 --
@@ -48814,6 +67946,20 @@ CREATE INDEX idx_allowlist_channel ON public.remote_command_allowlist USING btre
 
 
 --
+-- Name: idx_als_coworker; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_als_coworker ON public.agent_loop_sessions USING btree (coworker_id);
+
+
+--
+-- Name: idx_als_instance; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_als_instance ON public.agent_loop_sessions USING btree (instance_id);
+
+
+--
 -- Name: idx_ao_category; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -48856,6 +68002,55 @@ CREATE INDEX idx_aov_severity ON public.agent_output_violations USING btree (sev
 
 
 --
+-- Name: idx_apd_outcome; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_apd_outcome ON public.ace_preflight_decisions USING btree (outcome);
+
+
+--
+-- Name: idx_apd_prediction; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_apd_prediction ON public.ace_preflight_decisions USING btree (prediction);
+
+
+--
+-- Name: idx_apd_subtask; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_apd_subtask ON public.ace_preflight_decisions USING btree (subtask_id);
+
+
+--
+-- Name: idx_apd_topic; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_apd_topic ON public.ace_preflight_decisions USING btree (topic);
+
+
+--
+-- Name: idx_apg_generation_n; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_apg_generation_n ON public.ace_policy_generations USING btree (generation_n);
+
+
+--
+-- Name: idx_apg_subtask; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_apg_subtask ON public.ace_policy_generations USING btree (subtask_id);
+
+
+--
+-- Name: idx_apg_workflow; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_apg_workflow ON public.ace_policy_generations USING btree (workflow_id);
+
+
+--
 -- Name: idx_api_keys_hash; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -48870,6 +68065,34 @@ CREATE INDEX idx_api_keys_tenant ON public.api_keys USING btree (tenant_id);
 
 
 --
+-- Name: idx_approval_items_expires; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_approval_items_expires ON public.approval_items USING btree (expires_at);
+
+
+--
+-- Name: idx_approval_items_inbox_state; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_approval_items_inbox_state ON public.approval_items USING btree (inbox, state);
+
+
+--
+-- Name: idx_approval_items_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_approval_items_session ON public.approval_items USING btree (session_id);
+
+
+--
+-- Name: idx_approval_items_state; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_approval_items_state ON public.approval_items USING btree (state);
+
+
+--
 -- Name: idx_approval_session; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -48881,6 +68104,13 @@ CREATE INDEX idx_approval_session ON public.approval_workflows USING btree (sess
 --
 
 CREATE INDEX idx_approval_status ON public.approval_workflows USING btree (status);
+
+
+--
+-- Name: idx_atl_role; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_atl_role ON public.ace_trust_ledger USING btree (role_id);
 
 
 --
@@ -49185,6 +68415,62 @@ CREATE INDEX idx_batch_runs_project ON public.batch_runs USING btree (project_id
 
 
 --
+-- Name: idx_bd_alerts_acknowledged; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bd_alerts_acknowledged ON public.bd_alerts USING btree (acknowledged);
+
+
+--
+-- Name: idx_bd_alerts_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bd_alerts_design ON public.bd_alerts USING btree (design_id);
+
+
+--
+-- Name: idx_bd_assessments_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bd_assessments_design ON public.bd_assessments USING btree (design_id);
+
+
+--
+-- Name: idx_bd_audit_action; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bd_audit_action ON public.bd_audit USING btree (action);
+
+
+--
+-- Name: idx_bd_audit_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bd_audit_design ON public.bd_audit USING btree (design_id);
+
+
+--
+-- Name: idx_bd_auth_comp_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bd_auth_comp_status ON public.bd_authorized_components USING btree (status);
+
+
+--
+-- Name: idx_bd_auth_comp_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bd_auth_comp_type ON public.bd_authorized_components USING btree (component_type);
+
+
+--
+-- Name: idx_bd_collab_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bd_collab_design ON public.bd_collab_sessions USING btree (design_id);
+
+
+--
 -- Name: idx_bd_computed; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -49203,6 +68489,48 @@ CREATE INDEX idx_bd_digest ON public.blueprint_digests USING btree (digest);
 --
 
 CREATE INDEX idx_bd_entity ON public.blueprint_digests USING btree (entity_type, entity_id);
+
+
+--
+-- Name: idx_bd_isa_tracker_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bd_isa_tracker_design ON public.bd_isa_tracker USING btree (design_id);
+
+
+--
+-- Name: idx_bd_isa_tracker_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bd_isa_tracker_status ON public.bd_isa_tracker USING btree (status);
+
+
+--
+-- Name: idx_bdc_runbooks_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bdc_runbooks_design ON public.bdc_runbooks USING btree (design_id);
+
+
+--
+-- Name: idx_bdc_runbooks_trigger; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bdc_runbooks_trigger ON public.bdc_runbooks USING btree (trigger_event);
+
+
+--
+-- Name: idx_bdc_sops_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bdc_sops_status ON public.bdc_sops USING btree (approval_status);
+
+
+--
+-- Name: idx_bdc_sops_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bdc_sops_type ON public.bdc_sops USING btree (sop_type);
 
 
 --
@@ -49231,6 +68559,27 @@ CREATE INDEX idx_bes_candidate ON public.bayesian_experiment_scores USING btree 
 --
 
 CREATE INDEX idx_bes_domain ON public.bayesian_experiment_scores USING btree (domain);
+
+
+--
+-- Name: idx_bi_dashboards_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bi_dashboards_tenant ON public.bi_dashboards USING btree (tenant_id);
+
+
+--
+-- Name: idx_bi_data_sources_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bi_data_sources_tenant ON public.bi_data_sources USING btree (tenant_id);
+
+
+--
+-- Name: idx_bi_generation_log_dashboard; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bi_generation_log_dashboard ON public.bi_generation_log USING btree (dashboard_id);
 
 
 --
@@ -49283,6 +68632,209 @@ CREATE INDEX idx_bindings_user ON public.remote_user_bindings USING btree (icdev
 
 
 --
+-- Name: idx_bom_arch_function; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bom_arch_function ON public.bom_architecture_components USING btree (project_id, function_slug);
+
+
+--
+-- Name: idx_bom_arch_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bom_arch_project ON public.bom_architecture_components USING btree (project_id, baseline_label);
+
+
+--
+-- Name: idx_bom_audit_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bom_audit_project ON public.bom_audit USING btree (project_id);
+
+
+--
+-- Name: idx_bom_blocks_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bom_blocks_key ON public.bom_line_blocks USING btree (project_id, block_key);
+
+
+--
+-- Name: idx_bom_cells_formula; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bom_cells_formula ON public.bom_cells USING btree (source_id);
+
+
+--
+-- Name: idx_bom_cells_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bom_cells_source ON public.bom_cells USING btree (source_id, sheet);
+
+
+--
+-- Name: idx_bom_clusters_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bom_clusters_project ON public.bom_clusters USING btree (project_id);
+
+
+--
+-- Name: idx_bom_coverage_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bom_coverage_project ON public.bom_coverage USING btree (project_id, baseline_label);
+
+
+--
+-- Name: idx_bom_decisions_pair; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bom_decisions_pair ON public.bom_match_decisions USING btree (project_id, pair_key);
+
+
+--
+-- Name: idx_bom_findings_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bom_findings_project ON public.bom_findings USING btree (project_id, severity, disposition);
+
+
+--
+-- Name: idx_bom_findings_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bom_findings_type ON public.bom_findings USING btree (project_id, finding_type);
+
+
+--
+-- Name: idx_bom_inv_model; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bom_inv_model ON public.bom_inventory_assets USING btree (project_id, model_key);
+
+
+--
+-- Name: idx_bom_lines_cluster; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bom_lines_cluster ON public.bom_lines USING btree (cluster_id);
+
+
+--
+-- Name: idx_bom_lines_function; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bom_lines_function ON public.bom_lines USING btree (project_id, function_slug);
+
+
+--
+-- Name: idx_bom_lines_part; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bom_lines_part ON public.bom_lines USING btree (part_number_norm);
+
+
+--
+-- Name: idx_bom_lines_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bom_lines_project ON public.bom_lines USING btree (project_id);
+
+
+--
+-- Name: idx_bom_lines_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bom_lines_source ON public.bom_lines USING btree (source_id);
+
+
+--
+-- Name: idx_bom_optgroups_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bom_optgroups_project ON public.bom_option_groups USING btree (project_id);
+
+
+--
+-- Name: idx_bom_optmembers_group; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bom_optmembers_group ON public.bom_option_members USING btree (group_id);
+
+
+--
+-- Name: idx_bom_projects_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bom_projects_tenant ON public.bom_projects USING btree (tenant_id);
+
+
+--
+-- Name: idx_bom_rollup_consumed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bom_rollup_consumed ON public.bom_rollup_edges USING btree (consumed_cell_id);
+
+
+--
+-- Name: idx_bom_rollup_target; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bom_rollup_target ON public.bom_rollup_edges USING btree (target_cell_id);
+
+
+--
+-- Name: idx_bom_scope_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bom_scope_project ON public.bom_scope_items USING btree (project_id, status);
+
+
+--
+-- Name: idx_bom_scopecov_scope; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bom_scopecov_scope ON public.bom_scope_coverage USING btree (scope_id);
+
+
+--
+-- Name: idx_bom_snapshots_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bom_snapshots_project ON public.bom_snapshots USING btree (project_id);
+
+
+--
+-- Name: idx_bom_sources_fingerprint; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bom_sources_fingerprint ON public.bom_sources USING btree (content_fingerprint);
+
+
+--
+-- Name: idx_bom_sources_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bom_sources_project ON public.bom_sources USING btree (project_id);
+
+
+--
+-- Name: idx_bom_sources_role; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bom_sources_role ON public.bom_sources USING btree (project_id, role);
+
+
+--
+-- Name: idx_bom_taxnodes_tax; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bom_taxnodes_tax ON public.bom_taxonomy_nodes USING btree (taxonomy_id);
+
+
+--
 -- Name: idx_breadth_snapshots_created; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -49301,6 +68853,13 @@ CREATE INDEX idx_bridge_source ON public.crosswalk_bridges USING btree (source_f
 --
 
 CREATE INDEX idx_bridge_target ON public.crosswalk_bridges USING btree (target_framework);
+
+
+--
+-- Name: idx_briefing; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_briefing ON public.user_daily_briefings USING btree (user_id, tenant_id, briefing_date);
 
 
 --
@@ -49665,6 +69224,20 @@ CREATE INDEX idx_cec_source ON public.compliance_evidence_chain USING btree (sou
 --
 
 CREATE INDEX idx_cec_ts ON public.compliance_evidence_chain USING btree (event_ts);
+
+
+--
+-- Name: idx_cef_findings_browse; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cef_findings_browse ON public.cortex_entity_findings USING btree (tenant_id, finding_type, last_seen_at);
+
+
+--
+-- Name: idx_cef_findings_entity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cef_findings_entity ON public.cortex_entity_findings USING btree (tenant_id, entity_key);
 
 
 --
@@ -50130,6 +69703,20 @@ CREATE INDEX idx_ckg_nodes_canvas ON public.canvas_kg_nodes USING btree (canvas,
 
 
 --
+-- Name: idx_cli_llm_jobs_claim; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cli_llm_jobs_claim ON public.cli_llm_jobs USING btree (status, backend, created_at);
+
+
+--
+-- Name: idx_cli_llm_jobs_context; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cli_llm_jobs_context ON public.cli_llm_jobs USING btree (context_id);
+
+
+--
 -- Name: idx_cloud_status_provider; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -50200,6 +69787,27 @@ CREATE INDEX idx_cmdlog_status ON public.remote_command_log USING btree (executi
 
 
 --
+-- Name: idx_cmmc_gaps_assessment; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cmmc_gaps_assessment ON public.cmmc_practice_gaps USING btree (assessment_id);
+
+
+--
+-- Name: idx_cmmc_gaps_domain; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cmmc_gaps_domain ON public.cmmc_practice_gaps USING btree (domain);
+
+
+--
+-- Name: idx_cmmc_gaps_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cmmc_gaps_tenant ON public.cmmc_practice_gaps USING btree (tenant_id);
+
+
+--
 -- Name: idx_cmmc_level; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -50211,6 +69819,20 @@ CREATE INDEX idx_cmmc_level ON public.cmmc_assessments USING btree (level);
 --
 
 CREATE INDEX idx_cmmc_project ON public.cmmc_assessments USING btree (project_id);
+
+
+--
+-- Name: idx_cmmc_systems_classification; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cmmc_systems_classification ON public.cmmc_systems USING btree (classification);
+
+
+--
+-- Name: idx_cmmc_systems_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cmmc_systems_tenant ON public.cmmc_systems USING btree (tenant_id);
 
 
 --
@@ -50298,6 +69920,48 @@ CREATE INDEX idx_collab_project ON public.agent_collaboration_history USING btre
 
 
 --
+-- Name: idx_compliance_gates_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_compliance_gates_project ON public.compliance_gates USING btree (project_id);
+
+
+--
+-- Name: idx_compliance_gates_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_compliance_gates_status ON public.compliance_gates USING btree (status);
+
+
+--
+-- Name: idx_compliance_gates_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_compliance_gates_tenant ON public.compliance_gates USING btree (tenant_id);
+
+
+--
+-- Name: idx_component_audit_log_component; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_component_audit_log_component ON public.component_audit_log USING btree (component_key);
+
+
+--
+-- Name: idx_component_audit_log_event; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_component_audit_log_event ON public.component_audit_log USING btree (event_type);
+
+
+--
+-- Name: idx_component_audit_log_recorded_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_component_audit_log_recorded_at ON public.component_audit_log USING btree (recorded_at);
+
+
+--
 -- Name: idx_confab_created; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -50309,6 +69973,13 @@ CREATE INDEX idx_confab_created ON public.confabulation_checks USING btree (crea
 --
 
 CREATE INDEX idx_confab_project ON public.confabulation_checks USING btree (project_id);
+
+
+--
+-- Name: idx_confabulation_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_confabulation_project ON public.confabulation_checks USING btree (project_id);
 
 
 --
@@ -50330,6 +70001,104 @@ CREATE INDEX idx_conv_reflex ON public.genesis_convergence_log USING btree (refl
 --
 
 CREATE INDEX idx_conv_session ON public.ci_conversations USING btree (session_key, status);
+
+
+--
+-- Name: idx_cortex_audit_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cortex_audit_created_at ON public.cortex_audit USING btree (created_at);
+
+
+--
+-- Name: idx_cortex_audit_function; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cortex_audit_function ON public.cortex_audit USING btree (function);
+
+
+--
+-- Name: idx_cortex_audit_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cortex_audit_session ON public.cortex_audit USING btree (session_id);
+
+
+--
+-- Name: idx_cortex_audit_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cortex_audit_tenant ON public.cortex_audit USING btree (tenant_id);
+
+
+--
+-- Name: idx_cortex_audit_tenant_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cortex_audit_tenant_created ON public.cortex_audit USING btree (tenant_id, created_at);
+
+
+--
+-- Name: idx_cortex_chat_sessions_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cortex_chat_sessions_tenant ON public.cortex_chat_sessions USING btree (tenant_id);
+
+
+--
+-- Name: idx_cortex_chat_sessions_tenant_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cortex_chat_sessions_tenant_created ON public.cortex_chat_sessions USING btree (tenant_id, created_at);
+
+
+--
+-- Name: idx_cortex_chat_sessions_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cortex_chat_sessions_user ON public.cortex_chat_sessions USING btree (user_id);
+
+
+--
+-- Name: idx_cortex_messages_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cortex_messages_session ON public.cortex_messages USING btree (session_id, turn_number);
+
+
+--
+-- Name: idx_cortex_messages_tenant_session_turn; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cortex_messages_tenant_session_turn ON public.cortex_messages USING btree (tenant_id, session_id, turn_number);
+
+
+--
+-- Name: idx_cortex_search_history_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cortex_search_history_session ON public.cortex_search_history USING btree (session_id);
+
+
+--
+-- Name: idx_cortex_search_history_tenant_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cortex_search_history_tenant_created ON public.cortex_search_history USING btree (tenant_id, created_at);
+
+
+--
+-- Name: idx_cortex_sessions_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cortex_sessions_tenant ON public.cortex_sessions USING btree (tenant_id);
+
+
+--
+-- Name: idx_cortex_sessions_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cortex_sessions_user ON public.cortex_sessions USING btree (user_id);
 
 
 --
@@ -50456,20 +70225,6 @@ CREATE INDEX idx_cpmp_contract_health ON public.cpmp_contracts USING btree (heal
 --
 
 CREATE INDEX idx_cpmp_contract_idiq ON public.cpmp_contracts USING btree (idiq_contract_id);
-
-
---
--- Name: idx_cpmp_contract_periods_contract; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_cpmp_contract_periods_contract ON public.cpmp_contract_periods USING btree (contract_id);
-
-
---
--- Name: idx_cpmp_contract_periods_status; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_cpmp_contract_periods_status ON public.cpmp_contract_periods USING btree (contract_id, status);
 
 
 --
@@ -50641,6 +70396,34 @@ CREATE INDEX idx_cpmp_hist_entity ON public.cpmp_status_history USING btree (ent
 
 
 --
+-- Name: idx_cpmp_milestone_deps_pred; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cpmp_milestone_deps_pred ON public.cpmp_milestone_deps USING btree (predecessor_id);
+
+
+--
+-- Name: idx_cpmp_milestone_deps_succ; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cpmp_milestone_deps_succ ON public.cpmp_milestone_deps USING btree (successor_id);
+
+
+--
+-- Name: idx_cpmp_milestones_contract; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cpmp_milestones_contract ON public.cpmp_milestones USING btree (contract_id);
+
+
+--
+-- Name: idx_cpmp_milestones_wbs; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cpmp_milestones_wbs ON public.cpmp_milestones USING btree (wbs_id);
+
+
+--
 -- Name: idx_cpmp_mods_contract; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -50757,6 +70540,20 @@ CREATE INDEX idx_cpmp_opt_deadline ON public.cpmp_option_periods USING btree (ex
 --
 
 CREATE INDEX idx_cpmp_opt_status ON public.cpmp_option_periods USING btree (status);
+
+
+--
+-- Name: idx_cpmp_periods_contract; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cpmp_periods_contract ON public.cpmp_contract_periods USING btree (contract_id);
+
+
+--
+-- Name: idx_cpmp_periods_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cpmp_periods_status ON public.cpmp_contract_periods USING btree (contract_id, status);
 
 
 --
@@ -50939,6 +70736,34 @@ CREATE INDEX idx_creative_comp_domain ON public.creative_competitors USING btree
 --
 
 CREATE INDEX idx_creative_comp_status ON public.creative_competitors USING btree (status);
+
+
+--
+-- Name: idx_creative_gap_concept; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_creative_gap_concept ON public.creative_gap USING btree (concept_id);
+
+
+--
+-- Name: idx_creative_gap_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_creative_gap_created ON public.creative_gap USING btree (created_at);
+
+
+--
+-- Name: idx_creative_gap_hash; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_creative_gap_hash ON public.creative_gap USING btree (content_hash);
+
+
+--
+-- Name: idx_creative_gap_score; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_creative_gap_score ON public.creative_gap USING btree (score);
 
 
 --
@@ -51152,6 +70977,20 @@ CREATE INDEX idx_ctrend_velocity ON public.creative_trends USING btree (velocity
 
 
 --
+-- Name: idx_ctx_compress_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ctx_compress_created ON public.llm_context_compression_log USING brin (created_at);
+
+
+--
+-- Name: idx_ctx_compress_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ctx_compress_session ON public.llm_context_compression_log USING btree (session_id);
+
+
+--
 -- Name: idx_ctx_pressure_session; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -51198,6 +71037,13 @@ CREATE INDEX idx_cve_triage_project ON public.cve_triage USING btree (project_id
 --
 
 CREATE INDEX idx_cve_triage_severity ON public.cve_triage USING btree (severity);
+
+
+--
+-- Name: idx_cwk_dic_instance; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cwk_dic_instance ON public.coworker_dic_contexts USING btree (instance_id);
 
 
 --
@@ -51303,6 +71149,27 @@ CREATE INDEX idx_dataclass_category ON public.data_classifications USING btree (
 --
 
 CREATE INDEX idx_dataclass_project ON public.data_classifications USING btree (project_id);
+
+
+--
+-- Name: idx_db_agent_access_agent; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_db_agent_access_agent ON public.databridge_agent_access_log USING btree (agent_id);
+
+
+--
+-- Name: idx_db_agent_access_decision; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_db_agent_access_decision ON public.databridge_agent_access_log USING btree (decision);
+
+
+--
+-- Name: idx_db_agent_access_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_db_agent_access_tenant ON public.databridge_agent_access_log USING btree (tenant_id, created_at);
 
 
 --
@@ -51425,6 +71292,48 @@ CREATE INDEX idx_db_sync_time ON public.db_sync_log USING btree (synced_at);
 
 
 --
+-- Name: idx_dd_collab_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dd_collab_design ON public.dd_collab_sessions USING btree (design_id);
+
+
+--
+-- Name: idx_dd_explore_profiles_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dd_explore_profiles_design ON public.dd_explore_profiles USING btree (design_id);
+
+
+--
+-- Name: idx_dd_explore_sessions_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dd_explore_sessions_design ON public.dd_explore_sessions USING btree (design_id);
+
+
+--
+-- Name: idx_dd_fm_confidence; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dd_fm_confidence ON public.dd_field_mappings USING btree (confidence DESC);
+
+
+--
+-- Name: idx_dd_fm_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dd_fm_session ON public.dd_field_mappings USING btree (session_id);
+
+
+--
+-- Name: idx_dd_fm_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dd_fm_status ON public.dd_field_mappings USING btree (status);
+
+
+--
 -- Name: idx_dd_freshness_design; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -51436,6 +71345,76 @@ CREATE INDEX idx_dd_freshness_design ON public.dd_freshness_runs USING btree (de
 --
 
 CREATE INDEX idx_dd_freshness_run_at ON public.dd_freshness_runs USING btree (run_at DESC);
+
+
+--
+-- Name: idx_dd_lineage_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dd_lineage_design ON public.dd_lineage USING btree (design_id);
+
+
+--
+-- Name: idx_dd_lineage_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dd_lineage_source ON public.dd_lineage USING btree (source_node_id);
+
+
+--
+-- Name: idx_dd_lineage_target; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dd_lineage_target ON public.dd_lineage USING btree (target_node_id);
+
+
+--
+-- Name: idx_dd_migration_jobs_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dd_migration_jobs_design ON public.dd_migration_jobs USING btree (design_id);
+
+
+--
+-- Name: idx_dd_migration_jobs_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dd_migration_jobs_status ON public.dd_migration_jobs USING btree (status);
+
+
+--
+-- Name: idx_dd_ms_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dd_ms_created ON public.dd_mapping_sessions USING btree (created_at DESC);
+
+
+--
+-- Name: idx_dd_ms_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dd_ms_status ON public.dd_mapping_sessions USING btree (status);
+
+
+--
+-- Name: idx_dd_ms_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dd_ms_tenant ON public.dd_mapping_sessions USING btree (tenant_id);
+
+
+--
+-- Name: idx_dd_mt_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dd_mt_created ON public.dd_mapping_transforms USING btree (created_at DESC);
+
+
+--
+-- Name: idx_dd_mt_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dd_mt_session ON public.dd_mapping_transforms USING btree (session_id);
 
 
 --
@@ -51453,10 +71432,87 @@ CREATE INDEX idx_dd_pii_scans_risk ON public.dd_pii_scans USING btree (overall_r
 
 
 --
+-- Name: idx_dd_pii_scans_scanned; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dd_pii_scans_scanned ON public.dd_pii_scans USING btree (scanned_at DESC);
+
+
+--
 -- Name: idx_dd_pii_scans_tenant; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_dd_pii_scans_tenant ON public.dd_pii_scans USING btree (tenant_id);
+
+
+--
+-- Name: idx_dd_quality_rules_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dd_quality_rules_design ON public.dd_quality_rules USING btree (design_id);
+
+
+--
+-- Name: idx_dd_quality_runs_rule; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dd_quality_runs_rule ON public.dd_quality_runs USING btree (rule_id);
+
+
+--
+-- Name: idx_dd_query_history_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dd_query_history_design ON public.dd_query_history USING btree (design_id);
+
+
+--
+-- Name: idx_dd_versions_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dd_versions_design ON public.dd_versions USING btree (design_id);
+
+
+--
+-- Name: idx_ddc_runbook_exec_runbook; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ddc_runbook_exec_runbook ON public.ddc_runbook_executions USING btree (runbook_id);
+
+
+--
+-- Name: idx_ddc_runbooks_category; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ddc_runbooks_category ON public.ddc_runbooks USING btree (category);
+
+
+--
+-- Name: idx_ddc_runbooks_severity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ddc_runbooks_severity ON public.ddc_runbooks USING btree (severity);
+
+
+--
+-- Name: idx_ddc_sop_approvals_sop; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ddc_sop_approvals_sop ON public.ddc_sop_approvals USING btree (sop_id);
+
+
+--
+-- Name: idx_ddc_sops_category; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ddc_sops_category ON public.ddc_sops USING btree (category);
+
+
+--
+-- Name: idx_ddc_sops_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ddc_sops_status ON public.ddc_sops USING btree (status);
 
 
 --
@@ -51558,6 +71614,20 @@ CREATE INDEX idx_detect_project ON public.compliance_detection_log USING btree (
 
 
 --
+-- Name: idx_detector_findings_browse; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_detector_findings_browse ON public.detector_findings USING btree (detector, status, last_seen_at);
+
+
+--
+-- Name: idx_detector_findings_task; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_detector_findings_task ON public.detector_findings USING btree (task_id);
+
+
+--
 -- Name: idx_dev_profile_detections_tenant; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -51635,6 +71705,55 @@ CREATE INDEX idx_dib_nodes_type ON public.dib_nodes USING btree (node_type);
 
 
 --
+-- Name: idx_dic_chat_memory_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dic_chat_memory_session ON public.dic_chat_memory USING btree (session_id, tenant_id);
+
+
+--
+-- Name: idx_dic_chunk_links_hash; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dic_chunk_links_hash ON public.dic_chunk_links USING btree (chunk_hash);
+
+
+--
+-- Name: idx_dic_community_summaries_community; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dic_community_summaries_community ON public.dic_community_summaries USING btree (community_id);
+
+
+--
+-- Name: idx_dic_community_summaries_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dic_community_summaries_tenant ON public.dic_community_summaries USING btree (tenant_id);
+
+
+--
+-- Name: idx_dic_cross_refs_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dic_cross_refs_source ON public.dic_cross_references USING btree (source_doc_id);
+
+
+--
+-- Name: idx_dic_cross_refs_target; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dic_cross_refs_target ON public.dic_cross_references USING btree (target_doc_id);
+
+
+--
+-- Name: idx_dic_cross_refs_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dic_cross_refs_tenant ON public.dic_cross_references USING btree (tenant_id);
+
+
+--
 -- Name: idx_dic_doc_freshness_collection; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -51649,10 +71768,45 @@ CREATE INDEX idx_dic_doc_freshness_tenant ON public.dic_doc_freshness USING btre
 
 
 --
+-- Name: idx_dic_doc_views_doc; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dic_doc_views_doc ON public.dic_doc_views USING btree (doc_id);
+
+
+--
+-- Name: idx_dic_doc_views_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dic_doc_views_tenant ON public.dic_doc_views USING btree (tenant_id);
+
+
+--
+-- Name: idx_dic_doc_views_viewed_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dic_doc_views_viewed_at ON public.dic_doc_views USING btree (viewed_at);
+
+
+--
 -- Name: idx_dic_freshness_scans_collection; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_dic_freshness_scans_collection ON public.dic_freshness_scans USING btree (collection_id);
+
+
+--
+-- Name: idx_dic_generated_outputs_collection; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dic_generated_outputs_collection ON public.dic_generated_outputs USING btree (collection_id);
+
+
+--
+-- Name: idx_dic_generated_outputs_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dic_generated_outputs_type ON public.dic_generated_outputs USING btree (output_type);
 
 
 --
@@ -51670,6 +71824,20 @@ CREATE INDEX idx_dic_handoff_sessions_tenant ON public.dic_handoff_sessions USIN
 
 
 --
+-- Name: idx_dic_presence_sessions_doc; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dic_presence_sessions_doc ON public.dic_presence_sessions USING btree (doc_id);
+
+
+--
+-- Name: idx_dic_presence_sessions_last_seen; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dic_presence_sessions_last_seen ON public.dic_presence_sessions USING btree (last_seen);
+
+
+--
 -- Name: idx_dic_team_access_collection; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -51684,10 +71852,122 @@ CREATE INDEX idx_dispatcher_mode_project ON public.dispatcher_mode_overrides USI
 
 
 --
--- Name: idx_dm_ports_product; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_dm_audit_domain; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_dm_ports_product ON public.dm_ports USING btree (product_id);
+CREATE INDEX idx_dm_audit_domain ON public.dm_audit USING btree (domain_id);
+
+
+--
+-- Name: idx_dm_audit_product; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dm_audit_product ON public.dm_audit USING btree (product_id);
+
+
+--
+-- Name: idx_dm_catalog_entries_product; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dm_catalog_entries_product ON public.dm_catalog_entries USING btree (product_id);
+
+
+--
+-- Name: idx_dm_contracts_domain; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dm_contracts_domain ON public.dm_data_contracts USING btree (domain_id);
+
+
+--
+-- Name: idx_dm_contracts_product; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dm_contracts_product ON public.dm_data_contracts USING btree (product_id);
+
+
+--
+-- Name: idx_dm_contracts_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dm_contracts_status ON public.dm_data_contracts USING btree (status);
+
+
+--
+-- Name: idx_dm_csp_provider; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dm_csp_provider ON public.dm_csp_sync_log USING btree (provider, created_at);
+
+
+--
+-- Name: idx_dm_data_products_domain; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dm_data_products_domain ON public.dm_data_products USING btree (domain_id);
+
+
+--
+-- Name: idx_dm_data_products_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dm_data_products_status ON public.dm_data_products USING btree (status);
+
+
+--
+-- Name: idx_dm_domain_maturity_domain; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dm_domain_maturity_domain ON public.dm_domain_maturity USING btree (domain_id);
+
+
+--
+-- Name: idx_dm_domains_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dm_domains_status ON public.dm_domains USING btree (status);
+
+
+--
+-- Name: idx_dm_governance_policies_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dm_governance_policies_status ON public.dm_governance_policies USING btree (status);
+
+
+--
+-- Name: idx_dm_input_ports_product; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dm_input_ports_product ON public.dm_input_ports USING btree (product_id);
+
+
+--
+-- Name: idx_dm_opa_policies_domain; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dm_opa_policies_domain ON public.dm_opa_policies USING btree (domain_id);
+
+
+--
+-- Name: idx_dm_opa_policies_enabled; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dm_opa_policies_enabled ON public.dm_opa_policies USING btree (enabled);
+
+
+--
+-- Name: idx_dm_output_ports_product; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dm_output_ports_product ON public.dm_output_ports USING btree (product_id);
+
+
+--
+-- Name: idx_dm_policy_audit_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dm_policy_audit_created ON public.dm_policy_audit_log USING btree (created_at DESC);
 
 
 --
@@ -51698,10 +71978,136 @@ CREATE INDEX idx_dm_ports_port_type ON public.dm_ports USING btree (port_type);
 
 
 --
--- Name: idx_dm_ports_tenant; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_dm_ports_product; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_dm_ports_tenant ON public.dm_ports USING btree (tenant_id);
+CREATE INDEX idx_dm_ports_product ON public.dm_ports USING btree (product_id);
+
+
+--
+-- Name: idx_dm_ports_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dm_ports_status ON public.dm_ports USING btree (status);
+
+
+--
+-- Name: idx_dm_product_slas_product; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dm_product_slas_product ON public.dm_product_slas USING btree (product_id);
+
+
+--
+-- Name: idx_dm_subscriptions_product; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dm_subscriptions_product ON public.dm_product_subscriptions USING btree (product_id);
+
+
+--
+-- Name: idx_dm_test_runs_contract; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dm_test_runs_contract ON public.dm_contract_test_runs USING btree (contract_id);
+
+
+--
+-- Name: idx_docdrift_res_entity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_docdrift_res_entity ON public.dic_docdrift_resolutions USING btree (tenant_id, entity_key, resolved_at);
+
+
+--
+-- Name: idx_docmod_catalog_audit_entry; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_docmod_catalog_audit_entry ON public.docmod_catalog_audit USING btree (entry_id);
+
+
+--
+-- Name: idx_docmod_catalog_domain; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_docmod_catalog_domain ON public.docmod_catalog_entries USING btree (domain, category, status);
+
+
+--
+-- Name: idx_docmod_defacto_domain; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_docmod_defacto_domain ON public.docmod_defacto_standards USING btree (domain, category);
+
+
+--
+-- Name: idx_docmod_eol_product; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_docmod_eol_product ON public.docmod_eol_products USING btree (product);
+
+
+--
+-- Name: idx_docmod_findings_dedupe; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_docmod_findings_dedupe ON public.docmod_findings USING btree (dedupe_key);
+
+
+--
+-- Name: idx_docmod_findings_doc; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_docmod_findings_doc ON public.docmod_findings USING btree (doc_id, state);
+
+
+--
+-- Name: idx_docmod_findings_run; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_docmod_findings_run ON public.docmod_findings USING btree (run_id);
+
+
+--
+-- Name: idx_docmod_nist_pubs_pub; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_docmod_nist_pubs_pub ON public.docmod_nist_pubs USING btree (pub_id);
+
+
+--
+-- Name: idx_documents_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_documents_created_at ON public.documents USING btree (created_at DESC);
+
+
+--
+-- Name: idx_documents_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_documents_status ON public.documents USING btree (status);
+
+
+--
+-- Name: idx_documents_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_documents_tenant ON public.documents USING btree (tenant_id);
+
+
+--
+-- Name: idx_domain_coverage_category; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_domain_coverage_category ON public.domain_coverage USING btree (domain_category);
+
+
+--
+-- Name: idx_domain_coverage_pattern; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_domain_coverage_pattern ON public.domain_coverage USING btree (pattern_id);
 
 
 --
@@ -51765,6 +72171,27 @@ CREATE INDEX idx_draftjob_opp ON public.draft_generation_jobs USING btree (oppor
 --
 
 CREATE INDEX idx_draftjob_status ON public.draft_generation_jobs USING btree (status);
+
+
+--
+-- Name: idx_dynamic_findings_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dynamic_findings_key ON public.dynamic_findings USING btree (finding_key);
+
+
+--
+-- Name: idx_dynamic_findings_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dynamic_findings_status ON public.dynamic_findings USING btree (status);
+
+
+--
+-- Name: idx_dynamic_findings_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dynamic_findings_tenant ON public.dynamic_findings USING btree (tenant_id);
 
 
 --
@@ -51838,6 +72265,55 @@ CREATE INDEX idx_emass_sync_project ON public.emass_sync_log USING btree (projec
 
 
 --
+-- Name: idx_entitlements_principal; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_entitlements_principal ON public.entitlements USING btree (principal_id, status);
+
+
+--
+-- Name: idx_entitlements_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_entitlements_tenant ON public.entitlements USING btree (tenant_id, status) WHERE (tenant_id IS NOT NULL);
+
+
+--
+-- Name: idx_entity_currency_entity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_entity_currency_entity ON public.entity_currency USING btree (entity_type, entity_key);
+
+
+--
+-- Name: idx_entity_currency_identity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_entity_currency_identity ON public.entity_currency USING btree (source, entity_type, namespace, entity_key, entity_version);
+
+
+--
+-- Name: idx_entity_currency_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_entity_currency_source ON public.entity_currency USING btree (source, observed_at);
+
+
+--
+-- Name: idx_entity_currency_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_entity_currency_tenant ON public.entity_currency USING btree (tenant_id, as_of);
+
+
+--
+-- Name: idx_entity_currency_verdict; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_entity_currency_verdict ON public.entity_currency USING btree (verdict, eol_date);
+
+
+--
 -- Name: idx_epa_created; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -51877,6 +72353,27 @@ CREATE INDEX idx_er_domain ON public.experiment_results USING btree (domain);
 --
 
 CREATE INDEX idx_eu_ai_act_project ON public.eu_ai_act_assessments USING btree (project_id);
+
+
+--
+-- Name: idx_evidence_items_control; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_evidence_items_control ON public.evidence_items USING btree (tenant_id, control_id);
+
+
+--
+-- Name: idx_evidence_items_framework; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_evidence_items_framework ON public.evidence_items USING btree (framework, tenant_id);
+
+
+--
+-- Name: idx_evidence_items_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_evidence_items_source ON public.evidence_items USING btree (source_table, source_row_id, control_id) WHERE ((source_table IS NOT NULL) AND (source_row_id IS NOT NULL));
 
 
 --
@@ -51943,6 +72440,48 @@ CREATE INDEX idx_ext_reg_scope ON public.extension_registry USING btree (scope, 
 
 
 --
+-- Name: idx_fa_assignments_target; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_fa_assignments_target ON public.fa_assignments USING btree (target_type, target_user_id);
+
+
+--
+-- Name: idx_fa_assignments_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_fa_assignments_tenant ON public.fa_assignments USING btree (tenant_id);
+
+
+--
+-- Name: idx_fa_attempts_step; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_fa_attempts_step ON public.fa_step_attempts USING btree (step_id);
+
+
+--
+-- Name: idx_fa_attempts_user_step; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_fa_attempts_user_step ON public.fa_step_attempts USING btree (user_id, step_id);
+
+
+--
+-- Name: idx_fa_cert_evidence_cert; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_fa_cert_evidence_cert ON public.fa_certificate_evidence USING btree (cert_id);
+
+
+--
+-- Name: idx_fa_cert_evidence_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_fa_cert_evidence_user ON public.fa_certificate_evidence USING btree (user_id);
+
+
+--
 -- Name: idx_fa_certs_token; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -51968,6 +72507,27 @@ CREATE INDEX idx_fa_comp_edges_class ON public.fa_competency_edges USING btree (
 --
 
 CREATE INDEX idx_fa_comp_edges_user ON public.fa_competency_edges USING btree (user_id);
+
+
+--
+-- Name: idx_fa_instructor_audit_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_fa_instructor_audit_tenant ON public.fa_instructor_audit USING btree (tenant_id, id);
+
+
+--
+-- Name: idx_fa_instructor_reviews_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_fa_instructor_reviews_user ON public.fa_instructor_reviews USING btree (user_id);
+
+
+--
+-- Name: idx_fa_items_step; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_fa_items_step ON public.fa_assessment_items USING btree (step_id);
 
 
 --
@@ -52027,6 +72587,13 @@ CREATE INDEX idx_fa_project ON public.framework_applicability USING btree (proje
 
 
 --
+-- Name: idx_fa_step_ontology_competency; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_fa_step_ontology_competency ON public.fa_step_ontology USING btree (competency_class);
+
+
+--
 -- Name: idx_fa_user_competencies_class; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -52048,6 +72615,27 @@ CREATE INDEX idx_fa_users_tenant ON public.fa_users USING btree (tenant_id) WHER
 
 
 --
+-- Name: idx_fa_xp_ledger_earned; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_fa_xp_ledger_earned ON public.fa_xp_ledger USING btree (user_id, is_attendance);
+
+
+--
+-- Name: idx_fa_xp_ledger_reason; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_fa_xp_ledger_reason ON public.fa_xp_ledger USING btree (user_id, reason);
+
+
+--
+-- Name: idx_fa_xp_ledger_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_fa_xp_ledger_user ON public.fa_xp_ledger USING btree (user_id);
+
+
+--
 -- Name: idx_fairness_created; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -52062,17 +72650,10 @@ CREATE INDEX idx_fairness_project ON public.fairness_assessments USING btree (pr
 
 
 --
--- Name: idx_fedramp_baseline; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_fairness_project_dimension; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_fedramp_baseline ON public.fedramp_assessments USING btree (baseline);
-
-
---
--- Name: idx_fedramp_project; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_fedramp_project ON public.fedramp_assessments USING btree (project_id);
+CREATE UNIQUE INDEX idx_fairness_project_dimension ON public.fairness_assessments USING btree (project_id, dimension);
 
 
 --
@@ -52083,10 +72664,10 @@ CREATE INDEX idx_fedramp_ato_pkgs_status ON public.fedramp_ato_packages USING bt
 
 
 --
--- Name: idx_fedramp_ato_pkgs_tenant; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_fedramp_baseline; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_fedramp_ato_pkgs_tenant ON public.fedramp_ato_packages USING btree (tenant_id);
+CREATE INDEX idx_fedramp_baseline ON public.fedramp_assessments USING btree (baseline);
 
 
 --
@@ -52104,10 +72685,10 @@ CREATE INDEX idx_fedramp_controls_status ON public.fedramp_controls USING btree 
 
 
 --
--- Name: idx_fedramp_controls_tenant; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_fedramp_project; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_fedramp_controls_tenant ON public.fedramp_controls USING btree (tenant_id);
+CREATE INDEX idx_fedramp_project ON public.fedramp_assessments USING btree (project_id);
 
 
 --
@@ -52153,6 +72734,48 @@ CREATE INDEX idx_finding_approvals_severity ON public.finding_approvals USING bt
 
 
 --
+-- Name: idx_finetune_eval_job; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_finetune_eval_job ON public.finetune_eval_results USING btree (job_id);
+
+
+--
+-- Name: idx_finetune_eval_score; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_finetune_eval_score ON public.finetune_eval_results USING btree (score);
+
+
+--
+-- Name: idx_finetune_jobs_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_finetune_jobs_status ON public.finetune_jobs USING btree (status);
+
+
+--
+-- Name: idx_finetune_jobs_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_finetune_jobs_tenant ON public.finetune_jobs USING btree (tenant_id);
+
+
+--
+-- Name: idx_finetune_metrics_epoch; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_finetune_metrics_epoch ON public.finetune_metrics USING btree (epoch);
+
+
+--
+-- Name: idx_finetune_metrics_job; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_finetune_metrics_job ON public.finetune_metrics USING btree (job_id);
+
+
+--
 -- Name: idx_fips199_project; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -52195,6 +72818,41 @@ CREATE INDEX idx_fitness_score ON public.agentic_fitness_assessments USING btree
 
 
 --
+-- Name: idx_forecast_audit_event_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_forecast_audit_event_type ON public.forecast_audit USING btree (event_type);
+
+
+--
+-- Name: idx_forecast_audit_job_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_forecast_audit_job_id ON public.forecast_audit USING btree (job_id);
+
+
+--
+-- Name: idx_forecast_jobs_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_forecast_jobs_created_at ON public.forecast_jobs USING btree (created_at);
+
+
+--
+-- Name: idx_forecast_jobs_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_forecast_jobs_status ON public.forecast_jobs USING btree (status);
+
+
+--
+-- Name: idx_forecast_jobs_tenant_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_forecast_jobs_tenant_id ON public.forecast_jobs USING btree (tenant_id);
+
+
+--
 -- Name: idx_forge_connector_name; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -52234,6 +72892,125 @@ CREATE INDEX idx_forge_sandbox_conn ON public.db_forge_sandbox_log USING btree (
 --
 
 CREATE INDEX idx_forge_val_connector ON public.db_forge_validations USING btree (connector_id);
+
+
+--
+-- Name: idx_foundry_concepts_run; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_concepts_run ON public.foundry_concepts USING btree (run_id);
+
+
+--
+-- Name: idx_foundry_concepts_score; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_concepts_score ON public.foundry_concepts USING btree (composite_score);
+
+
+--
+-- Name: idx_foundry_concepts_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_concepts_status ON public.foundry_concepts USING btree (status);
+
+
+--
+-- Name: idx_foundry_concepts_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_concepts_tenant ON public.foundry_concepts USING btree (tenant_id);
+
+
+--
+-- Name: idx_foundry_outcomes_concept; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_outcomes_concept ON public.foundry_outcomes USING btree (concept_id);
+
+
+--
+-- Name: idx_foundry_outcomes_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_outcomes_tenant ON public.foundry_outcomes USING btree (tenant_id);
+
+
+--
+-- Name: idx_foundry_runs_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_runs_status ON public.foundry_runs USING btree (status);
+
+
+--
+-- Name: idx_foundry_runs_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_runs_tenant ON public.foundry_runs USING btree (tenant_id);
+
+
+--
+-- Name: idx_foundry_signals_engine; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_signals_engine ON public.foundry_signals USING btree (source_engine);
+
+
+--
+-- Name: idx_foundry_signals_hash; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_foundry_signals_hash ON public.foundry_signals USING btree (content_hash);
+
+
+--
+-- Name: idx_foundry_signals_run; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_signals_run ON public.foundry_signals USING btree (run_id);
+
+
+--
+-- Name: idx_foundry_signals_score; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_signals_score ON public.foundry_signals USING btree (raw_score);
+
+
+--
+-- Name: idx_foundry_signals_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_signals_tenant ON public.foundry_signals USING btree (tenant_id);
+
+
+--
+-- Name: idx_foundry_specs_concept; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_specs_concept ON public.foundry_specs USING btree (concept_id);
+
+
+--
+-- Name: idx_foundry_specs_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_specs_tenant ON public.foundry_specs USING btree (tenant_id);
+
+
+--
+-- Name: idx_foundry_tasks_concept; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_tasks_concept ON public.foundry_tasks_emitted USING btree (concept_id);
+
+
+--
+-- Name: idx_foundry_tasks_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_foundry_tasks_tenant ON public.foundry_tasks_emitted USING btree (tenant_id);
 
 
 --
@@ -52489,6 +73266,27 @@ CREATE INDEX idx_gaoai_requirement ON public.gao_ai_assessments USING btree (req
 
 
 --
+-- Name: idx_gate_failures_gate; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_gate_failures_gate ON public.gate_failures USING btree (gate_id);
+
+
+--
+-- Name: idx_gate_failures_severity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_gate_failures_severity ON public.gate_failures USING btree (severity);
+
+
+--
+-- Name: idx_gate_failures_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_gate_failures_tenant ON public.gate_failures USING btree (tenant_id);
+
+
+--
 -- Name: idx_gd_artifacts_game; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -52507,6 +73305,13 @@ CREATE INDEX idx_gd_artifacts_round ON public.gd_ai_artifacts USING btree (round
 --
 
 CREATE INDEX idx_gd_artifacts_team ON public.gd_ai_artifacts USING btree (team_id);
+
+
+--
+-- Name: idx_gd_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_gd_created ON public.genesis_designs USING btree (created_at);
 
 
 --
@@ -52545,20 +73350,6 @@ CREATE INDEX idx_gd_pairs_round ON public.gd_ai_training_pairs USING btree (roun
 
 
 --
--- Name: idx_gd_tournaments_game; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_gd_tournaments_game ON public.gd_ai_tournaments USING btree (game_key, status);
-
-
---
--- Name: idx_gd_created; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_gd_created ON public.genesis_designs USING btree (created_at);
-
-
---
 -- Name: idx_gd_status; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -52573,24 +73364,10 @@ CREATE INDEX idx_gd_tenant ON public.genesis_designs USING btree (tenant_id);
 
 
 --
--- Name: idx_gr_design_id; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_gd_tournaments_game; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_gr_design_id ON public.genesis_reflexes USING btree (design_id);
-
-
---
--- Name: idx_gr_fired_at; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_gr_fired_at ON public.genesis_reflexes USING btree (fired_at);
-
-
---
--- Name: idx_gr_tenant; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_gr_tenant ON public.genesis_reflexes USING btree (tenant_id);
+CREATE INDEX idx_gd_tournaments_game ON public.gd_ai_tournaments USING btree (game_key, status);
 
 
 --
@@ -52671,6 +73448,34 @@ CREATE INDEX idx_genome_versions_version ON public.genome_versions USING btree (
 
 
 --
+-- Name: idx_geo_fetched; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_geo_fetched ON public.geoint_events USING btree (fetched_at);
+
+
+--
+-- Name: idx_geo_sev; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_geo_sev ON public.geoint_events USING btree (severity);
+
+
+--
+-- Name: idx_geo_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_geo_source ON public.geoint_events USING btree (source);
+
+
+--
+-- Name: idx_geo_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_geo_type ON public.geoint_events USING btree (event_type);
+
+
+--
 -- Name: idx_gg_created; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -52692,6 +73497,20 @@ CREATE INDEX idx_gg_status ON public.genesis_generated_goals USING btree (status
 
 
 --
+-- Name: idx_github_inbox_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_github_inbox_created_at ON public.github_inbox USING btree (created_at DESC);
+
+
+--
+-- Name: idx_github_inbox_processed_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_github_inbox_processed_at ON public.github_inbox USING btree (processed_at) WHERE (processed_at IS NULL);
+
+
+--
 -- Name: idx_gitlab_claim_iid; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -52706,6 +73525,20 @@ CREATE INDEX idx_gitlab_claim_status ON public.gitlab_task_claims USING btree (s
 
 
 --
+-- Name: idx_gitlab_inbox_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_gitlab_inbox_created_at ON public.gitlab_inbox USING btree (created_at DESC);
+
+
+--
+-- Name: idx_gitlab_inbox_processed_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_gitlab_inbox_processed_at ON public.gitlab_inbox USING btree (processed_at) WHERE (processed_at IS NULL);
+
+
+--
 -- Name: idx_gl_mktpl_cat; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -52717,6 +73550,20 @@ CREATE INDEX idx_gl_mktpl_cat ON public.govlift_marketplace_templates USING btre
 --
 
 CREATE INDEX idx_gl_mktpl_cert ON public.govlift_marketplace_templates USING btree (is_certified);
+
+
+--
+-- Name: idx_go_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_go_created_at ON public.genesis_outputs USING btree (created_at);
+
+
+--
+-- Name: idx_go_reflex_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_go_reflex_name ON public.genesis_outputs USING btree (reflex_name);
 
 
 --
@@ -52916,6 +73763,13 @@ CREATE INDEX idx_govlift_rb_status ON public.govlift_runbooks USING btree (statu
 
 
 --
+-- Name: idx_govlift_rb_template; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_govlift_rb_template ON public.govlift_runbooks USING btree (template_id);
+
+
+--
 -- Name: idx_govlift_rb_wave; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -52934,6 +73788,13 @@ CREATE INDEX idx_govlift_rbe_runbook ON public.govlift_runbook_executions USING 
 --
 
 CREATE INDEX idx_govlift_rbe_status ON public.govlift_runbook_executions USING btree (status);
+
+
+--
+-- Name: idx_govlift_rbs_exec; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_govlift_rbs_exec ON public.govlift_runbook_step_results USING btree (execution_id);
 
 
 --
@@ -53179,6 +74040,48 @@ CREATE INDEX idx_govlift_wlm_scored_at ON public.govlift_workload_metadata USING
 --
 
 CREATE INDEX idx_govlift_wlm_workload ON public.govlift_workload_metadata USING btree (workload_id);
+
+
+--
+-- Name: idx_gpl_completed_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_gpl_completed_at ON public.genesis_phase_log USING btree (completed_at);
+
+
+--
+-- Name: idx_gpl_design_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_gpl_design_id ON public.genesis_phase_log USING btree (design_id);
+
+
+--
+-- Name: idx_gpl_started_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_gpl_started_at ON public.genesis_phase_log USING btree (started_at);
+
+
+--
+-- Name: idx_gr_design_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_gr_design_id ON public.genesis_reflexes USING btree (design_id);
+
+
+--
+-- Name: idx_gr_fired_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_gr_fired_at ON public.genesis_reflexes USING btree (fired_at);
+
+
+--
+-- Name: idx_gr_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_gr_tenant ON public.genesis_reflexes USING btree (tenant_id);
 
 
 --
@@ -53441,6 +74344,62 @@ CREATE INDEX idx_idc_versions_design ON public.idc_versions USING btree (design_
 
 
 --
+-- Name: idx_idr_analyses_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_idr_analyses_session ON public.idr_analyses USING btree (session_id);
+
+
+--
+-- Name: idx_idr_analyses_upload; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_idr_analyses_upload ON public.idr_analyses USING btree (upload_id);
+
+
+--
+-- Name: idx_idr_artifacts_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_idr_artifacts_session ON public.idr_artifacts USING btree (session_id);
+
+
+--
+-- Name: idx_idr_conflicts_pending; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_idr_conflicts_pending ON public.idr_conflicts USING btree (session_id) WHERE (resolved_at IS NULL);
+
+
+--
+-- Name: idx_idr_conflicts_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_idr_conflicts_session ON public.idr_conflicts USING btree (session_id);
+
+
+--
+-- Name: idx_idr_publish_audit_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_idr_publish_audit_session ON public.idr_publish_audit USING btree (session_id);
+
+
+--
+-- Name: idx_idr_uploads_doc; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_idr_uploads_doc ON public.idr_uploads USING btree (doc_id);
+
+
+--
+-- Name: idx_idr_uploads_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_idr_uploads_session ON public.idr_uploads USING btree (session_id);
+
+
+--
 -- Name: idx_iir_classification; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -53550,6 +74509,34 @@ CREATE INDEX idx_innovation_feedback_signal ON public.innovation_feedback USING 
 --
 
 CREATE INDEX idx_innovation_feedback_type ON public.innovation_feedback USING btree (feedback_type);
+
+
+--
+-- Name: idx_innovation_signal_concept; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_innovation_signal_concept ON public.innovation_signal USING btree (concept_id);
+
+
+--
+-- Name: idx_innovation_signal_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_innovation_signal_created ON public.innovation_signal USING btree (created_at);
+
+
+--
+-- Name: idx_innovation_signal_hash; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_innovation_signal_hash ON public.innovation_signal USING btree (content_hash);
+
+
+--
+-- Name: idx_innovation_signal_score; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_innovation_signal_score ON public.innovation_signal USING btree (score);
 
 
 --
@@ -53669,6 +74656,13 @@ CREATE INDEX idx_innovation_triage_result ON public.innovation_triage_log USING 
 --
 
 CREATE INDEX idx_innovation_triage_signal ON public.innovation_triage_log USING btree (signal_id);
+
+
+--
+-- Name: idx_insider_scores_acct; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_insider_scores_acct ON public.insider_risk_scores USING btree (account_id, created_at);
 
 
 --
@@ -53847,6 +74841,41 @@ CREATE INDEX idx_isa_status ON public.isa_agreements USING btree (status);
 
 
 --
+-- Name: idx_isch_component_evaluated; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_isch_component_evaluated ON public.idp_scorecard_history USING btree (scorecard_key, component_key, evaluated_at);
+
+
+--
+-- Name: idx_isch_run; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_isch_run ON public.idp_scorecard_history USING btree (run_id);
+
+
+--
+-- Name: idx_isch_tenant_component; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_isch_tenant_component ON public.idp_scorecard_history USING btree (tenant_id, scorecard_key, component_key, evaluated_at);
+
+
+--
+-- Name: idx_isch_tenant_window; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_isch_tenant_window ON public.idp_scorecard_history USING btree (tenant_id, scorecard_key, window_start);
+
+
+--
+-- Name: idx_isch_window; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_isch_window ON public.idp_scorecard_history USING btree (scorecard_key, window_start);
+
+
+--
 -- Name: idx_iso27001_assessments_project; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -53970,6 +74999,27 @@ CREATE INDEX idx_iwts_country ON public.iw_twin_snapshots USING btree (country_i
 --
 
 CREATE INDEX idx_iwts_snap ON public.iw_twin_snapshots USING btree (snapshot_at);
+
+
+--
+-- Name: idx_ixmp_key_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ixmp_key_index ON public.idp_rule_exemptions USING btree (exemption_key, event_index);
+
+
+--
+-- Name: idx_ixmp_recorded; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ixmp_recorded ON public.idp_rule_exemptions USING btree (recorded_at);
+
+
+--
+-- Name: idx_ixmp_scorecard; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ixmp_scorecard ON public.idp_rule_exemptions USING btree (scorecard_key, component_key, rule_identifier);
 
 
 --
@@ -54124,6 +75174,27 @@ CREATE INDEX idx_kst_task_id ON public.kanban_status_transitions USING btree (ta
 --
 
 CREATE INDEX idx_kst_time ON public.kanban_status_transitions USING btree (recorded_at DESC);
+
+
+--
+-- Name: idx_ksub_task_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ksub_task_id ON public.kanban_task_subscriptions USING btree (task_id);
+
+
+--
+-- Name: idx_kt_heartbeat; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_kt_heartbeat ON public.kanban_tasks USING btree (last_heartbeat_at);
+
+
+--
+-- Name: idx_kt_idem_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_kt_idem_key ON public.kanban_tasks USING btree (idempotency_key);
 
 
 --
@@ -54337,6 +75408,41 @@ CREATE INDEX idx_maint_audit_project ON public.maintenance_audits USING btree (p
 
 
 --
+-- Name: idx_mattermost_inbox_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mattermost_inbox_created_at ON public.mattermost_inbox USING btree (created_at DESC);
+
+
+--
+-- Name: idx_mattermost_inbox_processed_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mattermost_inbox_processed_at ON public.mattermost_inbox USING btree (processed_at) WHERE (processed_at IS NULL);
+
+
+--
+-- Name: idx_mbu_cost_basis; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mbu_cost_basis ON public.module_budget_usage USING btree (cost_basis) WHERE (cost_basis IS NOT NULL);
+
+
+--
+-- Name: idx_mc_ai_opps_component; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_ai_opps_component ON public.mc_ai_opportunities USING btree (component_name);
+
+
+--
+-- Name: idx_mc_ai_opps_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_ai_opps_project ON public.mc_ai_opportunities USING btree (project_id);
+
+
+--
 -- Name: idx_mc_alerts_session; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -54348,6 +75454,125 @@ CREATE INDEX idx_mc_alerts_session ON public.mission_canvas_alerts USING btree (
 --
 
 CREATE INDEX idx_mc_alerts_severity ON public.mission_canvas_alerts USING btree (severity, acknowledged);
+
+
+--
+-- Name: idx_mc_app_inv_criticality; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_app_inv_criticality ON public.mc_app_inventory USING btree (criticality);
+
+
+--
+-- Name: idx_mc_app_inv_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_app_inv_session ON public.mc_app_inventory USING btree (session_id);
+
+
+--
+-- Name: idx_mc_app_steps_app; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_app_steps_app ON public.mc_app_migration_steps USING btree (app_id);
+
+
+--
+-- Name: idx_mc_app_steps_phase; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_app_steps_phase ON public.mc_app_migration_steps USING btree (phase);
+
+
+--
+-- Name: idx_mc_assessments_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_assessments_design ON public.mc_assessments USING btree (design_id);
+
+
+--
+-- Name: idx_mc_audit_action; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_audit_action ON public.mc_audit USING btree (action);
+
+
+--
+-- Name: idx_mc_audit_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_audit_created ON public.mc_audit USING btree (created_at);
+
+
+--
+-- Name: idx_mc_audit_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_audit_design ON public.mc_audit USING btree (design_id);
+
+
+--
+-- Name: idx_mc_cc_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_cc_design ON public.mc_compliance_checks USING btree (design_id);
+
+
+--
+-- Name: idx_mc_cc_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_cc_session ON public.mc_compliance_checks USING btree (session_id);
+
+
+--
+-- Name: idx_mc_cloud_instances_family; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_cloud_instances_family ON public.mc_cloud_instances USING btree (family);
+
+
+--
+-- Name: idx_mc_cloud_instances_provider; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_cloud_instances_provider ON public.mc_cloud_instances USING btree (provider);
+
+
+--
+-- Name: idx_mc_cloud_instances_ram; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_cloud_instances_ram ON public.mc_cloud_instances USING btree (ram_gb);
+
+
+--
+-- Name: idx_mc_cloud_instances_vcpus; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_cloud_instances_vcpus ON public.mc_cloud_instances USING btree (vcpus);
+
+
+--
+-- Name: idx_mc_data_mig_app; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_data_mig_app ON public.mc_data_migration USING btree (app_id);
+
+
+--
+-- Name: idx_mc_data_mig_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_data_mig_status ON public.mc_data_migration USING btree (status);
+
+
+--
+-- Name: idx_mc_deps_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_deps_session ON public.mc_server_dependencies USING btree (session_id);
 
 
 --
@@ -54365,6 +75590,216 @@ CREATE INDEX idx_mc_evidence_session ON public.mission_canvas_evidence USING btr
 
 
 --
+-- Name: idx_mc_net_ai_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_net_ai_session ON public.mc_net_ai_sessions USING btree (session_id);
+
+
+--
+-- Name: idx_mc_net_cfgmap_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_net_cfgmap_session ON public.mc_net_config_map USING btree (session_id);
+
+
+--
+-- Name: idx_mc_net_cfgmap_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_net_cfgmap_status ON public.mc_net_config_map USING btree (status);
+
+
+--
+-- Name: idx_mc_net_cfgq_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_net_cfgq_session ON public.mc_net_config_questions USING btree (session_id);
+
+
+--
+-- Name: idx_mc_net_cfgval_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_net_cfgval_session ON public.mc_net_config_validation USING btree (session_id);
+
+
+--
+-- Name: idx_mc_net_coaq_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_net_coaq_session ON public.mc_net_coa_questions USING btree (session_id);
+
+
+--
+-- Name: idx_mc_net_compat_category; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_net_compat_category ON public.mc_net_compat_checks USING btree (category);
+
+
+--
+-- Name: idx_mc_net_compat_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_net_compat_session ON public.mc_net_compat_checks USING btree (session_id);
+
+
+--
+-- Name: idx_mc_net_cutover_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_net_cutover_session ON public.mc_net_cutover_steps USING btree (session_id);
+
+
+--
+-- Name: idx_mc_net_eol_vendor; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_net_eol_vendor ON public.mc_net_eol_data USING btree (vendor);
+
+
+--
+-- Name: idx_mc_net_erb_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_net_erb_session ON public.mc_net_erb_metadata USING btree (session_id);
+
+
+--
+-- Name: idx_mc_net_port_map_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_net_port_map_session ON public.mc_net_port_map USING btree (session_id);
+
+
+--
+-- Name: idx_mc_net_proto_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_net_proto_session ON public.mc_net_protocol_plans USING btree (session_id);
+
+
+--
+-- Name: idx_mc_net_tests_phase; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_net_tests_phase ON public.mc_net_test_cases USING btree (phase);
+
+
+--
+-- Name: idx_mc_net_tests_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_net_tests_session ON public.mc_net_test_cases USING btree (session_id);
+
+
+--
+-- Name: idx_mc_net_timeline_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_net_timeline_session ON public.mc_net_parallel_timelines USING btree (session_id);
+
+
+--
+-- Name: idx_mc_net_topo_neighbor_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_net_topo_neighbor_session ON public.mc_net_topology_neighbors USING btree (session_id);
+
+
+--
+-- Name: idx_mc_observed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_observed ON public.mitre_coverage USING btree (last_observed_at);
+
+
+--
+-- Name: idx_mc_oracle_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_oracle_design ON public.mc_oracle_predictions USING btree (design_id);
+
+
+--
+-- Name: idx_mc_oracle_severity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_oracle_severity ON public.mc_oracle_predictions USING btree (severity);
+
+
+--
+-- Name: idx_mc_phase_sops_phase; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_phase_sops_phase ON public.mc_project_phase_sops USING btree (phase_id);
+
+
+--
+-- Name: idx_mc_phase_sops_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_phase_sops_project ON public.mc_project_phase_sops USING btree (project_id);
+
+
+--
+-- Name: idx_mc_proj_phases_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_proj_phases_project ON public.mc_project_phases USING btree (project_id);
+
+
+--
+-- Name: idx_mc_proj_phases_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_proj_phases_status ON public.mc_project_phases USING btree (status);
+
+
+--
+-- Name: idx_mc_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_project ON public.mitre_coverage USING btree (project_id);
+
+
+--
+-- Name: idx_mc_refactor_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_refactor_project ON public.mc_refactor_jobs USING btree (project_id);
+
+
+--
+-- Name: idx_mc_refactor_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_refactor_status ON public.mc_refactor_jobs USING btree (status);
+
+
+--
+-- Name: idx_mc_refactor_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_refactor_type ON public.mc_refactor_jobs USING btree (refactor_type);
+
+
+--
+-- Name: idx_mc_runbooks_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_runbooks_design ON public.mc_runbooks USING btree (design_id);
+
+
+--
+-- Name: idx_mc_runbooks_trigger; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_runbooks_trigger ON public.mc_runbooks USING btree (trigger_event);
+
+
+--
 -- Name: idx_mc_scenario; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -54379,10 +75814,241 @@ CREATE INDEX idx_mc_sessions_status ON public.mission_canvas_sessions USING btre
 
 
 --
+-- Name: idx_mc_sops_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_sops_status ON public.mc_sops USING btree (approval_status);
+
+
+--
+-- Name: idx_mc_sops_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_sops_type ON public.mc_sops USING btree (sop_type);
+
+
+--
+-- Name: idx_mc_srv_compat_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_srv_compat_session ON public.mc_srv_compat_checks USING btree (session_id);
+
+
+--
+-- Name: idx_mc_srv_compat_sev; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_srv_compat_sev ON public.mc_srv_compat_checks USING btree (severity);
+
+
+--
+-- Name: idx_mc_srv_cutover_phase; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_srv_cutover_phase ON public.mc_srv_cutover_steps USING btree (phase);
+
+
+--
+-- Name: idx_mc_srv_cutover_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_srv_cutover_session ON public.mc_srv_cutover_steps USING btree (session_id);
+
+
+--
+-- Name: idx_mc_srv_deps_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_srv_deps_session ON public.mc_srv_dependencies USING btree (session_id);
+
+
+--
+-- Name: idx_mc_srv_erb_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_srv_erb_session ON public.mc_srv_erb_metadata USING btree (session_id);
+
+
+--
+-- Name: idx_mc_srv_hvsess_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_srv_hvsess_session ON public.mc_srv_hypervisor_sessions USING btree (session_id);
+
+
+--
+-- Name: idx_mc_srv_inventory_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_srv_inventory_session ON public.mc_srv_inventory USING btree (session_id);
+
+
+--
+-- Name: idx_mc_srv_nic_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_srv_nic_session ON public.mc_srv_nic_map USING btree (session_id);
+
+
+--
+-- Name: idx_mc_srv_perf_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_srv_perf_session ON public.mc_srv_performance USING btree (session_id);
+
+
+--
+-- Name: idx_mc_srv_pmtest_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_srv_pmtest_session ON public.mc_srv_post_migration_tests USING btree (session_id);
+
+
+--
+-- Name: idx_mc_srv_pmtest_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_srv_pmtest_status ON public.mc_srv_post_migration_tests USING btree (status);
+
+
+--
+-- Name: idx_mc_srv_rightsizing_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_srv_rightsizing_session ON public.mc_srv_rightsizing USING btree (session_id);
+
+
+--
+-- Name: idx_mc_srv_services_role; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_srv_services_role ON public.mc_srv_services USING btree (service_role);
+
+
+--
+-- Name: idx_mc_srv_services_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_srv_services_session ON public.mc_srv_services USING btree (session_id);
+
+
+--
+-- Name: idx_mc_srv_sessions_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_srv_sessions_status ON public.mc_srv_sessions USING btree (status);
+
+
+--
+-- Name: idx_mc_srv_storage_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_srv_storage_session ON public.mc_srv_storage_map USING btree (session_id);
+
+
+--
+-- Name: idx_mc_srv_tests_phase; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_srv_tests_phase ON public.mc_srv_test_cases USING btree (phase);
+
+
+--
+-- Name: idx_mc_srv_tests_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_srv_tests_session ON public.mc_srv_test_cases USING btree (session_id);
+
+
+--
+-- Name: idx_mc_state; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_state ON public.mitre_coverage USING btree (state);
+
+
+--
+-- Name: idx_mc_technique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_technique ON public.mitre_coverage USING btree (technique_id, project_id);
+
+
+--
 -- Name: idx_mc_twins_session; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_mc_twins_session ON public.mission_canvas_twins USING btree (session_id);
+
+
+--
+-- Name: idx_mc_versions_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_versions_design ON public.mc_versions USING btree (design_id);
+
+
+--
+-- Name: idx_mc_wave_backout_wave; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_mc_wave_backout_wave ON public.mc_wave_backout USING btree (session_id, wave_id);
+
+
+--
+-- Name: idx_mc_wave_close_ovr_wave; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_wave_close_ovr_wave ON public.mc_wave_close_overrides USING btree (session_id, wave_id);
+
+
+--
+-- Name: idx_mc_wave_plans_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_wave_plans_design ON public.mc_wave_plans USING btree (design_id);
+
+
+--
+-- Name: idx_mc_waves_num; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_mc_waves_num ON public.mc_migration_waves USING btree (session_id, wave_number);
+
+
+--
+-- Name: idx_mc_wlval_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_mc_wlval_unique ON public.mc_workload_validations USING btree (session_id, wave_id, workload_id, check_type);
+
+
+--
+-- Name: idx_mc_wlval_wave; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mc_wlval_wave ON public.mc_workload_validations USING btree (session_id, wave_id);
+
+
+--
+-- Name: idx_mcip_dat_events_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mcip_dat_events_at ON public.mcip_dat_events USING btree (ingested_at);
+
+
+--
+-- Name: idx_mcip_dat_events_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mcip_dat_events_source ON public.mcip_dat_events USING btree (source_type);
+
+
+--
+-- Name: idx_mcip_dti_scores_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mcip_dti_scores_at ON public.mcip_dti_scores USING btree (computed_at);
 
 
 --
@@ -54491,6 +76157,20 @@ CREATE INDEX idx_mem_consol_source ON public.memory_consolidation_log USING btre
 
 
 --
+-- Name: idx_memory_classification; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_memory_classification ON public.memory_entries USING btree (classification);
+
+
+--
+-- Name: idx_memory_compartment; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_memory_compartment ON public.memory_entries USING btree (compartment);
+
+
+--
 -- Name: idx_memory_content_hash_user; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -54505,10 +76185,38 @@ CREATE INDEX idx_memory_created ON public.memory_entries USING btree (created_at
 
 
 --
+-- Name: idx_memory_distilled; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_memory_distilled ON public.memory_entries USING btree (distilled) WHERE (distilled = 0);
+
+
+--
+-- Name: idx_memory_session_ref; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_memory_session_ref ON public.memory_entries USING btree (session_ref) WHERE (session_ref IS NOT NULL);
+
+
+--
 -- Name: idx_memory_tenant_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_memory_tenant_id ON public.memory_entries USING btree (tenant_id);
+
+
+--
+-- Name: idx_memory_tier; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_memory_tier ON public.memory_entries USING btree (tier);
+
+
+--
+-- Name: idx_memory_trace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_memory_trace_id ON public.memory_entries USING btree (trace_id) WHERE (trace_id IS NOT NULL);
 
 
 --
@@ -54544,6 +76252,55 @@ CREATE INDEX idx_mer_type ON public.memory_entity_relationships USING btree (rel
 --
 
 CREATE INDEX idx_meta_strategy ON public.ad_order_meta USING btree (strategy_id);
+
+
+--
+-- Name: idx_mi_goals_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mi_goals_status ON public.mi_goals USING btree (status);
+
+
+--
+-- Name: idx_mi_opps_score; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mi_opps_score ON public.mi_opportunities USING btree (composite_score DESC);
+
+
+--
+-- Name: idx_mi_opps_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mi_opps_status ON public.mi_opportunities USING btree (status);
+
+
+--
+-- Name: idx_mi_opps_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mi_opps_type ON public.mi_opportunities USING btree (opportunity_type);
+
+
+--
+-- Name: idx_mi_scans_started; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mi_scans_started ON public.mi_scans USING btree (started_at DESC);
+
+
+--
+-- Name: idx_mi_wishlist_fy; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mi_wishlist_fy ON public.mi_wishlist USING btree (fiscal_year, status);
+
+
+--
+-- Name: idx_mi_wishlist_urgency; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mi_wishlist_urgency ON public.mi_wishlist USING btree (replacement_urgency, status);
 
 
 --
@@ -54946,6 +76703,328 @@ CREATE INDEX idx_nash_wargame ON public.sg_nash_scenarios USING btree (wargame_i
 
 
 --
+-- Name: idx_nc_advisories_cve; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_advisories_cve ON public.nc_advisories USING btree (cve_id);
+
+
+--
+-- Name: idx_nc_advisories_severity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_advisories_severity ON public.nc_advisories USING btree (severity);
+
+
+--
+-- Name: idx_nc_advisories_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_advisories_status ON public.nc_advisories USING btree (status);
+
+
+--
+-- Name: idx_nc_advisory_assessments_advisory; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_advisory_assessments_advisory ON public.nc_advisory_assessments USING btree (advisory_id);
+
+
+--
+-- Name: idx_nc_advisory_assessments_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_advisory_assessments_created ON public.nc_advisory_assessments USING btree (created_at DESC);
+
+
+--
+-- Name: idx_nc_agreement_amendments_agreement; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_agreement_amendments_agreement ON public.nc_agreement_amendments USING btree (agreement_id);
+
+
+--
+-- Name: idx_nc_ai_history_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_ai_history_created ON public.nc_ai_history USING btree (created_at DESC);
+
+
+--
+-- Name: idx_nc_attack_surface_device_cve; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_nc_attack_surface_device_cve ON public.nc_attack_surface USING btree (device_name, cve_id);
+
+
+--
+-- Name: idx_nc_attack_surface_score; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_attack_surface_score ON public.nc_attack_surface USING btree (surface_score DESC);
+
+
+--
+-- Name: idx_nc_captures_link; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_captures_link ON public.nc_packet_captures USING btree (link_id);
+
+
+--
+-- Name: idx_nc_captures_run; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_captures_run ON public.nc_packet_captures USING btree (lab_run_id);
+
+
+--
+-- Name: idx_nc_collab_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_collab_design ON public.nc_collab_sessions USING btree (design_id);
+
+
+--
+-- Name: idx_nc_consolidation_topo; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_consolidation_topo ON public.nc_consolidation_analysis USING btree (topo_id);
+
+
+--
+-- Name: idx_nc_cp_csp; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_cp_csp ON public.nc_connectivity_patterns USING btree (csp_pair);
+
+
+--
+-- Name: idx_nc_exception_approvals_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_exception_approvals_created ON public.nc_exception_approvals USING btree (created_at DESC);
+
+
+--
+-- Name: idx_nc_exception_approvals_exception; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_exception_approvals_exception ON public.nc_exception_approvals USING btree (exception_id);
+
+
+--
+-- Name: idx_nc_exceptions_advisory; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_exceptions_advisory ON public.nc_exceptions USING btree (advisory_id) WHERE (advisory_id IS NOT NULL);
+
+
+--
+-- Name: idx_nc_exceptions_device; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_exceptions_device ON public.nc_exceptions USING btree (device_name);
+
+
+--
+-- Name: idx_nc_exceptions_expiry; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_exceptions_expiry ON public.nc_exceptions USING btree (expiry_date) WHERE (expiry_date IS NOT NULL);
+
+
+--
+-- Name: idx_nc_fws_flow; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_fws_flow ON public.nc_flow_walkthrough_steps USING btree (flow_id);
+
+
+--
+-- Name: idx_nc_lab_clones_parent; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_lab_clones_parent ON public.nc_lab_clones USING btree (parent_design_id);
+
+
+--
+-- Name: idx_nc_lab_runs_topo; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_lab_runs_topo ON public.nc_lab_runs USING btree (topology_id);
+
+
+--
+-- Name: idx_nc_maintenance_site; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_maintenance_site ON public.nc_maintenance_windows USING btree (site);
+
+
+--
+-- Name: idx_nc_nqe_audit_advisory; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_nqe_audit_advisory ON public.nc_nqe_audit_log USING btree (advisory_id) WHERE (advisory_id IS NOT NULL);
+
+
+--
+-- Name: idx_nc_nqe_audit_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_nqe_audit_created ON public.nc_nqe_audit_log USING btree (created_at DESC);
+
+
+--
+-- Name: idx_nc_nqe_cache_expires; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_nqe_cache_expires ON public.nc_nqe_cache USING btree (expires_at);
+
+
+--
+-- Name: idx_nc_nqe_cache_hash; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_nc_nqe_cache_hash ON public.nc_nqe_cache USING btree (nql_hash);
+
+
+--
+-- Name: idx_nc_partners_asn; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_partners_asn ON public.nc_partners USING btree (asn);
+
+
+--
+-- Name: idx_nc_partners_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_partners_status ON public.nc_partners USING btree (status);
+
+
+--
+-- Name: idx_nc_patch_plans_advisory; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_patch_plans_advisory ON public.nc_patch_plans USING btree (advisory_id);
+
+
+--
+-- Name: idx_nc_patch_plans_plan_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_patch_plans_plan_id ON public.nc_patch_plans USING btree (plan_id);
+
+
+--
+-- Name: idx_nc_patch_plans_scheduled; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_patch_plans_scheduled ON public.nc_patch_plans USING btree (scheduled_at);
+
+
+--
+-- Name: idx_nc_phase_docs_phase; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_phase_docs_phase ON public.nc_phase_documents USING btree (phase_id);
+
+
+--
+-- Name: idx_nc_phase_docs_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_phase_docs_project ON public.nc_phase_documents USING btree (project_id);
+
+
+--
+-- Name: idx_nc_phase_infoboxes_topo; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_phase_infoboxes_topo ON public.nc_phase_infoboxes USING btree (topo_id);
+
+
+--
+-- Name: idx_nc_poam_advisory; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_poam_advisory ON public.nc_poam_items USING btree (advisory_id) WHERE (advisory_id IS NOT NULL);
+
+
+--
+-- Name: idx_nc_poam_severity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_poam_severity ON public.nc_poam_items USING btree (severity);
+
+
+--
+-- Name: idx_nc_poam_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_poam_status ON public.nc_poam_items USING btree (status);
+
+
+--
+-- Name: idx_nc_poam_status_log_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_poam_status_log_created ON public.nc_poam_status_log USING btree (created_at DESC);
+
+
+--
+-- Name: idx_nc_poam_status_log_poam; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_poam_status_log_poam ON public.nc_poam_status_log USING btree (poam_id);
+
+
+--
+-- Name: idx_nc_reme_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_reme_project ON public.nc_remediation_actions USING btree (project_id);
+
+
+--
+-- Name: idx_nc_reme_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_reme_status ON public.nc_remediation_actions USING btree (status);
+
+
+--
+-- Name: idx_nc_reme_status_log_action; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_reme_status_log_action ON public.nc_remediation_status_log USING btree (action_id);
+
+
+--
+-- Name: idx_nc_reme_status_log_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_reme_status_log_created ON public.nc_remediation_status_log USING btree (created_at DESC);
+
+
+--
+-- Name: idx_nc_sdp_node; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_sdp_node ON public.nc_security_domain_policies USING btree (node_id);
+
+
+--
+-- Name: idx_nc_sdp_topology; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_sdp_topology ON public.nc_security_domain_policies USING btree (topology_id);
+
+
+--
 -- Name: idx_nc_sim_artifacts_run_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -54981,10 +77060,136 @@ CREATE INDEX idx_nc_sim_sessions_topology_id ON public.nc_simulation_sessions US
 
 
 --
+-- Name: idx_nc_sl_vendor; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_sl_vendor ON public.nc_stencil_libraries USING btree (vendor);
+
+
+--
+-- Name: idx_nc_snapshots_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_snapshots_created ON public.nc_design_snapshots USING btree (created_at);
+
+
+--
+-- Name: idx_nc_snapshots_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_snapshots_design ON public.nc_design_snapshots USING btree (design_id);
+
+
+--
+-- Name: idx_nc_spr_step; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_spr_step ON public.nc_step_persona_responses USING btree (step_id);
+
+
+--
+-- Name: idx_nc_ss_library; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_ss_library ON public.nc_stencil_shapes USING btree (library_id);
+
+
+--
+-- Name: idx_nc_ss_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_ss_name ON public.nc_stencil_shapes USING btree (name);
+
+
+--
+-- Name: idx_nc_subnet_calc_proj; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_subnet_calc_proj ON public.nc_subnet_calc_history USING btree (project_id);
+
+
+--
+-- Name: idx_nc_tf_topology; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_tf_topology ON public.nc_traffic_flows USING btree (topology_id);
+
+
+--
 -- Name: idx_nc_topologies_updated_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_nc_topologies_updated_at ON public.nc_topologies USING btree (updated_at DESC);
+
+
+--
+-- Name: idx_nc_triage_queue_priority; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_triage_queue_priority ON public.nc_triage_queue USING btree (priority_score DESC);
+
+
+--
+-- Name: idx_nc_triage_queue_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_triage_queue_status ON public.nc_triage_queue USING btree (status);
+
+
+--
+-- Name: idx_nc_vuln_predictions_advisory; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_vuln_predictions_advisory ON public.nc_vuln_predictions USING btree (advisory_id);
+
+
+--
+-- Name: idx_nc_vuln_predictions_predicted_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_vuln_predictions_predicted_at ON public.nc_vuln_predictions USING btree (predicted_at DESC);
+
+
+--
+-- Name: idx_nc_vuln_predictions_risk; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_nc_vuln_predictions_risk ON public.nc_vuln_predictions USING btree (risk_score_composite DESC);
+
+
+--
+-- Name: idx_ncmsg_ctx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ncmsg_ctx ON public.chat_messages USING btree (context_id);
+
+
+--
+-- Name: idx_ncmsg_turn; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ncmsg_turn ON public.chat_messages USING btree (context_id, turn_number);
+
+
+--
+-- Name: idx_ndc_sop_log_sop; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ndc_sop_log_sop ON public.ndc_sop_approval_log USING btree (sop_id);
+
+
+--
+-- Name: idx_ndc_sops_category; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ndc_sops_category ON public.ndc_sops USING btree (category);
+
+
+--
+-- Name: idx_ndc_sops_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ndc_sops_status ON public.ndc_sops USING btree (status);
 
 
 --
@@ -55268,6 +77473,34 @@ CREATE INDEX idx_obs_nodes_node_type ON public.observability_nodes USING btree (
 
 
 --
+-- Name: idx_od_collab_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_od_collab_design ON public.od_collab_sessions USING btree (design_id);
+
+
+--
+-- Name: idx_od_ttp_cov_state; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_od_ttp_cov_state ON public.od_ttp_coverage USING btree (state);
+
+
+--
+-- Name: idx_od_ttp_cov_ttp; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_od_ttp_cov_ttp ON public.od_ttp_coverage USING btree (ttp_id);
+
+
+--
+-- Name: idx_od_versions_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_od_versions_design ON public.od_versions USING btree (design_id);
+
+
+--
 -- Name: idx_odc_designs_updated; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -55275,10 +77508,178 @@ CREATE INDEX idx_odc_designs_updated ON public.odc_designs USING btree (updated_
 
 
 --
+-- Name: idx_odc_gap_scores_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_odc_gap_scores_design ON public.odc_gap_scores USING btree (design_id);
+
+
+--
+-- Name: idx_odc_mt_tactic; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_odc_mt_tactic ON public.odc_mitre_techniques USING btree (tactic);
+
+
+--
+-- Name: idx_odc_mt_technique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_odc_mt_technique ON public.odc_mitre_techniques USING btree (technique_id);
+
+
+--
+-- Name: idx_odc_otel_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_odc_otel_design ON public.odc_otel_events USING btree (design_id);
+
+
+--
+-- Name: idx_odc_otel_received; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_odc_otel_received ON public.odc_otel_events USING btree (received_at);
+
+
+--
+-- Name: idx_odc_otel_technique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_odc_otel_technique ON public.odc_otel_events USING btree (technique_id);
+
+
+--
+-- Name: idx_odc_runbooks_category; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_odc_runbooks_category ON public.odc_runbooks USING btree (category);
+
+
+--
+-- Name: idx_odc_runbooks_severity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_odc_runbooks_severity ON public.odc_runbooks USING btree (severity);
+
+
+--
+-- Name: idx_odc_sdcv_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_odc_sdcv_design ON public.odc_sdc_verifications USING btree (design_id);
+
+
+--
+-- Name: idx_odc_sops_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_odc_sops_status ON public.odc_sops USING btree (approval_status);
+
+
+--
+-- Name: idx_odc_sops_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_odc_sops_type ON public.odc_sops USING btree (sop_type);
+
+
+--
+-- Name: idx_odc_tc_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_odc_tc_design ON public.odc_technique_coverage USING btree (design_id);
+
+
+--
+-- Name: idx_odc_tc_state; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_odc_tc_state ON public.odc_technique_coverage USING btree (coverage_state);
+
+
+--
+-- Name: idx_odc_tc_technique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_odc_tc_technique ON public.odc_technique_coverage USING btree (technique_id);
+
+
+--
+-- Name: idx_odc_twin_snap_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_odc_twin_snap_design ON public.odc_twin_snapshots USING btree (design_id);
+
+
+--
+-- Name: idx_ohc_adapter_log_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ohc_adapter_log_name ON public.ohc_adapter_health_log USING btree (adapter_name);
+
+
+--
+-- Name: idx_ohc_adapter_log_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ohc_adapter_log_time ON public.ohc_adapter_health_log USING btree (checked_at);
+
+
+--
+-- Name: idx_ohc_drift_dataset; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ohc_drift_dataset ON public.ohc_data_drift_events USING btree (dataset_name);
+
+
+--
+-- Name: idx_ohc_drift_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ohc_drift_time ON public.ohc_data_drift_events USING btree (detected_at);
+
+
+--
+-- Name: idx_ohc_registry_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ohc_registry_name ON public.ohc_model_registry USING btree (name);
+
+
+--
+-- Name: idx_ohc_registry_stage; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ohc_registry_stage ON public.ohc_model_registry USING btree (stage);
+
+
+--
 -- Name: idx_ohc_runbooks_project; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_ohc_runbooks_project ON public.ohc_runbooks USING btree (project_id, created_at DESC);
+
+
+--
+-- Name: idx_ohc_runs_experiment; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ohc_runs_experiment ON public.ohc_experiment_runs USING btree (experiment_id);
+
+
+--
+-- Name: idx_ohc_runs_start; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ohc_runs_start ON public.ohc_experiment_runs USING btree (start_time);
+
+
+--
+-- Name: idx_ohc_runs_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ohc_runs_status ON public.ohc_experiment_runs USING btree (status);
 
 
 --
@@ -55660,6 +78061,13 @@ CREATE INDEX idx_oscal_val_validator ON public.oscal_validation_log USING btree 
 
 
 --
+-- Name: idx_osint_fetched; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_osint_fetched ON public.osint_signals USING btree (fetched_at);
+
+
+--
 -- Name: idx_osint_pa_pii; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -55678,6 +78086,20 @@ CREATE INDEX idx_osint_pa_ts ON public.osint_privacy_audit USING btree ("timesta
 --
 
 CREATE INDEX idx_osint_pa_url ON public.osint_privacy_audit USING btree (url_hash);
+
+
+--
+-- Name: idx_osint_severity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_osint_severity ON public.osint_signals USING btree (severity);
+
+
+--
+-- Name: idx_osint_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_osint_source ON public.osint_signals USING btree (source);
 
 
 --
@@ -55765,6 +78187,13 @@ CREATE INDEX idx_owasp_llm_project ON public.owasp_llm_assessments USING btree (
 
 
 --
+-- Name: idx_pc_collab_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_pc_collab_design ON public.pc_collab_sessions USING btree (design_id);
+
+
+--
 -- Name: idx_pci_dss_assessments_project; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -55776,6 +78205,34 @@ CREATE INDEX idx_pci_dss_assessments_project ON public.pci_dss_assessments USING
 --
 
 CREATE INDEX idx_pcidss_project ON public.pci_dss_assessments USING btree (project_id);
+
+
+--
+-- Name: idx_pdc_simulations_pipeline; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_pdc_simulations_pipeline ON public.pdc_simulations USING btree (pipeline_id);
+
+
+--
+-- Name: idx_pdc_snapshots_pipeline; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_pdc_snapshots_pipeline ON public.pdc_snapshots USING btree (pipeline_id);
+
+
+--
+-- Name: idx_pdc_sops_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_pdc_sops_status ON public.pdc_sops USING btree (approval_status);
+
+
+--
+-- Name: idx_pdc_sops_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_pdc_sops_type ON public.pdc_sops USING btree (sop_type);
 
 
 --
@@ -55839,6 +78296,20 @@ CREATE INDEX idx_pg_audit_type ON public.pg_proposal_genesis_audit USING btree (
 --
 
 CREATE INDEX idx_pg_bid_opp ON public.pg_bid_decisions USING btree (opportunity_id);
+
+
+--
+-- Name: idx_pg_cap_gates_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_pg_cap_gates_created ON public.pg_capture_gate_decisions USING btree (created_at);
+
+
+--
+-- Name: idx_pg_cap_gates_plan; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_pg_cap_gates_plan ON public.pg_capture_gate_decisions USING btree (capture_plan_id);
 
 
 --
@@ -56150,6 +78621,48 @@ CREATE INDEX idx_pipeline_session ON public.ci_pipeline_runs USING btree (sessio
 
 
 --
+-- Name: idx_pkp_opportunity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_pkp_opportunity ON public.proposal_key_personnel USING btree (opportunity_id);
+
+
+--
+-- Name: idx_pkp_verdict; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_pkp_verdict ON public.proposal_key_personnel USING btree (qualification_verdict);
+
+
+--
+-- Name: idx_pma_cred_alerts_person; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_pma_cred_alerts_person ON public.pma_credential_alerts USING btree (person_id);
+
+
+--
+-- Name: idx_pma_cred_alerts_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_pma_cred_alerts_status ON public.pma_credential_alerts USING btree (status);
+
+
+--
+-- Name: idx_pma_personnel_contract; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_pma_personnel_contract ON public.pma_personnel USING btree (contract_id);
+
+
+--
+-- Name: idx_pma_personnel_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_pma_personnel_status ON public.pma_personnel USING btree (status);
+
+
+--
 -- Name: idx_pma_run_action; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -56262,6 +78775,20 @@ CREATE INDEX idx_pr_intel_project ON public.pr_intelligence_reports USING btree 
 
 
 --
+-- Name: idx_pr_merge_elig_eligible; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_pr_merge_elig_eligible ON public.pr_merge_eligibility_events USING btree (eligible, observed_at DESC);
+
+
+--
+-- Name: idx_pr_merge_elig_url_observed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_pr_merge_elig_url_observed ON public.pr_merge_eligibility_events USING btree (pr_url, observed_at DESC);
+
+
+--
 -- Name: idx_prod_audit_created; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -56308,6 +78835,27 @@ CREATE INDEX idx_prop_amend_opp ON public.proposal_amendments USING btree (oppor
 --
 
 CREATE INDEX idx_prop_amend_version ON public.proposal_amendments USING btree (opportunity_id, version_number);
+
+
+--
+-- Name: idx_prop_asgn_review; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_prop_asgn_review ON public.proposal_reviewer_assignments USING btree (review_id);
+
+
+--
+-- Name: idx_prop_asgn_reviewer; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_prop_asgn_reviewer ON public.proposal_reviewer_assignments USING btree (reviewer);
+
+
+--
+-- Name: idx_prop_asgn_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_prop_asgn_status ON public.proposal_reviewer_assignments USING btree (status);
 
 
 --
@@ -56570,6 +79118,20 @@ CREATE INDEX idx_propagation_status ON public.propagation_log USING btree (statu
 
 
 --
+-- Name: idx_proposal_key_personnel_opportunity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_proposal_key_personnel_opportunity ON public.proposal_key_personnel USING btree (opportunity_id);
+
+
+--
+-- Name: idx_proposal_key_personnel_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_proposal_key_personnel_tenant ON public.proposal_key_personnel USING btree (tenant_id);
+
+
+--
 -- Name: idx_prov_act_created; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -56658,6 +79220,20 @@ CREATE INDEX idx_prov_rel_trace ON public.prov_relations USING btree (trace_id);
 --
 
 CREATE INDEX idx_prov_rel_type ON public.prov_relations USING btree (relation_type);
+
+
+--
+-- Name: idx_ps_pipeline; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ps_pipeline ON public.pipeline_snapshots USING btree (pipeline_id, created_at DESC);
+
+
+--
+-- Name: idx_ps_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ps_type ON public.pipeline_snapshots USING btree (snapshot_type, created_at DESC);
 
 
 --
@@ -56773,6 +79349,27 @@ CREATE INDEX idx_qa_messages_session ON public.icdev_qa_messages USING btree (se
 
 
 --
+-- Name: idx_qdc_collab_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_qdc_collab_design ON public.qdc_collab_sessions USING btree (design_id);
+
+
+--
+-- Name: idx_qdc_collab_ops_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_qdc_collab_ops_design ON public.qdc_collab_ops USING btree (design_id, seq);
+
+
+--
+-- Name: idx_qdc_gate_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_qdc_gate_design ON public.qdc_gate_results USING btree (design_id);
+
+
+--
 -- Name: idx_qdc_metrics_project; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -56784,6 +79381,48 @@ CREATE INDEX idx_qdc_metrics_project ON public.qdc_metrics USING btree (project_
 --
 
 CREATE INDEX idx_qdc_metrics_project_key ON public.qdc_metrics USING btree (project_id, metric_key);
+
+
+--
+-- Name: idx_qdc_simulations_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_qdc_simulations_design ON public.qdc_simulations USING btree (design_id);
+
+
+--
+-- Name: idx_qdc_twin_snapshots_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_qdc_twin_snapshots_design ON public.qdc_twin_snapshots USING btree (design_id);
+
+
+--
+-- Name: idx_qdc_uqs_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_qdc_uqs_design ON public.qdc_uqs_history USING btree (design_id);
+
+
+--
+-- Name: idx_qdc_versions_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_qdc_versions_design ON public.qdc_versions USING btree (design_id);
+
+
+--
+-- Name: idx_query_log_topo; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_query_log_topo ON public.nc_query_log USING btree (topology_id);
+
+
+--
+-- Name: idx_query_log_ts; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_query_log_ts ON public.nc_query_log USING btree (ts);
 
 
 --
@@ -56819,6 +79458,20 @@ CREATE INDEX idx_rag_chunks_tenant ON public.rag_chunks USING btree (tenant_id);
 --
 
 CREATE INDEX idx_rag_chunks_tier ON public.rag_chunks USING btree (tier);
+
+
+--
+-- Name: idx_rag_compliance_corpus_control; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_rag_compliance_corpus_control ON public.rag_compliance_corpus USING btree (control_id);
+
+
+--
+-- Name: idx_rag_compliance_corpus_regime; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_rag_compliance_corpus_regime ON public.rag_compliance_corpus USING btree (regime);
 
 
 --
@@ -56871,6 +79524,34 @@ CREATE INDEX idx_rag_pdf_tenant ON public.rag_pdf_documents USING btree (tenant_
 
 
 --
+-- Name: idx_rag_prov_chunk; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_rag_prov_chunk ON public.rag_provenance_ledger USING btree (chunk_uuid);
+
+
+--
+-- Name: idx_rag_prov_event_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_rag_prov_event_type ON public.rag_provenance_ledger USING btree (event_type);
+
+
+--
+-- Name: idx_rag_prov_parent_doc; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_rag_prov_parent_doc ON public.rag_provenance_ledger USING btree (parent_doc_uuid);
+
+
+--
+-- Name: idx_rag_prov_retrieval_log; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_rag_prov_retrieval_log ON public.rag_provenance_ledger USING btree (retrieval_log_id);
+
+
+--
 -- Name: idx_rag_retrieval_created; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -56882,6 +79563,20 @@ CREATE INDEX idx_rag_retrieval_created ON public.rag_retrieval_log USING btree (
 --
 
 CREATE INDEX idx_rag_retrieval_tenant ON public.rag_retrieval_log USING btree (tenant_id);
+
+
+--
+-- Name: idx_rag_summaries_parent; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_rag_summaries_parent ON public.rag_chunk_summaries USING btree (parent_chunk_id);
+
+
+--
+-- Name: idx_rag_summaries_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_rag_summaries_source ON public.rag_chunk_summaries USING btree (source_id, level);
 
 
 --
@@ -57102,6 +79797,13 @@ CREATE INDEX idx_regfore_source ON public.regulatory_foresight_signals USING btr
 
 
 --
+-- Name: idx_rel_interactions; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_rel_interactions ON public.user_relationship_interactions USING btree (relationship_id, user_id, interaction_date DESC);
+
+
+--
 -- Name: idx_remed_project; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -57141,6 +79843,27 @@ CREATE INDEX idx_remediation_status ON public.remediation_audit_log USING btree 
 --
 
 CREATE INDEX idx_remediation_tier ON public.remediation_audit_log USING btree (tier);
+
+
+--
+-- Name: idx_replay_attempts_finding; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_replay_attempts_finding ON public.finding_replay_attempts USING btree (finding_id);
+
+
+--
+-- Name: idx_replay_attempts_outcome; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_replay_attempts_outcome ON public.finding_replay_attempts USING btree (outcome);
+
+
+--
+-- Name: idx_replay_attempts_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_replay_attempts_tenant ON public.finding_replay_attempts USING btree (tenant_id);
 
 
 --
@@ -57197,6 +79920,62 @@ CREATE INDEX idx_rf_run ON public.runtime_feedback USING btree (run_id);
 --
 
 CREATE INDEX idx_rf_source_fn ON public.runtime_feedback USING btree (source_function);
+
+
+--
+-- Name: idx_rfi_exports_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_rfi_exports_session ON public.rfi_workbench_exports USING btree (session_id);
+
+
+--
+-- Name: idx_rfi_gap_links_gap; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_rfi_gap_links_gap ON public.rfi_gap_task_links USING btree (gap_hash);
+
+
+--
+-- Name: idx_rfi_gaps_high; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_rfi_gaps_high ON public.rfi_capability_gaps USING btree (is_high_demand);
+
+
+--
+-- Name: idx_rfi_gaps_priority; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_rfi_gaps_priority ON public.rfi_capability_gaps USING btree (priority);
+
+
+--
+-- Name: idx_rfi_gaps_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_rfi_gaps_status ON public.rfi_capability_gaps USING btree (status);
+
+
+--
+-- Name: idx_rfi_sections_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_rfi_sections_session ON public.rfi_workbench_sections USING btree (session_id);
+
+
+--
+-- Name: idx_rfi_sessions_ace; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_rfi_sessions_ace ON public.rfi_workbench_sessions USING btree (ace_instance_id);
+
+
+--
+-- Name: idx_rfi_uploads_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_rfi_uploads_session ON public.rfi_session_uploads USING btree (session_id);
 
 
 --
@@ -57361,6 +80140,41 @@ CREATE INDEX idx_rtrend_velocity ON public.research_trends USING btree (velocity
 
 
 --
+-- Name: idx_runtime_inv_correlation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_runtime_inv_correlation ON public.runtime_invocations USING btree (correlation_id);
+
+
+--
+-- Name: idx_runtime_inv_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_runtime_inv_name ON public.runtime_invocations USING btree (name);
+
+
+--
+-- Name: idx_runtime_inv_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_runtime_inv_session ON public.runtime_invocations USING btree (session_id);
+
+
+--
+-- Name: idx_runtime_inv_status_started; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_runtime_inv_status_started ON public.runtime_invocations USING btree (status, started_at);
+
+
+--
+-- Name: idx_runtime_inv_surface_started; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_runtime_inv_surface_started ON public.runtime_invocations USING btree (surface, started_at);
+
+
+--
 -- Name: idx_rvert_active; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -57400,6 +80214,20 @@ CREATE INDEX idx_safe_decomp_project ON public.safe_decomposition USING btree (p
 --
 
 CREATE INDEX idx_safe_decomp_session ON public.safe_decomposition USING btree (session_id);
+
+
+--
+-- Name: idx_sag_standing_goals_context; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sag_standing_goals_context ON public.sag_standing_goals USING btree (context_id);
+
+
+--
+-- Name: idx_sag_standing_goals_owner_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sag_standing_goals_owner_status ON public.sag_standing_goals USING btree (user_id, tenant_id, status);
 
 
 --
@@ -57466,10 +80294,143 @@ CREATE INDEX idx_sbd_assess_project ON public.sbd_assessments USING btree (proje
 
 
 --
+-- Name: idx_sbom_comp_hash; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sbom_comp_hash ON public.sbom_components USING btree (hash_value);
+
+
+--
+-- Name: idx_sbom_comp_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sbom_comp_name ON public.sbom_components USING btree (component_name);
+
+
+--
+-- Name: idx_sbom_comp_producer; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sbom_comp_producer ON public.sbom_components USING btree (producer);
+
+
+--
+-- Name: idx_sbom_comp_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sbom_comp_tenant ON public.sbom_components USING btree (tenant_id);
+
+
+--
+-- Name: idx_sbom_comp_vendor; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sbom_comp_vendor ON public.sbom_components USING btree (vendor);
+
+
+--
+-- Name: idx_sbom_conf_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sbom_conf_project ON public.sbom_conformance_assessments USING btree (project_id);
+
+
+--
+-- Name: idx_sbom_conf_record; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sbom_conf_record ON public.sbom_conformance_assessments USING btree (sbom_record_id);
+
+
+--
+-- Name: idx_sbom_conf_sha; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sbom_conf_sha ON public.sbom_conformance_assessments USING btree (document_sha256);
+
+
+--
+-- Name: idx_sbom_conf_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sbom_conf_tenant ON public.sbom_conformance_assessments USING btree (tenant_id);
+
+
+--
 -- Name: idx_sbom_decision_project; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_sbom_decision_project ON public.sbom_access_decisions USING btree (project_id, decided_at);
+
+
+--
+-- Name: idx_sbom_dep_child; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sbom_dep_child ON public.sbom_dependencies USING btree (child_component_id);
+
+
+--
+-- Name: idx_sbom_dep_parent; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sbom_dep_parent ON public.sbom_dependencies USING btree (parent_component_id);
+
+
+--
+-- Name: idx_sbom_dep_record; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sbom_dep_record ON public.sbom_dependencies USING btree (sbom_record_id);
+
+
+--
+-- Name: idx_sbom_dep_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sbom_dep_tenant ON public.sbom_dependencies USING btree (tenant_id);
+
+
+--
+-- Name: idx_sbom_rec_digest; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sbom_rec_digest ON public.sbom_records USING btree (content_digest);
+
+
+--
+-- Name: idx_sbom_rec_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sbom_rec_project ON public.sbom_records USING btree (project_id);
+
+
+--
+-- Name: idx_sbom_rec_serial; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sbom_rec_serial ON public.sbom_records USING btree (serial_number);
+
+
+--
+-- Name: idx_sbom_rec_srcrev; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sbom_rec_srcrev ON public.sbom_records USING btree (source_revision);
+
+
+--
+-- Name: idx_sbom_rec_supersedes; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sbom_rec_supersedes ON public.sbom_records USING btree (supersedes_sbom_id);
+
+
+--
+-- Name: idx_sbom_rec_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sbom_rec_tenant ON public.sbom_records USING btree (tenant_id);
 
 
 --
@@ -57508,6 +80469,13 @@ CREATE INDEX idx_sc_actor ON public.developer_scorecards USING btree (actor);
 
 
 --
+-- Name: idx_sc_component_evaluated; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sc_component_evaluated ON public.developer_scorecards USING btree (component_id, evaluated_at);
+
+
+--
 -- Name: idx_sc_created; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -57540,6 +80508,13 @@ CREATE INDEX idx_sc_res_run ON public.sg_supply_cascade_results USING btree (run
 --
 
 CREATE INDEX idx_sc_res_ts ON public.sg_supply_cascade_results USING btree (created_at);
+
+
+--
+-- Name: idx_sc_versions_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sc_versions_design ON public.sc_versions USING btree (design_id, version_number);
 
 
 --
@@ -57627,6 +80602,27 @@ CREATE INDEX idx_scrm_risk ON public.scrm_assessments USING btree (residual_risk
 
 
 --
+-- Name: idx_scrs_last_assessed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_scrs_last_assessed ON public.supply_chain_risk_scores USING btree (last_assessed);
+
+
+--
+-- Name: idx_scrs_sbom_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_scrs_sbom_id ON public.supply_chain_risk_scores USING btree (sbom_id);
+
+
+--
+-- Name: idx_scv_cvss_score; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_scv_cvss_score ON public.supply_chain_vulnerabilities USING btree (cvss_score);
+
+
+--
 -- Name: idx_scv_project; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -57641,10 +80637,31 @@ CREATE INDEX idx_scv_risk ON public.supply_chain_vendors USING btree (scrm_risk_
 
 
 --
+-- Name: idx_scv_sbom_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_scv_sbom_id ON public.supply_chain_vulnerabilities USING btree (sbom_id);
+
+
+--
 -- Name: idx_sdc_atk_component_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_sdc_atk_component_id ON public.sdc_attack_snapshots USING btree (component_id);
+
+
+--
+-- Name: idx_sdc_attack_component; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sdc_attack_component ON public.sdc_attack_snapshots USING btree (component_id);
+
+
+--
+-- Name: idx_sdc_attack_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sdc_attack_created ON public.sdc_attack_snapshots USING btree (created_at);
 
 
 --
@@ -57687,6 +80704,20 @@ CREATE INDEX idx_sdc_rag_stigs_severity ON public.sdc_rag_stigs USING btree (sev
 --
 
 CREATE INDEX idx_sdc_roi_design ON public.sdc_roi_metrics USING btree (design_id);
+
+
+--
+-- Name: idx_sdc_sops_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sdc_sops_status ON public.sdc_sops USING btree (approval_status);
+
+
+--
+-- Name: idx_sdc_sops_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sdc_sops_type ON public.sdc_sops USING btree (sop_type);
 
 
 --
@@ -58747,6 +81778,20 @@ CREATE INDEX idx_sg_orbat_status ON public.sg_orbat_entries USING btree (status)
 
 
 --
+-- Name: idx_sg_orbat_strengths_conflict; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sg_orbat_strengths_conflict ON public.sg_orbat_strengths USING btree (conflict_id);
+
+
+--
+-- Name: idx_sg_orbat_strengths_unit; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sg_orbat_strengths_unit ON public.sg_orbat_strengths USING btree (unit_id);
+
+
+--
 -- Name: idx_sg_orbat_updated; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -59468,6 +82513,27 @@ CREATE INDEX idx_shap_trace ON public.shap_attributions USING btree (trace_id);
 
 
 --
+-- Name: idx_showcase_apps_category; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_showcase_apps_category ON public.showcase_apps USING btree (category);
+
+
+--
+-- Name: idx_showcase_apps_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_showcase_apps_created_at ON public.showcase_apps USING btree (created_at);
+
+
+--
+-- Name: idx_showcase_apps_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_showcase_apps_status ON public.showcase_apps USING btree (status);
+
+
+--
 -- Name: idx_shpp_project; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -59514,6 +82580,20 @@ CREATE INDEX idx_sim_result_scenario ON public.simulation_results USING btree (s
 --
 
 CREATE INDEX idx_sim_scenario_project ON public.simulation_scenarios USING btree (project_id);
+
+
+--
+-- Name: idx_skype_inbox_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_skype_inbox_created_at ON public.skype_inbox USING btree (created_at DESC);
+
+
+--
+-- Name: idx_skype_inbox_processed_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_skype_inbox_processed_at ON public.skype_inbox USING btree (processed_at) WHERE (processed_at IS NULL);
 
 
 --
@@ -59573,6 +82653,20 @@ CREATE INDEX idx_snapshots_project ON public.model_snapshots USING btree (projec
 
 
 --
+-- Name: idx_soar_audit_run; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_soar_audit_run ON public.soar_playbook_audit USING btree (run_id, created_at);
+
+
+--
+-- Name: idx_soar_runs_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_soar_runs_status ON public.soar_playbook_runs USING btree (status, created_at);
+
+
+--
 -- Name: idx_soc2_assessments_project; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -59601,6 +82695,41 @@ CREATE INDEX idx_solutions_status ON public.innovation_solutions USING btree (st
 
 
 --
+-- Name: idx_sp_docs_path; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sp_docs_path ON public.sharepoint_documents USING btree (path);
+
+
+--
+-- Name: idx_sp_docs_site_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sp_docs_site_id ON public.sharepoint_documents USING btree (site_id);
+
+
+--
+-- Name: idx_sp_items_list_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sp_items_list_id ON public.sharepoint_items USING btree (list_id);
+
+
+--
+-- Name: idx_sp_items_modified; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sp_items_modified ON public.sharepoint_items USING btree (modified_at DESC);
+
+
+--
+-- Name: idx_sp_lists_site_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sp_lists_site_id ON public.sharepoint_lists USING btree (site_id);
+
+
+--
 -- Name: idx_spec_registry_project; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -59619,6 +82748,20 @@ CREATE INDEX idx_spll_sig ON public.sg_pattern_learner_log USING btree (signatur
 --
 
 CREATE INDEX idx_spll_ts ON public.sg_pattern_learner_log USING btree (ts);
+
+
+--
+-- Name: idx_sr_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sr_created ON public.supplemental_refinements USING btree (created_at);
+
+
+--
+-- Name: idx_sr_cycle; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sr_cycle ON public.supplemental_refinements USING btree (cycle_id);
 
 
 --
@@ -59650,6 +82793,41 @@ CREATE INDEX idx_ss_theater ON public.strategos_signals USING btree (theater);
 
 
 --
+-- Name: idx_sso_providers_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sso_providers_tenant ON public.sso_providers USING btree (tenant_id);
+
+
+--
+-- Name: idx_sso_sessions_provider; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sso_sessions_provider ON public.sso_sessions USING btree (provider_id);
+
+
+--
+-- Name: idx_sso_sessions_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sso_sessions_tenant ON public.sso_sessions USING btree (tenant_id);
+
+
+--
+-- Name: idx_sss_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sss_created ON public.supplemental_state_snapshots USING btree (created_at);
+
+
+--
+-- Name: idx_sss_cycle; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sss_cycle ON public.supplemental_state_snapshots USING btree (cycle_id);
+
+
+--
 -- Name: idx_stag_reflex; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -59675,6 +82853,83 @@ CREATE INDEX idx_strategos_signals_tenant ON public.strategos_signals USING btre
 --
 
 CREATE INDEX idx_stub_project ON public.stub_detection_results USING btree (project_id);
+
+
+--
+-- Name: idx_studio_event_sources_kind; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_studio_event_sources_kind ON public.studio_event_sources USING btree (kind);
+
+
+--
+-- Name: idx_studio_mcp_dispatch_audit_decision; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_studio_mcp_dispatch_audit_decision ON public.studio_mcp_dispatch_audit USING btree (decision);
+
+
+--
+-- Name: idx_studio_mcp_dispatch_audit_run; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_studio_mcp_dispatch_audit_run ON public.studio_mcp_dispatch_audit USING btree (run_id);
+
+
+--
+-- Name: idx_studio_mcp_dispatch_audit_tool; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_studio_mcp_dispatch_audit_tool ON public.studio_mcp_dispatch_audit USING btree (tool);
+
+
+--
+-- Name: idx_studio_run_memory_run; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_studio_run_memory_run ON public.studio_run_memory USING btree (run_id);
+
+
+--
+-- Name: idx_studio_trigger_events_evaluated; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_studio_trigger_events_evaluated ON public.studio_trigger_events USING btree (received_at);
+
+
+--
+-- Name: idx_studio_trigger_events_run; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_studio_trigger_events_run ON public.studio_trigger_events USING btree (run_id);
+
+
+--
+-- Name: idx_studio_trigger_events_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_studio_trigger_events_source ON public.studio_trigger_events USING btree (source_id);
+
+
+--
+-- Name: idx_studio_trigger_events_trigger; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_studio_trigger_events_trigger ON public.studio_trigger_events USING btree (trigger_id);
+
+
+--
+-- Name: idx_studio_workflow_triggers_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_studio_workflow_triggers_source ON public.studio_workflow_triggers USING btree (source_id, enabled);
+
+
+--
+-- Name: idx_studio_workflow_triggers_workflow; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_studio_workflow_triggers_workflow ON public.studio_workflow_triggers USING btree (workflow_id);
 
 
 --
@@ -59874,6 +83129,20 @@ CREATE INDEX idx_tda_reflex ON public.trading_daemon_audit USING btree (reflex_n
 
 
 --
+-- Name: idx_teams_inbox_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_teams_inbox_created_at ON public.teams_inbox USING btree (created_at DESC);
+
+
+--
+-- Name: idx_teams_inbox_processed_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_teams_inbox_processed_at ON public.teams_inbox USING btree (processed_at) WHERE (processed_at IS NULL);
+
+
+--
 -- Name: idx_techrad_history_entry; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -59899,6 +83168,20 @@ CREATE INDEX idx_telegram_inbox_created_at ON public.telegram_inbox USING btree 
 --
 
 CREATE INDEX idx_telegram_inbox_processed_at ON public.telegram_inbox USING btree (processed_at) WHERE (processed_at IS NULL);
+
+
+--
+-- Name: idx_tenant_component_overrides_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tenant_component_overrides_key ON public.tenant_component_overrides USING btree (component_key);
+
+
+--
+-- Name: idx_tenant_component_overrides_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tenant_component_overrides_tenant ON public.tenant_component_overrides USING btree (tenant_id);
 
 
 --
@@ -60126,6 +83409,48 @@ CREATE INDEX idx_trends_status ON public.innovation_trends USING btree (status);
 
 
 --
+-- Name: idx_trust_deltas_approval_item; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_trust_deltas_approval_item ON public.trust_deltas USING btree (approval_item_id);
+
+
+--
+-- Name: idx_trust_deltas_artifact; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_trust_deltas_artifact ON public.trust_deltas USING btree (artifact_id);
+
+
+--
+-- Name: idx_trust_deltas_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_trust_deltas_created ON public.trust_deltas USING btree (created_at);
+
+
+--
+-- Name: idx_trust_deltas_disposition; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_trust_deltas_disposition ON public.trust_deltas USING btree (disposition);
+
+
+--
+-- Name: idx_trust_deltas_stage; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_trust_deltas_stage ON public.trust_deltas USING btree (stage);
+
+
+--
+-- Name: idx_trust_deltas_supersedes; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_trust_deltas_supersedes ON public.trust_deltas USING btree (supersedes_delta_id);
+
+
+--
 -- Name: idx_tsp_documents_project; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -60137,6 +83462,20 @@ CREATE INDEX idx_tsp_documents_project ON public.tsp_documents USING btree (proj
 --
 
 CREATE INDEX idx_ttx_api_log_team ON public.ttx_api_log USING btree (team_id, session_id);
+
+
+--
+-- Name: idx_ttx_formation_plan_registration; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ttx_formation_plan_registration ON public.ttx_formation_plan USING btree (registration_id);
+
+
+--
+-- Name: idx_ttx_formation_plan_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ttx_formation_plan_session ON public.ttx_formation_plan USING btree (session_id);
 
 
 --
@@ -60158,6 +83497,13 @@ CREATE INDEX idx_ttx_injects_slug ON public.ttx_injects USING btree (session_id,
 --
 
 CREATE INDEX idx_ttx_leaderboard_session ON public.ttx_leaderboard USING btree (session_id);
+
+
+--
+-- Name: idx_ttx_registrations_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ttx_registrations_session ON public.ttx_registrations USING btree (session_id);
 
 
 --
@@ -60210,6 +83556,76 @@ CREATE INDEX idx_turns_session ON public.ci_conversation_turns USING btree (sess
 
 
 --
+-- Name: idx_twin_compat_target; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_twin_compat_target ON public.twin_compat_reports USING btree (target_id, created_at);
+
+
+--
+-- Name: idx_twin_run_framework; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_twin_run_framework ON public.compliance_twin_runs USING btree (framework);
+
+
+--
+-- Name: idx_twin_run_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_twin_run_project ON public.compliance_twin_runs USING btree (project_id);
+
+
+--
+-- Name: idx_twin_snap_control; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_twin_snap_control ON public.compliance_twin_snapshots USING btree (control_id);
+
+
+--
+-- Name: idx_twin_snap_framework; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_twin_snap_framework ON public.compliance_twin_snapshots USING btree (framework);
+
+
+--
+-- Name: idx_twin_snap_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_twin_snap_project ON public.compliance_twin_snapshots USING btree (project_id);
+
+
+--
+-- Name: idx_twin_snap_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_twin_snap_status ON public.compliance_twin_snapshots USING btree (implementation_status);
+
+
+--
+-- Name: idx_twin_viol_control; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_twin_viol_control ON public.compliance_twin_violations USING btree (control_id);
+
+
+--
+-- Name: idx_twin_viol_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_twin_viol_project ON public.compliance_twin_violations USING btree (project_id);
+
+
+--
+-- Name: idx_twin_viol_snapshot; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_twin_viol_snapshot ON public.compliance_twin_violations USING btree (snapshot_id);
+
+
+--
 -- Name: idx_uc_chains_tenant; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -60221,6 +83637,13 @@ CREATE INDEX idx_uc_chains_tenant ON public.use_case_chains USING btree (tenant_
 --
 
 CREATE INDEX idx_uc_overrides_tenant ON public.use_case_overrides USING btree (tenant_id);
+
+
+--
+-- Name: idx_ungated_test_baseline_last_checked; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ungated_test_baseline_last_checked ON public.ungated_test_baseline USING btree (last_checked);
 
 
 --
@@ -60249,6 +83672,34 @@ CREATE INDEX idx_usage_route ON public.usage_events USING btree (route);
 --
 
 CREATE INDEX idx_usage_tenant_time ON public.usage_records USING btree (tenant_id, recorded_at);
+
+
+--
+-- Name: idx_user_chal; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_chal ON public.user_challenges USING btree (user_id, tenant_id, status);
+
+
+--
+-- Name: idx_user_ki; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_ki ON public.user_knowledge_items USING btree (user_id, tenant_id, status);
+
+
+--
+-- Name: idx_user_obj; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_obj ON public.user_objectives USING btree (user_id, tenant_id, status);
+
+
+--
+-- Name: idx_user_rel; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_rel ON public.user_relationships USING btree (user_id, tenant_id);
 
 
 --
@@ -60326,6 +83777,41 @@ CREATE INDEX idx_vsm_project ON public.vsm_stage_events USING btree (project_id)
 --
 
 CREATE INDEX idx_vsm_stage ON public.vsm_stage_events USING btree (stage);
+
+
+--
+-- Name: idx_vuln_findings_host; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_vuln_findings_host ON public.nc_vuln_findings USING btree (host_id);
+
+
+--
+-- Name: idx_vuln_findings_severity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_vuln_findings_severity ON public.nc_vuln_findings USING btree (severity);
+
+
+--
+-- Name: idx_vuln_hosts_ip; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_vuln_hosts_ip ON public.nc_vuln_hosts USING btree (ip);
+
+
+--
+-- Name: idx_vuln_hosts_node; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_vuln_hosts_node ON public.nc_vuln_hosts USING btree (node_id);
+
+
+--
+-- Name: idx_vuln_hosts_scan; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_vuln_hosts_scan ON public.nc_vuln_hosts USING btree (scan_id);
 
 
 --
@@ -60459,6 +83945,265 @@ CREATE INDEX idx_wf_rsc_report ON public.wf_report_section_chunks USING btree (r
 --
 
 CREATE INDEX idx_wf_team_assignments_scope ON public.wf_team_assignments USING btree (scope_type, scope_id);
+
+
+--
+-- Name: idx_wfc_branding_entity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfc_branding_entity ON public.wfc_branding USING btree (entity_type, entity_id);
+
+
+--
+-- Name: idx_wfc_form_nodes_workflow; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfc_form_nodes_workflow ON public.wfc_workflow_form_nodes USING btree (workflow_id);
+
+
+--
+-- Name: idx_wfl_audit_application; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfl_audit_application ON public.wfl_credentialing_audit USING btree (application_id);
+
+
+--
+-- Name: idx_wfl_audit_event; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfl_audit_event ON public.wfl_credentialing_audit USING btree (event_type);
+
+
+--
+-- Name: idx_wfl_ca_npi; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfl_ca_npi ON public.wfl_credentialing_applications USING btree (npi);
+
+
+--
+-- Name: idx_wfl_ca_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfl_ca_status ON public.wfl_credentialing_applications USING btree (status);
+
+
+--
+-- Name: idx_wfl_ca_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfl_ca_tenant ON public.wfl_credentialing_applications USING btree (tenant_id);
+
+
+--
+-- Name: idx_wfl_cap_application; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfl_cap_application ON public.wfl_credentialing_approvals USING btree (application_id);
+
+
+--
+-- Name: idx_wfl_cap_decision; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfl_cap_decision ON public.wfl_credentialing_approvals USING btree (decision);
+
+
+--
+-- Name: idx_wfl_cap_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfl_cap_status ON public.wfl_credentialing_approvals USING btree (status);
+
+
+--
+-- Name: idx_wfl_cap_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfl_cap_tenant ON public.wfl_credentialing_approvals USING btree (tenant_id);
+
+
+--
+-- Name: idx_wfl_cmr_application; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfl_cmr_application ON public.wfl_committee_reviews USING btree (application_id);
+
+
+--
+-- Name: idx_wfl_cmr_decision; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfl_cmr_decision ON public.wfl_committee_reviews USING btree (decision);
+
+
+--
+-- Name: idx_wfl_cmr_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfl_cmr_status ON public.wfl_committee_reviews USING btree (status);
+
+
+--
+-- Name: idx_wfl_cmr_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfl_cmr_tenant ON public.wfl_committee_reviews USING btree (tenant_id);
+
+
+--
+-- Name: idx_wfl_cr_application; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfl_cr_application ON public.wfl_completeness_reviews USING btree (application_id);
+
+
+--
+-- Name: idx_wfl_cr_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfl_cr_status ON public.wfl_completeness_reviews USING btree (status);
+
+
+--
+-- Name: idx_wfl_cr_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfl_cr_tenant ON public.wfl_completeness_reviews USING btree (tenant_id);
+
+
+--
+-- Name: idx_wfl_naa_application; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfl_naa_application ON public.wfl_network_agreement_approvals USING btree (application_id);
+
+
+--
+-- Name: idx_wfl_naa_decision; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfl_naa_decision ON public.wfl_network_agreement_approvals USING btree (decision);
+
+
+--
+-- Name: idx_wfl_naa_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfl_naa_status ON public.wfl_network_agreement_approvals USING btree (status);
+
+
+--
+-- Name: idx_wfl_naa_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfl_naa_tenant ON public.wfl_network_agreement_approvals USING btree (tenant_id);
+
+
+--
+-- Name: idx_wfl_nar_application; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfl_nar_application ON public.wfl_network_agreement_reviews USING btree (application_id);
+
+
+--
+-- Name: idx_wfl_nar_decision; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfl_nar_decision ON public.wfl_network_agreement_reviews USING btree (decision);
+
+
+--
+-- Name: idx_wfl_nar_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfl_nar_status ON public.wfl_network_agreement_reviews USING btree (status);
+
+
+--
+-- Name: idx_wfl_nar_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfl_nar_tenant ON public.wfl_network_agreement_reviews USING btree (tenant_id);
+
+
+--
+-- Name: idx_wfl_ps_application; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfl_ps_application ON public.wfl_provider_setups USING btree (application_id);
+
+
+--
+-- Name: idx_wfl_ps_decision; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfl_ps_decision ON public.wfl_provider_setups USING btree (decision);
+
+
+--
+-- Name: idx_wfl_ps_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfl_ps_status ON public.wfl_provider_setups USING btree (status);
+
+
+--
+-- Name: idx_wfl_ps_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfl_ps_tenant ON public.wfl_provider_setups USING btree (tenant_id);
+
+
+--
+-- Name: idx_wfl_psv_application; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfl_psv_application ON public.wfl_psv_verifications USING btree (application_id);
+
+
+--
+-- Name: idx_wfl_psv_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfl_psv_status ON public.wfl_psv_verifications USING btree (status);
+
+
+--
+-- Name: idx_wfl_psv_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfl_psv_tenant ON public.wfl_psv_verifications USING btree (tenant_id);
+
+
+--
+-- Name: idx_wfp_citation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfp_citation ON public.web_fetch_provenance USING btree (citation_id);
+
+
+--
+-- Name: idx_wfp_content_hash; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfp_content_hash ON public.web_fetch_provenance USING btree (content_hash);
+
+
+--
+-- Name: idx_wfp_fetched_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfp_fetched_at ON public.web_fetch_provenance USING btree (fetched_at);
+
+
+--
+-- Name: idx_wfp_requested_url; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wfp_requested_url ON public.web_fetch_provenance USING btree (requested_url);
 
 
 --
@@ -60735,6 +84480,62 @@ CREATE INDEX idx_xai_status ON public.xai_assessments USING btree (overall_statu
 
 
 --
+-- Name: idx_zig_act_cap; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_zig_act_cap ON public.zig_activities USING btree (capability_id);
+
+
+--
+-- Name: idx_zig_act_phase; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_zig_act_phase ON public.zig_activities USING btree (phase);
+
+
+--
+-- Name: idx_zig_cap_phase; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_zig_cap_phase ON public.zig_capabilities USING btree (phase);
+
+
+--
+-- Name: idx_zig_cap_pillar; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_zig_cap_pillar ON public.zig_capabilities USING btree (pillar_slug);
+
+
+--
+-- Name: idx_zig_comp_act; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_zig_comp_act ON public.zig_activity_completions USING btree (activity_id, target_id);
+
+
+--
+-- Name: idx_zig_comp_act_target; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_zig_comp_act_target ON public.zig_activity_completions USING btree (activity_id, target_id);
+
+
+--
+-- Name: idx_zig_score_pillar; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_zig_score_pillar ON public.zig_maturity_scores USING btree (pillar_slug);
+
+
+--
+-- Name: idx_zig_score_target; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_zig_score_target ON public.zig_maturity_scores USING btree (target_id);
+
+
+--
 -- Name: idx_zta_evidence_project; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -60770,6 +84571,118 @@ CREATE INDEX idx_ztp_status ON public.zta_twin_phases USING btree (status);
 
 
 --
+-- Name: ix_studio_automation_runs_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_studio_automation_runs_tenant ON public.studio_automation_runs USING btree (tenant_id);
+
+
+--
+-- Name: ix_studio_automations_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_studio_automations_tenant ON public.studio_automations USING btree (tenant_id);
+
+
+--
+-- Name: ix_studio_case_history_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_studio_case_history_tenant ON public.studio_case_history USING btree (tenant_id);
+
+
+--
+-- Name: ix_studio_case_types_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_studio_case_types_tenant ON public.studio_case_types USING btree (tenant_id);
+
+
+--
+-- Name: ix_studio_cases_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_studio_cases_tenant ON public.studio_cases USING btree (tenant_id);
+
+
+--
+-- Name: ix_studio_dashboards_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_studio_dashboards_tenant ON public.studio_dashboards USING btree (tenant_id);
+
+
+--
+-- Name: ix_studio_event_sources_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_studio_event_sources_tenant ON public.studio_event_sources USING btree (tenant_id);
+
+
+--
+-- Name: ix_studio_form_submissions_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_studio_form_submissions_tenant ON public.studio_form_submissions USING btree (tenant_id);
+
+
+--
+-- Name: ix_studio_forms_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_studio_forms_tenant ON public.studio_forms USING btree (tenant_id);
+
+
+--
+-- Name: ix_studio_run_memory_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_studio_run_memory_tenant ON public.studio_run_memory USING btree (tenant_id);
+
+
+--
+-- Name: ix_studio_trigger_events_outcome; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_studio_trigger_events_outcome ON public.studio_trigger_events USING btree (outcome);
+
+
+--
+-- Name: ix_studio_trigger_events_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_studio_trigger_events_tenant ON public.studio_trigger_events USING btree (tenant_id);
+
+
+--
+-- Name: ix_studio_workflow_heal_log_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_studio_workflow_heal_log_tenant ON public.studio_workflow_heal_log USING btree (tenant_id);
+
+
+--
+-- Name: ix_studio_workflow_run_steps_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_studio_workflow_run_steps_tenant ON public.studio_workflow_run_steps USING btree (tenant_id);
+
+
+--
+-- Name: ix_studio_workflow_runs_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_studio_workflow_runs_tenant ON public.studio_workflow_runs USING btree (tenant_id);
+
+
+--
+-- Name: ix_studio_workflow_triggers_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_studio_workflow_triggers_tenant ON public.studio_workflow_triggers USING btree (tenant_id);
+
+
+--
 -- Name: uix_ftd_source_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -60777,10 +84690,108 @@ CREATE UNIQUE INDEX uix_ftd_source_id ON public.fine_tuning_datasets USING btree
 
 
 --
+-- Name: uq_mc_cloud_instances; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_mc_cloud_instances ON public.mc_cloud_instances USING btree (provider, instance_type);
+
+
+--
+-- Name: uq_mc_net_eol; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_mc_net_eol ON public.mc_net_eol_data USING btree (vendor, model_pattern);
+
+
+--
 -- Name: uq_sg_cve_feed_cve_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX uq_sg_cve_feed_cve_id ON public.sg_cve_feed USING btree (cve_id) WHERE (cve_id IS NOT NULL);
+
+
+--
+-- Name: ux_nc_consolidation_topo_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_nc_consolidation_topo_id ON public.nc_consolidation_analysis USING btree (topo_id);
+
+
+--
+-- Name: ux_studio_trigger_events_idem; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_studio_trigger_events_idem ON public.studio_trigger_events USING btree (idempotency_key) WHERE (idempotency_key IS NOT NULL);
+
+
+--
+-- Name: wfc_tlib_doc_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX wfc_tlib_doc_type ON public.wfc_template_library USING btree (doc_type);
+
+
+--
+-- Name: wfc_tlib_industry; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX wfc_tlib_industry ON public.wfc_template_library USING btree (industry);
+
+
+--
+-- Name: bd_audit bd_audit_no_delete; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER bd_audit_no_delete BEFORE DELETE ON public.bd_audit FOR EACH ROW EXECUTE FUNCTION public.bd_audit_immutable();
+
+
+--
+-- Name: bd_audit bd_audit_no_update; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER bd_audit_no_update BEFORE UPDATE ON public.bd_audit FOR EACH ROW EXECUTE FUNCTION public.bd_audit_immutable();
+
+
+--
+-- Name: dd_audit dd_audit_no_delete; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER dd_audit_no_delete BEFORE DELETE ON public.dd_audit FOR EACH ROW EXECUTE FUNCTION public.dd_audit_immutable();
+
+
+--
+-- Name: dd_audit dd_audit_no_update; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER dd_audit_no_update BEFORE UPDATE ON public.dd_audit FOR EACH ROW EXECUTE FUNCTION public.dd_audit_immutable();
+
+
+--
+-- Name: nc_audit nc_audit_no_delete; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER nc_audit_no_delete BEFORE DELETE ON public.nc_audit FOR EACH ROW EXECUTE FUNCTION public.nc_audit_immutable();
+
+
+--
+-- Name: nc_audit nc_audit_no_update; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER nc_audit_no_update BEFORE UPDATE ON public.nc_audit FOR EACH ROW EXECUTE FUNCTION public.nc_audit_immutable();
+
+
+--
+-- Name: sc_audit sc_audit_no_delete; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER sc_audit_no_delete BEFORE DELETE ON public.sc_audit FOR EACH ROW EXECUTE FUNCTION public.sc_audit_immutable();
+
+
+--
+-- Name: sc_audit sc_audit_no_update; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER sc_audit_no_update BEFORE UPDATE ON public.sc_audit FOR EACH ROW EXECUTE FUNCTION public.sc_audit_immutable();
 
 
 --
@@ -60823,6 +84834,54 @@ ALTER TABLE ONLY public.aac_scores
 
 
 --
+-- Name: aadc_aimc_model_refs aadc_aimc_model_refs_aadc_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aadc_aimc_model_refs
+    ADD CONSTRAINT aadc_aimc_model_refs_aadc_design_id_fkey FOREIGN KEY (aadc_design_id) REFERENCES public.aadc_designs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: aadc_cost_estimates aadc_cost_estimates_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aadc_cost_estimates
+    ADD CONSTRAINT aadc_cost_estimates_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.aadc_designs(id);
+
+
+--
+-- Name: aadc_design_links aadc_design_links_src_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aadc_design_links
+    ADD CONSTRAINT aadc_design_links_src_design_id_fkey FOREIGN KEY (src_design_id) REFERENCES public.aadc_designs(id);
+
+
+--
+-- Name: aadc_design_links aadc_design_links_tgt_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aadc_design_links
+    ADD CONSTRAINT aadc_design_links_tgt_design_id_fkey FOREIGN KEY (tgt_design_id) REFERENCES public.aadc_designs(id);
+
+
+--
+-- Name: aadc_versions aadc_versions_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aadc_versions
+    ADD CONSTRAINT aadc_versions_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.aadc_designs(id);
+
+
+--
+-- Name: ace_agent_workflows ace_agent_workflows_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ace_agent_workflows
+    ADD CONSTRAINT ace_agent_workflows_instance_id_fkey FOREIGN KEY (instance_id) REFERENCES public.ace_instances(id) ON DELETE CASCADE;
+
+
+--
 -- Name: ace_artifacts ace_artifacts_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -60839,11 +84898,35 @@ ALTER TABLE ONLY public.ace_coworkers
 
 
 --
+-- Name: ace_event_results ace_event_results_event_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ace_event_results
+    ADD CONSTRAINT ace_event_results_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.ace_events(id);
+
+
+--
 -- Name: ace_messages ace_messages_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.ace_messages
     ADD CONSTRAINT ace_messages_instance_id_fkey FOREIGN KEY (instance_id) REFERENCES public.ace_instances(id) ON DELETE CASCADE;
+
+
+--
+-- Name: ace_qa_failures ace_qa_failures_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ace_qa_failures
+    ADD CONSTRAINT ace_qa_failures_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.ace_qa_runs(id);
+
+
+--
+-- Name: ace_sessions ace_sessions_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ace_sessions
+    ADD CONSTRAINT ace_sessions_instance_id_fkey FOREIGN KEY (instance_id) REFERENCES public.ace_instances(id) ON DELETE CASCADE;
 
 
 --
@@ -60876,6 +84959,46 @@ ALTER TABLE ONLY public.aiify_roadmaps
 
 ALTER TABLE ONLY public.aiify_scores
     ADD CONSTRAINT aiify_scores_opportunity_id_fkey FOREIGN KEY (opportunity_id) REFERENCES public.aiify_opportunities(opportunity_id) ON DELETE CASCADE;
+
+
+--
+-- Name: aiml_artifacts aiml_artifacts_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aiml_artifacts
+    ADD CONSTRAINT aiml_artifacts_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.aiml_designs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: aiml_assessments aiml_assessments_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aiml_assessments
+    ADD CONSTRAINT aiml_assessments_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.aiml_designs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: aiml_edges aiml_edges_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aiml_edges
+    ADD CONSTRAINT aiml_edges_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.aiml_designs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: aiml_nodes aiml_nodes_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aiml_nodes
+    ADD CONSTRAINT aiml_nodes_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.aiml_designs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: aiml_versions aiml_versions_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aiml_versions
+    ADD CONSTRAINT aiml_versions_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.aiml_designs(id) ON DELETE CASCADE;
 
 
 --
@@ -60951,6 +85074,62 @@ ALTER TABLE ONLY public.batch_run_steps
 
 
 --
+-- Name: bd_alerts bd_alerts_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bd_alerts
+    ADD CONSTRAINT bd_alerts_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.boundary_designs(id);
+
+
+--
+-- Name: bd_alerts bd_alerts_isa_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bd_alerts
+    ADD CONSTRAINT bd_alerts_isa_id_fkey FOREIGN KEY (isa_id) REFERENCES public.bd_isa_tracker(id);
+
+
+--
+-- Name: bd_assessments bd_assessments_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bd_assessments
+    ADD CONSTRAINT bd_assessments_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.boundary_designs(id);
+
+
+--
+-- Name: bd_collab_sessions bd_collab_sessions_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bd_collab_sessions
+    ADD CONSTRAINT bd_collab_sessions_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.boundary_designs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: bd_isa_tracker bd_isa_tracker_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bd_isa_tracker
+    ADD CONSTRAINT bd_isa_tracker_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.boundary_designs(id);
+
+
+--
+-- Name: bd_versions bd_versions_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bd_versions
+    ADD CONSTRAINT bd_versions_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.boundary_designs(id);
+
+
+--
+-- Name: bdc_runbooks bdc_runbooks_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bdc_runbooks
+    ADD CONSTRAINT bdc_runbooks_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.boundary_designs(id);
+
+
+--
 -- Name: ccc_capacity_plans ccc_capacity_plans_circuit_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -61023,6 +85202,102 @@ ALTER TABLE ONLY public.cpmp_option_periods
 
 
 --
+-- Name: dd_assessments dd_assessments_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dd_assessments
+    ADD CONSTRAINT dd_assessments_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.data_designs(id);
+
+
+--
+-- Name: dd_collab_sessions dd_collab_sessions_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dd_collab_sessions
+    ADD CONSTRAINT dd_collab_sessions_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.data_designs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: dd_data_contracts dd_data_contracts_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dd_data_contracts
+    ADD CONSTRAINT dd_data_contracts_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.data_designs(id);
+
+
+--
+-- Name: dd_explore_profiles dd_explore_profiles_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dd_explore_profiles
+    ADD CONSTRAINT dd_explore_profiles_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.dd_explore_sessions(id) ON DELETE SET NULL;
+
+
+--
+-- Name: dd_field_mappings dd_field_mappings_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dd_field_mappings
+    ADD CONSTRAINT dd_field_mappings_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.dd_mapping_sessions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: dd_lineage dd_lineage_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dd_lineage
+    ADD CONSTRAINT dd_lineage_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.data_designs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: dd_mapping_transforms dd_mapping_transforms_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dd_mapping_transforms
+    ADD CONSTRAINT dd_mapping_transforms_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.dd_mapping_sessions(id);
+
+
+--
+-- Name: dd_migration_jobs dd_migration_jobs_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dd_migration_jobs
+    ADD CONSTRAINT dd_migration_jobs_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.data_designs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: dd_quality_runs dd_quality_runs_rule_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dd_quality_runs
+    ADD CONSTRAINT dd_quality_runs_rule_id_fkey FOREIGN KEY (rule_id) REFERENCES public.dd_quality_rules(id) ON DELETE CASCADE;
+
+
+--
+-- Name: dd_versions dd_versions_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dd_versions
+    ADD CONSTRAINT dd_versions_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.data_designs(id);
+
+
+--
+-- Name: ddc_runbook_executions ddc_runbook_executions_runbook_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ddc_runbook_executions
+    ADD CONSTRAINT ddc_runbook_executions_runbook_id_fkey FOREIGN KEY (runbook_id) REFERENCES public.ddc_runbooks(id) ON DELETE CASCADE;
+
+
+--
+-- Name: ddc_sop_approvals ddc_sop_approvals_sop_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ddc_sop_approvals
+    ADD CONSTRAINT ddc_sop_approvals_sop_id_fkey FOREIGN KEY (sop_id) REFERENCES public.ddc_sops(id) ON DELETE CASCADE;
+
+
+--
 -- Name: dib_supply_edges dib_supply_edges_source_node_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -61044,6 +85319,102 @@ ALTER TABLE ONLY public.dib_supply_edges
 
 ALTER TABLE ONLY public.dic_team_access
     ADD CONSTRAINT dic_team_access_collection_id_fkey FOREIGN KEY (collection_id) REFERENCES public.dic_collections(collection_id);
+
+
+--
+-- Name: dm_catalog_entries dm_catalog_entries_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dm_catalog_entries
+    ADD CONSTRAINT dm_catalog_entries_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.dm_data_products(id) ON DELETE CASCADE;
+
+
+--
+-- Name: dm_contract_test_runs dm_contract_test_runs_contract_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dm_contract_test_runs
+    ADD CONSTRAINT dm_contract_test_runs_contract_id_fkey FOREIGN KEY (contract_id) REFERENCES public.dm_data_contracts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: dm_contracts dm_contracts_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dm_contracts
+    ADD CONSTRAINT dm_contracts_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.dm_data_products(id) ON DELETE CASCADE;
+
+
+--
+-- Name: dm_data_products dm_data_products_domain_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dm_data_products
+    ADD CONSTRAINT dm_data_products_domain_id_fkey FOREIGN KEY (domain_id) REFERENCES public.dm_domains(id) ON DELETE CASCADE;
+
+
+--
+-- Name: dm_domain_maturity dm_domain_maturity_domain_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dm_domain_maturity
+    ADD CONSTRAINT dm_domain_maturity_domain_id_fkey FOREIGN KEY (domain_id) REFERENCES public.dm_domains(id) ON DELETE CASCADE;
+
+
+--
+-- Name: dm_input_ports dm_input_ports_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dm_input_ports
+    ADD CONSTRAINT dm_input_ports_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.dm_data_products(id) ON DELETE CASCADE;
+
+
+--
+-- Name: dm_output_ports dm_output_ports_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dm_output_ports
+    ADD CONSTRAINT dm_output_ports_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.dm_data_products(id) ON DELETE CASCADE;
+
+
+--
+-- Name: dm_product_slas dm_product_slas_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dm_product_slas
+    ADD CONSTRAINT dm_product_slas_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.dm_data_products(id) ON DELETE CASCADE;
+
+
+--
+-- Name: dm_product_subscriptions dm_product_subscriptions_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dm_product_subscriptions
+    ADD CONSTRAINT dm_product_subscriptions_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.dm_data_products(id) ON DELETE CASCADE;
+
+
+--
+-- Name: docmod_catalog_entries docmod_catalog_entries_replacement_entry_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.docmod_catalog_entries
+    ADD CONSTRAINT docmod_catalog_entries_replacement_entry_id_fkey FOREIGN KEY (replacement_entry_id) REFERENCES public.docmod_catalog_entries(entry_id);
+
+
+--
+-- Name: docmod_findings docmod_findings_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.docmod_findings
+    ADD CONSTRAINT docmod_findings_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.docmod_scan_runs(run_id);
+
+
+--
+-- Name: docmod_findings docmod_findings_supersedes_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.docmod_findings
+    ADD CONSTRAINT docmod_findings_supersedes_id_fkey FOREIGN KEY (supersedes_id) REFERENCES public.docmod_findings(finding_id);
 
 
 --
@@ -61279,6 +85650,62 @@ ALTER TABLE ONLY public.fa_workflow_submissions
 
 
 --
+-- Name: fedramp_controls fedramp_controls_package_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fedramp_controls
+    ADD CONSTRAINT fedramp_controls_package_id_fkey FOREIGN KEY (package_id) REFERENCES public.fedramp_ato_packages(id) ON DELETE CASCADE;
+
+
+--
+-- Name: finetune_eval_results finetune_eval_results_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.finetune_eval_results
+    ADD CONSTRAINT finetune_eval_results_job_id_fkey FOREIGN KEY (job_id) REFERENCES public.finetune_jobs(id);
+
+
+--
+-- Name: finetune_metrics finetune_metrics_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.finetune_metrics
+    ADD CONSTRAINT finetune_metrics_job_id_fkey FOREIGN KEY (job_id) REFERENCES public.finetune_jobs(id);
+
+
+--
+-- Name: forecast_audit forecast_audit_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.forecast_audit
+    ADD CONSTRAINT forecast_audit_job_id_fkey FOREIGN KEY (job_id) REFERENCES public.forecast_jobs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: foundry_outcomes foundry_outcomes_concept_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.foundry_outcomes
+    ADD CONSTRAINT foundry_outcomes_concept_id_fkey FOREIGN KEY (concept_id) REFERENCES public.foundry_concepts(id);
+
+
+--
+-- Name: foundry_specs foundry_specs_concept_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.foundry_specs
+    ADD CONSTRAINT foundry_specs_concept_id_fkey FOREIGN KEY (concept_id) REFERENCES public.foundry_concepts(id);
+
+
+--
+-- Name: foundry_tasks_emitted foundry_tasks_emitted_concept_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.foundry_tasks_emitted
+    ADD CONSTRAINT foundry_tasks_emitted_concept_id_fkey FOREIGN KEY (concept_id) REFERENCES public.foundry_concepts(id);
+
+
+--
 -- Name: fr_requirements fr_requirements_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -61308,6 +85735,14 @@ ALTER TABLE ONLY public.ft_hp_trials
 
 ALTER TABLE ONLY public.ft_trajectory_steps
     ADD CONSTRAINT ft_trajectory_steps_trajectory_id_fkey FOREIGN KEY (trajectory_id) REFERENCES public.ft_trajectories(id);
+
+
+--
+-- Name: gate_failures gate_failures_gate_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.gate_failures
+    ADD CONSTRAINT gate_failures_gate_id_fkey FOREIGN KEY (gate_id) REFERENCES public.compliance_gates(id) ON DELETE CASCADE;
 
 
 --
@@ -61447,6 +85882,14 @@ ALTER TABLE ONLY public.govlift_rollback_events
 
 
 --
+-- Name: govlift_runbook_step_results govlift_runbook_step_results_execution_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.govlift_runbook_step_results
+    ADD CONSTRAINT govlift_runbook_step_results_execution_id_fkey FOREIGN KEY (execution_id) REFERENCES public.govlift_runbook_executions(id);
+
+
+--
 -- Name: govlift_runbook_steps govlift_runbook_steps_runbook_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -61508,6 +85951,22 @@ ALTER TABLE ONLY public.idc_migration_baselines
 
 ALTER TABLE ONLY public.idc_versions
     ADD CONSTRAINT idc_versions_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.infra_designs(id);
+
+
+--
+-- Name: idr_artifacts idr_artifacts_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.idr_artifacts
+    ADD CONSTRAINT idr_artifacts_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.idr_sessions(id);
+
+
+--
+-- Name: idr_conflicts idr_conflicts_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.idr_conflicts
+    ADD CONSTRAINT idr_conflicts_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.idr_sessions(id);
 
 
 --
@@ -61655,6 +86114,342 @@ ALTER TABLE ONLY public.kg_retrieval_log
 
 
 --
+-- Name: mc_ai_opportunities mc_ai_opportunities_app_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_ai_opportunities
+    ADD CONSTRAINT mc_ai_opportunities_app_id_fkey FOREIGN KEY (app_id) REFERENCES public.mc_app_inventory(id);
+
+
+--
+-- Name: mc_ai_opportunities mc_ai_opportunities_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_ai_opportunities
+    ADD CONSTRAINT mc_ai_opportunities_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.mc_projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: mc_app_data_sources mc_app_data_sources_app_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_app_data_sources
+    ADD CONSTRAINT mc_app_data_sources_app_id_fkey FOREIGN KEY (app_id) REFERENCES public.mc_app_inventory(id) ON DELETE CASCADE;
+
+
+--
+-- Name: mc_app_inventory mc_app_inventory_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_app_inventory
+    ADD CONSTRAINT mc_app_inventory_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.mc_srv_sessions(id);
+
+
+--
+-- Name: mc_app_migration_steps mc_app_migration_steps_app_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_app_migration_steps
+    ADD CONSTRAINT mc_app_migration_steps_app_id_fkey FOREIGN KEY (app_id) REFERENCES public.mc_app_inventory(id) ON DELETE CASCADE;
+
+
+--
+-- Name: mc_assessments mc_assessments_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_assessments
+    ADD CONSTRAINT mc_assessments_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.migration_designs(id);
+
+
+--
+-- Name: mc_data_migration mc_data_migration_app_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_data_migration
+    ADD CONSTRAINT mc_data_migration_app_id_fkey FOREIGN KEY (app_id) REFERENCES public.mc_app_inventory(id);
+
+
+--
+-- Name: mc_net_coa_questions mc_net_coa_questions_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_coa_questions
+    ADD CONSTRAINT mc_net_coa_questions_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.mc_net_sessions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: mc_net_compat_checks mc_net_compat_checks_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_compat_checks
+    ADD CONSTRAINT mc_net_compat_checks_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.mc_net_sessions(id);
+
+
+--
+-- Name: mc_net_config_map mc_net_config_map_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_config_map
+    ADD CONSTRAINT mc_net_config_map_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.mc_net_sessions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: mc_net_config_questions mc_net_config_questions_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_config_questions
+    ADD CONSTRAINT mc_net_config_questions_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.mc_net_sessions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: mc_net_cutover_steps mc_net_cutover_steps_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_cutover_steps
+    ADD CONSTRAINT mc_net_cutover_steps_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.mc_net_sessions(id);
+
+
+--
+-- Name: mc_net_erb_metadata mc_net_erb_metadata_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_erb_metadata
+    ADD CONSTRAINT mc_net_erb_metadata_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.mc_net_sessions(id);
+
+
+--
+-- Name: mc_net_port_map mc_net_port_map_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_port_map
+    ADD CONSTRAINT mc_net_port_map_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.mc_net_sessions(id);
+
+
+--
+-- Name: mc_net_sessions mc_net_sessions_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_sessions
+    ADD CONSTRAINT mc_net_sessions_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.migration_designs(id);
+
+
+--
+-- Name: mc_net_test_cases mc_net_test_cases_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_test_cases
+    ADD CONSTRAINT mc_net_test_cases_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.mc_net_sessions(id);
+
+
+--
+-- Name: mc_net_topology_neighbors mc_net_topology_neighbors_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_net_topology_neighbors
+    ADD CONSTRAINT mc_net_topology_neighbors_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.mc_net_sessions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: mc_project_phase_sops mc_project_phase_sops_phase_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_project_phase_sops
+    ADD CONSTRAINT mc_project_phase_sops_phase_id_fkey FOREIGN KEY (phase_id) REFERENCES public.mc_project_phases(id) ON DELETE CASCADE;
+
+
+--
+-- Name: mc_project_phase_sops mc_project_phase_sops_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_project_phase_sops
+    ADD CONSTRAINT mc_project_phase_sops_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.mc_projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: mc_project_phases mc_project_phases_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_project_phases
+    ADD CONSTRAINT mc_project_phases_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.mc_projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: mc_projects mc_projects_mc_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_projects
+    ADD CONSTRAINT mc_projects_mc_session_id_fkey FOREIGN KEY (mc_session_id) REFERENCES public.mc_srv_sessions(id);
+
+
+--
+-- Name: mc_refactor_jobs mc_refactor_jobs_ai_opp_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_refactor_jobs
+    ADD CONSTRAINT mc_refactor_jobs_ai_opp_id_fkey FOREIGN KEY (ai_opp_id) REFERENCES public.mc_ai_opportunities(id);
+
+
+--
+-- Name: mc_refactor_jobs mc_refactor_jobs_app_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_refactor_jobs
+    ADD CONSTRAINT mc_refactor_jobs_app_id_fkey FOREIGN KEY (app_id) REFERENCES public.mc_app_inventory(id);
+
+
+--
+-- Name: mc_refactor_jobs mc_refactor_jobs_phase_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_refactor_jobs
+    ADD CONSTRAINT mc_refactor_jobs_phase_id_fkey FOREIGN KEY (phase_id) REFERENCES public.mc_project_phases(id);
+
+
+--
+-- Name: mc_refactor_jobs mc_refactor_jobs_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_refactor_jobs
+    ADD CONSTRAINT mc_refactor_jobs_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.mc_projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: mc_runbooks mc_runbooks_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_runbooks
+    ADD CONSTRAINT mc_runbooks_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.migration_designs(id);
+
+
+--
+-- Name: mc_srv_compat_checks mc_srv_compat_checks_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_compat_checks
+    ADD CONSTRAINT mc_srv_compat_checks_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.mc_srv_sessions(id);
+
+
+--
+-- Name: mc_srv_cutover_steps mc_srv_cutover_steps_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_cutover_steps
+    ADD CONSTRAINT mc_srv_cutover_steps_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.mc_srv_sessions(id);
+
+
+--
+-- Name: mc_srv_dependencies mc_srv_dependencies_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_dependencies
+    ADD CONSTRAINT mc_srv_dependencies_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.mc_srv_sessions(id);
+
+
+--
+-- Name: mc_srv_erb_metadata mc_srv_erb_metadata_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_erb_metadata
+    ADD CONSTRAINT mc_srv_erb_metadata_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.mc_srv_sessions(id);
+
+
+--
+-- Name: mc_srv_inventory mc_srv_inventory_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_inventory
+    ADD CONSTRAINT mc_srv_inventory_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.mc_srv_sessions(id);
+
+
+--
+-- Name: mc_srv_nic_map mc_srv_nic_map_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_nic_map
+    ADD CONSTRAINT mc_srv_nic_map_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.mc_srv_sessions(id);
+
+
+--
+-- Name: mc_srv_performance mc_srv_performance_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_performance
+    ADD CONSTRAINT mc_srv_performance_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.mc_srv_sessions(id);
+
+
+--
+-- Name: mc_srv_rightsizing mc_srv_rightsizing_recommended_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_rightsizing
+    ADD CONSTRAINT mc_srv_rightsizing_recommended_instance_id_fkey FOREIGN KEY (recommended_instance_id) REFERENCES public.mc_cloud_instances(id);
+
+
+--
+-- Name: mc_srv_rightsizing mc_srv_rightsizing_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_rightsizing
+    ADD CONSTRAINT mc_srv_rightsizing_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.mc_srv_sessions(id);
+
+
+--
+-- Name: mc_srv_services mc_srv_services_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_services
+    ADD CONSTRAINT mc_srv_services_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.mc_srv_sessions(id);
+
+
+--
+-- Name: mc_srv_sessions mc_srv_sessions_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_sessions
+    ADD CONSTRAINT mc_srv_sessions_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.migration_designs(id);
+
+
+--
+-- Name: mc_srv_sessions mc_srv_sessions_tgt_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_sessions
+    ADD CONSTRAINT mc_srv_sessions_tgt_instance_id_fkey FOREIGN KEY (tgt_instance_id) REFERENCES public.mc_cloud_instances(id);
+
+
+--
+-- Name: mc_srv_storage_map mc_srv_storage_map_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_storage_map
+    ADD CONSTRAINT mc_srv_storage_map_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.mc_srv_sessions(id);
+
+
+--
+-- Name: mc_srv_test_cases mc_srv_test_cases_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_srv_test_cases
+    ADD CONSTRAINT mc_srv_test_cases_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.mc_srv_sessions(id);
+
+
+--
+-- Name: mc_versions mc_versions_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_versions
+    ADD CONSTRAINT mc_versions_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.migration_designs(id);
+
+
+--
+-- Name: mc_wave_plans mc_wave_plans_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mc_wave_plans
+    ADD CONSTRAINT mc_wave_plans_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.migration_designs(id);
+
+
+--
 -- Name: memory_entity_relationships memory_entity_relationships_from_entry_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -61668,6 +86463,38 @@ ALTER TABLE ONLY public.memory_entity_relationships
 
 ALTER TABLE ONLY public.memory_entity_relationships
     ADD CONSTRAINT memory_entity_relationships_to_entry_id_fkey FOREIGN KEY (to_entry_id) REFERENCES public.memory_entries(id) ON DELETE CASCADE;
+
+
+--
+-- Name: mi_goal_alignments mi_goal_alignments_goal_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mi_goal_alignments
+    ADD CONSTRAINT mi_goal_alignments_goal_id_fkey FOREIGN KEY (goal_id) REFERENCES public.mi_goals(id);
+
+
+--
+-- Name: mi_goal_alignments mi_goal_alignments_opportunity_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mi_goal_alignments
+    ADD CONSTRAINT mi_goal_alignments_opportunity_id_fkey FOREIGN KEY (opportunity_id) REFERENCES public.mi_opportunities(id);
+
+
+--
+-- Name: mi_strategies mi_strategies_opportunity_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mi_strategies
+    ADD CONSTRAINT mi_strategies_opportunity_id_fkey FOREIGN KEY (opportunity_id) REFERENCES public.mi_opportunities(id);
+
+
+--
+-- Name: mi_wishlist mi_wishlist_linked_opportunity_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mi_wishlist
+    ADD CONSTRAINT mi_wishlist_linked_opportunity_id_fkey FOREIGN KEY (linked_opportunity_id) REFERENCES public.mi_opportunities(id);
 
 
 --
@@ -61751,6 +86578,710 @@ ALTER TABLE ONLY public.mission_versions
 
 
 --
+-- Name: nc_advisory_assessments nc_advisory_assessments_advisory_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_advisory_assessments
+    ADD CONSTRAINT nc_advisory_assessments_advisory_id_fkey FOREIGN KEY (advisory_id) REFERENCES public.nc_advisories(id);
+
+
+--
+-- Name: nc_agreement_amendments nc_agreement_amendments_agreement_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_agreement_amendments
+    ADD CONSTRAINT nc_agreement_amendments_agreement_id_fkey FOREIGN KEY (agreement_id) REFERENCES public.nc_peering_agreements(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_alert_events nc_alert_events_rule_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_alert_events
+    ADD CONSTRAINT nc_alert_events_rule_id_fkey FOREIGN KEY (rule_id) REFERENCES public.nc_alert_rules(id);
+
+
+--
+-- Name: nc_alt_criteria nc_alt_criteria_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_alt_criteria
+    ADD CONSTRAINT nc_alt_criteria_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.nc_projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_alternatives nc_alternatives_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_alternatives
+    ADD CONSTRAINT nc_alternatives_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.nc_projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_ato_packages nc_ato_packages_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_ato_packages
+    ADD CONSTRAINT nc_ato_packages_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_board_reviews nc_board_reviews_board_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_board_reviews
+    ADD CONSTRAINT nc_board_reviews_board_id_fkey FOREIGN KEY (board_id) REFERENCES public.nc_review_boards(id);
+
+
+--
+-- Name: nc_board_reviews nc_board_reviews_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_board_reviews
+    ADD CONSTRAINT nc_board_reviews_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.nc_projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_bom_items nc_bom_items_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_bom_items
+    ADD CONSTRAINT nc_bom_items_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.nc_projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_boundaries nc_boundaries_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_boundaries
+    ADD CONSTRAINT nc_boundaries_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_bw_simulations nc_bw_simulations_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_bw_simulations
+    ADD CONSTRAINT nc_bw_simulations_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_cables nc_cables_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_cables
+    ADD CONSTRAINT nc_cables_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_capacity_projections nc_capacity_projections_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_capacity_projections
+    ADD CONSTRAINT nc_capacity_projections_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.nc_projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_case_history nc_case_history_workflow_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_case_history
+    ADD CONSTRAINT nc_case_history_workflow_id_fkey FOREIGN KEY (workflow_id) REFERENCES public.nc_case_workflows(id);
+
+
+--
+-- Name: nc_case_workflows nc_case_workflows_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_case_workflows
+    ADD CONSTRAINT nc_case_workflows_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.nc_projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_change_request_items nc_change_request_items_cr_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_change_request_items
+    ADD CONSTRAINT nc_change_request_items_cr_id_fkey FOREIGN KEY (cr_id) REFERENCES public.nc_change_requests(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_change_request_items nc_change_request_items_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_change_request_items
+    ADD CONSTRAINT nc_change_request_items_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_change_requests nc_change_requests_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_change_requests
+    ADD CONSTRAINT nc_change_requests_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_circuits nc_circuits_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_circuits
+    ADD CONSTRAINT nc_circuits_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_collab_sessions nc_collab_sessions_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_collab_sessions
+    ADD CONSTRAINT nc_collab_sessions_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.topologies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_collected_configs nc_collected_configs_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_collected_configs
+    ADD CONSTRAINT nc_collected_configs_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.nc_device_profiles(id);
+
+
+--
+-- Name: nc_collected_configs nc_collected_configs_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_collected_configs
+    ADD CONSTRAINT nc_collected_configs_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_compliance_checks nc_compliance_checks_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_compliance_checks
+    ADD CONSTRAINT nc_compliance_checks_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_compliance_findings nc_compliance_findings_audit_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_compliance_findings
+    ADD CONSTRAINT nc_compliance_findings_audit_id_fkey FOREIGN KEY (audit_id) REFERENCES public.nc_compliance_checks(id);
+
+
+--
+-- Name: nc_compliance_findings nc_compliance_findings_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_compliance_findings
+    ADD CONSTRAINT nc_compliance_findings_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_compliance_history nc_compliance_history_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_compliance_history
+    ADD CONSTRAINT nc_compliance_history_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.nc_projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_compliance_profiles nc_compliance_profiles_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_compliance_profiles
+    ADD CONSTRAINT nc_compliance_profiles_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_config_review_findings nc_config_review_findings_review_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_config_review_findings
+    ADD CONSTRAINT nc_config_review_findings_review_id_fkey FOREIGN KEY (review_id) REFERENCES public.nc_config_reviews(id);
+
+
+--
+-- Name: nc_cross_connects nc_cross_connects_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_cross_connects
+    ADD CONSTRAINT nc_cross_connects_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_device_geo nc_device_geo_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_device_geo
+    ADD CONSTRAINT nc_device_geo_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_diagram_analyses nc_diagram_analyses_upload_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_diagram_analyses
+    ADD CONSTRAINT nc_diagram_analyses_upload_id_fkey FOREIGN KEY (upload_id) REFERENCES public.nc_diagram_uploads(id);
+
+
+--
+-- Name: nc_diagram_exports nc_diagram_exports_analysis_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_diagram_exports
+    ADD CONSTRAINT nc_diagram_exports_analysis_id_fkey FOREIGN KEY (analysis_id) REFERENCES public.nc_diagram_analyses(id);
+
+
+--
+-- Name: nc_diagram_findings nc_diagram_findings_analysis_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_diagram_findings
+    ADD CONSTRAINT nc_diagram_findings_analysis_id_fkey FOREIGN KEY (analysis_id) REFERENCES public.nc_diagram_analyses(id);
+
+
+--
+-- Name: nc_discovery_configs nc_discovery_configs_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_discovery_configs
+    ADD CONSTRAINT nc_discovery_configs_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.nc_device_profiles(id);
+
+
+--
+-- Name: nc_discovery_diffs nc_discovery_diffs_scan_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_discovery_diffs
+    ADD CONSTRAINT nc_discovery_diffs_scan_id_fkey FOREIGN KEY (scan_id) REFERENCES public.nc_discovery_scans(id);
+
+
+--
+-- Name: nc_discovery_diffs nc_discovery_diffs_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_discovery_diffs
+    ADD CONSTRAINT nc_discovery_diffs_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_discovery_scans nc_discovery_scans_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_discovery_scans
+    ADD CONSTRAINT nc_discovery_scans_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_documents nc_documents_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_documents
+    ADD CONSTRAINT nc_documents_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_exception_approvals nc_exception_approvals_exception_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_exception_approvals
+    ADD CONSTRAINT nc_exception_approvals_exception_id_fkey FOREIGN KEY (exception_id) REFERENCES public.nc_exceptions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_flow_walkthrough_steps nc_flow_walkthrough_steps_flow_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_flow_walkthrough_steps
+    ADD CONSTRAINT nc_flow_walkthrough_steps_flow_id_fkey FOREIGN KEY (flow_id) REFERENCES public.nc_traffic_flows(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_groups nc_groups_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_groups
+    ADD CONSTRAINT nc_groups_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_innovation_ideas nc_innovation_ideas_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_innovation_ideas
+    ADD CONSTRAINT nc_innovation_ideas_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.nc_projects(id);
+
+
+--
+-- Name: nc_intent_constraints nc_intent_constraints_policy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_intent_constraints
+    ADD CONSTRAINT nc_intent_constraints_policy_id_fkey FOREIGN KEY (policy_id) REFERENCES public.nc_intent_policies(id);
+
+
+--
+-- Name: nc_intent_policies nc_intent_policies_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_intent_policies
+    ADD CONSTRAINT nc_intent_policies_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_intent_validations nc_intent_validations_policy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_intent_validations
+    ADD CONSTRAINT nc_intent_validations_policy_id_fkey FOREIGN KEY (policy_id) REFERENCES public.nc_intent_policies(id);
+
+
+--
+-- Name: nc_intent_validations nc_intent_validations_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_intent_validations
+    ADD CONSTRAINT nc_intent_validations_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_interconnects nc_interconnects_dst_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_interconnects
+    ADD CONSTRAINT nc_interconnects_dst_project_id_fkey FOREIGN KEY (dst_project_id) REFERENCES public.nc_projects(id);
+
+
+--
+-- Name: nc_interconnects nc_interconnects_dst_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_interconnects
+    ADD CONSTRAINT nc_interconnects_dst_topology_id_fkey FOREIGN KEY (dst_topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_interconnects nc_interconnects_src_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_interconnects
+    ADD CONSTRAINT nc_interconnects_src_project_id_fkey FOREIGN KEY (src_project_id) REFERENCES public.nc_projects(id);
+
+
+--
+-- Name: nc_interconnects nc_interconnects_src_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_interconnects
+    ADD CONSTRAINT nc_interconnects_src_topology_id_fkey FOREIGN KEY (src_topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_ipam_blocks nc_ipam_blocks_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_ipam_blocks
+    ADD CONSTRAINT nc_ipam_blocks_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_lab_runs nc_lab_runs_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_lab_runs
+    ADD CONSTRAINT nc_lab_runs_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_lab_tests nc_lab_tests_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_lab_tests
+    ADD CONSTRAINT nc_lab_tests_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.nc_projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_lessons_learned nc_lessons_learned_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_lessons_learned
+    ADD CONSTRAINT nc_lessons_learned_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.nc_projects(id);
+
+
+--
+-- Name: nc_mc_runs nc_mc_runs_scenario_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_mc_runs
+    ADD CONSTRAINT nc_mc_runs_scenario_id_fkey FOREIGN KEY (scenario_id) REFERENCES public.nc_mc_scenarios(id);
+
+
+--
+-- Name: nc_mc_runs nc_mc_runs_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_mc_runs
+    ADD CONSTRAINT nc_mc_runs_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_mc_scenarios nc_mc_scenarios_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_mc_scenarios
+    ADD CONSTRAINT nc_mc_scenarios_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_migration_phases nc_migration_phases_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_migration_phases
+    ADD CONSTRAINT nc_migration_phases_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.nc_projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_module_inventory nc_module_inventory_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_module_inventory
+    ADD CONSTRAINT nc_module_inventory_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_naming_sequences nc_naming_sequences_convention_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_naming_sequences
+    ADD CONSTRAINT nc_naming_sequences_convention_id_fkey FOREIGN KEY (convention_id) REFERENCES public.nc_naming_conventions(id);
+
+
+--
+-- Name: nc_netbox_objects nc_netbox_objects_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_netbox_objects
+    ADD CONSTRAINT nc_netbox_objects_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_netbox_sync_log nc_netbox_sync_log_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_netbox_sync_log
+    ADD CONSTRAINT nc_netbox_sync_log_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_notifications nc_notifications_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_notifications
+    ADD CONSTRAINT nc_notifications_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.nc_projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_objects nc_objects_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_objects
+    ADD CONSTRAINT nc_objects_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_packet_captures nc_packet_captures_lab_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_packet_captures
+    ADD CONSTRAINT nc_packet_captures_lab_run_id_fkey FOREIGN KEY (lab_run_id) REFERENCES public.nc_lab_runs(id) ON DELETE SET NULL;
+
+
+--
+-- Name: nc_packet_captures nc_packet_captures_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_packet_captures
+    ADD CONSTRAINT nc_packet_captures_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_peering_agreements nc_peering_agreements_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_peering_agreements
+    ADD CONSTRAINT nc_peering_agreements_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.nc_projects(id);
+
+
+--
+-- Name: nc_peering_sessions nc_peering_sessions_agreement_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_peering_sessions
+    ADD CONSTRAINT nc_peering_sessions_agreement_id_fkey FOREIGN KEY (agreement_id) REFERENCES public.nc_peering_agreements(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_peering_traffic nc_peering_traffic_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_peering_traffic
+    ADD CONSTRAINT nc_peering_traffic_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.nc_peering_sessions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_phase_documents nc_phase_documents_phase_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_phase_documents
+    ADD CONSTRAINT nc_phase_documents_phase_id_fkey FOREIGN KEY (phase_id) REFERENCES public.nc_migration_phases(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_phase_documents nc_phase_documents_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_phase_documents
+    ADD CONSTRAINT nc_phase_documents_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.nc_projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_poam_status_log nc_poam_status_log_poam_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_poam_status_log
+    ADD CONSTRAINT nc_poam_status_log_poam_id_fkey FOREIGN KEY (poam_id) REFERENCES public.nc_poam_items(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_port_inventory nc_port_inventory_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_port_inventory
+    ADD CONSTRAINT nc_port_inventory_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_project_milestones nc_project_milestones_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_project_milestones
+    ADD CONSTRAINT nc_project_milestones_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.nc_projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_project_notes nc_project_notes_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_project_notes
+    ADD CONSTRAINT nc_project_notes_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.nc_projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_project_phases nc_project_phases_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_project_phases
+    ADD CONSTRAINT nc_project_phases_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.nc_projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_project_topologies nc_project_topologies_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_project_topologies
+    ADD CONSTRAINT nc_project_topologies_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.nc_projects(id);
+
+
+--
+-- Name: nc_project_topologies nc_project_topologies_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_project_topologies
+    ADD CONSTRAINT nc_project_topologies_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_projects nc_projects_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_projects
+    ADD CONSTRAINT nc_projects_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.nc_customers(id);
+
+
+--
+-- Name: nc_query_log nc_query_log_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_query_log
+    ADD CONSTRAINT nc_query_log_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_racks nc_racks_facility_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_racks
+    ADD CONSTRAINT nc_racks_facility_id_fkey FOREIGN KEY (facility_id) REFERENCES public.nc_facilities(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_refresh_plans nc_refresh_plans_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_refresh_plans
+    ADD CONSTRAINT nc_refresh_plans_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.nc_projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_remediation_actions nc_remediation_actions_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_remediation_actions
+    ADD CONSTRAINT nc_remediation_actions_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.nc_projects(id) ON DELETE SET NULL;
+
+
+--
+-- Name: nc_remediation_status_log nc_remediation_status_log_action_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_remediation_status_log
+    ADD CONSTRAINT nc_remediation_status_log_action_id_fkey FOREIGN KEY (action_id) REFERENCES public.nc_remediation_actions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_resource_plan nc_resource_plan_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_resource_plan
+    ADD CONSTRAINT nc_resource_plan_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.nc_projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_risks nc_risks_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_risks
+    ADD CONSTRAINT nc_risks_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.nc_projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_routing_entries nc_routing_entries_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_routing_entries
+    ADD CONSTRAINT nc_routing_entries_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_safe_bridge nc_safe_bridge_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_safe_bridge
+    ADD CONSTRAINT nc_safe_bridge_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.nc_projects(id) ON DELETE CASCADE;
+
+
+--
 -- Name: nc_simulation_artifacts nc_simulation_artifacts_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -61775,11 +87306,147 @@ ALTER TABLE ONLY public.nc_simulation_runs
 
 
 --
+-- Name: nc_sites nc_sites_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_sites
+    ADD CONSTRAINT nc_sites_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.nc_customers(id);
+
+
+--
+-- Name: nc_standards_checks nc_standards_checks_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_standards_checks
+    ADD CONSTRAINT nc_standards_checks_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.nc_projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_stencil_shapes nc_stencil_shapes_library_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_stencil_shapes
+    ADD CONSTRAINT nc_stencil_shapes_library_id_fkey FOREIGN KEY (library_id) REFERENCES public.nc_stencil_libraries(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_step_persona_responses nc_step_persona_responses_step_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_step_persona_responses
+    ADD CONSTRAINT nc_step_persona_responses_step_id_fkey FOREIGN KEY (step_id) REFERENCES public.nc_flow_walkthrough_steps(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_stig_imports nc_stig_imports_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_stig_imports
+    ADD CONSTRAINT nc_stig_imports_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_subnet_calc_history nc_subnet_calc_history_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_subnet_calc_history
+    ADD CONSTRAINT nc_subnet_calc_history_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.nc_projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_template_docs nc_template_docs_template_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_template_docs
+    ADD CONSTRAINT nc_template_docs_template_id_fkey FOREIGN KEY (template_id) REFERENCES public.nc_templates(id);
+
+
+--
+-- Name: nc_topology_snapshots nc_topology_snapshots_phase_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_topology_snapshots
+    ADD CONSTRAINT nc_topology_snapshots_phase_id_fkey FOREIGN KEY (phase_id) REFERENCES public.nc_migration_phases(id);
+
+
+--
+-- Name: nc_topology_snapshots nc_topology_snapshots_topo_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_topology_snapshots
+    ADD CONSTRAINT nc_topology_snapshots_topo_id_fkey FOREIGN KEY (topo_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_traffic_flows nc_traffic_flows_phase_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_traffic_flows
+    ADD CONSTRAINT nc_traffic_flows_phase_id_fkey FOREIGN KEY (phase_id) REFERENCES public.nc_migration_phases(id);
+
+
+--
+-- Name: nc_versions nc_versions_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_versions
+    ADD CONSTRAINT nc_versions_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: nc_vuln_findings nc_vuln_findings_host_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_vuln_findings
+    ADD CONSTRAINT nc_vuln_findings_host_id_fkey FOREIGN KEY (host_id) REFERENCES public.nc_vuln_hosts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_vuln_findings nc_vuln_findings_scan_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_vuln_findings
+    ADD CONSTRAINT nc_vuln_findings_scan_id_fkey FOREIGN KEY (scan_id) REFERENCES public.nc_vuln_scans(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_vuln_hosts nc_vuln_hosts_scan_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_vuln_hosts
+    ADD CONSTRAINT nc_vuln_hosts_scan_id_fkey FOREIGN KEY (scan_id) REFERENCES public.nc_vuln_scans(id) ON DELETE CASCADE;
+
+
+--
+-- Name: nc_vuln_scans nc_vuln_scans_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.nc_vuln_scans
+    ADD CONSTRAINT nc_vuln_scans_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: ndc_runbooks ndc_runbooks_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ndc_runbooks
+    ADD CONSTRAINT ndc_runbooks_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
 -- Name: ni_analyses ni_analyses_topology_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.ni_analyses
     ADD CONSTRAINT ni_analyses_topology_id_fkey FOREIGN KEY (topology_id) REFERENCES public.topologies(id);
+
+
+--
+-- Name: ni_device_configs ni_device_configs_device_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ni_device_configs
+    ADD CONSTRAINT ni_device_configs_device_id_fkey FOREIGN KEY (device_id) REFERENCES public.ni_devices(id);
 
 
 --
@@ -61820,6 +87487,150 @@ ALTER TABLE ONLY public.noc_maintenance_windows
 
 ALTER TABLE ONLY public.noc_mops
     ADD CONSTRAINT noc_mops_rfc_id_fkey FOREIGN KEY (rfc_id) REFERENCES public.noc_rfcs(id);
+
+
+--
+-- Name: od_assessments od_assessments_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.od_assessments
+    ADD CONSTRAINT od_assessments_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.observability_designs(id);
+
+
+--
+-- Name: od_collab_sessions od_collab_sessions_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.od_collab_sessions
+    ADD CONSTRAINT od_collab_sessions_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.observability_designs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: od_versions od_versions_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.od_versions
+    ADD CONSTRAINT od_versions_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.observability_designs(id);
+
+
+--
+-- Name: ohc_experiment_runs ohc_experiment_runs_experiment_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ohc_experiment_runs
+    ADD CONSTRAINT ohc_experiment_runs_experiment_id_fkey FOREIGN KEY (experiment_id) REFERENCES public.ohc_experiments(id) ON DELETE CASCADE;
+
+
+--
+-- Name: ohc_model_registry ohc_model_registry_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ohc_model_registry
+    ADD CONSTRAINT ohc_model_registry_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.ohc_experiment_runs(id);
+
+
+--
+-- Name: pc_boundaries pc_boundaries_pipeline_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pc_boundaries
+    ADD CONSTRAINT pc_boundaries_pipeline_id_fkey FOREIGN KEY (pipeline_id) REFERENCES public.pipelines(id);
+
+
+--
+-- Name: pc_change_requests pc_change_requests_pipeline_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pc_change_requests
+    ADD CONSTRAINT pc_change_requests_pipeline_id_fkey FOREIGN KEY (pipeline_id) REFERENCES public.pipelines(id);
+
+
+--
+-- Name: pc_collab_sessions pc_collab_sessions_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pc_collab_sessions
+    ADD CONSTRAINT pc_collab_sessions_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.pipelines(id) ON DELETE CASCADE;
+
+
+--
+-- Name: pc_compliance_checks pc_compliance_checks_pipeline_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pc_compliance_checks
+    ADD CONSTRAINT pc_compliance_checks_pipeline_id_fkey FOREIGN KEY (pipeline_id) REFERENCES public.pipelines(id);
+
+
+--
+-- Name: pc_compliance_findings pc_compliance_findings_audit_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pc_compliance_findings
+    ADD CONSTRAINT pc_compliance_findings_audit_id_fkey FOREIGN KEY (audit_id) REFERENCES public.pc_compliance_checks(id);
+
+
+--
+-- Name: pc_compliance_findings pc_compliance_findings_pipeline_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pc_compliance_findings
+    ADD CONSTRAINT pc_compliance_findings_pipeline_id_fkey FOREIGN KEY (pipeline_id) REFERENCES public.pipelines(id);
+
+
+--
+-- Name: pc_project_pipelines pc_project_pipelines_pipeline_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pc_project_pipelines
+    ADD CONSTRAINT pc_project_pipelines_pipeline_id_fkey FOREIGN KEY (pipeline_id) REFERENCES public.pipelines(id);
+
+
+--
+-- Name: pc_project_pipelines pc_project_pipelines_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pc_project_pipelines
+    ADD CONSTRAINT pc_project_pipelines_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.pc_projects(id);
+
+
+--
+-- Name: pc_stages pc_stages_pipeline_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pc_stages
+    ADD CONSTRAINT pc_stages_pipeline_id_fkey FOREIGN KEY (pipeline_id) REFERENCES public.pipelines(id);
+
+
+--
+-- Name: pc_versions pc_versions_pipeline_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pc_versions
+    ADD CONSTRAINT pc_versions_pipeline_id_fkey FOREIGN KEY (pipeline_id) REFERENCES public.pipelines(id);
+
+
+--
+-- Name: pdc_simulations pdc_simulations_baseline_snap_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pdc_simulations
+    ADD CONSTRAINT pdc_simulations_baseline_snap_id_fkey FOREIGN KEY (baseline_snap_id) REFERENCES public.pdc_snapshots(id);
+
+
+--
+-- Name: pdc_simulations pdc_simulations_pipeline_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pdc_simulations
+    ADD CONSTRAINT pdc_simulations_pipeline_id_fkey FOREIGN KEY (pipeline_id) REFERENCES public.pipelines(id);
+
+
+--
+-- Name: pdc_snapshots pdc_snapshots_pipeline_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pdc_snapshots
+    ADD CONSTRAINT pdc_snapshots_pipeline_id_fkey FOREIGN KEY (pipeline_id) REFERENCES public.pipelines(id);
 
 
 --
@@ -61871,6 +87682,14 @@ ALTER TABLE ONLY public.proposal_competitors
 
 
 --
+-- Name: proposal_reviewer_assignments proposal_reviewer_assignments_review_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.proposal_reviewer_assignments
+    ADD CONSTRAINT proposal_reviewer_assignments_review_id_fkey FOREIGN KEY (review_id) REFERENCES public.proposal_reviews(id);
+
+
+--
 -- Name: proposal_shred_items proposal_shred_items_opportunity_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -61903,11 +87722,179 @@ ALTER TABLE ONLY public.proposal_versions
 
 
 --
+-- Name: qdc_collab_sessions qdc_collab_sessions_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.qdc_collab_sessions
+    ADD CONSTRAINT qdc_collab_sessions_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.qdc_designs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: qdc_versions qdc_versions_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.qdc_versions
+    ADD CONSTRAINT qdc_versions_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.qdc_designs(id);
+
+
+--
+-- Name: rag_citations rag_citations_query_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rag_citations
+    ADD CONSTRAINT rag_citations_query_id_fkey FOREIGN KEY (query_id) REFERENCES public.rag_queries(id);
+
+
+--
 -- Name: rate_limits rate_limits_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.rate_limits
     ADD CONSTRAINT rate_limits_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: rfi_workbench_exports rfi_workbench_exports_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rfi_workbench_exports
+    ADD CONSTRAINT rfi_workbench_exports_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.rfi_workbench_sessions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: rfi_workbench_sections rfi_workbench_sections_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rfi_workbench_sections
+    ADD CONSTRAINT rfi_workbench_sections_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.rfi_workbench_sessions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: sbom_conformance_assessments sbom_conformance_assessments_sbom_record_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sbom_conformance_assessments
+    ADD CONSTRAINT sbom_conformance_assessments_sbom_record_id_fkey FOREIGN KEY (sbom_record_id) REFERENCES public.sbom_records(id);
+
+
+--
+-- Name: sbom_dependencies sbom_dependencies_child_component_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sbom_dependencies
+    ADD CONSTRAINT sbom_dependencies_child_component_id_fkey FOREIGN KEY (child_component_id) REFERENCES public.sbom_components(id);
+
+
+--
+-- Name: sbom_dependencies sbom_dependencies_parent_component_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sbom_dependencies
+    ADD CONSTRAINT sbom_dependencies_parent_component_id_fkey FOREIGN KEY (parent_component_id) REFERENCES public.sbom_components(id);
+
+
+--
+-- Name: sbom_dependencies sbom_dependencies_sbom_record_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sbom_dependencies
+    ADD CONSTRAINT sbom_dependencies_sbom_record_id_fkey FOREIGN KEY (sbom_record_id) REFERENCES public.sbom_records(id);
+
+
+--
+-- Name: sbom_records sbom_records_supersedes_sbom_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sbom_records
+    ADD CONSTRAINT sbom_records_supersedes_sbom_id_fkey FOREIGN KEY (supersedes_sbom_id) REFERENCES public.sbom_records(id);
+
+
+--
+-- Name: sc_assessments sc_assessments_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sc_assessments
+    ADD CONSTRAINT sc_assessments_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.security_designs(id);
+
+
+--
+-- Name: sc_assets sc_assets_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sc_assets
+    ADD CONSTRAINT sc_assets_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.security_designs(id);
+
+
+--
+-- Name: sc_controls sc_controls_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sc_controls
+    ADD CONSTRAINT sc_controls_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.security_designs(id);
+
+
+--
+-- Name: sc_data_flows sc_data_flows_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sc_data_flows
+    ADD CONSTRAINT sc_data_flows_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.security_designs(id);
+
+
+--
+-- Name: sc_data_flows sc_data_flows_source_asset_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sc_data_flows
+    ADD CONSTRAINT sc_data_flows_source_asset_id_fkey FOREIGN KEY (source_asset_id) REFERENCES public.sc_assets(id);
+
+
+--
+-- Name: sc_data_flows sc_data_flows_target_asset_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sc_data_flows
+    ADD CONSTRAINT sc_data_flows_target_asset_id_fkey FOREIGN KEY (target_asset_id) REFERENCES public.sc_assets(id);
+
+
+--
+-- Name: sc_remediation_plans sc_remediation_plans_assessment_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sc_remediation_plans
+    ADD CONSTRAINT sc_remediation_plans_assessment_id_fkey FOREIGN KEY (assessment_id) REFERENCES public.sc_assessments(id);
+
+
+--
+-- Name: sc_remediation_plans sc_remediation_plans_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sc_remediation_plans
+    ADD CONSTRAINT sc_remediation_plans_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.security_designs(id);
+
+
+--
+-- Name: sc_threats sc_threats_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sc_threats
+    ADD CONSTRAINT sc_threats_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.security_designs(id);
+
+
+--
+-- Name: sc_trust_boundaries sc_trust_boundaries_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sc_trust_boundaries
+    ADD CONSTRAINT sc_trust_boundaries_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.security_designs(id);
+
+
+--
+-- Name: sc_versions sc_versions_design_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sc_versions
+    ADD CONSTRAINT sc_versions_design_id_fkey FOREIGN KEY (design_id) REFERENCES public.security_designs(id);
 
 
 --
@@ -62015,6 +88002,14 @@ ALTER TABLE ONLY public.sg_kg_edges
 
 
 --
+-- Name: sg_orbat_strengths sg_orbat_strengths_unit_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sg_orbat_strengths
+    ADD CONSTRAINT sg_orbat_strengths_unit_id_fkey FOREIGN KEY (unit_id) REFERENCES public.sg_orbat_units(id) ON DELETE SET NULL;
+
+
+--
 -- Name: sg_osint_normalized sg_osint_normalized_raw_signal_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -62084,6 +88079,14 @@ ALTER TABLE ONLY public.sg_war_readiness_events
 
 ALTER TABLE ONLY public.sg_wargame_turns
     ADD CONSTRAINT sg_wargame_turns_wargame_id_fkey FOREIGN KEY (wargame_id) REFERENCES public.sg_wargames(id);
+
+
+--
+-- Name: simulation_results simulation_results_scenario_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.simulation_results
+    ADD CONSTRAINT simulation_results_scenario_id_fkey FOREIGN KEY (scenario_id) REFERENCES public.simulation_scenarios(id);
 
 
 --
@@ -62167,11 +88170,35 @@ ALTER TABLE ONLY public.studio_form_submissions
 
 
 --
+-- Name: studio_workflow_triggers studio_workflow_triggers_source_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.studio_workflow_triggers
+    ADD CONSTRAINT studio_workflow_triggers_source_id_fkey FOREIGN KEY (source_id) REFERENCES public.studio_event_sources(source_id);
+
+
+--
 -- Name: subscriptions subscriptions_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.subscriptions
     ADD CONSTRAINT subscriptions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: supply_chain_risk_scores supply_chain_risk_scores_sbom_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.supply_chain_risk_scores
+    ADD CONSTRAINT supply_chain_risk_scores_sbom_id_fkey FOREIGN KEY (sbom_id) REFERENCES public.sbom_components(id);
+
+
+--
+-- Name: supply_chain_vulnerabilities supply_chain_vulnerabilities_sbom_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.supply_chain_vulnerabilities
+    ADD CONSTRAINT supply_chain_vulnerabilities_sbom_id_fkey FOREIGN KEY (sbom_id) REFERENCES public.sbom_components(id);
 
 
 --
@@ -62479,6 +88506,22 @@ ALTER TABLE ONLY public.wf_team_members
 
 
 --
+-- Name: wfc_chain_phases wfc_chain_phases_chain_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wfc_chain_phases
+    ADD CONSTRAINT wfc_chain_phases_chain_id_fkey FOREIGN KEY (chain_id) REFERENCES public.wfc_process_chains(id) ON DELETE CASCADE;
+
+
+--
+-- Name: wfc_workflow_form_nodes wfc_workflow_form_nodes_form_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wfc_workflow_form_nodes
+    ADD CONSTRAINT wfc_workflow_form_nodes_form_id_fkey FOREIGN KEY (form_id) REFERENCES public.studio_forms(form_id);
+
+
+--
 -- Name: wne_artifacts wne_artifacts_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -62487,178 +88530,78 @@ ALTER TABLE ONLY public.wne_artifacts
 
 
 --
--- Name: domain_coverage; Type: TABLE; Schema: public; Owner: -
+-- Name: zig_activities zig_activities_capability_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-CREATE TABLE IF NOT EXISTS public.domain_coverage (
-    id               BIGSERIAL PRIMARY KEY,
-    domain_key       TEXT    NOT NULL,
-    domain_name      TEXT    NOT NULL,
-    domain_type      TEXT    NOT NULL DEFAULT 'knowledge'
-                     CHECK (domain_type IN ('knowledge', 'data', 'system', 'integration', 'canvas')),
-    source_canvas    TEXT,
-    coverage_score   REAL    NOT NULL DEFAULT 0.0
-                     CHECK (coverage_score >= 0.0 AND coverage_score <= 1.0),
-    gap_count        INTEGER NOT NULL DEFAULT 0,
-    status           TEXT    NOT NULL DEFAULT 'active'
-                     CHECK (status IN ('active', 'orphaned', 'resolved', 'pending')),
-    orphan_reason    TEXT
-                     CHECK (orphan_reason IS NULL OR orphan_reason IN (
-                         'no_canvas', 'no_source', 'schema_mismatch',
-                         'stale_data', 'removed_integration'
-                     )),
-    last_checked_at  TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    resolved_at      TEXT,
-    detail           TEXT    NOT NULL DEFAULT '{}',
-    tenant_id        TEXT    NOT NULL DEFAULT 'default',
-    classification   TEXT    NOT NULL DEFAULT 'CUI',
-    created_at       TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at       TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_domain_coverage_key     ON public.domain_coverage(domain_key);
-CREATE INDEX IF NOT EXISTS idx_domain_coverage_status  ON public.domain_coverage(status);
-CREATE INDEX IF NOT EXISTS idx_domain_coverage_canvas  ON public.domain_coverage(source_canvas);
-CREATE INDEX IF NOT EXISTS idx_domain_coverage_score   ON public.domain_coverage(coverage_score);
-CREATE INDEX IF NOT EXISTS idx_domain_coverage_tenant  ON public.domain_coverage(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_domain_coverage_checked ON public.domain_coverage(last_checked_at);
+ALTER TABLE ONLY public.zig_activities
+    ADD CONSTRAINT zig_activities_capability_id_fkey FOREIGN KEY (capability_id) REFERENCES public.zig_capabilities(id);
 
 
 --
--- Migration 215 — user_preferences (added post-snapshot; see
--- tools/db/migrations/215_user_preferences/up.py for the canonical DDL).
--- bootstrap_pg.py marks every discovered migration as applied against this
--- snapshot regardless of whether its table is present, so an omission here
--- is never replayed by migrate.py --up on a fresh PG bootstrap.
+-- Name: zig_activity_completions zig_activity_completions_activity_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-CREATE TABLE IF NOT EXISTS public.user_preferences (
-    user_id          TEXT PRIMARY KEY,
-    tenant_id        TEXT NOT NULL DEFAULT 'default',
-    onboarding_state TEXT NOT NULL DEFAULT '{}',
-    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+ALTER TABLE ONLY public.zig_activity_completions
+    ADD CONSTRAINT zig_activity_completions_activity_id_fkey FOREIGN KEY (activity_id) REFERENCES public.zig_activities(id);
 
 
 --
--- Migration 223 — Second Brain user identity model (added post-snapshot;
--- see tools/db/migrations/223_user_identity.sql for the canonical DDL, whose
--- SQLite-dialect datetime('now') defaults are rewritten here to the
--- PG/SQLite-portable CURRENT_TIMESTAMP).
+-- Name: zig_capabilities zig_capabilities_pillar_slug_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-CREATE TABLE IF NOT EXISTS public.user_identity_profiles (
-    user_id          TEXT NOT NULL,
-    tenant_id        TEXT NOT NULL DEFAULT 'default',
-    full_name        TEXT,
-    work_email       TEXT,
-    title            TEXT,
-    seniority_tier   TEXT CHECK(seniority_tier IN ('ic','lead','manager','director','executive')),
-    department       TEXT,
-    timezone         TEXT NOT NULL DEFAULT 'UTC',
-    work_start       TEXT NOT NULL DEFAULT '09:00',
-    work_end         TEXT NOT NULL DEFAULT '18:00',
-    focus_block      TEXT NOT NULL DEFAULT 'am' CHECK(focus_block IN ('am','pm','none')),
-    meeting_heavy_days TEXT NOT NULL DEFAULT '[]',
-    briefing_time    TEXT NOT NULL DEFAULT '08:00',
-    delivery_channels TEXT NOT NULL DEFAULT '["dashboard"]',
-    comm_style       INTEGER NOT NULL DEFAULT 3,
-    org_name         TEXT,
-    org_industry     TEXT,
-    org_size         TEXT,
-    team_mission     TEXT,
-    profile_summary  TEXT,
-    context_complete INTEGER NOT NULL DEFAULT 0,
-    created_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (user_id, tenant_id)
-);
-
-CREATE TABLE IF NOT EXISTS public.user_objectives (
-    id          TEXT PRIMARY KEY,
-    user_id     TEXT NOT NULL,
-    tenant_id   TEXT NOT NULL DEFAULT 'default',
-    title       TEXT NOT NULL,
-    description TEXT,
-    horizon     TEXT CHECK(horizon IN ('week','quarter','long_term')),
-    metric      TEXT,
-    status      TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','done','dropped')),
-    sort_order  INTEGER NOT NULL DEFAULT 0,
-    created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_user_obj
-    ON public.user_objectives (user_id, tenant_id, status);
-
-CREATE TABLE IF NOT EXISTS public.user_relationships (
-    id                TEXT PRIMARY KEY,
-    user_id           TEXT NOT NULL,
-    tenant_id         TEXT NOT NULL DEFAULT 'default',
-    name              TEXT NOT NULL,
-    title             TEXT,
-    email             TEXT,
-    org               TEXT,
-    relationship_type TEXT CHECK(relationship_type IN ('boss','direct','peer','stakeholder','customer','vendor','other')),
-    notes             TEXT,
-    last_contact_at   TEXT,
-    created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_user_rel
-    ON public.user_relationships (user_id, tenant_id);
-
-CREATE TABLE IF NOT EXISTS public.user_challenges (
-    id                   TEXT PRIMARY KEY,
-    user_id              TEXT NOT NULL,
-    tenant_id            TEXT NOT NULL DEFAULT 'default',
-    challenge_key        TEXT,
-    custom_description   TEXT,
-    severity             TEXT NOT NULL DEFAULT 'medium' CHECK(severity IN ('low','medium','high')),
-    status               TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','resolved')),
-    created_at           TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_user_chal
-    ON public.user_challenges (user_id, tenant_id, status);
-
-CREATE TABLE IF NOT EXISTS public.user_integrations (
-    id                TEXT PRIMARY KEY,
-    user_id           TEXT NOT NULL,
-    tenant_id         TEXT NOT NULL DEFAULT 'default',
-    service           TEXT NOT NULL CHECK(service IN ('gmail','gcal','slack','github','gitlab','jira','linear','notion','msgraph')),
-    access_token_enc  TEXT,
-    refresh_token_enc TEXT,
-    token_expiry      TEXT,
-    scopes            TEXT,
-    metadata_json     TEXT NOT NULL DEFAULT '{}',
-    status            TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','revoked','error')),
-    last_sync_at      TEXT,
-    created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, tenant_id, service)
-);
-
-CREATE TABLE IF NOT EXISTS public.user_daily_briefings (
-    id                   TEXT PRIMARY KEY,
-    user_id              TEXT NOT NULL,
-    tenant_id            TEXT NOT NULL DEFAULT 'default',
-    briefing_date        TEXT NOT NULL,
-    content_json         TEXT NOT NULL DEFAULT '{}',
-    delivery_channels    TEXT NOT NULL DEFAULT '["dashboard"]',
-    delivery_status_json TEXT NOT NULL DEFAULT '{}',
-    opened_at            TEXT,
-    created_at           TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, tenant_id, briefing_date)
-);
-
-CREATE INDEX IF NOT EXISTS idx_briefing
-    ON public.user_daily_briefings (user_id, tenant_id, briefing_date);
+ALTER TABLE ONLY public.zig_capabilities
+    ADD CONSTRAINT zig_capabilities_pillar_slug_fkey FOREIGN KEY (pillar_slug) REFERENCES public.zig_pillars(slug);
 
 
 --
 -- PostgreSQL database dump complete
 --
 
-\unrestrict Qap9jwGnwjCLnf0yuzwfDjdGVcjK3amQNXgGbTCQZ4s0nx7szFJkVZl8XRi6Q9N
+\unrestrict sYSIUc4R2tnaW2aBCif1I2zNUEkwzGDjC3favDIfzC0keLz5xjLRfHuWSrpsscE
+
+
+-- ============================================================================
+-- CARRIED-FORWARD SECTION (regenerated 2026-08-21) — APPEND ONLY
+-- Tables declared by init_db/migrations but ABSENT from the canonical
+-- database, so pg_dump cannot emit them. Taken verbatim from the previous
+-- snapshot in its original order (REFERENCES targets precede referrers) and
+-- made idempotent. See tests/db/test_pg_bootstrap_baseline.py.
+-- ============================================================================
+
+
+
+-- Columns the previous snapshot's additive sections declared on tables the
+-- canonical database ALSO has (with an older shape), so the idempotent
+-- declarations below can no longer add them. Typed from a database built by
+-- the previous snapshot; idempotent.
+ALTER TABLE public.dm_ports ADD COLUMN IF NOT EXISTS tenant_id text DEFAULT 'default'::text;
+ALTER TABLE public.dm_ports ADD COLUMN IF NOT EXISTS transport_type text DEFAULT 'api'::text;
+ALTER TABLE public.dm_product_subscriptions ADD COLUMN IF NOT EXISTS approved integer DEFAULT 0;
+ALTER TABLE public.dm_product_subscriptions ADD COLUMN IF NOT EXISTS subscriber_team text;
+ALTER TABLE public.domain_coverage ADD COLUMN IF NOT EXISTS coverage_score real DEFAULT 0.0;
+ALTER TABLE public.domain_coverage ADD COLUMN IF NOT EXISTS created_at text DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE public.domain_coverage ADD COLUMN IF NOT EXISTS detail text DEFAULT '{}'::text;
+ALTER TABLE public.domain_coverage ADD COLUMN IF NOT EXISTS domain_key text;
+ALTER TABLE public.domain_coverage ADD COLUMN IF NOT EXISTS domain_name text;
+ALTER TABLE public.domain_coverage ADD COLUMN IF NOT EXISTS domain_type text DEFAULT 'knowledge'::text;
+ALTER TABLE public.domain_coverage ADD COLUMN IF NOT EXISTS gap_count integer DEFAULT 0;
+ALTER TABLE public.domain_coverage ADD COLUMN IF NOT EXISTS last_checked_at text DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE public.domain_coverage ADD COLUMN IF NOT EXISTS orphan_reason text;
+ALTER TABLE public.domain_coverage ADD COLUMN IF NOT EXISTS resolved_at text;
+ALTER TABLE public.domain_coverage ADD COLUMN IF NOT EXISTS source_canvas text;
+ALTER TABLE public.domain_coverage ADD COLUMN IF NOT EXISTS status text DEFAULT 'active'::text;
+ALTER TABLE public.domain_coverage ADD COLUMN IF NOT EXISTS tenant_id text DEFAULT 'default'::text;
+ALTER TABLE public.domain_coverage ADD COLUMN IF NOT EXISTS updated_at text DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE public.fedramp_ato_packages ADD COLUMN IF NOT EXISTS tenant_id text DEFAULT 'default'::text;
+ALTER TABLE public.fedramp_controls ADD COLUMN IF NOT EXISTS tenant_id text DEFAULT 'default'::text;
+ALTER TABLE public.genesis_phase_log ADD COLUMN IF NOT EXISTS classification text DEFAULT 'CUI'::text;
+ALTER TABLE public.genesis_phase_log ADD COLUMN IF NOT EXISTS created_at text DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE public.genesis_phase_log ADD COLUMN IF NOT EXISTS detail_json text DEFAULT '{}'::text;
+ALTER TABLE public.genesis_phase_log ADD COLUMN IF NOT EXISTS tenant_id text DEFAULT 'default'::text;
+ALTER TABLE public.idr_analyses ADD COLUMN IF NOT EXISTS confidence_score double precision;
+ALTER TABLE public.idr_artifacts ADD COLUMN IF NOT EXISTS flagged_sections text;
+ALTER TABLE public.ttx_injects ADD COLUMN IF NOT EXISTS ontology_tags_json text DEFAULT '{}'::text;
+ALTER TABLE public.ttx_sessions ADD COLUMN IF NOT EXISTS ontology_tags_json text DEFAULT '{}'::text;
 
 -- ============================================================================
 -- ICDEV ADDITIVE SECTION (post-dump, hand-maintained) — APPEND ONLY

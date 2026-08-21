@@ -3524,10 +3524,14 @@ class PRWatcher:
         # serving old code while looking healthy. The row is the difference
         # between "it self-updates" as a design claim and as an observation.
         try:
-            import os as _os
+            # DISTINCT PER PROCESS (autonomy-sid-01). Two pr_watchers race
+            # on auto-merge, which /start's own notes warn about, and a
+            # shared id hid that from every coordination surface.
+            from tools.coordination.service_identity import (
+                claim_service_identity,
+            )
 
-            _os.environ.setdefault("ICDEV_SESSION_ID", "pr-watcher")
-            _os.environ.setdefault("ICDEV_AGENT", "pr_watcher")
+            claim_service_identity("pr-watcher", "pr_watcher")
             from tools.coordination import session_registry as _reg
 
             _reg.register(intent="pr watcher — merging eligible kanban PRs")

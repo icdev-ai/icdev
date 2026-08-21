@@ -491,18 +491,27 @@ def test_a_hook_point_nothing_dispatches_reports_inert(conn_factory):
     Without the control this test would pass just as well if the probe silently
     read nothing at all — the failure mode the tool exists to detect.
     """
+    # The control is `agent_end`, not a chat point: autonomy-wire-01 DISABLED
+    # chat_message_before/after in args/extension_config.yaml (they had zero
+    # call sites in the tree), and a disabled point is not declared — so a
+    # control on one would silently stop being a control.
     report = capcon.collect(
-        conn=conn_factory([_dispatch_row("chat_message_after")]),
+        conn=conn_factory([_dispatch_row("agent_end")]),
         config=CONFIG,
         only=["extension_hook_point"],
     )
     cls = _by_class(report)["extension_hook_point"]
 
     assert cls["telemetry_available"] is True
-    assert cls["declared"] == 6
+    # The whole ENABLED set. This number moves when a point is enabled or
+    # disabled in args/extension_config.yaml, and it is asserted rather than
+    # derived on purpose: deriving it from the same config the probe reads
+    # would make the assertion a tautology, and the declared set silently
+    # shrinking is exactly what this class exists to catch.
+    assert cls["declared"] == 4
     assert cls["consumed"] == 1, "the positive control did not register"
     assert "tool_execute_after" in cls["inert_units"]
-    assert "chat_message_after" not in cls["inert_units"]
+    assert "agent_end" not in cls["inert_units"]
 
 
 def test_rows_from_another_surface_are_not_counted_as_dispatches(conn_factory):
@@ -526,15 +535,18 @@ def test_a_dispatch_whose_handler_failed_still_counts_as_consumption(conn_factor
     broken hook behind the same number as a hook nobody calls.
     """
     report = capcon.collect(
-        conn=conn_factory([_dispatch_row("chat_message_before", status="error")]),
+        # `tool_execute_before`, not a chat point — autonomy-wire-01 disabled
+        # those, and a disabled point is not declared, so the "wired and broken"
+        # reading this test pins could not be observed on one.
+        conn=conn_factory([_dispatch_row("tool_execute_before", status="error")]),
         config=CONFIG,
         only=["extension_hook_point"],
     )
     cls = _by_class(report)["extension_hook_point"]
 
-    assert "chat_message_before" not in cls["inert_units"]
+    assert "tool_execute_before" not in cls["inert_units"]
     assert cls["extra"]["failed_dispatch_events"] == 1
-    assert cls["extra"]["points_with_failures"] == ["chat_message_before"]
+    assert cls["extra"]["points_with_failures"] == ["tool_execute_before"]
 
 
 def test_a_point_disabled_in_config_is_not_counted_as_declared(
