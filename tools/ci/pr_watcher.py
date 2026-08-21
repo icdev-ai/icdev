@@ -3517,6 +3517,23 @@ class PRWatcher:
         """
         from tools.genesis import code_reload
 
+        # Record which code this process is running (autonomy-id-01). This
+        # daemon DOES self-update — see the docstring above — which is exactly
+        # why the record matters: `restart_if_code_changed` re-execs through
+        # `os.execv`, and a re-exec that fails leaves a long-lived process
+        # serving old code while looking healthy. The row is the difference
+        # between "it self-updates" as a design claim and as an observation.
+        try:
+            import os as _os
+
+            _os.environ.setdefault("ICDEV_SESSION_ID", "pr-watcher")
+            _os.environ.setdefault("ICDEV_AGENT", "pr_watcher")
+            from tools.coordination import session_registry as _reg
+
+            _reg.register(intent="pr watcher — merging eligible kanban PRs")
+        except Exception:  # noqa: BLE001 — observability must not stop the poll
+            pass
+
         started_at = time.time()
         baseline = code_reload.snapshot()
         watch = bool(self.config.get("restart_on_code_change", True))

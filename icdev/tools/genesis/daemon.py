@@ -996,8 +996,35 @@ def _run_reflex(name: str, config: Dict[str, Any], trust) -> Tuple[bool, float, 
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+def _register_process_identity() -> None:
+    """Record which code THIS daemon is running (autonomy-id-01).
+
+    The genesis daemon is the one supervised process that does NOT self-update:
+    ``kanban_scheduler`` and ``pr_watcher`` both call
+    ``code_reload.restart_if_code_changed`` in their poll loops, and this does
+    not — so a merged fix goes live here only on restart, and until this record
+    existed nothing could report that it had not. Observed 2026-08-20: three
+    fixes merged and the daemon went on executing pre-merge code while the board
+    was correct and CI was green.
+
+    Best-effort by construction. A daemon that cannot name its code must still
+    start; the record is observability, not authorization.
+    """
+    try:
+        import os as _os
+
+        _os.environ.setdefault("ICDEV_SESSION_ID", "genesis-daemon")
+        _os.environ.setdefault("ICDEV_AGENT", "genesis")
+        from tools.coordination import session_registry as _reg
+
+        _reg.register(intent="genesis daemon — running due reflexes")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def main() -> None:
     """CLI entry point."""
+    _register_process_identity()
     config = GenesisDaemon.load_config()
     daemon = GenesisDaemon(config)
     daemon.run_cli()

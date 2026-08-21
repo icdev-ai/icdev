@@ -43,9 +43,26 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
     started_at     TEXT,
     last_heartbeat TEXT,
     current_intent TEXT,
-    status         TEXT DEFAULT 'active'
+    status         TEXT DEFAULT 'active',
+    -- WHICH CODE this process is running (autonomy-id-01). Nullable on
+    -- purpose: a process that cannot determine its version must still be able
+    -- to register, reporting unknown, rather than fail to register at all.
+    -- These four are kept in step with migration
+    -- 20260821024132_agent_sessions_code_identity, which adds them to a table
+    -- that already exists. Both are needed: CREATE TABLE IF NOT EXISTS never
+    -- alters a live table, so the DDL alone leaves every existing deployment
+    -- without the columns, and the migration alone leaves a fresh database
+    -- without them until it runs.
+    module              TEXT,
+    code_version        TEXT,
+    code_version_source TEXT,
+    code_dirty          INTEGER
 )
 """
+
+#: Written by :func:`register` from :func:`code_identity.boot_identity`. Named
+#: once so the INSERT, the DDL and the migration cannot drift apart silently.
+_IDENTITY_COLUMNS = ("module", "code_version", "code_version_source", "code_dirty")
 
 _table_ready = False
 
@@ -90,8 +107,43 @@ def _parse(ts: Any) -> Optional[datetime]:
         return None
 
 
+def _live_columns(conn) -> set:
+    """Column names `agent_sessions` ACTUALLY has, read from the catalogue.
+
+    Not from :data:`_DDL`. ``CREATE TABLE IF NOT EXISTS`` never alters a table
+    that already exists, so on every deployment that registered a session before
+    autonomy-id-01 the identity columns are absent until migration
+    20260821024132 runs. Naming them in the INSERT regardless would raise, and
+    :func:`register` swallows its exceptions — so the session would silently stop
+    registering at all, trading a missing code version for a missing process.
+    """
+    try:
+        if getattr(conn, "_backend", "") == "postgresql":
+            rows = conn.execute(
+                "SELECT column_name AS c FROM information_schema.columns "
+                "WHERE table_name = 'agent_sessions'"
+            ).fetchall()
+        else:
+            rows = conn.execute("PRAGMA table_info(agent_sessions)").fetchall()
+    except Exception:  # noqa: BLE001 — an unreadable catalogue means "assume none"
+        return set()
+    out = set()
+    for row in rows or []:
+        d = dict(row)
+        name = d.get("c") or d.get("column_name") or d.get("name")
+        if name:
+            out.add(str(name))
+    return out
+
+
 def register(intent: Optional[str] = None) -> Dict[str, Any]:
-    """Register (or refresh) the current session. Idempotent upsert."""
+    """Register (or refresh) the current session. Idempotent upsert.
+
+    Also records WHICH CODE this process is running (autonomy-id-01), so the
+    fleet can be asked whether the code doing the work is the code that was
+    merged. The identity is frozen at first read — see
+    :mod:`tools.coordination.code_identity`.
+    """
     if get_connection is None:
         return {"ok": False, "reason": "no db"}
     sid = get_session_id()
@@ -103,14 +155,31 @@ def register(intent: Optional[str] = None) -> Dict[str, Any]:
             "SELECT started_at FROM agent_sessions WHERE session_id = %s", (sid,)
         ).fetchone()
         started = (dict(existing).get("started_at") if existing else None) or now
+
+        cols = ["session_id", "agent_type", "pid", "host", "cwd", "started_at",
+                "last_heartbeat", "current_intent"]
+        vals = [sid, get_agent_type(), os.getpid(), socket.gethostname(),
+                os.getcwd(), started, now, intent]
+
+        # Identity is best-effort and must never stop a session registering:
+        # a process that cannot name its code still needs to be visible as a
+        # process. Absent columns and an unreadable git both end as unknown.
+        if set(_IDENTITY_COLUMNS).issubset(_live_columns(conn)):
+            try:
+                from tools.coordination.code_identity import boot_identity
+                ident = boot_identity()
+            except Exception:  # noqa: BLE001
+                ident = {}
+            cols.extend(_IDENTITY_COLUMNS)
+            vals.extend(ident.get(c) for c in _IDENTITY_COLUMNS)
+
+        placeholders = ", ".join(["%s"] * len(cols))
         # portable upsert: delete-then-insert keeps it backend-agnostic
         conn.execute("DELETE FROM agent_sessions WHERE session_id = %s", (sid,))
         conn.execute(
-            "INSERT INTO agent_sessions "
-            "(session_id, agent_type, pid, host, cwd, started_at, last_heartbeat, current_intent, status) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'active')",
-            (sid, get_agent_type(), os.getpid(), socket.gethostname(),
-             os.getcwd(), started, now, intent),
+            f"INSERT INTO agent_sessions ({', '.join(cols)}, status) "  # nosec B608
+            f"VALUES ({placeholders}, 'active')",
+            tuple(vals),
         )
         conn.commit()
         return {"ok": True, "session_id": sid}

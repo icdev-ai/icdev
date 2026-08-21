@@ -238,3 +238,146 @@ def test_the_reader_computes_no_staleness_verdict():
             f"processes() reached for {forbidden!r} — that is id-02's question, "
             f"and it must be answered against the import closure, not the tip"
         )
+
+
+# --------------------------------------------------------------------------- #
+# 6. IS IT ACTUALLY WIRED? — the half that shipped missing
+# --------------------------------------------------------------------------- #
+# These exist because the first push of this card contained the library, the
+# migration and every test above, and NONE of the three callers: the files were
+# modified but never `git add`ed, so the commit carried a recorder nothing
+# invoked. Every check passed — the suite and the red-first gate both run
+# against the WORKING TREE, which had the wiring — so a capability nobody calls
+# went green inside the card whose whole subject is capabilities nobody calls.
+#
+# A test that only exercises `code_identity` cannot see that. These assert the
+# CALLERS.
+
+def _as_session(sid: str) -> None:
+    import os
+
+    os.environ["ICDEV_SESSION_ID"] = sid
+    os.environ["CLAUDE_SESSION_ID"] = sid
+    os.environ["ICDEV_AGENT"] = "test"
+    try:
+        import tools.airgap.hook_compat as hc
+        hc._session_id = None
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _migrate_identity_columns() -> bool:
+    """Apply migration 20260821024132 to whatever database this test is on.
+
+    Necessary, and the reason is the point: an `agent_sessions` table created
+    before this card has the OLD shape, and `CREATE TABLE IF NOT EXISTS` never
+    alters it — so a test DB carried over from an earlier run reaches the
+    identity-absent path, which is a REAL deployment state rather than a test
+    artifact. Applying the migration is what makes this test describe a MIGRATED
+    deployment; the pre-migration state is asserted separately below.
+    """
+    import importlib.util
+
+    from tools.coordination import session_registry as reg
+
+    path = (ROOT / "tools" / "db" / "migrations"
+            / "20260821024132_agent_sessions_code_identity" / "up.py")
+    if not path.is_file():
+        return False
+    conn = reg._conn()
+    try:
+        reg._ensure_table(conn)
+        spec = importlib.util.spec_from_file_location("_id_up", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        mod.up(conn)
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
+def test_register_actually_persists_the_code_identity(tmp_path):
+    """The wiring, end to end: `register` must WRITE what `boot_identity` reads.
+
+    Without this the recorder is a library nobody calls — and that is not a
+    hypothetical, it is what the first push of this card shipped.
+    """
+    from tools.coordination import session_registry as reg
+
+    # Asserted, never skipped: the migration ships in the same commit as this
+    # test, so its absence is a broken change and not a reason to stand the
+    # check down. A gated test that skips is an UNMEASURED test.
+    assert _migrate_identity_columns(), (
+        "migration 20260821024132 is missing — the identity columns cannot exist"
+    )
+
+    ci.reset_for_test()
+    ci.boot_identity(root=tmp_path, runner=_runner(sha="wired0123456"))
+    _as_session("identity-wiring-probe")
+
+    assert reg.register(intent="probe").get("ok"), "the session did not register at all"
+
+    row = next((dict(r) for r in reg.list_active()
+                if dict(r).get("session_id") == "identity-wiring-probe"), None)
+    assert row is not None, "registered session is not visible"
+    assert row.get("code_version") == "wired0123456", (
+        "register() did not persist the code identity — the recorder is not wired"
+    )
+    assert row.get("code_version_source") == "git"
+
+
+def test_register_still_works_when_the_identity_columns_are_absent(monkeypatch, tmp_path):
+    """A deployment where migration 20260821024132 has not run yet.
+
+    `register` swallows its exceptions, so naming absent columns in the INSERT
+    would silently stop the session registering AT ALL — trading a missing code
+    version for a missing PROCESS, which is strictly worse.
+    """
+    from tools.coordination import session_registry as reg
+
+    ci.reset_for_test()
+    ci.boot_identity(root=tmp_path, runner=_runner(sha="abc"))
+    _as_session("pre-migration-probe")
+    # Pretend the catalogue reports the OLD shape.
+    monkeypatch.setattr(reg, "_live_columns", lambda _conn: {
+        "session_id", "agent_type", "pid", "host", "cwd", "started_at",
+        "last_heartbeat", "current_intent", "status"})
+
+    assert reg.register(intent="probe").get("ok"), (
+        "a pre-migration deployment could no longer register a session"
+    )
+
+
+def test_the_genesis_daemon_registers_its_identity_at_boot():
+    """The daemon is the one supervised process that does NOT self-update —
+    `kanban_scheduler` and `pr_watcher` both call
+    `code_reload.restart_if_code_changed` and it does not — so it is precisely
+    the process whose staleness is invisible without a record."""
+    from tools.genesis import daemon
+
+    called = {}
+    import tools.coordination.session_registry as reg
+    original = reg.register
+    try:
+        reg.register = lambda intent=None: called.setdefault("intent", intent) or {"ok": True}
+        daemon._register_process_identity()
+    finally:
+        reg.register = original
+
+    assert "intent" in called, "the genesis daemon boots without recording its code"
+
+
+def test_pr_watcher_registers_in_its_poll_loop():
+    """Structural, and deliberately so: asserting this behaviourally would mean
+    starting a forever-poll. Narrow — it pins the ONE call site, so it cannot
+    speak for any other (see rem-hyg-19)."""
+    import inspect
+
+    from tools.ci.pr_watcher import PRWatcher
+
+    src = inspect.getsource(PRWatcher.run_daemon)
+    assert "session_registry" in src, (
+        "pr_watcher polls for days and self-re-execs through os.execv; without a "
+        "record, a failed re-exec leaves it serving old code while looking healthy"
+    )
