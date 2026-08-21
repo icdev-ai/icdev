@@ -43,10 +43,20 @@ REPORT ONLY, no ``--gate``. This repo has learned twice (kpr-fix-03) that a
 survey shipped with a gate earns itself a ``|| true``. Arming any claim requires
 its own false-positive survey first.
 
+WHERE A CLAIM COMES FROM (autonomy-lrn-01). Every claim cites an
+:class:`Incident` — the defect that actually happened, by kanban task id and
+date. That is the LEARNING rule: a claim is seeded from a VERIFIED FACT (the fix
+is ``done`` on the board and landed on the default branch), never from a
+pattern in the system's own reported history. ``tools/awareness/incident_claims``
+is the path from one to the other and measures how many of a window's fixed
+incidents have a standing claim — the conversion was manual, and mostly did not
+happen: 4 claims against 58 done fixes in 7 days, measured 2026-08-21.
+
 Usage:
     python tools/awareness/claim_verifier.py --json
     python tools/awareness/claim_verifier.py --claim posture_score_needs_evidence
     python tools/awareness/claim_verifier.py --list
+    python tools/awareness/claim_verifier.py --incidents [--window-days 7]
 """
 
 from __future__ import annotations
@@ -111,6 +121,26 @@ class ClaimResult:
 
 
 @dataclass
+class Incident:
+    """The defect a claim was learned from — a FACT, cited by task id.
+
+    A claim must be seeded from something that actually happened, or the
+    registry becomes one more capability that reports clean because it does
+    nothing. ``task_ids`` names every card that fixed the defect: two when the
+    same defect was fixed at two sites weeks apart (hgx-park-01, rem-hyg-19),
+    which is the whole reason a LIVE claim over the data beats a structural test
+    over one function. ``tools.awareness.incident_claims.verify_incident``
+    checks the citation against the board and the default branch.
+    """
+
+    task_ids: List[str]
+    #: When the defect was OBSERVED (ISO date), not when the claim was written.
+    observed_on: str
+    #: One line: what the fix changed. Not a re-statement of the claim.
+    fixed_by: str = ""
+
+
+@dataclass
 class Claim:
     """One checkable assertion a surface makes.
 
@@ -128,6 +158,10 @@ class Claim:
     agree: Callable[[Any, Any], bool] = lambda a, b: a == b
     tier: str = "report"
     tags: List[str] = field(default_factory=list)
+    #: The defect this claim was learned from. Every registered claim cites one
+    #: (asserted by tests/awareness/test_incident_claims.py); the default exists
+    #: only so an ad-hoc Claim built in a test needs no provenance.
+    incident: Optional[Incident] = None
 
 
 def independent_observations(rows, subject_key: str, value_key: str) -> int:
@@ -241,14 +275,29 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--claim", help="verify one claim by id")
     parser.add_argument("--list", action="store_true", help="list registered claims")
+    parser.add_argument("--incidents", action="store_true",
+                        help="which of the window's FIXED incidents have a standing "
+                             "claim, and which claims cite an unverified incident")
+    parser.add_argument("--window-days", type=int, default=7)
     args = parser.parse_args(argv)
 
     from tools.awareness.claims import REGISTRY
 
     if args.list:
         for c in REGISTRY:
-            print(f"  {c.claim_id:34} [{c.tier}] {c.description[:70]}")
+            cited = ",".join(c.incident.task_ids) if c.incident else "NO INCIDENT"
+            print(f"  {c.claim_id:34} [{c.tier}] <- {cited}")
+            print(f"  {'':34} {c.description[:70]}")
         return 0
+
+    if args.incidents:
+        from tools.awareness import incident_claims
+
+        report = incident_claims.coverage_report(REGISTRY, window_days=args.window_days)
+        print(json.dumps(report, indent=2, default=str) if args.json
+              else incident_claims.render(report))
+        # Report only: a survey with a gate earns itself a `|| true` (kpr-fix-03).
+        return 0 if report["state"] != "error" else 2
 
     claims = [c for c in REGISTRY if not args.claim or c.claim_id == args.claim]
     if args.claim and not claims:
