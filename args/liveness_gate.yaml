@@ -199,7 +199,24 @@ grandfathered:
   # Lower this as they drain; 4 is the floor the static picture supports today.
   # Do NOT raise it: a new hook point added to the enum without a dispatch call
   # site is precisely the defect, and it should trip the check.
-  extension_hook_point: 10
+  # LOWERED 10 -> 4 (autonomy-wire-01, 2026-08-21), a ratchet DOWN on measured
+  # evidence, never an accommodation. Two changes, both in that card:
+  #   * `TOOL_EXECUTE_AFTER` now has a DISPATCHER. `tools/awareness/hooks.py`
+  #     had subscribed a handler at process start since Phase 1e and nothing
+  #     ever dispatched the point, so the auto-reindex was silently dead — the
+  #     "no handlers ever fired" case this file's own note called the sharpest.
+  #     tools/agent_runtime/dispatch.py dispatches it after every executed tool
+  #     call, so it drains on the next SAG tool call the platform serves.
+  #   * `chat_message_before` / `chat_message_after` are DISABLED in
+  #     args/extension_config.yaml. They had ZERO call sites in the tree — no
+  #     dispatch and not even a handler — so they were two permanently inert
+  #     units that no amount of traffic could drain. Declaring a point nothing
+  #     can reach is the defect, not the budget.
+  # 4 is now the whole enabled set, measured with
+  # `python tools/awareness/capability_consumption.py --class extension_hook_point`.
+  # Lower it as they drain. Do NOT raise it: a point added to the enum without a
+  # dispatch call site is exactly what this class exists to catch.
+  extension_hook_point: 4
 
   # ── Cortex federation layer (cef-ci-01) ──────────────────────────────────
   # Two NEW classes, arguing their way in as the note at the top of this file

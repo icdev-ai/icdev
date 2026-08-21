@@ -291,7 +291,10 @@ def _extension_point() -> Any:
         logger.debug("dispatch: extension manager unavailable: %s", exc)
         _ext_point = False
         return None
-    _ext_point = (extension_manager, ExtensionPoint.TOOL_EXECUTE_BEFORE)
+    # The ENUM, not one member: this dispatcher owns BOTH halves of the tool
+    # call, and caching a single point is how TOOL_EXECUTE_AFTER ended up with
+    # no dispatcher at all (autonomy-wire-01).
+    _ext_point = (extension_manager, ExtensionPoint)
     return _ext_point
 
 
@@ -334,7 +337,7 @@ def _dispatch_before(
     loaded = _extension_point()
     if loaded is None:
         return tool_input, ""
-    manager, point = loaded
+    manager, points = loaded
 
     context = {
         "tool_name": spec.name,
@@ -344,7 +347,7 @@ def _dispatch_before(
         "task_id": task_id or "",
     }
     try:
-        result = manager.dispatch(point, context)
+        result = manager.dispatch(points.TOOL_EXECUTE_BEFORE, context)
     except Exception as exc:  # noqa: BLE001 — never crash the agent loop
         logger.warning("dispatch: TOOL_EXECUTE_BEFORE dispatch failed: %s", exc)
         return tool_input, ""
@@ -365,6 +368,56 @@ def _dispatch_before(
             f"{spec.name} refused by a TOOL_EXECUTE_BEFORE extension"
         )
     return out_input, reason
+
+
+def _dispatch_after(
+    spec: ToolSpec,
+    tool_input: dict[str, Any],
+    output: str,
+    task_id: Optional[str],
+) -> None:
+    """Run TOOL_EXECUTE_AFTER. Observes; returns nothing; changes nothing.
+
+    THE DEFECT THIS CLOSES (autonomy-wire-01). ``tools/awareness/hooks.py``
+    subscribes a handler to this point at process start — the auto-reindex that
+    refreshes ``kg_nodes`` after every Edit/Write — and NOTHING DISPATCHED IT.
+    Measured 2026-08-21: of the six enabled hook points, this one had a
+    registered handler and no dispatcher anywhere in the tree, so the handler
+    had never fired and the feature was silently dead.
+    ``capability_consumption`` reported the class 6 declared / 0 consumed, and
+    that zero was the only trace.
+
+    OBSERVE-ONLY, WHICH IS THE DIFFERENCE FROM :func:`_dispatch_before`.
+    ``args/extension_config.yaml`` sets ``allow_modification: false`` here, so
+    the return value is deliberately DISCARDED: nothing an after-handler returns
+    can rewrite the output the model sees or deny a call that already ran. A
+    post-hook able to change the result would be a second, unaudited place to
+    edit tool output, reachable by dropping in a file.
+
+    Dispatched ONLY when the tool actually ran. A call blocked by an extension
+    or by the safety gate never executed, so there is no "after" for it — firing
+    here would tell a handler an Edit had happened when nothing was written.
+
+    Fail-open and never fatal: extensions are a layer, not a dependency, and an
+    exception in an observer must not fail a tool call that already succeeded.
+    """
+    loaded = _extension_point()
+    if loaded is None:
+        return
+    manager, points = loaded
+
+    context = {
+        "tool_name": spec.name,
+        "tool_input": dict(tool_input),
+        "read_only": spec.read_only,
+        "source": spec.source,
+        "task_id": task_id or "",
+        "output": output,
+    }
+    try:
+        manager.dispatch(points.TOOL_EXECUTE_AFTER, context)
+    except Exception as exc:  # noqa: BLE001 — an observer must not fail the call
+        logger.warning("dispatch: TOOL_EXECUTE_AFTER dispatch failed: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -540,6 +593,9 @@ def make_handler(
             if out.startswith(_FAILURE_PREFIX):
                 _annotate(inv, status="error", error_class=type(exc).__name__,
                           error_message=str(exc))
+        # The tool RAN — a blocked call returned above and has no "after".
+        # Observe-only: whatever a handler returns is discarded (wire-01).
+        _dispatch_after(spec, tool_input, out, task_id)
         _record_result(inv, out)
         return out
 

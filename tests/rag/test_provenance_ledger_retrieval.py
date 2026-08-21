@@ -346,8 +346,11 @@ def _event_types_in(text: str, table_pattern: str) -> set:
             r"CREATE TABLE IF NOT EXISTS rag_provenance_ledger.*?\n\);",
         ),
         (
+            # The dump form, NOT `IF NOT EXISTS`: since the 2026-08-21 regeneration
+            # the canonical database has the table, so the snapshot carries it in
+            # the pg_dump region (CHECK inlined) rather than as a hand patch.
             "tools/db/schema/pg_consolidated.sql",
-            r"CREATE TABLE IF NOT EXISTS public\.rag_provenance_ledger.*?\n\);",
+            r"CREATE TABLE public\.rag_provenance_ledger \(.*?\n\);",
         ),
         (
             "tests/conftest.py",
