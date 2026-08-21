@@ -1,0 +1,61 @@
+# CUI // SP-CTI
+# Self-Root Gate (xit-decl-03)
+#
+# THE POLICY THIS ENCODES
+# -----------------------
+# 2,054 modules under tools/ compute the REPOSITORY ROOT from their own
+# location -- Path(__file__).resolve().parent.parent.parent, parents[2], a nest
+# of os.path.dirname -- and then read args/, data/, context/ or the database
+# relative to it. Each is a private, hard-coded claim about where the file sits.
+# The claim is true today and false the moment the file moves: a kernel package
+# relocated to another repository (the ICDEV[domain] split,
+# docs/programmes/icdev-domain-split.md) keeps computing parents[2] and lands
+# its args/ reads in the WRONG checkout, silently, because that directory
+# usually exists. icdev/core/paths.py::repo_root() is the one resolver that
+# answers correctly wherever the code lives; this gate stops the set of private
+# answers growing while they migrate onto it.
+#
+# WHAT IS AND IS NOT A FINDING
+# ----------------------------
+# A finding is a __file__-rooted expression that climbs EXACTLY to the repo
+# root (hops == the file's depth). NOT findings, because they are correct:
+#   * a module-local path -- Path(__file__).parent / "templates" -- those
+#     assets move WITH the module;
+#   * the sys.path BOOTSTRAP idiom -- a name whose every use is a sys.path
+#     insertion or membership test resolves the IMPORT root, which is the same
+#     directory before and after a move;
+#   * a marker WALK (for p in Path(__file__).parents: if (p/"pyproject.toml")
+#     .exists()) -- the good pattern; it climbs by evidence, not by count.
+# Climbing PAST the root is reported as `overwalk`: a bug, not a self-root.
+#
+# The policy is a RATCHET, not a sweep:
+#   1. A NEW site fails `python tools/ci/self_root_census.py --check` by name.
+#   2. The sites that existed at adoption are grandfathered BY NAME in
+#      args/self_root_census.txt -- enumerated, never counted.
+#   3. `self_root_max` may ONLY go DOWN. Lower it when a site is migrated.
+#      A kernel package must reach ZERO sites before it physically moves.
+#
+# Gate:  python tools/ci/self_root_census.py --check
+#        python tools/ci/self_root_census.py --changed <files> --check
+#        python tools/ci/self_root_census.py --fix <file>      # the simple form
+
+self_root_census:
+  census_file: args/self_root_census.txt
+
+  # Ceiling on REGISTERED sites. MAY ONLY GO DOWN. Set at adoption to exactly
+  # the measured count -- headroom is permission.
+  self_root_max: 1362
+
+  # tools/ only. icdev/tools/ is a generated mirror of the same files and would
+  # double every entry; when a package's physical home moves (xit-core-*), its
+  # census lines move with it.
+  scan_roots:
+    - tools
+
+  # An EXCLUSION asserts the pattern is CORRECT here -- a different claim from
+  # a census entry, and it does not count against the ceiling.
+  exclude:
+    - path: tools/ci/self_root_census.py
+      reason: >-
+        the census tool names the forbidden shapes in its own docstring and
+        parses them; it resolves its root by marker walk, never by count.

@@ -38,6 +38,9 @@ Checks:
  25. board_writer_census — a NEW raw board INSERT that bypasses tools/kanban/task_factory.py fails; the 219 that
                       existed at adoption are grandfathered BY NAME in args/kanban_raw_insert_census.txt and the
                       ceiling in args/board_writer_gate.yaml may only go DOWN (rem-hyg-05)
+ 26. self_rooting — a NEW module that computes the REPO ROOT from its own location fails; the 1,362 that
+                      existed at adoption are grandfathered BY NAME in args/self_root_census.txt and the ceiling in
+                      args/self_root_gate.yaml may only go DOWN (xit-decl-03)
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 (openapi_parity imports Flask/dashboard at runtime; gracefully skips if unavailable.)
@@ -9876,6 +9879,132 @@ def check_mirror_parity(changed_files: Optional[List[Path]] = None) -> Coherence
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
 
+
+# ---------------------------------------------------------------------------
+# Check 26: self-rooting census (xit-decl-03)
+# ---------------------------------------------------------------------------
+_SELF_ROOT_CHECK_ID = "self_rooting"
+_SELF_ROOT_CHECK_NAME = "Self-Root Census (xit-decl-03)"
+_SELF_ROOT_EXPECTED = [
+    "every module under tools/ that computes the REPOSITORY ROOT from its own "
+    "location (Path(__file__).resolve().parent.parent.parent, parents[n], nested "
+    "os.path.dirname) is either enumerated BY NAME in args/self_root_census.txt "
+    "or rewritten onto icdev.core.paths.repo_root(__file__)"
+]
+
+
+def _self_root_check(
+    status: str, message: str, actual: List[str], missing: Optional[List[str]] = None
+) -> CoherenceCheck:
+    return CoherenceCheck(
+        check_id=_SELF_ROOT_CHECK_ID,
+        check_name=_SELF_ROOT_CHECK_NAME,
+        status=status,
+        expected=_SELF_ROOT_EXPECTED,
+        actual=actual,
+        missing=missing or [],
+        extra=[],
+        message=message,
+    )
+
+
+def check_self_rooting(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """xit-decl-03 -- a NEW module that computes the repo root from its own location.
+
+    1,362 modules under tools/ derive an args/, data/, context/ or database
+    path from ``Path(__file__).resolve().parent.parent.parent`` (measured
+    2026-08-21). Each is a hard-coded claim about where the file sits; the claim
+    is true until the file moves and then silently wrong -- which is what the
+    ICDEV[domain] split (docs/programmes/icdev-domain-split.md) does to every
+    kernel package. ``icdev/core/paths.py::repo_root()`` is the one resolver
+    that answers correctly wherever the code lives; this check stops the set of
+    private answers GROWING while packages migrate onto it. A kernel package
+    must reach ZERO sites before it physically moves.
+
+    Same family and same shape as ``board_writer_census``: a diff-scoped scan
+    that fails on a NEW site by name, a tree scan that also enforces the
+    ceiling and reports stale entries, and ``warn`` -- never ``pass`` -- when the
+    census tool cannot run, because "did not run" must not read as "found
+    nothing". What is NOT a site (a module-local ``Path(__file__).parent /
+    "templates"``; the ``sys.path`` bootstrap idiom; a marker walk) is decided
+    by the census predicate, not here.
+    """
+    try:
+        from tools.ci.self_root_census import build_report, filter_scope, load_gate
+    except Exception as exc:  # noqa: BLE001
+        return _self_root_check(
+            "warn",
+            f"tools/ci/self_root_census.py could not be imported ({exc}) -- self-root "
+            "sites NOT verified. This is 'unmeasured', not 'clean'.",
+            [f"import failed: {exc}"],
+        )
+
+    scoped: Optional[List[str]] = None
+    if changed_files:
+        try:
+            scoped = filter_scope(_relative_changed(changed_files), load_gate())
+        except Exception as exc:  # noqa: BLE001
+            return _self_root_check(
+                "warn",
+                f"could not resolve the census scope for this diff ({exc}) -- "
+                "self-root sites NOT verified.",
+                [f"scope failed: {exc}"],
+            )
+        if not scoped:
+            return _self_root_check(
+                "pass",
+                "this change touches no Python file under tools/, so it cannot add a "
+                "self-root site.",
+                [],
+            )
+
+    try:
+        report = build_report(PROJECT_ROOT, scoped)
+    except SystemExit as exc:  # a missing gate config is a SystemExit in the tool
+        return _self_root_check(
+            "warn", f"self-root census could not run ({exc}) -- NOT verified.", [str(exc)]
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _self_root_check(
+            "warn", f"self-root census raised ({exc}) -- NOT verified.", [str(exc)]
+        )
+
+    unregistered = report.get("unregistered") or []
+    actual = [
+        f"{report['sites_seen']} site(s) in scope ({report['root_sites']} root, "
+        f"{report['overwalk_sites']} overwalk), {report['registered']} registered",
+        f"census {report['census_size']} (ceiling {report['ceiling']})",
+    ]
+    missing = [
+        f"{s['file']}:{s['line']}  {s['expr']}  [{s['kind']}]  ->  rewrite as "
+        "`from icdev.core.paths import repo_root; <name> = repo_root(__file__)`"
+        for s in unregistered
+    ]
+    if report.get("over_ceiling"):
+        missing.append(
+            f"census {report['census_size']} exceeds self_root_max {report['ceiling']} "
+            "-- the ceiling may only go DOWN"
+        )
+    if missing:
+        return _self_root_check(
+            "fail",
+            f"{len(unregistered)} NEW self-root site(s)"
+            + (" and a breached ceiling" if report.get("over_ceiling") else "")
+            + ". A module must not compute the repo root from its own location; use "
+            "icdev.core.paths.repo_root(__file__) (`python tools/ci/self_root_census.py "
+            "--fix <file>` does the simple form). Registering it is a debt you have "
+            "written down and it breaches the ceiling.",
+            actual,
+            missing,
+        )
+    stale = report.get("stale_entries") or []
+    note = f"; {len(stale)} stale census entr(ies) can be pruned" if stale else ""
+    return _self_root_check(
+        "pass",
+        f"no new self-root site in {report['scope']} scope{note}.",
+        actual,
+    )
+
 CHECK_REGISTRY = {
     "bootstrap_parity": check_bootstrap_parity,
     "mirror_parity": check_mirror_parity,
@@ -9937,6 +10066,7 @@ CHECK_REGISTRY = {
     "doc_command_paths": check_doc_command_paths,
     "insert_schema_parity": check_insert_schema_parity,
     "board_writer_census": check_board_writer_census,
+    "self_rooting": check_self_rooting,
 }
 
 
@@ -9969,6 +10099,9 @@ TIERS = ("fast", "full")
 # history — the evidence anchor degrades it to `warn` instead. Asserted by
 # tests/test_coherence_capability_liveness.py::test_runs_in_the_fast_tier.
 HEAVY_CHECKS: Dict[str, Tuple[str, ...]] = {
+    # xit-decl-03: a full-tree scan parses every module under tools/; with a
+    # diff it is scoped to the touched files and costs milliseconds.
+    "self_rooting": ("tools/", "icdev/tools/"),
     "blueprint_imports": (
         "tools/dashboard/",
         "icdev/tools/dashboard/",
@@ -10090,6 +10223,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "external_only_surfaces": "skip",  # satisfy the obligation or drop the declaration — both are decisions
     "gate_sentinel_shape": "skip",  # rename the task or make it a real gate — both are decisions
     "board_writer_census": "skip",  # route the write through create_tasks, or register it with a written reason — both are decisions, and auto-registering would be the gate widening its own allowlist
+    "self_rooting": "skip",  # `python tools/ci/self_root_census.py --fix <file>` rewrites the simple form; auto-running it inside a coherence run would change imports behind the caller
 }
 
 

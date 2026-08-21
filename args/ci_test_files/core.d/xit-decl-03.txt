@@ -1,0 +1,3 @@
+# xit-decl-03 - the self-root census: a module must not compute the repo root
+# from its own location; the one resolver is icdev.core.paths.repo_root.
+tests/ci/test_self_root_census.py
