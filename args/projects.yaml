@@ -8635,3 +8635,76 @@ projects:
   - key: ci
     title: CI - liveness gates and red-first proof so it stays wired
     priority: medium
+- key: autonomy
+  name: AUTONOMY - Close the actuation gap in the autonomous pipeline
+  description: 'Measured on the live board 2026-08-20. The autonomous pipeline still
+    needs a human several times a day, and the cause is not missing detection - it
+    is missing ACTUATION. Every failure that required manual intervention was already
+    visible to something in the tree, and nothing consumed it. Runtime-import census
+    over tools/genesis, tools/ci and tools/kanban: landed_check is consumed (kanban
+    reflex, pr_watcher, task_factory) and merge_stall is consumed (pr_watcher), while
+    status_churn, claim_verifier, born_red_survey and recovery_summary are imported
+    by NOBODY. That is declared-but-unconsumed - this platform''s signature defect -
+    reaching its own self-observation layer. THE VERIFIED-FACT LEARNER ALREADY EXISTS:
+    claim_verifier (rem-hyg-17) carries the right architecture - two derivations that
+    may not share code, three verdicts where unmeasurable is never folded into agrees,
+    corrective action tiered by reversibility, and independent_observations counting
+    distinct (subject, value) pairs rather than rows so a stuck writer cannot inflate
+    confidence. It holds 4 claims, all tier propose, runs only when a human types the
+    command, and is not registered with the liveness gate that exists to catch exactly
+    this. FOUR MEASURED GAPS. (A) The system cannot say what code it is running: zero
+    matches for git_sha/code_version in daemon.py, launch.py or kanban_scheduler.py,
+    zero importlib.reload anywhere under tools/genesis, and two competing supervision
+    models - launch.py supervises the scheduler and daemon while /start tells you to
+    launch them directly, so following /start spawns duplicates that die silently AND
+    truncate the logs, making a healthy supervised pair read as total failure. A merged
+    fix goes live only on restart and nothing reports that it has not. (B) Dispatch has
+    no admission control: 27 of 232 kanban task branches (11.6 percent) drew more than
+    one PR and 12 landed TWO merged PRs. #1862 duplicated rem-hyg-14, already merged as
+    #1858, and would have deleted 5545 lines across 76 files including the fix that had
+    merged two hours earlier. The right discriminator was already identified by
+    landed_dispatch_survey and never built on: PR IDENTITY (a merged PR carrying the id
+    while the task points elsewhere), not "is the id on main", which that survey measured
+    29 percent wrong when it fires. (C) An internal task silently falls back to the
+    SHARED CHECKOUT: kanban.py work_dir = worktree_path if worktree_path else str(BASE_DIR).
+    An external task parks with an explicit refusal three lines above, whose comment calls
+    the fallback "the whole hazard this change exists to remove" - the internal branch was
+    left open and fired today for rem-hyg-18. (D) Nothing converts an incident into a
+    standing guard: each defect gets a fixture-based unit test pinning ONE function, which
+    is why the studio park race survived weeks at a second site. SCOPE BOUNDARY: build NO
+    new detector. The parts are in the tree and mostly unconsumed; a twelfth detector
+    nobody reads makes the diagnosis worse. Do not arm any gate without surveying its
+    refusal rate first (1.63 percent is this repo''s measured threshold for refusing
+    routine work). Do not let an actuator edit what it verifies.'
+  task_prefix: autonomy-
+  default_open: true
+  briefs:
+  - 'ID: identity and sync. Until a process can say which git SHA it is running, you
+    cannot tell a working autonomous system from one executing last week''s code. This
+    is the gap observed directly at /start on 2026-08-20 and it blocks trusting every
+    later phase.'
+  - 'ADM: admission control. One pre-dispatch gate that asks every question once and
+    RECORDS its verdict, so the refusal rate is measurable and can be surveyed before
+    it is armed. Keyed on PR identity. Includes closing the internal BASE_DIR fallback.'
+  - 'ACT: actuation. No new detection - schedule and consume what exists, register
+    claim_verifier with capability_consumption so its own inertness goes red, and give
+    the restore tier a small enumerated set of mechanical, individually verifiable acts.'
+  - 'LRN: learning. An incident becomes a standing claim with two independent
+    derivations, so a defect that actually happened gains a LIVE regression guard its
+    fixture-based unit test cannot provide. Repetition is not corroboration.'
+  epics:
+  - key: gate
+    title: Manual Gate
+    priority: critical
+  - key: id
+    title: ID - process identity, code-version staleness, one supervision model
+    priority: critical
+  - key: adm
+    title: ADM - pre-dispatch admission control and worktree safety
+    priority: critical
+  - key: act
+    title: ACT - wire the detectors that already exist
+    priority: high
+  - key: lrn
+    title: LRN - incident becomes a standing verified claim
+    priority: medium

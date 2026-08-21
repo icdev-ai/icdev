@@ -6340,7 +6340,8 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
     name is preserved for backwards compatibility with existing call sites.
 
     Creates a git worktree for isolation so parallel tasks don't collide.
-    Falls back to BASE_DIR if worktree creation fails.
+    A task whose worktree cannot be created is PARKED, never built in the
+    shared checkout (autonomy-adm-02).
 
     FAST-PATH: _pre_dispatch_check runs first. If the task is a
     false-positive gap (tool already in manifest, route already in start.md,
@@ -6481,12 +6482,46 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
             pass
         return
 
-    work_dir = worktree_path if worktree_path else str(BASE_DIR)
-    if worktree_path:
-        _worktrees[task_id] = worktree_path
-        print(f"  Kanban: using worktree {worktree_path} for {task_id}")
-    else:
-        print(f"  Kanban: worktree unavailable, using BASE_DIR for {task_id}")
+    if not worktree_path:
+        # NO TASK BUILDS IN THE SHARED CHECKOUT (autonomy-adm-02).
+        #
+        # This used to read `work_dir = worktree_path if worktree_path else
+        # str(BASE_DIR)`, so an INTERNAL task whose worktree could not be created
+        # printed one line and dispatched an autonomous worker into BASE_DIR —
+        # the working directory concurrent sessions share. The external branch
+        # directly above has refused exactly that since it was written; only the
+        # internal half was left open, and it fired on 2026-08-20 for rem-hyg-18.
+        #
+        # The harm is documented one screen up in this very module:
+        # `_create_worktree`'s stale-branch cleanup exists because a failure there
+        # was "forcing every subsequent dispatch into BASE_DIR — causing the
+        # coherence loop". Beyond that, a second session's `git checkout` moves
+        # HEAD under the worker, so its commits land on the wrong branch.
+        #
+        # FAIL-CLOSED: a task that cannot be isolated does not build. Parking is
+        # strictly better than the silent downgrade it replaces — the task stays
+        # VISIBLE in `validating` instead of quietly corrupting a shared tree.
+        # Do NOT "fix" a recurring park by retrying until creation succeeds; that
+        # hides the cause. `_create_worktree` already logs why it failed.
+        logger.error(
+            "kanban: worktree creation failed for %s — NOT falling back to the "
+            "shared checkout at %s. Parking.", task_id, BASE_DIR,
+        )
+        try:
+            _move_task(
+                task_id, "validating", actor="worktree-isolation-guard",
+                reason=("worktree creation failed; refusing to build in the shared "
+                        "checkout (see the git worktree add failure logged above)"),
+            )
+        except Exception:  # noqa: BLE001
+            # The park itself failing must not become a reason to dispatch — the
+            # safe outcome is still "no worker in the shared tree".
+            logger.exception("kanban: could not park %s after worktree failure", task_id)
+        return
+
+    work_dir = worktree_path
+    _worktrees[task_id] = worktree_path
+    print(f"  Kanban: using worktree {worktree_path} for {task_id}")
 
     # FIX: Capture main HEAD at dispatch time. Verification uses this as the
     # baseline so that agent commits are visible even if main advances
