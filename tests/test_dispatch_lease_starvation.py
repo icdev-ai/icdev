@@ -40,6 +40,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools.genesis.reflexes import kanban as k  # noqa: E402
+from tools.kanban import lease_liveness as ll  # noqa: E402
 
 
 class _FakeLeases:
@@ -88,9 +89,15 @@ def _install_fake_leases(monkeypatch, fake):
 
 
 def _patch(monkeypatch, fake, heartbeating):
-    """Route the module's lease import and heartbeat probe at the fakes."""
+    """Route the lease import and the heartbeat probe at the fakes.
+
+    The probe is patched on ``tools.kanban.lease_liveness`` — the ONE seam the
+    dispatch reaper, ``cli --release`` and the idle advisor all consult
+    (autonomy-adm-03) — not on the reflex's alias of it. Patching the alias
+    would leave the shared verdict reading the live board.
+    """
     _install_fake_leases(monkeypatch, fake)
-    monkeypatch.setattr(k, "_task_is_heartbeating", lambda tid: heartbeating.get(tid, False))
+    monkeypatch.setattr(ll, "task_is_heartbeating", lambda tid: heartbeating.get(tid, False))
 
 
 # --------------------------------------------------------------------------- #
@@ -207,8 +214,15 @@ _MISSING = object()
 
 
 def _hb(monkeypatch, value, raises=False):
-    monkeypatch.setattr(k, "get_connection", lambda *a, **kw: _Conn(value, raises))
+    monkeypatch.setattr(ll, "get_connection", lambda *a, **kw: _Conn(value, raises))
     return k._task_is_heartbeating("t")
+
+
+def test_the_reflex_probe_IS_the_shared_probe():
+    """Consolidation, pinned: the reflex must not keep a private copy that could
+    drift from what `cli --release` and the idle advisor ask."""
+    assert k._task_is_heartbeating is ll.task_is_heartbeating
+    assert k._HEARTBEAT_LIVE_MINUTES == ll.HEARTBEAT_LIVE_MINUTES
 
 
 def test_a_recent_heartbeat_reads_as_running(monkeypatch):
@@ -252,10 +266,11 @@ class _AdvConn:
         return [{"id": i} for i in self._ids]
 
 
-def _advisor(monkeypatch, fake):
+def _advisor(monkeypatch, fake, heartbeating=None):
     from tools.kanban import idle_advisor
 
     _install_fake_leases(monkeypatch, fake)
+    monkeypatch.setattr(ll, "task_is_heartbeating", lambda tid: (heartbeating or {}).get(tid, False))
     return idle_advisor
 
 
@@ -275,6 +290,25 @@ def test_the_diagnosis_names_a_dead_lease_holder(monkeypatch):
     assert "GONE" in text and "t-dead-1" in text
     assert "release_stale" in text, "it must name the remedy, not just the symptom"
     assert "usual cause" not in text
+
+
+def test_the_diagnosis_does_NOT_call_a_heartbeating_task_litter(monkeypatch):
+    """autonomy-adm-03. The pid on the lease died with the dispatcher; the
+    worker heartbeats on. The old clause read the dead pid alone, called this
+    "GONE ... litter" and told the operator to reap it — advice that would
+    have freed a lease guarding live work."""
+    fake = _FakeLeases(
+        holders={"kanban:task:t-work-1": {"pid": 9}},
+        alive={"kanban:task:t-work-1": False},
+    )
+    adv = _advisor(monkeypatch, fake, heartbeating={"t-work-1": True})
+
+    text = adv._withhold_cause_clause(_AdvConn(["t-work-1"]))
+    assert "t-work-1" in text
+    assert "heartbeating" in text and "do not reap" in text
+    assert "litter" not in text and "release_stale" not in text, (
+        "a heartbeating task must never be presented as reapable"
+    )
 
 
 def test_the_diagnosis_names_a_live_claim(monkeypatch):
@@ -321,7 +355,7 @@ def _guarded(monkeypatch, fake, heartbeating=None):
     stubbing them isolates the third cause this card added.
     """
     _install_fake_leases(monkeypatch, fake)
-    monkeypatch.setattr(k, "_task_is_heartbeating", lambda tid: (heartbeating or {}).get(tid, False))
+    monkeypatch.setattr(ll, "task_is_heartbeating", lambda tid: (heartbeating or {}).get(tid, False))
     monkeypatch.setattr(k, "_tasks_with_recent_success", lambda ids: set())
     monkeypatch.setattr(k, "_open_pr_head_branches", lambda root: set())
     return k._drop_respawn_guarded
