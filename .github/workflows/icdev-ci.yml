@@ -260,6 +260,14 @@ jobs:
       - name: Perfect-score-for-no-data census
         working-directory: ${{ github.workspace }}
         run: python tools/ci/perfect_score_census.py --check
+      # xit-decl-04 -- every table created under tools/ has exactly ONE owner
+      # (core | it | ft) in the generated ownership manifests, the manifests
+      # agree with args/schema_ownership_rules.yaml, and a migration in this
+      # repository touches only the owners args/schema_ownership_gate.yaml
+      # allows. A new table without an owner, or a stale manifest, fails here.
+      - name: Schema ownership
+        working-directory: ${{ github.workspace }}
+        run: python tools/db/schema_ownership.py --check
       # xit-decl-03 -- a module that computes the REPOSITORY ROOT from its own
       # location (Path(__file__).resolve().parent.parent.parent, parents[2], a
       # nest of os.path.dirname) and reads args/ data/ or the database relative
@@ -695,6 +703,14 @@ jobs:
       - run: pip install bandit pip-audit
       - name: SAST (bandit) — 0 high+high findings
         run: bandit -r tools/ -q --severity-level high --confidence-level high
+      # xit-leak-01 -- this repository is PUBLIC and the trading domain is moving
+      # to a private sibling. Refuses a broker credential (patterns surveyed at
+      # 0 hits before arming), an ad_* table dump in a data file, and -- once
+      # paths.mode flips to enforce in the removal PR -- any file under a
+      # removed trading path. Do NOT add `|| true`; ICDEV_DOMAIN_LEAK_GUARD=0
+      # is the named switch.
+      - name: Domain leak gate
+        run: python tools/ci/domain_leak_gate.py --check
       - name: Dependency audit
         run: pip install -r requirements.txt && pip-audit --skip-editable -q
         continue-on-error: true

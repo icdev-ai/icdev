@@ -1,0 +1,6 @@
+# autonomy-act-03 — the restore tier is a CLOSED set of mechanical acts.
+# Pins the invariants that fail GREEN if broken: the registry is frozen at three
+# names, cannot-tell REFUSES (a dead pid alone never reaps), the audit intent row
+# is written BEFORE the act and its failure stops the act, and no act edits a
+# claim, a threshold or audit_trail.
+tests/awareness/test_restore_acts.py

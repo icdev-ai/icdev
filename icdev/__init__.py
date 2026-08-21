@@ -22,6 +22,25 @@ from icdev._version import __version__
 __all__ = ["__version__"]
 
 
+def _install_checkout_alias(tools_init: "str | None") -> None:
+    """Source checkout: make ``icdev.tools.X`` the same object as ``tools.X``.
+
+    xit-decl-02. ``tools/__init__.py`` installs the same finder, but whichever
+    of the two packages is imported FIRST must install it, or a module imported
+    as ``icdev.tools.X`` before ``tools`` is ever touched becomes a second
+    object. ``install`` refuses unless ``tools/`` is this package's sibling, so
+    the wheel and a project's own ``tools/`` package are unaffected.
+    """
+    if not tools_init:
+        return
+    try:
+        from icdev.core import shim
+
+        shim.install(tools_init)
+    except Exception:  # pragma: no cover - importing icdev must never fail here
+        pass
+
+
 def _alias_tools_namespace() -> None:
     """Bind ``icdev.tools`` to the ``tools`` name when nothing else provides it.
 
@@ -38,12 +57,15 @@ def _alias_tools_namespace() -> None:
     and a scaffolded project's own ``tools/`` directory, must not be shadowed.
     """
     if "tools" in sys.modules:
+        _install_checkout_alias(getattr(sys.modules["tools"], "__file__", None))
         return
     try:
-        if importlib.util.find_spec("tools") is not None:
-            return
+        spec = importlib.util.find_spec("tools")
     except (ImportError, ValueError, AttributeError):
-        pass  # find_spec can raise on odd sys.path entries; fall through to alias
+        spec = None  # find_spec can raise on odd sys.path entries; fall through to alias
+    if spec is not None:
+        _install_checkout_alias(spec.origin)
+        return
     try:
         sys.modules["tools"] = importlib.import_module("icdev.tools")
     except Exception:  # pragma: no cover — importing icdev must never fail here

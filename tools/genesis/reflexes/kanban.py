@@ -9598,53 +9598,20 @@ def _drop_respawn_guarded(tasks: List[dict]) -> List[dict]:
     return kept
 
 
-#: How recently a task must have heartbeat to count as actively running. Well
-#: above any plausible heartbeat interval: this value only ever makes the reap
-#: MORE conservative, and being slow to reclaim a genuinely abandoned lease
-#: costs one stalled task, while reclaiming a live one costs duplicate work.
-_HEARTBEAT_LIVE_MINUTES = 30
-
-
-def _task_is_heartbeating(task_id: str) -> bool:
-    """Has this task heartbeat recently? The signal about the WORK, not the pid.
-
-    A dispatching process exits once it has handed off, so the pid recorded on
-    the lease dies long before the worker does. ``last_heartbeat_at`` is what
-    the worker itself refreshes, and it is therefore the only one of the two
-    that answers "is anybody still building this".
-
-    Fail-safe to True on any error: an unreadable heartbeat must not license a
-    reap.
-    """
-    conn = None
-    try:
-        conn = get_connection()
-        row = conn.execute(
-            "SELECT last_heartbeat_at FROM kanban_tasks WHERE id = %s",
-            (task_id,),
-        ).fetchone()
-        if not row:
-            return False                      # no such task — nothing to protect
-        raw = dict(row).get("last_heartbeat_at")
-        if not raw:
-            return False                      # never started: safe to reap
-        ts = raw if isinstance(raw, datetime) else datetime.fromisoformat(str(raw))
-        if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=timezone.utc)
-        return ts > datetime.now(timezone.utc) - timedelta(minutes=_HEARTBEAT_LIVE_MINUTES)
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("heartbeat check failed for %s: %s", task_id, exc)
-        return True                           # unknown -> assume alive
-    finally:
-        if conn:
-            try:
-                conn.close()
-            except Exception:
-                pass
+# Lease liveness is answered in ONE place (autonomy-adm-03). The heartbeat probe
+# and its window used to live here as a private pair, which left every OTHER
+# reader of the same lease (cli --release, the idle advisor, startup recovery)
+# asking ``holder_is_alive`` on its own and reading a dead pid as dead work.
+# The names are kept as aliases so nothing that imported them breaks, but they
+# ARE the shared objects — not copies.
+from tools.kanban.lease_liveness import (  # noqa: E402
+    HEARTBEAT_LIVE_MINUTES as _HEARTBEAT_LIVE_MINUTES,  # noqa: F401 — alias, see above
+    task_is_heartbeating as _task_is_heartbeating,  # noqa: F401 — alias, see above
+)
 
 
 def _lease_blocks_dispatch(task_id: str) -> bool:
-    """Is ``kanban:task:<id>`` held by a LIVE session? Reap it if the holder died.
+    """Is ``kanban:task:<id>`` held by LIVE WORK? Reap it if it is litter.
 
     Two different answers that used to look identical from the scheduler's seat:
 
@@ -9660,7 +9627,9 @@ def _lease_blocks_dispatch(task_id: str) -> bool:
     window every cycle and the board sat `idle [review_bound]` for over an hour
     with capacity free and no open PRs anywhere.
 
-    FAIL-SAFE TOWARDS NOT REAPING, ON TWO SIGNALS RATHER THAN ONE.
+    FAIL-SAFE TOWARDS NOT REAPING, ON TWO SIGNALS RATHER THAN ONE — and the
+    two-signal verdict is ``tools.kanban.lease_liveness.task_lease_verdict``,
+    shared with every other reader of this lease, not a rule of this function.
 
     ``holder_is_alive`` returns ``None`` when the answer cannot be determined
     (no psutil, an unreadable process table), and that is treated as ALIVE —
@@ -9682,33 +9651,31 @@ def _lease_blocks_dispatch(task_id: str) -> bool:
     never started (the one-shot seeding script case this was written for) has no
     heartbeat at all, while a live worker refreshes one continuously.
     """
-    resource = f"kanban:task:{task_id}"
     try:
-        from tools.coordination import leases
+        from tools.kanban import lease_liveness
     except Exception as exc:  # noqa: BLE001 — never wedge dispatch on an import
         logger.debug("lease check unavailable for %s: %s", task_id, exc)
         return False
 
     try:
-        if leases.holder(resource) is None:
-            return False                      # free
-        alive = leases.holder_is_alive(resource)
-        if alive is False and not _task_is_heartbeating(task_id):
-            reaped = leases.release_stale(resource)
+        verdict, reaped = lease_liveness.reap_if_litter(task_id)
+        if verdict.state == lease_liveness.STATE_FREE:
+            return False
+        if verdict.state == lease_liveness.STATE_LITTER:
             logger.info(
                 "dispatch window: %s was pinned by a lease whose holder is gone "
                 "and the task is not heartbeating — reaped=%s, dispatchable "
                 "again", task_id, reaped,
             )
             return not reaped                 # reaped -> dispatchable now
-        if alive is False:
+        if verdict.state == lease_liveness.STATE_WORKING:
             logger.info(
                 "dispatch window: %s has a dead lease holder but IS heartbeating "
                 "— the worker outlived the process that took the lease, so the "
                 "lease is kept and the slot yielded", task_id,
             )
             return True
-        # True, or None ("cannot tell" -> assume alive).
+        # live: True, or None ("cannot tell" -> assume alive).
         logger.info(
             "dispatch window: %s is claimed by a live session — yielding its "
             "slot to a task that can actually run", task_id,

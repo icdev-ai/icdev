@@ -1,0 +1,5 @@
+# autonomy-dep-02 — a pending migration becomes a card that says what to do.
+# Pins ONE finding per drift state (not one per migration), an order-independent
+# fingerprint (so a six-hourly run bumps seen_count rather than filing a new
+# card), and that UNMEASURABLE never reads as clean.
+tests/kanban/test_detector_migration_drift.py

@@ -53,6 +53,60 @@ BUILTIN_PATTERNS = [
         "pattern": r"gh[pousr]_[A-Za-z0-9_]{36,}",
         "severity": "critical",
     },
+    # -- Broker / exchange credentials (xit-leak-01) ---------------------------
+    # Consumed by tools/ci/domain_leak_gate.py through the `category` tag; kept
+    # here so there is ONE pattern table. Surveyed 2026-08-21: 0 hits on the
+    # tracked tree for every rule.
+    {
+        "name": "Alpaca Paper Key ID",
+        "pattern": r"\bPK[A-Z0-9]{18}\b",
+        "severity": "critical",
+        "category": "broker_credential",
+    },
+    {
+        # Live keys start with AK; AWS access keys start with AKIA and are the
+        # previous rule's business, so they are excluded here.
+        "name": "Alpaca Live Key ID",
+        "pattern": r"\bAK(?!IA)[A-Z0-9]{18}\b",
+        "severity": "critical",
+        "category": "broker_credential",
+    },
+    {
+        "name": "Alpaca API Header Value",
+        "pattern": r"APCA[-_]API[-_](?:KEY[-_]ID|SECRET[-_]KEY)['\"]?\s*[:=]\s*['\"]?[A-Za-z0-9/+]{16,}",
+        "severity": "critical",
+        "category": "broker_credential",
+    },
+    {
+        "name": "Kraken Private Key",
+        "pattern": r"(?i)kraken[^\n]{0,60}(?:secret|private)[^\n]{0,20}['\"]?[A-Za-z0-9+/]{80,}={0,2}",
+        "severity": "critical",
+        "category": "broker_credential",
+    },
+    {
+        "name": "Tradier Access Token",
+        "pattern": r"(?i)tradier[^\n]{0,40}(?:token|key)\s*[=:]\s*['\"]?[A-Za-z0-9]{28,}",
+        "severity": "critical",
+        "category": "broker_credential",
+    },
+    {
+        "name": "Brokerage OAuth Token (Tastytrade/Schwab/IBKR)",
+        "pattern": r"(?i)(?:tastytrade|schwab|ibkr|interactive_brokers)[^\n]{0,40}(?:token|secret|key)\s*[=:]\s*['\"]?[A-Za-z0-9._\-]{20,}",
+        "severity": "critical",
+        "category": "broker_credential",
+    },
+    {
+        "name": "Coinbase CDP Key Name",
+        "pattern": r"organizations/[0-9a-f-]{36}/apiKeys/[0-9a-f-]{36}",
+        "severity": "critical",
+        "category": "broker_credential",
+    },
+    {
+        "name": "Exchange API Secret (Binance/Bybit/OKX)",
+        "pattern": r"(?i)(?:binance|bybit|okx)[^\n]{0,40}(?:secret|key)\s*[=:]\s*['\"]?[A-Za-z0-9]{40,}",
+        "severity": "critical",
+        "category": "broker_credential",
+    },
     {
         "name": "Slack Token",
         "pattern": r"xox[baprs]-[A-Za-z0-9\-]{10,}",

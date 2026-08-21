@@ -119,6 +119,7 @@ REFLEX_NAMES = [
     "dep_health_reflex",            # pip check + pip-audit → files [DEP-HEALTH] kanban tasks
     "dead_code_reflex",             # orphan files + dead functions + import cycles → [DEAD-CODE] tasks
     "kanban_stranded_reflex",       # done/validating tasks vs origin/main → [STRANDED] suggested cards
+    "detector_findings_reflex",     # autonomy-act-02: status_churn + born_red_survey + recovery_summary → evidence cards, deduped on the finding
     "critical_task_watchdog_reflex",  # polls for critical kanban tasks → watchdog_alerts + sidecar JSON
     "api_contract_reflex",            # OpenAPI spec vs live responses → [API-CONTRACT] kanban tasks
     "route_perf_reflex",              # NAV_ROUTES smoke + p50 latency regression detection → [PERF] tasks
@@ -212,6 +213,16 @@ REFLEX_NAMES = [
     # named non-findings, never cards -- on the live board it evaluates 3
     # providers and files 0.
     "cache_regression_reflex",
+    # autonomy-act-01: tools/awareness/claim_verifier.py (rem-hyg-17) verifies
+    # what a surface CLAIMS against an independently derived fact -- and was
+    # consumed by nobody: no reflex, no scheduler, no daemon imported it, so it
+    # ran only when a human typed the command. Registration is TWO places
+    # (this list AND args/genesis_config.yaml) and missing either makes it
+    # silently inert -- the omission test_reflex_registration.py exists to
+    # catch. Report + propose tiers only; restore is autonomy-act-03. A cycle
+    # that measures zero claims reports `unmeasurable`, never ok, and its
+    # per-claim verdicts are what the `verified_claim` capability class reads.
+    "claim_verifier_reflex",
 ]
 
 # Backward-compat aliases for module-level access used by other code
@@ -1011,10 +1022,10 @@ def _register_process_identity() -> None:
     start; the record is observability, not authorization.
     """
     try:
-        import os as _os
+        # DISTINCT PER PROCESS (autonomy-sid-01) — see the scheduler.
+        from tools.coordination.service_identity import claim_service_identity
 
-        _os.environ.setdefault("ICDEV_SESSION_ID", "genesis-daemon")
-        _os.environ.setdefault("ICDEV_AGENT", "genesis")
+        claim_service_identity("genesis-daemon", "genesis")
         from tools.coordination import session_registry as _reg
 
         _reg.register(intent="genesis daemon — running due reflexes")
@@ -1023,6 +1034,10 @@ def _register_process_identity() -> None:
 
 
 def main() -> None:
+    # xit-decl-01: a daemon bound to another parent's database must not start.
+    from icdev.core.context import assert_identity
+
+    assert_identity(anchor=__file__)
     """CLI entry point."""
     _register_process_identity()
     config = GenesisDaemon.load_config()

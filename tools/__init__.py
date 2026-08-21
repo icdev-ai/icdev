@@ -18,6 +18,17 @@ _tools_dir = os.path.dirname(os.path.abspath(__file__))
 _project_root = os.path.dirname(_tools_dir)
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
+
+# xit-decl-02: in a source checkout, make ``icdev.tools.X`` the SAME module
+# object as ``tools.X``. Without this a submodule import STATEMENT loaded the
+# physical tools/ file while attribute access (below) returned the icdev/tools/
+# copy — two objects, two singletons, a monkeypatch on the wrong one. The finder
+# refuses to install anywhere tools/ and icdev/ are not siblings (the wheel, a
+# scaffolded project), so nothing changes there. See icdev/core/shim.py.
+from icdev.core import shim as _core_shim  # noqa: E402
+
+_core_shim.install(__file__)
+
 from icdev.tools.llm.router import LLMRouter  # noqa: E402
 _ICDEV_TOOLS_BASE = "icdev.tools"  # namespace root for dynamic importlib calls
 

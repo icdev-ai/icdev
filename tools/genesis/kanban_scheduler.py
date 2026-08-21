@@ -314,9 +314,12 @@ def main():
     # it's dispatching (LLM-agnostic; tools/coordination). Best-effort.
     _coord_reg = None
     try:
-        import os as _os
-        _os.environ.setdefault("ICDEV_SESSION_ID", "kanban-scheduler")
-        _os.environ.setdefault("ICDEV_AGENT", "kanban")
+        # DISTINCT PER PROCESS (autonomy-sid-01). A fixed id made two
+        # schedulers indistinguishable to leases.acquire, which refuses a
+        # hard lease only when it is held by ANOTHER session — so the guard
+        # against two workers building one task could not see two workers.
+        from tools.coordination.service_identity import claim_service_identity
+        claim_service_identity("kanban-scheduler", "kanban")
         from tools.coordination import session_registry as _coord_reg
         _coord_reg.register(intent="kanban scheduler — dispatching due tasks")
     except Exception:

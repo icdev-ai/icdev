@@ -223,8 +223,38 @@ def _list_toggles() -> dict:
     }
 
 
+def _domain_summary() -> dict:
+    """Which parent this checkout IS, per icdev_domain.yaml (xit-decl-01).
+
+    Best-effort: a status command must never fail because the declaration is
+    unreadable — it reports the error instead.
+    """
+    try:
+        from icdev.core.context import describe
+
+        info = describe(anchor=__file__)
+    except Exception as exc:  # noqa: BLE001 - status is diagnostic, never a gate
+        return {"error": str(exc)}
+    dom = info.get("domain") or {}
+    ident = info.get("identity") or {}
+    return {
+        "key": dom.get("key"),
+        "name": dom.get("name"),
+        "source": dom.get("source"),
+        "root": info.get("paths", {}).get("root"),
+        "identity": ident.get("verdict"),
+        "database_declared": dom.get("db", {}).get("databases"),
+        "database_observed": ident.get("database_observed"),
+        "error": info.get("error"),
+    }
+
+
 def _print_status(result: dict) -> None:
     rows = result["toggles"]
+    dom = result.get("domain") or {}
+    if dom:
+        print(f"Domain: {dom.get('key')} ({dom.get('name')}) from {dom.get('source')}  "
+              f"root={dom.get('root')}  identity={dom.get('identity', 'unknown').upper()}")
     print(f"Env file: {result['env_file']}  "
           f"({'exists' if result['env_file_exists'] else 'NOT FOUND'})")
     print(f"Enabled: {result['enabled_count']} / {result['total_count']}")
@@ -278,6 +308,13 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Windows consoles default to cp1252; the hints below carry "→". Never
+    # let a diagnostic command die on its own arrow.
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
     parser = _build_parser()
     args = parser.parse_args(argv)
     env_file = Path(args.env_file).resolve()
@@ -295,6 +332,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.action == "status":
         result = get_status(env_file)
+        result["domain"] = _domain_summary()
         uninitialized = _looks_uninitialized(env_file)
         result["initialized"] = not uninitialized
         if uninitialized:

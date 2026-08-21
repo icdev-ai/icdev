@@ -1,0 +1,7 @@
+{
+  "description": "autonomy-act-02: detector_findings / detector_runs projection for the detector-consuming reflex",
+  "date": "2026-08-21",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

@@ -38,7 +38,9 @@ Checks:
  25. board_writer_census — a NEW raw board INSERT that bypasses tools/kanban/task_factory.py fails; the 219 that
                       existed at adoption are grandfathered BY NAME in args/kanban_raw_insert_census.txt and the
                       ceiling in args/board_writer_gate.yaml may only go DOWN (rem-hyg-05)
- 26. self_rooting — a NEW module that computes the REPO ROOT from its own location fails; the 1,362 that
+ 27. schema_ownership — every table created under tools/ has exactly ONE owner (core | it | ft) in the generated
+                      manifests; a migration here may only touch owners args/schema_ownership_gate.yaml allows (xit-decl-04)
+ 28. self_rooting — a NEW module that computes the REPO ROOT from its own location fails; the 1,362 that
                       existed at adoption are grandfathered BY NAME in args/self_root_census.txt and the ceiling in
                       args/self_root_gate.yaml may only go DOWN (xit-decl-03)
 
@@ -9881,7 +9883,36 @@ def check_mirror_parity(changed_files: Optional[List[Path]] = None) -> Coherence
 
 
 # ---------------------------------------------------------------------------
-# Check 26: self-rooting census (xit-decl-03)
+# Check 27: schema ownership (xit-decl-04)
+# ---------------------------------------------------------------------------
+_SCHEMA_OWNER_CHECK_ID = "schema_ownership"
+_SCHEMA_OWNER_CHECK_NAME = "Schema Ownership (xit-decl-04)"
+_SCHEMA_OWNER_EXPECTED = [
+    "every table created by a DDL source or migration under tools/ is owned by exactly "
+    "one of core | it | ft in the generated manifests (icdev/core/schema/tables.yaml, "
+    "tools/db/schema/tables.yaml), the manifests agree with args/schema_ownership_rules.yaml, "
+    "and nothing in this repository touches a table whose owner args/schema_ownership_gate.yaml "
+    "does not allow here"
+]
+
+
+def _schema_owner_check(
+    status: str, message: str, actual: List[str], missing: Optional[List[str]] = None
+) -> CoherenceCheck:
+    return CoherenceCheck(
+        check_id=_SCHEMA_OWNER_CHECK_ID,
+        check_name=_SCHEMA_OWNER_CHECK_NAME,
+        status=status,
+        expected=_SCHEMA_OWNER_EXPECTED,
+        actual=actual,
+        missing=missing or [],
+        extra=[],
+        message=message,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Check 28: self-rooting census (xit-decl-03)
 # ---------------------------------------------------------------------------
 _SELF_ROOT_CHECK_ID = "self_rooting"
 _SELF_ROOT_CHECK_NAME = "Self-Root Census (xit-decl-03)"
@@ -9908,6 +9939,67 @@ def _self_root_check(
     )
 
 
+def check_schema_ownership(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """xit-decl-04 -- a NEW table with no owner, or a migration crossing an owner line.
+
+    1,874 distinct tables are created across tools/db/init_icdev_db.py (527 in
+    one string), fourteen per-canvas init_db modules, tools/kanban, tools/trading
+    and 430 migrations, and until now nothing said which belonged to the
+    domain-neutral core both ICDEV parents install, which to ICDEV[IT], and
+    which to the trading domain leaving for a private repository. The ownership
+    manifests are GENERATED from args/schema_ownership_rules.yaml, so the check
+    is closure (every created table has an owner), uniqueness, freshness (the
+    manifests agree with the rules) and a boundary (this repository may touch
+    only the owners args/schema_ownership_gate.yaml allows -- today core, it and
+    ft; the removal PR drops ft). With a diff the scan is scoped to the touched
+    DDL/migration files and freshness is skipped; ``warn``, never ``pass``,
+    when the tool cannot run.
+    """
+    try:
+        from tools.db.schema_ownership import build_report
+    except Exception as exc:  # noqa: BLE001
+        return _schema_owner_check(
+            "warn",
+            f"tools/db/schema_ownership.py could not be imported ({exc}) -- schema "
+            "ownership NOT verified. This is 'unmeasured', not 'clean'.",
+            [f"import failed: {exc}"],
+        )
+    scoped: Optional[List[str]] = None
+    if changed_files:
+        scoped = [
+            f for f in _relative_changed(changed_files)
+            if f.startswith("tools/") and f.endswith((".py", ".sql"))
+        ]
+        if not scoped:
+            return _schema_owner_check(
+                "pass", "this change touches no DDL source or migration under tools/.", []
+            )
+    try:
+        report = build_report(PROJECT_ROOT, scoped)
+    except Exception as exc:  # noqa: BLE001
+        return _schema_owner_check(
+            "warn", f"schema ownership check raised ({exc}) -- NOT verified.", [str(exc)]
+        )
+    actual = [
+        f"{report['tables_seen']} table(s) in scope; manifest {report['manifest_size']} {report['owners']}",
+        f"allowed owners here: {report['allowed_owners_here']}",
+    ]
+    missing = (
+        [f"UNOWNED {t} -> add a rule to args/schema_ownership_rules.yaml, then --regenerate" for t in report["unowned"]]
+        + [f"DUPLICATE {t} (in both manifests)" for t in report["duplicates"]]
+        + [f"FOREIGN {t}" for t in report["foreign_owner_touched"]]
+        + [f"STALE {t} -> python tools/db/schema_ownership.py --regenerate" for t in report["stale"]]
+    )
+    if missing:
+        return _schema_owner_check(
+            "fail",
+            f"{len(missing)} schema-ownership finding(s): a table must have exactly one owner and "
+            "this repository may only touch the owners its gate allows.",
+            actual,
+            missing,
+        )
+    note = f"; {len(report['touched_only'])} touch-only name(s) reported" if report.get("touched_only") else ""
+    return _schema_owner_check("pass", f"every created table in {report['scope']} scope has one owner{note}.", actual)
 def check_self_rooting(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
     """xit-decl-03 -- a NEW module that computes the repo root from its own location.
 
@@ -10066,6 +10158,7 @@ CHECK_REGISTRY = {
     "doc_command_paths": check_doc_command_paths,
     "insert_schema_parity": check_insert_schema_parity,
     "board_writer_census": check_board_writer_census,
+    "schema_ownership": check_schema_ownership,
     "self_rooting": check_self_rooting,
 }
 
@@ -10099,6 +10192,9 @@ TIERS = ("fast", "full")
 # history — the evidence anchor degrades it to `warn` instead. Asserted by
 # tests/test_coherence_capability_liveness.py::test_runs_in_the_fast_tier.
 HEAVY_CHECKS: Dict[str, Tuple[str, ...]] = {
+    # xit-decl-04: a full-tree scan reads every DDL source; with a diff it is
+    # scoped to the touched DDL/migration files.
+    "schema_ownership": ("tools/db/", "icdev/tools/db/", "init_db.py", ".sql", "schema_ownership"),
     # xit-decl-03: a full-tree scan parses every module under tools/; with a
     # diff it is scoped to the touched files and costs milliseconds.
     "self_rooting": ("tools/", "icdev/tools/"),
@@ -10223,6 +10319,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "external_only_surfaces": "skip",  # satisfy the obligation or drop the declaration — both are decisions
     "gate_sentinel_shape": "skip",  # rename the task or make it a real gate — both are decisions
     "board_writer_census": "skip",  # route the write through create_tasks, or register it with a written reason — both are decisions, and auto-registering would be the gate widening its own allowlist
+    "schema_ownership": "skip",  # an owner is a decision: add a rule and --regenerate; auto-assigning would be the gate widening itself
     "self_rooting": "skip",  # `python tools/ci/self_root_census.py --fix <file>` rewrites the simple form; auto-running it inside a coherence run would change imports behind the caller
 }
 

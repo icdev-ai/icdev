@@ -414,6 +414,15 @@ VALID_EVENT_TYPES = (
     # best-effort handler downstream made the rejection invisible.
     # Constraint rebuilt by migration 20260819021003.
     "dic.ssp_fragment.review",
+
+    # The enumerated `restore` tier (autonomy-act-03,
+    # tools/awareness/restore_acts.py). One type; the act and the phase are in
+    # `action` — restore.<act>.intent is written BEFORE the act with
+    # raise_on_error=True, so an act whose row cannot be written does not run,
+    # and restore.<act>.<outcome> after it. An unaudited automatic repair is
+    # indistinguishable from drift. Constraint rebuilt by migration
+    # 20260821045946.
+    "awareness.restore_act",
 )
 
 EVENT_TYPE_CONSTRAINT = "audit_trail_event_type_check"

@@ -647,6 +647,38 @@ reflexes:
       threshold: 0
       operator: gte
 
+  detector_findings_reflex:
+    enabled: true
+    risk_tier: green
+    schedule: "every 6h"
+    interval_seconds: 21600
+    # born_red_survey resolves a landing commit per born-red file (measured
+    # 32s on the live board with 3 findings); the other two are sub-second.
+    timeout_seconds: 600
+    # Cards one run may seed, across all detectors, worst-first. The remainder
+    # is projected, reported as `cards_deferred`, and arrives next cycle.
+    max_cards_per_run: 6
+    # HITL quarantine by default: each finding is a pipeline behaviour a human
+    # decides about. `backlog` hands them to the autonomous runner instead.
+    seed_status: suggested
+    detectors:
+      status_churn:
+        window_hours: 24
+        min_returns: 10      # surveyed in tools/kanban/status_churn.py — re-survey before lowering
+      born_red: {}
+      recovery:
+        window_hours: 24     # the Autonomous Recovery panel's window
+      migration_drift:
+        # The branch this deployment is meant to be running. A migration that
+        # merged and was never applied leaves its capability INERT here: the
+        # code is present, the schema is not, and every test stays green.
+        ref: origin/main
+    description: "autonomy-act-02: run status_churn, born_red_survey and recovery_summary; project findings into detector_findings (deduped on the finding, seen_count on recurrence) and file one evidence-carrying card per NEW finding via task_factory"
+    success_metric:
+      name: findings_seen
+      threshold: 0
+      operator: gte
+
   critical_task_watchdog_reflex:
     enabled: true
     risk_tier: green
@@ -1812,6 +1844,35 @@ reflexes:
       name: providers_evaluated
       threshold: 0
       operator: gte
+  claim_verifier_reflex:
+    timeout_seconds: 300     # four claims today, each opening canvas/primary tables
+    enabled: true
+    risk_tier: green         # reads surfaces + primary data, writes kanban rows; edits no claim
+    a2a_eligible: false
+    schedule: every 6h
+    dry_run: false
+    description: >-
+      Claim verification on a cadence (autonomy-act-01). Runs every claim in
+      tools/awareness/claims.py through claim_verifier.verify_all - what a
+      surface REPORTS against an INDEPENDENT derivation from primary data - and
+      acts by the claim's own tier: `report` states the disagreement, `propose`
+      seeds one card carrying BOTH derivations (id deterministic in the claim
+      id, so an open card is not refiled), `restore` is deferred to
+      autonomy-act-03 and NAMED in the result, never dropped. No claim refuses
+      anything. A cycle that measures ZERO claims reports `unmeasurable`, never
+      ok: a verifier whose clean run and whose no-op look identical is the
+      defect the card exists to remove. Per-claim verdicts ride on details and
+      are read back by the `verified_claim` capability class, so a verifier
+      nobody runs reads as inert rather than as clean.
+    card:
+      id_prefix: "claim-verif-"
+      task_type: fix
+      priority: high
+      status: backlog
+    success_metric:
+      name: claims_measured
+      threshold: 0
+      operator: gte          # informational - 0 is `unmeasurable`, never a clean run
 
 # ── Reflex Health & Alerting (crx-gen-02) ────────────────────────────────────
 # Turns critical-reflex failures into operator alerts on the /monitoring page

@@ -87,6 +87,26 @@ python -c "from tools.genesis.reflexes.awareness import run; run({}, None)"  # F
 # UI: http://localhost:5050/components-map (visual map) + /ask-icdev (Q&A chat)
 # Config: args/awareness_config.yaml — 3h cadence, 7 gap rules, 0.7 threshold
 
+# Which parent IS this checkout, and may it touch THIS database? (xit-decl-01)
+python -m icdev.core.context --check          # exit 1 on a DECLARED mismatch
+python -m icdev.core.context --check --json
+icdev status                                  # first line names the domain, its root and the identity verdict
+# Every ICDEV parent declares itself in `icdev_domain.yaml` at its repo root
+# (this repo = ICDEV[IT]; ICDEV[FT] is the second parent — docs/programmes/
+# icdev-domain-split.md). The domain KEY comes from the FILE the core finds,
+# never from an env var, so two parents on one machine cannot cross-load.
+# icdev/core/paths.py is the ONE root resolver (ICDEV_PROJECT_ROOT -> the
+# source checkout holding the calling file -> the nearest icdev_domain.yaml
+# above CWD, for an installed kernel -> icdev/); icdev/_paths.py and
+# tools/llm/config_path.py are delegates onto it. `assert_identity()` runs at
+# dashboard, genesis daemon, migrate.py and kanban/cli.py start-up and REFUSES
+# when <PREFIX>_PG_DATABASE / the DSN names a database the declaration does
+# not list. It is fail-closed on a declared mismatch ONLY: an env that names no
+# database is `unmeasured` and allowed (SQLite, CI, tests). Stand it down with
+# ICDEV_IDENTITY_GUARD=0, never a shell neutraliser. A wheel or scaffolded
+# project with no declaration gets the builtin ICDEV[IT] default
+# (`source: builtin_default`); ICDEV_REQUIRE_DOMAIN=1 refuses to run undeclared.
+
 # Capability consumption — is a DECLARED capability actually being used? (#exa-live-01)
 python tools/awareness/capability_consumption.py --json                  # all classes, 30d window
 python tools/awareness/capability_consumption.py --window-days 7         # configurable window
@@ -194,7 +214,140 @@ python tools/awareness/claim_verifier.py --claim posture_score_needs_evidence
 # clean" can never be confused with "it does nothing" -- and today's fixes gain
 # a LIVE regression guard their fixture-based unit tests cannot provide.
 # Report only, no --gate (kpr-fix-03). Registry: tools/awareness/claims.py
+# IT RUNS ON ITS OWN, and its own inertness goes red (autonomy-act-01). It was
+# consumed by NOBODY for its first day -- no reflex, scheduler or daemon imported
+# it. Now the `claim_verifier_reflex` genesis reflex (6h, green; registered in
+# BOTH daemon.REFLEX_NAMES and args/genesis_config.yaml) acts by the claim's own
+# tier -- report states, propose seeds ONE card carrying both derivations,
+# restore is DEFERRED to autonomy-act-03 and named, never dropped -- and a cycle
+# measuring zero claims reports `unmeasurable`, never ok.
+python tools/genesis/daemon.py --reflex claim_verifier_reflex --json     # one cycle, through the daemon
+python tools/awareness/capability_consumption.py --class verified_claim --json
+# Consumption is a MEASURED verdict (agrees|disagrees) on a daemon-dispatched
+# run, read from the per-claim `verdicts` map on genesis_audit.details -- no new
+# table. `unmeasurable` is reported under extra.unmeasurable_events and never
+# counted; a human running the CLI records nothing, on purpose. Budget 0 in
+# args/liveness_gate.yaml: a verifier nobody runs FAILS capability_liveness.
 
+# Is intervention actually FALLING? The AUTONOMY card held to its own standard (autonomy-lrn-02)
+python -m tools.awareness.autonomy_loop                  # human report, 7-day window
+python -m tools.awareness.autonomy_loop --json --window-days 30
+python -m tools.awareness.autonomy_loop --no-live-verify # skip running the claim verifier
+python -m tools.awareness.autonomy_loop --no-forge       # no gh call; PR-based measures read unmeasurable
+# FIVE MEASURES, each with its denominator stated: claims registered and how
+# many name a REAL incident (the registry's tag is DECLARED, the board's row is
+# VERIFIED — two numbers, never one); disagreements caught LIVE before a human;
+# duplicate-dispatch rate against the recorded 11.6% baseline (27/232,
+# 2026-08-20); admission refusals split RIGHT/WRONG by replaying history
+# through the gate's OWN `classify` (never a second copy of the rule); stale
+# daemons over ASSESSED processes, each with `stale_for`.
+# EVERY RATE IS None, NEVER 0.0 OR 100.0, WHEN NOTHING WAS MEASURED. `_rate` is
+# the one place a percentage is computed; `pct if total else 100.0` here would
+# breach args/perfect_score_gate.yaml, ratcheted to 0 by rem-hyg-13.
+# THREE ABSENCES, measured on the live board 2026-08-21 and reported BY NAME:
+#  * the admission gate in `report` mode LOGS its verdict and persists nothing,
+#    so `recorded_refusals` counts ENFORCED refusals only; what it WOULD have
+#    said is recovered by replay, lifetime AND window, because the baseline was
+#    lifetime and a 7-day number against it is not like for like;
+#  * nothing persists a claim-verifier run (it runs when a human types the
+#    command — autonomy-act-01 schedules it), so a disagreement cannot be DATED
+#    and `caught_live` is None. The current verdicts ride along as
+#    `snapshot_now`, labelled: 0 disagreements today is not 0 caught live;
+#  * `agent_sessions` lacked the code-identity columns (migration
+#    20260821024132 unapplied), so all 5 live processes read "no recorded code
+#    version" and the stale count was UNKNOWN — named, not 0.
+# The lifetime admission replay DRIFTS DOWN over time: the forge reader returns
+# the newest PRs only, so a dispatch whose PRs aged out replays as allow (190
+# fires today against the baseline's 195, with more dispatches). Stated on the
+# result as `sample_note`. The windowed duplicate rate is a LOWER BOUND (a
+# branch that opened yesterday has had less time to draw a second PR) — stated
+# as `censoring`.
+# Baselines are carried AS RECORDED and dated, never recomputed. A delta is None
+# when either side is missing, and the headline cannot read `falling` while any
+# section is unmeasured: `falling_where_measured` names the holes beside it.
+# Report only, no --gate: it measures the BOARD and the FLEET, not a diff.
+
+# The restore tier, ENUMERATED — three mechanical acts, and no fourth (autonomy-act-03)
+python tools/awareness/restore_acts.py --list
+python tools/awareness/restore_acts.py --plan [--json]                      # candidates; ACTS NOTHING
+python tools/awareness/restore_acts.py --apply reap_dead_lease --target <task-id>
+python tools/awareness/restore_acts.py --apply prune_gone_census_entry --target <census entry>
+python tools/awareness/restore_acts.py --apply restart_stale_daemon --target tools.genesis.daemon
+python tools/awareness/restore_acts.py --apply <act> --target <t> --dry-run   # prove, audit nothing, act on nothing
+# A CLOSED SET IS THE CONTROL. `ACTS` is a frozen mapping of exactly three
+# names; an open-ended "the agent decides what to fix" is not self-healing, it
+# is an unaudited actuator with write access to its own guardrails. There is
+# deliberately NO act that edits a claim, threshold or assertion so a surface
+# agrees — the module cannot even import the claims registry, and a test reads
+# its AST to prove it.
+# EVERY ACT IS prove -> audit -> apply -> confirm, IN THAT ORDER.
+#   prove    re-derives the precondition from PRIMARY evidence now. `proven` is
+#            True | False | None, and None (cannot tell) REFUSES.
+#   audit    writes `awareness.restore_act` / restore.<act>.intent to
+#            audit_trail BEFORE acting, raise_on_error=True. No row, no act:
+#            `unaudited_refused` — an unaudited automatic repair is
+#            indistinguishable from drift. On a PG database that has not run
+#            migration 20260821045946 the CHECK refuses the type and EVERY act is
+#            refused; that is the correct reading, not an obstacle.
+#   apply    one lease file / one census line / one pid. Nothing else.
+#   confirm  re-reads the world; `applied_unconfirmed` is never `applied`.
+# THE THREE:
+#   reap_dead_lease          kanban:task:<id> only. Holder pid PROVABLY dead AND
+#                            the task not heartbeating — rem-hyg-15's
+#                            `_task_is_heartbeating`, the same question every
+#                            reaper asks (autonomy-adm-03), not a third opinion.
+#                            rem-hyg-13 measured holder_is_alive() False FOUR
+#                            SECONDS after a heartbeat: the pid on the lease is
+#                            the dispatcher's, which exits while the worker runs
+#                            on. `service:` etc. are out of scope — nothing
+#                            heartbeats for them, so the two-signal proof cannot
+#                            be made. Undo: `kanban/cli.py --claim <id>`.
+#   prune_gone_census_entry  ONE line from ONE of five enumerated census files
+#                            (undeclared_import, perfect_score, kanban_raw_insert,
+#                            ci_test_backlog, ci_skip), and only when the FILE the
+#                            line names does not exist — what a Path.exists() can
+#                            verify. A fixed site whose file still exists is the
+#                            scanner's own --prune to decide. Only ever shrinks,
+#                            so cef-ci-02's census_growth never objects. Undo:
+#                            `git checkout -- <census>`.
+#   restart_stale_daemon     terminate ONE supervised child whose import closure
+#                            is `stale` per code_staleness (autonomy-id-02), only
+#                            while the supervisor is UP (autonomy-id-03) to
+#                            restart it from the current tree within 30s. No
+#                            supervisor => refused: that is a kill, not a
+#                            restart. The pid must be the identity row's pid AND
+#                            its command line must run the service's script
+#                            (supervisor_status.SERVICES, the same fragments the
+#                            launcher kills by) — a reused pid, a `bash -c` that
+#                            merely typed the name, and an unreadable process
+#                            table all refuse. Graceful terminate, never kill.
+# `--plan` re-proves every candidate and prints the refusals too, and it states
+# what it MEASURED (leases / census files read / staleness state) beside the
+# verdict, because "no candidate" over an unmeasured fleet is the fabricated
+# clean bill this whole card series exists to refuse.
+# An INCIDENT becomes a STANDING CLAIM, and the claim cites it (autonomy-lrn-01)
+python tools/awareness/claim_verifier.py --incidents              # which fixed incidents have NO claim
+python tools/awareness/claim_verifier.py --incidents --window-days 30 --json
+python tools/awareness/claim_verifier.py --list                   # each claim <- the card(s) it was learned from
+# WHY. Every defect gets a fixture-based unit test pinning ONE function, and when the
+# same defect exists at a second site that test still passes. hgx-park-01 made
+# workflow_runner._park_for_approval atomic and its structural tests read THAT
+# function's source; mcp_executor.open_approval_gate kept the identical two-commit
+# park for weeks, read as Windows flake, until rem-hyg-19. A claim over the DATA
+# (`approval_park_is_whole`: a gate awaiting a decision under a run that is not
+# parked) is the same finding whichever site wrote it. Measured 2026-08-21: 58
+# done `fix` cards in 7 days, 5 guarded, 53 UNGUARDED — the conversion was
+# manual and mostly did not happen.
+# Every Claim carries an `Incident` (task ids + the date OBSERVED). It is a
+# VERIFIED FACT only when every cited card is `done` on the board AND landed on
+# the default branch (tools/kanban/landed_check, the one "is it on main"); a card
+# in `pr_opened` is a fix that has not happened yet. True | False | None — an
+# unreadable board or a shallow clone is None, never verified. Distinct ids, never
+# rows: an incident cited by two claims is ONE incident; one claim citing two
+# sites guards TWO. A board with no done fix in the window is UNMEASURABLE with
+# None counts, never "0 unguarded". Nothing seeds a claim automatically — the two
+# derivations that share no code are authored by whoever fixed the defect, with
+# the incident cited. Report only. Library: tools/awareness/incident_claims.py
 # Substrate probe — does the thing you are about to design against HAVE ROWS? (#trust-disc-04)
 python tools/awareness/capability_consumption.py --probe-plan <plan.md> --substrate-gate  # BEFORE writing code
 python tools/awareness/capability_consumption.py --probe-substrate kg_ontology            # one table
@@ -716,6 +869,34 @@ python -m tools.kanban.status_churn --min-returns 5
 # window. Report only; it measures the BOARD, not a diff, so a --gate would
 # fail commits for a condition the committer did not cause.
 
+# Consume the detectors nobody runs — and file each finding ONCE, with its evidence (autonomy-act-02)
+python -m tools.kanban.detector_findings --json          # run status_churn + born_red_survey + recovery_summary, seed cards
+python -m tools.kanban.detector_findings --dry-run       # run the detectors; write NOTHING (no rows, no cards)
+python -m tools.kanban.detector_findings --list          # browse the projection (--detector, --status active|cleared)
+python -m tools.kanban.detector_findings --stats         # per-detector denominator: never_ran | unmeasurable | clean | findings
+python tools/genesis/daemon.py --reflex detector_findings_reflex   # the 6h reflex, once, through the daemon
+# THE DEFECT. status_churn (kpr-watch-11), born_red_survey (rem-hyg-14) and
+# recovery_summary (rem-hyg-16) were each built because a human found the defect
+# BY HAND, and each then sat imported by NOBODY on any runtime path — the
+# declared-but-unconsumed defect reaching the self-observation layer. This builds
+# NO detector; it runs the three that exist on the Genesis cadence.
+# A CARD CARRIES ITS DERIVATION: the detector's own row verbatim, the exact
+# command that re-derives it, and what "fixed" looks like. Never a bare alert.
+# DEDUPE ON THE FINDING, NOT THE RUN: one `detector_findings` row per
+# (detector, subject, fingerprint), upserted with `seen_count` — the cef-ui-02
+# projection shape. A card is seeded on FIRST sight and again only if the finding
+# RECURS after its card closed (`-r2`, `card_count`); `idempotency_key` on the
+# spec is the second lock inside create_tasks. Cards land in `suggested` (HITL
+# quarantine) by default — `seed_status` in args/genesis_config.yaml.
+# UNMEASURABLE CLEARS NOTHING: an idle board, an unmigrated baseline, an empty
+# audit window each report that they could not measure, and only a MEASURABLE
+# run that no longer reports a finding marks it `cleared`. `detector_runs` is
+# the denominator keeping never_ran / unmeasurable / clean apart.
+# Bounded per run (`max_cards_per_run`, default 6, worst-first) and the bound is
+# REPORTED as `cards_deferred`, never silent. Measured on the live board
+# 2026-08-21: 0 oscillating, 3 born-red, 3 needed_a_human -> 6 cards.
+# Migration 20260821050135. Seeds through task_factory.create_tasks, never a raw INSERT.
+
 # Would that check have been RIGHT to refuse? Surveyed; answer is NO (kpr-fix-03)
 python -m tools.kanban.landed_dispatch_survey --json
 python -m tools.kanban.landed_dispatch_survey --window-days 30
@@ -793,6 +974,39 @@ python tools/ci/undeclared_import_census.py --prune          # drop entries whos
 # on the very runner where a package is missing it reports nothing.
 # 210 sites grandfathered BY NAME in args/undeclared_import_census.txt;
 # `undeclared_max` in args/undeclared_import_gate.yaml may only go DOWN.
+
+# This repo is PUBLIC: nothing from the trading domain comes back (xit-leak-01)
+python tools/ci/domain_leak_gate.py --check                   # CI security job; exit 1 on a violation
+python tools/ci/domain_leak_gate.py --staged --check          # what .githooks/pre-commit runs
+python tools/ci/domain_leak_gate.py --json
+# Refuses a BROKER CREDENTIAL (Alpaca key ids / APCA headers, Kraken private
+# keys, Tradier / Tastytrade / Schwab / IBKR tokens, Coinbase CDP key names,
+# exchange secrets -- patterns in tools/security/secret_detector.py, category
+# broker_credential, SURVEYED at 0 hits before arming), an ad_* table DUMP in a
+# data file, and -- once `paths.mode` flips to enforce in the removal PR -- any
+# file under a removed trading path. Allow entries in args/domain_leak_gate.yaml
+# need a written reason. ICDEV_DOMAIN_LEAK_GUARD=0 stands it down; never `|| true`.
+
+# Every table has ONE owner: core | it | ft (xit-decl-04)
+python tools/db/schema_ownership.py --check                   # CI; exit 1 on an unowned/duplicate/foreign/stale table
+python tools/db/schema_ownership.py --regenerate              # after editing args/schema_ownership_rules.yaml
+python tools/db/schema_ownership.py --table kanban_tasks      # owner + where it is declared
+python tools/workflow/coherence_checker.py --check schema_ownership --gate
+# 2,096 distinct tables are created under tools/ (init_icdev_db.py's 527 in ONE
+# string, fourteen canvas init_db modules, kanban, trading, 430 migrations) and
+# nothing said which belonged to the kernel both ICDEV parents install, to
+# ICDEV[IT], or to the trading domain leaving for the private ICDEV[FT] repo.
+# The manifests (icdev/core/schema/tables.yaml = core, tools/db/schema/
+# tables.yaml = it + ft) are GENERATED from args/schema_ownership_rules.yaml --
+# change a rule, never a manifest line; the check fails on a stale manifest.
+# args/schema_ownership_gate.yaml says which owners a migration HERE may touch;
+# the removal PR drops ft, and then an ad_* table cannot come back. `rls_exempt`
+# (in the rules, flowing into the manifests) is the generalisation of
+# get_canvas_connection and is EMPTY at adoption. icdev/core/sensitivity.py is
+# the ONE sensitivity seam (labels low->high, default, egress_restricted,
+# dominates(), rls_exempt_tables()) read from icdev_domain.yaml; the four
+# hard-coded classification ladders in the tree are rewired onto it by
+# xit-core-*, one PR each, asserted behaviour-identical for IT.
 
 # A module that computes the REPO ROOT from its own location (xit-decl-03)
 python tools/ci/self_root_census.py --check                  # the gate; exit 1 on a NEW site
@@ -1386,6 +1600,8 @@ from tools.llm.router import LLMRouter
 ```
 
 The root `tools/` package is a backward-compatibility shim (`tools/__init__.py`) that redirects `tools.xxx` to `icdev.tools.xxx`. Existing scripts continue to work, but all new code must use `icdev.tools.*`.
+
+**In a source checkout the two spellings are ONE module object (xit-decl-02).** `tools/__init__.py` installs `icdev/core/shim.py`, a meta-path finder that answers `icdev.tools.X` with the object already bound to `tools.X` — so a monkeypatch on either spelling lands on the code under test, and a module-level singleton exists once. The physical file is the one under `tools/` (aliasing the other way would re-root 2,054 `Path(__file__)` sites onto the packaged copies under `icdev/`). Five `tools/` files are tiny shims over a real implementation that lives only in `icdev/tools/` (`llm/agent_loop`, `showcase/synthetic_data_engine`, `testing/qa_agent_runner`, `testing/selector_healer`, `billing/tier`) and resolve to that file under both names. The finder never installs in the wheel or beside a project's own `tools/` package. Pinned by `tests/test_namespace_identity.py`.
 
 **Test environments:** `tests/conftest.py` automatically injects the repo root into `sys.path` and forces `ICDEV_STORAGE_BACKEND=sqlite`. If you see `ModuleNotFoundError: No module named 'icdev'`, the repo root is not on `PYTHONPATH` and the package is not installed in editable mode.
 

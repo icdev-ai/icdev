@@ -16,6 +16,13 @@ THE RULE FOR ADDING ONE. ``reported`` and ``derived`` must not share code. If
 the verifier calls what the surface calls, it proves the function is
 deterministic — which was never in question. Every defect below survived
 because one computation was trusted twice.
+
+AND IT CITES ITS INCIDENT (autonomy-lrn-01). Every claim carries an
+``Incident`` naming the card(s) that fixed the defect it was learned from. A
+claim is seeded from a VERIFIED FACT — the card is done and the id is on main,
+checked by ``tools/awareness/incident_claims.py`` — never from a pattern in the
+system's own reported history. ``python tools/awareness/claim_verifier.py
+--incidents`` names the window's fixed incidents that still have NO claim.
 """
 
 from __future__ import annotations
@@ -24,7 +31,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 
-from tools.awareness.claim_verifier import Claim, independent_observations
+from tools.awareness.claim_verifier import Claim, Incident, independent_observations
 
 
 def _conn():
@@ -313,6 +320,209 @@ def _no_stuck_writer(reported: Dict[str, str], derived: Dict[str, str]) -> bool:
     return "stuck_writer" not in (derived or {}).values()
 
 
+# --------------------------------------------------------------------------- #
+# 5. An approval park is WHOLE, at every site  (hgx-park-01 + rem-hyg-19)
+# --------------------------------------------------------------------------- #
+#: THE INCIDENT THIS MODULE'S PROVENANCE RULE WAS WRITTEN FOR. hgx-park-01 made
+#: `workflow_runner._park_for_approval` commit the gate row and the run row in
+#: ONE transaction and pinned it with structural tests reading THAT function's
+#: source. `mcp_executor.open_approval_gate` had the identical two-commit
+#: defect, kept failing `assert 'running' == 'awaiting_approval'` on the Windows
+#: runner, and was read as flake until rem-hyg-19 — weeks later.
+#:
+#: A claim over the DATA has no second-site blind spot: whichever function
+#: parks, a gate row awaiting a decision under a run that does not read
+#: `awaiting_approval` (or a parked run with no pending gate) is the half-commit,
+#: observed. The reported side is the HITL surface's own list of pending gates;
+#: the derived side reads the RUN table and joins across, sharing no code.
+#:
+#: Measured 2026-08-21: this board has never held a parked gate (121 step rows,
+#: none awaiting), so the claim reads UNMEASURABLE today — never `agrees`.
+def _reported_pending_gates() -> List[str]:
+    """What the HITL surface lists as awaiting a decision (step ids)."""
+    from tools.studio.workflow_runner import get_pending_approvals
+    return sorted(get_pending_approvals())
+
+
+def _derived_pending_gates() -> List[str]:
+    """From the RUN side: pending gates under PARKED runs, plus a sentinel for
+    every parked run that has no pending gate at all. Raw SQL, no runner code."""
+    conn = _conn()
+    try:
+        whole = conn.execute(
+            "SELECT s.step_run_id AS g FROM studio_workflow_runs r "
+            "JOIN studio_workflow_run_steps s ON s.run_id = r.run_id "
+            "WHERE r.status = 'awaiting_approval' AND s.status = 'awaiting_approval'"
+        ).fetchall()
+        gateless = conn.execute(
+            "SELECT r.run_id AS g FROM studio_workflow_runs r "
+            "WHERE r.status = 'awaiting_approval' AND NOT EXISTS ("
+            "  SELECT 1 FROM studio_workflow_run_steps s "
+            "  WHERE s.run_id = r.run_id AND s.status = 'awaiting_approval')"
+        ).fetchall()
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+    out = [str(dict(r)["g"]) for r in whole]
+    out += [f"run-without-gate:{dict(r)['g']}" for r in gateless]
+    return sorted(out)
+
+
+def _park_is_whole(reported: List[str], derived: List[str]) -> bool:
+    """Every gate the surface shows sits under a parked run, and every parked
+    run shows a gate. A gate in `reported` missing from `derived` is the first
+    half of a two-commit park; a `run-without-gate:` sentinel is the other
+    order. Either one is the defect, whichever site wrote it."""
+    return set(reported or []) == set(derived or [])
+
+
+# --------------------------------------------------------------------------- #
+# 5. A held task lease has a live holder  (rem-hyg-15)
+# --------------------------------------------------------------------------- #
+# THE INCIDENT. A lease taken by a one-shot script pinned three tasks after the
+# process that took it had exited. `promote_backlog_to_scheduled` skipped every
+# pinned task, and the board sat `idle [review_bound]` for an hour with free
+# capacity — reporting idleness as a fact about the QUEUE when it was a fact
+# about a dead process.
+#
+# The two sides share no code: the LEASE FILES on disk say what is held; the
+# PROCESS TABLE and the task heartbeat say who is alive. A dead pid alone is not
+# proof (the dispatching pid exits after handoff, which is what rem-hyg-15 got
+# wrong first), so the derivation asks the same two-signal question adm-03
+# consolidated — and `None` from either means CANNOT TELL, which counts as ALIVE.
+def _reported_task_leases() -> Any:
+    """Every kanban task lease the coordination layer currently reports held."""
+    try:
+        from tools.coordination import leases
+        from tools.coordination.constants import LEASE_DIR
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        if not LEASE_DIR.exists():
+            return []
+        held = []
+        for path in sorted(LEASE_DIR.glob("kanban_task_*.json")):
+            # The file name is the resource, sanitised. Recover the task id from
+            # the lease's own metadata rather than un-mangling the name.
+            meta = leases.holder(_resource_from_meta(path))
+            if meta:
+                held.append(str(meta.get("resource") or path.stem))
+        return sorted(set(held))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _resource_from_meta(path) -> str:
+    """The `resource` a lease file records, or its stem if unreadable."""
+    import json
+
+    try:
+        return str(json.loads(path.read_text(encoding="utf-8")).get("resource")
+                   or path.stem)
+    except Exception:  # noqa: BLE001
+        return path.stem
+
+
+def _derived_leases_with_a_live_holder() -> Any:
+    """The same leases, kept only where the holder is alive or unknowable.
+
+    UNKNOWABLE COUNTS AS ALIVE. `holder_is_alive` returns None when it cannot
+    tell, and treating that as dead is precisely how a live worker loses its
+    lease — the error rem-hyg-15 made on its first probe, reaping a lease whose
+    task had heartbeat four seconds earlier.
+    """
+    try:
+        from tools.coordination import leases
+    except Exception:  # noqa: BLE001
+        return None
+    reported = _reported_task_leases()
+    if reported is None:
+        return None
+
+    alive = []
+    for resource in reported:
+        try:
+            verdict = leases.holder_is_alive(resource)
+        except Exception:  # noqa: BLE001
+            verdict = None
+        if verdict is not False:          # True or None -> alive
+            alive.append(resource)
+            continue
+        # A dead pid is not dead work: adm-03 requires a heartbeat as an
+        # independent second signal before anything is treated as gone.
+        task_id = resource.split(":")[-1]
+        if _task_is_heartbeating(task_id):
+            alive.append(resource)
+    return sorted(alive)
+
+
+def _task_is_heartbeating(task_id: str) -> bool:
+    """Second signal, asked of the board rather than the process table."""
+    try:
+        from tools.kanban.lease_liveness import task_is_heartbeating
+        return bool(task_is_heartbeating(task_id))
+    except Exception:  # noqa: BLE001
+        # Cannot tell -> assume alive, for the same reason as above.
+        return True
+
+
+# --------------------------------------------------------------------------- #
+# 6. A dispatchable task has no open PR  (rem-hyg-18)
+# --------------------------------------------------------------------------- #
+# THE INCIDENT. `pr_opened` had exactly ONE writer in the tree — the stale
+# reaper, gated on `status = 'in_progress'` — so a task in `scheduled` or
+# `backlog` with an open PR could reach it by NO path. The Home panel read the
+# forge and showed three PRs while the Kanban column read the status and showed
+# none. 77 `pr_opened` transitions in seven days with zero tasks in that state
+# is the shape of a status reachable only as a side effect.
+#
+# The two sides are the BOARD and the FORGE — two systems, no shared code.
+_DISPATCHABLE_STATUSES = ("backlog", "scheduled")
+
+
+def _reported_dispatchable_tasks() -> Any:
+    """Tasks the board is willing to hand to a worker."""
+    try:
+        with _conn() as conn:
+            marks = ", ".join(["%s"] * len(_DISPATCHABLE_STATUSES))
+            rows = conn.execute(
+                "SELECT id FROM kanban_tasks WHERE status IN (" + marks + ")",
+                _DISPATCHABLE_STATUSES,
+            ).fetchall()
+    except Exception:  # noqa: BLE001
+        return None
+    return sorted({str(dict(r).get("id")) for r in rows or []})
+
+
+def _derived_tasks_without_an_open_pr() -> Any:
+    """The same set, minus every task the FORGE says already has an open PR."""
+    import json
+    import subprocess  # nosec B404 — gh only, fixed argv, shell=False
+
+    dispatchable = _reported_dispatchable_tasks()
+    if dispatchable is None:
+        return None
+    try:
+        result = subprocess.run(  # nosec B603 B607
+            ["gh", "pr", "list", "--state", "open", "--limit", "300",
+             "--json", "headRefName"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=45, check=False, shell=False,
+        )
+        if result.returncode != 0:
+            return None
+        branches = {str(pr.get("headRefName") or "")
+                    for pr in json.loads(result.stdout or "[]")}
+    except Exception:  # noqa: BLE001
+        # An unreachable forge is UNMEASURABLE, never "no open PRs" — the latter
+        # would report every board clean whenever `gh` was unavailable.
+        return None
+    with_pr = {t for t in dispatchable if "kanban/" + t in branches}
+    return sorted(set(dispatchable) - with_pr)
+
+
 REGISTRY: List[Claim] = [
     Claim(
         claim_id="posture_score_needs_evidence",
@@ -327,6 +537,8 @@ REGISTRY: List[Claim] = [
         agree=_scored_implies_evidence,
         tier="propose",
         tags=["compliance", "rem-hyg-09"],
+        incident=Incident(["rem-hyg-09"], "2026-08-20",
+                          "posture returns None, never 100.0, for a canvas with no rows"),
     ),
     Claim(
         claim_id="cache_unlogged_is_measured",
@@ -340,6 +552,8 @@ REGISTRY: List[Claim] = [
         derived=_actual_unlogged,
         tier="propose",
         tags=["cache", "cch-obs-03"],
+        incident=Incident(["cch-obs-03"], "2026-08-20",
+                          "`unlogged` is read from pg_class.relpersistence"),
     ),
     Claim(
         claim_id="recovery_counts_outcomes_not_attempts",
@@ -353,6 +567,8 @@ REGISTRY: List[Claim] = [
         derived=_derived_recoveries,
         tier="propose",
         tags=["autonomy", "rem-hyg-16"],
+        incident=Incident(["rem-hyg-16"], "2026-08-20",
+                          "the recovery panel counts tasks that merged un-escalated"),
     ),
     Claim(
         claim_id="repetition_is_not_corroboration",
@@ -366,6 +582,63 @@ REGISTRY: List[Claim] = [
         derived=_derived_series_health,
         agree=_no_stuck_writer,
         tier="propose",
-        tags=["evidence-quality"],
+        tags=["evidence-quality", "rem-hyg-17"],
+        incident=Incident(["rem-hyg-17"], "2026-08-20",
+                          "this claim's own first live run: narrowed to output "
+                          "frozen while its INPUT moved"),
+    ),
+    Claim(
+        claim_id="approval_park_is_whole",
+        description=(
+            "A Studio approval gate awaiting a decision must sit under a run "
+            "that reads awaiting_approval, and a parked run must show a gate. "
+            "The park was TWO commits at two sites: hgx-park-01 made "
+            "workflow_runner._park_for_approval atomic and its structural tests "
+            "read that function; mcp_executor.open_approval_gate kept the "
+            "defect for weeks, read as Windows flake, until rem-hyg-19."
+        ),
+        reported=_reported_pending_gates,
+        derived=_derived_pending_gates,
+        agree=_park_is_whole,
+        tier="propose",
+        tags=["studio", "hitl", "hgx-park-01", "rem-hyg-19"],
+        incident=Incident(["hgx-park-01", "rem-hyg-19"], "2026-08-20",
+                          "both park sites commit the gate row and the run row "
+                          "in one transaction"),
+    ),
+    Claim(
+        claim_id="held_task_lease_has_a_live_holder",
+        description=(
+            "Every held kanban task lease must have a holder that is alive, or "
+            "whose liveness cannot be determined. A lease taken by a one-shot "
+            "script pinned three tasks after its process exited; the board sat "
+            "`idle [review_bound]` for an hour with free capacity, reporting "
+            "idleness as a fact about the QUEUE when it was a fact about a dead "
+            "process."
+        ),
+        reported=_reported_task_leases,
+        derived=_derived_leases_with_a_live_holder,
+        tier="propose",
+        tags=["kanban", "rem-hyg-15"],
+        incident=Incident(["rem-hyg-15", "autonomy-adm-03"], "2026-08-20",
+                          "liveness needs a dead pid AND no heartbeat, and "
+                          "cannot-tell counts as alive"),
+    ),
+    Claim(
+        claim_id="dispatchable_task_has_no_open_pr",
+        description=(
+            "A task the board is willing to dispatch must not already have an "
+            "open PR. `pr_opened` had ONE writer, gated on `in_progress`, so a "
+            "scheduled task with a PR could reach it by no path — the Home "
+            "panel read the forge and showed three, the Kanban column read the "
+            "status and showed none."
+        ),
+        reported=_reported_dispatchable_tasks,
+        derived=_derived_tasks_without_an_open_pr,
+        tier="propose",
+        tags=["kanban", "rem-hyg-18"],
+        incident=Incident(["rem-hyg-18"], "2026-08-21",
+                          "_reconcile_pr_opened moves a scheduled/backlog task "
+                          "with an open PR into pr_opened every cycle"),
     ),
 ]

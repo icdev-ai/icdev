@@ -1,0 +1,5 @@
+# autonomy-cov-01 — two claims authored from confirmed incidents, and one
+# WITHDRAWN. Pins that cannot-tell counts as ALIVE (reaping on an unknown is how
+# a live worker loses its lease), that an unreachable forge is None and never
+# "no open PRs", and that the withdrawn claim does not return without evidence.
+tests/awareness/test_claims_cov_01.py

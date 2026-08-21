@@ -75,6 +75,13 @@ SCHEMA = [
         id TEXT PRIMARY KEY, session_id TEXT, tenant_id TEXT, classification TEXT,
         function TEXT, agent_id TEXT, user_id TEXT, gates_json TEXT,
         outcome TEXT, blocked INTEGER, provenance_id TEXT, created_at TEXT)""",
+    # The daemon's own append-only run log. autonomy-act-01 reads the per-claim
+    # `verdicts` map the claim_verifier_reflex leaves in `details` (parsed in
+    # Python) for the verified_claim class -- existing telemetry, no new table.
+    """CREATE TABLE genesis_audit (
+        id TEXT PRIMARY KEY, event_type TEXT NOT NULL, reflex_name TEXT,
+        risk_tier TEXT, details TEXT, success INTEGER, duration_ms INTEGER,
+        metric_name TEXT, metric_value REAL, gkp_id TEXT, created_at TEXT NOT NULL)""",
 ]
 
 CONFIG = {
@@ -416,6 +423,9 @@ def test_report_uses_only_existing_telemetry_tables(conn_factory):
         # rung detail rides in the same free-form gates_json blob ctx-obs-02's
         # timings and trust-kg-03's kg_grounding already use.
         "cortex_audit",
+        # The genesis daemon's run log, which autonomy-act-01 reads for the
+        # verified_claim class. Older than every reflex it records.
+        "genesis_audit",
     }
     report = capcon.collect(conn=conn_factory(), config=CONFIG)
     for cls in report["classes"]:
@@ -429,7 +439,21 @@ def test_shipped_config_covers_every_probe():
     assert set(cfg.get("classes") or {}) == set(capcon.PROBES)
     covered = {c["capability_class"] for c in cfg.get("known_inert_cases") or []}
     assert covered <= set(capcon.PROBES)
-    assert len(cfg.get("known_inert_cases") or []) == 5
+    # Five documented incidents plus autonomy-act-01's: the claim verifier,
+    # which was the one immune-system component this file did not cover.
+    assert len(cfg.get("known_inert_cases") or []) == 6
+
+
+def test_a_claim_verifier_nobody_runs_reads_inert_not_clean(conn_factory):
+    """autonomy-act-01. With the daemon log present and empty, every registered
+    claim is declared and none consumed -- measured, not unmeasurable, and not
+    a clean bill of health."""
+    report = capcon.collect(conn=conn_factory(), config=CONFIG, only=["verified_claim"])
+    cls = _by_class(report)["verified_claim"]
+    assert cls["telemetry_available"] is True
+    assert cls["declared"] >= 4, "the four rem-hyg-17 claims must be declared"
+    assert cls["consumed"] == 0 and cls["inert"] == cls["declared"]
+    assert cls["extra"]["reflex_registered"] is True
 
 
 def test_class_filter_restricts_the_report(conn_factory):
@@ -467,18 +491,27 @@ def test_a_hook_point_nothing_dispatches_reports_inert(conn_factory):
     Without the control this test would pass just as well if the probe silently
     read nothing at all — the failure mode the tool exists to detect.
     """
+    # The control is `agent_end`, not a chat point: autonomy-wire-01 DISABLED
+    # chat_message_before/after in args/extension_config.yaml (they had zero
+    # call sites in the tree), and a disabled point is not declared — so a
+    # control on one would silently stop being a control.
     report = capcon.collect(
-        conn=conn_factory([_dispatch_row("chat_message_after")]),
+        conn=conn_factory([_dispatch_row("agent_end")]),
         config=CONFIG,
         only=["extension_hook_point"],
     )
     cls = _by_class(report)["extension_hook_point"]
 
     assert cls["telemetry_available"] is True
-    assert cls["declared"] == 6
+    # The whole ENABLED set. This number moves when a point is enabled or
+    # disabled in args/extension_config.yaml, and it is asserted rather than
+    # derived on purpose: deriving it from the same config the probe reads
+    # would make the assertion a tautology, and the declared set silently
+    # shrinking is exactly what this class exists to catch.
+    assert cls["declared"] == 4
     assert cls["consumed"] == 1, "the positive control did not register"
     assert "tool_execute_after" in cls["inert_units"]
-    assert "chat_message_after" not in cls["inert_units"]
+    assert "agent_end" not in cls["inert_units"]
 
 
 def test_rows_from_another_surface_are_not_counted_as_dispatches(conn_factory):
@@ -502,15 +535,18 @@ def test_a_dispatch_whose_handler_failed_still_counts_as_consumption(conn_factor
     broken hook behind the same number as a hook nobody calls.
     """
     report = capcon.collect(
-        conn=conn_factory([_dispatch_row("chat_message_before", status="error")]),
+        # `tool_execute_before`, not a chat point — autonomy-wire-01 disabled
+        # those, and a disabled point is not declared, so the "wired and broken"
+        # reading this test pins could not be observed on one.
+        conn=conn_factory([_dispatch_row("tool_execute_before", status="error")]),
         config=CONFIG,
         only=["extension_hook_point"],
     )
     cls = _by_class(report)["extension_hook_point"]
 
-    assert "chat_message_before" not in cls["inert_units"]
+    assert "tool_execute_before" not in cls["inert_units"]
     assert cls["extra"]["failed_dispatch_events"] == 1
-    assert cls["extra"]["points_with_failures"] == ["chat_message_before"]
+    assert cls["extra"]["points_with_failures"] == ["tool_execute_before"]
 
 
 def test_a_point_disabled_in_config_is_not_counted_as_declared(

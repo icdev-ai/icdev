@@ -749,18 +749,32 @@ def cmd_release(task_id: str, json_out: bool) -> int:
     A claim whose holder is still RUNNING is left alone. That one is real: another
     live session is building the task, and stealing its claim is precisely the
     duplicate-build race the claim exists to prevent.
+
+    AND A DEAD PID IS NOT DEAD WORK (autonomy-adm-03). The pid on a runner's
+    lease is the dispatcher's, which exits after handing off while the worker
+    heartbeats on under another pid. ``release_stale`` reads only the pid, so
+    this fallback used to reclaim a live worker's lease on request and hand the
+    runner a second copy of the task. The reclaim now goes through
+    :func:`tools.kanban.lease_liveness.reap_if_litter`, the SAME two-signal
+    verdict the dispatch window uses: a task that is still heartbeating is
+    refused with the reason, and the heartbeat ages out on its own
+    (``HEARTBEAT_LIVE_MINUTES``) once the worker really is gone. An unreadable
+    heartbeat reads as alive — cannot-tell must never license a reap.
     """
     from tools.coordination import leases
+    from tools.kanban import lease_liveness
 
     resource = _task_lease_resource(task_id)
     prior = leases.holder(resource)
     released = leases.release(resource)
     reclaimed = False
-    if not released:
-        reclaimed = leases.release_stale(resource)
+    verdict = None
+    if not released and prior is not None:
+        verdict, reclaimed = lease_liveness.reap_if_litter(task_id)
         released = reclaimed
 
     still = leases.holder(resource)
+    worker_alive = verdict is not None and verdict.state == lease_liveness.STATE_WORKING
     if json_out:
         print(json.dumps({
             "released": released,
@@ -768,17 +782,29 @@ def cmd_release(task_id: str, json_out: bool) -> int:
             "task_id": task_id,
             "prior_holder": (prior or {}).get("holder_session"),
             "still_held_by": (still or {}).get("holder_session"),
+            "lease_state": verdict.state if verdict is not None else None,
+            "worker_heartbeating": worker_alive,
         }, indent=2))
     elif released and reclaimed:
         print(f"  RELEASED: {task_id} (reclaimed from exited session "
               f"{(prior or {}).get('holder_session')}, pid {(prior or {}).get('pid')})")
     elif released:
         print(f"  RELEASED: {task_id}")
+    elif still and worker_alive:
+        # The holder's pid is gone but the task is heartbeating: a worker is
+        # building it right now under a different pid. Reclaiming here is the
+        # duplicate-build race, with a human's hand on the lever.
+        print(f"  STILL CLAIMED — the worker is HEARTBEATING: {task_id}")
+        print(f"    {lease_liveness.describe(verdict)}")
+        print("    release is refused while the task heartbeats; it ages out after "
+              f"{lease_liveness.HEARTBEAT_LIVE_MINUTES} min once the worker stops.")
     elif still:
         # Not a failure to report as "not held by you" — the holder is ALIVE,
         # and that is the case the claim exists for.
         print(f"  STILL CLAIMED by a LIVE session "
               f"{still.get('holder_session')} (pid {still.get('pid')}): {task_id}")
+        if verdict is not None:
+            print(f"    {lease_liveness.describe(verdict)}")
     else:
         print(f"  NOT CLAIMED: {task_id}")
     return 0 if released else 1
@@ -904,6 +930,12 @@ def cmd_build_model(model: str, json_out: bool) -> int:
 
 
 def main():
+    # xit-decl-01: the board CLI moves rows; refuse when the process env names a
+    # database this parent did not declare (two parents share one shell).
+    from icdev.core.context import assert_identity
+
+    assert_identity(anchor=__file__)
+
     from tools.kanban.requeue import REQUEUE_STATUSES
 
     parser = argparse.ArgumentParser(

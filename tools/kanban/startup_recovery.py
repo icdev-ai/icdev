@@ -245,19 +245,31 @@ def scan_live_task_processes(task_ids: Sequence[str]) -> Dict[str, int]:
 def _lease_holder_pid(task_id: str) -> Optional[int]:
     """PID of a LIVE holder of ``kanban:task:<id>``, or None.
 
-    ``holder_is_alive`` returns None when the answer is unknowable; per its own
-    contract that must not be read as death, but it is not evidence of life
-    either — the other three sources decide in that case.
+    Read through the shared verdict (``tools.kanban.lease_liveness``,
+    autonomy-adm-03) so this rung cannot drift from the dispatch reaper's idea
+    of what a lease holder is; it consumes the PID half only.
+
+    ``pid_alive`` is None when the answer is unknowable; per its own contract
+    that must not be read as death, but it is not evidence of life either — the
+    other three sources decide in that case.
+
+    The HEARTBEAT half is deliberately not evidence here. ``last_heartbeat_at``
+    is stamped by the scheduler for every child it can still poll, and this
+    sweep runs precisely when that scheduler has just restarted: a fresh
+    heartbeat proves only that the OLD process saw the worker alive before it
+    exited, not that the worker is alive now. Whether it is alive now is the
+    process scan's question (``EV_PROCESS``), answered directly. Reading the
+    stale stamp as life would hold every interrupted task for
+    ``HEARTBEAT_LIVE_MINUTES`` after each restart — the recovery policy
+    (kax-recover-04) is unchanged by this consolidation.
     """
     try:
-        from tools.coordination import leases
+        from tools.kanban import lease_liveness
 
-        resource = f"kanban:task:{task_id}"
-        if leases.holder_is_alive(resource) is not True:
+        verdict = lease_liveness.task_lease_verdict(task_id)
+        if verdict.pid_alive is not True:
             return None
-        meta = leases.holder(resource) or {}
-        pid = meta.get("pid")
-        return int(pid) if isinstance(pid, int) else None
+        return verdict.holder_pid
     except Exception as exc:  # noqa: BLE001
         logger.debug("startup-recovery: lease check failed for %s: %s", task_id, exc)
         return None

@@ -62,9 +62,14 @@ class ConnectionCounter:
         self._mods = []
         for name in _STORAGE_ALIASES:
             try:
-                self._mods.append(importlib.import_module(name))
+                mod = importlib.import_module(name)
             except ImportError:  # pragma: no cover — mirror may be absent
                 continue
+            # xit-decl-02: the two spellings are ONE module object now; wrapping
+            # it twice would count every open twice.
+            if any(mod is seen for seen in self._mods):
+                continue
+            self._mods.append(mod)
 
     def install(self):
         counter = self
