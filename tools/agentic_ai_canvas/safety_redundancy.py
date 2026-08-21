@@ -48,7 +48,11 @@ def analyze_safety_redundancy(nodes: list[dict], edges: list[dict]) -> dict:
             unprotected.append(agent)
 
     total = len(agent_nodes)
-    score = round(len(protected) / total * 100, 1) if total > 0 else 100.0
+    # NOT ASSESSED, never 100.0 (rem-hyg-13). `total` is the number of agent
+    # nodes on the design, so zero means the design has no agents to protect —
+    # an EMPTY canvas, not a fully-redundant one. The old `else 100.0` reported
+    # perfect safety redundancy for a design nobody had drawn yet.
+    score = round(len(protected) / total * 100, 1) if total > 0 else None
 
     return {
         "score": score,

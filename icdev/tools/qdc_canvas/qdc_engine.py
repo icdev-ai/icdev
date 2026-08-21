@@ -178,13 +178,21 @@ def assess_quality_design(graph_data: dict) -> dict:
                 }
             )
 
-    # Base score
-    score = 100.0 * (passed / rules_checked) if rules_checked else 100.0
-
-    # Extra deductions for severity
-    score -= by_severity.get("CAT1", 0) * 10
-    score -= by_severity.get("CAT2", 0) * 5
-    score = max(0.0, min(100.0, score))
+    # Base score — NOT ASSESSED, never 100.0 (rem-hyg-13). An empty rulebook
+    # means no check ran, which is the strongest possible reason NOT to publish
+    # a quality score. QDC_COMPLIANCE_RULES is non-empty today so this arm is
+    # unreached, and it is corrected anyway: the branch is what a future change
+    # filtering the rulebook would land on. Written as a statement rather than a
+    # conditional expression because the severity deductions below must not run
+    # against None.
+    if rules_checked:
+        score = 100.0 * (passed / rules_checked)
+        # Extra deductions for severity
+        score -= by_severity.get("CAT1", 0) * 10
+        score -= by_severity.get("CAT2", 0) * 5
+        score = max(0.0, min(100.0, score))
+    else:
+        score = None
 
     return {
         "assessed_at": _utcnow_iso(),
@@ -196,7 +204,7 @@ def assess_quality_design(graph_data: dict) -> dict:
             "by_severity": dict(by_severity),
             "by_category": dict(by_category),
         },
-        "score": round(score, 2),
+        "score": round(score, 2) if score is not None else None,
     }
 
 

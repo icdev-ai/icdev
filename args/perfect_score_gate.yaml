@@ -1,0 +1,125 @@
+# CUI // SP-CTI
+# Perfect-Score-For-No-Data Gate (rem-hyg-13)
+#
+# THE POLICY THIS ENCODES
+# -----------------------
+# Three of the four defects fixed on 2026-08-20 were one defect: a surface
+# rendering a CONFIDENT NUMBER over an ABSENCE. rem-hyg-08 drew a project card
+# from rows no epic claimed; cch-obs-03 and ctx-obs-03 reported cache and
+# governance rates nobody had measured; rem-hyg-09 scored canvases nobody had
+# ever assessed. The most dangerous concrete form is a HARDCODED PERFECT SCORE
+# returned when the denominator is empty:
+#
+#     pct = round(within / total_relevant * 100, 1) if total_relevant > 0 else 100.0
+#
+# Nothing was scanned, nothing was measured, and the page draws a full green bar
+# at 100%. It is strictly worse than a missing number: a missing number prompts
+# somebody to go and measure, and a perfect one closes the question.
+#
+# WHAT IS AND IS NOT A FINDING
+# ----------------------------
+# The finding is the CONJUNCTION —
+#
+#     a conditional expression whose FALLBACK arm is the float constant 100.0,
+#     guarding a body that computes a RATIO (a division).
+#
+# — and requiring the ratio is what keeps this gate high-signal. `else 100.0`
+# appears at 15 sites in the tree and two of them are not scores at all:
+# tools/trading/data/fixture_provider.py (a synthetic bar price) and
+# tools/trading/data/macro_data.py (the US Dollar Index, whose BASE IS 100 by
+# definition). Neither body divides, so the SCANNER excludes both structurally
+# and neither needs a written excuse. That is deliberate: an exemption list is a
+# claim a reviewer has to check, and a predicate is one the scanner re-derives
+# on every run.
+#
+# The same property disposes of a third false positive for free — a grep for
+# `else 100.0` matches tools/canvas_compliance/posture.py:260, which is a
+# COMMENT inside the rem-hyg-09 fix explaining the very defect removed there.
+# The scanner parses to an AST and cannot see a comment at all.
+#
+# The constant is the FLOAT 100.0 and never the bare int 100. Measured:
+# widening to the int adds ZERO true positives over this tree and adds one
+# legitimate site that would then need an excuse — tools/trading/dashboard/app.py
+# computes RSI as `100 - (100 / (1 + rs)) if avg_loss > 0 else 100`, and an RSI
+# of 100 with no down moves is the DEFINITION of the indicator. A gate that must
+# be argued with on its first run is one people learn to bypass.
+#
+# The broader `if X else 0` shape is deliberately NOT gated: 1,167 occurrences
+# across 566 files, most of them ordinary counters and indices. Refusing those
+# refuses routine work, which is the exact defect the PreToolUse fire-rate
+# survey found.
+#
+# THE CORRECT FIX
+# ---------------
+# The convention is already in the tree — tools/quality/component_scorer.py's
+# NOT_ASSESSED. Return None, never a number, and let the renderer say "not
+# assessed". Templates here already tell None from 0.0; see
+# tools/dashboard/templates/network/compare.html and network/enterprise.html.
+#
+# The policy is a RATCHET, not a sweep:
+#
+#   1. A NEW site fails `python tools/ci/perfect_score_census.py --check` by name.
+#   2. The sites that remain at adoption are grandfathered BY NAME in
+#      args/perfect_score_census.txt. They are debt, enumerated so it is
+#      countable — and so the SET cannot churn behind a constant count, which is
+#      exactly how the ungated-test gap regrew behind a green gate.
+#   3. `perfect_score_max` may ONLY go DOWN. Lower it when a site is fixed.
+#      Raising it is the visible, reviewable act of taking on another fabricated
+#      score, and it belongs in a PR description — never in a drive-by edit to
+#      get a commit through.
+#
+# Gate:  python tools/ci/perfect_score_census.py --check
+#        python tools/ci/perfect_score_census.py --changed <files> --check
+
+perfect_score_census:
+  # The enumerated census. Flat and line-oriented, so `merge=union` is safe for
+  # it the way it is for the manifest shards (see .gitattributes).
+  census_file: args/perfect_score_census.txt
+
+  # Ceiling on REGISTERED sites. MAY ONLY GO DOWN.
+  #
+  # ZERO AT ADOPTION, 2026-08-20 — nothing is grandfathered. The scanner found
+  # 12 ratio sites over tools/ and its icdev/tools/ mirror (24 entries; the
+  # other two of the card's 15 greps are the non-ratio trading fallbacks and are
+  # excluded by the PREDICATE, not by this file) and all 12 are FIXED in the
+  # adopting change, including both surfaces the card named as still live after
+  # rem-hyg-09 — tools/dashboard/api/compliance_debt.py and
+  # tools/compliance/fips200_validator.py.
+  #
+  # A ceiling of 0 is a stronger position than the raw-INSERT and
+  # undeclared-import censuses could take, and only because the set was small
+  # enough to drain: 12 sites against their 219 and 210. There is no
+  # "drain the census" follow-up card because there is no census to drain.
+  #
+  # It is set to exactly today's count, not a round number above it — headroom
+  # is permission. Since today's count is zero, ANY new entry breaches it, which
+  # is the intended and only posture.
+  perfect_score_max: 0
+
+  # A reason shorter than this is not a reason. Applies to the exclusions below.
+  min_reason_chars: 12
+
+  # icdev/tools/ is in scope on purpose: CLAUDE.md directs all NEW code at
+  # `icdev.tools.*`, so omitting the mirror would leave the growth path open.
+  scan_roots:
+    - tools
+    - icdev/tools
+
+  # An EXCLUSION asserts the pattern is CORRECT here — a different claim from a
+  # census entry, and it must not count against the ceiling we are driving down.
+  #
+  # Note how SHORT this list is, and why. The two non-score fallbacks the survey
+  # found legitimate are NOT here: `computes_ratio` rejects them structurally,
+  # which is a stronger guarantee than a line in a config file. Only this
+  # scanner's own source needs naming, and only because it must be able to talk
+  # about the shape it forbids.
+  exclude:
+    - path: tools/ci/perfect_score_census.py
+      reason: >-
+        this census tool's own source carries the forbidden expression in its
+        docstring and in the ADVICE text it prints, and its test fixtures are
+        built from the same shape. Excluded by name rather than left to the
+        accident that a docstring is not an IfExp.
+    - path: icdev/tools/ci/perfect_score_census.py
+      reason: >-
+        packaged mirror of the census tool — same reason as the tools/ copy.

@@ -242,6 +242,24 @@ jobs:
       - name: Undeclared-import census
         working-directory: ${{ github.workspace }}
         run: python tools/ci/undeclared_import_census.py --check
+      # rem-hyg-13 -- a hardcoded PERFECT SCORE returned when the denominator is
+      # empty. Nothing was scanned, nothing was assessed, and the page draws a
+      # full green bar at 100%. Strictly worse than a missing number: a missing
+      # number prompts somebody to go and measure, and a perfect one closes the
+      # question. Three of the four defects fixed on 2026-08-20 (rem-hyg-08,
+      # cch-obs-03/ctx-obs-03, rem-hyg-09) were this same shape.
+      #
+      # The finding is the CONJUNCTION -- a 100.0 fallback arm guarding a RATIO
+      # -- so the two non-score `else 100.0` fallbacks in tools/trading/ (a
+      # synthetic bar price; the US Dollar Index, whose base IS 100) are
+      # excluded by the predicate rather than by an exemption. All 12 ratio
+      # sites were FIXED rather than grandfathered, so `perfect_score_max` is
+      # 0 and args/perfect_score_census.txt is empty. Any entry breaches it.
+      #
+      # Do NOT add `|| true`. The failure names the file, line and expression.
+      - name: Perfect-score-for-no-data census
+        working-directory: ${{ github.workspace }}
+        run: python tools/ci/perfect_score_census.py --check
       - name: Isolation run — changed test files, alone
         working-directory: ${{ github.workspace }}
         run: python tools/ci/isolation_run.py --run

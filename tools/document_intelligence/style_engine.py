@@ -248,28 +248,49 @@ def check_sections(sections: list[dict]) -> dict:
     Returns::
 
         {
-          "overall_score": float,
-          "passed": bool,
-          "sections": [{"heading": ..., "result": StyleResult.to_dict()}, ...]
+          "overall_score": float | None,   # None == NOT ASSESSED
+          "passed": bool | None,
+          "assessed_sections": int,
+          "sections": [{"heading": ..., "assessed": bool,
+                        "result": StyleResult.to_dict()}, ...]
         }
+
+    ``overall_score`` is ``None`` — never a number — when no section carried any
+    prose to assess (rem-hyg-13). ``None`` and ``0.0`` are different claims and
+    the caller must be able to tell them apart.
     """
     results = []
     total_score = 0.0
+    assessed = 0
     for sec in sections:
         content = (sec.get("content") or "").strip()
         heading = (sec.get("heading") or "").strip()
         if not content:
-            results.append({"heading": heading, "result": StyleResult(score=100.0, passed=True).to_dict()})
+            # NOT ASSESSED. An empty section has no prose, so there is nothing
+            # for a style rule to fire on — which is not the same claim as
+            # "this prose is flawless". Every key of the StyleResult shape is
+            # kept so the response stays shape-compatible; the two that would
+            # be a fabrication are null.
+            empty = StyleResult(score=0.0, passed=False).to_dict()
+            empty["score"] = None
+            empty["passed"] = None
+            results.append({"heading": heading, "assessed": False, "result": empty})
             continue
         r = check_style(content)
         total_score += r.score
-        results.append({"heading": heading, "result": r.to_dict()})
+        assessed += 1
+        results.append({"heading": heading, "assessed": True, "result": r.to_dict()})
 
-    overall = total_score / len(results) if results else 100.0
+    # Divided by the number of sections ACTUALLY SCORED, not by len(results).
+    # The old spelling divided by every section including the empty ones while
+    # summing only the scored ones, so one clean section beside four empty ones
+    # averaged to 20 — a second fabrication, in the opposite direction.
+    overall = total_score / assessed if assessed else None
     cfg = _load_rules()
     passing = cfg.get("meta", {}).get("passing_score", 70)
     return {
-        "overall_score": round(overall, 1),
-        "passed": overall >= passing,
+        "overall_score": round(overall, 1) if overall is not None else None,
+        "passed": (overall >= passing) if overall is not None else None,
+        "assessed_sections": assessed,
         "sections": results,
     }

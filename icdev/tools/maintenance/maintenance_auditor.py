@@ -359,7 +359,13 @@ def _collect_vulnerability_stats(conn, project_id):
             "overdue_high": 0,
             "overdue_medium": 0,
             "overdue_low": 0,
-            "sla_compliant_pct": 100.0,
+            # NOT ASSESSED, never 100.0 (rem-hyg-13). No vulnerability rows for
+            # this project means nothing has been SCANNED — the overwhelmingly
+            # likely reading, since a scan that found nothing still needs a scan
+            # to have run — and reporting perfect remediation-SLA compliance for
+            # it is the exact defect this card exists for. The counts beside it
+            # are honest zeroes; this one was not.
+            "sla_compliant_pct": None,
             "fix_available_count": 0,
             "exploit_available_count": 0,
             "overdue_items": [],
@@ -399,7 +405,10 @@ def _collect_vulnerability_stats(conn, project_id):
         "overdue_high": overdue["high"],
         "overdue_medium": overdue["medium"],
         "overdue_low": overdue["low"],
-        "sla_compliant_pct": round(100.0 * sla_met / sla_total, 1) if sla_total else 100.0,
+        # NOT ASSESSED, never 100.0 (rem-hyg-13). `sla_total` counts only the
+        # vulnerabilities that carry an sla_deadline, so zero means none of the
+        # rows found could be judged against an SLA at all.
+        "sla_compliant_pct": round(100.0 * sla_met / sla_total, 1) if sla_total else None,
         "fix_available_count": fix_avail,
         "exploit_available_count": exploit_avail,
         "overdue_items": overdue_items,
@@ -532,6 +541,12 @@ def _generate_audit_report(audit_data, output_dir, project_name):
     tr = audit_data.get("trend", {})
     recs = audit_data.get("recommendations", [])
     status_label = "HEALTHY" if score >= 80 else ("AT RISK" if score >= 50 else "CRITICAL")
+    # `sla_compliant_pct` is None when nothing could be judged against an SLA
+    # (rem-hyg-13). The old spelling was `vl.get(..., 100.0)`, which supplied a
+    # perfect score BOTH when the key was absent and — once the producer started
+    # returning None — printed "None%". Neither is a measurement.
+    _sla = vl.get("sla_compliant_pct")
+    sla_txt = f"{_sla}%" if _sla is not None else "not assessed"
 
     L = [
         cui.get("document_header", CUI_BANNER),
@@ -552,7 +567,7 @@ def _generate_audit_report(audit_data, output_dir, project_name):
         f"| Total Dependencies | {sl.get('total_dependencies', 0)} |",
         f"| Outdated | {sl.get('outdated_count', 0)} |",
         f"| Vulnerable | {vl.get('vulnerable_count', 0)} |",
-        f"| SLA Compliance | {vl.get('sla_compliant_pct', 100.0)}% |",
+        f"| SLA Compliance | {sla_txt} |",
         f"| Avg Staleness | {sl.get('avg_staleness_days', 0)} days |",
         f"| Score Trend | {tr.get('score_trend', 'N/A')} |",
         "",
@@ -592,7 +607,7 @@ def _generate_audit_report(audit_data, output_dir, project_name):
     ]
 
     # SLA Compliance
-    L += ["## SLA Compliance", "", f"**Overall SLA Compliance:** {vl.get('sla_compliant_pct', 100.0)}%", ""]
+    L += ["## SLA Compliance", "", f"**Overall SLA Compliance:** {sla_txt}", ""]
     oi = vl.get("overdue_items", [])
     if oi:
         L += [
@@ -952,7 +967,11 @@ def run_maintenance_audit(project_id, output_dir=None, offline=False, db_path=No
         print(f"  Dependencies:   {staleness_stats['total_dependencies']}")
         print(f"  Outdated:       {staleness_stats['outdated_count']}")
         print(f"  Vulnerable:     {vuln_stats['vulnerable_count']}")
-        print(f"  SLA Compliance: {vuln_stats['sla_compliant_pct']}%")
+        _sla_pct = vuln_stats["sla_compliant_pct"]
+        print(
+            "  SLA Compliance: "
+            + (f"{_sla_pct}%" if _sla_pct is not None else "not assessed")
+        )
         print(f"  Avg Staleness:  {staleness_stats['avg_staleness_days']} days")
         print(f"  Score Trend:    {trend['score_trend']}")
         print(f"  Report:         {report_path}")

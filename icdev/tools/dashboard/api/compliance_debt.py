@@ -563,7 +563,13 @@ def sla_compliance():
                 open_past = conn.execute(open_past_q, [sev, today, max_days] + proj_params).fetchone()["cnt"]
 
             total_relevant = total_completed + open_past
-            pct = round(within / total_relevant * 100, 1) if total_relevant > 0 else 100.0
+            # NOT ASSESSED, never 100.0 (rem-hyg-13). `total_relevant` is the
+            # number of POA&M items of this severity that a deadline can be
+            # judged against. Zero of them means nobody has filed one — which
+            # is a statement about the BOARD, not about remediation speed — and
+            # the old `else 100.0` drew a full green SLA bar for a severity
+            # nothing had ever been tracked at.
+            pct = round(within / total_relevant * 100, 1) if total_relevant > 0 else None
 
             results.append(
                 {

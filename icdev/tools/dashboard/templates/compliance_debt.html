@@ -328,17 +328,29 @@
         if (d.sla && d.sla.length > 0) {
             var html = '';
             d.sla.forEach(function(s) {
-                var color = slaColor(s.compliance_pct);
+                // compliance_pct is null when NOTHING of this severity has ever
+                // been filed — not assessed, never 100% (rem-hyg-13). Tested
+                // against null explicitly rather than for truthiness, because a
+                // genuinely MEASURED 0% is a real finding and must still render
+                // as a red bar.
+                var assessed = s.compliance_pct !== null && s.compliance_pct !== undefined;
+                var color = assessed ? slaColor(s.compliance_pct) : '#9e9e9e';
                 var label = s.severity.charAt(0).toUpperCase() + s.severity.slice(1);
                 html += '<div style="margin-bottom:1rem;">';
                 html += '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">';
                 html += '<span style="font-weight:600;font-size:0.9rem;">'+label+' <span style="font-weight:400;color:#999;">('+s.sla_days+' day SLA)</span></span>';
-                html += '<span style="font-weight:bold;color:'+color+';">'+s.compliance_pct+'%</span>';
+                html += assessed
+                    ? '<span style="font-weight:bold;color:'+color+';">'+s.compliance_pct+'%</span>'
+                    : '<span style="font-weight:600;color:#9e9e9e;">Not assessed</span>';
                 html += '</div>';
                 html += '<div style="background:#e0e0e0;border-radius:4px;height:22px;overflow:hidden;position:relative;">';
-                html += '<div style="height:100%;background:'+color+';width:'+s.compliance_pct+'%;transition:width 0.5s;border-radius:4px;"></div>';
+                if (assessed) {
+                    html += '<div style="height:100%;background:'+color+';width:'+s.compliance_pct+'%;transition:width 0.5s;border-radius:4px;"></div>';
+                }
                 html += '</div>';
-                html += '<div style="font-size:0.75rem;color:#888;margin-top:2px;">'+s.within_sla+' within SLA / '+(s.total_completed + s.open_past_sla)+' total | '+s.open_past_sla+' open past SLA</div>';
+                html += assessed
+                    ? '<div style="font-size:0.75rem;color:#888;margin-top:2px;">'+s.within_sla+' within SLA / '+(s.total_completed + s.open_past_sla)+' total | '+s.open_past_sla+' open past SLA</div>'
+                    : '<div style="font-size:0.75rem;color:#888;margin-top:2px;">No '+label.toLowerCase()+' POA&amp;M items have been filed, so there is nothing to measure an SLA against.</div>';
                 html += '</div>';
             });
             container.innerHTML = html;

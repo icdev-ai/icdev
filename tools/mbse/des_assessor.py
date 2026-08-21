@@ -969,8 +969,16 @@ def run_des_assessment(project_id, project_dir, db_path=None):
             cat_scoreable = cat_total - cat_na
             cat_compliant = sum(1 for r in cat_results if r["status"] == "compliant")
             cat_partial = sum(1 for r in cat_results if r["status"] == "partially_compliant")
+            # NOT ASSESSED, never 100.0 (rem-hyg-13). `cat_scoreable` is the
+            # category's requirement count minus the ones marked
+            # not_applicable, so zero means either the category has no
+            # requirements at all or every one of them was waived — and the old
+            # `else 100.0` published a perfect DES score for a category nothing
+            # was measured in, beside categories that were.
             cat_score = (
-                round(100.0 * (cat_compliant + cat_partial * 0.5) / cat_scoreable, 1) if cat_scoreable > 0 else 100.0
+                round(100.0 * (cat_compliant + cat_partial * 0.5) / cat_scoreable, 1)
+                if cat_scoreable > 0
+                else None
             )
             category_summary[cat] = {
                 "total": cat_total,
@@ -1016,13 +1024,16 @@ def run_des_assessment(project_id, project_dir, db_path=None):
         print(f"  Gate Status:       {gate_status}")
         print()
         for cat, cs in category_summary.items():
+            cat_score_txt = (
+                f"{cs['score']}%" if cs["score"] is not None else "not assessed"
+            )
             print(
                 f"  {cat}: "
                 f"C={cs['compliant']} "
                 f"P={cs['partially_compliant']} "
                 f"NC={cs['non_compliant']} "
                 f"NA={cs['not_assessed']} "
-                f"Score={cs['score']}%"
+                f"Score={cat_score_txt}"
             )
 
         return {

@@ -2131,7 +2131,13 @@ function applySafetyOverlay(data) {
   });
   const badge = document.getElementById('safety-map-badge');
   badge.style.display = 'block';
-  document.getElementById('safety-map-score-text').textContent = 'Safety Coverage: ' + data.score + '%';
+  // score is null when the design carries no agent nodes — not assessed, never
+  // 100% (rem-hyg-13). Compared against null explicitly, so a MEASURED 0%
+  // (agents present, none protected) still renders as a real number.
+  document.getElementById('safety-map-score-text').textContent =
+    (data.score === null || data.score === undefined)
+      ? 'Safety Coverage: not assessed (no agent nodes on this design)'
+      : 'Safety Coverage: ' + data.score + '%';
   document.getElementById('safety-map-detail').textContent =
     data.protected_agents.length + ' protected · ' + data.unprotected_agents.length + ' unprotected';
 }

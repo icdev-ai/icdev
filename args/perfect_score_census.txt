@@ -1,0 +1,14 @@
+# CUI // SP-CTI
+# Perfect-score-for-no-data census (rem-hyg-13).
+#
+# EMPTY AT ADOPTION, and that is the point: all 12 ratio sites the scanner
+# found were FIXED in the adopting change rather than grandfathered, so this
+# gate starts with a ceiling of 0 and nothing written down.
+#
+# One line per site, keyed `<file>::<qualname>#<ordinal>`. See
+# args/perfect_score_gate.yaml for the policy and
+# tools/ci/perfect_score_census.py for what counts as a site.
+#
+# Adding a line here is a debt you have written down AND a breach of
+# `perfect_score_max`, which may only go DOWN. There is no third door: the fix
+# is `None` plus a renderer that says "not assessed".
