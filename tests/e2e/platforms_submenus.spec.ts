@@ -1,13 +1,11 @@
 // CUI // SP-CTI
-// E2E Test: Platforms Menu — FathomDesk, GeoSIGINT, Info Ops, GovCon, Training, More
+// E2E Test: Platforms Menu — GeoSIGINT, Info Ops, GovCon, Training, More
 
 import { test, expect } from '@playwright/test';
 
 const SCREENSHOT_DIR = '.tmp/test_runs/screenshots';
 
 const PLATFORMS_HARD = [
-  { label: 'FathomDesk',           path: '/fathomdesk' },
-  { label: 'FathomDesk Trap Events',path: '/fathomdesk/trap-events' },
   { label: 'Genesis',               path: '/genesis' },
   { label: 'Oracle',                path: '/oracle' },
   { label: 'Proposals',             path: '/proposals' },

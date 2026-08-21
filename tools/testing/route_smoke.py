@@ -100,7 +100,6 @@ NAV_ROUTES: List[str] = [
     "/safety",
     "/stig-manager",
     "/digital-twin",
-    "/fathomdesk",
     "/supply_chain",
     "/strategos",
     "/innovation",

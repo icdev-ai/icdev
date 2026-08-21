@@ -8,7 +8,6 @@ const SCREENSHOT_DIR = '.tmp/test_runs/screenshots';
 const CANVASES = [
   { name: 'Supply Chain SCRM',  path: '/supply_chain' },
   { name: 'Digital Twin',       path: '/digital-twin' },
-  { name: 'FathomDesk',         path: '/fathomdesk' },
   { name: 'OSCAL',              path: '/oscal' },
   { name: 'FedRAMP 20x',        path: '/fedramp-20x' },
   { name: 'Strategos',          path: '/strategos' },
