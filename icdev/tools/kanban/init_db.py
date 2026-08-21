@@ -211,6 +211,18 @@ _KANBAN_TASKS_EXTRA_COLUMNS = [
     # crx-kan-01 — SLA / due-date tracking (nullable; opt-in per task).
     ("due_date",            "ALTER TABLE kanban_tasks ADD COLUMN due_date             TEXT"),
     ("sla_hours",           "ALTER TABLE kanban_tasks ADD COLUMN sla_hours            INTEGER"),
+    # These two are in the CREATE TABLE above and were NEVER in this list, which
+    # is the same defect `trace_id` / `span_id` above carry a comment about: a
+    # fresh database got them from the DDL, and `CREATE TABLE IF NOT EXISTS`
+    # never alters an existing one, so every board that predates them stayed on
+    # the old shape forever. The CANONICAL SEEDER names both in its INSERT, so
+    # on any such board `task_factory.create_tasks` — the one writer this repo
+    # tells you to route through — raised `no column named loop_type` on its
+    # first row. Measured 2026-08-21 on the live ambient data/icdev.db: 41
+    # columns, both absent. Adding them here is what makes the seeder usable on
+    # a board that already exists rather than only on a brand-new one.
+    ("loop_type",           "ALTER TABLE kanban_tasks ADD COLUMN loop_type            TEXT DEFAULT 'deterministic'"),
+    ("adversarial_enabled", "ALTER TABLE kanban_tasks ADD COLUMN adversarial_enabled  INTEGER DEFAULT 0"),
 ]
 
 # Same conditional-ALTER contract as _KANBAN_TASKS_EXTRA_COLUMNS.
