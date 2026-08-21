@@ -112,6 +112,21 @@ classes:
       BLOCKED call still counts: the verb was invoked and the TRUST chain
       refused it, and that is consumption, reported separately under
       extra.blocked_events.
+  verified_claim:
+    enabled: true
+    description: >-
+      Claims registered in tools.awareness.claims.REGISTRY (rem-hyg-17), each a
+      surface assertion paired with an INDEPENDENT derivation of the same fact.
+      Consumption is a claim that produced a MEASURED verdict (agrees or
+      disagrees) on a daemon-dispatched claim_verifier_reflex run, read from
+      the per-claim `verdicts` map the reflex leaves in genesis_audit.details
+      (autonomy-act-01). An `unmeasurable` verdict is attempted-and-measured-
+      nothing and is reported under extra.unmeasurable_events, never counted:
+      a verifier that runs every six hours and measures nothing is inert, not
+      busy. A human running the CLI records nothing, on purpose - this class
+      measures the AUTONOMOUS consumption that was missing for the verifier's
+      whole first day, when it was the one immune-system component the immune
+      system did not cover.
 
 # ---------------------------------------------------------------------------
 # Substrate probing (#trust-disc-04)
@@ -328,3 +343,18 @@ known_inert_cases:
       reflexes absent from REFLEX_NAMES) and hgx-obs-02 — enabled, importable,
       catalogued, never executed. Counted per-reflex: a class total stays
       healthy while individual reflexes sit at zero.
+  - id: claim_verifier_unconsumed
+    capability_class: verified_claim
+    metric: events
+    note: >-
+      tools/awareness/claim_verifier.py (rem-hyg-17) is the verified-fact
+      learner this platform needs and for its first day it was consumed by
+      NOBODY: no reflex, no scheduler, no daemon imported it (measured across
+      tools/genesis/, tools/ci/, tools/kanban/ on 2026-08-20), it held 4 claims
+      and ran only when a human typed the command — and it was not registered
+      here, the gate that exists to catch exactly that. The immune system was
+      not covered by the immune system. autonomy-act-01 scheduled it as the
+      claim_verifier_reflex and registered this class. Stays listed because the
+      thing worth counting is whether a given INSTALL's daemon is verifying
+      anything: a registered reflex on a daemon that was never restarted is
+      still a no-op, and that is the state this entry makes visible.

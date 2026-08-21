@@ -75,6 +75,13 @@ SCHEMA = [
         id TEXT PRIMARY KEY, session_id TEXT, tenant_id TEXT, classification TEXT,
         function TEXT, agent_id TEXT, user_id TEXT, gates_json TEXT,
         outcome TEXT, blocked INTEGER, provenance_id TEXT, created_at TEXT)""",
+    # The daemon's own append-only run log. autonomy-act-01 reads the per-claim
+    # `verdicts` map the claim_verifier_reflex leaves in `details` (parsed in
+    # Python) for the verified_claim class -- existing telemetry, no new table.
+    """CREATE TABLE genesis_audit (
+        id TEXT PRIMARY KEY, event_type TEXT NOT NULL, reflex_name TEXT,
+        risk_tier TEXT, details TEXT, success INTEGER, duration_ms INTEGER,
+        metric_name TEXT, metric_value REAL, gkp_id TEXT, created_at TEXT NOT NULL)""",
 ]
 
 CONFIG = {
@@ -416,6 +423,9 @@ def test_report_uses_only_existing_telemetry_tables(conn_factory):
         # rung detail rides in the same free-form gates_json blob ctx-obs-02's
         # timings and trust-kg-03's kg_grounding already use.
         "cortex_audit",
+        # The genesis daemon's run log, which autonomy-act-01 reads for the
+        # verified_claim class. Older than every reflex it records.
+        "genesis_audit",
     }
     report = capcon.collect(conn=conn_factory(), config=CONFIG)
     for cls in report["classes"]:
@@ -429,7 +439,21 @@ def test_shipped_config_covers_every_probe():
     assert set(cfg.get("classes") or {}) == set(capcon.PROBES)
     covered = {c["capability_class"] for c in cfg.get("known_inert_cases") or []}
     assert covered <= set(capcon.PROBES)
-    assert len(cfg.get("known_inert_cases") or []) == 5
+    # Five documented incidents plus autonomy-act-01's: the claim verifier,
+    # which was the one immune-system component this file did not cover.
+    assert len(cfg.get("known_inert_cases") or []) == 6
+
+
+def test_a_claim_verifier_nobody_runs_reads_inert_not_clean(conn_factory):
+    """autonomy-act-01. With the daemon log present and empty, every registered
+    claim is declared and none consumed -- measured, not unmeasurable, and not
+    a clean bill of health."""
+    report = capcon.collect(conn=conn_factory(), config=CONFIG, only=["verified_claim"])
+    cls = _by_class(report)["verified_claim"]
+    assert cls["telemetry_available"] is True
+    assert cls["declared"] >= 4, "the four rem-hyg-17 claims must be declared"
+    assert cls["consumed"] == 0 and cls["inert"] == cls["declared"]
+    assert cls["extra"]["reflex_registered"] is True
 
 
 def test_class_filter_restricts_the_report(conn_factory):

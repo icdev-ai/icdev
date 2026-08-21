@@ -1839,6 +1839,35 @@ reflexes:
       name: providers_evaluated
       threshold: 0
       operator: gte
+  claim_verifier_reflex:
+    timeout_seconds: 300     # four claims today, each opening canvas/primary tables
+    enabled: true
+    risk_tier: green         # reads surfaces + primary data, writes kanban rows; edits no claim
+    a2a_eligible: false
+    schedule: every 6h
+    dry_run: false
+    description: >-
+      Claim verification on a cadence (autonomy-act-01). Runs every claim in
+      tools/awareness/claims.py through claim_verifier.verify_all - what a
+      surface REPORTS against an INDEPENDENT derivation from primary data - and
+      acts by the claim's own tier: `report` states the disagreement, `propose`
+      seeds one card carrying BOTH derivations (id deterministic in the claim
+      id, so an open card is not refiled), `restore` is deferred to
+      autonomy-act-03 and NAMED in the result, never dropped. No claim refuses
+      anything. A cycle that measures ZERO claims reports `unmeasurable`, never
+      ok: a verifier whose clean run and whose no-op look identical is the
+      defect the card exists to remove. Per-claim verdicts ride on details and
+      are read back by the `verified_claim` capability class, so a verifier
+      nobody runs reads as inert rather than as clean.
+    card:
+      id_prefix: "claim-verif-"
+      task_type: fix
+      priority: high
+      status: backlog
+    success_metric:
+      name: claims_measured
+      threshold: 0
+      operator: gte          # informational - 0 is `unmeasurable`, never a clean run
 
 # ── Reflex Health & Alerting (crx-gen-02) ────────────────────────────────────
 # Turns critical-reflex failures into operator alerts on the /monitoring page
