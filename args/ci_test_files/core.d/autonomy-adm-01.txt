@@ -1,0 +1,5 @@
+# autonomy-adm-01 — one pre-dispatch admission gate, keyed on PR identity.
+# Pins the two carve-outs the survey measured (an open PR => 80.4% wrong to
+# refuse; two prior merges => 85.7% wrong) and the rule that `unmeasurable`
+# never refuses. Also pins that the survey routes through the SAME classify().
+tests/kanban/test_dispatch_admission.py
