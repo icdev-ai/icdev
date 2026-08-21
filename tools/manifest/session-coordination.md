@@ -19,3 +19,4 @@ DB safety (companion fix): `tools/db/storage.py` sets
 connection (`.env`: `ICDEV_PG_IDLE_TXN_TIMEOUT_MS`, `ICDEV_PG_LOCK_TIMEOUT_MS`).
 Tests: `tests/test_coordination.py`. Kanban scheduler registers via
 `tools/genesis/kanban_scheduler.py`.
+| Process Code Identity | tools/coordination/code_identity.py | Records WHICH CODE a live process is running, frozen at boot and never recomputed (`code_reload.pull_if_safe` moves HEAD underneath a running daemon, so a re-read would report `current` at the moment it went stale). Persisted onto `agent_sessions` by `session_registry.register`. `code_version=None` means UNKNOWN and never reads as current; `code_version_source` says why (git/env/unavailable); `code_dirty` is a separate axis. (autonomy-id-01) | --boot, --json | Per-process identity; `processes()` fleet reader (recorded/unknown, never a fabricated version) |
