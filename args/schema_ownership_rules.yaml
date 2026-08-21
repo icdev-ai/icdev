@@ -1,0 +1,146 @@
+# CUI // SP-CTI
+# Schema ownership rules (xit-decl-04).
+#
+# Every table this repository creates -- tools/db/init_icdev_db.py (527),
+# the per-canvas tools/<canvas>/db/init_db.py modules, tools/kanban/init_db.py,
+# tools/trading/db.py and the 430 migrations (1,874 distinct names on
+# 2026-08-21) -- is assigned ONE owner:
+#
+#   core  the domain-neutral kernel both ICDEV parents install
+#   it    ICDEV[IT]: compliance / ATO / DoD / GovCon and the IT canvases
+#   ft    ICDEV[FT]: FathomDesk, moving to the private sibling repository
+#
+# `python tools/db/schema_ownership.py --regenerate` reads the DDL sources and
+# THIS file and writes the two manifests (icdev/core/schema/tables.yaml for
+# core, tools/db/schema/tables.yaml for it + ft). The manifests are generated
+# artefacts; change a rule here, never a manifest line. `--check` fails when
+# a table named by any DDL or migration is in no manifest, in two, or when the
+# manifests disagree with these rules -- so a new table cannot be created
+# without an owner, and an owner cannot drift behind a stale manifest.
+#
+# RESOLUTION ORDER: the first `prefix` rule whose regex matches the table name
+# wins; otherwise the owner of the DECLARING package (`packages`); otherwise
+# `default`. Rules are regexes anchored at the start of the name.
+#
+# A `prefix` rule is a CLAIM, not a measurement -- it was drafted from which
+# tools/<pkg> reads each prefix (xit-decl-04 survey) and reviewed by hand.
+# Move a table by moving its rule; `--check` then tells you which manifest
+# line changed.
+
+default: it
+
+# Tables the row-security predicate must NOT be injected into -- the
+# generalisation of get_canvas_connection(), which today turns RLS off for a
+# WHOLE connection because canvas tables carry no classification/tenant_id
+# column. EMPTY at adoption: this task changes no RLS behaviour. Add a table
+# here (with a reason in the PR) and `--regenerate`; tools/security/
+# row_security.py reads the generated `rls_exempt` list.
+rls_exempt: []
+
+packages:
+  # declaring package (tools/<pkg>) -> owner, consulted when no prefix matched
+  core:
+    - db          # init_icdev_db.py is MIXED and is resolved by prefix first
+    - kanban
+    - genesis
+    - memory
+    - rag
+    - knowledge_graph
+    - cortex
+    - llm
+    - agent
+    - agents
+    - agent_runtime
+    - a2a
+    - mcp
+    - audit
+    - awareness
+    - ci
+    - workflow
+    - workflow_hitl
+    - studio
+    - quality
+    - config
+    - registry
+    - coordination
+    - currency
+    - provenance
+    - security
+    - logging
+    - observability
+    - dashboard
+    - builder
+    - cli
+    - integrity
+    - knowledge
+    - databridge
+    - finetune
+    - research
+    - innovation
+    - marketplace
+    - maintenance
+    - monitor
+    - gateway
+    - chat
+    - nova
+    - ace
+    - autoresearch
+    - scout
+  ft:
+    - trading
+    - market_intel
+    - fathomdesk
+  # everything else (canvases, compliance, govcon, proposal_genesis, ...) is it
+
+prefix:
+  # ---- ft -----------------------------------------------------------------
+  - match: "ad_"
+    owner: ft
+  # ---- core: kernel bookkeeping -------------------------------------------
+  - match: "schema_migrations$"
+    owner: core
+  - match: "(projects|agents|audit|deployments|alerts|tasks|requirements|groups)$"
+    owner: core
+  - match: "audit_"
+    owner: core
+  - match: "kanban_"
+    owner: core
+  - match: "(agent_|a2a_|session_|context_|dispatcher_|anvil_|coordination_|lease)"
+    owner: core
+  - match: "(memory_|daily_)"
+    owner: core
+  - match: "(rag_|kg_|codebase_|knowledge_|prov_|source_citation|entity_currency|ontology)"
+    owner: core
+  - match: "canvas_"
+    owner: core
+  - match: "(genesis_|experiment_|bayesian_|autonomy_|evolution_|self_|reflex_|outcome_|ungated_test)"
+    owner: core
+  - match: "(wf_|workflow_|studio_)"
+    owner: core
+  - match: "(ci_|gitlab_|pr_|review_)"
+    owner: core
+  - match: "(db_|databridge_|forge_)"
+    owner: core
+  - match: "(dashboard_|chat_|notification_|hook_|otel_|metric_|activity_|user_|users$|api_token)"
+    owner: core
+  - match: "(component_|tenant_|centralized_|module_|group_|credential_|staging_|capability_|genome_|child_|propagation_|registry)"
+    owner: core
+  - match: "(oracle_|llm_|ai_telemetry|prompt_|redaction_|egress_|tool_|cortex_|mcp_)"
+    owner: core
+  - match: "(integrity_|confabulation_|finding_|deviation_|failure_)"
+    owner: core
+  - match: "(innovation_|vsm_|developer_|thread_|smart_|nlq_|maintenance_|dependency_|remediation_|production_|auto_|heartbeat_|runtime_|code_|agentic_|indicator_|remote_)"
+    owner: core
+  - match: "(marketplace_|openclaw_|extension_|scaffold_|blueprint_|dev_)"
+    owner: core
+  - match: "(ft_|wg_|research_|creative_)"
+    owner: core
+  # ---- it: explicitly named so a reviewer sees the decision ---------------
+  - match: "(compliance_|framework_|control_|crosswalk_|nist_|oscal_|fedramp_|cmmc_|stig_|poam_|ssp_|emass_|cato_|ato_|fips|cssp_|zta_|sbd_|ivv_|mosa_|sbom_|cve_|supply_|scrm_|boundary_|pi_|cjis_|hipaa_|hitrust_|soc2_|pci_|iso|gao_|omb_|eu_|atlas_|owasp_|ai_|fairness_|xai_|shap_|red_|threat_|siem_)"
+    owner: it
+  - match: "(proposal_|pg_|govcon_|cpmp_|sam_|gsa_|rfp_|igce_|win_|customer_|draft_|narrative_|voc_|scout_|pulse_)"
+    owner: it
+  - match: "(cf_|cloud_|csp_|container_|firmware_|runbook)"
+    owner: it
+  - match: "(legacy_|migration_|translation_|sysml_|doors_|model_|des_|digital_|simulation_|coa_|monte_|intake_|spec_|readiness_|project_|approval_|integration_|sync_)"
+    owner: it

@@ -1,0 +1,7 @@
+{
+  "description": "restore act audit event type",
+  "date": "2026-08-21",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

@@ -126,11 +126,52 @@ def _depth0_skeleton(sql: str) -> str:
 #: separator, so a qualified `information_schema.columns` is seen here as the
 #: bare token `information_schema`. `pg_catalog.pg_tables` is already covered by
 #: the `pg_` prefix.
-_SYSTEM_TABLE_PREFIXES = ("pg_", "information_schema", "sqlite_")
+_SYSTEM_TABLE_PREFIXES = ("information_schema", "sqlite_", "pg_catalog", "pg_toast", "pg_stat", "pg_statio")
+
+#: PostgreSQL catalog relations referred to by their bare name. xit-decl-04: the
+#: exemption used to be the PREFIX ``pg_``, and an application prefix in this
+#: tree also begins with ``pg_`` -- so those application tables, which carry
+#: the very columns the predicate filters on, were exempted with the catalog.
+#: Catalog relations are enumerated by NAME instead; an application table can
+#: never match this set by accident. `pg_catalog.`/`pg_toast`/`pg_stat*` stay
+#: prefix-matched because those are schemas, not tables.
+_PG_CATALOG_RELATIONS = frozenset({
+    "pg_class", "pg_attribute", "pg_namespace", "pg_type", "pg_proc", "pg_index", "pg_indexes",
+    "pg_tables", "pg_views", "pg_matviews", "pg_sequences", "pg_constraint", "pg_extension",
+    "pg_available_extensions", "pg_roles", "pg_user", "pg_shadow", "pg_authid", "pg_auth_members",
+    "pg_database", "pg_settings", "pg_locks", "pg_description", "pg_depend", "pg_trigger",
+    "pg_policy", "pg_policies", "pg_am", "pg_opclass", "pg_attrdef", "pg_inherits", "pg_enum",
+    "pg_range", "pg_collation", "pg_tablespace", "pg_event_trigger", "pg_rewrite", "pg_language",
+    "pg_cast", "pg_operator", "pg_aggregate", "pg_statistic", "pg_stats", "pg_foreign_table",
+    "pg_foreign_server", "pg_foreign_data_wrapper", "pg_replication_slots", "pg_subscription",
+    "pg_publication", "pg_publication_tables", "pg_largeobject", "pg_largeobject_metadata",
+    "pg_timezone_names", "pg_prepared_statements", "pg_cursors", "pg_seclabel", "pg_shdescription",
+    "pg_partitioned_table", "pg_ts_config", "pg_ts_dict", "pg_ts_parser", "pg_ts_template",
+    "pg_user_mapping", "pg_default_acl", "pg_init_privs", "pg_transform", "pg_conversion",
+    "pg_amop", "pg_amproc", "pg_opfamily", "pg_statistic_ext", "pg_sequence", "pg_group",
+    "pg_rules", "pg_shmem_allocations", "pg_file_settings", "pg_hba_file_rules", "pg_config",
+})
+
+
+def _manifest_exempt_tables() -> frozenset:
+    """Tables the ownership manifest marks ``rls_exempt`` (icdev.core.sensitivity).
+
+    Empty unless a reviewer added a table to args/schema_ownership_rules.yaml's
+    ``rls_exempt`` and regenerated. Fail CLOSED: an unimportable seam exempts
+    nothing, because a missing exemption raises UndefinedColumn where a wrong
+    exemption leaks rows.
+    """
+    try:
+        from icdev.core.sensitivity import rls_exempt_tables
+
+        return rls_exempt_tables()
+    except Exception:  # noqa: BLE001
+        return frozenset()
 
 
 def _is_system_table(sql: str) -> bool:
-    """True when the outer query's primary FROM target is a system catalog.
+    """True when the outer query's primary FROM target is a system catalog, or a
+    table the ownership manifest explicitly exempts from row security.
 
     Deliberately reads the OUTER primary table only (via the depth-0 skeleton),
     so a catalog lookup nested inside a query over an application table cannot
@@ -140,7 +181,9 @@ def _is_system_table(sql: str) -> bool:
     if not m:
         return False
     table = (m.group(1) or "").lower()
-    return any(table.startswith(p) for p in _SYSTEM_TABLE_PREFIXES)
+    if table in _PG_CATALOG_RELATIONS or any(table.startswith(p) for p in _SYSTEM_TABLE_PREFIXES):
+        return True
+    return table in _manifest_exempt_tables()
 
 
 def _primary_alias(sql: str) -> str | None:
