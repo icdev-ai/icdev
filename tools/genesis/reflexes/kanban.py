@@ -6371,6 +6371,44 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
         )
         return
 
+    # ── Admission: is this task already carried by a merged PR? ───────────────
+    # Asked ONCE, here, before a token is spent (autonomy-adm-01). #1862
+    # duplicated rem-hyg-14 — already merged as #1858 — and would have deleted
+    # 5,545 lines across 76 files by re-applying a ten-commit-old tree.
+    #
+    # DEFAULT `report`: it logs and dispatches anyway. The survey supports
+    # arming (2.99% fire rate, 0.35% of dispatches wrongly refused, against the
+    # 1.63% this repo calls refusing routine work) but shipping a gate enforcing
+    # on day one against a survey written by the same change is the pattern that
+    # has bitten this repo twice. `KANBAN_DISPATCH_ADMISSION=enforce` arms it.
+    #
+    # FAIL-OPEN by construction: an unreachable forge yields `unmeasurable`,
+    # which never blocks. A gate that stops dispatch when it cannot see is how a
+    # board stops moving at 3am.
+    try:
+        from tools.kanban.dispatch_admission import assess as _admission_assess
+
+        _admission = _admission_assess(task_id)
+        if _admission.verdict == "refuse":
+            if _admission.blocks:
+                logger.warning(
+                    "kanban: admission REFUSED %s — %s. Not dispatching.",
+                    task_id, _admission.reason,
+                )
+                try:
+                    _move_task(task_id, "validating", actor="dispatch-admission",
+                               reason=f"admission refused: {_admission.reason}")
+                except Exception:  # noqa: BLE001
+                    logger.exception("kanban: could not park %s after admission refusal",
+                                     task_id)
+                return
+            logger.warning(
+                "kanban: admission would REFUSE %s — %s (mode=report, dispatching "
+                "anyway)", task_id, _admission.reason,
+            )
+    except Exception as exc:  # noqa: BLE001 — admission must never wedge dispatch
+        logger.debug("kanban: admission check unavailable for %s: %s", task_id, exc)
+
     # ── Repo-aware dispatch: external-repo tasks ──────────────────────────────
     # An external-repo task (prem-* compass / idea_lab work, per
     # args/kanban_external_repos.yaml) must NEVER be built inside ICDev — its
