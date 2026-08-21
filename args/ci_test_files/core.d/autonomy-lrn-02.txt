@@ -1,0 +1,6 @@
+# autonomy-lrn-02 — is intervention actually falling, measured with an honest
+# denominator. Pins the invariants that fail GREEN if broken: a rate over an
+# empty denominator is None (never 0.0, never 100.0 — the rem-hyg-13 defect),
+# a fleet nobody could assess has an UNKNOWN stale count, and the headline
+# cannot read `falling` over sections that were never measured.
+tests/awareness/test_autonomy_loop.py
