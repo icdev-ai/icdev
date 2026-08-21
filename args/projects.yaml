@@ -8708,6 +8708,18 @@ projects:
   - key: lrn
     title: LRN - incident becomes a standing verified claim
     priority: medium
+  - key: dep
+    title: DEP - a merged capability must actually be LIVE on this deployment
+    priority: critical
+  - key: sid
+    title: SID - two schedulers must be distinguishable to the lease
+    priority: critical
+  - key: cov
+    title: COV - drain the unguarded-incident backlog
+    priority: high
+  - key: wire
+    title: WIRE - the fully inert capability classes
+    priority: medium
 - key: xit
   name: XIT - ICDEV[domain] split, the ICDEV[IT] side
   description: 'ICDEV[IT] is the first DOMAIN of a shared, domain-neutral core, and a
