@@ -65,6 +65,10 @@ def _get_tenant_db_paths() -> list:
 
 
 def main():
+    # xit-decl-01: never migrate another parent's database from this checkout.
+    from icdev.core.context import assert_identity
+
+    assert_identity(anchor=__file__)
     parser = argparse.ArgumentParser(description="ICDEV™ Database Migration Tool")
     parser.add_argument("--db-path", type=Path, default=DB_PATH, help="Database file path")
     parser.add_argument("--status", action="store_true", help="Show migration status")

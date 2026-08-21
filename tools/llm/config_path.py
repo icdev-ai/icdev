@@ -54,16 +54,24 @@ def _walk_up_for_config(start: Path) -> Path | None:
 
 
 def resolve_llm_config_path() -> Path:
-    """Return the LLM config path that every ICDEV™ component should read."""
-    override = os.environ.get(CONFIG_ENV_VAR, "").strip()
-    if override:
-        return Path(override).expanduser().resolve()
+    """Return the LLM config path that every ICDEV™ component should read.
 
-    project = _walk_up_for_config(_PROJECT_ROOT)
-    if project is not None:
-        return project
+    xit-decl-01: delegates to :func:`icdev.core.paths.config_path`, the one
+    resolver every parent shares. The walk-up rule that skips a directory named
+    ``icdev`` is preserved by handing it the packaged copy explicitly.
+    """
+    from icdev.core.paths import config_path
 
-    return _PACKAGED
+    resolved = config_path(
+        CONFIG_RELPATH, env=CONFIG_ENV_VAR, anchor=_HERE, packaged=_PACKAGED
+    )
+    if resolved == _PACKAGED:
+        # The repo root had no args/llm_config.yaml: keep the legacy walk, which
+        # also finds a config ABOVE the repo (a monorepo or a parent checkout).
+        project = _walk_up_for_config(_PROJECT_ROOT)
+        if project is not None:
+            return project
+    return resolved
 
 
 def describe_resolution() -> dict:

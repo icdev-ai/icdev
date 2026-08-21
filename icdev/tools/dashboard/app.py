@@ -1924,6 +1924,12 @@ def _aggregate_chat_sources(conn, tenant_id: str, context_id: str) -> list[dict]
 
 
 def create_app(testing: bool = False) -> Flask:
+    # xit-decl-01: refuse to serve another parent's database. Fail-closed on a
+    # DECLARED mismatch only; an env that names no database is "unmeasured".
+    if not testing:
+        from icdev.core.context import assert_identity
+
+        assert_identity(anchor=__file__)
     app = Flask(
         __name__,
         template_folder=str(Path(__file__).resolve().parent / "templates"),
