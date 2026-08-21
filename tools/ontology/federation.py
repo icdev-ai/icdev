@@ -223,6 +223,22 @@ CROSS_DOMAIN_PROPERTIES: List[Dict[str, Any]] = [
 _TTL_DIR = BASE_DIR / "args" / "ontology"
 
 
+def _ttl_dir() -> Path:
+    """The ontology directory of the PARENT this process belongs to.
+
+    Resolved through ``icdev.core.paths`` so ``ICDEV_PROJECT_ROOT`` -- a second
+    ICDEV parent such as ICDEV[FT] -- selects its own ``args/ontology``; with no
+    root declared it is this checkout's, exactly as before. A module that roots
+    the ontology at its own file location can only ever load the domain it was
+    checked out with, which is the self-rooting defect xit-decl-03 censuses.
+    """
+    try:
+        from icdev.core.paths import data_path
+    except ImportError:  # an older kernel without icdev.core
+        return _TTL_DIR
+    return data_path("args", anchor=__file__) / "ontology"
+
+
 # =========================================================================
 # TTL LOADER (lightweight, no rdflib dependency)
 # =========================================================================
@@ -282,6 +298,28 @@ def _parse_ttl_file(
         sup = _clean(m.group(2))
         if sub in classes and sup not in classes[sub]["superclasses"]:
             classes[sub]["superclasses"].append(sup)
+
+    # 4b. Turtle STATEMENT BLOCKS: a subject at column 0, predicate-object pairs
+    # on the indented lines that follow, terminated by " ." -- the layout of
+    # every file in args/ontology/. The same-line regex above only ever saw
+    # icdev_core.ttl's one-line form: measured 2026-08-21, 4 of the 74
+    # rdfs:subClassOf statements in the tree survived parsing, so the closure
+    # never learned a TTL class's hierarchy and `superclasses` was '[]' for
+    # 83 of 87 classes. The block pass is a superset of the same-line pass.
+    for block in re.split(r"\n(?=\S)", text):
+        head = block.strip().split(None, 1)
+        if not head:
+            continue
+        subj = _clean(head[0])
+        if subj not in classes:
+            continue
+        for m in re.finditer(r"rdfs:subClassOf\s+(\w+:\S+)", block):
+            sup = _clean(m.group(1))
+            if sup and sup not in classes[subj]["superclasses"]:
+                classes[subj]["superclasses"].append(sup)
+        lab = re.search(r"rdfs:label\s+\"([^\"]+)\"", block)
+        if lab:
+            classes[subj]["label"] = lab.group(1)
 
     # 5. rdf:type <KnownClass> → treat as rdfs:subClassOf
     for m in re.finditer(r"(\w+:\S+)\s+rdf:type\s+(\w+:\S+)", text):
@@ -457,7 +495,12 @@ def _build_equivalence_map(alignments: List[Dict[str, str]]) -> Dict[str, str]:
 # =========================================================================
 
 
-def build_federation(db_path: Optional[str] = None) -> Dict[str, Any]:
+def build_federation(
+    db_path: Optional[str] = None,
+    *,
+    ttl_dir: Optional[Path] = None,
+    include_builtin: bool = True,
+) -> Dict[str, Any]:
     """Merge all domain ontologies into the ICDEV Core Ontology graph.
 
     Steps:
@@ -471,11 +514,22 @@ def build_federation(db_path: Optional[str] = None) -> Dict[str, Any]:
 
     Args:
         db_path: Optional database path override.
+        ttl_dir: Directory of ``*.ttl`` files to load. Default: the owning
+            parent's ``args/ontology`` (see ``_ttl_dir``).
+        include_builtin: Also load the IT domain ontologies, alignments and
+            cross-domain properties hard-coded in this module. A parent whose
+            domain is not IT passes ``False`` and gets ONLY its TTL classes --
+            the hard-coded tables are ICDEV[IT]'s network / compliance /
+            security vocabulary, not a kernel.
 
     Returns:
         Dict with build stats and canonical class counts.
     """
     start_ms = int(time.time() * 1000)
+    ttl_dir = Path(ttl_dir) if ttl_dir is not None else _ttl_dir()
+    builtin_domains = DOMAIN_ONTOLOGIES if include_builtin else {}
+    builtin_alignments = EQUIVALENT_CLASSES if include_builtin else []
+    builtin_properties = CROSS_DOMAIN_PROPERTIES if include_builtin else []
     conn = _get_db(db_path)
     try:
         _ensure_tables(conn)
@@ -488,13 +542,13 @@ def build_federation(db_path: Optional[str] = None) -> Dict[str, Any]:
         conn.execute("DELETE FROM ontology_federation_meta WHERE key = 'last_build'")
         conn.commit()
 
-        # Load extra classes and alignments from args/ontology/*.ttl
-        ttl_domains, ttl_alignments = _load_ttl_classes(_TTL_DIR)
+        # Load extra classes and alignments from <parent>/args/ontology/*.ttl
+        ttl_domains, ttl_alignments = _load_ttl_classes(ttl_dir)
 
         # 2. Insert domain classes (hardcoded + TTL-derived, deduplicated by class id)
         seen_class_ids: Set[str] = set()
         all_classes: List[Tuple[str, str, str, str, str]] = []
-        for domain, classes in {**DOMAIN_ONTOLOGIES, **ttl_domains}.items():
+        for domain, classes in {**builtin_domains, **ttl_domains}.items():
             for cls in classes:
                 cid = cls["id"]
                 if cid in seen_class_ids:
@@ -510,7 +564,7 @@ def build_federation(db_path: Optional[str] = None) -> Dict[str, Any]:
         )
 
         # 3. Store alignments (hardcoded + TTL-derived, deduplicated)
-        all_alignments = EQUIVALENT_CLASSES + ttl_alignments
+        all_alignments = list(builtin_alignments) + ttl_alignments
         alignments_rows = list({
             (a["source"], a["target"], a["assertion"])
             for a in all_alignments
@@ -534,7 +588,7 @@ def build_federation(db_path: Optional[str] = None) -> Dict[str, Any]:
 
         # 5. Insert cross-domain properties
         prop_rows = []
-        for p in CROSS_DOMAIN_PROPERTIES:
+        for p in builtin_properties:
             prop_rows.append((
                 p["id"],
                 p["label"],
@@ -552,7 +606,7 @@ def build_federation(db_path: Optional[str] = None) -> Dict[str, Any]:
         subclass_of: Dict[str, Set[str]] = defaultdict(set)
 
         # From domain ontologies (hardcoded + TTL-derived)
-        for domain, classes in {**DOMAIN_ONTOLOGIES, **ttl_domains}.items():
+        for domain, classes in {**builtin_domains, **ttl_domains}.items():
             for cls in classes:
                 cid = cls["id"]
                 for sup in cls.get("superclasses", []):
@@ -614,6 +668,8 @@ def build_federation(db_path: Optional[str] = None) -> Dict[str, Any]:
         return {
             "status": "ok",
             "action": "build_federation",
+            "ttl_dir": str(ttl_dir),
+            "builtin_included": include_builtin,
             "classes_total": class_count,
             "classes_from_ttl": ttl_class_count,
             "ttl_domains_loaded": list(ttl_domains.keys()),
@@ -1072,13 +1128,21 @@ def main() -> None:
     parser.add_argument("--domain", default=None, help="Filter classes by domain")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument("--db-path", default=None, help="Override database path")
+    parser.add_argument("--ttl-dir", default=None,
+                        help="Directory of *.ttl files (default: the owning parent's args/ontology)")
+    parser.add_argument("--no-builtin", action="store_true",
+                        help="Load ONLY the TTL files; skip the IT domain ontologies hard-coded in this module")
 
     args = parser.parse_args()
 
     result: Dict[str, Any] = {}
 
     if args.build_federation:
-        result = build_federation(db_path=args.db_path)
+        result = build_federation(
+            db_path=args.db_path,
+            ttl_dir=Path(args.ttl_dir) if args.ttl_dir else None,
+            include_builtin=not args.no_builtin,
+        )
         # Auto-sync to KG federation after build
         if result.get("status") == "ok":
             sync = integrate_with_kg_federation(db_path=args.db_path)

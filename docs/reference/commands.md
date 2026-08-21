@@ -1938,7 +1938,9 @@ python tools/ontology/schema_extractor.py --dry-run --json
 python tools/ontology/ontology_catalog.py --validate --json
 
 # Build ontology federation
-python tools/ontology/federation.py --build --json
+python tools/ontology/federation.py --build-federation --json
+python tools/ontology/federation.py --build-federation --no-builtin --json          # only <parent>/args/ontology/*.ttl (ICDEV[FT])
+python tools/ontology/federation.py --build-federation --ttl-dir path/to/ttl --json
 
 # Query ontology
 python tools/ontology/ontology_catalog.py --query "AWS VPC" --json
