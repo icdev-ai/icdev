@@ -214,7 +214,6 @@ _AIRGAP_DISABLED_ROUTES = frozenset(
         "/proposal-genesis",
         "/leads",
         "/studio/marketplace",
-        "/fathomdesk",
     }
 )
 # Legacy canvas feature flags (derived from the component registry — see _CANVAS_FLAGS below)
@@ -1762,46 +1761,6 @@ def _enrich_chart_patterns(patterns: list[dict]) -> list[dict]:
     return enriched
 
 
-def _derive_chart_provenance(bars: list[dict]) -> dict:
-    """Derive top-level data-provenance flags for a chart response.
-
-    ``market_data.fetch_bars`` tags every bar with a per-bar ``source``
-    ("alpaca" / "alpaca_crypto" / "sample") plus ``as_of``. The chart frontend
-    ignores those per-bar markers, so synthetic ("sample") bars can render as
-    real market data in a financial UI. This helper collapses the per-bar
-    markers into top-level ``data_source`` / ``simulated`` / ``as_of`` fields
-    the UI can surface as a prominent "SIMULATED DATA" banner (nav-plat-01).
-
-    Args:
-        bars: OHLCV bar dicts, each optionally carrying ``source`` / ``as_of``.
-
-    Returns:
-        Dict with keys::
-
-            {
-              "data_source": str,   # "alpaca"|"sample"|...|"mixed"|"unknown"
-              "simulated": bool,    # True iff any bar is synthetic ("sample")
-              "as_of": str | None,  # most-recent per-bar as_of, if present
-            }
-    """
-    if not bars:
-        return {"data_source": "unknown", "simulated": False, "as_of": None}
-    sources = {str(b.get("source") or "unknown") for b in bars if isinstance(b, dict)}
-    simulated = "sample" in sources
-    if len(sources) == 1:
-        data_source = next(iter(sources))
-    elif sources:
-        data_source = "mixed"
-    else:
-        data_source = "unknown"
-    as_of = None
-    for b in reversed(bars):
-        if isinstance(b, dict) and b.get("as_of"):
-            as_of = b["as_of"]
-            break
-    return {"data_source": data_source, "simulated": simulated, "as_of": as_of}
-
-
 def _get_chat_models() -> tuple[list[dict], str]:
     """Read available chat models from args/llm_config.yaml.
 
@@ -2892,16 +2851,6 @@ def create_app(testing: bool = False) -> Flask:
     except Exception as _exc:
         import traceback as _tb
         app.logger.warning("GeoSIGINT blueprint failed to register: %s\n%s", _exc, _tb.format_exc())
-
-    # ---- TA Patterns Blueprint ----
-    try:
-        from tools.trading.ta.blueprint import create_ta_blueprint
-        _ta_bp = create_ta_blueprint()
-        if _ta_bp:
-            app.register_blueprint(_ta_bp)
-            app.logger.info("TA Patterns blueprint registered at /api/ta/patterns")
-    except Exception as _exc:
-        app.logger.warning("TA Patterns blueprint failed to register: %s", _exc)
 
     # ---- App Module Blueprints (registry-driven child_app components) ----
     for _ak, _abp in _APP_BLUEPRINTS.items():
@@ -10203,18 +10152,6 @@ def create_app(testing: bool = False) -> Flask:
         ticker = flask_request.args.get("ticker", "SPY").upper()
         return render_template("options.html", ticker=ticker)
 
-    # ── FathomDesk Trading Engine ─────────────────────────────────────────────
-    @app.route("/fathomdesk")
-    def fathomdesk_page():
-        """FathomDesk — trading chart with volume profile overlay."""
-        ticker = flask_request.args.get("ticker", "SPY").upper()
-        return render_template("fathomdesk.html", ticker=ticker)
-
-    @app.route("/fathomdesk/trap-events")
-    def fathomdesk_trap_events():
-        """FathomDesk — full trap event history with filters."""
-        return render_template("fathomdesk_trap_events.html")
-
     @app.route("/analysis")
     def analysis_page():
         """Market Analysis — Macro Intelligence, IV Skew & Term Structure."""
@@ -10255,144 +10192,6 @@ def create_app(testing: bool = False) -> Flask:
                 "fetched_at": None,
                 "error": str(exc),
             }), 503
-
-    @app.route("/api/trading/market")
-    def api_trading_market():
-        """Return macro context snapshot including qeqt_phase for FathomDesk overlay."""
-        try:
-            from tools.trading.data.macro_data import fetch_macro_context, fetch_extended_macro
-            ctx = fetch_macro_context()
-            ext = fetch_extended_macro()
-            return jsonify({
-                "macro_score": ctx.get("macro_score"),
-                "regime": ctx.get("regime"),
-                "qeqt_phase": ctx.get("qeqt_phase"),
-                "qeqt_magnitude": ext.get("qeqt_magnitude"),
-                "fed_bs_4w_roc_b": ext.get("fed_bs_4w_roc_b"),
-                "fed_bs_13w_roc_b": ext.get("fed_bs_13w_roc_b"),
-                "data_source": ctx.get("data_source"),
-                "fetched_at": ctx.get("fetched_at"),
-                "summary": ctx.get("summary"),
-            })
-        except Exception as exc:
-            return jsonify({"error": str(exc)}), 500
-
-    @app.route("/api/trading/chart/<ticker>")
-    def api_trading_chart(ticker: str):
-        """Return OHLCV bars, volume profile, patterns, and S/R levels for *ticker*."""
-        ticker = ticker.upper()
-        timeframe = flask_request.args.get("tf", "1D")
-        limit = min(int(flask_request.args.get("limit", 120)), 500)
-        try:
-            from tools.trading.data.market_data import fetch_bars
-            from tools.trading.ta.volume_profile import volume_profile as compute_vp
-            from tools.trading.ta.swings import find_swings
-            from tools.trading.ta.patterns import detect_patterns
-            from tools.trading.ta.support_resistance import compute_sr
-
-            bars = fetch_bars(ticker, timeframe, limit)
-            provenance = _derive_chart_provenance(bars)
-            vp = compute_vp(bars, bucket_count=40)
-            swings = find_swings(bars)
-            raw_patterns = detect_patterns(bars)
-            sr_levels = compute_sr(bars, swings=swings)
-            patterns = _enrich_chart_patterns(raw_patterns)
-            return jsonify({
-                "ticker": ticker,
-                "bars": bars,
-                "volume_profile": vp,
-                "patterns": patterns,
-                "sr_levels": sr_levels,
-                # Top-level data provenance so the UI can flag synthetic bars
-                # (nav-plat-01) — never render simulated data as real market data.
-                "data_source": provenance["data_source"],
-                "simulated": provenance["simulated"],
-                "as_of": provenance["as_of"],
-            })
-        except Exception as exc:
-            return jsonify({"error": str(exc)}), 500
-
-    @app.route("/fathomdesk/api/traps")
-    def fathomdesk_api_traps():
-        """Return last 20 trap events from ad_trap_events for the Trap History panel."""
-        def _confidence_to_severity(conf):
-            if conf is None:
-                return "medium"
-            if conf >= 0.8:
-                return "critical"
-            if conf >= 0.6:
-                return "high"
-            return "medium"
-
-        try:
-            from tools.db.storage import get_connection
-            conn = get_connection()
-            try:
-                rows = conn.execute(
-                    "SELECT id, ticker, pattern, broken_level, confidence, "
-                    "volume_ratio, timeframe, evidence_json, created_at "
-                    "FROM ad_trap_events "
-                    "ORDER BY created_at DESC "
-                    "LIMIT 20"
-                ).fetchall()
-            finally:
-                conn.close()
-
-            events = []
-            for r in rows:
-                row = dict(r) if hasattr(r, "keys") else {
-                    "id": r[0], "ticker": r[1], "pattern": r[2],
-                    "broken_level": r[3], "confidence": r[4],
-                    "volume_ratio": r[5], "timeframe": r[6],
-                    "evidence_json": r[7], "created_at": r[8],
-                }
-                row["severity"] = _confidence_to_severity(row.get("confidence"))
-                events.append(row)
-
-            return jsonify({"events": events})
-        except Exception as exc:
-            return jsonify({"events": [], "error": str(exc)})
-
-    @app.route("/fathomdesk/api/reflex-observations")
-    def fathomdesk_api_reflex_observations():
-        """Return recent reflex execution records."""
-        from flask import request as _req
-        try:
-            limit = min(int(_req.args.get("limit", 50)), 200)
-        except (ValueError, TypeError):
-            limit = 50
-        try:
-            from tools.db.storage import get_connection
-            conn = get_connection()
-            ph = "%s" if getattr(conn, "_dialect", "sqlite") == "postgresql" else "?"
-            try:
-                rows = conn.execute(
-                    f"SELECT id, reflex_name, started_at, duration_ms, status "  # nosec B608
-                    f"FROM reflex_observations "
-                    f"ORDER BY started_at DESC LIMIT {ph}",
-                    [limit],
-                ).fetchall()
-            finally:
-                conn.close()
-            observations = []
-            for r in rows:
-                row = dict(r) if hasattr(r, "keys") else {
-                    "id": r[0], "reflex_name": r[1], "started_at": r[2],
-                    "duration_ms": r[3], "status": r[4],
-                }
-                observations.append({
-                    "id": row["id"],
-                    "reflex_name": row["reflex_name"],
-                    "started_at": row["started_at"],
-                    "duration_ms": row["duration_ms"],
-                    "success": row["status"] == "done",
-                })
-            return jsonify({"observations": observations})
-        except Exception as exc:
-            return jsonify({"observations": [], "error": str(exc)})
-
-    if _track_request is not None:
-        _track_request(app)
 
     # ---- ECR-OBS-01: Prometheus /metrics endpoint ----
     try:

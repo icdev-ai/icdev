@@ -437,12 +437,10 @@
 
             <!-- ── Platforms ─────────────────────────────────────────────────── -->
             <li class="nav-dropdown">
-                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/fathomdesk','/fathomdesk/trap-events','/news','/options','/analysis','/machine-momentum','/quality-scores','/genesis','/oracle','/proposals','/govcon','/cpmp'] or request.path.startswith('/foundry') or '/geosigint' in request.path or '/gameday' in request.path or '/academy' in request.path or request.path.startswith('/cpmp/') %}active{% endif %}">Platforms ▾</a>
+                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/news','/options','/analysis','/machine-momentum','/quality-scores','/genesis','/oracle','/proposals','/govcon','/cpmp'] or request.path.startswith('/foundry') or '/geosigint' in request.path or '/gameday' in request.path or '/academy' in request.path or request.path.startswith('/cpmp/') %}active{% endif %}">Platforms ▾</a>
                 <ul class="nav-dropdown-menu">
                     {% if not airgap_mode %}
                     <li class="nav-section-label">Market &amp; AI</li>
-                    <li><a href="/fathomdesk" style="color:#8ab4ff;">FathomDesk</a></li>
-                    <li><a href="/fathomdesk/trap-events" style="color:#f87171;">&#9888; Trap Events</a></li>
                     <li><a href="/genesis">Genesis</a></li>
                     <li><a href="/oracle">Oracle</a></li>
                     {% if foundry_enabled %}<li><a href="/foundry" style="color:#b388ff;">Foundry (ACF)</a></li>{% endif %}

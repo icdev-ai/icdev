@@ -259,7 +259,6 @@ NAV_STRUCTURE = {
     },
     "Platforms ▾": {
         "Platforms": [
-            ("FathomDesk",       "/fathomdesk"),
             ("Genesis",          "/genesis"),
             ("Oracle",           "/oracle"),
             ("Proposals",        "/proposals"),
@@ -731,7 +730,6 @@ def check_additional_key_pages(page: Page, r: R) -> None:
         # Platforms / Ops
         ("/genesis",          ["Genesis", "daemon", "reflex"]),
         ("/oracle",           ["Oracle", "prediction", "insight"]),
-        ("/fathomdesk",       ["FathomDesk", "fathom", "desk"]),
         ("/proposals",        ["Proposal", "opportunity", "RFP"]),
         ("/academy",          ["Academy", "course", "learn", "FORGE"]),
         # Ops

@@ -15,7 +15,6 @@ const KEY_PAGES = [
   { label: 'Proposals',           path: '/proposals' },
   { label: 'Supply Chain',        path: '/supply_chain' },
   { label: 'Strategos',           path: '/strategos' },
-  { label: 'FathomDesk',          path: '/fathomdesk' },
   // Network canvas is disabled in CI (ICDEV_NETWORK_ENABLED=false); /network/ask
   // returns 404 when the blueprint is not registered — omit from smoke list.
 ];
