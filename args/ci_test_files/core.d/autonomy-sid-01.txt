@@ -1,0 +1,6 @@
+# autonomy-sid-01 — two scheduler processes must block each other on a task.
+# A fixed ICDEV_SESSION_ID made them indistinguishable to leases.acquire, which
+# refuses a hard lease only when it is held by ANOTHER session. Pins that two
+# distinct processes ARE refused, and that all three long-running services claim
+# a per-process id rather than re-inventing the scheme.
+tests/coordination/test_service_identity.py
