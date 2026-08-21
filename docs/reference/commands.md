@@ -6661,6 +6661,34 @@ python tools/ci/born_red_survey.py --out .tmp/born-red.json
 # Report only, deliberately no --gate (kpr-fix-03). Exit 2 = the survey could not
 # be produced, which is never the same as a clean survey.
 
+# Consume the detectors nobody runs — and file each finding ONCE, with its evidence (autonomy-act-02)
+python -m tools.kanban.detector_findings --json          # run status_churn + born_red_survey + recovery_summary, seed cards
+python -m tools.kanban.detector_findings --dry-run       # run the detectors; write NOTHING (no rows, no cards)
+python -m tools.kanban.detector_findings --list          # browse the projection (--detector, --status active|cleared)
+python -m tools.kanban.detector_findings --stats         # per-detector denominator: never_ran | unmeasurable | clean | findings
+python tools/genesis/daemon.py --reflex detector_findings_reflex   # the 6h reflex, once, through the daemon
+# THE DEFECT. status_churn (kpr-watch-11), born_red_survey (rem-hyg-14) and
+# recovery_summary (rem-hyg-16) were each built because a human found the defect
+# BY HAND, and each then sat imported by NOBODY on any runtime path — the
+# declared-but-unconsumed defect reaching the self-observation layer. This builds
+# NO detector; it runs the three that exist on the Genesis cadence.
+# A CARD CARRIES ITS DERIVATION: the detector's own row verbatim, the exact
+# command that re-derives it, and what "fixed" looks like. Never a bare alert.
+# DEDUPE ON THE FINDING, NOT THE RUN: one `detector_findings` row per
+# (detector, subject, fingerprint), upserted with `seen_count` — the cef-ui-02
+# projection shape. A card is seeded on FIRST sight and again only if the finding
+# RECURS after its card closed (`-r2`, `card_count`); `idempotency_key` on the
+# spec is the second lock inside create_tasks. Cards land in `suggested` (HITL
+# quarantine) by default — `seed_status` in args/genesis_config.yaml.
+# UNMEASURABLE CLEARS NOTHING: an idle board, an unmigrated baseline, an empty
+# audit window each report that they could not measure, and only a MEASURABLE
+# run that no longer reports a finding marks it `cleared`. `detector_runs` is
+# the denominator keeping never_ran / unmeasurable / clean apart.
+# Bounded per run (`max_cards_per_run`, default 6, worst-first) and the bound is
+# REPORTED as `cards_deferred`, never silent. Measured on the live board
+# 2026-08-21: 0 oscillating, 3 born-red, 3 needed_a_human -> 6 cards.
+# Migration 20260821050135. Seeds through task_factory.create_tasks, never a raw INSERT.
+
 # CLOSED-CENSUS growth (cef-ci-02) — a closed census may LOSE names, never GAIN one.
 # The ratchet above enforces args/ci_test_backlog.txt by a COUNT, and a count is exactly
 # what an ENUMERATED census exists to distrust. Nothing compared a census against its

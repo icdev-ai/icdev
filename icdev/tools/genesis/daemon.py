@@ -119,6 +119,7 @@ REFLEX_NAMES = [
     "dep_health_reflex",            # pip check + pip-audit → files [DEP-HEALTH] kanban tasks
     "dead_code_reflex",             # orphan files + dead functions + import cycles → [DEAD-CODE] tasks
     "kanban_stranded_reflex",       # done/validating tasks vs origin/main → [STRANDED] suggested cards
+    "detector_findings_reflex",     # autonomy-act-02: status_churn + born_red_survey + recovery_summary → evidence cards, deduped on the finding
     "critical_task_watchdog_reflex",  # polls for critical kanban tasks → watchdog_alerts + sidecar JSON
     "api_contract_reflex",            # OpenAPI spec vs live responses → [API-CONTRACT] kanban tasks
     "route_perf_reflex",              # NAV_ROUTES smoke + p50 latency regression detection → [PERF] tasks
