@@ -390,7 +390,12 @@ def _read_gate(conn, run_id: str, step_id: str) -> dict | None:
 
 
 def _set_run_status(run_id: str, status: str) -> None:
-    """Reflect the gate on the run row so it shows up as parked in the UI.
+    """Reflect a DECIDED gate on the run row (the un-park, `running`).
+
+    Parking does NOT go through here — see :func:`open_approval_gate`, which
+    writes the gate row and the run row in one transaction. This is the other
+    direction: the gate has already been decided by somebody else's commit, so
+    there is no pair to keep consistent and nothing to make atomic.
 
     Best-effort: this is visibility, not authorization, and a failure here must
     not decide the gate. The run's own worker rewrites this row when the run
@@ -423,6 +428,28 @@ def open_approval_gate(
     dispatched twice, must re-attach to the gate an approver has already been
     shown rather than silently opening a second one beside it.
 
+    The gate row and the run row are parked in ONE transaction (rem-hyg-19).
+    They used to be two: this function committed the step row and
+    :func:`_set_run_status` then committed the run row on its own connection,
+    leaving an observable window in which the gate read ``awaiting_approval``
+    while the run still read ``running``. hgx-park-01 closed exactly that window
+    in ``workflow_runner._park_for_approval`` — the authored ``node_type: human``
+    path — and this second park, the one a ``requires_approval`` MCP tool takes,
+    was never made atomic. It surfaced as an intermittent
+    ``assert 'running' == 'awaiting_approval'`` on the Windows runner, on two
+    unrelated branches inside ninety minutes.
+
+    The window is not only a test problem. Between the two commits the run
+    reads ``running`` while a state-changing tool is in fact blocked on a human,
+    so the Studio run list, the resume surface and anything else keying on the
+    run status describe a run that is executing when it is parked.
+
+    Making the run write part of the transaction also makes it load-bearing: if
+    it fails, the whole park rolls back and no gate row is left behind, and
+    :func:`await_approval` turns that into a fail-closed
+    ``mcp_tool_approval_gate_unavailable`` refusal. That is the right direction
+    — a park we could not record whole must not dispatch.
+
     Args:
         prefix: Gate-id namespace (see :func:`approval_step_id`).
         label: What the approver reads in the pending-approvals list. Names the
@@ -435,24 +462,41 @@ def open_approval_gate(
     conn = _gate_connection()
     try:
         existing = _read_gate(conn, run_id, step_id)
-        if existing and existing["status"] in (*_DECIDED, "awaiting_approval"):
+        if existing and existing["status"] in _DECIDED:
+            # Already decided: the run status is the un-park's business, not
+            # the park's, so leave it alone.
             return existing
 
-        step_run_id = f"sr-{uuid.uuid4().hex[:12]}"
+        if existing and existing["status"] == "awaiting_approval":
+            gate = existing
+        else:
+            step_run_id = f"sr-{uuid.uuid4().hex[:12]}"
+            conn.execute(
+                """INSERT INTO studio_workflow_run_steps
+                   (step_run_id, run_id, step_id, step_name, tool, status, started_at)
+                   VALUES (%s, %s, %s, %s, '', 'awaiting_approval', %s)""",
+                (
+                    step_run_id,
+                    run_id,
+                    step_id,
+                    f"{label}: {tool}",
+                    _utcnow(),
+                ),
+            )
+            gate = {
+                "step_run_id": step_run_id,
+                "status": "awaiting_approval",
+                "stderr": "",
+            }
+
         conn.execute(
-            """INSERT INTO studio_workflow_run_steps
-               (step_run_id, run_id, step_id, step_name, tool, status, started_at)
-               VALUES (%s, %s, %s, %s, '', 'awaiting_approval', %s)""",
-            (
-                step_run_id,
-                run_id,
-                step_id,
-                f"{label}: {tool}",
-                _utcnow(),
-            ),
+            "UPDATE studio_workflow_runs SET status = 'awaiting_approval' "
+            "WHERE run_id = %s",
+            (run_id,),
         )
+        # ONE commit for both rows: an observer sees the park whole, or not yet.
         conn.commit()
-        return {"step_run_id": step_run_id, "status": "awaiting_approval", "stderr": ""}
+        return gate
     finally:
         conn.close()
 
@@ -545,9 +589,10 @@ def await_approval(
 
     if status not in _DECIDED:
         wait = approval_wait_seconds(policy) if wait_seconds is None else max(0.0, wait_seconds)
-        # Show the run as parked while a person decides, the same way the runner
-        # does for an authored human node.
-        _set_run_status(run_id, "awaiting_approval")
+        # The run already reads `awaiting_approval`: `open_approval_gate` parked
+        # it in the SAME transaction that made the gate visible (rem-hyg-19).
+        # Do not restore a `_set_run_status` call here — a second, separately
+        # committed write is precisely the window that atomicity closed.
         status, reason = _poll_gate(run_id, step_id, wait, poll_seconds)
         if status == "approved":
             _set_run_status(run_id, "running")

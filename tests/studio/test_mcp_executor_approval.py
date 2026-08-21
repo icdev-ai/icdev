@@ -340,3 +340,116 @@ def test_parking_leaves_both_rows_consistent(run_id, stub_apply):
     finally:
         wr.reject_step(_gate_row(run_id)["step_run_id"], reason="test teardown")
         thread.join(timeout=15)
+
+
+# ── The MCP park is ATOMIC TOO (rem-hyg-19) ────────────────────────────────
+# `test_parking_leaves_both_rows_consistent` above kept failing on the Windows
+# runner AFTER hgx-park-01 — twice in ninety minutes, on two branches that
+# touch nothing under tools/studio/**. It was right both times, and hgx-park-01
+# had not closed its window: that card made `workflow_runner._park_for_approval`
+# atomic, which is the park an AUTHORED `node_type: human` step takes. These
+# tests drive `mcp_executor.run`, which parks through its OWN pair of writes —
+# `open_approval_gate` committed the step row and `_set_run_status` then
+# committed the run row on a SECOND connection. Same defect, second site, and
+# the structural tests above could not see it because they read the other
+# function's source.
+#
+# The lead recorded on the card (workflow_runner.py's `_update_run_status(
+# run_id, "running")` at worker start) is not the cause: no test here starts a
+# workflow worker, and the `run_id` fixture writes `running` itself.
+
+
+def test_the_mcp_park_writes_both_rows_in_one_transaction():
+    """Structural, for the same reason as its `_park_for_approval` twin: the
+    race is timing-dependent, so a functional test for it alone would be flaky
+    in exactly the way it replaces.
+
+    If someone splits the park back into an `open_approval_gate` commit plus a
+    `_set_run_status` commit, the window returns and this fails."""
+    import inspect
+
+    src = inspect.getsource(mcp_executor.open_approval_gate)
+    assert src.count("_gate_connection()") == 1, "one connection, or it is not atomic"
+    assert src.count("conn.commit()") == 1, "one commit, or the window returns"
+    assert "studio_workflow_run_steps" in src and "studio_workflow_runs" in src
+
+
+def test_the_mcp_park_site_does_not_re_park_on_a_second_connection():
+    """Pins the CALL SITE, not just the helper — `await_approval` used to park
+    the run itself, right after the gate row had already been committed."""
+    import inspect
+
+    src = inspect.getsource(mcp_executor.await_approval)
+    assert '_set_run_status(run_id, "awaiting_approval")' not in src
+    # The un-park stays: the gate is decided by then, so there is no pair.
+    assert '_set_run_status(run_id, "running")' in src
+
+
+def test_no_commit_publishes_the_gate_onto_a_still_running_run(
+    run_id, stub_apply, monkeypatch
+):
+    """The deterministic form of `test_parking_leaves_both_rows_consistent`.
+
+    That test can only catch the race if it reads in the window; this one reads
+    at EVERY commit the park makes, through a separate connection — which is
+    what another process sees at that instant. On the two-commit park the first
+    observation is `('awaiting_approval', 'running')`, every time.
+    """
+    observations: list[tuple[str, str]] = []
+    real_connection = mcp_executor._gate_connection
+
+    class _ObservedConnection:
+        def __init__(self, conn):
+            self._conn = conn
+
+        def __getattr__(self, name):
+            return getattr(self._conn, name)
+
+        def commit(self):
+            self._conn.commit()
+            observations.append(
+                ((_gate_row(run_id) or {}).get("status", ""), _run_status(run_id))
+            )
+
+    monkeypatch.setattr(
+        mcp_executor, "_gate_connection", lambda: _ObservedConnection(real_connection())
+    )
+
+    with pytest.raises(mcp_executor.MCPWorkflowGateError):
+        mcp_executor.run(_TOOL, {}, run_id, approval_wait=0)
+
+    published = [(g, r) for g, r in observations if g == "awaiting_approval"]
+    assert published, f"the gate never became visible at all: {observations}"
+    assert all(run == "awaiting_approval" for _gate, run in published), (
+        f"a commit published the parked gate while the run still read running: "
+        f"{observations}"
+    )
+
+
+def test_resuming_onto_an_existing_gate_re_parks_the_run(run_id, stub_apply):
+    """The re-attach branch parks too, and still opens no second gate.
+
+    `_set_run_status` used to cover this case for free because it ran after
+    every undecided `open_approval_gate`. Folding the write into the
+    transaction has to keep covering it, or a resumed run reads `running` while
+    it is blocked on a human.
+    """
+    with pytest.raises(mcp_executor.MCPWorkflowGateError):
+        mcp_executor.run(_TOOL, {}, run_id, approval_wait=0)
+    first = _gate_row(run_id)["step_run_id"]
+
+    conn = get_connection()
+    try:
+        conn.execute(
+            "UPDATE studio_workflow_runs SET status = 'running' WHERE run_id = %s",
+            (run_id,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    with pytest.raises(mcp_executor.MCPWorkflowGateError):
+        mcp_executor.run(_TOOL, {}, run_id, approval_wait=0)
+
+    assert _run_status(run_id) == "awaiting_approval"
+    assert _gate_row(run_id)["step_run_id"] == first, "resume opened a second gate"
