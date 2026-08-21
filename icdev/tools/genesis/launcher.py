@@ -292,8 +292,24 @@ def _start_pr_watcher():
     return proc, pw_log
 
 
+def _trading_dashboard_available() -> bool:
+    """xit-gen-01: FathomDesk is moving to the private ICDEV[FT] repository.
+
+    Start its dashboard only while the entry point is still in this tree and
+    nobody has switched it off (ICDEV_TRADING_DASHBOARD_ENABLED=0). After the
+    removal the file is gone and the launcher simply logs that it skipped it,
+    instead of a subprocess that dies on FileNotFoundError every restart cycle.
+    """
+    if os.environ.get("ICDEV_TRADING_DASHBOARD_ENABLED", "1").strip().lower() in ("0", "false", "no"):
+        return False
+    return os.path.isfile(os.path.join(ROOT, "tools", "trading", "dashboard", "app.py"))
+
+
 def _start_trading_dashboard():
-    """Start FathomDesk trading dashboard subprocess."""
+    """Start FathomDesk trading dashboard subprocess (None, None when absent)."""
+    if not _trading_dashboard_available():
+        _log("FathomDesk Dashboard skipped (tools/trading/dashboard/app.py absent or disabled)")
+        return None, None
     _kill_stale_instances("trading/dashboard/app.py")
     td_log = open(os.path.join(ROOT, ".tmp", "trading_dashboard.log"), "a", encoding="utf-8")
     proc = subprocess.Popen(
@@ -384,9 +400,10 @@ def main():
                     pw_proc, pw_log_f = _start_pr_watcher()
 
                 # Check FathomDesk Trading Dashboard
-                if td_proc.poll() is not None:
+                if td_proc is not None and td_proc.poll() is not None:
                     _log(f"FathomDesk Dashboard exited (code {td_proc.returncode}), restarting...")
-                    td_log_f.close()
+                    if td_log_f is not None:
+                        td_log_f.close()
                     time.sleep(2)
                     td_proc, td_log_f = _start_trading_dashboard()
 
@@ -397,9 +414,10 @@ def main():
         _log("Shutdown requested")
     finally:
         _log("Stopping services...")
-        for proc in [daemon_proc, pg_proc, kb_proc, pw_proc, td_proc, dash_proc]:
+        _procs = [p for p in (daemon_proc, pg_proc, kb_proc, pw_proc, td_proc, dash_proc) if p is not None]
+        for proc in _procs:
             proc.terminate()
-        for proc in [daemon_proc, pg_proc, kb_proc, pw_proc, td_proc, dash_proc]:
+        for proc in _procs:
             try:
                 proc.wait(timeout=10)
             except subprocess.TimeoutExpired:
@@ -409,7 +427,8 @@ def main():
         pg_log_f.close()
         kb_log_f.close()
         pw_log_f.close()
-        td_log_f.close()
+        if td_log_f is not None:
+            td_log_f.close()
         _release_pid_lock()
         _log("ICDEV™ Services stopped")
 
