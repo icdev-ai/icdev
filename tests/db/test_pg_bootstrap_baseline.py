@@ -148,18 +148,101 @@ def test_carried_forward_tables_are_ordered_for_their_foreign_keys():
 
     Appending these alphabetically produced a snapshot that failed to load with
     UndefinedTable partway through, leaving a half-built database.
+
+    The rule is about an INLINE ``REFERENCES``: a CREATE TABLE that names its
+    parent in the column list needs the parent to exist first. pg_dump never
+    inlines a foreign key -- it emits every FK as a trailing
+    ``ALTER TABLE ... ADD CONSTRAINT``, after all tables -- so once the
+    canonical database carries these tables, the dump region legitimately lists
+    them alphabetically (child first) and the FK still arrives. Either the
+    inline form is correctly ordered, or the FK is declared by a later ALTER;
+    a snapshot with NEITHER has lost the constraint.
     """
     snapshot = bootstrap_pg.SCHEMA_FILE.read_text(encoding="utf-8-sig", errors="replace")
 
-    def pos(table: str) -> int:
-        m = re.search(
-            rf"CREATE TABLE (?:IF NOT EXISTS )?(?:public\.)?\"?{table}\"?\s*\(", snapshot
-        )
-        assert m, f"{table} missing from snapshot"
-        return m.start()
+    parent = re.search(
+        r"CREATE TABLE (?:IF NOT EXISTS )?(?:public\.)?\"?dd_mapping_sessions\"?\s*\(", snapshot
+    )
+    assert parent, "dd_mapping_sessions missing from snapshot"
 
-    assert pos("dd_mapping_sessions") < pos("dd_field_mappings"), (
-        "dd_mapping_sessions must be created before the table that references it"
+    child_blocks = list(re.finditer(
+        r"CREATE TABLE (?:IF NOT EXISTS )?(?:public\.)?\"?dd_field_mappings\"?\s*\((.*?)\n\);",
+        snapshot, re.S,
+    ))
+    assert child_blocks, "dd_field_mappings missing from snapshot"
+
+    inline = [m for m in child_blocks if re.search(r"REFERENCES\s+(?:public\.)?dd_mapping_sessions", m.group(1))]
+    for m in inline:
+        assert m.start() > parent.start(), (
+            "dd_mapping_sessions must be created before a dd_field_mappings that "
+            "inlines a REFERENCES to it"
+        )
+    deferred = re.search(
+        r"ALTER TABLE (?:ONLY )?public\.dd_field_mappings\s+ADD CONSTRAINT \S+ FOREIGN KEY \(session_id\) "
+        r"REFERENCES public\.dd_mapping_sessions",
+        snapshot,
+    )
+    assert inline or deferred, (
+        "no CREATE TABLE of dd_field_mappings inlines its session_id foreign key and "
+        "no trailing ALTER declares it -- the constraint has been lost"
+    )
+
+
+# -- The 173-column hole (2026-08-21) ------------------------------------------
+#
+# The snapshot was a pg_dump taken on 2026-07-26 (through_version 301) and was
+# then hand-extended for four weeks while the canonical database kept moving.
+# Measured against the canonical database on 2026-08-21, a database bootstrapped
+# from it was short 173 columns across 102 tables -- among them
+# dic_chunk_links.chunk_hash (migration 267, which the runner reported as
+# applied because bootstrap had STAMPED it) and twelve kanban_tasks columns
+# (last_heartbeat_at, max_runtime_seconds, idempotency_key, ...). The first
+# consumer of a genuinely fresh database, ICDEV[FT]'s icdev_ft, failed on the
+# first INSERT the document-intelligence ingest made. Nothing in CI saw it:
+# the CI database is built by init_db first and only MARKED by bootstrap, so
+# the snapshot's own contents had not been exercised by anything since July.
+#
+# These pin two columns that were measured absent, one per failure mode, so a
+# regenerated snapshot that drops them -- or a through_version bumped past a
+# migration whose DDL is not actually inside -- goes red here instead of on the
+# next fresh deployment.
+
+def _snapshot_table_body(table: str) -> str:
+    snapshot = bootstrap_pg.SCHEMA_FILE.read_text(encoding="utf-8-sig", errors="replace")
+    m = re.search(
+        rf"CREATE TABLE (?:IF NOT EXISTS )?public\.{table} \((.*?)\n\);", snapshot, re.S
+    )
+    assert m, f"{table} not found in the consolidated snapshot"
+    body = m.group(1)
+    # columns a later hand-maintained section adds to the same table
+    body += "\n".join(re.findall(
+        rf"ALTER TABLE public\.{table} ADD COLUMN IF NOT EXISTS (\w+)", snapshot
+    ))
+    return body
+
+
+def test_snapshot_carries_the_column_migration_267_adds():
+    """dic_chunk_links.chunk_hash: a legacy migration the baseline marks applied.
+
+    bootstrap marks every version <= through_version as applied WITHOUT running
+    it, so a column a marked migration adds exists on a fresh database only if
+    the snapshot carries it. 267 is below the baseline; its column must be in.
+    """
+    assert bootstrap_pg.snapshot_through_version() >= "267"
+    assert re.search(r"\bchunk_hash\b", _snapshot_table_body("dic_chunk_links")), (
+        "dic_chunk_links.chunk_hash (migration 267) is missing from the snapshot "
+        "while 267 is marked applied -- ingest_orchestrator's INSERT fails on a fresh database"
+    )
+
+
+@pytest.mark.parametrize("column", ["last_heartbeat_at", "max_runtime_seconds", "idempotency_key"])
+def test_snapshot_carries_the_kanban_runtime_columns(column):
+    """kanban_tasks columns declared by init_db and added to the canonical database
+    at runtime -- no migration anywhere in the tree ALTERs them in, so a fresh
+    database gets them from the snapshot or not at all."""
+    assert re.search(rf"\b{column}\b", _snapshot_table_body("kanban_tasks")), (
+        f"kanban_tasks.{column} is missing from the snapshot; the scheduler and "
+        f"pr_watcher read it on every poll"
     )
 
 
@@ -211,22 +294,29 @@ def test_every_column_migration_308_adds_is_reachable_by_some_path():
             assert col in text, f"312 must backfill {table}.{col}"
 
 
-def test_the_column_whose_absence_broke_ci_is_not_in_the_snapshot():
-    """inputs_json (migration 306) postdates the snapshot.
+def test_the_column_whose_absence_broke_ci_agrees_with_the_baseline():
+    """inputs_json (migration 306) and through_version must tell the same story.
 
-    If a regenerated snapshot ever *does* contain it, through_version was bumped
-    with it and this test's premise moves — hence the guard is conditional on the
-    baseline rather than absolute.
+    Below 306 the snapshot must NOT contain the column: if it does, the marker
+    is stale-low rather than correct. At or above 306 it MUST: if it does not,
+    the marker was bumped past DDL the dump never contained, which is exactly
+    the "too HIGH" failure that cost CI every migration 302-310 on 2026-07-29.
+    Two sides, no skip -- a skipped gated test satisfies the coverage claim
+    while asserting nothing.
     """
-    if bootstrap_pg.snapshot_through_version() >= "306":
-        pytest.skip("snapshot regenerated past 306; the column is legitimately present")
-
     snapshot = bootstrap_pg.SCHEMA_FILE.read_text(encoding="utf-8-sig", errors="replace")
     match = re.search(
         r"CREATE TABLE public\.studio_workflow_runs \((.*?)\n\);", snapshot, re.S
     )
     assert match, "studio_workflow_runs not found in the consolidated snapshot"
-    assert "inputs_json" not in match.group(1), (
-        "the snapshot already has inputs_json, so through_version is stale-low "
-        "rather than correct — bump it to match what the dump contains"
-    )
+    present = "inputs_json" in match.group(1)
+    if bootstrap_pg.snapshot_through_version() >= "306":
+        assert present, (
+            "through_version is at or past 306 but the snapshot lacks "
+            "studio_workflow_runs.inputs_json -- the marker claims DDL the dump does not contain"
+        )
+    else:
+        assert not present, (
+            "the snapshot already has inputs_json, so through_version is stale-low "
+            "rather than correct -- bump it to match what the dump contains"
+        )

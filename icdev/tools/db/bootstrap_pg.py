@@ -27,17 +27,23 @@ the snapshot (302-310) — including 306, whose absent ``inputs_json`` column ma
 every workflow-run POST return 500 and the DWO V&V specs fail in CI while
 passing locally against a fully-migrated database.
 
-Regenerate the snapshot after schema changes land in the canonical DB:
+Regenerate the snapshot with ``tools/db/regen_pg_snapshot.py`` -- NEVER with a
+bare ``pg_dump > pg_consolidated.sql``. The snapshot is not only a dump: it
+carries tables the canonical database does not have, a hand-maintained
+``ICDEV ADDITIVE SECTION`` tail, and columns that tail used to add; a straight
+re-dump drops all three silently (it dropped twelve tables once). The runbook
+is ``docs/database/pg-snapshot-regeneration.md``.
 
-    docker exec -e PGPASSWORD=$PW icdev-postgres pg_dump --schema-only \
-        --no-owner --no-privileges --no-comments -U icdev -d icdev \
-        > tools/db/schema/pg_consolidated.sql
-
-then bump ``through_version`` in ``pg_consolidated.meta.json`` to the highest
-migration on disk at that moment. Leaving it stale is safe (the surplus
-migrations simply re-run, and every post-snapshot migration is idempotent on
-PostgreSQL); raising it past what the dump actually contains is the failure
-mode, and is what ``tests/db/test_pg_bootstrap_baseline.py`` guards.
+Regenerate it whenever the canonical schema moves -- left stale, the file is
+wrong in a way nothing in CI can see: the CI database is built by init_db and
+only MARKED here, so the snapshot's contents are exercised by nothing. Measured
+2026-08-21, four weeks stale, a fresh database was short 173 columns across
+102 tables, 128 of them with no ALTER anywhere in the tree. Then bump
+``through_version`` in ``pg_consolidated.meta.json`` to the highest LEGACY
+migration on disk. Leaving it stale-low is safe (the surplus migrations simply
+re-run, and every post-snapshot migration is idempotent on PostgreSQL); raising
+it past what the dump actually contains is the failure mode, and is what
+``tests/db/test_pg_bootstrap_baseline.py`` guards.
 
 Usage:
     python tools/db/bootstrap_pg.py            # load schema + mark migrations applied

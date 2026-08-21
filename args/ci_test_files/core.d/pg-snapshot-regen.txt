@@ -1,0 +1,2 @@
+tests/db/test_pg_bootstrap_baseline.py
+tests/db/test_regen_pg_snapshot.py
