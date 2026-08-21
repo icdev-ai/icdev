@@ -122,7 +122,7 @@ wheel alias in `icdev/__init__.py:27-60`, and the bootstrap already assume it). 
 `shim.py`, `sensitivity.py`, `schema.py`). Do NOT rename imports: 3,060 files and 1,303 tests import
 `from tools.`; 311 tests patch `"tools.…"` strings.
 
-**The one change that fixes the module-identity trap.** `tools/__init__.py:33-66` is a `_ToolsRedirect`
+**Direction, as built (xit-decl-02):** the finder aliases `icdev.tools.X` onto the `tools.X` object (physical `tools/`), not the reverse — aliasing towards `icdev/tools/` would have re-rooted the 2,054 self-rooting modules onto the packaged copies under `icdev/args` and the checked-in `icdev/data/icdev.db`. Which tree is physical per package can move once xit-decl-03's census reaches zero for it. **The one change that fixes the module-identity trap.** `tools/__init__.py:33-66` is a `_ToolsRedirect`
 whose `__path__` still points at `tools/`, so an `import tools.x.y` STATEMENT loads a second module
 object (`args/mirror_parity_gate.yaml`: "a is b -> False"). Replace the fallthrough with a meta-path
 finder (`icdev/core/shim.py`) that, for core packages, imports `icdev.tools.<pkg>` and registers the

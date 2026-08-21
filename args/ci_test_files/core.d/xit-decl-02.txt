@@ -1,0 +1,2 @@
+# xit-decl-02 - tools.X and icdev.tools.X are ONE module object in a checkout.
+tests/test_namespace_identity.py
