@@ -9725,6 +9725,87 @@ def _record_dispatch_pid(task_id: str, handle) -> None:
         logger.debug("could not record dispatch pid for %s: %s", task_id, exc)
 
 
+def _reconcile_pr_opened() -> int:
+    """Move a PRE-PR task that already has an open PR to ``pr_opened`` (rem-hyg-18).
+
+    THE GAP. `pr_opened` had exactly ONE writer in the whole tree — the
+    stale-reaper below — and it is gated on ``WHERE status = 'in_progress'``. So
+    a task sitting in ``scheduled`` or ``backlog`` with an open PR could never
+    reach ``pr_opened`` by any path at all. It is not a rare shape: it is what
+    every PR opened outside the runner produces, including every one a human
+    raises by hand.
+
+    The symptom is two surfaces with the SAME NAME disagreeing. The Home panel
+    "Awaiting Merge" reads the FORGE (`gh pr list`); the Kanban column "Awaiting
+    Merge" (kanban.html) reads ``status = 'pr_opened'``. Measured 2026-08-21:
+    the panel listed three PRs while the column was EMPTY and the board showed
+    those tasks as `scheduled` / `in_progress`.
+
+    DELIBERATELY NOT TOUCHING `in_progress`. That case is already handled, and
+    handled better: the stale-reaper moves it once the task stops heartbeating
+    ("finished, not stalled"). A task whose worker is alive and pushing commits
+    genuinely IS in progress, and moving it early would free a dispatch slot
+    while that worker still burns tokens — quietly raising concurrency above
+    MAX_IN_PROGRESS, which is the flow-control property clx-flow-01 exists to
+    hold. So this closes only the hole nothing else can reach.
+
+    FORWARD ONLY. `changes_requested`, `merge_conflict`, `ci_failed` and `done`
+    are all AHEAD of `pr_opened`; rewriting them backwards would erase a review
+    outcome. Only the two pre-PR states are eligible.
+    """
+    #: States that precede a PR. `in_progress` is excluded on purpose — see above.
+    eligible = ("scheduled", "backlog")
+    moved = 0
+    conn = None
+    try:
+        branches = _open_pr_head_branches(str(BASE_DIR))
+        if not branches:
+            # Empty means gh was unavailable OR there are genuinely no open PRs.
+            # Both are correctly a no-op: this only ever moves a task FORWARD on
+            # positive evidence that its PR exists.
+            return 0
+        conn = get_connection()
+        placeholders = ",".join(["%s"] * len(eligible))
+        rows = conn.execute(
+            f"SELECT id, status FROM kanban_tasks WHERE status IN ({placeholders})",  # nosec B608
+            eligible,
+        ).fetchall()
+        now_iso = datetime.now(timezone.utc).isoformat()
+        for row in rows:
+            record = dict(row)
+            task_id = record.get("id")
+            if not task_id or f"kanban/{task_id}" not in branches:
+                continue
+            # Belt as well as braces. The SELECT already filters on `eligible`,
+            # but that guard lives in SQL where no unit test can see it and a
+            # later edit could widen it without anything noticing. Re-asserting
+            # it here makes "only ever moves FORWARD" a property of the FUNCTION
+            # rather than of one query string.
+            if record.get("status") not in eligible:
+                continue
+            conn.execute(
+                "UPDATE kanban_tasks SET status = 'pr_opened', updated_at = %s "
+                "WHERE id = %s AND status = %s",
+                (now_iso, task_id, record.get("status")),
+            )
+            moved += 1
+            logger.info(
+                "pr-reconcile: %s was %s with an open PR (kanban/%s) -> pr_opened",
+                task_id, record.get("status"), task_id,
+            )
+        if moved:
+            conn.commit()
+    except Exception as exc:  # noqa: BLE001 — never wedge the cycle
+        logger.warning("pr-reconcile skipped: %s", exc)
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    return moved
+
+
 def _reap_stale_in_progress() -> None:
     """Periodic reaper: reset in_progress tasks not tracked in _running.
 
@@ -11758,6 +11839,16 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             _reap_stale_in_progress()
     except Exception as _rip_exc:
         logger.warning("stale-in_progress reaper failed: %s", _rip_exc)
+    # 0d-bis. Reconcile pre-PR tasks that already have an open PR (rem-hyg-18).
+    # EVERY cycle, not sampled like the reaper above: the open-PR branch set is
+    # already cached per cycle (`_open_pr_head_branches`), so this costs one
+    # indexed SELECT over the handful of scheduled/backlog rows. Sampling it at
+    # 1-in-30 would leave the board misreporting for up to half an hour, which
+    # is the defect rather than a cheaper version of the fix.
+    try:
+        _reconcile_pr_opened()
+    except Exception as _pro_exc:
+        logger.warning("pr-opened reconciler failed: %s", _pro_exc)
     # 0e. GA completion poller — move completed GA runs to done/backlog and free slots.
     try:
         _poll_github_actions_completions()
