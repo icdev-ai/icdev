@@ -107,6 +107,54 @@ _PLAYWRIGHT_JSON_FAIL = json.dumps({
 })
 
 
+# A report in the shape Playwright ACTUALLY writes: the file suite carries the
+# file name and NO specs; the `test.describe` suite under it carries them.
+# Every spec under tests/e2e/ is inside a describe block, so this -- not the
+# flat fixtures above -- is what `--run` parses on every batch.
+_PLAYWRIGHT_JSON_NESTED_FAIL = json.dumps({
+    "stats": {"expected": 2, "unexpected": 1, "skipped": 0},
+    "suites": [
+        {
+            "title": "coworker_lifecycle.spec.ts",
+            "file": "coworker_lifecycle.spec.ts",
+            "specs": [],
+            "suites": [
+                {
+                    "title": "ACE Co-Worker Engine Lifecycle",
+                    "file": "coworker_lifecycle.spec.ts",
+                    "specs": [
+                        {
+                            "title": "GET /coworker/<id> instance detail loads",
+                            "tests": [
+                                {
+                                    "results": [
+                                        {
+                                            "status": "failed",
+                                            "error": {"message": "Expected substring: \"CUI // SP-CTI\""},
+                                            "attachments": [
+                                                {
+                                                    "name": "screenshot",
+                                                    "contentType": "image/png",
+                                                    "path": "C:/x/test-results/cw-detail/test-failed-1.png",
+                                                }
+                                            ],
+                                        }
+                                    ]
+                                }
+                            ],
+                        },
+                        {
+                            "title": "GET /coworker/ lists instances",
+                            "tests": [{"results": [{"status": "passed", "attachments": []}]}],
+                        },
+                    ],
+                }
+            ],
+        }
+    ],
+})
+
+
 # ---------------------------------------------------------------------------
 # parse_playwright_json
 # ---------------------------------------------------------------------------
@@ -140,6 +188,24 @@ class TestParsePlaywrightJson(unittest.TestCase):
         failures = parse_playwright_json(_PLAYWRIGHT_JSON_FAIL)
         login_failure = next(f for f in failures if "login" in f.test_name.lower())
         assert "auth_login.png" in login_failure.screenshot_path
+
+    def test_nested_describe_suite_failure_is_found(self):
+        """The walker must descend: a one-level walk finds ZERO specs in every
+        real report (measured 2026-08-22: 6 file suites per batch, 0 specs
+        each, 1 child each) and a red sweep parses as green."""
+        failures = parse_playwright_json(_PLAYWRIGHT_JSON_NESTED_FAIL)
+        assert len(failures) == 1
+        f = failures[0]
+        assert f.test_name == "ACE Co-Worker Engine Lifecycle > GET /coworker/<id> instance detail loads"
+        assert f.spec_file == "coworker_lifecycle.spec.ts"
+        assert f.screenshot_path.endswith("test-failed-1.png")
+        assert "CUI // SP-CTI" in f.error_message
+
+    def test_nested_suite_inherits_file_from_its_ancestor(self):
+        report = json.loads(_PLAYWRIGHT_JSON_NESTED_FAIL)
+        report["suites"][0]["suites"][0].pop("file")
+        failures = parse_playwright_json(json.dumps(report))
+        assert [f.spec_file for f in failures] == ["coworker_lifecycle.spec.ts"]
 
     def test_error_message_extracted(self):
         failures = parse_playwright_json(_PLAYWRIGHT_JSON_FAIL)
@@ -410,7 +476,17 @@ class TestTally(unittest.TestCase):
     def test_missing_stats_contribute_nothing(self):
         result = QARunResult()
         _tally({}, result)
-        assert (result.total, result.passed, result.skipped) == (0, 0, 0)
+        assert (result.total, result.passed, result.skipped, result.failed) == (0, 0, 0, 0)
+
+    def test_unexpected_is_counted_as_failed(self):
+        """`failed` is Playwright's own `unexpected`, never the parser's count.
+        On the 2026-08-22 sweep `failed` read 0 against 31 unexpected and the
+        run was recorded `passed`."""
+        result = QARunResult()
+        _tally({"stats": {"expected": 88, "unexpected": 12, "skipped": 8}}, result)
+        _tally({"stats": {"expected": 60, "unexpected": 7, "skipped": 0}}, result)
+        assert result.failed == 19
+        assert derive_status(result) == STATUS_FAILED
 
 
 # ---------------------------------------------------------------------------
@@ -512,6 +588,39 @@ class TestRunE2ESuiteDeadline(unittest.TestCase):
             result = run_e2e_suite(deadline_seconds=600, batch_size=1)
         assert result.status == STATUS_NO_TESTS
         assert any("webServer" in e for e in result.batches[0]["errors"])
+
+    def test_nested_failing_report_makes_the_run_failed(self):
+        """The 2026-08-22 sweep: 11 batches, 31 `unexpected`, reported
+        `status=passed failed=0` because nothing below the file suite was read."""
+        specs = ["tests/e2e/coworker_lifecycle.spec.ts"]
+        proc = MagicMock(returncode=1, stdout=_PLAYWRIGHT_JSON_NESTED_FAIL, stderr="")
+        with (
+            patch("icdev.tools.testing.qa_agent_runner.resolve_spec_files", return_value=specs),
+            patch("icdev.tools.testing.qa_agent_runner.subprocess.run", return_value=proc),
+        ):
+            result = run_e2e_suite(deadline_seconds=600, batch_size=1)
+        assert result.status == STATUS_FAILED
+        assert result.failed == 1
+        assert [f.test_name for f in result.failures] == [
+            "ACE Co-Worker Engine Lifecycle > GET /coworker/<id> instance detail loads"
+        ]
+        assert result.failures_unparsed == 0
+
+    def test_unexpected_the_parser_cannot_name_still_fails_the_run(self):
+        """A parser blind spot must be REPORTED as unnamed failures, never
+        resolved in favour of the parser: Playwright said red."""
+        specs = ["tests/e2e/s0.spec.ts"]
+        report = json.dumps({"stats": {"expected": 0, "unexpected": 1, "skipped": 0}, "suites": []})
+        proc = MagicMock(returncode=1, stdout=report, stderr="")
+        with (
+            patch("icdev.tools.testing.qa_agent_runner.resolve_spec_files", return_value=specs),
+            patch("icdev.tools.testing.qa_agent_runner.subprocess.run", return_value=proc),
+        ):
+            result = run_e2e_suite(deadline_seconds=600, batch_size=1)
+        assert result.status == STATUS_FAILED
+        assert result.failed == 1
+        assert result.failures == []
+        assert result.failures_unparsed == 1
 
     def test_run_uses_the_single_token_project_flag(self):
         specs = ["tests/e2e/s0.spec.ts"]
