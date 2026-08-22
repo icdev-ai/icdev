@@ -8895,3 +8895,63 @@ projects:
   - key: data
     title: DATA - FathomDesk data migration
     priority: medium
+- key: fdx
+  name: FDX - FathomDesk decision engine into ICDEV[FT]
+  description: 'Migrate the LATEST, feature-rich FathomDesk (the live tools/trading tree,
+    258 py / ~87.5k lines / ~130 ad_* tables) OUT of the public ICDEV[IT] repo INTO the
+    private icdev_ft parent, landing in a new icdev_fin/fathomdesk/ package. The crown
+    jewel is the team-of-experts / Chain-of-Debate auto-trade decision engine (deterministic
+    analysts, CoD perspective scorer, six-agent CIS expert panel, LLM-as-Judge Socratic
+    loop, PMA fusion) plus the FathomDesk-local KG supply-chain used for research. The
+    engine rides FT rails - it does NOT fork them: every order routes through
+    icdev_fin/execution/order_gate (assert_may_trade) + FT governance + kill-switch, and it
+    feeds BOTH an autonomous auto-trader (paper) AND a spec-producer bridge (panel verdict
+    -> StrategySpec -> generate/ladder). Core coupling is thin (db.storage, llm.router,
+    icdev_logger only), so this does NOT depend on the xcore- kernel carve. SaaS cruft
+    (auth/billing/tenancy/leagues/lessons) is DROPPED; the user_id/tenant_id retrofit is
+    reversed (single-operator). semantica is DEFERRED to the sem epic. Tasks here are
+    EXTERNAL-repo tasks: parked until ICDEV_KANBAN_REPO_FT is set, held behind fdx-gate-00,
+    and live-trading code is never built unattended (Alpaca PAPER only; FT-9 live stays
+    HITL). Plan: you-are-an-agentic-cozy-parrot.md (PROGRAMME 2).'
+  task_prefix: fdx-
+  default_open: true
+  briefs:
+  - 'ENG (crown jewel): runner, analysts, analysis/{perspective_scorer(CoD),confluence},
+    market_intel/{expert_agents,judge,scenario,cascade,correlation,kg_seeder},
+    agents/portfolio_manager (PMA), strategist, auto_trader rewired to the FT order-gate +
+    governance + kill-switch; KG supply-chain seeded into icdev_ft; both seams
+    (auto-trade->paper AND panel->StrategySpec bridge); the ad_* tables this slice needs as
+    FT migrations with no user_id.'
+  - 'EXEC/QUANT: the 9 broker adapters into icdev_fin/brokers (args/fin_brokers.yaml,
+    env:/file: secret refs), execution mapped onto order_gate, risk reconciled to FT
+    governance; options/factors/ta/ml as decision-engine inputs.'
+  - 'INTEL/DATA: news, oracle lenses, analytics, feedback, alerts; consolidate + migrate the
+    ~130 ad_* tables to icdev_ft PG migrations, reverse the user_id retrofit.'
+  - 'UI/SEM: ft_api routers + React routes for advisor/experts/scenarios/strategist/graph
+    (OpenAPI/api-types/tokens drift-gated); SEM (deferred) evaluates semantica as the
+    reasoning/decision-provenance layer on the unused tools.cortex seam.'
+  epics:
+  - key: gate
+    title: Manual Gate
+    priority: high
+  - key: eng
+    title: ENG - decision engine crown jewel (experts, CoD, judge, PMA, KG, auto-trader)
+    priority: critical
+  - key: exec
+    title: EXEC - brokers, execution on order-gate, risk on FT governance
+    priority: high
+  - key: quant
+    title: QUANT - options, factors, TA, ML as decision inputs
+    priority: high
+  - key: intel
+    title: INTEL - news, oracle, analytics, feedback, alerts
+    priority: medium
+  - key: data
+    title: DATA - ad_* table consolidation and migration to icdev_ft
+    priority: medium
+  - key: ui
+    title: UI - ft_api advisor/experts routers and React routes
+    priority: medium
+  - key: sem
+    title: SEM - semantica reasoning/provenance layer (deferred)
+    priority: low
