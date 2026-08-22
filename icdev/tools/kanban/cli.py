@@ -350,6 +350,26 @@ def cmd_set_status(
             else:
                 results.append({"id": tid, "error": "not found"})
 
+    # The work landed: hand the task's coordination lease back. AFTER the
+    # connection is closed, so a slow lease read cannot hold a PG transaction
+    # open. Measured 2026-08-22 (claim-verif-a6a1517970): 17 of 20 litter
+    # leases the claim verifier flagged were `create_tasks(claim=True)` seeds on
+    # tasks this very command had already marked done — CLAUDE.md told the
+    # session to take the claim and left `--release` to its memory. The runner's
+    # `_move_task` releases on a terminal transition; this door did not.
+    # SAME LADDER AS --release, never a second copy: ownership first, then the
+    # two-signal verdict, so a live holder or a heartbeating worker is kept and
+    # REPORTED. Best-effort — the `done` row is already written and a lease
+    # failure must not un-write it — but never silent.
+    if status == "done":
+        for r in results:
+            if "error" in r:
+                continue
+            try:
+                r["lease"] = _release_task_lease(r["id"])
+            except Exception as exc:  # noqa: BLE001
+                r["lease"] = {"state": "error", "why": str(exc)}
+
     if json_out:
         payload = ({"merge": merge_verdict, "tasks": results}
                    if merge_verdict is not None else results)
@@ -362,6 +382,10 @@ def cmd_set_status(
                 print(f"  NOT FOUND: {r['id']}")
             else:
                 print(f"  {r['id']}: {r['status']}  {r.get('title', '')[:70]}")
+                lease = r.get("lease")
+                if lease and lease.get("state") != "none":
+                    why = f" — {_ascii(lease['why'])}" if lease.get("why") else ""
+                    print(f"    lease: {lease['state']}{why}")
     return 0
 
 
@@ -761,20 +785,13 @@ def cmd_release(task_id: str, json_out: bool) -> int:
     (``HEARTBEAT_LIVE_MINUTES``) once the worker really is gone. An unreadable
     heartbeat reads as alive — cannot-tell must never license a reap.
     """
-    from tools.coordination import leases
     from tools.kanban import lease_liveness
 
-    resource = _task_lease_resource(task_id)
-    prior = leases.holder(resource)
-    released = leases.release(resource)
-    reclaimed = False
-    verdict = None
-    if not released and prior is not None:
-        verdict, reclaimed = lease_liveness.reap_if_litter(task_id)
-        released = reclaimed
-
-    still = leases.holder(resource)
-    worker_alive = verdict is not None and verdict.state == lease_liveness.STATE_WORKING
+    out = _release_task_lease(task_id)
+    released, reclaimed = out["released"], out["reclaimed"]
+    prior, still = out["prior"], out["still"]
+    worker_alive = out["worker_heartbeating"]
+    why = out["why"]
     if json_out:
         print(json.dumps({
             "released": released,
@@ -782,7 +799,7 @@ def cmd_release(task_id: str, json_out: bool) -> int:
             "task_id": task_id,
             "prior_holder": (prior or {}).get("holder_session"),
             "still_held_by": (still or {}).get("holder_session"),
-            "lease_state": verdict.state if verdict is not None else None,
+            "lease_state": out["verdict_state"],
             "worker_heartbeating": worker_alive,
         }, indent=2))
     elif released and reclaimed:
@@ -795,7 +812,7 @@ def cmd_release(task_id: str, json_out: bool) -> int:
         # building it right now under a different pid. Reclaiming here is the
         # duplicate-build race, with a human's hand on the lever.
         print(f"  STILL CLAIMED — the worker is HEARTBEATING: {task_id}")
-        print(f"    {lease_liveness.describe(verdict)}")
+        print(f"    {why}")
         print("    release is refused while the task heartbeats; it ages out after "
               f"{lease_liveness.HEARTBEAT_LIVE_MINUTES} min once the worker stops.")
     elif still:
@@ -803,11 +820,65 @@ def cmd_release(task_id: str, json_out: bool) -> int:
         # and that is the case the claim exists for.
         print(f"  STILL CLAIMED by a LIVE session "
               f"{still.get('holder_session')} (pid {still.get('pid')}): {task_id}")
-        if verdict is not None:
-            print(f"    {lease_liveness.describe(verdict)}")
+        if why:
+            print(f"    {why}")
     else:
         print(f"  NOT CLAIMED: {task_id}")
     return 0 if released else 1
+
+
+def _release_task_lease(task_id: str) -> dict:
+    """Hand ``kanban:task:<id>`` back — THE ladder, climbed by every door.
+
+    Ownership first (``leases.release`` frees only a lease THIS session took),
+    then the two-signal verdict ``lease_liveness.reap_if_litter`` shares with
+    the dispatch window: a dead pid alone never reaps, a heartbeating task is
+    kept, and cannot-tell reads as alive. ``--release`` and ``--set-status done``
+    both call this and neither may grow its own copy (a structural test reads
+    their source) — pid-only readers each forming their own opinion is the
+    defect rem-hyg-15 / autonomy-adm-03 was about.
+
+    Returns a dict; ``state`` is one of:
+
+      none       nothing held — not claimed, or already expired
+      released   this session held it and let go
+      reclaimed  the holder had exited and the task was not heartbeating
+      kept       a live holder, or a heartbeating worker — left alone, with ``why``
+    """
+    from tools.coordination import leases
+    from tools.kanban import lease_liveness
+
+    resource = _task_lease_resource(task_id)
+    prior = leases.holder(resource)
+    released = leases.release(resource) if prior is not None else False
+    reclaimed = False
+    verdict = None
+    if not released and prior is not None:
+        verdict, reclaimed = lease_liveness.reap_if_litter(task_id)
+        released = reclaimed
+
+    still = leases.holder(resource)
+    worker_alive = verdict is not None and verdict.state == lease_liveness.STATE_WORKING
+    if prior is None:
+        state = "none"
+    elif released and reclaimed:
+        state = "reclaimed"
+    elif released:
+        state = "released"
+    else:
+        state = "kept"
+    return {
+        "state": state,
+        "released": released,
+        "reclaimed": reclaimed,
+        "prior": prior,
+        "still": still,
+        "prior_holder": (prior or {}).get("holder_session"),
+        "still_held_by": (still or {}).get("holder_session"),
+        "verdict_state": verdict.state if verdict is not None else None,
+        "worker_heartbeating": worker_alive,
+        "why": lease_liveness.describe(verdict) if verdict is not None else None,
+    }
 
 
 def cmd_pause_runner(json_out: bool) -> int:
