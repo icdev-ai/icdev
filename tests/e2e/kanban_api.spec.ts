@@ -1,7 +1,7 @@
 // CUI // SP-CTI
 // E2E Test: Kanban API — Task CRUD, dependencies, board UI
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/auth';
 
 import { deleteKanbanTasks } from './fixtures/kanban_cleanup';
 

@@ -2,7 +2,7 @@
 // E2E: gcpl-dft-* — DRAFT Epic
 // GovCon AI Drafting: bid recommendation + auto-compliance + auto-draft + Q&A + knowledge base
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/auth';
 import { BASE, CUI, seedOpportunity } from './fixtures/govcon_cpmp';
 
 let oppId: string;

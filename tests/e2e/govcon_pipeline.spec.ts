@@ -2,7 +2,7 @@
 // E2E: gcpl-disc-* — DISCOVER Epic
 // GovCon Pipeline Hub: SAM.gov scan API + /govcon page + stat cards + responsive screenshots
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/auth';
 import { BASE, SS, CUI } from './fixtures/govcon_cpmp';
 
 test.describe('gcpl-disc: GovCon Pipeline Hub — DISCOVER', () => {
@@ -28,7 +28,11 @@ test.describe('gcpl-disc: GovCon Pipeline Hub — DISCOVER', () => {
   });
 
   test('gcpl-disc-09: POST /api/govcon/sam/scan triggers scan (200 or 202)', async ({ request }) => {
-    const resp = await request.post(`${BASE}/api/govcon/sam/scan`);
+    // The scan runs SYNCHRONOUSLY against SAM.gov (one call per NAICS x notice
+    // type; measured 26s on a host whose key SAM rejects), which is longer than
+    // the 10s `actionTimeout` every test-runner `request` context inherits. It
+    // was never visible while the POST 403'd instantly on CSRF.
+    const resp = await request.post(`${BASE}/api/govcon/sam/scan`, { timeout: 45_000 });
     // 200 = ran immediately, 202 = accepted (async), 503 = no API key (graceful)
     expect([200, 202, 503]).toContain(resp.status());
   });

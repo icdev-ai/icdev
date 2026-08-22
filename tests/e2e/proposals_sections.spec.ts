@@ -3,7 +3,7 @@
 // Covers: /proposals/<opp_id>/sections/<sec_id> page +
 //         /api/proposals/opportunities/<opp_id>/sections API
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/auth';
 import { BASE, SS, CUI, seedOpportunity, seedVolume, seedSection } from './fixtures/govcon_cpmp';
 
 let oppId: string;

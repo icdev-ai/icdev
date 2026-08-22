@@ -2,7 +2,7 @@
 // E2E: gcpl-ext-* — EXTRACT Epic
 // GovCon Requirements Matrix: shall statement extraction + /govcon/requirements page
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/auth';
 import { BASE, SS, CUI, seedOpportunity } from './fixtures/govcon_cpmp';
 
 let oppId: string;
