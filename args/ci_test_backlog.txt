@@ -1433,7 +1433,6 @@ tests/test_pulumi_emitter.py
 tests/test_pulumi_state_importer.py
 tests/test_pwin_model.py
 tests/test_qa_agent_reflex.py
-tests/test_qa_agent_runner.py
 tests/test_qdc_canvas.py
 tests/test_quality_feedback_loop.py
 tests/test_quality_monitor.py
