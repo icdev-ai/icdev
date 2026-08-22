@@ -87,3 +87,8 @@ prefixes:
   # ICDev's gates. `xcore-` and `xft-` build in the two sibling repos above.
   xcore: icdev_core
   xft: icdev_ft
+  # FathomDesk decision-engine migration into the FT parent (card fdx,
+  # you-are-an-agentic-cozy-parrot.md PROGRAMME 2). Same repo as xft-; parked
+  # until ICDEV_KANBAN_REPO_FT is set, and additionally held behind fdx-gate-00.
+  # Live-trading code is never built unattended.
+  fdx: icdev_ft
