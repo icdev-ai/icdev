@@ -1954,7 +1954,10 @@ def ingest_file(
                 from tools.rag.rag_to_kg_ingester import ingest_chunk
 
                 for i, chunk in enumerate(chunks):
-                    cid = final_chunk_ids.get(i) or getattr(chunk, "chunk_id", None)
+                    # Only bridge a chunk the vector store actually persisted (same rule as the DIC links
+                    # above). ingest_chunk reads rag_chunks by id, so a c.chunk_id fallback here would hand
+                    # it an id that was never inserted.
+                    cid = final_chunk_ids.get(i)
                     if not cid:
                         continue
                     try:
