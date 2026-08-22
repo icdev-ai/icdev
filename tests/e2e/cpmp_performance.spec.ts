@@ -2,7 +2,7 @@
 // E2E: gcpl-perf-* — CPMP-PERF Epic
 // Subcontractors (FAR 52.219-9) + CPARS weighted scoring + negative events + health scoring
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/auth';
 import { BASE, SS, CUI, seedOpportunity, seedContract, seedWbs, seedDeliverable } from './fixtures/govcon_cpmp';
 
 let contractId: string;

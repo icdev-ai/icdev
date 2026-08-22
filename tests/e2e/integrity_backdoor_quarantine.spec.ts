@@ -17,7 +17,7 @@
 // target dashboard predates the canvas, /api/integrity/* 404s and the whole suite
 // skips rather than failing.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/auth';
 import path from 'path';
 
 const CUI_BANNER = 'CUI // SP-CTI';
@@ -38,8 +38,12 @@ test.describe('SIPA Backdoor Assessment — QUARANTINE', () => {
   });
 
   test('assess fixture -> verdict is QUARANTINE', async ({ request }) => {
+    // A provenance-blind assessment of the fixture takes ~7s alone and >10s
+    // under suite load, past the 10s `actionTimeout` the `request` context
+    // inherits; give the one real-work call its own budget.
     const resp = await request.post('/api/integrity/assess', {
       data: { source: FIXTURE_DIR, mode: 'provenance_blind' },
+      timeout: 30_000,
     });
     expect(resp.status(), await resp.text()).toBe(201);
 

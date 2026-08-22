@@ -2,7 +2,7 @@
 // E2E: gcpl-cdrl-* — CPMP-CDRL Epic
 // CDRL auto-generation + batch generation + audit trail + SAM.gov awards sync
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/auth';
 import { BASE, SS, CUI, seedOpportunity, seedContract, seedWbs, seedDeliverable } from './fixtures/govcon_cpmp';
 
 let contractId: string;

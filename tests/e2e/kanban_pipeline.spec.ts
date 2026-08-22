@@ -8,7 +8,7 @@
 // pipeline the system always follows: if args/pipeline.yaml changes, STAGES
 // below must change with it.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/auth';
 
 import { deleteKanbanTasks } from './fixtures/kanban_cleanup';
 

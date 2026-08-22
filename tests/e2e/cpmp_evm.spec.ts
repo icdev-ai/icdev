@@ -2,7 +2,7 @@
 // E2E: gcpl-evm-* — CPMP-EVM Epic
 // EVM snapshots + ANSI/EIA-748 calculations + Monte Carlo + S-curve + IPMDAR
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/auth';
 import { BASE, SS, CUI, seedOpportunity, seedContract, seedWbs } from './fixtures/govcon_cpmp';
 
 let contractId: string;

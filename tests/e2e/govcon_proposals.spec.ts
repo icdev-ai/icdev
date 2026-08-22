@@ -2,7 +2,7 @@
 // E2E: gcpl-prop-* — PROPOSALS Epic
 // /proposals list + /proposals/<id> detail + GovCon Intelligence action bar + /proposal-genesis
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/auth';
 import { BASE, SS, CUI, seedOpportunity } from './fixtures/govcon_cpmp';
 
 let oppId: string;
