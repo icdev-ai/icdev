@@ -468,11 +468,32 @@ def _embed_and_store(
         except Exception as e:
             errors.append(f"vector upsert failed: {e}")
         else:
-            # Record the final chunk ids for every chunk that was upserted.
+            # Record the id ACTUALLY persisted for each chunk, not the freshly
+            # generated c.chunk_id. upsert() dedups by content_hash and KEEPS the
+            # existing row under its ORIGINAL id, so when a chunk's content was
+            # already ingested (a re-ingest, or the same text in this collection),
+            # its real id is not c.chunk_id. Trusting c.chunk_id there makes the
+            # caller write a dic_chunk_link to a rag_chunks row that was never
+            # inserted -- a dangling link, so chunks_for_version returns nothing and
+            # a paper that ingested "successfully" can never be cited. Re-resolve by
+            # content_hash to the row the store actually holds.
             if out_id_map is not None:
                 for idx, c in new_chunks:
-                    if getattr(c, "embedding", None) is not None:
-                        out_id_map[idx] = c.chunk_id
+                    if getattr(c, "embedding", None) is None:
+                        continue
+                    # Record ONLY an id the store confirms is actually in rag_chunks.
+                    # get_by_content_hash resolves both the freshly-inserted row and a
+                    # content-hash duplicate kept under its original id. If it returns
+                    # nothing (upsert dedup-skipped an empty embedding, or the row did
+                    # not persist), record NOTHING -- the caller then writes no link
+                    # rather than a dangling one. Never fall back to c.chunk_id, which
+                    # is the id upsert may have skipped.
+                    try:
+                        resolved = store.get_by_content_hash(getattr(c, "content_hash", ""))
+                    except Exception:
+                        resolved = None
+                    if resolved and getattr(resolved, "chunk_id", None):
+                        out_id_map[idx] = resolved.chunk_id
     return embedded
 
 
@@ -1862,12 +1883,14 @@ def ingest_file(
         # Refresh chunk links for this version.
         cur.execute("DELETE FROM dic_chunk_links WHERE version_id = %s", (version_id,))
         for i, chunk in enumerate(chunks):
-            # final_chunk_ids contains the canonical rag_chunks.id (existing or
-            # newly upserted). Fall back to the chunk's own id only when the map
-            # is missing, and avoid writing a dangling link when embedding failed.
-            rag_chunk_id = final_chunk_ids.get(i) or getattr(
-                chunk, "chunk_id", f"{source_id}_chunk_{i}"
-            )
+            # final_chunk_ids contains the canonical rag_chunks.id the vector store
+            # ACTUALLY persisted (existing row on a content-hash dedup, or the
+            # freshly upserted one). Only link to that. The old `or chunk.chunk_id`
+            # fallback wrote a link to an id that was never inserted whenever
+            # embedding was skipped/failed or the chunk was deduped under a different
+            # id -- a dangling link that makes chunks_for_version return nothing, so
+            # the document could never be cited. No verified id => no link.
+            rag_chunk_id = final_chunk_ids.get(i)
             if not rag_chunk_id:
                 continue
             chunk_index = getattr(chunk, "chunk_index", i)
@@ -1931,7 +1954,10 @@ def ingest_file(
                 from tools.rag.rag_to_kg_ingester import ingest_chunk
 
                 for i, chunk in enumerate(chunks):
-                    cid = final_chunk_ids.get(i) or getattr(chunk, "chunk_id", None)
+                    # Only bridge a chunk the vector store actually persisted (same rule as the DIC links
+                    # above). ingest_chunk reads rag_chunks by id, so a c.chunk_id fallback here would hand
+                    # it an id that was never inserted.
+                    cid = final_chunk_ids.get(i)
                     if not cid:
                         continue
                     try:
