@@ -8941,16 +8941,22 @@ projects:
     title: EXEC - brokers, execution on order-gate, risk on FT governance
     priority: high
   - key: quant
-    title: QUANT - options, factors, TA, ML as decision inputs
+    title: QUANT - factors, TA, ML as decision inputs
+    priority: high
+  - key: opt
+    title: OPT - full options stack (pricing, greeks, strategies, selection, proposals)
     priority: high
   - key: intel
-    title: INTEL - news, oracle, analytics, feedback, alerts
+    title: INTEL - news (classify+reason+ingest), oracle lenses, analytics, feedback, alerts
     priority: medium
   - key: data
     title: DATA - ad_* table consolidation and migration to icdev_ft
     priority: medium
   - key: ui
-    title: UI - ft_api advisor/experts routers and React routes
+    title: UI - ft_api routers and React routes (advisor, analytics, markets, risk, audit, ops)
+    priority: medium
+  - key: sup
+    title: SUP - support subsystems (strategist, alerts, feedback, credentials vault, taxes, attribution)
     priority: medium
   - key: sem
     title: SEM - semantica reasoning/provenance layer (deferred)
