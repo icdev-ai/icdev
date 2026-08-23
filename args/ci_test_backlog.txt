@@ -303,7 +303,6 @@ tests/test_a2a_discovery.py
 tests/test_a2a_registry.py
 tests/test_a2a_trace_propagation.py
 tests/test_aac_anomaly_thresholds.py
-tests/test_aac_llm_http_auth.py
 tests/test_aac_nlp_ref_extractor.py
 tests/test_aac_pattern_classifier_anomaly.py
 tests/test_aac_score_anomalies.py
