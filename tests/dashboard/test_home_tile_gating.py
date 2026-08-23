@@ -36,10 +36,26 @@ def test_registry_answers_enablement_for_any_component():
 
 
 def test_cortex_is_disabled_by_default():
-    """Precondition for the bug: the component ships off."""
+    """Precondition for the bug: the component ships off.
+
+    "Ships off" is a claim about the registry's ``default_enabled``, so ask it
+    with an EMPTY environment. The original assertion read ``os.environ`` and
+    so measured whoever ran the suite: on a host exporting
+    ``ICDEV_CORTEX_ENABLED=true`` it failed on every observation from the day
+    it landed (born_red_survey finding 87e60dc7d52e4104, task-det-87e60dc7d5)
+    while saying nothing about the registry.
+    """
     from tools.config.component_registry import ComponentRegistry
 
-    assert ComponentRegistry().is_enabled("cortex") is False
+    assert ComponentRegistry(env={}).is_enabled("cortex") is False
+
+
+def test_cortex_flag_is_what_switches_it_on():
+    """The same registry answers True only when the flag says so."""
+    from tools.config.component_registry import ComponentRegistry
+
+    assert ComponentRegistry(env={"ICDEV_CORTEX_ENABLED": "true"}).is_enabled("cortex") is True
+    assert ComponentRegistry(env={"ICDEV_CORTEX_ENABLED": "false"}).is_enabled("cortex") is False
 
 
 def test_context_processor_exposes_the_helper():
@@ -76,6 +92,8 @@ def test_template_still_parses(html):
 def test_icdev_mirror_matches():
     """index.html was byte-identical to its icdev/ mirror before this change."""
     mirror = ROOT / "icdev/tools/dashboard/templates/index.html"
-    if not mirror.exists():
-        pytest.skip("no icdev mirror in this tree")
+    # The mirror is a tracked file (the companion sync writes it); a tree
+    # without it is a broken tree, not a reason to skip -- a gated test that
+    # skips is an unmeasured one (skip_census).
+    assert mirror.exists(), "icdev/ mirror of index.html is missing"
     assert mirror.read_text(encoding="utf-8") == INDEX.read_text(encoding="utf-8")

@@ -121,6 +121,28 @@ run:
 # while the set churns, which is exactly how a gap regrows behind a green gate
 # (see args/ci_test_backlog.txt, which is enumerated for the same reason).
 exemptions:
+  - pattern: "tests/dashboard/test_home_tile_gating.py"
+    reason: >-
+      PURE TEST REPAIR — NO PRODUCTION BEHAVIOUR CHANGED, so nothing here can go
+      red (task-det-87e60dc7d5, born_red_survey finding 87e60dc7d52e4104).
+      `test_cortex_is_disabled_by_default` claimed "the component ships off" —
+      a statement about `default_enabled: false` in args/component_registry.yaml
+      — and asserted it through `ComponentRegistry()`, which reads os.environ.
+      So it measured whoever ran the suite, not the registry: on any host
+      exporting ICDEV_CORTEX_ENABLED=true (the live board's runner, where the
+      born_red reflex observes) it failed on every observation since it landed
+      (faafbd679113, 2026-08-02), and `env -u ICDEV_CORTEX_ENABLED pytest` on
+      the SAME tree passes 7/7. THE RED IS RECORDED in detector_findings and it
+      is environmental, not a code defect. The repair asks the registry with an
+      explicit empty env (`ComponentRegistry(env={})`), which is the question
+      the docstring always posed, and adds a sibling pinning that the flag is
+      what switches it on. The registry code is untouched, so the file passes
+      at the merge base and is reported `not_discriminating` by construction.
+      The `pytest.skip` on the icdev mirror was replaced by an assertion so the
+      file can be gated without a skip-census entry. Scoped to this ONE file; a
+      test-only repair is not mechanically distinguishable from a test weakened
+      to match broken code, so this is not the pattern for the next one. GATED
+      by the same change (args/ci_test_files/core.d/task-det-87e60dc7d5.txt).
   - pattern: "tests/test_proposals_ptw_blackhat_api.py"
     reason: >-
       PURE TEST REPAIR — NO PRODUCTION BEHAVIOUR CHANGED, so nothing here can go

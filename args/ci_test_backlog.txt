@@ -122,7 +122,6 @@ tests/dashboard/test_crud_resource.py
 tests/dashboard/test_databridge_feeds.py
 tests/dashboard/test_hitl_alert_actions.py
 tests/dashboard/test_hitl_popup.py
-tests/dashboard/test_home_tile_gating.py
 tests/dashboard/test_lazy_canvas_loader.py
 tests/dashboard/test_monitoring_alert_row.py
 tests/dashboard/test_nav_misc_03_route_extraction.py
