@@ -1,0 +1,5 @@
+# task-qa-sweep-3c7b8b3d - the QA sweep runner read 31 Playwright failures as
+# `status=passed`: the parser walked one suite level and every spec sits under
+# a `test.describe`, and `failed` was the parser's count, not Playwright's.
+# This PR is the one that makes the nested-suite assertions pass.
+tests/test_qa_agent_runner.py

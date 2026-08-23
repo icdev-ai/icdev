@@ -10,7 +10,7 @@
 //   - the portal's own 8-point gate reads as passing on its own page
 //   - the IQE widget the gate requires is actually present and wired
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/auth';
 
 const CUI_BANNER = 'CUI // SP-CTI';
 

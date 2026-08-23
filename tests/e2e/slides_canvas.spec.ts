@@ -4,7 +4,7 @@
 // path (used by GraphicsGenerator -> AssetGenerator) is reachable via a lightweight
 // smoke endpoint.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/auth';
 
 const SCREENSHOT_DIR = '.tmp/test_runs/screenshots';
 const CUI_BANNER = 'CUI // SP-CTI';

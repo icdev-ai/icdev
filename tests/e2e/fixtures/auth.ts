@@ -70,12 +70,44 @@
  *
  *   import { test, expect } from './fixtures/auth';
  *
- * The `request` fixture is then CSRF-bootstrapped. Nothing else about a spec
- * changes; `page` is untouched, since a real browser context already gets both
- * the cookie and `Sec-Fetch-Site` for free.
+ * Both `request` AND the browser `context` (so `page.request`) are then
+ * CSRF-bootstrapped. Nothing else about a spec changes.
+ *
+ * WHY `page.request` NEEDS IT TOO (qa-fail-49655511c721a165)
+ * ---------------------------------------------------------
+ * The first version of this file bootstrapped only the `request` fixture and
+ * left `page` alone, reasoning that a real browser context gets the cookie and
+ * `Sec-Fetch-Site` for free. That is true of a request the BROWSER issues --
+ * a navigation, a form submit, a `fetch` from page JS. It is NOT true of
+ * `page.request` / `context.request`: that is the same bare HTTP client as
+ * `request`, sharing the context's cookie jar and nothing else. It carries the
+ * session cookie (so `csrf_protect` engages) and neither `X-CSRF-Token` nor
+ * `Sec-Fetch-Site` (so it is rejected). Measured on run qa-1787358426: 30 of 31
+ * failures were this 403, and 17 of the 30 went through `page.request`
+ * (noc_canvas, wfc_lifecycle, idp_portal) where switching `request` alone
+ * would have fixed nothing.
+ *
+ * The cure is the one Playwright offers for a context: `setExtraHTTPHeaders`.
+ * `BrowserContextAPIRequestContext` reads the context's `extraHTTPHeaders` on
+ * every call (playwright-core/lib/server/fetch.js), so pinning the token there
+ * covers `page.request` without touching each call site. The header also rides
+ * on browser navigations, where a GET ignores it, and on browser-issued
+ * mutating requests, where `base.html` attaches the SAME value from the same
+ * cookie -- so the two sources cannot disagree unless the session is rotated
+ * mid-test (a login flow), which none of the API specs do.
+ *
+ * A hand-rolled `browser.newContext()` / `browser.newPage()` in a `beforeAll`
+ * bypasses every fixture, so it gets `createAuthedBrowserContext(browser)`.
  */
 
-import { test as base, expect, type APIRequestContext } from '@playwright/test';
+import {
+  test as base,
+  expect,
+  type APIRequestContext,
+  type Browser,
+  type BrowserContext,
+  type BrowserContextOptions,
+} from '@playwright/test';
 
 /** Set by `tools/security/csrf.py::register_csrf`; readable by page JS by design. */
 export const CSRF_COOKIE = 'icdev_csrf';
@@ -155,8 +187,58 @@ export async function createAuthedRequestContext(
 }
 
 /**
+ * Pin the CSRF token onto an existing browser context so `context.request`
+ * (which is what `page.request` is) can perform mutating requests.
+ *
+ * Same handshake as `createAuthedRequestContext`, through the context's own
+ * cookie jar: GET `/` establishes the dev auto-login session and receives the
+ * `icdev_csrf` cookie; the cookie value becomes a context-wide extra header.
+ *
+ * Returns the token, or `''` when none was issued (ICDEV_AUTH_BYPASS, or an
+ * unreachable server). Never throws, for the same reason as above.
+ */
+export async function bootstrapBrowserContext(
+  context: BrowserContext,
+  baseURL: string = DEFAULT_BASE_URL,
+): Promise<string> {
+  let token = '';
+  try {
+    await context.request.get(`${baseURL}/`, { failOnStatusCode: false });
+    const cookies = await context.cookies(baseURL);
+    token = cookies.find((c) => c.name === CSRF_COOKIE)?.value ?? '';
+  } catch (err) {
+    warnOnce(`could not reach ${baseURL} (${(err as Error).message}) — continuing without a CSRF token`);
+  }
+  if (token) {
+    await context.setExtraHTTPHeaders({ [CSRF_HEADER]: token });
+  } else if (!truthy(process.env.ICDEV_AUTH_BYPASS)) {
+    warnOnce(
+      `no ${CSRF_COOKIE} cookie from ${baseURL} and ICDEV_AUTH_BYPASS is unset — ` +
+        'mutating requests will 403 CSRF_FAILED if that server has a login session',
+    );
+  }
+  return token;
+}
+
+/**
+ * For a spec that builds its own context in a hook (`beforeAll` gets no `page`
+ * or `context` fixture): a `browser.newContext()` that is already bootstrapped.
+ * The caller owns it and must `close()` it.
+ */
+export async function createAuthedBrowserContext(
+  browser: Browser,
+  options: BrowserContextOptions = {},
+  baseURL: string = DEFAULT_BASE_URL,
+): Promise<BrowserContext> {
+  const context = await browser.newContext({ baseURL, ...options });
+  await bootstrapBrowserContext(context, baseURL);
+  return context;
+}
+
+/**
  * Drop-in replacement for `@playwright/test`'s `test`, with `request` overridden
- * by the bootstrapped context above.
+ * by the bootstrapped context above and `context` (hence `page` and
+ * `page.request`) bootstrapped in place.
  */
 export const test = base.extend<{ request: APIRequestContext }>({
   request: async ({ playwright, baseURL }, use) => {
@@ -166,6 +248,10 @@ export const test = base.extend<{ request: APIRequestContext }>({
     );
     await use(context);
     await context.dispose();
+  },
+  context: async ({ context, baseURL }, use) => {
+    await bootstrapBrowserContext(context, baseURL ?? DEFAULT_BASE_URL);
+    await use(context);
   },
 });
 

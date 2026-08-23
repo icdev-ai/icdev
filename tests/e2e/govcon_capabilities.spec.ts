@@ -2,7 +2,7 @@
 // E2E: gcpl-map-* — MAP Epic
 // GovCon Capabilities Library: L/M/N coverage + gap analysis + /govcon/capabilities page
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/auth';
 import { BASE, SS, CUI, seedOpportunity } from './fixtures/govcon_cpmp';
 
 let oppId: string;

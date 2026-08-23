@@ -178,14 +178,24 @@ def test_the_resource_name_is_the_shared_one():
 
 
 def test_the_fallback_asks_the_shared_verdict_not_the_pid_alone():
-    """Pins the consolidation: cmd_release must reach release_stale ONLY via
-    lease_liveness.reap_if_litter, never call it directly."""
+    """Pins the consolidation: the release ladder must reach release_stale ONLY
+    via lease_liveness.reap_if_litter, never call it directly.
+
+    The ladder lives in ``_release_task_lease`` since claim-verif-a6a1517970,
+    shared with ``--set-status done``; cmd_release must climb THAT ladder and
+    not keep a private copy (a second pid-only reader is the rem-hyg-15 defect).
+    """
     import inspect
 
     src = inspect.getsource(cli.cmd_release)
     body = src.split('"""')[2]          # after the docstring, which names the old path
-    assert "reap_if_litter" in body
+    assert "_release_task_lease(" in body
     assert "release_stale" not in body
+    assert "reap_if_litter" not in body, "cmd_release grew its own ladder"
+
+    ladder = inspect.getsource(cli._release_task_lease)
+    assert "reap_if_litter" in ladder
+    assert "release_stale" not in ladder
 
 
 def test_release_stale_refuses_a_live_holder_at_the_lease_layer():

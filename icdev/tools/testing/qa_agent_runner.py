@@ -94,6 +94,10 @@ class QARunResult:
     failed: int = 0
     skipped: int = 0
     screenshot_count: int = 0
+    #: `failed` minus the failures the parser could name. Non-zero means the
+    #: report held a shape the walker did not understand; it is never folded
+    #: into `passed`.
+    failures_unparsed: int = 0
     failures: List[TestFailure] = field(default_factory=list)
     report_path: str = ""
 
@@ -430,8 +434,18 @@ def run_e2e_suite(
         result.batches.append(batch_record)
 
     result.screenshot_count = len(list(screenshot_dir.glob("*.png")))
+    # `failed` was tallied from Playwright's `stats.unexpected`; `failures` is
+    # what the parser could NAME. If the two disagree the gap is reported, never
+    # resolved in favour of the parser -- a parser blind spot must not turn a
+    # red sweep green.
+    result.failures_unparsed = max(0, result.failed - len(result.failures))
+    if result.failures_unparsed:
+        logger.warning(
+            "qa_agent_runner: run_id=%s Playwright reports %d unexpected but only %d "
+            "were parsed into failures (%d unnamed)",
+            run_id, result.failed, len(result.failures), result.failures_unparsed,
+        )
     result.report_path = str(write_run_report(result))
-    result.failed = len(result.failures)
     result.status = derive_status(result)
 
     logger.info(
@@ -472,6 +486,12 @@ def _tally(report: dict, result: QARunResult) -> None:
     result.total += expected + unexpected + skipped
     result.passed += expected
     result.skipped += skipped
+    # `failed` is Playwright's OWN count. It used to be `len(result.failures)`
+    # assigned after the loop, and on the 2026-08-22 sweep (task-qa-sweep-3c7b8b3d)
+    # that read 0 against 31 `unexpected` across 11 batch reports -- the parser
+    # walked one suite level and every spec sits under a `test.describe`, so
+    # `status` was `passed` with thirty-one red tests inside it.
+    result.failed += unexpected
 
 
 def parse_playwright_json(raw_json: str) -> List[TestFailure]:
@@ -482,9 +502,26 @@ def parse_playwright_json(raw_json: str) -> List[TestFailure]:
         return []
 
     failures: List[TestFailure] = []
-    for suite in report.get("suites") or []:
-        suite_title = suite.get("title", "unknown")
-        spec_file = suite.get("file") or ""
+    _walk_suites(report.get("suites") or [], "", "", failures)
+    return failures
+
+
+def _walk_suites(
+    suites: List[dict], parent_title: str, parent_file: str, failures: List[TestFailure],
+) -> None:
+    """Collect failed specs from a Playwright suite tree, at ANY depth.
+
+    Playwright's JSON reporter nests: a FILE suite (title = the file name, no
+    specs of its own) holds one suite per `test.describe`, which holds the
+    specs. Every spec under tests/e2e/ is inside a describe block, so a walk of
+    the top level alone finds zero specs in every real report -- measured on
+    the 2026-08-22 sweep: 6 file suites per batch, 0 specs each, 1 child each.
+    The innermost suite names the test (`Auth flow > login page loads`); the
+    file is inherited from whichever ancestor carries one.
+    """
+    for suite in suites or []:
+        suite_title = suite.get("title") or parent_title or "unknown"
+        spec_file = suite.get("file") or parent_file or ""
         for spec in suite.get("specs") or []:
             spec_title = spec.get("title", "unknown")
             test_name = f"{suite_title} > {spec_title}"
@@ -513,7 +550,7 @@ def parse_playwright_json(raw_json: str) -> List[TestFailure]:
                     screenshot_path=screenshot_path,
                     severity=severity,
                 ))
-    return failures
+        _walk_suites(suite.get("suites") or [], suite_title, spec_file, failures)
 
 
 # ---------------------------------------------------------------------------

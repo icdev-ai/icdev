@@ -2,7 +2,8 @@
 // E2E Test: Workflow Forms Canvas (WFC) — full lifecycle
 // Covers: index → create form (template) → view detail → export (pptx/pdf/docx) → edit → delete
 
-import { test, expect, Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { test, expect, createAuthedBrowserContext } from './fixtures/auth';
 
 const BASE = process.env.ICDEV_DASHBOARD_URL || 'http://127.0.0.1:5050';
 const SS = 'playwright/screenshots';
@@ -32,7 +33,10 @@ test.describe.serial('WFC Lifecycle', () => {
   let formId: string;
 
   test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
+    // A hand-rolled context bypasses the `context` fixture, so bootstrap it
+    // explicitly or this POST is the 403 that left formId undefined.
+    const context = await createAuthedBrowserContext(browser);
+    const page = await context.newPage();
     const resp = await page.request.post(`${BASE}/workflow-canvas/api/forms`, {
       data: {
         name: 'E2E Vendor Onboarding',
@@ -56,14 +60,14 @@ test.describe.serial('WFC Lifecycle', () => {
     });
     const data = await resp.json().catch(() => ({}));
     formId = data.form_id;
-    await page.close();
+    await context.close();
   });
 
   test.afterAll(async ({ browser }) => {
     if (!formId) return;
-    const page = await browser.newPage();
-    await page.request.delete(`${BASE}/workflow-canvas/api/forms/${formId}`);
-    await page.close();
+    const context = await createAuthedBrowserContext(browser);
+    await context.request.delete(`${BASE}/workflow-canvas/api/forms/${formId}`);
+    await context.close();
   });
 
   // ── 1. Index page ──────────────────────────────────────────────────────────

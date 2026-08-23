@@ -6,7 +6,7 @@
 // against a live dashboard, so the cnr-ops-01 fail-closed mutation gate is
 // satisfied by the login session.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/auth';
 
 const BASE = process.env.ICDEV_DASHBOARD_URL || 'http://localhost:5050';
 const CUI = 'CUI // SP-CTI';
