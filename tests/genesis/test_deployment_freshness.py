@@ -249,3 +249,35 @@ def test_exit_codes(monkeypatch, capsys, state, gate, expected):
         "root": "/x", "ref": "origin/main"})
     assert df.main(["--gate"] if gate else []) == expected
     capsys.readouterr()
+
+
+# --------------------------------------------------------------------------- #
+# The count is measured AFTER the guard has fetched (autonomy-dep-04)
+# --------------------------------------------------------------------------- #
+def test_behind_by_is_measured_after_the_probe_fetches():
+    """The guard fetches before it answers; `rev-list HEAD..origin/main` reads
+    the ref on disk. Measured the other way round, a checkout whose ref had not
+    been fetched since the last poll read 0 behind while the guard refused on a
+    locally-modified incoming file, and 0-and-refusing is reported `current`:
+    a frozen deployment with a clean bill of health."""
+    fetched = {"done": False}
+
+    class _R:
+        returncode = 0
+
+        @property
+        def stdout(self):
+            return "4" if fetched["done"] else "0"
+
+    def runner(*_a, **_k):
+        return _R()
+
+    def probe(_root):
+        fetched["done"] = True               # the real guard's `git fetch`
+        return {"pulled": False, "reason": "local changes would be lost",
+                "conflicts": ["args/projects.yaml"]}
+
+    rep = df.freshness(root="/deploy", runner=runner, probe=probe)
+    assert rep["state"] == df.BLOCKED
+    assert rep["behind_by"] == 4
+    assert rep["conflicts"] == ["args/projects.yaml"]

@@ -673,6 +673,18 @@ reflexes:
         # merged and was never applied leaves its capability INERT here: the
         # code is present, the schema is not, and every test stays green.
         ref: origin/main
+      deployment_freshness:
+        # autonomy-dep-04: a checkout frozen behind `ref` because an incoming
+        # file is also locally modified (dep-03's `blocked`). When EVERY such
+        # file is an enumerated auto-managed one (args/projects.yaml, regenerated
+        # by kanban_project_sync after every task creation) AND its writer,
+        # re-run over HEAD, reproduces the local diff, the restore tier checks it
+        # out, pulls through the same guard and re-derives the cards — audited,
+        # prove -> audit -> apply -> confirm. A human edit is NEVER reverted: the
+        # act refuses and a card carrying the refusal is filed instead.
+        # `restore: false` files the card without asking the restore tier.
+        ref: origin/main
+        restore: true
     description: "autonomy-act-02: run status_churn, born_red_survey and recovery_summary; project findings into detector_findings (deduped on the finding, seen_count on recurrence) and file one evidence-carrying card per NEW finding via task_factory"
     success_metric:
       name: findings_seen

@@ -79,9 +79,11 @@ _META = {"resource": "kanban:task:t-1", "pid": 4242, "holder_session": "s",
 # --------------------------------------------------------------------------- #
 # 1. The set is closed
 # --------------------------------------------------------------------------- #
-def test_exactly_three_acts_and_the_registry_is_frozen():
+def test_exactly_four_acts_and_the_registry_is_frozen():
+    # Three from autonomy-act-03; the fourth (autonomy-dep-04) was a deliberate
+    # addition to a CLOSED set, pinned here so a fifth is a decision too.
     assert set(ra.ACTS) == {"reap_dead_lease", "prune_gone_census_entry",
-                            "restart_stale_daemon"}
+                            "restart_stale_daemon", "restore_auto_managed_file"}
     with pytest.raises(TypeError):
         ra.ACTS["edit_threshold_so_it_agrees"] = None  # type: ignore[index]
     for act in ra.ACTS.values():
