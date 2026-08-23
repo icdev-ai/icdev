@@ -23,10 +23,12 @@ halves:
   dashboard app AND structurally over the blueprint's AST, because a structural
   test pinned to one function is blind to the second site.
 
-Uses the real dashboard app singleton (the gated convention in
-tests/cortex/test_blueprint_routes.py) because ``base.html`` needs the app's
-context processors (nav_tree, ROLE_VIEWS, brand banner); a bare ``Flask()``
-cannot render it and would only ever exercise the fallback path.
+Renders through an ISOLATED app that borrows the real dashboard app's
+template folder and context processors (the gated convention in
+tests/cortex/test_blueprint_routes.py): ``base.html`` needs ``nav_tree`` and the
+brand banner, so a bare ``Flask()`` would only ever exercise the fallback path --
+and the shared singleton only carries ``ace_bp`` when ``ICDEV_ACE_ENABLED`` is
+set, which CI never sets (see ``_isolated_app``).
 
 Run: pytest tests/test_ace_instance_page_render.py -v
 """
@@ -107,9 +109,54 @@ def instance_id(ace_env):
     return iid
 
 
+def _isolated_app():
+    """A FRESH Flask app carrying the dashboard's rendering context, with ``ace_bp`` on it.
+
+    NOT the shared ``tools.dashboard.app`` singleton. The ``ace`` canvas is
+    ``default_enabled: false`` behind ``ICDEV_ACE_ENABLED``
+    (args/component_registry.yaml), so on a runner with no ``.env`` the
+    singleton never registers ``ace_bp`` and every ``/coworker/...`` answers
+    404 on BOTH trees -- which is how this file's first CI run read
+    "13 failed / 2 passed on this tree, 14 failed / 1 passed at the merge
+    base": the red-first gate called it broken, not red-first, while it passed
+    on a developer machine whose ``.env`` enables the canvas
+    (qa-fail-9de4533aba26c880, the sweep that re-found the same defect a day
+    later because #1903 could not merge). And a blueprint cannot be registered
+    onto the singleton after it has served its first request, so a guard
+    around ``register_blueprint`` would make the verdict depend on module
+    order. Copying the singleton's template folder, config, filters, globals
+    and context processors (``base.html`` reads ``nav_tree``) onto a fresh app
+    renders the real pages while mutating nothing other tests observe. Same
+    shape as tests/cortex/test_blueprint_routes.py::_isolated_app.
+    """
+    from flask import Flask
+
+    from tools.dashboard.app import app as _dashboard_app
+
+    bp_mod = importlib.import_module("icdev.tools.ace.blueprint")
+    app = Flask(
+        __name__,
+        template_folder=_dashboard_app.template_folder,
+        static_folder=_dashboard_app.static_folder,
+    )
+    app.config.update(_dashboard_app.config)
+    app.jinja_env.filters.update(_dashboard_app.jinja_env.filters)
+    app.jinja_env.globals.update(_dashboard_app.jinja_env.globals)
+    app.template_context_processors[None].extend(
+        _dashboard_app.template_context_processors.get(None, [])
+    )
+    app.secret_key = _dashboard_app.secret_key or "test-secret"
+    app.config["TESTING"] = True
+    # ace_bp carries url_prefix="/coworker" itself, and its record_once hook
+    # registers ace_api_bp (/api/ace) on the same app -- registering ace_bp
+    # alone registers both; registering ace_api_bp again raises.
+    app.register_blueprint(bp_mod.ace_bp)
+    return app
+
+
 @pytest.fixture()
 def client(ace_env, icdev_db, monkeypatch):
-    """Authenticated test client on the real dashboard app (never re-registers)."""
+    """Test client on an isolated app that renders the REAL dashboard templates."""
     monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
     monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
 
@@ -117,9 +164,7 @@ def client(ace_env, icdev_db, monkeypatch):
 
     monkeypatch.setattr(_auth, "DB_PATH", str(icdev_db))
 
-    from tools.dashboard.app import app
-
-    app.config["TESTING"] = True
+    app = _isolated_app()
     with app.test_client() as tc:
         with tc.session_transaction() as sess:
             sess["user_id"] = "test-admin"
