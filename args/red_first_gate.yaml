@@ -121,6 +121,23 @@ run:
 # while the set churns, which is exactly how a gap regrows behind a green gate
 # (see args/ci_test_backlog.txt, which is enumerated for the same reason).
 exemptions:
+  - pattern: "tests/airgap/test_hook_compat_git_blocklist.py"
+    reason: >-
+      PURE TEST REPAIR — NO PRODUCTION BEHAVIOUR CHANGED, so nothing here can go
+      red (task-det-ea73602df5, born_red_survey finding ea73602df5798228).
+      `test_force_push_force_with_lease_blocked` pinned the verdict the guard
+      gave BEFORE exa-bench-05 (4678ce460, 2026-08-12), which deliberately
+      exempted `git push --force-with-lease` with a measured reason recorded
+      beside `_GIT_FORCE_WITH_LEASE_RE` in tools/hooks/shared_checks.py: 127 of
+      the 30-day corpus's 389 git_danger fires were that form on the session's
+      own kanban/* branch, i.e. the prescribed workflow. The file was ungated,
+      so the flip went unobserved; `born_red_survey --confirm 1` reports
+      `passed_at_birth` (green at ea51f30dd, 2026-05-25, broke later). THE RED
+      IS RECORDED in detector_findings. The repair asserts the current,
+      documented policy (lease push allowed; bare --force still refused, and
+      still refused when chained after a lease push in a second segment). The
+      guard code is untouched, so the file passes at the merge base and is
+      reported `not_discriminating` by construction.
   - pattern: "tests/dashboard/test_home_tile_gating.py"
     reason: >-
       PURE TEST REPAIR — NO PRODUCTION BEHAVIOUR CHANGED, so nothing here can go
