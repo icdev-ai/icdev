@@ -34,9 +34,27 @@ def test_force_push_short_flag_blocked():
     assert "force" in r["reason"].lower()
 
 
-def test_force_push_force_with_lease_blocked():
+def test_force_push_force_with_lease_allowed():
+    """``--force-with-lease`` is DELIBERATELY exempt (exa-bench-05).
+
+    It refuses the push when the remote moved underneath it, which is the
+    collision this repo's concurrent sessions have to survive, and it is what
+    they actually run: 127 of the 30-day corpus's 389 git_danger fires were
+    this form on the session's own ``kanban/*`` branch. See
+    ``_GIT_FORCE_WITH_LEASE_RE`` in tools/hooks/shared_checks.py. This test
+    pinned the pre-exa-bench-05 verdict and was red from 2026-08-12 until
+    task-det-ea73602df5 (born_red_survey finding ea73602df5798228).
+    """
     r = _bash("git push --force-with-lease origin main")
+    assert r["allowed"] is True
+
+
+def test_force_with_lease_exemption_is_per_segment():
+    """The exemption covers ONE shell segment; a bare ``--force`` chained
+    after a lease push is still the destructive form and still refused."""
+    r = _bash("git push --force-with-lease origin main && git push --force origin main")
     assert r["allowed"] is False
+    assert "force" in r["reason"].lower()
 
 
 def test_normal_push_allowed():

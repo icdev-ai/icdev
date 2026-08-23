@@ -40,7 +40,6 @@ tests/agent_runtime/test_search_stream.py
 tests/agent_runtime/test_skill_tools.py
 tests/agent_runtime/test_toolsets_dispatch.py
 tests/agent_toolkit/test_shell.py
-tests/airgap/test_hook_compat_git_blocklist.py
 tests/airgap/test_hook_compat_middleware.py
 tests/api/test_contract.py
 tests/bi_dashboard/test_routes_auth.py
