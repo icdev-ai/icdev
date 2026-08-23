@@ -199,27 +199,50 @@ def test_message_count_persists_across_reload(flask_app, seeded_messages, instan
 # Tests: resume button appears in rendered HTML
 # --------------------------------------------------------------------------- #
 
-def test_resume_button_present_when_session_exists(flask_app, seeded_session, seeded_messages, instance_id):
-    """The instance detail page must include the Resume Session button when a
-    session with a resume_token exists for the instance.
+def _captured_render(monkeypatch):
+    """Capture render_template's kwargs instead of rendering.
+
+    This harness is a bare ``Flask()`` with no dashboard template folder, so
+    ``coworker/instance.html`` (which extends ``base.html``) can NEVER render
+    here -- and since qa-fail-5f7cf03a0b0a4351 a page route answers that with a
+    500 HTML page instead of a JSON 200. The earlier version of these two tests
+    hedged on exactly that fallback ("at minimum assert 200"), which is how the
+    route passed for weeks while never sending ``resume_token`` at all. The
+    rendered page itself is asserted in tests/test_ace_instance_page_render.py
+    through the real dashboard app; here the contract is the DATA the route
+    hands the template.
     """
-    with flask_app.test_client() as client:
-        r = client.get(f"/coworker/{instance_id}")
-    # May render HTML or fall back to JSON depending on template availability.
-    if r.content_type and "html" in r.content_type:
-        body = r.data.decode("utf-8", errors="replace")
-        assert "Resume Session" in body or "resume-session-btn" in body
-    else:
-        # JSON fallback — instance data returned; at minimum assert 200.
-        assert r.status_code == 200
+    import icdev.tools.ace.blueprint as bp_mod
+
+    captured: dict = {}
+
+    def _fake_render(template, **ctx):
+        captured["template"] = template
+        captured.update(ctx)
+        return "rendered"
+
+    monkeypatch.setattr(bp_mod, "render_template", _fake_render)
+    return captured
 
 
-def test_resume_button_absent_without_session(flask_app, instance_id):
-    """Instance page must NOT include the Resume Session button when no session exists."""
+def test_instance_detail_passes_resume_token_when_session_exists(
+    flask_app, seeded_session, seeded_messages, instance_id, monkeypatch
+):
+    """The route must hand the most recent session's resume_token to the template."""
+    token, _ = seeded_session
+    captured = _captured_render(monkeypatch)
     with flask_app.test_client() as client:
         r = client.get(f"/coworker/{instance_id}")
-    if r.content_type and "html" in r.content_type:
-        body = r.data.decode("utf-8", errors="replace")
-        assert "resume-session-btn" not in body
-    else:
-        assert r.status_code == 200
+    assert r.status_code == 200
+    assert captured["template"] == "coworker/instance.html"
+    assert captured["resume_token"] == token
+
+
+def test_instance_detail_passes_none_resume_token_without_session(flask_app, instance_id, monkeypatch):
+    """No session -> resume_token is an explicit None (never an unset Jinja Undefined)."""
+    captured = _captured_render(monkeypatch)
+    with flask_app.test_client() as client:
+        r = client.get(f"/coworker/{instance_id}")
+    assert r.status_code == 200
+    assert "resume_token" in captured
+    assert captured["resume_token"] is None

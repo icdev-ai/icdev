@@ -98,6 +98,49 @@ def _one(cur) -> Optional[dict]:
     return dict(zip([d[0] for d in desc], row))
 
 
+def _render_page(template: str, **context: Any):
+    """Render a PAGE template; a failure is a **500 HTML page**, never a 200 JSON body.
+
+    Every ``ace_bp`` page route used to wrap ``render_template`` in
+    ``except Exception`` and return its context as ``jsonify(...)`` -- a 200.
+    That fallback was written for "the template is absent" and it swallowed
+    every other failure too: when ``instance.html`` gained
+    ``{{ resume_token | tojson }}`` and the running route never passed
+    ``resume_token``, Jinja's ``Undefined`` raised ``TypeError`` inside
+    ``render_template``, the handler logged it at INFO and answered
+    ``200 application/json`` for EVERY instance (qa-fail-5f7cf03a0b0a4351,
+    measured 2026-08-22). No 500, no route_smoke signal, no CUI banner -- the
+    only thing that noticed was a Playwright assertion on the banner text.
+
+    A page route that cannot render its page has failed, and a failure is
+    reported as one: logged with its traceback at ERROR, answered with the
+    dashboard's ``500.html`` (which extends ``base.html`` and so carries the
+    classification banner), or an inline HTML error page when even that
+    template is out of reach (a bare test harness). The status is 500 and the
+    body is ``text/html`` in both cases. Pinned by
+    tests/test_ace_instance_page_render.py, behaviourally and over this file's
+    AST.
+    """
+    try:
+        return render_template(template, **context)
+    except Exception:  # noqa: BLE001 -- reported as a 500, never swallowed into a 200
+        logger.exception("ace page template %s failed to render", template)
+    try:
+        body = render_template("500.html", message=f"{template} failed to render")
+    except Exception as exc:  # noqa: BLE001 -- no dashboard 500.html on this app
+        logger.debug("500.html unavailable (%s); inline error page", exc)
+        from markupsafe import escape
+
+        body = (
+            "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+            "<title>500 - Internal Server Error</title></head><body>"
+            "<h1>500 - Internal Server Error</h1>"
+            f"<p>{escape(template)} failed to render. The error has been logged.</p>"
+            "</body></html>"
+        )
+    return Response(body, status=500, mimetype="text/html")
+
+
 def _decode_json(value: Any) -> dict:
     """Decode a JSON(B) text/obj column to a dict, tolerating NULL/garbage."""
     if isinstance(value, dict):
@@ -262,17 +305,13 @@ def index():
         "stale_instance_hours": _const.STALE_INSTANCE_HOURS,
     }
 
-    try:
-        return render_template(
-            "coworker/index.html",
-            instances=instances,
-            active=active,
-            roles=roles,
-            cfg=cfg,
-        )
-    except Exception as exc:  # noqa: BLE001 — JSON fallback if the template is absent
-        logger.info("coworker/index.html unavailable (%s); JSON fallback", exc)
-        return jsonify({"instances": instances, "active": len(active), "roles": roles})
+    return _render_page(
+        "coworker/index.html",
+        instances=instances,
+        active=active,
+        roles=roles,
+        cfg=cfg,
+    )
 
 
 @ace_bp.route("/roles")
@@ -285,21 +324,13 @@ def roles():
     except Exception as exc:  # noqa: BLE001
         logger.warning("ace roles load failed: %s", exc)
         role_list = []
-    try:
-        return render_template("coworker/roles.html", roles=role_list)
-    except Exception as exc:  # noqa: BLE001
-        logger.info("coworker/roles.html unavailable (%s); JSON fallback", exc)
-        return jsonify({"roles": [r.role_id for r in role_list]})
+    return _render_page("coworker/roles.html", roles=role_list)
 
 
 @ace_bp.route("/profiles/new")
 def profiles_new():
     """Profile creation page — AI Assist-powered."""
-    try:
-        return render_template("coworker/profile_new.html")
-    except Exception as exc:
-        logger.info("coworker/profile_new.html unavailable (%s); JSON fallback", exc)
-        return jsonify({"page": "profile_new"})
+    return _render_page("coworker/profile_new.html")
 
 
 @ace_bp.route("/trust")
@@ -311,63 +342,37 @@ def trust_leaderboard():
         rows = get_trust_summary()
     except Exception as exc:  # noqa: BLE001
         logger.warning("ace trust_leaderboard: get_trust_summary failed: %s", exc)
-    try:
-        return render_template("ace/trust.html", rows=rows)
-    except Exception as exc:  # noqa: BLE001
-        logger.info("ace/trust.html unavailable (%s); JSON fallback", exc)
-        return jsonify({"rows": rows, "count": len(rows)})
+    return _render_page("ace/trust.html", rows=rows)
 
 
 @ace_bp.route("/sessions")
 def sessions_list():
     """Agent session replay — list of all saved agent_loop_sessions."""
-    try:
-        return render_template("ace/sessions.html")
-    except Exception as exc:  # noqa: BLE001
-        logger.info("ace/sessions.html unavailable (%s); JSON fallback", exc)
-        from icdev.tools.llm.agent_loop_session import list_sessions
-        return jsonify(list_sessions(limit=50))
+    return _render_page("ace/sessions.html")
 
 
 @ace_bp.route("/sessions/<session_id>")
 def session_detail(session_id: str):
     """Agent session replay — turn-by-turn detail view for one session."""
-    try:
-        return render_template("ace/session_detail.html", session_id=session_id)
-    except Exception as exc:  # noqa: BLE001
-        logger.info("ace/session_detail.html unavailable (%s); JSON fallback", exc)
-        from icdev.tools.llm.agent_loop_session import get_session_metadata
-        return jsonify(get_session_metadata(session_id) or {"error": "not found"})
+    return _render_page("ace/session_detail.html", session_id=session_id)
 
 
 @ace_bp.route("/live/<instance_id>")
 def live_monitor(instance_id: str):
     """Real-time agent loop monitoring via SSE stream."""
-    try:
-        return render_template("ace/live.html", instance_id=instance_id)
-    except Exception as exc:  # noqa: BLE001
-        logger.info("ace/live.html unavailable (%s); JSON fallback", exc)
-        return jsonify({"instance_id": instance_id, "stream": f"/api/ace/{instance_id}/stream"})
+    return _render_page("ace/live.html", instance_id=instance_id)
 
 
 @ace_bp.route("/evals")
 def evals_page():
     """Agent eval suite — run history and pass/fail trends."""
-    try:
-        return render_template("ace/evals.html")
-    except Exception as exc:  # noqa: BLE001
-        logger.info("ace/evals.html unavailable (%s); JSON fallback", exc)
-        return jsonify({"page": "evals"})
+    return _render_page("ace/evals.html")
 
 
 @ace_bp.route("/evals/trends")
 def evals_trends_page():
     """Eval score trending — time-bucketed aggregation chart."""
-    try:
-        return render_template("ace/trends.html")
-    except Exception as exc:  # noqa: BLE001
-        logger.info("ace/trends.html unavailable (%s); JSON fallback", exc)
-        return jsonify({"page": "evals/trends"})
+    return _render_page("ace/trends.html")
 
 
 @ace_bp.route("/<instance_id>")
@@ -378,6 +383,11 @@ def instance_detail(instance_id: str):
     messages: list[dict] = []
     artifacts: list[dict] = []
     pending_hitl: list[dict] = []
+    # instance.html renders ``{{ resume_token | tojson }}`` -- it MUST be passed,
+    # as None when there is no session. fc12cfa09 added this query to the
+    # icdev/ mirror only and the next tools/ -> icdev/ sync deleted it, which is
+    # how the template came to ask for a variable the running route never sent.
+    resume_token: Optional[str] = None
     conn = None
     try:
         conn = _db()
@@ -433,6 +443,19 @@ def instance_detail(instance_id: str):
                 )
             )
             pending_hitl = _pending_confidence_hitl(conn, instance_id)
+            # The most recent session on this instance, for the Resume button.
+            session_row = _one(
+                conn.execute(
+                    _q(
+                        conn,
+                        "SELECT resume_token FROM ace_sessions "
+                        "WHERE instance_id = ? ORDER BY created_at DESC LIMIT 1",
+                    ),
+                    (instance_id,),
+                )
+            )
+            if session_row:
+                resume_token = session_row.get("resume_token") or None
     except Exception as exc:  # noqa: BLE001
         logger.warning("ace instance_detail read failed for %s: %s", instance_id, exc)
     finally:
@@ -444,27 +467,17 @@ def instance_detail(instance_id: str):
 
     coworker_display = {c["id"]: (c.get("display_name") or c.get("role_id")) for c in coworkers}
 
-    try:
-        return render_template(
-            "coworker/instance.html",
-            instance=instance,
-            instance_id=instance_id,
-            coworkers=coworkers,
-            messages=messages,
-            artifacts=artifacts,
-            coworker_display=coworker_display,
-            pending_hitl=pending_hitl,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.info("coworker/instance.html unavailable (%s); JSON fallback", exc)
-        return jsonify(
-            {
-                "instance": instance,
-                "coworkers": coworkers,
-                "messages": messages,
-                "artifacts": artifacts,
-            }
-        )
+    return _render_page(
+        "coworker/instance.html",
+        instance=instance,
+        instance_id=instance_id,
+        coworkers=coworkers,
+        messages=messages,
+        artifacts=artifacts,
+        coworker_display=coworker_display,
+        pending_hitl=pending_hitl,
+        resume_token=resume_token,
+    )
 
 
 @ace_bp.route("/<instance_id>/resume")
