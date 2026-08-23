@@ -212,7 +212,6 @@ tests/genesis/test_talent_anomaly.py
 tests/genesis/test_team_constants.py
 tests/genesis/test_test_reflex_constants.py
 tests/govcon/test_clause_risk_engine.py
-tests/govcon/test_past_performance_suggester.py
 tests/hooks/test_headless_parity.py
 tests/hooks/test_network_egress.py
 tests/http/test_egress_guard.py
