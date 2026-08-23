@@ -756,6 +756,39 @@ def api_artifacts(instance_id: str):
     return jsonify({"artifacts": items, "count": len(items)})
 
 
+@ace_api_bp.route("/<instance_id>/audit", methods=["GET"])
+def api_audit(instance_id: str):
+    """Audit log events for an instance (chronological, oldest first).
+
+    Consumed by the Activity Log tab on ``coworker/instance.html``. Restored
+    by task-42a17b8956: 407111d59 added it to ``icdev/tools/ace/blueprint.py``
+    ONLY and the next tools/ -> icdev/ mirror sync (3d16b47a3) deleted it, so
+    the page shipped a tab whose endpoint answered 404 text/html.
+    """
+    limit = _int_arg("limit", 200, lo=1, hi=500)
+    items: list[dict] = []
+    conn = None
+    try:
+        conn = _db()
+        items = _rows(
+            conn.execute(
+                _q(
+                    conn,
+                    "SELECT id, coworker_id, action, detail, actor, control_refs, created_at "
+                    "FROM ace_audit_log WHERE instance_id = ? "
+                    "ORDER BY created_at ASC, id ASC LIMIT ?",
+                ),
+                (instance_id, limit),
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace api_audit read failed for %s: %s", instance_id, exc)
+    finally:
+        if conn is not None:
+            conn.close()
+    return jsonify({"events": items, "count": len(items)})
+
+
 @ace_api_bp.route("/<instance_id>/hitl/pending", methods=["GET"])
 def api_hitl_pending(instance_id: str):
     """List pending mid-turn HITL checkpoint requests for an instance.

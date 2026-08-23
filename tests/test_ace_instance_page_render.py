@@ -293,3 +293,68 @@ def test_no_page_route_falls_back_to_jsonify_on_template_failure():
                 if _calls(handler, "jsonify"):
                     offenders.append(f"{fn.name}:{handler.lineno}")
     assert not offenders, f"page routes answering a template failure with JSON: {offenders}"
+
+
+# ---------------------------------------------------------------------------
+# GET /api/ace/<id>/audit -- the endpoint the Activity Log tab fetches
+# ---------------------------------------------------------------------------
+# task-42a17b8956. 407111d59 added ``api_audit`` to icdev/tools/ace/blueprint.py
+# ONLY; the next mirror sync (3d16b47a3) deleted it, and NEITHER tree carried
+# the route while instance.html still fetched it: 404 text/html, and
+# ``r.json()`` threw in tests/e2e/coworker_lifecycle.spec.ts:476. Same shape as
+# the resume_token defect above -- a feature that lands only in the mirror is
+# one sync away from vanishing.
+
+
+def _seed_audit_rows(instance_id: str, n: int) -> None:
+    conn = _conn()
+    try:
+        for i in range(n):
+            conn.execute(
+                "INSERT INTO ace_audit_log (instance_id, coworker_id, action, detail, actor, created_at) "
+                "VALUES (%s, %s, %s, %s, 'system', %s)",
+                (instance_id, f"cw-{instance_id}", "step_complete", f"step {i}", f"2026-08-22T00:00:{i:02d}Z"),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_audit_endpoint_returns_events_array_and_count(client, instance_id):
+    """The e2e assertion, run in-process: 200 application/json, events[], numeric count."""
+    _seed_audit_rows(instance_id, 3)
+    r = client.get(f"/api/ace/{instance_id}/audit?limit=50")
+    assert r.status_code == 200, r.data[:300]
+    assert "application/json" in (r.content_type or ""), r.content_type
+    body = r.get_json()
+    assert isinstance(body["events"], list)
+    assert isinstance(body["count"], int)
+    assert body["count"] == len(body["events"]) == 3
+    # Oldest first -- the tab appends newer events below older ones.
+    assert [e["detail"] for e in body["events"]] == ["step 0", "step 1", "step 2"]
+    # Every field instance.html's buildAuditItem reads is present.
+    for ev in body["events"]:
+        assert {"action", "actor", "detail", "created_at"} <= set(ev)
+
+
+def test_audit_endpoint_honours_limit(client, instance_id):
+    _seed_audit_rows(instance_id, 5)
+    r = client.get(f"/api/ace/{instance_id}/audit?limit=2")
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["count"] == 2 and len(body["events"]) == 2
+
+
+def test_audit_endpoint_empty_instance_is_json_not_404(client, instance_id):
+    """No events yet is an empty array, never a missing route."""
+    r = client.get(f"/api/ace/{instance_id}/audit")
+    assert r.status_code == 200 and "application/json" in (r.content_type or "")
+    assert r.get_json() == {"events": [], "count": 0}
+
+
+def test_audit_route_exists_in_both_trees():
+    """The mirror must carry the route too, or the next sync deletes it again."""
+    for tree in (ROOT / "tools" / "ace" / "blueprint.py", ROOT / "icdev" / "tools" / "ace" / "blueprint.py"):
+        src = tree.read_text(encoding="utf-8")
+        assert '@ace_api_bp.route("/<instance_id>/audit"' in src, tree
+        assert "def api_audit(" in src, tree
