@@ -25,7 +25,20 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "Scanning for qualifying kanban PRs..."
-          # Qualifying: kanban/* branch, all checks passed, not a draft
+          # Qualifying: kanban/* branch, REQUIRED checks passed, not a draft.
+          #
+          # REQUIRED, and read as a column (task-det-295a9bb95e). This used to
+          # pipe `gh pr checks` through awk printing the second field, which splits on
+          # whitespace: for any check whose name contains a space -- 17 of this
+          # repo's 19 -- `$2` is a fragment of the NAME (`(Windows)`, `Shard`,
+          # `Scan`) and never `fail`, so the "all checks green" rule was
+          # enforced for `Lint` and `Test` alone and every other failure was
+          # invisible. PR #1859 merged here with `Test (Windows)` red, which was
+          # the RIGHT outcome (that job is non-required on purpose) reached by
+          # accident. `--required` makes the rule branch protection's rule, by
+          # construction; `--json bucket` is one value per check with no name
+          # to mis-split. An EMPTY answer (gh failed, no protection, nothing
+          # required) is refused, never read as green.
           gh pr list \
             --repo icdev-ai/icdev \
             --state open \
@@ -34,10 +47,14 @@ jobs:
           | jq -r '.[] | select(.headRefName | startswith("kanban/")) | select(.isDraft == false) | [.number, .headRefName, .title] | @tsv' \
           | while IFS=$'\t' read -r pr_num branch title; do
               echo "Checking PR #$pr_num ($branch)..."
-              # Get check status — all must be SUCCESS or SKIPPED (not PENDING/FAILURE)
-              status=$(gh pr checks "$pr_num" --repo icdev-ai/icdev 2>/dev/null | awk '{print $2}' | sort -u)
-              if echo "$status" | grep -qE "^(fail|pending|in_progress)$"; then
-                echo "  PR #$pr_num: checks not green, skipping"
+              # Required-check buckets: pass | fail | pending | skipping | cancel
+              status=$(gh pr checks "$pr_num" --repo icdev-ai/icdev --required --json bucket --jq '.[].bucket' 2>/dev/null | sort -u)
+              if [ -z "$status" ]; then
+                echo "  PR #$pr_num: required checks could not be read, skipping"
+                continue
+              fi
+              if echo "$status" | grep -qvE "^(pass|skipping)$"; then
+                echo "  PR #$pr_num: required checks not green ($(echo "$status" | tr '\n' ' ')), skipping"
                 continue
               fi
               mergeable=$(gh pr view "$pr_num" --repo icdev-ai/icdev --json mergeable --jq '.mergeable' 2>/dev/null)

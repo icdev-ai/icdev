@@ -46,7 +46,7 @@ import time
 from dataclasses import asdict, dataclass, field
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, FrozenSet, List, Optional, Tuple
 
 import yaml
 
@@ -59,6 +59,7 @@ from tools.ci.merge_readiness import (
     READY,
     HELD_LABEL,
     classify_merge_readiness,
+    fetch_required_checks,
     held_label_reason,
     hold_labels,
     measure_behind_by,
@@ -833,6 +834,7 @@ class PRWatcher:
         pr_list_runner=None,
         rebase_fn=None,
         behind_probe=None,
+        gh_runner=None,
         dry_run: bool = False,
     ):
         self.config = config or load_config()
@@ -853,6 +855,13 @@ class PRWatcher:
             default_branch_resolver or repo_default_branch
         )
         self._default_branch_cache: Optional[str] = None
+        # task-det-295a9bb95e: the branch-protection REQUIRED set, read through
+        # this runner and cached (see `required_checks`). Injectable so tests
+        # never touch a live forge.
+        # None defers to merge_readiness's default runner -- the seam a test
+        # session stubs so an un-injected watcher never reads the live forge.
+        self._gh_runner = gh_runner
+        self._required_checks_cache: Optional[tuple] = None   # (monotonic, set|None)
         # Re-verification attempts per task, for the life of this watcher.
         # Bounded so a task whose verification genuinely fails cannot spin: it is
         # re-checked once, and if it still fails the PR stays held until a human
@@ -1157,6 +1166,50 @@ class PRWatcher:
                     % (behind, (state.get("baseRefName") or "the base branch"),
                        limit))
         return None
+
+    def required_checks(self) -> Optional[FrozenSet[str]]:
+        """The checks branch protection REQUIRES, or None to count every check.
+
+        THE DEFECT (task-det-295a9bb95e). `Test (Windows)` is non-required on
+        purpose -- icdev-ci.yml: "a Windows-only flake cannot block a merge" --
+        and the forge merges on Lint / Test / Security Scan / Helm Lint alone.
+        This watcher read EVERY check, so one red Windows run classified PR
+        #1859 `ci_failed` with its required set fully green, injected five
+        resume contexts into a branch with nothing wrong in it, escalated to
+        "manual intervention required", and filed a NEEDED-A-HUMAN card (#1841
+        before it, same shape: 2 of the 11 `ci_failed` escalations since
+        2026-08-14). The forge then merged both itself.
+
+        Read from branch protection -- the ONE place the set is declared --
+        through `merge_readiness.fetch_required_checks`, never from a list in
+        code that drifts the day a check is promoted. Cached for
+        `required_checks_cache_seconds` (default 300) INCLUDING an unresolved
+        answer, so an unprotected branch or a token that may not read the rule
+        costs one call per window, not one per PR per poll.
+
+        `required_checks_only: false` in args/pr_watcher_config.yaml turns it
+        off: None, no forge call, and every predicate reads every check -- the
+        pre-existing behaviour, one flag flip away.
+        """
+        if not self.config.get("required_checks_only", True):
+            return None
+        ttl = float(self.config.get("required_checks_cache_seconds", 300) or 0)
+        now = time.monotonic()
+        cached = self._required_checks_cache
+        if cached is not None and now - cached[0] < ttl:
+            return cached[1]
+        resolved = None
+        try:
+            resolved = fetch_required_checks(
+                self._default_branch(), runner=self._gh_runner)
+        except Exception as exc:  # noqa: BLE001 -- unresolved, never a crash
+            logger.warning("pr_watcher: required-check resolution failed: %s", exc)
+        if resolved is None:
+            logger.info(
+                "pr_watcher: required checks UNRESOLVED for %s -- every check "
+                "counts until the next attempt", self._default_branch())
+        self._required_checks_cache = (now, resolved)
+        return resolved
 
     def _default_branch(self) -> str:
         if self._default_branch_cache is None:
@@ -2430,6 +2483,8 @@ class PRWatcher:
         require_approval = bool(
             self.config.get("auto_merge_require_approval", True)
         )
+        # The REQUIRED check set, once per poll (task-det-295a9bb95e).
+        required = self.required_checks()
         # Sibling-file-conflict map (kph): fetch every open PR's changed files ONCE
         # per cycle so the DONE path can flag a merge candidate that races another
         # open PR on the same source file (the "two different blueprint.py" class).
@@ -2478,7 +2533,19 @@ class PRWatcher:
 
             classification = ec.classify_pr_state(
                 state, ci_logs=ci_logs, require_approval=require_approval,
+                required=required,
             )
+            # A failing check the required set set aside is NAMED on the audit
+            # row, never dropped -- a red check nobody can see afterwards is the
+            # `awk '{print $2}'` defect in a new coat.
+            ignored = ec.ignored_failures(state, required=required)
+            ignored_note = (
+                "; ignored non-required failing check(s): " + ", ".join(ignored)
+                if ignored else "")
+            if ignored:
+                logger.info(
+                    "pr_watcher: %s -- %s failing but not required; classified %s",
+                    pr_url, ", ".join(ignored), classification)
 
             # WAKE EVENTS (agov-wake-03). This is the one place in ICDEV that
             # observes "PR #N just went green", so it is where
@@ -2974,7 +3041,7 @@ class PRWatcher:
                             task_id=task["id"], pr_url=pr_url,
                             classification="done",
                             action="merge",
-                            reason="auto-merge ok",
+                            reason="auto-merge ok" + ignored_note,
                             resume_cycle=cycle,
                         )
                     else:
@@ -2982,7 +3049,8 @@ class PRWatcher:
                             task_id=task["id"], pr_url=pr_url,
                             classification="done",
                             action="wait",
-                            reason="approval required or merge blocked",
+                            reason="approval required or merge blocked"
+                            + ignored_note,
                             resume_cycle=cycle,
                         )
                 report.actions.append(action)
@@ -3424,13 +3492,15 @@ class PRWatcher:
             return
 
         default_branch = self._default_branch()
+        required = self.required_checks()
         for pr in prs:
             url = (pr.get("url") or "").strip()
             verdict = classify_merge_readiness(
                 pr, default_branch=default_branch, linked_urls=linked,
                 changed_files=self._open_pr_index().get(url, {}).get("files")
                 if url in self._open_pr_index() else None,
-                protected_paths=self._protected_paths())
+                protected_paths=self._protected_paths(),
+                required_checks=required)
             if verdict.state == READY:
                 # STALENESS IS MEASURED LAST, and only here (kpr-stale-02).
                 # It is the one rung that costs a forge round-trip, so it is
@@ -3443,6 +3513,7 @@ class PRWatcher:
                     changed_files=self._open_pr_index().get(url, {}).get("files")
                     if url in self._open_pr_index() else None,
                     protected_paths=self._protected_paths(),
+                    required_checks=required,
                 ) if self.config.get("refuse_merge_when_behind", True) else verdict
             if verdict.state != READY:
                 # The refusals used to be bare `continue`s and so were entirely
