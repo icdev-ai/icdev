@@ -76,12 +76,12 @@ def _seed_instance(instance_id: str) -> None:
     try:
         conn.execute(
             "INSERT INTO ace_instances (id, name, role_id, state, trust_tier, config_json) "
-            "VALUES (?, ?, 'ai_developer', 'active', 'yellow', ?)",
+            "VALUES (%s, %s, 'ai_developer', 'active', 'yellow', %s)",
             (instance_id, instance_id, '{"problem_text": "Debug", "trigger_source": "dashboard"}'),
         )
         conn.execute(
             "INSERT INTO ace_coworkers (id, instance_id, role_id, display_name, state, trust_tier) "
-            "VALUES (?, ?, 'ai_developer', 'AI Developer', 'working', 'yellow')",
+            "VALUES (%s, %s, 'ai_developer', 'AI Developer', 'working', 'yellow')",
             (f"cw-{instance_id}", instance_id),
         )
         conn.commit()
@@ -94,7 +94,7 @@ def _seed_session(instance_id: str, token: str) -> None:
     try:
         conn.execute(
             "INSERT INTO ace_sessions (session_id, instance_id, conversation_history, resume_token, turn_count) "
-            "VALUES (?, ?, '[]', ?, 0)",
+            "VALUES (%s, %s, '[]', %s, 0)",
             (f"sess-{uuid.uuid4().hex[:8]}", instance_id, token),
         )
         conn.commit()
