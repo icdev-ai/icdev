@@ -52,7 +52,14 @@ from typing import Optional
 
 logger = get_logger(__name__)
 
-_PROJECTS_YAML = Path(__file__).resolve().parent.parent.parent / "args" / "projects.yaml"
+#: The ONE tracked file this module writes, repo-relative. Declared HERE, by
+#: the writer, because the restore tier (autonomy-dep-04,
+#: `tools/awareness/restore_acts.py::AUTO_MANAGED_FILES`) learns which file is
+#: regenerable from the module that regenerates it — never from a second list
+#: that can drift from the path the writer actually touches.
+TRACKED_RELPATH = "args/projects.yaml"
+
+_PROJECTS_YAML = Path(__file__).resolve().parent.parent.parent / TRACKED_RELPATH
 
 # Pattern: lowercase prefix + at least one epic segment + numeric suffix
 # e.g. sim-l0-01  dt-iqe-03  ad710-macro-01  og-data-02
@@ -129,19 +136,30 @@ def _parse_task_id(task_id: str) -> Optional[tuple[str, str]]:
     return prefix, epic
 
 
-def _load_yaml_raw() -> tuple[dict, str]:
+def _parse_projects(text: str) -> dict:
+    """``text`` -> the registry dict, always carrying a ``projects`` list."""
+    import yaml
+
+    data = yaml.safe_load(text) if text else None
+    data = data or {}
+    if not isinstance(data, dict):
+        data = {}
+    if "projects" not in data or data["projects"] is None:
+        data["projects"] = []
+    return data
+
+
+def _load_yaml_raw(path: Optional[Path] = None) -> tuple[dict, str]:
     """Load projects.yaml, return (parsed_dict, original_text)."""
     try:
-        import yaml
+        import yaml  # noqa: F401 — probe only; _parse_projects imports it again
     except ImportError:
         return {}, ""
-    if not _PROJECTS_YAML.exists():
+    target = path or _PROJECTS_YAML
+    if not target.exists():
         return {"projects": []}, ""
-    text = _PROJECTS_YAML.read_text(encoding="utf-8")
-    data = yaml.safe_load(text) or {}
-    if "projects" not in data:
-        data["projects"] = []
-    return data, text
+    text = target.read_text(encoding="utf-8")
+    return _parse_projects(text), text
 
 
 _HEADER = ("# CUI // SP-CTI\n#\n"
@@ -218,17 +236,23 @@ def compose(data: dict, original_text: str, changed_keys: set) -> str:
     return "".join(out)
 
 
-def _write_text(text: str) -> None:
+def _write_text(text: str, path: Optional[Path] = None) -> None:
     """Atomic write via temp-file rename."""
+    target = path or _PROJECTS_YAML
+    # LF, explicitly. Text mode on Windows turns every "\n" into "\r\n", so the
+    # blocks compose() hands back "byte-for-byte" landed CRLF on a file git
+    # holds LF — measured on the live checkout 2026-08-23 ("CRLF will be
+    # replaced by LF the next time Git touches it") — and a line-ending-only
+    # rewrite is still a locally modified file to pull_if_safe.
     tmp = tempfile.NamedTemporaryFile(
-        mode="w", encoding="utf-8", dir=_PROJECTS_YAML.parent,
+        mode="w", encoding="utf-8", newline="\n", dir=target.parent,
         prefix=".projects_tmp_", suffix=".yaml", delete=False
     )
     try:
         tmp.write(text)
         tmp.flush()
         tmp.close()
-        os.replace(tmp.name, _PROJECTS_YAML)
+        os.replace(tmp.name, target)
     except Exception:
         try:
             os.unlink(tmp.name)
@@ -251,7 +275,7 @@ def _write_yaml(data: dict) -> None:
     text = yaml.dump(data, default_flow_style=False, allow_unicode=True, sort_keys=False)
     header = _HEADER
     tmp = tempfile.NamedTemporaryFile(
-        mode="w", encoding="utf-8", dir=_PROJECTS_YAML.parent,
+        mode="w", encoding="utf-8", newline="\n", dir=_PROJECTS_YAML.parent,
         prefix=".projects_tmp_", suffix=".yaml", delete=False
     )
     try:
@@ -313,23 +337,22 @@ def _project_name(prefix: str) -> str:
     return f"{slug} Project"
 
 
-def sync_projects(dry_run: bool = False) -> dict:
-    """
-    Scan kanban DB and upsert project entries in projects.yaml.
+def regenerate(original_text: str, db_map: dict) -> tuple[dict, set, dict]:
+    """What this writer would make of ``original_text`` given the board.
 
-    Returns a report dict:
-      {
-        "new_projects": [{"prefix": ..., "key": ...}],
-        "updated_projects": [{"key": ..., "added_epics": [...]}],
-        "unchanged": int,
-        "written": bool,
-      }
-    """
-    db_map = _scan_db()
-    if not db_map:
-        return {"new_projects": [], "updated_projects": [], "unchanged": 0, "written": False}
+    PURE — reads no file, no database, writes nothing. ``db_map`` is
+    ``{prefix: {epic_key, ...}}`` in :func:`_scan_db`'s shape. Returns
+    ``(data, changed_keys, report)``: the registry dict after the upsert, the
+    project keys this run touched (what :func:`compose` re-renders), and the
+    report :func:`sync_projects` returns minus ``written``/``dry_run``.
 
-    data, original_text = _load_yaml_raw()
+    Split out of :func:`sync_projects` for autonomy-dep-04: the restore tier
+    needs to ask "is the local diff on the tracked file EXACTLY what this
+    writer adds from the board?" — and the only honest way to answer that is to
+    run the writer's own logic over the committed text and compare, never a
+    second reading of what an auto-managed entry looks like.
+    """
+    data = _parse_projects(original_text)
     projects: list = data.get("projects", [])
 
     # Build lookup: prefix -> project entry (by REFERENCE, not index). Indices
@@ -411,26 +434,67 @@ def sync_projects(dry_run: bool = False) -> dict:
             new_projects.append({"prefix": prefix, "key": key})
             changed = True
 
+    data["projects"] = projects
+    changed_keys: set = set()
+    if changed:
+        changed_keys = {str(p.get("key") or "").strip() for p in new_projects}
+        changed_keys |= {str(u.get("key") or "").strip() for u in updated_projects}
+    report = {
+        "new_projects": new_projects,
+        "updated_projects": updated_projects,
+        "unchanged": len(db_map) - len(new_projects) - len(updated_projects),
+        "changed": changed,
+    }
+    return data, changed_keys, report
+
+
+def regenerated_projects(original_text: str, db_map: dict) -> list:
+    """The project entries this writer would leave in the file. For a prover."""
+    data, _keys, _report = regenerate(original_text, db_map)
+    return list(data.get("projects") or [])
+
+
+def sync_projects(dry_run: bool = False, *, path: Optional[Path] = None,
+                  board: Optional[dict] = None) -> dict:
+    """
+    Scan kanban DB and upsert project entries in projects.yaml.
+
+    ``path`` is the registry file to read and write (default: this tree's
+    ``args/projects.yaml``); ``board`` is a pre-scanned ``{prefix: {epics}}``
+    (default: scan ``kanban_tasks`` now). Both exist so the restore tier can
+    re-derive the cards on top of a freshly pulled tree in a checkout that is
+    not the one this module was imported from.
+
+    Returns a report dict:
+      {
+        "new_projects": [{"prefix": ..., "key": ...}],
+        "updated_projects": [{"key": ..., "added_epics": [...]}],
+        "unchanged": int,
+        "written": bool,
+      }
+    """
+    target = Path(path) if path else _PROJECTS_YAML
+    db_map = board if board is not None else _scan_db()
+    if not db_map:
+        return {"new_projects": [], "updated_projects": [], "unchanged": 0, "written": False}
+
+    _data, original_text = _load_yaml_raw(target)
+    data, changed_keys, report = regenerate(original_text, db_map)
+    changed = report.pop("changed")
+
     written = False
     if changed and not dry_run:
-        data["projects"] = projects
         # Re-render ONLY the projects this run touched; every other block is
         # written back byte-for-byte. See compose() for why: a whole-document
         # yaml.dump reflows the file even when nothing changed, and this file is
         # tracked, so the churn clashes with every incoming merge and froze the
         # deployment 22 commits behind.
-        changed_keys = {str(p.get("key") or "").strip() for p in new_projects}
-        changed_keys |= {str(u.get("key") or "").strip() for u in updated_projects}
-        _write_text(compose(data, original_text, changed_keys))
+        _write_text(compose(data, original_text, changed_keys), target)
         written = True
 
-    return {
-        "new_projects": new_projects,
-        "updated_projects": updated_projects,
-        "unchanged": len(db_map) - len(new_projects) - len(updated_projects),
-        "written": written,
-        "dry_run": dry_run,
-    }
+    report["written"] = written
+    report["dry_run"] = dry_run
+    return report
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────

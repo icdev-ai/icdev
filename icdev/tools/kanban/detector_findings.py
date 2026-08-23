@@ -65,6 +65,7 @@ import json
 import sys
 import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
 from tools.logging.icdev_logger import get_logger
@@ -79,8 +80,9 @@ DETECTOR_STATUS_CHURN = "status_churn"
 DETECTOR_BORN_RED = "born_red"
 DETECTOR_RECOVERY = "recovery"
 DETECTOR_MIGRATION_DRIFT = "migration_drift"
+DETECTOR_DEPLOYMENT_FRESHNESS = "deployment_freshness"
 DETECTORS = (DETECTOR_STATUS_CHURN, DETECTOR_BORN_RED, DETECTOR_RECOVERY,
-             DETECTOR_MIGRATION_DRIFT)
+             DETECTOR_MIGRATION_DRIFT, DETECTOR_DEPLOYMENT_FRESHNESS)
 
 #: detector_runs.last_state — and the per-detector ``state`` in a report.
 RUN_FINDINGS = "findings"
@@ -473,13 +475,146 @@ def run_migration_drift(conn, cfg: Mapping[str, Any]) -> dict:
     return _result(RUN_FINDINGS if findings else RUN_CLEAN, findings, summary=summary)
 
 
-#: Cheap, SQL-only detectors first; the one that leaves the database for tens
-#: of seconds last, with everything before it already committed.
+def freshness_findings(report: Mapping[str, Any],
+                       restore: Optional[Mapping[str, Any]] = None) -> List[Finding]:
+    """deployment_freshness.freshness() -> findings. ONE finding per freeze.
+
+    Filed only for a `blocked` deployment the restore tier did NOT clear — so
+    the card carries the act's own refusal (a human edit, a foreign file, an
+    unreadable board) beside the guard's verdict, and says what a human does
+    about each. The FINGERPRINT is the guard's reason plus the files it names:
+    the same freeze on the same files is the SAME finding however many cycles
+    it persists (seen_count rises, no second card); a different file set is a
+    new condition.
+    """
+    if str(report.get("state") or "") != "blocked":
+        return []
+    conflicts = sorted(str(c) for c in (report.get("conflicts") or []))
+    reason = str(report.get("reason") or "")
+    root = str(report.get("root") or "deployment")
+    ref = str(report.get("ref") or "origin/main")
+    behind = report.get("behind_by")
+    outcome = str((restore or {}).get("outcome") or "not_attempted")
+    why = str((restore or {}).get("reason") or "")
+    advice = (
+        f"This checkout is {behind} commit(s) behind {ref} and has STOPPED updating: "
+        f"the update guard (code_reload.pull_if_safe) refuses — {reason}"
+        f"{' — on ' + ', '.join(conflicts) if conflicts else ''}. Every merged fix is "
+        "absent from the services running from it while every board, PR and CI signal "
+        "stays green (autonomy-dep-03 measured the cost; autonomy-dep-04 the recurrence). "
+        f"The restore tier (restore_acts.restore_auto_managed_file) reports `{outcome}`"
+        f"{': ' + why if why else ''}. "
+        "It restores a file ONLY when the file is an enumerated auto-managed one AND its "
+        "writer, re-run over HEAD, reproduces the local diff — so if it refused, the "
+        "local change is NOT regenerable: commit it (`git add -p` the human edit, push "
+        "it on a branch) or, if it is truly disposable, `git checkout -- <file>`; never "
+        "widen the guard to pull over it. Re-derive with "
+        f"`python tools/genesis/deployment_freshness.py --root {root} --json` and "
+        f"`python tools/awareness/restore_acts.py --plan --root {root}`."
+    )
+    evidence: Dict[str, Any] = {k: v for k, v in report.items()}
+    if restore is not None:
+        evidence["restore"] = {k: restore.get(k) for k in
+                               ("act", "target", "outcome", "proven", "reason", "audit_id",
+                                "confirmed")}
+    return [Finding(
+        DETECTOR_DEPLOYMENT_FRESHNESS, subject=root,
+        fingerprint=f"{reason}|{'|'.join(conflicts)}",
+        title=f"deployment frozen {behind} commit(s) behind {ref}: {reason}",
+        priority="high", task_type="fix",
+        evidence=evidence,
+        derivation=f"python tools/genesis/deployment_freshness.py --root {root} --json",
+        advice=advice,
+    )]
+
+
+def _restore_blocked_files(report: Mapping[str, Any], *, dry_run: bool) -> Dict[str, Any]:
+    """Try the restore tier on every enumerated auto-managed file the guard
+    names. ``outcome`` is ``applied`` only if EVERY attempted act applied; a
+    file no writer regenerates is reported as ``not_attempted`` for that file."""
+    from tools.awareness import restore_acts as ra
+
+    root = report.get("root")
+    attempts: List[Dict[str, Any]] = []
+    for path in sorted(str(c) for c in (report.get("conflicts") or [])):
+        rel = ra._rel(path)
+        if rel not in ra.AUTO_MANAGED_FILES:
+            attempts.append({"act": "restore_auto_managed_file", "target": rel,
+                             "outcome": "not_attempted",
+                             "reason": "not an enumerated auto-managed file"})
+            continue
+        attempts.append(ra.perform("restore_auto_managed_file", rel,
+                                   root=Path(root) if root else None, dry_run=dry_run))
+    if not attempts:
+        return {"outcome": "not_attempted", "reason": "the guard named no file", "acts": []}
+    first = attempts[0]
+    applied = all(a.get("outcome") == ra.APPLIED for a in attempts)
+    summary = {"outcome": ra.APPLIED if applied else str(first.get("outcome")),
+               "reason": "" if applied else str(first.get("reason") or ""),
+               "acts": attempts}
+    for key in ("act", "target", "proven", "audit_id", "confirmed"):
+        if key in first:
+            summary[key] = first[key]
+    return summary
+
+
+def run_deployment_freshness(conn, cfg: Mapping[str, Any]) -> dict:
+    """Ask the SAME reporter dep-03 ships; on `blocked`, CONSUME the restore
+    tier before filing anything.
+
+    The order is the card's whole point: a report nobody reads is the defect
+    dep-03 itself named, and a card for a freeze that a proven, audited act
+    could have cleared is a human doing a machine's work. So: measure; if
+    blocked, let the restore tier prove/audit/apply/confirm; re-measure; file a
+    card ONLY for what is still blocked, carrying the act's refusal.
+    """
+    from tools.genesis import deployment_freshness as dfm
+
+    # The reporter shells out to git (fetch included); hold no read txn across it.
+    end_read_txn(conn)
+    root = str(cfg.get("root")) if cfg.get("root") else None
+    ref = str(cfg.get("ref") or "origin/main")
+    dry_run = bool(cfg.get("dry_run"))
+    report = dfm.freshness(root=root, ref=ref)
+    state = str(report.get("state") or "")
+    summary: Dict[str, Any] = {k: report.get(k) for k in ("state", "behind_by", "reason",
+                                                          "conflicts", "root", "ref")}
+    if state == dfm.UNMEASURABLE:
+        # UNMEASURABLE CLEARS NOTHING: an unreachable remote is not a current
+        # checkout, and a run that could not look must not clear a live freeze.
+        return _result(RUN_UNMEASURABLE,
+                       reason=str(report.get("reason") or "freshness not measurable"),
+                       summary=summary)
+    if state != dfm.BLOCKED:
+        return _result(RUN_CLEAN, summary=summary)
+
+    restore: Optional[Dict[str, Any]] = None
+    if cfg.get("restore", True) is not False:
+        restore = _restore_blocked_files(report, dry_run=dry_run)
+        summary["restore"] = {k: restore.get(k) for k in ("outcome", "reason", "target")}
+        if restore.get("outcome") == "applied":
+            after = dfm.freshness(root=root, ref=ref)
+            summary["after"] = {k: after.get(k) for k in ("state", "behind_by", "reason")}
+            if str(after.get("state") or "") != dfm.BLOCKED:
+                # The freeze is CLEARED — measured again, not assumed from the
+                # act's own confirm. A clean run is what clears the projection.
+                return _result(RUN_CLEAN, summary=summary)
+            report = after
+    else:
+        summary["restore"] = {"outcome": "disabled", "reason": "detectors.deployment_"
+                              "freshness.restore is false", "target": None}
+    findings = freshness_findings(report, restore)
+    return _result(RUN_FINDINGS if findings else RUN_CLEAN, findings, summary=summary)
+
+
+#: Cheap, SQL-only detectors first; the ones that leave the database for tens
+#: of seconds last, with everything before them already committed.
 DEFAULT_RUNNERS: Dict[str, Callable[[Any, Mapping[str, Any]], dict]] = {
     DETECTOR_STATUS_CHURN: run_status_churn,
     DETECTOR_RECOVERY: run_recovery,
     DETECTOR_BORN_RED: run_born_red,
     DETECTOR_MIGRATION_DRIFT: run_migration_drift,
+    DETECTOR_DEPLOYMENT_FRESHNESS: run_deployment_freshness,
 }
 
 #: One line per detector, for the card: what it measures and where it came from.
@@ -497,6 +632,12 @@ DETECTOR_BLURB = {
         "migration_drift (autonomy-dep-01) — a migration that is on the default "
         "branch and NOT applied to this deployment. Its capability is inert here: "
         "the code merged, the schema did not, and every test stays green."),
+    DETECTOR_DEPLOYMENT_FRESHNESS: (
+        "deployment_freshness (autonomy-dep-03/04) — this checkout is behind the "
+        "default branch and the update guard REFUSES to pull, so every merged fix "
+        "is absent from the services running here. The restore tier was asked "
+        "first (restore_acts.restore_auto_managed_file); this card exists because "
+        "it could not prove the local change regenerable."),
 }
 
 
@@ -705,6 +846,10 @@ def consume(config: Optional[Mapping[str, Any]] = None, *, conn=None, seed: bool
         candidates: List[dict] = []   # {"finding", "existing", "revision"}
         for name, runner in runners.items():
             d_cfg = dict(detector_cfg.get(name) or {})
+            # A detector that CONSUMES the restore tier (deployment_freshness)
+            # must know a dry run is a dry run: `seed=False` writes no row and
+            # no card, and must act on nothing either.
+            d_cfg.setdefault("dry_run", not seed)
             t0 = time.monotonic()
             try:
                 res = runner(conn, d_cfg)

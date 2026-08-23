@@ -267,14 +267,15 @@ python -m tools.awareness.autonomy_loop --no-forge       # no gh call; PR-based 
 # section is unmeasured: `falling_where_measured` names the holes beside it.
 # Report only, no --gate: it measures the BOARD and the FLEET, not a diff.
 
-# The restore tier, ENUMERATED — three mechanical acts, and no fourth (autonomy-act-03)
+# The restore tier, ENUMERATED — four mechanical acts, and no fifth (autonomy-act-03, autonomy-dep-04)
 python tools/awareness/restore_acts.py --list
 python tools/awareness/restore_acts.py --plan [--json]                      # candidates; ACTS NOTHING
 python tools/awareness/restore_acts.py --apply reap_dead_lease --target <task-id>
 python tools/awareness/restore_acts.py --apply prune_gone_census_entry --target <census entry>
 python tools/awareness/restore_acts.py --apply restart_stale_daemon --target tools.genesis.daemon
+python tools/awareness/restore_acts.py --apply restore_auto_managed_file --target args/projects.yaml --root <checkout>
 python tools/awareness/restore_acts.py --apply <act> --target <t> --dry-run   # prove, audit nothing, act on nothing
-# A CLOSED SET IS THE CONTROL. `ACTS` is a frozen mapping of exactly three
+# A CLOSED SET IS THE CONTROL. `ACTS` is a frozen mapping of exactly four
 # names; an open-ended "the agent decides what to fix" is not self-healing, it
 # is an unaudited actuator with write access to its own guardrails. There is
 # deliberately NO act that edits a claim, threshold or assertion so a surface
@@ -291,7 +292,7 @@ python tools/awareness/restore_acts.py --apply <act> --target <t> --dry-run   # 
 #            refused; that is the correct reading, not an obstacle.
 #   apply    one lease file / one census line / one pid. Nothing else.
 #   confirm  re-reads the world; `applied_unconfirmed` is never `applied`.
-# THE THREE:
+# THE FOUR:
 #   reap_dead_lease          kanban:task:<id> only. Holder pid PROVABLY dead AND
 #                            the task not heartbeating — rem-hyg-15's
 #                            `_task_is_heartbeating`, the same question every
@@ -321,6 +322,31 @@ python tools/awareness/restore_acts.py --apply <act> --target <t> --dry-run   # 
 #                            launcher kills by) — a reused pid, a `bash -c` that
 #                            merely typed the name, and an unreadable process
 #                            table all refuse. Graceful terminate, never kill.
+#   restore_auto_managed_file  `git checkout --` ONE tracked file a reflex REGENERATES
+#                            (autonomy-dep-04; the set is AUTO_MANAGED_FILES, declared
+#                            by each WRITER's TRACKED_RELPATH: args/projects.yaml from
+#                            kanban_project_sync, today the only entry). Proven only
+#                            when deployment_freshness is `blocked` with the guard's
+#                            overlap naming EXACTLY enumerated files AND the writer,
+#                            re-run over HEAD:<file> against the CURRENT board,
+#                            reproduces the local diff (regenerable_diff: committed
+#                            projects unchanged apart from appended epics, every
+#                            addition one the writer would make; a board that grew
+#                            since is fine). A HUMAN EDIT to name/description/briefs/a
+#                            committed epic is False and NEVER reverted; an unreadable
+#                            board, HEAD or working copy, or an empty board, is None.
+#                            A second blocked file NO writer regenerates refuses too.
+#                            apply = checkout, then pull THROUGH pull_if_safe (never a
+#                            bare git pull), then re-run the writer on the pulled tree
+#                            so the board's cards are re-derived on top of what the
+#                            incoming commits registered by hand. confirm asks the
+#                            guard again, dry run. Undo: nothing to undo, by proof.
+#                            MEASURED live 2026-08-23 on C:/AI/ICDev (1,340 refusals
+#                            deep): proven True, 4 behind, applied, current.
+# CONSUMED by the `deployment_freshness` detector in tools/kanban/detector_findings.py
+# (detector_findings_reflex, 6h): on `blocked` it asks this act FIRST, re-measures,
+# and files a card ONLY for a freeze still standing, carrying the act's refusal.
+# `restore: false` under that detector's config files the card without asking.
 # `--plan` re-proves every candidate and prints the refusals too, and it states
 # what it MEASURED (leases / census files read / staleness state) beside the
 # verdict, because "no candidate" over an unmeasured fleet is the fabricated
