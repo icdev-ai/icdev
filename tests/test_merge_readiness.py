@@ -300,12 +300,14 @@ def test_cli_is_read_only():
 
     # Everything that shells out does so through an injectable runner, and
     # EVERY argv must be a read. kpr-stale-02 added the second one
-    # (`measure_behind_by`), so this counts argvs rather than asserting there
-    # is one -- but each is checked, and a new one cannot arrive unlisted.
+    # (`measure_behind_by`) and task-det-295a9bb95e the third
+    # (`fetch_required_checks`, a GET of the branch-protection rule), so this
+    # counts argvs rather than asserting there is one -- but each is checked,
+    # and a new one cannot arrive unlisted.
     shells = [n for n in ast.walk(tree) if isinstance(n, ast.Attribute)
               and n.attr in ("run", "Popen", "call", "check_call", "check_output")]
-    assert len(shells) == 2, (
-        "expected two subprocess references, got %s"
+    assert len(shells) == 3, (
+        "expected three subprocess references, got %s"
         % [ast.unparse(n) for n in shells])
 
     # The command literals are what execute; prose in a docstring or an --help
@@ -313,12 +315,13 @@ def test_cli_is_read_only():
     argvs = [n for n in ast.walk(tree)
              if isinstance(n, ast.Call) and n.args
              and isinstance(n.args[0], ast.List)]
-    assert len(argvs) == 2, "expected two argv lists, got %d" % len(argvs)
+    assert len(argvs) == 3, "expected three argv lists, got %d" % len(argvs)
     literals = [[e.value for e in a.args[0].elts
                  if isinstance(e, ast.Constant) and isinstance(e.value, str)]
                 for a in argvs]
     assert ["pr", "list", "--state", "open", "--limit", "--json"] in literals, literals
     assert ["api", "--jq", ".behind_by"] in literals, literals
+    assert ["api"] in literals, literals          # fetch_required_checks: a bare GET
 
     for words in literals:
         for verb in ("merge", "push", "close", "edit", "delete", "comment",
