@@ -160,6 +160,30 @@ exemptions:
       test-only repair is not mechanically distinguishable from a test weakened
       to match broken code, so this is not the pattern for the next one. GATED
       by the same change (args/ci_test_files/core.d/task-det-87e60dc7d5.txt).
+  - pattern: "tests/test_aac_llm_http_auth.py"
+    reason: >-
+      PURE TEST REPAIR — NO PRODUCTION BEHAVIOUR CHANGED, so nothing here can go
+      red (task-det-f5d3034b04, born_red_survey finding f5d3034b04b9f404).
+      `test_returns_llm_suggestion_when_available` mocked a router exposing
+      `complete(req)` returning `.text` — the API the implementation used when
+      both landed together (cd69e9055, 2026-06-20). nav-llm-01 (a21873760,
+      2026-07-18) replaced the dead `router.complete()` with the real
+      `invoke(function_name, LLMRequest)` returning `.content` at 10 call
+      sites, including tools/ai_augmentation/implementations/llm_http_auth.py,
+      but this ungated test's mock was not updated: `invoke` was missing on the
+      fake, the AttributeError was swallowed by the advisor's fallback, and the
+      test got 1 where it asserted 2 on every observation since. So the file is
+      the passed_at_birth shape wearing a born_red label — a silent regression
+      of the TEST when the implementation was corrected to the real API. THE
+      RED IS RECORDED in detector_findings. The repair updates both fake
+      routers in TestAdviseRetryThreshold to the real seam (`invoke` /
+      `.content`), which is the claim the test always intended; the
+      implementation and the router are untouched, so the file passes at the
+      merge base and is reported `not_discriminating` by construction. Scoped
+      to this ONE file — a test-only repair is not mechanically
+      distinguishable from a test weakened to match broken code, so this is
+      not the pattern for the next one. GATED by the same change
+      (args/ci_test_files/core.d/task-det-f5d3034b04.txt).
   - pattern: "tests/test_proposals_ptw_blackhat_api.py"
     reason: >-
       PURE TEST REPAIR — NO PRODUCTION BEHAVIOUR CHANGED, so nothing here can go

@@ -11,19 +11,12 @@ import sys
 import types
 from unittest.mock import MagicMock, patch
 
-# ---------------------------------------------------------------------------
-# Guard: skip entire module if `requests` is not installed
-# ---------------------------------------------------------------------------
-try:
-    import requests  # noqa: F401
-    _HAS_REQUESTS = True
-except ImportError:
-    _HAS_REQUESTS = False
+# `requests` is a declared dependency (requirements.txt), so the module
+# imports it unconditionally — a skip guard here would let a gated file
+# satisfy coverage while asserting nothing (skip census, rem-tst discipline).
+import requests  # noqa: F401
 
 import pytest
-
-pytestmark = pytest.mark.skipif(not _HAS_REQUESTS, reason="requests not installed")
-
 
 from tools.ai_augmentation.implementations.llm_http_auth import (
     LLMConfiguredDigestAuth,
@@ -209,7 +202,7 @@ class TestAdviseRetryThreshold:
         mock_router_mod = types.ModuleType("tools.llm.router")
 
         class _FakeRouter:
-            def complete(self, req):
+            def invoke(self, function_name, req):
                 raise RuntimeError("LLM unavailable")
 
         mock_router_mod.LLMRouter = _FakeRouter
@@ -230,10 +223,11 @@ class TestAdviseRetryThreshold:
         mock_router_mod = types.ModuleType("tools.llm.router")
 
         class _FakeResponse:
-            text = "2"
+            content = "2"
 
         class _FakeRouter:
-            def complete(self, req):
+            def invoke(self, function_name, req):
+                assert function_name == "llm_generation"
                 return _FakeResponse()
 
         mock_router_mod.LLMRouter = _FakeRouter
