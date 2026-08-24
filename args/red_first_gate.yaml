@@ -184,6 +184,43 @@ exemptions:
       distinguishable from a test weakened to match broken code, so this is
       not the pattern for the next one. GATED by the same change
       (args/ci_test_files/core.d/task-det-f5d3034b04.txt).
+  - pattern: "tests/test_aca_xp_ledger.py"
+    reason: >-
+      PURE TEST REPAIR — NO PRODUCTION BEHAVIOUR CHANGED, so nothing here can go
+      red (task-det-920b4f1072, born_red_survey finding 920b4f10726a2e85).
+      `test_the_ledger_is_registered_append_only` asked whether `"fa_xp_ledger"`
+      sat in the 8,000 chars after the FIRST mention of `APPEND_ONLY_TABLES` in
+      .claude/hooks/pre_tool_use.py — and the first mention is the hook's
+      module docstring (there since 9aa22358a, 2026-02-22), not the list. It
+      passed at its landing merge (585d6c4, 2026-07-30: the list began 2,190
+      chars after the docstring and the table 3,021) and went red when
+      exa-bench-10 (d77361d15, 2026-08-12, #1582) grew the hook's preamble so
+      the table sat 9,377 chars past that mention; today it is 11,210. The
+      table was registered append-only the whole time — the ASSERTION, not
+      the registration, was wrong. The file was ungated, so the flip went
+      unobserved: the passed_at_birth shape wearing a born_red label. THE RED
+      IS RECORDED in detector_findings. The repair reads the list literal off
+      the hook's AST (`_append_only_tables`), which has no window to fall out
+      of; the hook is untouched, so the file passes at the merge base and is
+      reported `not_discriminating` by construction. Scoped to this ONE file —
+      a test-only repair is not mechanically distinguishable from a test
+      weakened to match broken code, so this is not the pattern for the next
+      one. GATED by the same change (args/ci_test_files/core.d/task-det-920b4f1072.txt).
+  - pattern: "tests/test_aca_cert_evidence.py"
+    reason: >-
+      PURE TEST REPAIR — NO PRODUCTION BEHAVIOUR CHANGED, so nothing here can go
+      red (task-det-920b4f1072; the SAME defect as tests/test_aca_xp_ledger.py
+      at a second site, and a born_red finding on the same live survey,
+      2026-08-23: "1 failed, 15 passed"). `test_the_table_is_registered_append_only`
+      used the identical 8,000-char window after the first mention of
+      `APPEND_ONLY_TABLES`, and `"fa_certificate_evidence"` sits 11,435 chars
+      past it today while registered in the list the whole time. One
+      incident, two sites — fixed together on the incident-claims principle
+      that a fixture pinning ONE function passes while the same defect stands
+      next door. Same repair (an AST read of the list literal), hook untouched,
+      so the file passes at the merge base and is reported
+      `not_discriminating` by construction. Scoped to this ONE file. GATED by
+      the same change (args/ci_test_files/core.d/task-det-920b4f1072.txt).
   - pattern: "tests/test_proposals_ptw_blackhat_api.py"
     reason: >-
       PURE TEST REPAIR — NO PRODUCTION BEHAVIOUR CHANGED, so nothing here can go

@@ -17,6 +17,7 @@ certificate citing that total asserted competence with nothing behind it.
 from __future__ import annotations
 
 import importlib
+import pathlib
 import sqlite3
 
 import pytest
@@ -177,13 +178,34 @@ def test_award_mission_xp_records_the_mission(fadb):
 # append-only
 # --------------------------------------------------------------------------
 
+HOOK_PATH = (pathlib.Path(__file__).resolve().parent.parent
+             / ".claude" / "hooks" / "pre_tool_use.py")
+
+
+def _append_only_tables() -> set:
+    """The table names `APPEND_ONLY_TABLES` binds in .claude/hooks/pre_tool_use.py.
+
+    Read with `ast`, never with a character window. The first version of this test
+    took the 8,000 chars after the FIRST mention of the name, which is the hook's
+    module DOCSTRING and not the list, and went red the day the hook's preamble
+    grew past that window (d77361d15, 2026-08-12) while the table sat registered
+    the whole time (task-det-920b4f1072). A list read off the AST has no window.
+    """
+    import ast
+    hook = HOOK_PATH.read_text(encoding="utf-8")
+    for node in ast.walk(ast.parse(hook)):
+        if (isinstance(node, ast.Assign)
+                and any(isinstance(t, ast.Name) and t.id == "APPEND_ONLY_TABLES"
+                        for t in node.targets)
+                and isinstance(node.value, ast.List)):
+            return {e.value for e in node.value.elts
+                    if isinstance(e, ast.Constant) and isinstance(e.value, str)}
+    raise AssertionError("pre_tool_use.py binds no APPEND_ONLY_TABLES list literal")
+
+
 def test_the_ledger_is_registered_append_only():
     """Corrections must be compensating rows, or the ledger stops being evidence."""
-    import pathlib
-    hook = (pathlib.Path(__file__).resolve().parent.parent
-            / ".claude" / "hooks" / "pre_tool_use.py").read_text(encoding="utf-8")
-    block = hook[hook.index("APPEND_ONLY_TABLES"):]
-    assert '"fa_xp_ledger"' in block[:8000]
+    assert "fa_xp_ledger" in _append_only_tables()
 
 
 def test_a_correction_is_a_new_row_not_an_edit(fadb):
