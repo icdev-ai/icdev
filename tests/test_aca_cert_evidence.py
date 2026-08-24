@@ -14,6 +14,7 @@ certificate issued last year quietly describe something else.
 """
 from __future__ import annotations
 
+import ast
 import importlib
 import pathlib
 
@@ -235,11 +236,39 @@ def test_the_migration_declares_the_table_and_ships_no_backfill():
     )
 
 
-def test_the_table_is_registered_append_only():
-    hook = (REPO_ROOT / ".claude" / "hooks" / "pre_tool_use.py").read_text(
+def _append_only_tables() -> list[str]:
+    """The literal elements of APPEND_ONLY_TABLES in the PreToolUse hook.
+
+    Read with `ast`, never imported: the hook is a script whose import would
+    run its own module-level wiring, and never by a substring window. The
+    original form of this test anchored on the FIRST mention of the name --
+    a module docstring cross-reference at line 13 -- and looked 8,000 chars
+    past it. At the landing commit (e5ea7cb67, 2026-07-30) the entry sat
+    3,246 chars in; by 2026-08-23 the docstring and the list had grown and it
+    sat 11,435 chars in, so the test went red with the table still registered
+    (born_red_survey finding b7acdb6a2f7a694f, task-det-b7acdb6a2f). The list
+    literal is ~37,000 chars over 370+ unordered entries, so no fixed window is
+    an honest membership check; the AST is.
+    """
+    src = (REPO_ROOT / ".claude" / "hooks" / "pre_tool_use.py").read_text(
         encoding="utf-8")
-    block = hook[hook.index("APPEND_ONLY_TABLES"):]
-    assert '"fa_certificate_evidence"' in block[:8000]
+    for node in ast.walk(ast.parse(src)):
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(isinstance(t, ast.Name) and t.id == "APPEND_ONLY_TABLES"
+                   for t in node.targets):
+            continue
+        assert isinstance(node.value, ast.List), "APPEND_ONLY_TABLES is not a list literal"
+        return [e.value for e in node.value.elts
+                if isinstance(e, ast.Constant) and isinstance(e.value, str)]
+    raise AssertionError("no APPEND_ONLY_TABLES assignment in pre_tool_use.py")
+
+
+def test_the_table_is_registered_append_only():
+    """Membership in the hook's list, which is what 'append-only' means here."""
+    tables = _append_only_tables()
+    assert len(tables) > 100, "the list read back implausibly small"
+    assert "fa_certificate_evidence" in tables
 
 
 def test_the_table_is_in_the_shared_test_schema():

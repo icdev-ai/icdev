@@ -319,7 +319,6 @@ tests/test_aca_accessibility.py
 tests/test_aca_api_and_streak_hygiene.py
 tests/test_aca_catalog_honesty.py
 tests/test_aca_catalog_self_correcting.py
-tests/test_aca_cert_evidence.py
 tests/test_aca_chrome_clearance.py
 tests/test_aca_coding_asset_discovery.py
 tests/test_aca_competency_chain.py

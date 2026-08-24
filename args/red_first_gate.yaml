@@ -322,3 +322,29 @@ exemptions:
       tests/cortex/test_search_router.py, which exercises the same probe
       against a backend the router awaits to completion. Remove this exemption
       the moment this file is edited for anything but that determinism fix.
+
+  - pattern: "tests/test_aca_cert_evidence.py"
+    reason: >-
+      PURE TEST REPAIR — NO PRODUCTION BEHAVIOUR CHANGED, so nothing here can go
+      red (task-det-b7acdb6a2f, born_red_survey finding b7acdb6a2f7a694f).
+      `test_the_table_is_registered_append_only` anchored on the FIRST mention
+      of `APPEND_ONLY_TABLES` in .claude/hooks/pre_tool_use.py — a module
+      DOCSTRING cross-reference at line 13, present since 9aa22358a — and
+      asserted the `"fa_certificate_evidence"` entry appeared within 8,000
+      chars of it. At the landing commit (e5ea7cb67, 2026-07-30) the entry sat
+      3,246 chars past that anchor; the docstring and the list grew, and by
+      2026-08-23 it sat 11,435 chars past it, so the test went red with the
+      table still registered (it is, and always was). The list literal is
+      ~37,000 chars over 370+ UNORDERED entries, so no fixed window is an
+      honest membership check — the passed_at_birth shape wearing a born_red
+      label, re-derived from the two trees directly because `--confirm` ranks
+      by red_days and this file was not in the top slot. THE RED IS RECORDED
+      in detector_findings. The repair reads the list's literal elements with
+      `ast` (never an import — the hook runs wiring at module level) and
+      asserts membership, with a floor on the list size so an empty read
+      cannot pass. The hook is untouched, so the file passes at the merge base
+      and is reported `not_discriminating` by construction. Scoped to this ONE
+      file — a test-only repair is not mechanically distinguishable from a test
+      weakened to match broken code, so this is not the pattern for the next
+      one. GATED by the same change
+      (args/ci_test_files/core.d/task-det-b7acdb6a2f.txt).
