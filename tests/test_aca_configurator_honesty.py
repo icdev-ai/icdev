@@ -70,14 +70,91 @@ def test_no_handler_returns_unmarked_synthetic_data(action):
     ],
 )
 def test_the_specific_invented_fields_are_marked(action, invented):
-    """Each field enumerated in the audit must now travel with the marker."""
+    """Each field enumerated in the audit must travel with the marker — OR be real.
+
+    Born red (task-det-2f16251ac7, born_red_survey finding 2f16251ac7401913): the
+    original assertion demanded ``simulated is True`` whenever the field NAME was
+    present. But ``_handle_ai_inventory`` reads the real ``ai_use_case_inventory``
+    table and returns ``systems_found`` with ``simulated=False`` and its source
+    named — the honest REAL branch, which is the whole point of the fix. So the
+    case passed only where that table was unreachable (an empty worktree or CI
+    database, where the handler falls back to the simulation) and failed on any
+    host whose board holds inventory rows — the live board's runner, where the
+    born_red reflex observes. It measured the observer's database, not the
+    handler. The field being present is a defect only when it arrives with NO
+    provenance: neither a simulation marker nor a named real source.
+    """
     res = configurator.dispatch_configure({"action": action, "config": {}})
     present = [k for k in invented if k in res or k in (res.get("result") or {})]
     if not present:
         return  # the handler dropped the invented field entirely — also acceptable
-    assert res.get("simulated") is True, (
-        f"{action} still reports {present} without declaring itself a simulation"
+    assert _is_honestly_sourced(res), (
+        f"{action} still reports {present} with neither a simulation marker "
+        f"nor a real source: simulated={res.get('simulated')!r} "
+        f"source={res.get('source')!r}"
     )
+
+
+def _is_honestly_sourced(res: dict) -> bool:
+    """The contract every handler must meet: REAL with provenance, or MARKED fake."""
+    if res.get("simulated") is True:
+        return bool(res.get("note"))
+    return res.get("simulated") is False and res.get("source") not in (
+        None, "", "hardcoded", "teaching-simulation",
+    )
+
+
+class _FakeCursor:
+    def __init__(self, row):
+        self._row = row
+
+    def fetchone(self):
+        return self._row
+
+
+class _FakeConn:
+    """Answers the one query _handle_ai_inventory makes, with a fixed count."""
+
+    def __init__(self, total):
+        self.total = total
+        self.queries = []
+
+    def execute(self, sql, *args):
+        self.queries.append(sql)
+        return _FakeCursor((self.total,))
+
+
+def test_ai_inventory_reports_the_live_count_unsimulated(monkeypatch):
+    """Both branches of ai_inventory are pinned HERE, deterministically, so the
+    parametrized contract test above never again depends on whichever database
+    the observer happens to be running against."""
+    import tools.db.storage as storage
+
+    conn = _FakeConn(8)
+    monkeypatch.setattr(storage, "get_connection", lambda *a, **k: conn)
+    res = configurator.dispatch_configure({"action": "ai_inventory", "config": {}})
+    assert res["status"] == "ok"
+    assert res["simulated"] is False
+    assert res["source"] == "ai_use_case_inventory"
+    assert res["result"]["systems_found"] == 8
+    assert any("ai_use_case_inventory" in q for q in conn.queries)
+    assert _is_honestly_sourced(res)
+
+
+def test_ai_inventory_falls_back_to_a_marked_simulation_when_unreachable(monkeypatch):
+    import tools.db.storage as storage
+
+    def _unreachable(*a, **k):
+        raise RuntimeError("no such table: ai_use_case_inventory")
+
+    monkeypatch.setattr(storage, "get_connection", _unreachable)
+    res = configurator.dispatch_configure({"action": "ai_inventory", "config": {}})
+    assert res["status"] == "ok"
+    assert res["simulated"] is True
+    assert res["note"] and res["real_tool"]
+    # No invented total: the fallback must not fabricate a count for the estate.
+    assert res["result"]["systems_found"] is None
+    assert _is_honestly_sourced(res)
 
 
 def test_a_simulated_response_names_the_real_tool_it_stands_in_for():

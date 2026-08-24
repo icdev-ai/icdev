@@ -323,7 +323,6 @@ tests/test_aca_cert_evidence.py
 tests/test_aca_chrome_clearance.py
 tests/test_aca_coding_asset_discovery.py
 tests/test_aca_competency_chain.py
-tests/test_aca_configurator_honesty.py
 tests/test_aca_grading_integrity.py
 tests/test_aca_hint_accounting.py
 tests/test_aca_instructor_render.py
