@@ -121,6 +121,33 @@ run:
 # while the set churns, which is exactly how a gap regrows behind a green gate
 # (see args/ci_test_backlog.txt, which is enumerated for the same reason).
 exemptions:
+  - pattern: "tests/test_aca_configurator_honesty.py"
+    reason: >-
+      PURE TEST REPAIR — NO PRODUCTION BEHAVIOUR CHANGED, so nothing here can go
+      red (task-det-2f16251ac7, born_red_survey finding 2f16251ac7401913).
+      `test_the_specific_invented_fields_are_marked[ai_inventory]` asserted
+      `simulated is True` whenever the field NAME `systems_found` was present.
+      But `_handle_ai_inventory` (apps/forge_academy/configurator.py) reads the
+      real `ai_use_case_inventory` table and returns that field with
+      `simulated=False` and `source='ai_use_case_inventory'` — the honest REAL
+      branch aca-hon-01 introduced, which the file's own docstring calls the
+      contract ("either real or say that it is not"). So the case passed only
+      where the table was unreachable (an empty worktree or CI database, where
+      the handler falls back to the marked simulation) and failed on any host
+      whose board holds inventory rows — the live board's runner, where the
+      born_red reflex observes: reproduced 2026-08-23 from C:/AI/ICDev as
+      "1 failed, 17 passed", `systems_found: 8`, while the SAME tree in an empty
+      worktree passes 18/18. It measured the observer's database, not the
+      handler. THE RED IS RECORDED in detector_findings and it is environmental,
+      not a code defect. The repair asserts the contract (marked simulation OR
+      named real source) and pins BOTH ai_inventory branches deterministically
+      with a patched get_connection, so the file no longer depends on the
+      ambient board. The handler is untouched, so the file passes at the merge
+      base and is reported `not_discriminating` by construction. Scoped to this
+      ONE file; a test-only repair is not mechanically distinguishable from a
+      test weakened to match broken code, so this is not the pattern for the
+      next one. GATED by the same change
+      (args/ci_test_files/core.d/task-det-2f16251ac7.txt).
   - pattern: "tests/airgap/test_hook_compat_git_blocklist.py"
     reason: >-
       PURE TEST REPAIR — NO PRODUCTION BEHAVIOUR CHANGED, so nothing here can go
