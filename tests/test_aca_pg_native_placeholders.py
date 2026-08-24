@@ -68,6 +68,32 @@ def _query_literals(tree: ast.AST) -> list[ast.Constant]:
     return found
 
 
+def _docstrings(tree: ast.AST) -> set[int]:
+    """The id() of every docstring node — module, class and function.
+
+    A docstring is never concatenated into a query, but it is prose, and prose is
+    exactly what the fragment scan below cannot tell from SQL. The route docstring
+    for the xAPI export (aca-trn-05, bfb472dc7, 2026-08-02) documents its query
+    string as ``?user_id=`` / ``?include_unverified=1`` — a `?` with no word
+    character before it — and contains an ordinary English " and ", which is the
+    ` AND ` hint. That combination registered as an SQL fragment built with `?`
+    and turned this file red three days after it landed green (born_red_survey
+    finding 7460f16ce182e015, task-det-7460f16ce1). The docstring is correct as
+    written; the scanner was reading text that is structurally never a query.
+    """
+    ids: set[int] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Module, ast.ClassDef,
+                                 ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        body = getattr(node, "body", None) or []
+        first = body[0] if body else None
+        if (isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant)
+                and isinstance(first.value.value, str)):
+            ids.add(id(first.value))
+    return ids
+
+
 @pytest.mark.parametrize("path", _runtime_sources(), ids=lambda p: p.name)
 def test_queries_use_pg_native_placeholders(path):
     tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -91,11 +117,15 @@ def test_sql_built_by_concatenation_also_uses_pg_placeholders(path):
     """
     tree = ast.parse(path.read_text(encoding="utf-8"))
     inside_execute = {id(n) for n in _query_literals(tree)}
+    # Prose, structurally: a docstring cannot be a fragment of anything.
+    prose = _docstrings(tree)
     offenders = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
             continue
-        if id(node) in inside_execute or not _PLACEHOLDER.search(node.value):
+        if id(node) in inside_execute or id(node) in prose:
+            continue
+        if not _PLACEHOLDER.search(node.value):
             continue
         upper = node.value.upper()
         if any(h in upper for h in _FRAGMENT_HINTS):

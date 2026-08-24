@@ -329,7 +329,6 @@ tests/test_aca_instructor_render.py
 tests/test_aca_instructor_workflow.py
 tests/test_aca_mission_progress_on_get.py
 tests/test_aca_objective_surfacing.py
-tests/test_aca_pg_native_placeholders.py
 tests/test_aca_prereq_surfacing.py
 tests/test_aca_rank_display.py
 tests/test_aca_rank_recompute.py
