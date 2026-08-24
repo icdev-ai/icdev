@@ -202,7 +202,11 @@ exemptions:
       IS RECORDED in detector_findings. The repair reads the list literal off
       the hook's AST (`_append_only_tables`), which has no window to fall out
       of; the hook is untouched, so the file passes at the merge base and is
-      reported `not_discriminating` by construction. Scoped to this ONE file —
+      reported `not_discriminating` by construction. The migration test's
+      scratch database also moves from a bare sqlite3.connect onto the same
+      academy_conn() wrapper the fixture uses — that raw residue was what kept
+      coherence_checker's test_db_isolation flagging the file (pre-existing,
+      fixed on the way, no assertion changed). Scoped to this ONE file —
       a test-only repair is not mechanically distinguishable from a test
       weakened to match broken code, so this is not the pattern for the next
       one. GATED by the same change (args/ci_test_files/core.d/task-det-920b4f1072.txt).

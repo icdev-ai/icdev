@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import importlib
 import pathlib
-import sqlite3
 
 import pytest
 
@@ -234,8 +233,10 @@ def test_the_migration_reconciles_to_the_balance_and_is_idempotent():
 
     from tools.db.storage import translate_sql
 
-    db = sqlite3.connect(":memory:")
-    db.row_factory = sqlite3.Row
+    # Through the same translating wrapper the fixture uses, never a bare raw
+    # connection: that residue is what kept coherence_checker's
+    # test_db_isolation flagging this file (task-det-920b4f1072).
+    db = academy_conn()
     db.executescript("""
     CREATE TABLE fa_users (id INTEGER PRIMARY KEY, xp INTEGER, level TEXT);
     CREATE TABLE fa_daily_logins (id INTEGER PRIMARY KEY, user_id INT, xp_awarded INT);
