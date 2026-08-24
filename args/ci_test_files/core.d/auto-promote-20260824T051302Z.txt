@@ -1,0 +1,15 @@
+# Promoted by tools/ci/gate_promoter.py — each module verified GREEN
+# BOTH alone (own process) AND in-suite (appended to the gated set and
+# run in one process with it). Green-alone alone is not enough: a module
+# that registers onto a shared singleton passes alone and fails in-suite,
+# and promoting it on the isolated result turns `main` red.
+# Run: 20260824T051302Z
+tests/pg_tier/test_pg_backend_sentinel.py
+tests/pg_tier/test_sbom_component_license_pg.py
+tests/test_insert_column_schema_parity.py
+tests/test_dcpr_audit_immutability.py
+tests/test_installer.py
+tests/test_agent_output_validator.py
+tests/test_eol_predictor.py
+tests/test_graph_execution_chat_extension.py
+tests/test_intent_validator.py

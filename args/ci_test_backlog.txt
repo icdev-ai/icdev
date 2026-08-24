@@ -262,8 +262,6 @@ tests/llm/test_rate_gate.py
 tests/llm/test_router_network_guard.py
 tests/mcp/test_registry_handler_coverage.py
 tests/mcp/test_toolset_profiles.py
-tests/pg_tier/test_pg_backend_sentinel.py
-tests/pg_tier/test_sbom_component_license_pg.py
 tests/planning/test_design_twice.py
 tests/product_intel/test_orchestrator.py
 tests/provenance/test_asset_token_provenance_gate.py
@@ -401,7 +399,6 @@ tests/test_agent_execution_audit_events.py
 tests/test_agent_hitl.py
 tests/test_agent_loop_cancellation.py
 tests/test_agent_loop_failure_outcomes.py
-tests/test_agent_output_validator.py
 tests/test_agent_patch_file.py
 tests/test_agent_readiness_anomaly.py
 tests/test_agent_readiness_anomaly_detector.py
@@ -643,7 +640,6 @@ tests/test_data_lineage_route.py
 tests/test_databridge_egress.py
 tests/test_dataset_lineage.py
 tests/test_db_utils.py
-tests/test_dcpr_audit_immutability.py
 tests/test_dcpr_blueprint_hygiene.py
 tests/test_dcpr_blueprint_resilience.py
 tests/test_dcpr_conn_sweep.py
@@ -820,7 +816,6 @@ tests/test_endpoint_security_scanner.py
 tests/test_engine_nlp_input_classifier.py
 tests/test_entrypoint_path_bootstrap.py
 tests/test_env_generator.py
-tests/test_eol_predictor.py
 tests/test_episodic_distiller.py
 tests/test_eu_ai_act_classifier.py
 tests/test_eval_compare_rerun.py
@@ -965,7 +960,6 @@ tests/test_govcon_solicitation_parser.py
 tests/test_governed_llm_fanout.py
 tests/test_govlift_marketplace.py
 tests/test_govlift_runbook_engine.py
-tests/test_graph_execution_chat_extension.py
 tests/test_group_manager.py
 tests/test_gsd_adaptations.py
 tests/test_guardrails.py
@@ -998,8 +992,6 @@ tests/test_ingestion_masking.py
 tests/test_init_db_stdout_hygiene.py
 tests/test_initiative_allocator.py
 tests/test_innovation.py
-tests/test_insert_column_schema_parity.py
-tests/test_installer.py
 tests/test_instruction_generator.py
 tests/test_integrity_blueprint.py
 tests/test_integrity_capabilities.py
@@ -1016,7 +1008,6 @@ tests/test_integrity_scanners.py
 tests/test_integrity_scoring.py
 tests/test_integrity_skillspector_cache.py
 tests/test_integrity_tamper.py
-tests/test_intent_validator.py
 tests/test_invocation_recorder.py
 tests/test_ip_address_space.py
 tests/test_iqe_adapter_govcon_requirements.py
