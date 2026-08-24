@@ -9028,3 +9028,9 @@ projects:
   - key: obs
     title: OBS - make an empty producer chain visible on /ops
     priority: medium
+  - key: bt
+    title: BT - backtest evidence provenance (a fixture run is not evidence)
+    priority: high
+  - key: strat
+    title: STRAT - declared strategy set, default, and event/regime-driven selection
+    priority: high
