@@ -9082,3 +9082,10 @@ projects:
   - key: val
     title: VAL - point-in-time fundamentals, then a value factor judged on its own merits
     priority: high
+  # --- the measured edge is consumed by NOBODY, and the feed cannot see the tape
+  - key: feed
+    title: FEED - switch to the consolidated tape, so liquidity becomes measurable
+    priority: high
+  - key: live
+    title: LIVE - wire the blended book to paper, the only source of new evidence left
+    priority: high
