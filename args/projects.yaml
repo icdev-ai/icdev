@@ -9009,6 +9009,11 @@ projects:
   - 'OBS: surface the producer chain on /ops -- signal count, newest analysis run, newest
     committee verdict, pending candidates -- so an EMPTY substrate is visible instead of
     reading as a quiet market. An unmeasured count renders as a dash, never 0.'
+  - 'OPTIONS: the executor funds ONE name a day against a ten-name book because max_daily_budget
+    is a flat $10k. Options are the capital-efficiency answer, NOT a way round the cap -- and
+    _spent_today reads ad_auto_trades ONLY, so routing through options today would make the cap
+    stop applying rather than relax. Order is forced: a real chain feed, then delta-notional in
+    the gate, then a MEASURED options cost model, then stock replacement on Q1.'
   epics:
   - key: gate
     title: GATE - manual hold sentinel (this card is built by hand, never dispatched)
@@ -9094,3 +9099,18 @@ projects:
   - key: trend
     title: TREND - trend filters and multi-timeframe, measured as baselines before any wiring
     priority: high
+  - key: rank
+    title: RANK - the blend ranking is V-shaped, not monotone (the short leg is dead)
+    priority: high
+  - key: delta
+    title: DELTA - the daily budget must charge delta-notional across BOTH instruments
+    priority: high
+  - key: chain
+    title: CHAIN - a real options chain feed (data-05); today every /options number is a sample
+    priority: high
+  - key: ocost
+    title: OCOST - measure the options cost model, never inherit the equity 45x breakeven
+    priority: high
+  - key: repl
+    title: REPL - stock replacement, deep ITM calls on Q1 so the book funds ten names not one
+    priority: medium
