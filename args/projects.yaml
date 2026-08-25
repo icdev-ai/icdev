@@ -9078,3 +9078,7 @@ projects:
   - key: fix
     title: FIX - a gated test that passes on CI for the wrong reason
     priority: medium
+  # --- the decorrelated partner momentum needs, and the leak guard it requires FIRST
+  - key: val
+    title: VAL - point-in-time fundamentals, then a value factor judged on its own merits
+    priority: high
