@@ -9034,3 +9034,40 @@ projects:
   - key: strat
     title: STRAT - declared strategy set, default, and event/regime-driven selection
     priority: high
+  # --- RETROACTIVE. Every id below already exists in merged commits, and several already
+  # exist as rows on the board -- and NONE was counted, because no epic key matched them.
+  # `<task_prefix><epic_key>-<N>` is the whole contract: a task no epic claims is dropped
+  # from total/done/percent, and when every row is dropped the card vanishes entirely. That
+  # is the defect check_project_card_coverage exists to report, committed here by hand.
+  - key: conv
+    title: CONV - an abstention must not vote; the conviction scale must be reachable
+    priority: high
+  - key: ml
+    title: ML - real model evidence with calibrated confidence, as a first-class expert
+    priority: high
+  - key: hz
+    title: HZ - align the holding horizon with the signal's own horizon
+    priority: high
+  - key: breadth
+    title: BREADTH - widen the trading universe; measure whether it de-concentrates
+    priority: high
+  - key: bench
+    title: BENCH - one re-runnable harness for signal skill AND stability
+    priority: high
+  # --- P2-P4, now applied to MOMENTUM -- the only signal that cleared the stability bar.
+  # The committee was measured over 5.4y and sign-flips between sample halves under every
+  # neutralisation; 12-1 momentum does not. Sizing, costing and hedging a signal that has
+  # not demonstrated a stable edge is how a well-tuned filter on noise gets built, so the
+  # treatment follows the evidence to the baseline that beat it.
+  - key: mom
+    title: MOM - promote 12-1 momentum from benchmark baseline to a declared signal
+    priority: high
+  - key: size
+    title: SIZE - vol-target position sizing (equal notional is unequal risk)
+    priority: high
+  - key: cost
+    title: COST - transaction costs, and whether the edge survives them
+    priority: high
+  - key: beta
+    title: BETA - measure what the book actually earns; hedged vs unhedged
+    priority: medium
