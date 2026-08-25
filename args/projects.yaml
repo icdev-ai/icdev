@@ -9089,3 +9089,8 @@ projects:
   - key: live
     title: LIVE - wire the blended book to paper, the only source of new evidence left
     priority: high
+  # --- 50/200 EMA + multi-timeframe: MEASURE before wiring, because two thirds of it
+  # --- already exists (disciplines.py has the SMA50/200 cross; macro_feed has SPY 200d)
+  - key: trend
+    title: TREND - trend filters and multi-timeframe, measured as baselines before any wiring
+    priority: high
