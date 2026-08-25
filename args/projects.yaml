@@ -9071,3 +9071,10 @@ projects:
   - key: beta
     title: BETA - measure what the book actually earns; hedged vs unhedged
     priority: medium
+  # --- the standing caveat on EVERY number P2-P4 produced, and a CI defect found on the way
+  - key: cap
+    title: CAP - capacity - at what size does the measured edge stop existing?
+    priority: high
+  - key: fix
+    title: FIX - a gated test that passes on CI for the wrong reason
+    priority: medium
