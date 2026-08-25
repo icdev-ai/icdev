@@ -18,12 +18,16 @@ subject as the only one whose PR was still open:
 | ... | ... | ... | ... |
 | b1d12d0f70694dc2 | task-42a17b8956 | **pr_opened** | no — still open |
 
-So the clear here is **by outcome, not by window** — the distinction the
-[task-det-bbc0fa01ea audit](task-det-bbc0fa01ea-needed-a-human-resolution.md)
-drew for the opposite case.
+**Both clears happened, in the wrong order, and the record says so.** The
+`detector_findings` row reads `status=cleared, cleared_at=2026-08-24 19:11:54`
+— which is **before** the repair merged at `2026-08-25 04:10:37`. The reflex
+cleared it because the escalation aged out of the 24h window, exactly the
+mechanism the [task-det-bbc0fa01ea audit](task-det-bbc0fa01ea-needed-a-human-resolution.md)
+named. The subject then went `done` on main nine hours later, so the finding is
+*now* also clear by outcome — but the timestamp is honest about which came
+first, and it was not the fix.
 
-That matters, because the derivation *had already stopped reporting the
-subject* before any repair happened. `_recovery_rows()` reads a **24h**
+That ordering is the whole point. `_recovery_rows()` reads a **24h**
 window, and the escalation is dated 2026-08-23 03:16 — it aged out on its own.
 Re-running the acceptance derivation on 2026-08-24 returned `[]` against a
 board where PR #1910 was still red and still open. **A green derivation was
@@ -40,7 +44,9 @@ One cause, five red checks.
 | 2026-08-23 02:33 → 03:15 | `pr_watcher.resume` x5, `classification: ci_failed`, reason "injected resume context" |
 | 2026-08-23 03:16 | `pr_watcher.escalate` — "resume cap reached (5/5) — manual intervention required" |
 | 2026-08-23 05:08, 2026-08-24 22:50 | `pr_watcher.wait` — `gh pr view` fetch failures (host/forge, unrelated) |
-| 2026-08-25 | rebase-equivalent merge + one-line fix pushed by hand (this record) |
+| 2026-08-24 19:11 | finding `b1d12d0f70694dc2` marked `cleared` by the reflex — **by window**; #1910 still red and open |
+| 2026-08-25 03:5x | merge of `origin/main` + one-line fix pushed by hand (this record) |
+| 2026-08-25 04:10 | #1910 all 19 checks green, merged (`747392d89`); task-42a17b8956 → `done` |
 
 The refusal, identical in all five jobs:
 
@@ -107,6 +113,8 @@ Verified on the pushed tree:
 | `pytest tests/test_ace_instance_page_render.py` | 19 passed |
 | `red_first_gate.py --gate` | **discriminating** — 4 failed at merge base, 19 pass here |
 | behind `origin/main` | 0 |
+| CI after the push | 19 checks, **0 failures** (was 5 failures) |
+| PR #1910 | MERGED `2026-08-25T04:10:37Z`, `747392d89` |
 
 ## What was deliberately not done
 
