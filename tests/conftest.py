@@ -3,6 +3,7 @@ import os
 import shutil
 import sqlite3
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -4853,6 +4854,38 @@ def _no_live_llm_calls(request, monkeypatch):
 
     monkeypatch.setattr(LLMProvider, "invoke", _refuse, raising=False)
     monkeypatch.setattr(LLMProvider, "invoke_streaming", _refuse, raising=False)
+
+
+# ---------------------------------------------------------------------------
+# No live branch-protection reads (task-det-295a9bb95e)
+# ---------------------------------------------------------------------------
+#
+# pr_watcher / merge_readiness resolve the forge's REQUIRED-check set through
+# `gh api .../branches/<default>/protection`. A test that builds a PRWatcher
+# without injecting a runner must not reach the live forge: on a developer
+# machine with gh auth it resolves the REAL set (Lint / Test / Security Scan /
+# Helm Lint) and every fixture PR -- whose checks are named `ci`, `build`,
+# `Test`... -- reads as awaiting checks that will never report, while the same
+# test passes on a CI runner with no gh auth. Split-by-environment is the
+# worst failure shape a suite can have. The stub answers "not protected", which
+# resolves to None -- every check counts, the behaviour the fixtures assume.
+# A test that wants the resolver exercised injects its own runner.
+
+
+@pytest.fixture(autouse=True)
+def _no_live_branch_protection_reads(monkeypatch):
+    module = sys.modules.get("tools.ci.merge_readiness")
+    if module is None:
+        yield
+        return
+
+    def _not_protected(cmd, **kw):
+        return types.SimpleNamespace(
+            returncode=1, stdout='{"message": "Branch not protected (test stub)"}',
+            stderr="")
+
+    monkeypatch.setattr(module, "_DEFAULT_GH_RUNNER", _not_protected, raising=False)
+    yield
 
 
 # ---------------------------------------------------------------------------

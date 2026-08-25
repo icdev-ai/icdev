@@ -2773,6 +2773,7 @@ python tools/awareness/restore_acts.py --plan [--json]                          
 python tools/awareness/restore_acts.py --apply reap_dead_lease --target <task-id>                  # Holder pid PROVABLY dead AND task not heartbeating; cannot-tell is alive
 python tools/awareness/restore_acts.py --apply prune_gone_census_entry --target <census entry>     # One line, one enumerated census, only when the named file is gone
 python tools/awareness/restore_acts.py --apply restart_stale_daemon --target tools.genesis.daemon  # Terminate one stale supervised child; supervisor must be UP to restart it
+python tools/awareness/restore_acts.py --apply restore_auto_managed_file --target args/projects.yaml --root <checkout>  # autonomy-dep-04: checkout ONE regenerable auto-managed file the update guard is blocked on, pull through the guard, re-run the writer; a human edit refuses
 python tools/awareness/restore_acts.py --apply <act> --target <t> --dry-run [--root <checkout>]    # Prove only: no audit row, no act
 
 # Gate Sentinel Shape (kax-exec-04) — a task whose id is `<card>-gate-<n>` is filtered

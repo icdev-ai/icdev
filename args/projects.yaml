@@ -8961,3 +8961,76 @@ projects:
   - key: sem
     title: SEM - semantica reasoning/provenance layer (deferred)
     priority: low
+- key: ftl
+  name: FTL - FT autonomous loop, unstarve the committee to auto-trade chain
+  description: 'The ICDEV[FT] auto-trade loop has never placed a trade, and auto_trade
+    is not the defect: it is STARVED. Measured on the live board 2026-08-24 -- ad_signals
+    0 rows, ad_analysis_runs 0 rows, ad_auto_trades 0, ad_auto_trade_decisions 0, and all
+    6 ad_cis_recommendations HOLD at conviction EXACTLY 1 for NVDA/MSFT/GOOG/AMZN alike.
+    A uniform constant across every ticker is a degenerate value, not a market view. The
+    chain: analysts.write_signal() is the ONLY production writer of ad_signals +
+    ad_analysis_runs and is called by TESTS ONLY (repo-wide grep, zero reflex/route/task
+    callers) -> build_market_context returns signal=None run=None -> ctx.is_empty -> all
+    six experts abstain "No signal or analysis run for this ticker" at HOLD/1 ->
+    synthesize gives final_conviction 1 -> auto_trade_eligible (conviction>=6 AND BUY AND
+    tech_fund_aligned) is False -> auto_trade=0 -> _pending_recommendations returns [] ->
+    the 18:00 cycle no-ops. PROVEN in an isolated SQLite DB with the SAME code and no code
+    change: write_signal + a correctly shaped macro dict yields BUY conviction 7,
+    eligible=True, 1 pending candidate, and a FILLED 10,000 USD NVDA paper trade. So the
+    executor, the gates and the order path are healthy; only the producers are missing.
+    Second finding, latent: a wrong-shaped macro dict makes _score_macro raise and the
+    per-scorer handler swallows it into the reasoning string ("scorer error: float object
+    has no attribute get"), degrading silently to HOLD/1 -- an ERROR wearing an
+    ABSTENTION''s clothes, which is the same class of defect as a constant wearing the
+    name of a measurement. Third, macro.py and regime.py already produce exactly the dict
+    run_decision(macro=) wants and are likewise never called; without macro the committee
+    caps around conviction 4-5 and CANNOT reach the >=6 gate, which the runner docstring
+    documents as deliberate caution. NOTE the FT platform IS trading on the separate
+    strategy-ladder path (daily_paper, 14 sessions, 29 fills on fac-cs-0401); it is the
+    committee path that is dead. MANUAL-ONLY: every task is held behind ftl-gate-00 so the
+    autonomous runner never builds it unattended -- this card makes an idle system begin
+    placing (paper) trades, so a human lands each slice. PAPER ONLY; assert_may_trade,
+    check_risk, the kill switch and live_authorization are NEVER touched by this card.'
+  task_prefix: ftl-
+  default_open: true
+  briefs:
+  - 'SCORER: a scorer ERROR must be distinguishable from a genuine abstention. Today both
+    render as HOLD conviction 1 and the exception text is buried in reasoning, so a broken
+    input reads as a cautious committee and silently drags conviction below the auto-trade
+    gate.'
+  - 'MACRO: wire the EXISTING macro.py / regime.py producers into run_decision(macro=) so
+    the macro expert stops abstaining. Absence must keep lowering conviction rather than
+    fabricating a regime -- the fix is to SUPPLY the feed, never to relax the >=6 gate.'
+  - 'SIGNAL: a production caller for analysts.write_signal() over a declared universe, from
+    real price history, so ad_signals and ad_analysis_runs stop being empty.'
+  - 'SCHED: a committee producer reflex that runs run_decision(persist=True) across the
+    universe on a cadence AHEAD of the 18:00 executor, so pending candidates exist when the
+    auto-trade cycle asks for them.'
+  - 'OBS: surface the producer chain on /ops -- signal count, newest analysis run, newest
+    committee verdict, pending candidates -- so an EMPTY substrate is visible instead of
+    reading as a quiet market. An unmeasured count renders as a dash, never 0.'
+  epics:
+  - key: gate
+    title: GATE - manual hold sentinel (this card is built by hand, never dispatched)
+    priority: high
+  - key: scorer
+    title: SCORER - a scorer error must not masquerade as an abstention
+    priority: high
+  - key: macro
+    title: MACRO - wire the existing macro/regime feed into the committee
+    priority: high
+  - key: signal
+    title: SIGNAL - produce ad_signals and ad_analysis_runs from real prices
+    priority: high
+  - key: sched
+    title: SCHED - schedule the committee producer ahead of the executor
+    priority: high
+  - key: obs
+    title: OBS - make an empty producer chain visible on /ops
+    priority: medium
+  - key: bt
+    title: BT - backtest evidence provenance (a fixture run is not evidence)
+    priority: high
+  - key: strat
+    title: STRAT - declared strategy set, default, and event/regime-driven selection
+    priority: high

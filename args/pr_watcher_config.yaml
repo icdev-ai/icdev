@@ -11,6 +11,39 @@ max_resume_cycles_per_task: 5
 auto_merge_enabled: true
 auto_merge_require_approval: false
 
+# "CI is green" means the REQUIRED checks are green -- the forge's rule, read
+# from branch protection (task-det-295a9bb95e).
+#
+# `Test (Windows)` is NON-REQUIRED ON PURPOSE: icdev-ci.yml says "a Windows-only
+# flake cannot block a merge", and branch protection requires Lint / Test /
+# Security Scan / Helm Lint alone. This watcher read EVERY check, so one red
+# Windows run classified PR #1859 `ci_failed` with its required set fully
+# green, spent all five resumes on a branch that had no defect in it, escalated
+# to "manual intervention required" and filed a NEEDED-A-HUMAN card. #1841 was
+# the same shape; 2 of the 11 `ci_failed` escalations since 2026-08-14 were
+# this. The forge merged both -- because the forge only ever asked about the
+# required set.
+#
+# The set is READ from the default branch's protection rule (the GitHub
+# branches/<name>/protection endpoint) through
+# merge_readiness.fetch_required_checks -- never a list here, which would
+# drift the day `E2E (Playwright)` or `Test (Windows)` is promoted (the
+# CLAUDE.md note on promoting E2E already names the three hard-coded copies
+# that disagree with GitHub). A failing check OUTSIDE the set is named on the
+# audit row ("ignored non-required failing check(s): ...") and in the
+# merge-readiness reason, never dropped.
+#
+# UNRESOLVED IS NOT EMPTY. No protection rule, a token that may not read it,
+# a rule with no required checks -- every one reads as None and the watcher
+# counts every check, exactly as before; it says so in the log. An EMPTY
+# required set is deliberately None too: merging on nothing is the direction
+# with consequences. The answer is cached (including an unresolved one) for
+# `required_checks_cache_seconds`, so it costs one call per window.
+#
+# `false` restores the old read -- a flag flip, not a revert.
+required_checks_only: true
+required_checks_cache_seconds: 300
+
 # Take a GREEN PR out of draft so auto-merge can actually run.
 #
 # Without this the pipeline is autonomous right up to the last step and then

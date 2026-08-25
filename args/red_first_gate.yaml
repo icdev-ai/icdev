@@ -121,6 +121,96 @@ run:
 # while the set churns, which is exactly how a gap regrows behind a green gate
 # (see args/ci_test_backlog.txt, which is enumerated for the same reason).
 exemptions:
+  - pattern: "tests/test_aca_configurator_honesty.py"
+    reason: >-
+      PURE TEST REPAIR — NO PRODUCTION BEHAVIOUR CHANGED, so nothing here can go
+      red (task-det-2f16251ac7, born_red_survey finding 2f16251ac7401913).
+      `test_the_specific_invented_fields_are_marked[ai_inventory]` asserted
+      `simulated is True` whenever the field NAME `systems_found` was present.
+      But `_handle_ai_inventory` (apps/forge_academy/configurator.py) reads the
+      real `ai_use_case_inventory` table and returns that field with
+      `simulated=False` and `source='ai_use_case_inventory'` — the honest REAL
+      branch aca-hon-01 introduced, which the file's own docstring calls the
+      contract ("either real or say that it is not"). So the case passed only
+      where the table was unreachable (an empty worktree or CI database, where
+      the handler falls back to the marked simulation) and failed on any host
+      whose board holds inventory rows — the live board's runner, where the
+      born_red reflex observes: reproduced 2026-08-23 from C:/AI/ICDev as
+      "1 failed, 17 passed", `systems_found: 8`, while the SAME tree in an empty
+      worktree passes 18/18. It measured the observer's database, not the
+      handler. THE RED IS RECORDED in detector_findings and it is environmental,
+      not a code defect. The repair asserts the contract (marked simulation OR
+      named real source) and pins BOTH ai_inventory branches deterministically
+      with a patched get_connection, so the file no longer depends on the
+      ambient board. The handler is untouched, so the file passes at the merge
+      base and is reported `not_discriminating` by construction. Scoped to this
+      ONE file; a test-only repair is not mechanically distinguishable from a
+      test weakened to match broken code, so this is not the pattern for the
+      next one. GATED by the same change
+      (args/ci_test_files/core.d/task-det-2f16251ac7.txt).
+  - pattern: "tests/airgap/test_hook_compat_git_blocklist.py"
+    reason: >-
+      PURE TEST REPAIR — NO PRODUCTION BEHAVIOUR CHANGED, so nothing here can go
+      red (task-det-ea73602df5, born_red_survey finding ea73602df5798228).
+      `test_force_push_force_with_lease_blocked` pinned the verdict the guard
+      gave BEFORE exa-bench-05 (4678ce460, 2026-08-12), which deliberately
+      exempted `git push --force-with-lease` with a measured reason recorded
+      beside `_GIT_FORCE_WITH_LEASE_RE` in tools/hooks/shared_checks.py: 127 of
+      the 30-day corpus's 389 git_danger fires were that form on the session's
+      own kanban/* branch, i.e. the prescribed workflow. The file was ungated,
+      so the flip went unobserved; `born_red_survey --confirm 1` reports
+      `passed_at_birth` (green at ea51f30dd, 2026-05-25, broke later). THE RED
+      IS RECORDED in detector_findings. The repair asserts the current,
+      documented policy (lease push allowed; bare --force still refused, and
+      still refused when chained after a lease push in a second segment). The
+      guard code is untouched, so the file passes at the merge base and is
+      reported `not_discriminating` by construction.
+  - pattern: "tests/dashboard/test_home_tile_gating.py"
+    reason: >-
+      PURE TEST REPAIR — NO PRODUCTION BEHAVIOUR CHANGED, so nothing here can go
+      red (task-det-87e60dc7d5, born_red_survey finding 87e60dc7d52e4104).
+      `test_cortex_is_disabled_by_default` claimed "the component ships off" —
+      a statement about `default_enabled: false` in args/component_registry.yaml
+      — and asserted it through `ComponentRegistry()`, which reads os.environ.
+      So it measured whoever ran the suite, not the registry: on any host
+      exporting ICDEV_CORTEX_ENABLED=true (the live board's runner, where the
+      born_red reflex observes) it failed on every observation since it landed
+      (faafbd679113, 2026-08-02), and `env -u ICDEV_CORTEX_ENABLED pytest` on
+      the SAME tree passes 7/7. THE RED IS RECORDED in detector_findings and it
+      is environmental, not a code defect. The repair asks the registry with an
+      explicit empty env (`ComponentRegistry(env={})`), which is the question
+      the docstring always posed, and adds a sibling pinning that the flag is
+      what switches it on. The registry code is untouched, so the file passes
+      at the merge base and is reported `not_discriminating` by construction.
+      The `pytest.skip` on the icdev mirror was replaced by an assertion so the
+      file can be gated without a skip-census entry. Scoped to this ONE file; a
+      test-only repair is not mechanically distinguishable from a test weakened
+      to match broken code, so this is not the pattern for the next one. GATED
+      by the same change (args/ci_test_files/core.d/task-det-87e60dc7d5.txt).
+  - pattern: "tests/test_aac_llm_http_auth.py"
+    reason: >-
+      PURE TEST REPAIR — NO PRODUCTION BEHAVIOUR CHANGED, so nothing here can go
+      red (task-det-f5d3034b04, born_red_survey finding f5d3034b04b9f404).
+      `test_returns_llm_suggestion_when_available` mocked a router exposing
+      `complete(req)` returning `.text` — the API the implementation used when
+      both landed together (cd69e9055, 2026-06-20). nav-llm-01 (a21873760,
+      2026-07-18) replaced the dead `router.complete()` with the real
+      `invoke(function_name, LLMRequest)` returning `.content` at 10 call
+      sites, including tools/ai_augmentation/implementations/llm_http_auth.py,
+      but this ungated test's mock was not updated: `invoke` was missing on the
+      fake, the AttributeError was swallowed by the advisor's fallback, and the
+      test got 1 where it asserted 2 on every observation since. So the file is
+      the passed_at_birth shape wearing a born_red label — a silent regression
+      of the TEST when the implementation was corrected to the real API. THE
+      RED IS RECORDED in detector_findings. The repair updates both fake
+      routers in TestAdviseRetryThreshold to the real seam (`invoke` /
+      `.content`), which is the claim the test always intended; the
+      implementation and the router are untouched, so the file passes at the
+      merge base and is reported `not_discriminating` by construction. Scoped
+      to this ONE file — a test-only repair is not mechanically
+      distinguishable from a test weakened to match broken code, so this is
+      not the pattern for the next one. GATED by the same change
+      (args/ci_test_files/core.d/task-det-f5d3034b04.txt).
   - pattern: "tests/test_proposals_ptw_blackhat_api.py"
     reason: >-
       PURE TEST REPAIR — NO PRODUCTION BEHAVIOUR CHANGED, so nothing here can go
@@ -259,3 +349,29 @@ exemptions:
       tests/cortex/test_search_router.py, which exercises the same probe
       against a backend the router awaits to completion. Remove this exemption
       the moment this file is edited for anything but that determinism fix.
+
+  - pattern: "tests/test_aca_cert_evidence.py"
+    reason: >-
+      PURE TEST REPAIR — NO PRODUCTION BEHAVIOUR CHANGED, so nothing here can go
+      red (task-det-b7acdb6a2f, born_red_survey finding b7acdb6a2f7a694f).
+      `test_the_table_is_registered_append_only` anchored on the FIRST mention
+      of `APPEND_ONLY_TABLES` in .claude/hooks/pre_tool_use.py — a module
+      DOCSTRING cross-reference at line 13, present since 9aa22358a — and
+      asserted the `"fa_certificate_evidence"` entry appeared within 8,000
+      chars of it. At the landing commit (e5ea7cb67, 2026-07-30) the entry sat
+      3,246 chars past that anchor; the docstring and the list grew, and by
+      2026-08-23 it sat 11,435 chars past it, so the test went red with the
+      table still registered (it is, and always was). The list literal is
+      ~37,000 chars over 370+ UNORDERED entries, so no fixed window is an
+      honest membership check — the passed_at_birth shape wearing a born_red
+      label, re-derived from the two trees directly because `--confirm` ranks
+      by red_days and this file was not in the top slot. THE RED IS RECORDED
+      in detector_findings. The repair reads the list's literal elements with
+      `ast` (never an import — the hook runs wiring at module level) and
+      asserts membership, with a floor on the list size so an empty read
+      cannot pass. The hook is untouched, so the file passes at the merge base
+      and is reported `not_discriminating` by construction. Scoped to this ONE
+      file — a test-only repair is not mechanically distinguishable from a test
+      weakened to match broken code, so this is not the pattern for the next
+      one. GATED by the same change
+      (args/ci_test_files/core.d/task-det-b7acdb6a2f.txt).

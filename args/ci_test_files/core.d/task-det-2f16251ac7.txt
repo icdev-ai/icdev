@@ -1,0 +1,4 @@
+# task-det-2f16251ac7 - born_red_survey finding 2f16251ac7401913. The file failed on
+# every observation because one case measured the observer database instead of the
+# handler; repaired and gated in the same PR so it can never be born red again.
+tests/test_aca_configurator_honesty.py

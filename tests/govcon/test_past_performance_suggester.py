@@ -16,6 +16,19 @@ Invariants asserted:
   - nothing is auto-inserted (``auto_inserted`` is always False; the helper is
     read-only over the CPMP tables)
   - a bare DB without the CPMP tables degrades to zero suggestions, no error
+
+Storage isolation (task-det-ccb52986c1, born-red fix): every test opens its OWN
+SQLite file under ``tmp_path`` and never the ambient ``data/icdev.db``. The
+original fixture called a bare ``get_connection()``, so where a real
+``cpmp_contracts`` already existed (the main checkout, where the ungated-test
+reflex runs) ``CREATE TABLE IF NOT EXISTS`` kept the real shape, the seeded
+ids c1..c4 leaked into it, every later run died on ``UNIQUE constraint failed``
+-- and ``test_missing_tables_degrade_gracefully`` DROPPED the real
+``cpmp_cpars_assessments`` / ``pg_win_loss_records`` tables from whatever DB it
+landed on. A test that depends on, and rewrites, the board it runs beside is
+red by construction. ``_isolated_storage`` (autouse) also redirects
+``ICDEV_DB_PATH`` so even a bare ``get_connection()`` reached through the
+helper can only ever touch a throwaway file.
 """
 import importlib
 import uuid
@@ -90,11 +103,36 @@ def _insert_contract(conn, *, cid, number, title, agency, naics, notes,
     )
 
 
-@pytest.fixture()
-def seeded_conn():
+@pytest.fixture(autouse=True)
+def _isolated_storage(tmp_path, monkeypatch):
+    """Pin the process to SQLite on a throwaway file for the whole module.
+
+    ``tests/conftest.py`` already forces the sqlite backend; the path pin is the
+    part that matters here -- without it a bare ``get_connection()`` resolves to
+    ``<cwd>/data/icdev.db``, which is the live board when the reflex runs this
+    file from the main checkout.
+    """
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("ICDEV_DB_PATH", str(tmp_path / "ambient.db"))
+
+
+def _own_db(name):
+    """A dedicated SQLite connection on ``<tmp>/<name>.db`` (no RLS, no shared
+    state), beside the ambient file ``_isolated_storage`` pinned. Distinct from
+    ``ICDEV_DB_PATH`` itself so storage.py takes its dedicated-file branch
+    rather than the shared-DB path."""
+    import os
+    from pathlib import Path
+
     from tools.db.storage import get_connection
 
-    conn = get_connection()
+    scratch = Path(os.environ["ICDEV_DB_PATH"]).parent
+    return get_connection(db_path=str(scratch / f"{name}.db"))
+
+
+@pytest.fixture()
+def seeded_conn():
+    conn = _own_db("seeded")
     _create_tables(conn)
 
     # Target opportunity: cyber zero-trust modernization for DHS, NAICS 541512.
@@ -145,12 +183,7 @@ def seeded_conn():
     try:
         yield conn
     finally:
-        for t in ("pg_win_loss_records", "cpmp_cpars_assessments", "cpmp_contracts"):
-            try:
-                conn.execute(f"DROP TABLE IF EXISTS {t}")
-            except Exception:
-                pass
-        conn.commit()
+        # The file is private to this test; nothing to drop, nothing to leak.
         conn.close()
 
 
@@ -214,13 +247,10 @@ def test_nothing_written_back(seeded_conn):
 
 
 def test_missing_tables_degrade_gracefully():
-    from tools.db.storage import get_connection
-
-    conn = get_connection()
+    # A brand-new file holds no CPMP tables at all -- the "bare DB" case,
+    # without dropping anything from a database somebody else owns.
+    conn = _own_db("bare")
     try:
-        for t in ("cpmp_contracts", "cpmp_cpars_assessments", "pg_win_loss_records"):
-            conn.execute(f"DROP TABLE IF EXISTS {t}")
-        conn.commit()
         result = pps.suggest_references(OPPORTUNITY, top_k=5, conn=conn)
         assert result["count"] == 0
         assert result["suggestions"] == []

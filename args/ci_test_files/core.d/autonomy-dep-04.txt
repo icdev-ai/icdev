@@ -1,0 +1,6 @@
+# autonomy-dep-04: an auto-managed file re-freezes the deployment — the fourth
+# enumerated restore act (restore_auto_managed_file) and the detector that
+# consumes it. tests/awareness/test_restore_acts.py is already gated by
+# autonomy-act-03.txt.
+tests/awareness/test_restore_auto_managed_file.py
+tests/kanban/test_detector_deployment_freshness.py

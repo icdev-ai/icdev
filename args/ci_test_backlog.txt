@@ -40,7 +40,6 @@ tests/agent_runtime/test_search_stream.py
 tests/agent_runtime/test_skill_tools.py
 tests/agent_runtime/test_toolsets_dispatch.py
 tests/agent_toolkit/test_shell.py
-tests/airgap/test_hook_compat_git_blocklist.py
 tests/airgap/test_hook_compat_middleware.py
 tests/api/test_contract.py
 tests/bi_dashboard/test_routes_auth.py
@@ -122,7 +121,6 @@ tests/dashboard/test_crud_resource.py
 tests/dashboard/test_databridge_feeds.py
 tests/dashboard/test_hitl_alert_actions.py
 tests/dashboard/test_hitl_popup.py
-tests/dashboard/test_home_tile_gating.py
 tests/dashboard/test_lazy_canvas_loader.py
 tests/dashboard/test_monitoring_alert_row.py
 tests/dashboard/test_nav_misc_03_route_extraction.py
@@ -212,7 +210,6 @@ tests/genesis/test_talent_anomaly.py
 tests/genesis/test_team_constants.py
 tests/genesis/test_test_reflex_constants.py
 tests/govcon/test_clause_risk_engine.py
-tests/govcon/test_past_performance_suggester.py
 tests/hooks/test_headless_parity.py
 tests/hooks/test_network_egress.py
 tests/http/test_egress_guard.py
@@ -306,7 +303,6 @@ tests/test_a2a_discovery.py
 tests/test_a2a_registry.py
 tests/test_a2a_trace_propagation.py
 tests/test_aac_anomaly_thresholds.py
-tests/test_aac_llm_http_auth.py
 tests/test_aac_nlp_ref_extractor.py
 tests/test_aac_pattern_classifier_anomaly.py
 tests/test_aac_score_anomalies.py
@@ -323,18 +319,15 @@ tests/test_aca_accessibility.py
 tests/test_aca_api_and_streak_hygiene.py
 tests/test_aca_catalog_honesty.py
 tests/test_aca_catalog_self_correcting.py
-tests/test_aca_cert_evidence.py
 tests/test_aca_chrome_clearance.py
 tests/test_aca_coding_asset_discovery.py
 tests/test_aca_competency_chain.py
-tests/test_aca_configurator_honesty.py
 tests/test_aca_grading_integrity.py
 tests/test_aca_hint_accounting.py
 tests/test_aca_instructor_render.py
 tests/test_aca_instructor_workflow.py
 tests/test_aca_mission_progress_on_get.py
 tests/test_aca_objective_surfacing.py
-tests/test_aca_pg_native_placeholders.py
 tests/test_aca_prereq_surfacing.py
 tests/test_aca_rank_display.py
 tests/test_aca_rank_recompute.py

@@ -232,8 +232,17 @@ def classify_merge_readiness(
     max_behind_commits: int = DEFAULT_MAX_BEHIND_COMMITS,
     changed_files: Optional[Iterable[str]] = None,
     protected_paths: Iterable[str] = (),
+    required_checks: Optional[Iterable[str]] = None,
 ) -> MergeReadiness:
     """Why is this PR not merging? Pure — no I/O, no clock, no LLM.
+
+    ``required_checks`` is the branch-protection required set, resolved by the
+    caller through ``fetch_required_checks`` (task-det-295a9bb95e). With it,
+    ONLY those checks decide the CI rungs and a failing check outside the set
+    is NAMED on the ``ready`` reason rather than read as ``ci_failed`` — the
+    forge merges on the required set, and a ladder that refused on an advisory
+    red was the defect (PR #1859: five resumes and an escalation over a green
+    required set). Unresolved (``None``/empty) reads every check, as before.
 
     ``pr`` is one entry of ``gh pr list --json url,isDraft,baseRefName,
     mergeable,labels,statusCheckRollup,reviews,state``. Anything missing is
@@ -241,7 +250,8 @@ def classify_merge_readiness(
 
     Returns ``ready`` EXACTLY when ``_sweep_unlinked_prs`` would have merged:
     unlinked, not a draft, no hold label, based on ``default_branch``, reported
-    MERGEABLE, every check green, and no reviewer asking for changes. That
+    MERGEABLE, every DECIDING check green (the required set when resolved,
+    every check otherwise), and no reviewer asking for changes. That
     equivalence is the acceptance test (``tests/test_merge_readiness.py``).
 
     Two distinctions this refuses to blur, because each sends you somewhere
@@ -334,15 +344,32 @@ def classify_merge_readiness(
             detail = "mergeable=%s" % mergeable
         return MergeReadiness(CONFLICTING, detail)
 
-    if not ec.is_passing(pr):
+    required = frozenset(
+        str(n).strip() for n in (required_checks or ()) if str(n).strip()) or None
+    if not ec.is_passing(pr, required=required):
         rollup = list(pr.get("statusCheckRollup") or [])
         if not rollup:
             return MergeReadiness(
                 NO_CHECKS, "no check has reported yet -- empty status rollup")
-        if ec.is_ci_failed(pr):
-            return MergeReadiness(CI_FAILED, "failing checks: " + _failing_names(rollup))
-        return MergeReadiness(
-            AWAITING_CI, "checks still running: " + _pending_names(rollup))
+        if ec.is_ci_failed(pr, required=required):
+            deciding = ([c for c in rollup if _check_name(c) in required]
+                        if required else rollup)
+            return MergeReadiness(
+                CI_FAILED, ("failing required checks: " if required else
+                            "failing checks: ") + _failing_names(deciding))
+        # Still running -- or, with a required set, a required check that has
+        # not reported at all yet. Name the required ones first.
+        pending = _pending_names(rollup)
+        if required:
+            seen = {_check_name(c) for c in rollup}
+            missing = sorted(required - seen)
+            if missing:
+                pending = "required check(s) not yet reported: " + ", ".join(missing)
+        return MergeReadiness(AWAITING_CI, "checks still running: " + pending)
+    ignored = ec.ignored_failures(pr, required=required)
+    ignored_note = (
+        " -- ignored non-required failing check(s): " + ", ".join(ignored)
+        if ignored else "")
 
     if ec.is_changes_requested(pr):
         # A reviewer asked for changes. Merging over that is the one thing an
@@ -397,10 +424,12 @@ def classify_merge_readiness(
         # Not a refusal — but the reason must not claim a freshness nobody
         # measured. A silent fail-open is how the hole stayed open.
         return MergeReadiness(
-            READY, "green, mergeable and unblocked (staleness UNMEASURED)")
+            READY, "green, mergeable and unblocked (staleness UNMEASURED)"
+            + ignored_note)
     return MergeReadiness(
         READY, "green, mergeable and %d commit(s) behind %s -- within the "
-        "limit of %d" % (behind_by, default_branch, max_behind_commits))
+        "limit of %d" % (behind_by, default_branch, max_behind_commits)
+        + ignored_note)
 
 
 def staleness(
@@ -513,6 +542,89 @@ def measure_behind_by(
         return int((getattr(proc, "stdout", "") or "").strip())
     except (TypeError, ValueError):
         return None
+
+
+#: The runner `fetch_required_checks` uses when none is injected. A test
+#: session points this at a stub that answers "not protected" (tests/conftest.py),
+#: so a watcher a unit test builds without injecting a runner never reaches the
+#: live forge -- with local gh auth it would resolve the REAL required set and
+#: classify every fixture PR (whose checks are named `ci`, `build`...) as
+#: awaiting checks that will never report, while the same test passes on a CI
+#: runner that has no gh auth. None here means subprocess.run.
+_DEFAULT_GH_RUNNER = None
+
+
+def _required_checks_only() -> bool:
+    """`required_checks_only` from args/pr_watcher_config.yaml; default on."""
+    try:
+        from tools.ci.pr_watcher import load_config  # local: import cycle
+        return bool(load_config().get("required_checks_only", True))
+    except Exception:  # noqa: BLE001 -- an unreadable config keeps the old read
+        return False
+
+
+def fetch_required_checks(
+    default_branch: str,
+    *,
+    runner=None,
+    gh_bin: str = "gh",
+    repo: Optional[str] = None,
+    timeout: int = 30,
+) -> Optional[FrozenSet[str]]:
+    """The check names branch protection REQUIRES on ``default_branch``.
+
+    ``None`` when it cannot be resolved -- never an empty set (task-det-295a9bb95e).
+
+    THE ONE PLACE THE SET IS DECLARED. Lint / Test / Security Scan / Helm Lint
+    are written in at least three other places in this tree (task_pipeline.js,
+    seed_ahx_arr_clx.py, icdev-ci.yml's own comment) and every one of them
+    drifts the day a check is promoted; the CLAUDE.md note on promoting
+    `E2E (Playwright)` says exactly that. Reading the protection rule means the
+    watcher's "CI is green" is the forge's "CI is green", by construction.
+
+    NEVER RAISES. A branch with no protection (404 "Branch not protected"), a
+    token that may not read it (403 -- GITHUB_TOKEN in a workflow lacks the
+    administration scope this endpoint wants), a missing gh, a rate limit, a
+    rule with NO required checks -- every one returns ``None``, and every
+    caller reads ``None`` as "count every check", the pre-existing behaviour.
+    An EMPTY required set is deliberately ``None`` too: the forge would accept
+    any merge on such a branch, but a sweep that merged a PR with every check
+    red because nothing was required is the same move as the `awk '{print $2}'`
+    that could not see the failures, and it must stay a human decision.
+    """
+    branch = (default_branch or "").strip()
+    if not branch:
+        return None
+    if runner is None:
+        runner = _DEFAULT_GH_RUNNER or subprocess.run
+    slug = repo or "{owner}/{repo}"   # gh substitutes from the current remote
+    path = "repos/%s/branches/%s/protection" % (slug, branch)
+    try:
+        proc = runner(
+            [gh_bin, "api", path],
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=timeout,
+        )
+    except Exception:  # noqa: BLE001 -- unresolved, never a crash in the poll
+        return None
+    if getattr(proc, "returncode", 1) != 0:
+        return None
+    try:
+        payload = json.loads(getattr(proc, "stdout", "") or "")
+    except (TypeError, ValueError):
+        return None
+    rule = (payload or {}).get("required_status_checks") if isinstance(payload, dict) else None
+    if not isinstance(rule, dict):
+        return None
+    names = set()
+    for ctx in rule.get("contexts") or []:
+        if isinstance(ctx, str) and ctx.strip():
+            names.add(ctx.strip())
+    for chk in rule.get("checks") or []:
+        ctx = (chk or {}).get("context") if isinstance(chk, dict) else None
+        if isinstance(ctx, str) and ctx.strip():
+            names.add(ctx.strip())
+    return frozenset(names) or None
 
 
 def measure_behind_map(
@@ -823,8 +935,14 @@ def build_report(
     linked_tasks: Optional[Dict[str, Dict[str, Any]]] = None,
     now: Optional[_dt.datetime] = None,
     protected_paths: Iterable[str] = (),
+    required_checks: Optional[Iterable[str]] = None,
 ) -> Dict[str, Any]:
     """Classify every PR. Pure — takes data, returns data.
+
+    ``required_checks`` is the branch-protection required set (task-det-
+    295a9bb95e); ``None`` reads every check. It is reported back as
+    ``required_checks`` (sorted list, or ``None`` for UNRESOLVED) so a reader
+    can see which rule the CI rungs applied.
 
     ``behind_by_url`` maps PR url -> commits behind base, as
     ``measure_behind_map`` returns it. A url absent from the mapping, or
@@ -858,6 +976,8 @@ def build_report(
     behind_map = dict(behind_by_url or {})
     reference = now or _dt.datetime.now(_dt.timezone.utc)
     guarded = [p for p in (protected_paths or ()) if str(p or "").strip()]
+    required = frozenset(
+        str(n).strip() for n in (required_checks or ()) if str(n).strip()) or None
     rows: List[Dict[str, Any]] = []
     counts: Dict[str, int] = {}
     pipeline_counts: Dict[str, int] = {}
@@ -868,7 +988,8 @@ def build_report(
         verdict = classify_merge_readiness(
             pr, default_branch=default_branch, linked_urls=linked,
             behind_by=behind, max_behind_commits=max_behind_commits,
-            changed_files=changed, protected_paths=guarded)
+            changed_files=changed, protected_paths=guarded,
+            required_checks=required)
         # BOTH verdicts get the protected-path inputs (kpr-watch-03 x
         # kpr-watch-10). The diagnosis asks the SAME ladder "why would this not
         # merge, setting aside who owns it" — answering that without the rung
@@ -878,7 +999,8 @@ def build_report(
             verdict if verdict.state != LINKED else classify_merge_readiness(
                 pr, default_branch=default_branch, linked_urls=(),
                 behind_by=behind, max_behind_commits=max_behind_commits,
-                changed_files=changed, protected_paths=guarded))
+                changed_files=changed, protected_paths=guarded,
+                required_checks=required))
         counts[verdict.state] = counts.get(verdict.state, 0) + 1
         pipeline_counts[diagnosis.state] = pipeline_counts.get(
             diagnosis.state, 0) + 1
@@ -931,6 +1053,9 @@ def build_report(
     rows.sort(key=lambda r: (r["state"] != READY, r["number"] or 0))
     return {
         "default_branch": default_branch,
+        # Which CI rule the rungs applied: the required set, or None when it
+        # was UNRESOLVED and every check counted (task-det-295a9bb95e).
+        "required_checks": sorted(required) if required else None,
         # Never silent: without the board we cannot tell linked from unlinked,
         # so every PR is classified on its own merits and the caller is told.
         "linked_lookup_ok": bool(linked_lookup_ok),
@@ -1068,8 +1193,15 @@ def collect_report(
     from_json: Optional[str] = None,
     max_behind_commits: Optional[int] = None,
     measure_behind: bool = True,
+    required_checks: Optional[Iterable[str]] = None,
 ) -> Dict[str, Any]:
     """Gather the inputs and return the classified report. READ ONLY.
+
+    ``required_checks`` may be supplied (the watcher passes its cached set);
+    otherwise it is resolved here through ``fetch_required_checks`` when the
+    watcher's ``required_checks_only`` knob is on -- the same rule the merger
+    applies, so the report cannot call ``ci_failed`` what the merger will
+    merge. ``None`` (unresolved, or the knob off) reads every check.
 
     Extracted from ``main`` (kpr-watch-03) so the CLI, the kanban CLI and the
     dashboard panel all obtain the report the SAME way. A second caller that
@@ -1140,11 +1272,17 @@ def collect_report(
     behind = None
     if measure_behind and prs:
         behind = measure_behind_map(prs, default_branch=default_branch)
+    # Resolved from the forge only for a LIVE report. A `--from-json` replay is
+    # a record of some other moment (or a test fixture) and the branch
+    # protection of the repo this happens to run in says nothing about it --
+    # pass `required_checks` explicitly to replay under a rule.
+    if required_checks is None and not from_json and _required_checks_only():
+        required_checks = fetch_required_checks(default_branch)
     report = build_report(
         prs, default_branch=default_branch, linked_urls=linked,
         linked_lookup_ok=linked_lookup_ok, linked_tasks=tasks,
         behind_by_url=behind, max_behind_commits=max_behind_commits,
-        protected_paths=guarded)
+        protected_paths=guarded, required_checks=required_checks)
     # Why the board was unreadable, not merely that it was. A degraded report
     # that cannot say what degraded it sends the reader to the wrong fix.
     report["linked_lookup_error"] = linked_lookup_error

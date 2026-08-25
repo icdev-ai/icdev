@@ -137,14 +137,20 @@ def freshness(root: Optional[str] = None, ref: str = "origin/main",
                     "reason": f"code_reload unavailable: {exc}",
                     "conflicts": [], "root": root or _BASE, "ref": ref}
 
-    count = behind_by(ref, root, runner)
-
     try:
         verdict = probe(root or _BASE)
     except Exception as exc:  # noqa: BLE001
-        return {"state": UNMEASURABLE, "behind_by": count,
+        return {"state": UNMEASURABLE, "behind_by": behind_by(ref, root, runner),
                 "reason": f"the update guard could not be asked: {exc}",
                 "conflicts": [], "root": root or _BASE, "ref": ref}
+
+    # AFTER the probe, on purpose (autonomy-dep-04). The guard FETCHES before it
+    # answers; `rev-list HEAD..origin/main` reads the ref on disk. Counted
+    # first, a checkout whose ref had not been fetched since the last daemon
+    # poll read 0 behind while the guard refused — and 0-and-refusing is
+    # reported `current` below, which is the confidently-wrong verdict this
+    # module exists to refuse.
+    count = behind_by(ref, root, runner)
 
     reason = str(verdict.get("reason") or "")
     conflicts = list(verdict.get("conflicts") or [])

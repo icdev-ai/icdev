@@ -12,8 +12,11 @@ body, and the body is a LIST.
     is not self-healing; it is an unaudited actuator with write access to its
     own guardrails.
 
-THREE ACTS, and the registry is frozen — a fourth cannot be registered at
-runtime, and a test pins the names:
+FOUR ACTS, and the registry is frozen — a fifth cannot be registered at
+runtime, and a test pins the names. The fourth (autonomy-dep-04) was a
+DELIBERATE addition to a closed set, not a drift: it exists because the third
+shipped reporter for the same freeze (autonomy-dep-03) was cleared by hand and
+recurred within a day.
 
     reap_dead_lease           release `kanban:task:<id>` when the holder pid is
                               PROVABLY dead AND the task is not heartbeating.
@@ -27,6 +30,15 @@ runtime, and a test pins the names:
                               supervisor is UP to restart it (autonomy-id-03).
                               No supervisor, no act — that is a kill, not a
                               restart.
+    restore_auto_managed_file `git checkout --` ONE tracked file a reflex
+                              REGENERATES in the working tree, when the update
+                              guard is blocked on EXACTLY enumerated
+                              auto-managed files AND the writer, re-run over the
+                              committed text, reproduces the local diff — so the
+                              dirt is regenerable, never a human's edit. Then
+                              pull through the same guard and re-run the writer
+                              on the pulled tree. A diff the writer cannot
+                              reproduce REFUSES (autonomy-dep-04).
 
 EVERY ACT HAS THE SAME FOUR STEPS, in this order, and the order is the point:
 
@@ -65,7 +77,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Callable, Dict, List, Mapping, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 _BASE = Path(__file__).resolve().parents[2]
 if str(_BASE) not in sys.path:
@@ -73,6 +85,7 @@ if str(_BASE) not in sys.path:
 
 from tools.awareness.claim_verifier import TIER  # noqa: E402
 from tools.logging.icdev_logger import get_logger  # noqa: E402
+from tools.project.kanban_project_sync import TRACKED_RELPATH as _PROJECTS_REGISTRY  # noqa: E402
 
 logger = get_logger(__name__)
 
@@ -445,6 +458,313 @@ def confirm_stale_daemon(module: str, *, evidence: Dict[str, Any] = None,
 
 
 # --------------------------------------------------------------------------- #
+# Act 4 — restore an AUTO-MANAGED tracked file the deployment is frozen on
+# --------------------------------------------------------------------------- #
+#: The tracked files a reflex REGENERATES in the working tree, repo-relative
+#: path -> the writer module's dotted name. ENUMERATED, and declared by the
+#: WRITER (`kanban_project_sync.TRACKED_RELPATH`), never spelled here by hand:
+#: a path this module typed itself could drift from the one the writer actually
+#: touches, and the proof below would then prove the wrong file. One entry
+#: today. Adding one is a decision about a writer, made next to that writer.
+AUTO_MANAGED_FILES: Mapping[str, str] = MappingProxyType({
+    _PROJECTS_REGISTRY: "tools.project.kanban_project_sync",
+})
+
+#: The guard's one refusal this act can answer. Any other reason — not on main,
+#: a merge in flight, a non-fast-forward — is not a regenerable file's fault.
+OVERLAP_REASON = "local changes would be lost"
+#: `pull_if_safe(dry_run=True)` verdicts that mean "no overlap stands".
+_NO_OVERLAP_REASONS = frozenset({"already current", "would pull"})
+
+
+def _rel(target: str) -> str:
+    text = str(target or "").replace("\\", "/").strip()
+    return text[2:] if text.startswith("./") else text
+
+
+def _default_git(args: List[str], root: Path):
+    import subprocess  # nosec B404 — git only, fixed argv, shell=False
+    return subprocess.run(  # nosec B603 B607 — fixed argv, shell=False
+        ["git", "-C", str(root), *args], capture_output=True, text=True,
+        encoding="utf-8", errors="replace", timeout=120, check=False, shell=False,
+    )
+
+
+def _default_freshness(root: Path) -> Dict[str, Any]:
+    # The SAME reporter autonomy-dep-03 ships, which asks the SAME guard
+    # (`code_reload.pull_if_safe`, dry run). Not a second copy of the ladder.
+    from tools.genesis.deployment_freshness import freshness
+    return freshness(root=str(root))
+
+
+def _default_board() -> Dict[str, Any]:
+    from tools.project.kanban_project_sync import _scan_db
+    return _scan_db()
+
+
+def _default_pull(root: Path) -> Dict[str, Any]:
+    # THROUGH the guard, never a bare `git pull`: the act restores one file so
+    # that the guard's own ladder passes; it does not overrule the ladder.
+    from tools.genesis.code_reload import pull_if_safe
+    return pull_if_safe(root, min_interval=0)
+
+
+def _default_probe(root: Path) -> Dict[str, Any]:
+    from tools.genesis.code_reload import pull_if_safe
+    return pull_if_safe(root, dry_run=True)
+
+
+def _default_sync(path: Path, board: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    from tools.project.kanban_project_sync import sync_projects
+    return sync_projects(path=path, board=board)
+
+
+def _default_regenerate(head_text: str, board: Dict[str, Any]) -> List[Dict[str, Any]]:
+    from tools.project.kanban_project_sync import regenerated_projects
+    return regenerated_projects(head_text, board)
+
+
+def _projects_of(text: str) -> Optional[List[Dict[str, Any]]]:
+    """The registry's project list, or None if the text is not a registry."""
+    from yaml import YAMLError, safe_load
+    try:
+        data = safe_load(text) if text else {}
+    except YAMLError:
+        return None
+    if data is None:
+        return []
+    if not isinstance(data, dict):
+        return None
+    projects = data.get("projects")
+    if projects is None:
+        return []
+    if not isinstance(projects, list) or not all(isinstance(p, dict) for p in projects):
+        return None
+    return projects
+
+
+def regenerable_diff(head_projects: List[Dict[str, Any]],
+                     working_projects: List[Dict[str, Any]],
+                     regen_projects: List[Dict[str, Any]]
+                     ) -> Tuple[bool, str, Dict[str, Any]]:
+    """Is every difference HEAD -> working something the writer ADDS from the board?
+
+    The writer only ever APPENDS — a new project, or missing epics under an
+    existing one — and never renames, removes or edits what a human wrote
+    (its own contract: "name/description/briefs set by humans are never
+    overwritten"). So a working copy is regenerable exactly when (1) every
+    committed project survives unchanged apart from epics appended at the end,
+    and (2) every addition is one the writer, re-run over the committed text
+    against the CURRENT board, would also make. The board may have grown since
+    the dirt was written, so the regeneration may carry MORE than the working
+    copy — that is fine; what it may not do is carry LESS, or differ.
+
+    A working copy SEMANTICALLY equal to HEAD (the pre-dep-03 whole-document
+    writer reflowed the file without changing a value) is regenerable too:
+    nothing is lost by restoring it. Returns ``(ok, reason, evidence)``.
+    """
+    head = {str(p.get("key")): p for p in head_projects}
+    work = {str(p.get("key")): p for p in working_projects}
+    regen = {str(p.get("key")): p for p in regen_projects}
+    added_projects: List[str] = []
+    added_epics: List[str] = []
+
+    def _fields(*entries: Dict[str, Any]) -> set:
+        return {f for e in entries for f in e if f != "epics"}
+
+    for key, hp in head.items():
+        wp = work.get(key)
+        if wp is None:
+            return (False, f"project '{key}' is committed and missing from the working "
+                           f"copy — the writer never removes a project", {"project": key})
+        for field_name in sorted(_fields(hp, wp)):
+            if hp.get(field_name) != wp.get(field_name):
+                return (False, f"project '{key}' field '{field_name}' differs from HEAD — "
+                               f"a human edit, which this act never reverts",
+                        {"project": key, "field": field_name})
+        h_epics = list(hp.get("epics") or [])
+        w_epics = list(wp.get("epics") or [])
+        if w_epics[:len(h_epics)] != h_epics:
+            return (False, f"project '{key}' has committed epics edited, removed or "
+                           f"reordered — the writer only appends", {"project": key})
+        r_epics = list((regen.get(key) or {}).get("epics") or [])
+        for epic in w_epics[len(h_epics):]:
+            if epic not in r_epics:
+                return (False, f"epic '{epic.get('key')}' under '{key}' is not one the "
+                               f"writer would add from the board",
+                        {"project": key, "epic": epic.get("key")})
+            added_epics.append(f"{key}/{epic.get('key')}")
+
+    for key, wp in work.items():
+        if key in head:
+            continue
+        rp = regen.get(key)
+        if rp is None:
+            return (False, f"project '{key}' is not one the writer would register from "
+                           f"the board", {"project": key})
+        for field_name in sorted(_fields(wp, rp)):
+            if wp.get(field_name) != rp.get(field_name):
+                return (False, f"project '{key}' field '{field_name}' is not what the "
+                               f"writer would produce — a human edited an auto-registered "
+                               f"entry in the working tree", {"project": key, "field": field_name})
+        r_epics = list(rp.get("epics") or [])
+        for epic in wp.get("epics") or []:
+            if epic not in r_epics:
+                return (False, f"epic '{epic.get('key')}' under '{key}' is not one the "
+                               f"writer would add from the board",
+                        {"project": key, "epic": epic.get("key")})
+        added_projects.append(key)
+
+    evidence = {"added_projects": added_projects, "added_epics": added_epics,
+                "format_only": not added_projects and not added_epics}
+    if evidence["format_only"]:
+        return True, "the working copy equals HEAD in content — formatting drift only", evidence
+    return (True, f"the diff is {len(added_projects)} project(s) and {len(added_epics)} "
+                  f"epic(s) the writer adds from the board", evidence)
+
+
+def prove_auto_managed_file(target: str, *, root: Optional[Path] = None,
+                            freshness_fn: Callable[[Path], Dict[str, Any]] = None,
+                            board_fn: Callable[[], Dict[str, Any]] = None,
+                            git_fn: Callable[[List[str], Path], Any] = None,
+                            regenerate_fn: Callable[..., List[Dict[str, Any]]] = None,
+                            **_: Any) -> Proof:
+    """Enumerated file, guard blocked on EXACTLY enumerated files, and the
+    writer reproduces the local diff. Every one of the three must hold.
+
+    The human-edit guarantee lives in the third: a name, description or brief
+    that differs from HEAD is not something the writer produces, so the proof
+    is False and nothing is checked out. An unreadable board, HEAD or working
+    copy is None — "cannot tell" never becomes "safe to discard".
+    """
+    base = Path(root or _BASE)
+    rel = _rel(target)
+    freshness_fn = freshness_fn or _default_freshness
+    board_fn = board_fn or _default_board
+    git_fn = git_fn or _default_git
+    regenerate_fn = regenerate_fn or _default_regenerate
+
+    if rel not in AUTO_MANAGED_FILES:
+        return Proof(False, f"{rel or '<empty>'} is not an enumerated auto-managed file; "
+                            f"the set is {sorted(AUTO_MANAGED_FILES)}",
+                     {"path": rel, "auto_managed": sorted(AUTO_MANAGED_FILES)})
+    try:
+        rep = freshness_fn(base)
+    except Exception as exc:  # noqa: BLE001
+        return Proof(None, f"deployment freshness could not be asked: {exc}", {"path": rel})
+    state = str(rep.get("state") or "")
+    conflicts = [_rel(c) for c in (rep.get("conflicts") or [])]
+    evidence: Dict[str, Any] = {
+        "path": rel, "root": str(base), "writer": AUTO_MANAGED_FILES[rel],
+        "freshness": {"state": state, "behind_by": rep.get("behind_by"),
+                      "reason": rep.get("reason"), "conflicts": conflicts},
+    }
+    if state == "unmeasurable":
+        return Proof(None, f"deployment freshness is unmeasurable: {rep.get('reason')}",
+                     evidence)
+    if state != "blocked":
+        return Proof(False, f"the deployment is {state or 'unknown'} — nothing to restore",
+                     evidence)
+    if str(rep.get("reason") or "") != OVERLAP_REASON or rel not in conflicts:
+        return Proof(False, f"the guard refuses for another reason ({rep.get('reason')}), "
+                            f"not an overlap on {rel}", evidence)
+    foreign = [c for c in conflicts if c not in AUTO_MANAGED_FILES]
+    if foreign:
+        return Proof(False, f"the guard is also blocked on {len(foreign)} file(s) NO writer "
+                            f"regenerates ({', '.join(foreign[:3])}) — restoring {rel} would "
+                            f"not unblock it, and those may be a human's work",
+                     dict(evidence, foreign=foreign))
+
+    shown = git_fn(["show", f"HEAD:{rel}"], base)
+    if getattr(shown, "returncode", 1) != 0:
+        return Proof(None, f"HEAD:{rel} could not be read", evidence)
+    head_text = getattr(shown, "stdout", "") or ""
+    try:
+        working_text = (base / rel).read_text(encoding="utf-8")
+    except OSError as exc:
+        return Proof(None, f"the working copy could not be read: {exc}", evidence)
+    try:
+        board = board_fn()
+    except Exception as exc:  # noqa: BLE001
+        return Proof(None, f"the board could not be read — regenerability cannot be "
+                           f"proven: {exc}", evidence)
+    if not board:
+        return Proof(None, "the board reports no card-shaped tasks — regenerability "
+                           "cannot be proven against an empty board", evidence)
+    head_projects = _projects_of(head_text)
+    working_projects = _projects_of(working_text)
+    if head_projects is None or working_projects is None:
+        return Proof(None, "HEAD or the working copy is not a parseable registry — "
+                           "cannot tell what would be lost", evidence)
+    try:
+        regen_projects = regenerate_fn(head_text, board)
+    except Exception as exc:  # noqa: BLE001
+        return Proof(None, f"the writer could not be re-run over HEAD: {exc}", evidence)
+    ok, why, detail = regenerable_diff(head_projects, working_projects, regen_projects)
+    evidence.update(detail)
+    if not ok:
+        return Proof(False, why, evidence)
+    return Proof(True, f"{rel}: {why}; the guard is blocked on it alone, "
+                       f"{rep.get('behind_by')} commit(s) behind", evidence)
+
+
+def apply_auto_managed_file(target: str, *, root: Optional[Path] = None,
+                            git_fn: Callable[[List[str], Path], Any] = None,
+                            pull_fn: Callable[[Path], Dict[str, Any]] = None,
+                            sync_fn: Callable[..., Dict[str, Any]] = None,
+                            board_fn: Callable[[], Dict[str, Any]] = None,
+                            **deps: Any) -> Dict[str, Any]:
+    """checkout -> pull through the guard -> re-run the writer. In that order.
+
+    The pull sits BETWEEN the other two on purpose: re-running the writer first
+    would re-dirty the file with the very cards that made it dirty, and the
+    guard would refuse again. Re-running it AFTER the pull derives the board's
+    cards on top of whatever the incoming commits registered by hand.
+    """
+    base = Path(root or _BASE)
+    rel = _rel(target)
+    git_fn = git_fn or _default_git
+    pull_fn = pull_fn or _default_pull
+    sync_fn = sync_fn or _default_sync
+    # Re-proven at the moment of acting, like apply_gone_entry: the board or
+    # the tree may have moved since the intent row was written.
+    proof = prove_auto_managed_file(target, root=base, git_fn=git_fn,
+                                    board_fn=board_fn, **deps)
+    if not proof.proven:
+        raise RuntimeError(f"precondition no longer holds: {proof.reason}")
+    board = board_fn() if board_fn is not None else None
+    out = git_fn(["checkout", "--", rel], base)
+    if getattr(out, "returncode", 1) != 0:
+        raise RuntimeError(f"git checkout -- {rel} failed: "
+                           f"{(getattr(out, 'stderr', '') or '').strip()[:200]}")
+    result: Dict[str, Any] = {"restored": rel}
+    result["pull"] = pull_fn(base)
+    synced = sync_fn(base / rel, board)
+    result["sync"] = {k: synced.get(k) for k in ("new_projects", "updated_projects", "written")}
+    return result
+
+
+def confirm_auto_managed_file(target: str, *, root: Optional[Path] = None,
+                              probe_fn: Callable[[Path], Dict[str, Any]] = None,
+                              **_: Any) -> Optional[bool]:
+    """Ask the guard again, dry run: does it still name this file?"""
+    base = Path(root or _BASE)
+    rel = _rel(target)
+    probe_fn = probe_fn or _default_probe
+    try:
+        verdict = probe_fn(base)
+    except Exception:  # noqa: BLE001
+        return None
+    reason = str(verdict.get("reason") or "")
+    conflicts = [_rel(c) for c in (verdict.get("conflicts") or [])]
+    if reason in _NO_OVERLAP_REASONS:
+        return True
+    if reason == OVERLAP_REASON:
+        return rel not in conflicts
+    return None
+
+
+# --------------------------------------------------------------------------- #
 # The closed set
 # --------------------------------------------------------------------------- #
 ACTS: Mapping[str, RestoreAct] = MappingProxyType({
@@ -469,6 +789,17 @@ ACTS: Mapping[str, RestoreAct] = MappingProxyType({
         reverse="nothing to undo — the supervisor restarts it within 30s; if the "
                 "supervisor is gone, python tools/genesis/supervisor_status.py --ensure",
         prove=prove_stale_daemon, apply=apply_stale_daemon, confirm=confirm_stale_daemon,
+    ),
+    "restore_auto_managed_file": RestoreAct(
+        name="restore_auto_managed_file",
+        description="git checkout -- one enumerated auto-managed tracked file the "
+                    "update guard is blocked on, only when its writer re-run over HEAD "
+                    "reproduces the local diff; then pull through the guard and re-run "
+                    "the writer on the pulled tree. A human edit refuses",
+        reverse="nothing to undo — the discarded diff was, by proof, what the writer "
+                "re-derives from the board, and the re-run after the pull re-derives it",
+        prove=prove_auto_managed_file, apply=apply_auto_managed_file,
+        confirm=confirm_auto_managed_file,
     ),
 })
 
@@ -614,6 +945,31 @@ def plan(root: Optional[Path] = None, **deps: Any) -> Dict[str, Any]:
             out["candidates"].append({"act": "restart_stale_daemon", "target": proc["module"],
                                       "proven": p.proven, "reason": p.reason})
 
+    freshness_fn = deps.get("freshness_fn") or _default_freshness
+    try:
+        fresh = freshness_fn(base)
+    except Exception as exc:  # noqa: BLE001
+        fresh = {"state": "unmeasurable", "reason": str(exc)[:200], "conflicts": []}
+    out["freshness_state"] = fresh.get("state")
+    if fresh.get("state") == "blocked":
+        cached_fresh = (lambda _root, _rep=fresh: _rep)
+        for path in fresh.get("conflicts") or []:
+            rel = _rel(path)
+            if rel in AUTO_MANAGED_FILES:
+                p = prove_auto_managed_file(rel, root=base, freshness_fn=cached_fresh,
+                                            board_fn=deps.get("board_fn"),
+                                            git_fn=deps.get("git_fn"),
+                                            regenerate_fn=deps.get("regenerate_fn"))
+                proven, reason = p.proven, p.reason
+            else:
+                # Listed as a REFUSAL, not omitted: a blocked deployment whose
+                # plan shows no candidate reads as "nothing to do".
+                proven, reason = False, (f"{rel} is locally modified and incoming, and "
+                                         f"no enumerated writer regenerates it — a "
+                                         f"human's work, or an unregistered writer")
+            out["candidates"].append({"act": "restore_auto_managed_file", "target": rel,
+                                      "proven": proven, "reason": reason})
+
     out["provable"] = sum(1 for c in out["candidates"] if c["proven"] is True)
     out["refused"] = sum(1 for c in out["candidates"] if c["proven"] is not True)
     return out
@@ -629,12 +985,14 @@ def render_plan(rep: Dict[str, Any]) -> str:
         out.append(f"        {c['reason']}")
     if not rep["candidates"]:
         out.append("  no candidate — no held task lease, no gone census entry, "
-                   "no stale supervised child among what was MEASURED:")
+                   "no stale supervised child, no blocked auto-managed file among "
+                   "what was MEASURED:")
     # What the plan could see. "No candidate" over an unmeasured fleet is not a
     # clean bill of health, so the coverage is printed beside the verdict.
     out.append(f"  measured: leases={rep.get('leases_state')} · "
                f"census_files={rep.get('census_files_read')}/{len(CENSUS_FILES)} · "
-               f"staleness={rep.get('staleness_state')}")
+               f"staleness={rep.get('staleness_state')} · "
+               f"freshness={rep.get('freshness_state')}")
     return "\n".join(out)
 
 
