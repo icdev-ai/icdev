@@ -1,4 +1,4 @@
-# qa-fail-86fe338f55f5295b — the NOCC incident lifecycle was the merged base-URL defect, filed a 16th time
+# qa-fail-86fe338f55f5295b — the NOCC incident lifecycle was the merged base-URL defect, filed a 17th time
 
 **Card:** `[QA] NOCC — Incident Lifecycle > create an incident then update its status`
 **Run:** `qa-1787705278` **Spec:** `tests/e2e/noc_canvas.spec.ts:96`
@@ -56,7 +56,12 @@ ICDEV_NO_SERVER=1 npx playwright test tests/e2e/noc_canvas.spec.ts --project=chr
 
 All five pre-fix failures are this one cause, and the card's own test is among
 them. The other four (`overview page loads`, both alarm-lifecycle tests, and
-`RFC + MOP`) were filed as their own cards by the same sweep.
+`RFC + MOP`) were filed as their own cards by the same sweep — one of which,
+`alarm ingest with no body is rejected 400 (not 401)` at `noc_canvas.spec.ts:92`,
+is already closed as **qa-fail-550375c3c18c9474** (the 16th filing). That doc
+measures the alarm endpoint; this one measures the incidents endpoint and adds
+the whole-spec before/after across the two trees. Same spec file, same cause,
+two separate cards.
 `tests/test_e2e_base_url_single_source.py`, the gated guard that fails a spec
 re-deriving the expression, is green (7 passed).
 
