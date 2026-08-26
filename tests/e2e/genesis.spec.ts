@@ -4,12 +4,18 @@
 
 import { test, expect } from '@playwright/test';
 import { loginIfPrompted, suppressOnboarding } from './fixtures/onboarding';
+import { BASE_URL as RESOLVED_BASE_URL } from './fixtures/base_url';
 
 const CUI_BANNER = 'CUI // SP-CTI';
 // Genesis runs on the dashboard under test (default port 5050). Honour
 // ICDEV_DASHBOARD_URL so an isolated run (ICDEV_DASHBOARD_PORT=5090) does not
 // fall through to whatever dashboard already owns 5050.
-const GENESIS_BASE = process.env.ICDEV_DASHBOARD_URL || 'http://localhost:5050';
+// Resolved by tests/e2e/fixtures/base_url.ts, NOT restated here
+// (qa-fail-0d954757a83824da). `process.env.ICDEV_DASHBOARD_URL || <literal>`
+// omits the leading `ICDEV_E2E_BASE_URL` leg `playwright.config.ts` uses for
+// `use.baseURL`, so a run with both set pointed this constant and the
+// configured baseURL at two different host spellings of one server.
+const GENESIS_BASE = RESOLVED_BASE_URL;
 
 test.describe('Genesis v2.0 Autonomous Research Lab', () => {
   test.beforeEach(async ({ page }) => {

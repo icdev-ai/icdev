@@ -4,7 +4,22 @@
 
 import { APIRequestContext } from '@playwright/test';
 
-export const BASE = process.env.ICDEV_DASHBOARD_URL || 'http://localhost:5050';
+import { BASE_URL } from './base_url';
+
+// The base URL `playwright.config.ts` pins as `use.baseURL` — IMPORTED, not
+// restated (qa-fail-0d954757a83824da).
+//
+// This was `process.env.ICDEV_DASHBOARD_URL || 'http://localhost:5050'`, which
+// omits the config's leading `ICDEV_E2E_BASE_URL` leg. A run with both set
+// (`ICDEV_E2E_BASE_URL=http://127.0.0.1:5050`,
+// `ICDEV_DASHBOARD_URL=http://localhost:5050` — what the QA sweep does) sent
+// `fixtures/auth.ts`'s CSRF bootstrap to `127.0.0.1` and every request below to
+// `localhost`. Same server, but a cookie jar is keyed by host: the specs' calls
+// carried a `localhost` session whose token did not match the `127.0.0.1` token
+// pinned as `X-CSRF-Token`, so every GET returned 200 and every POST/PUT
+// returned 403 CSRF_FAILED — read on the board as a defect in whichever
+// endpoint was being exercised (gcpl-cset-11, PUT /api/cpmp/contracts/<id>/status).
+export const BASE = BASE_URL;
 export const SS   = '.tmp/test_runs/screenshots';
 export const CUI  = 'CUI // SP-CTI';
 

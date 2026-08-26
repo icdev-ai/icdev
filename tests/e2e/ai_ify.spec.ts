@@ -9,6 +9,7 @@
 // `csrf_protect` then demands a token the raw APIRequestContext does not carry.
 // CI hides it with ICDEV_AUTH_BYPASS. See that file for why. tsh-e2e-01-d2.
 import { test, expect } from './fixtures/auth';
+import { BASE_URL as RESOLVED_BASE_URL } from './fixtures/base_url';
 
 // Same precedence as `playwright.config.ts`'s DASHBOARD_URL, deliberately: this
 // spec-local constant is NOT covered by globalSetup's reachability assert, which
@@ -16,10 +17,11 @@ import { test, expect } from './fixtures/auth';
 // launched with ICDEV_E2E_BASE_URL still sent these five tests at the container
 // gateway and burned a timeout each, with nothing failing once to say why
 // (qa-fail-e2e-baseurl-01).
-const BASE  =
-  process.env.ICDEV_E2E_BASE_URL ||
-  process.env.ICDEV_DASHBOARD_URL ||
-  `http://localhost:${process.env.ICDEV_DASHBOARD_PORT || '5050'}`;
+//
+// It was then RESTATED here rather than shared, which is how the same defect
+// came back through fixtures/auth.ts and fixtures/govcon_cpmp.ts
+// (qa-fail-0d954757a83824da). One module owns the expression now.
+const BASE = RESOLVED_BASE_URL;
 const AIIFY = `${BASE}/ai-ify/`;
 
 test.describe('AI-ify Canvas', () => {

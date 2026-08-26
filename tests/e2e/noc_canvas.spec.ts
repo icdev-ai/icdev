@@ -8,7 +8,14 @@
 
 import { test, expect } from './fixtures/auth';
 
-const BASE = process.env.ICDEV_DASHBOARD_URL || 'http://localhost:5050';
+import { BASE_URL as RESOLVED_BASE_URL } from './fixtures/base_url';
+
+// Resolved by tests/e2e/fixtures/base_url.ts, NOT restated here
+// (qa-fail-0d954757a83824da). `process.env.ICDEV_DASHBOARD_URL || <literal>`
+// omits the leading `ICDEV_E2E_BASE_URL` leg `playwright.config.ts` uses for
+// `use.baseURL`, so a run with both set pointed this constant and the
+// configured baseURL at two different host spellings of one server.
+const BASE = RESOLVED_BASE_URL;
 const CUI = 'CUI // SP-CTI';
 const SS = 'playwright/screenshots';
 
