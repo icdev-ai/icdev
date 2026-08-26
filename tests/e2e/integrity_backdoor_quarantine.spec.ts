@@ -38,12 +38,29 @@ test.describe('SIPA Backdoor Assessment — QUARANTINE', () => {
   });
 
   test('assess fixture -> verdict is QUARANTINE', async ({ request }) => {
-    // A provenance-blind assessment of the fixture takes ~7s alone and >10s
-    // under suite load, past the 10s `actionTimeout` the `request` context
-    // inherits; give the one real-work call its own budget.
+    // `/api/integrity/assess` does the whole assessment SYNCHRONOUSLY: it stages
+    // the artifact, then runs four scanner subprocesses (sast, secrets, deps,
+    // semgrep) in series before scoring. Its cost is dominated by process spawn
+    // + Semgrep, so it tracks how loaded the host is, NOT how big the input is —
+    // this fixture is two files totalling ~2 KB.
+    //
+    // MEASURED, server-side, over every recorded assessment of this fixture
+    // (integrity_assessments JOIN integrity_verdicts, n=21, 2026-07-29..08-26):
+    // 5.2s min / 9.0s median / 45.0s max in the population since 2026-08-09
+    // (n=13; two 2026-07-29 outliers ran 144.7s and 173.6s). EIGHT of those 21
+    // runs — 38% — took longer than the 30s this call used to allow, which is
+    // why it flaked: the budget sat in the middle of the observed spread.
+    //
+    // ALL 21 RETURNED `assessed` / `quarantine`. The assertions below have never
+    // once failed; only the clock did. So this budget is not a performance
+    // assertion and relaxing it cannot let a wrong verdict through — a broken
+    // endpoint still fails here, just later. 120s is ~2.7x the modern maximum.
+    // The per-test budget must exceed it, or the 60s default in
+    // playwright.config.ts fires first and the request budget is dead code.
+    test.setTimeout(180_000);
     const resp = await request.post('/api/integrity/assess', {
       data: { source: FIXTURE_DIR, mode: 'provenance_blind' },
-      timeout: 30_000,
+      timeout: 120_000,
     });
     expect(resp.status(), await resp.text()).toBe(201);
 
