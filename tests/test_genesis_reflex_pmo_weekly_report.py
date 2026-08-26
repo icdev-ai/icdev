@@ -327,3 +327,93 @@ def test_html_report_declares_a_non_measured_data_quality_state():
 
     clean = dict(snap, data_quality={"state": reflex.DQ_MEASURED, "reasons": [], "detail": ""})
     assert "Data Quality" not in reflex._render_html_report(clean, "narrative body", "2026-08-17")
+
+
+# ---------------------------------------------------------------------------
+# The card body is the brief (pmo-rpt-2703fecac6)
+#
+# `_push_kanban_task` wrote `narrative[:500]`. The 2026-08-24 brief ran to 711
+# characters, so the card ended at "4 contract(s) are at YELLOW risk — " and
+# every actionable figure that week — 26 overdue deliverables, the portfolio
+# average CPI, the top open issue — fell off the end. The truncation was
+# unmarked, so the cut brief read as a complete one, and the card named no
+# artifact, so its reader had no route to the untruncated report.
+# ---------------------------------------------------------------------------
+
+# The 2026-08-24 brief, verbatim from data/reports/pmo_weekly_2026-08-24.html.
+LIVE_2026_08_24_NARRATIVE = (
+    "DATA QUALITY — SYNTHETIC: The records below are seed/probe residue, not a live "
+    "portfolio. Treat every figure in this brief as describing test data until real "
+    "contracts are loaded. 9 of 9 contract record(s) carry no contract number; 9 of 9 "
+    "title(s) match a seed/probe placeholder (e.g. GCPL Seed Contract, Untitled Contract, "
+    "bypass probe); all 6 contract(s) reporting a CPI report the SAME value, so the "
+    "portfolio average is one constant restated and ranks nothing. 4 contract(s) are at "
+    "YELLOW risk — monitor closely this week. Portfolio average CPI is 0.97. 26 "
+    "deliverable(s) are overdue — review Deliverable Command Center. Top open issue: "
+    "5 CDRL(s) are past due and not yet accepted. (bypass probe [0f28acca])"
+)
+
+_REPORT_PATH = r"C:\AI\ICDev\data\reports\pmo_weekly_2026-08-24.html"
+
+
+def test_the_live_brief_reaches_the_card_without_losing_its_actionable_figures():
+    """The regression, on the exact narrative that lost them."""
+    # The defect itself, pinned independently of the fix: the old slice cut the
+    # live brief mid-clause. This assertion holds with or without _card_description,
+    # so the test discriminates on BEHAVIOUR and not merely on a new symbol.
+    assert LIVE_2026_08_24_NARRATIVE[:500].rstrip().endswith(
+        "4 contract(s) are at YELLOW risk —"
+    )
+
+    description = reflex._card_description(LIVE_2026_08_24_NARRATIVE, _REPORT_PATH)
+
+    # The old slice ENDED here, mid-clause, and everything below was the loss.
+    # (Asserting on the start cannot discriminate — every string starts with
+    # its own prefix, so that assertion passes on the defect too.)
+    assert not description.rstrip().endswith("4 contract(s) are at YELLOW risk —")
+    assert LIVE_2026_08_24_NARRATIVE in description
+    assert "26 deliverable(s) are overdue" in description
+    assert "Portfolio average CPI is 0.97" in description
+    assert "5 CDRL(s) are past due" in description
+    # The advisory still leads: a fuller card must not bury the disqualifier.
+    assert description.startswith("DATA QUALITY — SYNTHETIC")
+
+
+def test_the_card_names_the_report_it_summarises():
+    """A truncation is lossless only if the whole brief is still reachable."""
+    assert _REPORT_PATH in reflex._card_description(LIVE_2026_08_24_NARRATIVE, _REPORT_PATH)
+    # Including when nothing was cut at all.
+    assert _REPORT_PATH in reflex._card_description("All 9 contracts are GREEN.", _REPORT_PATH)
+
+
+def test_an_over_budget_brief_is_cut_at_a_sentence_boundary_and_says_so():
+    """Never mid-clause, and never silently."""
+    long_narrative = " ".join(
+        f"Contract {i} is at YELLOW risk and needs review." for i in range(200)
+    )
+    assert len(long_narrative) > reflex.CARD_DESCRIPTION_BUDGET
+
+    body = reflex._truncate_at_sentence(long_narrative, reflex.CARD_DESCRIPTION_BUDGET)
+
+    assert body.endswith(reflex.TRUNCATION_MARKER)
+    # What survives is whole sentences — the cut lands after a full stop.
+    assert body[: -len(reflex.TRUNCATION_MARKER)].rstrip().endswith(".")
+    assert len(body) <= reflex.CARD_DESCRIPTION_BUDGET + len(reflex.TRUNCATION_MARKER)
+
+
+def test_a_brief_within_budget_is_passed_through_whole_and_unmarked():
+    """Negative control: an intact brief must not be labelled truncated."""
+    short = "All 9 contracts are GREEN — portfolio is healthy."
+    body = reflex._truncate_at_sentence(short, reflex.CARD_DESCRIPTION_BUDGET)
+
+    assert body == short
+    assert reflex.TRUNCATION_MARKER not in body
+    assert reflex.TRUNCATION_MARKER not in reflex._card_description(short, _REPORT_PATH)
+
+
+def test_a_first_sentence_longer_than_the_budget_falls_back_to_a_word_boundary():
+    """No sentence boundary to find — still never cut mid-word, still marked."""
+    body = reflex._truncate_at_sentence("word " * 200, 100)
+
+    assert body.endswith(reflex.TRUNCATION_MARKER)
+    assert "wor" + reflex.TRUNCATION_MARKER not in body

@@ -52,6 +52,50 @@ PLACEHOLDER_TITLE_TOKENS = (
 # whole is called synthetic rather than merely containing a stray fixture.
 PLACEHOLDER_SHARE_THRESHOLD = 0.5
 
+# The kanban card body IS the brief for whoever opens the card, and it was
+# written as a blind `narrative[:500]`. On 2026-08-24 that cut the brief at
+# "4 contract(s) are at YELLOW risk — " and dropped everything after it: the 26
+# overdue deliverables, the portfolio average CPI and the top open issue — every
+# actionable figure the week had. `kanban_tasks.description` is an unbounded TEXT
+# column (the widest row on the live board is 8,000 chars), so 500 was never a
+# storage constraint, and the card named no artifact, so a reader of the cut
+# brief had no route to the whole one.
+CARD_DESCRIPTION_BUDGET = 2000
+
+# Appended when, and only when, a brief really was cut. A truncation a reader
+# cannot see is indistinguishable from a brief that simply ended there.
+TRUNCATION_MARKER = " […brief truncated — see the full report]"
+
+
+def _truncate_at_sentence(text: str, budget: int) -> str:
+    """Cut at the last COMPLETED sentence within budget, never mid-sentence.
+
+    A brief that stops mid-clause reads as a finished statement of something it
+    never said. Falls back to a word boundary when the budget does not reach the
+    end of even the first sentence, and marks either cut.
+    """
+    text = (text or "").strip()
+    if len(text) <= budget:
+        return text
+
+    window = text[:budget]
+    cut = max(window.rfind(". "), window.rfind("! "), window.rfind("? "))
+    if cut != -1:
+        return window[: cut + 1] + TRUNCATION_MARKER
+
+    word = window.rfind(" ")
+    return (window[:word] if word > 0 else window).rstrip() + TRUNCATION_MARKER
+
+
+def _card_description(narrative: str, report_path: Any) -> str:
+    """The card body: the brief, cut safely if at all, plus the way to the rest.
+
+    The report pointer is appended unconditionally — that is what makes a
+    truncation lossless rather than merely visible.
+    """
+    body = _truncate_at_sentence(narrative, CARD_DESCRIPTION_BUDGET)
+    return f"{body}\n\nFull brief: {report_path}"
+
 
 def _contract_label(contract: Dict[str, Any]) -> str:
     """A stable, distinguishing label for a contract row.
@@ -560,6 +604,9 @@ def _push_kanban_task(snapshot: Dict[str, Any], narrative: str, report_date: str
         from datetime import datetime, timezone
         now = datetime.now(timezone.utc).isoformat()
         task_id_str = f"pmo-rpt-{_uuid3.uuid4().hex[:10]}"
+        # One value, used by both the tags and the card body — the pointer a
+        # reader follows must be the path the report was actually written to.
+        report_path = str(REPORTS_DIR / f"pmo_weekly_{report_date}.html")
         tags = json.dumps({
             "report_date": report_date,
             "total_contracts": snapshot.get("total_contracts", 0),
@@ -567,7 +614,7 @@ def _push_kanban_task(snapshot: Dict[str, Any], narrative: str, report_date: str
             "yellow": health.get("yellow", 0),
             "overdue_deliverables": snapshot.get("overdue_deliverables", 0),
             "critical_options": snapshot.get("critical_options", 0),
-            "report_path": str(REPORTS_DIR / f"pmo_weekly_{report_date}.html"),
+            "report_path": report_path,
             "data_quality": (snapshot.get("data_quality") or {}).get("state"),
             "data_quality_reasons": (snapshot.get("data_quality") or {}).get("reasons") or [],
         })
@@ -580,7 +627,7 @@ def _push_kanban_task(snapshot: Dict[str, Any], narrative: str, report_date: str
                 task_id_str,
                 "chore",
                 f"Weekly PMO Report — {report_date}",
-                narrative[:500],
+                _card_description(narrative, report_path),
                 "high" if health.get("red", 0) > 0 else "medium",
                 tags,
                 now,
