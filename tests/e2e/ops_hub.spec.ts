@@ -3,8 +3,13 @@
 // Tests all 8 sub-pages, JSON API endpoints, nav links, IQE widget, and CUI banners.
 
 import { test, expect } from '@playwright/test';
+import { resolveBaseUrl } from './fixtures/base_url';
 
-const BASE = process.env.ICDEV_DASHBOARD_URL || 'http://localhost:5050';
+// ONE resolver, shared with playwright.config.ts and fixtures/auth.ts, so the
+// origin these absolute URLs address is the origin the CSRF/session cookies
+// were minted at. Two copies of the precedence 403'd every mutating request in
+// the suite (qa-fail-a5dbf266dfb0ce4a). See fixtures/base_url.ts.
+const BASE = resolveBaseUrl();
 const CUI = 'CUI // SP-CTI';
 const SS = '.tmp/test_runs/screenshots';
 

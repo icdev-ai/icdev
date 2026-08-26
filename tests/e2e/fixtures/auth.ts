@@ -108,6 +108,7 @@ import {
   type BrowserContext,
   type BrowserContextOptions,
 } from '@playwright/test';
+import { resolveBaseUrl } from './base_url';
 
 /** Set by `tools/security/csrf.py::register_csrf`; readable by page JS by design. */
 export const CSRF_COOKIE = 'icdev_csrf';
@@ -118,9 +119,16 @@ export const CSRF_HEADER = 'X-CSRF-Token';
 /**
  * Same resolution `playwright.config.ts` and `fixtures/govcon_cpmp.ts` use, so a
  * spec and its auth bootstrap can never end up pointed at different servers.
+ *
+ * That sentence was a CLAIM, not a fact, until qa-fail-a5dbf266dfb0ce4a: this
+ * constant read `ICDEV_DASHBOARD_URL` while the config preferred
+ * `ICDEV_E2E_BASE_URL`, so a run setting both bootstrapped the CSRF handshake at
+ * one origin and issued the spec's requests at another. Cookies are keyed by
+ * host, so none rode along, dev-autologin minted a fresh session with a fresh
+ * token, and every mutating request 403'd CSRF_FAILED. It is now the same
+ * resolution because both sides call `resolveBaseUrl()`.
  */
-export const DEFAULT_BASE_URL =
-  process.env.ICDEV_DASHBOARD_URL || `http://localhost:${process.env.ICDEV_DASHBOARD_PORT || '5050'}`;
+export const DEFAULT_BASE_URL = resolveBaseUrl();
 
 /** The `playwright` worker fixture — typed structurally to avoid a deep import. */
 type PlaywrightFixture = {

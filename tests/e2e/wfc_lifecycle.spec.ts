@@ -4,8 +4,13 @@
 
 import type { Page } from '@playwright/test';
 import { test, expect, createAuthedBrowserContext } from './fixtures/auth';
+import { resolveBaseUrl } from './fixtures/base_url';
 
-const BASE = process.env.ICDEV_DASHBOARD_URL || 'http://127.0.0.1:5050';
+// ONE resolver, shared with playwright.config.ts and fixtures/auth.ts, so the
+// origin these absolute URLs address is the origin the CSRF/session cookies
+// were minted at. Two copies of the precedence 403'd every mutating request in
+// the suite (qa-fail-a5dbf266dfb0ce4a). See fixtures/base_url.ts.
+const BASE = resolveBaseUrl();
 const SS = 'playwright/screenshots';
 
 // ─────────────────────────────────────────────────────────────────────────────

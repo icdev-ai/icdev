@@ -3,8 +3,14 @@
 // Provides oppId, contractId, wbsId, deliverableId via API calls (no UI).
 
 import { APIRequestContext } from '@playwright/test';
+import { resolveBaseUrl } from './base_url';
 
-export const BASE = process.env.ICDEV_DASHBOARD_URL || 'http://localhost:5050';
+// ONE resolver, shared with playwright.config.ts and fixtures/auth.ts. Reading
+// ICDEV_DASHBOARD_URL here while the config preferred ICDEV_E2E_BASE_URL is what
+// sent the CSRF bootstrap to one origin and these requests to another, so every
+// POST/PUT in the CPMP + GovCon specs came back 403 CSRF_FAILED
+// (qa-fail-a5dbf266dfb0ce4a). See fixtures/base_url.ts.
+export const BASE = resolveBaseUrl();
 export const SS   = '.tmp/test_runs/screenshots';
 export const CUI  = 'CUI // SP-CTI';
 
