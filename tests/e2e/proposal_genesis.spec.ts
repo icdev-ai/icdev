@@ -4,10 +4,15 @@
 
 import { test, expect } from '@playwright/test';
 import { dismissOverlays, loginIfPrompted, suppressOnboarding } from './fixtures/onboarding';
+import { resolveBaseUrl } from './fixtures/base_url';
 
 const CUI_BANNER = 'CUI // SP-CTI';
 // Proposal Genesis runs on the dashboard under test (default port 5050).
-const PG_BASE = process.env.ICDEV_DASHBOARD_URL || 'http://localhost:5050';
+// ONE resolver, shared with playwright.config.ts and fixtures/auth.ts, so the
+// origin these absolute URLs address is the origin the CSRF/session cookies
+// were minted at. Two copies of the precedence 403'd every mutating request in
+// the suite (qa-fail-a5dbf266dfb0ce4a). See fixtures/base_url.ts.
+const PG_BASE = resolveBaseUrl();
 
 test.describe('Proposal Genesis — Autonomous Capture Pipeline', () => {
   test.beforeEach(async ({ page }) => {

@@ -46,6 +46,7 @@ import http from 'node:http';
 import https from 'node:https';
 import os from 'node:os';
 import path from 'node:path';
+import { baseUrlSource as resolveBaseUrlSource, resolveBaseUrl } from './tests/e2e/fixtures/base_url';
 
 /** Set once diagnostics have been emitted in this process. */
 const DONE_MARKER = 'ICDEV_E2E_ENV_DIAG_DONE';
@@ -786,9 +787,7 @@ function unreachableMessage(result: ReachabilityResult, source: string): string 
 
 /** Where the in-force baseURL came from, for the error message. */
 function baseUrlSource(): string {
-  if (process.env.ICDEV_E2E_BASE_URL) return 'ICDEV_E2E_BASE_URL';
-  if (process.env.ICDEV_DASHBOARD_URL) return 'ICDEV_DASHBOARD_URL';
-  return 'derived from ICDEV_DASHBOARD_PORT';
+  return resolveBaseUrlSource();
 }
 
 /**
@@ -827,7 +826,7 @@ function baseUrlFromConfig(config?: unknown): string | undefined {
   }
   const fromConfigUse = (config as { use?: { baseURL?: string } } | undefined)?.use?.baseURL;
   if (fromConfigUse) return fromConfigUse;
-  return process.env.ICDEV_E2E_BASE_URL || process.env.ICDEV_DASHBOARD_URL || undefined;
+  return resolveBaseUrl();
 }
 
 /**

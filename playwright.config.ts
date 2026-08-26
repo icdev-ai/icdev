@@ -5,6 +5,7 @@
 import { defineConfig, devices } from '@playwright/test';
 import path from 'path';
 import { logEnvironmentDiagnostics } from './globalSetup';
+import { resolveBaseUrl } from './tests/e2e/fixtures/base_url';
 
 // Root is always the directory that contains this config file — immune to cwd changes.
 const ROOT = __dirname;
@@ -30,7 +31,9 @@ const RUN_TAG = process.env.ICDEV_PW_RUN_TAG ? `-${process.env.ICDEV_PW_RUN_TAG}
 // run its own isolated server:
 //
 //   ICDEV_DASHBOARD_PORT=5090 ICDEV_PG_DATABASE=icdev_e2e npx playwright test
-const PORT = process.env.ICDEV_DASHBOARD_PORT || '5050';
+//
+// The variable is read by resolveBaseUrl() below; there is deliberately no
+// second binding for it here, so the port and the base URL cannot disagree.
 
 // Base URL under test — and ONE VARIABLE WAS ANSWERING TWO QUESTIONS
 // (qa-fail-e2e-baseurl-01).
@@ -54,8 +57,12 @@ const PORT = process.env.ICDEV_DASHBOARD_PORT || '5050';
 // setups that do. What stops a wrong value costing 838 test failures is not
 // precedence but globalSetup's reachability assert, which fails the run ONCE
 // and names this exact case.
-const DASHBOARD_URL =
-  process.env.ICDEV_E2E_BASE_URL || process.env.ICDEV_DASHBOARD_URL || `http://localhost:${PORT}`;
+// The precedence itself lives in tests/e2e/fixtures/base_url.ts, because a
+// SECOND copy of it in the specs is what produced qa-fail-a5dbf266dfb0ce4a: a
+// run setting BOTH variables bootstrapped auth at the origin this line picked
+// and issued the specs' requests at the origin theirs picked, so no cookie rode
+// along and every mutating request came back 403 CSRF_FAILED.
+const DASHBOARD_URL = resolveBaseUrl();
 
 /**
  * ICDEV™ Playwright Test Configuration
@@ -135,7 +142,7 @@ const config = defineConfig({
   // Dashboard server configuration
   // Always configure webServer so Playwright starts the app when needed.
   // reuseExistingServer:true means: if that port is already up, skip start —
-  // set ICDEV_DASHBOARD_PORT to get an isolated server instead (see PORT above).
+  // set ICDEV_DASHBOARD_PORT to get an isolated server instead (see the note above).
   // Set ICDEV_NO_SERVER=1 to disable (e.g. when an external server manages lifecycle).
   webServer: process.env.ICDEV_NO_SERVER ? undefined : {
     command: `python ${path.resolve(ROOT, 'tools/dashboard/app.py')}`,
