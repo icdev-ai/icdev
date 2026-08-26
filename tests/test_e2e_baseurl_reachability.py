@@ -42,6 +42,8 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PLAYWRIGHT_CONFIG = REPO_ROOT / "playwright.config.ts"
 GLOBAL_SETUP = REPO_ROOT / "globalSetup.ts"
+E2E_DIR = REPO_ROOT / "tests" / "e2e"
+BASE_URL_MODULE = E2E_DIR / "fixtures" / "base_url.ts"
 
 # Names that only resolve meaningfully from inside a container. `.env` is
 # untracked so it cannot be asserted on; the SAMPLES are what a fresh checkout
@@ -67,38 +69,107 @@ def setup_source() -> str:
     return GLOBAL_SETUP.read_text(encoding="utf-8")
 
 
-class TestBaseUrlPrecedence:
-    """A dedicated variable answers the test runner's question."""
+@pytest.fixture(scope="module")
+def resolver_source() -> str:
+    assert BASE_URL_MODULE.exists(), (
+        "tests/e2e/fixtures/base_url.ts is missing. The base-URL precedence lives "
+        "there and is imported by playwright.config.ts, fixtures/auth.ts and "
+        "fixtures/govcon_cpmp.ts; a per-file copy is the defect "
+        "(qa-fail-84f92cebcf4fe498)."
+    )
+    return BASE_URL_MODULE.read_text(encoding="utf-8")
 
-    def test_dedicated_e2e_base_url_is_honoured(self, config_source: str) -> None:
-        assert "ICDEV_E2E_BASE_URL" in config_source, (
-            "playwright.config.ts must honour ICDEV_E2E_BASE_URL so a deployment can "
+
+class TestBaseUrlPrecedence:
+    """A dedicated variable answers the test runner's question.
+
+    The precedence used to be written inline in ``playwright.config.ts`` and this
+    class read it there. It now lives in ``tests/e2e/fixtures/base_url.ts``,
+    because a SECOND defect grew in the gap: the config preferred
+    ``ICDEV_E2E_BASE_URL`` while ``fixtures/auth.ts`` and
+    ``fixtures/govcon_cpmp.ts`` each carried a private copy that read
+    ``ICDEV_DASHBOARD_URL`` alone. Set both -- the QA sweep does -- and the CSRF
+    bootstrap landed on ``127.0.0.1`` while the specs POSTed to ``localhost``.
+    Same server, two cookie jars, and every mutating request came back 403
+    CSRF_FAILED (qa-fail-84f92cebcf4fe498). The invariant is unchanged; one more
+    is added: there is exactly ONE definition.
+    """
+
+    def test_dedicated_e2e_base_url_is_honoured(self, resolver_source: str) -> None:
+        assert "ICDEV_E2E_BASE_URL" in resolver_source, (
+            "resolveBaseUrl() must honour ICDEV_E2E_BASE_URL so a deployment can "
             "keep a container-gateway ICDEV_DASHBOARD_URL for agents and still run "
             "the E2E suite."
         )
 
-    def test_precedence_is_e2e_then_dashboard_then_derived(self, config_source: str) -> None:
+    def test_precedence_is_e2e_then_dashboard_then_derived(self, resolver_source: str) -> None:
         """ICDEV_E2E_BASE_URL wins; ICDEV_DASHBOARD_URL still works; localhost is the floor."""
-        assignment = re.search(
-            r"const DASHBOARD_URL\s*=\s*(.*?);", config_source, re.DOTALL
+        body = re.search(
+            r"export function resolveBaseUrl\(\)\s*:\s*string\s*\{(.*?)\n\}",
+            resolver_source,
+            re.DOTALL,
         )
-        assert assignment, "playwright.config.ts no longer assigns DASHBOARD_URL"
-        expr = assignment.group(1)
+        assert body, "tests/e2e/fixtures/base_url.ts no longer exports resolveBaseUrl()"
+        expr = body.group(1)
 
         e2e_at = expr.find("ICDEV_E2E_BASE_URL")
         dash_at = expr.find("ICDEV_DASHBOARD_URL")
         assert e2e_at != -1, "ICDEV_E2E_BASE_URL is not part of the baseURL expression"
         assert dash_at != -1, (
-            "ICDEV_DASHBOARD_URL must remain honoured — pointing the suite at a remote "
-            "dashboard that way is a legitimate use, and the reachability guard, not "
-            "precedence, is what stops a wrong value costing 838 failures."
+            "ICDEV_DASHBOARD_URL must remain honoured -- pointing the suite at a "
+            "remote dashboard that way is a legitimate use, and the reachability "
+            "guard, not precedence, is what stops a wrong value costing 838 failures."
         )
         assert e2e_at < dash_at, (
             "ICDEV_E2E_BASE_URL must take precedence over ICDEV_DASHBOARD_URL"
         )
-        assert "localhost:${PORT}" in expr, (
-            "the derived http://localhost:$PORT fallback must survive — it is what an "
-            "unset environment gets"
+        assert "ICDEV_DASHBOARD_PORT" in expr and "localhost:" in expr, (
+            "the derived http://localhost:$ICDEV_DASHBOARD_PORT fallback must "
+            "survive -- it is what an unset environment gets"
+        )
+
+    def test_the_config_uses_the_shared_resolver(self, config_source: str) -> None:
+        """The config must IMPORT the precedence, never restate it.
+
+        A second copy that agrees today is what produced this defect: the ai_ify
+        fix (qa-fail-e2e-baseurl-01) corrected one file and left the two shared
+        fixtures behind.
+        """
+        assert "resolveBaseUrl" in config_source, (
+            "playwright.config.ts must call resolveBaseUrl() from "
+            "tests/e2e/fixtures/base_url.ts"
+        )
+        assignment = re.search(
+            r"const DASHBOARD_URL\s*=\s*(.*?);", config_source, re.DOTALL
+        )
+        assert assignment, "playwright.config.ts no longer assigns DASHBOARD_URL"
+        assert "process.env" not in assignment.group(1), (
+            "playwright.config.ts must not re-derive the base URL from process.env "
+            "-- it has the resolver; a private copy is the bug."
+        )
+
+    def test_no_spec_derives_its_own_base_url(self) -> None:
+        """The regression guard for the 403.
+
+        A spec-local ``const BASE = process.env.ICDEV_DASHBOARD_URL || ...`` is
+        outside globalSetup's reachability probe AND outside the auth fixture's
+        cookie jar. It reads fine, resolves fine, and 403s every mutating call.
+        """
+        offenders = []
+        for path in sorted(E2E_DIR.rglob("*.ts")):
+            if path == BASE_URL_MODULE:
+                continue
+            for lineno, line in enumerate(
+                path.read_text(encoding="utf-8").splitlines(), start=1
+            ):
+                code = line.split("//", 1)[0]
+                if "process.env.ICDEV_DASHBOARD_URL" in code:
+                    offenders.append(str(path.relative_to(REPO_ROOT)) + ":" + str(lineno))
+        assert not offenders, (
+            "these files derive their own base URL instead of importing BASE_URL "
+            "from tests/e2e/fixtures/base_url.ts, so they can disagree with the URL "
+            "the auth fixture bootstrapped its session on -- one server, two cookie "
+            "jars, 403 CSRF_FAILED on every mutating call: " + repr(offenders)
         )
 
 
