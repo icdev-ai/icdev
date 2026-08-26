@@ -8087,6 +8087,7 @@ def create_app(testing: bool = False) -> Flask:
     # args/genesis_apps.yaml (xit-gen-01). Same shape the routes below always
     # consumed; roots come from each app's root_env with a sibling-directory
     # fallback, and an app that is not on this machine is `available: False`.
+    from tools.dashboard.genesis_fleet import gather_fleet_status
     from tools.genesis.apps_registry import load_genesis_apps as _load_genesis_apps
     from tools.genesis.apps_registry import root_missing as _genesis_root_missing
 
@@ -8126,6 +8127,29 @@ def create_app(testing: bool = False) -> Flask:
         if json_start >= 0:
             return json.loads(stdout[json_start:])
         return {"error": "parse_failed", "stderr": result.stderr[:500] if result.stderr else ""}
+
+    def _genesis_fleet_status():
+        """Status for every Genesis app -- concurrent, and BOUNDED.
+
+        qa-fail-1474518ac97ac6a2: this used to be a `for` loop calling
+        `_genesis_run` once per app, so the page cost `sum(per-app timeout)` --
+        8 declared apps x 15s = 120s worst case. Measured against the same eight
+        real roots, best of three: 1.69s serial -> 0.89s bounded, and the worst
+        case capped at `DEFAULT_DEADLINE_SECONDS`. The nav smoke test's 10s
+        budget was the messenger; see tools/dashboard/genesis_fleet.py.
+
+        `available` is re-derived HERE rather than taken from the registry: it
+        is computed once at app start-up, and a sibling checkout removed since
+        then must read as absent, not as a probe that hangs.
+        """
+        live = {
+            key: {**cfg, "available": Path(cfg["root"]).exists()}
+            for key, cfg in GENESIS_APPS.items()
+        }
+        return gather_fleet_status(
+            live,
+            lambda key, cfg, timeout: _genesis_run(key, ["--status", "--json"], timeout=timeout),
+        )
 
     def _genesis_db(app_key):
         """Get a DB connection for a Genesis app."""
@@ -8260,18 +8284,7 @@ def create_app(testing: bool = False) -> Flask:
     def genesis():
         """Genesis v2.0 — Autonomous Research Lab dashboard (multi-app)."""
         app_key = flask_request.args.get("app", "icdev")
-        # Gather status for all apps
-        all_status = {}
-        for key, cfg in GENESIS_APPS.items():
-            if Path(cfg["root"]).exists():
-                try:
-                    all_status[key] = _genesis_run(key, ["--status", "--json"])
-                    all_status[key]["_name"] = cfg["name"]
-                    all_status[key]["_available"] = True
-                except Exception as exc:
-                    all_status[key] = {"_name": cfg["name"], "_available": False, "error": str(exc)}
-            else:
-                all_status[key] = {"_name": cfg["name"], "_available": False, "error": "Directory not found"}
+        all_status = _genesis_fleet_status()
         # Active app status
         status = all_status.get(app_key, all_status.get("icdev", {}))
         return render_template(
@@ -8302,18 +8315,8 @@ def create_app(testing: bool = False) -> Flask:
 
     @app.route("/api/genesis/all-status", methods=["GET"])
     def api_genesis_all_status():
-        """Get status for all Genesis apps."""
-        results = {}
-        for key, cfg in GENESIS_APPS.items():
-            if Path(cfg["root"]).exists():
-                try:
-                    results[key] = _genesis_run(key, ["--status", "--json"])
-                    results[key]["_name"] = cfg["name"]
-                except Exception as exc:
-                    results[key] = {"_name": cfg["name"], "error": str(exc)}
-            else:
-                results[key] = {"_name": cfg["name"], "error": "not_found"}
-        return jsonify(results)
+        """Get status for all Genesis apps -- same bounded fan-out as the page."""
+        return jsonify(_genesis_fleet_status())
 
     @app.route("/api/genesis/reflex/<name>", methods=["POST"])
     def api_genesis_run_reflex(name):
