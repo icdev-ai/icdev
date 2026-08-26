@@ -3,9 +3,14 @@
 // Covers: index → create form (template) → view detail → export (pptx/pdf/docx) → edit → delete
 
 import type { Page } from '@playwright/test';
-import { test, expect, createAuthedBrowserContext } from './fixtures/auth';
+import { test, expect, createAuthedBrowserContext, DEFAULT_BASE_URL } from './fixtures/auth';
 
-const BASE = process.env.ICDEV_DASHBOARD_URL || 'http://127.0.0.1:5050';
+// The suite has ONE base-URL resolution (fixtures/auth.ts::DEFAULT_BASE_URL,
+// which mirrors playwright.config.ts). Re-deriving it here from
+// ICDEV_DASHBOARD_URL alone let this spec address a different SPELLING of the
+// same server than the CSRF bootstrap probed, and every mutating request
+// after the first then came back 403 CSRF_FAILED (qa-fail-b2537204d4a9b6dd).
+const BASE = DEFAULT_BASE_URL;
 const SS = 'playwright/screenshots';
 
 // ─────────────────────────────────────────────────────────────────────────────

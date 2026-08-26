@@ -116,11 +116,35 @@ export const CSRF_COOKIE = 'icdev_csrf';
 export const CSRF_HEADER = 'X-CSRF-Token';
 
 /**
- * Same resolution `playwright.config.ts` and `fixtures/govcon_cpmp.ts` use, so a
- * spec and its auth bootstrap can never end up pointed at different servers.
+ * THE resolution for the whole suite — `playwright.config.ts`'s `DASHBOARD_URL`
+ * precedence, exported once so a spec and its auth bootstrap cannot end up
+ * pointed at two different spellings of the same server.
+ *
+ * That claim used to be a comment rather than a property. This constant omitted
+ * `ICDEV_E2E_BASE_URL`, and eight spec-local `BASE` constants re-derived the URL
+ * themselves — seven defaulting to `localhost:5050` and `wfc_lifecycle` to
+ * `127.0.0.1:5050`. Because the cookie jar keys the Flask session by HOST while
+ * the CSRF token below is pinned as a context-wide header, a spec addressing the
+ * other spelling gets a SECOND dev-auto-login session with its own
+ * `_csrf_token`, and every mutating request after its first one comes back
+ * `403 CSRF_FAILED`. The first request passes (no session cookie yet, so
+ * `csrf_protect` returns early), which is exactly what makes the split read as
+ * an endpoint defect instead of a fixture defect.
+ *
+ * Measured on QA run qa-1787705278: 14 of 39 failures were that 403, spread
+ * across 8 spec files and filed as 14 separate product cards
+ * (qa-fail-b2537204d4a9b6dd among them). Reproduced on
+ * `cpmp_performance.spec.ts`: 21/21 pass with the hosts aligned, 6 fail with
+ * `ICDEV_E2E_BASE_URL=http://127.0.0.1:5050` against a `localhost` spec
+ * constant.
+ *
+ * Import this instead of writing `process.env.ICDEV_DASHBOARD_URL || '...'` in a
+ * spec. `tests/test_e2e_base_url_single_source.py` fails on a new one.
  */
 export const DEFAULT_BASE_URL =
-  process.env.ICDEV_DASHBOARD_URL || `http://localhost:${process.env.ICDEV_DASHBOARD_PORT || '5050'}`;
+  process.env.ICDEV_E2E_BASE_URL ||
+  process.env.ICDEV_DASHBOARD_URL ||
+  `http://localhost:${process.env.ICDEV_DASHBOARD_PORT || '5050'}`;
 
 /** The `playwright` worker fixture — typed structurally to avoid a deep import. */
 type PlaywrightFixture = {

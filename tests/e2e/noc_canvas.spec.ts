@@ -6,9 +6,14 @@
 // against a live dashboard, so the cnr-ops-01 fail-closed mutation gate is
 // satisfied by the login session.
 
-import { test, expect } from './fixtures/auth';
+import { test, expect, DEFAULT_BASE_URL } from './fixtures/auth';
 
-const BASE = process.env.ICDEV_DASHBOARD_URL || 'http://localhost:5050';
+// The suite has ONE base-URL resolution (fixtures/auth.ts::DEFAULT_BASE_URL,
+// which mirrors playwright.config.ts). Re-deriving it here from
+// ICDEV_DASHBOARD_URL alone let this spec address a different SPELLING of the
+// same server than the CSRF bootstrap probed, and every mutating request
+// after the first then came back 403 CSRF_FAILED (qa-fail-b2537204d4a9b6dd).
+const BASE = DEFAULT_BASE_URL;
 const CUI = 'CUI // SP-CTI';
 const SS = 'playwright/screenshots';
 

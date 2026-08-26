@@ -4,12 +4,19 @@
 
 import { test, expect } from '@playwright/test';
 import { loginIfPrompted, suppressOnboarding } from './fixtures/onboarding';
+import { DEFAULT_BASE_URL } from './fixtures/auth';
 
 const CUI_BANNER = 'CUI // SP-CTI';
-// Genesis runs on the dashboard under test (default port 5050). Honour
-// ICDEV_DASHBOARD_URL so an isolated run (ICDEV_DASHBOARD_PORT=5090) does not
-// fall through to whatever dashboard already owns 5050.
-const GENESIS_BASE = process.env.ICDEV_DASHBOARD_URL || 'http://localhost:5050';
+// Genesis runs on the dashboard under test (default port 5050), and
+// DEFAULT_BASE_URL honours ICDEV_DASHBOARD_PORT so an isolated run
+// (ICDEV_DASHBOARD_PORT=5090) does not fall through to whatever dashboard
+// already owns 5050.
+// The suite has ONE base-URL resolution (fixtures/auth.ts::DEFAULT_BASE_URL,
+// which mirrors playwright.config.ts). Re-deriving it here from
+// ICDEV_DASHBOARD_URL alone let this spec address a different SPELLING of the
+// same server than the CSRF bootstrap probed, and every mutating request
+// after the first then came back 403 CSRF_FAILED (qa-fail-b2537204d4a9b6dd).
+const GENESIS_BASE = DEFAULT_BASE_URL;
 
 test.describe('Genesis v2.0 Autonomous Research Lab', () => {
   test.beforeEach(async ({ page }) => {

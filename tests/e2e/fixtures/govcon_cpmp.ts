@@ -3,8 +3,15 @@
 // Provides oppId, contractId, wbsId, deliverableId via API calls (no UI).
 
 import { APIRequestContext } from '@playwright/test';
+import { DEFAULT_BASE_URL } from './auth';
 
-export const BASE = process.env.ICDEV_DASHBOARD_URL || 'http://localhost:5050';
+// The suite has ONE base-URL resolution (fixtures/auth.ts::DEFAULT_BASE_URL,
+// which mirrors playwright.config.ts). Re-deriving it here from
+// ICDEV_DASHBOARD_URL alone let every spec built on this fixture address a
+// different SPELLING of the same server than the CSRF bootstrap probed, and
+// every mutating request after the first then came back 403 CSRF_FAILED
+// (qa-fail-b2537204d4a9b6dd).
+export const BASE = DEFAULT_BASE_URL;
 export const SS   = '.tmp/test_runs/screenshots';
 export const CUI  = 'CUI // SP-CTI';
 

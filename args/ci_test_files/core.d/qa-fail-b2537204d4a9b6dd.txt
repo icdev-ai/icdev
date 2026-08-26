@@ -1,0 +1,6 @@
+# qa-fail-b2537204d4a9b6dd - the e2e suite resolves its base URL in ONE place.
+# A spec re-deriving it from ICDEV_DASHBOARD_URL alone addressed a different
+# SPELLING of the same server than the CSRF bootstrap probed, and every mutating
+# request after the first came back 403 CSRF_FAILED - 14 of 39 failures on QA
+# run qa-1787705278, filed as 14 separate product cards.
+tests/test_e2e_base_url_single_source.py

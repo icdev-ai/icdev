@@ -4,10 +4,16 @@
 
 import { test, expect } from '@playwright/test';
 import { dismissOverlays, loginIfPrompted, suppressOnboarding } from './fixtures/onboarding';
+import { DEFAULT_BASE_URL } from './fixtures/auth';
 
 const CUI_BANNER = 'CUI // SP-CTI';
 // Proposal Genesis runs on the dashboard under test (default port 5050).
-const PG_BASE = process.env.ICDEV_DASHBOARD_URL || 'http://localhost:5050';
+// The suite has ONE base-URL resolution (fixtures/auth.ts::DEFAULT_BASE_URL,
+// which mirrors playwright.config.ts). Re-deriving it here from
+// ICDEV_DASHBOARD_URL alone let this spec address a different SPELLING of the
+// same server than the CSRF bootstrap probed, and every mutating request
+// after the first then came back 403 CSRF_FAILED (qa-fail-b2537204d4a9b6dd).
+const PG_BASE = DEFAULT_BASE_URL;
 
 test.describe('Proposal Genesis — Autonomous Capture Pipeline', () => {
   test.beforeEach(async ({ page }) => {
