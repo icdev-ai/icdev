@@ -42,6 +42,13 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PLAYWRIGHT_CONFIG = REPO_ROOT / "playwright.config.ts"
 GLOBAL_SETUP = REPO_ROOT / "globalSetup.ts"
+# The precedence MOVED here (qa-fail-a5dbf266dfb0ce4a). It used to be inline in
+# playwright.config.ts, and a SECOND copy of it in the spec fixtures is what
+# 403'd every mutating request in the suite: the config preferred
+# ICDEV_E2E_BASE_URL, `fixtures/govcon_cpmp.ts` read only ICDEV_DASHBOARD_URL,
+# and a run setting both bootstrapped the CSRF handshake at one origin while
+# issuing its requests at another.
+BASE_URL_RESOLVER = REPO_ROOT / "tests" / "e2e" / "fixtures" / "base_url.ts"
 
 # Names that only resolve meaningfully from inside a container. `.env` is
 # untracked so it cannot be asserted on; the SAMPLES are what a fresh checkout
@@ -67,23 +74,62 @@ def setup_source() -> str:
     return GLOBAL_SETUP.read_text(encoding="utf-8")
 
 
-class TestBaseUrlPrecedence:
-    """A dedicated variable answers the test runner's question."""
+@pytest.fixture(scope="module")
+def resolver_source() -> str:
+    assert BASE_URL_RESOLVER.exists(), (
+        "tests/e2e/fixtures/base_url.ts is the single source of the E2E base URL; "
+        "without it this module would assert the precedence against nothing"
+    )
+    return BASE_URL_RESOLVER.read_text(encoding="utf-8")
 
-    def test_dedicated_e2e_base_url_is_honoured(self, config_source: str) -> None:
-        assert "ICDEV_E2E_BASE_URL" in config_source, (
-            "playwright.config.ts must honour ICDEV_E2E_BASE_URL so a deployment can "
+
+class TestBaseUrlPrecedence:
+    """A dedicated variable answers the test runner's question.
+
+    Asserted against ``tests/e2e/fixtures/base_url.ts`` rather than against
+    ``playwright.config.ts``'s own expression, because the precedence moved there
+    (qa-fail-a5dbf266dfb0ce4a) — the claims below are unchanged, only their
+    subject is. Pinning them to the config would have let a spec keep a second,
+    disagreeing copy, which is the defect that move repaired.
+    """
+
+    def test_dedicated_e2e_base_url_is_honoured(self, resolver_source: str) -> None:
+        assert "process.env.ICDEV_E2E_BASE_URL" in resolver_source, (
+            "resolveBaseUrl() must honour ICDEV_E2E_BASE_URL so a deployment can "
             "keep a container-gateway ICDEV_DASHBOARD_URL for agents and still run "
             "the E2E suite."
         )
 
-    def test_precedence_is_e2e_then_dashboard_then_derived(self, config_source: str) -> None:
-        """ICDEV_E2E_BASE_URL wins; ICDEV_DASHBOARD_URL still works; localhost is the floor."""
-        assignment = re.search(
-            r"const DASHBOARD_URL\s*=\s*(.*?);", config_source, re.DOTALL
-        )
+    def test_the_config_takes_its_base_url_from_the_resolver(self, config_source: str) -> None:
+        """And derives NOTHING itself — a second copy is how the split returns.
+
+        Deliberately stricter than "ICDEV_E2E_BASE_URL appears somewhere in the
+        config": that string is in this file's own explanatory comments there, so
+        a substring check would pass for a config that had stopped honouring it.
+        """
+        assignment = re.search(r"const DASHBOARD_URL\s*=\s*(.*?);", config_source, re.DOTALL)
         assert assignment, "playwright.config.ts no longer assigns DASHBOARD_URL"
         expr = assignment.group(1)
+        assert "resolveBaseUrl()" in expr, (
+            "playwright.config.ts must obtain its baseURL from "
+            "tests/e2e/fixtures/base_url.ts::resolveBaseUrl(), not re-derive it"
+        )
+        assert "process.env." not in expr, (
+            f"playwright.config.ts re-derives the base URL ({expr.strip()}). Two copies "
+            "of the precedence point the CSRF/session bootstrap at one origin and the "
+            "specs' requests at another, and every mutating request answers 403 "
+            "CSRF_FAILED."
+        )
+
+    def test_precedence_is_e2e_then_dashboard_then_derived(self, resolver_source: str) -> None:
+        """ICDEV_E2E_BASE_URL wins; ICDEV_DASHBOARD_URL still works; localhost is the floor."""
+        body = re.search(
+            r"export function resolveBaseUrl\(\)\s*:\s*string\s*\{(.*?)\n\}",
+            resolver_source,
+            re.DOTALL,
+        )
+        assert body, "tests/e2e/fixtures/base_url.ts no longer exports resolveBaseUrl()"
+        expr = body.group(1)
 
         e2e_at = expr.find("ICDEV_E2E_BASE_URL")
         dash_at = expr.find("ICDEV_DASHBOARD_URL")
@@ -96,9 +142,9 @@ class TestBaseUrlPrecedence:
         assert e2e_at < dash_at, (
             "ICDEV_E2E_BASE_URL must take precedence over ICDEV_DASHBOARD_URL"
         )
-        assert "localhost:${PORT}" in expr, (
-            "the derived http://localhost:$PORT fallback must survive — it is what an "
-            "unset environment gets"
+        assert "http://localhost:${" in expr and "ICDEV_DASHBOARD_PORT" in expr, (
+            "the derived http://localhost:$ICDEV_DASHBOARD_PORT fallback must survive — "
+            "it is what an unset environment gets"
         )
 
 
