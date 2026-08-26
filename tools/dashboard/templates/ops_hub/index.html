@@ -140,6 +140,10 @@
       <div style="color:#64748b;margin-top:2px;">{{ adapter.domain }}</div>
       {% if adapter.available %}
       <div style="color:#22c55e;font-size:.7rem;">{{ adapter.latency_ms }}ms</div>
+      {# A probe we stopped waiting for is not a verdict that the service is
+         down -- render it as its own state, never as `unavailable`. #}
+      {% elif adapter.probe_state == 'timeout' %}
+      <div style="color:#f59e0b;font-size:.7rem;" title="{{ adapter.error }}">no answer</div>
       {% elif adapter.error %}
       <div style="color:#ef4444;font-size:.7rem;" title="{{ adapter.error }}">unavailable</div>
       {% endif %}
