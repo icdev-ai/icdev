@@ -108,6 +108,7 @@ import {
   type BrowserContext,
   type BrowserContextOptions,
 } from '@playwright/test';
+import { BASE_URL, resolveBaseUrl, sameOrigin } from './base_url';
 
 /** Set by `tools/security/csrf.py::register_csrf`; readable by page JS by design. */
 export const CSRF_COOKIE = 'icdev_csrf';
@@ -118,9 +119,15 @@ export const CSRF_HEADER = 'X-CSRF-Token';
 /**
  * Same resolution `playwright.config.ts` and `fixtures/govcon_cpmp.ts` use, so a
  * spec and its auth bootstrap can never end up pointed at different servers.
+ *
+ * That claim used to be FALSE and nothing checked it: this constant read
+ * `ICDEV_DASHBOARD_URL` while the config preferred `ICDEV_E2E_BASE_URL`, so a
+ * run setting both bootstrapped the session on one host spelling and issued the
+ * spec's requests on the other. A cookie jar is keyed by host, so the session
+ * never rode along and every mutating request 403'd CSRF_FAILED. All three now
+ * import ./base_url (qa-fail-84f92cebcf4fe498).
  */
-export const DEFAULT_BASE_URL =
-  process.env.ICDEV_DASHBOARD_URL || `http://localhost:${process.env.ICDEV_DASHBOARD_PORT || '5050'}`;
+export const DEFAULT_BASE_URL = BASE_URL;
 
 /** The `playwright` worker fixture — typed structurally to avoid a deep import. */
 type PlaywrightFixture = {
@@ -140,6 +147,29 @@ function warnOnce(message: string): void {
   console.log(`  ! E2E auth bootstrap: ${message}`);
 }
 
+let warnedOrigin = false;
+
+/**
+ * Say ONCE when the URL a spec is about to be bootstrapped against is not the
+ * one the rest of the suite resolves to.
+ *
+ * Its own latch, not `warnOnce`'s: this is the failure that produced 4 silent
+ * 403s in `cpmp_cdrl.spec.ts` on run qa-1787705278, and it must not be
+ * swallowed by an unrelated CSRF-token warning that happened to fire first.
+ * `sameOrigin` compares the host SPELLING deliberately — `localhost` and
+ * `127.0.0.1` are one server and two cookie jars, which is the whole defect.
+ */
+function warnOnOriginDivergence(baseURL: string): void {
+  if (warnedOrigin || sameOrigin(baseURL)) return;
+  warnedOrigin = true;
+  console.log(
+    `  ! E2E auth bootstrap: bootstrapping against ${baseURL} but the suite resolves ` +
+      `${resolveBaseUrl()} — a session cookie is keyed by host, so mutating requests ` +
+      'will 403 CSRF_FAILED even when both point at the same server. ' +
+      'Set ICDEV_E2E_BASE_URL and ICDEV_DASHBOARD_URL to the same spelling.',
+  );
+}
+
 /**
  * Build an `APIRequestContext` that can perform mutating requests against a
  * CSRF-enforcing dashboard.
@@ -152,6 +182,7 @@ export async function createAuthedRequestContext(
   playwright: PlaywrightFixture,
   baseURL: string = DEFAULT_BASE_URL,
 ): Promise<APIRequestContext> {
+  warnOnOriginDivergence(baseURL);
   const probe = await playwright.request.newContext({ baseURL });
   let storageState: unknown;
   let token = '';
@@ -201,6 +232,7 @@ export async function bootstrapBrowserContext(
   context: BrowserContext,
   baseURL: string = DEFAULT_BASE_URL,
 ): Promise<string> {
+  warnOnOriginDivergence(baseURL);
   let token = '';
   try {
     await context.request.get(`${baseURL}/`, { failOnStatusCode: false });

@@ -3,8 +3,14 @@
 // Tests all 8 sub-pages, JSON API endpoints, nav links, IQE widget, and CUI banners.
 
 import { test, expect } from '@playwright/test';
+import { BASE_URL as BASE } from './fixtures/base_url';
 
-const BASE = process.env.ICDEV_DASHBOARD_URL || 'http://localhost:5050';
+// Resolved by the one shared resolver (./fixtures/base_url), not by a private
+// copy: this constant used to read ICDEV_DASHBOARD_URL alone while
+// playwright.config.ts and fixtures/auth.ts preferred ICDEV_E2E_BASE_URL, so a
+// run setting both bootstrapped the CSRF session on one host spelling and sent
+// these requests to the other. Same server, two cookie jars, 403 CSRF_FAILED on
+// every mutating call (qa-fail-84f92cebcf4fe498).
 const CUI = 'CUI // SP-CTI';
 const SS = '.tmp/test_runs/screenshots';
 

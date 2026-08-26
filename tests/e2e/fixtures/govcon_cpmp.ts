@@ -3,8 +3,16 @@
 // Provides oppId, contractId, wbsId, deliverableId via API calls (no UI).
 
 import { APIRequestContext } from '@playwright/test';
+import { BASE_URL } from './base_url';
 
-export const BASE = process.env.ICDEV_DASHBOARD_URL || 'http://localhost:5050';
+// The dashboard URL, resolved by the ONE resolver `playwright.config.ts` and
+// `fixtures/auth.ts` also use. This constant used to read ICDEV_DASHBOARD_URL
+// alone, so a run that set ICDEV_E2E_BASE_URL (the QA sweep does) seeded and
+// asserted against `localhost` while auth.ts bootstrapped the CSRF session
+// against `127.0.0.1`. Same server, two cookie jars, and every mutating request
+// in every spec that imports this file came back 403 CSRF_FAILED. See
+// ./base_url.ts for the measurement (qa-fail-84f92cebcf4fe498).
+export const BASE = BASE_URL;
 export const SS   = '.tmp/test_runs/screenshots';
 export const CUI  = 'CUI // SP-CTI';
 

@@ -9,17 +9,17 @@
 // `csrf_protect` then demands a token the raw APIRequestContext does not carry.
 // CI hides it with ICDEV_AUTH_BYPASS. See that file for why. tsh-e2e-01-d2.
 import { test, expect } from './fixtures/auth';
+import { BASE_URL as BASE } from './fixtures/base_url';
 
 // Same precedence as `playwright.config.ts`'s DASHBOARD_URL, deliberately: this
 // spec-local constant is NOT covered by globalSetup's reachability assert, which
 // probes the CONFIGURED baseURL. Reading ICDEV_DASHBOARD_URL alone meant a run
 // launched with ICDEV_E2E_BASE_URL still sent these five tests at the container
 // gateway and burned a timeout each, with nothing failing once to say why
-// (qa-fail-e2e-baseurl-01).
-const BASE  =
-  process.env.ICDEV_E2E_BASE_URL ||
-  process.env.ICDEV_DASHBOARD_URL ||
-  `http://localhost:${process.env.ICDEV_DASHBOARD_PORT || '5050'}`;
+// (qa-fail-e2e-baseurl-01). That fix was applied HERE and nowhere else, so the
+// copies in fixtures/auth.ts and fixtures/govcon_cpmp.ts kept the defect and it
+// resurfaced as 403 CSRF_FAILED (qa-fail-84f92cebcf4fe498). The expression now
+// has one home and this file imports it.
 const AIIFY = `${BASE}/ai-ify/`;
 
 test.describe('AI-ify Canvas', () => {

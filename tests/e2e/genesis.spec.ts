@@ -4,12 +4,18 @@
 
 import { test, expect } from '@playwright/test';
 import { loginIfPrompted, suppressOnboarding } from './fixtures/onboarding';
+import { BASE_URL as GENESIS_BASE } from './fixtures/base_url';
 
 const CUI_BANNER = 'CUI // SP-CTI';
-// Genesis runs on the dashboard under test (default port 5050). Honour
-// ICDEV_DASHBOARD_URL so an isolated run (ICDEV_DASHBOARD_PORT=5090) does not
-// fall through to whatever dashboard already owns 5050.
-const GENESIS_BASE = process.env.ICDEV_DASHBOARD_URL || 'http://localhost:5050';
+// Genesis runs on the dashboard under test (default port 5050), so an isolated
+// run (ICDEV_DASHBOARD_PORT=5090) does not fall through to whatever dashboard
+// already owns 5050.
+// Resolved by the one shared resolver (./fixtures/base_url), not by a private
+// copy: this constant used to read ICDEV_DASHBOARD_URL alone while
+// playwright.config.ts and fixtures/auth.ts preferred ICDEV_E2E_BASE_URL, so a
+// run setting both bootstrapped the CSRF session on one host spelling and sent
+// these requests to the other. Same server, two cookie jars, 403 CSRF_FAILED on
+// every mutating call (qa-fail-84f92cebcf4fe498).
 
 test.describe('Genesis v2.0 Autonomous Research Lab', () => {
   test.beforeEach(async ({ page }) => {
