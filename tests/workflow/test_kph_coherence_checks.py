@@ -51,7 +51,7 @@ class TestTestDbIsolation:
             "import sqlite3\n"
             "def test_x():\n"
             "    conn = sqlite3.connect(':memory:')\n"
-            "    from tools.trading.db import get_signals\n"
+            "    from tools.example.db import get_rows\n"
             "    get_signals(conn=conn)  # runtime uses '%s'\n"
             "    _ = 'SELECT * FROM t WHERE a=%s'\n",
         )

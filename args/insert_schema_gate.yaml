@@ -187,9 +187,6 @@ grandfathered:
   "tools/strategos/interdiction_ranker.py:sg_interdiction_results:substitutability_inverse": "swp-scan-01 backlog — baselined 2026-08-01"
   "tools/strategos/interdiction_ranker.py:sg_kg_edges:created_at": "swp-scan-01 backlog — baselined 2026-08-01"
   "tools/strategos/interdiction_ranker.py:sg_kg_nodes:created_at": "swp-scan-01 backlog — baselined 2026-08-01"
-  # tools/trading/analysts/quality.py
-  "tools/trading/analysts/quality.py:ad_quality_scores:model_version": "swp-scan-01 backlog — baselined 2026-08-01"
-  "tools/trading/analysts/quality.py:ad_quality_scores:updated_at": "swp-scan-01 backlog — baselined 2026-08-01"
   # tools/ttx/engine.py
   "tools/ttx/engine.py:ttx_api_log:cost_usd": "swp-scan-01 backlog — baselined 2026-08-01"
   "tools/ttx/engine.py:ttx_api_log:token_count": "swp-scan-01 backlog — baselined 2026-08-01"

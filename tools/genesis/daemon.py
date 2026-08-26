@@ -108,7 +108,6 @@ REFLEX_NAMES = [
     "awareness",
     "canvas_indexer",
     "self_monitor",
-    "fathomdesk_trap_scenarios",
     "migration_canvas",
     "academy_reflex",
     "academy_oracle_reflex",  # penta-aca-06: 6h in-app 7-lens AcademyOracleRunner → fa_oracle_* (replaces dead forge_academy_oracle)

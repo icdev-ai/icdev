@@ -61,7 +61,7 @@ undeclared_import_census:
   # evidently, opentelemetry) that a deployment genuinely may not have. Those
   # are fixable the cheap way — make the handler log which package was missing —
   # and each one that is drops this ceiling by one.
-  undeclared_max: 210
+  undeclared_max: 179
 
   # A reason shorter than this is not a reason.
   min_reason_chars: 12

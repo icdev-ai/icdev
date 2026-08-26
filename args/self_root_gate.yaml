@@ -44,7 +44,7 @@ self_root_census:
 
   # Ceiling on REGISTERED sites. MAY ONLY GO DOWN. Set at adoption to exactly
   # the measured count -- headroom is permission.
-  self_root_max: 1369   # measured at MERGE (2026-08-21): 1,362 at adoption + 7 sites main added while the PR was open
+  self_root_max: 1329   # measured at MERGE (2026-08-21): 1,362 at adoption + 7 sites main added while the PR was open
 
   # tools/ only. icdev/tools/ is a generated mirror of the same files and would
   # double every entry; when a package's physical home moves (xit-core-*), its

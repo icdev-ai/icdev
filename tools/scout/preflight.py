@@ -172,20 +172,11 @@ def check_liquidity_trap(
     if strategy and strategy not in _SHORT_PREMIUM_STRATEGIES:
         return True, f"Strategy '{strategy}' not subject to liquidity-trap gate"
 
-    try:
-        from tools.trading.ta.macro_liquidity import detect_liquidity_trap
-
-        result = detect_liquidity_trap(macro_data)
-    except Exception as exc:
-        return True, f"Liquidity-trap check unavailable ({exc}) — allowing"
-
-    if result["active"]:
-        return False, (
-            f"liquidity_trap active (confidence={result['confidence']:.0%}) — "
-            f"short-premium strategy '{strategy}' blocked. "
-            "Set ICDEV_PREFLIGHT_LIQTRAP_OVERRIDE=true to bypass."
-        )
-    return True, f"Liquidity trap inactive (confidence={result['confidence']:.0%}) — strategy allowed"
+    # THE LIQUIDITY-TRAP DETECTOR LEFT WITH THE TRADING DOMAIN (xit-rm-02). It lived in
+    # tools.trading.ta.macro_liquidity, which is now ICDEV[FT]'s. The gate keeps its
+    # fail-open contract -- it always allowed on an unavailable detector -- so the behaviour
+    # here is unchanged; what is removed is an import that can no longer succeed.
+    return True, "Liquidity-trap check unavailable (detector moved to ICDEV[FT]) — allowing"
 
 
 def check_all(config: Dict) -> Tuple[bool, str, Dict]:

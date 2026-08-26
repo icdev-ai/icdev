@@ -30,14 +30,36 @@ def test_enumeration_is_by_declaring_source_not_by_prefix(tmp_path):
     assert "kanban_tasks" not in enum["tables"]
 
 
-def test_the_real_tree_enumerates_fathomdesk_and_excludes_the_shared_graph():
+def test_the_real_tree_enumerates_fathomdesk_from_the_migrations():
+    """The ad_ namespace still enumerates AFTER the sources were removed (xit-rm-02).
+
+    The FathomDesk and trading trees are gone from this domain; the ad_* MIGRATIONS stay as
+    history and are never deleted or renumbered, and they are what keeps this enumerable.
+    """
     enum = x.enumerate_tables(REPO_ROOT)
     assert len(enum["tables"]) >= 137, len(enum["tables"])
     assert all(t.startswith("ad_") for t in enum["tables"]), [t for t in enum["tables"] if not t.startswith("ad_")]
-    # declared by a FathomDesk source AND by the core -> shared, excluded by name
-    assert {"kg_nodes", "kg_edges", "kg_graphs", "trading_daemon_audit"} <= set(enum["excluded_shared"])
     for noise in ("is", "from", "ad_"):
         assert noise not in enum["tables"]
+
+
+def test_the_shared_graph_can_no_longer_enter_the_export_SET():
+    """The protection that mattered, restated for a tree with no FathomDesk sources.
+
+    `excluded_shared` USED to name kg_nodes/kg_edges/kg_graphs/trading_daemon_audit -- tables
+    declared by a FathomDesk source AND by the core, which the exporter had to subtract so a
+    cutover could not carry the shared knowledge graph into ICDEV[FT]. After xit-rm-02 there
+    is no FathomDesk source left to co-declare them, so that set is empty STRUCTURALLY rather
+    than by measurement, and asserting the four old names would assert the removal never
+    happened.
+
+    What is asserted instead is the invariant those exclusions existed to serve: nothing
+    outside the ad_ namespace can reach the export set, whatever the tree declares.
+    """
+    enum = x.enumerate_tables(REPO_ROOT)
+    shared = {"kg_nodes", "kg_edges", "kg_graphs", "trading_daemon_audit"}
+    assert not (shared & set(enum["tables"])), "the shared graph must never be exportable"
+    assert all(t.startswith("ad_") for t in enum["tables"])
 
 
 def test_diff_counts_is_exact_and_names_every_difference():
@@ -71,7 +93,12 @@ def test_cli_refuses_without_a_dsn_and_lists_without_one(monkeypatch, capsys):
     assert x.main(["--dry-run"]) == 2
     assert x.main(["--list"]) == 0
     out = capsys.readouterr().out
-    assert "FathomDesk table(s) declared" in out and "kg_nodes" in out
+    # `kg_nodes` used to appear here as an EXCLUDED shared table. After xit-rm-02 no
+    # FathomDesk source co-declares it, so it is absent from both lists -- and it must not
+    # appear as an exported table either, which is the half that matters.
+    assert "FathomDesk table(s) declared" in out
+    assert "ad_" in out
+    assert "\n  kg_nodes" not in out, "the shared graph must never be listed for export"
 
 
 def test_tool_never_mutates():

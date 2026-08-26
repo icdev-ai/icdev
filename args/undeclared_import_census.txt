@@ -72,10 +72,6 @@ icdev/tools/cloud/storage_provider.py::<module>::ibm_botocore
 icdev/tools/compliance/dependency_resolver.py::<module>::tomli
 
 # yfinance -> distribution 'yfinance'
-icdev/tools/dashboard/api/options.py::get_ivr::yfinance
-icdev/tools/dashboard/api/options.py::iv_skew::yfinance
-icdev/tools/dashboard/api/options.py::iv_skew_query::yfinance
-icdev/tools/dashboard/api/options.py::iv_term_query::yfinance
 
 # slugify -> distribution 'python_slugify'
 icdev/tools/dashboard/api/pulse.py::api_pulse_update_post::slugify
@@ -118,10 +114,8 @@ icdev/tools/docgen/workflow.py::_try_export_html::markdown
 icdev/tools/document_intelligence/extractors.py::_ocr_image::pytesseract
 
 # yfinance -> distribution 'yfinance'
-icdev/tools/fathomdesk/data_gateway.py::<module>::yfinance
 
 # openbb -> distribution 'openbb'
-icdev/tools/fathomdesk/openbb_gateway.py::<module>::openbb
 
 # paramiko -> distribution 'paramiko'
 icdev/tools/filesync/providers/sftp.py::<module>::paramiko
@@ -307,10 +301,6 @@ tools/cloud/storage_provider.py::<module>::ibm_botocore
 tools/compliance/dependency_resolver.py::<module>::tomli
 
 # yfinance -> distribution 'yfinance'
-tools/dashboard/api/options.py::get_ivr::yfinance
-tools/dashboard/api/options.py::iv_skew::yfinance
-tools/dashboard/api/options.py::iv_skew_query::yfinance
-tools/dashboard/api/options.py::iv_term_query::yfinance
 
 # slugify -> distribution 'python_slugify'
 tools/dashboard/api/pulse.py::api_pulse_update_post::slugify
@@ -353,10 +343,8 @@ tools/docgen/workflow.py::_try_export_html::markdown
 tools/document_intelligence/extractors.py::_ocr_image::pytesseract
 
 # yfinance -> distribution 'yfinance'
-tools/fathomdesk/data_gateway.py::<module>::yfinance
 
 # openbb -> distribution 'openbb'
-tools/fathomdesk/openbb_gateway.py::<module>::openbb
 
 # paramiko -> distribution 'paramiko'
 tools/filesync/providers/sftp.py::<module>::paramiko
@@ -489,47 +477,28 @@ tools/testing/perf/locustfile.py::<module>::locust
 tools/testing/perf_benchmark.py::locust_available::locust
 
 # flask_mailman -> distribution 'flask_mailman'
-tools/trading/auth/email.py::_send_smtp::flask_mailman
 
 # yfinance -> distribution 'yfinance'
-tools/trading/dashboard/app.py::_current_portfolio::yfinance
-tools/trading/dashboard/app.py::_snapshot_portfolio_now::yfinance
 
 # email_validator -> distribution 'email_validator'
-tools/trading/dashboard/app.py::api_auth_signup::email_validator
 
 # yfinance -> distribution 'yfinance'
-tools/trading/dashboard/app.py::api_ticker_chart::yfinance
-tools/trading/dashboard/app.py::api_ticker_fundamentals::yfinance
-tools/trading/dashboard/app.py::api_watchlist_list::yfinance
-tools/trading/data/bond_etf_data.py::_fetch_live_bond_etfs::yfinance
 
 # fredapi -> distribution 'fredapi'
-tools/trading/data/macro_data.py::_fetch_live_extended::fredapi
 
 # yfinance -> distribution 'yfinance'
-tools/trading/data/macro_data.py::_fetch_live_extended::yfinance
 
 # fredapi -> distribution 'fredapi'
-tools/trading/data/macro_data.py::_fetch_live_macro::fredapi
 
 # yfinance -> distribution 'yfinance'
-tools/trading/data/macro_data.py::_fetch_live_macro::yfinance
 
 # fredapi -> distribution 'fredapi'
-tools/trading/data/macro_data.py::compute_buffett_indicator::fredapi
 
 # yfinance -> distribution 'yfinance'
-tools/trading/data/macro_data.py::compute_buffett_indicator::yfinance
-tools/trading/data/macro_data.py::compute_fear_greed::yfinance
 
 # fredapi -> distribution 'fredapi'
-tools/trading/market_intel/cross_asset_rotation.py::_fetch_fred_breakeven::fredapi
-tools/trading/market_intel/cross_asset_rotation.py::_fetch_hy_oas_history::fredapi
 
 # yfinance -> distribution 'yfinance'
-tools/trading/market_intel/cross_asset_rotation.py::_fetch_live_prices::yfinance
-tools/trading/market_intel/cross_asset_rotation.py::_fetch_vix_history::yfinance
 
 # matplotlib -> distribution 'matplotlib'
 tools/viz/asset_generator.py::AssetGenerator._provider_matplotlib::matplotlib

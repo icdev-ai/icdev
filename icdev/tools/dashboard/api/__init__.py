@@ -298,12 +298,6 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
     except Exception as exc:
         logger.warning("studio bus subscriber registration skipped: %s", exc)
 
-    try:
-        from tools.dashboard.api.news import news_api
-        _mount_inline(news_api)   # inline routes: /api/news/*
-    except Exception as exc:
-        logger.warning("news_api skipped: %s", exc)
-
     # Extracted from app.py inline routes (nav-misc-03) — paths unchanged.
     try:
         from tools.dashboard.api.pulse import pulse_api
@@ -322,24 +316,6 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
         _mount_inline(clawhub_api)   # inline routes: /api/clawhub/*
     except Exception as exc:
         logger.warning("clawhub_api skipped: %s", exc)
-
-    try:
-        from tools.fathomdesk.blueprint import fathomdesk_api
-        _mount_inline(fathomdesk_api)   # inline routes: /fathomdesk/api/*
-    except Exception as exc:
-        logger.warning("fathomdesk_api skipped: %s", exc)
-
-    try:
-        from tools.dashboard.api.options import options_api
-        _mount_inline(options_api)   # inline routes: /api/options/*
-    except Exception as exc:
-        logger.warning("options_api skipped: %s", exc)
-
-    try:
-        from tools.dashboard.api.quality_scores import quality_scores_api
-        _mount_inline(quality_scores_api)   # inline routes: /api/quality-scores/*
-    except Exception as exc:
-        logger.warning("quality_scores_api skipped: %s", exc)
 
     # ------------------------------------------------------------------ #
     #  Optional blueprints — graceful skip on ImportError                 #

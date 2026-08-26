@@ -128,7 +128,6 @@ tables:
   ad_order_meta: ft
   ad_orders: ft
   ad_password_reset_tokens: ft
-  ad_pc_ratio_history: ft
   ad_perspective_scores: ft
   ad_pf_daily_snapshots: ft
   ad_pma_recommendations: ft
@@ -139,7 +138,6 @@ tables:
   ad_positions: ft
   ad_pulse_articles: ft
   ad_quality_scores: ft
-  ad_reflex_cooldowns: ft
   ad_regime_hmm_models: ft
   ad_regime_premiums: ft
   ad_risk_assessments: ft
@@ -1453,8 +1451,8 @@ tables:
   topology_edges: it
   topology_nodes: it
   tour_config: it
-  trading_daemon_audit: ft
-  trading_daemon_reflex_state: ft
+  trading_daemon_audit: it
+  trading_daemon_reflex_state: it
   translation_dependency_mappings: it
   translation_jobs: it
   translation_units: it
