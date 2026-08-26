@@ -16,7 +16,10 @@
        class="btn {% if key == active_app %}btn-primary{% endif %}"
        style="position:relative;">
         {{ app_info.get('_name', key) }}
-        {% if app_info.get('_available') %}
+        {% set _probe = app_info.get('_probe_state', 'ok') %}
+        {% if _probe == 'unmeasured' %}
+            <span class="app-dot app-dot-gray" title="Status unknown: the probe did not answer"></span>
+        {% elif app_info.get('_available') %}
             {% if app_info.get('daemon', {}).get('enabled') %}
                 <span class="app-dot app-dot-green"></span>
             {% else %}
@@ -50,12 +53,21 @@
                 <tr class="{% if key == active_app %}selected-row{% endif %}" onclick="window.location='/genesis?app={{ key }}';" style="cursor:pointer;">
                     <td><strong>{{ app_info.get('_name', key) }}</strong></td>
                     <td>
-                        {% if app_info.get('_available') and app_info.get('daemon', {}).get('enabled') %}
+                        {# qa-fail-1474518ac97ac6a2: four probe states, never merged.
+                           UNMEASURED and ERROR both used to render as OFFLINE or
+                           DISABLED -- an app nobody managed to read looked
+                           identical to one that is switched off. #}
+                        {% set _probe = app_info.get('_probe_state', 'ok') %}
+                        {% if _probe == 'unmeasured' %}
+                            <span class="badge badge-yellow" title="The status probe did not answer inside the page budget. This app's state is unknown — not a report that it is offline.">UNMEASURED</span>
+                        {% elif _probe == 'error' %}
+                            <span class="badge badge-red" title="{{ app_info.get('error', '') }}">PROBE FAILED</span>
+                        {% elif app_info.get('_available') and app_info.get('daemon', {}).get('enabled') %}
                             <span class="badge badge-green">RUNNING</span>
                         {% elif app_info.get('_available') %}
                             <span class="badge badge-yellow">DISABLED</span>
                         {% else %}
-                            <span class="badge badge-red">OFFLINE</span>
+                            <span class="badge badge-red" title="Not checked out on this machine">OFFLINE</span>
                         {% endif %}
                     </td>
                     {% set reflexes = app_info.get('reflexes', {}) %}
@@ -286,6 +298,9 @@
 .app-dot-green { background: #10b981; }
 .app-dot-yellow { background: #f59e0b; }
 .app-dot-red { background: #ef4444; }
+/* qa-fail-1474518ac97ac6a2: nobody read this app's status. Not red
+   (offline) and not yellow (disabled) — grey is "unknown". */
+.app-dot-gray { background: #9ca3af; }
 .sortable { cursor: pointer; user-select: none; }
 .sortable:hover { color: var(--accent, #3b82f6); }
 .sort-arrow { font-size: 10px; margin-left: 4px; }
