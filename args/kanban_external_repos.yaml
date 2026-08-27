@@ -92,3 +92,14 @@ prefixes:
   # until ICDEV_KANBAN_REPO_FT is set, and additionally held behind fdx-gate-00.
   # Live-trading code is never built unattended.
   fdx: icdev_ft
+  # xit-reg-02: `ftl-` -- the ICDEV[FT] autonomous-trading loop, 53 cards -- was
+  # MISSING and therefore fell through to the ICDev default, resolving
+  # external=False root=C:/AI/ICDev. This repo is PUBLIC, so releasing
+  # ftl-gate-00 (which xit-rm-04 contemplates) would have had the dispatcher
+  # build trading work inside it: the xit-leak-01 class, reached through the
+  # dispatcher rather than through a commit. Same shape as the ked-reg-01 note
+  # above -- a stream LIVE on the board and absent from this file.
+  #
+  # Root env stays UNSET, so this resolves external + NOT dispatchable = PARKED.
+  # Registering a stream never enables it; it only stops it building here.
+  ftl: icdev_ft
