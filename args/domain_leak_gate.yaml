@@ -28,7 +28,7 @@
 
 domain_leak_gate:
   paths:
-    mode: report            # report | enforce  -- flips to enforce in xit-rm-*
+    mode: enforce           # ARMED by xit-rm-02: the denied trees are gone from this domain
     deny:
       - tools/trading/**
       - tools/market_intel/**

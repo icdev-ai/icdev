@@ -115,7 +115,6 @@ icdev/tools/notifications/adapters/telegram_listener.py::_create_task[1]  # gran
 icdev/tools/requirements/intake_kanban_promoter.py::promote[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
 icdev/tools/scripts/decompose_backlog.py::create_subtask[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
 icdev/tools/scripts/schedule_enterprise_frontend_plan.py::enqueue[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
-icdev/tools/scripts/schedule_fathomdesk_news_plan.py::enqueue[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
 icdev/tools/scripts/schedule_phase_7_10_traps_plan.py::enqueue[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
 icdev/tools/scripts/schedule_phase_7_11_news_2_plan.py::enqueue[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
 icdev/tools/scripts/schedule_phase_7_6_ai_options_plan.py::enqueue[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
@@ -193,8 +192,6 @@ tools/kanban/seed_ddc_datasci.py::seed[1]  # grandfathered at adoption (rem-hyg-
 tools/kanban/seed_ddx_extensions.py::insert_task[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
 tools/kanban/seed_dic_kanban.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
 tools/kanban/seed_dsyn_kanban.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: mixed; convert to task_factory.create_tasks in rem-hyg-06
-tools/kanban/seed_fdt_amendment.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
-tools/kanban/seed_fdt_tradingagents.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
 tools/kanban/seed_foundry.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
 tools/kanban/seed_irad_kanban.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
 tools/kanban/seed_llm_cache.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
@@ -218,7 +215,6 @@ tools/notifications/adapters/telegram_listener.py::_create_task[1]  # grandfathe
 tools/requirements/intake_kanban_promoter.py::promote[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
 tools/scripts/decompose_backlog.py::create_subtask[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
 tools/scripts/schedule_enterprise_frontend_plan.py::enqueue[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
-tools/scripts/schedule_fathomdesk_news_plan.py::enqueue[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
 tools/scripts/schedule_phase_7_10_traps_plan.py::enqueue[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
 tools/scripts/schedule_phase_7_11_news_2_plan.py::enqueue[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
 tools/scripts/schedule_phase_7_6_ai_options_plan.py::enqueue[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06

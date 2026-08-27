@@ -10167,34 +10167,31 @@ def create_app(testing: bool = False) -> Flask:
 
     @app.route("/api/macro/intelligence")
     def api_macro_intelligence():
-        """Return macro regime badges for the /analysis page panel."""
-        try:
-            from tools.trading.data.macro_data import fetch_macro_context
-            ctx = fetch_macro_context()
-            return jsonify({
-                "qeqt_phase": ctx.get("qeqt_phase", "NEUTRAL"),
-                "credit_stress": ctx.get("credit_impulse", {}).get("label", "NEUTRAL"),
-                "rotation_signal": ctx.get("regime", "UNKNOWN"),
-                "macro_score": ctx.get("macro_score"),
-                "summary": ctx.get("summary", ""),
-                "fetched_at": ctx.get("fetched_at"),
-            })
-        except Exception as exc:
-            # nav-plat-04: a data outage must NOT masquerade as a benign NEUTRAL
-            # regime. Log it and return an explicit error state (HTTP 503) with
-            # null badges so no consumer renders NEUTRAL for missing data.
-            app.logger.exception("macro/intelligence fetch failed: %s", exc)
-            return jsonify({
-                "status": "error",
-                "detail": str(exc),
-                "qeqt_phase": None,
-                "credit_stress": None,
-                "rotation_signal": None,
-                "macro_score": None,
-                "summary": "",
-                "fetched_at": None,
-                "error": str(exc),
-            }), 503
+        """Macro regime badges for the /analysis panel — no provider in this domain.
+
+        THE FEED LEFT WITH THE TRADING DOMAIN (xit-rm-02). `fetch_macro_context` lived in
+        tools.trading.data.macro_data, which is now ICDEV[FT]'s.
+
+        THE ROUTE STAYS AND ITS CONTRACT IS UNCHANGED. nav-plat-04 exists because a data
+        outage must NOT masquerade as a benign NEUTRAL regime, and a capability that has
+        MOVED is an outage of exactly that kind -- so this returns the documented 503 with
+        NULL badges and a stated reason, byte-for-byte the shape the old except-branch
+        returned. Deleting the route would 404 the panel instead of telling it why, and
+        returning NEUTRAL would be the fabrication nav-plat-04 was written to prevent.
+        """
+        detail = ("macro intelligence feed moved to ICDEV[FT] (xit-rm-02); no macro "
+                  "provider is configured in this domain")
+        return jsonify({
+            "status": "error",
+            "detail": detail,
+            "qeqt_phase": None,
+            "credit_stress": None,
+            "rotation_signal": None,
+            "macro_score": None,
+            "summary": "",
+            "fetched_at": None,
+            "error": detail,
+        }), 503
 
     # ---- ECR-OBS-01: Prometheus /metrics endpoint ----
     try:

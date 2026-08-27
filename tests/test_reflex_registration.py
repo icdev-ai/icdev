@@ -73,8 +73,6 @@ _XBM_WAKE_02_EXEMPTED = (
     "govcon_scan",
     "socmint",
     "failure_triage",
-    "fathomdesk_trap_sweep",
-    "fathomdesk_pc_ratio",
     "nocc_sla_watcher",
     "peering_agreement_renewal",
     "quality",
@@ -115,10 +113,6 @@ EXEMPT: dict[str, str] = {
     # the genesis daemon", and its run() returned no "success" key so registering it
     # would have tripped its breaker in three cycles. Envelope fixed, config block
     # written, name registered — it is now dispatched, so it belongs in neither list.
-    "fathomdesk_news_patterns": "reflex_registry SUPPORT; FathomDesk domain reflex invoked by scheduler script, not daemon-scheduled",
-    "fathomdesk_correlation_monitor": "reflex_registry SUPPORT; FathomDesk domain reflex; outside daemon subset",
-    "fathomdesk_openbb_refresh": "reflex_registry DOMAIN; FathomDesk domain reflex; outside daemon subset",
-    "fathomdesk_fundamentals_sweep": "reflex_registry DOMAIN; FathomDesk domain reflex; outside daemon subset",
     "wf_feedback_aggregation": "reflex_registry SUPPORT; workflow-canvas HITL feedback aggregation; outside daemon subset",
     "wf_ext_poller": "reflex_registry SUPPORT; workflow external-step poller; outside daemon subset",
     "circuit_capacity_monitor": "reflex_registry DOMAIN; CCC network canvas reflex; outside daemon subset",
@@ -172,19 +166,6 @@ EXEMPT: dict[str, str] = {
         "cycle would score a failure), and registration needs an owner decision on the "
         "cadence — risk_tier yellow, and ICDEV_AUTOFIX_ENABLED=true in the live .env means "
         "it would generate LLM patches and commit to autofix/* branches every 30 minutes."
-    ),
-    "fathomdesk_trap_sweep": (
-        "no invoker outside tests. Blocked on PostgreSQL: ad_reflex_cooldowns does not exist "
-        "and _mark_cooldown uses SQLite-only `INSERT OR REPLACE`, so _check_cooldown's "
-        "except-branch returns True forever and the duplicate-suppression guard never "
-        "engages; ad_signals is also empty, so a dispatched sweep would be inert."
-    ),
-    "fathomdesk_pc_ratio": (
-        "no invoker; catalogued in reflex_registry by xbm-wake-02 (it was module + config "
-        "block only). Blocked on PostgreSQL: its _DDL is SQLite-only (INTEGER PRIMARY KEY "
-        "AUTOINCREMENT / datetime('now')) and ad_pc_ratio_history does not exist, so "
-        "_persist_snapshot fails and run() returns success=False whenever the CBOE fetch "
-        "actually succeeds."
     ),
     # --- Invoked on-demand by other subsystems (not daemon-scheduled) ---
     "oracle_triage": "on-demand — invoked by tools/foundry/oracle_verifiers.py (Foundry oracle pipeline), not daemon-scheduled",

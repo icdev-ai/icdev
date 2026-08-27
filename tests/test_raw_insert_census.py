@@ -66,12 +66,18 @@ def test_census_is_clean_on_the_committed_tree(report):
 def test_the_census_is_not_empty(report):
     """A census that measured nothing would pass every assertion above.
 
-    The adoption measurement is 219 sites in 199 files. This asserts the scan
-    still SEES the bypassers rather than silently resolving to zero — a scanner
-    whose scope quietly broke reports a perfectly clean board.
+    The adoption measurement was 219 sites in 199 files. This asserts the scan still SEES
+    the bypassers rather than silently resolving to zero — a scanner whose scope quietly
+    broke reports a perfectly clean board.
+
+    THE FLOORS MOVE DOWN WHEN THE POPULATION REALLY SHRINKS, and only then. xit-rm-02
+    removed the trading and FathomDesk trees from this domain, taking real raw-INSERT
+    writers with them: 203 sites in 187 files now, measured. Lowering the floors by exactly
+    that much keeps the guard doing its job — it still fails on a scanner that collapses to
+    zero or near-zero — while not asserting a population this domain no longer has.
     """
     assert report["total_sites"] >= 200, report["total_sites"]
-    assert report["total_files"] >= 190, report["total_files"]
+    assert report["total_files"] >= 187, report["total_files"]
     assert report["registered"] == report["total_sites"]
 
 

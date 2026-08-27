@@ -441,7 +441,6 @@ tests/test_aiml_twin.py
 tests/test_aisg_wizard.py
 tests/test_alert_dispatcher_secure_log_integration.py
 tests/test_alert_service_dispatch_narrative.py
-tests/test_analyst_panel_phaseC.py
 tests/test_analyzer_connection_binding.py
 tests/test_ansible_emitter.py
 tests/test_anvil_critique.py
@@ -638,7 +637,6 @@ tests/test_dashboard_registry_no_duplicate_blueprint.py
 tests/test_dashboard_template_js_parses.py
 tests/test_dat_ingestion_engine.py
 tests/test_dat_refresh_anomaly.py
-tests/test_data_gateway.py
 tests/test_data_lineage_route.py
 tests/test_databridge_egress.py
 tests/test_dataset_lineage.py
@@ -1196,9 +1194,7 @@ tests/test_nav_misc_01_release_badge.py
 tests/test_nav_misc_02_fail_loud_pass.py
 tests/test_nav_misc_04_cli_repo_resolution.py
 tests/test_nav_misc_05_evidence_page.py
-tests/test_nav_plat_02_broker_guard.py
 tests/test_nav_plat_03_geosigint_provenance.py
-tests/test_nav_plat_04_macro_fail.py
 tests/test_nav_plat_05_gkp_geosigint.py
 tests/test_nav_sec_02_admin_rbac.py
 tests/test_nav_sec_04_hitl_rbac.py
@@ -1274,7 +1270,6 @@ tests/test_openclaw_compat.py
 tests/test_openmetadata_client.py
 tests/test_opportunity_scorer.py
 tests/test_option_period_recommendation.py
-tests/test_options_intent_parser.py
 tests/test_oracle_lens_migration_anomaly.py
 tests/test_oracle_lens_network.py
 tests/test_oracle_migration_lens.py
@@ -1390,7 +1385,6 @@ tests/test_pma_igap_reflex.py
 tests/test_pma_personnel_api.py
 tests/test_pmc_ccc_dsoc_templates.py
 tests/test_poam_auto_generator.py
-tests/test_portfolio_greeks.py
 tests/test_pr_watcher_heartbeat_db.py
 tests/test_preapply_gate.py
 tests/test_premerge_runner.py
@@ -1562,8 +1556,6 @@ tests/test_setup_wizard.py
 tests/test_sharepoint_change_hash.py
 tests/test_siem_alert_forwarder.py
 tests/test_sigma_generator.py
-tests/test_signal_decay.py
-tests/test_signal_tuner.py
 tests/test_simulation_engine.py
 tests/test_sipa_finding_labelling.py
 tests/test_skill_selector.py
@@ -1600,7 +1592,6 @@ tests/test_subsystem_map.py
 tests/test_supply_chain_risk_scorer.py
 tests/test_swagger_ui.py
 tests/test_system_graph_ndc.py
-tests/test_ta_patterns.py
 tests/test_taste_skill_hardprompts.py
 tests/test_team_composition.py
 tests/test_team_orchestrator.py
@@ -1696,8 +1687,6 @@ tests/tools/llm/chain_orchestrator_test.py
 tests/tools/llm/reasoned_codegen_advisor_test.py
 tests/tools/llm/reasoned_codegen_test.py
 tests/tools/ops_hub/test_reasoned_codegen_engine.py
-tests/trading/test_data_quality.py
-tests/trading/test_get_signals_ranked.py
 tests/unit/test_audit_trail.py
 tests/usage_analytics/test_analytics_engine.py
 tests/viz/test_asset_generator.py

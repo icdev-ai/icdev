@@ -1,9 +1,0 @@
-# AlphaDesk Correlation Monitor — anomaly detection threshold defaults
-# All values overridable; AI calibration adjusts these at runtime.
-thresholds:
-  cooldown_hours: 2
-  min_confidence: 0.70
-  min_lagging_count: 2
-  allowed_strengths:
-    - medium
-    - high

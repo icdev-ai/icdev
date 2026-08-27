@@ -69,7 +69,7 @@ raw_insert_census:
   # still-empty board as a failed conversion. 219 -> 207.
   # Remaining autonomous-path debt: 48 entries / 24 sites (38/19 under
   # tools/genesis/reflexes/, plus the ace, chat and awareness writers).
-  raw_insert_max: 207
+  raw_insert_max: 203
 
   # A reason shorter than this is not a reason. Applies to census entries and to
   # the exclusions below.

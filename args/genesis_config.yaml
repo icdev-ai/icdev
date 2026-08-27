@@ -1533,51 +1533,6 @@ reflexes:
       operator: eq  # 0 canvas-level errors means clean cycle
     canvases: [pdc, bdc, ddc, odc, idc]  # NDC and SDC use other pipelines
 
-  # ── FathomDesk Trap Scenarios (Phase 7.10 integration-01) ─────────────────────
-
-  fathomdesk_trap_scenarios:
-    enabled: false   # ICDEV[FT] cutover P3 (2026-08-21): FathomDesk data moved to icdev_ft; IT's copy is frozen (kill switch tripped) and must not drift during the dual run
-    risk_tier: green
-    schedule: "every 1h"
-    interval_seconds: 3600  # 1 hour — match trap_scanner 15m cadence × 4
-    cooldown_minutes: 30    # Minimum gap between consecutive cycles
-    description: "Detect high-confidence trap events (>=0.8) since last run, spawn potential_reversal_cascade scenarios, write daily Pulse digest"
-    success_metric:
-      name: events_found
-      threshold: 0
-      operator: gte  # 0 = no new traps (healthy), >0 = scenarios spawned
-    confidence_threshold: 0.8          # Minimum confidence to spawn a scenario
-    scenario_key: potential_reversal_cascade  # Scenario template to execute per trap
-    digest_status: draft               # Pulse post status for daily digest
-
-  # ── FathomDesk Trap Sweep (Phase 7.12 ad712-trap-02) ──────────────────────────
-
-  fathomdesk_trap_sweep:
-    enabled: false   # ICDEV[FT] cutover P3 (2026-08-21): FathomDesk data moved to icdev_ft; IT's copy is frozen (kill switch tripped) and must not drift during the dual run
-    risk_tier: green
-    schedule: "every 4h"
-    interval_seconds: 14400  # 4 hours — COOLDOWN_HOURS=4 per ad712-trap-02
-    cooldown_minutes: 60     # Minimum gap between consecutive cycles
-    description: "Detect bull/bear trap patterns from signal direction flips, persist to ad_trap_events via ad712-trap-01 insert path (ta_config.yaml thresholds)"
-    success_metric:
-      name: traps_inserted
-      threshold: 0
-      operator: gte  # 0 = no new traps detected (healthy), >0 = events written
-
-  # ── FathomDesk P/C Ratio History (fdmm-pcr-04) ────────────────────────────
-
-  fathomdesk_pc_ratio:
-    enabled: false   # ICDEV[FT] cutover P3 (2026-08-21): FathomDesk data moved to icdev_ft; IT's copy is frozen (kill switch tripped) and must not drift during the dual run
-    risk_tier: green
-    schedule: "daily 06:00"
-    interval_seconds: 86400  # 24 hours — CBOE data is end-of-day
-    cooldown_minutes: 60     # Minimum gap between consecutive cycles
-    description: "Fetch CBOE equity put/call ratio series and append snapshot to ad_pc_ratio_history; backing store for put_call_sentiment confluence pillar"
-    success_metric:
-      name: rows_written
-      threshold: 0
-      operator: gte  # 0 = no new data today (ok), 1 = snapshot stored
-
   # ── Cost Optimizer (Cluster C fd-cost-01/02) ──────────────────────────────
 
   cost_optimizer:

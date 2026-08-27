@@ -121,6 +121,37 @@ run:
 # while the set churns, which is exactly how a gap regrows behind a green gate
 # (see args/ci_test_backlog.txt, which is enumerated for the same reason).
 exemptions:
+  - pattern: "tests/db/test_export_ft_data.py"
+    reason: >-
+      A REMOVAL, NOT A FIX — there is no RED to record because no defect was
+      repaired (xit-rm-02). `excluded_shared` was the set of tables declared by
+      BOTH a FathomDesk source AND the core, and the exporter subtracted it so a
+      cutover could not carry the shared knowledge graph into ICDEV[FT]. This PR
+      deletes tools/fathomdesk and tools/trading, so no FathomDesk source is left
+      to co-declare kg_nodes/kg_edges/kg_graphs/trading_daemon_audit and the set
+      is empty STRUCTURALLY rather than by measurement. Asserting the four old
+      names would assert that the removal never happened. The replacement asserts
+      the invariant those exclusions existed to SERVE — nothing outside the ad_
+      namespace can reach the export set — which is true both before and after,
+      and therefore passes at the merge base BY CONSTRUCTION. The production
+      change under test is the deletion itself, whose evidence is the domain leak
+      gate flipping to `paths: enforce` with 0 denied paths present across 20,719
+      files; a per-file RED cannot exist for code that was removed rather than
+      corrected. Scoped to this ONE file.
+  - pattern: "tests/test_raw_insert_census.py"
+    reason: >-
+      A CENSUS FLOOR TRACKING A POPULATION THAT REALLY SHRANK (xit-rm-02), not a
+      weakened assertion. `test_the_census_is_not_empty` guards against a scanner
+      whose scope quietly broke and reports a perfectly clean board, by requiring
+      the scan still SEE the bypassers. This PR removes the trading and FathomDesk
+      trees, which carried real raw-INSERT writers with them: 187 files now hold
+      one, measured, against a floor of 190 written when they were still present.
+      Lowering the floor to exactly the measured value keeps the guard doing its
+      job — it still fails on a scan that collapses to zero or near-zero — while
+      no longer asserting a population this domain does not have. It passes at the
+      merge base by construction: at that tree the files still exist, so the old
+      floor was satisfied too. `raw_insert_max` moved 205 -> 203 in the same
+      change and only ever moves DOWN. Scoped to this ONE file.
   - pattern: "tests/test_aca_configurator_honesty.py"
     reason: >-
       PURE TEST REPAIR — NO PRODUCTION BEHAVIOUR CHANGED, so nothing here can go

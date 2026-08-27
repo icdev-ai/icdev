@@ -111,7 +111,3 @@ grandfathered:
   # adversarial_verify.py documented but never built
   tools/skills/adversarial_verify.py: "documented but not implemented (oss-fix-02)"
   # documented news pipeline modules never built; only rss_ingestor exists
-  tools/trading/news/aggregator.py: "documented but not implemented (oss-fix-02)"
-  tools/trading/news/classifier.py: "documented but not implemented (oss-fix-02)"
-  tools/trading/news/news_reasoner.py: "documented but not implemented (oss-fix-02)"
-  tools/trading/news/perspective_scorer.py: "documented but not implemented (oss-fix-02)"
