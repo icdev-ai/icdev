@@ -443,6 +443,12 @@ CREATE TABLE IF NOT EXISTS knowledge_patterns (
     source TEXT,
     confidence REAL DEFAULT 0.0,
     occurrence_count INTEGER DEFAULT 1,
+    -- cch-obs-05: how often this pattern was USED to heal something, which is a
+    -- different fact from how often the PROBLEM occurred. knowledge_server.py has
+    -- ordered by, read and incremented it since it was written, against a table that
+    -- never had it -- so every search_knowledge raised `column "use_count" does not
+    -- exist` and the Cortex `kb` backend failed on every resolution.
+    use_count INTEGER DEFAULT 0,
     last_occurrence TIMESTAMP,
     auto_healable BOOLEAN DEFAULT FALSE,
     embedding BLOB,
