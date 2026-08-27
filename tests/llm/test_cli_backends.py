@@ -59,6 +59,11 @@ CREATE TABLE cli_llm_jobs (
     context_id     TEXT,
     input_tokens   INTEGER DEFAULT 0,
     output_tokens  INTEGER DEFAULT 0,
+    -- cch-obs-04: migration 20260827223358 adds these to the live table. A
+    -- hand-written fixture DDL that lags the migration fails every test with
+    -- "no such column", far from the change that caused it.
+    cache_read_input_tokens     INTEGER DEFAULT 0,
+    cache_creation_input_tokens INTEGER DEFAULT 0,
     tenant_id      TEXT,
     classification TEXT DEFAULT 'CUI // SP-CTI',
     created_at     TEXT,

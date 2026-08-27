@@ -155,18 +155,58 @@ def test_the_two_zeroes_are_visibly_distinct(conn):
 # ---------------------------------------------------------------------------
 
 def test_provider_that_reports_no_counters_is_unreported_not_zero(conn):
-    """claude-cli carried 626 calls on the live board and reports nothing.
+    """The rule, now asserted against a provider that genuinely reports nothing.
 
-    Claude Code caches aggressively on the far side of that transport. Calling
-    it 0% would be a fabricated claim about a cache that is very likely working.
+    This used to use `claude-cli`, on the belief that "Claude Code caches aggressively on
+    the far side of that transport" and reports nothing back. HALF of that was wrong, and
+    cch-obs-04 measured which half: the CLI reports `cache_read_input_tokens` and
+    `cache_creation_input_tokens` on every call, and ICDEV's own bridge was parsing `usage`
+    and keeping only input/output. The claim `reports_cache_tokens: false` and the missing
+    evidence agreed with each other because the same pipeline produced both.
+
+    So claude-cli is no longer the example. `ollama` is: it is a local runtime with no
+    prefix-cache concept at all, its zero really is the absence of a number, and calling it
+    0% would fabricate a measurement.
+    """
+    _insert(conn, "ollama", calls=50, cache_read=0)
+
+    row = _by_name(bp.get_provider_effectiveness(conn=conn, window_days=7, now=NOW))["ollama"]
+
+    assert row["calls"] == 50
+    assert row["status"] == bp.STATUS_UNREPORTED
+    assert row["cached_share_pct"] is None
+
+
+def test_claude_cli_zero_is_now_a_measurement_not_an_absence(conn):
+    """The other side of cch-obs-04, and the reason the change is not free.
+
+    Once the counters flow, a zero from claude-cli means "this call got no cache hit" — a
+    real 0%. That is the point. The cost is that the 626 rows written BEFORE the fix also
+    hold 0, and those zeros mean "the bridge dropped the number". They are indistinguishable
+    at the row level, so a window wide enough to reach them reports a measured 0% for calls
+    that were never measured.
+
+    That is bounded rather than hidden: the default window is 7 days and the last claude-cli
+    call was 2026-07-09, so no default view can reach them. The caveat is recorded beside the
+    claim in args/cache_effectiveness.yaml for anyone widening the window.
     """
     _insert(conn, "claude-cli", calls=50, cache_read=0)
 
-    cli = _by_name(bp.get_provider_effectiveness(conn=conn, window_days=7, now=NOW))["claude-cli"]
+    row = _by_name(bp.get_provider_effectiveness(conn=conn, window_days=7, now=NOW))["claude-cli"]
 
-    assert cli["calls"] == 50
-    assert cli["status"] == bp.STATUS_UNREPORTED
-    assert cli["cached_share_pct"] is None
+    assert row["status"] == bp.STATUS_NO_CACHE_HITS
+    assert row["cached_share_pct"] == 0.0
+
+
+def test_claude_cli_reports_a_real_hit_rate_when_the_counters_are_present(conn):
+    """What the fix actually buys: the subscription path becomes measurable."""
+    _insert(conn, "claude-cli", calls=10, input_tokens=100, cache_read=900)
+
+    row = _by_name(bp.get_provider_effectiveness(conn=conn, window_days=7, now=NOW))["claude-cli"]
+
+    assert row["status"] == bp.STATUS_CACHING
+    # DISJOINT accounting: total = input + read + write, so 900 of 1000 came from cache.
+    assert row["cached_share_pct"] == pytest.approx(90.0, abs=0.1)
 
 
 def test_local_provider_shows_latency_not_dollars(conn):

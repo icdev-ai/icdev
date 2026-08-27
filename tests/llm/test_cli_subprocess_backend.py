@@ -53,7 +53,18 @@ class _FakeStore:
     def get_job(self, job_id):
         return self.jobs.get(job_id)
 
-    def complete_job(self, job_id, result, input_tokens=0, output_tokens=0):
+    def complete_job(
+        self,
+        job_id,
+        result,
+        input_tokens=0,
+        output_tokens=0,
+        cache_read_input_tokens=0,
+        cache_creation_input_tokens=0,
+    ):
+        # cch-obs-04: the signature tracks the real job_store. A fake that lags it turns a
+        # kwargs mismatch into a TypeError inside the worker thread, which surfaces as
+        # "the job never completed" rather than as the signature drift it is.
         with self.lock:
             row = self.jobs.get(job_id)
             if row is None:
@@ -63,6 +74,8 @@ class _FakeStore:
                 result=result,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
+                cache_read_input_tokens=cache_read_input_tokens,
+                cache_creation_input_tokens=cache_creation_input_tokens,
             )
             return True
 
