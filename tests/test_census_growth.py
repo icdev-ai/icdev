@@ -330,9 +330,41 @@ def test_an_unsurveyed_census_reports_unmeasurable_not_a_clean_zero(census_repo:
 
 
 def test_the_live_censuses_are_registered() -> None:
-    """The two files this gate is for, named — a registry matching nothing is a
-    gate that runs and guards nothing."""
+    """A registry matching nothing is a gate that runs and guards nothing.
+
+    That is the property, and it is what is asserted: the registry is non-empty, every entry
+    names a file that exists, and the two censuses this gate was BUILT for are still in it.
+
+    It used to assert set EQUALITY against those two. That pinned today's population rather
+    than the property, so registering a third census — which strengthens the gate — failed a
+    test whose own docstring says the danger is a registry guarding too LITTLE. wire-req-01
+    added `args/kanban_seeder_criteria_census.txt` and hit exactly that.
+    """
     registered = {c.path for c in census_growth.CENSUSES}
-    assert registered == {"args/ci_test_backlog.txt", "args/ci_skip_census.txt"}
+    assert registered, "an empty registry is a gate that guards nothing"
+    for original in ("args/ci_test_backlog.txt", "args/ci_skip_census.txt"):
+        assert original in registered, (
+            f"{original} is one of the two censuses this gate was built for; removing it "
+            "would silently stop ratcheting the set it was written to protect"
+        )
     for c in census_growth.CENSUSES:
         assert (REPO_ROOT / c.path).is_file(), f"{c.path} is registered but absent"
+
+
+def test_the_seeder_criteria_census_is_ratcheted() -> None:
+    """wire-req-01's census must be under the SET ratchet, not merely committed.
+
+    It is the named path to arming `KANBAN_REQUIRE_ACCEPTANCE_CRITERIA`: the gate ships
+    `report` because 13 modules — five of them live reflexes seeding `fix` cards every six
+    hours — would raise on their next cycle if it were armed. A file that records that debt
+    but is not ratcheted can grow silently, and then the gate can never be armed at all.
+
+    This is the assertion the relaxation above gave up, put back pointing at the property
+    that actually matters: not "the registry holds exactly these two", but "the file this
+    programme depends on is being watched".
+    """
+    registered = {c.path for c in census_growth.CENSUSES}
+    assert "args/kanban_seeder_criteria_census.txt" in registered, (
+        "the seeder-criteria census is not registered in census_growth.CENSUSES, so it is "
+        "not ratcheted and may gain entries silently"
+    )

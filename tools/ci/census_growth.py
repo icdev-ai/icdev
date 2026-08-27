@@ -148,7 +148,34 @@ class Census:
 
 
 #: The registered censuses. Adding one is a config edit plus its own survey.
+def _names_from_plain_list(text: str) -> set:
+    """One path per line, `#` comments and blanks dropped (wire-req-01).
+
+    The simplest census shape there is. Kept separate from the backlog/skip readers rather
+    than reused: those two strip trailing metadata this file does not have, and sharing a
+    parser would make a change for one silently reinterpret the others.
+    """
+    return {
+        line.strip()
+        for line in text.splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    }
+
+
 CENSUSES = (
+    Census(
+        path="args/kanban_seeder_criteria_census.txt",
+        unit="seeder that creates a build/fix card with no acceptance_criteria",
+        reader=_names_from_plain_list,
+        remedy=(
+            "give the module a real acceptance criterion for the cards it seeds -- what "
+            "would a reader check to know the card was delivered -- and remove its line. "
+            "Draining this file to zero is what lets "
+            "KANBAN_REQUIRE_ACCEPTANCE_CRITERIA move from `report` to `enforce`; a new "
+            "entry is a new seeder whose cards nothing can judge"
+        ),
+        surveyed_commits=None,
+    ),
     Census(
         path="args/ci_test_backlog.txt",
         unit="ungated test module",
