@@ -6,6 +6,8 @@ installation or a live PostgreSQL backend.
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import subprocess
@@ -736,6 +738,111 @@ class TestRecordFailure(unittest.TestCase):
         with patch("icdev.tools.db.storage.get_canvas_connection", return_value=mock_conn):
             record_failure(failure, "run-x")
         mock_conn.close.assert_called_once()
+
+
+class TestMainPersistsTheRun(unittest.TestCase):
+    """`--run` must PERSIST the sweep, and must not file cards uninvited.
+
+    task-qa-sweep-96fa73e9: `main()` ran the whole 65-file suite — 770 tests,
+    ~41m of wall clock — and called neither `record_run` nor
+    `file_failure_tasks`, so the documented CLI measured everything and wrote
+    nothing an hour later anyone could cite. Both seams existed, were exported,
+    were tested in isolation, and were reachable from no runtime path: the
+    declared-but-unconsumed shape, one layer down.
+
+    Filing stays OPT-IN. One shared cause becomes N `qa-fail-*` cards and N
+    duplicate PRs, so a CLI that files by default is a board-spam generator.
+    """
+
+    def _module(self):
+        import importlib
+
+        return importlib.import_module("icdev.tools.testing.qa_agent_runner")
+
+    def _run_main(self, argv, result):
+        mod = self._module()
+        calls = {"record": [], "file": []}
+
+        def fake_run_e2e_suite(**kwargs):
+            return result
+
+        def fake_record_run(res):
+            calls["record"].append(res)
+            return res.run_id
+
+        def fake_file_failure_tasks(failures, run_id, instance_id=""):
+            calls["file"].append((failures, run_id))
+            return ["qa-fail-deadbeef"]
+
+        with patch.object(mod, "run_e2e_suite", fake_run_e2e_suite),                 patch.object(mod, "record_run", fake_record_run),                 patch.object(mod, "file_failure_tasks", fake_file_failure_tasks),                 patch.object(sys, "argv", ["qa_agent_runner.py", *argv]):
+            rc = mod.main()
+        return rc, calls
+
+    def _passing_result(self):
+        r = QARunResult(run_id="qa-test-1", trigger="unit")
+        r.status = STATUS_PASSED
+        r.total = 3
+        r.passed = 3
+        return r
+
+    def _failing_result(self):
+        r = QARunResult(run_id="qa-test-2", trigger="unit")
+        r.status = STATUS_FAILED
+        r.total = 2
+        r.passed = 1
+        r.failed = 1
+        r.failures = [TestFailure(test_name="a > b", error_message="boom")]
+        return r
+
+    def test_run_records_the_sweep_by_default(self):
+        rc, calls = self._run_main(["--run"], self._passing_result())
+        assert rc == 0
+        assert len(calls["record"]) == 1, "main() --run did not call record_run"
+        assert calls["record"][0].run_id == "qa-test-1"
+
+    def test_no_record_opts_out(self):
+        _, calls = self._run_main(["--run", "--no-record"], self._passing_result())
+        assert calls["record"] == []
+
+    def test_failures_do_not_file_cards_unless_asked(self):
+        rc, calls = self._run_main(["--run"], self._failing_result())
+        assert rc == 1
+        assert len(calls["record"]) == 1
+        assert calls["file"] == [], "failures filed kanban cards without --file-failures"
+
+    def test_file_failures_flag_files_them(self):
+        _, calls = self._run_main(["--run", "--file-failures"], self._failing_result())
+        assert len(calls["file"]) == 1
+        failures, run_id = calls["file"][0]
+        assert run_id == "qa-test-2"
+        assert failures[0].test_name == "a > b"
+
+    def test_json_output_reports_both_outcomes(self):
+        mod = self._module()
+        result = self._passing_result()
+        buf = io.StringIO()
+        with patch.object(mod, "run_e2e_suite", lambda **kw: result),                 patch.object(mod, "record_run", lambda res: res.run_id),                 patch.object(sys, "argv", ["qa_agent_runner.py", "--run", "--json"]),                 contextlib.redirect_stdout(buf):
+            mod.main()
+        payload = json.loads(buf.getvalue())
+        assert payload["persistence"]["recorded"] == "qa-test-1"
+        # Never attempted is not the same as attempted and failed.
+        assert payload["persistence"]["filed_tasks"] is None
+        assert payload["persistence"]["record_error"] is None
+
+    def test_a_record_failure_is_reported_never_swallowed(self):
+        mod = self._module()
+        result = self._passing_result()
+        buf = io.StringIO()
+
+        def boom(_res):
+            raise RuntimeError("ace db unreachable")
+
+        with patch.object(mod, "run_e2e_suite", lambda **kw: result),                 patch.object(mod, "record_run", boom),                 patch.object(sys, "argv", ["qa_agent_runner.py", "--run", "--json"]),                 contextlib.redirect_stdout(buf):
+            rc = mod.main()
+        payload = json.loads(buf.getvalue())
+        assert rc == 0, "a persistence failure must not change the suite's verdict"
+        assert payload["persistence"]["recorded"] is None
+        assert "ace db unreachable" in payload["persistence"]["record_error"]
 
 
 if __name__ == "__main__":

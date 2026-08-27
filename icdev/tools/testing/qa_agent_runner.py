@@ -760,6 +760,19 @@ def main() -> int:
         "--batch-size", type=int, default=_BATCH_SIZE,
         help=f"Spec files per Playwright invocation (default: {_BATCH_SIZE})",
     )
+    parser.add_argument(
+        "--record", dest="record", action="store_true", default=True,
+        help="Persist the run to ace_qa_runs (default: on)",
+    )
+    parser.add_argument(
+        "--no-record", dest="record", action="store_false",
+        help="Run the suite without persisting it",
+    )
+    parser.add_argument(
+        "--file-failures", action="store_true",
+        help="File one kanban `fix` card per failure (default: off — one shared "
+             "cause becomes N cards and N duplicate PRs, so filing is opt-in)",
+    )
     parser.add_argument("--json", action="store_true", help="Output JSON")
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
@@ -773,10 +786,40 @@ def main() -> int:
             deadline_seconds=args.deadline_seconds,
             batch_size=args.batch_size,
         )
+        # A sweep the CLI does not persist is a sweep nobody can cite an hour
+        # later: `--run` measured 770 tests and wrote NOTHING to ace_qa_runs,
+        # so every caller that needed step 3/4 of the QA card had to hand-write
+        # a driver around these same two seams. Both outcomes are REPORTED —
+        # `recorded` is None when recording was not attempted, which is never
+        # the same as an attempt that failed.
+        persistence: Dict[str, Any] = {
+            "recorded": None, "record_error": None,
+            "filed_tasks": None, "file_failures_error": None,
+        }
+        if args.record:
+            try:
+                persistence["recorded"] = record_run(result)
+            except Exception as exc:
+                persistence["record_error"] = repr(exc)
+                logger.error("qa_agent_runner: record_run failed: %s", exc)
+        if result.failures and args.file_failures:
+            try:
+                persistence["filed_tasks"] = file_failure_tasks(
+                    result.failures, run_id=result.run_id
+                )
+            except Exception as exc:
+                persistence["file_failures_error"] = repr(exc)
+                logger.error("qa_agent_runner: file_failure_tasks failed: %s", exc)
+
         if args.json:
-            print(json.dumps(result.to_dict(), indent=2))
+            payload = result.to_dict()
+            payload["persistence"] = persistence
+            print(json.dumps(payload, indent=2))
         else:
             print(f"Run {result.run_id}: {result.status} ({result.passed}/{result.total} passed)")
+            print(f"  recorded: {persistence['recorded'] or persistence['record_error'] or 'not attempted'}")
+            if result.failures:
+                print(f"  filed tasks: {persistence['filed_tasks'] if persistence['filed_tasks'] is not None else persistence['file_failures_error'] or 'not attempted (--file-failures is off)'}")
             print(f"  spec files: {len(result.spec_files_run)}/{result.spec_files_total} measured")
             for f in result.failures:
                 print(f"  FAIL: {f.test_name} — {f.error_message[:120]}")
