@@ -177,13 +177,80 @@ def test_award_mission_xp_records_the_mission(fadb):
 # append-only
 # --------------------------------------------------------------------------
 
+def _append_only_tables() -> list[str]:
+    """The names in the hook's `APPEND_ONLY_TABLES` literal, read with `ast`.
+
+    NOT a text window. This assertion used to be
+
+        block = hook[hook.index("APPEND_ONLY_TABLES"):]
+        assert '"fa_xp_ledger"' in block[:8000]
+
+    and it had never passed: `hook.index` matches the FIRST textual occurrence of the name,
+    which is the module docstring's "See APPEND_ONLY_TABLES list in
+    is_append_only_table_modification()" at char 446, while `"fa_xp_ledger"` sits at char
+    11,656 -- 11,210 apart, against an 8,000-char window. The table was correctly registered
+    the whole time; the test was measuring the distance between a sentence and a list.
+
+    Anchoring on the definition instead would only move the cliff, because the list grows
+    every time a table is added, so any window eventually fails for the entries furthest down.
+    Parsing the literal removes the window entirely. `APPEND_ONLY_TABLES` is a LOCAL inside
+    `is_append_only_table_modification()`, so the walk cannot assume module scope.
+    """
+    import ast
+    import pathlib
+
+    source = (pathlib.Path(__file__).resolve().parent.parent
+              / ".claude" / "hooks" / "pre_tool_use.py").read_text(encoding="utf-8")
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(
+            isinstance(t, ast.Name) and t.id == "APPEND_ONLY_TABLES" for t in node.targets
+        ):
+            continue
+        return [
+            e.value for e in getattr(node.value, "elts", [])
+            if isinstance(e, ast.Constant) and isinstance(e.value, str)
+        ]
+    raise AssertionError(
+        "no APPEND_ONLY_TABLES assignment found in .claude/hooks/pre_tool_use.py -- the hook "
+        "that enforces append-only tables has been restructured, which is a bigger finding "
+        "than this test"
+    )
+
+
 def test_the_ledger_is_registered_append_only():
     """Corrections must be compensating rows, or the ledger stops being evidence."""
+    tables = _append_only_tables()
+    assert tables, "the APPEND_ONLY_TABLES literal parsed to nothing"
+    assert "fa_xp_ledger" in tables, (
+        "fa_xp_ledger is not in APPEND_ONLY_TABLES, so an UPDATE or DELETE against the XP "
+        "ledger would not be refused. CLAUDE.md: when adding an append-only table, ALWAYS "
+        f"add it to .claude/hooks/pre_tool_use.py. Registered: {len(tables)} table(s)."
+    )
+
+
+def test_the_registration_check_is_not_position_dependent():
+    """A guard that only sees the top of a growing list is not a guard.
+
+    The predecessor of the test above read a fixed 8,000-character window from the first
+    mention of the name, so whether it passed depended on how far down the list an entry
+    happened to sit. Asserted here against the LAST entry, which is the one any window-based
+    check loses first.
+    """
+    tables = _append_only_tables()
+    assert len(tables) > 20, f"only {len(tables)} table(s) parsed -- the walk found the wrong node"
+    assert tables[-1] in tables  # trivially true; the point is that the LAST entry is reachable
     import pathlib
-    hook = (pathlib.Path(__file__).resolve().parent.parent
-            / ".claude" / "hooks" / "pre_tool_use.py").read_text(encoding="utf-8")
-    block = hook[hook.index("APPEND_ONLY_TABLES"):]
-    assert '"fa_xp_ledger"' in block[:8000]
+
+    source = (pathlib.Path(__file__).resolve().parent.parent
+              / ".claude" / "hooks" / "pre_tool_use.py").read_text(encoding="utf-8")
+    first_mention = source.index("APPEND_ONLY_TABLES")
+    furthest = max(source.index('"%s"' % t) for t in tables if '"%s"' % t in source)
+    assert furthest - first_mention > 8000, (
+        "this test is now vacuous: every entry sits within 8,000 characters of the first "
+        "mention, so the old window would pass and the regression it guards is unreachable"
+    )
 
 
 def test_a_correction_is_a_new_row_not_an_edit(fadb):
