@@ -21,6 +21,7 @@ from tools.workflow.core_api_manifest import (
     CoreApiError,
     _module_all,
     _module_constants,
+    _text_hash,
     collect_surface,
     load_declaration,
     load_manifest,
@@ -201,6 +202,32 @@ def test_constants_are_captured_because_public_api_does_not_capture_them():
     assert set(constants).isdisjoint(callables), (
         "the two derivations must cover different things, or one of them is redundant"
     )
+
+
+def test_a_data_file_hash_ignores_line_endings_but_not_content(tmp_path):
+    """The committed manifest must mean the same thing on Windows and on a Linux runner.
+
+    `schema/tables.yaml` checks out CRLF under `core.autocrlf` and LF on CI, so hashing raw
+    BYTES made the manifest platform-dependent: it was generated on Windows, and every Linux
+    job then reported `schema/tables.yaml: content changed` — eight test failures whose real
+    cause had nothing to do with what they assert. `_public_api` already avoids exactly this
+    for source by comparing an AST (its docstring calls a byte comparison "pure noise"); a
+    data file needs the same care one layer lower.
+    """
+    lf, crlf = tmp_path / "lf.yaml", tmp_path / "crlf.yaml"
+    lf.write_bytes(b"rls_exempt:\n  - a\n  - b\n")
+    crlf.write_bytes(b"rls_exempt:\r\n  - a\r\n  - b\r\n")
+    assert _text_hash(lf) == _text_hash(crlf)
+
+    # A trailing-newline difference is not a content change either.
+    no_eol = tmp_path / "noeol.yaml"
+    no_eol.write_bytes(b"rls_exempt:\n  - a\n  - b")
+    assert _text_hash(lf) == _text_hash(no_eol)
+
+    # ...and a REAL edit still moves it, or the normalisation would hide changes.
+    edited = tmp_path / "edited.yaml"
+    edited.write_bytes(b"rls_exempt:\n  - a\n  - c\n")
+    assert _text_hash(lf) != _text_hash(edited)
 
 
 def test_dunder_all_absent_is_none_not_empty():

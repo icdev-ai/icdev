@@ -1,7 +1,7 @@
 {
   "data_files": {
     "schema/tables.yaml": {
-      "content_hash": "bccddafe8c7c0bd1"
+      "content_hash": "0286daea7800aa52"
     }
   },
   "modules": {
@@ -95,5 +95,5 @@
   "pinned_version": "0.2.0",
   "repo": "icdev-ai/icdev-core",
   "resolution": "installed",
-  "surface_hash": "8c32eb50d01dc897"
+  "surface_hash": "2fe6c79cd070f1bd"
 }

@@ -136,6 +136,23 @@ def package_root(package: str = "icdev.core") -> pathlib.Path:
     return module_source(package).parent
 
 
+def _text_hash(path: pathlib.Path) -> str:
+    """Content hash of a committed TEXT file, independent of line endings.
+
+    NOT ``sha256(read_bytes())``. The same `schema/tables.yaml` checks out CRLF on Windows
+    under ``core.autocrlf`` and LF on a Linux runner, so a byte hash makes the committed
+    manifest platform-dependent: it was generated on Windows and every Linux CI job reported
+    ``schema/tables.yaml: content changed`` -- eight test failures whose real cause was the
+    hash, not the file. ``_public_api`` already avoids exactly this for source (it compares an
+    AST, and its docstring calls a byte comparison "pure noise"); a data file needs the same
+    care, taken one layer lower.
+
+    A trailing-newline difference is likewise not a content change. Real edits still move it.
+    """
+    text = path.read_text(encoding="utf-8").replace("\r\n", "\n").replace("\r", "\n")
+    return hashlib.sha256(text.rstrip("\n").encode("utf-8")).hexdigest()[:16]
+
+
 def _hash(parts: List[str]) -> str:
     digest = hashlib.sha256()
     for part in parts:
@@ -230,9 +247,7 @@ def collect_surface(declaration: Optional[dict] = None) -> dict:
             raise CoreApiError(
                 f"declared data_file {rel} is not present in the installed icdev.core package"
             )
-        data_files[rel] = {
-            "content_hash": hashlib.sha256(path.read_bytes()).hexdigest()[:16]
-        }
+        data_files[rel] = {"content_hash": _text_hash(path)}
 
     return {
         "package": decl.get("package", "icdev-core"),
