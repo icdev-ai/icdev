@@ -57,6 +57,7 @@ from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
 from pathlib import Path
 from typing import Any, Dict, Optional
+from icdev.core.paths import repo_root
 
 # Lazy YAML import (stdlib fallback)
 try:
@@ -68,7 +69,7 @@ except ImportError:
 _CACHE: Dict[str, logging.Logger] = {}
 _CONFIG_CACHE: Optional[Dict[str, Any]] = None
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+BASE_DIR = repo_root(__file__)
 
 
 class _JsonFormatter(logging.Formatter):

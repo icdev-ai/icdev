@@ -306,7 +306,6 @@ tools/compliance/xacta/xacta_export.py::<module>::BASE_DIR
 tools/compliance/xacta/xacta_sync.py::<module>::BASE_DIR
 tools/compliance/xai_assessor.py::XAIAssessor::inline-1
 tools/compliance/xai_assessor.py::XAIAssessor::inline-2
-tools/config/core_profile.py::<module>::BASE_DIR
 tools/config/ideation_frames.py::<module>::inline-1
 tools/config/recipe_loader.py::<module>::inline-1
 tools/coordination/code_identity.py::<module>::BASE_DIR
@@ -755,13 +754,8 @@ tools/llm/model_monitor.py::<module>::BASE_DIR
 tools/llm/output_redactor.py::load_config::inline-1
 tools/llm/prompt_registry.py::<module>::BASE_DIR
 tools/llm/provider_health.py::<module>::BASE_DIR
-tools/llm/response_cache.py::<module>::BASE_DIR
 tools/llm/role_cost_caps.py::<module>::inline-1
-tools/llm/router.py::<module>::BASE_DIR
-tools/llm/router.py::LLMRouter::inline-1
-tools/llm/router.py::_resolve_redaction_fail_closed::inline-1
 tools/llm/tool_result_sanitizer.py::load_config::inline-1
-tools/logging/icdev_logger.py::<module>::BASE_DIR
 tools/maintenance/dependency_scanner.py::<module>::BASE_DIR
 tools/maintenance/disk_audit.py::<module>::BASE_DIR
 tools/maintenance/maintenance_auditor.py::<module>::BASE_DIR

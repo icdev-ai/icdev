@@ -38,6 +38,7 @@ from tools.llm.provider import (
     wants_prefix_cache,
 )
 from tools.llm import cost_budget
+from icdev.core.paths import repo_root
 
 try:
     from tools.llm.response_cache import LLMResponseCache, canonical_key
@@ -47,7 +48,7 @@ except ImportError:
 
 logger = get_logger("icdev.llm.router")
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+BASE_DIR = repo_root(__file__)
 
 # Resolved centrally rather than as BASE_DIR/"args"/... — this module exists twice
 # (tools/llm and icdev/tools/llm) and the naive expression made each copy read a
@@ -125,7 +126,7 @@ def _resolve_redaction_fail_closed(llm_redaction_cfg: dict) -> bool:
     try:
         import yaml  # noqa: PLC0415
 
-        path = Path(__file__).resolve().parents[2] / "args" / "redaction_config.yaml"
+        path = repo_root(__file__) / "args" / "redaction_config.yaml"
         with open(path, encoding="utf-8") as fh:
             return bool((yaml.safe_load(fh) or {}).get("fail_closed", False))
     except Exception as exc:  # pragma: no cover - defensive
@@ -1613,7 +1614,7 @@ class LLMRouter:
             # Append citation instruction if enabled (D-RAG-21)
             citation_block = ""
             if citation_enabled and citation_instruction:
-                citation_path = Path(__file__).resolve().parent.parent.parent / "hardprompts" / "rag_citation.md"
+                citation_path = repo_root(__file__) / "hardprompts" / "rag_citation.md"
                 if citation_path.exists():
                     try:
                         citation_block = "\n" + citation_path.read_text(encoding="utf-8") + "\n"

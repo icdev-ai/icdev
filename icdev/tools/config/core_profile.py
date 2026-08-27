@@ -12,10 +12,11 @@ from pathlib import Path
 from typing import Any
 
 from tools.logging.icdev_logger import get_logger
+from icdev.core.paths import repo_root
 
 logger = get_logger("icdev.core_profile")
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+BASE_DIR = repo_root(__file__)
 DEFAULT_PATH = BASE_DIR / "args" / "core_profiles.yaml"
 
 
