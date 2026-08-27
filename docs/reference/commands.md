@@ -2421,6 +2421,15 @@ python -m tools.kanban.cli --set-status oss-gate-00 done      # RELEASE the card
 # routing: `prem-vfy` prefix in args/kanban_external_repos.yaml.
 python -m tools.kanban.seed_compass_dispatch_probe --dry-run --json   # Validate routing, write nothing
 python -m tools.kanban.seed_compass_dispatch_probe --json             # Seed onto the board
+python -m tools.kanban.seed_compass_dispatch_probe --seed-file args/kanban_seed_ft_dispatch.yaml --dry-run
+python -m tools.kanban.seed_compass_dispatch_probe --seed-file args/kanban_seed_ft_dispatch.yaml
+# NOT compass-specific despite the module name (xit-rm-04): `--seed-file` seeds any dispatch
+# probe. The name stays because renaming touches 11 files across both mirror trees including
+# args/self_root_census.txt. What matters is the routing cross-check -- it refuses to seed unless
+# repo_registry INDEPENDENTLY agrees the id routes where the YAML claims. An unregistered prefix
+# resolves to ICDev, and for a PRIVATE sibling that is not merely wrong: this repo is PUBLIC.
+# The FT probe uses `xft-`, never `ftl-`/`fdx-` -- those are the TRADING streams, held behind
+# their own gate-00 sentinels, because live-trading code is never built unattended.
 # Refuses to seed if the id's prefix does not resolve to the repo the YAML claims
 # (an unregistered prefix defaults to ICDev — that would build a compass task in ICDev).
 # The external repo root must be set where the scheduler runs, else dispatch SKIPs it:
