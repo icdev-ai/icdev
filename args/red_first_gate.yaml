@@ -121,6 +121,25 @@ run:
 # while the set churns, which is exactly how a gap regrows behind a green gate
 # (see args/ci_test_backlog.txt, which is enumerated for the same reason).
 exemptions:
+  - pattern: "tests/ci/test_self_root_census.py"
+    reason: >-
+      A TEST THAT FAILED BECAUSE THE WORK SUCCEEDED, repaired so it cannot do so
+      again (xcore-cut-02). `test_known_shapes_in_the_tree` asserted that
+      `tools/config/core_profile.py::<module>::BASE_DIR` was PRESENT in the
+      census -- a positive control that the scanner detects that shape. This PR
+      migrates that exact site onto repo_root(__file__), which is the census's
+      entire PURPOSE, so the test failed on success. Every name in the census is
+      somebody's future fix; pinning one guarantees a failure each time the
+      census drains. The control is now the SHAPE (some entry ends
+      `::<module>::BASE_DIR`, some entry contains `::inline-`), which is true on
+      BOTH trees by construction and therefore passes at the merge base -- it
+      asserts a property of the SCANNER, not a snapshot of the tree. The NEGATIVE
+      control is deliberately left exact and unexempted in spirit: storage.py's
+      `parents[2]` is the sys.path bootstrap idiom and must never be counted,
+      which is a claim about one named file. There is no RED to record because no
+      defect was repaired -- six self-root sites were migrated, and the evidence
+      for that is the census itself going 1329 -> 1323 with its ceiling lowered
+      to match. Scoped to this ONE file.
   - pattern: "tests/db/test_export_ft_data.py"
     reason: >-
       A REMOVAL, NOT A FIX — there is no RED to record because no defect was
