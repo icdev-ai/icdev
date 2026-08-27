@@ -1967,6 +1967,38 @@ architectures:
 # (PostgreSQL-native with SQLite fallback); context_cache = provider-level
 # KV prefix reuse (cache_control: ephemeral on system prompt + last user msg).
 # -----------------------------------------------------------------------
+# -----------------------------------------------------------------------
+# CLI bridge — routing ICDEV's own LLM calls through the locally authenticated
+# Claude Code CLI, so they pass through LLMRouter and are MEASURED.
+# -----------------------------------------------------------------------
+# WHY THIS KEY EXISTS (cch-obs-06). `activate.should_enable()` is
+# `is_airgap() or not _has_cloud_key()` -- the bridge is a FALLBACK for a
+# keyless or air-gapped host, and there was no way to PREFER it. On a machine
+# holding any of the nine CLOUD_KEY_ENV_VARS the bridge is off, full stop, and
+# the only overrides were unsetting the key (which kills that provider's
+# routing) or a context-scoped per-request call. Neither is an operator
+# decision that survives a restart.
+#
+# Measured on this deployment 2026-08-27: OLLAMA_API_KEY is set, so
+# _has_cloud_key() is True, should_enable() is False, and every one of the last
+# 90 router calls went to ollama_cloud. `anthropic` has ZERO rows in 13,166
+# lifetime ai_telemetry rows and `claude-cli` last appeared 2026-07-09.
+#
+# `prefer` OVERRIDES the auto-detection; it does not disable it. `auto` (the
+# default) is exactly today's behaviour, so an absent key is a complete no-op.
+#
+#   auto    fallback only -- air-gapped, or no cloud key present (default)
+#   prefer  use the Claude CLI even when a cloud key exists
+#   never   never bridge, even air-gapped and keyless
+#
+# THIS BUYS TOKEN STATISTICS, NOT DOLLARS. The CLI is the SUBSCRIPTION path and
+# args/cache_effectiveness.yaml declares it `usd_basis: unpriced` -- there is no
+# per-token bill to save against, and pricing it at the API rate card would
+# invent spend that never happened. What it does buy is real prompt-cache
+# counters (cch-obs-04) and a real hit rate on the provider you actually use.
+cli_bridge:
+  mode: auto
+
 response_cache:
   enabled: true
   backend: postgresql

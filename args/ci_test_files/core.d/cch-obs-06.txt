@@ -1,0 +1,2 @@
+# cch-obs-06 -- an operator can PREFER the CLI bridge, not only fall back to it.
+tests/llm/test_cli_bridge_mode.py
