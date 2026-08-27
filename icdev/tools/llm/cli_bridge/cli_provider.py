@@ -303,6 +303,14 @@ class CLILLMProvider(LLMProvider):
         response.model_id = job.get("model_id") or model_id or DEFAULT_MODEL_ID
         response.input_tokens = int(job.get("input_tokens") or 0)
         response.output_tokens = int(job.get("output_tokens") or 0)
+        # THE LAST HOP (cch-obs-04). `router._log_telemetry` reads these off the response
+        # with `getattr(response, "cache_read_input_tokens", 0)`, so a response that never
+        # sets them records 0 — which is what made all 626 claude-cli rows report no prompt
+        # caching and the dashboard classify the provider `unreported`.
+        response.cache_read_input_tokens = int(job.get("cache_read_input_tokens") or 0)
+        response.cache_creation_input_tokens = int(
+            job.get("cache_creation_input_tokens") or 0
+        )
         response.duration_ms = int((time.time() - start) * 1000)
         response.classification = job.get("classification") or "CUI"
         response.stop_reason = "stop"

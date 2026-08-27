@@ -58,6 +58,8 @@ CREATE TABLE cli_llm_jobs (
     context_id     TEXT,
     input_tokens   INTEGER DEFAULT 0,
     output_tokens  INTEGER DEFAULT 0,
+    cache_read_input_tokens     INTEGER DEFAULT 0,
+    cache_creation_input_tokens INTEGER DEFAULT 0,
     tenant_id      TEXT,
     classification TEXT DEFAULT 'CUI // SP-CTI',
     created_at     TEXT,

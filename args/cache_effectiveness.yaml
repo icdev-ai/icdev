@@ -158,10 +158,38 @@ providers:
   # Claude Code caches aggressively on the far side of this transport, but the
   # CLI returns no usage counters, so we can never say a rate. Reporting these
   # as 0% would be the exact defect this card exists to remove.
+  # cch-obs-04: this WAS declared opaque/n_a/reports_cache_tokens:false, and the
+  # declaration was wrong in a way nothing could catch. Claude Code's result JSON
+  # carries `cache_read_input_tokens` and `cache_creation_input_tokens`; the
+  # adapter read them and folded them into `input_tokens`, so telemetry stored 0
+  # and this file's claim was never contradicted. The adapter now carries them
+  # through raw, so the accounting shape has to be stated correctly too.
+  #
+  # DISJOINT, because it is Anthropic: `input_tokens` excludes both cache reads
+  # and cache writes, and `_split_tokens` adds them back. Declaring `inclusive`
+  # here would subtract cached tokens that were never in the input count.
+  #
+  # usd_basis stays UNPRICED, deliberately. This is the SUBSCRIPTION path, not
+  # the metered API: there is no per-token bill to save against, and pricing it
+  # at the API rate card would invent a dollar figure for spend that never
+  # happened — the exact defect the per-provider split was built to remove.
+  # A saving of None is the honest answer; the token counts are still real.
+  # THE HISTORICAL ROWS ARE NOT MEASUREMENTS, and a wide enough window will read them as
+  # though they were. The 626 claude-cli rows written before 2026-08-27 hold
+  # cache_read_input_tokens = 0 because the bridge DROPPED the number, not because the call
+  # missed the cache; with `reports_cache_tokens: true` those zeros now classify as
+  # `no_cache_hits` (a real measured 0%) rather than `unreported`. They are indistinguishable
+  # at the row level -- 0 is 0.
+  #
+  # BOUNDED, NOT HIDDEN: `window_days` is 7 above and the last claude-cli call was
+  # 2026-07-09, so no default view can reach them. Anyone passing --window-days beyond about
+  # 50 is reading dropped counters as measured misses. Stated here rather than papered over,
+  # in the same spirit as `pricing_verified_on` below.
   claude-cli:
-    capability: opaque
-    token_accounting: n_a
-    reports_cache_tokens: false
+    capability: explicit
+    token_accounting: disjoint
+    reports_cache_tokens: true
+    counters_trustworthy_since: 2026-08-27   # cch-obs-04; rows before this are dropped, not measured
     usd_basis: unpriced
   cli_bridge:
     capability: opaque

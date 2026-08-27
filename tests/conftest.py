@@ -2507,6 +2507,12 @@ CREATE TABLE IF NOT EXISTS cli_llm_jobs (
     context_id     TEXT,
     input_tokens   INTEGER DEFAULT 0,
     output_tokens  INTEGER DEFAULT 0,
+    -- cch-obs-04: migration 20260827223358 adds these. MINIMAL_ICDEV_SCHEMA lagging a
+    -- migration does not fail loudly here: job_store.complete_job catches the resulting
+    -- "no such column" and returns False, so the job simply never reaches `done` and the
+    -- caller times out on its soft-wait -- four cli_provider tests failed that way.
+    cache_read_input_tokens     INTEGER DEFAULT 0,
+    cache_creation_input_tokens INTEGER DEFAULT 0,
     tenant_id      TEXT,
     classification TEXT DEFAULT 'CUI // SP-CTI',
     created_at     TEXT,

@@ -224,8 +224,18 @@ def test_the_json_envelope_is_the_reason_for_that_flag(monkeypatch):
     assert text == "done"
     assert structured["total_cost_usd"] == 0.42
     assert structured["turns"] == 3
-    # cache reads are input tokens too — billed differently, still consumed
-    assert structured["input_tokens"] == 15
+    # cch-obs-04: `input_tokens` is now RAW and the cache counters ride alongside it.
+    # This used to assert 15 — input(10) + cache_read(5) summed — on the reasoning that
+    # "cache reads are input tokens too". True as a statement about consumption, and it
+    # destroyed the only evidence that prompt caching was working: telemetry recorded a
+    # single total and 0 cache reads, so the dashboard called the provider `unreported`.
+    # Anthropic's accounting is DISJOINT, so `by_provider._split_tokens` adds them back
+    # itself; pre-summing here made it count every cached token twice.
+    assert structured["input_tokens"] == 10, "raw, not summed"
+    assert structured["cache_read_input_tokens"] == 5
+    assert structured["cache_creation_input_tokens"] == 0
+    # The old summed meaning, kept under a name that says what it is.
+    assert structured["prompt_tokens_total"] == 15
     assert structured["output_tokens"] == 7
 
 

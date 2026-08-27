@@ -212,6 +212,18 @@ def _run_job(job_id: str) -> None:
             usage = data.get("usage") or {}
             input_tokens = int(usage.get("input_tokens") or 0)
             output_tokens = int(usage.get("output_tokens") or 0)
+            # THE PROMPT-CACHE COUNTERS, which this parser used to drop on the floor
+            # (cch-obs-04). Claude Code reports both; taking only input/output meant
+            # `ai_telemetry.cache_read_input_tokens` was 0 for all 626 claude-cli calls,
+            # and the cache dashboard classified the provider `unreported` — "the
+            # transport reports no counters". The transport reports them fine.
+            #
+            # `input_tokens` above is left RAW. Anthropic's accounting is DISJOINT: it
+            # already excludes both cache reads and writes, and
+            # `by_provider._split_tokens` adds them back itself. Summing here and
+            # declaring `disjoint` would count every cached token twice.
+            cache_read_tokens = int(usage.get("cache_read_input_tokens") or 0)
+            cache_creation_tokens = int(usage.get("cache_creation_input_tokens") or 0)
             if data.get("is_error"):
                 js.fail_job(job_id, text_result)
                 _emit_progress(phase="done", status="failed",
@@ -220,9 +232,12 @@ def _run_job(job_id: str) -> None:
         except (json.JSONDecodeError, ValueError, TypeError):
             text_result = stdout
             input_tokens = output_tokens = 0
+            cache_read_tokens = cache_creation_tokens = 0
 
         js.complete_job(job_id, text_result,
-                        input_tokens=input_tokens, output_tokens=output_tokens)
+                        input_tokens=input_tokens, output_tokens=output_tokens,
+                        cache_read_input_tokens=cache_read_tokens,
+                        cache_creation_input_tokens=cache_creation_tokens)
         _emit_progress(phase="done", status="completed",
                        operation_type="cli_synthesis", operation_id=job_id)
 

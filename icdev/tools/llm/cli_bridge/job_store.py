@@ -158,8 +158,19 @@ def complete_job(
     result: str,
     input_tokens: int = 0,
     output_tokens: int = 0,
+    cache_read_input_tokens: int = 0,
+    cache_creation_input_tokens: int = 0,
 ) -> bool:
-    """Mark a job ``done`` with its result and token counts. Returns success."""
+    """Mark a job ``done`` with its result and token counts. Returns success.
+
+    cch-obs-04: the two cache counters are persisted alongside input/output. Claude Code
+    reports them and the backend used to drop them, so ``ai_telemetry`` recorded 0 for every
+    claude-cli call and the cache dashboard called the provider ``unreported`` — a statement
+    about this pipeline rather than about the transport.
+
+    ``input_tokens`` stays RAW. Anthropic's accounting is DISJOINT, so it already excludes
+    both cache reads and writes and ``by_provider._split_tokens`` adds them back itself.
+    """
     now = _now()
     try:
         with get_connection() as conn:
@@ -167,10 +178,13 @@ def complete_job(
                 """
                 UPDATE cli_llm_jobs
                 SET status = 'done', result = %s, input_tokens = %s, output_tokens = %s,
+                    cache_read_input_tokens = %s, cache_creation_input_tokens = %s,
                     completed_at = %s, updated_at = %s
                 WHERE id = %s
                 """,
-                (result, input_tokens or 0, output_tokens or 0, now, now, job_id),
+                (result, input_tokens or 0, output_tokens or 0,
+                 cache_read_input_tokens or 0, cache_creation_input_tokens or 0,
+                 now, now, job_id),
             )
             return getattr(cur, "rowcount", 0) >= 1
     except Exception as exc:  # pragma: no cover - defensive

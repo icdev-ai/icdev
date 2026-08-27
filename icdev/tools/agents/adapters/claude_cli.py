@@ -148,7 +148,30 @@ def _parse_cli_json(stdout: str) -> Tuple[str, Dict[str, Any]]:
         "turns": payload.get("num_turns") or 0,
         "session_id": payload.get("session_id") or "",
         "total_cost_usd": payload.get("total_cost_usd") or 0.0,
-        "input_tokens": (usage.get("input_tokens") or 0)
+        # THE CACHE COUNTERS ARE CARRIED THROUGH, NOT SUMMED AWAY (cch-obs-04).
+        #
+        # This used to be a single `input_tokens` holding
+        # input + cache_read + cache_creation. The CLI reports all three, and
+        # folding them together destroyed the only evidence that prompt caching
+        # was working at all: `ai_telemetry.cache_read_input_tokens` recorded 0
+        # for every one of the 626 claude-cli calls on this board, and the
+        # cache dashboard therefore classified the provider `unreported` —
+        # "the transport reports no counters" — when the transport reports them
+        # fine and the adapter was discarding them. A declared claim
+        # (`reports_cache_tokens: false` in args/cache_effectiveness.yaml) that
+        # nothing could ever contradict, because the contradiction was thrown
+        # away one layer below.
+        #
+        # `input_tokens` is now RAW, which is what Anthropic's DISJOINT
+        # accounting means and what `by_provider._split_tokens` expects:
+        # it computes total = input + read + write itself. Pre-summing here and
+        # declaring `disjoint` would count every cached token twice.
+        "input_tokens": usage.get("input_tokens") or 0,
+        "cache_read_input_tokens": usage.get("cache_read_input_tokens") or 0,
+        "cache_creation_input_tokens": usage.get("cache_creation_input_tokens") or 0,
+        # The pre-change meaning, kept under its own name so anything that was
+        # reading the summed value still has it and does not silently shrink.
+        "prompt_tokens_total": (usage.get("input_tokens") or 0)
         + (usage.get("cache_read_input_tokens") or 0)
         + (usage.get("cache_creation_input_tokens") or 0),
         "output_tokens": usage.get("output_tokens") or 0,
