@@ -700,7 +700,18 @@ jobs:
           # job paid the full install. (crx-test-05)
           cache: pip
           cache-dependency-path: requirements.txt
+      # `icdev-core` IS NEEDED HERE EVEN THOUGH THIS JOB RUNS NO TESTS (xcore-cut-02).
+      # `python tools/ci/domain_leak_gate.py` imports `tools/__init__.py`, which imports
+      # the LLM router, which imports `tools.logging.icdev_logger`, whose module body does
+      # `from icdev.core.paths import repo_root`. Since this parent stopped shipping
+      # `icdev/core/`, that is an EXTERNAL dependency, and this job's only
+      # `pip install -r requirements.txt` runs in the LAST step -- after the gate. Measured:
+      # `ModuleNotFoundError: No module named 'icdev.core.paths'`.
+      # Installed on its own rather than pulling the whole requirements file in early: this
+      # job is deliberately fast, and the one package is what it actually needs.
       - run: pip install bandit pip-audit
+      - name: Install the shared core (imported by tools/__init__)
+        run: pip install "icdev-core @ git+https://github.com/icdev-ai/icdev-core@v0.2.0"
       - name: SAST (bandit) — 0 high+high findings
         run: bandit -r tools/ -q --severity-level high --confidence-level high
       # xit-leak-01 -- this repository is PUBLIC and the trading domain is moving

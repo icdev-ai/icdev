@@ -843,7 +843,20 @@ def _print_human(report: Dict[str, Any]) -> None:
             print(f"      this tree:  {proof['after']['outcome']} "
                   f"(exit {proof['after']['exit_code']}) {proof['after']['summary']}")
         if proof["status"] == ProofStatus.not_discriminating:
-            for line in proof["before"]["tail"]:
+            # WHICH SIDE EXPLAINS THE VERDICT. `not_discriminating` has two causes and they
+            # are diagnosed from OPPOSITE runs: the test PASSED at the merge base (read the
+            # BEFORE output -- it should have been red), or the test FAILS in THIS tree (read
+            # the AFTER output -- it is broken). Printing `before` unconditionally shows the
+            # merge-base ImportError of a helper the PR adds, which is expected, correct, and
+            # says nothing whatever about the failure being reported. Measured on PR #1958:
+            # the gate said "this tree: 8 failed" and printed the other run's output, so the
+            # only way to see the actual failures was to add this.
+            side = "after" if proof["after"]["outcome"] != RunOutcome.passed else "before"
+            label = "this tree" if side == "after" else "merge-base"
+            tail = proof[side]["tail"]
+            if tail:
+                print(f"      | ---- {label} output ----")
+            for line in tail:
                 print(f"      | {line}")
 
 
