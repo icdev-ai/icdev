@@ -349,3 +349,22 @@ def test_the_live_censuses_are_registered() -> None:
         )
     for c in census_growth.CENSUSES:
         assert (REPO_ROOT / c.path).is_file(), f"{c.path} is registered but absent"
+
+
+def test_the_seeder_criteria_census_is_ratcheted() -> None:
+    """wire-req-01's census must be under the SET ratchet, not merely committed.
+
+    It is the named path to arming `KANBAN_REQUIRE_ACCEPTANCE_CRITERIA`: the gate ships
+    `report` because 13 modules — five of them live reflexes seeding `fix` cards every six
+    hours — would raise on their next cycle if it were armed. A file that records that debt
+    but is not ratcheted can grow silently, and then the gate can never be armed at all.
+
+    This is the assertion the relaxation above gave up, put back pointing at the property
+    that actually matters: not "the registry holds exactly these two", but "the file this
+    programme depends on is being watched".
+    """
+    registered = {c.path for c in census_growth.CENSUSES}
+    assert "args/kanban_seeder_criteria_census.txt" in registered, (
+        "the seeder-criteria census is not registered in census_growth.CENSUSES, so it is "
+        "not ratcheted and may gain entries silently"
+    )
