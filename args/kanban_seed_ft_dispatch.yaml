@@ -1,0 +1,84 @@
+# CUI // SP-CTI
+# Dispatch-proof seed — the one real ICDEV[FT] task behind xit-rm-04
+# ("land one trivial dispatch-proof FT PR to confirm the external-repo path works").
+#
+# Consumed by tools/kanban/seed_compass_dispatch_probe.py --seed-file <this>. That module is
+# named for compass for historical reasons and is not compass-specific; what matters is that it
+# refuses to seed unless `repo_registry.resolve_task_repo` INDEPENDENTLY agrees the id routes to
+# the repo this file claims. An unregistered prefix resolves to ICDev by default, and here that
+# would not merely be wrong — ICDEV[IT] is PUBLIC and ICDEV[FT] is private, so building an FT
+# task in this tree is the xit-leak-01 class reached through the dispatcher.
+#
+# WHY `xft-` AND NOT `ftl-` OR `fdx-`. All three route to icdev_ft, but `ftl-` and `fdx-` are the
+# TRADING streams and stay behind ftl-gate-00 / fdx-gate-00, because
+# args/kanban_external_repos.yaml states the rule this card must not break: live-trading code is
+# never built unattended. `xft-` carries no trading work and no gate, which is exactly what a
+# dispatch probe should exercise.
+#
+# THE PREMISE WAS VERIFIED AGAINST THE TARGET REPO BEFORE SEEDING, which the compass seed's own
+# header demands after its first version asked an agent to badge a README that did not exist.
+# Checked on icdev-ai/icdev_ft @ 6af86d4:
+#   * README.md exists and has a "## Setup (one Windows machine, both parents)" section
+#   * that section says `pip install -e C:\ai\icdev` under a comment reading
+#     "the core, from a sibling checkout, until icdev-core is carved"
+#   * icdev-core IS carved (v0.2.0) and that command now FAILS with
+#     "No matching distribution found for icdev-core>=0.2.0" — the identical error this repo's
+#     own CI hit at icdev_ft#229 before it was fixed
+# So the task is real, small, non-trading, and its fix is already proven in that repo's CI.
+
+task:
+  id: xft-vfy-01
+  title: Update the README setup steps for the carved icdev-core
+  task_type: fix
+  target_repo: icdev-ai/icdev_ft
+  # The registry's logical name for this repo. Stated because it differs from the GitHub
+  # repo name in punctuation and the routing check compares against the registry.
+  registry_repo: icdev_ft
+  complexity: low
+  priority: medium
+  status: backlog
+  description: |
+    README.md's "Setup (one Windows machine, both parents)" section is now WRONG, and
+    following it produces a hard failure rather than a degraded install.
+
+    It says:
+
+        # 1. the core, from a sibling checkout, until icdev-core is carved
+        git clone https://github.com/icdev-ai/icdev C:\ai\icdev
+        pip install -e C:\ai\icdev
+
+    Two things changed (ICDEV[IT] xcore-cut-02, 2026-08-27):
+
+      * icdev-core IS carved. It is a separate distribution at
+        https://github.com/icdev-ai/icdev-core, currently v0.2.0, so the "until it is
+        carved" caveat is stale.
+      * ICDEV[IT] no longer ships `icdev/core` and now DEPENDS on that distribution, which
+        is not on PyPI. So `pip install -e C:\ai\icdev` fails outright with:
+
+            ERROR: Could not find a version that satisfies the requirement
+            icdev-core>=0.2.0 (from icdev) (from versions: none)
+
+    WHAT TO DO. Update the setup steps so they work, matching what this repo's own CI
+    already does in .github/workflows/ci.yml (fixed in #229 — copy from there rather than
+    inventing a different order):
+
+      1. install icdev-core FIRST, from its tag:
+             pip install "icdev-core @ git+https://github.com/icdev-ai/icdev-core@v0.2.0"
+      2. then the ICDEV[IT] checkout, which the 72 modules here that import `tools.*` still
+         need:
+             pip install -e C:\ai\icdev
+      3. state that the ICDEV[IT] checkout must be on PYTHONPATH. Without it, `icdev`
+         resolves to the namespace portion icdev-core installs in site-packages, ICDEV[IT]'s
+         `icdev/__init__.py` never runs, and every `import tools.X` dies with
+         "ModuleNotFoundError: No module named 'tools'" — silently, because `icdev` still
+         imports.
+
+    Also drop the "until icdev-core is carved" comment, and say plainly that the ICDEV[IT]
+    checkout is still required for its `tools/` tree (32 modules here import `icdev.core`,
+    which the package now supplies; 72 import `tools.*`, which nothing else does).
+
+    SCOPE: README.md only. Do not change CI, pyproject or any code — the CI is already
+    correct and is the reference for these instructions.
+
+    ACCEPTANCE: a reader following the README on a clean machine can install both parents
+    and `python -c "import tools.db.storage, icdev.core.paths"` succeeds.

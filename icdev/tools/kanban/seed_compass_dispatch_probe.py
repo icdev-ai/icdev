@@ -1,8 +1,16 @@
 # CUI // SP-CTI
-"""Seed the single compass task that proves repo-aware dispatch (ked-vfy-01).
+"""Seed the one task that proves repo-aware dispatch to an external repo (ked-vfy-01).
 
-Reads the task definition from ``args/kanban_seed_compass_dispatch.yaml`` and
-inserts it via ``task_factory.create_tasks`` (never a raw INSERT).
+Reads the task definition from ``args/kanban_seed_compass_dispatch.yaml`` by
+default, or from ``--seed-file``, and inserts it via ``task_factory.create_tasks``
+(never a raw INSERT).
+
+NOT COMPASS-SPECIFIC despite the module name (xit-rm-04). The only compass-shaped
+things here were a default path and one error string; everything that matters --
+refusing to seed unless the resolver independently agrees the task routes where
+the YAML claims -- is what any external probe needs. The name is kept because
+renaming would touch 11 files across both mirror trees including
+``args/self_root_census.txt``, and churn on a census entry buys nothing.
 
 Why this validates before it seeds
 ----------------------------------
@@ -20,6 +28,8 @@ safe state to seed into, so it is a warning here, not an error.
 Usage:
     python -m tools.kanban.seed_compass_dispatch_probe --dry-run --json
     python -m tools.kanban.seed_compass_dispatch_probe --json
+    python -m tools.kanban.seed_compass_dispatch_probe \
+        --seed-file args/kanban_seed_ft_dispatch.yaml --dry-run
 """
 from __future__ import annotations
 
@@ -62,14 +72,18 @@ def check_routing(task: dict[str, Any]) -> dict[str, Any]:
     """
     task_id = str(task["id"])
     # "icdev-ai/compass" -> "compass", the logical repo name used by the registry.
-    claimed = str(task["target_repo"]).rsplit("/", 1)[-1]
+    # The registry's logical name need not equal the GitHub repo name -- ICDEV[FT] is
+    # `icdev_ft` in args/kanban_external_repos.yaml and `icdev-ai/icdev_ft` on the forge --
+    # so the seed may state the logical name in `registry_repo` when the two differ.
+    claimed = str(task.get("registry_repo") or task["target_repo"]).rsplit("/", 1)[-1]
     target = resolve_task_repo(task_id)
 
     if not target.is_external:
         raise ValueError(
             f"{task_id!r} resolves to ICDev, not {claimed!r}. Its prefix is not "
             f"registered in args/kanban_external_repos.yaml — seeding now would "
-            f"build a compass task inside ICDev's tree."
+            f"build a {claimed} task inside ICDev's own tree. For a private sibling "
+            f"that is also a disclosure: this repository is PUBLIC."
         )
     if target.name != claimed:
         raise ValueError(
@@ -104,14 +118,19 @@ def _to_spec(task: dict[str, Any]) -> dict[str, Any]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Seed the compass dispatch-proof task")
+    ap = argparse.ArgumentParser(description="Seed a dispatch-proof task")
+    ap.add_argument(
+        "--seed-file", default=None,
+        help="task definition YAML (default: args/kanban_seed_compass_dispatch.yaml)",
+    )
     ap.add_argument("--dry-run", action="store_true",
                     help="Validate the seed and its routing; write nothing")
     ap.add_argument("--json", action="store_true", help="Machine-readable output")
     args = ap.parse_args(argv)
 
     try:
-        task = load_seed()
+        seed_path = Path(args.seed_file).resolve() if args.seed_file else None
+        task = load_seed(seed_path)
         routing = check_routing(task)
     except (OSError, ValueError, yaml.YAMLError) as exc:
         result = {"ok": False, "error": str(exc)}
