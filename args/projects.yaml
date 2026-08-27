@@ -7547,6 +7547,9 @@ projects:
   - key: watch
     title: WATCH — Report what is AWAITING MERGE, and why each PR is not merging
     priority: high
+  - key: extrepo
+    title: EXTREPO - external-repo tasks reach their own repo
+    priority: medium
 - key: sdt
   name: SDT - Slides Deck-Type Vocabulary Repair
   description: 'Carded out of TSR. tsr-dash-01-d5 found, and its merged report
@@ -8832,6 +8835,12 @@ projects:
   - key: pin
     title: PIN - parents consume a pinned icdev-core
     priority: medium
+  - key: cut
+    title: CUT - the parent stops shipping icdev/core
+    priority: medium
+  - key: dec
+    title: DEC - the core boundary decision
+    priority: medium
 - key: xft
   name: XFT - ICDEV[FT], the financial-trading parent
   description: 'A second PARENT (not a child app) in a separate PRIVATE repo: ingests open
@@ -8894,6 +8903,9 @@ projects:
     priority: high
   - key: data
     title: DATA - FathomDesk data migration
+    priority: medium
+  - key: vfy
+    title: VFY - dispatch proof for the external-repo path
     priority: medium
 - key: fdx
   name: FDX - FathomDesk decision engine into ICDEV[FT]
@@ -9113,4 +9125,28 @@ projects:
     priority: high
   - key: repl
     title: REPL - stock replacement, deep ITM calls on Q1 so the book funds ten names not one
+    priority: medium
+  - key: budget
+    title: BUDGET - daily budget as a fraction of account balance
+    priority: medium
+  - key: claims
+    title: CLAIMS - a claim verifier for FT
+    priority: medium
+  - key: liveev
+    title: LIVEEV - predicted vs realised on the live book
+    priority: medium
+  - key: mkt
+    title: MKT - crypto as an asset class on /markets
+    priority: medium
+  - key: opt
+    title: OPT - options expression of the stock signal, measured
+    priority: medium
+  - key: oqual
+    title: OQUAL - chain quality measured, overlay closed
+    priority: medium
+  - key: put
+    title: PUT - the SPY put hedge, measured
+    priority: medium
+  - key: ramp
+    title: RAMP - raise the daily delta meter so the book assembles
     priority: medium
