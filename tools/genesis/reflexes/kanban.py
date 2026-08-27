@@ -1984,7 +1984,7 @@ def _capture_diff_stats(task_id: str) -> dict:
     try:
         result = _sp.run(
             ["git", "diff", "--stat", f"{_default_base_ref()}..{branch}"],
-            cwd=str(BASE_DIR),
+            cwd=str(_task_repo_root(task_id)),
             capture_output=True,
             text=True,
             timeout=15,
@@ -2033,7 +2033,7 @@ def _post_merge_route_smoke(task_id: str, commit_summary: str) -> None:
         import subprocess as _sp3
         _flist = _sp3.run(
             ["git", "diff", "--name-only", "HEAD~1", "HEAD"],
-            cwd=str(BASE_DIR),
+            cwd=str(_task_repo_root(task_id)),
             capture_output=True,
             text=True,
             timeout=10,
@@ -2137,7 +2137,7 @@ def _ensure_pr_base(pr_ref: str, task_id: str) -> str | None:
     try:
         view = _sp.run(
             ["gh", "pr", "view", pr_ref, "--json", "baseRefName,url"],
-            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+            cwd=str(_task_repo_root(task_id)), capture_output=True, text=True, timeout=30,
         )
         if view.returncode != 0:
             logger.warning(
@@ -2156,7 +2156,7 @@ def _ensure_pr_base(pr_ref: str, task_id: str) -> str | None:
         )
         edit = _sp.run(
             ["gh", "pr", "edit", pr_ref, "--base", default_branch],
-            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+            cwd=str(_task_repo_root(task_id)), capture_output=True, text=True, timeout=30,
         )
         if edit.returncode != 0:
             logger.warning(
@@ -7022,7 +7022,7 @@ def _git_worktree_has_real_changes(task_id: str) -> Tuple[bool, str]:
                  "--name-only", "--pretty=format:"],
                 capture_output=True, text=True,
                 encoding="utf-8", errors="replace",
-                cwd=str(BASE_DIR), timeout=10,
+                cwd=str(_task_repo_root(task_id)), timeout=10,
             )
             files = [
                 ln.strip() for ln in (r.stdout or "").splitlines() if ln.strip()
@@ -7079,7 +7079,7 @@ def _git_worktree_has_real_changes(task_id: str) -> Tuple[bool, str]:
                  "--name-only", "--pretty=format:"],
                 capture_output=True, text=True,
                 encoding="utf-8", errors="replace",
-                cwd=str(BASE_DIR), timeout=10,
+                cwd=str(_task_repo_root(task_id)), timeout=10,
             )
             main_files = [
                 ln.strip() for ln in (r.stdout or "").splitlines() if ln.strip()
@@ -7435,7 +7435,7 @@ def _run_verify_checks(task_id, claude_output):
             text=True,
             encoding="utf-8",
             errors="replace",
-            cwd=str(BASE_DIR),
+            cwd=str(_task_repo_root(task_id)),
             timeout=10,
         )
         worktree_commits = result.stdout.strip()
@@ -7450,7 +7450,7 @@ def _run_verify_checks(task_id, claude_output):
                 r2 = _sp.run(
                     ["git", "log", f"{dispatch_baseline}..HEAD", "--oneline"],
                     capture_output=True, text=True, encoding="utf-8", errors="replace",
-                    cwd=str(BASE_DIR), timeout=10,
+                    cwd=str(_task_repo_root(task_id)), timeout=10,
                 )
                 main_advanced = r2.stdout.strip()
                 if main_advanced:
@@ -7477,7 +7477,7 @@ def _run_verify_checks(task_id, claude_output):
             text=True,
             encoding="utf-8",
             errors="replace",
-            cwd=str(BASE_DIR),
+            cwd=str(_task_repo_root(task_id)),
             timeout=10,
         )
         if result.stdout.strip():
@@ -7788,7 +7788,7 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
                          f"kanban/{task_id}", "tools/"],
                         capture_output=True, text=True,
                         encoding="utf-8", errors="replace",
-                        cwd=str(BASE_DIR), timeout=10,
+                        cwd=str(_task_repo_root(task_id)), timeout=10,
                     )
                     if r.returncode == 0:
                         shard_files = [
@@ -7802,7 +7802,7 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
                                 ["git", "show", f"kanban/{task_id}:{sf}"],
                                 capture_output=True, text=True,
                                 encoding="utf-8", errors="replace",
-                                cwd=str(BASE_DIR), timeout=10,
+                                cwd=str(_task_repo_root(task_id)), timeout=10,
                             )
                             if sr.returncode == 0:
                                 chunks.append(sr.stdout)
@@ -7955,7 +7955,7 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
                      f"kanban/{task_id}", "--", "tools/db/", "tools/"],
                     capture_output=True, text=True,
                     encoding="utf-8", errors="replace",
-                    cwd=str(BASE_DIR), timeout=15,
+                    cwd=str(_task_repo_root(task_id)), timeout=15,
                 )
                 found = r.returncode == 0 and bool(r.stdout.strip())
             except Exception:
@@ -7968,7 +7968,7 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
                          "tools/db/", "tools/"],
                         capture_output=True, text=True,
                         encoding="utf-8", errors="replace",
-                        cwd=str(BASE_DIR), timeout=15,
+                        cwd=str(_task_repo_root(task_id)), timeout=15,
                     )
                     found = r.returncode == 0 and bool(r.stdout.strip())
                 except Exception as _ll_exc:
@@ -8100,7 +8100,7 @@ def _run_post_task_validation(task_id: str) -> Tuple[bool, str, Dict[str, Any]]:
         result = _sp.run(
             ["git", "diff", "--name-only", f"{_default_base_ref()}...{branch_name}"],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
-            cwd=str(BASE_DIR), timeout=15,
+            cwd=str(_task_repo_root(task_id)), timeout=15,
         )
         modified = [line.strip() for line in result.stdout.splitlines() if line.strip()]
     except Exception:
@@ -8248,7 +8248,7 @@ def _verify_task_completed(task_id, claude_output):
                 diff = _sp.run(
                     ["git", "diff", "--name-only", f"{_default_base_ref()}...kanban/{task_id}"],
                     capture_output=True, text=True, encoding="utf-8", errors="replace",
-                    cwd=str(BASE_DIR), timeout=15,
+                    cwd=str(_task_repo_root(task_id)), timeout=15,
                 )
                 modified_files = [ln.strip() for ln in diff.stdout.splitlines() if ln.strip()]
 
