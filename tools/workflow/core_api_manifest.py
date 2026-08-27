@@ -375,6 +375,28 @@ def verify() -> dict:
     }
 
 
+def repo_path_for(module: str) -> str:
+    """Where the core REPOSITORY stores *module*, derived from the dotted name.
+
+    NOT the manifest's `path` field. Since xcore-cut-02 that field is relative to the INSTALLED
+    package's parent -- `core/paths.py`, because the installed root is `site-packages/icdev/core`
+    -- while the repository stores `icdev/core/paths.py`. Passing the local spelling to the forge
+    asks for a file that does not exist there, and every module comes back 404.
+
+    That is not a hypothetical: after the cut, `--verify-upstream` reported four of five modules
+    "absent from icdev-ai/icdev-core@v0.2.0" while all five were plainly in the tag. A tool whose
+    job is to answer "does the published core still match" reporting the core as MISSING is worse
+    than one that says nothing -- it reads as a broken release. It never failed CI because this
+    comparison is deliberately never gated (it needs the network), so nothing caught it.
+
+    Deriving from the MODULE NAME is immune: it is the same string the import system uses, and it
+    cannot drift when the manifest changes how it records local paths.
+    """
+    if module == "icdev.core":
+        return "icdev/core/__init__.py"
+    return module.replace(".", "/") + ".py"
+
+
 def _fetch_upstream(repo: str, rel: str, ref: str) -> Optional[str]:
     proc = subprocess.run(
         ["gh", "api", f"repos/{repo}/contents/{rel}?ref={ref}", "--jq", ".content"],
@@ -426,7 +448,7 @@ def verify_upstream(ref: Optional[str] = None) -> dict:
 
     findings: List[str] = []
     for module, entry in sorted(collect_surface(decl)["modules"].items()):
-        remote = _fetch_upstream(repo, entry["path"], ref)
+        remote = _fetch_upstream(repo, repo_path_for(module), ref)
         if remote is None:
             findings.append(f"{module}: absent from {repo}@{ref}")
             continue

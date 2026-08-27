@@ -28,6 +28,7 @@ from tools.workflow.core_api_manifest import (
     manifest_path,
     module_source,
     package_root,
+    repo_path_for,
     render_manifest,
     undeclared_core_modules,
     verify,
@@ -378,6 +379,59 @@ def test_a_tree_scan_that_finds_no_core_import_warns(monkeypatch):
 # ---------------------------------------------------------------------------
 # One derivation of "the public API", not two
 # ---------------------------------------------------------------------------
+
+
+def test_the_repo_path_is_derived_from_the_module_name_not_the_manifest():
+    """The upstream comparison asks the forge for a path the REPOSITORY uses.
+
+    Since xcore-cut-02 the manifest's `path` is relative to the INSTALLED package's parent
+    (`core/paths.py`, because the installed root is `site-packages/icdev/core`), while the
+    repository stores `icdev/core/paths.py`. Handing the local spelling to the forge asks for a
+    file that is not there.
+
+    MEASURED: after the cut, `--verify-upstream` reported four of five modules "absent from
+    icdev-ai/icdev-core@v0.2.0" while all five were plainly in that tag — a tool whose job is
+    "does the published core still match" reporting the core as MISSING. It never failed CI
+    because that comparison is deliberately never gated, so nothing caught it.
+    """
+    assert repo_path_for("icdev.core") == "icdev/core/__init__.py"
+    assert repo_path_for("icdev.core.paths") == "icdev/core/paths.py"
+    assert repo_path_for("icdev.core.sensitivity") == "icdev/core/sensitivity.py"
+
+    # And it must NOT agree with the local spelling, or the bug is back.
+    manifest = load_manifest() or {}
+    for module, entry in (manifest.get("modules") or {}).items():
+        local = entry.get("path", "")
+        assert repo_path_for(module).startswith("icdev/"), module
+        if not local.startswith("icdev/"):
+            assert repo_path_for(module) != local, (
+                f"{module}: the repo path equals the manifest's local path {local!r}; the "
+                "upstream comparison would ask the forge for a file that is not there"
+            )
+
+
+def test_verify_upstream_does_not_use_the_manifests_local_path():
+    """Structural, because the behavioural test above cannot run without the network.
+
+    A future edit that reaches for `entry["path"]` again inside the upstream comparison
+    reintroduces the same 404-for-every-module failure, silently, in a code path no gate runs.
+    """
+    import ast
+
+    source = (REPO_ROOT / "tools/workflow/core_api_manifest.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    target = next(
+        (n for n in ast.walk(tree)
+         if isinstance(n, ast.FunctionDef) and n.name == "verify_upstream"),
+        None,
+    )
+    assert target is not None, "verify_upstream has been renamed — re-check its path handling"
+    body = ast.get_source_segment(source, target) or ""
+    assert 'entry["path"]' not in body, (
+        "verify_upstream reads the manifest's local `path`, which since xcore-cut-02 is "
+        "package-relative and not what the repository stores. Use repo_path_for(module)."
+    )
+    assert "repo_path_for(" in body, "verify_upstream must derive the repo path from the module"
 
 
 def test_the_manifest_reuses_public_api_and_does_not_reimplement_it():
