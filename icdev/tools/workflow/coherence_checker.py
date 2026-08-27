@@ -10097,6 +10097,250 @@ def check_self_rooting(changed_files: Optional[List[Path]] = None) -> CoherenceC
         actual,
     )
 
+# ---------------------------------------------------------------------------
+# check_core_api (xcore-api-01) — this parent vs the PINNED shared core
+# ---------------------------------------------------------------------------
+
+
+def _core_api_check(status: str, message: str, actual: List[str], missing: List[str]) -> CoherenceCheck:
+    return CoherenceCheck(
+        check_id="core_api",
+        check_name="Shared core API parity",
+        status=status,
+        expected=["every icdev.core import resolves to a symbol the pinned core exports"],
+        actual=actual,
+        missing=missing,
+        extra=[],
+        message=message,
+    )
+
+
+_CORE_IMPORT_PREFIX = "icdev.core"
+
+
+def _core_imports(paths: List[Path]) -> List[Tuple[str, str, str, int]]:
+    """Every ``icdev.core`` import in *paths* as (file, module, name, line).
+
+    ``name`` is "" for a bare ``import icdev.core.x``: there is no symbol to
+    check, only the module.
+    """
+    found: List[Tuple[str, str, str, int]] = []
+    for path in paths:
+        try:
+            rel = path.relative_to(PROJECT_ROOT).as_posix()
+        except ValueError:
+            rel = path.as_posix()
+        if rel.startswith("icdev/core/"):
+            continue  # the core does not consume its own published surface
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+        except (SyntaxError, OSError):
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module and (
+                node.module == _CORE_IMPORT_PREFIX
+                or node.module.startswith(_CORE_IMPORT_PREFIX + ".")
+            ):
+                for alias in node.names:
+                    found.append((rel, node.module, alias.name, node.lineno))
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name == _CORE_IMPORT_PREFIX or alias.name.startswith(
+                        _CORE_IMPORT_PREFIX + "."
+                    ):
+                        found.append((rel, alias.name, "", node.lineno))
+    return found
+
+
+def check_core_api(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """xcore-api-01 — does this parent call a symbol the PINNED core exports?
+
+    ``icdev-core`` is a separate repository holding the modules BOTH parents
+    need. This parent no longer owns that code outright, so "it imports fine
+    here" stopped being evidence: the checkout has ``icdev/core/`` sitting in
+    the tree, and the wheel FT installs may export something else entirely. The
+    committed ``args/core_api_manifest.json`` is what makes the question
+    answerable on a runner that checks out neither the package nor the sibling
+    parent — the same remedy, for the same repo topology, that
+    ``args/vendor_api_manifest.json`` (ctx-enf-01) exists for.
+
+    THREE FINDINGS, THREE DIFFERENT REPAIRS, so they are never merged:
+
+      * the manifest is STALE — a core module's surface moved and nobody
+        republished. Repair: regenerate, publish, bump ``pinned_version``.
+      * an import names a symbol the pinned core does NOT export. Repair: stop
+        calling it, or ship it in the package. This is the card's case.
+      * an import names a ``parent_local`` module (``icdev.core.shim``). It
+        resolves HERE because the file is in this checkout and will NOT resolve
+        from the installed wheel alone. REPORTED, never failed — the declaration
+        says it is deliberate, and this parent is entitled to its own modules
+        under its own tree.
+
+    ``warn``, never ``pass``, whenever the manifest or the declaration cannot be
+    read: "did not run" must not read as "found nothing". A diff that touches no
+    Python file cannot introduce a core import, and passes without scanning.
+    """
+    try:
+        from tools.workflow.core_api_manifest import (
+            CORE_API_MANIFEST,
+            load_manifest,
+            verify,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _core_api_check(
+            "warn",
+            f"tools/workflow/core_api_manifest.py could not be imported ({exc}) — the "
+            "shared-core API was NOT verified. This is 'unmeasured', not 'clean'.",
+            [f"import failed: {exc}"],
+            [],
+        )
+
+    try:
+        # verify() reads the declaration itself (collect_surface ->
+        # load_declaration) and reports a CoreApiError as result["error"], so a
+        # broken declaration lands on the `warn` branch below. The outer except
+        # is for everything that is NOT a CoreApiError.
+        result = verify()
+        manifest = load_manifest()
+    except Exception as exc:  # noqa: BLE001
+        return _core_api_check(
+            "warn",
+            f"the core API declaration could not be read ({exc}) — NOT verified.",
+            [f"declaration failed: {exc}"],
+            [],
+        )
+
+    if result["error"]:
+        return _core_api_check(
+            "warn",
+            f"{result['error']} — the shared-core API was NOT verified.",
+            [result["error"]],
+            [],
+        )
+    if manifest is None:
+        return _core_api_check(
+            "warn",
+            f"{CORE_API_MANIFEST} is absent or unparseable — NOT verified. Generate it with "
+            "`python tools/workflow/core_api_manifest.py --write`.",
+            ["manifest unreadable"],
+            [],
+        )
+
+    missing: List[str] = []
+    for line in result["drift"]:
+        missing.append(
+            f"MANIFEST STALE: {line}  ->  `python tools/workflow/core_api_manifest.py --write`, "
+            "then publish and bump pinned_version"
+        )
+    for module in result["undeclared_core_modules"]:
+        missing.append(
+            f"UNDECLARED: {module} is under the core source root but appears in neither "
+            "`exports` nor `parent_local` in args/core_api.yaml — it would ship to neither "
+            "parent, and nothing would say so"
+        )
+
+    exports: Dict[str, dict] = manifest.get("modules", {})
+    parent_local = set(manifest.get("parent_local") or [])
+    # A submodule is importable BY NAME from its package: `from icdev.core import
+    # paths` binds a module, not a symbol, and no amount of reading paths.py's
+    # callables will find it.
+    submodules = {m for m in exports if m.count(".") > _CORE_IMPORT_PREFIX.count(".")}
+
+    targets: List[Path] = []
+    for subdir in ("tools", "icdev", "tests"):
+        targets.extend(_scan_targets(changed_files, subdir))
+    targets = sorted(set(targets))
+
+    if changed_files and not targets:
+        return _core_api_check(
+            "pass",
+            "this change touches no Python file under tools/, icdev/ or tests/, so it "
+            "cannot introduce an import of the shared core.",
+            [f"manifest in sync at {manifest.get('pinned_version')}"],
+            missing,
+        ) if not missing else _core_api_check(
+            "fail",
+            "the committed core API manifest does not describe this tree.",
+            [f"manifest at {manifest.get('pinned_version')}"],
+            missing,
+        )
+
+    imports = _core_imports(targets)
+    local_notes: List[str] = []
+    for rel, module, name, lineno in imports:
+        # `from icdev.core import shim` matches on the SYMBOL, not the module —
+        # name the one that actually matched, or the note reads as though
+        # `icdev.core` itself were parent-local.
+        resolved_local = (
+            module if module in parent_local
+            else (f"{module}.{name}" if f"{module}.{name}" in parent_local else None)
+        )
+        if resolved_local:
+            local_notes.append(
+                f"{rel}:{lineno} imports {resolved_local} — parent-local, so it resolves "
+                "from this checkout and NOT from the installed package"
+            )
+            continue
+        if module not in exports:
+            missing.append(
+                f"{rel}:{lineno}  imports {module}, which the pinned core "
+                f"{manifest.get('package')}=={manifest.get('pinned_version')} does not export "
+                "— declare it in args/core_api.yaml or stop importing it"
+            )
+            continue
+        if not name:
+            continue  # `import icdev.core.paths` — the module is exported; nothing more to check
+        entry = exports[module]
+        # `name(...)` for a function, `class Name` for a class, plus constants
+        # and submodules. Compared on the NAME, because a signature change is
+        # the manifest's business and an import only binds the name.
+        callables = {s.split("(")[0].removeprefix("class ").strip() for s in entry.get("symbols", [])}
+        known = callables | set(entry.get("constants", [])) | {
+            m.rsplit(".", 1)[1] for m in submodules if m.rsplit(".", 1)[0] == module
+        }
+        if name != "*" and name not in known:
+            missing.append(
+                f"{rel}:{lineno}  imports {name} from {module}, which the pinned core "
+                f"{manifest.get('package')}=={manifest.get('pinned_version')} does not export"
+            )
+
+    scope = "diff" if changed_files else "tree"
+    actual = [
+        f"{len(imports)} icdev.core import(s) in {len(targets)} file(s), {scope} scope",
+        f"manifest {manifest.get('pinned_version')} — {len(exports)} exported module(s), "
+        f"{len(parent_local)} parent-local",
+    ]
+    actual.extend(local_notes[:20])
+    if len(local_notes) > 20:
+        actual.append(f"... and {len(local_notes) - 20} more parent-local import(s)")
+
+    if missing:
+        return _core_api_check(
+            "fail",
+            f"{len(missing)} shared-core API finding(s) — this parent's imports and the "
+            "pinned core disagree.",
+            actual,
+            missing,
+        )
+    if not imports and not changed_files:
+        # A tree scan that found NOTHING to check has not verified anything.
+        return _core_api_check(
+            "warn",
+            "no icdev.core import was found anywhere in the tree — the parent-side half of "
+            "this check verified nothing. That is 'unmeasured', not 'clean'.",
+            actual,
+            [],
+        )
+    note = f"; {len(local_notes)} parent-local import(s) reported" if local_notes else ""
+    return _core_api_check(
+        "pass",
+        f"every icdev.core import resolves to a symbol {manifest.get('package')}=="
+        f"{manifest.get('pinned_version')} exports{note}.",
+        actual,
+        [],
+    )
+
+
 CHECK_REGISTRY = {
     "bootstrap_parity": check_bootstrap_parity,
     "mirror_parity": check_mirror_parity,
@@ -10160,6 +10404,7 @@ CHECK_REGISTRY = {
     "board_writer_census": check_board_writer_census,
     "schema_ownership": check_schema_ownership,
     "self_rooting": check_self_rooting,
+    "core_api": check_core_api,
 }
 
 
@@ -10198,6 +10443,12 @@ HEAVY_CHECKS: Dict[str, Tuple[str, ...]] = {
     # xit-decl-03: a full-tree scan parses every module under tools/; with a
     # diff it is scoped to the touched files and costs milliseconds.
     "self_rooting": ("tools/", "icdev/tools/"),
+    # xcore-api-01: a full-tree scan parses ~10,300 files to find 34 icdev.core
+    # imports and costs ~25s — measured, not estimated. With a diff it is scoped
+    # by _scan_targets and costs milliseconds. The triggers cover both halves of
+    # the check: the core source and its declaration (does the manifest still
+    # describe the tree?) and any Python file (could it have added an import?).
+    "core_api": ("icdev/core/", "args/core_api", "tools/workflow/core_api_manifest.py", ".py"),
     "blueprint_imports": (
         "tools/dashboard/",
         "icdev/tools/dashboard/",

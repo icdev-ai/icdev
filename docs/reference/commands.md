@@ -2822,6 +2822,30 @@ python tools/workflow/vendor_api_manifest.py                                    
 python tools/workflow/vendor_api_manifest.py --write                                                # Regenerate after changing a vendored source
 python tools/workflow/vendor_api_manifest.py --json                                                 # Machine-readable drift report
 
+# --- Shared core API: is this parent calling something the PINNED core exports? (xcore-api-01) ---
+# icdev-core is a SEPARATE repo (icdev-ai/icdev-core). A tree-vs-tree comparison would need it
+# checked out, and ICDEV CI never checks it out -- so it would SKIP forever and report clean
+# however far the two drifted. That is exactly how check_vendor_parity failed (ctx-enf-01), and
+# this is the same remedy: a COMMITTED manifest a runner can check with nothing else present.
+# `exports` in args/core_api.yaml is the authority, NOT a directory listing -- icdev/core/shim.py
+# sits in the directory and is deliberately not in the package (FT has no tools/ tree), so a glob
+# would tell FT a module is available that its wheel will never contain.
+python tools/workflow/core_api_manifest.py                    # Verify; exit 1 stale, exit 2 could-not-run
+python tools/workflow/core_api_manifest.py --write            # Regenerate, then publish and bump pinned_version
+python tools/workflow/core_api_manifest.py --json
+python tools/workflow/core_api_manifest.py --verify-upstream  # Network; compares against the published tag
+python tools/workflow/core_api_manifest.py --verify-upstream --ref main
+python tools/workflow/coherence_checker.py --check core_api   # The parent gate
+# THREE findings, THREE repairs, never merged: the manifest is STALE (regenerate + republish);
+# an import names a symbol the pinned core does NOT export (stop calling it, or ship it); an
+# import names a `parent_local` module -- resolves from THIS checkout and not from the installed
+# wheel, so it is REPORTED and never failed.
+# `warn`, never `pass`, when the manifest or declaration cannot be read, and when a TREE scan
+# finds zero icdev.core imports -- a scan with nothing to check has verified nothing.
+# Constants are part of the surface: `_public_api` reports callables only, so `from
+# icdev.core.domain import BUILTIN_DEFAULT` would be refused without `_module_constants`.
+# A BRANCH is not a legal pin: `pinned_version: main` is refused outright.
+
 # Bootstrap parity — what `icdev init` scaffolds must be what this repo runs on. Two rules:
 #   1. must_match pairs (args/bootstrap_parity.yaml) are byte-identical, both directions.
 #   2. payload completeness (exa-bench-10) — every module a PACKAGED HOOK loads by path

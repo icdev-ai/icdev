@@ -1,0 +1,101 @@
+{
+  "data_files": {
+    "icdev/core/schema/tables.yaml": {
+      "content_hash": "a6190cf6fcf640e9"
+    }
+  },
+  "modules": {
+    "icdev.core": {
+      "constants": [],
+      "dunder_all": [
+        "context",
+        "domain",
+        "paths"
+      ],
+      "path": "icdev/core/__init__.py",
+      "signature_hash": "e3b0c44298fc1c14",
+      "symbols": []
+    },
+    "icdev.core.context": {
+      "constants": [
+        "IDENTITY_GUARD_ENV"
+      ],
+      "dunder_all": null,
+      "path": "icdev/core/context.py",
+      "signature_hash": "8788555ff6bddfb3",
+      "symbols": [
+        "IdentityReport.to_dict(self)",
+        "assert_identity(*, anchor=..., domain=..., environ=...)",
+        "check_identity(*, anchor=..., domain=..., environ=...)",
+        "class IdentityMismatch",
+        "class IdentityReport",
+        "describe(anchor=...)",
+        "load_env(root=...)",
+        "main(argv=...)",
+        "observed_database(domain, environ=...)"
+      ]
+    },
+    "icdev.core.domain": {
+      "constants": [
+        "BUILTIN_DEFAULT",
+        "REQUIRE_DOMAIN_ENV",
+        "SCHEMA_VERSION"
+      ],
+      "dunder_all": null,
+      "path": "icdev/core/domain.py",
+      "signature_hash": "b3ec5bb3b4f48bc8",
+      "symbols": [
+        "Domain.env(self, suffix)",
+        "Domain.to_dict(self)",
+        "class DbDeclaration",
+        "class Domain",
+        "class DomainError",
+        "class SensitivityDeclaration",
+        "load_domain(path=..., *, anchor=..., require=...)",
+        "parse_domain(data, *, root, source, path)"
+      ]
+    },
+    "icdev.core.paths": {
+      "constants": [
+        "DOMAIN_FILE",
+        "PROJECT_ROOT_ENV",
+        "SOURCE_MARKERS"
+      ],
+      "dunder_all": null,
+      "path": "icdev/core/paths.py",
+      "signature_hash": "55324a309d8f914d",
+      "symbols": [
+        "config_path(relpath, *, env=..., anchor=..., packaged=...)",
+        "data_path(name, anchor=...)",
+        "describe(anchor=...)",
+        "find_domain_file(start=...)",
+        "repo_root(anchor=...)"
+      ]
+    },
+    "icdev.core.sensitivity": {
+      "constants": [],
+      "dunder_all": null,
+      "path": "icdev/core/sensitivity.py",
+      "signature_hash": "5bca6ee2d4058549",
+      "symbols": [
+        "default_label(domain=...)",
+        "describe(domain=...)",
+        "dominates(clearance, row_label, domain=...)",
+        "is_egress_restricted(label, domain=...)",
+        "label_column(domain=...)",
+        "labels(domain=...)",
+        "normalise(label)",
+        "rank(label, domain=...)",
+        "rls_exempt_tables(domain=...)"
+      ]
+    }
+  },
+  "package": "icdev-core",
+  "parent_local": [
+    "icdev.core.shim"
+  ],
+  "pinned_version": "0.1.0",
+  "repo": "icdev-ai/icdev-core",
+  "source_root": "icdev/core",
+  "surface_hash": "bc484c959bc1405e"
+}
