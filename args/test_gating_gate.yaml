@@ -114,7 +114,7 @@ backlog_file: args/ci_test_backlog.txt
 # tools/ci/census_growth.py: this census may lose names and never gain one,
 # whatever the ceiling says. The ceiling stays as a second, independent barrier
 # for a file ALREADY named here that someone un-gates.
-backlog_max: 1679
+backlog_max: 1678
 
 # --------------------------------------------------------------------------- #
 # SKIP CENSUS — a gated test that skips is UNMEASURED, not passing (trust-disc-03)

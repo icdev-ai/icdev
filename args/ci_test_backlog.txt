@@ -340,7 +340,6 @@ tests/test_aca_static_assets_resolve.py
 tests/test_aca_step_asset_reconcile.py
 tests/test_aca_tier_gating.py
 tests/test_aca_vv_integrity_refusal.py
-tests/test_aca_xp_ledger.py
 tests/test_academy_assessment_model.py
 tests/test_academy_learning_objective.py
 tests/test_academy_reflex_anomaly_detection.py
