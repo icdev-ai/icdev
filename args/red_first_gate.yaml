@@ -121,6 +121,35 @@ run:
 # while the set churns, which is exactly how a gap regrows behind a green gate
 # (see args/ci_test_backlog.txt, which is enumerated for the same reason).
 exemptions:
+  - pattern: "tests/test_aca_xp_ledger.py"
+    reason: >-
+      THE TEST WAS THE DEFECT, AND THE CODE IT GUARDS WAS ALWAYS CORRECT
+      (kpr-extrepo-03), so there is no production change for a red-first proof to
+      discriminate against. `test_the_ledger_is_registered_append_only` did
+      `block = hook[hook.index("APPEND_ONLY_TABLES"):]` and then
+      `assert '"fa_xp_ledger"' in block[:8000]`. `hook.index` returns the FIRST
+      TEXTUAL occurrence of the name, which is the module docstring's "See
+      APPEND_ONLY_TABLES list in is_append_only_table_modification()" at char
+      446; `"fa_xp_ledger"` sits at char 11,656. The gap is 11,210 against an
+      8,000-character window, so the assertion measured the distance between a
+      sentence and a list and would have failed for any table far enough down it
+      WHETHER OR NOT that table was registered. `fa_xp_ledger` is registered, at
+      .claude/hooks/pre_tool_use.py:223, and always was -- so the repaired test
+      necessarily passes against the merge-base tree too, which is exactly what
+      the gate reports.
+      THE RED IS RECORDED, just not by this gate: born_red_survey (rem-hyg-14)
+      reported the file 21 times from 2026-08-22, its baseline row carries
+      first_status=fail / ever_passed=0, and the failure reproduces by hand on
+      the main checkout as "1 failed, 14 passed" -> "16 passed", matching the
+      detector's own recorded last_detail exactly. That is a stronger artifact
+      than a synthetic merge-base run, because it is the defect's real history.
+      Narrowing the assertion's input is not available here (the usual repair
+      when a test fails to discriminate): the fix removes a WINDOW rather than
+      changing what is asserted, and the assertion's subject -- is this table
+      registered -- has one true answer on both trees. A second test added
+      alongside pins the property the window destroyed: it fails if every entry
+      ever fits within 8,000 characters, so the guard cannot silently become
+      vacuous. Scoped to this ONE file.
   - pattern: "tests/ci/test_self_root_census.py"
     reason: >-
       A TEST THAT FAILED BECAUSE THE WORK SUCCEEDED, repaired so it cannot do so
