@@ -2847,6 +2847,26 @@ python tools/workflow/coherence_checker.py --check core_api   # The parent gate
 # icdev.core.domain import BUILTIN_DEFAULT` would be refused without `_module_constants`.
 # A BRANCH is not a legal pin: `pinned_version: main` is refused outright.
 
+# --- Would a change to icdev-core break a PARENT? (xcore-compat-01) ---
+# The core's own suite proves the core is internally consistent. It cannot prove a parent still
+# works: since xcore-cut-02 the parents carry no copy of that code, so a core change reaches them
+# on the next release with nothing in between. Each parent declares its OWN answer -- the tools
+# below encode no parent internals.
+export ICDEV_CORE_PARENTS="/c/AI/ICDev;/c/ai/icdev_ft"   # ';' — a Windows path contains a colon
+python tools/dev/core_compat_local.py                    # install the core, run every parent
+python tools/dev/core_compat_local.py --core ../icdev-core --json
+python tools/dev/core_compat_local.py --no-install       # core already installed
+python tools/dev/core_compat_local.py --parent /c/AI/ICDev
+python tools/workflow/coherence_checker.py --tier core --gate   # the parent's half, alone
+# `core` is an ENUMERATED tier (CORE_TIER_CHECKS), not a subtraction like `fast`: it is asked
+# from ANOTHER repository where there is no diff against this parent, so a subtractive definition
+# would grow silently every time a check is registered here.
+# args/ci_test_files/core_compat.txt is DERIVED FROM IMPORTS, never filenames: a gated module
+# qualifies when it imports icdev.core directly (2) or a subsystem sitting on it -- db.storage,
+# kanban, llm, genesis (163). 165 of 515 gated modules; ~5.9 min serial by the recorded timings.
+# `undeclared` and `unreachable` are NOT passes, and a report over ZERO parents exits 2. A
+# matrix green over a parent it never exercised retires the question it was built to ask.
+
 # Bootstrap parity — what `icdev init` scaffolds must be what this repo runs on. Two rules:
 #   1. must_match pairs (args/bootstrap_parity.yaml) are byte-identical, both directions.
 #   2. payload completeness (exa-bench-10) — every module a PACKAGED HOOK loads by path
