@@ -65,6 +65,7 @@ import argparse
 import ast
 import concurrent.futures
 import dataclasses
+import importlib
 import json
 import os
 import re
@@ -10415,7 +10416,46 @@ CHECK_REGISTRY = {
 # Check tiers — the gate/sweep split
 # ---------------------------------------------------------------------------
 
-TIERS = ("fast", "full")
+TIERS = ("fast", "full", "core")
+
+# ---------------------------------------------------------------------------
+# The `core` tier (xcore-compat-01) -- "would a change to icdev-core break this
+# parent?"
+# ---------------------------------------------------------------------------
+# ENUMERATED, NOT DERIVED. `fast` is defined by SUBTRACTION (everything except
+# the heavies) and that is right for a per-task gate, where the question is
+# "what did this diff touch". This tier answers a different question asked from
+# ANOTHER REPOSITORY, where there is no diff against this parent at all -- so a
+# subtractive definition would silently grow every time a check is registered
+# here, and the core repo's gate would slow down for reasons nobody in that repo
+# could see.
+#
+# Membership means: this check reads something `icdev.core` OWNS -- path
+# resolution, the domain declaration, identity assertion, the sensitivity ladder
+# or the core-owned table manifest -- so a core change can move its verdict.
+# Everything else in the registry is about THIS parent's own code and cannot be
+# broken by a core release.
+CORE_TIER_CHECKS: Tuple[str, ...] = (
+    # The pinned core surface itself: symbols, constants, data files, version.
+    "core_api",
+    # `icdev/core/schema/tables.yaml` is core-owned; ownership rules are read
+    # through icdev.core.sensitivity.
+    "schema_ownership",
+    # Every migration off a private repo-root guess and onto
+    # icdev.core.paths.repo_root -- a core change to root resolution shows here.
+    "self_rooting",
+    # `icdev init` scaffolds what this repo runs on; the payload includes the
+    # bootstrap CLAUDE.md and the hook modules that import core.
+    "bootstrap_parity",
+    # tools/ <-> icdev/tools parity. The alias finder lives in icdev/_shim.py and
+    # its sibling check depends on where the core package sits.
+    "icdev_mirror_parity",
+    # A test that opens the ambient database resolves its path through
+    # icdev.core.paths.
+    "test_db_isolation",
+    # Declared-but-unconsumed, measured across the cortex/core facades.
+    "capability_liveness",
+)
 
 # Checks that import or introspect the ENTIRE application rather than the diff.
 # Measured on a warm checkout these three cost ~100s of a ~170s full run, which
@@ -10504,6 +10544,13 @@ def select_checks(
     should ask for ``full`` explicitly rather than relying on this to guess.
     """
     all_ids = list(CHECK_REGISTRY.keys())
+    if tier == "core":
+        # Order follows the registry, not the tuple, so the report reads the same
+        # way it does in every other tier. An id that is declared but no longer
+        # registered is DROPPED here and REPORTED by
+        # tests/workflow/test_core_tier.py -- silently running six checks while
+        # claiming seven is the shape this file exists to refuse.
+        return [cid for cid in all_ids if cid in CORE_TIER_CHECKS]
     if tier != "fast":
         return all_ids
     touched = _normalised_paths(changed_files)
@@ -10515,6 +10562,41 @@ def select_checks(
         elif any(trigger in path for path in touched for trigger in triggers):
             keep.append(check_id)
     return keep
+
+
+#: Modules several checks import LAZILY, inside the check body, so that a
+#: missing scanner degrades to `warn` instead of breaking the whole sweep at
+#: import time. That laziness is correct and it has a cost under a thread pool:
+#: two workers importing the same cold module race on the per-module lock, and
+#: Python raises `ImportError: deadlock detected by _ModuleLock`. The check then
+#: reports `warn: could not be imported`, which is INDISTINGUISHABLE from the
+#: scanner genuinely being absent -- "unmeasured" fabricated by a race.
+#:
+#: MEASURED 2026-08-27 running `--tier core` (7 checks, cold process): FOUR of
+#: the seven warned that way in parallel and all seven were decisive serially.
+#: The full tier hides it because whichever check runs first warms the import
+#: while the pool is still filling, so this was latent in `--tier fast` too.
+_LAZY_CHECK_IMPORTS: Tuple[str, ...] = (
+    "tools.ci.self_root_census",
+    "tools.db.schema_ownership",
+    "tools.kanban.raw_insert_census",
+    "tools.workflow.core_api_manifest",
+    "tools.awareness.capability_consumption",
+)
+
+
+def _warm_lazy_check_imports() -> None:
+    """Import the lazily-imported scanners ONCE, serially, before fanning out.
+
+    Failures are swallowed on purpose: a genuinely absent or broken scanner must
+    still reach its own check and be reported there as `warn` with the real
+    reason. This only removes the race, never a finding.
+    """
+    for name in _LAZY_CHECK_IMPORTS:
+        try:
+            importlib.import_module(name)
+        except Exception:  # noqa: BLE001 - the check reports the real reason
+            pass
 
 
 def _check_workers() -> int:
@@ -10817,6 +10899,7 @@ def run_checks(
     workers = 1 if autofix else min(_check_workers(), max(1, len(checks_to_run)))
 
     if workers > 1:
+        _warm_lazy_check_imports()
         hard_timeout = bool(timeout_sec and timeout_sec > 0 and not autofix)
         pool_cls = (
             concurrent.futures.ProcessPoolExecutor
@@ -10961,8 +11044,9 @@ def main() -> None:
         default=None,
         help=(
             "fast = per-task gate (drops whole-app heavies unless the diff "
-            "touches them); full = every check (nightly sweep / post-merge). "
-            "Default: full."
+            "touches them); full = every check (nightly sweep / post-merge); "
+            "core = only the checks a change to icdev-core can move, for the "
+            "core repo's compat matrix (xcore-compat-01). Default: full."
         ),
     )
     parser.add_argument("--check", type=str, default="", help=f"Specific check: {', '.join(CHECK_REGISTRY.keys())}")
