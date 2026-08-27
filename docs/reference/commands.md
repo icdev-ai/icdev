@@ -4375,41 +4375,6 @@ python tools/research/research_engine.py --daemon --json
 
 ---
 
-## FathomDeskNews Pipeline — ADN News Intelligence (Phase ADN)
-```bash
-# Ingest RSS feeds once (all configured feeds in args/news_feeds.yaml)
-python tools/trading/news/rss_ingestor.py --run-once --json
-
-# Continuous poller daemon (respects poll_interval_seconds from args/news_feeds.yaml)
-python tools/trading/news/rss_ingestor.py --daemon --json
-
-# Classify pending news items (rule-based, no LLM required)
-python tools/trading/news/classifier.py --run --json
-
-# Match classified items to macro scenarios (meta_scenarios.yaml)
-python tools/trading/news/scenario_matcher.py --run --json
-
-# Aggregate and promote clusters to the dashboard
-python tools/trading/news/aggregator.py --run --json
-
-# LLM-backed reasoning over top clusters (requires LLM provider)
-python tools/trading/news/news_reasoner.py --run --json
-
-# Database migrations and health
-python tools/trading/news/db.py --migrate --json
-python tools/trading/news/db.py --health --json
-
-# Perspective scoring (bearish/bullish net_direction wiring)
-python tools/trading/news/perspective_scorer.py --score --json
-```
-
----
-
-## FathomDesk — OpenBB Gateway
-```bash
-python tools/fathomdesk/openbb_gateway.py --ticker AAPL --method get_price --json
-```
-
 ---
 
 ## Marketplace — Federated FORGE Asset Registry (Phase 22)
