@@ -761,7 +761,14 @@ def test_claude_cli_parses_cost_and_tokens_from_the_json_envelope():
 
     assert text == "Task completed"
     assert structured["total_cost_usd"] == 1.2345
-    assert structured["input_tokens"] == 15
+    # cch-obs-04: `input_tokens` is RAW and the cache counters ride beside it. This used to
+    # assert 15 — input(10) + cache_read(5) — which destroyed the only evidence that prompt
+    # caching worked: telemetry saw one total and zero cache reads, so the dashboard called
+    # claude-cli `unreported`. Anthropic's accounting is DISJOINT and
+    # by_provider._split_tokens adds the cache tokens back itself.
+    assert structured["input_tokens"] == 10, "raw, not summed"
+    assert structured["cache_read_input_tokens"] == 5
+    assert structured["prompt_tokens_total"] == 15
     assert structured["output_tokens"] == 7
     assert structured["turns"] == 9
 
