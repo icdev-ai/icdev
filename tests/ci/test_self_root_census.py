@@ -235,8 +235,22 @@ def test_ceiling_equals_the_census_at_adoption():
 
 
 def test_known_shapes_in_the_tree():
+    """The scanner sees the canonical shape, and does NOT see the bootstrap idiom.
+
+    THE POSITIVE CONTROL IS THE SHAPE, NOT A NAMED FILE. It used to assert
+    `tools/config/core_profile.py::<module>::BASE_DIR` was present, and that broke the moment
+    that site was migrated onto repo_root(__file__) -- which is the census's entire PURPOSE.
+    Pinning any single entry makes this test fail on success: every name in the census is
+    somebody's future fix, so the exemplar has to be the shape it detects.
+
+    The NEGATIVE control stays exact, because it is a claim about ONE file: storage.py's
+    `_REPO_ROOT = parents[2]` is the sys.path BOOTSTRAP idiom, which resolves the IMPORT root
+    and is identical before and after a move. It must never be counted, and naming it is the
+    only way to say so.
+    """
     keys = census.load_census(REPO_ROOT, census.load_gate(REPO_ROOT / "args" / "self_root_gate.yaml"))
-    assert "tools/config/core_profile.py::<module>::BASE_DIR" in keys
+    assert any(k.endswith("::<module>::BASE_DIR") for k in keys),         "the canonical module-level BASE_DIR shape is no longer detected by the scanner"
+    assert any("::inline-" in k for k in keys),         "the inline (function-local) shape is no longer detected by the scanner"
     # storage.py's _REPO_ROOT is the sys.path bootstrap idiom; its root resolver walks by marker
     assert not any(k.startswith("tools/db/storage.py::") for k in keys)
 

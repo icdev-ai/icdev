@@ -31,10 +31,10 @@ import random
 import sys
 import time
 from datetime import datetime, timezone, timedelta
-from pathlib import Path
 from typing import Any, Dict, Optional
 
 from tools.db.storage import get_connection, get_backend, is_pg
+from icdev.core.paths import repo_root
 
 # LLMResponse import with graceful fallback
 try:
@@ -44,7 +44,7 @@ except ImportError:
 
 logger = get_logger("icdev.llm.response_cache")
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+BASE_DIR = repo_root(__file__)
 CONFIG_PATH = BASE_DIR / "args" / "llm_config.yaml"
 
 # ---------------------------------------------------------------------------
