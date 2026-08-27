@@ -262,7 +262,19 @@ def install(tools_init_file: str | Path) -> IcdevToolsAliasFinder | None:
     ``icdev/tools``) — in which case nothing changes.
     """
     tools_dir = Path(tools_init_file).resolve().parent
-    icdev_pkg = Path(__file__).resolve().parent.parent  # icdev/
+    # This module sits DIRECTLY in ``icdev/`` (it was ``icdev/core/shim.py`` until
+    # xcore-cut-02, where ``.parent.parent`` was right). Getting the depth wrong here does not
+    # raise -- ``_siblings`` simply returns False, ``install`` returns None, and the alias
+    # finder is never installed, so ``icdev.tools.X`` and ``tools.X`` become two module objects
+    # again and every module-level singleton exists twice. That is xit-decl-02 undone, and it
+    # is silent: it surfaced only as 28 unrelated-looking failures in
+    # tests/test_namespace_identity.py. Hence the assertion below rather than a bare comment.
+    icdev_pkg = Path(__file__).resolve().parent  # icdev/
+    if icdev_pkg.name != "icdev":  # pragma: no cover - a wiring mistake, not a runtime state
+        raise RuntimeError(
+            f"icdev/_shim.py expected to live directly in icdev/, found {icdev_pkg}. "
+            "If this module moved, the depth above moved with it."
+        )
     if not _siblings(tools_dir, icdev_pkg):
         return None
     mirror_dir = icdev_pkg / "tools"

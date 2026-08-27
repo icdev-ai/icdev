@@ -25,9 +25,15 @@ TWO INDEPENDENT QUESTIONS, AND THEY FAIL FOR DIFFERENT REASONS.
      republish, (2) is stop calling it or ship it in the package.
 
 THE MANIFEST IS NOT A DIRECTORY LISTING. ``args/core_api.yaml`` declares which
-modules the distribution ships; ``icdev/core/shim.py`` sits in the directory and
-is deliberately not one of them. Globbing would publish it and tell ICDEV[FT] a
-module is available that its wheel will never contain.
+modules the distribution ships, and a module found in the installed package that
+the declaration does not name FAILS rather than being published silently.
+
+RESOLVED THROUGH ``importlib``, NOT FROM A SOURCE TREE (xcore-cut-02). This
+parent no longer ships ``icdev/core/`` -- ``icdev.core.*`` comes from the
+``icdev-core`` distribution -- so the manifest is generated from what
+``import icdev.core`` actually resolves. That is the stronger claim and the one
+that matters: a wrong answer here is an ImportError at the start of the
+dashboard, the genesis daemon, ``migrate.py`` and ``kanban/cli.py``.
 
     python tools/workflow/core_api_manifest.py              # verify, exit 1 on drift
     python tools/workflow/core_api_manifest.py --write      # regenerate
@@ -41,7 +47,9 @@ import argparse
 import ast
 import base64
 import hashlib
+import importlib.util
 import json
+import pathlib
 import subprocess
 import sys
 from pathlib import Path
@@ -89,6 +97,12 @@ def load_declaration() -> dict:
     pinned = str(data.get("pinned_version") or "").strip()
     if not pinned:
         raise CoreApiError(f"{CORE_API_DECLARATION} declares no pinned_version")
+    resolution = str(data.get("resolution") or "installed").strip()
+    if resolution != "installed":
+        raise CoreApiError(
+            f"{CORE_API_DECLARATION} declares resolution={resolution!r}; this parent no "
+            "longer ships a core source tree, so 'installed' is the only supported value"
+        )
     if pinned in {"main", "master", "HEAD"}:
         # The card's last line: no floating `main` dependency anywhere. A branch
         # pin makes the manifest a description of whatever was installed.
@@ -98,15 +112,28 @@ def load_declaration() -> dict:
     return data
 
 
-def module_to_relpath(module: str, source_root: str) -> str:
-    """``icdev.core.paths`` -> ``icdev/core/paths.py``; the package -> ``__init__.py``."""
-    root_module = source_root.replace("/", ".")
-    if module == root_module:
-        return f"{source_root}/__init__.py"
-    if not module.startswith(root_module + "."):
-        raise CoreApiError(f"declared export {module!r} is not under source_root {source_root!r}")
-    tail = module[len(root_module) + 1:].replace(".", "/")
-    return f"{source_root}/{tail}.py"
+def module_source(module: str) -> pathlib.Path:
+    """Where the INSTALLED distribution provides *module*.
+
+    ``find_spec`` rather than ``import_module``: locating a module must not execute it. The
+    core is import-safe today, but a manifest generator that runs the code it is describing
+    would make "the surface changed" and "the surface raises on import" the same failure.
+    """
+    try:
+        spec = importlib.util.find_spec(module)
+    except (ImportError, AttributeError, ValueError) as exc:
+        raise CoreApiError(f"{module} could not be located ({exc}) -- is icdev-core installed?")
+    if spec is None or not spec.origin or spec.origin == "namespace":
+        raise CoreApiError(
+            f"{module} could not be located -- is icdev-core installed? "
+            "(`pip install -r requirements.txt`)"
+        )
+    return pathlib.Path(spec.origin)
+
+
+def package_root(package: str = "icdev.core") -> pathlib.Path:
+    """The installed package's directory, for data files and undeclared-module scanning."""
+    return module_source(package).parent
 
 
 def _hash(parts: List[str]) -> str:
@@ -168,13 +195,17 @@ def _module_constants(source: str) -> List[str]:
 def collect_surface(declaration: Optional[dict] = None) -> dict:
     """The current public surface of every DECLARED export, from this tree."""
     decl = declaration or load_declaration()
-    source_root = decl.get("source_root", "icdev/core")
+    root = package_root()
     modules: Dict[str, dict] = {}
     for module in sorted(decl["exports"]):
-        rel = module_to_relpath(module, source_root)
-        path = PROJECT_ROOT / rel
-        if not path.exists():
-            raise CoreApiError(f"declared export {module!r} has no source file at {rel}")
+        path = module_source(module)
+        # Recorded relative to the installed package so the manifest does not carry an
+        # absolute site-packages path, which differs on every machine and would make the
+        # committed file churn on every regeneration.
+        try:
+            rel = path.relative_to(root.parent).as_posix()
+        except ValueError:
+            rel = path.name
         source = path.read_text(encoding="utf-8")
         symbols = sorted(_public_api(source))
         constants = _module_constants(source)
@@ -190,9 +221,15 @@ def collect_surface(declaration: Optional[dict] = None) -> dict:
 
     data_files: Dict[str, dict] = {}
     for rel in sorted(decl.get("data_files") or []):
-        path = PROJECT_ROOT / rel
+        # Relative to the icdev.core package, NOT to this repo. The parent's own
+        # icdev/core/schema/tables.yaml is a different file with a different lifecycle
+        # (written by schema_ownership.py --regenerate, read by sensitivity from the repo
+        # root); this manifest describes only what the distribution ships.
+        path = root / rel
         if not path.exists():
-            raise CoreApiError(f"declared data_file {rel} does not exist")
+            raise CoreApiError(
+                f"declared data_file {rel} is not present in the installed icdev.core package"
+            )
         data_files[rel] = {
             "content_hash": hashlib.sha256(path.read_bytes()).hexdigest()[:16]
         }
@@ -201,7 +238,7 @@ def collect_surface(declaration: Optional[dict] = None) -> dict:
         "package": decl.get("package", "icdev-core"),
         "repo": decl.get("repo"),
         "pinned_version": decl["pinned_version"],
-        "source_root": source_root,
+        "resolution": "installed",
         "modules": modules,
         "data_files": data_files,
         "parent_local": sorted((decl.get("parent_local") or {}).keys()),
@@ -274,23 +311,18 @@ def manifest_drift() -> List[str]:
 
 
 def undeclared_core_modules() -> List[str]:
-    """Source files under ``source_root`` in neither ``exports`` nor ``parent_local``.
+    """Modules the INSTALLED package provides that the declaration names nowhere.
 
-    The other direction of the declaration check. Without it a module added to
-    ``icdev/core/`` is simply never published, and nothing says so.
+    The other direction of the declaration check. Without it a module added to the
+    distribution is simply never described here, and nothing says so.
     """
     decl = load_declaration()
-    source_root = decl.get("source_root", "icdev/core")
     declared = set(decl["exports"]) | set((decl.get("parent_local") or {}).keys())
-    root_module = source_root.replace("/", ".")
+    base = package_root()
     found: List[str] = []
-    base = PROJECT_ROOT / source_root
-    if not base.is_dir():
-        return found
     for path in sorted(base.rglob("*.py")):
-        rel = path.relative_to(PROJECT_ROOT).as_posix()
-        tail = rel[len(source_root) + 1: -len(".py")]
-        module = root_module if tail == "__init__" else f"{root_module}.{tail.replace('/', '.')}"
+        tail = path.relative_to(base).as_posix()[: -len(".py")]
+        module = "icdev.core" if tail == "__init__" else f"icdev.core.{tail.replace('/', '.')}"
         if module not in declared:
             found.append(module)
     return found
@@ -354,14 +386,13 @@ def verify_upstream(ref: Optional[str] = None) -> dict:
     if not repo:
         return {"state": "unmeasurable", "reason": "no repo declared", "findings": []}
     ref = ref or f"v{decl['pinned_version']}"
-    source_root = decl.get("source_root", "icdev/core")
 
-    probe = _fetch_upstream(repo, f"{source_root}/__init__.py", ref)
+    probe = _fetch_upstream(repo, "icdev/core/__init__.py", ref)
     if probe is None:
         # An unreleased pin is a real state and is REPORTED as one, never
         # silently retried as `main` and reported as agreement.
         if ref not in {"main", "master"} and _fetch_upstream(
-            repo, f"{source_root}/__init__.py", "main"
+            repo, "icdev/core/__init__.py", "main"
         ) is not None:
             return {
                 "state": "unreleased",

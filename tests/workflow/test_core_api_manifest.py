@@ -25,7 +25,8 @@ from tools.workflow.core_api_manifest import (
     load_declaration,
     load_manifest,
     manifest_path,
-    module_to_relpath,
+    module_source,
+    package_root,
     render_manifest,
     undeclared_core_modules,
     verify,
@@ -83,22 +84,27 @@ def test_the_manifest_on_disk_is_exactly_what_render_produces():
 # ---------------------------------------------------------------------------
 
 
-def test_shim_is_declared_parent_local_and_is_not_an_export():
-    """The case that makes this a declaration rather than a glob.
+def test_shim_is_no_longer_under_icdev_core():
+    """xcore-cut-02 moved it, and it HAD to move.
 
-    `icdev/core/shim.py` is in the directory and deliberately not in the
-    package: it aliases `tools.X` onto `icdev.tools.X` for ICDEV[IT]'s dual
-    tree, and ICDEV[FT] has no `tools/` directory. Publishing it would tell FT a
-    module is available that its wheel will never contain.
+    Once this parent stopped shipping the rest of `icdev/core/`, `icdev.core` resolves to the
+    installed distribution and its `__path__` does not include this parent's leftover
+    directory -- `icdev.core.shim` would have been unimportable. It still lives in the parent,
+    which is what the card requires; only its address changed.
     """
     decl = load_declaration()
     assert "icdev.core.shim" not in decl["exports"]
-    assert "icdev.core.shim" in (decl.get("parent_local") or {})
-    reason = decl["parent_local"]["icdev.core.shim"]
-    assert reason and reason.strip(), "a parent_local entry needs a written reason"
+    assert "icdev.core.shim" not in (decl.get("parent_local") or {})
+    assert (REPO_ROOT / "icdev/_shim.py").is_file(), "the shim must still be in the parent"
+    assert not (REPO_ROOT / "icdev/core/shim.py").exists()
+
+    from icdev import _shim
+
+    assert hasattr(_shim, "install") and hasattr(_shim, "IcdevToolsAliasFinder")
 
 
 def test_a_parent_local_entry_needs_a_written_reason():
+    """Empty today, and the rule still has to hold for whatever is added next."""
     for module, reason in (load_declaration().get("parent_local") or {}).items():
         assert isinstance(reason, str) and len(reason.strip()) > 20, (
             f"{module} is exempted from the published surface with no usable reason"
@@ -116,7 +122,7 @@ def test_a_branch_is_not_a_legal_pin(tmp_path, monkeypatch, branch):
 
     decl = tmp_path / "core_api.yaml"
     decl.write_text(
-        f"package: icdev-core\npinned_version: {branch}\nsource_root: icdev/core\n"
+        f"package: icdev-core\npinned_version: {branch}\nresolution: installed\n"
         "exports: [icdev.core]\n",
         encoding="utf-8",
     )
@@ -134,11 +140,43 @@ def test_an_absent_declaration_raises_rather_than_defaulting(tmp_path, monkeypat
         mod.load_declaration()
 
 
-def test_module_to_relpath_round_trips():
-    assert module_to_relpath("icdev.core", "icdev/core") == "icdev/core/__init__.py"
-    assert module_to_relpath("icdev.core.paths", "icdev/core") == "icdev/core/paths.py"
+def test_exports_resolve_to_the_installed_distribution_not_this_tree():
+    """The whole point of xcore-cut-02, asserted directly.
+
+    `icdev.core.paths` must come from the installed `icdev-core`, NOT from anywhere under this
+    repository -- this parent no longer ships those files at all.
+    """
+    src = module_source("icdev.core.paths")
+    assert src.is_file()
+    assert not str(src).startswith(str(REPO_ROOT)), (
+        f"icdev.core.paths resolved to {src}, inside this parent's tree — the cut did not take"
+    )
+    assert package_root().name == "core"
+
+
+def test_a_module_that_cannot_be_located_raises():
     with pytest.raises(CoreApiError):
-        module_to_relpath("something.else", "icdev/core")
+        module_source("icdev.core.definitely_not_a_module")
+
+
+def test_this_parent_no_longer_ships_the_core_modules():
+    for gone in ("__init__.py", "paths.py", "domain.py", "context.py", "sensitivity.py"):
+        assert not (REPO_ROOT / "icdev/core" / gone).exists(), (
+            f"icdev/core/{gone} is back in the parent — it would shadow the installed package "
+            "on any machine that has both"
+        )
+
+
+def test_the_parents_own_table_manifest_stays():
+    """Kept deliberately: a DATA file, not a module.
+
+    `sensitivity._manifest_exempt` reads it from the REPO ROOT by path (not through
+    importlib.resources) and `schema_ownership.py --regenerate` writes it there. A leftover
+    `icdev/core/` holding only data does not shadow the installed package -- PEP 420 uses a
+    namespace portion only when no regular package is found anywhere on the path.
+    """
+    assert (REPO_ROOT / "icdev/core/schema/tables.yaml").is_file()
+    assert not (REPO_ROOT / "icdev/core/__init__.py").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -156,7 +194,7 @@ def test_constants_are_captured_because_public_api_does_not_capture_them():
     """
     from tools.workflow.coherence_checker import _public_api
 
-    source = (REPO_ROOT / "icdev/core/domain.py").read_text(encoding="utf-8")
+    source = module_source("icdev.core.domain").read_text(encoding="utf-8")
     constants = _module_constants(source)
     callables = {s.split("(")[0].removeprefix("class ").strip() for s in _public_api(source)}
     assert constants, "icdev/core/domain.py binds public module-level names"
@@ -234,14 +272,36 @@ def test_a_submodule_imported_from_the_package_passes(probe):
     assert result.status == "pass", result.missing
 
 
-def test_a_parent_local_import_is_reported_and_never_failed(probe):
-    """It resolves from this checkout and not from the wheel — a note, not a defect."""
-    result = _run(probe("from icdev.core import shim\n"))
+def test_a_parent_local_import_is_reported_and_never_failed(probe, monkeypatch):
+    """A parent-local module is REPORTED, never failed — the code path, kept guarded.
+
+    `parent_local` is empty since xcore-cut-02 (shim moved to `icdev/_shim.py`), so this uses
+    a synthetic declaration. Without it the branch would be dead code that still ships, and
+    the next module a parent keeps back would land on an unexercised path.
+    """
+    import tools.workflow.core_api_manifest as mod
+
+    patched = dict(mod.load_manifest(), parent_local=["icdev.core.kept_back"])
+    monkeypatch.setattr(mod, "load_manifest", lambda: patched)
+
+    result = _run(probe("from icdev.core import kept_back\n"))
     assert result.status == "pass", result.missing
     assert any("parent-local" in line for line in result.actual)
-    assert any("icdev.core.shim" in line for line in result.actual), (
+    assert any("icdev.core.kept_back" in line for line in result.actual), (
         "the note must name the symbol that matched, not the module it was imported from"
     )
+
+
+def test_an_import_of_a_module_no_longer_under_icdev_core_fails(probe):
+    """The regression this card could have shipped.
+
+    `from icdev.core import shim` resolved for as long as the parent carried its own
+    `icdev/core/`. After the cut it cannot, and the gate must say so here rather than let it
+    reach an ImportError at dashboard start-up.
+    """
+    result = _run(probe("from icdev.core import shim\n"))
+    assert result.status == "fail"
+    assert any("shim" in m for m in result.missing)
 
 
 def test_a_diff_with_no_python_file_cannot_add_a_core_import():
@@ -327,13 +387,28 @@ def test_the_manifest_is_valid_json_with_the_fields_the_gate_reads():
     json.loads(manifest_path().read_text(encoding="utf-8"))
 
 
-def test_collect_surface_refuses_a_declared_export_with_no_source(tmp_path, monkeypatch):
+def test_collect_surface_refuses_a_declared_export_that_cannot_be_located():
     """A declaration naming a module that does not exist must fail, not silently skip."""
     decl = {
         "package": "icdev-core",
-        "pinned_version": "0.1.0",
-        "source_root": "icdev/core",
+        "pinned_version": "0.2.0",
+        "resolution": "installed",
         "exports": ["icdev.core.does_not_exist"],
     }
-    with pytest.raises(CoreApiError, match="no source file"):
+    with pytest.raises(CoreApiError, match="could not be located"):
         collect_surface(decl)
+
+
+def test_a_source_tree_resolution_is_refused(tmp_path, monkeypatch):
+    """`resolution` may only be `installed` — there is no core source tree here any more."""
+    import tools.workflow.core_api_manifest as mod
+
+    decl = tmp_path / "core_api.yaml"
+    decl.write_text(
+        "package: icdev-core\npinned_version: 0.2.0\nresolution: tree\n"
+        "exports: [icdev.core]\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(mod, "declaration_path", lambda: decl)
+    with pytest.raises(CoreApiError, match="only supported value"):
+        mod.load_declaration()

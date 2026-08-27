@@ -76,5 +76,9 @@ def test_rls_exempt_tables_reads_the_generated_manifests(it_domain, monkeypatch)
 
 
 def test_module_imports_nothing_from_tools():
-    src = (REPO_ROOT / "icdev" / "core" / "sensitivity.py").read_text(encoding="utf-8")
+    """Read from the INSTALLED distribution since xcore-cut-02 — see the note on
+    tests/core/test_domain_declaration.py::test_core_package_is_stdlib_plus_yaml_only."""
+    from tools.workflow.core_api_manifest import module_source
+
+    src = module_source("icdev.core.sensitivity").read_text(encoding="utf-8")
     assert "from tools." not in src and "import tools" not in src
