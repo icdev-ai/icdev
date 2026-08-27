@@ -110,3 +110,29 @@ def test_shipped_registry_parks_parent_split_streams(monkeypatch):
         assert t.name == repo, tid
         assert t.dispatchable is False, tid
     assert rr.resolve_task_repo("xit-decl-01").is_external is False
+
+
+def test_every_ft_domain_stream_on_the_board_is_external(monkeypatch):
+    """The guard above named `xft-`, and the live streams are `ftl-` and `fdx-`.
+
+    THE DEFECT THIS CATCHES (xit-reg-02). `ftl-` -- 53 cards, the ICDEV[FT]
+    autonomous-trading loop -- was absent from args/kanban_external_repos.yaml and so
+    fell through to the ICDev default: external=False, root=<this checkout>. This repo
+    is PUBLIC. Releasing ftl-gate-00, which xit-rm-04 explicitly contemplates, would
+    have had the dispatcher build trading work here -- the xit-leak-01 class reached
+    through the dispatcher instead of through a commit.
+
+    A prefix-by-prefix assertion could not catch it, because the missing prefix is
+    exactly the one nobody thought to list. This reads the SHIPPED registry instead and
+    asserts the property for every FT-domain stream, so a new one cannot be added
+    without landing here too -- the discipline ked-reg-01 applied to the prem-* streams.
+
+    Registering a stream does NOT enable it: with the root env unset the resolution is
+    external + not dispatchable, i.e. PARKED.
+    """
+    monkeypatch.delenv("ICDEV_KANBAN_REPO_FT", raising=False)
+    for stream in ("ftl", "fdx", "xft"):
+        t = rr.resolve_task_repo(f"{stream}-zzz-01")
+        assert t.is_external is True, f"{stream}- must not build in the public checkout"
+        assert t.name == "icdev_ft", f"{stream}- resolved to {t.name}"
+        assert t.dispatchable is False, f"{stream}- must be parked while the root is unset"
