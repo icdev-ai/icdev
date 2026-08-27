@@ -25,7 +25,7 @@ if _project_root not in sys.path:
 # copy — two objects, two singletons, a monkeypatch on the wrong one. The finder
 # refuses to install anywhere tools/ and icdev/ are not siblings (the wheel, a
 # scaffolded project), so nothing changes there. See icdev/core/shim.py.
-from icdev.core import shim as _core_shim  # noqa: E402
+from icdev import _shim as _core_shim  # noqa: E402
 
 _core_shim.install(__file__)
 

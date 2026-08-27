@@ -38,6 +38,19 @@ dependencies = [
     "flask>=3.0",
     "requests>=2.31",
     "python-dotenv>=1.0",
+    # THE SHARED CORE (xcore-cut-02). This parent no longer ships `icdev/core/`:
+    # `icdev.core.paths`, `.domain`, `.context` and `.sensitivity` come from the
+    # `icdev-core` distribution, which ICDEV[FT] installs too. `assert_identity` runs at the
+    # start of the dashboard, the genesis daemon, migrate.py and kanban/cli.py, so this is a
+    # hard runtime dependency and not an optional extra.
+    #
+    # A LOWER BOUND OF 0.2.0, NOT AN EXACT PIN. 0.2.0 is where `icdev-core` stopped shipping
+    # `icdev/__init__.py`; with one, the two distributions both own the `icdev` name, only
+    # one `__init__` executes, and if it is core's then `_alias_tools_namespace()` never runs
+    # and the wheel's ~1,900 `tools.X` imports break silently. The exact version this parent
+    # is pinned to for API purposes lives in args/core_api.yaml and is checked by
+    # `coherence_checker --check core_api`.
+    "icdev-core>=0.2.0",
 ]
 
 [project.urls]
@@ -216,12 +229,24 @@ icdev-mcp-maintenance = "icdev.tools.mcp.standalone.maintenance:main"
 
 [tool.setuptools.packages.find]
 include = ["icdev*"]
+# `icdev` IS A SHARED NAMESPACE SINCE xcore-cut-02. The `icdev-core` distribution ships
+# `icdev/core/` and deliberately no `icdev/__init__.py`; this parent ships the `__init__.py`
+# (which adds `pkgutil.extend_path`) plus `icdev/tools/` and `icdev/data/`. `icdev.core` is
+# therefore NOT this parent's to package -- it is excluded below, and what remains under
+# `icdev/core/` here is `schema/tables.yaml`, a DATA file that `schema_ownership.py
+# --regenerate` writes and `sensitivity._manifest_exempt` reads from the repo root by path.
+namespaces = true
 # Keep this list in sync with PARENT_ONLY_DIRS in
 # tools/installer/sync_package_tree.py. These are owner-operated child apps
 # and parent-platform services — NOT shipped in the public wheel.
 # Framework/core subsystems (WriteGuard, canvases, genesis, oracle, etc.)
 # ARE shipped.
 exclude = [
+    # xcore-cut-02: provided by the `icdev-core` distribution, not by this parent.
+    # Packaging it here would put two copies of `icdev.core` on one machine, and the
+    # editable parent would win -- which is precisely the shadowing the split removed.
+    "icdev.core",
+    "icdev.core.*",
     # Owner-operated child apps
     "icdev.tools.pulse*",
     "icdev.tools.proposal_genesis*",

@@ -10170,11 +10170,14 @@ def check_core_api(changed_files: Optional[List[Path]] = None) -> CoherenceCheck
         republished. Repair: regenerate, publish, bump ``pinned_version``.
       * an import names a symbol the pinned core does NOT export. Repair: stop
         calling it, or ship it in the package. This is the card's case.
-      * an import names a ``parent_local`` module (``icdev.core.shim``). It
-        resolves HERE because the file is in this checkout and will NOT resolve
-        from the installed wheel alone. REPORTED, never failed — the declaration
-        says it is deliberate, and this parent is entitled to its own modules
-        under its own tree.
+      * an import names a ``parent_local`` module — one this parent provides
+        itself under ``icdev.core``. It resolves HERE because the file is in this
+        checkout and will NOT resolve from the installed distribution alone.
+        REPORTED, never failed — the declaration says it is deliberate, and this
+        parent is entitled to its own modules under its own tree. The list is
+        EMPTY since xcore-cut-02 (``icdev/core/shim.py`` moved to
+        ``icdev/_shim.py``), and the branch is kept exercised by
+        tests/workflow/test_core_api_manifest.py against a synthetic declaration.
 
     ``warn``, never ``pass``, whenever the manifest or the declaration cannot be
     read: "did not run" must not read as "found nothing". A diff that touches no

@@ -200,3 +200,24 @@ openpyxl>=3.1             # XLSX extraction (MIT) — imported best-effort by to
 # It is an optional accelerator; the PDF pass degrades to pypdf/pdfplumber without
 # it (extractors.py Pass 1 catches ImportError). Install it yourself only if its
 # AGPL terms are acceptable for your deployment.
+
+# The shared ICDEV core (xcore-cut-02). This parent no longer ships `icdev/core/`;
+# `icdev.core.paths`, `.domain`, `.context` and `.sensitivity` come from this
+# distribution, and `assert_identity` runs at the start of the dashboard, the genesis
+# daemon, migrate.py and kanban/cli.py -- so this is a hard runtime dependency, not an
+# optional extra. Pinned to a TAG, never a branch: a floating `main` makes the parent's
+# core-API gate describe whatever happened to be installed.
+#
+# THE CONCRETE URL BELONGS HERE AND NOT IN pyproject.toml, which declares the ABSTRACT
+# requirement `icdev-core>=0.2.0`. A distribution states what it needs; an environment
+# states where to get it. Keeping the VCS URL out of the package metadata is also what
+# lets the air-gap path below work at all -- a `@ git+https` in an installed wheel's
+# metadata would be re-resolved over the network on every reinstall.
+#
+# AIR-GAPPED INSTALLS: icdev-core is not on PyPI, so this line needs GitHub. On a
+# restricted host, mirror the release wheel into the local wheelhouse and install with
+# `pip install --no-index --find-links <wheelhouse> icdev-core==0.2.0` BEFORE running
+# `pip install -r requirements.txt`; pip then treats the requirement as satisfied. Do
+# NOT drop the pin to make an air-gapped install succeed -- an unpinned core is what
+# args/core_api.yaml exists to refuse.
+icdev-core @ git+https://github.com/icdev-ai/icdev-core@v0.2.0

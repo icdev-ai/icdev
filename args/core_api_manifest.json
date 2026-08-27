@@ -1,7 +1,7 @@
 {
   "data_files": {
-    "icdev/core/schema/tables.yaml": {
-      "content_hash": "a6190cf6fcf640e9"
+    "schema/tables.yaml": {
+      "content_hash": "0286daea7800aa52"
     }
   },
   "modules": {
@@ -12,7 +12,7 @@
         "domain",
         "paths"
       ],
-      "path": "icdev/core/__init__.py",
+      "path": "core/__init__.py",
       "signature_hash": "e3b0c44298fc1c14",
       "symbols": []
     },
@@ -21,7 +21,7 @@
         "IDENTITY_GUARD_ENV"
       ],
       "dunder_all": null,
-      "path": "icdev/core/context.py",
+      "path": "core/context.py",
       "signature_hash": "8788555ff6bddfb3",
       "symbols": [
         "IdentityReport.to_dict(self)",
@@ -42,7 +42,7 @@
         "SCHEMA_VERSION"
       ],
       "dunder_all": null,
-      "path": "icdev/core/domain.py",
+      "path": "core/domain.py",
       "signature_hash": "b3ec5bb3b4f48bc8",
       "symbols": [
         "Domain.env(self, suffix)",
@@ -62,7 +62,7 @@
         "SOURCE_MARKERS"
       ],
       "dunder_all": null,
-      "path": "icdev/core/paths.py",
+      "path": "core/paths.py",
       "signature_hash": "55324a309d8f914d",
       "symbols": [
         "config_path(relpath, *, env=..., anchor=..., packaged=...)",
@@ -75,7 +75,7 @@
     "icdev.core.sensitivity": {
       "constants": [],
       "dunder_all": null,
-      "path": "icdev/core/sensitivity.py",
+      "path": "core/sensitivity.py",
       "signature_hash": "5bca6ee2d4058549",
       "symbols": [
         "default_label(domain=...)",
@@ -91,11 +91,9 @@
     }
   },
   "package": "icdev-core",
-  "parent_local": [
-    "icdev.core.shim"
-  ],
-  "pinned_version": "0.1.0",
+  "parent_local": [],
+  "pinned_version": "0.2.0",
   "repo": "icdev-ai/icdev-core",
-  "source_root": "icdev/core",
-  "surface_hash": "bc484c959bc1405e"
+  "resolution": "installed",
+  "surface_hash": "2fe6c79cd070f1bd"
 }

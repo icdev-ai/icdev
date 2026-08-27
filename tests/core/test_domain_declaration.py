@@ -252,10 +252,18 @@ def test_status_reports_the_domain():
 
 
 def test_core_package_is_stdlib_plus_yaml_only():
-    """The seam must be importable before tools.db.storage, from either namespace."""
+    """The seam must be importable before tools.db.storage, from either namespace.
+
+    Read from the INSTALLED distribution since xcore-cut-02 — this parent no longer ships
+    ``icdev/core/``. That is the stronger check: the property has to hold for the core this
+    parent actually resolves, not for a copy it happened to carry. icdev-core's own CI
+    re-derives it on every core change, which is where a violation would originate.
+    """
+    from tools.workflow.core_api_manifest import module_source
+
     src = "\n".join(
-        (REPO_ROOT / "icdev" / "core" / f).read_text(encoding="utf-8")
-        for f in ("paths.py", "domain.py", "context.py")
+        module_source(f"icdev.core.{m}").read_text(encoding="utf-8")
+        for m in ("paths", "domain", "context")
     )
     for banned in ("from tools.", "import tools", "icdev.tools", "flask", "psycopg", "sqlite3"):
         assert banned not in textwrap.dedent(src), banned

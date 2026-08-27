@@ -2827,9 +2827,10 @@ python tools/workflow/vendor_api_manifest.py --json                             
 # checked out, and ICDEV CI never checks it out -- so it would SKIP forever and report clean
 # however far the two drifted. That is exactly how check_vendor_parity failed (ctx-enf-01), and
 # this is the same remedy: a COMMITTED manifest a runner can check with nothing else present.
-# `exports` in args/core_api.yaml is the authority, NOT a directory listing -- icdev/core/shim.py
-# sits in the directory and is deliberately not in the package (FT has no tools/ tree), so a glob
-# would tell FT a module is available that its wheel will never contain.
+# `exports` in args/core_api.yaml is the authority, NOT a directory listing, and since
+# xcore-cut-02 it is resolved through importlib against the INSTALLED distribution -- this
+# parent no longer ships icdev/core/*.py at all. A declared module that cannot be located
+# fails; a module the installed package provides that the declaration names nowhere fails too.
 python tools/workflow/core_api_manifest.py                    # Verify; exit 1 stale, exit 2 could-not-run
 python tools/workflow/core_api_manifest.py --write            # Regenerate, then publish and bump pinned_version
 python tools/workflow/core_api_manifest.py --json

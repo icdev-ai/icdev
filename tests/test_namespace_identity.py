@@ -89,7 +89,7 @@ def test_mirror_only_and_shim_cases_resolve_in_the_mirror_explicitly(tmp_path):
     """A module that exists only under icdev/tools/, or whose tools/ file is a
     shim, must resolve to the MIRROR file even when its parent package is
     aliased (whose __path__ then points at tools/<pkg>)."""
-    from icdev.core.shim import IcdevToolsAliasFinder
+    from icdev._shim import IcdevToolsAliasFinder
 
     tools_dir = tmp_path / "tools"
     mirror_dir = tmp_path / "icdev" / "tools"
@@ -115,7 +115,7 @@ def test_mirror_only_and_shim_cases_resolve_in_the_mirror_explicitly(tmp_path):
 
 
 def test_finder_refuses_to_install_outside_a_checkout(tmp_path):
-    from icdev.core import shim
+    from icdev import _shim as shim
 
     foreign = tmp_path / "someproject" / "tools"
     foreign.mkdir(parents=True)

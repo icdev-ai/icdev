@@ -17,6 +17,18 @@ import importlib
 import importlib.util
 import sys
 
+# TWO DISTRIBUTIONS SHARE THIS NAME (xcore-cut-02). `icdev-core` ships `icdev/core/` and the
+# ICDEV[IT] parent ships `icdev/tools/`, `icdev/data/` and this file. A regular package has ONE
+# `__path__`, so without this line whichever were found first would win and the other's
+# subpackages would silently vanish -- measured 2026-08-26, the editable parent won and
+# installing icdev-core beside it changed nothing at all.
+#
+# `icdev-core` deliberately ships NO `icdev/__init__.py`, so this module is the only one that
+# ever executes and `_alias_tools_namespace()` below runs whatever the sys.path order. Do not
+# "fix" a future collision by adding an `__init__.py` there: with one in both, only one runs,
+# and if it is core's then the wheel's `tools.X` aliasing silently stops happening.
+__path__ = __import__("pkgutil").extend_path(__path__, __name__)
+
 from icdev._version import __version__
 
 __all__ = ["__version__"]
@@ -34,9 +46,9 @@ def _install_checkout_alias(tools_init: "str | None") -> None:
     if not tools_init:
         return
     try:
-        from icdev.core import shim
+        from icdev import _shim
 
-        shim.install(tools_init)
+        _shim.install(tools_init)
     except Exception:  # pragma: no cover - importing icdev must never fail here
         pass
 

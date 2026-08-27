@@ -125,7 +125,7 @@ wheel alias in `icdev/__init__.py:27-60`, and the bootstrap already assume it). 
 **Direction, as built (xit-decl-02):** the finder aliases `icdev.tools.X` onto the `tools.X` object (physical `tools/`), not the reverse — aliasing towards `icdev/tools/` would have re-rooted the 2,054 self-rooting modules onto the packaged copies under `icdev/args` and the checked-in `icdev/data/icdev.db`. Which tree is physical per package can move once xit-decl-03's census reaches zero for it. **The one change that fixes the module-identity trap.** `tools/__init__.py:33-66` is a `_ToolsRedirect`
 whose `__path__` still points at `tools/`, so an `import tools.x.y` STATEMENT loads a second module
 object (`args/mirror_parity_gate.yaml`: "a is b -> False"). Replace the fallthrough with a meta-path
-finder (`icdev/core/shim.py`) that, for core packages, imports `icdev.tools.<pkg>` and registers the
+finder (`icdev/_shim.py`, `icdev/core/shim.py` until xcore-cut-02) that, for core packages, imports `icdev.tools.<pkg>` and registers the
 SAME object under both names. Domain code stays in each parent's own `tools/` (IT keeps
 `tools/compliance`, FT gets `tools/trading`) and is served by the same finder — no `icdev_it` rename
 needed. Guard: `tests/test_namespace_identity.py` (`import tools.X as a; import icdev.tools.X as b;
@@ -306,7 +306,7 @@ days: IT trading stays killed, FT paper-only; rollback = untrip IT.
 |---|---|---|---|---|
 | `xit-gate-00` / `xcore-gate-00` / `xft-gate-00` | IT/core/FT | chore | high | MANUAL-MODE GATE, held `in_progress`, `RISK:` line (cutover ordering the runner cannot see; private repo unreachable; live-trading code never built unattended) |
 | `xit-decl-01` | IT | build | critical | `icdev/core/{paths,domain,context}.py`, IT `icdev_domain.yaml`, `assert_identity()` at dashboard/migrate/kanban-CLI startup; red-first tests; `core.d/xit-decl-01.txt` |
-| `xit-decl-02` | IT | build | critical | meta-path finder in `tools/__init__.py` (`icdev/core/shim.py`) + `tests/test_namespace_identity.py` |
+| `xit-decl-02` | IT | build | critical | meta-path finder in `tools/__init__.py` (`icdev/_shim.py`) + `tests/test_namespace_identity.py` |
 | `xit-decl-03` | IT | build | high | `tools/ci/self_root_census.py` + `args/self_root_census.txt` + `self_root_gate.yaml` + `check_self_rooting` (with `--fix`) |
 | `xit-decl-04` | IT | build | high | `icdev/core/schema/tables.yaml` ownership manifest (generated, reviewed) + `check_schema_ownership`; `icdev/core/sensitivity.py` |
 | `xit-leak-01` | IT | build | critical | `tools/ci/domain_leak_gate.py` + yaml; pre-commit + CI security job; negative-control red-first |
