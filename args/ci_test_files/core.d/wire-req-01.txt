@@ -1,0 +1,2 @@
+# wire-req-01 -- the requirement gate's decision table and its arming posture.
+tests/kanban/test_requirement_gate.py

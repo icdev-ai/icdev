@@ -1,0 +1,67 @@
+# CUI // SP-CTI
+# Modules that seed a build/fix card with NO acceptance_criteria (wire-req-01).
+#
+# Consumed by tools/kanban/requirement_gate.py (the arming decision) and
+# tests/kanban/test_requirement_gate.py (the ratchet).
+#
+# WHY THIS FILE EXISTS. `KANBAN_REQUIRE_ACCEPTANCE_CRITERIA` ships `report`, not `enforce`, and
+# this list is why. Arming it would make every module below raise ValueError on its next run --
+# and five of them are LIVE reflexes seeding `fix` cards on a 6-hour cadence
+# (claim_verifier_reflex, coherence_to_kanban_reflex, qa_agent_reflex, ungated_test_drift,
+# route_perf_reflex), so the autonomous loop would stop within hours. That is refusing routine
+# work, which CLAUDE.md treats as grounds to stand a check down.
+#
+# THE PATH TO ARMING IS TO DRAIN THIS FILE. Give each module a real acceptance criterion for the
+# cards it seeds -- what would a reader check to know the card was delivered -- and remove its
+# line. When the file is empty, flip SEED_DEFAULT_MODE to `enforce` and the gate costs nothing.
+#
+# IT MAY ONLY SHRINK. A new entry means a new seeder that cannot be judged, which is the defect
+# this programme exists to stop. Add the criterion instead.
+#
+# SELECTION IS CONSERVATIVE: a module is listed only if it calls create_tasks, names a `build`
+# or `fix` task_type LITERALLY, and never mentions acceptance_criteria. Modules that build
+# their specs dynamically are NOT listed -- they cannot be judged statically, and listing one on
+# suspicion would put an undrainable entry in a shrink-only file. They are named at the bottom
+# as a comment so the omission is visible rather than silent.
+#
+# Regenerate the candidate list (does not write this file):
+#   python -m tools.kanban.bypass_survey --json
+#
+tools/aiify/blueprint.py
+tools/aiify/engine.py
+tools/document_intelligence/blueprint.py
+tools/genesis/reflexes/claim_verifier_reflex.py
+tools/genesis/reflexes/coherence_to_kanban_reflex.py
+tools/genesis/reflexes/qa_agent_reflex.py
+tools/genesis/reflexes/route_perf_reflex.py
+tools/genesis/reflexes/ungated_test_drift.py
+tools/govcon/rfi_demand.py
+tools/kanban/seed_acf_adaptations.py
+tools/kanban/seed_ahx_arr_clx.py
+tools/kanban/seed_nav_readiness.py
+tools/workflow_canvas/blueprint.py
+
+# Dynamic-spec modules, deliberately NOT listed (see SELECTION above):
+#   tools/agentic_ai_canvas/blueprint.py
+#   tools/agentic_ai_canvas/ops_config_generator.py
+#   tools/dx/instruction_generator.py
+#   tools/genesis/reflexes/cache_regression_reflex.py
+#   tools/genesis/reflexes/detector_findings_reflex.py
+#   tools/kanban/cli.py
+#   tools/kanban/identity_survey.py
+#   tools/kanban/lane_conflicts.py
+#   tools/kanban/policy_drift.py
+#   tools/kanban/raw_insert_census.py
+#   tools/kanban/seed_acf_completion.py
+#   tools/kanban/seed_bom_concord.py
+#   tools/kanban/seed_cdp_kanban.py
+#   tools/kanban/seed_compass_dispatch_probe.py
+#   tools/kanban/seed_dwo_kanban.py
+#   tools/kanban/seed_fga_kanban.py
+#   tools/kanban/seed_ft_programme_phase2.py
+#   tools/kanban/seed_oss02_kanban.py
+#   tools/kanban/task_identity.py
+#   tools/mcp/kanban_server.py
+#   tools/migration_intelligence/migration_manager.py
+#   tools/ndc/agentic_netops.py
+#   tools/workflow/coherence_checker.py

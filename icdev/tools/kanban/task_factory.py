@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from tools.kanban import requirement_gate
 from tools.kanban.gates import (
     GATE_ID_SEPARATOR,
     GATE_TITLE_MARKER,
@@ -227,6 +228,32 @@ def create_tasks(task_specs: list[dict], *, claim: bool = False) -> list[str]:
             f"task_type {', '.join(repr(b) for b in bad_types)} violates "
             f"kanban_tasks_task_type_check; allowed: {sorted(VALID_TASK_TYPES)}. "
             "(There is no 'bug' — use 'fix'.)"
+        )
+
+    # wire-req-01: a build/fix card with no acceptance_criteria can never be judged.
+    # An empty criterion makes conformance_reviewer return review_passed=None, and
+    # pr_watcher._enforced_done_ok reads None as ALLOWED ("None = not judged, allowed") --
+    # so the card reaches done having been checked against nothing. Measured on the live
+    # board 2026-08-27: the column was populated on 267 of 3,571 tasks (7.5%), and exactly
+    # ONE task in the whole history was ever judged against a criterion and passed.
+    #
+    # Refused HERE because seeding is the only place the root cause is fixable and the only
+    # place the cost is one sentence. The fire-rate survey
+    # (`python -m tools.kanban.bypass_survey`) puts this rung at 91.5% against HISTORY, which
+    # is a fact about cards already seeded, not a forward cost: this refuses new specs only,
+    # and withholds no delivered work. The DONE-side rung measured 96.7% and is deliberately
+    # NOT armed -- see tools/kanban/requirement_gate.py.
+    #
+    # Stand down with KANBAN_REQUIRE_ACCEPTANCE_CRITERIA=report (or =off), never by passing a
+    # placeholder: "TBD" satisfies the check and defeats its purpose.
+    unjudgeable = []
+    for spec in task_specs:
+        ok, why = requirement_gate.admit_spec(spec)
+        if not ok:
+            unjudgeable.append(why)
+    if unjudgeable:
+        raise ValueError(
+            "refusing to seed a card nothing can judge:\n  " + "\n  ".join(unjudgeable)
         )
 
     # kax-exec-04: a gate-shaped id on a work task is undispatchable, silently.

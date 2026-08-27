@@ -4324,10 +4324,13 @@ def _write_prompt_file(task: dict):
 
     resume_section = _get_resume_context(task_id)
 
-    # Show the agent the criteria it will be GRADED on. review_conformance
-    # (via make_pipeline_grader) and _check_acceptance_criteria both judge the
-    # finished work against acceptance_criteria, but the column never reached
-    # the prompt — the agent was marked down against a spec it was never given.
+    # Show the agent the criteria it will be GRADED on. `review_conformance` (via
+    # make_pipeline_grader) judges the finished work against acceptance_criteria, but the
+    # column never reached the prompt — the agent was marked down against a spec it was
+    # never given. (`_check_acceptance_criteria` was the second judge named here until
+    # wire-req-01 deleted it: it was never called from anywhere, and it returned True on
+    # no-criteria, DB error, judge-unavailable and judge-exception, so wiring it would have
+    # added a rung that cannot fail.)
     criteria = (task.get("acceptance_criteria") or "").strip()
     criteria_section = (
         f"\n## Acceptance Criteria\nYou will be graded against these. "
@@ -9066,63 +9069,6 @@ def _unblock_dep_chain(conn: Any) -> None:
             )
     except Exception as exc:
         logger.warning("dep-chain-unblock: failed: %s", exc)
-def _check_acceptance_criteria(task_id: str, output_text: str) -> tuple:
-    """Judge whether task output satisfies its acceptance_criteria.
-
-    Returns (passed: bool, reasoning: str). Passes when no criteria are set
-    or when the LLM judge votes pass. Non-fatal — any failure returns pass
-    so the verification gate degrades gracefully.
-    """
-    conn = None
-    try:
-        conn = get_connection()
-        row = conn.execute(
-            "SELECT acceptance_criteria FROM kanban_tasks WHERE id = %s",
-            (task_id,),
-        ).fetchone()
-        if not row:
-            return True, "task not found"
-        criteria = (dict(row).get("acceptance_criteria") or "").strip()
-        if not criteria:
-            return True, "no criteria"
-    except Exception:
-        return True, "db error"
-    finally:
-        if conn:
-            conn.close()
-
-    try:
-        import json as _json
-        import re as _re2
-        from tools.llm.router import LLMRouter
-        from tools.llm.provider import LLMRequest
-
-        prompt = (
-            f"Does this task output meet the acceptance criteria?\n\n"
-            f"ACCEPTANCE CRITERIA:\n{criteria}\n\n"
-            f"TASK OUTPUT (last 3000 chars):\n{output_text[-3000:] if output_text else '(no output)'}\n\n"
-            'Return ONLY valid JSON: {"passed": true/false, "reasoning": "one sentence"}'
-        )
-        req = LLMRequest(
-            system_prompt="You are a quality acceptance evaluator. Return valid JSON only.",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=200,
-            temperature=0.0,
-            skip_injection_scan=True,
-            classification="CUI",
-        )
-        resp = LLMRouter().invoke("acceptance_judge", req)
-        if not resp or not resp.content:
-            return True, "judge unavailable"
-        raw = _re2.sub(
-            r"^```(?:json)?\s*|\s*```$", "", resp.content.strip(), flags=_re2.MULTILINE
-        ).strip()
-        data = _json.loads(raw)
-        return bool(data.get("passed", True)), str(data.get("reasoning", ""))
-    except Exception as exc:
-        return True, f"judge error: {exc}"
-
-
 def _fire_task_subscriptions(task_id: str, event: str) -> None:
     """Fire webhook notifications for all subscriptions matching this event.
 

@@ -2421,6 +2421,28 @@ python -m tools.kanban.cli --set-status oss-gate-00 done      # RELEASE the card
 # routing: `prem-vfy` prefix in args/kanban_external_repos.yaml.
 python -m tools.kanban.seed_compass_dispatch_probe --dry-run --json   # Validate routing, write nothing
 python -m tools.kanban.seed_compass_dispatch_probe --json             # Seed onto the board
+
+# --- Was this task ever judged against a requirement? (wire-req-01) ---
+# THE DEFECT, measured on the live board 2026-08-27 over 3,571 tasks: acceptance_criteria
+# populated on 7.5%, 38% completed via bypass, and judged_pass = 1. Exactly ONE task in the
+# whole history was judged against a criterion and passed. conformance_reviewer returns
+# review_passed=None for an EMPTY criterion and pr_watcher._enforced_done_ok reads None as
+# ALLOWED, so 92.5% of tasks cleared that rung vacuously.
+python -m tools.kanban.bypass_survey                    # what the gate WOULD have refused
+python -m tools.kanban.bypass_survey --json
+# BOTH RUNGS SHIP `report` AND THE SURVEY IS WHY. Done gate: 96.7% refusal (wrong rate 78.8%),
+# against CLAUDE.md's 1.63% stand-down threshold. Seed admission LOOKED armable -- its 91.5% is
+# a fact about history, not a forward cost -- until measuring showed 46 of 57 create_tasks
+# callers never mention acceptance_criteria, five of them LIVE reflexes seeding `fix` cards on a
+# 6-hour cadence (claim_verifier, coherence_to_kanban, qa_agent, ungated_test_drift,
+# route_perf). Arming would take the autonomous loop down within hours.
+# THE PATH TO ARMING IS NAMED: drain args/kanban_seeder_criteria_census.txt (13 entries,
+# shrink-only, registered in tools/ci/census_growth.py), then flip SEED_DEFAULT_MODE.
+KANBAN_REQUIRE_ACCEPTANCE_CRITERIA=enforce   # seed admission (default: report)
+KANBAN_REQUIREMENT_GATE=enforce              # the done rung  (default: report)
+# The predicates live in tools/kanban/requirement_gate.py and are consumed by task_factory,
+# pr_watcher and the survey -- one decision table, never a second copy, so the survey cannot
+# measure a gate that does not exist.
 python -m tools.kanban.seed_compass_dispatch_probe --seed-file args/kanban_seed_ft_dispatch.yaml --dry-run
 python -m tools.kanban.seed_compass_dispatch_probe --seed-file args/kanban_seed_ft_dispatch.yaml
 # NOT compass-specific despite the module name (xit-rm-04): `--seed-file` seeds any dispatch
