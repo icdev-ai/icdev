@@ -433,6 +433,31 @@ class LLMResponseCache:
             )
             conn.commit()
 
+            # DURABLE RECORD OF THE AVOIDED CALL (cch-obs-07).
+            #
+            # `hit_count` above is the only trace a hit used to leave, and every savings
+            # number is derived from it `FROM llm_response_cache` -- so the figure died with
+            # the row. Rows die routinely: `ttl_seconds` (3600), LRU eviction past
+            # `max_entries`, and `invalidate()`. The panel read $0.0000 having previously
+            # shown a real figure, because whatever had been re-read had since aged out.
+            #
+            # Appended HERE rather than derived later because this is the moment the saving
+            # happens, and the only moment at which the avoided call's token counts are
+            # known. Best-effort: a serving hit must never fail because bookkeeping did.
+            try:
+                from tools.cache_savings.ledger import record_avoided_call  # noqa: PLC0415
+
+                _r = dict(row) if not isinstance(row, dict) else row
+                record_avoided_call(
+                    function=_r.get("function") or "",
+                    model_id=_r.get("model_id") or "",
+                    provider=_r.get("provider") or "",
+                    input_tokens=_r.get("input_tokens") or 0,
+                    output_tokens=_r.get("output_tokens") or 0,
+                )
+            except Exception:  # noqa: BLE001 - never let bookkeeping break a cache hit
+                pass
+
             # Timing side-channel mitigation
             if jitter_ms > 0:
                 delay = random.randint(0, jitter_ms) / 1000.0

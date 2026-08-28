@@ -295,6 +295,7 @@ tables:
   kg_retrieval_log: core
   knowledge_graph_edges: core
   knowledge_patterns: core
+  llm_cache_savings_ledger: core
   llm_chain_telemetry: core
   llm_context_compression_log: core
   llm_cost_alerts: core

@@ -128,6 +128,13 @@ def api_cache_savings_tile():
         "state":          stats.get("state", ""),
         "state_detail":   stats.get("state_detail", ""),
         "stored_entries": stats.get("stored_entries", 0),
+        # THE DURABLE FIGURE, CARRIED BESIDE THE LIVE ONE AND NEVER INSTEAD OF IT
+        # (cch-obs-07). `cost_usd_saved` above is derived from rows STILL IN the
+        # cache, so it falls to $0.0000 the moment a ttl expires or the LRU sweeps
+        # -- which is what the tile was observed doing on 2026-08-27 after
+        # previously showing a real figure. `lifetime` is summed from the
+        # append-only ledger and answers "what has this cache saved, ever".
+        "lifetime": stats.get("lifetime") or {"measurable": False},
     })
 
 

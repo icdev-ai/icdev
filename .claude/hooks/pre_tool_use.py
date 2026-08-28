@@ -152,6 +152,15 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
     """
     APPEND_ONLY_TABLES = [
     "web_fetch_provenance",   # oss-cite-01: a fetch is an observation; re-fetch appends
+        # cch-obs-07, migration 20260827235301. One row per LLM call the response
+        # cache avoided. It exists because every savings figure was previously
+        # derived live `FROM llm_response_cache`, so a saving died with the row
+        # that caused it -- and rows die routinely (ttl_seconds, LRU eviction,
+        # invalidate()). A cache is ALLOWED to forget; the record of what it saved
+        # is not. An UPDATE here would rewrite what a call cost at the one moment
+        # that cost was knowable, and the avoided calls cannot be re-derived
+        # because they already did not happen. A correction is a new row.
+        "llm_cache_savings_ledger",
         # === CHILD-INHERITABLE (copied to child apps via step_09c) ===
         # Core audit
         "audit_trail",

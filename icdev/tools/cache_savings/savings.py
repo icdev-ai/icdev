@@ -383,7 +383,33 @@ def get_savings_stats(conn: Any = None) -> dict:
         },
         "by_function": by_function,
         "by_provider": by_provider,
+        # THE DURABLE HALF, AND IT IS KEPT APART FROM THE LIVE ONE ON PURPOSE
+        # (cch-obs-07). Everything above is derived from rows STILL IN the cache,
+        # so it answers "what is the cache holding right now" -- and a cache is
+        # allowed to forget. `lifetime` is summed from llm_cache_savings_ledger,
+        # one appended row per avoided call, so it answers "what has this cache
+        # saved, ever" and survives ttl expiry, LRU eviction, invalidate() and
+        # restart. Merging the two would let a swept cache report that its
+        # savings never happened, which is the defect this card exists to fix.
+        "lifetime": _lifetime(conn),
     }
+
+
+def _lifetime(conn: Any) -> dict:
+    """Cumulative savings from the append-only ledger; never raises.
+
+    `measurable` False means the ledger could not be read (unmigrated database,
+    unreachable backend) -- NOT that nothing was saved. The caller must render
+    those differently, for the same reason `hit_rate_pct` is None rather than 0.0.
+    """
+    try:
+        from tools.cache_savings.ledger import cumulative
+
+        return cumulative(conn)
+    except Exception:  # noqa: BLE001
+        return {"avoided_calls": 0, "tokens_saved_input": 0, "tokens_saved_output": 0,
+                "usd_saved": None, "priced_calls": 0, "unpriced_calls": 0,
+                "measurable": False}
 
 
 def _empty(state: str = STATE_UNREACHABLE) -> dict:
@@ -397,4 +423,10 @@ def _empty(state: str = STATE_UNREACHABLE) -> dict:
     return {"enabled": False, "backend": "unknown", "window_hours": 168,
             "state": state, "state_detail": _STATE_DETAIL.get(state, ""),
             "stored_entries": 0, "unlogged": False,
-            "summary": summary, "by_function": [], "by_provider": []}
+            "summary": summary, "by_function": [], "by_provider": [],
+            # Unreachable is not "saved nothing": measurable stays False so a
+            # caller cannot render this as a measured $0.00.
+            "lifetime": {"avoided_calls": 0, "tokens_saved_input": 0,
+                         "tokens_saved_output": 0, "usd_saved": None,
+                         "priced_calls": 0, "unpriced_calls": 0,
+                         "measurable": False}}
