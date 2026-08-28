@@ -69,8 +69,13 @@ def test_visibility_no_longer_depends_on_counted_tasks_alone():
         "must go False once every task is done"
     )
     # ...and open_orphans must actually exclude terminal states, or it is just
-    # len(orphans) wearing a different name.
-    assert "status NOT IN ('done', 'decomposed', 'cancelled', 'merged')" in src
+    # len(orphans) wearing a different name. The closed set became ONE named tuple in the
+    # card-clearing fix (2026-08-28) -- the epic counts and this predicate had drifted apart
+    # precisely because they were two hand-maintained literals -- so the pin moved from the
+    # literal list to the tuple and its interpolation. tests/test_project_card_clearing.py
+    # asserts the literal never reappears.
+    assert '_closed_statuses = ("done", "decomposed", "cancelled", "merged")' in src
+    assert "AND status NOT IN ({_cq})" in src
 
 
 def test_a_finished_project_leaves_the_board():
