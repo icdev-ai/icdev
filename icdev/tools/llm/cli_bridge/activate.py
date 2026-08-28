@@ -159,20 +159,68 @@ def should_enable() -> bool:
     return not _has_cloud_key()
 
 
+#: Declared modes for ``cli_bridge.mode`` in args/llm_config.yaml.
+MODE_AUTO = "auto"      # fallback only — air-gapped or keyless (the historical behaviour)
+MODE_PREFER = "prefer"  # use the Claude CLI even when a cloud key exists
+MODE_NEVER = "never"    # never bridge, even air-gapped and keyless
+_MODES = (MODE_AUTO, MODE_PREFER, MODE_NEVER)
+
+
+def configured_mode() -> str:
+    """The declared `cli_bridge.mode`, defaulting to `auto`.
+
+    A CONFIG key, not an env var, on purpose. `ICDEV_CLI_BRIDGE` was removed for a good
+    reason -- an env toggle deciding which vendor gets the prompt is invisible in review --
+    and the answer is not to bring it back but to put the decision where the rest of the
+    routing lives. An unreadable or absent config yields `auto`, which is exactly today's
+    behaviour, so this can never change routing by failing.
+    """
+    try:
+        import yaml  # noqa: PLC0415
+
+        from tools.llm.config_path import resolve_llm_config_path  # noqa: PLC0415
+
+        cfg = yaml.safe_load(resolve_llm_config_path().read_text(encoding="utf-8")) or {}
+        mode = str(((cfg.get("cli_bridge") or {}).get("mode") or MODE_AUTO)).strip().lower()
+    except Exception as exc:  # noqa: BLE001 — routing must never break on a config read
+        logger.debug("cli_bridge.mode unreadable (%s); defaulting to auto", exc)
+        return MODE_AUTO
+    if mode not in _MODES:
+        logger.warning("cli_bridge.mode=%r is not one of %s; using auto", mode, _MODES)
+        return MODE_AUTO
+    return mode
+
+
 def cli_bridge_enabled() -> bool:
     """Resolve the effective enable state.
 
     Precedence (highest to lowest):
     1. Context override (set via :func:`cli_bridge_override`)
-    2. ``should_enable()`` auto-detection (air-gapped or no cloud key)
+    2. ``cli_bridge.mode`` in args/llm_config.yaml — `prefer` / `never`
+    3. ``should_enable()`` auto-detection (air-gapped or no cloud key)
 
-    The legacy ``ICDEV_CLI_BRIDGE`` env-var toggle is intentionally no longer
-    consulted — the context-scoped override is the sole per-request override path.
+    THE DECLARED MODE EXISTS BECAUSE (2) HAD NO ENTRY (cch-obs-06). `should_enable` is
+    `is_airgap() or not _has_cloud_key()`, so the bridge was a FALLBACK for a keyless host
+    and there was no way to PREFER it: on a machine holding any of the nine
+    CLOUD_KEY_ENV_VARS it was off, and the only ways round that were unsetting the key
+    (which kills that provider's routing) or a per-request context override. Neither is an
+    operator decision that survives a restart, so ICDEV's own Claude traffic could not be
+    routed through LLMRouter and therefore could not be MEASURED.
+
+    The legacy ``ICDEV_CLI_BRIDGE`` env-var toggle is still not consulted, and this does not
+    reinstate it: an env var deciding which vendor receives the prompt is invisible in
+    review, which is why it was removed. `auto` is the default and is byte-identical to the
+    previous behaviour.
     """
     override = _cli_bridge_override.get()
     if override is not None:
         return override
 
+    mode = configured_mode()
+    if mode == MODE_PREFER:
+        return True
+    if mode == MODE_NEVER:
+        return False
     return should_enable()
 
 
