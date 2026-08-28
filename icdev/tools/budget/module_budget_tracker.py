@@ -58,6 +58,55 @@ CONFIG_PATH = BASE_DIR / "args" / "llm_config.yaml"
 # ---------------------------------------------------------------------------
 
 VALID_MODULES = ("generative_intelligence", "predictive_analysis")
+
+
+def declared_modules() -> tuple:
+    """Every module a budget may be enforced against: the two built-ins plus anything
+    declared under ``module_budgets.per_module``.
+
+    An unknown module is ALLOWED, not blocked, so this list is what makes a declared
+    module actually enforceable rather than silently free.
+    """
+    try:
+        per_module = (_load_module_budget_config().get("per_module") or {})
+        return tuple(dict.fromkeys(VALID_MODULES + tuple(per_module)))
+    except Exception:  # noqa: BLE001 -- an unreadable config must not disable enforcement
+        return VALID_MODULES
+
+
+def module_for_function(function: str) -> str:
+    """Which budget module this LLM function is charged to.
+
+    THE DEFECT THIS EXISTS FOR. ``router.invoke`` hardcoded ``"generative_intelligence"``
+    for EVERY call, so one monthly pool covered the whole platform and a "module budget"
+    was a global cap wearing a module's name. Measured 2026-08-28: FT's period row read
+    407,934 / 400,000 tokens, and because the pool is shared the block was not specific
+    to the workload that filled it -- ``code_generation`` was refused too, as was every
+    other function in both parents.
+
+    The mapping is DATA (``module_budgets.function_modules``), not a second hardcoded
+    frozenset beside ``PREDICTIVE_ANALYSIS_FUNCTIONS``. An unmapped function falls to
+    ``default_module``, which defaults to ``generative_intelligence`` -- so a deployment
+    that declares no mapping behaves exactly as it did before this change.
+
+    A call is charged to exactly ONE module. Charging one call to two pools -- which is
+    what the predictive branch did, counting a simulation call against both -- is part of
+    why neither number could be read as a budget.
+    """
+    try:
+        cfg = _load_module_budget_config()
+    except Exception:  # noqa: BLE001
+        return "generative_intelligence"
+    default = str(cfg.get("default_module") or "generative_intelligence")
+    mapping = cfg.get("function_modules") or {}
+    mod = mapping.get(function) if isinstance(mapping, dict) else None
+    if not mod:
+        # The legacy frozenset stays authoritative for the module it was written for, so
+        # deleting it is a separate, reviewable change.
+        if function in PREDICTIVE_ANALYSIS_FUNCTIONS:
+            return "predictive_analysis"
+        return default
+    return str(mod) if str(mod) in declared_modules() else default
 VALID_RESOURCE_TYPES = ("usd", "tokens", "operations")
 
 # LLM function names that belong to the predictive_analysis module.
@@ -78,7 +127,7 @@ PREDICTIVE_ANALYSIS_FUNCTIONS = frozenset({
 CREATE_MODULE_BUDGET_USAGE_SQL = """
 CREATE TABLE IF NOT EXISTS module_budget_usage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    module_name TEXT NOT NULL CHECK(module_name IN ('generative_intelligence', 'predictive_analysis')),
+    module_name TEXT NOT NULL CHECK(module_name <> ''),  -- declared in args/llm_config.yaml; see declared_modules()
     function_name TEXT,
     resource_type TEXT NOT NULL DEFAULT 'usd' CHECK(resource_type IN ('usd', 'tokens', 'operations')),
     amount REAL NOT NULL DEFAULT 0.0,
@@ -98,7 +147,7 @@ CREATE TABLE IF NOT EXISTS module_budget_usage (
 CREATE_MODULE_BUDGET_PERIODS_SQL = """
 CREATE TABLE IF NOT EXISTS module_budget_periods (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    module_name TEXT NOT NULL CHECK(module_name IN ('generative_intelligence', 'predictive_analysis')),
+    module_name TEXT NOT NULL CHECK(module_name <> ''),  -- declared in args/llm_config.yaml; see declared_modules()
     month TEXT NOT NULL,
     budget_usd REAL NOT NULL DEFAULT 0.0,
     budget_tokens INTEGER NOT NULL DEFAULT 0,
@@ -363,7 +412,7 @@ def check_module_budget(
     Returns:
         Dict with action ('allow'|'warn'|'block'), utilization, message.
     """
-    if module_name not in VALID_MODULES:
+    if module_name not in declared_modules():
         return {
             "action": "allow",
             "module_name": module_name,
@@ -430,6 +479,15 @@ def check_module_budget(
         )
 
     if budget_tokens > 0 and (spent_tokens + estimated_tokens) > budget_tokens:
+        # NOTE, measured 2026-08-28 and deliberately NOT acted on here: this cap is a cost
+        # proxy, and on this deployment it fired at 407,934 of 400,000 tokens while the USD
+        # cap beside it -- the one that tracks real money -- sat at $0.00 of $150.00,
+        # because every call routed to a provider priced at $0/1k. Relaxing it pre-flight
+        # is not implementable: the gate runs BEFORE the model is resolved, and every
+        # declared chain here carries `claude-sonnet` and `gpt-4o` as fallbacks, so the
+        # honest pre-flight answer is always "this could cost money". Moving the token cap
+        # after routing, or giving it a short window so it guards runaways instead of
+        # proxying cost, is its own card.
         over_budget = True
         over_message.append(
             f"Token cap: {spent_tokens + estimated_tokens} would exceed {budget_tokens}"

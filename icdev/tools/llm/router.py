@@ -2240,7 +2240,7 @@ class LLMRouter:
                 # Record module-level budget usage for generative_intelligence
                 try:
                     from tools.budget.module_budget_tracker import (
-                        PREDICTIVE_ANALYSIS_FUNCTIONS,
+                        module_for_function,
                         record_module_usage,
                     )
 
@@ -2270,7 +2270,7 @@ class LLMRouter:
                             logger.debug("cost derivation skipped: %s", _cost_exc)
 
                     record_module_usage(
-                        "generative_intelligence",
+                        module_for_function(function),
                         cost_usd=_resp_cost,
                         tokens=_resp_tokens,
                         function=function,
@@ -2279,16 +2279,9 @@ class LLMRouter:
                         cost_basis=_cost_basis,
                     )
 
-                    # Also record predictive_analysis usage for simulation functions
-                    if function in PREDICTIVE_ANALYSIS_FUNCTIONS:
-                        record_module_usage(
-                            "predictive_analysis",
-                            cost_usd=_resp_cost,
-                            tokens=_resp_tokens,
-                            function=function,
-                            project_id=getattr(request, "project_id", None),
-                            model_id=getattr(response, "model_id", model_id),
-                        )
+                    # No second record: the call was already charged to the module
+                    # `module_for_function` resolved, which IS `predictive_analysis` for a
+                    # simulation function. One call, one pool.
                 except Exception as exc:
                     # Best-effort — never block a completed LLM call on budget
                     # bookkeeping. But log it: a bare `pass` here hid a schema
@@ -2586,8 +2579,8 @@ class LLMRouter:
         # Module-level budget enforcement for generative_intelligence and predictive_analysis
         try:
             from tools.budget.module_budget_tracker import (
-                PREDICTIVE_ANALYSIS_FUNCTIONS,
                 check_module_budget,
+                module_for_function,
                 ModuleBudgetExceededError,
             )
 
@@ -2595,29 +2588,23 @@ class LLMRouter:
                 len(m.get("content", "")) for m in (request.messages or []) if isinstance(m, dict)
             ) // 4  # rough token estimate for pre-check
 
+            # WHICH module, from the declared mapping -- not one hardcoded name for the
+            # whole platform (cch-bud-01).
+            _budget_module = module_for_function(function)
             mod_budget = check_module_budget(
-                "generative_intelligence",
+                _budget_module,
                 function=function,
                 estimated_cost_usd=0.0,  # actual cost recorded post-invoke
                 estimated_tokens=_estimated_tokens,
             )
             if mod_budget["action"] == "block":
-                raise ModuleBudgetExceededError("generative_intelligence", mod_budget)
+                raise ModuleBudgetExceededError(_budget_module, mod_budget)
             if mod_budget["action"] == "warn":
                 logger.warning("Module budget warning: %s", mod_budget["message"])
 
-            # Also enforce predictive_analysis budget when invoking simulation functions
-            if function in PREDICTIVE_ANALYSIS_FUNCTIONS:
-                pa_budget = check_module_budget(
-                    "predictive_analysis",
-                    function=function,
-                    estimated_cost_usd=0.0,
-                    estimated_tokens=_estimated_tokens,
-                )
-                if pa_budget["action"] == "block":
-                    raise ModuleBudgetExceededError("predictive_analysis", pa_budget)
-                if pa_budget["action"] == "warn":
-                    logger.warning("Predictive analysis budget warning: %s", pa_budget["message"])
+            # No second check: `module_for_function` already routes a simulation function
+            # to `predictive_analysis`. This branch used to charge such a call to BOTH
+            # pools, which is why neither number could be read as a budget.
         except ImportError:
             pass
         except ModuleBudgetExceededError:
