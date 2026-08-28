@@ -1,6 +1,10 @@
 # CUI // SP-CTI
 """The home Cortex tile must not report a fault for a switched-off canvas.
 
+cch-obs-08 REMOVED that tile from Home. The registry-level guarantees below still
+hold and still run; the two tile-specific ones are conditional on the tile existing,
+so they return the moment it does. See the module comment above them.
+
 Regression for: with ICDEV_CORTEX_ENABLED unset the Cortex blueprint is never
 registered, so /cortex/api/metrics/tile 404s and the tile rendered "Cortex
 metrics unavailable" — telling an operator the audit trail was broken when the
@@ -65,7 +69,24 @@ def test_context_processor_exposes_the_helper():
     )
 
 
+# The two assertions below were UNCONDITIONAL until cch-obs-08 removed the Cortex tile
+# from Home, at which point they failed on `html.index(...)` raising ValueError.
+#
+# They are now CONDITIONAL rather than deleted, and the difference matters. Deleting them
+# would discard a guarantee because its subject happened to go away this week -- and the
+# regression they encode (a switched-off component reporting a FAULT) is a property of any
+# tile that fetches a component-gated endpoint, not of this one. Written this way they are
+# silent while the tile is absent and fire again the moment somebody re-adds it without
+# the gate, which is exactly when the guarantee is needed.
+#
+# That the tile is currently absent is asserted positively, per token and per tree, by
+# tests/dashboard/test_home_tile_removal.py -- so "no tile" cannot be reached by accident
+# and then sit unnoticed behind a skipped assertion here.
+
+
 def test_tile_is_gated_on_component_enablement(html):
+    if 'id="tile-cortex"' not in html:
+        return   # removed by cch-obs-08; see test_home_tile_removal.py
     gate = html.index("component_enabled('cortex')")
     tile = html.index('id="tile-cortex"')
     endif = html.index("{% endif %}", tile)
@@ -73,6 +94,8 @@ def test_tile_is_gated_on_component_enablement(html):
 
 
 def test_404_is_reported_as_not_enabled_not_as_a_fault(html):
+    if "/cortex/api/metrics/tile" not in html:
+        return   # nothing on Home fetches it any more; see test_home_tile_removal.py
     assert "r.status === 404" in html, "404 is not distinguished from other errors"
     assert "err.notMounted" in html, "no distinct not-mounted branch in the catch"
 
