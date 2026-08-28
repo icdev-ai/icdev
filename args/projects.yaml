@@ -9179,3 +9179,24 @@ projects:
   - key: pead
     title: PEAD - earnings drift from point-in-time filings, a third decorrelated blend leg
     priority: high
+  # --- MARKET-CYCLE ADAPTATION + POST-ENTRY MANAGEMENT (plan approved 2026-08-28).
+  # Exploration verdicts these epics answer to: the exit path is a probable no-op on this
+  # host (quote 403 -> empty price map -> evaluate_exits skips every rule incl. time_stop;
+  # Alpaca fills carry no fill_price -> register_exit_rules never runs; a tripped kill
+  # switch refuses EXIT orders too); regime machinery exists unwired (macro_feed observes,
+  # strategy_routing ceilings consume, nothing connects them, nothing persists a label);
+  # exits are all-or-nothing (qty_pct plumbed, hard-coded 1.0) and the blend rebalance
+  # never sells. Phase order is LAW: exit first (safety), then regime (persist + prove
+  # reachability via exposure.reachability() BEFORE any wire), then pm, then harm.
+  - key: exit
+    title: EXIT - make the exit path real; fills resolve, prices answer, stops fire under a tripped switch
+    priority: high
+  - key: regime
+    title: REGIME - the market cycle observed, persisted, and proven reachable before it steers anything
+    priority: high
+  - key: pm
+    title: PM - tiered position management; scale-out, scale-in discipline, regime de-risk
+    priority: high
+  - key: harm
+    title: HARM - one exposure owner; inert modules decided; per-regime attribution
+    priority: medium
