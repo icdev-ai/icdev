@@ -182,6 +182,7 @@ def register(intent: Optional[str] = None) -> Dict[str, Any]:
             tuple(vals),
         )
         conn.commit()
+        _reap_on_register()
         return {"ok": True, "session_id": sid}
     except Exception as exc:
         try:
@@ -191,6 +192,36 @@ def register(intent: Optional[str] = None) -> Dict[str, Any]:
         return {"ok": False, "reason": str(exc)[:160]}
     finally:
         conn.close()
+
+
+def _reap_on_register() -> int:
+    """Drop rows whose heartbeat aged past the TTL. Never raises.
+
+    THE DEFECT THIS CLOSES. `reap_stale()` has existed since this module was written and
+    was called by NOBODY -- not a reflex, not the supervisor, not a scheduler. Rows for
+    dead processes therefore accumulated forever. `list_active()` filters by TTL so they
+    stopped being DISPLAYED, which is precisely why nobody noticed the table growing.
+
+    Measured on the live board 2026-08-28: 9 rows carried `status='active'`, 4 of them
+    past the 900s TTL, for processes whose pids were provably dead. During the window
+    where those rows were still INSIDE the TTL they were shown to every session as live
+    peers -- reported as duplicate schedulers, pr_watchers and daemons that did not exist.
+    A reader acting on that would have gone looking for processes to stop.
+
+    REGISTER is the right hook and heartbeat is not. Registration happens once per process
+    start -- rare, already doing a write, and exactly the moment a NEW process arrives to
+    replace ones that died. Reaping on every heartbeat would put a scan and a DELETE on a
+    path that runs every cycle of every daemon, to clean up something that changes only
+    when a process starts or stops.
+
+    Best-effort by construction: a failed reap must never stop a session registering. The
+    cost of a lost reap is a stale row that the next registration clears; the cost of a
+    raised exception here is a process that cannot announce itself at all.
+    """
+    try:
+        return reap_stale()
+    except Exception:  # noqa: BLE001 -- see the docstring
+        return 0
 
 
 def heartbeat(intent: Optional[str] = None) -> bool:

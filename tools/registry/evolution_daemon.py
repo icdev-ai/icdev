@@ -118,6 +118,8 @@ class EvolutionDaemon(DaemonBase):
     event_prefix = "evolution"
     reflex_names = REFLEX_NAMES
     id_prefix = "evo"
+    service_name = "evolution-daemon"       # coordination session-id prefix (autonomy-id-05)
+    service_agent = "evolution"
 
     # -----------------------------------------------------------------------
     # Abstract method implementations

@@ -157,6 +157,8 @@ class ProposalGenesisDaemon(DaemonBase):
     event_prefix = "pg"
     reflex_names = REFLEX_NAMES
     id_prefix = "pg"
+    service_name = "proposal-genesis"       # coordination session-id prefix (autonomy-id-05)
+    service_agent = "proposal_genesis"
 
     def ensure_tables(self) -> None:
         conn = get_connection()

@@ -108,7 +108,6 @@ REFLEX_NAMES = [
     "awareness",
     "canvas_indexer",
     "self_monitor",
-    "fathomdesk_trap_scenarios",
     "migration_canvas",
     "academy_reflex",
     "academy_oracle_reflex",  # penta-aca-06: 6h in-app 7-lens AcademyOracleRunner → fa_oracle_* (replaces dead forge_academy_oracle)
@@ -268,6 +267,8 @@ class GenesisDaemon(DaemonBase):
     event_prefix = "genesis"
     reflex_names = REFLEX_NAMES
     id_prefix = "gen"
+    service_name = "genesis-daemon"       # coordination session-id prefix (autonomy-id-05)
+    service_agent = "genesis"
 
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)

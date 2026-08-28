@@ -267,6 +267,8 @@ class GenesisDaemon(DaemonBase):
     event_prefix = "genesis"
     reflex_names = REFLEX_NAMES
     id_prefix = "gen"
+    service_name = "genesis-daemon"       # coordination session-id prefix (autonomy-id-05)
+    service_agent = "genesis"
 
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)

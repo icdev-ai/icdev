@@ -87,6 +87,8 @@ class AppForgeDaemon(DaemonBase):
     event_prefix = "appforge"
     reflex_names = REFLEX_NAMES
     id_prefix = "afg"
+    service_name = "appforge-daemon"       # coordination session-id prefix (autonomy-id-05)
+    service_agent = "appforge"
 
     def ensure_tables(self) -> None:
         """Create AppForge tables."""
