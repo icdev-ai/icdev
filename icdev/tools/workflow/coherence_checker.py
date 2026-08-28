@@ -69,6 +69,7 @@ import importlib
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 from datetime import datetime, timezone
@@ -10345,6 +10346,221 @@ def check_core_api(changed_files: Optional[List[Path]] = None) -> CoherenceCheck
     )
 
 
+
+# --------------------------------------------------------------------------- #
+# Check: new module registration (wire-reg-01)
+# --------------------------------------------------------------------------- #
+NEW_MODULE_GATE_ENV = "ICDEV_NEW_MODULE_GATE"
+#: `report`. SURVEYED FIRST, over the 389 new `tools/` CLI modules added in the last 600
+#: commits (2026-08-27):
+#:     tools/manifest/ row              284/389  73.0%  -> a gate fires on 27.0%
+#:     commands.md / CLAUDE.md entry    163/389  41.9%  -> a gate fires on 58.1%
+#:     tools/mcp/tool_registry.py        76/389  19.5%  -> a gate fires on 80.5%
+#:     args/security_gates.yaml          73/389  18.8%  -> a gate fires on 81.2%
+#: CLAUDE.md treats a check refusing 1.63% of routine work as grounds to stand it down, so
+#: NONE of these can ship armed. The bottom two can never be armed AS WRITTEN -- four fifths of
+#: tools are legitimately not MCP verbs and have no security gate -- so they are REPORT-ONLY,
+#: permanently, and are not counted in `missing`. The top two are fail-eligible behind this
+#: switch, and arming waits on those rates coming down.
+NEW_MODULE_GATE_DEFAULT = "report"
+
+#: Points 1 and 2 of CLAUDE.md's 8-point checklist. Fail-eligible under `enforce`.
+#: Points 3, 4, 6 and 7 are REPORTED and never enter `missing`.
+_ENFORCEABLE_RUNGS = ("manifest", "commands")
+
+
+def _new_module_gate_mode() -> str:
+    """off | report | enforce. An unrecognised value falls back to the DEFAULT, never to
+    `enforce` -- a typo in an env var must not silently arm a gate."""
+    raw = os.environ.get(NEW_MODULE_GATE_ENV, "").strip().lower()
+    return raw if raw in ("off", "report", "enforce") else NEW_MODULE_GATE_DEFAULT
+
+
+def _added_tool_modules(
+    base: str = "origin/main", root: Optional[Path] = None
+) -> Optional[List[str]]:
+    """`tools/**/*.py` files ADDED between *base* and HEAD, or None if git could not answer.
+
+    ADDED, not changed. This check asks "did the new tool get registered", so a module that
+    merely gained a line is none of its business -- and running it over the whole tree would
+    re-report 105 historical modules to every session, which is how a check gets ignored.
+
+    None is not an empty list. A repository git cannot read is UNMEASURED, and the caller says
+    so rather than reporting a clean bill.
+    """
+    cwd = str(root or PROJECT_ROOT)
+    for spec in (f"{base}...HEAD", f"{base}..HEAD"):
+        # `...` needs a merge base; a shallow clone has none, so `..` is the fallback.
+        try:
+            proc = subprocess.run(
+                ["git", "diff", "--diff-filter=A", "--name-only", spec, "--", "tools/"],
+                cwd=cwd, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=60,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if proc.returncode == 0:
+            return sorted(
+                ln.strip() for ln in (proc.stdout or "").splitlines()
+                if ln.strip().endswith(".py") and ln.strip().startswith("tools/")
+            )
+    return None
+
+
+def _is_cli_module(path: Path) -> bool:
+    """A module a human is told to RUN -- an entry point, or an argparse CLI.
+
+    A library has no command to document, so demanding a commands.md line for one would be the
+    "never document a command whose file does not exist" rule inverted into a demand for a
+    command that does not exist.
+    """
+    try:
+        src = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return '__name__ == "__main__"' in src or "ArgumentParser" in src
+
+
+def check_new_module_registration(
+    changed_files: Optional[List[Path]] = None,
+) -> CoherenceCheck:
+    """Check: a NEW tools/ CLI module is actually registered (wire-reg-01).
+
+    CLAUDE.md's 8-point checklist has three real gates and two that run in the WRONG DIRECTION:
+    ``check_doc_command_paths`` asks whether a DOCUMENTED command resolves, never whether a new
+    tool GOT documented; ``check_mcp_security`` asserts ``gap_handlers.py`` exists, never that a
+    new tool was registered. Both are satisfied by a tree in which nothing was ever documented.
+    This adds the missing direction, and only for what THIS diff adds.
+    """
+    check_id = "new_module_registration"
+    check_name = "New Module Registration"
+    mode = _new_module_gate_mode()
+
+    if mode == "off":
+        return CoherenceCheck(
+            check_id=check_id, check_name=check_name, status="pass",
+            expected=["new tools/ CLI modules registered"], actual=["gate disabled"],
+            missing=[], extra=[],
+            message=f"disabled via {NEW_MODULE_GATE_ENV}=off",
+        )
+
+    added = _added_tool_modules()
+    if added is None:
+        return CoherenceCheck(
+            check_id=check_id, check_name=check_name, status="warn",
+            expected=["a readable diff against the default branch"], actual=[],
+            missing=[], extra=[],
+            message=(
+                "UNMEASURED: git could not list files added against origin/main (a shallow "
+                "clone, or no origin). This is not a clean bill."
+            ),
+        )
+
+    if changed_files:
+        touched = {str(f).replace("\\", "/") for f in changed_files}
+        added = [rel for rel in added if rel in touched]
+
+    candidates = [rel for rel in added if _is_cli_module(PROJECT_ROOT / rel)]
+    if not candidates:
+        return CoherenceCheck(
+            check_id=check_id, check_name=check_name, status="pass",
+            expected=["new tools/ CLI modules registered"],
+            actual=[f"{len(added)} tools/ file(s) added, 0 with a CLI entry point"],
+            missing=[], extra=[],
+            message="no new tools/ CLI module in this diff.",
+        )
+
+    manifest_text = _read_all(
+        [PROJECT_ROOT / "tools/manifest.md", *sorted((PROJECT_ROOT / "tools/manifest").glob("*.md"))]
+    )
+    docs_text = _read_all([PROJECT_ROOT / "docs/reference/commands.md", PROJECT_ROOT / "CLAUDE.md"])
+    mcp_text = _read_all([PROJECT_ROOT / "tools/mcp/tool_registry.py"])
+    gates_text = _read_all([PROJECT_ROOT / "args/security_gates.yaml"])
+    conftest_text = _read_all([PROJECT_ROOT / "tests/conftest.py"])
+
+    missing: List[str] = []
+    reported: List[str] = []
+    for rel in candidates:
+        module = rel[: -len(".py")].replace("/", ".")
+        stem = Path(rel).stem
+        if rel not in manifest_text:
+            entry = f"{rel}: no row in tools/manifest/ (checklist #1)"
+            (missing if "manifest" in _ENFORCEABLE_RUNGS else reported).append(entry)
+        if rel not in docs_text and module not in docs_text:
+            entry = (
+                f"{rel}: not documented in docs/reference/commands.md or CLAUDE.md "
+                f"(checklist #2 -- the direction check_doc_command_paths does not check)"
+            )
+            (missing if "commands" in _ENFORCEABLE_RUNGS else reported).append(entry)
+        # Report-only, permanently. 80.5% and 81.2% of new tools legitimately carry neither.
+        if mcp_text and stem not in mcp_text:
+            reported.append(f"{rel}: not registered in tools/mcp/tool_registry.py (#4, advisory)")
+        if gates_text and stem not in gates_text:
+            reported.append(f"{rel}: no entry in args/security_gates.yaml (#3, advisory)")
+        try:
+            src = (PROJECT_ROOT / rel).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            src = ""
+        if re.search(r"CREATE\s+TABLE", src, re.IGNORECASE) and stem not in conftest_text:
+            reported.append(
+                f"{rel}: creates a table; check MINIMAL_ICDEV_SCHEMA in tests/conftest.py "
+                f"(#6, advisory)"
+            )
+        reported.append(
+            f"{rel}: run `python tools/dx/companion.py --sync --write --json` (#7, advisory)"
+        )
+
+    actual = [f"{len(candidates)} new CLI module(s): {', '.join(candidates)}"]
+    if reported:
+        actual.extend(reported)
+
+    if missing and mode == "enforce":
+        return CoherenceCheck(
+            check_id=check_id, check_name=check_name, status="fail",
+            expected=["every new tools/ CLI module registered (checklist #1, #2)"],
+            actual=actual, missing=missing, extra=[],
+            message=(
+                f"{len(missing)} registration gap(s) in {len(candidates)} new CLI module(s). "
+                f"Add the manifest row and the commands.md entry -- do NOT set "
+                f"{NEW_MODULE_GATE_ENV}=report to get a commit through."
+            ),
+        )
+    if missing:
+        return CoherenceCheck(
+            check_id=check_id, check_name=check_name, status="warn",
+            expected=["every new tools/ CLI module registered (checklist #1, #2)"],
+            actual=actual,
+            missing=[],  # `report`: named in the message, never counted against the commit
+            extra=[],
+            message=(
+                f"{len(missing)} registration gap(s) in {len(candidates)} new CLI module(s), "
+                f"reported not enforced ({NEW_MODULE_GATE_ENV}={mode}): "
+                + "; ".join(missing)
+            ),
+        )
+    return CoherenceCheck(
+        check_id=check_id, check_name=check_name, status="pass",
+        expected=["every new tools/ CLI module registered (checklist #1, #2)"],
+        actual=actual, missing=[], extra=[],
+        message=f"{len(candidates)} new CLI module(s), all registered.",
+    )
+
+
+def _read_all(paths: List[Path]) -> str:
+    """Concatenated text of *paths* that exist. Absent files contribute nothing.
+
+    An absent registry therefore makes its rung silent rather than making every module fail it
+    -- a missing tool_registry.py is a fact about the checkout, not about the module.
+    """
+    out = []
+    for path in paths:
+        try:
+            out.append(path.read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            continue
+    return "\n".join(out)
+
+
 CHECK_REGISTRY = {
     "bootstrap_parity": check_bootstrap_parity,
     "mirror_parity": check_mirror_parity,
@@ -10353,6 +10569,7 @@ CHECK_REGISTRY = {
     "signature_call": check_signature_call,
     "fixture_schema": check_fixture_schema,
     "manifest": check_manifest,
+    "new_module_registration": check_new_module_registration,
     "append_only": check_append_only,
     "trust_coverage": check_trust_coverage,
     "import_usage": check_import_usage,
