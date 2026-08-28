@@ -69,6 +69,7 @@ import argparse
 import ast
 import json
 import re
+import subprocess
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -2422,6 +2423,230 @@ def _run_substrate_mode(args: argparse.Namespace) -> int:
     return 0
 
 
+
+# --------------------------------------------------------------------------- #
+# New units in a diff (wire-run-01)
+# --------------------------------------------------------------------------- #
+#: Where each class's units are DECLARED, as repo-root-relative paths.
+#: ``declaration_source`` on a ClassResult is prose for a human
+#: ("tools.genesis.daemon.REFLEX_NAMES x args/genesis_config.yaml"), so it cannot be used to
+#: find a file; this map is the machine-readable half, and the two are checked against each
+#: other in tests/awareness/test_new_units.py rather than kept in sync by hand.
+DECLARATION_FILES: Dict[str, Tuple[str, ...]] = {
+    "reflex": ("tools/genesis/daemon.py", "args/genesis_config.yaml"),
+    "mcp_dispatch_tool": ("tools/mcp/tool_registry.py",),
+    "mcp_tool_authorization": ("tools/mcp/tool_registry.py",),
+    "agent_approval_rule": ("args/agent_approval_policy.yaml",),
+    "prompt_template": ("hardprompts",),
+    "extension_hook_point": (
+        "tools/extensions/extension_manager.py",
+        "args/extension_config.yaml",
+    ),
+    "cortex_backend": ("tools/cortex/schemas.py",),
+    "cortex_facade": ("tools/cortex/api.py",),
+    "verified_claim": ("tools/awareness/claims.py",),
+}
+
+#: Classes whose units are NOT declared by a file, so "added in this diff" is not a question a
+#: diff can answer. They report ``undiffable`` and are NAMED; reporting them as having no new
+#: units would be the fabricated clean bill this whole module exists to refuse.
+#:   audit_chain      declared by a MIGRATION (columns on audit_trail), not by a listing
+#:   skill_optimizer  declared by a TABLE (distinct skill_used rows)
+UNDIFFABLE_CLASSES: Tuple[str, ...] = ("audit_chain", "skill_optimizer")
+
+#: Effectively lifetime. A unit consumed once three years ago is WIRED; the question here is
+#: "has this ever run", never "has it run lately".
+NEW_UNITS_WINDOW_DAYS = 36500
+
+#: Raised well above DEFAULT_MAX_LISTED_UNITS for this call only. ``inert_units`` is capped for
+#: display, and a new unit that fell off a truncated list would read as consumed -- the exact
+#: false clean this function must not produce. Truncation beyond even this is treated as
+#: undiffable rather than ignored.
+NEW_UNITS_MAX_LISTED = 100000
+
+
+def _added_lines(
+    since: str,
+    paths: Tuple[str, ...],
+    root: Optional[Path] = None,
+    head: str = "HEAD",
+) -> Optional[str]:
+    """Lines ADDED between *since* and *head* for *paths*, or None if git could not answer.
+
+    *head* is explicit because the done gate asks this question AFTER the work has landed, when
+    HEAD is main and `origin/main...HEAD` is empty. A check that measured the wrong range would
+    report a clean bill for every task it was built to catch -- the same shape as a V&V card
+    dispatched after its subject merged, which can never go red.
+
+    None is not "nothing was added" -- a caller that merged the two would report a clean bill
+    for a repository it failed to read.
+
+    ADDED only: a unit whose declaration merely moved is not new. Not airtight -- a reformat
+    that rewrites the declaring line reads as an addition -- and the caveat is reported rather
+    than hidden. The failure direction is the safe one for the consumer this feeds: a done gate
+    telling an author to run their own capability once costs one command and is correct advice
+    either way.
+    """
+    if not paths:
+        return None
+    cwd = str(root or BASE_DIR)
+    for spec in (f"{since}...{head}", f"{since}..{head}"):
+        # `...` needs a merge base; a shallow clone has none, so `..` is the fallback.
+        try:
+            proc = subprocess.run(
+                ["git", "diff", "--unified=0", spec, "--", *paths],
+                cwd=cwd, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=60,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if proc.returncode == 0:
+            return "\n".join(
+                ln for ln in (proc.stdout or "").splitlines()
+                if ln.startswith("+") and not ln.startswith("+++")
+            )
+    return None
+
+
+def new_units(
+    since: str,
+    *,
+    head: str = "HEAD",
+    conn=None,
+    root: Optional[Path] = None,
+    config: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Units DECLARED in this diff that have NEVER been consumed. wire-run-01.
+
+    The question a done gate should ask and ``check_capability_liveness`` structurally cannot:
+    that check compares a whole-class count against a grandfathered budget, so a capability
+    added by THIS card vanishes into a backlog of 510 that is allowed to be inert. Here the
+    unit is NAMED, and the remedy is to run it once -- the sanctioned drain, never a budget
+    bump.
+
+    ``state`` is ``measured`` | ``unmeasurable``. An unreadable board or git history is
+    unmeasurable, never an empty finding list.
+    """
+    cfg = dict(config if config is not None else load_config())
+    cfg["max_listed_units"] = NEW_UNITS_MAX_LISTED
+    report = collect(window_days=NEW_UNITS_WINDOW_DAYS, conn=conn, config=cfg)
+    classes = report.get("classes") or []
+    if not classes:
+        return {
+            "state": "unmeasurable",
+            "reason": "capability_consumption measured no classes",
+            "since": since,
+            "head": head,
+            "findings": [],
+            "classes_scanned": [],
+            "classes_undiffable": [],
+        }
+
+    findings: List[Dict[str, Any]] = []
+    undiffable: List[Dict[str, str]] = []
+    scanned: List[str] = []
+
+    for entry in classes:
+        name = str(entry.get("capability_class") or "")
+        paths = DECLARATION_FILES.get(name)
+        if name in UNDIFFABLE_CLASSES:
+            undiffable.append({"capability_class": name, "reason": "not declared by a file"})
+            continue
+        if not entry.get("telemetry_available", True):
+            # Unmeasurable stays unmeasurable: a class whose telemetry is absent cannot say
+            # whether a new unit ran, and answering "no" would be a fabricated finding just as
+            # answering "yes" would be a fabricated clean bill.
+            undiffable.append({"capability_class": name, "reason": "telemetry unavailable"})
+            continue
+        if not paths:
+            undiffable.append({"capability_class": name, "reason": "no declaration file mapped"})
+            continue
+        if entry.get("inert_units_truncated"):
+            undiffable.append({"capability_class": name, "reason": "inert unit list truncated"})
+            continue
+        added = _added_lines(since, paths, root=root, head=head)
+        if added is None:
+            undiffable.append({"capability_class": name, "reason": f"git could not diff {since}"})
+            continue
+        scanned.append(name)
+        if not added:
+            continue
+        for unit in entry.get("inert_units") or []:
+            if unit and unit in added:
+                findings.append(
+                    {
+                        "capability_class": name,
+                        "unit": unit,
+                        "declared_in": list(paths),
+                        "telemetry": entry.get("telemetry_table"),
+                        "remedy": (
+                            f"run {unit!r} once so it records a consumption event. That is the "
+                            "sanctioned drain -- do NOT raise a budget in "
+                            "args/liveness_gate.yaml. If it genuinely has no consumer by "
+                            "design, declare it in args/external_only_surfaces.yaml, which "
+                            "adds an obligation rather than an exemption."
+                        ),
+                    }
+                )
+
+    return {
+        # NOT MEASURED unless at least one class was actually scanned. A run where every class
+        # was undiffable produced `findings: []` and exit 0 on the first live invocation of
+        # this function -- a clean bill from a measurement that never happened, which is the
+        # defect the whole capability programme exists to refuse. Zero findings is a claim
+        # about the diff; zero scanned classes is a claim about nothing.
+        "state": "measured" if scanned else "unmeasurable",
+        "reason": None if scanned else "no capability class could be scanned",
+        "since": since,
+        "head": head,
+        "findings": findings,
+        "classes_scanned": sorted(scanned),
+        "classes_undiffable": sorted(undiffable, key=lambda d: d["capability_class"]),
+        "caveat": (
+            "A unit is NEW when its name appears on a line ADDED since `since` in its declaring "
+            "file, and it has zero LIFETIME consumption events. A reformat that rewrites the "
+            "declaring line reads as an addition; the failure direction is safe, because the "
+            "remedy is to run the capability once."
+        ),
+    }
+
+
+
+def _run_new_units_mode(args) -> int:
+    """--new-units. Exit 0 clean, 1 a new unit has never run, 2 could not measure.
+
+    Exit 2 is its own code and stays non-zero: a check that could not run is not a check that
+    found nothing, and a done gate reading 2 as clean would be the fabrication this module
+    refuses everywhere else.
+    """
+    if not args.since:
+        print("--new-units requires --since <ref>", file=sys.stderr)
+        return 2
+
+    result = new_units(args.since, head=args.head)
+
+    if args.json:
+        print(json.dumps(result, indent=2, default=str))
+    else:
+        if result["state"] != "measured":
+            print(f"UNMEASURABLE: {result.get('reason', 'unknown')}")
+        else:
+            findings = result["findings"]
+            print(f"New-but-never-consumed units since {result['since']}: {len(findings)}")
+            for f in findings:
+                print(f"  {f['capability_class']}: {f['unit']}")
+                print(f"      declared in {', '.join(f['declared_in'])}")
+                print(f"      {f['remedy']}")
+            scanned = result["classes_scanned"]
+            print(f"  scanned {len(scanned)} class(es): {', '.join(scanned) or '(none)'}")
+            for entry in result["classes_undiffable"]:
+                print(f"  not scanned  {entry['capability_class']}: {entry['reason']}")
+
+    if result["state"] != "measured":
+        return 2
+    return 1 if result["findings"] else 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description="Count consumption per declared capability class over a recent window."
@@ -2463,10 +2688,25 @@ def main(argv: Optional[List[str]] = None) -> int:
         "--substrate-gate", action="store_true",
         help="Exit 1 if a probed substrate is empty (never on an unmeasurable database)",
     )
+    parser.add_argument(
+        "--new-units", action="store_true",
+        help="Name capability units DECLARED since --since that have never been consumed",
+    )
+    parser.add_argument(
+        "--since", default=None, metavar="REF",
+        help="Git ref --new-units compares against (e.g. origin/main)",
+    )
+    parser.add_argument(
+        "--head", default="HEAD", metavar="REF",
+        help="Git ref --new-units compares --since TO (default HEAD)",
+    )
     args = parser.parse_args(argv)
 
     if args.probe_substrate or args.probe_plan or args.probe_diff or args.substrates:
         return _run_substrate_mode(args)
+
+    if args.new_units:
+        return _run_new_units_mode(args)
 
     report = collect(window_days=args.window_days, only=args.classes)
 
