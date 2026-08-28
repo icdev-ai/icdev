@@ -1712,6 +1712,37 @@ module_budgets:
   warning_threshold: 0.8
   hard_stop: true
 
+  # Which module a function is charged to. DATA, not a hardcoded name in the router.
+  #
+  # THE DEFECT THIS CLOSES. `router.invoke` charged EVERY call to
+  # `generative_intelligence`, so one monthly pool covered the whole platform and a
+  # "module budget" was a global cap wearing a module's name. Measured 2026-08-28 on the
+  # ICDEV[FT] board, 407,934 of 400,000 tokens spent and EVERY ROW at $0.00:
+  #
+  #     cortex_complete             165,111   40%
+  #     intaas_multiperspectivity   108,404   27%
+  #     fin_claim_extraction         50,429   12%
+  #     fin_idea_to_spec             37,653    9%
+  #     summarization                29,749    7%
+  #     judge_challenge               9,937
+  #     fin_research                  3,882
+  #     ace_persona_query             2,769
+  #
+  # The research/knowledge pipeline is 23% of that and was refused because two unrelated
+  # workloads had spent 67% of a pool it shared with them. Every LLM call in the parent
+  # was refused, including `code_generation` -- a block with no relationship to the
+  # workload that caused it.
+  #
+  # An unmapped function falls to `default_module`, so a deployment that declares nothing
+  # behaves exactly as it did before. A call is charged to exactly ONE module.
+  default_module: generative_intelligence
+  function_modules:
+    # The research -> knowledge -> strategy-draft pipeline (ICDEV[FT]).
+    fin_claim_extraction: research_knowledge
+    fin_idea_to_spec: research_knowledge
+    fin_intake: research_knowledge
+    fin_research: research_knowledge
+
   per_module:
     generative_intelligence:
       monthly_usd: 150.00         # LLM calls, embeddings, chain orchestration
@@ -1721,6 +1752,12 @@ module_budgets:
       monthly_usd: 50.00          # simulation runs, Monte Carlo, COA generation
       monthly_tokens: 100000       # LLM use inside simulations
       monthly_operations: 500      # simulation scenario runs
+    research_knowledge:
+      # Sized from the MEASURED workload above -- 91,964 tokens across the four functions
+      # in the month that filled the shared pool -- with headroom, not from a round number.
+      monthly_usd: 25.00
+      monthly_tokens: 150000
+      monthly_operations: 0
 
 # -----------------------------------------------------------------------
 # Cost Budget — the DOWNGRADE gate (exa-policy-04)
