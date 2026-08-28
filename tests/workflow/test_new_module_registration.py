@@ -22,6 +22,7 @@ gate -- so they are report-only permanently.
 from __future__ import annotations
 
 import importlib
+import subprocess
 
 import pytest
 
@@ -206,15 +207,72 @@ def test_an_unreadable_diff_is_warn_not_ok(monkeypatch):
     assert "not a clean bill" in result.message
 
 
-def test_a_full_tree_run_does_not_fire_on_the_existing_tree(monkeypatch):
+def test_a_full_tree_run_never_counts_the_existing_tree_against_the_commit(monkeypatch):
     """105 historical modules lack a docs entry. Re-reporting them to every session is how a
-    check gets ignored -- so the scope is what THIS diff ADDS, never the tree."""
+    check gets ignored -- so the scope is what THIS diff ADDS, never the tree.
+
+    Asserted on `missing`, NOT on `status`, and that distinction is the point. CI checks out
+    shallow, so `_added_tool_modules` legitimately returns None there and the check reports
+    `warn: not a clean bill` -- which is the CORRECT behaviour and was the first version of this
+    test's undoing. What must hold on every runner, at every clone depth, is that the existing
+    tree never enters `missing`. The measured path is exercised against a real repository in
+    `test_added_tool_modules_*` below rather than against whatever history the runner happens
+    to have.
+    """
     monkeypatch.setenv(cc.NEW_MODULE_GATE_ENV, "enforce")
 
     result = cc.check_new_module_registration()
 
-    assert result.status == "pass", result.message
-    assert result.missing == []
+    assert result.missing == [], result.message
+    assert result.status in ("pass", "warn"), result.message
+
+
+# ---------------------------------------------------------------------------
+# The git seam, against a real repository
+# ---------------------------------------------------------------------------
+
+
+def _git(*args, cwd):
+    subprocess.run(["git", *args], cwd=str(cwd), check=True, capture_output=True)
+
+
+@pytest.fixture
+def repo(tmp_path):
+    """A real git repo with a base commit. The fixture above never exercises git itself."""
+    _git("init", "-q", cwd=tmp_path)
+    _git("config", "user.email", "t@example.com", cwd=tmp_path)
+    _git("config", "user.name", "t", cwd=tmp_path)
+    (tmp_path / "tools").mkdir()
+    (tmp_path / "tools/existing.py").write_text("VALUE = 1\n", encoding="utf-8")
+    _git("add", "-A", cwd=tmp_path)
+    _git("commit", "-qm", "base", cwd=tmp_path)
+    _git("branch", "-f", "base", cwd=tmp_path)
+    return tmp_path
+
+
+def test_added_tool_modules_lists_only_what_was_added(repo):
+    (repo / "tools/brand_new.py").write_text("import argparse\n", encoding="utf-8")
+    (repo / "tools/existing.py").write_text("VALUE = 2\n", encoding="utf-8")  # MODIFIED
+    _git("add", "-A", cwd=repo)
+    _git("commit", "-qm", "add one, modify one", cwd=repo)
+
+    added = cc._added_tool_modules("base", root=repo)
+
+    assert added == ["tools/brand_new.py"], (
+        "a module that merely gained a line is none of this check's business"
+    )
+
+
+def test_added_tool_modules_is_empty_when_nothing_was_added(repo):
+    """Empty is a MEASURED answer and must not be confused with None."""
+    assert cc._added_tool_modules("base", root=repo) == []
+
+
+def test_added_tool_modules_returns_none_for_an_unknown_base(repo):
+    """None is 'git could not tell'. Merging it with [] would report a clean bill for a
+    repository the check failed to read -- which is exactly what CI's shallow clone would have
+    produced."""
+    assert cc._added_tool_modules("no-such-ref", root=repo) is None
 
 
 def test_it_scopes_to_added_files_not_changed_files():
