@@ -8476,6 +8476,9 @@ projects:
     - key: prov
       title: Per-provider implementation
       priority: medium
+    - key: bud
+      title: Budget shape - one pool per module, not one wearing a module's name
+      priority: high
 - key: cef
   name: CEF - Cortex Evidence Fabric
   description: 'Every /document-intelligence/* surface should answer evidence questions
