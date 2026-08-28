@@ -9179,6 +9179,11 @@ projects:
   - key: pead
     title: PEAD - earnings drift from point-in-time filings, a third decorrelated blend leg
     priority: high
+  # --- RETROACTIVE (rem-hyg-02 shape): five ftl-qopt-* rows existed on the board before
+  # this key did, so none was counted and qopt-05 rendered as an orphan on the card.
+  - key: qopt
+    title: QOPT - the per-name exit overlay measured, then retired by operator decision
+    priority: high
   # --- MARKET-CYCLE ADAPTATION + POST-ENTRY MANAGEMENT (plan approved 2026-08-28).
   # Exploration verdicts these epics answer to: the exit path is a probable no-op on this
   # host (quote 403 -> empty price map -> evaluate_exits skips every rule incl. time_stop;

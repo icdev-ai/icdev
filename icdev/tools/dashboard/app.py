@@ -9704,17 +9704,45 @@ def create_app(testing: bool = False) -> Flask:
         epics_out: list = []
         total_all = 0
         done_all = 0
+        # A task is CLOSED when it is no longer outstanding, and that is more than
+        # `status = 'done'`. This tuple mirrors the open-orphan predicate below EXACTLY --
+        # the two disagreed until 2026-08-28, and the disagreement was the "cards do not
+        # clear any more" report: a `cancelled` or `decomposed` row counted toward `total`
+        # but never toward `done`, so its card stayed visible forever with nothing left to
+        # do. `validating` and `pr_opened` stay OPEN on purpose: verification can fail,
+        # and an unmerged PR is not landed work.
+        _closed_statuses = ("done", "decomposed", "cancelled", "merged")
+        try:
+            from tools.kanban.gates import has_gate_id as _has_gate_id
+        except Exception:  # noqa: BLE001 -- the card must render without the gates module
+            def _has_gate_id(_tid):  # type: ignore[misc]
+                return False
         for ep in project.get("epics", []):
             ek_esc = _escape_like(ep["key"])
             pattern = f"{prefix_esc}{ek_esc}-%"
             rows = conn.execute(
-                "SELECT status, COUNT(*) AS n FROM kanban_tasks "
-                "WHERE id LIKE %s ESCAPE '\\'" + excl_sql + " GROUP BY status",
+                "SELECT id, status FROM kanban_tasks "
+                "WHERE id LIKE %s ESCAPE '\\'" + excl_sql,
                 (pattern,) + excl_params,
             ).fetchall()
-            counts = {dict(r)["status"]: int(dict(r)["n"]) for r in rows}
+            # GATE SENTINELS ARE NOT WORK, in the counts as well as in the orphan check.
+            # The orphan pass below has excluded them from day one, with the reason stated
+            # ("a sentinel holds the card, it is not work, and it does not belong in a
+            # progress figure") -- but the reserved `gate` epic's own pattern matched them
+            # HERE, so a card whose every real task had finished stayed visible until a
+            # human remembered to release the sentinel; `wire` sat at 4/5 exactly that way.
+            # The sentinel still appears in the card's in-flight list while the card
+            # renders; it just cannot hold a finished card on screen by itself.
+            counts: dict = {}
+            for _r in rows:
+                _d = dict(_r)
+                if _has_gate_id(str(_d["id"])):
+                    continue
+                counts[_d["status"]] = counts.get(_d["status"], 0) + 1
             total = sum(counts.values())
-            done = counts.get("done", 0)
+            # `done` here means CLOSED -- see _closed_statuses above. The per-status
+            # breakdown fields below still itemise the open states individually.
+            done = sum(counts.get(s, 0) for s in _closed_statuses)
             pct = int(round(100 * done / total)) if total else 0
             total_all += total
             done_all += done
@@ -9781,10 +9809,13 @@ def create_app(testing: bool = False) -> Flask:
         open_orphans = 0
         if orphans:
             _q = ",".join(["%s"] * len(orphans))
+            # The SAME closed set as the epic counts above, by reference -- these two
+            # predicates disagreeing is the defect this section's history is about.
+            _cq = ",".join(["%s"] * len(_closed_statuses))
             _row = conn.execute(
                 f"SELECT COUNT(*) AS n FROM kanban_tasks WHERE id IN ({_q}) "
-                "AND status NOT IN ('done', 'decomposed', 'cancelled', 'merged')",
-                tuple(orphans),
+                f"AND status NOT IN ({_cq})",
+                tuple(orphans) + tuple(_closed_statuses),
             ).fetchone()
             open_orphans = int(dict(_row)["n"]) if _row else 0
 
