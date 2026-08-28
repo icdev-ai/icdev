@@ -44,10 +44,23 @@ def cache():
         "per_function": {},
         "per_canvas": {},
     }
+    # LLMResponseCache is a PROCESS SINGLETON whose __init__ returns early once
+    # `_initialized` is set, so `config=cfg` was SILENTLY IGNORED whenever anything
+    # earlier in the same process had already constructed it -- and the cache is
+    # constructed on the ordinary serving path. This fixture then believed it had
+    # `max_entries: 100` and `excluded_functions: ["excluded_fn"]` while running
+    # against the deployment's real config, so `test_lru_eviction` and
+    # `test_excluded_functions_not_cached` passed ALONE and failed IN-SUITE
+    # (measured 2026-08-27: 105 entries against an asserted ceiling of 100).
+    # Dropping the instance is what makes the declared config actually apply.
+    LLMResponseCache._instance = None
     c = LLMResponseCache(config=cfg)
+    assert c._config is cfg, "the fixture's config must be the one under test"
     # Clear any existing entries
     c.clear()
-    return c
+    yield c
+    # Leave the process as we found it, so the next module builds its own.
+    LLMResponseCache._instance = None
 
 
 def test_canonical_key_determinism():

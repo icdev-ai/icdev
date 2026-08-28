@@ -1162,13 +1162,46 @@ document.addEventListener('DOMContentLoaded', function() {
                 : liveEntries.toLocaleString();
             var entriesLabel = showStored ? 'Entries (live / stored)' : 'Entries';
             if (cold) { statusColor = '#f59e0b'; statusLabel = (d.state === 'cold') ? 'Enabled · cold' : 'Enabled · warming'; }
+
+            // SAVINGS: the ALL-TIME figure, from the append-only ledger (cch-obs-07).
+            //
+            // This cell used to render `cost_usd_saved`, derived from rows STILL IN the
+            // cache -- so it fell to $0.0000 the moment a ttl expired or the LRU swept,
+            // having previously shown a real figure. The cache is allowed to forget; the
+            // record of what it saved is not.
+            //
+            // FOUR STATES, and only the last is "$0.00 because nothing was saved":
+            //   not measurable  the ledger could not be read -> "--", never a zero
+            //   nothing yet     readable, no hits recorded yet
+            //   unpriced        calls WERE avoided but nobody was billed for them (a
+            //                   Claude subscription, local Ollama). Showing $0.0000 here
+            //                   reports a working cache as a failed one, so the count of
+            //                   avoided calls IS the answer and the dollars say so.
+            //   priced          a real bill was avoided
+            var life = d.lifetime || {};
+            var savedText, savedLabel, savedColor = '#f59e0b';
+            if (!life.measurable) {
+                savedText = '--'; savedLabel = 'Saved (not measurable)'; savedColor = 'var(--text-dim)';
+            } else if (!life.avoided_calls) {
+                savedText = '--'; savedLabel = 'Saved (no hits yet)'; savedColor = 'var(--text-dim)';
+            } else if (life.usd_saved === null || life.usd_saved === undefined) {
+                savedText = life.avoided_calls.toLocaleString();
+                savedLabel = 'Calls avoided (unbilled)';
+                savedColor = '#818cf8';
+            } else {
+                savedText = '$' + life.usd_saved.toFixed(4);
+                savedLabel = 'Saved all time (USD)';
+            }
+            var savedCell = '<div><div style="font-size:20px;font-weight:700;color:'
+                + savedColor + ';">' + savedText + '</div><div style="font-size:10px;'
+                + 'color:var(--text-dim);">' + savedLabel + '</div></div>';
             el.innerHTML = '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">'
                 + '<span style="width:8px;height:8px;border-radius:50%;background:' + statusColor + ';display:inline-block;flex-shrink:0;"></span>'
                 + '<span style="font-size:11px;color:var(--text-dim);">' + statusLabel + ' &middot; backend: ' + (d.backend || 'unknown') + '</span>'
                 + '</div>'
                 + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">'
                 + '<div><div style="font-size:20px;font-weight:700;color:' + hitColor + ';">' + hitText + '</div><div style="font-size:10px;color:var(--text-dim);">' + (rateMeasured ? 'Hit Rate' : 'Hit Rate (not measured)') + '</div></div>'
-                + '<div><div style="font-size:20px;font-weight:700;color:#f59e0b;">$' + (d.cost_usd_saved || 0).toFixed(4) + '</div><div style="font-size:10px;color:var(--text-dim);">Saved (USD)</div></div>'
+                + savedCell
                 + '<div><div style="font-size:16px;font-weight:600;color:var(--accent-blue-light);">' + entriesText + '</div><div style="font-size:10px;color:var(--text-dim);">' + entriesLabel + '</div></div>'
                 + '<div><div style="font-size:16px;font-weight:600;color:#818cf8;">' + (d.tokens_saved || 0).toLocaleString() + '</div><div style="font-size:10px;color:var(--text-dim);">Read Tokens</div></div>'
                 + '</div>'
