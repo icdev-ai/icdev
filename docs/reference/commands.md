@@ -2752,6 +2752,31 @@ python tools/workflow/coherence_checker.py --tier fast --list-tier              
 python tools/genesis/reflexes/coherence_sweep.py                                                    # Full-tier sweep on main + refresh the gate's baseline
 python tools/workflow/coherence_checker.py --check capability_liveness --gate                       # Declared-but-never-consumed capabilities (exa-live-02)
 
+# --- Did the NEW tool in this diff actually get registered? (wire-reg-01) ---
+python tools/workflow/coherence_checker.py --check new_module_registration
+python tools/workflow/coherence_checker.py --tier fast --changed-files "tools/foo/bar.py"
+# CLAUDE.md's 8-point checklist has 3 real gates and 2 that run in the WRONG DIRECTION:
+# check_doc_command_paths asks whether a DOCUMENTED command RESOLVES, never whether a new tool
+# GOT documented; check_mcp_security asserts gap_handlers.py EXISTS, never that a new tool was
+# registered. Both are fully satisfied by a tree in which nothing was ever documented.
+# SCOPED TO WHAT THIS DIFF *ADDS* (git diff --diff-filter=A), never the tree: 105 historical
+# modules lack a docs entry, and re-reporting them to every session is how a check gets ignored.
+# A module with no `__main__` and no ArgumentParser is a LIBRARY and is asked for no command --
+# demanding one would invert CLAUDE.md's "never document a command whose file does not exist".
+# SURVEYED BEFORE ARMING over the 389 new tools/ CLI modules in the last 600 commits:
+#   tools/manifest/ row            284/389  73.0%  -> a gate fires on 27.0%   ENFORCEABLE
+#   commands.md / CLAUDE.md entry  163/389  41.9%  -> a gate fires on 58.1%   ENFORCEABLE
+#   tools/mcp/tool_registry.py      76/389  19.5%  -> a gate fires on 80.5%   report-only
+#   args/security_gates.yaml        73/389  18.8%  -> a gate fires on 81.2%   report-only
+# CLAUDE.md stands a check down at 1.63%, so NOTHING ships armed. The bottom two can never be
+# armed AS WRITTEN -- four fifths of tools are legitimately not MCP verbs and carry no gate --
+# so they, plus conftest MINIMAL_ICDEV_SCHEMA (#6) and companion sync (#7), are report-only
+# PERMANENTLY and never enter `missing`.
+ICDEV_NEW_MODULE_GATE=off|report|enforce     # default: report
+# Arming waits on those two rates coming down. Add the manifest row and the commands.md entry --
+# never set this back to `report` to get a commit through.
+# git could not diff (a shallow clone, no origin) reports `warn: not a clean bill`, NEVER pass.
+
 # Capability Liveness gate (exa-live-02) — a capability that is registered, enabled and
 # catalogued but has ZERO consumption over the telemetry's LIFETIME fails the gate.
 # Measured through tools/awareness/capability_consumption.py using existing telemetry only.

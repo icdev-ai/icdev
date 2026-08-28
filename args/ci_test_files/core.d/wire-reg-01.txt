@@ -1,0 +1,2 @@
+# wire-reg-01 -- a NEW tools/ CLI module must actually be registered.
+tests/workflow/test_new_module_registration.py
