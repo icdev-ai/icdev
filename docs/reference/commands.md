@@ -2430,6 +2430,31 @@ python -m tools.kanban.seed_compass_dispatch_probe --json             # Seed ont
 # ALLOWED, so 92.5% of tasks cleared that rung vacuously.
 python -m tools.kanban.bypass_survey                    # what the gate WOULD have refused
 python -m tools.kanban.bypass_survey --json
+
+# --- Did the capability THIS card added ever RUN? (wire-run-01) ---
+# capability_liveness compares a whole-class count against a grandfathered budget, so a unit
+# added by the card under review disappears into a backlog of 510 units that are ALLOWED to be
+# inert -- the author cannot tell their own omission from the backlog. This names the unit.
+python tools/awareness/capability_consumption.py --new-units --since origin/main
+python tools/awareness/capability_consumption.py --new-units --since <base> --head <branch> --json
+# Exit 0 clean / 1 a new unit has never run / 2 COULD NOT MEASURE -- and 2 stays non-zero,
+# because a check that could not run is not a check that found nothing.
+# FOUR ways of not knowing, none of them a clean bill: no class scanned (a worktree with no .env
+# silently reads an empty SQLite DB -- this printed `0 findings` and exit 0 on its first live
+# run), telemetry unavailable, git could not diff, inert-unit list truncated for display.
+# 9 of 11 classes map to a declaring file; `audit_chain` (declared by a MIGRATION) and
+# `skill_optimizer` (declared by a TABLE) are UNDIFFABLE BY NAME -- reporting them clean would
+# be the fabrication the whole programme refuses.
+# THE REMEDY IS TO RUN IT ONCE (`daemon.py --reflex <n>` for a reflex, the analogous first call
+# otherwise). NEVER raise a budget in args/liveness_gate.yaml. A unit with no consumer BY DESIGN
+# goes in args/external_only_surfaces.yaml, which ADDS an obligation rather than an exemption.
+KANBAN_NEW_UNIT_GATE=off|report|enforce      # the done-gate rung (default: report)
+# A SECOND rung beside the merge check, deliberately not folded into it: `_refuses_done` asks
+# whether the work LANDED, `_unwired_units` asks whether what landed is WIRED. Both fail-open.
+# The range is the task's own branch against its merge base (falling back to commits carrying
+# the id) -- NEVER origin/main...HEAD, which is empty by done-time and would report every task
+# clean, the shape of a V&V card dispatched after its subject landed.
+# A FINDING speaks in both modes; NON-MEASUREMENT speaks only under `enforce`.
 # BOTH RUNGS SHIP `report` AND THE SURVEY IS WHY. Done gate: 96.7% refusal (wrong rate 78.8%),
 # against CLAUDE.md's 1.63% stand-down threshold. Seed admission LOOKED armable -- its 91.5% is
 # a fact about history, not a forward cost -- until measuring showed 46 of 57 create_tasks

@@ -1,0 +1,3 @@
+# wire-run-01 -- a capability declared by THIS diff must have run once.
+tests/awareness/test_new_units.py
+tests/kanban/test_new_unit_done_gate.py

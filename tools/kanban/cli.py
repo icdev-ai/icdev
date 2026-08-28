@@ -34,6 +34,7 @@ import argparse
 import json
 import os
 import secrets
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -211,6 +212,138 @@ def _refuses_done(task_id: str) -> str:
     return ""
 
 
+NEW_UNIT_GATE_ENV = "KANBAN_NEW_UNIT_GATE"
+#: `report`, matching the posture wire-req-01 shipped and for the same reason: nothing has ever
+#: measured how often this fires, and CLAUDE.md treats a check refusing routine work as grounds
+#: to stand it down. Arm it once a survey supports it -- never to get a card closed.
+NEW_UNIT_GATE_DEFAULT = "report"
+
+
+def _new_unit_gate_mode() -> str:
+    """off | report | enforce. An unrecognised value falls back to the DEFAULT, never to
+    `enforce` -- a typo in an env var must not silently arm a gate."""
+    raw = os.environ.get(NEW_UNIT_GATE_ENV, "").strip().lower()
+    return raw if raw in ("off", "report", "enforce") else NEW_UNIT_GATE_DEFAULT
+
+
+def _task_diff_range(task_id: str):
+    """(since, head) covering what THIS task added, or None if it cannot be determined.
+
+    Not `origin/main...HEAD`. By the time a worker runs `--set-status <id> done` the work is
+    usually already merged, so that range is empty and every task would report clean -- the
+    shape of a V&V card dispatched after its subject landed, which can never go red.
+
+    Two ways, in order of directness:
+      1. the task's own branch, `kanban/<id>`, against its merge base with the default branch;
+      2. failing that, the commits whose subject carries the id, from the parent of the earliest
+         to the newest.
+    Neither available -> None, and the caller reports UNMEASURABLE rather than clean.
+    """
+    def _git(*args):
+        try:
+            proc = subprocess.run(
+                ["git", *args], cwd=str(_repo_root), capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=30,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return proc.stdout.strip() if proc.returncode == 0 else None
+
+    default = _git("symbolic-ref", "--short", "refs/remotes/origin/HEAD") or "origin/main"
+    default = default.rsplit("/", 1)[-1] if default.startswith("origin/") else default
+    base_ref = f"origin/{default}"
+
+    for branch in (f"origin/kanban/{task_id}", f"kanban/{task_id}"):
+        if _git("rev-parse", "--verify", "--quiet", branch):
+            merge_base = _git("merge-base", base_ref, branch)
+            if merge_base:
+                return merge_base, branch
+
+    shas = (_git("log", "--format=%H", f"--grep={task_id}", base_ref) or "").split()
+    if shas:
+        newest, earliest = shas[0], shas[-1]
+        parent = _git("rev-parse", "--verify", "--quiet", f"{earliest}^")
+        if parent:
+            return parent, newest
+    return None
+
+
+def _unwired_units(task_id: str) -> str:
+    """Reason this task declares a capability nothing has ever run, or '' .
+
+    THE GAP. `check_capability_liveness` compares a whole-class count against a grandfathered
+    budget, so a unit added by THIS card vanishes into a backlog of 510 units that are allowed
+    to be inert -- and the author cannot tell their own omission from the backlog. Here the unit
+    is NAMED and the remedy is to run it once.
+
+    FAIL-OPEN, exactly like `_refuses_done`: an unreadable board, an undeterminable diff range
+    or an absent module must never wedge a completion. Only a positive, named finding speaks.
+    """
+    mode = _new_unit_gate_mode()
+    if mode == "off":
+        return ""
+    try:
+        from tools.awareness.capability_consumption import new_units
+    except Exception:  # noqa: BLE001 - fail open
+        return ""
+
+    def _note(message: str) -> str:
+        """Say why the check did not run -- but only under `enforce`.
+
+        "We could not tell" is not "there is nothing", so it must never be swallowed where
+        somebody is RELYING on this rung to refuse. Under `report` the rung refuses nothing by
+        construction, and a per-task note on every completion is noise that teaches people to
+        ignore stderr -- which is how a real finding gets missed later. A FINDING is printed in
+        both modes; only non-measurement is conditioned.
+        """
+        if mode == "enforce":
+            print(f"NOTE: {task_id}: {message}", file=sys.stderr)
+        return ""
+
+    rng = _task_diff_range(task_id)
+    if rng is None:
+        return _note(
+            "could not determine this task's diff range, so its new capability units were "
+            "NOT checked (this is not a clean bill)."
+        )
+
+    since, head = rng
+    try:
+        result = new_units(since, head=head)
+    except Exception as exc:  # noqa: BLE001 - fail open
+        return _note(f"new-unit check could not run ({exc}) -- this is not a clean bill.")
+
+    if result.get("state") != "measured":
+        return _note(
+            f"new-unit check UNMEASURABLE ({result.get('reason') or 'unknown'}) -- "
+            "not a clean bill."
+        )
+
+    findings = result.get("findings") or []
+    if not findings:
+        return ""
+
+    lines = [
+        f"{task_id}: declares {len(findings)} capability unit(s) that have NEVER run:",
+    ]
+    for f in findings:
+        lines.append(f"  - {f['capability_class']}: {f['unit']}")
+        lines.append(f"      {f['remedy']}")
+    lines.append(
+        f"  Re-derive: python tools/awareness/capability_consumption.py --new-units "
+        f"--since {since} --head {head}"
+    )
+    message = "\n".join(lines)
+
+    if mode == "enforce":
+        return message + (
+            f"\n  Run it, or set {NEW_UNIT_GATE_ENV}=report if this is not the right check "
+            f"for this task."
+        )
+    print(f"WARNING: {message}", file=sys.stderr)
+    return ""
+
+
 def cmd_set_status(
     task_ids: list,
     status: str,
@@ -285,6 +418,11 @@ def cmd_set_status(
     # whenever this checkout's origin/<default> has not been fetched since.
     if status == "done" and not force_done and not merge:
         refusals = [r for r in (_refuses_done(t) for t in task_ids) if r]
+        # A SECOND, INDEPENDENT question, deliberately its own rung: `_refuses_done` asks
+        # whether the work LANDED, this asks whether what landed is WIRED. A task can pass the
+        # first and fail the second -- that is precisely the "100% done, nothing consumes it"
+        # defect. It ships `report`, so it appends nothing to `refusals` today.
+        refusals += [r for r in (_unwired_units(t) for t in task_ids) if r]
         if refusals:
             if json_out:
                 print(json.dumps(
