@@ -9150,3 +9150,16 @@ projects:
   - key: ramp
     title: RAMP - raise the daily delta meter so the book assembles
     priority: medium
+  # --- TTM SQUEEZE: the volatility-COMPRESSION read this platform has never had.
+  # `trend` measured trend variants as rankable signals (every 200-period one sign-flips)
+  # and then as a per-name filter and a market switch (both inside the noise band of 200
+  # random filters). All of that was TREND. None of it says whether the tape is COILED,
+  # which is the one read that can justify standing aside in a sideways market.
+  # TTM Squeeze makes TWO claims and they must be measured APART: compression predicts LOW
+  # forward realised vol, and a fire predicts HIGH. Only the second half is directional, so
+  # scoring a symmetric predictor against a SIGNED forward return returns ~0 by
+  # construction and would read as a null that was never tested. The prior is against a
+  # directional edge; the honest outcome may be an EXPOSURE input and not a DIRECTION one.
+  - key: sqz
+    title: SQZ - TTM Squeeze, the volatility-compression read, measured before any wiring
+    priority: high
