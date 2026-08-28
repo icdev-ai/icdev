@@ -9166,3 +9166,16 @@ projects:
   - key: sqz
     title: SQZ - TTM Squeeze, the volatility-compression read, measured before any wiring
     priority: high
+  # --- THE POST-SQZ QUANT PROGRAMME. Grounded in what the platform itself measured:
+  # every DISCRETE regime idea died (trend-01/02, sqz), the survivors are a slow
+  # cross-sectional factor (12-1 momentum, sector-neutral +0.0789 OOS stable) and a
+  # decorrelated partner (value, -0.254 corr, doubles IR to 2.65). The sqz study also
+  # proved forward realised vol is forecastable here (trailing sigma IC -0.44..-0.61,
+  # stable, both clocks) and NOTHING consumes that forecast. These epics exploit the
+  # measured survivors instead of adding a fourth regime detector.
+  - key: vt
+    title: VT - vol-target the book; the continuous scaler the dead regime labels never were
+    priority: high
+  - key: pead
+    title: PEAD - earnings drift from point-in-time filings, a third decorrelated blend leg
+    priority: high
