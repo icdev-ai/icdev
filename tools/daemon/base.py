@@ -684,6 +684,25 @@ class DaemonBase(abc.ABC):
     reflex_names: List[str] = []
     id_prefix: str = "dmn"
 
+    #: WHAT THIS PROCESS IS, for the coordination registry (autonomy-id-05).
+    #:
+    #: `get_agent_type()` returns "claude" whenever CLAUDECODE or CLAUDE_SESSION_ID is in
+    #: the environment, and a supervisor started from a Claude Code terminal passes those
+    #: to every child it spawns. So a daemon that never says what it is registers as a
+    #: CLAUDE SESSION, under a generated `local-<hex>` id.
+    #:
+    #: Measured on the live board 2026-08-28: `agent_sessions` carried
+    #: `local-548f064fde37 / claude / pid 20948`, and pid 20948 was
+    #: `tools/proposal_genesis/daemon.py`, supervised by launch.py. The coordination hook
+    #: therefore told every other session that a daemon was a human's Claude session --
+    #: which is exactly what a reader consults before deciding what is safe to stop.
+    #:
+    #: `service_name` is the session-id prefix ("proposal-genesis"); `service_agent` is
+    #: the agent_type ("proposal_genesis"). Claimed with setdefault semantics, so a
+    #: subclass that already claims its own identity earlier in main() still wins.
+    service_name: Optional[str] = None
+    service_agent: Optional[str] = None
+
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.trust = self.create_trust_kernel(config)
@@ -1178,6 +1197,24 @@ class DaemonBase(abc.ABC):
 
         return results
 
+    def claim_identity(self) -> Optional[str]:
+        """Tell the coordination registry what this process IS. Never raises.
+
+        Returns the session id claimed, or None when the subclass declares no identity.
+        None is a REPORTED gap rather than a silent one: without a claim the row this
+        daemon writes says `claude`, and a reader deciding what is safe to stop sees a
+        human session where a supervised daemon is running.
+        """
+        if not (self.service_name and self.service_agent):
+            return None
+        try:
+            from tools.coordination.service_identity import claim_service_identity
+
+            # setdefault semantics -- a subclass that claimed earlier in main() wins.
+            return claim_service_identity(self.service_name, self.service_agent)
+        except Exception:  # noqa: BLE001 -- identity is observability, not authorization
+            return None
+
     def run_forever(self) -> None:
         """Main daemon loop."""
         enabled_count = sum(1 for n in self.reflex_names if self.config.get("reflexes", {}).get(n, {}).get("enabled"))
@@ -1227,6 +1264,14 @@ class DaemonBase(abc.ABC):
                   f"{self.daemon_name} will run its startup code until restarted")
         _code_baseline = _code_reload.snapshot() if _code_reload else None
         _started_at = time.time()
+
+        # BEFORE the first heartbeat, so the very first row this process writes already
+        # names the service. Claiming after would leave a `claude`-labelled row visible
+        # to every other session for a full cycle.
+        _claimed = self.claim_identity()
+        if _claimed is None:
+            print(f"WARN: {self.daemon_name} declares no service_name/service_agent; it "
+                  f"will register under the ambient agent identity (see autonomy-id-05)")
 
         try:
             check_interval = (

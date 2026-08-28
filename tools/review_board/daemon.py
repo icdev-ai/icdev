@@ -128,6 +128,8 @@ class ReviewBoardDaemon(DaemonBase):
     event_prefix = "review_board"
     reflex_names = REFLEX_NAMES
     id_prefix = "rb"
+    service_name = "review-board"       # coordination session-id prefix (autonomy-id-05)
+    service_agent = "review_board"
 
     def ensure_tables(self) -> None:
         """Create review board tables if they do not exist."""

@@ -133,6 +133,8 @@ class CompanionSyncDaemon(DaemonBase):
     event_prefix = "companion_sync"
     reflex_names = REFLEX_NAMES
     id_prefix = "csd"
+    service_name = "companion-sync"       # coordination session-id prefix (autonomy-id-05)
+    service_agent = "companion_sync"
 
     # ------------------------------------------------------------------
     # Table lifecycle
