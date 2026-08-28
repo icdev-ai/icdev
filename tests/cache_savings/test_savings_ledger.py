@@ -192,6 +192,27 @@ def test_cumulative_is_none_not_zero_when_nothing_priced_was_avoided(led):
     assert out["unpriced_calls"] == 1 and out["priced_calls"] == 0
 
 
+def test_an_unbilled_saving_is_denominated_in_tokens(led):
+    """A FLAT SUBSCRIPTION METERS QUOTA, so tokens are the unit -- not dollars, and not a
+    bare call count either.
+
+    "Unbilled" does not mean "nothing was saved". An uncached call spends the allowance
+    whether or not it produces a line on an invoice, and protecting that allowance is the
+    entire purpose of response and prefix caching. So the ledger must carry a REAL token
+    figure for an unpriced provider, and it is the headline the tile renders. Reporting
+    $0.0000 -- or only "3 calls avoided" -- understates a cache doing exactly its job.
+    """
+    for _ in range(3):
+        ledger.record_avoided_call(function="f", model_id="m", provider="claude-cli",
+                                   input_tokens=40_000, output_tokens=1_500, conn=led)
+    out = ledger.cumulative(led)
+    assert out["usd_saved"] is None, "a subscription has no per-token price"
+    assert out["unpriced_calls"] == 3
+    # The saving, in the unit that is actually scarce here.
+    assert out["tokens_saved_input"] == 120_000
+    assert out["tokens_saved_output"] == 4_500
+
+
 def test_priced_and_unpriced_are_summed_apart(led):
     for prov in ("anthropic", "ollama", "ollama"):
         ledger.record_avoided_call(function="f", model_id="m", provider=prov,

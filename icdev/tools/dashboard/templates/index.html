@@ -1173,24 +1173,37 @@ document.addEventListener('DOMContentLoaded', function() {
             // FOUR STATES, and only the last is "$0.00 because nothing was saved":
             //   not measurable  the ledger could not be read -> "--", never a zero
             //   nothing yet     readable, no hits recorded yet
-            //   unpriced        calls WERE avoided but nobody was billed for them (a
-            //                   Claude subscription, local Ollama). Showing $0.0000 here
-            //                   reports a working cache as a failed one, so the count of
-            //                   avoided calls IS the answer and the dollars say so.
-            //   priced          a real bill was avoided
+            //   unpriced        calls WERE avoided and nobody was INVOICED for them -- a
+            //                   flat Claude subscription, local Ollama. THE SAVING IS REAL
+            //                   AND IT IS DENOMINATED IN TOKENS, NOT DOLLARS: a
+            //                   subscription meters QUOTA, so an uncached call spends the
+            //                   allowance whether or not it produces a line on a bill.
+            //                   That is the whole purpose of response and prefix caching,
+            //                   so the headline here is TOKENS NOT SPENT. Reporting
+            //                   $0.0000 -- or even just a call count -- understates a
+            //                   cache that is doing exactly its job.
+            //   priced          an invoice was avoided; dollars are the right unit
             var life = d.lifetime || {};
             var savedText, savedLabel, savedColor = '#f59e0b';
+            var lifeTokens = (life.tokens_saved_input || 0) + (life.tokens_saved_output || 0);
             if (!life.measurable) {
                 savedText = '--'; savedLabel = 'Saved (not measurable)'; savedColor = 'var(--text-dim)';
             } else if (!life.avoided_calls) {
                 savedText = '--'; savedLabel = 'Saved (no hits yet)'; savedColor = 'var(--text-dim)';
             } else if (life.usd_saved === null || life.usd_saved === undefined) {
-                savedText = life.avoided_calls.toLocaleString();
-                savedLabel = 'Calls avoided (unbilled)';
+                savedText = lifeTokens.toLocaleString();
+                savedLabel = 'Tokens not spent · ' + life.avoided_calls.toLocaleString()
+                    + (life.avoided_calls === 1 ? ' call' : ' calls');
                 savedColor = '#818cf8';
             } else {
                 savedText = '$' + life.usd_saved.toFixed(4);
-                savedLabel = 'Saved all time (USD)';
+                // A MIXED BOARD IS THE NORMAL CASE, and dollars alone hide half of it: a
+                // deployment that avoided 6 metered calls and 12,000 subscription ones
+                // would render a few cents and say nothing about the quota it protected.
+                // Name the unpriced calls beside the figure rather than dropping them.
+                savedLabel = life.unpriced_calls
+                    ? 'Saved all time · +' + lifeTokens.toLocaleString() + ' tokens unbilled'
+                    : 'Saved all time (USD)';
             }
             var savedCell = '<div><div style="font-size:20px;font-weight:700;color:'
                 + savedColor + ';">' + savedText + '</div><div style="font-size:10px;'
