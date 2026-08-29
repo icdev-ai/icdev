@@ -9205,3 +9205,52 @@ projects:
   - key: harm
     title: HARM - one exposure owner; inert modules decided; per-regime attribution
     priority: medium
+
+- key: ftp
+  name: FTP - ICDEV[FT] production readiness and the easy button
+  description: 'Make the ICDEV[FT] paper platform production-grade and installable by
+    a layman on any OS. Three exploration passes (2026-08-29) found the code disciplined
+    but the operational shell wanting: setup is an 11-step undocumented Windows-only
+    sequence with a materially wrong README (extras, no migrate/UI-build/start steps,
+    drifted .env.template); the entry-risk gate estimates order value from a constant
+    when no price is threaded through, so both blocking checks measure a fiction for
+    every new position (invisible to a test suite whose fixtures all sit at exactly
+    that constant); the autonomous order path carries no venue idempotency key while
+    the adapter and the paper-session path both support one; the supervisor auto-deploys
+    origin/main with no migration step, no post-restart health probe, no rollback and
+    no crash-loop backoff; /health answers 200 with HTML through the SPA catch-all;
+    broker calls have no bounded retry while the knowledge fetchers carry the exact
+    pattern; and three broker adapters still hold private copies of the transport the
+    shared HttpBroker exists to unify. Two epics: prd hardens the money path and the
+    deploy loop; ezb ships a stdlib-only cross-platform setup_ft.py bootstrap (SQLite
+    zero-config default, PG documented upgrade), an icdev_fin.doctor traffic-light
+    diagnostic, de-Windowsed tooling, honest README/OVERVIEW/GLOSSARY, and a layman
+    UI pass. PAPER ONLY: every live gate is untouched or strengthened; live trading
+    stays HITL-gated regardless. Deliberately a SEPARATE card from ftl, whose text
+    promises check_risk is never touched -- fixing check_risk is this card''s first
+    task. Detailed derivations live on the task rows, not here: this file is public.'
+  task_prefix: ftp-
+  default_open: true
+  briefs:
+  - 'PRD: the risk gate must measure the order it is checking -- thread the real price
+    (and the notional) into check_risk; the fallback constant survives only with a
+    named warning, per the evidence-honesty rule.'
+  - 'PRD: an autonomous submit must be idempotent at the venue -- deterministic
+    client_order_id per (cycle, system, symbol, side), intent row persisted BEFORE the
+    broker call, resolver adopts or declares lost by asking the venue.'
+  - 'PRD: the deploy loop must migrate, verify and be able to roll back -- pull ->
+    migrate --up -> health-probe the fresh child -> tag last-good or restore the
+    pre-pull sha; crash loops back off instead of spinning.'
+  - 'EZB: git clone, python setup_ft.py, python launch_ft.py --open must be the whole
+    story on Windows, macOS and Linux -- stdlib-only bootstrap, SQLite by default,
+    idempotent re-runs, doctor at the end.'
+  - 'EZB: a layman must be able to read the system -- OVERVIEW.md and GLOSSARY.md in
+    plain language, a glossary route in the UI, and no rendered value that was never
+    measured.'
+  epics:
+  - key: prd
+    title: PRD - production hardening of the money path and the deploy loop
+    priority: high
+  - key: ezb
+    title: EZB - the easy button; cross-OS setup, doctor, docs, layman UI
+    priority: high
