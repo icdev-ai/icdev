@@ -103,3 +103,9 @@ prefixes:
   # Root env stays UNSET, so this resolves external + NOT dispatchable = PARKED.
   # Registering a stream never enables it; it only stops it building here.
   ftl: icdev_ft
+  # ftp -- ICDEV[FT] production readiness + easy button (card ftp, 2026-08-29).
+  # Registered BEFORE seeding, per the xit-reg-02 lesson above: an unregistered
+  # ftp- task resolves to the ICDev default and the dispatcher would build FT
+  # hardening work inside this PUBLIC checkout. Same repo, same env var: the
+  # stream is dispatchable exactly when ICDEV_KANBAN_REPO_FT is set.
+  ftp: icdev_ft
