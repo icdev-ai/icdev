@@ -156,3 +156,104 @@ def test_precommit_and_ci_consume_the_gate():
     ci = (REPO_ROOT / ".github" / "workflows" / "icdev-ci.yml").read_text(encoding="utf-8")
     assert "python tools/ci/domain_leak_gate.py --check" in ci
     assert textwrap.dedent(ci).count("domain_leak_gate.py --check || true") == 0
+
+
+# --------------------------------------------------------------------------- #
+# personal_financial -- the ICDEV[RT] category
+# --------------------------------------------------------------------------- #
+# Deliberately fake shapes, as above.
+FAKE_SIMPLEFIN = "https://user123:s3cr3ttoken@beta-bridge.simplefin.org/simplefin"
+FAKE_SSN = "123-45-6789"          # the canonical documentation SSN
+
+
+def _repo_rt(tmp_path: Path) -> Path:
+    """A repo whose gate config enforces the RT category and the data rules."""
+    repo = _repo(tmp_path)
+    cfg = yaml.safe_load((repo / "args" / "domain_leak_gate.yaml").read_text(encoding="utf-8"))
+    cfg["domain_leak_gate"]["patterns"]["categories"] = ["broker_credential", "personal_financial"]
+    cfg["domain_leak_gate"]["data_patterns"] = [
+        {"name": "SSN shape in a data file", "pattern": r"\b\d{3}-\d{2}-\d{4}\b",
+         "severity": "critical"},
+    ]
+    (repo / "args" / "domain_leak_gate.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
+    return repo
+
+
+def test_a_config_without_categories_keeps_the_broker_only_set(tmp_path):
+    """An older args/domain_leak_gate.yaml must behave exactly as before."""
+    repo = _repo(tmp_path)
+    cfg = yaml.safe_load((repo / "args" / "domain_leak_gate.yaml").read_text(encoding="utf-8"))
+    loaded = gate.gate_patterns(cfg["domain_leak_gate"])
+    assert {p["category"] for p in loaded} == {"broker_credential"}
+
+
+def test_declaring_the_rt_category_loads_it(tmp_path):
+    repo = _repo_rt(tmp_path)
+    cfg = yaml.safe_load((repo / "args" / "domain_leak_gate.yaml").read_text(encoding="utf-8"))
+    loaded = gate.gate_patterns(cfg["domain_leak_gate"])
+    assert {p["category"] for p in loaded} == {"broker_credential", "personal_financial"}
+    assert {"SimpleFIN Access URL", "Labelled Account Number", "Bank Routing Number",
+            "Boldin API Credential"} <= {p["name"] for p in loaded}
+
+
+def test_an_unknown_category_is_a_config_error_not_an_empty_ruleset(tmp_path):
+    """Silently matching nothing is how a gate reports clean over rules it
+    never loaded -- the exact failure shape this file exists to refuse."""
+    repo = _repo(tmp_path)
+    cfg = yaml.safe_load((repo / "args" / "domain_leak_gate.yaml").read_text(encoding="utf-8"))
+    cfg["domain_leak_gate"]["patterns"]["categories"] = ["broker_credential", "typo_category"]
+    with pytest.raises(SystemExit) as exc:
+        gate.gate_patterns(cfg["domain_leak_gate"])
+    assert "typo_category" in str(exc.value)
+
+
+@pytest.mark.parametrize("planted,rule", [
+    (f"RET_SIMPLEFIN={FAKE_SIMPLEFIN}", "SimpleFIN Access URL"),
+    ("account_number: 4432119087", "Labelled Account Number"),
+    ("Routing Number = 021000021", "Bank Routing Number"),
+    ("BOLDIN_API_TOKEN: abcd1234efgh5678", "Boldin API Credential"),
+])
+def test_planted_personal_financial_credential_is_refused(tmp_path, planted, rule):
+    repo = _repo_rt(tmp_path)
+    (repo / "leak.py").write_text(planted + "\n", encoding="utf-8")
+    rep = gate.build_report(repo, ["leak.py"])
+    assert rep["ok"] is False
+    assert rule in {f["rule"] for f in rep["findings"]}
+
+
+def test_an_ssn_shape_is_refused_in_a_DATA_file_and_allowed_in_SOURCE(tmp_path):
+    """The whole reason the SSN rule is data-scoped.
+
+    Measured over ICDEV[IT] 2026-08-30: the bare shape hits 45 times -- 40 in
+    .py, 5 in .md -- and every one is a fixture or doc example of the redaction
+    subsystem itself. Arming it against source would refuse the tests that
+    prove redaction works. In a data file it is 0, and a data file is what a
+    real leak looks like.
+    """
+    repo = _repo_rt(tmp_path)
+    (repo / "export.csv").write_text(f"name,ssn\nAlice,{FAKE_SSN}\n", encoding="utf-8")
+    (repo / "tools" / "pkg" / "redact_test.py").write_text(
+        f'assert redact("SSN: {FAKE_SSN}") == "SSN: [US_SSN]"\n', encoding="utf-8")
+
+    rep = gate.build_report(repo, ["export.csv", "tools/pkg/redact_test.py"])
+    assert rep["ok"] is False
+    assert {f["file"] for f in rep["findings"]} == {"export.csv"}
+    assert [f["kind"] for f in rep["findings"]] == ["personal_data_dump"]
+
+
+def test_the_tracked_tree_carries_no_personal_financial_credential():
+    """The live assertion, not a fixture one: arming this refused nothing.
+
+    Surveyed over BOTH parents before arming -- ICDEV[IT] 20,788 tracked files
+    and ICDEV[FT] 901 -- zero hits for all four rules. FT counts because the
+    generic scanner compiles the whole table regardless of category.
+    """
+    cfg = gate.load_gate()
+    declared = (cfg.get("patterns", {}) or {}).get("categories", [])
+    assert "personal_financial" in declared, (
+        "the checked-in gate no longer enforces the ICDEV[RT] category")
+
+    rep = gate.build_report(REPO_ROOT)
+    assert rep["findings"] == [], [(f["file"], f["rule"]) for f in rep["findings"]][:10]
+    # 8 broker + 4 personal_financial, all loaded from the one table.
+    assert rep["rules"] >= 12
