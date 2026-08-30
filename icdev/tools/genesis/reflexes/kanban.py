@@ -3886,6 +3886,31 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
                     logger.warning("lesson_learned hook failed: %s", _ll_exc)
                 return
 
+        # Delivery-evidence gate (kpr-rvfy-04): the POSITIVE half of the gate
+        # above. `_branch_has_unmerged_commits` asks whether this task's branch
+        # holds work that has not landed — so a task nothing ever built, whose
+        # branch does not exist, satisfies it by having no unmerged work. That is
+        # how ftp-prd-11 went from seeded to `done` in six minutes with no PR, no
+        # commit and no dispatch. A negative check cannot establish that
+        # something happened; this one asks for the positive.
+        #
+        # Refuses only on a MEASURED absence, and only for an automatic actor.
+        # See done_delivery_refusal for the fail-open reasoning and the env
+        # toggle.
+        if new_status == "done":
+            _delivery_reason = done_delivery_refusal(task_id, actor=actor)
+            if _delivery_reason:
+                logger.warning(
+                    "_move_task: REFUSED done for %s (%s) — %s",
+                    task_id, actor, _delivery_reason,
+                )
+                conn.close()
+                _record_status_transition(
+                    task_id, prior_status, "REFUSED_done_no_delivery_evidence",
+                    actor=actor, reason=f"guard: {_delivery_reason}"[:400],
+                )
+                return
+
         now = _utcnow_iso()
         sql = "UPDATE kanban_tasks SET status = ?, updated_at = ?"
         vals = [new_status, now]
@@ -4141,6 +4166,220 @@ _UNCOMPLETE_GUARDED_TARGETS = frozenset({
 
 #: A human moving a task by hand is making a decision, not losing a race.
 _UNCOMPLETE_EXEMPT_ACTORS = frozenset({"manual", "cli", "operator"})
+
+#: Actors whose ``done`` this gate does not judge, and there are only two kinds.
+#:
+#: A ``cli``/``manual``/``operator`` completion is a human DECISION, already
+#: carried through the CLI's own merge-verify refusal and its audited
+#: ``--force-done`` escape hatch. This gate exists for the AUTOMATIC path, which
+#: has no human behind it.
+#:
+#: ``pre_dispatch_resolver`` is the one automatic path whose completion does not
+#: CLAIM a delivery: :func:`_pre_dispatch_check` re-derives that the gap is
+#: already resolved and closes the card without dispatching, so it has no branch
+#: by construction. It carries its own evidence, and it declares itself rather
+#: than completing under ``scheduler``'s name.
+#:
+#: Do NOT add a fourth entry to quieten a fire. Every other refusal has positive
+#: evidence available to it — see :func:`done_delivery_refusal`.
+_DELIVERY_EVIDENCE_EXEMPT_ACTORS = frozenset({
+    "manual", "cli", "operator", "pre_dispatch_resolver",
+})
+
+#: ``1``/``true`` (default) refuse; anything else stands the gate down. Named
+#: rather than shell-neutralised, on the same terms as
+#: ``KANBAN_REQUIRE_MERGE_FOR_DONE``: an operator standing a control down must
+#: leave a record a reader can find.
+_DELIVERY_EVIDENCE_ENV = "KANBAN_REQUIRE_DELIVERY_EVIDENCE"
+
+
+def _has_dispatch_record(task_id: str) -> Optional[bool]:
+    """``True`` | ``False`` | ``None`` — did anything ever dispatch this task?
+
+    Two independent witnesses, because they fail separately: a transition INTO
+    ``in_progress`` in ``kanban_status_transitions`` (written by ``_move_task``
+    itself, so it survives a scheduler restart) and a ``kanban_executions`` row
+    (written by ``_open_execution`` on every executor tier). Either is enough.
+
+    ``None`` when the board could not be read. NEVER ``False`` on an error: this
+    feeds a refusal, and "the database was briefly unreachable" must not read as
+    "nothing ever built this task".
+    """
+    try:
+        conn = get_connection()
+    except Exception as exc:  # noqa: BLE001 — unreadable board is unmeasurable
+        logger.debug("dispatch-record probe: no connection for %s: %s", task_id, exc)
+        return None
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM kanban_status_transitions "
+            "WHERE task_id = %s AND to_status = 'in_progress' LIMIT 1",
+            (task_id,),
+        ).fetchone()
+        if row:
+            return True
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("dispatch-record probe: transitions unreadable for %s: %s",
+                     task_id, exc)
+        conn.close()
+        return None
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM kanban_executions WHERE task_id = %s LIMIT 1",
+            (task_id,),
+        ).fetchone()
+        return bool(row)
+    except Exception as exc:  # noqa: BLE001 — one witness answered, the other
+        # did not. That is not proof of absence.
+        logger.debug("dispatch-record probe: executions unreadable for %s: %s",
+                     task_id, exc)
+        return None
+    finally:
+        conn.close()
+
+
+def _children_all_done(task_id: str) -> Optional[bool]:
+    """``True`` when this task has children and every one of them is ``done``.
+
+    ``None`` when it has no children, or the board could not be read. A parent's
+    delivery evidence IS its children's: ``auto_close_parent`` in
+    ``tools/kanban/state_machine.py`` completes a gate sentinel that was never
+    dispatched and has no branch, and it is right to. 13 of the 32 fires in the
+    survey below were exactly that.
+    """
+    try:
+        conn = get_connection()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("children probe: no connection for %s: %s", task_id, exc)
+        return None
+    try:
+        total = conn.execute(
+            "SELECT COUNT(*) FROM kanban_tasks WHERE depends_on_task_id = %s",
+            (task_id,),
+        ).fetchone()[0]
+        if not total:
+            return None
+        undone = conn.execute(
+            "SELECT COUNT(*) FROM kanban_tasks "
+            "WHERE depends_on_task_id = %s AND status != 'done'",
+            (task_id,),
+        ).fetchone()[0]
+        return undone == 0
+    except Exception as exc:  # noqa: BLE001 — unreadable is not "no children"
+        logger.debug("children probe failed for %s: %s", task_id, exc)
+        return None
+    finally:
+        conn.close()
+
+
+def done_delivery_refusal(task_id: str, actor: str = "scheduler",
+                          dispatched: Optional[bool] = None) -> str:
+    """Why an AUTOMATIC move to ``done`` must be refused, or ``""`` to allow it.
+
+    THE HOLE (kpr-rvfy-04). The merge-verify gate beside this one asks
+    ``_branch_has_unmerged_commits`` — "does this task's branch hold work that
+    has NOT landed" — so it is satisfied by unmerged work being ABSENT. A task
+    nothing ever built, whose branch does not exist, passes it trivially. A
+    NEGATIVE check cannot establish that anything happened. This is the positive
+    half: **something must have built this.**
+
+    Extracted as a function rather than written inline for the reason
+    :func:`timeout_demotion_skip_reason` states: a rule that can only be
+    exercised by driving the whole scheduler loop is a rule nobody checks.
+
+    SURVEYED BEFORE ARMING, and the survey is what shaped it. Population: the
+    904 tasks whose latest ``-> done`` transition was written by an actor that
+    reaches this function (``scheduler``, ``pr_watcher``, ``tool_runner``,
+    ``startup_backfill``). The dashboard is NOT in it — ``tools/dashboard/api/
+    kanban.py`` has its own move path and never calls ``_move_task`` — which is
+    why the first measurement, taken over every done task, read a meaningless
+    17.63%.
+
+    The bare rule "no dispatch record and no branch" fires **29 times, 3.21%**,
+    twice the 1.63% this repo already calls refusing routine work. EVERY ONE OF
+    THE 29 WAS A LEGITIMATE COMPLETION, in three kinds, so each is answered with
+    POSITIVE evidence rather than an exemption list:
+
+      * parent auto-closes ("auto-closed: all N child tasks done", from
+        ``state_machine.auto_close_parent``). A gate sentinel is never
+        dispatched and has no branch; its delivery evidence is its children's —
+        :func:`_children_all_done`, which narrows 12 of the 29.
+      * :func:`_pre_dispatch_check` auto-resolving a false-positive gap
+        (``tool_not_in_manifest`` on ``cdh-gap-*``). Nothing was built because
+        there was nothing to build, and that path now declares itself through
+        its own actor instead of wearing ``scheduler``'s.
+      * a ``pr_watcher`` completion whose PR merged and whose branch was then
+        deleted, so the work is ON MAIN — which :func:`_work_already_landed`
+        already knows how to see, and sees through the merge_ref/subject tiers
+        only.
+
+    AFTER NARROWING: 17 fires, 1.88%, and **every one of them is dated
+    2026-06-14 to 2026-06-30** — the June-era auto-resolve path, which wrote no
+    reason and so cannot be told apart in replay from the actor that now labels
+    it. Over the population the gate will actually meet, it fires ZERO times:
+    0.00% over the last 30 days (410 completions) and 0.00% over the last 60
+    (451). That is what supports shipping it armed.
+
+    Re-derive with ``python -m tools.kanban.artifact_evidence --survey``. Do NOT
+    respond to a future fire by adding a fourth exempt actor: find the positive
+    evidence that completion rests on, or the completion has no evidence.
+
+    FAIL-OPEN, deliberately and at every step. Only a MEASURED absence refuses:
+    ``delivery_evidence`` returns ``has_evidence=False`` solely when the dispatch
+    record, the branch listing and the commit compare were ALL read and all three
+    came back negative. Anything unreadable is ``None`` and allows the
+    completion, because an unreachable git or a briefly-down board must never
+    wedge every task on the board.
+    """
+    if (actor or "") in _DELIVERY_EVIDENCE_EXEMPT_ACTORS:
+        return ""
+    import os as _os
+    if _os.getenv(_DELIVERY_EVIDENCE_ENV, "1").strip().lower() not in ("1", "true", "yes"):
+        return ""
+    try:
+        from tools.kanban.artifact_evidence import delivery_evidence
+        if dispatched is None:
+            dispatched = _has_dispatch_record(task_id)
+        evidence = delivery_evidence(
+            task_id,
+            repo_root=_task_repo_root(task_id),
+            base_branch=_task_base_branch(task_id),
+            dispatched=dispatched,
+        )
+    except Exception as exc:  # noqa: BLE001 — an unanswerable check allows
+        logger.debug("delivery-evidence gate errored for %s (fail-open): %s",
+                     task_id, exc)
+        return ""
+    if evidence.get("has_evidence") is not False:
+        return ""
+
+    # The three narrowings, cheapest first. Each is POSITIVE evidence of a real
+    # completion, not a licence granted by name.
+    try:
+        if _children_all_done(task_id) is True:
+            return ""
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("children narrowing failed for %s (fail-open): %s", task_id, exc)
+        return ""
+    try:
+        # `_work_already_landed` returns True | None | False; only a firm False
+        # means the work is genuinely not on the default branch. Reusing it
+        # rather than re-deriving keeps ONE statement of the merge_ref/subject
+        # tiering — and file content is never in it (landed_check's
+        # NON_LANDING_CONFIDENCE), so a forward reference in a comment cannot
+        # complete a task through this door either.
+        landed, _detail = _work_already_landed(task_id)
+        if landed is not False:
+            return ""
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("landed narrowing failed for %s (fail-open): %s", task_id, exc)
+        return ""
+
+    return (
+        "no delivery evidence: nothing dispatched this task, no branch carries "
+        "its id, nothing to merge, no completed children, and its work is not "
+        f"on the default branch — {evidence.get('reason') or 'measured absent'}"
+    )
 
 
 def _work_already_landed(task_id: str):
@@ -6527,7 +6766,16 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
         logger.info("kanban: %s auto-resolved pre-dispatch: %s", task_id, resolution_reason)
         _write_verification_log(task_id, True, f"AUTO-RESOLVED (pre-dispatch): {resolution_reason}")
         try:
-            _move_task(task_id, "done",
+            # Its OWN actor (kpr-rvfy-04). This completion's claim is "there was
+            # nothing to build", and `_pre_dispatch_check` proves it by
+            # re-deriving the desired state — the tool IS in the manifest, the
+            # route IS in the Pages list. That is a different claim from "the
+            # work was delivered", and the delivery-evidence gate would
+            # otherwise refuse it for lacking a branch it was never going to
+            # have. Declaring the path is honest where hiding inside
+            # `scheduler` was not: 18 of the 32 fires in that gate's survey were
+            # this path, unlabelled.
+            _move_task(task_id, "done", actor="pre_dispatch_resolver",
                        reason=f"auto-resolved pre-dispatch: {resolution_reason}")
         except Exception:
             pass
@@ -6995,7 +7243,8 @@ def _dir_owns_its_repo_root(work_dir: str) -> bool:
         return False
 
 
-def _git_worktree_has_real_changes(task_id: str) -> Tuple[bool, str]:
+def _git_worktree_has_real_changes(task_id: str,
+                                   committed_only: bool = False) -> Tuple[bool, str]:
     """Fast-path: did the agent actually touch the filesystem / commit work?
 
     Checks in order (any positive → True):
@@ -7009,6 +7258,32 @@ def _git_worktree_has_real_changes(task_id: str) -> Tuple[bool, str]:
          verifier ran. If main advanced AND the worktree is clean, the
          agent's commits are there already.
 
+    ``committed_only`` DROPS arm 2 (kpr-rvfy-04). The three arms answer two
+    different questions and the callers want different ones:
+
+      * "did anything happen here?" — all three arms. A dirty worktree is the
+        right answer for :func:`timeout_demotion_skip_reason`, which is
+        deciding whether demoting a timed-out task would throw work away.
+      * "was this task DELIVERED?" — arms 1 and 3 only. An uncommitted change
+        is evidence the agent WORKED, and none at all that it delivered: a
+        worktree is torn down, and what was in it is then simply gone.
+
+    ``_run_verify_checks``'s own docstring has said "uncommitted changes alone
+    are NOT evidence of completion" since the dirty fallback was removed from
+    check 5 — and check 0, which runs FIRST, reinstated it. Measured 2026-08-29:
+    four of five falsely-completed ``ftp-*`` tasks were verified on this arm,
+    among them ``ftp-ezb-06``, marked done on 24 uncommitted changes while its
+    worker was still running pytest. That session exited without committing;
+    ``kanban/ftp-ezb-06`` carries no commits and ``git fsck`` finds no dangling
+    one, so the work is gone. The false ``done`` also removed the pressure that
+    would have caught the loss.
+
+    SURVEYED before narrowing, as this repo requires: over the last 498
+    scheduler ``verified:`` completions the arms split 55.6% branch commits,
+    18.9% main advanced, 22.5% not git-first, and **3.01% this arm alone**. A
+    task that now falls through runs the full check chain, and if that fails it
+    is RETRIED with its worktree preserved — the direction that keeps the work.
+
     Returns ``(ok, reason)``. On git failure or no evidence, ``(False, "")``.
     """
     import subprocess as _sp
@@ -7016,12 +7291,25 @@ def _git_worktree_has_real_changes(task_id: str) -> Tuple[bool, str]:
     branch_name = f"kanban/{task_id}"
     work_dir = _work_dir_for(task_id)
     dispatch_baseline = _dispatch_main_heads.get(task_id, None)
+    default_branch_for_task = _task_base_branch(task_id)
 
     # 1. branch commits with file changes since dispatch
+    #
+    # `--not origin/<default>` is load-bearing (kpr-rvfy-04). Without it the
+    # range is `<main at dispatch>..<branch>`, which counts every commit MAIN
+    # itself gained while the task ran — other tasks' merged work — whenever the
+    # branch sits at or below the current default branch. Measured 2026-08-29:
+    # ftp-prd-07 was marked done on "18 file(s) changed on kanban/ftp-prd-07"
+    # while that branch was 0 commits ahead of origin/main and its declared
+    # deliverable (icdev_fin/fathomdesk/alert_delivery.py) was absent from the
+    # tree. Excluding what is already on the default branch leaves exactly the
+    # commits this task contributed; work that has since MERGED stops matching
+    # here and is picked up by arm 3 below, which is the case that arm is for.
     if dispatch_baseline:
         try:
             r = _sp.run(
                 ["git", "log", f"{dispatch_baseline}..{branch_name}",
+                 "--not", f"origin/{default_branch_for_task}",
                  "--name-only", "--pretty=format:"],
                 capture_output=True, text=True,
                 encoding="utf-8", errors="replace",
@@ -7058,7 +7346,7 @@ def _git_worktree_has_real_changes(task_id: str) -> Tuple[bool, str]:
     #
     # Asserted HERE, at use, rather than at dispatch: removal happens mid-run,
     # so a start-of-task check would have passed and still let this through.
-    if task_id in _worktrees and _dir_owns_its_repo_root(work_dir):
+    if (not committed_only) and task_id in _worktrees and _dir_owns_its_repo_root(work_dir):
         try:
             r = _sp.run(
                 ["git", "status", "--porcelain"],
@@ -7111,8 +7399,11 @@ def _run_verify_checks(task_id, claude_output):
 
     Checks (order matters; early returns on success/failure):
     0. **Git-first fast-path** (memory: feedback_kanban_vv_policy.md):
-       if the worktree branch has commits or file changes vs dispatch
-       baseline, trust the filesystem truth and return verified=True.
+       if the task branch has COMMITS the default branch does not, or the
+       default branch advanced while the worktree stayed clean, trust the
+       filesystem truth and return verified=True. Uncommitted changes do NOT
+       satisfy it (kpr-rvfy-04) — they are evidence the agent worked, not that
+       it delivered, and this check used to contradict check 5 below.
        Skipped for dangerous task types (see _is_dangerous_task) so
        destructive ops still go through every downstream guard.
     1. Claude output must be substantial (>200 chars)
@@ -7140,13 +7431,23 @@ def _run_verify_checks(task_id, claude_output):
     # instead require BOTH git-first AND the full downstream chain to
     # pass. This tightens the verifier without creating new false-positive
     # surface for safe tasks.
-    _git_ok, _git_reason = _git_worktree_has_real_changes(task_id)
+    #
+    # `committed_only=True` (kpr-rvfy-04): the fast path may accept only
+    # COMMITTED evidence. A dirty worktree says the agent worked, never that it
+    # delivered, and a worktree is torn down — see
+    # `_git_worktree_has_real_changes` for the four tasks that were completed on
+    # it and the work that was lost. The DANGEROUS fail-fast below asks the
+    # OTHER question ("is there any sign of activity at all?"), where a dirty
+    # worktree is the right signal, so it keeps the broad form.
+    _git_ok, _git_reason = _git_worktree_has_real_changes(task_id, committed_only=True)
     _is_dangerous = _is_dangerous_task(task_id)
     if _git_ok and not _is_dangerous:
         return True, f"Verified (git-first): {_git_reason}"
     # Dangerous task: git-first is a necessary condition but not sufficient.
     # Fall through to the full check chain; at the end we require the
     # git-first signal to have fired as well.
+    if _is_dangerous and not _git_ok:
+        _git_ok, _git_reason = _git_worktree_has_real_changes(task_id)
     if _is_dangerous and not _git_ok:
         return False, (
             "Dangerous task has no git-side evidence of work (no commits, "

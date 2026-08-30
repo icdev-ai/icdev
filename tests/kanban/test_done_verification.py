@@ -229,9 +229,16 @@ def _isolated_db(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def ephemeral_task(_isolated_db):
+def ephemeral_task(_isolated_db, monkeypatch):
     if get_connection is None:
         pytest.skip("get_connection unavailable")
+    # The row below is `in_progress`, which by definition means something
+    # dispatched it. Say so, or the delivery-evidence gate (kpr-rvfy-04)
+    # correctly refuses every completion here for want of a dispatch record and
+    # these tests stop measuring the merge-verify gate they are about. The two
+    # gates are independent and are tested apart in
+    # tests/kanban/test_artifact_evidence.py.
+    monkeypatch.setattr(kb, "_has_dispatch_record", lambda tid: True)
     try:
         from tools.kanban.init_db import init_kanban_tables
         init_kanban_tables()

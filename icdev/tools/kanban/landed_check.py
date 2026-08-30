@@ -73,16 +73,28 @@ logger = get_logger("kanban.landed_check")
 CONFIDENCE_MERGE_REF = "merge_ref"
 CONFIDENCE_SUBJECT = "subject"
 CONFIDENCE_BODY = "body"
+#: The id appears in a FILE on the default branch — source, doc or config —
+#: and in no commit message. WEAKEST tier there is, and the only one that is
+#: routinely EVIDENCE OF THE OPPOSITE. See :func:`check_file_content_bulk`.
+CONFIDENCE_FILE_CONTENT = "file_content"
 
-#: The tiers that justify refusing work. ``body`` is deliberately absent: a body
-#: mention is a reference at least as often as it is a landing, and a check that
-#: blocks on it stops legitimate work while pointing at the wrong commit.
+#: The tiers that justify refusing work, and equally the tiers that may satisfy
+#: a done-gate. ``body`` is deliberately absent: a body mention is a reference at
+#: least as often as it is a landing, and a check that blocks on it stops
+#: legitimate work while pointing at the wrong commit. ``file_content`` is
+#: absent for a stronger reason still — see :data:`NON_LANDING_CONFIDENCE`.
 BLOCKING_CONFIDENCE = (CONFIDENCE_MERGE_REF, CONFIDENCE_SUBJECT)
+
+#: Tiers that are a CITATION, never a landing. Kept as a named constant so a
+#: caller asking "may this evidence complete a task?" reads the same list the
+#: dispatch gate reads, rather than re-deriving the rule with its own tuple.
+NON_LANDING_CONFIDENCE = (CONFIDENCE_BODY, CONFIDENCE_FILE_CONTENT)
 
 _CONFIDENCE_RANK = {
     CONFIDENCE_MERGE_REF: 3,
     CONFIDENCE_SUBJECT: 2,
     CONFIDENCE_BODY: 1,
+    CONFIDENCE_FILE_CONTENT: 0,
 }
 
 #: What a task id is allowed to look like. Anything else is refused rather than
@@ -326,6 +338,112 @@ def check_landed_bulk(
             rep["landed"] = rep["confidence"] in BLOCKING_CONFIDENCE
             rep["referenced"] = bool(rep["confidence"])
     return reports
+
+
+def check_file_content_bulk(
+    task_ids: Iterable[str],
+    repo_root=None,
+    branch: Optional[str] = None,
+    ref: Optional[str] = None,
+    limit: int = 20,
+) -> Dict[str, dict]:
+    """``{task_id: report}`` — does the id appear in a FILE on the default branch?
+
+    THIS IS NEVER A LANDING, and the report says so structurally: ``landed`` is
+    hard-wired ``False`` and ``confidence`` can only ever be
+    :data:`CONFIDENCE_FILE_CONTENT`, which is absent from
+    :data:`BLOCKING_CONFIDENCE`. The function exists so that a caller reaching
+    for "is this task id anywhere on main" gets the classification WITH the
+    answer, instead of running its own ``git grep`` and reading a hit as done.
+
+    The module already draws this line for commit messages — ``body`` evidence
+    is advisory because "a body mention is a citation as often as a landing".
+    File content is the same distinction one layer over, and the asymmetry runs
+    HARDER in the citation direction: this repo's house style is to name the
+    card that WILL do a thing at the site where it will be done. Measured
+    2026-08-29 on ICDEV[FT]'s ``origin/main``, three ``ftp-*`` tasks were marked
+    done while their deliverable was absent from the tree, and each id was
+    present on main only as a forward reference:
+
+      * ``setup_ft.py`` — ``FIN_API_TOKEN ... (ftp-prd-08)`` in the env wizard,
+        naming the token an auth module that does not exist would consume;
+      * ``supervise_ft.py`` — ``ftp-prd-07`` cited at the alert hooks;
+      * ``tests/setup/test_bootstrap.py`` — ``ftp-ezb-05`` named as the CI job
+        that will prove the bootstrap.
+
+    A comment saying "the X card will do this" is the strongest available
+    evidence that X has NOT happened. Reading it as completion inverts the
+    signal exactly.
+
+    ``git grep`` is run per id: the ``-l`` form reports FILES, not which pattern
+    matched, so one call per id is what keeps a hit attributable. Fail-open
+    throughout, on the same terms as :func:`check_landed_bulk`.
+    """
+    ids = [str(t) for t in task_ids if str(t or "").strip()]
+    root = repo_root or BASE_DIR
+    br = branch or default_branch(root)
+    target = ref or f"origin/{br}"
+
+    reports: Dict[str, dict] = {}
+    valid: List[str] = []
+    for tid in ids:
+        if not _ID_RE.match(tid):
+            reports[tid] = _empty_file_report(tid, target, "id is not id-shaped")
+        else:
+            valid.append(tid)
+            reports[tid] = _empty_file_report(tid, target, "")
+
+    if valid:
+        probe = _run_git(["rev-parse", "--verify", "--quiet", f"{target}^{{commit}}"],
+                         root, timeout=10)
+        if probe is None or probe.returncode != 0:
+            for tid in valid:
+                reports[tid] = _empty_file_report(tid, target, f"ref {target} not resolvable")
+            return reports
+
+    for tid in valid:
+        out = _run_git(
+            ["grep", "-l", "-I", "-F", "-e", tid, target],
+            root, timeout=60,
+        )
+        if out is None:
+            reports[tid] = _empty_file_report(tid, target, "git grep failed")
+            continue
+        # git grep exits 1 for "no match" — that is a clean answer, not a
+        # failure. Anything above 1 is the tool erroring, which is not.
+        if out.returncode not in (0, 1):
+            reports[tid] = _empty_file_report(tid, target, "git grep failed")
+            continue
+        rep = reports[tid]
+        rep["checked"] = True
+        files = []
+        for line in (out.stdout or "").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            # `git grep <rev>` prefixes every path with "<rev>:".
+            files.append(line.split(":", 1)[1] if line.startswith(f"{target}:") else line)
+        if files:
+            rep["files"] = files[:limit]
+            rep["file_count"] = len(files)
+            rep["referenced"] = True
+            rep["confidence"] = CONFIDENCE_FILE_CONTENT
+    return reports
+
+
+def _empty_file_report(task_id: str, target: str, reason: str) -> dict:
+    """A file-content report with nothing found. ``landed`` is never True here."""
+    return {
+        "task_id": task_id,
+        "ref": target,
+        "checked": not reason,
+        "reason": reason,
+        "landed": False,          # structural: file content is not a landing
+        "referenced": False,
+        "confidence": None,
+        "files": [],
+        "file_count": 0,
+    }
 
 
 def _empty_report(task_id: str, target: str, reason: str) -> dict:
