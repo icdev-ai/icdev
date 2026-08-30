@@ -176,7 +176,21 @@ def _worktree_is_disposable(path, listed) -> tuple:
                 return False, "a git worktree whose status could not be read"
             if out.strip():
                 return False, "a git worktree with uncommitted changes"
-            code, out = _quiet_git(["log", "--branches", "--not", "--remotes",
+            # HEAD, NOT `--branches`. A worktree SHARES its .git with the main
+            # checkout, so `--branches` answers "does this REPOSITORY have any
+            # unpushed commit on any branch" -- the same repo-wide number from
+            # every worktree. Measured 2026-08-30 in a worktree whose branch was
+            # merged and pushed:
+            #     git log --branches --not --remotes --oneline | wc -l  -> 2142
+            #     git log HEAD       --not --remotes --oneline | wc -l  ->    0
+            # The over-broad form errs toward REFUSING, so nothing was ever
+            # destroyed by it -- but on any active repository at least one branch
+            # always has an unpushed commit, which made `disposable` UNREACHABLE
+            # and left the cleanup path dead. That re-opens the leak
+            # `reclaim_worktree` exists for (122 registered worktrees, recursively
+            # nested, 2026-08-02). A guard that can never PASS is the same defect
+            # as one that never FIRES, mirrored.
+            code, out = _quiet_git(["log", "HEAD", "--not", "--remotes",
                                     "--oneline"], cwd=str(path))
             if code != 0:
                 return False, "a git worktree whose unpushed commits could not be counted"
