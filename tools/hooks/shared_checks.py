@@ -2663,18 +2663,52 @@ def gh_pr_merge_invocations(command: str) -> List[Dict[str, Optional[str]]]:
     return out
 
 
+#: Shell keywords that can PRECEDE a command inside a compound statement. A
+#: segment reads ``then cd /some/where``, so ``command_word`` returns ``then``
+#: and a naive ``== "cd"`` misses the move entirely. That miss is not benign:
+#: see :func:`_merge_directories`.
+_SEGMENT_PREFIXES = ("then", "else", "elif", "do", "time", "!", "{")
+
+
+def _segment_tokens_after_keywords(segment: str) -> List[str]:
+    """Tokens of *segment* with any leading shell keywords stripped."""
+    tokens = shell_tokens(segment)
+    while tokens and tokens[0] in _SEGMENT_PREFIXES:
+        tokens = tokens[1:]
+    return tokens
+
+
+def _mentions_cd(command: str) -> bool:
+    """Does *command* contain a ``cd`` at all, however it is nested?
+
+    Deliberately BROADER than :func:`_cd_target`, and the gap between the two
+    is the point: a ``cd`` this sees and that cannot resolve means the merge
+    runs somewhere this module cannot name.
+    """
+    for segment in command_segments(command or ""):
+        tokens = _segment_tokens_after_keywords(segment)
+        if tokens and tokens[0] == "cd":
+            return True
+    return False
+
+
 def _cd_target(command: str) -> Optional[str]:
     """Last directory a ``cd`` in *command* moves to, or None.
 
     The house style is ``cd <worktree> && gh pr merge`` (CLAUDE.md documents the
     Bash tool's cwd as resetting between calls), so the directory the merge runs
     in is usually stated right there in the command.
+
+    LEADING SHELL KEYWORDS ARE STRIPPED. Inside a compound statement the segment
+    reads ``then cd <path>``, so ``command_word`` returns ``then`` and the move
+    was invisible here -- measured 2026-08-30, that is exactly how a merge in
+    icdev_rt came to be judged against ICDEV[IT]'s PR numbering.
     """
     target: Optional[str] = None
     for segment in command_segments(command or ""):
-        if command_word(segment) != "cd":
+        tokens = _segment_tokens_after_keywords(segment)
+        if not tokens or tokens[0] != "cd":
             continue
-        tokens = shell_tokens(segment)
         operands = [t for t in tokens[1:] if not t.startswith("-")]
         if operands and not _UNEXPANDED_RE.search(operands[0]):
             target = operands[0]
@@ -2696,12 +2730,31 @@ def _merge_directories(command: str, repo_root: Optional[Path]) -> List[Path]:
     EARLIER Bash call and merges in a later one leaves no trace in either
     anchor, so the no-selector case fails open there. That is the right way for
     this to be wrong.
+
+    A ``cd`` THIS CANNOT RESOLVE DROPS *repo_root* ENTIRELY, and that is the
+    load-bearing rule. A bare PR NUMBER means nothing without a repository, so
+    answering one from the session's own checkout when the command plainly said
+    it was going somewhere else does not fail open -- it MANUFACTURES A LINKAGE
+    TO A DIFFERENT REPOSITORY. Measured 2026-08-30: ``... then cd /c/ai/icdev_rt
+    && gh pr merge 21`` was judged against ICDEV[IT], whose PR 21 happens to sit
+    on a ``kanban/`` branch, and a merge in icdev_rt was refused with a task id
+    from another product. Two ways to be unresolvable, both treated the same:
+    the ``cd`` was not extracted at all, or it names a directory that does not
+    exist here (a Git Bash ``/c/...`` path is not a Windows path, and this
+    module deliberately does not guess a translation).
     """
     candidates: List[Path] = []
     cd_target = _cd_target(command)
+    resolved = False
     if cd_target:
-        candidates.append(Path(cd_target))
-    if repo_root is not None:
+        target = Path(cd_target)
+        try:
+            resolved = target.is_dir()
+        except OSError:
+            resolved = False
+        if resolved:
+            candidates.append(target)
+    if repo_root is not None and not (_mentions_cd(command) and not resolved):
         candidates.append(Path(repo_root))
     seen, ordered = set(), []
     for candidate in candidates:
@@ -2769,6 +2822,17 @@ def _pr_head_branch(
     return branch if isinstance(branch, str) and branch else None
 
 
+def _names_its_own_repo(selector: str) -> bool:
+    """Does *selector* say which repository it belongs to?
+
+    A URL does, and so does ``owner/repo#123``. A bare ``123`` does not, and
+    resolving one without an anchor is a guess about which product is being
+    merged.
+    """
+    text = (selector or "").strip()
+    return "://" in text or ("/" in text and "#" in text)
+
+
 def _kanban_link(
     invocation: Dict[str, Optional[str]], command: str, repo_root: Optional[Path]
 ) -> Optional[Tuple[str, str]]:
@@ -2786,6 +2850,14 @@ def _kanban_link(
             # head branch, so the question is already answered — asking the forge
             # would spend a round trip on every `gh pr merge feat/<slug>`, which
             # is CLAUDE.md's own documented worktree workflow.
+            return None
+        # A BARE NUMBER IS NOT SELF-DESCRIBING. Without a directory to run in
+        # and without an explicit --repo, `gh pr view 21` resolves against
+        # whatever repository the process happens to sit in -- which is how a
+        # merge in one product came to be judged against another's PR
+        # numbering. A URL or `owner/repo#21` names its own repository and
+        # still resolves.
+        if not directories and not repo and not _names_its_own_repo(selector):
             return None
         head = _pr_head_branch(selector, repo, directories[0] if directories else None)
         task_id = kanban_task_from_ref(head or "")
