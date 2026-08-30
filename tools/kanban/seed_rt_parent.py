@@ -245,6 +245,82 @@ consumer planners. Plus the 10% early-withdrawal penalty and the 72(t) SEPP
 exception.
 """, priority="high"),
 
+    # -- DATA: getting a plan INTO the system -------------------------------
+    _t("rt-data-01", "Manual intake from scratch -- the PRIMARY entry path",
+       """
+A person must be able to build a complete plan from nothing, without an export
+from anywhere. This is not the fallback for a failed import; it is the path
+that always works, the one every other intake adapter is measured against, and
+the only one that exists for a household whose situation no product models.
+
+Two pieces:
+ * a repository layer mapping the ledger dataclasses to the rt_* tables, so
+   what the projection reads is what a person entered -- today the tables and
+   the dataclasses both exist and NOTHING connects them, which is the classic
+   declared-but-unconsumed shape;
+ * a guided intake that asks in a sensible ORDER (household, people, accounts,
+   income, expenses, debts), validates as it goes, and can be resumed.
+
+INTAKE MUST BE RESUMABLE AND PARTIAL. Nobody enters a retirement plan in one
+sitting: account statements are in three places and half the numbers need
+looking up. A wizard that only commits a COMPLETE plan is a wizard that gets
+abandoned, so a partial household is a first-class state and the projection
+must be able to say what is still missing rather than failing.
+
+VALIDATION EXPLAINS RATHER THAN REFUSING. "birth_date must be a date" is
+useless; "a birth DATE, not an age -- the RMD and Social Security rules key off
+the birth year, and an age is only true for a year" is the reason. Every
+refusal in this parent so far names what to do instead, and intake is where a
+person meets that convention first.
+""", priority="critical"),
+
+    _t("rt-data-02", "Completeness: what is still missing, and what it blocks",
+       """
+Given a partially entered household, report what is absent and WHICH ANALYSIS
+each gap blocks -- not a percentage. "62% complete" tells a person nothing;
+"you can project cash flow, but not Roth conversions until a birth date exists
+for the second person" tells them exactly what to go and find.
+
+Absent is not zero anywhere in this parent, and this is the surface where that
+rule is most visible: a household with no expenses entered has UNKNOWN
+spending, not zero spending, and a projection that treats the two the same
+reports a plan that succeeds because it costs nothing.
+""", priority="high"),
+
+    _t("rt-data-03", "Boldin extraction by browser automation -- human-assisted login",
+       """
+Boldin has no public API, so a browser is the only programmatic path to a plan
+that already exists there. Playwright drives it; the extractor reads the
+PlannerPlus data-download and the on-screen tables and maps them onto the same
+AccountSnapshot interface every other intake adapter uses.
+
+THE LOGIN IS HUMAN-ASSISTED, AND THAT IS A DESIGN DECISION, NOT A LIMITATION.
+The account signs in with Google. Automating a Google login means holding
+Google credentials, defeating 2FA, and impersonating a browser well enough to
+get past bot detection -- three things that are fragile, hostile to the user's
+own security posture, and liable to lock the account. Instead the session runs
+HEADED, the person signs in themselves, and automation resumes once a logged-in
+page is detected. Nothing in this repository ever stores a Google credential.
+Persist the browser profile so the login survives runs; that is a cookie jar on
+the operator's own machine, not a credential store.
+
+EXTRACTION MUST VERIFY WHAT IT GOT. A scraped number that silently changed
+meaning because a selector matched a different column is exactly the plausible
+wrong number this parent refuses everywhere else. So: assert the shape (a
+balance parses as currency, a date as a date), cross-check totals against any
+summary figure the page also shows, and REFUSE on ambiguity rather than
+returning a partial plan that looks complete. Record the extraction timestamp
+and the page it came from on every row, so a figure can be traced later.
+
+RECORD WHICH BASIS THE EXPORT WAS IN. Boldin's own download reflects whichever
+of optimistic/average/pessimistic is toggled, in FUTURE dollars unless
+"today's dollars" is on. An importer that does not capture that has imported
+numbers whose meaning it cannot state.
+
+This is an ALTERNATIVE, never a prerequisite: rt-data-01's manual intake is the
+path that always works, and this one is measured against it.
+""", priority="medium"),
+
     # -- PROJ: the deterministic walk ---------------------------------------
     _t("rt-proj-01", "The year-by-year projection loop",
        """
