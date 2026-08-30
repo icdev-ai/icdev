@@ -84,3 +84,34 @@ def test_the_sqlite_backend_is_still_defaulted(monkeypatch):
     """Unchanged behaviour: the gate must never reach a real database."""
     env = _captured_env(monkeypatch, None)
     assert env["ICDEV_STORAGE_BACKEND"] == "sqlite"
+
+
+def test_the_icdev_mirror_carries_the_fix_too():
+    """The packaged copy must not still overwrite the inherited path.
+
+    In a source checkout `tools.X` and `icdev.tools.X` are ONE module object
+    (xit-decl-02's meta-path shim), so importing the second spelling and
+    asserting on it would re-test the file the tests above already cover and
+    prove nothing about the mirror. The shim deliberately never installs in the
+    wheel, where `icdev/tools/workflow/validated_commit.py` IS the file that
+    runs -- so the mirror is read as SOURCE here, which is the only derivation
+    that can actually see it.
+
+    The two copies were byte-identical before the fix and the fix touched only
+    `tools/`, which is exactly the half-live drift args/mirror_parity_gate.yaml
+    was written for: it does not ImportError, it just behaves like the old code.
+    """
+    from icdev.core.paths import repo_root
+
+    mirror = (
+        repo_root(__file__) / "icdev" / "tools" / "workflow" / "validated_commit.py"
+    )
+    assert mirror.exists(), f"the mirrored twin is missing: {mirror}"
+    source = mirror.read_text(encoding="utf-8")
+    assert 'env["PYTHONPATH"] = cwd' not in source, (
+        "the icdev/ mirror still OVERWRITES the inherited PYTHONPATH -- the fix "
+        "is only half live, and the packaged copy is the stale half"
+    )
+    assert 'env.get("PYTHONPATH")' in source, (
+        "the icdev/ mirror does not read the inherited PYTHONPATH at all"
+    )
