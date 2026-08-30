@@ -146,7 +146,9 @@ class _Watcher(pw.PRWatcher):
         self.merged = []
         self.audits = []
 
-    def _open_pr_index(self):
+    def _open_pr_index(self, repo=None):  # repo: the PR's own repository (kpr-rvfy-09) --
+        # optional on the real watcher, so only a double that hard-codes the
+        # old arity needs touching. No assertion changes.
         if self._files is None:
             return {}                      # PR absent from the listing
         return {"https://github.com/o/r/pull/1":

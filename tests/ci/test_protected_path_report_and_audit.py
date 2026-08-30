@@ -113,7 +113,9 @@ class _Watcher(pw.PRWatcher):
         self._already = already_held
         self.audits = []
 
-    def _open_pr_index(self):
+    def _open_pr_index(self, repo=None):  # repo: the PR's own repository (kpr-rvfy-09) --
+        # optional on the real watcher, so only a double that hard-codes the
+        # old arity needs touching. No assertion changes.
         return {URL: {"files": {"tools/ci/pr_watcher.py"},
                       "mergeable": "MERGEABLE", "draft": False}}
 
