@@ -51,13 +51,48 @@ domain_leak_gate:
 
   patterns:
     mode: enforce           # report | enforce
+    # WHICH RULE CATEGORIES THIS GATE ENFORCES, from the ONE pattern table in
+    # tools/security/secret_detector.py. Omitting the key keeps the historical
+    # broker-only set, so an older copy of this file behaves identically.
+    #
+    # `personal_financial` arrives with ICDEV[RT] (icdev-ai/icdev_rt), the
+    # retirement + insurance parent. Its database IS personal financial
+    # records -- balances, tax records, account numbers -- and THIS repository
+    # is public. RT lives in its own private repo, so the realistic leak is not
+    # its code arriving here; it is an export, a statement or an aggregation
+    # token pasted into a doc, a plan or a test fixture.
+    #
+    # SURVEYED BEFORE ARMING, 2026-08-30, over BOTH parents: ICDEV[IT] 20,788
+    # tracked files and ICDEV[FT] 901. ZERO hits for all four rules in either.
+    # FT was surveyed because the generic scanner compiles the whole table
+    # regardless of category, so a rule added for RT fires in FT's CI too.
+    categories:
+      - broker_credential
+      - personal_financial
+
+  # DATA-FILE-ONLY rules (.sql/.dump/.csv/.tsv/.txt), the same scoping
+  # `sql_markers` above uses and for the same reason.
+  #
+  # A bare SSN shape measures 45 hits across this tree -- 40 in .py, 5 in .md --
+  # and every one is a fixture or documentation example of the REDACTION
+  # SUBSYSTEM ITSELF using the canonical 123-45-6789. Arming it against source
+  # would refuse the tests that prove redaction works, which is how a check
+  # earns itself a bypass. In a DATA file the same shape is 0 hits, and a data
+  # file is what a real leak actually looks like: an export, not source.
+  data_patterns:
+    - name: SSN shape in a data file
+      pattern: '\b\d{3}-\d{2}-\d{4}\b'
+      severity: critical
 
   # An ALLOW entry asserts a match is CORRECT here and needs a written reason.
   allow:
     - path: tests/ci/test_domain_leak_gate.py
       reason: >-
-        the gate's own tests plant deliberately fake broker key shapes as the
-        negative control that proves the rules fire.
+        the gate's own tests plant deliberately fake credential shapes -- broker
+        keys AND, since the personal_financial category, a SimpleFIN URL, an
+        account number, a routing number and a Boldin token -- as the negative
+        control that proves each rule actually fires. A rule with no planted
+        control cannot be told apart from one that matches nothing.
     - path: tools/security/secret_detector.py
       reason: >-
         the pattern table names the shapes it detects.

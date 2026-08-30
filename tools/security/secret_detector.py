@@ -127,6 +127,49 @@ BUILTIN_PATTERNS = [
         "pattern": r"[Bb]earer\s+[A-Za-z0-9_\-.]{20,}",
         "severity": "high",
     },
+    # --- personal_financial (ICDEV[RT]) ---------------------------------
+    # ICDEV[RT] is the retirement/insurance parent; its data IS personal
+    # financial records, and ICDEV[IT] is PUBLIC. These four are the shapes
+    # that carry an account or an aggregation credential.
+    #
+    # SURVEYED BEFORE ARMING, 2026-08-30, over BOTH parents' tracked trees --
+    # ICDEV[IT] 20,788 files and ICDEV[FT] 901 files: ZERO hits for every one
+    # of the four. The generic scanner compiles the whole table regardless of
+    # category (line ~330), so a pattern added here fires for every caller,
+    # which is why FT was surveyed too rather than assumed.
+    #
+    # DELIBERATELY ABSENT: a bare SSN shape. It measures 45 hits in ICDEV[IT]
+    # -- 40 in .py and 5 in .md -- and every one is a fixture or a doc example
+    # of the REDACTION SUBSYSTEM ITSELF using the canonical 123-45-6789. A rule
+    # that refuses the redaction tests is a rule people learn to bypass. The
+    # armable form is "an SSN shape in a DATA file", which is 0 hits and is
+    # what a real leak looks like (an export, not source); it needs data-suffix
+    # scoping this table cannot express, so it lives in
+    # args/domain_leak_gate.yaml under `data_patterns` instead.
+    {
+        "name": "SimpleFIN Access URL",
+        "pattern": r"https://[^\s:@/]+:[^\s@/]+@[^\s/]*simplefin",
+        "severity": "critical",
+        "category": "personal_financial",
+    },
+    {
+        "name": "Labelled Account Number",
+        "pattern": r"(?i)\b(?:account|acct)[ _-]?(?:number|no|num)\b\s*[=:]\s*['\"]?[\dX*-]{6,}",
+        "severity": "critical",
+        "category": "personal_financial",
+    },
+    {
+        "name": "Bank Routing Number",
+        "pattern": r"(?i)\brouting[ _-]?(?:number|no|num)\b\s*[=:]\s*['\"]?\d{9}\b",
+        "severity": "critical",
+        "category": "personal_financial",
+    },
+    {
+        "name": "Boldin API Credential",
+        "pattern": r"(?i)\bboldin[ _-]?(?:api[ _-]?)?(?:token|key|secret)\b\s*[=:]\s*['\"]?\S{8,}",
+        "severity": "critical",
+        "category": "personal_financial",
+    },
 ]
 
 # File extensions to skip

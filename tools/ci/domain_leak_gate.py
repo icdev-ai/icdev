@@ -60,6 +60,9 @@ if str(_REPO_ROOT) not in sys.path:
 GUARD_ENV = "ICDEV_DOMAIN_LEAK_GUARD"
 GATE_KEY = "domain_leak_gate"
 BROKER_CATEGORY = "broker_credential"
+# The categories enforced when the config does not say. Keeping the historical
+# set as the default means an older args/domain_leak_gate.yaml is unchanged.
+DEFAULT_CATEGORIES = ("broker_credential",)
 
 _TEXT_SUFFIXES = {
     ".py", ".md", ".txt", ".yaml", ".yml", ".json", ".toml", ".cfg", ".ini",
@@ -93,13 +96,42 @@ def load_gate(path: Path | None = None) -> dict:
     return (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get(GATE_KEY, {})
 
 
-def broker_patterns() -> list[dict]:
-    """The broker-credential rules, read from the ONE secret-pattern table."""
+def _builtin_patterns() -> list[dict]:
     try:
         from tools.security.secret_detector import BUILTIN_PATTERNS
     except Exception:  # noqa: BLE001 -- fall back to the packaged copy
         from icdev.tools.security.secret_detector import BUILTIN_PATTERNS  # type: ignore
-    return [p for p in BUILTIN_PATTERNS if p.get("category") == BROKER_CATEGORY]
+    return list(BUILTIN_PATTERNS)
+
+
+def broker_patterns() -> list[dict]:
+    """The broker-credential rules, read from the ONE secret-pattern table."""
+    return [p for p in _builtin_patterns() if p.get("category") == BROKER_CATEGORY]
+
+
+def gate_patterns(cfg: dict) -> list[dict]:
+    """Every rule this gate enforces, by CATEGORY, from the one table.
+
+    `patterns.categories` defaults to the broker set alone, so a config that
+    predates this key behaves exactly as before. ICDEV[RT] adds
+    `personal_financial`: that parent's data IS personal financial records and
+    this repository is PUBLIC.
+
+    An unknown category name is a CONFIG ERROR, not an empty result. Silently
+    matching nothing is how a gate reports clean over a rule set it never
+    loaded -- the failure shape this whole file exists to refuse.
+    """
+    declared = list((cfg.get("patterns", {}) or {}).get("categories") or DEFAULT_CATEGORIES)
+    table = _builtin_patterns()
+    known = {p.get("category") for p in table if p.get("category")}
+    unknown = [c for c in declared if c not in known]
+    if unknown:
+        raise SystemExit(
+            f"domain_leak_gate: patterns.categories names {unknown!r}, which no rule in "
+            f"secret_detector.BUILTIN_PATTERNS declares (known: {sorted(known)})"
+        )
+    wanted = set(declared)
+    return [p for p in table if p.get("category") in wanted]
 
 
 def _allowed(rel: str, cfg: dict) -> str | None:
@@ -135,8 +167,17 @@ def _staged_files(repo: Path) -> list[str]:
 
 
 def scan(repo: Path, files: list[str], cfg: dict) -> dict:
-    rules = [(re.compile(p["pattern"]), p["name"], p.get("severity", "high")) for p in broker_patterns()]
+    rules = [(re.compile(p["pattern"]), p["name"], p.get("severity", "high")) for p in gate_patterns(cfg)]
     markers = [m for m in (cfg.get("sql_markers") or [])]
+    # DATA-FILE-ONLY rules. An SSN shape measures 45 hits across this tree and
+    # every one is a fixture or doc example of the redaction subsystem itself
+    # (40 .py, 5 .md, all the canonical 123-45-6789). In a DATA file it is 0 --
+    # and a data file is what a real leak looks like: an export, not source.
+    # Same scoping `sql_markers` already uses, and for the same reason.
+    data_rules = [
+        (re.compile(d["pattern"]), d.get("name", d["pattern"]), d.get("severity", "critical"))
+        for d in (cfg.get("data_patterns") or [])
+    ]
     findings: list[dict] = []
     denied: list[str] = []
     allowed_hits: list[dict] = []
@@ -158,6 +199,10 @@ def scan(repo: Path, files: list[str], cfg: dict) -> dict:
                     hits.append({"file": rel, "line": lineno, "rule": name, "severity": severity,
                                  "kind": "broker_credential"})
             if path.suffix.lower() in _DATA_SUFFIXES:
+                for rx, name, severity in data_rules:
+                    if rx.search(line):
+                        hits.append({"file": rel, "line": lineno, "rule": name,
+                                     "severity": severity, "kind": "personal_data_dump"})
                 for m in markers:
                     if m in line:
                         hits.append({"file": rel, "line": lineno, "rule": f"data dump marker {m!r}",
@@ -186,7 +231,11 @@ def build_report(repo: Path = REPO, only: list[str] | None = None) -> dict:
     return {
         "scope": "changed" if only is not None else "tree",
         "files_scanned": len(files),
-        "rules": len(broker_patterns()),
+        # The rules ACTUALLY ENFORCED on this run, not the broker set. It read
+        # len(broker_patterns()) regardless of configuration, so once a second
+        # category was declared the report understated its own coverage -- a
+        # number that no longer measures what it names.
+        "rules": len(gate_patterns(cfg)),
         "paths_mode": paths_mode,
         "patterns_mode": patterns_mode,
         "enforced": enforced,
