@@ -1,0 +1,2 @@
+# kpr-rvfy-05 - refuse a raw `gh pr merge` on a kanban-linked PR
+tests/hooks/test_gh_pr_merge_bypass.py

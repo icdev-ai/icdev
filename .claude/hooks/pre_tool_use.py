@@ -15,6 +15,9 @@ Blocks:
     - Writes/deletes forbidden by the D-ORCH-8 file access tiers
     - Deletion of a remote branch that still holds unmerged commits
     - `git worktree add` outside the sanctioned roots
+    - A raw `gh pr merge` on a KANBAN-LINKED PR — the sanctioned door
+      (`cli.py --set-status <id> done --merge`) runs thirteen gates the raw
+      command runs none of. An UNLINKED PR is still allowed.
 and self-greens staged changes with review_loop before a `git commit`.
 
 This file is the Claude Code ENTRY POINT, not the implementation. Every check
@@ -947,6 +950,25 @@ def check_git_danger(tool_name: str, tool_input: dict) -> str:
     return shared_checks.check_git_danger(tool_name, tool_input) or ""
 
 
+def check_gh_pr_merge_bypass(tool_name: str, tool_input: dict) -> str:
+    """Refuse a raw ``gh pr merge`` on a kanban-linked PR (kpr-rvfy-05).
+
+    The sanctioned door — ``tools/kanban/cli.py --set-status <id> done --merge``
+    through ``tools/kanban/land.py`` — runs thirteen checks and writes ``done``
+    only after the forge CONFIRMS the merge. A raw ``gh pr merge`` runs none of
+    them, and on 2026-08-29 twelve PRs were landed that way.
+
+    Branch protection is not the alternative here: it is unavailable on the
+    private user-owned repo (403), and it accepts a repo where no check ever
+    reported, which is exactly the 2026-08-29 dead-runner case the door's
+    ``ci_green`` refuses. An UNLINKED PR is still allowed. Set
+    ICDEV_GH_PR_MERGE_GUARD=0 to disable. Fails OPEN on any error.
+    """
+    return shared_checks.check_gh_pr_merge_bypass(
+        tool_name, tool_input, repo_root=REPO_ROOT
+    ) or ""
+
+
 def check_network_egress(tool_name: str, tool_input: dict) -> str:
     """Record — and, when enforcing, refuse — egress to an unapproved host.
 
@@ -1002,6 +1024,7 @@ HOOK_CHECKS = (
     "check_write_outside_worktree",
     "check_branch_deletion",
     "check_worktree_path",
+    "check_gh_pr_merge_bypass",
     "check_network_egress",
     "check_agent_rules",
     "check_review_loop_precommit",
@@ -1019,6 +1042,7 @@ HOOK_CHECK_CALLSITES = {
     "check_write_outside_worktree": "check_write_outside_worktree",
     "check_branch_deletion": "check_branch_deletion",
     "check_worktree_path": "check_worktree_path",
+    "check_gh_pr_merge_bypass": "check_gh_pr_merge_bypass",
     "check_network_egress": "check_network_egress",
     "check_agent_rules": "check_agent_rules",
     "check_review_loop_precommit": "run_review_loop_precommit",
@@ -1039,6 +1063,11 @@ HOOK_CHECK_REQUIREMENTS = {
     "check_append_only_write": None,
     "check_direct_sqlite_usage": None,
     "check_branch_deletion": None,
+    # Needs nothing on disk: linkage is a branch-NAME convention plus a `git` /
+    # `gh` subprocess, both of which a scaffolded project has or does not
+    # independently of what `icdev init` copied. It fails open where it cannot
+    # resolve, so it is genuinely active everywhere the hook loads.
+    "check_gh_pr_merge_bypass": None,
     "check_file_access_tiers": "args/file_access_tiers.yaml",
     "check_network_egress": "args/agent_egress_policy.yaml",
     "check_worktree_path": "tools/git/worktree_paths.py",
@@ -1110,6 +1139,7 @@ CHECK_KILL_SWITCHES = {
     "write_outside_worktree": "ICDEV_WRITE_BOUNDARY_GUARD",
     "branch_deletion": "ICDEV_BRANCH_DELETE_GUARD",
     "worktree_path": "ICDEV_WORKTREE_GUARD",
+    "gh_pr_merge_bypass": "ICDEV_GH_PR_MERGE_GUARD",
     "network_egress": "ICDEV_EGRESS_GUARD",
     "agent_rules": "ICDEV_AGENT_DETECT",
     "review_loop_precommit": "ICDEV_REVIEW_LOOP_PRECOMMIT",
@@ -1171,6 +1201,12 @@ def main():
             ("branch_deletion", lambda: check_branch_deletion(tool_name, tool_input)),
             # Keep worktrees out of shared temp dirs where two sessions collide
             ("worktree_path", lambda: check_worktree_path(tool_name, tool_input)),
+            # Refuse a raw `gh pr merge` on a kanban-linked PR (kpr-rvfy-05).
+            # The 13-gate door in tools/kanban/land.py already exists; this is
+            # the only place the interactive/agent path can be sent to it.
+            # Scoped to LINKED PRs — an unlinked one has no task to mark done.
+            ("gh_pr_merge_bypass",
+             lambda: check_gh_pr_merge_bypass(tool_name, tool_input)),
             # Network egress (exa-bench-08). Monitor-only by default: it records
             # the finding and returns "" so the call proceeds. This is the only
             # network control that reaches the

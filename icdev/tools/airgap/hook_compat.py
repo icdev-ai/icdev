@@ -242,6 +242,11 @@ HEADLESS_CHECKS = (
     "check_write_outside_worktree",
     "check_branch_deletion",
     "check_worktree_path",
+    # kpr-rvfy-05: a raw `gh pr merge` on a kanban-linked PR bypasses all
+    # thirteen gates in tools/kanban/land.py. Scoped to LINKED PRs only — an
+    # unlinked one has no task row to mark done, so refusing it would refuse
+    # routine work. Fails open on every unresolvable selector.
+    "check_gh_pr_merge_bypass",
     "check_review_loop_precommit",
     # Network egress (exa-bench-08). Monitor-only until `enforce: true` in
     # args/agent_egress_policy.yaml — it records a finding and returns None, so

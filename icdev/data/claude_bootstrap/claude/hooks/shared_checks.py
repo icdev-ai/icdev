@@ -37,6 +37,7 @@ Conventions this module holds itself to
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shlex
@@ -105,6 +106,14 @@ __all__ = [
     "check_network_egress",
     "egress_destinations",
     "reset_egress_policy",
+    # 13 — raw `gh pr merge` on a kanban-linked PR (kpr-rvfy-05)
+    "check_gh_pr_merge_bypass",
+    "gh_pr_merge_invocations",
+    "gh_pr_merge_block_reason",
+    "kanban_task_from_ref",
+    "GH_PR_MERGE_GUARD_ENV",
+    "GH_PR_MERGE_OFFLINE_ENV",
+    "GH_PR_MERGE_DOOR_CHECKS",
 ]
 
 
@@ -2524,5 +2533,332 @@ def check_network_egress(
             "is legitimate, or set ICDEV_EGRESS_GUARD_ENFORCE=0 to downgrade "
             "this check to monitor-only."
         )
+    except Exception:  # noqa: BLE001 — see docstring: fails open
+        return None
+
+
+# ── 13. Raw `gh pr merge` on a kanban-linked PR ───────────────────────────
+#
+# THE DOOR ALREADY EXISTS (kpr-rvfy-05). `tools/kanban/cli.py --set-status <id>
+# done --merge` routes through `tools/kanban/land.py`, which runs THIRTEEN
+# checks before it asks GitHub for anything and CONFIRMS the merge before the
+# board may write `done` — so `done` becomes a consequence of a landed PR
+# rather than an independent claim. A raw `gh pr merge` runs none of them.
+#
+# Its `ci_green` is STRICTER than GitHub's own required-status-checks: it
+# refuses a failed check, checks STILL RUNNING, and an EMPTY rollup. That last
+# one is why branch protection is not a substitute — on 2026-08-29 two of three
+# self-hosted runners were dead and jobs QUEUED with no red anywhere. Branch
+# protection accepts a repo where no check ever reported; this door does not.
+#
+# Measured 2026-08-29: an operator session merged TWELVE PRs into icdev_ft with
+# a raw `gh pr merge`. Retroactively every one of the twelve WAS green, on the
+# default branch and non-draft — so no bad merge landed. The exposure is that
+# nothing would have stopped one, and "the operator eyeballed the checks" is
+# the `|| true` failure mode this repo has a written rule against.
+#
+# WHY A HOOK. Branch protection is unavailable on the private user-owned repo
+# (403: Pro required) and `pr_watcher` already refuses a non-READY PR, so the
+# AUTOMATED path is gated and the hole is exactly the interactive/agent path.
+# This is where that path can be refused.
+#
+# SCOPE — A KANBAN-LINKED PR ONLY. An unlinked PR (a hotfix, a `feat/<slug>`
+# branch, somebody else's repo) has no task row to mark `done` and no board
+# gate to satisfy, so refusing it would refuse routine work. CLAUDE.md's own
+# worktree-first workflow ends in `gh pr merge --merge` for a `feat/` branch;
+# this check must not touch that.
+
+#: Kill switch. See ``CHECK_KILL_SWITCHES`` in the hook.
+GH_PR_MERGE_GUARD_ENV = "ICDEV_GH_PR_MERGE_GUARD"
+
+#: Set to skip the forge lookup that resolves a PR NUMBER or URL to its head
+#: branch. The offline signals (an explicit ``kanban/<id>`` selector, and the
+#: current branch when the command names no PR at all) still apply. For a host
+#: with no ``gh`` credentials, where the lookup can only ever time out.
+GH_PR_MERGE_OFFLINE_ENV = "ICDEV_GH_PR_MERGE_GUARD_OFFLINE"
+
+#: Every kanban PR is opened from ``kanban/<task-id>`` — ``tools/genesis/
+#: reflexes/kanban.py`` builds the name that way and ``tools/dashboard/api/
+#: kanban.py`` reads it back. Accepts a bare branch, a remote-qualified one
+#: (``origin/kanban/x``) and a ``refs/heads/`` ref.
+_KANBAN_BRANCH_RE = re.compile(
+    r"^(?:refs/heads/)?(?:[\w.-]+/)?kanban/([A-Za-z0-9][\w.-]*)$"
+)
+
+#: ``gh pr merge`` flags that CONSUME the next token. Without this list a
+#: ``--body my-note`` would read ``my-note`` as the PR selector.
+_GH_MERGE_VALUE_FLAGS = frozenset({
+    "-b", "--body", "-F", "--body-file", "-t", "--subject",
+    "--author-email", "--match-head-commit", "-R", "--repo",
+})
+
+#: The thirteen, quoted in the refusal so a reader sees what a raw merge skips.
+#: Re-derive with ``grep -n 'ck("' tools/kanban/land.py``.
+GH_PR_MERGE_DOOR_CHECKS = (
+    "pr_recorded", "pr_readable", "pr_open", "base_is_default", "mergeable",
+    "ci_green", "approved", "no_changes_requested", "no_sibling_conflict",
+    "draft_promoted", "enforced_done_gate", "merge_requested", "merge_confirmed",
+)
+
+
+def kanban_task_from_ref(ref: str) -> Optional[str]:
+    """Task id when *ref* names a ``kanban/<task-id>`` branch, else None."""
+    match = _KANBAN_BRANCH_RE.match((ref or "").strip().strip("\"'"))
+    return match.group(1) if match else None
+
+
+def gh_pr_merge_invocations(command: str) -> List[Dict[str, Optional[str]]]:
+    """Every ``gh pr merge`` in *command*, as ``{selector, repo}``.
+
+    ``selector`` is the PR argument as written — a number, a URL or a branch —
+    or ``None`` when the command names none, which is how ``gh`` is told to use
+    the CURRENT branch. ``repo`` is the ``--repo``/``-R`` value if given.
+
+    Pure and offline, so the fire-rate survey can replay it: the list this
+    returns is the UPPER BOUND on what the check can ever refuse.
+
+    A heredoc body that is data, and a mention inside an unrelated program's
+    arguments, are excluded by :func:`command_segments` / :func:`command_word`
+    — ``echo "run gh pr merge"`` invokes nothing.
+    """
+    out: List[Dict[str, Optional[str]]] = []
+    if "merge" not in (command or ""):
+        return out
+    for segment in command_segments(command):
+        if command_word(segment) not in ("gh", "gh.exe"):
+            continue
+        tokens = shell_tokens(segment)
+        index = None
+        for position, token in enumerate(tokens):
+            if os.path.basename(token.replace("\\", "/")).lower() in ("gh", "gh.exe"):
+                index = position
+                break
+        if index is None:
+            continue
+        rest = tokens[index + 1:]
+        if len(rest) < 2 or rest[0] != "pr" or rest[1] != "merge":
+            continue
+        selector: Optional[str] = None
+        repo: Optional[str] = None
+        skip = False
+        args = rest[2:]
+        for position, token in enumerate(args):
+            if skip:
+                skip = False
+                continue
+            if token in ("-R", "--repo"):
+                repo = args[position + 1] if position + 1 < len(args) else None
+                skip = True
+                continue
+            if token.startswith("--repo="):
+                repo = token.split("=", 1)[1]
+                continue
+            if token.startswith("-") and token != "-":
+                if token in _GH_MERGE_VALUE_FLAGS:
+                    skip = True
+                continue
+            if selector is None:
+                selector = token
+        out.append({"selector": selector, "repo": repo})
+    return out
+
+
+def _cd_target(command: str) -> Optional[str]:
+    """Last directory a ``cd`` in *command* moves to, or None.
+
+    The house style is ``cd <worktree> && gh pr merge`` (CLAUDE.md documents the
+    Bash tool's cwd as resetting between calls), so the directory the merge runs
+    in is usually stated right there in the command.
+    """
+    target: Optional[str] = None
+    for segment in command_segments(command or ""):
+        if command_word(segment) != "cd":
+            continue
+        tokens = shell_tokens(segment)
+        operands = [t for t in tokens[1:] if not t.startswith("-")]
+        if operands and not _UNEXPANDED_RE.search(operands[0]):
+            target = operands[0]
+    return target
+
+
+def _merge_directories(command: str, repo_root: Optional[Path]) -> List[Path]:
+    """Where the merge would run, most authoritative first.
+
+    NOT ``os.getcwd()`` — this module forbids it (see the header) and
+    ``tests/hooks/test_shared_checks.py::test_no_check_reads_cwd`` pins that
+    against the AST. The two anchors here are both resolved from something
+    written down: an explicit ``cd`` in the command itself, and the caller's
+    *repo_root*, which the hook derives from ``__file__`` and which is therefore
+    the worktree the SESSION is running in — for a kanban session, the
+    ``kanban/<id>`` checkout itself.
+
+    The cost is stated rather than hidden: a session that ``cd``-ed in an
+    EARLIER Bash call and merges in a later one leaves no trace in either
+    anchor, so the no-selector case fails open there. That is the right way for
+    this to be wrong.
+    """
+    candidates: List[Path] = []
+    cd_target = _cd_target(command)
+    if cd_target:
+        candidates.append(Path(cd_target))
+    if repo_root is not None:
+        candidates.append(Path(repo_root))
+    seen, ordered = set(), []
+    for candidate in candidates:
+        key = str(candidate)
+        if key not in seen:
+            seen.add(key)
+            ordered.append(candidate)
+    return ordered
+
+
+def _current_branch(directory: Path) -> Optional[str]:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=str(directory), capture_output=True, text=True, timeout=15,
+        )
+    except Exception:  # noqa: BLE001 — no git, no such directory: fail open
+        return None
+    if result.returncode != 0:
+        return None
+    branch = result.stdout.strip()
+    return branch or None
+
+
+def _is_pr_reference(selector: str) -> bool:
+    """True when *selector* is a PR NUMBER or URL rather than a branch name.
+
+    ``gh pr merge`` takes any of the three. A branch name needs no lookup — it
+    is the head branch — so this is what keeps the forge round trip to the one
+    case that cannot be answered offline.
+    """
+    return selector.isdigit() or "/pull/" in selector
+
+
+def _pr_head_branch(
+    selector: str, repo: Optional[str], directory: Optional[Path]
+) -> Optional[str]:
+    """Head branch of the PR *selector* names, via the forge. None on any doubt.
+
+    A NUMBER or a URL says nothing about the branch, and the incident this check
+    exists for was twelve NUMBERED merges — so without this lookup the check
+    would miss its own motivating case. Bounded and fail-open: a host with no
+    credentials, no network or no ``gh`` gets None and the call proceeds.
+    """
+    if _on(GH_PR_MERGE_OFFLINE_ENV):
+        return None
+    argv = ["gh", "pr", "view", selector, "--json", "headRefName"]
+    if repo:
+        argv += ["--repo", repo]
+    try:
+        result = subprocess.run(
+            argv,
+            cwd=str(directory) if directory else None,
+            capture_output=True, text=True, timeout=20,
+        )
+    except Exception:  # noqa: BLE001 — no gh, no network, timeout: fail open
+        return None
+    if result.returncode != 0:
+        return None
+    try:
+        payload = json.loads(result.stdout or "{}")
+    except (ValueError, TypeError):
+        return None
+    branch = payload.get("headRefName") if isinstance(payload, dict) else None
+    return branch if isinstance(branch, str) and branch else None
+
+
+def _kanban_link(
+    invocation: Dict[str, Optional[str]], command: str, repo_root: Optional[Path]
+) -> Optional[Tuple[str, str]]:
+    """``(task_id, how it was established)`` when the merge targets a kanban PR."""
+    selector = invocation.get("selector")
+    repo = invocation.get("repo")
+    directories = _merge_directories(command, repo_root)
+
+    if selector:
+        task_id = kanban_task_from_ref(selector)
+        if task_id:
+            return task_id, f"the command merges branch '{selector}'"
+        if not _is_pr_reference(selector):
+            # A BRANCH was named and it is not a kanban one. The selector IS the
+            # head branch, so the question is already answered — asking the forge
+            # would spend a round trip on every `gh pr merge feat/<slug>`, which
+            # is CLAUDE.md's own documented worktree workflow.
+            return None
+        head = _pr_head_branch(selector, repo, directories[0] if directories else None)
+        task_id = kanban_task_from_ref(head or "")
+        if task_id:
+            return task_id, f"PR {selector} has head branch '{head}'"
+        return None
+
+    # No selector: `gh pr merge` means "the PR for the CURRENT branch". Skipped
+    # when --repo names somewhere else, because then this checkout's HEAD is not
+    # what gh resolves against.
+    if repo:
+        return None
+    for directory in directories:
+        branch = _current_branch(directory)
+        if branch is None:
+            continue
+        task_id = kanban_task_from_ref(branch)
+        if task_id:
+            return task_id, f"the current branch is '{branch}'"
+        return None
+    return None
+
+
+def gh_pr_merge_block_reason(task_id: str, evidence: str) -> str:
+    """The refusal text. Names the sanctioned door and the task it applies to."""
+    return (
+        "BLOCKED: refusing a raw `gh pr merge` on a kanban-linked PR "
+        f"({task_id}).\n"
+        f"    linked because {evidence}\n"
+        "  A raw merge runs NONE of the thirteen checks the sanctioned door\n"
+        "  enforces (tools/kanban/land.py):\n"
+        f"    {', '.join(GH_PR_MERGE_DOOR_CHECKS[:7])},\n"
+        f"    {', '.join(GH_PR_MERGE_DOOR_CHECKS[7:])}.\n"
+        "  Its ci_green is STRICTER than branch protection: a failed check, a\n"
+        "  check STILL RUNNING and an EMPTY rollup are all refused — and the\n"
+        "  board's 'done' is written only after the forge CONFIRMS the merge,\n"
+        "  so 'done' is a consequence of a landed PR and not a separate claim.\n"
+        "  Use the door:\n"
+        f"    python tools/kanban/cli.py --set-status {task_id} done --merge --dry-run\n"
+        f"    python tools/kanban/cli.py --set-status {task_id} done --merge\n"
+        "  Nothing left to land (already merged, or no PR)? Add --force-done\n"
+        "  --reason '<why>', which is audit-logged.\n"
+        f"  Deliberate bypass: {GH_PR_MERGE_GUARD_ENV}=0"
+    )
+
+
+def check_gh_pr_merge_bypass(
+    tool_name: str, tool_input: dict, repo_root: Optional[Path] = None
+) -> Optional[str]:
+    """Refuse a raw ``gh pr merge`` on a kanban-linked PR (kpr-rvfy-05).
+
+    Linkage is established three ways, cheapest first: the command names a
+    ``kanban/<id>`` branch outright; it names no PR at all and HEAD is such a
+    branch; or the PR number/URL it names resolves to such a head branch through
+    the forge.
+
+    An UNLINKED PR is always allowed — it has no task row to mark ``done`` and
+    no board gate to satisfy, so a refusal there would refuse routine work.
+    Fails OPEN on every error and on every unresolvable selector: this guard
+    narrows a door, it is not the boundary.
+    """
+    if tool_name != "Bash":
+        return None
+    if _off(GH_PR_MERGE_GUARD_ENV):
+        return None
+    command = (tool_input or {}).get("command") or ""
+    if not isinstance(command, str):
+        return None
+    try:
+        for invocation in gh_pr_merge_invocations(command):
+            link = _kanban_link(invocation, command, repo_root)
+            if link:
+                return gh_pr_merge_block_reason(*link)
+        return None
     except Exception:  # noqa: BLE001 — see docstring: fails open
         return None
