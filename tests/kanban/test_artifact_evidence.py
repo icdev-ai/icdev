@@ -291,13 +291,34 @@ class TestDeliveryEvidenceGate:
         assert "not resolvable" in ev["reason"]
 
     def test_gate_refuses_an_automatic_done_with_no_evidence(self, monkeypatch, repo):
+        """THIS TEST WAS BITTEN BY ITS OWN CARD'S DEFECT, which is worth keeping
+        in front of whoever edits it next.
+
+        It named a REAL task id, and the id appeared in this very file. The gate
+        asks `_work_already_landed`, which greps the default branch for the id;
+        on CI that grep found the literal string in this test's own SOURCE,
+        concluded the work had landed, and declined to refuse -- so the test for
+        "a mention is not an artifact" failed because a mention was read as an
+        artifact. It passed on a developer box only because the checkout and the
+        board differed there.
+
+        So: a synthetic id that exists nowhere, and BOTH live-data seams pinned.
+        A test whose verdict depends on what the board or the branch happens to
+        hold is not a test.
+        """
         from tools.genesis.reflexes import kanban as k
 
         monkeypatch.setattr(k, "_task_repo_root", lambda tid: repo)
         monkeypatch.setattr(k, "_task_base_branch", lambda tid: "main")
         monkeypatch.setattr(k, "_has_dispatch_record", lambda tid: False)
+        # live DB: "are this task's children all done?"
+        monkeypatch.setattr(k, "_children_all_done", lambda tid: None)
+        # live git: "is this id already on the default branch?" -- the seam that
+        # read this file's own text as delivery evidence.
+        monkeypatch.setattr(k, "_work_already_landed",
+                            lambda tid, *a, **kw: (False, "work is not on the default branch"))
 
-        reason = k.done_delivery_refusal("ftp-prd-11", actor="scheduler")
+        reason = k.done_delivery_refusal("zzz-synthetic-00", actor="scheduler")
         assert reason, "an automatic done with no delivery evidence must be refused"
         assert "no delivery evidence" in reason
 
