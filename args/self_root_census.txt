@@ -712,7 +712,6 @@ tools/integrity/pr_gates.py::<module>::BASE_DIR
 tools/integrity/scoring.py::<module>::BASE_DIR
 tools/intelligence/bayesian_teacher.py::<module>::BASE_DIR
 tools/iqe/adapters/sdc_demo.py::<module>::inline-1
-tools/kanban/build_mode.py::<module>::_ROOT
 tools/kanban/landed_check.py::<module>::BASE_DIR
 tools/kanban/lane_conflicts.py::<module>::_REPO_ROOT
 tools/kanban/model_override.py::<module>::_ROOT

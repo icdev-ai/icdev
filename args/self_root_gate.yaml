@@ -44,7 +44,10 @@ self_root_census:
 
   # Ceiling on REGISTERED sites. MAY ONLY GO DOWN. Set at adoption to exactly
   # the measured count -- headroom is permission.
-  self_root_max: 1323   # measured at MERGE (2026-08-21): 1,362 at adoption + 7 sites main added while the PR was open
+  self_root_max: 1322   # ratcheted DOWN by kpr-rvfy-10: build_mode.py's `_ROOT` moved onto
+                        # icdev.core.paths.repo_root, so its census line was pruned.
+                        # Was 1323 -- measured at MERGE (2026-08-21): 1,362 at adoption
+                        # + 7 sites main added while that PR was open.
 
   # tools/ only. icdev/tools/ is a generated mirror of the same files and would
   # double every entry; when a package's physical home moves (xit-core-*), its
