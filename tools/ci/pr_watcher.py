@@ -1009,7 +1009,16 @@ class PRWatcher:
         paths = self._protected_paths()
         if not paths:
             return []
-        entry = self._open_pr_index().get(pr_url)
+        # THE PR'S OWN REPOSITORY, not this checkout's (kpr-rvfy-09). `gh pr list`
+        # with no --repo lists whichever repo the process is standing in, so an
+        # ICDEV[FT] / compass / idea_lab PR is NEVER in the index -- and the
+        # fail-closed rule below then reads its absence as "protected", refusing
+        # every external-repo merge forever. The refusal was correct in form and
+        # wrong in fact: those PRs touch none of the protected paths, all of
+        # which are ICDEV[IT] files. Measured 2026-08-30 on icdev_ft#323, which
+        # passed twelve gates and died here. Same defect as the sibling map fixed
+        # in kpr-rvfy-07; this is its twin, one call site over.
+        entry = self._open_pr_index(repo_of(pr_url)).get(pr_url)
         files = entry.get("files") if entry else None
         return protected_hits(files, paths) or []
 
