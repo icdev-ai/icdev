@@ -50,7 +50,7 @@ def _live_watcher():
     w = pr_watcher.PRWatcher(dry_run=True)
     w.dry_run = False
     w.config = {**getattr(w, "config", {}), "auto_merge_enabled": True}
-    w._open_pr_index = lambda: {  # noqa: SLF001 — fixture, not production wiring
+    w._open_pr_index = lambda repo=None: {  # noqa: SLF001 — fixture, not production wiring
         "https://github.com/o/r/pull/1": {
             "files": {"README.md"}, "mergeable": "MERGEABLE", "draft": False},
     }
