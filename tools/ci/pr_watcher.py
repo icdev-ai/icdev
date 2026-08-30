@@ -1646,21 +1646,47 @@ class PRWatcher:
         if not self.config.get("auto_merge_enabled", False):
             return False
         try:
-            proc = self._auto_merge_runner(
+            # --auto ASKS GITHUB TO MERGE WHEN CHECKS PASS, and it requires the
+            # repository to have auto-merge ENABLED. Measured 2026-08-30:
+            # `allow_auto_merge` is false on BOTH icdev and icdev_ft (it needs
+            # branch protection, which this plan does not offer on a private
+            # repo -- the protection API answers 403). So this call could never
+            # succeed on either parent, `merge_requested` failed on every land,
+            # and the sanctioned door -- twelve gates green, one to go -- was
+            # structurally incapable of merging ANYTHING. That is why every
+            # agent, and every human, fell back to a raw `gh pr merge` that runs
+            # none of the thirteen checks. A door that cannot open is not a door.
+            #
+            # Falling back to an immediate merge is safe HERE and only here:
+            # both callers have already established the PR is mergeable and its
+            # checks are green -- land.py through its own ci_green gate,
+            # pr_watcher through classify_merge_readiness returning READY. --auto
+            # would only re-wait for a verdict the caller already holds. Where a
+            # repo DOES allow auto-merge the first call still wins, so nothing
+            # changes for a deployment that has it.
+            attempts = (
                 ["gh", "pr", "merge", pr_url, "--squash", "--auto"],
-                capture_output=True, text=True,
-                encoding="utf-8", errors="replace", timeout=60,
+                ["gh", "pr", "merge", pr_url, "--squash"],
             )
-            if getattr(proc, "returncode", 1) != 0:
-                # Previously this returned False with NO log line, so a forge
-                # that refused every merge looked identical to a board with
-                # nothing to merge. That is how 11 PRs sat "awaiting merge" while
-                # the watcher decided "merge" on each pass and was refused.
-                logger.warning(
-                    "pr_watcher: gh refused to merge %s: %s",
-                    pr_url, (getattr(proc, "stderr", "") or "").strip()[:200])
-                return False
-            return True
+            last_err = ""
+            for i, cmd in enumerate(attempts):
+                proc = self._auto_merge_runner(
+                    cmd, capture_output=True, text=True,
+                    encoding="utf-8", errors="replace", timeout=60,
+                )
+                if getattr(proc, "returncode", 1) == 0:
+                    if i:
+                        logger.info(
+                            "pr_watcher: merged %s without --auto "
+                            "(auto-merge is not enabled on this repository)", pr_url)
+                    return True
+                last_err = (getattr(proc, "stderr", "") or "").strip()[:200]
+            # Previously this returned False with NO log line, so a forge that
+            # refused every merge looked identical to a board with nothing to
+            # merge. That is how 11 PRs sat "awaiting merge" while the watcher
+            # decided "merge" on each pass and was refused.
+            logger.warning("pr_watcher: gh refused to merge %s: %s", pr_url, last_err)
+            return False
         except Exception as exc:
             logger.warning("pr_watcher: auto-merge failed: %s", exc)
             return False
