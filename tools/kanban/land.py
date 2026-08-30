@@ -236,7 +236,9 @@ def preflight(task_id: str, *, get_conn=None, watcher=None) -> dict:
 
     # ── (d) sibling-file conflict, when the operator opted into holding ────
     if not already_merged and w.config.get("hold_on_sibling_conflict", False):
-        file_map = w._open_pr_files()
+        # the PR's OWN repo, not this checkout's: an ICDEV[FT] task's PR is
+        # invisible to a bare `gh pr list` here (kpr-rvfy-07)
+        file_map = w._open_pr_files(prw.repo_of(pr_url))
         if pr_url not in file_map:
             # `_open_pr_files` returns {} on any gh failure, and this PR is open,
             # so its own absence means the listing failed rather than that there

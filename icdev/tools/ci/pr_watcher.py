@@ -820,6 +820,26 @@ def prepare_resume_context(
 # ────────────────────────────────────────────────────────────────────────────
 
 
+
+def repo_of(pr_url: str | None) -> str | None:
+    """``owner/repo`` from a GitHub PR url, or None.
+
+    Module-level and pure on purpose: an external-repo task's PR lives in
+    ANOTHER repository, and `gh pr list` without --repo lists whichever repo the
+    process happens to be standing in. Kept off PRWatcher so a caller can ask
+    without holding a watcher -- and so the existing test doubles that stub the
+    watcher keep working.
+    """
+    if not pr_url:
+        return None
+    parts = [p for p in str(pr_url).split("/") if p]
+    try:
+        i = parts.index("pull")
+    except ValueError:
+        return None
+    return "/".join(parts[i - 2:i]) if i >= 2 else None
+
+
 class PRWatcher:
     def __init__(
         self,
@@ -921,7 +941,7 @@ class PRWatcher:
             logger.debug("pr_watcher: wake event emit failed for %s: %s", pr_url, exc)
             return {"keys": [], "promoted": [], "error": str(exc)}
 
-    def _open_pr_index(self) -> Dict[str, dict]:
+    def _open_pr_index(self, repo: str | None = None) -> Dict[str, dict]:
         """url -> {files, mergeable, draft} for every open PR (single gh call).
 
         `mergeable`/`draft` are what let the tie-break skip a sibling that cannot
@@ -933,9 +953,15 @@ class PRWatcher:
         check degrades to a no-op rather than blocking the watcher.
         """
         try:
+            # --repo when the caller names one: an EXTERNAL-repo task's PR is not
+            # in this checkout's listing, and its own absence is then read as
+            # "the listing failed" -- which made land.py refuse every ICDEV[FT]
+            # task on no_sibling_conflict, whatever the PR looked like
+            # (measured 2026-08-30 on icdev_ft#320).
             proc = self._pr_list_runner(
                 ["gh", "pr", "list", "--state", "open", "--json",
-                 "url,files,mergeable,isDraft", "--limit", "200"],
+                 "url,files,mergeable,isDraft", "--limit", "200",
+                 *(["--repo", repo] if repo else [])],
                 capture_output=True, text=True, encoding="utf-8",
                 errors="replace", timeout=60,
             )
@@ -1060,9 +1086,12 @@ class PRWatcher:
         ))
         return held
 
-    def _open_pr_files(self) -> Dict[str, set]:
-        """Map every open PR's url -> set of changed file paths."""
-        return {url: e["files"] for url, e in self._open_pr_index().items()}
+    def _open_pr_files(self, repo: str | None = None) -> Dict[str, set]:
+        """Map every open PR's url -> set of changed file paths.
+
+        ``repo`` ("owner/name") lists THAT repository instead of the one this
+        process is standing in -- required for an external-repo task."""
+        return {url: e["files"] for url, e in self._open_pr_index(repo).items()}
 
     def _landed_map(self, tasks: List[dict]) -> Dict[str, dict]:
         """task_id -> landed-check report for every task with an open PR.
