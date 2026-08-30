@@ -387,3 +387,85 @@ class TestNoShellNeutraliser:
                     "exit 2 never reaches the caller. Stand a check down with "
                     "its env kill switch, which is auditable."
                 )
+
+
+# ── The anchor: WHICH repository a bare PR number is resolved against ──────
+
+
+class TestABarePRNumberIsNeverResolvedAgainstTheWrongRepository:
+    """A PR NUMBER means nothing without a repository, and this check had no
+    rule saying which one.
+
+    MEASURED 2026-08-30. The command was, in one Bash call:
+
+        until [ ... ]; do sleep 20; done; if [ "$F" = "0" ]; then
+          cd /c/ai/icdev_rt && gh pr merge 21 --merge --delete-branch; fi
+
+    ``command_word`` on that segment returns ``then``, not ``cd``, so
+    ``_cd_target`` saw no move at all and the check fell back to *repo_root* --
+    the SESSION's checkout, ICDEV[IT]. ICDEV[IT]'s PR 21 happens to sit on a
+    ``kanban/`` branch, so a merge in a DIFFERENT PRODUCT was refused, citing a
+    task id belonging to another repository.
+
+    That is not a fail-open miss. It is a FABRICATED LINKAGE, and it is the
+    same defect this repository chases everywhere else: a plausible answer
+    derived from evidence about something other than the thing being asked
+    about.
+    """
+
+    def test_a_cd_after_a_shell_keyword_is_seen(self):
+        """``then cd <path>`` -- the exact form that was invisible."""
+        command = ('if [ "$F" = "0" ]; then cd /c/ai/icdev_rt && '
+                   'gh pr merge 21 --merge; fi')
+        assert sc._cd_target(command) == "/c/ai/icdev_rt"
+
+    @pytest.mark.parametrize("keyword", ["then", "else", "do"])
+    def test_every_compound_keyword_form_is_seen(self, keyword, tmp_path):
+        real = tmp_path / "wt"
+        real.mkdir()
+        command = f'x; {keyword} cd {real.as_posix()} && gh pr merge 21 --merge'
+        assert sc._cd_target(command) == real.as_posix()
+
+    def test_an_unresolvable_cd_drops_the_session_repo_entirely(self, tmp_path):
+        """The load-bearing rule. If the command said it was going somewhere
+        this cannot name, answering from the session's own checkout does not
+        fail open -- it answers a question about a different repository."""
+        command = ('if [ "$F" = "0" ]; then cd /c/ai/icdev_rt && '
+                   'gh pr merge 21 --merge; fi')
+        assert sc._merge_directories(command, tmp_path) == []
+
+    def test_a_git_bash_style_path_is_unresolvable_not_translated(self, tmp_path):
+        """``/c/ai/x`` is not a Windows path and this module does not guess a
+        translation -- guessing one would re-arm the check on an anchor nobody
+        surveyed."""
+        command = "cd /c/ai/icdev_rt && gh pr merge 21 --merge"
+        assert sc._merge_directories(command, tmp_path) == []
+
+    def test_the_motivating_incident_still_anchors_on_the_session_repo(
+            self, tmp_path):
+        """The twelve numbered merges carried NO ``cd`` -- they ran in the
+        session's own kanban worktree, where *repo_root* is exactly right. This
+        narrowing must not cost that case."""
+        assert sc._merge_directories("gh pr merge 21 --merge", tmp_path) == [
+            tmp_path]
+
+    def test_a_resolvable_cd_is_the_FIRST_anchor(self, tmp_path):
+        """*repo_root* is deliberately kept behind it rather than dropped: the
+        selector path reads only the first entry, and the no-selector path asks
+        each directory for its CURRENT BRANCH -- a question about a checkout it
+        can actually see, not a number resolved against a guess. Only an
+        UNRESOLVABLE ``cd`` drops it."""
+        elsewhere = tmp_path / "other"
+        elsewhere.mkdir()
+        command = f"cd {elsewhere.as_posix()} && gh pr merge 21 --merge"
+        dirs = sc._merge_directories(command, tmp_path)
+        assert dirs[0] == Path(elsewhere.as_posix())
+        assert dirs[1] == tmp_path
+
+    def test_the_end_to_end_check_allows_the_merge_it_wrongly_refused(
+            self, monkeypatch, tmp_path):
+        """With no directory it can name, the check must not consult the forge
+        at all -- the autouse fixture fails the test if it does."""
+        command = ('if [ "$F" = "0" ]; then cd /c/ai/icdev_rt && '
+                   'gh pr merge 21 --merge --delete-branch; fi')
+        assert not _check(command, repo_root=tmp_path)
