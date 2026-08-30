@@ -42,6 +42,18 @@ repos:
   icdev_ft:
     base_branch: main
     root_env: ICDEV_KANBAN_REPO_FT
+  # ICDEV[RT] -- the retirement + insurance planning parent (card rt, 2026-08-30).
+  # Third parent of the ICDEV family, alongside ICDEV[IT] (this repo) and
+  # ICDEV[FT]. Registered BEFORE the repo exists, on the CONCORD / ked-reg-01 /
+  # xit-reg-02 precedent stated three times above: an unregistered rt- task
+  # resolves to the ICDev default and the dispatcher would build a FastAPI/React
+  # retirement app -- and, worse, personal financial data -- inside this PUBLIC
+  # checkout. The env var stays UNSET until the repo is scaffolded, so matching
+  # tasks are PARKED, never built here.
+  #   $env:ICDEV_KANBAN_REPO_RT = "C:/ai/icdev_rt"
+  icdev_rt:
+    base_branch: main
+    root_env: ICDEV_KANBAN_REPO_RT
 
 # Longest matching prefix wins. These are the premium/external product streams
 # that must NOT run through ICDev's build+validate+merge pipeline.
@@ -109,3 +121,8 @@ prefixes:
   # hardening work inside this PUBLIC checkout. Same repo, same env var: the
   # stream is dispatchable exactly when ICDEV_KANBAN_REPO_FT is set.
   ftp: icdev_ft
+  # rt -- ICDEV[RT], the retirement + insurance planning parent. Same discipline
+  # as ftl-/ftp- above: registered before seeding so the stream cannot fall
+  # through to the ICDev default. Dispatchable exactly when
+  # ICDEV_KANBAN_REPO_RT is set; additionally held behind rt-gate-00.
+  rt: icdev_rt

@@ -77,6 +77,32 @@ def _load_registry(config_path: Optional[Path] = None) -> dict:
         return {}
 
 
+def _claim_len(prefix: str) -> int:
+    """Length of the prefix's claim, ignoring an optional trailing hyphen."""
+    return len(prefix[:-1] if prefix.endswith("-") else prefix)
+
+
+def _claims(prefix: str, task_id: str) -> bool:
+    """Does ``prefix`` claim ``task_id``, at an id-SEGMENT boundary?
+
+    A bare ``startswith`` made a prefix claim every LONGER STREAM NAME sharing
+    its letters: registering ICDEV[RT] as ``rt`` also claimed the live
+    ``rted-`` card (DIC Real-Time Collaborative Editing) and parked all 12 of
+    its tasks -- external, root_env unset, never dispatched, nothing red.
+
+    A prefix may be written WITH or WITHOUT a trailing hyphen -- the live
+    registry omits it (``ftp``, ``xft``) and callers pass it (``ext-``) --
+    so the hyphen is normalised away before the boundary is applied.
+
+    Surveyed over the live board 2026-08-30 before changing this: 3,704 rows,
+    ZERO matching any of the 18 registered prefixes without a boundary. So the
+    rule is behaviour-preserving for every existing stream. Same discipline
+    ``landed_check`` applies so ``ctx-perf-02`` does not match ``ctx-perf-021``.
+    """
+    core = prefix[:-1] if prefix.endswith("-") else prefix
+    return task_id == core or task_id.startswith(core + "-")
+
+
 def resolve_task_repo(task_id: str, config_path: Optional[Path] = None) -> RepoTarget:
     """Resolve the target repo for ``task_id`` (defaults to ICDev).
 
@@ -89,8 +115,8 @@ def resolve_task_repo(task_id: str, config_path: Optional[Path] = None) -> RepoT
         repos = reg.get("repos") or {}
         # Longest prefix match so "prem-cpmp" beats a broader "prem".
         match = None
-        for prefix in sorted(prefixes, key=len, reverse=True):
-            if task_id.startswith(prefix):
+        for prefix in sorted(prefixes, key=_claim_len, reverse=True):
+            if _claims(prefix, task_id):
                 match = prefixes[prefix]
                 break
         if not match or match not in repos:

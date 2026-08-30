@@ -136,3 +136,77 @@ def test_every_ft_domain_stream_on_the_board_is_external(monkeypatch):
         assert t.is_external is True, f"{stream}- must not build in the public checkout"
         assert t.name == "icdev_ft", f"{stream}- resolved to {t.name}"
         assert t.dispatchable is False, f"{stream}- must be parked while the root is unset"
+
+
+class TestPrefixBoundaryMatching:
+    """A registered prefix claims a task id only at an id-SEGMENT boundary.
+
+    The resolver matched with a bare ``str.startswith``, so registering the
+    ICDEV[RT] stream as ``rt`` also claimed every ``rted-`` task (the live DIC
+    Real-Time Collaborative Editing card) and parked all 12 of them: external,
+    root_env unset, never dispatched, with nothing going red.
+
+    Surveyed before changing the predicate, over the live board 2026-08-30:
+    3,704 rows, and ZERO of them match any of the 18 registered prefixes
+    without a boundary. The rule is therefore behaviour-preserving for every
+    existing stream and changes only the collision it was written for. This is
+    the same boundary discipline ``tools/kanban/landed_check.py`` already
+    applies so ``ctx-perf-02`` does not match ``ctx-perf-021``.
+    """
+
+    def test_sibling_prefix_is_not_captured(self, tmp_path):
+        cfg = tmp_path / "reg.yaml"
+        cfg.write_text(
+            "repos:\n"
+            "  icdev_rt:\n"
+            "    base_branch: main\n"
+            "    root_env: ICDEV_KANBAN_REPO_RT\n"
+            "prefixes:\n"
+            "  rt: icdev_rt\n",
+            encoding="utf-8",
+        )
+        # The stream itself resolves external.
+        assert rr.resolve_task_repo("rt-boot-01", cfg).name == "icdev_rt"
+        # A DIFFERENT stream that merely starts with the same letters does not.
+        target = rr.resolve_task_repo("rted-arch-01", cfg)
+        assert target.name == "icdev"
+        assert target.is_external is False
+
+    def test_bare_prefix_id_still_matches(self, tmp_path):
+        cfg = tmp_path / "reg.yaml"
+        cfg.write_text(
+            "repos:\n  icdev_rt:\n    base_branch: main\n"
+            "prefixes:\n  rt: icdev_rt\n",
+            encoding="utf-8",
+        )
+        assert rr.resolve_task_repo("rt", cfg).name == "icdev_rt"
+
+    def test_longest_prefix_still_wins_at_a_boundary(self, tmp_path):
+        cfg = tmp_path / "reg.yaml"
+        cfg.write_text(
+            "repos:\n"
+            "  broad:\n    base_branch: main\n"
+            "  narrow:\n    base_branch: main\n"
+            "prefixes:\n"
+            "  prem: broad\n"
+            "  prem-cpmp: narrow\n",
+            encoding="utf-8",
+        )
+        assert rr.resolve_task_repo("prem-cpmp-01", cfg).name == "narrow"
+        assert rr.resolve_task_repo("prem-other-01", cfg).name == "broad"
+
+    def test_a_prefix_written_with_a_trailing_hyphen_still_claims(self, tmp_path):
+        """Both spellings are accepted, and the boundary rule applies to both.
+
+        The committed registry omits the hyphen (``ftp``, ``xft``); callers in
+        tests/kanban/test_done_verification.py pass it (``ext-``). Neither
+        spelling may capture a sibling stream.
+        """
+        cfg = tmp_path / "reg.yaml"
+        cfg.write_text(
+            "repos:\n  extrepo:\n    base_branch: trunk\n"
+            "prefixes:\n  ext-: extrepo\n",
+            encoding="utf-8",
+        )
+        assert rr.resolve_task_repo("ext-thing-01", cfg).name == "extrepo"
+        assert rr.resolve_task_repo("extra-thing-01", cfg).name == "icdev"
