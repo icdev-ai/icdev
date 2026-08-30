@@ -195,6 +195,27 @@ def _worktree_is_disposable(path, listed) -> tuple:
             if code != 0:
                 return False, "a git worktree whose unpushed commits could not be counted"
             if out.strip():
+                # A REPO WITH NO REMOTES MAKES EVERY COMMIT LOOK UNPUSHED, and
+                # refusing on that basis would make this predicate unable to ever
+                # say yes there -- the same "guard that can never pass" defect
+                # kpr-dup-11 removed. `--not --remotes` excludes nothing when
+                # there is nothing to exclude, so ask the question that still has
+                # meaning: is HEAD reachable from some OTHER ref in this repo? If
+                # it is, the worktree holds nothing unique and losing it loses
+                # nothing.
+                rcode, remotes = _quiet_git(["remote"], cwd=str(path))
+                if rcode == 0 and not remotes.strip():
+                    bcode, containing = _quiet_git(
+                        ["branch", "--contains", "HEAD"], cwd=str(path))
+                    if bcode != 0:
+                        return False, "no remote, and reachability could not be read"
+                    named = [ln.strip().lstrip("* ").strip()
+                             for ln in containing.splitlines() if ln.strip()]
+                    named = [b for b in named if b and not b.startswith("(")]
+                    if named:
+                        return True, (f"no remote configured; HEAD is reachable from "
+                                      f"{named[0]}, so nothing here is unique")
+                    return False, "no remote, and HEAD is on no branch -- unique work"
                 n = len([ln for ln in out.splitlines() if ln.strip()])
                 return False, f"a git worktree holding {n} commit(s) that are on no remote"
             return True, "a clean git worktree with nothing unpushed"
@@ -1880,6 +1901,110 @@ def _push_main(cwd: str) -> bool:
 _WORKTREE_STALE_AGE_DAYS = _int_env("KANBAN_WORKTREE_STALE_AGE_DAYS", 7)
 
 
+def _sweep_roots() -> list:
+    """Every directory tree a worktree may legitimately live under.
+
+    THE DEFECT THIS EXISTS FOR. `_sweep_old_worktrees` walked exactly one
+    directory -- `WORKTREE_BASE`, the repo's own `.tmp/worktrees` -- while
+    `tools/git/worktree_paths` had long since moved every actor to
+    `%TEMP%/icdev-worktrees/<actor>/...`. The sweep was cleaning the location the
+    path policy ABANDONED.
+
+    MEASURED on the live board 2026-08-30, after 292 worktrees had already been
+    removed by hand: 39 remained -- 2 under WORKTREE_BASE, 23 under the
+    sanctioned root, 14 elsewhere. About 5% coverage, which is why 341
+    accumulated while a sweep ran every half hour and found nothing to do.
+    """
+    roots = []
+    if WORKTREE_BASE.is_dir():
+        roots.append(WORKTREE_BASE)
+    try:
+        from tools.git.worktree_paths import worktree_root
+
+        sanctioned = Path(str(worktree_root()))
+        if sanctioned.is_dir():
+            roots.append(sanctioned)
+    except Exception as exc:  # noqa: BLE001 -- a missing resolver must not stop the legacy sweep
+        logger.debug("Sweep: sanctioned worktree root unavailable (%s)", exc)
+    return roots
+
+
+def _sweep_candidates(max_depth: int = 4) -> list:
+    """Directories that ARE git worktrees, under any sanctioned root.
+
+    The layout under the sanctioned root is NESTED
+    (``<root>/<actor>/<session>/<slug>``), not flat like WORKTREE_BASE, so this
+    descends rather than listing one level. A directory is a candidate only when
+    it carries a `.git` entry -- the actor and session levels are containers and
+    must never be handed to `git worktree remove`.
+    """
+    out: list = []
+    seen: set = set()
+
+    def walk(d, depth: int) -> None:
+        if depth > max_depth:
+            return
+        try:
+            children = sorted(d.iterdir())
+        except OSError:
+            return
+        for c in children:
+            if not c.is_dir():
+                continue
+            key = str(c).lower()
+            if key in seen:
+                continue
+            if (c / ".git").exists():
+                seen.add(key)
+                out.append(c)
+                continue          # a worktree is a leaf; never descend into one
+            walk(c, depth + 1)
+
+    for root in _sweep_roots():
+        walk(root, 1)
+    return out
+
+
+def _worktree_task_id(path):
+    """The task a worktree belongs to, from its CHECKED-OUT BRANCH.
+
+    `task_id = sub.name` held only for the flat WORKTREE_BASE layout. Under the
+    sanctioned root a directory is named for a slug or a session, so a name-based
+    guess would invent task ids that match nothing -- and a task id that matches
+    nothing silently defeats the `in_progress` guard, which is the one thing
+    standing between this sweep and a live session's worktree. The branch
+    (`kanban/<id>`) is what actually ties a worktree to a task; anything else has
+    no task, and says so.
+    """
+    import subprocess as _sp2
+
+    try:
+        r = _sp2.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(path),
+                     capture_output=True, text=True, timeout=10)
+    except Exception:  # noqa: BLE001
+        return None
+    if r.returncode != 0:
+        return None
+    branch = (r.stdout or "").strip()
+    if branch.startswith("kanban/"):
+        return branch.split("/", 1)[1]
+
+    # THE FLAT LAYOUT'S DIRECTORY NAME IS AUTHORITATIVE, and only there. Under
+    # WORKTREE_BASE a worktree is created as `<base>/<task_id>` -- that is the
+    # layout's contract, and it holds even for a detached checkout with no
+    # branch to read. Falling back to the name ANYWHERE would be the guess this
+    # function exists to avoid (under the sanctioned root a directory is named
+    # for a slug or a session, and an invented id matches no task, which
+    # silently defeats the `in_progress` guard). So the fallback is scoped to
+    # the one layout where the name is a fact rather than a guess.
+    try:
+        if Path(path).resolve().parent == Path(WORKTREE_BASE).resolve():
+            return Path(path).name
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
 def _sweep_old_worktrees(max_age_days: int = _WORKTREE_STALE_AGE_DAYS) -> list[str]:
     """Force-clean worktrees older than max_age_days whose task isn't in_progress.
 
@@ -1909,11 +2034,9 @@ def _sweep_old_worktrees(max_age_days: int = _WORKTREE_STALE_AGE_DAYS) -> list[s
     except Exception:
         in_progress_ids = set()
 
-    for sub in sorted(WORKTREE_BASE.iterdir() if WORKTREE_BASE.is_dir() else []):
-        if not sub.is_dir():
-            continue
-        task_id = sub.name
-        if task_id in in_progress_ids:
+    for sub in _sweep_candidates():
+        task_id = _worktree_task_id(sub)
+        if task_id and task_id in in_progress_ids:
             continue
         try:
             age_sec = now_ts - sub.stat().st_mtime
@@ -1921,13 +2044,35 @@ def _sweep_old_worktrees(max_age_days: int = _WORKTREE_STALE_AGE_DAYS) -> list[s
             continue
         if age_sec < threshold_sec:
             continue
+
+        # AGE IS NOT EVIDENCE OF ABANDONMENT, and this check is what makes the
+        # widened scope safe. Before kpr-dup-12 the sweep walked ONE directory
+        # holding 2 of the 39 live worktrees, and its only guards were "task not
+        # in_progress" and mtime -- then it FORCE-removed. Reaching the other ~25
+        # without asking whether they hold work would loose a force-remover on
+        # directories it has never touched, which is exactly the harm kpr-dup-10
+        # exists to prevent. An old worktree holding unpushed commits is the MOST
+        # valuable one to keep: nothing else has that work.
+        listed = _sp.run(
+            ["git", "worktree", "list", "--porcelain"],
+            cwd=str(_canonical_repo_root()), capture_output=True, text=True, timeout=10,
+        )
+        disposable, why = _worktree_is_disposable(sub, listed)
+        if not disposable:
+            logger.info("Sweep: keeping %s -- %s", sub, why)
+            continue
+
         try:
             if _remove_worktree(sub):
                 logger.info(
                     "Sweep: removed stale worktree %s (age %.1f days, task not "
-                    "in_progress)", sub, age_sec / 86400,
+                    "in_progress, %s)", sub, age_sec / 86400, why,
                 )
-                removed.append(task_id)
+                # The GUARD above uses the branch-derived task id and skips only
+                # on a real match; this returned list is informational, so the
+                # directory name is the right fallback and keeps the contract the
+                # flat WORKTREE_BASE layout always had.
+                removed.append(task_id or sub.name)
         except Exception as exc:
             logger.warning("Sweep: could not remove %s: %s", sub, exc)
 
