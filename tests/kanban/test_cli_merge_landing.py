@@ -70,7 +70,9 @@ class _FakeWatcher:
         self.merge_calls.append(pr_url)
         return self._merge_ok
 
-    def _open_pr_files(self):
+    def _open_pr_files(self, repo=None):   # repo: the PR's own repository
+        # (kpr-rvfy-07) -- optional on the real watcher, so a double that
+        # hard-codes the old arity is the only thing that breaks.
         return self._file_map
 
     def _sibling_conflicts(self, url, file_map):

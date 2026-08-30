@@ -820,6 +820,26 @@ def prepare_resume_context(
 # ────────────────────────────────────────────────────────────────────────────
 
 
+
+def repo_of(pr_url: str | None) -> str | None:
+    """``owner/repo`` from a GitHub PR url, or None.
+
+    Module-level and pure on purpose: an external-repo task's PR lives in
+    ANOTHER repository, and `gh pr list` without --repo lists whichever repo the
+    process happens to be standing in. Kept off PRWatcher so a caller can ask
+    without holding a watcher -- and so the existing test doubles that stub the
+    watcher keep working.
+    """
+    if not pr_url:
+        return None
+    parts = [p for p in str(pr_url).split("/") if p]
+    try:
+        i = parts.index("pull")
+    except ValueError:
+        return None
+    return "/".join(parts[i - 2:i]) if i >= 2 else None
+
+
 class PRWatcher:
     def __init__(
         self,
@@ -921,7 +941,7 @@ class PRWatcher:
             logger.debug("pr_watcher: wake event emit failed for %s: %s", pr_url, exc)
             return {"keys": [], "promoted": [], "error": str(exc)}
 
-    def _open_pr_index(self) -> Dict[str, dict]:
+    def _open_pr_index(self, repo: str | None = None) -> Dict[str, dict]:
         """url -> {files, mergeable, draft} for every open PR (single gh call).
 
         `mergeable`/`draft` are what let the tie-break skip a sibling that cannot
@@ -933,9 +953,15 @@ class PRWatcher:
         check degrades to a no-op rather than blocking the watcher.
         """
         try:
+            # --repo when the caller names one: an EXTERNAL-repo task's PR is not
+            # in this checkout's listing, and its own absence is then read as
+            # "the listing failed" -- which made land.py refuse every ICDEV[FT]
+            # task on no_sibling_conflict, whatever the PR looked like
+            # (measured 2026-08-30 on icdev_ft#320).
             proc = self._pr_list_runner(
                 ["gh", "pr", "list", "--state", "open", "--json",
-                 "url,files,mergeable,isDraft", "--limit", "200"],
+                 "url,files,mergeable,isDraft", "--limit", "200",
+                 *(["--repo", repo] if repo else [])],
                 capture_output=True, text=True, encoding="utf-8",
                 errors="replace", timeout=60,
             )
@@ -1060,9 +1086,12 @@ class PRWatcher:
         ))
         return held
 
-    def _open_pr_files(self) -> Dict[str, set]:
-        """Map every open PR's url -> set of changed file paths."""
-        return {url: e["files"] for url, e in self._open_pr_index().items()}
+    def _open_pr_files(self, repo: str | None = None) -> Dict[str, set]:
+        """Map every open PR's url -> set of changed file paths.
+
+        ``repo`` ("owner/name") lists THAT repository instead of the one this
+        process is standing in -- required for an external-repo task."""
+        return {url: e["files"] for url, e in self._open_pr_index(repo).items()}
 
     def _landed_map(self, tasks: List[dict]) -> Dict[str, dict]:
         """task_id -> landed-check report for every task with an open PR.
@@ -1617,21 +1646,47 @@ class PRWatcher:
         if not self.config.get("auto_merge_enabled", False):
             return False
         try:
-            proc = self._auto_merge_runner(
+            # --auto ASKS GITHUB TO MERGE WHEN CHECKS PASS, and it requires the
+            # repository to have auto-merge ENABLED. Measured 2026-08-30:
+            # `allow_auto_merge` is false on BOTH icdev and icdev_ft (it needs
+            # branch protection, which this plan does not offer on a private
+            # repo -- the protection API answers 403). So this call could never
+            # succeed on either parent, `merge_requested` failed on every land,
+            # and the sanctioned door -- twelve gates green, one to go -- was
+            # structurally incapable of merging ANYTHING. That is why every
+            # agent, and every human, fell back to a raw `gh pr merge` that runs
+            # none of the thirteen checks. A door that cannot open is not a door.
+            #
+            # Falling back to an immediate merge is safe HERE and only here:
+            # both callers have already established the PR is mergeable and its
+            # checks are green -- land.py through its own ci_green gate,
+            # pr_watcher through classify_merge_readiness returning READY. --auto
+            # would only re-wait for a verdict the caller already holds. Where a
+            # repo DOES allow auto-merge the first call still wins, so nothing
+            # changes for a deployment that has it.
+            attempts = (
                 ["gh", "pr", "merge", pr_url, "--squash", "--auto"],
-                capture_output=True, text=True,
-                encoding="utf-8", errors="replace", timeout=60,
+                ["gh", "pr", "merge", pr_url, "--squash"],
             )
-            if getattr(proc, "returncode", 1) != 0:
-                # Previously this returned False with NO log line, so a forge
-                # that refused every merge looked identical to a board with
-                # nothing to merge. That is how 11 PRs sat "awaiting merge" while
-                # the watcher decided "merge" on each pass and was refused.
-                logger.warning(
-                    "pr_watcher: gh refused to merge %s: %s",
-                    pr_url, (getattr(proc, "stderr", "") or "").strip()[:200])
-                return False
-            return True
+            last_err = ""
+            for i, cmd in enumerate(attempts):
+                proc = self._auto_merge_runner(
+                    cmd, capture_output=True, text=True,
+                    encoding="utf-8", errors="replace", timeout=60,
+                )
+                if getattr(proc, "returncode", 1) == 0:
+                    if i:
+                        logger.info(
+                            "pr_watcher: merged %s without --auto "
+                            "(auto-merge is not enabled on this repository)", pr_url)
+                    return True
+                last_err = (getattr(proc, "stderr", "") or "").strip()[:200]
+            # Previously this returned False with NO log line, so a forge that
+            # refused every merge looked identical to a board with nothing to
+            # merge. That is how 11 PRs sat "awaiting merge" while the watcher
+            # decided "merge" on each pass and was refused.
+            logger.warning("pr_watcher: gh refused to merge %s: %s", pr_url, last_err)
+            return False
         except Exception as exc:
             logger.warning("pr_watcher: auto-merge failed: %s", exc)
             return False

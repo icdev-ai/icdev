@@ -967,7 +967,21 @@ def _run_pytest(
     timeout = max(15, min(120, int(time_budget)))
     try:
         env = dict(os.environ)
-        env["PYTHONPATH"] = cwd
+        # PREPEND, never overwrite. `cwd` is the task's worktree, which for an
+        # ICDEV[IT] task is the repo that HOLDS `tools/` -- so assigning it was
+        # right for this parent and silently fatal for the other. An ICDEV[FT]
+        # worktree does NOT contain `tools/`: that package comes from the IT
+        # checkout the operator carries on PYTHONPATH, so overwriting the
+        # inherited value stripped it and every `import tools.X` in the suite
+        # died. Measured 2026-08-30 on kanban/ftp-prd-08: with the inherited
+        # path 2678 passed; with it discarded, 22 failed and 588 errored, and
+        # the verifier recorded UNIT TESTS FAILED for a branch whose suite is
+        # entirely green. That false verdict then failed the enforced done-gate,
+        # so the sanctioned merge door refused every FT task -- which is how
+        # agents learned to reach for a raw `gh pr merge` instead. A gate that
+        # always says no is a gate people route around.
+        inherited = env.get("PYTHONPATH") or ""
+        env["PYTHONPATH"] = os.pathsep.join([cwd, *([inherited] if inherited else [])])
         env.setdefault("ICDEV_STORAGE_BACKEND", "sqlite")
         proc = subprocess.run(  # nosec B603 — fixed args, shell=False
             ["python", "-m", "pytest", *test_files, "-q", "--no-header",
