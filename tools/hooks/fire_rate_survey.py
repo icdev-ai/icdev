@@ -197,6 +197,18 @@ def build_checks(repo_root: Path, live_git: bool = False) -> List[Check]:
     def _branch_live(tool: str, ti: dict) -> Optional[str]:
         return sc.check_branch_deletion(tool, ti, repo_root=repo_root) or None
 
+    def _gh_merge_trigger(tool: str, ti: dict) -> Optional[str]:
+        if tool != "Bash":
+            return None
+        found = sc.gh_pr_merge_invocations(ti.get("command", "") or "")
+        if not found:
+            return None
+        named = ", ".join(str(f.get("selector") or "<current branch>") for f in found)
+        return f"invokes `gh pr merge` on: {named}"
+
+    def _gh_merge_live(tool: str, ti: dict) -> Optional[str]:
+        return sc.check_gh_pr_merge_bypass(tool, ti, repo_root=repo_root) or None
+
     def _commit_trigger(tool: str, ti: dict) -> Optional[str]:
         if tool != "Bash":
             return None
@@ -250,6 +262,17 @@ def build_checks(repo_root: Path, live_git: bool = False) -> List[Check]:
               note="live verdict needs refs that may no longer exist; --live-git to try"),
         Check("worktree_path", predicate=_worktree,
               blocks_when="a `git worktree add` targets a path outside the sanctioned roots"),
+        Check("gh_pr_merge_bypass",
+              predicate=_gh_merge_live if live_git else None,
+              trigger=_gh_merge_trigger,
+              blocks_when="the `gh pr merge` targets a PR whose head branch is "
+                          "kanban/<task-id>",
+              note="the trigger is the UPPER BOUND on this check's fire rate — it "
+                   "can refuse nothing that is not a `gh pr merge`, and only the "
+                   "kanban-LINKED subset of those. The live verdict resolves a PR "
+                   "number/URL through the forge and reads HEAD of the merge "
+                   "directory, neither of which a months-old transcript can "
+                   "reproduce; --live-git to try"),
         Check("network_egress", predicate=_egress,
               blocks_when="a command reaches a host that is neither local nor in "
                           "agent_egress.allowed_hosts",
