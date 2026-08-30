@@ -25,7 +25,7 @@ def test_the_flag_lives_in_the_main_checkout_not_the_calling_copy():
     """The whole point: one state, one file."""
     common = subprocess.run(
         ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
-        cwd=str(Path(bm.__file__).resolve().parents[2]),
+        cwd=str(bm.repo_root(bm.__file__)),
         capture_output=True, text=True, timeout=10,
     )
     if common.returncode != 0 or not common.stdout.strip():
@@ -55,8 +55,7 @@ def test_no_git_falls_back_rather_than_raising(monkeypatch):
         raise FileNotFoundError("git not installed")
 
     monkeypatch.setattr(bm.subprocess, "run", _boom, raising=False)
-    root = bm._main_checkout()
-    assert root == Path(bm.__file__).resolve().parents[2]
+    assert bm._main_checkout() == bm.repo_root(bm.__file__)
 
 
 def test_a_git_failure_falls_back_rather_than_raising(monkeypatch):
@@ -65,7 +64,7 @@ def test_a_git_failure_falls_back_rather_than_raising(monkeypatch):
         return subprocess.CompletedProcess([], 128, stdout="", stderr="not a git repository")
 
     monkeypatch.setattr(bm.subprocess, "run", _fail, raising=False)
-    assert bm._main_checkout() == Path(bm.__file__).resolve().parents[2]
+    assert bm._main_checkout() == bm.repo_root(bm.__file__)
 
 
 def test_is_manual_never_raises_whatever_the_flag_holds(tmp_path, monkeypatch):
@@ -77,3 +76,31 @@ def test_is_manual_never_raises_whatever_the_flag_holds(tmp_path, monkeypatch):
     assert bm.is_manual() is True          # present-but-corrupt is still a flag
     monkeypatch.setattr(bm, "_FLAG", tmp_path / "absent.json")
     assert bm.is_manual() is False
+
+
+def test_the_fallback_is_repo_root_and_never_a_self_root():
+    """The first version of this fix fell back to `parents[2]` -- reintroducing,
+    as the safety net, the exact defect being repaired. The self-root census
+    caught it on CI; this pins it so the next edit cannot quietly restore it.
+
+    Read from the AST with the DOCSTRING REMOVED. A plain substring scan fails
+    on its own explanation: the function's docstring names `parents[2]` while
+    describing why it must not appear, so the naive check reports the defect it
+    is documenting. The code is what has to be clean, not the prose about it.
+    """
+    import ast
+
+    tree = ast.parse(Path(bm.__file__).read_text(encoding="utf-8"))
+    fn = next(
+        n for n in ast.walk(tree)
+        if isinstance(n, ast.FunctionDef) and n.name == "_main_checkout"
+    )
+    body = list(fn.body)
+    if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
+        body = body[1:]  # drop the docstring
+    code = ast.unparse(ast.Module(body=body, type_ignores=[]))
+    assert "repo_root(__file__)" in code, "_main_checkout no longer uses the one resolver"
+    assert "parents[2]" not in code, (
+        "_main_checkout computes the root from this file's location again. That is the "
+        "defect this module was changed to remove; use icdev.core.paths.repo_root."
+    )

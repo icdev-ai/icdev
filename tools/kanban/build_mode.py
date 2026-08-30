@@ -50,6 +50,8 @@ import os
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
+
+from icdev.core.paths import repo_root
 from typing import Any, Dict
 
 def _main_checkout() -> Path:
@@ -68,13 +70,21 @@ def _main_checkout() -> Path:
     the scheduler will never read, so the pause silently does nothing.
 
     `git --git-common-dir` is the canonical answer: for a worktree it returns the
-    MAIN repository's .git, for a normal checkout its own. Falling back to the
-    self-root keeps this working with no git at all (a source tarball, a
-    container without the binary), which is the same posture the rest of the
-    module takes: never raise, prefer the answer that keeps the scheduler
+    MAIN repository's .git, for a normal checkout its own. Falling back to
+    `icdev.core.paths.repo_root` keeps this working with no git at all (a source
+    tarball, a container without the binary), which is the same posture the rest
+    of the module takes: never raise, prefer the answer that keeps the scheduler
     running.
+
+    THE FALLBACK IS `repo_root`, NOT A SELF-ROOT, and the first version of this
+    fix got that wrong: it fell back to `Path(__file__).resolve().parents[2]` --
+    reintroducing, as the safety net, the exact defect being repaired. The
+    self-root census caught it (tools/kanban/build_mode.py:77, NEW), which is
+    the census earning its place: a reviewer reading a commit titled "stop
+    computing the root from this file's location" is not primed to notice the
+    one line that still does.
     """
-    here = Path(__file__).resolve().parents[2]
+    here = repo_root(__file__)
     try:
         r = subprocess.run(
             ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
@@ -82,7 +92,7 @@ def _main_checkout() -> Path:
         )
         if r.returncode == 0 and r.stdout.strip():
             return Path(r.stdout.strip()).resolve().parent
-    except Exception:  # noqa: BLE001 -- no git, or not a repo: the self-root still works
+    except Exception:  # noqa: BLE001 -- no git, or not a repo: repo_root still answers
         pass
     return here
 
