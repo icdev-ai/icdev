@@ -50,6 +50,22 @@ FOUR VERDICTS, and ``unmeasurable`` is never folded into any of the others:
                   count so "no findings" can never be read over a board most of
                   which was never looked at.
 
+TWO WAYS "NOT ON MAIN" IS NOT A FINDING, both measured as false positives on the
+first board-wide run — 300 done tasks over 14 days, and its ONLY two findings
+were both wrong. A report whose findings are all wrong is one people learn to
+skip, so each is answered by RE-DERIVING, never by a blocklist:
+
+  * a path git is told never to track (``git check-ignore``) cannot be on any
+    branch, so its absence says nothing about the card. ``ftl-sched-03``
+    declared ``args/ft_scheduler.local.yaml``, which is ``.gitignore`` line 40.
+    It is kept out of BOTH ``present`` and ``missing``.
+  * a path the card wrote relative to a subdirectory. ``ftl-val-05`` declared
+    ``families/__init__.py``, which is on main at
+    ``icdev_fin/backtest/families/__init__.py``. A UNIQUE suffix match against
+    the branch's tracked files resolves it and the move is RECORDED under
+    ``resolved_relative`` rather than silently applied; two or more matches is a
+    guess, and a guess is not evidence, so an ambiguous path stays missing.
+
 A TASK ID FOUND IN A FILE IS NOT AN ARTIFACT. The obvious survey — grep main for
 the id — is the one that produced the wrong answer in the first place: three of
 the five ids are on main only as forward references in comments naming the card
@@ -216,6 +232,15 @@ def artifact_report(
         "declared": [],
         "present": [],
         "missing": [],
+        #: Declared paths git is told never to track. Kept OUT of both
+        #: `present` and `missing`: a .gitignore'd path is not evidence either
+        #: way, and counting it as missing manufactures a finding.
+        "ignored": [],
+        #: {declared, found} for a path the card wrote relative to a
+        #: subdirectory and that resolved UNIQUELY on the default branch.
+        #: Recorded rather than silently rewritten, so a reader can see that
+        #: the survey moved the goalposts and check the move.
+        "resolved_relative": [],
     }
 
     if repo_root is not None:
@@ -245,13 +270,55 @@ def artifact_report(
         report["reason"] = f"ref {target} not resolvable"
         return report
 
+    tracked: Optional[List[str]] = None
     for path in declared:
         r = _run_git(["cat-file", "-e", f"{target}:{path}"], root, timeout=15)
         if r is None:
             report["reason"] = f"git could not be asked about {path}"
             report["present"], report["missing"] = [], []
             return report
-        (report["present"] if r.returncode == 0 else report["missing"]).append(path)
+        if r.returncode == 0:
+            report["present"].append(path)
+            continue
+
+        # Absent at the path as written. TWO ways that is not a finding, and
+        # both were MEASURED as false positives on the first board-wide run
+        # (300 done tasks, 14 days — its ONLY two findings, both wrong). A
+        # report whose findings are all wrong is one people learn to skip.
+
+        # (1) A path git is instructed never to track cannot be on any branch,
+        # so "it is not on main" says nothing about the card.
+        # `args/ft_scheduler.local.yaml` (ftl-sched-03) is .gitignore line 40.
+        ignored = _run_git(["check-ignore", "-q", "--", path], root, timeout=10)
+        if ignored is not None and ignored.returncode == 0:
+            report["ignored"].append(path)
+            continue
+
+        # (2) The card wrote the path relative to a subdirectory.
+        # `families/__init__.py` (ftl-val-05) is on main at
+        # `icdev_fin/backtest/families/__init__.py`. A UNIQUE suffix match
+        # resolves it; two or more matches is a guess, and a guess is not
+        # evidence, so an ambiguous path stays missing.
+        if tracked is None:
+            listing = _run_git(["ls-tree", "-r", "--name-only", target], root, timeout=60)
+            tracked = ([ln.strip() for ln in (listing.stdout or "").splitlines() if ln.strip()]
+                       if listing is not None and listing.returncode == 0 else [])
+        suffix = f"/{path}"
+        hits = [t for t in tracked if t.endswith(suffix)]
+        if len(hits) == 1:
+            report["present"].append(hits[0])
+            report["resolved_relative"].append({"declared": path, "found": hits[0]})
+            continue
+
+        report["missing"].append(path)
+
+    # A card whose every declared path is untrackable was never measured.
+    if report["ignored"] and not report["present"] and not report["missing"]:
+        report["reason"] = (
+            "every declared path is gitignored — nothing the default branch "
+            "could ever carry"
+        )
+        return report
 
     if not report["missing"]:
         report["state"] = STATE_PRESENT

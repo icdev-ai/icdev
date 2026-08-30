@@ -176,6 +176,74 @@ class TestArtifactReportStates:
             "t-3", "", "new pkg/missing.py", repo_root=repo, ref="origin/main")
         assert absent["state"] == ae.STATE_ABSENT
 
+    def test_a_gitignored_path_is_never_a_finding(self, repo):
+        """MEASURED false positive: ftl-sched-03 / args/ft_scheduler.local.yaml.
+
+        A path git is told never to track cannot be on any branch, so "it is not
+        on main" says nothing about the card. It is kept out of BOTH `present`
+        and `missing`.
+        """
+        (repo / ".gitignore").write_text("args/*.local.yaml\n", encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-m", "chore: ignore local overrides")
+        _git(repo, "push", "origin", "main")
+
+        report = ae.artifact_report(
+            "ftl-sched-03", "", "new args/ft_scheduler.local.yaml",
+            repo_root=repo, ref="origin/main")
+        assert report["state"] == ae.STATE_UNMEASURABLE
+        assert report["ignored"] == ["args/ft_scheduler.local.yaml"]
+        assert report["missing"] == []
+        assert "gitignored" in report["reason"]
+
+    def test_a_uniquely_resolving_relative_path_is_present(self, repo):
+        """MEASURED false positive: ftl-val-05 / families/__init__.py.
+
+        The card wrote the path relative to a subdirectory; the file is on main
+        at icdev_fin/backtest/families/__init__.py.
+        """
+        deep = repo / "pkg" / "backtest" / "families"
+        deep.mkdir(parents=True)
+        (deep / "__init__.py").write_text("", encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-m", "feat: families")
+        _git(repo, "push", "origin", "main")
+
+        report = ae.artifact_report(
+            "ftl-val-05", "", "new families/__init__.py",
+            repo_root=repo, ref="origin/main")
+        assert report["state"] == ae.STATE_PRESENT
+        assert report["resolved_relative"] == [
+            {"declared": "families/__init__.py",
+             "found": "pkg/backtest/families/__init__.py"}
+        ], "the move must be RECORDED, not silently applied"
+
+    def test_an_ambiguous_relative_path_does_not_resolve(self, repo):
+        """Two candidates is a guess, and a guess is not evidence."""
+        for parent in ("a", "b"):
+            d = repo / parent / "families"
+            d.mkdir(parents=True)
+            (d / "__init__.py").write_text("", encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-m", "feat: two families")
+        _git(repo, "push", "origin", "main")
+
+        report = ae.artifact_report(
+            "t-amb", "", "new families/__init__.py",
+            repo_root=repo, ref="origin/main")
+        assert report["state"] == ae.STATE_ABSENT
+        assert report["missing"] == ["families/__init__.py"]
+        assert report["resolved_relative"] == []
+
+    def test_a_genuinely_missing_path_is_still_a_finding(self, repo):
+        """The narrowings must not swallow the case the survey exists for."""
+        report = ae.artifact_report(
+            "ftp-prd-08", "", "new ft_api/auth.py",
+            repo_root=repo, ref="origin/main")
+        assert report["state"] == ae.STATE_ABSENT
+        assert report["missing"] == ["ft_api/auth.py"]
+        assert report["ignored"] == []
+
     def test_unresolvable_ref_is_unmeasurable_not_absent(self, repo):
         report = ae.artifact_report(
             "t-4", "", "new pkg/whatever.py",

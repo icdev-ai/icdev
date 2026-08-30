@@ -1019,7 +1019,20 @@ python -c "from tools.kanban.landed_check import check_file_content_bulk as f; p
 # ft_api/auth.py"): a path merely CITED for context already exists, so counting
 # it would make every card report `present` for free. Shared registries
 # (tools/manifest.md, args/ci_test_files/core.txt, requirements.txt) are never a
-# deliverable. `artifact_present_pct` is None, NEVER 100.0, over an empty
+# deliverable.
+# TWO WAYS "NOT ON MAIN" IS NOT A FINDING, both MEASURED as false positives on
+# the first board-wide run (300 done tasks, 14 days — its ONLY two findings, and
+# both wrong; a report whose findings are all wrong is one people learn to
+# skip). Each is answered by RE-DERIVING, never by a blocklist: a path git is
+# told never to track (`git check-ignore`) cannot be on any branch, so it is
+# kept out of BOTH present and missing (ftl-sched-03 declared
+# args/ft_scheduler.local.yaml, .gitignore line 40); and a path the card wrote
+# relative to a subdirectory resolves by a UNIQUE suffix match against the
+# branch's tracked files, recorded under `resolved_relative` rather than
+# silently applied (ftl-val-05 declared families/__init__.py, on main at
+# icdev_fin/backtest/families/__init__.py). Two or more matches is a GUESS, and
+# a guess is not evidence, so an ambiguous path stays missing. After both: the
+# same 14-day sweep reports 21 present, 0 findings, 279 unmeasurable. `artifact_present_pct` is None, NEVER 100.0, over an empty
 # denominator (args/perfect_score_gate.yaml, ratcheted to 0). Repo-aware through
 # `repo_registry`, so an ftp-* deliverable is looked for in ICDEV[FT].
 # RE-VERIFIED against the tree 2026-08-29, `git cat-file -e origin/main:<path>`
