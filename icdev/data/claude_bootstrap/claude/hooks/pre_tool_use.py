@@ -15,6 +15,9 @@ Blocks:
     - Writes/deletes forbidden by the D-ORCH-8 file access tiers
     - Deletion of a remote branch that still holds unmerged commits
     - `git worktree add` outside the sanctioned roots
+    - A raw `gh pr merge` on a KANBAN-LINKED PR — the sanctioned door
+      (`cli.py --set-status <id> done --merge`) runs thirteen gates the raw
+      command runs none of. An UNLINKED PR is still allowed.
 and self-greens staged changes with review_loop before a `git commit`.
 
 This file is the Claude Code ENTRY POINT, not the implementation. Every check
@@ -152,6 +155,15 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
     """
     APPEND_ONLY_TABLES = [
     "web_fetch_provenance",   # oss-cite-01: a fetch is an observation; re-fetch appends
+        # cch-obs-07, migration 20260827235301. One row per LLM call the response
+        # cache avoided. It exists because every savings figure was previously
+        # derived live `FROM llm_response_cache`, so a saving died with the row
+        # that caused it -- and rows die routinely (ttl_seconds, LRU eviction,
+        # invalidate()). A cache is ALLOWED to forget; the record of what it saved
+        # is not. An UPDATE here would rewrite what a call cost at the one moment
+        # that cost was knowable, and the avoided calls cannot be re-derived
+        # because they already did not happen. A correction is a new row.
+        "llm_cache_savings_ledger",
         # === CHILD-INHERITABLE (copied to child apps via step_09c) ===
         # Core audit
         "audit_trail",
@@ -162,6 +174,15 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # "it never had a hash anyway", so a re-cutover appends a second row and
         # the earliest one still wins.
         "audit_chain_genesis",
+        # kpr-watch-02, migration 20260819011454. One row per OBSERVED
+        # TRANSITION of a PR's merge eligibility. It is the only record of WHEN
+        # a PR became mergeable, so it is the only thing the "this should have
+        # merged 40 minutes ago" alarm can measure an age against — and an
+        # observation that a PR was eligible at 03:14 does not stop being true
+        # when it merges at 03:15. An UPDATE here would not correct the past, it
+        # would move the clock the alarm reads, which is indistinguishable from
+        # switching the alarm off for that PR.
+        "pr_merge_eligibility_events",
         # Refinement-cycle snapshots of the supplemental harness state
         # (exa-refine-05, migration 20260812074403). A snapshot is a
         # point-in-time record of what the harness looked like before it
@@ -368,6 +389,27 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "rag_retrieval_log",
         # RAG provenance ledger — append-only AIA chain-of-custody (D-AIDP, NIST AU-3)
         "rag_provenance_ledger",
+        # HITL trust deltas (trust-hitl-01, migration 20260815063941). What a
+        # human actually approved when they overrode a TRUST gate: the before and
+        # after text, claim-anchored, with the findings on each side. That is
+        # EVIDENCE — this text became that text at this moment — and editing it
+        # rewrites what a reviewer was shown after they signed off on it. A
+        # correction appends a successor pointing at its predecessor through
+        # supersedes_delta_id, the same rule sbom_records follows. The reviewer's
+        # DISPOSITION is mutable state and lives in approval_items, which is
+        # deliberately NOT in this list.
+        "trust_deltas",
+        # The agent event log (hcx-evt-01, migration 20260816122036). One row per
+        # model-visible event — turn_start, request_context, assistant_message,
+        # tool_call, tool_result, turn_end — carrying the payload's SHA-256
+        # always and the payload itself only when the classification policy in
+        # args/agent_event_log.yaml allows. It exists because
+        # agent_loop_sessions.messages_json is UPSERT-overwritten every turn, so
+        # turn N stops existing the moment turn N+1 is written; an event log that
+        # could be edited would restore exactly that defect. A correction is a
+        # new event. tools/agent_runtime/event_log.py exposes append(),
+        # read_session() and next_seq() and no mutating verb at all.
+        "agent_session_events",
         # ICDEV Cortex governance audit — one append-only row per governed Cortex
         # call (ctx-govern-03, NIST AU). cortex_sessions is intentionally NOT here
         # (mutable session lifecycle: status/updated_at).
@@ -908,6 +950,25 @@ def check_git_danger(tool_name: str, tool_input: dict) -> str:
     return shared_checks.check_git_danger(tool_name, tool_input) or ""
 
 
+def check_gh_pr_merge_bypass(tool_name: str, tool_input: dict) -> str:
+    """Refuse a raw ``gh pr merge`` on a kanban-linked PR (kpr-rvfy-05).
+
+    The sanctioned door — ``tools/kanban/cli.py --set-status <id> done --merge``
+    through ``tools/kanban/land.py`` — runs thirteen checks and writes ``done``
+    only after the forge CONFIRMS the merge. A raw ``gh pr merge`` runs none of
+    them, and on 2026-08-29 twelve PRs were landed that way.
+
+    Branch protection is not the alternative here: it is unavailable on the
+    private user-owned repo (403), and it accepts a repo where no check ever
+    reported, which is exactly the 2026-08-29 dead-runner case the door's
+    ``ci_green`` refuses. An UNLINKED PR is still allowed. Set
+    ICDEV_GH_PR_MERGE_GUARD=0 to disable. Fails OPEN on any error.
+    """
+    return shared_checks.check_gh_pr_merge_bypass(
+        tool_name, tool_input, repo_root=REPO_ROOT
+    ) or ""
+
+
 def check_network_egress(tool_name: str, tool_input: dict) -> str:
     """Record — and, when enforcing, refuse — egress to an unapproved host.
 
@@ -963,6 +1024,7 @@ HOOK_CHECKS = (
     "check_write_outside_worktree",
     "check_branch_deletion",
     "check_worktree_path",
+    "check_gh_pr_merge_bypass",
     "check_network_egress",
     "check_agent_rules",
     "check_review_loop_precommit",
@@ -980,6 +1042,7 @@ HOOK_CHECK_CALLSITES = {
     "check_write_outside_worktree": "check_write_outside_worktree",
     "check_branch_deletion": "check_branch_deletion",
     "check_worktree_path": "check_worktree_path",
+    "check_gh_pr_merge_bypass": "check_gh_pr_merge_bypass",
     "check_network_egress": "check_network_egress",
     "check_agent_rules": "check_agent_rules",
     "check_review_loop_precommit": "run_review_loop_precommit",
@@ -1000,6 +1063,11 @@ HOOK_CHECK_REQUIREMENTS = {
     "check_append_only_write": None,
     "check_direct_sqlite_usage": None,
     "check_branch_deletion": None,
+    # Needs nothing on disk: linkage is a branch-NAME convention plus a `git` /
+    # `gh` subprocess, both of which a scaffolded project has or does not
+    # independently of what `icdev init` copied. It fails open where it cannot
+    # resolve, so it is genuinely active everywhere the hook loads.
+    "check_gh_pr_merge_bypass": None,
     "check_file_access_tiers": "args/file_access_tiers.yaml",
     "check_network_egress": "args/agent_egress_policy.yaml",
     "check_worktree_path": "tools/git/worktree_paths.py",
@@ -1071,6 +1139,7 @@ CHECK_KILL_SWITCHES = {
     "write_outside_worktree": "ICDEV_WRITE_BOUNDARY_GUARD",
     "branch_deletion": "ICDEV_BRANCH_DELETE_GUARD",
     "worktree_path": "ICDEV_WORKTREE_GUARD",
+    "gh_pr_merge_bypass": "ICDEV_GH_PR_MERGE_GUARD",
     "network_egress": "ICDEV_EGRESS_GUARD",
     "agent_rules": "ICDEV_AGENT_DETECT",
     "review_loop_precommit": "ICDEV_REVIEW_LOOP_PRECOMMIT",
@@ -1132,6 +1201,12 @@ def main():
             ("branch_deletion", lambda: check_branch_deletion(tool_name, tool_input)),
             # Keep worktrees out of shared temp dirs where two sessions collide
             ("worktree_path", lambda: check_worktree_path(tool_name, tool_input)),
+            # Refuse a raw `gh pr merge` on a kanban-linked PR (kpr-rvfy-05).
+            # The 13-gate door in tools/kanban/land.py already exists; this is
+            # the only place the interactive/agent path can be sent to it.
+            # Scoped to LINKED PRs — an unlinked one has no task to mark done.
+            ("gh_pr_merge_bypass",
+             lambda: check_gh_pr_merge_bypass(tool_name, tool_input)),
             # Network egress (exa-bench-08). Monitor-only by default: it records
             # the finding and returns "" so the call proceeds. This is the only
             # network control that reaches the
