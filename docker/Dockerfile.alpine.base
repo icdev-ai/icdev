@@ -18,7 +18,14 @@ LABEL stage="builder"
 
 # Build-time deps: compilers and headers for binary packages.
 # These are NOT included in the runtime stage (multi-stage build).
+# `git` is a BUILD-time requirement, not a runtime one: requirements.txt carries
+# a VCS requirement (`icdev-core @ git+https://...`, xcore-cut-02, 2026-08-26) and
+# pip shells out to `git` to resolve it. Without it every build of this image dies
+# on `Cannot find command 'git'` before installing a single package.
+# It stays in the BUILDER stage, which is discarded, so the runtime stage keeps its
+# STIG-minimal package set and gains no new attack surface.
 RUN apk add --no-cache \
+    git \
     gcc \
     g++ \
     musl-dev \

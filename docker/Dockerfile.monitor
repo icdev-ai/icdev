@@ -7,6 +7,14 @@
 FROM python:3.12-slim AS builder
 
 WORKDIR /build
+# `git` is a BUILD-time requirement, not a runtime one: requirements.txt carries
+# a VCS requirement (`icdev-core @ git+https://...`, xcore-cut-02, 2026-08-26) and
+# pip shells out to `git` to resolve it. Without it every build of this image dies
+# on `Cannot find command 'git'` before installing a single package.
+# It stays in the BUILDER stage, which is discarded, so the runtime stage keeps its
+# STIG-minimal package set and gains no new attack surface.
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
