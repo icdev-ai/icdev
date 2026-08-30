@@ -67,7 +67,7 @@ def _fake_conn(rows_by_fragment: dict):
 def test_bypass_flag_primary_signal_passes_verify(monkeypatch):
     """completed_via_bypass=1 on the task row → verified, git never called."""
     monkeypatch.setattr(
-        kanban, "_git_worktree_has_real_changes", lambda tid: (False, "")
+        kanban, "_git_worktree_has_real_changes", lambda tid, committed_only=False: (False, "")
     )
     conn = _fake_conn(
         {"completed_via_bypass FROM": _Row({"completed_via_bypass": 1})}
@@ -85,7 +85,7 @@ def test_bypass_flag_primary_signal_passes_verify(monkeypatch):
 def test_bypass_secondary_signal_passes_verify(monkeypatch):
     """kanban_verifications row with result='bypassed' → verified without task flag."""
     monkeypatch.setattr(
-        kanban, "_git_worktree_has_real_changes", lambda tid: (False, "")
+        kanban, "_git_worktree_has_real_changes", lambda tid, committed_only=False: (False, "")
     )
     conn = _fake_conn({
         "completed_via_bypass FROM": _Row({"completed_via_bypass": 0}),
@@ -109,7 +109,7 @@ def test_without_bypass_falls_through_to_normal_checks(monkeypatch):
     exemption.
     """
     monkeypatch.setattr(
-        kanban, "_git_worktree_has_real_changes", lambda tid: (False, "")
+        kanban, "_git_worktree_has_real_changes", lambda tid, committed_only=False: (False, "")
     )
     conn = _fake_conn(
         {"completed_via_bypass FROM": _Row({"completed_via_bypass": 0})}

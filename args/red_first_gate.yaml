@@ -429,6 +429,23 @@ exemptions:
       against a backend the router awaits to completion. Remove this exemption
       the moment this file is edited for anything but that determinism fix.
 
+  - pattern: "tests/kanban/test_external_repo_verification.py"
+    reason: >-
+      PURE ASSERTION REPAIR — NO PRODUCTION BEHAVIOUR CHANGED, so there is no
+      new RED for a pre-change tree to record (kpr-rvfy-04). The test asserted
+      on `seen[0]`, meaning "whichever git command ran first". Whether the first
+      call is the commit probe or a `git symbolic-ref` from `_task_base_branch`
+      depends on ICDEV_KANBAN_REPO_FT being exported in the AMBIENT environment:
+      with it set the test passed, with it unset (CI) it failed, and the
+      behaviour under test — the commit check running git in the TASK'S repo —
+      was identical and correct in both. The change makes the assertion find the
+      `git log` probe BY NAME, so it measures the code rather than the runner.
+      Verified by reproducing the CI condition locally: `env -u
+      ICDEV_KANBAN_REPO_FT` failed before the change and passes after, while the
+      merge-base tree passes either way — which is exactly why red-first
+      correctly reports it non-discriminating. Remove this exemption the moment
+      this file is edited for anything but that assertion repair.
+
   - pattern: "tests/test_aca_cert_evidence.py"
     reason: >-
       PURE TEST REPAIR — NO PRODUCTION BEHAVIOUR CHANGED, so nothing here can go

@@ -77,10 +77,16 @@ def test_the_commit_check_runs_git_in_the_tasks_repo(monkeypatch):
     ok, reason = K._git_worktree_has_real_changes("xft-vfy-01")
 
     assert seen, "the commit check ran no git command at all"
-    first = seen[0]
-    assert "git" in first["argv"][0]
-    assert first["cwd"].replace("\\", "/").lower().endswith("icdev_ft"), (
-        f"the commit check ran in {first['cwd']!r}. For an external task that is the ICDev "
+    # THE COMMIT-CHECK CALL BY NAME, not seen[0]. `_task_base_branch` may probe the
+    # local checkout with `git symbolic-ref` first, and whether it does depends on
+    # whether ICDEV_KANBAN_REPO_FT is set in the AMBIENT environment -- so asserting
+    # on "whichever git ran first" passed on a developer box with the var exported
+    # and failed on CI without it, while the behaviour under test was identical and
+    # correct in both. A test that reads os.environ measures the RUNNER, not the code.
+    probe = next((c for c in seen if c["argv"][:2] == ["git", "log"]), None)
+    assert probe is not None, f"no `git log` commit probe ran; got {[c['argv'] for c in seen]}"
+    assert probe["cwd"].replace("\\", "/").lower().endswith("icdev_ft"), (
+        f"the commit check ran in {probe['cwd']!r}. For an external task that is the ICDev "
         "checkout, where the task branch does not exist — the done-gate then asks ICDev "
         "whether the other repo's work landed, the answer is always no, and the task churns."
     )
