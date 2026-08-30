@@ -135,6 +135,77 @@ def _task_base_branch(task_id: str) -> str:
     return _default_branch()
 
 
+def _worktree_is_disposable(path, listed) -> tuple:
+    """May this directory be deleted to make room for a fresh worktree?
+
+    Returns ``(disposable, reason)``. The reason is returned either way so the
+    refusal is auditable rather than a silent skip.
+
+    THIS FUNCTION EXISTS BECAUSE THE OLD TEST WAS "git worktree list did not
+    mention it". Three sessions lost work in one night to that test
+    (2026-08-29, kpr-dup-10). A directory nothing in THIS repo claims is not
+    thereby empty, abandoned, or yours -- it is merely unexplained, and the
+    correct response to unexplained is to refuse.
+
+    The posture is deliberately asymmetric, and it is the same one
+    ``pr_watcher.reclaim_worktree`` takes: a wrongly-kept directory costs one
+    parked task that a human unsticks in a minute, while a wrongly-deleted one
+    costs work that no ordinary means recovers. So every branch that cannot
+    prove disposability returns False, INCLUDING every error path -- an
+    exception here must never fall through to "go ahead and delete".
+    """
+    import os
+
+    try:
+        if listed is not None and getattr(listed, "returncode", 1) != 0:
+            # The measured inversion: empty stdout contains no path, so without
+            # this check EVERY existing directory reads as an orphan -- and it
+            # does so exactly when git is already unhealthy.
+            return False, "git worktree list failed, so absence from it proves nothing"
+
+        entries = list(os.scandir(path))
+        if not entries:
+            return True, "empty directory"
+
+        # A `.git` entry means this IS a git worktree, registered against SOME
+        # repository -- just not the one asked. That is the external-repo task
+        # and the CLI-session cases, both of which are alive.
+        if any(e.name == ".git" for e in entries):
+            code, out = _quiet_git(["status", "--porcelain"], cwd=str(path))
+            if code != 0:
+                return False, "a git worktree whose status could not be read"
+            if out.strip():
+                return False, "a git worktree with uncommitted changes"
+            code, out = _quiet_git(["log", "--branches", "--not", "--remotes",
+                                    "--oneline"], cwd=str(path))
+            if code != 0:
+                return False, "a git worktree whose unpushed commits could not be counted"
+            if out.strip():
+                n = len([ln for ln in out.splitlines() if ln.strip()])
+                return False, f"a git worktree holding {n} commit(s) that are on no remote"
+            return True, "a clean git worktree with nothing unpushed"
+
+        # Content, but no .git. Could be a partial checkout whose .git was
+        # already taken by a half-finished delete -- which is precisely the
+        # state the old `ignore_errors=True` left behind, and precisely when
+        # the commits are least recoverable. Not ours to judge.
+        return False, f"{len(entries)} entries but no .git -- possibly a partial delete"
+    except Exception as exc:  # noqa: BLE001 -- unreadable is never disposable
+        return False, f"could not inspect the directory: {exc}"
+
+
+def _quiet_git(args, cwd):
+    """(returncode, stdout). Never raises; a failure is (1, "")."""
+    import subprocess as _sp2
+
+    try:
+        proc = _sp2.run(["git", *args], cwd=cwd, capture_output=True,
+                        text=True, encoding="utf-8", errors="replace", timeout=30)
+        return proc.returncode, (proc.stdout or "")
+    except Exception:  # noqa: BLE001
+        return 1, ""
+
+
 def _task_worktree_path(task_id: str) -> Path:
     """Where the task's worktree lives.
 
@@ -1123,9 +1194,49 @@ def _create_worktree(task_id: str) -> Optional[str]:
             ["git", "worktree", "list", "--porcelain"],
             cwd=str(_repo_root), capture_output=True, text=True, timeout=10,
         )
-        if str(worktree_path).replace("\\", "/") in listed.stdout.replace("\\", "/"):
+        if listed.returncode == 0 and str(worktree_path).replace("\\", "/") in (
+            listed.stdout or ""
+        ).replace("\\", "/"):
             return str(worktree_path)
-        logger.warning("Orphan worktree dir at %s — removing and recreating", worktree_path)
+
+        # NOT LISTED IS NOT THE SAME AS DISPOSABLE, and treating it as such cost
+        # three sessions their work in one night (2026-08-29, kpr-dup-10). The
+        # old code went straight from "git worktree list did not name this path"
+        # to `shutil.rmtree(..., ignore_errors=True)` over a directory that, in
+        # every one of those cases, held a live session's uncommitted edits.
+        #
+        # TWO WAYS THE OLD TEST SAID "ORPHAN" ABOUT A LIVE CHECKOUT:
+        #
+        #   * the substring test read `listed.stdout` WITHOUT checking
+        #     `returncode`. A git that fails, times out at 10s, or is run
+        #     against a repo mid-operation returns empty stdout -- and an empty
+        #     haystack contains no path, so EVERY existing directory reads as an
+        #     orphan. The failure mode is not "one path misjudged"; it is the
+        #     predicate inverting wholesale, precisely when the machine is
+        #     already unhealthy.
+        #
+        #   * `_repo_root` is THIS task's repo. A worktree registered against a
+        #     different repository (an external-repo task, or a CLI session's
+        #     own checkout that happens to land on the same path) is correctly
+        #     absent from this list while being entirely alive.
+        #
+        # `ignore_errors=True` then made it worse in a way that is easy to miss:
+        # a partial delete on Windows takes `.git` and leaves the tree, so the
+        # work is not merely deleted, it is deleted AND unrecoverable by
+        # ordinary means, because the commits are no longer reachable from any
+        # branch.
+        #
+        # The rule is the one `pr_watcher.reclaim_worktree` already follows:
+        # PROVE the directory is disposable, and REFUSE when you cannot tell.
+        disposable, why = _worktree_is_disposable(worktree_path, listed)
+        if not disposable:
+            logger.warning(
+                "Refusing to remove %s: %s. Dispatching into it would race a live "
+                "session, so this task is left for a human.", worktree_path, why,
+            )
+            return None
+        logger.warning("Orphan worktree dir at %s (%s) — removing and recreating",
+                       worktree_path, why)
         import shutil
         shutil.rmtree(worktree_path, ignore_errors=True)
         _sp.run(["git", "worktree", "prune"], cwd=str(_repo_root),
@@ -1948,6 +2059,21 @@ def _remove_worktree(path) -> bool:
             # would put phantom entries back into the sweep count.
             logger.warning(
                 "Sweep: %s is neither a worktree nor a directory — nothing to remove", path,
+            )
+            return False
+        # THE SAME DEFECT, SECOND FACE (kpr-dup-10). git's verdict here is
+        # stronger than dispatch's was -- it explicitly said "is not a working
+        # tree" rather than merely omitting the path from a list -- but it is
+        # still a claim about REGISTRATION, not about CONTENT. The state that
+        # produces this stderr includes the partial delete that already took
+        # `.git` and left the tree, which is exactly when the commits inside are
+        # least recoverable. A fixture-based test on the dispatch site would not
+        # have caught this one, so it is repaired with the same predicate rather
+        # than a second opinion.
+        disposable, why = _worktree_is_disposable(Path(path), None)
+        if not disposable:
+            logger.warning(
+                "Sweep: refusing to remove %s: %s. Left for a human.", path, why,
             )
             return False
         _shutil.rmtree(str(path), ignore_errors=True)
