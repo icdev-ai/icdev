@@ -76,12 +76,104 @@ def _remote_ref(branch: str) -> str:
     return f"origin/{branch}"
 
 
+#: Distinguishes "the caller said nothing" from "the caller explicitly passed
+#: None/the default". A falsy check cannot: `base=""` and `base="main"` are both
+#: things a caller may legitimately mean, and silently overriding either would
+#: make this function ignore its own arguments.
+_UNSET = object()
+
+
+def resolve_repo_context(task_id: str, repo_root, base):
+    """(repo_root, base, unmeasurable_reason) for a task, from the repo registry.
+
+    THE DEFECT THIS EXISTS FOR. `reverify` accepted `repo_root` and `base` as
+    optional arguments and NOTHING ever resolved them from the task, so both
+    fell back to the ICDEV[IT] checkout and its default base. An
+    EXTERNAL-repo task's branch lives on a different origin, so the lookup
+    always missed and the verdict was always `failed`.
+
+    MEASURED 2026-08-30 on ftp-prd-13 -- an icdev_ft task whose PR was open,
+    green, mergeable, and passing 7 of the 8 merge gates:
+
+        branch origin/kanban/ftp-prd-13 not found on origin (deleted after
+        merge, or never pushed) - cannot verify from git
+
+    The branch existed. It was on icdev_ft's origin, and this door looked at
+    icdev's. `repo_registry.resolve_task_repo` already returned the right
+    answer; nothing asked it.
+
+    THE CONSEQUENCE WAS NOT A BAD MESSAGE. An external task could never satisfy
+    the enforced done-gate through the sanctioned door, so it could only be
+    completed by `--force-done` or by one of the weaker paths kpr-rvfy-04
+    measured producing phantom `done`s -- the gate pushed work toward exactly
+    the routes it exists to replace.
+
+    DEGRADES, NEVER RAISES. A machine with no external repos configured, an
+    unreadable registry, or an unknown prefix all return today's behaviour.
+    """
+    reason = None
+    try:
+        from tools.kanban.repo_registry import resolve_task_repo
+
+        target = resolve_task_repo(task_id)
+    except Exception as exc:  # noqa: BLE001 -- no registry is not an error here
+        logger.debug("reverify: repo registry unavailable for %s (%s)", task_id, exc)
+        return (None if repo_root is _UNSET else repo_root,
+                DEFAULT_BASE if base is _UNSET else base, None)
+
+    if repo_root is _UNSET:
+        root = getattr(target, "root", None)
+        # TRUTHINESS, not `is not None`. A target carrying an empty root would
+        # pass an `is not None` check and become `cwd=""`, which is not the
+        # ambient checkout -- it is an invalid working directory that turns a
+        # clean degrade into a subprocess error. Caught by the parametrized
+        # test, not by review.
+        if root and getattr(target, "is_external", False):
+            # A ROOT THAT IS NOT ON THIS MACHINE IS UNMEASURABLE, NOT FAILED.
+            # Writing `failed` because a checkout is absent would append a
+            # verdict about the WORK on the strength of a fact about the HOST --
+            # the same category error, one layer down, that this fix removes.
+            if not _root_exists(root):
+                reason = (
+                    f"{getattr(target, 'name', 'external repo')} checkout is not present "
+                    f"at {root} on this machine - cannot verify from git"
+                )
+            repo_root = str(root)
+        else:
+            repo_root = None
+
+    if base is _UNSET:
+        # `origin/` PREFIXED, because DEFAULT_BASE is "origin/main" and the
+        # registry's `base_branch` is the bare "main". Taking it raw looks
+        # right and silently compares against a LOCAL branch that nothing in
+        # this process fetches -- measured 2026-08-30, C:/ai/icdev_ft's local
+        # `main` was 14 commits behind origin, which turned ftp-prd-13's 4
+        # commits into 18 and its 6 files into 52. The verdict happened to
+        # stay `passed`, which is exactly why this would have shipped: the
+        # answer is right and the evidence attached to it is wrong, and the
+        # evidence is what a human reads out of kanban_verifications later.
+        bb = getattr(target, "base_branch", None) or "main"
+        base = bb if "/" in bb else f"origin/{bb}"
+
+    return repo_root, base, reason
+
+
+def _root_exists(root) -> bool:
+    """Never raises; an unreadable path is 'not there' for our purposes."""
+    try:
+        from pathlib import Path
+
+        return Path(str(root)).is_dir()
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def compute_verification(
     task_id: str,
     *,
     task_row: Optional[dict] = None,
-    base: str = DEFAULT_BASE,
-    repo_root: Optional[str] = None,
+    base=_UNSET,
+    repo_root=_UNSET,
     runner: Optional[Callable] = None,
     fetch: bool = True,
 ) -> Dict[str, object]:
@@ -90,11 +182,21 @@ def compute_verification(
     ``{result, reason, branch, files_changed, commits}`` where ``result`` is
     ``passed`` or ``failed`` — the same vocabulary `_enforced_done_ok` reads.
     """
+    repo_root, base, unmeasurable = resolve_repo_context(task_id, repo_root, base)
     branch = resolve_branch(task_id, task_row)
     ref = _remote_ref(branch)
     verdict: Dict[str, object] = {
         "task_id": task_id, "branch": branch, "files_changed": 0, "commits": 0,
     }
+
+    if unmeasurable:
+        # NOT `failed`. `failed` is a claim about the WORK; this is a fact about
+        # the HOST. `_enforced_done_ok` reads the latest row's `result`, so a
+        # `failed` written here would block a merge on the strength of a missing
+        # checkout -- and it would be written to an APPEND-ONLY table, where a
+        # wrong verdict cannot be corrected, only outvoted by a later one.
+        verdict.update(result="unmeasurable", reason=unmeasurable)
+        return verdict
 
     if fetch:
         # Best-effort: a stale ref would produce a confidently wrong verdict,
@@ -173,8 +275,8 @@ def reverify(
     task_id: str,
     get_connection,
     *,
-    base: str = DEFAULT_BASE,
-    repo_root: Optional[str] = None,
+    base=_UNSET,
+    repo_root=_UNSET,
     runner: Optional[Callable] = None,
     fetch: bool = True,
     dry_run: bool = False,
@@ -200,6 +302,13 @@ def reverify(
         )
         verdict["written"] = False
         if dry_run:
+            return verdict
+        if verdict.get("result") == "unmeasurable":
+            # kanban_verifications is append-only and `_enforced_done_ok` reads
+            # only the LATEST row, so a row written here would stand as the
+            # task's verdict until something else overwrote it. "I could not
+            # look" is not a verdict; it is the absence of one, and the honest
+            # record of it is no row at all.
             return verdict
 
         now = datetime.now(timezone.utc).isoformat()
