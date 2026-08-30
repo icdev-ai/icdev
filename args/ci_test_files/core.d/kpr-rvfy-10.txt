@@ -1,0 +1,1 @@
+tests/kanban/test_build_mode_one_location.py

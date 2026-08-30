@@ -47,11 +47,47 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
-_ROOT = Path(__file__).resolve().parents[2]
+def _main_checkout() -> Path:
+    """The MAIN checkout, even when this module is imported from a worktree.
+
+    `Path(__file__).parents[2]` is a self-root (xit-decl-03): it answers "which
+    copy of this file am I", and in a git WORKTREE that is the worktree, not the
+    repository the scheduler runs in. Manual Build is one GLOBAL state -- the
+    scheduler either dispatches or it does not -- so a worktree asking must get
+    the same answer as the main checkout, or the flag means nothing.
+
+    MEASURED 2026-08-30: `--build-mode status` reported MANUAL from C:/AI/ICDev
+    and AUTOMATIC from a worktree of it, in the same minute, with dispatch
+    genuinely paused. An operator standing in a worktree is told the runner is
+    live when it is not -- and, worse, `--build-mode manual` there writes a flag
+    the scheduler will never read, so the pause silently does nothing.
+
+    `git --git-common-dir` is the canonical answer: for a worktree it returns the
+    MAIN repository's .git, for a normal checkout its own. Falling back to the
+    self-root keeps this working with no git at all (a source tarball, a
+    container without the binary), which is the same posture the rest of the
+    module takes: never raise, prefer the answer that keeps the scheduler
+    running.
+    """
+    here = Path(__file__).resolve().parents[2]
+    try:
+        r = subprocess.run(
+            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            cwd=str(here), capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            return Path(r.stdout.strip()).resolve().parent
+    except Exception:  # noqa: BLE001 -- no git, or not a repo: the self-root still works
+        pass
+    return here
+
+
+_ROOT = _main_checkout()
 _FLAG = Path(
     os.environ.get("KANBAN_BUILD_MODE_FLAG", str(_ROOT / "data" / "kanban_manual_build.json"))
 )
