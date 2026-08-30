@@ -9254,3 +9254,131 @@ projects:
   - key: ezb
     title: EZB - the easy button; cross-OS setup, doctor, docs, layman UI
     priority: high
+- key: rt
+  name: ICDEV[RT] - Retirement & Insurance Planning Parent
+  description: 'The THIRD parent of the ICDEV family, alongside ICDEV[IT] (this
+    repo, public) and ICDEV[FT] (private, trading). Builds in icdev-ai/icdev_rt,
+    NOT here: registered in args/kanban_external_repos.yaml as repo icdev_rt
+    behind ICDEV_KANBAN_REPO_RT. It exists to own what a Boldin PlannerPlus
+    subscription rents -- a ledger, a decades-long deterministic projection, a
+    real federal tax model, Monte Carlo, and multi-year Roth conversion
+    optimisation -- plus an IUL policy engine no consumer planner offers.
+
+    SCOPE BOUNDARY. The parent MECHANICS are cheap and largely already paid for:
+    building ICDEV[FT] is what produced icdev-core, so the kernel a third parent
+    needs exists and is pinned at v0.2.0. What does NOT exist anywhere in this
+    tree is the domain math. Measured 2026-08-30: no tax code of any kind (every
+    `tax` hit under tools/ is `taxonomy`), no multi-decade time-stepped
+    projection loop, no inflation modelling, no return distribution other than
+    PERT, no IRR, no amortisation, nothing actuarial. Roughly 80% of this card
+    is greenfield financial engineering.
+
+    THE ONE RULE THIS PARENT ADDS. No projection, tax or policy verdict is ever
+    produced by a model. LLMs explain what the engines computed; a number a
+    surface shows must be re-derivable from the ledger that produced it.
+
+    ICDEV[FT] INTEGRATION IS READ-MOSTLY. RT reads positions, tax lots and
+    realized gains over loopback and PROPOSES withdrawal-schedule and risk
+    constraints. It holds no broker credential and calls no order endpoint --
+    every order still passes FT''s own assert_may_trade, kill switch and step-up
+    chain. FT trades an Alpaca PAPER account, so its equity is modelled money:
+    it is labelled as such and never summed into net worth.'
+  task_prefix: rt-
+  default_open: true
+  briefs:
+  - 'GATE (rt-gate-00): the manual-mode hold. Held in_progress so
+    promote_backlog_to_scheduled never dispatches a card whose repo env var may
+    be unset. Every rt- task carries depends_on_task_id pointing at it -- a gate
+    holds ONLY tasks that depend on it, and a seed claim does not stop dispatch.'
+  - 'BOOT (rt-boot-01..08): the parent itself. Declaration, PG role + database,
+    setup_rt.py / launch_rt.py / supervise_rt.py, doctor, CI with the full gate
+    set, API shell, UI shell. Landed 2026-08-30: the repo exists, declares
+    key=rt / prefix=RET / database=icdev_rt / port 5300, and CI is green on its
+    own self-hosted runner (label rt-local).'
+  - 'LDGR (rt-ldgr-01..06): households, people, accounts (taxable, trad
+    IRA/401k, Roth, HSA, 529, cash, real estate, business, annuity, policy),
+    holdings with tax lots, income streams, expense categories, debts.'
+  - 'TAX (rt-tax-01..10): federal ordinary brackets, standard/itemised
+    deduction, LTCG + qualified dividends, NIIT, provisional income into Social
+    Security taxability, IRMAA with its 2-year lookback, RMD (Uniform Lifetime +
+    Joint Life), 72(t) penalties, and the ACA premium-tax-credit cliff -- the
+    dominant constraint for a pre-65 retiree and a common blind spot. Rates live
+    in args/tax_tables/<year>.yaml as DATA, so a new tax year is a YAML file.
+    Cross-validated against tenforty and PSL Tax-Calculator as test oracles, and
+    against filed returns where they exist. A disagreement is a finding, never a
+    tolerance to widen.'
+  - 'PROJ (rt-proj-01..06): the deterministic year-by-year walk to age 100+, the
+    thing that does not exist anywhere in this repo. Income, Social Security,
+    RMDs, per-category inflation, withdrawal ordering, taxes, surplus, growth.
+    Reconciled line-by-line against a Boldin export; differences explained, not
+    averaged away.'
+  - 'MC (rt-mc-01..05): four selectable return models -- historical single-year
+    bootstrap, BLOCK bootstrap (preserves the sequence-of-returns
+    autocorrelation that actually kills retirements), parametric multivariate
+    normal/t, and regime-switching fed by ICDEV[FT]. Reuses the stdlib-only
+    correlated-draw kernel in tools/simulation/monte_carlo.py (Cholesky,
+    Box-Muller, normal CDF) and discards the rest of that module, which is
+    hard-wired to schedule/cost/risk and reads its inputs from safe_decomposition
+    by SQL. success_probability is None -- never 100.0 -- over an unrun
+    denominator (args/perfect_score_gate.yaml is ratcheted to 0).'
+  - 'ROTH (rt-roth-01..05): multi-year conversion schedule search. Objective is
+    joint lifetime tax and terminal after-tax wealth, constrained by bracket
+    fill, IRMAA tier edges and the ACA cliff. Boldin''s headline feature, and the
+    first place this should beat it -- it can optimise against measured paths
+    rather than one average one.'
+  - 'DRAW (rt-draw-01..04): withdrawal ordering, Guyton-Klinger guardrails,
+    fixed-percent, VPW, floor-and-upside.'
+  - 'IUL (rt-iul-01..09): a MONTHLY policy ledger, which is why it cannot ride
+    the annual projection loop. Premium loads, COI on net amount at risk, per-
+    policy and per-unit charges, index crediting by segment (annual
+    point-to-point / monthly sum / monthly average; cap, participation rate,
+    floor, spread, multiplier), policy loans incl. participating/wash with a
+    lapse test, surrender charges, 7702 GPT/CVAT corridor and 7702A 7-pay MEC.
+    A plan that inadvertently MECs a policy has silently destroyed the entire
+    tax argument for owning it. Outputs feed PROJ as tax-free income and TAX as
+    income that does NOT raise provisional income or IRMAA.'
+  - 'ILLUS (rt-illus-01..05): carrier illustration ingestion and the honest
+    re-run. Lifts the year-by-year ledger with the 4-pass PDF cascade already in
+    tools/document_intelligence, back-solves implied charges, and shows three
+    columns: as illustrated, our model on the SAME assumptions, our model under
+    stress. Column two is a HARD GATE on column three -- if the carrier''s own
+    ledger cannot be reproduced from its own assumptions the charges are wrong,
+    and the stress number is not credible.'
+  - 'DATA (rt-data-01..08): four intake adapters behind one AccountSnapshot
+    interface -- Boldin spreadsheet export (recording which of
+    optimistic/average/pessimistic basis it read), SimpleFIN Bridge (chosen over
+    Plaid: read-only, individual-friendly, no business onboarding), statement
+    PDFs through the grounded DIC extractor, and direct broker APIs THROUGH
+    ICDEV[FT] rather than rebuilt -- FT already has nine broker adapters and a
+    credential vault, so RT never holds a broker credential.'
+  - 'FTX (rt-ftx-01..06): the ICDEV[FT] seam, over loopback against FT''s
+    committed OpenAPI contract so a contract change breaks RT''s build rather
+    than its runtime. Needs one FT-side card first: FT has no account/cash table
+    and no GET /api/v1/account -- equity exists only as AlpacaBroker
+    .account_equity() inside the auto-trade policy, exposed nowhere. An AST test
+    proves RT calls no order endpoint and imports no broker adapter.'
+  - 'UI (rt-ui-01..10): FastAPI + React SPA on port 5300, cloned from FT''s
+    stack. Home, Accounts, Cash Flow, Projection, Monte Carlo, Taxes, Roth
+    Explorer, Policies, Scenarios, Settings.'
+  - 'UX (rt-ux-01..03): information architecture and the four key screens
+    reviewed BEFORE ui/ is scaffolded, the xft-ux-01 precedent.'
+  - 'VV (rt-vv-01..05): the acceptance evidence. Projection reconciled against
+    Boldin, Monte Carlo reproducing known sequence-of-returns results (a 1966
+    retiree fails where a 1982 retiree does not), the IUL ledger reproducing a
+    real illustration, and the paper-equity-never-summed assertion.'
+  epics:
+  - {key: gate, title: GATE, priority: critical}
+  - {key: boot, title: PARENT BOOTSTRAP, priority: critical}
+  - {key: ldgr, title: LEDGER, priority: critical}
+  - {key: tax, title: TAX ENGINE, priority: critical}
+  - {key: proj, title: PROJECTION ENGINE, priority: critical}
+  - {key: mc, title: MONTE CARLO, priority: high}
+  - {key: roth, title: ROTH CONVERSION OPTIMIZER, priority: high}
+  - {key: draw, title: WITHDRAWAL STRATEGY, priority: high}
+  - {key: iul, title: IUL POLICY ENGINE, priority: high}
+  - {key: illus, title: ILLUSTRATION INGESTION, priority: high}
+  - {key: data, title: DATA INTAKE, priority: high}
+  - {key: ftx, title: 'ICDEV[FT] INTEGRATION', priority: medium}
+  - {key: ui, title: UI, priority: medium}
+  - {key: ux, title: UX DESIGN, priority: medium}
+  - {key: vv, title: VERIFICATION, priority: high}
