@@ -121,6 +121,31 @@ run:
 # while the set churns, which is exactly how a gap regrows behind a green gate
 # (see args/ci_test_backlog.txt, which is enumerated for the same reason).
 exemptions:
+  - pattern: "tests/test_cost_budget_downgrade.py"
+    reason: >-
+      THE TEST WAS THE DEFECT AND THE CODE IT GUARDS WAS ALWAYS CORRECT, so
+      there is no production change for a red-first proof to discriminate
+      against. `test_period_start_survives_both_timestamp_spellings` compared
+      the LITERALS '2026-08-01 10:00:00' and '2026-07-31 23:59:59' against
+      `cost_budget.period_start("monthly")`, which is THIS month's start. The
+      assertion held for the whole of August and inverted at midnight on
+      2026-09-01 -- `assert '2026-08-01 10:00:00' >= '2026-09-01'` -- taking
+      Test, Test (Windows), Test (PostgreSQL) and Test Shard 3 of 4 red on
+      every open PR in the repository, none of which touched the file.
+      `period_start` itself never changed and is not changed here.
+      THE RED IS RECORDED, and by something stronger than a synthetic
+      merge-base run: it is failing on `main` RIGHT NOW. `python -m pytest
+      tests/test_cost_budget_downgrade.py -k period_start` reproduces it on any
+      checkout, on any day that is not in August 2026, and the four red jobs on
+      unrelated PRs are its live history.
+      Narrowing the assertion's input -- the usual repair when a test fails to
+      discriminate -- is exactly what the fix DOES: both samples are now derived
+      from the boundary rather than pinned to a month, so the property under
+      test (a space-separated timestamp and a full-ISO one both sort correctly
+      against a 10-character date prefix, because ' ' sorts below 'T') is
+      asserted without also asserting which month it is. A repaired test that
+      asserts the same always-correct behaviour necessarily passes against the
+      merge base, which is precisely what the gate reports.
   - pattern: "tests/test_aca_xp_ledger.py"
     reason: >-
       THE TEST WAS THE DEFECT, AND THE CODE IT GUARDS WAS ALWAYS CORRECT
