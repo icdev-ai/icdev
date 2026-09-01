@@ -358,6 +358,33 @@ def _prev_module_import_status(conn: Any, node_id: str) -> str:
         return "pass"
 
 
+def _read_source_for_parse(path: Path) -> str:
+    """Read a source file the way PYTHON'S IMPORT MACHINERY reads it.
+
+    `utf-8-sig`, NOT `utf-8`, and the difference is a three-month bug. Plain
+    utf-8 leaves a leading BYTE ORDER MARK in the string as U+FEFF, and
+    `ast.parse` rejects it with "invalid non-printable character U+FEFF ...
+    line 1". Python's own importer tolerates a leading BOM, so every one of
+    those files imports perfectly from a shell -- and this probe, whose stated
+    job is to be the cheap version of `python -c "import <module>"`, reported
+    them broken on every run since 2026-06-14.
+
+    Four files in this tree carry one, and all four import: the two network
+    predictors, the supply-chain risk tool and the SkillHub connector. The
+    2-probe confirmation rule could not help, because it filters TRANSIENT
+    failures and this one is perfectly reproducible -- so it confirmed to
+    `fail` every time and kept filing kanban cards.
+
+    `utf-8-sig` strips ONLY a leading mark. A U+FEFF in the body is a real
+    defect -- what a bad editor write leaves behind -- and the import system
+    rejects that too, so this must keep surfacing it.
+
+    `errors="replace"` is kept deliberately: a sweep over 842 files must not
+    die on one unreadable byte.
+    """
+    return path.read_text(encoding="utf-8-sig", errors="replace")
+
+
 def _probe_module_import(
     conn: Any,
     run_id: str,
@@ -412,7 +439,7 @@ def _probe_module_import(
             continue
         detail = {"file_path": file_path}
         try:
-            source = abs_path.read_text(encoding="utf-8", errors="replace")
+            source = _read_source_for_parse(abs_path)
             ast.parse(source, filename=str(abs_path))
             status = "pass"
             detail["ast_ok"] = True
