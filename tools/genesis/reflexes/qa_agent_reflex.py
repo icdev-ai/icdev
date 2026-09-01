@@ -24,6 +24,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.kanban.lane_conflicts import TERMINAL_STATUSES  # noqa: E402
 from tools.kanban.task_factory import create_tasks  # noqa: E402
 from tools.logging.icdev_logger import get_logger  # noqa: E402
 
@@ -71,14 +72,33 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+#: Pending is "NOT TERMINAL", never a list of the live states.
+#:
+#: All three predicates below enumerated `('backlog', 'in_progress')` and
+#: omitted `scheduled` -- where a task sits within minutes of being seeded,
+#: because the scheduler promotes it there. From that moment the guard sees
+#: nothing pending and the next cycle seeds a duplicate. The e2e_runner reflex
+#: proved it on the live board (two byte-identical tasks a day apart); these
+#: three are the same code with the same hole, found by grepping for the shape
+#: rather than waiting for each one to demonstrate itself.
+#:
+#: `validating` is ALREADY a status on this board and no version of the
+#: enumeration mentioned it, which is the argument for inverting rather than
+#: extending: an unknown status now reads as pending, and a false pending
+#: costs one skipped cycle where a false absence costs a duplicate somebody
+#: has to reconcile.
+_OPEN = f"status NOT IN ({', '.join(['%s'] * len(TERMINAL_STATUSES))})"
+
+
 def _pending_sweep_exists(conn) -> bool:
     row = conn.execute(
-        """
+        f"""
         SELECT id FROM kanban_tasks
-        WHERE title LIKE '%Full E2E Suite Sweep%'
-          AND status IN ('backlog', 'in_progress')
+        WHERE title LIKE '%%Full E2E Suite Sweep%%'
+          AND {_OPEN}
         LIMIT 1
-        """
+        """,                                     # nosec B608 -- fixed set
+        tuple(TERMINAL_STATUSES),
     ).fetchone()
     return row is not None
 
@@ -108,13 +128,13 @@ def _last_sweep_completed_at(conn) -> datetime | None:
 def _pending_gap_task_exists(conn, canvas_key: str) -> bool:
     title_fragment = f"[QA-GAP] {canvas_key}"
     row = conn.execute(
-        """
+        f"""
         SELECT id FROM kanban_tasks
         WHERE title LIKE %s
-          AND status IN ('backlog', 'in_progress')
+          AND {_OPEN}
         LIMIT 1
-        """,
-        (f"%{title_fragment}%",),
+        """,                                     # nosec B608 -- fixed set
+        (f"%{title_fragment}%", *TERMINAL_STATUSES),
     ).fetchone()
     return row is not None
 
@@ -122,13 +142,13 @@ def _pending_gap_task_exists(conn, canvas_key: str) -> bool:
 def _pending_smoke_bug_exists(conn, route: str) -> bool:
     fragment = f"{_SMOKE_TASK_TITLE_PREFIX} {route}"
     row = conn.execute(
-        """
+        f"""
         SELECT id FROM kanban_tasks
         WHERE title LIKE %s
-          AND status IN ('backlog', 'in_progress')
+          AND {_OPEN}
         LIMIT 1
-        """,
-        (f"%{fragment}%",),
+        """,                                     # nosec B608 -- fixed set
+        (f"%{fragment}%", *TERMINAL_STATUSES),
     ).fetchone()
     return row is not None
 

@@ -103,3 +103,34 @@ def test_an_UNKNOWN_status_reads_as_pending_which_is_the_safe_direction():
     """The cost of a false pending is one skipped cycle; the cost of a false
     absence is a duplicate a human has to reconcile."""
     assert _pending_run_exists(Conn(["some_status_nobody_has_added_yet"])) is True
+
+
+# --------------------------------------------------------------------------- #
+# the same hole in the QA reflex -- found by grepping for the shape
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("predicate", [
+    "_pending_sweep_exists", "_pending_gap_task_exists",
+    "_pending_smoke_bug_exists",
+])
+def test_the_qa_reflex_predicates_also_exclude_terminal(predicate):
+    """Three copies of the same guard, all enumerating the live states.
+
+    The e2e_runner reflex demonstrated the defect on the live board; these were
+    found by grepping for the SHAPE rather than waiting for each one to seed its
+    own duplicate. Fixing one instance of a repeated bug is half a fix.
+    """
+    import inspect
+
+    from tools.genesis.reflexes import qa_agent_reflex as qa
+
+    src = inspect.getsource(getattr(qa, predicate))
+    assert "_OPEN" in src, f"{predicate} does not use the shared open-status filter"
+    assert "'backlog'" not in src and "'in_progress'" not in src, (
+        f"{predicate} still enumerates live states")
+
+
+def test_the_qa_reflex_open_filter_excludes_exactly_the_terminal_set():
+    from tools.genesis.reflexes.qa_agent_reflex import _OPEN
+
+    assert "NOT IN" in _OPEN
+    assert _OPEN.count("%s") == len(TERMINAL_STATUSES)
