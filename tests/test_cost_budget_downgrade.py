@@ -11,6 +11,7 @@ The four acceptance criteria, one class each:
 from __future__ import annotations
 
 import ast
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
@@ -375,9 +376,44 @@ class TestRouterConsumesTheGate:
 
         A full-ISO boundary drops every space-separated row on day one, because
         ' ' sorts below 'T'. The boundary is a 10-char date prefix for that reason.
+
+        THE SAMPLES ARE DERIVED FROM THE BOUNDARY, never hardcoded to a month.
+        They used to read '2026-08-01...' against `period_start("monthly")`,
+        which is THIS month's -- so the whole assertion inverted at midnight on
+        2026-09-01 and failed every PR in the repository until somebody looked.
+        The property under test is about STRING ORDERING and has nothing to do
+        with which month it is; pinning a month tested the calendar instead.
         """
         boundary = cb.period_start("monthly")
         assert len(boundary) == 10 and boundary.endswith("-01")
-        assert "2026-08-01 10:00:00" >= boundary
-        assert "2026-08-01T10:00:00+00:00" >= boundary
-        assert not ("2026-07-31 23:59:59" >= boundary)
+
+        # The first instant OF the period, in both spellings this table holds.
+        assert f"{boundary} 10:00:00" >= boundary
+        assert f"{boundary}T10:00:00+00:00" >= boundary
+
+        # And the instant BEFORE it, which must fall outside.
+        previous = (date.fromisoformat(boundary) - timedelta(days=1)).isoformat()
+        assert not (f"{previous} 23:59:59" >= boundary)
+        assert not (f"{previous}T23:59:59+00:00" >= boundary)
+
+    @pytest.mark.parametrize("boundary", [
+        "2026-01-01",   # the YEAR boundary: the previous day is in 2025, which
+                        # a naive "subtract one from the day number" gets wrong
+        "2026-03-01",   # the day after February, in a non-leap year
+        "2024-03-01",   # and in a LEAP year, where the previous day is the 29th
+        "2026-09-01",   # the boundary that broke the original test
+        "2026-12-01",
+    ])
+    def test_the_ordering_property_holds_at_every_boundary(self, boundary):
+        """The property is about STRING ORDERING and holds in every month.
+
+        Pinning one month tested the calendar instead, which is why the
+        original inverted at midnight on 2026-09-01. These are the boundaries
+        an off-by-one would get wrong -- January, both flavours of March, and
+        December.
+        """
+        previous = (date.fromisoformat(boundary) - timedelta(days=1)).isoformat()
+        assert f"{boundary} 00:00:00" >= boundary
+        assert f"{boundary}T00:00:00+00:00" >= boundary
+        assert not (f"{previous} 23:59:59" >= boundary)
+        assert not (f"{previous}T23:59:59+00:00" >= boundary)
