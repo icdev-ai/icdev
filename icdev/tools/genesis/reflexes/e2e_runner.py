@@ -21,6 +21,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.kanban.lane_conflicts import TERMINAL_STATUSES  # noqa: E402
 from tools.kanban.task_factory import create_tasks  # noqa: E402
 from tools.logging.icdev_logger import get_logger  # noqa: E402
 
@@ -75,14 +76,33 @@ def _utcnow() -> datetime:
 
 
 def _pending_run_exists(conn) -> bool:
-    """Return True if a runner task is already backlog or in_progress."""
+    """True when a runner task is still OPEN -- in any non-terminal state.
+
+    ENUMERATING THE LIVE STATES IS WHAT BROKE. This asked for
+    ``status IN ('backlog', 'in_progress')`` and omitted `scheduled`, which is
+    where a task spends most of its life: the scheduler promotes it out of
+    backlog within minutes, the guard then sees nothing pending, and the next
+    cycle seeds another. MEASURED on the live board 2026-08-31 --
+    `task-e2e-393aebca` (seeded 08-30) sat in `scheduled` while
+    `task-e2e-324a69a9` was seeded on 08-31 with a BYTE-IDENTICAL description.
+    25 earlier runs never doubled only because each happened to complete
+    before the next cycle.
+
+    So the predicate is INVERTED: pending is "not terminal". A live state this
+    function has never heard of -- `validating` is already on this board --
+    then counts as pending by default, which is the safe direction: the cost
+    of a false pending is one skipped cycle, and the cost of a false absence
+    is a duplicate that a human has to reconcile.
+    """
+    placeholders = ", ".join(["%s"] * len(TERMINAL_STATUSES))
     row = conn.execute(
-        """
+        f"""
         SELECT id FROM kanban_tasks
-        WHERE title LIKE '%Playwright E2E Suite%'
-          AND status IN ('backlog', 'in_progress')
+        WHERE title LIKE '%%Playwright E2E Suite%%'
+          AND status NOT IN ({placeholders})
         LIMIT 1
-        """,
+        """,                                     # nosec B608 -- fixed set
+        tuple(TERMINAL_STATUSES),
     ).fetchone()
     return row is not None
 

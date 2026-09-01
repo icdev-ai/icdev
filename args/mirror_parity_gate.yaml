@@ -62,7 +62,7 @@ extensions:
 # two names resolve to the SAME module object, so there is no stale half — and
 # "fixing" one by copying the body back would recreate the separate stale copy
 # it was written to delete. The ceiling comes down to match; never raise it.
-budget: 14
+budget: 13
 
 # Not counted, with the reason. A gate that fires on a difference which is
 # correct gets switched off, so exclusions are declared rather than discovered.
