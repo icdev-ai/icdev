@@ -17,3 +17,4 @@
 | NIST 800-207 Assessor | tools/compliance/nist_800_207_assessor.py | NIST SP 800-207 ZTA compliance assessment (BaseAssessor pattern) | --project-id, --gate, --json | Assessment + gate |
 | MCP DevSecOps Server | tools/mcp/devsecops_server.py | MCP server for DevSecOps/ZTA tools (12 tools) | stdio | JSON-RPC responses |
 
+| Canonical Asset Identity | tools/assets/identity.py | ONE asset identity across the three ZT/asset stacks (7-pillar ZTA on project_id, NSA ZIG on sha256(hostname), NDC/PVM on ni_devices.id); resolvers, ingest, and the device -> ZT decision -> attack surface -> enclave join | --ingest, --list, --posture <asset>, --fleet, --stats, --json | asset_identity rows + joined posture |

@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from tools.security_canvas.db.init_db import get_connection
+from tools.assets.identity import zig_device_id
 
 # ---------------------------------------------------------------------------
 # Supported MDM/UEM platforms
@@ -89,7 +90,7 @@ def enroll_device(hostname: str, os_platform: str = "windows",
     """
     now = datetime.now(timezone.utc).isoformat()
     if not device_id:
-        device_id = hashlib.sha256(hostname.encode()).hexdigest()[:16]
+        device_id = zig_device_id(hostname)
 
     profile = generate_enrollment_profile(os_platform, mdm_platform)
 

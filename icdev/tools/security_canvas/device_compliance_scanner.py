@@ -11,13 +11,13 @@ ZIG Activity: zig-act-p1-09 (Deploy automated device compliance scanning)
 """
 from __future__ import annotations
 
-import hashlib
 from datetime import datetime, timezone
 from typing import Any
 
 from tools.security_canvas.db.init_db import get_connection
 from tools.security.device_trust import verify_device_posture, DeviceTrustResult
 from tools.security.stub_gate import stub_allowed
+from tools.assets.identity import zig_device_id
 
 # ---------------------------------------------------------------------------
 # Compliance baseline definitions
@@ -84,7 +84,11 @@ def _ensure_tables(conn) -> None:
 
 
 def _device_fingerprint(hostname: str) -> str:
-    return hashlib.sha256(hostname.encode()).hexdigest()[:16]
+    # rmf-ident-01: ONE definition of the ZIG fingerprint rule. This name is
+    # kept because callers and tests import it; the rule itself lives in
+    # tools/assets/identity.py, which is what asset_identity.zig_device_id
+    # resolves onto. A second copy here could drift from the key it claims.
+    return zig_device_id(hostname)
 
 
 def scan_device(hostname: str, os_platform: str = "linux",

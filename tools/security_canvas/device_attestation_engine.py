@@ -18,6 +18,7 @@ from typing import Any
 
 from tools.security_canvas.db.init_db import get_connection
 from tools.security.device_trust import verify_device_posture, DeviceTrustResult
+from tools.assets.identity import zig_device_id
 
 # ---------------------------------------------------------------------------
 # Attestation claim definitions (RATS Entity Attestation Token style)
@@ -85,7 +86,7 @@ def generate_attestation(hostname: str, device_id: str = "",
     now = datetime.now(timezone.utc)
     now_iso = now.isoformat()
     if not device_id:
-        device_id = hashlib.sha256(hostname.encode()).hexdigest()[:16]
+        device_id = zig_device_id(hostname)
 
     trust: DeviceTrustResult = verify_device_posture(device_id)
 

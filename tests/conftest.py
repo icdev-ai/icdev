@@ -2523,6 +2523,40 @@ CREATE TABLE IF NOT EXISTS cli_llm_jobs (
 CREATE INDEX IF NOT EXISTS idx_cli_llm_jobs_claim   ON cli_llm_jobs (status, backend, created_at);
 CREATE INDEX IF NOT EXISTS idx_cli_llm_jobs_context ON cli_llm_jobs (context_id);
 
+-- rmf-ident-01 — the canonical asset identity (migration 20260902205902).
+-- tests/test_asset_identity.py builds its own database from the migration's
+-- up.sql rather than from here, deliberately: a fixture transcribed by hand
+-- can agree with itself. This entry is for every OTHER test that reaches
+-- tools/assets/identity.py incidentally through the ZIG device pillar.
+CREATE TABLE IF NOT EXISTS asset_identity (
+    asset_id            TEXT PRIMARY KEY,
+    tenant_id           TEXT NOT NULL DEFAULT 'default',
+    classification      TEXT NOT NULL DEFAULT 'cui',
+    classification_method TEXT,
+    fabric_key          TEXT NOT NULL,
+    hostname            TEXT,
+    mgmt_ip             TEXT,
+    mac_address         TEXT,
+    os_platform         TEXT,
+    device_type         TEXT,
+    vendor              TEXT,
+    model               TEXT,
+    zig_device_id       TEXT,
+    ni_device_id        TEXT,
+    ni_node_id          TEXT,
+    zta_project_id      TEXT,
+    surface_device_name TEXT,
+    enclave_id          TEXT,
+    discovery_sources   TEXT NOT NULL DEFAULT '[]',
+    corroboration_tier  TEXT NOT NULL DEFAULT 'unconfirmed',
+    first_seen          TIMESTAMP,
+    last_seen           TIMESTAMP,
+    created_at          TIMESTAMP,
+    updated_at          TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_identity_fabric_key
+    ON asset_identity (tenant_id, fabric_key);
+
 -- ACF — Autonomous Capability Foundry (acf-db) — 6 platform findings tables.
 CREATE TABLE IF NOT EXISTS foundry_runs (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
