@@ -17,6 +17,13 @@
 # EVERY ENTRY CARRIES A WRITTEN REASON. A bare list of ids is a claim nobody
 # can check. Removing an entry is how a collection becomes live again.
 #
+# AN ENTRY MAY BE A COLLECTION ID OR ITS NAME. `dic_documents.collection_id`
+# holds an opaque id (801d27077c1444ddd4864757) while the label a person
+# recognises lives in `dic_collections.name` ('Politics'), so requiring the id
+# would make this file unwritable by hand and requiring the name would break
+# `col1`, which has no separate one. Names are resolved through dic_collections
+# and matched EXACTLY -- 'test' never drags in 'citation-test-coll'.
+#
 # Consumed by tools/doc_modernization/card_bridge.py::emit_rollups.
 # An unreadable or missing file denies NOTHING -- see demo_collections().
 
