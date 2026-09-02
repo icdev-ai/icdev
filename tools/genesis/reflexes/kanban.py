@@ -12811,160 +12811,195 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     decomposed_this_cycle = []
 
     for task in due_tasks:
-        # Per-task coordination lease: claim exclusive ownership before spending
-        # any tokens. If another session already owns this task (e.g. an
-        # interactive CLI session working it out-of-band via `--claim`), skip it
-        # — this is what prevents the runner and a human from double-building the
-        # same task into divergent branches. The lease is released in _move_task
-        # on terminal/re-queue transitions; its TTL is a backstop if the task
-        # never terminates.
+        # LEASE OWNERSHIP (kpr-stale-03). The per-task lease acquired below is
+        # released by _move_task on a terminal/re-queue transition -- which only
+        # happens if the task was ACTUALLY DISPATCHED. Every path that abandons
+        # dispatch after the acquire used to leak it for the full 3600s TTL, and
+        # the next cycle then refused the task through _drop_respawn_guarded
+        # ("claimed by a live session") -- the scheduler starving itself.
+        # Measured 2026-09-02: 20 tasks across three projects, board idle 8h+.
+        #
+        # The release is CONDITIONAL, never unconditional: a dispatched task must
+        # KEEP its lease while the worker runs, or the double-build race that
+        # rem-hyg-15 and kpr-dup-07 exist to prevent comes straight back.
+        _task_lease = None
+        _dispatch_started = False
         try:
-            from tools.coordination import leases as _leases
-            _task_lease = _leases.acquire(
-                f"kanban:task:{task['id']}", intent="kanban-runner",
-                ttl_seconds=3600, block=False,
-            )
-            if _task_lease is None:
-                logger.info(
-                    "kanban: task %s owned by another session — skipping", task["id"],
+            # Per-task coordination lease: claim exclusive ownership before spending
+            # any tokens. If another session already owns this task (e.g. an
+            # interactive CLI session working it out-of-band via `--claim`), skip it
+            # — this is what prevents the runner and a human from double-building the
+            # same task into divergent branches. The lease is released in _move_task
+            # on terminal/re-queue transitions; its TTL is a backstop if the task
+            # never terminates.
+            try:
+                from tools.coordination import leases as _leases
+                _task_lease = _leases.acquire(
+                    f"kanban:task:{task['id']}", intent="kanban-runner",
+                    ttl_seconds=3600, block=False,
                 )
-                continue
-        except Exception as _lease_exc:
-            logger.debug(
-                "task-lease acquire failed for %s (continuing): %s", task["id"], _lease_exc,
-            )
-
-        # Pre-dispatch landed check (trust-disc-05): is this task id ALREADY on
-        # origin/<default>? The board tracks task -> PR and nothing checked
-        # task -> main, so a task whose work merged under a different PR number
-        # got dispatched again and produced a second PR that could only land as
-        # a revert. Advisory by default — it prints, logs, and goes into the
-        # prompt — and refuses only under KANBAN_LANDED_CHECK=enforce.
-        try:
-            _landed = _landed_preflight(task["id"])
-            if _landed.get("landed") or (_landed.get("prs") or {}).get("settles") is False:
-                from tools.kanban.landed_check import format_warning as _fmt_landed
-                _msg = _fmt_landed(_landed)
-                logger.warning("pre-dispatch landed check for %s:\n%s", task["id"], _msg)
-                print(f"  Kanban: pre-dispatch landed check fired for {task['id']!r}\n"
-                      + "\n".join(f"    {ln}" for ln in _msg.splitlines()))
-                if _landed.get("blocking"):
-                    # Skip the dispatch, and deliberately do NOT change the
-                    # task's status. There is no board status meaning "held
-                    # pending human verification": kanban_tasks' CHECK constraint
-                    # has no `blocked` (state_machine.py carries that migration as
-                    # an open TODO), and the statuses that do exist all lie about
-                    # what happened here — `failed` says the work was attempted,
-                    # `backlog` says nobody has got to it. So the task stays put
-                    # and says so every cycle, which is the correct amount of
-                    # noise for work that must not be built until a human looks.
-                    print(f"  Kanban: REFUSING to dispatch {task['id']!r} — its id is "
-                          f"already on the default branch (KANBAN_LANDED_CHECK=enforce); "
-                          f"status left unchanged for a human to reconcile")
-                    logger.warning(
-                        "landed check REFUSED dispatch of %s (%s) — already on %s",
-                        task["id"], _landed.get("confidence"), _landed.get("ref"),
+                if _task_lease is None:
+                    logger.info(
+                        "kanban: task %s owned by another session — skipping", task["id"],
                     )
                     continue
-        except Exception as _lc_exc:  # noqa: BLE001 — advisory, never blocks dispatch
-            logger.debug("pre-dispatch landed check failed for %s: %s",
-                         task["id"], _lc_exc)
+            except Exception as _lease_exc:
+                logger.debug(
+                    "task-lease acquire failed for %s (continuing): %s", task["id"], _lease_exc,
+                )
 
-        # Pre-dispatch complexity gate: score the task before spending any tokens.
-        # If it looks too big for a single session (score ≥ 7) decompose it now
-        # instead of letting it fail and waste a full 900s agent run.
-        _cscore = _complexity_score(task)
-        if _cscore >= 7:
-            logger.info(
-                "pre-dispatch: %s complexity score %d ≥ 7 — decomposing upfront",
-                task["id"], _cscore,
-            )
-            print(
-                f"  Kanban: pre-dispatch complexity gate triggered for {task['id']!r} "
-                f"(score={_cscore}) — decomposing upfront to avoid wasted token run"
-            )
+            # Pre-dispatch landed check (trust-disc-05): is this task id ALREADY on
+            # origin/<default>? The board tracks task -> PR and nothing checked
+            # task -> main, so a task whose work merged under a different PR number
+            # got dispatched again and produced a second PR that could only land as
+            # a revert. Advisory by default — it prints, logs, and goes into the
+            # prompt — and refuses only under KANBAN_LANDED_CHECK=enforce.
             try:
-                _decompose_one_task(task, ai_narrative=True)
-            except Exception as _pd_exc:
-                logger.warning(
-                    "pre-dispatch decompose failed for %s (%s) — dispatching anyway",
-                    task["id"], _pd_exc,
+                _landed = _landed_preflight(task["id"])
+                if _landed.get("landed") or (_landed.get("prs") or {}).get("settles") is False:
+                    from tools.kanban.landed_check import format_warning as _fmt_landed
+                    _msg = _fmt_landed(_landed)
+                    logger.warning("pre-dispatch landed check for %s:\n%s", task["id"], _msg)
+                    print(f"  Kanban: pre-dispatch landed check fired for {task['id']!r}\n"
+                          + "\n".join(f"    {ln}" for ln in _msg.splitlines()))
+                    if _landed.get("blocking"):
+                        # Skip the dispatch, and deliberately do NOT change the
+                        # task's status. There is no board status meaning "held
+                        # pending human verification": kanban_tasks' CHECK constraint
+                        # has no `blocked` (state_machine.py carries that migration as
+                        # an open TODO), and the statuses that do exist all lie about
+                        # what happened here — `failed` says the work was attempted,
+                        # `backlog` says nobody has got to it. So the task stays put
+                        # and says so every cycle, which is the correct amount of
+                        # noise for work that must not be built until a human looks.
+                        print(f"  Kanban: REFUSING to dispatch {task['id']!r} — its id is "
+                              f"already on the default branch (KANBAN_LANDED_CHECK=enforce); "
+                              f"status left unchanged for a human to reconcile")
+                        logger.warning(
+                            "landed check REFUSED dispatch of %s (%s) — already on %s",
+                            task["id"], _landed.get("confidence"), _landed.get("ref"),
+                        )
+                        continue
+            except Exception as _lc_exc:  # noqa: BLE001 — advisory, never blocks dispatch
+                logger.debug("pre-dispatch landed check failed for %s: %s",
+                             task["id"], _lc_exc)
+
+            # Pre-dispatch complexity gate: score the task before spending any tokens.
+            # If it looks too big for a single session (score ≥ 7) decompose it now
+            # instead of letting it fail and waste a full 900s agent run.
+            _cscore = _complexity_score(task)
+            if _cscore >= 7:
+                logger.info(
+                    "pre-dispatch: %s complexity score %d ≥ 7 — decomposing upfront",
+                    task["id"], _cscore,
                 )
-            else:
-                # Decomposed successfully — skip dispatch for this task;
-                # children will be picked up next cycle. Continue to next task.
-                decomposed_this_cycle.append(task["id"])
-                # ── LESSONS LEARNED: pre-dispatch complexity decompose ────
+                print(
+                    f"  Kanban: pre-dispatch complexity gate triggered for {task['id']!r} "
+                    f"(score={_cscore}) — decomposing upfront to avoid wasted token run"
+                )
                 try:
-                    from tools.workflow.lesson_learned import analyze_task, write_lesson
-                    lesson = analyze_task(task["id"], outcome="auto_decomposed")
-                    write_lesson(lesson)
-                except Exception as _ll_exc:
-                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
-                continue
+                    _decompose_one_task(task, ai_narrative=True)
+                except Exception as _pd_exc:
+                    logger.warning(
+                        "pre-dispatch decompose failed for %s (%s) — dispatching anyway",
+                        task["id"], _pd_exc,
+                    )
+                else:
+                    # Decomposed successfully — skip dispatch for this task;
+                    # children will be picked up next cycle. Continue to next task.
+                    decomposed_this_cycle.append(task["id"])
+                    # ── LESSONS LEARNED: pre-dispatch complexity decompose ────
+                    try:
+                        from tools.workflow.lesson_learned import analyze_task, write_lesson
+                        lesson = analyze_task(task["id"], outcome="auto_decomposed")
+                        write_lesson(lesson)
+                    except Exception as _ll_exc:
+                        logger.warning("lesson_learned hook failed: %s", _ll_exc)
+                    continue
 
-        try:
-            # Write prompt file first (low risk)
-            prompt_path = _write_prompt_file(task)
+            try:
+                # Write prompt file first (low risk)
+                prompt_path = _write_prompt_file(task)
 
-            # Dispatch to claude CLI — only move to in_progress AFTER
-            # subprocess is confirmed running, so tasks don't get stuck
-            # in in_progress when dispatch fails.
-            _dispatch_to_claude(task, prompt_path)
+                # Dispatch to claude CLI — only move to in_progress AFTER
+                # subprocess is confirmed running, so tasks don't get stuck
+                # in in_progress when dispatch fails.
+                _dispatch_to_claude(task, prompt_path)
 
-            if task["id"] in _ollama_completed:
-                # Synchronous Ollama dispatch — completed immediately, mark done
-                _ollama_completed.discard(task["id"])
-                _move_task(task["id"], "done",
-                           reason="Ollama synchronous dispatch completed in-cycle")
-                _send_notification(task, event="done")
-                processed.append(
-                    {
-                        "id": task["id"],
-                        "title": task["title"],
-                        "prompt_file": prompt_path,
-                    }
-                )
-                print(f"  Kanban: {task['id']} '{task['title']}' -> done (Ollama sync)")
-            elif task["id"] in _github_actions_dispatched:
-                # Async GitHub Actions dispatch — move to in_progress;
-                # completion is tracked externally (GitHub Actions run).
-                _github_actions_dispatched.discard(task["id"])
-                _move_task(task["id"], "in_progress",
-                           reason="dispatched via GitHub Actions (completion tracked externally)")
-                _send_notification(task)
-                processed.append(
-                    {
-                        "id": task["id"],
-                        "title": task["title"],
-                        "prompt_file": prompt_path,
-                    }
-                )
-                print(f"  Kanban: {task['id']} '{task['title']}' -> in_progress (GitHub Actions)")
-            elif task["id"] in _running:
-                # Async Claude/LLM subprocess launched — move to in_progress
-                _move_task(task["id"], "in_progress",
-                           reason="dispatched: agent subprocess launched")
-                _send_notification(task)
-                processed.append(
-                    {
-                        "id": task["id"],
-                        "title": task["title"],
-                        "prompt_file": prompt_path,
-                    }
-                )
-                print(f"  Kanban: {task['id']} '{task['title']}' -> in_progress -> dispatched")
-            else:
-                # Dispatch failed — leave task in backlog, clean up prompt
+                if task["id"] in _ollama_completed:
+                    # Synchronous Ollama dispatch — completed immediately, mark done
+                    _ollama_completed.discard(task["id"])
+                    _move_task(task["id"], "done",
+                               reason="Ollama synchronous dispatch completed in-cycle")
+                    # Ollama sync: the task reached a TERMINAL state, so _move_task already
+                    # released the lease; flag it so `finally` does not double-release.
+                    _dispatch_started = True
+                    _send_notification(task, event="done")
+                    processed.append(
+                        {
+                            "id": task["id"],
+                            "title": task["title"],
+                            "prompt_file": prompt_path,
+                        }
+                    )
+                    print(f"  Kanban: {task['id']} '{task['title']}' -> done (Ollama sync)")
+                elif task["id"] in _github_actions_dispatched:
+                    # Async GitHub Actions dispatch — move to in_progress;
+                    # completion is tracked externally (GitHub Actions run).
+                    _github_actions_dispatched.discard(task["id"])
+                    _move_task(task["id"], "in_progress",
+                               reason="dispatched via GitHub Actions (completion tracked externally)")
+                    # Dispatched: the run is tracked externally and the lease must be HELD
+                    # for its duration -- releasing here reopens the double-build race.
+                    _dispatch_started = True
+                    _send_notification(task)
+                    processed.append(
+                        {
+                            "id": task["id"],
+                            "title": task["title"],
+                            "prompt_file": prompt_path,
+                        }
+                    )
+                    print(f"  Kanban: {task['id']} '{task['title']}' -> in_progress (GitHub Actions)")
+                elif task["id"] in _running:
+                    # Async Claude/LLM subprocess launched — move to in_progress
+                    _move_task(task["id"], "in_progress",
+                               reason="dispatched: agent subprocess launched")
+                    # Dispatched: a worker subprocess owns this task now and must keep the
+                    # lease until it terminates.
+                    _dispatch_started = True
+                    _send_notification(task)
+                    processed.append(
+                        {
+                            "id": task["id"],
+                            "title": task["title"],
+                            "prompt_file": prompt_path,
+                        }
+                    )
+                    print(f"  Kanban: {task['id']} '{task['title']}' -> in_progress -> dispatched")
+                else:
+                    # Dispatch failed — leave task in backlog, clean up prompt
+                    errors += 1
+                    prompt_file = Path(prompt_path)
+                    if prompt_file.exists():
+                        prompt_file.unlink()
+                    print(f"  Kanban: {task['id']} dispatch failed — staying in backlog")
+            except Exception as e:
                 errors += 1
-                prompt_file = Path(prompt_path)
-                if prompt_file.exists():
-                    prompt_file.unlink()
-                print(f"  Kanban: {task['id']} dispatch failed — staying in backlog")
-        except Exception as e:
-            errors += 1
-            print(f"  Kanban error: {task['id']}: {e}")
+                print(f"  Kanban error: {task['id']}: {e}")
 
+        finally:
+            if _task_lease is not None and not _dispatch_started:
+                try:
+                    from tools.coordination import leases as _leases_rel
+                    _leases_rel.release(f"kanban:task:{task['id']}")
+                    logger.debug(
+                        "released lease for %s -- dispatch was not started", task["id"],
+                    )
+                except Exception as _rel_exc:  # noqa: BLE001 -- never wedge the loop
+                    logger.warning(
+                        "could not release lease for %s: %s", task["id"], _rel_exc,
+                    )
     return {
         "success": errors == 0,
         "metric_value": len(processed),

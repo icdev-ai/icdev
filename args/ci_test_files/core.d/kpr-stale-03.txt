@@ -1,0 +1,4 @@
+# kpr-stale-03 — the dispatch loop leaked the lease it acquired on every path
+# that abandoned dispatch, then refused the task next cycle through its own
+# "claimed by a live session" guard. 20 tasks starved, board idle 8h+.
+tests/test_kanban_dispatch_lease_release.py
