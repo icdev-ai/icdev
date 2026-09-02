@@ -4635,11 +4635,11 @@ python -c "from tools.cortex.client import CortexClient; c = CortexClient('http:
 python -c "from tools.cortex.client import CortexClient; c = CortexClient('http://localhost:5050', 'icdev_ctx_...'); print(c.reason('is this design sound?', mode='debate'))"
 python -c "from tools.cortex.client import CortexClient; c = CortexClient('http://localhost:5050', 'icdev_ctx_...'); print(c.agent('run the SDLC', mode='graph', workflow_id='full_sdlc'))"
 
-# --- DataBridge feeds (IRIS stub, ctx-expose-05) ---
-#   GET  /api/databridge/v1/iris/staffing_alignment     (scope databridge:iris:read)
-#   POST /api/databridge/v1/iris/performance_reviews    (scope databridge:iris:write)
-# Stub rows carry metadata.stub=true until the vendor publishes the IRIS API
-# (flip with IRIS_STUB_MODE=false + IRIS_BASE_URL + IRIS_API_KEY).
+# --- DataBridge feeds (ctx-expose-05) ---
+#   GET  /api/databridge/v1/icdev_demand/capability_gaps  (scope databridge:icdev_demand:read)
+#   GET  /api/databridge/v1/icdev_cpmp/contracts          (scope databridge:icdev_cpmp:read)
+# Service keys only (401 for session users). Both exposed connectors read the
+# local platform DB, so neither takes an endpoint or a secret.
 ```
 
 Related MCP tools (RAG taxonomy shared by the analyst/search routers): `query_classify`

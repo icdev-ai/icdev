@@ -7,7 +7,7 @@ Endpoints:
 
 Only connectors in ``_CONNECTOR_ALLOWLIST`` are reachable — the DataBridge
 registry holds many internal connectors (Splunk, ServiceNow, trading APIs)
-that must never be exposed to external service-key callers. v1 exposes IRIS
+that must never be exposed to external service-key callers. v1 exposes the local-DB
 only.
 
 Auth: the same ``icdev_ctx_`` service keys as the Cortex REST surface, with
@@ -17,13 +17,11 @@ into ``g.cortex_binding``; this blueprint enforces the connector allowlist
 and scopes. Dashboard session users are NOT granted feed access — this is a
 service-to-service surface only.
 
-Connector config comes from env for v1 (IRIS_STUB_MODE / IRIS_BASE_URL /
-IRIS_API_KEY); a ``db_connections`` row through the connection manager's
+Neither exposed connector takes an endpoint or a secret; a ``db_connections`` row through the connection manager's
 secret-resolver chain can replace this without changing the route contract.
 """
 from __future__ import annotations
 
-import os
 from typing import Any, Dict, Optional
 
 from flask import Blueprint, g, jsonify, request
@@ -39,21 +37,15 @@ _PREFIX = "/api/databridge/v1"
 
 # Externally exposable connectors only. Everything else in the registry is
 # internal-only regardless of the caller's scopes.
-_CONNECTOR_ALLOWLIST = frozenset({"iris", "icdev_demand", "icdev_cpmp"})
+_CONNECTOR_ALLOWLIST = frozenset({"icdev_demand", "icdev_cpmp"})
 
 # Cached connected instances, keyed by connector name.
 _instances: Dict[str, Any] = {}
 
 
 def _connector_config(name: str) -> Dict[str, Any]:
-    """Env-based v1 config. IRIS defaults to stub mode until the API exists."""
-    if name == "iris":
-        return {
-            "stub_mode": os.environ.get("IRIS_STUB_MODE", "true").strip().lower()
-            in ("1", "true", "yes"),
-            "base_url": os.environ.get("IRIS_BASE_URL", ""),
-            "api_key": os.environ.get("IRIS_API_KEY", ""),
-        }
+    """Env-based v1 config. Both exposed connectors read the local platform DB
+    and take no endpoint or secret, so there is nothing to configure."""
     return {}
 
 
@@ -61,9 +53,7 @@ def _get_instance(name: str) -> Optional[Any]:
     if name in _instances:
         return _instances[name]
     # Import for registration side effect, then resolve through the registry.
-    if name == "iris":
-        import tools.databridge.connectors.iris_connector  # noqa: F401
-    elif name == "icdev_demand":
+    if name == "icdev_demand":
         import tools.databridge.connectors.icdev_demand_connector  # noqa: F401
     elif name == "icdev_cpmp":
         import tools.databridge.connectors.icdev_cpmp_connector  # noqa: F401

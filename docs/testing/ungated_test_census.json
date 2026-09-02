@@ -1596,17 +1596,6 @@
    "concurrency_shaped": false
   },
   {
-   "file": "tests/databridge/test_iris_connector.py",
-   "status": "passed",
-   "returncode": 0,
-   "duration_s": 5.2,
-   "counts": {
-    "passed": 13
-   },
-   "first_failure": "",
-   "concurrency_shaped": false
-  },
-  {
    "file": "tests/databridge/test_servicenow_itsm_connector.py",
    "status": "passed",
    "returncode": 0,
