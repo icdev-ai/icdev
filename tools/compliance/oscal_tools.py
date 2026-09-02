@@ -60,6 +60,7 @@ _OSCAL_TYPE_MAP = {
     "system-security-plan": "ssp",
     "plan-of-action-and-milestones": "poam",
     "assessment-results": "assessment_results",
+    "assessment-plan": "assessment_plan",
     "component-definition": "component_definition",
 }
 _OSCAL_JSON_KEY = {v: k for k, v in _OSCAL_TYPE_MAP.items()}
@@ -69,7 +70,21 @@ _OSCAL_PYDANTIC_MAP = {
     "ssp": ("oscal_pydantic.ssp", "SystemSecurityPlan"),
     "poam": ("oscal_pydantic.poam", "PlanOfActionAndMilestones"),
     "assessment_results": ("oscal_pydantic.assessment_results", "AssessmentResults"),
+    "assessment_plan": ("oscal_pydantic.assessment_plan", "AssessmentPlan"),
     "component_definition": ("oscal_pydantic.component_definition", "ComponentDefinition"),
+}
+
+# Internal artifact type -> oscal-cli subcommand. NOT derivable from the JSON
+# key: oscal-cli spells the first two "ssp" and "poam", not
+# "system-security-plan" and "plan-of-action-and-milestones". It is one map so
+# that _validate_metaschema and convert() cannot disagree about a subcommand,
+# which they previously could -- they each carried their own copy.
+_OSCAL_CLI_SUBCMD = {
+    "ssp": "ssp",
+    "poam": "poam",
+    "assessment_results": "assessment-results",
+    "assessment_plan": "assessment-plan",
+    "component_definition": "component-definition",
 }
 
 # Model class cache: {artifact_type: (model_cls, compat_mode, is_document_model)}
@@ -582,6 +597,26 @@ def _get_builtin_v2_model(artifact_type):
 
         return _Doc
 
+    elif artifact_type == "assessment_plan":
+
+        class _AP(PydanticBaseModel):
+            model_config = ConfigDict(extra="allow", populate_by_name=True)
+            uuid: str
+            metadata: _Metadata
+            # OSCAL 1.1.2 requires both on an assessment-plan. They are
+            # declared REQUIRED here (unlike the assessment-results model
+            # above, whose own required members are all optional in OSCAL)
+            # because a plan missing either reviews nothing while still
+            # parsing as a plan.
+            import_ssp: dict = Field(alias="import-ssp")
+            reviewed_controls: dict = Field(alias="reviewed-controls")
+
+        class _Doc(PydanticBaseModel):
+            model_config = ConfigDict(extra="allow", populate_by_name=True)
+            assessment_plan: _AP = Field(alias="assessment-plan")
+
+        return _Doc
+
     elif artifact_type == "component_definition":
 
         class _CD(PydanticBaseModel):
@@ -742,32 +777,19 @@ def _validate_metaschema(file_path, artifact_type=None):
 
     start = time.monotonic()
 
-    # Map artifact type to oscal-cli subcommand
-    subcmd_map = {
-        "ssp": "ssp",
-        "poam": "poam",
-        "assessment_results": "assessment-results",
-        "component_definition": "component-definition",
-    }
-
     # Auto-detect from file content if needed
     if artifact_type is None:
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            for key, at in {
-                "system-security-plan": "ssp",
-                "plan-of-action-and-milestones": "poam",
-                "assessment-results": "assessment_results",
-                "component-definition": "component_definition",
-            }.items():
+            for key, at in _OSCAL_TYPE_MAP.items():
                 if key in data:
                     artifact_type = at
                     break
         except Exception:
             pass
 
-    subcmd = subcmd_map.get(artifact_type, "ssp")
+    subcmd = _OSCAL_CLI_SUBCMD.get(artifact_type, "ssp")
     result = _run_oscal_cli(f"{subcmd} validate", [str(file_path)])
 
     elapsed = int((time.monotonic() - start) * 1000)
@@ -835,7 +857,8 @@ def validate_oscal_deep(file_path, artifact_type=None, validators=None, project_
 
     Args:
         file_path: Path to OSCAL file to validate.
-        artifact_type: ssp|poam|assessment_results|component_definition (auto-detected).
+        artifact_type: ssp|poam|assessment_results|assessment_plan|
+                       component_definition (auto-detected).
         validators: List of specific validators to run. Default: all available.
         project_id: Optional project ID for audit logging.
         db_path: Override database path.
@@ -914,14 +937,9 @@ def convert_oscal_format(input_path, output_format, output_path=None):
     try:
         with open(input_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        for key, cmd in {
-            "system-security-plan": "ssp",
-            "plan-of-action-and-milestones": "poam",
-            "assessment-results": "assessment-results",
-            "component-definition": "component-definition",
-        }.items():
+        for key, at in _OSCAL_TYPE_MAP.items():
             if key in data:
-                subcmd = cmd
+                subcmd = _OSCAL_CLI_SUBCMD[at]
                 break
     except Exception:
         pass
@@ -1105,7 +1123,7 @@ def main():
     parser.add_argument("--output", help="Output file path")
     parser.add_argument(
         "--artifact-type",
-        choices=["ssp", "poam", "assessment_results", "component_definition"],
+        choices=["ssp", "poam", "assessment_results", "assessment_plan", "component_definition"],
         help="OSCAL artifact type (auto-detected if omitted)",
     )
     parser.add_argument(

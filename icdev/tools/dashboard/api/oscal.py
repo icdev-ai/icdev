@@ -182,6 +182,64 @@ def catalog_lookup(control_id: str):
         return jsonify({"error": str(e)}), 500
 
 
+# ── Generation ──────────────────────────────────────────────────
+
+# Artifact type -> oscal_generator entry point. `assessment_plan` is the
+# continuous-assessment model; `all` runs every one of the five in sequence.
+GENERATOR_FUNCTIONS = {
+    "ssp": "generate_oscal_ssp",
+    "poam": "generate_oscal_poam",
+    "assessment_results": "generate_oscal_assessment_results",
+    "assessment_plan": "generate_oscal_assessment_plan",
+    "component_definition": "generate_oscal_component_definition",
+    "all": "generate_all_oscal",
+}
+
+
+@oscal_api.route("/generate", methods=["POST"])
+def generate_artifact():
+    """Generate an OSCAL artifact for a project.
+
+    An unknown artifact type is REFUSED with the accepted list, never
+    silently defaulted to `ssp`: a caller asking for an assessment-plan and
+    receiving an SSP with a 200 has no way to learn that it did not get one.
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    project_id = data.get("project_id")
+    artifact = data.get("artifact", "ssp")
+
+    if not project_id:
+        return jsonify({"error": "project_id required"}), 400
+
+    func_name = GENERATOR_FUNCTIONS.get(artifact)
+    if not func_name:
+        return (
+            jsonify(
+                {
+                    "error": f"Unknown artifact type: {artifact}",
+                    "accepted": sorted(GENERATOR_FUNCTIONS),
+                }
+            ),
+            400,
+        )
+
+    try:
+        from tools.compliance import oscal_generator
+
+        result = getattr(oscal_generator, func_name)(
+            project_id,
+            output_dir=data.get("output_dir"),
+            db_path=str(DB_PATH),
+        )
+        return jsonify({"artifact": artifact, "result": result})
+    except ImportError:
+        return jsonify({"error": "oscal_generator module not available"}), 503
+    except (FileNotFoundError, ValueError) as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Validation Action ───────────────────────────────────────────
 
 

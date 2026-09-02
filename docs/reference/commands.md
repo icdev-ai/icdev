@@ -3716,7 +3716,19 @@ python tools/compliance/fedramp_report_generator.py --project-id "proj-123"     
 python tools/compliance/cmmc_assessor.py --project-id "proj-123" --level 2              # CMMC assessment
 python tools/compliance/cmmc_report_generator.py --project-id "proj-123"                # CMMC report
 python tools/compliance/oscal_generator.py --project-id "proj-123" --artifact ssp       # OSCAL generation
+python tools/compliance/oscal_generator.py --project-id "proj-123" --artifact assessment_plan  # Assessment Plan (rmf-oscal-01)
+python tools/compliance/oscal_generator.py --project-id "proj-123" --artifact all --json  # All five models
 python tools/compliance/oscal_generator.py --project-id "proj-123" --deep-validate /path/to/ssp.oscal.json --json  # Deep validation (D302-D305)
+python tools/compliance/oscal_generator.py --validate /path/to/assessment-plan.oscal.json --json  # Structural validation only
+
+# DISA STIG checklist EMITTER -- .ckl (STIG Viewer 2 XML) and .cklb (v3 JSON) (rmf-oscal-01)
+python tools/compliance/stig_ckl_writer.py --project-id "proj-123" --format both --json
+python tools/compliance/stig_ckl_writer.py --project-id "proj-123" --format ckl --host-name web01
+python tools/compliance/stig_ckl_writer.py --project-id "proj-123" --format cklb --output-dir ./out
+# The severity/status tables are INVERTED from tools/network/stig_import.py's
+# parser at import time, never restated, so a written .ckl round-trips through
+# the reader the repo already had. Import it as a library for in-memory use:
+#   from tools.compliance.stig_ckl_writer import build_ckl, build_cklb
 
 # OSCAL Ecosystem Tools (D302-D306)
 python tools/compliance/oscal_tools.py --detect --json                                  # Check oscal-cli, oscal-pydantic, NIST catalog availability

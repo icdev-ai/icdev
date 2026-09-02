@@ -484,6 +484,7 @@ def handle_oscal_generate(args: dict) -> dict:
             "ssp": "generate_oscal_ssp",
             "poam": "generate_oscal_poam",
             "assessment_results": "generate_oscal_assessment_results",
+            "assessment_plan": "generate_oscal_assessment_plan",
             "component_definition": "generate_oscal_component_definition",
         }
         func_name = fn_map.get(artifact_type, "generate_oscal_ssp")
