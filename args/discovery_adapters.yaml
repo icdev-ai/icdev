@@ -1,0 +1,140 @@
+# CUI // SP-CTI
+#
+# Asset discovery adapters — the DECLARATION (rmf-disc-01).
+#
+# WHAT THIS FILE IS FOR
+#
+# `tools/assets/discovery_adapters/` puts csv, netbox, snmp, ssh and gns3 behind
+# one two-method contract so ni_devices is populated by WHICHEVER sources a
+# deployment actually has. This file is the only place that says which sources
+# exist, on which fabric, and whether they are turned on. No adapter reads an
+# environment variable of its own or carries an endpoint in code.
+#
+# NOTHING HERE IS A DOMAIN CONSTANT. No vendor, product, protocol or site name
+# appears in tools/assets/discovery_adapters/*.py — a CSV's headers, a NetBox
+# URL and a GNS3 project id all arrive as data from this file.
+#
+# EVERY ADAPTER SHIPS DISABLED ON THIS DEPLOYMENT, and that is a measurement,
+# not caution: there is no NetBox, no GNS3 server and no inventory export
+# reachable from this host, and snmp/ssh would walk live gear. An adapter that
+# is `enabled: false` reports health state `disabled`, which the runner counts
+# as NOT MEASURED — it never reads as a source that answered, and it never reads
+# as a source that failed. A fabric all of whose adapters are disabled reports
+# fabric state `unmeasured`, which is deliberately not a clean bill of health.
+#
+# SNMP IS DISABLED FOR A SECOND REASON and it is the one that matters: an
+# unannounced SNMP walk against production switches is a change-control incident
+# before it is a feature. Turning it on is an act by somebody who owns the
+# maintenance window. pysnmp and netmiko are also both absent from this host, so
+# even enabled those two would report `unavailable` (install a package) rather
+# than `unreachable` (fix the network) — two states, two different tickets.
+#
+# CREDENTIALS ARE REFERENCES, NEVER LITERALS
+#
+# `token`, `password`, `community`, `enable_secret`, `secret` and `api_key` must
+# be written as `env:VAR` or `file:/path`. A literal is REFUSED — the adapter
+# instance reports `unconfigured` with the refusal as its detail and discovers
+# nothing. Refused rather than warned about, because this repository is public
+# and a warning still lands the secret in git history. An `env:` reference whose
+# variable is unset resolves to empty, which reports `unconfigured` too — that
+# is a missing credential, which is a different fact from a refused one and says
+# so in the detail.
+#
+# ADDING A FABRIC is a block under `fabrics:`. Its `id` is what every health
+# report is keyed by. `classification` is the fabric's LABEL (UNCLASSIFIED, CUI,
+# SECRET) — never a banner string like 'CUI // SP-CTI', because the label is
+# what a row-level predicate can compare and a banner matches no label at any
+# clearance.
+
+classification: CUI // SP-CTI
+version: 1
+
+fabrics:
+  # ── The fabric this platform itself runs on ───────────────────────────────
+  - id: enterprise
+    name: Enterprise / unclassified fabric
+    classification: UNCLASSIFIED
+    adapters:
+      - id: csv-inventory-export
+        adapter: csv
+        enabled: false
+        disabled_reason: >-
+          No inventory export exists on this host. Point `path` at a CSV export
+          and set enabled: true — this is the adapter an air-gapped enclave that
+          will never expose an API can still supply.
+        config:
+          path: ""
+          # canonical field -> candidate headers, first non-empty wins. Matching
+          # is case-insensitive; the DECLARED spelling is what a reader sees.
+          columns:
+            node_id: [hostname, name, device, asset_tag]
+            label: [hostname, name, display_name]
+            device_type: [device_type, role, type]
+            vendor: [vendor, manufacturer, make]
+            model: [model, part_number, device_model]
+            firmware_version: [firmware, firmware_version, os_version, software]
+            serial: [serial, serial_number, sn]
+            site: [site, location, facility]
+            rack: [rack, rack_location, cabinet]
+            ip_address: [ip, ip_address, mgmt_ip, management_ip]
+
+      - id: netbox-dcim
+        adapter: netbox
+        enabled: false
+        disabled_reason: >-
+          No NetBox instance is reachable from this deployment. Set url and an
+          env: reference for the token, then enabled: true.
+        config:
+          url: ""
+          token: "env:NETBOX_TOKEN"
+          verify_ssl: true
+          timeout: 15
+          site: ""
+
+      - id: snmp-poll
+        adapter: snmp
+        enabled: false
+        disabled_reason: >-
+          DELIBERATELY OFF. An SNMP walk touches live gear; it needs a named
+          maintenance window and a change record, not a default. pysnmp is also
+          absent from this host, so enabling it here reports `unavailable`.
+        config:
+          targets: []
+          community: "env:ICDEV_SNMP_COMMUNITY"
+          port: 161
+          timeout: 2.0
+
+      - id: ssh-neighbors
+        adapter: ssh
+        enabled: false
+        disabled_reason: >-
+          DELIBERATELY OFF. This adapter logs into gear with an enable-level
+          account. netmiko is also absent from this host.
+        config:
+          targets: []
+          username: ""
+          password: "env:ICDEV_DISCOVERY_SSH_PASSWORD"
+          enable_secret: "env:ICDEV_DISCOVERY_SSH_ENABLE"
+          device_type: cisco_ios
+          port: 22
+
+  # ── A lab is real inventory OF THE LAB, and of nothing else ───────────────
+  - id: lab-gns3
+    name: GNS3 virtual lab
+    classification: UNCLASSIFIED
+    adapters:
+      - id: gns3-lab
+        adapter: gns3
+        enabled: false
+        disabled_reason: >-
+          No GNS3 server is running on this host. Every device this adapter
+          produces carries properties.evidence_kind = "lab" — a lab node is not
+          a deployed switch, and it is declared on its own fabric so a roll-up
+          cannot silently blend it into a production asset count.
+        config:
+          url: ""
+          username: ""
+          password: "env:GNS3_PASSWORD"
+          timeout: 10.0
+          # Empty = every project on the server.
+          project_ids: []

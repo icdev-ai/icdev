@@ -1690,6 +1690,54 @@ works. Health is cached for `fabric.transport_health_ttl_seconds` (60s) because
   `ChainAnchor` queues on anything that is not `anchored`, and `flush_pending()`
   drains a row only on `anchored`.
 
+## Asset Discovery Adapters (rmf-disc-01)
+
+Five sources — csv, netbox, snmp, ssh, gns3 — behind one two-method contract,
+so `ni_devices` is populated by WHICHEVER adapters report healthy. Declaration:
+`args/discovery_adapters.yaml`. Every adapter ships **disabled** on this
+deployment, and snmp/ssh are disabled for a second reason: they touch live gear.
+
+```bash
+# Health per fabric. Discovers nothing, writes nothing.
+python -m tools.assets.discovery_adapters.runner --health --json
+# Discover, and write NOTHING — inspect a live fabric before any row lands.
+python -m tools.assets.discovery_adapters.runner --dry-run
+# Discover and upsert ni_devices.
+python -m tools.assets.discovery_adapters.runner --run --fabric enterprise
+python -m tools.assets.discovery_adapters.runner --list
+
+# Exercise every adapter against a MOCK target. No live probing: a temp CSV,
+# two loopback HTTP servers, and a substituted SNMP/SSH transport.
+python -m tools.assets.discovery_adapters.harness --json
+python -m tools.assets.discovery_adapters.harness --adapter snmp
+```
+
+FOUR FABRIC STATES and two of them mean "no inventory": `unmeasured` (no source
+on this fabric said anything about itself — NOT a clean bill of health),
+`blind` (sources WERE asked and not one can discover), `partial`, `covered`.
+NO PERCENTAGES: a discovery sweep has no authoritative denominator, so
+`device_count` is None — never 0 — when nothing was discovered.
+
+SEVEN HEALTH STATES, never merged. `unavailable` (a python dependency is
+absent — an install) is not `unreachable` (the network did not answer — a
+firewall); `disabled` says nothing whatever about the source. Only `healthy`
+and `degraded` discover, and a skipped adapter reports the state it was
+skipped on, so "0 devices" always carries its reason.
+
+CREDENTIALS ARE REFERENCES. `token`/`password`/`community`/`enable_secret` must
+be `env:VAR` or `file:/path`; a literal is REFUSED (not warned about — this
+repository is public) and disables only its own adapter instance.
+
+`ni_devices.source` carries the EVIDENCE CLASS in rmf-disc-02's vocabulary —
+`csv` / `netbox` / `discovery` / `topology_ingest` — because
+`doc_modernization/defacto_learner` excludes the last one by name. A GNS3 lab
+is real inventory OF THE LAB; labelling it `discovery` would route a drawing
+into the platform's strongest claim about what hardware is fielded. NULL when
+unattributed, never a guess. The adapter INSTANCE and the fabric ride in
+`properties_json`, which exists on both the migrated and the DDL schema shapes.
+
+---
+
 ## AI Security Commands
 ```bash
 python tools/security/prompt_injection_detector.py --text "input" --json
