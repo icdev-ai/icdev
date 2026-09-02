@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-# DEPRECATED: unused as of 2026-05-09. Remove after 2026-08-01.
 ####################################################################
 # CONTROLLED UNCLASSIFIED INFORMATION (CUI) // SP-CTI
 # Distribution: Distribution D -- Authorized DoD Personnel Only
 ####################################################################
 """NIST OSCAL 1.1.2 artifact generator for ICDEV™.
 
-Generates four OSCAL JSON artifact types from the ICDEV™ database:
+Generates five OSCAL JSON artifact types from the ICDEV™ database:
   - System Security Plan (SSP)
   - Plan of Action & Milestones (POA&M)
   - Assessment Results
+  - Assessment Plan (the continuous-assessment model: which controls are
+    reviewed, by what activity, and on the cadence the cATO monitor enforces)
   - Component Definition
 
 Each artifact conforms to the OSCAL 1.1.2 specification with proper UUIDs,
@@ -151,8 +152,14 @@ def _compute_file_hash(file_path):
 
 
 def _get_connection(db_path=None):
-    """Get a database connection with Row factory."""
-    path = db_path or DB_PATH
+    """Get a database connection with Row factory.
+
+    ``db_path`` is coerced to a Path: every in-tree caller other than the CLI
+    passes a STRING (tools/mcp/compliance_server.py::handle_oscal_generate and
+    the /api/oscal/generate route both pass ``str(DB_PATH)``), and a bare
+    ``str.exists()`` raised AttributeError for all five artifact types.
+    """
+    path = Path(db_path) if db_path else DB_PATH
     if not path.exists():
         raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = get_connection(db_path=str(path))
@@ -1516,6 +1523,500 @@ def _stig_status_to_oscal(status):
     return mapping.get(status, "not-satisfied")
 
 
+# ---------------------------------------------------------------------------
+# Assessment Plan (OSCAL 1.1.2)
+# ---------------------------------------------------------------------------
+
+
+def _evidence_cadences():
+    """Return the cATO monitor's {automation_frequency: days} refresh windows.
+
+    IMPORTED, never restated. Two copies of a cadence table drift, and an
+    assessment plan whose ``at-frequency`` timing promises a refresh interval
+    the monitor does not enforce is worse than one that promises none: the
+    first is a claim about continuous monitoring, the second is an admission.
+
+    Returns an EMPTY mapping when cato_monitor cannot be imported, in which
+    case frequency-derived tasks carry no timing at all.
+    """
+    try:
+        from tools.compliance.cato_monitor import EXPIRY_WINDOWS
+
+        return dict(EXPIRY_WINDOWS)
+    except Exception:
+        return {}
+
+
+def _safe_query(conn, sql, params):
+    """Run a read that may hit a table this deployment has not migrated.
+
+    Returns a list of dicts, or ``None`` when the table could not be read.
+    ``None`` and ``[]`` are deliberately different: an absent table is not an
+    empty one, and the caller says so on the artifact rather than reporting a
+    system with no evidence.
+
+    Rolls back on failure so a PostgreSQL transaction is not left aborted for
+    every subsequent read in the same connection.
+    """
+    try:
+        rows = conn.execute(sql, params).fetchall()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return None
+    return [dict(r) for r in rows]
+
+
+def _get_cato_evidence(conn, project_id):
+    """Load cATO evidence rows for a project (None when unreadable)."""
+    return _safe_query(
+        conn,
+        """SELECT control_id, evidence_type, evidence_source,
+                  automation_frequency, status
+           FROM cato_evidence
+           WHERE project_id = %s
+           ORDER BY control_id""",
+        (project_id,),
+    )
+
+
+def _find_ssp_href(conn, project_id):
+    """Resolve the ``import-ssp`` href from a previously generated SSP.
+
+    Returns ``(href, resolved)``. ``resolved`` is False when no SSP artifact
+    record exists for this project, in which case the href is an explicit
+    placeholder and the caller records that fact on the document -- an
+    assessment plan pointing at an SSP that was never generated must say so,
+    not look like a plan that resolved.
+    """
+    rows = _safe_query(
+        conn,
+        """SELECT file_path FROM oscal_artifacts
+           WHERE project_id = %s AND artifact_type = 'ssp'
+           ORDER BY generated_at DESC""",
+        (project_id,),
+    )
+    if rows:
+        href = str(rows[0].get("file_path") or "").strip()
+        if href:
+            return href, True
+    return "#ssp-not-yet-generated", False
+
+
+def _unique_oscal_control_ids(rows, key="control_id"):
+    """Return de-duplicated OSCAL-format control ids, preserving row order."""
+    seen = set()
+    ordered = []
+    for row in rows or []:
+        cid = _control_id_to_oscal(row.get(key, "") or "")
+        if cid and cid not in seen:
+            seen.add(cid)
+            ordered.append(cid)
+    return ordered
+
+
+def generate_oscal_assessment_plan(project_id, output_dir=None, db_path=None):
+    """Generate an OSCAL Assessment Plan JSON artifact.
+
+    This is the model a continuous-assessment story needs and the only one of
+    the five the generator was missing. Assessment Results has always carried
+    an ``import-ap`` reference, and until this artifact existed that href
+    could only ever be a placeholder pointing at nothing.
+
+    WHERE THE CADENCE COMES FROM. Each ``at-frequency`` task timing is derived
+    from the project's OWN ``cato_evidence`` rows -- the ``automation_frequency``
+    the cATO monitor actually enforces -- resolved through that module's
+    ``EXPIRY_WINDOWS``. A project with no evidence rows gets tasks with NO
+    timing and a ``continuous-monitoring`` prop of ``not-configured``. An
+    assessment plan that invented a cadence would read as continuous
+    monitoring to every downstream reader while nothing recurred.
+
+    THREE EVIDENCE STATES, never merged, because they send a reader to three
+    different fixes: ``configured`` (evidence rows carry a frequency),
+    ``not-configured`` (the table was read and holds nothing for this project)
+    and ``unmeasured`` (the ``cato_evidence`` table could not be read at all --
+    a migration that never ran, which is not the same as a system nobody
+    monitors).
+
+    Args:
+        project_id: The project identifier.
+        output_dir: Override output directory.
+        db_path: Override database path.
+
+    Returns:
+        Dict with file_path, uuid, reviewed_controls, tasks, activities,
+        continuous_monitoring, file_hash and the validation result.
+    """
+    conn = _get_connection(db_path)
+    try:
+        project = _get_project(conn, project_id)
+        controls = _get_controls(conn, project_id)
+        evidence = _get_cato_evidence(conn, project_id)
+        baseline = _determine_baseline(project)
+
+        ap_uuid = _generate_uuid()
+        ssp_href, ssp_resolved = _find_ssp_href(conn, project_id)
+
+        # --- reviewed-controls -------------------------------------------
+        control_ids = _unique_oscal_control_ids(controls)
+        if control_ids:
+            control_selection = {
+                "description": (
+                    f"The {len(control_ids)} NIST 800-53 control(s) registered against "
+                    f"project {project_id} in project_controls, assessed against the "
+                    f"FedRAMP {baseline} baseline."
+                ),
+                "include-controls": [{"control-id": cid} for cid in control_ids],
+            }
+        else:
+            control_selection = {
+                "description": (
+                    "No controls are registered against this project in project_controls, "
+                    "so no control selection could be derived from the database. "
+                    "'include-all' is asserted to keep the plan structurally valid; it is "
+                    "NOT a claim that every catalog control was deliberately selected."
+                ),
+                "include-all": {},
+            }
+
+        # --- activities and tasks ----------------------------------------
+        activities = []
+        tasks = []
+
+        review_activity_uuid = _generate_uuid()
+        activities.append(
+            {
+                "uuid": review_activity_uuid,
+                "title": "Control implementation review",
+                "description": (
+                    "Examine the implementation statement and supporting evidence "
+                    "recorded for each reviewed control."
+                ),
+                "props": [
+                    {"name": "method", "ns": OSCAL_NS, "value": "EXAMINE"},
+                ],
+                "steps": [
+                    {
+                        "uuid": _generate_uuid(),
+                        "title": "Collect implementation statements",
+                        "description": (
+                            "Read project_controls.implementation_description for every "
+                            "control in the reviewed-controls selection."
+                        ),
+                    },
+                    {
+                        "uuid": _generate_uuid(),
+                        "title": "Examine supporting evidence",
+                        "description": (
+                            "Open each control's evidence_path and confirm it supports the "
+                            "stated implementation status."
+                        ),
+                    },
+                ],
+                "related-controls": {
+                    "control-selections": [dict(control_selection)],
+                },
+            }
+        )
+        tasks.append(
+            {
+                "uuid": _generate_uuid(),
+                "type": "action",
+                "title": "Review control implementations",
+                "description": (
+                    "Assessor-led examination of every reviewed control's implementation "
+                    "statement and evidence."
+                ),
+                "associated-activities": [
+                    {
+                        "activity-uuid": review_activity_uuid,
+                        "subjects": [
+                            {
+                                "type": "component",
+                                "include-all": {},
+                            },
+                        ],
+                    },
+                ],
+            }
+        )
+
+        cadences = _evidence_cadences()
+        by_frequency = {}
+        for row in evidence or []:
+            frequency = str(row.get("automation_frequency") or "").strip()
+            if frequency:
+                by_frequency.setdefault(frequency, []).append(row)
+
+        for frequency in sorted(by_frequency):
+            rows = by_frequency[frequency]
+            activity_uuid = _generate_uuid()
+            frequency_control_ids = _unique_oscal_control_ids(rows)
+
+            if frequency_control_ids:
+                related_selection = {
+                    "description": f"Controls carrying '{frequency}' evidence automation.",
+                    "include-controls": [{"control-id": cid} for cid in frequency_control_ids],
+                }
+            else:
+                related_selection = {
+                    "description": (
+                        f"Evidence on the '{frequency}' cadence carries no resolvable "
+                        f"control id, so no control selection could be derived."
+                    ),
+                    "include-all": {},
+                }
+
+            activities.append(
+                {
+                    "uuid": activity_uuid,
+                    "title": f"Automated evidence collection -- {frequency}",
+                    "description": (
+                        f"{len(rows)} cATO evidence item(s) for this system refresh on the "
+                        f"'{frequency}' cadence."
+                    ),
+                    "props": [
+                        {"name": "method", "ns": OSCAL_NS, "value": "TEST"},
+                        {"name": "automation-frequency", "ns": OSCAL_NS, "value": frequency},
+                        {"name": "evidence-items", "ns": OSCAL_NS, "value": str(len(rows))},
+                    ],
+                    "related-controls": {
+                        "control-selections": [related_selection],
+                    },
+                }
+            )
+
+            task = {
+                "uuid": _generate_uuid(),
+                "type": "action",
+                "title": f"Collect '{frequency}' evidence",
+                "description": (
+                    f"Refresh the {len(rows)} cATO evidence item(s) registered on the "
+                    f"'{frequency}' cadence."
+                ),
+                "associated-activities": [
+                    {
+                        "activity-uuid": activity_uuid,
+                        "subjects": [
+                            {
+                                "type": "component",
+                                "include-all": {},
+                            },
+                        ],
+                    },
+                ],
+            }
+            period = cadences.get(frequency)
+            if period:
+                task["timing"] = {
+                    "at-frequency": {
+                        "period": int(period),
+                        "unit": "days",
+                    },
+                }
+            else:
+                task["remarks"] = (
+                    f"The cATO monitor defines no refresh window for the '{frequency}' "
+                    f"cadence, so this task carries no timing. An invented interval would "
+                    f"promise a refresh nothing enforces."
+                )
+            tasks.append(task)
+
+        if evidence is None:
+            monitoring_state = "unmeasured"
+            monitoring_remark = (
+                "The cato_evidence table could not be read on this deployment, so no "
+                "continuous-monitoring cadence could be derived. This is NOT a finding "
+                "that the system is unmonitored."
+            )
+        elif by_frequency:
+            monitoring_state = "configured"
+            monitoring_remark = (
+                f"{sum(len(v) for v in by_frequency.values())} cATO evidence item(s) across "
+                f"{len(by_frequency)} automation cadence(s) drive the recurring tasks below."
+            )
+        else:
+            monitoring_state = "not-configured"
+            monitoring_remark = (
+                "No cATO evidence is registered for this project, so no recurring "
+                "collection task carries a cadence. The control review below is the only "
+                "planned activity."
+            )
+
+        # --- assemble ------------------------------------------------------
+        ap_doc = {
+            "assessment-plan": {
+                "uuid": ap_uuid,
+                "metadata": _build_metadata(
+                    project,
+                    "Assessment Plan",
+                    extra_roles=[
+                        {
+                            "id": "assessor",
+                            "title": "Security Assessor",
+                        },
+                    ],
+                ),
+                "import-ssp": {
+                    "href": ssp_href,
+                    "remarks": (
+                        f"System Security Plan for project {project_id}."
+                        if ssp_resolved
+                        else (
+                            "No OSCAL SSP has been generated for this project yet, so this "
+                            "href is a placeholder. Run --artifact ssp and regenerate this "
+                            "plan to resolve it."
+                        )
+                    ),
+                },
+                "local-definitions": {
+                    "activities": activities,
+                },
+                "terms-and-conditions": {
+                    "parts": [
+                        {
+                            "name": "assumptions",
+                            "title": "Assumptions",
+                            "prose": (
+                                "Assessment evidence is drawn from the ICDEV compliance "
+                                "database. Controls absent from project_controls are outside "
+                                "this plan's reviewed-controls selection and are not assessed "
+                                "by it."
+                            ),
+                        },
+                        {
+                            "name": "methodology",
+                            "title": "Methodology",
+                            "prose": (
+                                "Control implementations are EXAMINEd by an assessor; cATO "
+                                "evidence is collected by automated TEST on the cadence the "
+                                "cATO monitor enforces."
+                            ),
+                        },
+                    ],
+                },
+                "reviewed-controls": {
+                    "description": (
+                        f"Controls under continuous assessment for project {project_id} "
+                        f"(FedRAMP {baseline} baseline)."
+                    ),
+                    "control-selections": [control_selection],
+                },
+                "assessment-subjects": [
+                    {
+                        "type": "component",
+                        "description": (
+                            "All components declared in the imported SSP's "
+                            "system-implementation."
+                        ),
+                        "include-all": {},
+                    },
+                ],
+                "assessment-assets": {
+                    "assessment-platforms": [
+                        {
+                            "uuid": _generate_uuid(),
+                            "title": "ICDEV Compliance Engine",
+                            "props": [
+                                {"name": "type", "ns": OSCAL_NS, "value": "automated"},
+                            ],
+                            "remarks": (
+                                "Evidence is collected by the ICDEV cATO monitor and recorded "
+                                "in the cato_evidence table; findings are recorded in "
+                                "stig_findings, fedramp_assessments and cmmc_assessments."
+                            ),
+                        },
+                    ],
+                },
+                "tasks": tasks,
+                "props": [
+                    {
+                        "name": "continuous-monitoring",
+                        "ns": OSCAL_NS,
+                        "value": monitoring_state,
+                    },
+                    {
+                        "name": "reviewed-control-count",
+                        "ns": OSCAL_NS,
+                        "value": str(len(control_ids)),
+                    },
+                    {
+                        "name": "import-ssp-resolved",
+                        "ns": OSCAL_NS,
+                        "value": "true" if ssp_resolved else "false",
+                    },
+                ],
+                "remarks": monitoring_remark,
+                "back-matter": {
+                    "resources": [],
+                },
+            },
+        }
+
+        # Write
+        out_dir = _resolve_output_dir(project, project_id, output_dir)
+        out_file = out_dir / "assessment-plan.oscal.json"
+
+        with open(out_file, "w", encoding="utf-8") as f:
+            json.dump(ap_doc, f, indent=2, ensure_ascii=False)
+
+        file_hash = _compute_file_hash(out_file)
+
+        # Validate
+        validation = validate_oscal(str(out_file), "assessment_plan")
+        schema_valid = validation["valid"]
+
+        # Store record
+        _store_oscal_artifact(
+            conn, project_id, "assessment_plan", str(out_file), file_hash, schema_valid, validation.get("errors")
+        )
+
+        # Audit
+        _log_audit(
+            conn,
+            project_id,
+            "OSCAL Assessment Plan generated",
+            {
+                "artifact_type": "assessment_plan",
+                "oscal_version": OSCAL_VERSION,
+                "uuid": ap_uuid,
+                "reviewed_controls": len(control_ids),
+                "activities": len(activities),
+                "tasks": len(tasks),
+                "continuous_monitoring": monitoring_state,
+                "import_ssp_resolved": ssp_resolved,
+                "file_hash": file_hash,
+                "schema_valid": schema_valid,
+                "affected_files": [str(out_file)],
+            },
+        )
+
+        print("OSCAL Assessment Plan generated:")
+        print(f"  File: {out_file}")
+        print(f"  UUID: {ap_uuid}")
+        print(f"  Reviewed controls: {len(control_ids)}")
+        print(f"  Activities: {len(activities)}  Tasks: {len(tasks)}")
+        print(f"  Continuous monitoring: {monitoring_state}")
+        print(f"  Valid: {schema_valid}")
+
+        return {
+            "file_path": str(out_file),
+            "uuid": ap_uuid,
+            "reviewed_controls": len(control_ids),
+            "activities": len(activities),
+            "tasks": len(tasks),
+            "continuous_monitoring": monitoring_state,
+            "import_ssp_resolved": ssp_resolved,
+            "file_hash": file_hash,
+            "validation": validation,
+        }
+
+    finally:
+        conn.close()
+
+
 def generate_oscal_component_definition(project_id, output_dir=None, db_path=None):
     """Generate an OSCAL Component Definition JSON artifact.
 
@@ -1781,6 +2282,7 @@ def validate_oscal(file_path, artifact_type=None):
         "ssp": "system-security-plan",
         "poam": "plan-of-action-and-milestones",
         "assessment_results": "assessment-results",
+        "assessment_plan": "assessment-plan",
         "component_definition": "component-definition",
     }
 
@@ -1839,6 +2341,8 @@ def validate_oscal(file_path, artifact_type=None):
             _validate_poam(doc, errors)
         elif artifact_type == "assessment_results":
             _validate_assessment_results(doc, errors)
+        elif artifact_type == "assessment_plan":
+            _validate_assessment_plan(doc, errors)
         elif artifact_type == "component_definition":
             _validate_component_definition(doc, errors)
 
@@ -1903,6 +2407,49 @@ def _validate_assessment_results(doc, errors):
         errors.append("Assessment Results 'results' array is empty.")
 
 
+def _validate_assessment_plan(doc, errors):
+    """Validate Assessment Plan-specific structure.
+
+    OSCAL 1.1.2 requires ``import-ssp`` and ``reviewed-controls`` on an
+    assessment-plan. A ``control-selection`` that carries NEITHER
+    ``include-all`` NOR a non-empty ``include-controls`` selects nothing at
+    all, which is the one shape that renders as a populated plan while
+    reviewing no control -- so it is checked explicitly rather than left to
+    the presence of the key.
+    """
+    if "import-ssp" not in doc:
+        errors.append("Assessment Plan missing 'import-ssp' block.")
+    elif "href" not in doc.get("import-ssp", {}):
+        errors.append("Assessment Plan 'import-ssp' missing 'href'.")
+
+    if "reviewed-controls" not in doc:
+        errors.append("Assessment Plan missing 'reviewed-controls' block.")
+    else:
+        selections = doc["reviewed-controls"].get("control-selections")
+        if not isinstance(selections, list):
+            errors.append("Assessment Plan 'reviewed-controls' missing 'control-selections' array.")
+        elif len(selections) == 0:
+            errors.append("Assessment Plan 'reviewed-controls.control-selections' array is empty.")
+        else:
+            for i, selection in enumerate(selections):
+                if "include-all" not in selection and not selection.get("include-controls"):
+                    errors.append(
+                        f"Assessment Plan 'control-selections[{i}]' selects nothing: "
+                        f"needs 'include-all' or a non-empty 'include-controls'."
+                    )
+
+    tasks = doc.get("tasks")
+    if tasks is not None and not isinstance(tasks, list):
+        errors.append("Assessment Plan 'tasks' must be an array.")
+    else:
+        for task in tasks or []:
+            if task.get("type") not in ("milestone", "action"):
+                errors.append(
+                    f"Assessment Plan task '{task.get('title', '?')}' has invalid type "
+                    f"'{task.get('type')}'. OSCAL allows 'milestone' or 'action'."
+                )
+
+
 def _validate_component_definition(doc, errors):
     """Validate Component Definition-specific structure."""
     if "components" not in doc:
@@ -1964,10 +2511,10 @@ def _validate_control_ids_recursive(obj, errors, path="", max_errors=20):
 
 
 def generate_all_oscal(project_id, output_dir=None, db_path=None):
-    """Generate all four OSCAL artifact types for a project.
+    """Generate all five OSCAL artifact types for a project.
 
-    Generates SSP, POA&M, Assessment Results, and Component Definition
-    in sequence. Returns a summary dict.
+    Generates SSP, POA&M, Assessment Results, Assessment Plan, and
+    Component Definition in sequence. Returns a summary dict.
 
     Args:
         project_id: The project identifier.
@@ -1982,6 +2529,7 @@ def generate_all_oscal(project_id, output_dir=None, db_path=None):
         ("ssp", generate_oscal_ssp),
         ("poam", generate_oscal_poam),
         ("assessment_results", generate_oscal_assessment_results),
+        ("assessment_plan", generate_oscal_assessment_plan),
         ("component_definition", generate_oscal_component_definition),
     ]
 
@@ -2038,8 +2586,8 @@ def main():
     parser = argparse.ArgumentParser(
         description=(
             "NIST OSCAL 1.1.2 Artifact Generator -- "
-            "Generate SSP, POA&M, Assessment Results, and "
-            "Component Definition in OSCAL JSON format."
+            "Generate SSP, POA&M, Assessment Results, Assessment Plan "
+            "and Component Definition in OSCAL JSON format."
         ),
     )
     parser.add_argument(
@@ -2053,6 +2601,7 @@ def main():
             "ssp",
             "poam",
             "assessment_results",
+            "assessment_plan",
             "component_definition",
             "all",
         ],
@@ -2142,6 +2691,7 @@ def main():
         "ssp": generate_oscal_ssp,
         "poam": generate_oscal_poam,
         "assessment_results": generate_oscal_assessment_results,
+        "assessment_plan": generate_oscal_assessment_plan,
         "component_definition": generate_oscal_component_definition,
         "all": generate_all_oscal,
     }

@@ -914,7 +914,7 @@ CREATE INDEX IF NOT EXISTS idx_cmmc_level ON cmmc_assessments(level);
 CREATE TABLE IF NOT EXISTS oscal_artifacts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id TEXT NOT NULL REFERENCES projects(id),
-    artifact_type TEXT NOT NULL CHECK(artifact_type IN ('ssp', 'poam', 'assessment_results', 'component_definition', 'catalog', 'profile')),
+    artifact_type TEXT NOT NULL CHECK(artifact_type IN ('ssp', 'poam', 'assessment_results', 'assessment_plan', 'component_definition', 'catalog', 'profile')),
     oscal_version TEXT DEFAULT '1.1.2',
     format TEXT DEFAULT 'json' CHECK(format IN ('json', 'xml', 'yaml')),
     file_path TEXT NOT NULL,

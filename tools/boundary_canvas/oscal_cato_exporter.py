@@ -11,6 +11,7 @@ Public API (mirrors the generator so callers/tests can depend on stable names):
   * ``generate_oscal_ssp(project_id, output_dir=None, db_path=None)``
   * ``generate_oscal_poam(project_id, output_dir=None, db_path=None)``
   * ``generate_oscal_assessment_results(project_id, output_dir=None, db_path=None)``
+  * ``generate_oscal_assessment_plan(project_id, output_dir=None, db_path=None)``
   * ``generate_oscal_component_definition(project_id, output_dir=None, db_path=None)``
   * ``validate_oscal(file_path, artifact_type=None)``
   * ``export_oscal_artifact(project_id, artifact_type='ssp', output_dir=None, db_path=None)``
@@ -50,6 +51,9 @@ _ARTIFACT_ALIASES = {
     "ar": "assessment_results",
     "assessment_results": "assessment_results",
     "assessment-results": "assessment_results",
+    "ap": "assessment_plan",
+    "assessment_plan": "assessment_plan",
+    "assessment-plan": "assessment_plan",
     "cd": "component_definition",
     "component_definition": "component_definition",
     "component-definition": "component_definition",
@@ -59,6 +63,7 @@ _GENERATORS = {
     "ssp": _oscal.generate_oscal_ssp,
     "poam": _oscal.generate_oscal_poam,
     "assessment_results": _oscal.generate_oscal_assessment_results,
+    "assessment_plan": _oscal.generate_oscal_assessment_plan,
     "component_definition": _oscal.generate_oscal_component_definition,
 }
 
@@ -79,6 +84,11 @@ def generate_oscal_poam(project_id, output_dir=None, db_path=None):
 def generate_oscal_assessment_results(project_id, output_dir=None, db_path=None):
     """Delegate to oscal_generator.generate_oscal_assessment_results."""
     return _oscal.generate_oscal_assessment_results(project_id, output_dir=output_dir, db_path=db_path)
+
+
+def generate_oscal_assessment_plan(project_id, output_dir=None, db_path=None):
+    """Delegate to oscal_generator.generate_oscal_assessment_plan."""
+    return _oscal.generate_oscal_assessment_plan(project_id, output_dir=output_dir, db_path=db_path)
 
 
 def generate_oscal_component_definition(project_id, output_dir=None, db_path=None):
