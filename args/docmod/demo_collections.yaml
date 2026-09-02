@@ -1,0 +1,36 @@
+# Collections that are NOT a live corpus (cdh-seed-01).
+#
+# A document in one of these produces NO modernization card. Every finding
+# against them on 2026-09-01 was technically CORRECT -- Catalyst 6500 EOL
+# 2018-07-31, TLS 1.1 per RFC 8996 -- and every one asked a person to
+# modernize demo data. Six such cards reached `scheduled`.
+#
+# A DENYLIST, NOT AN ALLOWLIST. An allowlist of live collections would mean a
+# new collection nobody remembered to declare files NO cards -- silently
+# dropping real findings. An undeclared collection here still files cards:
+# noisier, never silent. The direction is the decision.
+#
+# NOT A NAME HEURISTIC. Matching 'demo'/'test' would miss `Politics` and
+# `col1` -- two of the four below -- and would wrongly exclude a real
+# collection somebody called 'Test Estate'. Only a declaration excludes one.
+#
+# EVERY ENTRY CARRIES A WRITTEN REASON. A bare list of ids is a claim nobody
+# can check. Removing an entry is how a collection becomes live again.
+#
+# Consumed by tools/doc_modernization/card_bridge.py::emit_rollups.
+# An unreadable or missing file denies NOTHING -- see demo_collections().
+
+collections:
+  Politics: >-
+    Two reference texts loaded to exercise ingestion: the US Constitution and a
+    sample SOP. Not an estate anybody maintains; a redline against the First
+    Amendment is not actionable work.
+  test: >-
+    One document titled `tmp9x41vmaz` -- a Python tempfile name, so the corpus
+    is the residue of a test run rather than anything an author uploaded.
+  isp-peering-demo: >-
+    Demo topology auto-registered by migration 268 to give the peering canvas
+    something to render. Created by a migration, never by a person.
+  col1: >-
+    One document, 'Legacy Doc', dated 2020-01-01 -- placeholder fixture data
+    from early DIC development, kept so the collection list is non-empty.
