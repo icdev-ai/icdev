@@ -326,7 +326,6 @@ tools/daemon/base.py::<module>::BASE_DIR
 tools/dashboard/api/ai_accountability.py::<module>::BASE_DIR
 tools/dashboard/api/ai_transparency.py::<module>::BASE_DIR
 tools/dashboard/api/ato_compliance.py::<module>::BASE_DIR
-tools/dashboard/api/ato_package.py::<module>::BASE_DIR
 tools/dashboard/api/auth.py::<module>::inline-1
 tools/dashboard/api/auth.py::<module>::inline-2
 tools/dashboard/api/batch.py::<module>::BASE_DIR
