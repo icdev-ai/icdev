@@ -76,6 +76,15 @@ _FORBIDDEN_TERMS = (
 
 _SUFFIXES = (".py", ".yaml", ".yml", ".md")
 
+# Wider than _SUFFIXES, and separate from it on purpose: the identifier scan
+# runs repo-wide over every tracked text file, while _LEAK_PATTERNS stays scoped
+# to SCANNED where its narrower suffix set belongs. Sharing one tuple would
+# silently change what the path patterns walk.
+_TRACKED_SUFFIXES = (
+    ".py", ".yaml", ".yml", ".md", ".txt", ".json", ".html", ".js", ".ts",
+    ".j2", ".rst", ".toml", ".cfg", ".ini", ".sh", ".ps1",
+)
+
 
 def _iter_files():
     for target in SCANNED:
@@ -89,6 +98,30 @@ def _iter_files():
                 and f.suffix in _SUFFIXES
                 and "__pycache__" not in f.parts
             )
+
+
+def _iter_tracked_text_files():
+    """Every TRACKED text file in the repo.
+
+    Tracked, not walked: an untracked scratch file is not published and a
+    gitignored database is not either, so scanning them would refuse work the
+    public repo never carries. `git ls-files` is also the same population the
+    domain leak gate scans, so the two guards cannot disagree about what "in the
+    repo" means.
+    """
+    out = subprocess.run(
+        ["git", "ls-files"],
+        cwd=REPO, capture_output=True, text=True, timeout=60, check=False,
+    )
+    if out.returncode != 0:
+        return
+    for rel in out.stdout.split("\n"):
+        rel = rel.strip()
+        if not rel or not rel.endswith(_TRACKED_SUFFIXES):
+            continue
+        p = REPO / rel
+        if p.is_file():
+            yield p
 
 
 class TestNoCorpusInTheOpenSourceRepo:
@@ -106,8 +139,24 @@ class TestNoCorpusInTheOpenSourceRepo:
         )
 
     def test_no_customer_identifiers(self):
+        """Scanned REPO-WIDE, unlike the path patterns above.
+
+        This check used to run only over SCANNED -- the BOM engine's own
+        directories -- and that is how it missed `tools/slides/constants.py`,
+        which carried "Modelled on a real Peraton status deck" while the guard
+        was already scanning `tools/slides/brand_deck.py` one file away.
+
+        The narrow scope is right for `_LEAK_PATTERNS` (an absolute Downloads
+        path is a false positive almost everywhere else) and wrong for a company
+        NAME, which has no innocent occurrence anywhere in this tree. Measured
+        2026-09-01 across all 17,840 tracked text files: the only hit is this
+        file's own term list. So the widening refuses nothing that exists, which
+        is what makes it armable.
+        """
         offenders = []
-        for f in _iter_files():
+        for f in _iter_tracked_text_files():
+            if f.resolve() == Path(__file__).resolve():
+                continue  # the term list necessarily names the terms it refuses
             text = f.read_text(encoding="utf-8", errors="replace").lower()
             for term in _FORBIDDEN_TERMS:
                 if term in text:
@@ -116,6 +165,16 @@ class TestNoCorpusInTheOpenSourceRepo:
             "Customer identifiers must not appear in the public repo:\n  "
             + "\n  ".join(offenders)
         )
+
+    def test_the_identifier_scan_actually_covers_the_tree(self):
+        """A scan that silently walked nothing would pass forever.
+
+        `_iter_tracked_text_files` shells out to `git ls-files`; in a broken
+        checkout that returns nothing and every identifier assertion above
+        becomes vacuous. Pin a floor well under the measured 17,840 so this
+        fails on an empty walk without churning as the tree grows.
+        """
+        assert sum(1 for _ in _iter_tracked_text_files()) > 5000
 
     def test_the_live_plan_config_is_not_tracked(self):
         """A plan config names real people, real committed dates, a real task list.
