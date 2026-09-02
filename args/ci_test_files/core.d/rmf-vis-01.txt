@@ -1,0 +1,14 @@
+# rmf-vis-01 — asset visibility that cannot fabricate a percentage.
+#
+# Pins the invariants that fail GREEN if broken: that `visibility_pct` is None
+# (and renders the words "not assessed") with no denominator registered rather
+# than 0.0 or 100.0; that corroboration counts distinct (asset, source) PAIRS,
+# so forty reports from one source stay ONE pair; that depth over an empty
+# asset set is None and never 0.0; that the ranked pick reports its loser
+# rather than averaging it in; that a numerator over its denominator is not
+# clamped to 100; that a synthetic row is excluded AND counted; and that
+# `derived_if_mib` yields None rather than 0 when no switch has been walked.
+#
+# Two SQLite files under tmp_path and one monkeypatched canvas connection —
+# no network, no live database.
+tests/assets/test_visibility.py
