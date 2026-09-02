@@ -84,6 +84,51 @@ domain_leak_gate:
       pattern: '\b\d{3}-\d{2}-\d{4}\b'
       severity: critical
 
+  # PATH-SCOPED rules -- pursuit-sensitive bid content in GovCon source.
+  #
+  # THE INCIDENT. tools/govcon/rfi_workbench.py carried a hardcoded
+  # `_SECTION_PROMPTS` dict holding one live solicitation's full ROM cost
+  # breakdown, an IR&D cost-share figure and its statutory authority, teaming
+  # options, TRL positioning, commerciality split and risk register -- 11KB of
+  # capture strategy, in a PUBLIC repository, from 2026-06-30. A competitor
+  # reading it learns our price, our cost-share play and our teaming approach.
+  #
+  # WHY SCOPED BY PATH, and not added to secret_detector.py. The generic scanner
+  # compiles that whole table regardless of category, and measured across this
+  # tree the unscoped rules hit 11 TEST FIXTURES carrying synthetic figures
+  # ($1.2M / $1.5M / $2M / $2.1M in test_dic_publish_gate.py and
+  # test_rfi_grounding.py) -- fixtures of the publish and redaction gates that
+  # exist to handle exactly this kind of content. Refusing those is refusing
+  # routine work. The discriminator is not the pattern, it is the LOCATION: a
+  # fake ROM in a test is correct; a ROM figure in a prompt TEMPLATE or a
+  # response GENERATOR is the defect.
+  #
+  # SURVEYED BEFORE ARMING, 2026-09-01, over the 214 tracked files in scope:
+  # 0 hits for all three rules after the fix, and 6 on the pre-fix tree (5 in
+  # rfi_workbench.py, 1 in rfi_response_generator.py). The rule discriminates
+  # the leak from the repair, which is what makes it armable.
+  #
+  # Real pursuit figures load from a PRIVATE overlay outside this repository:
+  #   ICDEV_GOVCON_PROMPTS_PATH   (see tools/govcon/section_prompts.py)
+  scoped_patterns:
+    - name: ROM or cost-share figure in GovCon source
+      pattern: '(?i)\b(?:ROM|cost[ _-]?share)\b[^\n]{0,80}\$\s?[\d.,]+\s?[KMB]\b'
+      severity: critical
+      paths: &govcon_source
+        - tools/govcon/*
+        - icdev/tools/govcon/*
+        - args/govcon/*
+        - args/govcon*.yaml
+        - hardprompts/*
+    - name: Labor basis of estimate in GovCon source
+      pattern: '(?i)\blabor\b[^\n]{0,40}\$\s?[\d.,]+\s?[KMB]\b'
+      severity: critical
+      paths: *govcon_source
+    - name: Annual O&M or licensing rate in GovCon source
+      pattern: '(?i)\bannual\s+(?:O&M|licensing|maintenance)\b[^\n]{0,40}\$\s?[\d.,]+\s?[KMB]\b'
+      severity: critical
+      paths: *govcon_source
+
   # An ALLOW entry asserts a match is CORRECT here and needs a written reason.
   allow:
     - path: tests/ci/test_domain_leak_gate.py

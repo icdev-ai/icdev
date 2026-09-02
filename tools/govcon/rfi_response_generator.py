@@ -223,20 +223,28 @@ def _draft_part4(profile: dict, rfi: dict) -> str:
     ndc_status = profile.get("ndc_status", "")
     is_traditional = "traditional" in ndc_status.lower()
 
+    # Cost-share figures and the teaming approach are PURSUIT STRATEGY and are
+    # never hardcoded here -- this repository is PUBLIC. They come from the
+    # company profile for the specific pursuit, and are marked [VERIFY] when
+    # absent so an unreviewed number can never reach a submitted response.
+    teaming = profile.get("teaming_posture", {}) or {}
+    rom_total = teaming.get("rom_total", "[VERIFY: ROM total]")
+    cost_share = teaming.get("cost_share_amount", "[VERIFY: cost share amount]")
+    cost_share_authority = teaming.get("cost_share_authority", "10 U.S.C. 4022")
+
     teaming_section = ""
     if is_traditional:
         teaming_section = f"""**4.3 Teaming and Cost Share**
 
-{entity_name} is a traditional defense contractor. Two paths to satisfy 10 U.S.C. 4022:
+{entity_name} is a traditional defense contractor. Two paths to satisfy {cost_share_authority}:
 
-**Option A — NDC Teaming (Preferred):** {entity_name} is in discussions with NDC-eligible
-AI/ML technology partners. An NDC team member will contribute the AI/ML core component
-development to a significant extent (>1/3 of technical effort on novel components).
-Specific NDC partner to be identified at the solicitation/proposal stage.
+**Option A — NDC Teaming:** {entity_name} would team with an NDC-eligible partner
+contributing a significant extent of the technical effort on novel components. The
+specific partner is identified at the solicitation/proposal stage.
 
 **Option B — IR&D Cost Share:** {entity_name} has sustained IR&D investments in the
-proposed platform. A 1/3 cost share (~$490K of estimated $1.475M ROM) can be satisfied
-from existing IR&D commitments.
+proposed platform. A cost share of {cost_share} against an estimated {rom_total} ROM
+can be satisfied from existing IR&D commitments.
 """
     else:
         teaming_section = "**4.3 Teaming:** N/A — NDC Status.\n"

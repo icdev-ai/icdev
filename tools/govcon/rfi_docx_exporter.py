@@ -2,7 +2,8 @@
 RFI Response DOCX Exporter — converts a structured RFI response (markdown or JSON)
 to a properly formatted Word document matching government submission requirements.
 
-Formatting per NSA RFI-26-00358 guidance:
+Formatting per common government RFI submission guidance (override per
+solicitation via the exporter's formatting options):
   - 11-point Times New Roman
   - Single-spaced
   - 1-inch margins
