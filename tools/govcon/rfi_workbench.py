@@ -985,21 +985,42 @@ def assemble_and_export(session_id, export_format="docx", force_placeholders=Fal
         _record_export(session_id, "md", str(md_path))
         return str(md_path)
 
+    # DOCX EXPORT HAD NEVER RUN. This called `export_to_docx(...)` with
+    # `rfi_number=` / `entity_name=` kwargs; the module exports
+    # `markdown_to_docx(md_text, output_path, classification=...)` and nothing
+    # named `export_to_docx`. The ImportError was caught by a broad `except
+    # Exception`, logged at WARNING and recorded as a SUCCESSFUL `md` export --
+    # so every DOCX request since the exporter was written silently produced
+    # markdown, and .tmp/rfi_exports/ holds only .md files. python-docx 1.2.0 is
+    # installed and the exporter works: the caller was simply wrong.
+    #
+    # The two failure modes are now kept apart, because they justify opposite
+    # actions: python-docx genuinely absent is a legitimate degradation on an
+    # air-gapped install, while a failure WITH the library present is a defect
+    # that must not read as a successful markdown export.
+    docx_path = _EXPORT_DIR / f"{base_name}.docx"
     try:
-        from tools.govcon.rfi_docx_exporter import export_to_docx
-        docx_path = _EXPORT_DIR / f"{base_name}.docx"
-        export_to_docx(
-            md_content, str(docx_path),
-            rfi_number=session.get("rfi_number"),
-            entity_name=profile.get("entity_name"),
-        )
+        from tools.govcon.rfi_docx_exporter import DOCX_AVAILABLE, markdown_to_docx
+    except ImportError as exc:
+        logger.error("RFI DOCX exporter module unavailable: %s", exc, exc_info=True)
+        DOCX_AVAILABLE, markdown_to_docx = False, None
+
+    if not DOCX_AVAILABLE:
+        logger.warning("python-docx not installed — exporting MD only")
+        _record_export(session_id, "md", str(md_path))
+        _mark_session_exported(session_id)
+        return str(md_path)
+
+    try:
+        markdown_to_docx(md_content, str(docx_path))
         _record_export(session_id, "docx", str(docx_path))
     except Exception as exc:
-        logger.warning("DOCX export failed: %s — saving MD only", exc)
-        _record_export(session_id, "md", str(md_path))
-        db = get_db()
-        db.execute("UPDATE rfi_workbench_sessions SET status='exported', updated_at=%s WHERE id=%s", (_now(), session_id))
-        db.commit()
+        # NOT recorded as "md": the caller asked for DOCX, python-docx is
+        # present, and it failed. Recording a successful markdown export here is
+        # what hid this bug for the exporter's whole lifetime.
+        logger.error("DOCX export FAILED with python-docx available: %s", exc, exc_info=True)
+        _record_export(session_id, "docx_failed", str(md_path))
+        _mark_session_exported(session_id)
         return str(md_path)
 
     db = get_db()
@@ -1231,6 +1252,15 @@ def _build_compliance_annex_md(annex: dict) -> str:
             lines.append(f"| {need} | {s.get('domain', '')} | {prio_s} | {high} |")
         lines.append("")
     return "\n".join(lines)
+
+
+def _mark_session_exported(session_id):
+    db = get_db()
+    db.execute(
+        "UPDATE rfi_workbench_sessions SET status='exported', updated_at=%s WHERE id=%s",
+        (_now(), session_id),
+    )
+    db.commit()
 
 
 def _record_export(session_id, fmt, path):
