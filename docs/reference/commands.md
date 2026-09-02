@@ -193,6 +193,18 @@ python tools/builder/forge_validator.py --gate               # FORGE gate for ch
 python tools/compliance/ssp_generator.py --project-id "sparkpilot"
 python tools/compliance/poam_generator.py --project-id "sparkpilot"
 python tools/compliance/stig_checker.py --project-id "sparkpilot"
+
+# ATO package — the ONE packager (rmf-inert-01). POST /api/ato-package/generate answered
+# 501 because it imported a module that did not exist; AADC's working accreditation
+# builder was GENERALISED to take any system rather than a second packager forking.
+# accred_package.build_accred_zip now delegates to build_package_zip, and the evidence
+# collectors MOVED out of the dashboard route module, so the package and /status cannot
+# disagree. readiness_pct is None — never 100.0 — over an empty denominator.
+python -m tools.compliance.ato_packager --project-id "sparkpilot" --json
+python -m tools.compliance.ato_packager --project-id "sparkpilot" --package-type cato --output-dir /tmp/pkg
+# UI: /ato-package   API: POST /api/ato-package/generate {"project_id": ..., "package_type": initial|renewal|cato}
+# Library: from tools.compliance.ato_packager import build_package_zip, PackageArtifact, generate_package
+
 python tools/compliance/sbom_generator.py --project-id "sparkpilot"                                # CycloneDX (default spec 1.7)
 python tools/compliance/sbom_generator.py --project-id "sparkpilot" --format spdx                  # SPDX 2.3 — the other format the 2026 standard names
 python tools/compliance/sbom_generator.py --project-id "sparkpilot" --spec-version 1.6             # 1.4-1.7 selectable for lagging consumers

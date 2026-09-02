@@ -11,14 +11,17 @@ Assembles all governance artifacts for a design into a downloadable ZIP:
   - exec-summary.json
   - assessment.json
   - README.md (package cover sheet)
+
+The ZIP mechanics and the cover sheet live in
+``tools.compliance.ato_packager`` — this module decides only WHICH artifacts an
+AADC design contributes and HOW its posture reads. That split is the point:
+``POST /api/ato-package/generate`` needed a packager and this one worked, so it
+was generalised rather than forked (rmf-inert-01).
 """
 
 from __future__ import annotations
 
-import io
-import json
-import zipfile
-from datetime import datetime, timezone
+from tools.compliance import ato_packager
 
 
 def build_accred_zip(
@@ -41,99 +44,80 @@ def build_accred_zip(
     Returns:
         ZIP file as bytes (write to HTTP response or disk).
     """
-    now = datetime.now(timezone.utc).isoformat()
     design_id = design.get("id", "unknown")
-    classification = design.get("classification", "CUI")
 
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-        # README / cover sheet
-        readme = _build_readme(design, assessment, ato_data, exec_data, now, classification)
-        zf.writestr("README.md", readme)
+    artifacts = [
+        ato_packager.PackageArtifact(
+            f"oscal-component-{design_id}.json",
+            oscal_data,
+            "OSCAL 1.1 Component Definition (FedRAMP/ATO)",
+        ),
+        ato_packager.PackageArtifact(
+            f"threat-model-{design_id}.json",
+            threat_model_data or {},
+            "STRIDE + ATLAS threat model",
+        ),
+        ato_packager.PackageArtifact(
+            f"risk-register-{design_id}.json",
+            {"risks": risks, "design_id": design_id},
+            "Risk register items",
+        ),
+        ato_packager.PackageArtifact(
+            f"ato-checklist-{design_id}.json", ato_data, "ATO readiness checklist"
+        ),
+        ato_packager.PackageArtifact(
+            f"regulatory-gaps-{design_id}.json",
+            reg_data,
+            "Regulatory gap analysis (EU AI Act / DoD / OMB)",
+        ),
+        ato_packager.PackageArtifact(
+            f"red-team-report-{design_id}.json",
+            red_team_data,
+            "AI red team adversarial analysis",
+        ),
+        ato_packager.PackageArtifact(
+            f"exec-summary-{design_id}.json", exec_data, "Executive summary report"
+        ),
+    ]
+    if assessment:
+        artifacts.append(
+            ato_packager.PackageArtifact(
+                f"assessment-{design_id}.json",
+                assessment,
+                "Latest NIST AI RMF / OWASP assessment",
+            )
+        )
 
-        # All JSON artifacts
-        _add_json(zf, f"oscal-component-{design_id}.json", oscal_data)
-        _add_json(zf, f"threat-model-{design_id}.json", threat_model_data or {})
-        _add_json(zf, f"risk-register-{design_id}.json", {"risks": risks, "design_id": design_id})
-        _add_json(zf, f"ato-checklist-{design_id}.json", ato_data)
-        _add_json(zf, f"regulatory-gaps-{design_id}.json", reg_data)
-        _add_json(zf, f"red-team-report-{design_id}.json", red_team_data)
-        _add_json(zf, f"exec-summary-{design_id}.json", exec_data)
-        if assessment:
-            _add_json(zf, f"assessment-{design_id}.json", assessment)
+    summary = ato_data.get("summary", {})
+    metrics = [
+        (
+            "Combined Posture",
+            f"**{exec_data.get('posture_rating', 'UNRATED')}** ({exec_data.get('combined_score', 0)}%)",
+        ),
+        ("Assessment Score", f"{exec_data.get('overall_score', 0)}%"),
+        ("ATO Readiness Score", f"{exec_data.get('ato_score', 0)}%"),
+        ("Regulatory Score", f"{exec_data.get('reg_score', 0)}%"),
+        ("ATO Ready", "✓ YES" if summary.get("ato_ready") else "✗ NO"),
+        ("NIST AI RMF", f"{exec_data.get('nist_score', 0)}%"),
+        ("OWASP LLM", f"{exec_data.get('owasp_score', 0)}%"),
+    ]
 
-    return buf.getvalue()
-
-
-def _add_json(zf: zipfile.ZipFile, name: str, data: object) -> None:
-    zf.writestr(name, json.dumps(data, indent=2, default=str))
-
-
-def _build_readme(
-    design: dict,
-    assessment: dict | None,
-    ato_data: dict,
-    exec_data: dict,
-    now: str,
-    classification: str,
-) -> str:
-    s = ato_data.get("summary", {})
-    posture = exec_data.get("posture_rating", "UNRATED")
-    score = exec_data.get("combined_score", 0)
-    ato_ready = "✓ YES" if s.get("ato_ready") else "✗ NO"
-
-    return f"""# {classification}
-# Accreditation Package — {design.get('name', 'Unnamed')}
-
-**Generated:** {now[:19]} UTC
-**Classification:** {classification}
-**Design ID:** {design.get('id', 'unknown')}
-**Domain:** {design.get('domain', 'unspecified')}
-**Safety Impacting:** {'Yes' if design.get('safety_impacting') else 'No'}
-**Rights Impacting:** {'Yes' if design.get('rights_impacting') else 'No'}
-
----
-
-## Risk Posture
-
-| Metric | Value |
-|--------|-------|
-| Combined Posture | **{posture}** ({score}%) |
-| Assessment Score | {exec_data.get('overall_score', 0)}% |
-| ATO Readiness Score | {exec_data.get('ato_score', 0)}% |
-| Regulatory Score | {exec_data.get('reg_score', 0)}% |
-| ATO Ready | {ato_ready} |
-| NIST AI RMF | {exec_data.get('nist_score', 0)}% |
-| OWASP LLM | {exec_data.get('owasp_score', 0)}% |
-
----
-
-## Package Contents
-
-| File | Description |
-|------|-------------|
-| `README.md` | This cover sheet |
-| `oscal-component-*.json` | OSCAL 1.1 Component Definition (FedRAMP/ATO) |
-| `threat-model-*.json` | STRIDE + ATLAS threat model |
-| `risk-register-*.json` | Risk register items |
-| `ato-checklist-*.json` | ATO readiness checklist |
-| `regulatory-gaps-*.json` | Regulatory gap analysis (EU AI Act / DoD / OMB) |
-| `red-team-report-*.json` | AI red team adversarial analysis |
-| `exec-summary-*.json` | Executive summary report |
-| `assessment-*.json` | Latest NIST AI RMF / OWASP assessment |
-
----
-
-## Critical Gaps
-
-{chr(10).join(f'- {g}' for g in exec_data.get('critical_gaps', [])) or '- None identified'}
-
-## Recommended Actions
-
-{chr(10).join(f'{i+1}. {a}' for i, a in enumerate(exec_data.get('recommended_actions', []))) or '1. No critical actions required'}
-
----
-
-*Generated by ICDEV™ AADC — Agentic AI Design Canvas*
-*{classification}*
-"""
+    return ato_packager.build_package_zip(
+        subject={
+            "id": design_id,
+            "name": design.get("name", "Unnamed"),
+            "classification": design.get("classification", "CUI"),
+            "id_label": "Design ID",
+            "metadata": [
+                ("Domain", design.get("domain", "unspecified")),
+                ("Safety Impacting", "Yes" if design.get("safety_impacting") else "No"),
+                ("Rights Impacting", "Yes" if design.get("rights_impacting") else "No"),
+            ],
+        },
+        artifacts=artifacts,
+        title="Accreditation Package",
+        metrics=metrics,
+        gaps=exec_data.get("critical_gaps", []),
+        actions=exec_data.get("recommended_actions", []),
+        generator="ICDEV™ AADC — Agentic AI Design Canvas",
+    )

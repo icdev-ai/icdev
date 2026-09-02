@@ -42,6 +42,12 @@ data/llm_degraded_tier2.json
 # tests/test_generated_artifacts_untracked.py.
 data/studio_artifacts/
 
+# Generated ATO packages (rmf-inert-01). Each is a point-in-time ZIP over
+# board data — reproducible from the board with `python -m
+# tools.compliance.ato_packager`, and a package committed to a public repo is
+# a system's control posture published.
+data/ato_packages/
+
 # Alert spool and failed-audit dead-letter file — per-machine runtime state.
 data/alerts/
 data/failed_audit_entries.jsonl

@@ -211,11 +211,18 @@ TOOL_REGISTRY = {
             "type": "object",
             "properties": {
                 "project_id": {"type": "string", "description": "UUID of the project"},
-                "stig_profile": {
+                "stig_id": {
                     "type": "string",
-                    "description": "STIG profile to check against",
-                    "enum": ["webapp", "container", "database", "linux", "network"],
+                    "description": "STIG template to check against",
+                    # Kept in step with compliance_server._available_stig_ids():
+                    # only templates that ship under context/compliance/stig_templates.
+                    "enum": ["webapp"],
                     "default": "webapp",
+                },
+                "gate": {
+                    "type": "boolean",
+                    "description": "Evaluate the security gate (0 CAT1 Open = pass)",
+                    "default": False,
                 },
             },
             "required": ["project_id"],
@@ -275,31 +282,65 @@ TOOL_REGISTRY = {
         "category": "compliance",
         "module": "tools.mcp.compliance_server",
         "handler": "handle_cui_mark",
-        "description": "Apply CUI (Controlled Unclassified Information) markings to a file or content string. Adds CUI // SP-CTI banners and designation indicators.",
+        "description": (
+            "Apply CUI (Controlled Unclassified Information) markings to a file. "
+            "Documents get top and bottom banners; source files get a comment header. "
+            "The marking text comes from args/cui_markings.yaml, not from the caller."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "file_path": {"type": "string", "description": "Path to file to mark with CUI banners"},
-                "content": {"type": "string", "description": "Content string to mark (alternative to file_path)"},
-                "marking": {"type": "string", "description": "CUI marking text", "default": "CUI // SP-CTI"},
+                "file_path": {"type": "string", "description": "Path to the file to mark"},
+                "dry_run": {
+                    "type": "boolean",
+                    "description": "Report what would be marked without writing",
+                    "default": False,
+                },
             },
+            "required": ["file_path"],
         },
     },
     "control_map": {
         "category": "compliance",
         "module": "tools.mcp.compliance_server",
         "handler": "handle_control_map",
-        "description": "Map a project activity (e.g., code.commit, test.execute, deploy) to relevant NIST 800-53 controls. Records the mapping in the database.",
+        "description": (
+            "Record a project's implementation of a NIST 800-53 control "
+            "(status, description, responsible role, evidence path). Upserts the "
+            "mapping in project_controls."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "activity": {
+                "project_id": {"type": "string", "description": "UUID of the project"},
+                "control_id": {
                     "type": "string",
-                    "description": "Activity type (e.g., code.commit, test.execute, security.scan, deploy.staging)",
+                    "description": "NIST 800-53 control id (e.g. AC-2, AU-12)",
                 },
-                "project_id": {"type": "string", "description": "UUID of the project (optional)"},
+                "implementation_status": {
+                    "type": "string",
+                    "description": "Implementation status of the control",
+                    # control_mapper.VALID_STATUSES — create_mapping raises on any other.
+                    "enum": [
+                        "compensating",
+                        "implemented",
+                        "not_applicable",
+                        "partially_implemented",
+                        "planned",
+                    ],
+                    "default": "planned",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "How the control is implemented for this project",
+                },
+                "responsible_role": {
+                    "type": "string",
+                    "description": "Role accountable for the control",
+                },
+                "evidence_path": {"type": "string", "description": "Path to supporting evidence"},
             },
-            "required": ["activity"],
+            "required": ["project_id", "control_id"],
         },
     },
     "cssp_assess": {
@@ -316,6 +357,11 @@ TOOL_REGISTRY = {
                     "description": "Functional area to assess (default: all)",
                     "enum": ["all", "Identify", "Protect", "Detect", "Respond", "Sustain"],
                     "default": "all",
+                },
+                "gate": {
+                    "type": "boolean",
+                    "description": "Evaluate the CSSP gate (0 critical not_satisfied = pass)",
+                    "default": False,
                 },
             },
             "required": ["project_id"],

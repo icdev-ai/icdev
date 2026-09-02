@@ -1,0 +1,13 @@
+# rmf-inert-01 — the compliance surface delivers what it declares.
+# Pins the invariants that fail GREEN if broken: that POST /api/ato-package/generate
+# returns a package rather than 501, that the package holds the project's REAL rows
+# (not empty scaffolding) and agrees with /status because both read ONE collector,
+# that readiness_pct is None — never 100.0 — over an empty denominator, that the
+# AADC accreditation builder carries no second zipfile implementation, that every
+# _import_tool call site in compliance_server resolves a symbol its module actually
+# exports (the sweep found five, not the three the card named), that the gateway
+# registry's copy of each rewired schema matches what the server serves, that
+# stig_check's enum only offers templates that are on disk, and that /ato-compliance
+# and /fedramp-20x are LINKED rather than deleted.
+tests/compliance/test_ato_packager.py
+tests/compliance/test_compliance_surface_liveness.py
