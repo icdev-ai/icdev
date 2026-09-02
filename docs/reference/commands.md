@@ -1779,6 +1779,51 @@ python tools/compliance/nist_800_207_assessor.py --project-id "sparkpilot" --jso
 python tools/devsecops/service_mesh_generator.py --project-id "sparkpilot" --mesh istio --json
 ```
 
+### Canonical asset identity — ONE key across the three stacks (rmf-ident-01)
+```bash
+python -m tools.assets.identity --ingest --json     # populate from ni_devices / zig_device_registry / nc_vuln_hosts
+python -m tools.assets.identity --stats --json      # coverage PER RESOLVER, never one 'linked' number
+python -m tools.assets.identity --list --limit 50 --json
+python -m tools.assets.identity --posture <asset-id-or-hostname> --json
+python -m tools.assets.identity --fleet --json      # what the ZIG device pillar deploys against
+```
+Three stacks describe the same machines and none could be joined to another:
+7-pillar ZTA keys on `project_id`, NSA ZIG on `sha256(hostname)[:16]`, NDC/PVM on
+`ni_devices.id`. `asset_identity` (migration `20260902205902`) is one row per
+asset carrying a NULLABLE resolver onto each — NULL means "that stack has never
+seen this asset", which is a finding, not a resolution failure. `--posture` is
+the only path from a discovered device to a ZT decision to an attack-surface row
+to an enclave, and it names WHICH stacks answered (`joined`) so "no attack-surface
+row" cannot be read over a PVM stack that was unreadable.
+
+The join is done in **Python, not SQL**: on PostgreSQL all three stacks share the
+`icdev` database, but on SQLite each canvas has its own file, so a SQL JOIN would
+work on PG and silently return nothing on SQLite.
+
+`corroboration_tier` counts DISTINCT sources, never rows — the ZIG scanner
+re-registers a device on every sweep, and repetition is not corroboration.
+`classification_method` (`rule|oui|model|human_confirmed`) records how the
+classification LABEL was arrived at; NULL is a fourth state meaning nothing has
+classified it, and must never be read as `rule`.
+
+`tools/security_canvas/device_pillar_orchestrator.resolve_fleet()` reads its
+fleet from here and falls back to the six-hostname `DEFAULT_FLEET` fixture,
+**returning which it used** — `asset_identity` | `fixture_inventory_empty` |
+`fixture_inventory_unreadable` | `caller`. Before this, the ZIG device-pillar
+maturity score described six machines that do not exist and nothing said so.
+
+MEASURED on the live board 2026-09-02: all three upstreams are empty or absent
+(`ni_devices` 0 rows, `nc_vuln_hosts` 0 rows, `zig_device_registry` does not
+exist on PostgreSQL at all — the ZIG scanners create it lazily on first run, so
+the device pillar has never been run against this database). `--ingest` reports
+each source separately for exactly this reason: `readable: false` is never
+folded into `ingested: 0`.
+
+`tools/assets/identity.py::zig_device_id()` is the ONE definition of the ZIG
+fingerprint rule; it was written out by hand at five sites in
+`tools/security_canvas/` and all five now delegate. A resolver that
+re-implemented it a sixth time could drift from the key it claims to resolve onto.
+
 ---
 
 ## Observability & XAI Commands

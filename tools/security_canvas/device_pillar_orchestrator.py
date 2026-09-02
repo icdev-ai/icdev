@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from tools.assets.identity import zig_device_id
 from tools.security_canvas import (
     device_compliance_scanner as dcs,
     nac_enforcer as nac,
@@ -26,7 +27,11 @@ from tools.security_canvas import (
     edr_deployment_controller as edr,
 )
 
-# A representative managed fleet (mix of OS platforms)
+# FALLBACK ONLY (rmf-ident-01). These six hostnames do not exist. They were the
+# ONLY input this orchestrator ever had, so the ZIG device-pillar maturity score
+# described an invented fleet and nothing said so. The real fleet now comes from
+# asset_identity -- see resolve_fleet() -- and this fixture is what is used when
+# that table is absent or empty, which `deploy_all` REPORTS as fleet_source.
 DEFAULT_FLEET = [
     {"hostname": "icdev-wks-01", "os_platform": "windows"},
     {"hostname": "icdev-wks-02", "os_platform": "windows"},
@@ -37,15 +42,47 @@ DEFAULT_FLEET = [
 ]
 
 
+def resolve_fleet(fleet: list[dict] | None = None) -> tuple[list[dict], str]:
+    """(devices, source) -- where the fleet came from, always stated.
+
+    Order: an explicit argument, then the canonical asset inventory
+    (``asset_identity``, rmf-ident-01), then the fixture.
+
+    THE SOURCE IS RETURNED, not logged and dropped. A device-pillar score
+    computed over six invented hostnames and one computed over the real estate
+    are different claims, and a caller that cannot tell them apart will quote
+    the first as if it were the second.
+
+    An unreachable or unmigrated inventory degrades to the fixture and says
+    ``fixture_inventory_unreadable`` -- distinct from ``fixture_inventory_empty``
+    (the table is there and nothing has been ingested), because those send you
+    to different fixes.
+    """
+    if fleet:
+        return fleet, "caller"
+    try:
+        from tools.assets.identity import managed_fleet
+
+        discovered = managed_fleet()
+    except Exception:  # noqa: BLE001 - inventory absent is not an outage here
+        return DEFAULT_FLEET, "fixture_inventory_unreadable"
+    if discovered:
+        return discovered, "asset_identity"
+    return DEFAULT_FLEET, "fixture_inventory_empty"
+
+
 def deploy_all(fleet: list[dict] | None = None) -> dict[str, Any]:
     """Deploy all six device-pillar capabilities and re-assess ZIG.
 
     Order matters: MDM enrollment + EDR + compliance scan populate the
     device registry, then attestation/NAC/ZTNA consume that posture data.
     """
-    devices = fleet or DEFAULT_FLEET
+    devices, fleet_source = resolve_fleet(fleet)
     hostnames = [d["hostname"] for d in devices]
-    results: dict[str, Any] = {}
+    results: dict[str, Any] = {
+        "fleet_source": fleet_source,
+        "fleet_size": len(hostnames),
+    }
 
     # 1. MDM/UEM enrollment — establishes the managed-device baseline
     results["mdm"] = mdm.enroll_fleet(devices)
@@ -69,7 +106,7 @@ def deploy_all(fleet: list[dict] | None = None) -> dict[str, Any]:
         nac.evaluate_access(
             mac_address=f"02:00:{hash(h) & 0xff:02x}:00:00:01",
             hostname=h,
-            device_id=__import__("hashlib").sha256(h.encode()).hexdigest()[:16],
+            device_id=zig_device_id(h),
         )
     results["nac"] = nac.deploy_nac_policy()
 
@@ -83,6 +120,11 @@ def deploy_all(fleet: list[dict] | None = None) -> dict[str, Any]:
         (p for p in assessment["pillar_scores"] if p["slug"] == "device"), None
     )
     results["assessment"] = {
+        # Carried onto the assessment too, because __main__ prints only this
+        # sub-dict -- a score whose fleet provenance is one level up is a score
+        # nobody reads the provenance of.
+        "fleet_source": fleet_source,
+        "fleet_size": len(hostnames),
         "aggregate_score": round(assessment["aggregate"]["score"] * 100, 1),
         "device_pillar_score": round(device_pillar["score"] * 100, 1) if device_pillar else None,
         "device_complete_activities": device_pillar["complete_activities"] if device_pillar else None,
