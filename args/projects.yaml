@@ -9382,3 +9382,50 @@ projects:
   - {key: ui, title: UI, priority: medium}
   - {key: ux, title: UX DESIGN, priority: medium}
   - {key: vv, title: VERIFICATION, priority: high}
+- key: rmf
+  name: "RMF/cATO, Asset Visibility & RFI Whitepaper"
+  description: >-
+    Two pursuit commitments plus the document engine that sells them. (1) Compress RMF
+    cycle time and hold a continuous ATO posture across N classification fabrics --
+    measured as TWO clocks that are never merged: automation_time (ours, the 72h claim)
+    and decision_latency (the AO's queue). (2) Asset visibility across those fabrics,
+    reporting corroboration tiers always and a percentage only when an authoritative
+    denominator exists -- never 0, never 100 over an unmeasured estate. (3) A whitepaper /
+    RFP volume generator built on the RFI Workbench, the one surface that already owns
+    parse -> draft -> WriteGuard -> HITL -> DOCX. NO NEW CANVAS: BDC already owns ATO
+    boundary, enclave and cross-domain with real data, and SDC owns the ZT pillars, so the
+    work extends those two rather than adding a fourth overlapping surface.
+  task_prefix: rmf-
+  default_open: true
+  briefs:
+  - 'Epic gate: MANUAL-MODE hold sentinel; the wave is not dispatched until a human releases it'
+  - 'Epic leak: pursuit + vendor identifiers out of the public repo -- rmf-leak-01..02 (DONE)'
+  - 'Epic docx: DOCX export had never run; the caller named a function that does not exist -- rmf-docx-01 (DONE)'
+  - 'Epic rail: honesty rails -- no rate returns 0.0/100.0 over an empty denominator -- rmf-rail-01'
+  - 'Epic fab: fabric registry + cross-fabric posture roll-up consuming BOTH cATO modules -- rmf-fab-01..02'
+  - 'Epic cyc: RMF cycle-time instrumentation, two clocks, with a recorded baseline -- rmf-cyc-01'
+  - 'Epic inert: close the inert five (ato_packager, 3 MCP symbol mismatches, 2 orphan pages) -- rmf-inert-01'
+  - 'Epic oscal: OSCAL assessment-plan + the missing CKL/CKLB emitter -- rmf-oscal-01'
+  - 'Epic disc: discovery adapters, characterization harness, the 5 missing endpoints, a reflex -- rmf-disc-01..02'
+  - 'Epic ident: one canonical asset identity across the three unconnected ZT/asset stacks -- rmf-ident-01'
+  - 'Epic vis: visibility measurement that cannot fabricate a percentage -- rmf-vis-01'
+  - 'Epic zt: ZT checks stop failing OPEN; maturity refuses to score over empty evidence -- rmf-zt-01..02'
+  - 'Epic wp: whitepaper document type, the dead template_id parameter, DIC export + TRUST rails -- rmf-wp-01..02'
+  - 'Epic rfp: wire the solicitation shredder and the Section L/M compliance matrix -- rmf-rfp-01'
+  - 'Epic ui: migrate ungoverned compliance routes into BDC/SDC one per card; register 4 standing claims -- rmf-ui-01..02'
+  epics:
+  - {key: gate, title: GATE, priority: critical}
+  - {key: leak, title: "PUBLIC-REPO DISCLOSURE", priority: critical}
+  - {key: docx, title: "DOCX EXPORT", priority: high}
+  - {key: rail, title: "HONESTY RAILS", priority: critical}
+  - {key: fab, title: "FABRIC REGISTRY & POSTURE", priority: critical}
+  - {key: cyc, title: "RMF CYCLE TIME", priority: high}
+  - {key: inert, title: "CLOSE THE INERT FIVE", priority: high}
+  - {key: oscal, title: "OSCAL & STIG ARTIFACTS", priority: high}
+  - {key: disc, title: "ASSET DISCOVERY", priority: critical}
+  - {key: ident, title: "CANONICAL ASSET IDENTITY", priority: critical}
+  - {key: vis, title: "VISIBILITY MEASUREMENT", priority: high}
+  - {key: zt, title: "ZERO TRUST EVIDENCE", priority: high}
+  - {key: wp, title: "WHITEPAPER ENGINE", priority: high}
+  - {key: rfp, title: "RFP VOLUME", priority: medium}
+  - {key: ui, title: "CANVAS SURFACES & CLAIMS", priority: medium}
