@@ -86,15 +86,64 @@ def demo_collections(path=None) -> frozenset:
         return frozenset()
 
 
-def _is_demo_document(collection_id) -> bool:
-    """True only for a collection the declaration NAMES.
+def resolve_demo_collection_ids(conn, declared=None) -> frozenset:
+    """The declared strings, plus the collection_id of every collection they NAME.
+
+    WHY THIS IS NEEDED, and it is not a hypothetical. `dic_documents.collection_id`
+    holds an opaque id; the human-readable label lives in `dic_collections.name`.
+    Measured on the live board 2026-09-01, after the id-only version merged:
+
+        801d27077c1444ddd4864757 -> 'Politics'  (constitution.pdf, ArtOfWar.pdf, and
+                                                 'The First Amendment to the United
+                                                 States Constitution')
+        d92716e5c128623f0e9fd1b1 -> 'test'      (tmp9x41vmaz)
+
+    Two of the four declared entries were names, so the gate skipped 19 findings
+    and let 108 through -- including the two documents the card was written about.
+    The unit tests could not have caught it: they passed an id in and asserted set
+    membership, which is the mechanism working. The defect was in what a
+    DECLARATION means.
+
+    A LOOKUP, NOT A HEURISTIC. Asking the database which collection somebody named
+    is not pattern-matching a name for 'test'. Matching is EXACT -- 'test' must
+    never drag in 'citation-test-coll'. A name shared by two collections resolves
+    to BOTH: a denylist naming a collection means all of it, and picking one id
+    would half-apply the declaration.
+
+    FAILS OPEN. An unreadable or absent `dic_collections` resolves nothing extra
+    and the declared strings still match by id, which is exactly what shipped
+    first -- never fewer matches than before.
+    """
+    names = frozenset(declared if declared is not None else demo_collections())
+    if not names:
+        return frozenset()
+    resolved = set(names)
+    try:
+        rows = conn.execute(
+            "SELECT collection_id, name FROM dic_collections"
+        ).fetchall()
+        for row in rows:
+            r = dict(row)
+            if r.get("name") in names and r.get("collection_id"):
+                resolved.add(str(r["collection_id"]))
+    except Exception as exc:  # noqa: BLE001 - fail open, but never silently
+        logger.warning("could not resolve demo collection names (%s); matching by id only", exc)
+    return frozenset(resolved)
+
+
+def _is_demo_document(collection_id, resolved=None) -> bool:
+    """True only for a collection the declaration NAMES (by id or by name).
 
     An empty or unknown collection is False -- not knowing which corpus a
     document belongs to is a reason to file the card, not to drop it.
+
+    `resolved` is the set from resolve_demo_collection_ids(); omitting it falls
+    back to id-only matching, which is correct but weaker, so emit_rollups always
+    passes one.
     """
     if not collection_id:
         return False
-    return str(collection_id) in demo_collections()
+    return str(collection_id) in (resolved if resolved is not None else demo_collections())
 
 
 # 'Awaiting review' includes drafted redlines — a finding with a pending
@@ -122,6 +171,8 @@ def emit_rollups(conn=None) -> dict:
             by_doc.setdefault(f["doc_id"], []).append(f)
 
         created, skipped, demo_skipped = [], 0, []
+        # Resolved ONCE per run: one read of dic_collections, not one per document.
+        demo_ids = resolve_demo_collection_ids(conn)
         for doc_id, findings in by_doc.items():
             # prediction-level dedup: one open rollup per document
             existing = conn.execute(
@@ -151,7 +202,7 @@ def emit_rollups(conn=None) -> dict:
                 logger.warning("could not read %s's collection (%s)", doc_id, exc)
                 title_row = None
             row = dict(title_row) if title_row else {}
-            if _is_demo_document(row.get("collection_id")):
+            if _is_demo_document(row.get("collection_id"), demo_ids):
                 demo_skipped.append(doc_id)
                 continue
             title = row.get("title") or doc_id
