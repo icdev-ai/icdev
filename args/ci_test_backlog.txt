@@ -133,7 +133,6 @@ tests/databridge/test_connection_manager.py
 tests/databridge/test_file_resolver.py
 tests/databridge/test_icdev_cpmp_connector.py
 tests/databridge/test_icdev_demand_connector.py
-tests/databridge/test_iris_connector.py
 tests/databridge/test_servicenow_itsm_connector.py
 tests/databridge/test_vault_resolver.py
 tests/db/test_mvs_audit_03_p1_gaps.py

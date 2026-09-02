@@ -8,7 +8,7 @@
 ICDEV's Cortex unified AI layer is now consumable as a **shared service** by external
 standalone applications (compass at `:8010`, idea_lab at `:8000`, future premium child
 apps) over the existing `/cortex/api/v1/*` REST surface, with dedicated scoped
-credentials, plus a DataBridge feeds surface with an IRIS (third-party AI platform)
+credentials, plus a DataBridge feeds surface with first-party local-DB
 connector stub.
 
 Built on top of what the expose epic already had on main: the MCP `cortex_*` family
@@ -22,8 +22,7 @@ Built on top of what the expose epic already had on main: the MCP `cortex_*` fam
 | Service keys | `tools/cortex/service_keys.py` + migration `265_cortex_service_keys.sql` | `icdev_ctx_` keys: SHA-256 at rest, revocable, scoped, tenant-bound, classification ceiling. CLI create/list/revoke. |
 | Central auth branch | `tools/dashboard/auth.py` | `icdev_ctx_` keys honored ONLY on `/cortex/api/v1/` + `/api/databridge/v1/`; fills `g.current_user` (role `service`), `g.security_context`, `g.cortex_binding`. Invalid → 401 + auth event. |
 | REST scope gate | `tools/cortex/rest_v1.py` `_scope_denied()` | Service callers need `cortex:<op>` per endpoint; session users unaffected. New unauthenticated `GET /cortex/api/v1/health` (status only, in `PUBLIC_ENDPOINTS`). |
-| IRIS connector | `tools/databridge/connectors/iris_connector.py` (+ `fixtures/iris_fixtures.py`) | Stub mode default (no published IRIS API). Tables: staffing_alignment (r), performance_reviews (rw), dashboard_feed (r), health. Live = config flip. |
-| Feeds API | `tools/dashboard/api/databridge_feeds.py` | `GET/POST /api/databridge/v1/<connector>/<table>`; connector allowlist `{iris}`; scopes `databridge:iris:read|write`; service keys only. |
+| Feeds API | `tools/dashboard/api/databridge_feeds.py` | `GET/POST /api/databridge/v1/<connector>/<table>`; connector allowlist `{icdev_demand, icdev_cpmp}`; scopes `databridge:<connector>:read|write`; service keys only. |
 | Client SDK | `tools/cortex/client.py` | Stdlib-only, vendored into compass/idea_lab. Never raises: dict on 2xx, 4xx body returned (blocked is an answer), None when unreachable. |
 | Leak guard | `tests/ci/test_premium_leak_guard.py` | Fails CI if premium product identifiers enter the open repo. |
 
@@ -34,7 +33,7 @@ Built on top of what the expose epic already had on main: the MCP `cortex_*` fam
 - `air_gap` / `fail_closed`: caller may raise strictness, never lower it.
 - `trusted_content` is force-cleared for network callers (no injection-screen skip).
 - No `agent` over REST — team launches remain same-machine MCP (`cortex_agent_launch`).
-- Feeds expose ONLY allowlisted connectors regardless of scopes (v1: `iris`).
+- Feeds expose ONLY allowlisted connectors regardless of scopes (v1: `icdev_demand`, `icdev_cpmp`).
 
 ## Consumer wiring (compass / idea_lab)
 
@@ -55,5 +54,5 @@ Built on top of what the expose epic already had on main: the MCP `cortex_*` fam
 
 `tests/cortex/test_service_keys.py`, `test_rest_scopes.py`, `test_client.py`,
 `tests/dashboard/test_cortex_service_key_auth.py`, `test_databridge_feeds.py`,
-`tests/databridge/test_iris_connector.py`, `tests/ci/test_premium_leak_guard.py`
+`tests/dashboard/test_databridge_feeds.py`, `tests/ci/test_premium_leak_guard.py`
 (48 new tests; full cortex+databridge suites green: 570 passed).

@@ -51,7 +51,7 @@ Server surfaces this client speaks to (one ICDEV host):
     POST {host}/cortex/api/v1/intake/{session,turn}       (RICOAS intake bridge)
     GET  {host}/cortex/api/v1/intake/session/<id>
     GET  {host}/cortex/api/v1/health                      (unauthenticated)
-    GET/POST {host}/api/databridge/v1/<connector>/<table> (IRIS feeds)
+    GET/POST {host}/api/databridge/v1/<connector>/<table> (DataBridge feeds)
 
 Auth: an ``icdev_ctx_`` Cortex service key sent as ``Authorization: Bearer``.
 The key row binds tenant/classification/scopes SERVER-SIDE
@@ -548,12 +548,12 @@ class CortexClient:
         result = self.health()
         return bool(result and result.get("ok"))
 
-    # -- DataBridge feeds (IRIS et al.) -----------------------------------------
+    # -- DataBridge feeds -----------------------------------------
 
     def feed_read(self, connector: str, table: str, *, limit: Optional[int] = None,
                   filters: Optional[dict] = None,
                   timeout: Optional[int] = None) -> Optional[dict]:
-        """Read rows from an exposed DataBridge connector feed (e.g. iris)."""
+        """Read rows from an exposed DataBridge connector feed (e.g. icdev_demand)."""
         params = dict(filters or {})
         if limit is not None:
             params["limit"] = limit
