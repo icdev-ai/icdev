@@ -10,12 +10,12 @@ ZIG Activity: zig-act-p1-15 (Deploy EDR on all managed endpoints)
 """
 from __future__ import annotations
 
-import hashlib
 from datetime import datetime, timezone
 from typing import Any
 
 from tools.security_canvas.db.init_db import get_connection
 from tools.security.device_trust import verify_device_posture, DeviceTrustResult
+from tools.assets.identity import zig_device_id
 
 # ---------------------------------------------------------------------------
 # Supported EDR/XDR products
@@ -62,7 +62,7 @@ def deploy_sensor(hostname: str, edr_product: str = "crowdstrike_falcon",
         raise ValueError(f"unsupported EDR product: {edr_product}")
     now = datetime.now(timezone.utc).isoformat()
     if not device_id:
-        device_id = hashlib.sha256(hostname.encode()).hexdigest()[:16]
+        device_id = zig_device_id(hostname)
 
     trust: DeviceTrustResult = verify_device_posture(device_id)
     sensor_version = trust.sensor_version or "7.x"

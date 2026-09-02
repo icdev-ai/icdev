@@ -274,6 +274,25 @@ substrates:
       (args/docmod/inventory_feeds.yaml) instead of one hardcoded table; it now
       holds 32 rows derived from the topology feed. If it returns to 0, check
       whether every declared feed is empty before suspecting the writer.
+  - ref: asset_identity
+    note: >-
+      The canonical asset identity (rmf-ident-01, migration
+      20260902205902). Load-bearing on a READ path and therefore silent when
+      empty: tools/security_canvas/device_pillar_orchestrator.resolve_fleet()
+      asks it for the managed fleet and falls back to the six-hostname
+      DEFAULT_FLEET fixture on an empty answer, so an empty table does not
+      break the ZIG device pillar — it makes its maturity score describe six
+      machines that do not exist, which is exactly what it did before this
+      table existed. tools/assets/identity.py::asset_posture() is the other
+      reader: it is the ONLY path from a discovered device to a ZT decision to
+      an attack-surface row to an enclave, and with no rows it answers
+      "no asset with that id" for every real machine on the estate.
+      Populated by `python -m tools.assets.identity --ingest` from
+      ni_devices, zig_device_registry and nc_vuln_hosts. Note that ni_devices
+      is ITSELF a declared substrate that has read 0 rows (see
+      docmod_defacto_standards above), so an empty asset_identity here may be
+      an empty UPSTREAM rather than a writer that never ran — `--ingest`
+      reports each source's row count separately for that reason.
 
 # The five incidents this measurement was built for. Each is asserted to be
 # measurable — `--gate` fails when a case's class cannot be measured at all,

@@ -256,6 +256,7 @@ tables:
   appforge_reflex_state: it
   approval_items: it
   approval_workflows: it
+  asset_identity: it
   atlas_assessments: it
   atlas_critique_findings: it
   atlas_critique_sessions: it
