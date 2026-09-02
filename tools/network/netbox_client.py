@@ -138,6 +138,20 @@ class NetBoxClient:
         raw = self._get_paginated("/api/dcim/devices/", params)
         return [self._map_device(d) for d in raw]
 
+    def get_devices_raw(self, site: str | None = None) -> list[dict]:
+        """Pull devices UNMAPPED, exactly as NetBox returned them.
+
+        ``get_devices`` maps to the canvas-node shape and drops
+        ``device_type.manufacturer`` / ``device_type.model`` — the two fields
+        the asset-discovery adapter and the de-facto standard learner both
+        need. Callers that want the canvas shape keep using ``get_devices``;
+        this is purely additive and changes nothing for them (rmf-disc-01).
+        """
+        params: dict[str, Any] = {}
+        if site:
+            params["site"] = site
+        return self._get_paginated("/api/dcim/devices/", params)
+
     def _map_device(self, d: dict) -> dict:
         """Convert NetBox device object to canvas node format."""
         role_slug = ""

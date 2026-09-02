@@ -1,0 +1,24 @@
+# Asset Discovery Adapters
+
+CUI // SP-CTI
+
+Five sources of asset truth behind ONE two-method contract, so `ni_devices` is
+populated by whichever adapters report healthy — and a fabric with no reachable
+source says so instead of reading as an empty estate.
+
+Declaration: `args/discovery_adapters.yaml`. Every adapter ships **disabled** on
+this deployment (no NetBox, no GNS3 server, no inventory export is reachable
+from it; `pysnmp` and `netmiko` are both absent). SNMP and SSH are disabled for
+a second reason: they touch live gear.
+
+| Tool | Path | Purpose | CLI | Output |
+|------|------|---------|-----|--------|
+| Discovery adapter contract | `tools\assets\discovery_adapters\base.py` | The ONE contract: `DiscoveryAdapter.health() -> AdapterHealth` and `.discover() -> list[DiscoveredDevice]`, plus `AdapterRegistry`. Seven health states that are never merged (`healthy`, `degraded`, `unreachable`, `unavailable`, `unconfigured`, `disabled`, `unmeasured`); only `healthy`/`degraded` discover, and the last three are "we did not look" and never count as a verdict about a source. `DiscoveredDevice.stable_id()` hashes (fabric, adapter, node_id) so re-running upserts and the same hostname on two fabrics stays two assets. `normalize_inference()` stops `_infer_vendor`'s `"Unknown"` sentinel and `_infer_device_type`'s `"server"` fallback becoming asset attributes. | library | — |
+| CSV discovery adapter | `tools\assets\discovery_adapters\csv_adapter.py` | An exported inventory file as a source — what an air-gapped enclave that will never expose an API can still supply. Header → canonical field mapping is DECLARED per instance (`columns:`); no column name appears in the code. A row with no identity is skipped, never given an invented id. | library | — |
+| NetBox discovery adapter | `tools\assets\discovery_adapters\netbox_adapter.py` | NetBox DCIM as a source. Delegates to the existing `NetBoxClient` (no HTTP/auth/pagination here) but reads `get_devices_raw`, because `get_devices()` is the canvas-node mapper and DROPS `device_type.manufacturer`/`model` — the two fields the de-facto standard learner reads. | library | — |
+| SNMP discovery adapter | `tools\assets\discovery_adapters\snmp_adapter.py` | First consumer of `tools/network/discovery.py::discover_snmp` (946 lines, zero importers before this). Calls through the module object so the transport can be substituted. Reports `unavailable` + `dependency: pysnmp` when the package is absent — never `unreachable`, which is a different ticket. **Ships disabled.** | library | — |
+| SSH discovery adapter | `tools\assets\discovery_adapters\ssh_adapter.py` | First consumer of `discover_ssh` (CDP/LLDP neighbour tables). `health()` deliberately does NOT log in — a health probe would double the auth attempts against every device on every sweep — so it reports `degraded`, never `healthy`. **Ships disabled.** | library | — |
+| GNS3 discovery adapter | `tools\assets\discovery_adapters\gns3_adapter.py` | A virtual lab as a source. Real inventory OF THE LAB and of nothing else: every device carries `properties.evidence_kind = "lab"` and `source = "topology_ingest"`, which the de-facto learner excludes by name. Delegates to `tools/network/adapters/gns3_adapter.py::GNS3Adapter`. | library | — |
+| ni_devices sink | `tools\assets\discovery_adapters\sink.py` | Upserts canonical devices into `ni_devices`, writing the INTERSECTION of what it has and what the LIVE table has — the `CREATE TABLE IF NOT EXISTS` DDL and the migrated PostgreSQL table have diverged (`source`, `rack`, `classification` exist only on the latter). `source` carries the EVIDENCE CLASS (`csv`/`netbox`/`discovery`/`topology_ingest`), NULL when unattributed; the adapter instance and fabric ride in `properties_json`, which exists on both shapes. | library | `SinkReport` |
+| Discovery runner | `tools\assets\discovery_adapters\runner.py` | Runs the declared adapters and reports health **per fabric** — four fabric states (`covered`, `partial`, `blind`, `unmeasured`), no percentages anywhere, `device_count` None rather than 0 when nothing was discovered. Refuses a literal credential in the declaration (`env:`/`file:` only), per instance, so one bad declaration cannot take the sweep down. | `--health \| --dry-run \| --run \| --list [--fabric <id>] [--config <path>] [--json]` | JSON report; exit 2 if the sweep could not be produced |
+| Characterization harness | `tools\assets\discovery_adapters\harness.py` | Exercises every adapter against a MOCK: a temp CSV, loopback HTTP servers speaking NetBox and GNS3 JSON, and substituted `_snmp_get`/`_snmp_walk` and `ConnectHandler` so the REAL orphaned parsers run. Mocks sit at the TRANSPORT seam, never at the adapter. Nothing here can reach production gear. | `[--adapter <name>] [--list] [--json]` | Observations per adapter; exit 1 if a case could not run |

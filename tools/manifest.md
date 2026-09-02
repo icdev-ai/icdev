@@ -9,6 +9,7 @@
 - [LLM Chain Orchestration (CoT / CoD)](manifest/llm-chain-orchestration.md)
 - [AIS Vessel Data Importer](manifest/ais-importer.md)
 - [Network Design Canvas + IQE (ICDEV Query Engine)](manifest/network-iqe.md)
+- [Asset Discovery Adapters](manifest/asset-discovery.md)
 - [Memory System](manifest/memory-system.md)
 - [Database](manifest/database.md)
 - [Resilience (D146-D149)](manifest/resilience.md)

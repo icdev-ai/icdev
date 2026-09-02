@@ -178,6 +178,17 @@ class GNS3Adapter:
         """GET /v2/projects."""
         return self._get_list("/v2/projects")
 
+    def list_nodes(self, project_id: str) -> List[Dict[str, Any]]:
+        """GET /v2/projects/{project_id}/nodes.
+
+        The read counterpart of :meth:`add_node`. This adapter could build a
+        topology and never enumerate one, so asset discovery had no way to see
+        what a lab actually contains (rmf-disc-01). Purely additive.
+        """
+        return self._get_list(
+            f"/v2/projects/{urllib.parse.quote(project_id)}/nodes"
+        )
+
     def delete_project(self, project_id: str) -> bool:
         """DELETE /v2/projects/{project_id}."""
         resp = self._request(
