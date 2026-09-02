@@ -322,7 +322,22 @@ def _process_advisory_model_match(
         for model in affected_models:
             model_lower = model.lower()
             for dev_name_lower, (ip_key, dev) in device_names_lower.items():
-                if model_lower in dev_name_lower or dev_name_lower in model_lower:
+                # rmf-disc-02: an advisory names a MODEL ("Catalyst 6500") and
+                # this compared it only against the device's HOSTNAME. Operators
+                # do not put model numbers in hostnames, so the comparison could
+                # essentially never fire and nc_attack_surface would have stayed
+                # empty even once devices arrived. `platform` carries the model
+                # (nqe_client._project_device_row puts it in platform.ostype,
+                # which is where the Forward Networks API puts it too), so it is
+                # matched as well. The name comparison is UNCHANGED — a live NQE
+                # deployment whose device names do encode models keeps matching
+                # exactly as before; this only adds a second candidate.
+                dev_model_lower = str(dev.get("platform") or "").strip().lower()
+                name_hit = model_lower in dev_name_lower or dev_name_lower in model_lower
+                model_hit = bool(dev_model_lower) and (
+                    model_lower in dev_model_lower or dev_model_lower in model_lower
+                )
+                if name_hit or model_hit:
                     row = {
                         "device_id": dev.get("platform", ""),
                         "device_name": dev["name"],

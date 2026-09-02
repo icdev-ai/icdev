@@ -5910,6 +5910,70 @@ python -c "from tools.genesis.reflexes.dic_digest import run; print(run({}, None
 
 ---
 
+## Network Canvas — Auto-Discovery (rmf-disc-02)
+
+The scan engine, its persistence, and the page that drives it.
+
+```bash
+# The engine — scan a live network and diff it against a design (library + CLI;
+# persists nothing on its own)
+python tools/network/discovery.py --target 10.0.0.0/24 --method snmp --community public --json
+python tools/network/discovery.py --target 10.0.0.1 --method ssh --username admin --json
+python tools/network/discovery.py --target 10.0.0.0/24 --method ping --json
+python tools/network/discovery.py --diff --discovered disc.json --designed topo.json --json
+
+# The store — scan history, and the ONE writer of ni_devices on the discovery path
+python -m tools.network.discovery_store                       # inventory by provenance + scan summary
+python -m tools.network.discovery_store --list-scans
+python -m tools.network.discovery_store --scan <scan_id>
+python -m tools.network.discovery_store --delete-scan <scan_id>   # cascades to nc_discovery_diffs
+
+# Seed a DEMO inventory. The rows are FABRICATED and are labelled
+# ni_devices.source='synthetic', which args/docmod/inventory_feeds.yaml excludes
+# BY NAME from the de-facto standard learner's `inventory` feed. Without that
+# label these would outrank every real design topology as evidence of what
+# hardware is fielded. Defaults to a topology of its own so a fabricated fleet
+# never lands inside somebody's real diagram.
+python -m tools.network.discovery_store --seed-synthetic --count 24
+python -m tools.network.discovery_store --seed-synthetic --topology-id <id> --count 50 --seed 7
+
+# The reflex — passive asset discovery, 24h. Ships with NO targets and reports
+# `unmeasured`/`no_targets_declared` rather than a clean run it did not make.
+# `snmp`/`ssh` need `allow_active_scan: true` in args/genesis_config.yaml: a
+# credentialed sweep of live infrastructure on a schedule with no human present
+# is an operator decision, not a default.
+python -m tools.genesis.reflexes.asset_discovery
+python tools/genesis/daemon.py --reflex asset_discovery --json
+
+# UI:  http://localhost:5050/network/discovery
+# API: POST   /network/api/discovery/scan
+#      GET    /network/api/discovery/scans
+#      GET    /network/api/discovery/scans/<scan_id>
+#      DELETE /network/api/discovery/scans/<scan_id>
+#      POST   /network/api/discovery/scans/<scan_id>/import/<topology_id>   {"mode":"merge"|"replace"}
+#      POST   /network/api/discovery/diff                                   {"scan_id":..,"topology_id":..}
+#      GET    /network/api/discovery/inventory
+```
+
+Notes that will save a debugging session:
+
+- A scan that reaches nothing is `completed` with `devices_discovered: 0`, never
+  `failed`. "The targets did not answer" and "the scanner broke" are different
+  facts with opposite repairs.
+- A `ping` sweep finds live HOSTS and produces NO device records — nothing on the
+  wire tells an ICMP echo what answered it. `targets_scanned` is the measurement
+  there, not `devices_discovered`.
+- A scan is SYNCHRONOUS. `POST /api/discovery/scan` refuses a target set
+  expanding past 1024 addresses, WHOLE and naming the count, rather than
+  truncating it — a sweep that quietly scanned a prefix would report a partial
+  estate as a complete one.
+- SNMP community strings and SSH passwords are stripped before the scan config
+  is persisted (that config is read back and rendered). The scan still records
+  THAT it authenticated.
+- `GET /api/discovery/inventory` reports `measurable: false` rather than a zero
+  when `ni_devices` cannot be read: "nothing is deployed" and "I could not look"
+  justify opposite decisions.
+
 ## Network Canvas — PVM (Predictive Vulnerability Management)
 
 ```bash

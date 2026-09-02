@@ -61,6 +61,13 @@ def upsert_device(topology_id: str, node_id: str, conn=None, **kwargs) -> dict:
             "label", "device_type", "vendor", "model", "firmware_version",
             "eol_date", "eos_date", "purchase_date", "purchase_cost",
             "annual_maintenance_cost", "replacement_cost", "site",
+            # `source` records WHERE THE ROW CAME FROM (rmf-disc-02, migration
+            # 20260902210030). It is updatable on purpose: a device first seeded
+            # synthetically and later confirmed by a real scan must be able to
+            # stop reading `synthetic`. A caller that does not pass it leaves
+            # the existing value alone rather than clearing it — an unstated
+            # provenance must never silently become "unknown".
+            "source",
             "rack_location", "notes", "properties_json",
         ):
             if key in kwargs:
@@ -83,8 +90,8 @@ def upsert_device(topology_id: str, node_id: str, conn=None, **kwargs) -> dict:
             "vendor, model, firmware_version, eol_date, eos_date, purchase_date, "
             "purchase_cost, annual_maintenance_cost, replacement_cost, site, "
             # `rack`, not `rack_location` (swp-scan-01).
-            "rack, notes, properties_json, created_at, updated_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            "rack, notes, properties_json, source, created_at, updated_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 device_id, topology_id, node_id,
                 kwargs.get("label", f"device-{node_id}"),
@@ -99,6 +106,11 @@ def upsert_device(topology_id: str, node_id: str, conn=None, **kwargs) -> dict:
                 kwargs.get("site"), kwargs.get("rack_location"),
                 kwargs.get("notes"),
                 kwargs.get("properties_json", "{}"),
+                # NULL when the caller names no provenance. Never defaulted to a
+                # label: a row whose origin nobody stated is UNKNOWN, and the
+                # de-facto learner's inventory feed treats unknown as readable
+                # evidence exactly as it did before this column existed.
+                kwargs.get("source"),
                 now, now,
             ),
         )
@@ -229,6 +241,11 @@ def bulk_import_devices(topology_id: str, file_path: str, conn=None) -> dict:
             site=rec.get("site"),
             rack_location=rec.get("rack_location"),
             notes=rec.get("notes"),
+            # rmf-disc-02: an operator CSV/JSON export of a real inventory
+            # system is an OBSERVED estate, so this label is read by the
+            # de-facto learner's `inventory` feed. A file the row itself names a
+            # source in wins -- the caller knows better than this default.
+            source=rec.get("source") or "csv",
         )
         if result["action"] == "created":
             created += 1

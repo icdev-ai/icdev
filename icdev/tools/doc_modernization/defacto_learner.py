@@ -140,6 +140,61 @@ def _pick(source: dict, candidates) -> str:
     return ""
 
 
+def _apply_row_filter(feed: dict, rows: list[dict]) -> list[dict]:
+    """Drop rows a feed declares out of scope, in PYTHON.
+
+    WHY A FEED NEEDS TO EXCLUDE PART OF ITS OWN TABLE (rmf-disc-02)
+
+    A feed's ``evidence_kind`` is a claim about the WHOLE table, and that held
+    for as long as ``ni_devices`` could only be written by a NetBox sync or a
+    CSV export. It stopped holding the moment the platform gained a way to seed
+    the same table with fabricated demo devices: those rows are physically
+    indistinguishable from an observed estate once written, and this feed ranks
+    the table at the best precedence there is. One config line keeps the claim
+    true instead of the table having to stay empty to keep it true.
+
+    ``exclude_when: {column: [values]}`` -- a row is dropped when ANY named
+    column holds ANY listed value. Compared as strings and case-insensitively,
+    because a provenance label is data typed by a writer, not an enum.
+
+    In Python, never SQL: the module's own contract is pure-Python aggregation
+    (feed JSON is parsed here, never by json_extract), and a WHERE clause built
+    from config would be a dialect-portability problem and an injection surface
+    for no gain over a list comprehension.
+    """
+    exclude = feed.get("exclude_when") or {}
+    if not isinstance(exclude, dict) or not exclude:
+        return rows
+
+    banned: dict[str, set[str]] = {}
+    for column, values in exclude.items():
+        if not isinstance(column, str):
+            continue
+        vals = values if isinstance(values, (list, tuple, set)) else [values]
+        banned[column] = {str(v).strip().lower() for v in vals if v is not None}
+
+    kept: list[dict] = []
+    for row in rows:
+        for column, values in banned.items():
+            cell = row.get(column)
+            # A NULL is never excluded. Absent provenance is UNKNOWN, and
+            # dropping unknowns would silently shrink a feed to only the rows
+            # some writer happened to label -- a different measurement wearing
+            # the same name.
+            if cell is not None and str(cell).strip().lower() in values:
+                break
+        else:
+            kept.append(row)
+
+    dropped = len(rows) - len(kept)
+    if dropped:
+        logger.info(
+            "docmod learner: feed %s excluded %d of %d rows by exclude_when",
+            feed.get("id"), dropped, len(rows),
+        )
+    return kept
+
+
 def _read_feed(feed: dict, conn) -> list[dict]:
     """Normalize one feed into records carrying the canonical fields."""
     table = feed.get("table")
@@ -159,6 +214,8 @@ def _read_feed(feed: dict, conn) -> list[dict]:
         except Exception:
             pass
         return []
+
+    rows = _apply_row_filter(feed, rows)
 
     records: list[dict] = []
     if kind == "json_nodes":

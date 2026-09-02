@@ -1239,6 +1239,42 @@ reflexes:
 
   # ── NDC Topology Drift → ACOIC (producer for the DIC compliance path) ───────
 
+  # rmf-disc-02: passive network asset discovery. PASSIVE-ONLY BY DEFAULT and
+  # DECLARES NO TARGETS -- so on a deployment that has not been configured it
+  # reports `unmeasured` / `no_targets_declared` and sweeps nothing, rather
+  # than guessing an address space or reporting a clean run it did not make.
+  #
+  # `snmp` and `ssh` present a community string / an account password to live
+  # infrastructure on a schedule with no human present. That is a different act
+  # from an ICMP echo, so it needs `allow_active_scan: true` -- an operator
+  # decision, never a default.
+  #
+  # This reflex NEVER seeds synthetic devices. A daemon fabricating inventory
+  # rows on a cadence would manufacture its own evidence; the CLI seed
+  # (`python -m tools.network.discovery_store --seed-synthetic`) is a
+  # deliberate one-off an operator asks for.
+  asset_discovery:
+    timeout_seconds: 600     # a /24 ping sweep is ~256 sequential probes
+    enabled: true
+    risk_tier: green         # read-only against NDC; ICMP only unless opted in
+    schedule: "every 24h"
+    interval_seconds: 86400  # matches CADENCE_HOURS = 24 in the reflex module
+    cooldown_minutes: 120
+    success_metric:
+      name: addresses_swept
+      threshold: 0        # >= 0 -- a cycle that correctly REFUSED (no targets
+                          # declared, or an active method not opted into) swept 0
+                          # addresses and is a healthy cycle, not a failure.
+      operator: gte
+    description: "Passive network asset discovery: sweep the DECLARED targets, persist each scan to nc_discovery_scans, import what answered into ni_devices with source='discovery', and measure the inventory's provenance split. Reports `unmeasured` when no targets are declared -- never a clean run it did not make."
+    targets: []              # IPs/CIDRs. EMPTY = discover nothing, and say so.
+    method: ping             # ping | snmp | ssh (the last two need allow_active_scan)
+    allow_active_scan: false
+    topology_id: null        # topology discovered devices are attributed to
+    timeout: 1.0             # per-host seconds
+    hop_limit: 0             # neighbour-crawl depth; 0 = no crawl
+    dry_run: false
+
   ndc_topology_drift:
     timeout_seconds: 180     # config generation + diff across all topologies
     enabled: true

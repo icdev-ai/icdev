@@ -119,6 +119,7 @@ def create_network_blueprint():
     from tools.network.routes.ingestion import register_ingestion_routes
     from tools.network.routes.pvm import register_pvm_routes
     from tools.network.routes.pna import register_pna_routes
+    from tools.network.routes.discovery import register_discovery_routes
 
     register_projects_routes(bp)
     register_governance_routes(bp)
@@ -128,6 +129,9 @@ def create_network_blueprint():
     register_ingestion_routes(bp)
     register_pvm_routes(bp)
     register_pna_routes(bp)
+    # rmf-disc-02: /discovery + the five /api/discovery/* endpoints the
+    # page has always called and that were defined nowhere.
+    register_discovery_routes(bp)
 
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)", len(bp.deferred_functions))

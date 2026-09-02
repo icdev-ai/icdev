@@ -1481,12 +1481,17 @@ def register_analytics_routes(bp):
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
-    @bp.route("/discovery")
-    @nc_login_required
-    def nc_discovery_page():
-        return render_template("network/discovery.html") if os.path.exists(
-            os.path.join(os.path.dirname(__file__), "..", "dashboard", "templates", "network", "discovery.html")
-        ) else ("Discovery page coming soon", 200)
+    # /discovery moved to tools/network/routes/discovery.py (rmf-disc-02).
+    # It used to live here behind an os.path.exists() guard on
+    # `<this dir>/../dashboard/templates/network/discovery.html` -- a path that
+    # has never existed in this tree, because the templates are under
+    # tools/dashboard/templates/. The guard was therefore always false and the
+    # route returned the string "Discovery page coming soon" with HTTP 200,
+    # measured live 2026-09-02, while a complete page sat in the template
+    # directory unrendered. It also passed no context, so `scans`, `topologies`
+    # and the two protocol flags were undefined. Do not re-add a filesystem
+    # guard around a render_template call: a missing template raises something
+    # a reader can act on, and a guard that downgrades it to a 200 does not.
 
     @bp.route("/logout")
     def nc_logout():

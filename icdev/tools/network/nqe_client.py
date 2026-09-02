@@ -121,88 +121,169 @@ def _normalise_nql(nql: str) -> str:
 # Local IQE execution stub
 # ---------------------------------------------------------------------------
 
+#: Collections this local fallback can actually answer, and the table each reads.
+#:
+#: EVERY ENTRY HERE USED TO NAME `nc_nodes` OR `nc_edges`, AND NEITHER TABLE HAS
+#: EVER EXISTED (rmf-disc-02). There is no CREATE TABLE for either anywhere in
+#: this repository -- network topology is stored as JSON in
+#: `topologies.graph_json` and device inventory in `ni_devices`. So every local
+#: NQE query raised `relation "nc_nodes" does not exist`, was swallowed by the
+#: broad `except` below, and returned `[]`.
+#: `attack_surface_mapper._build_device_map` then built an empty device map,
+#: `map_attack_surface` correlated every advisory against zero devices, and
+#: `nc_attack_surface` stayed at 0 rows permanently while the PVM dashboard
+#: reported a successful mapping pass. Measured on the live board 2026-09-02:
+#: nc_nodes absent, nc_edges absent, nc_attack_surface 0 rows.
+#:
+#: Only `network.devices` is remapped, onto the table that does exist. The other
+#: collections named tables holding interface / BGP / ACL / VLAN state, and this
+#: schema has no such tables at all -- so they are declared UNSUPPORTED rather
+#: than pointed at something approximate. An interface list synthesised from a
+#: device list would be a fabrication, and the caller reads "no interfaces" as
+#: "not reachable", which is at least the safe direction.
+_COLLECTION_TABLES: dict[str, tuple[str, list[str]]] = {
+    "network.devices": (
+        "ni_devices",
+        ["id", "node_id", "label", "device_type", "vendor", "model",
+         "firmware_version", "site", "properties_json"],
+    ),
+}
+
+#: Collections with no backing table in this schema. Explicit, so a reader can
+#: tell "this deployment cannot answer that" from "the answer is nothing" --
+#: the second is what kept this engine's failure invisible for so long.
+_UNSUPPORTED_COLLECTIONS = (
+    "network.interfaces", "network.bgp.sessions", "network.bgp.routes",
+    "network.links", "network.acls", "network.acls.rules", "network.vlans",
+    "network.prefixes", "network.ospf.neighbors", "network.isis.adjacencies",
+    "network.mpls.lsps",
+)
+
+
+def _local_source(iqe: str) -> str:
+    """Label what the local fallback could do with this query.
+
+    ``local_mapping``       a table backs this collection and was queried.
+    ``unsupported_locally`` no table in this schema holds that state.
+    """
+    coll_match = re.search(r"\bin\s+(network\.[a-z_.]+)", iqe or "", re.I)
+    collection = coll_match.group(1).rstrip(".") if coll_match else ""
+    if collection in _COLLECTION_TABLES:
+        return "local_mapping"
+    if collection in _UNSUPPORTED_COLLECTIONS:
+        return "unsupported_locally"
+    return "local_mapping"
+
+
+def _project_device_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Shape one ni_devices row like an NQE `network.devices` record.
+
+    The keys are the ones `attack_surface_mapper._build_device_map` reads
+    (`managementIp`, `name`, `platform.ostype`), so that consumer is untouched:
+    the NQE API's own field names stay the contract and this fallback speaks
+    them.
+
+    `platform.ostype` carries the MODEL. That is what the advisory matcher
+    compares affected-model strings against, and the model is the only field in
+    this table that can match one.
+    """
+    import json as _json
+
+    props: dict[str, Any] = {}
+    raw = row.get("properties_json")
+    if isinstance(raw, str) and raw:
+        try:
+            props = _json.loads(raw)
+        except Exception:
+            props = {}
+    elif isinstance(raw, dict):
+        props = raw
+
+    return {
+        "id": row.get("id"),
+        "name": row.get("label") or row.get("node_id") or "",
+        "managementIp": props.get("ip_address") or "",
+        "platform": {
+            "ostype": row.get("model") or "",
+            "osversion": row.get("firmware_version") or "",
+            "vendor": row.get("vendor") or "",
+        },
+        "location": row.get("site") or "",
+        "deviceType": row.get("device_type") or "",
+        "model": row.get("model") or "",
+        # Provenance travels with the record so a consumer can tell an observed
+        # device from a synthetic demo one without re-reading the table.
+        "source": row.get("source"),
+    }
+
+
 def _run_iqe_local(iqe: str, network_id: str | None) -> list[dict[str, Any]]:
     """Execute an IQE query against the local network canvas DB.
 
-    Returns a list of row dicts.  Returns an empty list on any error so the
-    caller always gets a valid (possibly empty) result set.
+    Returns a list of row dicts, and an empty list for a collection this schema
+    cannot answer -- see ``_UNSUPPORTED_COLLECTIONS``.
     """
+    coll_match = re.search(r"\bin\s+(network\.[a-z_.]+)", iqe, re.I)
+    collection = coll_match.group(1).rstrip(".") if coll_match else ""
+    if collection not in _COLLECTION_TABLES:
+        return []
+
     try:
-        from tools.db.storage import get_canvas_connection
-        conn = get_canvas_connection("NC_STORAGE_BACKEND")
+        # The canvas connection, not tools.db.storage.get_connection():
+        # ni_devices carries a `classification` column but no `tenant_id`, so
+        # the global RLS predicate must not be attached to it.
+        from tools.network.db.init_db import get_connection as _nc_conn
+        conn = _nc_conn()
     except Exception as exc:
         logger.debug("Could not open canvas connection: %s", exc)
         return []
 
-    # Determine which table to query based on the IQE collection keyword
-    collection_map = {
-        "network.devices": ("nc_nodes", ["id", "label", "object_type", "config"]),
-        "network.interfaces": ("nc_nodes", ["id", "label", "object_type"]),
-        "network.bgp.sessions": ("nc_nodes", ["id", "label", "config"]),
-        "network.links": ("nc_edges", ["id", "source_id", "target_id"]),
-        "network.acls": ("nc_nodes", ["id", "label", "config"]),
-        "network.acls.rules": ("nc_nodes", ["id", "label", "config"]),
-        "network.vlans": ("nc_nodes", ["id", "label", "config"]),
-        "network.prefixes": ("nc_nodes", ["id", "label", "config"]),
-        "network.ospf.neighbors": ("nc_nodes", ["id", "label", "config"]),
-        "network.isis.adjacencies": ("nc_nodes", ["id", "label", "config"]),
-        "network.mpls.lsps": ("nc_nodes", ["id", "label", "config"]),
-    }
-
-    # Extract collection name from IQE "foreach … in <collection> …"
-    coll_match = re.search(r"\bin\s+(network\.[a-z_.]+)", iqe, re.I)
-    collection = coll_match.group(1).rstrip(".") if coll_match else ""
-    table, cols = collection_map.get(collection, ("nc_nodes", ["id", "label", "object_type"]))
+    table, cols = _COLLECTION_TABLES[collection]
 
     try:
         where_parts: list[str] = ["1=1"]
         params: list[Any] = []
-
         if network_id:
             where_parts.append("topology_id = %s")
             params.append(network_id)
 
-        # Surface object_type filter for interface / BGP / OSPF sub-collections
-        _OBJECT_TYPE_HINTS = {
-            "network.interfaces": "interface",
-            "network.bgp.sessions": "bgp_session",
-            "network.bgp.routes": "bgp_route",
-            "network.ospf.neighbors": "ospf_neighbor",
-            "network.isis.adjacencies": "isis_adjacency",
-            "network.mpls.lsps": "mpls_lsp",
-            "network.acls": "acl",
-            "network.acls.rules": "acl_rule",
-            "network.vlans": "vlan",
-            "network.prefixes": "prefix",
-        }
-        hint = _OBJECT_TYPE_HINTS.get(collection)
-        if hint and table == "nc_nodes":
-            where_parts.append("object_type = %s")
-            params.append(hint)
+        # `source` is selected separately and retried without: it arrived in
+        # migration 20260902210030, and a deployment that has not applied that
+        # migration must still answer this query rather than failing whole.
+        select_cols = list(cols) + ["source"]
+        sql = (  # nosec B608 - table and columns come from the module constant above
+            f"SELECT {', '.join(select_cols)} FROM {table} "
+            f"WHERE {' AND '.join(where_parts)} LIMIT 500"
+        )
+        try:
+            rows = conn.execute(sql, params).fetchall()
+        except Exception:
+            try:
+                conn.rollback()  # PG: a failed statement poisons the transaction
+            except Exception:
+                pass
+            select_cols = list(cols)
+            sql = (  # nosec B608 - table and columns come from the module constant above
+                f"SELECT {', '.join(select_cols)} FROM {table} "
+                f"WHERE {' AND '.join(where_parts)} LIMIT 500"
+            )
+            rows = conn.execute(sql, params).fetchall()
 
-        col_list = ", ".join(cols)
-        sql = f"SELECT {col_list} FROM {table} WHERE {' AND '.join(where_parts)} LIMIT 500"
-
-        import json as _json
-
-        rows = conn.execute(sql, params).fetchall()
-
-        col_names = cols
         result: list[dict[str, Any]] = []
         for row in rows:
-            row_dict: dict[str, Any] = {}
-            for i, col in enumerate(col_names):
-                val = row[i] if isinstance(row, (list, tuple)) else row.get(col)
-                if col == "config" and isinstance(val, str):
-                    try:
-                        val = _json.loads(val)
-                    except Exception:
-                        pass
-                row_dict[col] = val
-            result.append(row_dict)
+            if isinstance(row, (list, tuple)):
+                row_dict = {col: row[i] for i, col in enumerate(select_cols)}
+            else:
+                row_dict = {col: row[col] for col in select_cols}
+            result.append(_project_device_row(row_dict))
         return result
     except Exception as exc:
-        logger.debug("IQE local execution failed: %s", exc)
+        # Still broad, deliberately: this is a fallback and its caller must
+        # always get a list. It is no longer SILENT, which is what let the
+        # nc_nodes defect hide for as long as it did.
+        logger.warning(
+            "IQE local execution failed for %s against %s: %s", collection, table, exc
+        )
         return []
     finally:
         try:
@@ -273,7 +354,18 @@ class FallbackNQEClient:
         iqe = _NQL_TO_IQE.get(canonical)
         if iqe:
             rows = _run_iqe_local(iqe, network_id)
-            return {"rows": rows, "iqe": iqe, "source": "local_mapping", "nql": nql, "error": None}
+            source = _local_source(iqe)
+            return {
+                "rows": rows, "iqe": iqe, "source": source, "nql": nql,
+                # `unsupported_locally` is NOT an error and NOT a measurement:
+                # this schema stores no interface / BGP / ACL / VLAN state at
+                # all, so an empty list there says nothing about the network.
+                # Reporting it as `local_mapping` with zero rows -- which is
+                # what happened for as long as those collections pointed at the
+                # non-existent nc_nodes -- is what made a structurally dead
+                # query indistinguishable from a live one that found nothing.
+                "error": None,
+            }
 
         # 3. Heuristic: strip brackets, query bare collection
         bare = re.sub(r"\[.*?\]", "", nql).strip().rstrip(".")
