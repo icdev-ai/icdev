@@ -1,0 +1,4 @@
+# rmf-docx-01 — the RFI workbench called export_to_docx(), a function the DOCX
+# exporter never defined; the ImportError was swallowed and recorded as a
+# successful `md` export, so DOCX export had never once run.
+tests/test_rfi_docx_export_wiring.py
