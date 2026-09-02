@@ -121,6 +121,30 @@ run:
 # while the set churns, which is exactly how a gap regrows behind a green gate
 # (see args/ci_test_backlog.txt, which is enumerated for the same reason).
 exemptions:
+  - pattern: "tests/test_rfi_grounding.py"
+    reason: >-
+      THE EDIT REPLACES PURSUIT-SENSITIVE FIXTURE DATA AND ASSERTS NOTHING NEW,
+      so there is no behaviour for a red-first proof to discriminate against.
+      rmf-leak-01 removed a live solicitation's identifiers and bid figures from
+      tracked source in this PUBLIC repository; in this file that means the
+      `_PARSED` fixture's real `rfi_number` and `title` become the synthetic
+      `RFI-99-00001` / "Synthetic Test Solicitation", and
+      `test_fixes_mangled_rfi_number` follows its own fixture from
+      "RFI-26-[TASK_ORDER]" to "RFI-99-[TASK_ORDER]".
+      `substitute_profile_facts` is NOT changed by this PR and is not changed
+      here. The property under test -- that a mangled RFI number is repaired
+      from the parsed data -- is identical before and after; only the datum it
+      is exercised with differs. A test whose fixture and whose assertion move
+      together necessarily passes against the merge base, which is exactly what
+      the gate reports, and the applicability check cannot see it as a
+      no-new-assertion edit because the assertion literal did change.
+      The sibling file in the same PR, tests/test_govcon_rfi_parser.py, is the
+      same kind of edit and the gate correctly classifies it `not_applicable`
+      without an exemption -- only this one needs the entry, because only this
+      one has a literal inside an `assert`.
+      NOT exempted: tests/test_govcon_section_prompts.py, the actual guard this
+      PR adds, which is `discriminating` (5 failed + 4 errors at the merge base,
+      10 passed here).
   - pattern: "tests/test_cost_budget_downgrade.py"
     reason: >-
       THE TEST WAS THE DEFECT AND THE CODE IT GUARDS WAS ALWAYS CORRECT, so
