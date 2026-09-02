@@ -375,7 +375,7 @@ PALETTE_INVESTMENT_DECK = {
 }
 
 # A LIGHT corporate status-deck theme — white slides, a navy header band, and
-# white cards with a coloured top stripe. Modelled on a real Peraton status deck.
+# white cards with a coloured top stripe. Modelled on a real status deck.
 #
 # Every theme above is dark-background; this is the first light one, which is why
 # it carries two keys the others do not need:

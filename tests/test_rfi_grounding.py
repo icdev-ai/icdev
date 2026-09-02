@@ -15,8 +15,8 @@ from tools.govcon.rfi_grounding import (
 )
 
 _PARSED = {
-    "rfi_number": "RFI-26-00358",
-    "title": "AI/ML Processing Orchestration",
+    "rfi_number": "RFI-99-00001",
+    "title": "Synthetic Test Solicitation",
     "naics": "541512",
     "due_date": "10 August 2026",
     "questions_due_date": "13 July 2026",
@@ -91,8 +91,8 @@ class TestSubstitution:
 
     def test_fixes_mangled_rfi_number(self):
         out, subs = substitute_profile_facts(
-            "reviewed RFI-26-[TASK_ORDER] thoroughly", _PROFILE, _PARSED)
-        assert "RFI-26-00358" in out
+            "reviewed RFI-99-[TASK_ORDER] thoroughly", _PROFILE, _PARSED)
+        assert "RFI-99-00001" in out
         assert "[TASK_ORDER]" not in out
 
     def test_unknown_tokens_left_alone(self):

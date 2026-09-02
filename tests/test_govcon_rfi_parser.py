@@ -151,7 +151,7 @@ Responses are limited to 7 pages maximum, using 11-point Times New Roman font,
 with 1-inch margins. An optional 2-page technical appendix is permitted.
 Questions must be submitted by 13 July 2026.
 Submit responses no later than 10 August 2026 via ARC portal.
-File naming convention: CompanyName_AIOrchestration_RFI-26-00358.
+File naming convention: CompanyName_SolicitationShortName_RFI-99-00001.
 """
 
 

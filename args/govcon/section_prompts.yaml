@@ -1,0 +1,180 @@
+# RFI/RFP section prompt templates — GENERIC, PURSUIT-NEUTRAL
+#
+# WHY THIS FILE EXISTS.
+# These templates used to live as a hardcoded `_SECTION_PROMPTS` dict in
+# tools/govcon/rfi_workbench.py, populated with the specifics of ONE live
+# solicitation: a full ROM cost breakdown, an IR&D cost-share figure and
+# statute, teaming options, TRL positioning, commerciality percentages, data
+# rights strategy and a risk register. This repository is PUBLIC. That content
+# is competition-sensitive bid strategy and it must never be committed here.
+#
+# THE RULE: a template in this file describes the SHAPE of a response section —
+# what an evaluator expects to see in it — and never the CONTENT of any
+# particular bid. No dollar figures. No customer or solicitation names. No
+# teaming partners. No performance numbers. No positioning strategy.
+#
+# Real pursuit content belongs in a PRIVATE overlay, loaded at runtime:
+#   ICDEV_GOVCON_PROMPTS_PATH=/path/outside/this/repo/section_prompts.yaml
+# The overlay is merged over this file per item key. See
+# tools/govcon/section_prompts.py.
+#
+# Available format variables (supplied by rfi_workbench.generate_section_content):
+#   entity_name, rfi_number, rfi_title, primary_naics, business_size,
+#   ndc_status, clearances, objectives_list, hitl_context, title,
+#   question_text, capability_context, solution_name
+#
+# An item with no template here falls back to `default` below. That fallback is
+# deliberately generic and is a correct answer, not a degraded one.
+
+schema_version: 1
+
+default: >-
+  Generate a professional GovCon response for the '{title}' section addressing:
+  {question_text}. {hitl_context}
+
+prompts:
+  "1.1": >-
+    Generate Part 1.1 administrative data for {entity_name}. Include a table with
+    company name, address, contact name/title/email/phone, CAGE code and SAM.gov
+    UEI. Mark any field you cannot source from the company profile with [VERIFY]
+    rather than inventing a value. {hitl_context}
+
+  "1.2": >-
+    Generate Part 1.2 business size declaration for {entity_name} under NAICS
+    {primary_naics}. State the business size ({business_size}) and socioeconomic
+    status, and give the rationale for the NAICS selection. {hitl_context}
+
+  "1.3": >-
+    Generate Part 1.3 non-traditional defense contractor status for
+    {entity_name}. Status: {ndc_status}. Reference the teaming posture recorded
+    in the company profile; do not assert a teaming arrangement that is not in
+    the profile. {hitl_context}
+
+  "1.4": >-
+    Generate Part 1.4 foreign ownership, control or influence (FOCI) disclosure
+    for {entity_name}, consistent with the company profile. {hitl_context}
+
+  "1.5": >-
+    Generate Part 1.5 security clearances for {entity_name}. Clearances on
+    record: {clearances}. Include a facility and SCIF capability statement only
+    to the extent the company profile supports it. {hitl_context}
+
+  "2.1": >-
+    Generate Part 2.1 technology readiness assessment for {entity_name}
+    addressing: {rfi_title}. Present a table mapping each major component to its
+    TRL with the evidence supporting that rating. Rate components from the
+    capability context supplied; do not assign a TRL you cannot evidence.
+    {hitl_context}
+
+  "2.4": >-
+    Generate Part 2.4 technical approach for {entity_name}'s response to
+    {rfi_number}. Describe the proposed architecture and map it to the
+    solicitation objectives: {objectives_list}. Include an architecture diagram
+    as a Mermaid flowchart inside a fenced ```mermaid code block (graph TD or
+    flowchart TD syntax); do not use ASCII art. {hitl_context}
+
+  "2.5": >-
+    Generate Part 2.5 commerciality response for {entity_name}. Address whether
+    the offering is a commercial product under FAR 2.101 and identify which
+    components are commercially available today versus developmental for this
+    mission. Use only the commercial/developmental split recorded in the
+    company profile. {hitl_context}
+
+  "2.6": >-
+    Generate Part 2.6 cybersecurity and supply chain response for {entity_name}.
+    Present a table covering the cybersecurity frameworks, SBOM format, container
+    hardening and secure SDLC practices recorded in the company profile. State
+    NDAA Section 889 supply chain compliance and disclose any known supply chain
+    risks. {hitl_context}
+
+  "3.1": >-
+    Generate Part 3.1 project timeline for {entity_name} as a table of phases
+    with their objectives and exit criteria, spanning the period of performance
+    stated in the solicitation. Derive durations from the solicitation, not from
+    a fixed schedule. {hitl_context}
+
+  "3.2": >-
+    Generate Part 3.2 key risks for {entity_name}. For each risk give the
+    condition, the impact and a specific mitigation with the point at which the
+    mitigation is validated. Draw risks from the technical approach actually
+    proposed. {hitl_context}
+
+  "4.1": >-
+    Generate Part 4.1 data rights for {entity_name}. Present a table mapping each
+    category of deliverable to its proposed rights assertion, consistent with the
+    data rights posture in the company profile. {hitl_context}
+
+  "4.2": >-
+    Generate Part 4.2 rough order of magnitude cost estimate for {entity_name}.
+    Present the cost element structure the solicitation asks for — labor,
+    software and cloud, hardware, other direct costs, and recurring operations
+    and maintenance — with the basis of estimate for each. Populate figures ONLY
+    from the pricing inputs supplied for this pursuit; if none are supplied,
+    emit the table with [VERIFY] in each cost cell rather than inventing an
+    estimate. {hitl_context}
+
+  "4.3": >-
+    Generate Part 4.3 teaming and cost share for {entity_name}. {ndc_status}.
+    Describe the teaming and any cost-share approach using only the arrangements
+    recorded for this pursuit. Do not propose a cost-share figure or a statutory
+    authority that has not been supplied. {hitl_context}
+
+  "5.1": >-
+    Generate Part 5 industry insights for {entity_name}'s response to
+    {rfi_title}. Identify gaps or ambiguities in the stated objectives
+    ({objectives_list}) and, for each, recommend specific solicitation language
+    the Government could adopt. Ground each recommendation in the requirement it
+    addresses. {hitl_context}
+
+  "6.1": >-
+    You are preparing pre-submission questions to the Contracting Officer for
+    {rfi_title} ({rfi_number}), due before the Q&A deadline. Identify what the
+    solicitation leaves unstated: data characteristics, the existing integration
+    environment, the security accreditation path, government-furnished
+    equipment/information/APIs, evaluation method, and the anticipated follow-on
+    vehicle. Objectives for context: {objectives_list}. Generate 4-6 numbered
+    questions; for each give one sentence of context citing the section it
+    concerns, then the question. All questions must be unclassified and suitable
+    for the Government's consolidated public Q&A. {hitl_context}
+
+  "6.2": >-
+    You are preparing pre-submission questions to the Contracting Officer for
+    {rfi_title} ({rfi_number}). Generate questions that clarify the customer's
+    underlying mission intent so {entity_name} can determine whether
+    {solution_name} fits the need. Probe the mission outcomes that define
+    success, who owns the relevant policy today, the real performance envelope
+    versus aspirational figures, and the boundary between this scope and
+    adjacent systems. Objectives: {objectives_list}. Generate 4-6 numbered
+    questions, each with one sentence of context then the question. Unclassified
+    and suitable for public Q&A. {hitl_context}
+
+  "6.4": >-
+    You are preparing pre-submission questions to the Contracting Officer for
+    {rfi_title} ({rfi_number}). Generate questions resolving ambiguities within
+    the solicitation text itself: page-limit mechanics, formatting rules,
+    openness to alternative NAICS codes, handling of classified detail, cost
+    format expectations, and submission mechanics. Section under question:
+    {question_text}. Generate 3-5 numbered questions, each with one sentence of
+    context citing the section, then the question. Unclassified and suitable for
+    public Q&A. {hitl_context}
+
+  "A": >-
+    Generate Appendix A architecture overview for {entity_name}'s proposed
+    solution, using the capability context supplied. For any deployment diagram,
+    output a fenced ```mermaid code block using flowchart TD syntax with real
+    node labels, and nothing else for the diagram; do not draw ASCII art.
+    {hitl_context}
+
+  "B": >-
+    Generate Appendix B describing the feedback and improvement loop for
+    {solution_name}: what signals are collected, how they are stored, how policy
+    is updated, what gates a change before it takes effect, and the cadence of
+    the cycle. Use only mechanisms present in the capability context.
+    {hitl_context}
+
+# DELIBERATELY NOT TEMPLATED HERE — these were pursuit-specific in the original
+# hardcoded dict and have no pursuit-neutral form worth shipping. They fall back
+# to `default`, or are supplied by a private overlay:
+#   2.2, 2.3, 2.7  architecture answers specific to one solicitation's questions
+#   3.3            risk responses specific to one technical approach
+#   6.3            competitive-positioning questions; strategy, not a template

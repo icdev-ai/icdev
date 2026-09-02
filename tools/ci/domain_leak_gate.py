@@ -178,6 +178,20 @@ def scan(repo: Path, files: list[str], cfg: dict) -> dict:
         (re.compile(d["pattern"]), d.get("name", d["pattern"]), d.get("severity", "critical"))
         for d in (cfg.get("data_patterns") or [])
     ]
+    # PATH-SCOPED rules. Same idea as data_patterns, scoped by PATH rather than
+    # suffix. Bid pricing (a ROM total, a cost-share figure, a labor basis of
+    # estimate) is competition-sensitive in a PUBLIC repo -- but the same prose
+    # is legitimate in a test fixture, and measured across this tree the
+    # unscoped rule hits 11 fixtures of the publish/redaction gates that exist
+    # to handle exactly this content. A rule that refuses those is one people
+    # learn to bypass. Scoped to govcon SOURCE the same rules measure 0 hits
+    # over 214 files, and 6 on the pre-fix tree they were written for.
+    scoped_rules = [
+        (re.compile(s["pattern"]), s.get("name", s["pattern"]),
+         s.get("severity", "critical"), [g for g in (s.get("paths") or [])],
+         s.get("kind", "pursuit_sensitive"))
+        for s in (cfg.get("scoped_patterns") or [])
+    ]
     findings: list[dict] = []
     denied: list[str] = []
     allowed_hits: list[dict] = []
@@ -207,6 +221,10 @@ def scan(repo: Path, files: list[str], cfg: dict) -> dict:
                     if m in line:
                         hits.append({"file": rel, "line": lineno, "rule": f"data dump marker {m!r}",
                                      "severity": "critical", "kind": "ad_table_dump"})
+            for rx, name, severity, globs, kind in scoped_rules:
+                if any(fnmatch(rel, g) for g in globs) and rx.search(line):
+                    hits.append({"file": rel, "line": lineno, "rule": name,
+                                 "severity": severity, "kind": kind})
         if not hits:
             continue
         reason = _allowed(rel, cfg)
