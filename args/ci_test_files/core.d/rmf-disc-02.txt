@@ -1,0 +1,7 @@
+# rmf-disc-02 — the discovery engine is reachable, and honest about provenance.
+#
+# Gated in the PR that adds it, per the test-gating policy. One fragment named
+# for the task rather than an append to core.txt: two PRs writing two
+# differently-named files cannot collide, and core.txt was the largest
+# merge-collision surface in the repository.
+tests/network/test_discovery_wiring.py

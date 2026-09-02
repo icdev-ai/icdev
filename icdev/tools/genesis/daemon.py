@@ -146,6 +146,10 @@ REFLEX_NAMES = [
     "freshness_guardian",  # dcpr-fix-06: DDC freshness quality sweep (1h) → dd_freshness_alerts/dd_quality_runs
     "cato_twin",           # bdr-ops-1: cATO twin continuous monitoring (6h) — config enabled:false until hardened query path soaks
     "ndc_topology_drift",  # ndc→ACOIC: topology config drift vs nc_versions baseline
+    # rmf-disc-02: passive network asset discovery (24h). Registered in BOTH
+    # this list and args/genesis_config.yaml -- the daemon dispatches from
+    # HERE, and a reflex present in only the config has never run (xbm-wake-02).
+    "asset_discovery",
     "dic_integration",     # dsyn-reflex-02: DIC Canvas Synergy — 15-min cadence
     "dic_review_cadence",  # dsyn-suggest-02: nightly collection review overdue check
     "dic_digest",          # dic-syn-gn: weekly digest of new docs + freshness alerts

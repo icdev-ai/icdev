@@ -4157,6 +4157,10 @@ def ingest_devices_netbox(
                 device_type=dev.get("type", "unknown"),
                 site=dev.get("site") or None,
                 rack_location=dev.get("rack") or None,
+                # rmf-disc-02: ni_devices.source records provenance. NetBox is a
+                # real inventory system, so these rows ARE an observed estate and
+                # the de-facto learner's `inventory` feed reads them.
+                source="netbox",
             )
             if result["action"] == "created":
                 created += 1
@@ -4212,6 +4216,14 @@ def ingest_devices_topology(src_topology_id: str) -> dict:
                 model=props.get("model") or None,
                 firmware_version=props.get("firmware_version") or None,
                 site=props.get("site") or None,
+                # rmf-disc-02: a device read off a DESIGN DIAGRAM is a drawing of
+                # an estate, never an observation of one. The label is what keeps
+                # args/docmod/inventory_feeds.yaml honest -- its `ni_devices` feed
+                # excludes `topology_ingest` by name, because the `topology_nodes`
+                # feed already counts these same nodes at evidence_kind `design`,
+                # and reading them here too would promote a drawing to `inventory`
+                # AND double-count it.
+                source="topology_ingest",
             )
             if result["action"] == "created":
                 created += 1

@@ -31,6 +31,11 @@
 #   kind           table | json_nodes
 #   fields         canonical field -> candidate source keys, first non-empty
 #                  wins. `a.b` descends one dict level.
+#   exclude_when   optional {column: [values]}. A row is dropped when ANY named
+#                  column holds ANY listed value (string compare, case
+#                  insensitive). A NULL is NEVER excluded -- absent provenance
+#                  is UNKNOWN, and dropping unknowns would quietly turn a feed
+#                  into "only the rows some writer happened to label".
 #
 # PRECEDENCE IS AN EVIDENCE ORDERING, NOT A PREFERENCE
 #
@@ -51,12 +56,42 @@ feeds:
     kind: table
     table: ni_devices
     note: >-
-      The real deployment inventory — NetBox sync, CSV import, or topology
-      re-ingest via tools/network/network_ingester.py. Empty in this deployment
-      (0 rows) because no external inventory system is reachable from it. Left
+      The real deployment inventory — NetBox sync, CSV import, a live discovery
+      scan (rmf-disc-02), or topology re-ingest. Held 0 rows for months because
+      no external inventory system is reachable from this deployment. Left
       ENABLED on purpose: the day one is connected this feed starts winning with
       no config change, and an enabled feed that reports 0 rows is visible in the
       sweep result where a commented-out one would not be.
+    exclude_when:
+      # THE TABLE IS NO LONGER ALL ONE EVIDENCE CLASS (rmf-disc-02).
+      #
+      # `evidence_kind: inventory` above is a claim that every row in this table
+      # was OBSERVED. That was true while the only writers were a NetBox sync
+      # and a CSV export. It stopped being true when the platform gained
+      # `discovery_store.seed_synthetic_devices`, which fabricates demo devices
+      # so the EOL scanner, the MDC inventory page and the PVM attack-surface
+      # map have something to render — real vendor/model strings, plausible EOL
+      # dates, and no relationship whatsoever to any deployed asset.
+      #
+      # Such a row is physically indistinguishable from an observed one once
+      # written, and this feed ranks the table ABOVE every design topology. So
+      # the rows carry ni_devices.source (migration 20260902210030) and the two
+      # fabricating labels are excluded BY NAME here:
+      #
+      #   synthetic        SyntheticDataEngine output. Not an asset.
+      #   topology_ingest  devices re-ingested from a design DIAGRAM. Already
+      #                    counted, correctly, by the `topology_nodes` feed
+      #                    below at evidence_kind `design`. Reading it here too
+      #                    would promote the same drawing to `inventory` AND
+      #                    double-count it — the exact laundering the precedence
+      #                    ordering in this file exists to prevent.
+      #
+      # `discovery` is NOT excluded: a scan that reached a host and got an
+      # answer is an observation, which is what this evidence class means.
+      # A NULL source is not excluded either — rows written before that
+      # migration stated no origin, and they are read exactly as they were
+      # before this key existed.
+      source: [synthetic, topology_ingest]
     fields:
       category: [device_type]
       vendor: [vendor]
