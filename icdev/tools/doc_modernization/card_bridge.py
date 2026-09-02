@@ -8,7 +8,9 @@ status='suggested' with its existing dedup/consolidation/auto-dismiss —
 no changes to the card writer.
 
 Sub-threshold findings (confidence < docmod_config.confidence_threshold)
-never contribute to a rollup (plan risk rule). reconcile() closes predictions
+never contribute to a rollup (plan risk rule). Nor does a document in a
+collection DECLARED not to be a live corpus (args/docmod/demo_collections.yaml)
+-- see demo_collections() for why that is a declaration and not a heuristic. reconcile() closes predictions
 whose findings are all resolved so the board never shows stale cards.
 """
 from __future__ import annotations
@@ -16,6 +18,9 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
+
+from icdev.core.paths import repo_root
 
 from tools.logging.icdev_logger import get_logger
 
@@ -38,6 +43,58 @@ def _now() -> str:
 def _connect():
     from tools.db.storage import get_connection
     return get_connection()
+
+
+# --------------------------------------------------------------------------- #
+# demo corpus (cdh-seed-01)
+# --------------------------------------------------------------------------- #
+# A DECLARATION, never a heuristic. Matching 'demo'/'test' in a collection name
+# would have missed `Politics` and `col1` -- two of the four collections that
+# actually filed cards -- and would wrongly exclude a real collection somebody
+# called 'Test Estate'. A declaration is a claim somebody made and can be read
+# back; a heuristic is one nobody checked.
+#
+# A DENYLIST, so an UNDECLARED collection still files cards. An allowlist of
+# live collections would go silent the first time somebody forgot to declare
+# one, and silently dropping a real finding is the worse failure for a queue
+# whose whole job is surfacing them.
+# repo_root(), never Path(__file__).parents[N]: this module ships in BOTH
+# tools/ and icdev/tools/, at two different depths, so a counted walk is
+# right in one copy and silently wrong in the other (xit-decl-03).
+_DEMO_COLLECTIONS_PATH = (
+    repo_root(__file__) / "args" / "docmod" / "demo_collections.yaml"
+)
+
+
+def demo_collections(path=None) -> frozenset:
+    """Collection ids declared NOT to be a live corpus.
+
+    FAILS OPEN. A missing, unreadable or malformed declaration returns the empty
+    set, so the seeder keeps filing every card it would have filed before. A
+    findings queue that goes quiet because a config file broke is this card's
+    own defect one level up.
+    """
+    try:
+        import yaml
+        raw = yaml.safe_load(
+            Path(path or _DEMO_COLLECTIONS_PATH).read_text(encoding="utf-8")
+        ) or {}
+        entries = raw.get("collections") or {}
+        return frozenset(str(k) for k in entries)
+    except Exception as exc:  # noqa: BLE001 - fail open, but never silently
+        logger.warning("demo-collection declaration unreadable (%s); denying nothing", exc)
+        return frozenset()
+
+
+def _is_demo_document(collection_id) -> bool:
+    """True only for a collection the declaration NAMES.
+
+    An empty or unknown collection is False -- not knowing which corpus a
+    document belongs to is a reason to file the card, not to drop it.
+    """
+    if not collection_id:
+        return False
+    return str(collection_id) in demo_collections()
 
 
 # 'Awaiting review' includes drafted redlines — a finding with a pending
@@ -64,7 +121,7 @@ def emit_rollups(conn=None) -> dict:
         for f in open_findings:
             by_doc.setdefault(f["doc_id"], []).append(f)
 
-        created, skipped = [], 0
+        created, skipped, demo_skipped = [], 0, []
         for doc_id, findings in by_doc.items():
             # prediction-level dedup: one open rollup per document
             existing = conn.execute(
@@ -85,10 +142,19 @@ def emit_rollups(conn=None) -> dict:
                 (f.get("severity") or "medium" for f in findings),
                 key=lambda s: _SEVERITY_RANK.get(s, 2),
             )
-            title_row = conn.execute(
-                "SELECT title FROM dic_documents WHERE doc_id = %s", (doc_id,)
-            ).fetchone()
-            title = (dict(title_row).get("title") if title_row else None) or doc_id
+            try:
+                title_row = conn.execute(
+                    "SELECT title, collection_id FROM dic_documents WHERE doc_id = %s",
+                    (doc_id,),
+                ).fetchone()
+            except Exception as exc:  # noqa: BLE001 - fail open on an older schema
+                logger.warning("could not read %s's collection (%s)", doc_id, exc)
+                title_row = None
+            row = dict(title_row) if title_row else {}
+            if _is_demo_document(row.get("collection_id")):
+                demo_skipped.append(doc_id)
+                continue
+            title = row.get("title") or doc_id
             summary = ", ".join(f"{v}× {k}" for k, v in sorted(counts.items()))
             text = (
                 f"Document '{title}' has {len(findings)} open modernization finding(s): "
@@ -116,7 +182,11 @@ def emit_rollups(conn=None) -> dict:
             )
             created.append(pred_id)
         conn.commit()
+        # demo_skipped is REPORTED, never silent: a seeder that quietly drops
+        # documents cannot be told apart from one that found nothing.
         return {"created": len(created), "skipped_existing": skipped,
+                "demo_skipped": len(demo_skipped),
+                "demo_skipped_docs": demo_skipped,
                 "docs_with_findings": len(by_doc), "prediction_ids": created}
     finally:
         if own:
