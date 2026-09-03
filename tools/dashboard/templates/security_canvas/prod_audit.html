@@ -1,9 +1,19 @@
+<!-- CUI // SP-CTI — Security Design Canvas Production Audit (rmf-ui-14) -->
 {% extends "base.html" %}
 
-{% block title %}Production Audit - ICDEV™ Dashboard{% endblock %}
+{% block title %}Production Audit — Security Canvas — ICDEV™{% endblock %}
 
 {% block content %}
 <div class="container">
+    <!-- Breadcrumb -->
+    <nav aria-label="breadcrumb" style="margin-bottom:0.5rem;">
+        <span><a href="/" style="color:#1976d2;text-decoration:none;">Home</a></span>
+        <span style="color:#999;"> &gt; </span>
+        <span><a href="/security/" style="color:#1976d2;text-decoration:none;">Security Canvas</a></span>
+        <span style="color:#999;"> &gt; </span>
+        <span style="color:#333;">Production Audit</span>
+    </nav>
+
     <h1>Production Readiness Audit</h1>
     <p class="text-muted">38 checks across 7 categories with 3-tier remediation (D291-D300).</p>
 
@@ -30,6 +40,8 @@
             <div class="stat-label" style="color:#666;">Skipped</div>
         </div>
     </div>
+
+    {% include "includes/iqe_query_widget.html" %}
 
     <!-- Quick Actions -->
     <h2>Actions</h2>
