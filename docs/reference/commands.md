@@ -3795,6 +3795,62 @@ python tools/compliance/cato_monitor.py --project-id "proj-123" --check-freshnes
 python tools/compliance/cato_scheduler.py --project-id "proj-123" --run-due             # cATO scheduling
 python tools/compliance/pi_compliance_tracker.py --project-id "proj-123" --velocity     # PI tracking
 
+# RMF cycle time — TWO clocks that are never merged (rmf-cyc-01)
+python -m tools.compliance.rmf_cycle_time                       # human report
+python -m tools.compliance.rmf_cycle_time --json --window-days 30
+python -m tools.compliance.rmf_cycle_time --project-id "proj-123"
+# automation_time is OURS (the 72h claim); decision_latency is the AUTHORIZING
+# OFFICIAL's queue. They are never added: halve the automation and a single
+# end-to-end figure can get WORSE because an AO took leave, so a change in it
+# attributes to neither party. Each carries its own denominator and each is
+# None -- never 0.0, which would read as "instant" -- when unmeasured.
+#
+# THE WRITES ARE A CONSEQUENCE OF AN ARTIFACT, never a step anyone remembers.
+# rmf_workflow_stages held ZERO rows on the live board (measured 2026-09-02,
+# alongside ssp_documents, poam_items, stig_findings, oscal_artifacts and
+# cato_evidence -- all empty) because it was a hand-maintained board, and
+# hand-maintained boards do not get maintained. Five producers now write it
+# through tools/compliance/rmf_stage_recorder.py, the ONE writer:
+#   ssp_generator      -> select      (SP 800-37r2 S-4/S-5, the security plan)
+#   poam_generator     -> assess      (Task A-6)
+#   stig_checker       -> assess      (Task A-4, assessment reports)
+#   oscal_generator    -> select / implement / assess, by WHAT the artifact IS
+#   cato_monitor.collect_evidence -> monitor  (Step 7, Task M-2)
+# `categorize` and `authorize` have NO automated producer here and are named on
+# every run under stages_without_producer -- a clock that silently began at
+# whichever step happened to be wired measures a shorter job than the one
+# claimed. started_at is stamped ONCE: an SSP regenerated on day 3 must not
+# reset the clock to day 3.
+#
+# A LOWER BOUND CANNOT MEET A TARGET. A package with no recorded submission is
+# bounded by its latest artifact, so its span can only GROW -- two artifacts
+# produced 16ms apart give 0.0 hours, and scoring that against 72h returns True
+# for a package nobody finished assembling. `meets_target` is therefore judged
+# on SUBMITTED packages only and is None otherwise; `is_lower_bound` says when
+# the headline median is a floor rather than a duration.
+#
+# Record the two human events the producers cannot observe:
+python -m tools.compliance.rmf_stage_recorder --project-id "proj-123" --actor human:pm --submit --evidence pkg:v1
+python -m tools.compliance.rmf_stage_recorder --project-id "proj-123" --actor human:ao --decision authorized
+# A RESUBMISSION overwrites submitted_at and CLEARS the recorded decision, so
+# decision_latency measures the most recent submit->decide pair and never sums
+# across rework -- the time between a rejection and a resubmission is OURS. A
+# decision recorded with no submission is UNMEASURABLE, never zero. `denied` is
+# `blocked`, never `complete`.
+#
+# baseline_source carries TWO derivations that share no code and are never
+# merged: the DECLARED baseline in args/rmf_cycle_baseline.yaml (with its
+# `kind` -- a `claimed` figure is never presented as evidence) and a
+# `measured_here` one re-derived from this deployment's own human:* stage rows,
+# which withholds its median below `min_projects` because one project is an
+# anecdote wearing a statistic's name. THE SHIPPED BASELINE REFUSES ITS OWN
+# COMPARISON, twice: `baseline_unquantified` ("months" has no number, no scope,
+# no source, no date) and `baseline_includes_decision_latency` -- an anecdotal
+# ATO duration is wall-clock to the signed authorization and so CONTAINS the
+# AO's queue, and dividing it by an automation-only clock is the blend wearing
+# a percentage. Fill in a quantified, AO-queue-free figure before publishing
+# any "months -> 72h" ratio; do NOT flip the refusal off in the config.
+
 # FIPS 199/200 Security Categorization (Phase 20)
 python tools/compliance/fips199_categorizer.py --list-catalog                                          # Browse SP 800-60 types
 python tools/compliance/fips199_categorizer.py --list-catalog --category D.1 --json                    # Filter by category

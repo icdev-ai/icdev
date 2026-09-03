@@ -279,6 +279,42 @@ CREATE TABLE IF NOT EXISTS poam_items (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- RMF lifecycle position for a system, one row per (project, stage) — NIST SP
+-- 800-37 Rev 2's six steps. Carried here for fresh databases; PostgreSQL got it
+-- from the consolidated snapshot and migration 20260902233931 widened both.
+--
+-- THE TWO CLOCKS (rmf-cyc-01). started_at/submitted_at/completed_at are three
+-- timestamps, not one, because the span they bracket is owned by two different
+-- parties. started_at -> submitted_at is OURS (automation_time, the 72h claim);
+-- submitted_at -> completed_at on the `authorize` row is the AO's queue
+-- (decision_latency). A single elapsed figure across both is unfalsifiable, so
+-- the schema records the boundary rather than the span.
+--
+-- actor is what separates the automated population from the manual one — a
+-- generator name, or 'human:<who>'. Without it every row looks automated and
+-- an improvement claim has no control group. evidence_ref points at the
+-- artifact that CAUSED the write, so the row's assertion can be re-derived.
+-- All four are NULLABLE with no default: NULL means NOT RECORDED, and a
+-- default would make an untouched row indistinguishable from a written one.
+-- Written by tools/compliance/rmf_stage_recorder.py, the one writer.
+CREATE TABLE IF NOT EXISTS rmf_workflow_stages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL,
+    stage TEXT NOT NULL CHECK(stage IN ('categorize', 'select', 'implement', 'assess', 'authorize', 'monitor')),
+    status TEXT NOT NULL DEFAULT 'not_started' CHECK(status IN ('not_started', 'in_progress', 'complete', 'blocked')),
+    assigned_to TEXT,
+    completed_at TEXT,
+    notes TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    classification VARCHAR(50) DEFAULT 'CUI',
+    started_at TEXT,
+    actor TEXT,
+    evidence_ref TEXT,
+    submitted_at TEXT,
+    UNIQUE(project_id, stage)
+);
+
 -- Canvas-finding approval state (one row per unique finding across all canvas DBs).
 -- Findings live in their source canvas DBs (security_canvas.db, data_canvas.db, etc.)
 -- and are re-generated each scan. This table persists the human approval decision

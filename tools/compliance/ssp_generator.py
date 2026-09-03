@@ -63,7 +63,11 @@ def _get_connection(db_path=None):
     """Get a database connection."""
     if get_db_connection:
         return get_db_connection(db_path or DB_PATH, validate=True)
-    path = db_path or DB_PATH
+    # Path(), never a bare .exists(): every caller that passes --db hands this a
+    # STRING (argparse produces one), so the bare attribute access below raised
+    # AttributeError on every single invocation with an explicit database. The
+    # documented `--db` flag on these CLIs had never worked.
+    path = Path(db_path or DB_PATH)
     if not path.exists():
         raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = get_connection(db_path=str(path))
@@ -497,6 +501,22 @@ def generate_ssp(
                 "output_file": str(out_file),
             },
             out_file,
+        )
+
+        # rmf-cyc-01: the RMF `select` step is where the security plan is
+        # developed and approved (SP 800-37 Rev 2, Tasks S-4/S-5), so producing
+        # an SSP IS that step starting. Recorded as a CONSEQUENCE of the
+        # artifact rather than as a step somebody must remember — a
+        # hand-maintained stage board does not get maintained, which is why this
+        # table held zero rows.
+        from tools.compliance.rmf_stage_recorder import evidence_ref, record_artifact
+
+        record_artifact(
+            project_id,
+            "ssp",
+            actor="ssp_generator",
+            evidence=evidence_ref("ssp_documents", f"{project_id}@v{new_version}"),
+            conn=conn,
         )
 
         print("SSP generated successfully:")

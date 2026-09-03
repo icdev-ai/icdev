@@ -231,28 +231,45 @@ def get_rmf_stages(project_id: str, *, conn: Any = None) -> list[dict]:
     If no rows exist for the project the function returns 6 default stages
     all with status='not_started'.
 
+    Each entry also carries the cycle-time fields migration 20260902233931
+    added (rmf-cyc-01) — ``started_at``, ``submitted_at``, ``actor`` and
+    ``evidence_ref``. ``submitted_at`` is deliberately separate from
+    ``completed_at``: the span before it is the platform's automation time and
+    the span after it is the Authorizing Official's queue, and a surface that
+    shows one figure for both cannot attribute a change to either. See
+    tools/compliance/rmf_cycle_time.py.
+
     Returns::
 
         [
             {"stage": str, "label": str, "status": str,
-             "assigned_to": str|None, "completed_at": str|None, "notes": str|None},
+             "assigned_to": str|None, "completed_at": str|None, "notes": str|None,
+             "started_at": str|None, "submitted_at": str|None,
+             "actor": str|None, "evidence_ref": str|None},
             ...  # 6 entries in RMF order
         ]
     """
     _conn = conn or _get_default_conn()
     close_after = conn is None
 
-    default_stages = [
-        {
-            "stage": s,
-            "label": RMF_STAGE_LABELS[s],
+    def _empty(stage_name: str) -> dict:
+        """A stage nothing has recorded. Every clock field is None, never a
+        timestamp and never a zero — an unrecorded stage must not render the
+        same as one measured at no elapsed time."""
+        return {
+            "stage": stage_name,
+            "label": RMF_STAGE_LABELS[stage_name],
             "status": "not_started",
             "assigned_to": None,
             "completed_at": None,
             "notes": None,
+            "started_at": None,
+            "submitted_at": None,
+            "actor": None,
+            "evidence_ref": None,
         }
-        for s in RMF_STAGES
-    ]
+
+    default_stages = [_empty(s) for s in RMF_STAGES]
 
     try:
         if not _table_exists(_conn, "rmf_workflow_stages"):
@@ -260,9 +277,7 @@ def get_rmf_stages(project_id: str, *, conn: Any = None) -> list[dict]:
 
         rows = _conn.execute(
             """
-            SELECT stage, status, assigned_to, completed_at, notes
-            FROM rmf_workflow_stages
-            WHERE project_id = %s
+            SELECT * FROM rmf_workflow_stages WHERE project_id = %s
             """,
             (project_id,),
         ).fetchall()
@@ -278,29 +293,28 @@ def get_rmf_stages(project_id: str, *, conn: Any = None) -> list[dict]:
 
         result = []
         for s in RMF_STAGES:
-            if s in stage_map:
-                r = stage_map[s]
-                result.append(
-                    {
-                        "stage": s,
-                        "label": RMF_STAGE_LABELS[s],
-                        "status": r.get("status", "not_started"),
-                        "assigned_to": r.get("assigned_to"),
-                        "completed_at": r.get("completed_at"),
-                        "notes": r.get("notes"),
-                    }
-                )
-            else:
-                result.append(
-                    {
-                        "stage": s,
-                        "label": RMF_STAGE_LABELS[s],
-                        "status": "not_started",
-                        "assigned_to": None,
-                        "completed_at": None,
-                        "notes": None,
-                    }
-                )
+            if s not in stage_map:
+                result.append(_empty(s))
+                continue
+            r = stage_map[s]
+            result.append(
+                {
+                    "stage": s,
+                    "label": RMF_STAGE_LABELS[s],
+                    "status": r.get("status", "not_started"),
+                    "assigned_to": r.get("assigned_to"),
+                    "completed_at": r.get("completed_at"),
+                    "notes": r.get("notes"),
+                    # `.get` rather than indexing: a database that predates
+                    # migration 20260902233931 has the row without the columns,
+                    # and reporting those as None is correct — they were never
+                    # recorded there.
+                    "started_at": r.get("started_at"),
+                    "submitted_at": r.get("submitted_at"),
+                    "actor": r.get("actor"),
+                    "evidence_ref": r.get("evidence_ref"),
+                }
+            )
 
         return result
 

@@ -136,7 +136,13 @@ prefix:
   - match: "(ft_|wg_|research_|creative_)"
     owner: core
   # ---- it: explicitly named so a reviewer sees the decision ---------------
-  - match: "(compliance_|framework_|control_|crosswalk_|nist_|oscal_|fedramp_|cmmc_|stig_|poam_|ssp_|emass_|cato_|ato_|fips|cssp_|zta_|sbd_|ivv_|mosa_|sbom_|cve_|supply_|scrm_|boundary_|pi_|cjis_|hipaa_|hitrust_|soc2_|pci_|iso|gao_|omb_|eu_|atlas_|owasp_|ai_|fairness_|xai_|shap_|red_|threat_|siem_)"
+  # rmf_ joins the ATO family here (rmf-cyc-01). rmf_workflow_stages was
+  # declared ONLY in pg_consolidated.sql and so fell through to `default: it`;
+  # adding it to init_icdev_db.py, where a fresh database gets its copy, put it
+  # under the `db` package rule and silently reassigned it to `core`. The RMF
+  # lifecycle is ICDEV[IT] compliance, not kernel bookkeeping both parents
+  # install, so the rule is what moves — never the generated manifest line.
+  - match: "(compliance_|rmf_|framework_|control_|crosswalk_|nist_|oscal_|fedramp_|cmmc_|stig_|poam_|ssp_|emass_|cato_|ato_|fips|cssp_|zta_|sbd_|ivv_|mosa_|sbom_|cve_|supply_|scrm_|boundary_|pi_|cjis_|hipaa_|hitrust_|soc2_|pci_|iso|gao_|omb_|eu_|atlas_|owasp_|ai_|fairness_|xai_|shap_|red_|threat_|siem_)"
     owner: it
   - match: "(proposal_|pg_|govcon_|cpmp_|sam_|gsa_|rfp_|igce_|win_|customer_|draft_|narrative_|voc_|scout_|pulse_)"
     owner: it

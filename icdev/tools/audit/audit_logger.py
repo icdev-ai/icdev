@@ -54,6 +54,22 @@ VALID_EVENT_TYPES = (
     "ssp_generated",
     "poam_generated",
     "stig_checked",
+    # rmf-cyc-01. Two names that have been WRITTEN since their producers were
+    # authored and never ADMITTED: `oscal_generator._log_audit` has always used
+    # "oscal_generated" and `cato_monitor._log_audit_event` has always used
+    # "cato_evidence_collected". Neither was in this tuple, so the CHECK refused
+    # every row and each writer's `except Exception: print(..., file=sys.stderr)`
+    # sent the refusal to a stream nobody reads. Measured 2026-09-02 on the live
+    # PostgreSQL board AND on a fresh SQLite database: every OSCAL artifact ever
+    # generated and every piece of cATO evidence ever collected is unaudited.
+    #
+    # It matters here specifically because those two producers are what advance
+    # the RMF `select`/`implement`/`assess`/`monitor` stages, and the audit row
+    # is the independent corroboration of the stage row's claim. A lifecycle
+    # board whose supporting audit trail was silently refused is the same
+    # unverifiable assertion this card exists to prevent.
+    "oscal_generated",
+    "cato_evidence_collected",
     "sbom_generated",
     # SBOM 2026 Accommodation of Updates (sbx-prc-02). A corrected SBOM is a new
     # document superseding its predecessor, never an edit, so the correction itself
