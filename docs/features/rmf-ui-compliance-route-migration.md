@@ -108,3 +108,21 @@ Canvas behind `sc_login_required`. Its IQE widget is wired to the canvas's own
 
 Every follow-up card touches `base.html` and `compliance.html`, so sibling PRs
 will report DIRTY against each other. Rebase; do not fight the verdict.
+
+## rmf-ui-05: `/cato` → `/boundary/cato-health`
+
+The second route to move, and the first with a fold-or-land decision. BDC
+already served `/boundary/cato` (the per-design "cATO Dashboard": a table of
+`bd_assessments` scores and the fabric posture roll-up, in the canvas's dark
+style). The top-level `/cato` was the OTHER cATO view: a fleet-wide health
+gauge, evidence stream, control-family heatmap, certifications and timeline over
+nine `/api/cato/*` calls, in the dashboard's light style. Folding a 530-line
+page with its own data model into a 250-line page with a different one would
+have produced one page with two themes and two ideas of what "a score" is, so
+it lands at `/boundary/cato-health` under a DISTINCT title ("Continuous ATO
+Health"), cross-linked to `/boundary/cato` from its lede.
+`tests/test_bdc_cato_health_page.py` pins that the two title blocks differ and
+that the new one is not "cATO Dashboard". Everything else copies the exemplar:
+`bdc_cato_health_page` on the blueprint, a 301 from `app.py`, both `base.html`
+copies plus `compliance.html` and `mosa.html` repointed, the template moved and
+mirrored, `core.d/rmf-ui-05.txt`.

@@ -26,7 +26,9 @@ const COMPLIANCE_PAGES = [
   // rmf-ui-04: migrated onto the Boundary canvas (registry-registered, RBAC-guarded,
   // IQE-dispatchable). The old /oscal answers with a 301 to this path.
   { label: 'OSCAL',                path: '/boundary/oscal' },
-  { label: 'Continuous ATO',       path: '/cato' },
+  // rmf-ui-05: migrated onto the Boundary canvas beside rmf-ui-01. The old
+  // /cato answers with a 301 to this path.
+  { label: 'Continuous ATO',       path: '/boundary/cato-health' },
   { label: 'ATO Package Builder',  path: '/ato-package' },
   // Linked by rmf-inert-01 — both rendered a real template over a real API and
   // were reachable only by typing the URL, so nothing had ever loaded them.
