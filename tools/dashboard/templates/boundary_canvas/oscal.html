@@ -1,11 +1,23 @@
+<!-- CUI // SP-CTI — Boundary Design Canvas OSCAL Ecosystem (rmf-ui-04) -->
 {% extends "base.html" %}
 
-{% block title %}OSCAL Ecosystem - ICDEV™ Dashboard{% endblock %}
+{% block title %}OSCAL Ecosystem — Boundary Canvas — ICDEV™{% endblock %}
 
 {% block content %}
 <div class="container">
+    <!-- Breadcrumb -->
+    <nav aria-label="breadcrumb" style="margin-bottom:0.5rem;">
+        <span><a href="/" style="color:#1976d2;text-decoration:none;">Home</a></span>
+        <span style="color:#999;"> &gt; </span>
+        <span><a href="/boundary/" style="color:#1976d2;text-decoration:none;">Boundary Canvas</a></span>
+        <span style="color:#999;"> &gt; </span>
+        <span style="color:#333;">OSCAL Ecosystem</span>
+    </nav>
+
     <h1>OSCAL Ecosystem</h1>
     <p class="text-muted">Tool detection, deep validation, catalog browser, and artifact management (D302-D306).</p>
+
+    {% include "includes/iqe_query_widget.html" %}
 
     <!-- Tool Status -->
     <h2>Tool Availability</h2>

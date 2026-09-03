@@ -1,16 +1,23 @@
+<!-- CUI // SP-CTI — Security Design Canvas CISA Secure by Design (rmf-ui-13) -->
 {% extends "base.html" %}
-{% block title %}Secure by Design - ICDEV™ Dashboard{% endblock %}
+{% block title %}Secure by Design — Security Canvas — ICDEV™{% endblock %}
 {% block content %}
 <div class="container">
     <!-- Breadcrumb -->
     <nav aria-label="breadcrumb" style="margin-bottom:0.5rem;">
         <span><a href="/" style="color:#1976d2;text-decoration:none;">Home</a></span>
         <span style="color:#999;"> &gt; </span>
+        <span><a href="/security/" style="color:#1976d2;text-decoration:none;">Security Canvas</a></span>
+        <span style="color:#999;"> &gt; </span>
         <span style="color:#333;">Secure by Design</span>
     </nav>
 
     <h1>CISA Secure by Design Assessment</h1>
     <p class="text-muted">8-pillar assessment scoring with automated gating across memory safety, default security, secure protocols, and more.</p>
+
+    {% with iqe_canvas="security", iqe_api_route="/security/api/iqe-query", iqe_title="IQE Query — Security Canvas" %}
+    {% include "includes/iqe_query_widget.html" %}
+    {% endwith %}
 
     <!-- Overall Posture Score -->
     <div style="display:flex;justify-content:center;margin:2rem 0;">

@@ -1658,6 +1658,21 @@ def create_boundary_blueprint():
         """Continuous ATO Health — ATO health score, evidence freshness, certifications, timeline."""
         return render_template("boundary_canvas/cato_health.html")
 
+    # ── OSCAL Ecosystem (rmf-ui-04) ──────────────────────────────────────────
+    #
+    # Migrated from a bare `@app.route("/oscal")` in tools/dashboard/app.py --
+    # the same shape as the rmf-ui-01 exemplar above. An RMF ARTIFACT surface
+    # (OSCAL SSP/SAP/SAR/POA&M validation, catalog lookup, format conversion)
+    # belongs on the canvas that already ships oscal_cato_exporter.py. The
+    # page drives the UNCHANGED /api/oscal/* routes -- only the PAGE route
+    # moved. The old URL redirects here rather than 404ing.
+
+    @bp.route("/oscal")
+    @bdc_login_required
+    def bdc_oscal_page():
+        """OSCAL ecosystem — validation, catalog, format conversion (D302-D306)."""
+        return render_template("boundary_canvas/oscal.html")
+
     @bp.route("/api/fabric-posture", methods=["GET"])
     @bdc_login_required
     def bdc_api_fabric_posture():

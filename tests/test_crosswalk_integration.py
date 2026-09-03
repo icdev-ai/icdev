@@ -193,18 +193,19 @@ class TestFrameworkQuery:
 class TestImpactLevel:
     """Verify get_controls_for_impact_level behavior."""
 
-    def test_il4_returns_list(self):
-        """IL4 query should return a list (may be empty if data uses il4_required key)."""
+    def test_il4_returns_controls(self):
+        """IL4 answers with controls. This test used to accept [] because IL_KEYS
+        named `il4` while the data carries `il4_required` (fixed under rmf-fab-01)."""
         controls = get_controls_for_impact_level("IL4")
-        assert isinstance(controls, list)
+        assert isinstance(controls, list) and controls
 
-    def test_il5_returns_list(self):
+    def test_il5_returns_controls(self):
         controls = get_controls_for_impact_level("IL5")
-        assert isinstance(controls, list)
+        assert isinstance(controls, list) and controls
 
-    def test_il6_returns_list(self):
+    def test_il6_returns_controls(self):
         controls = get_controls_for_impact_level("IL6")
-        assert isinstance(controls, list)
+        assert isinstance(controls, list) and controls
 
     def test_invalid_il_raises(self):
         with pytest.raises(ValueError, match="Invalid impact level"):

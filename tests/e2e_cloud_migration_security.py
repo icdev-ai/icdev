@@ -39,7 +39,7 @@ PAGES = [
     {"path": "/control-inheritance", "title": "Control Inheritance", "api": "/api/control-inheritance/csps"},
     {"path": "/migration-cost", "title": "Migration Cost", "api": "/api/migration-cost/portfolio"},
     {"path": "/compliance-debt", "title": "Compliance Debt", "api": "/api/compliance-debt/summary"},
-    {"path": "/stig-manager", "title": "STIG Manager", "api": "/api/stig-manager/stats"},
+    {"path": "/security/stig-manager", "title": "STIG Manager", "api": "/api/stig-manager/stats"},
     {"path": "/ato-package", "title": "ATO Package", "api": "/api/ato-package/status?project_id=test"},
 ]
 

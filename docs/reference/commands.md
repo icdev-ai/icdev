@@ -188,6 +188,38 @@ python tools/builder/forge_validator.py --gate               # FORGE gate for ch
 
 ---
 
+## Fabric Registry (rmf-fab-01)
+```bash
+python -m tools.fabric.registry                        # real fabrics only (fixtures excluded, count stated)
+python -m tools.fabric.registry --include-synthetic    # the in-repo synthetic fixture too
+python -m tools.fabric.registry --json --fabric <key>
+python -m tools.fabric.registry --check                # validate base + overlay; exit 1 on a refusal
+python -m tools.fabric.registry --overlay /private/path/fabrics.yaml   # same as ICDEV_FABRIC_REGISTRY_PATH
+```
+A FABRIC is an enclave instance that HAS a classification; it is not itself a
+classification level. `args/fabric_registry.yaml` is schema + SYNTHETIC fixture
+(`fixture: synthetic`, every key `fx-*`) and names no real fabric -- the repository
+is public. Real fabrics live in a private overlay OUTSIDE the repo named by
+`ICDEV_FABRIC_REGISTRY_PATH`; an overlay entry with a fixture's key replaces it
+whole, a new key is added, `drop:` removes fixture keys, and a path that resolves
+inside the repo is refused. `classification` is a LABEL from
+`args/classification_profiles.yaml` (public, fouo, cui, cui_sp_cti, secret, itar);
+a BANNER (`CUI // SP-CTI`, `SECRET // NOFORN`, even bare `CUI`) is refused with the
+label it should have been, and the banner is derived from the profile at read time.
+`impact_level` must be one the domain declares AND the profile admits. Rank, egress
+restriction and traversal direction come from `icdev.core.sensitivity`; traversal is
+declared separately from any fabric, and a DOWNWARD path without a named `guard` is
+refused. `load_registry()` -- the seam `tools/fabric/posture.py` probes -- EXCLUDES
+synthetic fabrics unless asked and reports `synthetic_excluded` beside a reason, so a
+default deployment's posture panel reads "no fabrics declared (3 fixtures excluded)"
+rather than a fabricated fleet. `required_controls(fabric)` reuses
+`crosswalk_engine.get_controls_for_impact_level`; IL2 reads `count: None`, never 0.
+Found on the way: `crosswalk_engine.IL_KEYS` named `il4`/`il5`/`il6` while the data
+carries `il4_required`/..., so that function had returned `[]` for every level since
+it was written (IL4 now answers 114, IL5/IL6 117), and its own bootstrap DDL for
+`project_framework_status` disagreed with the live schema, so the coverage INSERT
+raised on any database it created itself. Both fixed here.
+
 ## Cross-Fabric Posture Roll-Up (rmf-fab-02)
 ```bash
 python -m tools.fabric.posture                    # human report, all declared fabrics
