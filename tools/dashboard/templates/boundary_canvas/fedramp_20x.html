@@ -1,11 +1,23 @@
+<!-- CUI // SP-CTI — Boundary Design Canvas FedRAMP 20x KSI Dashboard (rmf-ui-06) -->
 {% extends "base.html" %}
 
-{% block title %}FedRAMP 20x KSI Dashboard - ICDEV™{% endblock %}
+{% block title %}FedRAMP 20x KSI Dashboard — Boundary Canvas — ICDEV™{% endblock %}
 
 {% block content %}
 <div class="container">
+    <!-- Breadcrumb -->
+    <nav aria-label="breadcrumb" style="margin-bottom:0.5rem;">
+        <span><a href="/" style="color:#1976d2;text-decoration:none;">Home</a></span>
+        <span style="color:#999;"> &gt; </span>
+        <span><a href="/boundary/" style="color:#1976d2;text-decoration:none;">Boundary Canvas</a></span>
+        <span style="color:#999;"> &gt; </span>
+        <span style="color:#333;">FedRAMP 20x KSIs</span>
+    </nav>
+
     <h1>FedRAMP 20x — Key Security Indicators</h1>
     <p class="text-muted">Machine-readable KSI evidence for FedRAMP 20x continuous authorization (Phase 2).</p>
+
+    {% include "includes/iqe_query_widget.html" %}
 
     <!-- Summary Stats -->
     <div class="stat-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1rem;margin:1.5rem 0;">

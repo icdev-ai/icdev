@@ -1,11 +1,13 @@
-{# CUI // SP-CTI #}
+{# CUI // SP-CTI — Boundary Design Canvas POA&M Findings (rmf-ui-07) #}
 {% extends "base.html" %}
-{% block title %}POA&M - ICDEV™ Dashboard{% endblock %}
+{% block title %}POA&M — Boundary Canvas — ICDEV™{% endblock %}
 
 {% block content %}
 <div class="page-header">
     <div class="breadcrumbs">
         <a href="/">Home</a>
+        <span class="separator">/</span>
+        <a href="/boundary/">Boundary Canvas</a>
         <span class="separator">/</span>
         <span class="current">POA&amp;M</span>
     </div>
@@ -14,6 +16,8 @@
     </h1>
     <p class="subtitle">Review and approve canvas findings for remediation. Aggregated from all 7 design canvases.</p>
 </div>
+
+{% include "includes/iqe_query_widget.html" %}
 
 <!-- Stat bar -->
 <div class="stat-bar" id="poam-stat-bar">

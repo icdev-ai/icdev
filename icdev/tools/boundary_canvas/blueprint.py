@@ -1658,6 +1658,22 @@ def create_boundary_blueprint():
         """Continuous ATO Health — ATO health score, evidence freshness, certifications, timeline."""
         return render_template("boundary_canvas/cato_health.html")
 
+    # ── POA&M Findings (rmf-ui-07) ───────────────────────────────────────────
+    #
+    # Migrated from a bare `@app.route("/poam")` in tools/dashboard/app.py --
+    # the same move as the ATO Compliance Dashboard above (rmf-ui-01), one
+    # route per card. The page is the findings approval workflow across the
+    # seven canvas DBs, an RMF artifact surface, so the Boundary canvas is its
+    # governed home. It drives the UNCHANGED /api/poam/* routes in app.py --
+    # only the PAGE route moved -- and the old URL redirects here rather than
+    # 404ing.
+
+    @bp.route("/poam")
+    @bdc_login_required
+    def bdc_poam_page():
+        """POA&M — canvas findings approval workflow across the 7 canvas DBs."""
+        return render_template("boundary_canvas/poam/list.html")
+
     # ── OSCAL Ecosystem (rmf-ui-04) ──────────────────────────────────────────
     #
     # Migrated from a bare `@app.route("/oscal")` in tools/dashboard/app.py --
@@ -1672,6 +1688,21 @@ def create_boundary_blueprint():
     def bdc_oscal_page():
         """OSCAL ecosystem — validation, catalog, format conversion (D302-D306)."""
         return render_template("boundary_canvas/oscal.html")
+    # ── FedRAMP 20x KSI Dashboard (rmf-ui-06) ────────────────────────────────
+    #
+    # Migrated from a bare `@app.route("/fedramp-20x")` in tools/dashboard/app.py
+    # -- an RMF ARTIFACT surface (KSI evidence, maturity levels, authorization
+    # package) that had no registry entry, no RBAC guard, no completeness gate
+    # and no IQE dispatch, and was an orphan until rmf-inert-01 linked it. On
+    # this blueprint it inherits all four by construction, exactly as the
+    # rmf-ui-01 exemplar above. The page drives the UNCHANGED /api/fedramp-20x/*
+    # blueprint -- only the PAGE route moved; the old URL is a 301 here.
+
+    @bp.route("/fedramp-20x")
+    @bdc_login_required
+    def bdc_fedramp_20x_page():
+        """FedRAMP 20x KSI Dashboard — KSI evidence generation, maturity levels, authorization package."""
+        return render_template("boundary_canvas/fedramp_20x.html")
 
     # ── Compliance Debt Burndown (rmf-ui-09) ─────────────────────────────────
     #

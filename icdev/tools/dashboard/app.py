@@ -3626,13 +3626,16 @@ def create_app(testing: bool = False) -> Flask:
 
     @app.route("/poam")
     def poam_page():
-        """POA&M — Canvas findings approval workflow.
+        """POA&M Findings — MIGRATED to the Boundary canvas (rmf-ui-07).
 
-        Aggregates findings from all 7 canvas DBs (security, infra, observability,
-        boundary, data, network, pipeline) and lets a reviewer approve, decline,
-        accept risk, or mark remediated. Approval state lives in finding_approvals.
+        The governed page is ``/boundary/poam`` on
+        tools/boundary_canvas/blueprint.py, where it is registry-registered,
+        RBAC-guarded and IQE-dispatchable. The /api/poam/* routes below are
+        unchanged -- only the page route moved. This handler stays as a
+        redirect so a bookmark, an e2e spec or a nav link that still names the
+        old URL lands on the page rather than a 404 — never a dropped page.
         """
-        return render_template("poam/list.html")
+        return redirect("/boundary/poam", code=301)
 
     @app.route("/projects")
     def projects_list():
@@ -5235,8 +5238,15 @@ def create_app(testing: bool = False) -> Flask:
 
     @app.route("/fedramp-20x")
     def fedramp_20x_page():
-        """FedRAMP 20x KSI Dashboard — KSI evidence generation, maturity levels, authorization package (Phase 53, D338)."""
-        return render_template("fedramp_20x.html")
+        """FedRAMP 20x KSI Dashboard — MIGRATED to the Boundary canvas (rmf-ui-06).
+
+        The governed page is ``/boundary/fedramp-20x`` on
+        tools/boundary_canvas/blueprint.py, where it is registry-registered,
+        RBAC-guarded and IQE-dispatchable. This handler stays as a redirect so
+        a bookmark, an e2e spec or a nav link that still names the old URL
+        lands on the page rather than a 404 — never a dropped page.
+        """
+        return redirect("/boundary/fedramp-20x", code=301)
 
     @app.route("/evidence")
     def evidence_page():
