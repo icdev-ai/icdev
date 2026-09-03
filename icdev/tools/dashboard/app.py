@@ -5193,8 +5193,15 @@ def create_app(testing: bool = False) -> Flask:
 
     @app.route("/prod-audit")
     def prod_audit_page():
-        """Production readiness audit — 30 checks, 6 categories (D291-D300)."""
-        return render_template("prod_audit.html")
+        """Production readiness audit — MIGRATED to the Security canvas (rmf-ui-14).
+
+        The governed page is ``/security/prod-audit`` on
+        tools/security_canvas/blueprint.py, where it is registry-registered,
+        RBAC-guarded and IQE-dispatchable. This handler stays as a redirect so
+        a bookmark, an e2e spec or a nav link that still names the old URL
+        lands on the page rather than a 404 — never a dropped page.
+        """
+        return redirect("/security/prod-audit", code=301)
 
     @app.route("/ai-transparency")
     def ai_transparency_page():

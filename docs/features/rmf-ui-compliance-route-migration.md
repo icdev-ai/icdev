@@ -58,6 +58,19 @@ bare handler lacked, without any per-route wiring:
   both copies, the mirror, and the IQE path→canvas dispatch. All three touched
   test files are RED on the merge base per `red_first_gate.py`.
 
+## Landed so far
+
+| Card | Old URL | Governed home | Canvas | Test |
+|---|---|---|---|---|
+| rmf-ui-01 | `/ato-compliance` | `/boundary/ato-compliance` | BDC | `tests/test_bdc_ato_compliance_page.py` |
+| rmf-ui-14 | `/prod-audit` | `/security/prod-audit` | SDC | `tests/test_sdc_prod_audit_page.py` |
+
+`/prod-audit` is a visibility surface (production-readiness checks, read-only
+posture), which is SDC's ground; its `/api/prod-audit/*` blueprint
+(`tools/dashboard/api/prod_audit.py`) did not move. SDC's template directory is
+`tools/dashboard/templates/security_canvas/` (the registry's completeness
+template), and its wrapper is `sc_login_required`.
+
 ## The shape the follow-up cards copy
 
 1. Add the route next to the exemplar's block on the target blueprint; `git mv`

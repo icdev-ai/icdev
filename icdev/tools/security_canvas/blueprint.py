@@ -2138,6 +2138,26 @@ def create_security_blueprint():
         """SDC Demo Runner — 3-scenario executive/customer/prospect demo."""
         return render_template("security_canvas/demo.html", page_title="SDC Demo Runner")
 
+    # ── Production Audit (rmf-ui-14) ──────────────────────────────────────────
+    #
+    # Migrated from a bare `@app.route("/prod-audit")` in tools/dashboard/app.py,
+    # where it had no registry entry, no RBAC guard, no completeness gate and no
+    # IQE dispatch. On this blueprint it inherits all four: app.py attaches
+    # guard_component_access("sdc", min_il) as a before_request on every
+    # registered canvas blueprint, the registry's url_prefix + IQE adapter put
+    # /security/* on the path->canvas map, and the canvas completeness gate owns
+    # security_canvas/. A VISIBILITY surface -- production-readiness checks,
+    # read-only posture -- which is SDC's ground. The page drives the UNCHANGED
+    # /api/prod-audit/* blueprint (tools/dashboard/api/prod_audit.py) -- only the
+    # PAGE route moved. The old URL redirects here rather than 404ing: a silently
+    # dropped page is the failure mode a one-route-per-card migration refuses.
+
+    @bp.route("/prod-audit")
+    @sc_login_required
+    def sc_prod_audit_page():
+        """Production readiness audit — 30 checks, 6 categories (D291-D300)."""
+        return render_template("security_canvas/prod_audit.html")
+
     @bp.route("/api/sdc-demo-run", methods=["POST"])
     @sc_login_required
     def sc_api_sdc_demo_run():
