@@ -224,6 +224,20 @@ reflexes:
       operator: gte
     targets_file: context/genesis/competitors.yaml
 
+  cache_warm:
+    enabled: true
+    risk_tier: green
+    a2a_eligible: false
+    schedule: every 4h
+    interval_seconds: 14400
+    timeout_seconds: 600
+    description: >-
+      Refill the LLM response cache after it resets. llm_response_cache is
+      UNLOGGED on PostgreSQL, so the server empties it on any unclean shutdown
+      and the cache goes cold until live traffic refills it. The reflex warms
+      ONLY when get_savings_stats() reports state == "cold" — warming makes real
+      LLM calls, so a populated or merely TTL-expired cache is a no-op.
+    success_metric: {name: seeds_warmed, threshold: 0, operator: gte}
   audit:
     enabled: true
     risk_tier: green
@@ -240,6 +254,11 @@ reflexes:
       - compliance_check
       - stig_check
       - sbd_assessment
+      # exa-audit-04: whole-of-table audit_trail hash chain sweep. Listed HERE and
+      # not only in audit.py's check_map default — reflexes/audit.py reads
+      # config["checks"] and only falls back to its own list when this key is
+      # absent, so a check that is not named here never runs.
+      - chain_integrity
 
   comply:
     enabled: true
@@ -301,7 +320,7 @@ reflexes:
     risk_tier: green
     schedule: "every 1m"
     interval: 60  # seconds (1 min) — near-minute cron resolution
-    description: "User-facing cron (sag-cron-01): drains every due job in the durable agent_cron_jobs store. Two exec modes — agent (single-shot SAG runtime turn) and script (allowlisted python tools/... command). Retry with exponential backoff; delivery via log / email (SMTP or on-file outbox) / gateway best-effort. Every run recorded to the append-only agent_cron_runs log."
+    description: "User-facing cron (sag-cron-01) + agent wake tick (agov-wake-03): drains every due job in the durable agent_cron_jobs store AND every due row in agent_wakes. Cron has two exec modes — agent (single-shot SAG runtime turn) and script (allowlisted python tools/... command) — with retry/exponential backoff, delivery via log / email (SMTP or on-file outbox) / gateway best-effort, and every run recorded to the append-only agent_cron_runs log. The wake half fires each due wake exactly once (conditional UPDATE claim before delivery, so overlapping ticks cannot resume one suspension twice) and resumes its session. The two stores share this tick deliberately: a separate wake daemon would be a fourth long-lived process that can die unnoticed. The drains are independently guarded — a cron failure must not cost the wakes their delivery."
     success_metric:
       name: ran
       threshold: 0
@@ -628,6 +647,50 @@ reflexes:
       threshold: 0
       operator: gte
 
+  detector_findings_reflex:
+    enabled: true
+    risk_tier: green
+    schedule: "every 6h"
+    interval_seconds: 21600
+    # born_red_survey resolves a landing commit per born-red file (measured
+    # 32s on the live board with 3 findings); the other two are sub-second.
+    timeout_seconds: 600
+    # Cards one run may seed, across all detectors, worst-first. The remainder
+    # is projected, reported as `cards_deferred`, and arrives next cycle.
+    max_cards_per_run: 6
+    # HITL quarantine by default: each finding is a pipeline behaviour a human
+    # decides about. `backlog` hands them to the autonomous runner instead.
+    seed_status: suggested
+    detectors:
+      status_churn:
+        window_hours: 24
+        min_returns: 10      # surveyed in tools/kanban/status_churn.py — re-survey before lowering
+      born_red: {}
+      recovery:
+        window_hours: 24     # the Autonomous Recovery panel's window
+      migration_drift:
+        # The branch this deployment is meant to be running. A migration that
+        # merged and was never applied leaves its capability INERT here: the
+        # code is present, the schema is not, and every test stays green.
+        ref: origin/main
+      deployment_freshness:
+        # autonomy-dep-04: a checkout frozen behind `ref` because an incoming
+        # file is also locally modified (dep-03's `blocked`). When EVERY such
+        # file is an enumerated auto-managed one (args/projects.yaml, regenerated
+        # by kanban_project_sync after every task creation) AND its writer,
+        # re-run over HEAD, reproduces the local diff, the restore tier checks it
+        # out, pulls through the same guard and re-derives the cards — audited,
+        # prove -> audit -> apply -> confirm. A human edit is NEVER reverted: the
+        # act refuses and a card carrying the refusal is filed instead.
+        # `restore: false` files the card without asking the restore tier.
+        ref: origin/main
+        restore: true
+    description: "autonomy-act-02: run status_churn, born_red_survey and recovery_summary; project findings into detector_findings (deduped on the finding, seen_count on recurrence) and file one evidence-carrying card per NEW finding via task_factory"
+    success_metric:
+      name: findings_seen
+      threshold: 0
+      operator: gte
+
   critical_task_watchdog_reflex:
     enabled: true
     risk_tier: green
@@ -676,7 +739,7 @@ reflexes:
       operator: gte
 
   pmo_option_tracker:
-    enabled: true
+    enabled: false   # ICDEV[FT] cutover P3 (2026-08-21): FathomDesk data moved to icdev_ft; IT's copy is frozen (kill switch tripped) and must not drift during the dual run
     risk_tier: yellow
     schedule: "daily 06:30"
     interval_seconds: 86400
@@ -688,9 +751,13 @@ reflexes:
       operator: gte
 
   pmo_weekly_report:
-    enabled: true
+    enabled: false   # ICDEV[FT] cutover P3 (2026-08-21): FathomDesk data moved to icdev_ft; IT's copy is frozen (kill switch tripped) and must not drift during the dual run
     risk_tier: yellow
-    schedule: "every Monday at 07:00"
+    # hgx-obs-02: was "every Monday at 07:00", which parse_schedule does not
+    # match — it returned None, so this reflex had no entry in daemon.schedules
+    # and never ran despite enabled:true. `interval_seconds` is only honoured
+    # when schedule == "continuous", so it was not a fallback either.
+    schedule: "weekly Mon 07:00"
     interval_seconds: 604800
     timeout_seconds: 300
     description: "AI-narrated weekly portfolio health report: EVM aggregates, overdue deliverables, option countdowns, top issues. Pushes to kanban and data/reports/"
@@ -702,7 +769,9 @@ reflexes:
   slides:
     enabled: true
     risk_tier: green
-    schedule: "0 17 * * 5"
+    # hgx-obs-02: was the cron string "0 17 * * 5" (Fri 17:00). parse_schedule
+    # has no cron form — it returned None and this reflex never ran.
+    schedule: "weekly Fri 17:00"
     interval_seconds: 604800
     timeout_seconds: 300
     description: "Weekly auto-generated ICDEV™ status deck: pulls canvases, kanban, genesis, capabilities → produces .pptx via Midnight Executive theme"
@@ -1170,6 +1239,42 @@ reflexes:
 
   # ── NDC Topology Drift → ACOIC (producer for the DIC compliance path) ───────
 
+  # rmf-disc-02: passive network asset discovery. PASSIVE-ONLY BY DEFAULT and
+  # DECLARES NO TARGETS -- so on a deployment that has not been configured it
+  # reports `unmeasured` / `no_targets_declared` and sweeps nothing, rather
+  # than guessing an address space or reporting a clean run it did not make.
+  #
+  # `snmp` and `ssh` present a community string / an account password to live
+  # infrastructure on a schedule with no human present. That is a different act
+  # from an ICMP echo, so it needs `allow_active_scan: true` -- an operator
+  # decision, never a default.
+  #
+  # This reflex NEVER seeds synthetic devices. A daemon fabricating inventory
+  # rows on a cadence would manufacture its own evidence; the CLI seed
+  # (`python -m tools.network.discovery_store --seed-synthetic`) is a
+  # deliberate one-off an operator asks for.
+  asset_discovery:
+    timeout_seconds: 600     # a /24 ping sweep is ~256 sequential probes
+    enabled: true
+    risk_tier: green         # read-only against NDC; ICMP only unless opted in
+    schedule: "every 24h"
+    interval_seconds: 86400  # matches CADENCE_HOURS = 24 in the reflex module
+    cooldown_minutes: 120
+    success_metric:
+      name: addresses_swept
+      threshold: 0        # >= 0 -- a cycle that correctly REFUSED (no targets
+                          # declared, or an active method not opted into) swept 0
+                          # addresses and is a healthy cycle, not a failure.
+      operator: gte
+    description: "Passive network asset discovery: sweep the DECLARED targets, persist each scan to nc_discovery_scans, import what answered into ni_devices with source='discovery', and measure the inventory's provenance split. Reports `unmeasured` when no targets are declared -- never a clean run it did not make."
+    targets: []              # IPs/CIDRs. EMPTY = discover nothing, and say so.
+    method: ping             # ping | snmp | ssh (the last two need allow_active_scan)
+    allow_active_scan: false
+    topology_id: null        # topology discovered devices are attributed to
+    timeout: 1.0             # per-host seconds
+    hop_limit: 0             # neighbour-crawl depth; 0 = no crawl
+    dry_run: false
+
   ndc_topology_drift:
     timeout_seconds: 180     # config generation + diff across all topologies
     enabled: true
@@ -1186,6 +1291,19 @@ reflexes:
 
   # ── BDC ISA Expiry Alerting (bdr-ops-1 — was registered-but-undispatched) ────
 
+  canvas_reassess:
+    timeout_seconds: 900     # up to 25 designs x one in-process engine run each
+    enabled: true
+    risk_tier: green         # appends assessment rows; mutates no design
+    schedule: "every 24h"
+    interval_seconds: 86400
+    cooldown_minutes: 240
+    description: "Canvas reassessment (rem-hyg-11): re-run each canvas's own assessment engine for designs whose newest assessment is missing or older than stale_after_days, and persist the score the engine ACTUALLY returned. Fixes the cause of the Compliance Posture card being 33-71 days stale - an assessment was only ever written by a human clicking assess in the canvas UI. Covers observability/boundary/infra; Security is out of scope (wider schema, design-id engine)."
+    dry_run: false
+    success_metric:
+      name: reassessed
+      threshold: 0
+      operator: gte          # Informational - 0 is healthy once the backlog has drained
   bdc_isa_expiry:
     timeout_seconds: 120     # single BDC table scan + canvas event publish + Telegram fire-and-forget
     enabled: true
@@ -1215,6 +1333,22 @@ reflexes:
       name: failed_count
       threshold: 0
       operator: lte          # 0 failing checks on main is healthy; >0 means main has regressed
+
+  # ── Kanban policy drift (kax-merge-02) ───────────────────────────────────────
+
+  kanban_policy_drift:
+    timeout_seconds: 300     # one SELECT over kanban_tasks + N small UPDATEs
+    enabled: true
+    risk_tier: amber         # writes kanban_tasks.description for backlog/scheduled rows only
+    schedule: "every 6h"
+    interval_seconds: 21600  # 6 hours — matches CADENCE_HOURS = 6 in the reflex module
+    cooldown_minutes: 60
+    description: "Operating policy is copied into every task description at seed time, so correcting the card does not correct the tasks that already exist (35 hgx rows kept telling sessions to open --draft for a day, and three batches of finished green work needed a human). Re-syncs descriptions against `policy:` on the project entry in args/projects.yaml. Rewrites only backlog/scheduled rows — done and in_progress are reported, never touched. Projects listed in args/kanban_policy_drift.yaml exempt_projects (agov, whose --draft is deliberate) are skipped entirely. Delegates to tools.kanban.policy_drift."
+    dry_run: false           # when true, reports drifted rows without rewriting any
+    success_metric:
+      name: unresolved_dispatchable
+      threshold: 0
+      operator: lte          # 0 dispatchable rows out of sync is healthy; >0 means a session will read stale policy
 
   # ── cATO Twin Continuous Monitoring (bdr-ops-1 — enabled after query soak) ───
 
@@ -1435,51 +1569,6 @@ reflexes:
       operator: eq  # 0 canvas-level errors means clean cycle
     canvases: [pdc, bdc, ddc, odc, idc]  # NDC and SDC use other pipelines
 
-  # ── FathomDesk Trap Scenarios (Phase 7.10 integration-01) ─────────────────────
-
-  fathomdesk_trap_scenarios:
-    enabled: true
-    risk_tier: green
-    schedule: "every 1h"
-    interval_seconds: 3600  # 1 hour — match trap_scanner 15m cadence × 4
-    cooldown_minutes: 30    # Minimum gap between consecutive cycles
-    description: "Detect high-confidence trap events (>=0.8) since last run, spawn potential_reversal_cascade scenarios, write daily Pulse digest"
-    success_metric:
-      name: events_found
-      threshold: 0
-      operator: gte  # 0 = no new traps (healthy), >0 = scenarios spawned
-    confidence_threshold: 0.8          # Minimum confidence to spawn a scenario
-    scenario_key: potential_reversal_cascade  # Scenario template to execute per trap
-    digest_status: draft               # Pulse post status for daily digest
-
-  # ── FathomDesk Trap Sweep (Phase 7.12 ad712-trap-02) ──────────────────────────
-
-  fathomdesk_trap_sweep:
-    enabled: true
-    risk_tier: green
-    schedule: "every 4h"
-    interval_seconds: 14400  # 4 hours — COOLDOWN_HOURS=4 per ad712-trap-02
-    cooldown_minutes: 60     # Minimum gap between consecutive cycles
-    description: "Detect bull/bear trap patterns from signal direction flips, persist to ad_trap_events via ad712-trap-01 insert path (ta_config.yaml thresholds)"
-    success_metric:
-      name: traps_inserted
-      threshold: 0
-      operator: gte  # 0 = no new traps detected (healthy), >0 = events written
-
-  # ── FathomDesk P/C Ratio History (fdmm-pcr-04) ────────────────────────────
-
-  fathomdesk_pc_ratio:
-    enabled: true
-    risk_tier: green
-    schedule: "daily 06:00"
-    interval_seconds: 86400  # 24 hours — CBOE data is end-of-day
-    cooldown_minutes: 60     # Minimum gap between consecutive cycles
-    description: "Fetch CBOE equity put/call ratio series and append snapshot to ad_pc_ratio_history; backing store for put_call_sentiment confluence pillar"
-    success_metric:
-      name: rows_written
-      threshold: 0
-      operator: gte  # 0 = no new data today (ok), 1 = snapshot stored
-
   # ── Cost Optimizer (Cluster C fd-cost-01/02) ──────────────────────────────
 
   cost_optimizer:
@@ -1673,6 +1762,51 @@ reflexes:
       name: semantic_facts_written
       threshold: 0
       operator: gte
+
+  # ── Self-improvement flywheel (hgx-obs-02) ─────────────────────────────────
+  # These three were in daemon.REFLEX_NAMES (or, for gepa_optimizer, only in
+  # reflex_registry) but had NO block here, and DaemonBase.run_due_reflexes
+  # silently skips a reflex with no schedule entry.  Result: reflexion →
+  # evolution → GEPA, the whole self-improvement loop, never ran once — while
+  # gepa_optimizer's own docstring claimed it ran every 24 hours.
+  # tests/test_reflex_dispatch_parity.py now fails if this drift reappears.
+
+  reflexion_loop:
+    enabled: true
+    risk_tier: yellow
+    schedule: "weekly Sun 03:00"
+    description: "Batch Reflexion pass over recent task traces → agent_improvement_artifacts + amendment cards"
+    dry_run: false
+    # No-ops unless ICDEV_HARNESS_COLEARN is set (checked inside the reflex).
+    success_metric:
+      name: artifacts_created
+      threshold: 0
+      operator: gte
+
+  evolution:
+    enabled: true
+    risk_tier: yellow
+    schedule: "weekly Sun 04:00"
+    description: "SELA: mutate low-performing skill text, score variants, emit improvement artifacts"
+    # Tuning (trace_window_days, mutation_count, fitness weights, …) stays in
+    # args/nova_sela_config.yaml — run_evolution() merges this block on top of
+    # it, so keep this block to scheduling keys only.
+    success_metric:
+      name: artifacts_created
+      threshold: 0
+      operator: gte
+
+  gepa_optimizer:
+    enabled: true
+    risk_tier: yellow
+    schedule: "every 24h"
+    description: "GEPA: patch skill files from high-fitness reflexion artifacts, seed a human review card"
+    dry_run: false
+    # Promotion honours ICDEV_GEPA_FROZEN inside tools/skills/gepa_optimizer.py.
+    success_metric:
+      name: skills_patched
+      threshold: 0
+      operator: gte
   ungated_test_drift:
     timeout_seconds: 600
     enabled: true
@@ -1713,6 +1847,60 @@ reflexes:
       name: providers_evaluated
       threshold: 0
       operator: gte
+  claim_verifier_reflex:
+    timeout_seconds: 300     # four claims today, each opening canvas/primary tables
+    enabled: true
+    risk_tier: green         # reads surfaces + primary data, writes kanban rows; edits no claim
+    a2a_eligible: false
+    schedule: every 6h
+    dry_run: false
+    description: >-
+      Claim verification on a cadence (autonomy-act-01). Runs every claim in
+      tools/awareness/claims.py through claim_verifier.verify_all - what a
+      surface REPORTS against an INDEPENDENT derivation from primary data - and
+      acts by the claim's own tier: `report` states the disagreement, `propose`
+      seeds one card carrying BOTH derivations (id deterministic in the claim
+      id, so an open card is not refiled), `restore` is deferred to
+      autonomy-act-03 and NAMED in the result, never dropped. No claim refuses
+      anything. A cycle that measures ZERO claims reports `unmeasurable`, never
+      ok: a verifier whose clean run and whose no-op look identical is the
+      defect the card exists to remove. Per-claim verdicts ride on details and
+      are read back by the `verified_claim` capability class, so a verifier
+      nobody runs reads as inert rather than as clean.
+    card:
+      id_prefix: "claim-verif-"
+      task_type: fix
+      priority: high
+      status: backlog
+    success_metric:
+      name: claims_measured
+      threshold: 0
+      operator: gte          # informational - 0 is `unmeasurable`, never a clean run
+
+  lease_litter_reflex:
+    enabled: true
+    risk_tier: green
+    schedule: every 1h
+    interval_seconds: 3600
+    timeout_seconds: 120
+    a2a_eligible: false
+    dry_run: false
+    # Acts one cycle may PERFORM. Every further candidate is still proven (dry
+    # run) and reported as `deferred`, never silently dropped. Refusals cost a
+    # proof each and are never bounded.
+    max_reaps_per_run: 25
+    description: >-
+      Lease litter sweep (kpr-stale-04). Feeds every held kanban:task lease to
+      the frozen restore act reap_dead_lease (autonomy-act-03), which re-proves
+      dead-pid AND no-heartbeat, writes the intent row, releases and confirms -
+      and REFUSES a live holder. On 2026-09-02 an operator cleared 20 leaked
+      leases by hand to unstarve the board and 92 more sat on done tasks: the
+      actuator existed and nothing ran it. This reflex carries no reaping rule
+      of its own. An unreadable lease store reports unmeasurable, never ok.
+    success_metric:
+      name: leases_reaped
+      threshold: 0
+      operator: gte          # informational - 0 is a clean sweep OR unmeasurable; `status` says which
 
 # ── Reflex Health & Alerting (crx-gen-02) ────────────────────────────────────
 # Turns critical-reflex failures into operator alerts on the /monitoring page
@@ -1777,6 +1965,12 @@ promoter:
     - artifact_type: code_patch
       min_confidence: 0.0  # Always human review
     - artifact_type: training_pair
+      min_confidence: 0.0  # Always human review
+    # hgx-obs-02: staged output of an ORANGE reflex run in proposal mode.
+    # Absent from auto_promote above on purpose — auto_promote_eligible() matches
+    # on artifact_type/reflex/source, so leaving it out is what keeps an ORANGE
+    # proposal from ever promoting itself.
+    - artifact_type: orange_proposal
       min_confidence: 0.0  # Always human review
 
   # Deduplication

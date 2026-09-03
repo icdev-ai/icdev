@@ -523,6 +523,86 @@ def _derived_tasks_without_an_open_pr() -> Any:
     return sorted(set(dispatchable) - with_pr)
 
 
+# --------------------------------------------------------------------------- #
+# 9. A live scheduler heartbeats  (kpr-stale-03, 2026-09-02)
+# --------------------------------------------------------------------------- #
+#: The script name the launcher starts; a process whose command line carries
+#: it IS a scheduler, whatever the registry says about it.
+SCHEDULER_SCRIPT = "kanban_scheduler.py"
+#: Ten cycles at the 60s interval. Well above one missed beat; a scheduler that
+#: has not heartbeat in ten minutes is not "busy", it is not looping.
+SCHEDULER_HEARTBEAT_WINDOW_MINUTES = 10
+
+
+def _live_scheduler_pids() -> Any:
+    """PIDs of running kanban scheduler processes, from the PROCESS TABLE.
+
+    None when the table cannot be read (no psutil, or a scan error): that is
+    unmeasurable, never "no scheduler".
+    """
+    try:
+        import psutil
+    except ImportError:
+        return None
+    pids: List[int] = []
+    try:
+        for proc in psutil.process_iter(["pid", "cmdline"]):
+            try:
+                cmd = " ".join(proc.info.get("cmdline") or [])
+            except Exception:  # noqa: BLE001 -- a vanished process
+                continue
+            if SCHEDULER_SCRIPT in cmd:
+                pids.append(int(proc.info["pid"]))
+    except Exception:  # noqa: BLE001
+        return None
+    return sorted(set(pids))
+
+
+def _kanban_session_rows() -> Any:
+    """(pid, last_heartbeat) for every active `kanban` row, from the REGISTRY
+    TABLE. None when unreadable. Shares nothing with the process scan."""
+    try:
+        with _conn() as conn:
+            rows = conn.execute(
+                "SELECT pid, last_heartbeat FROM agent_sessions "
+                "WHERE agent_type = %s AND status = %s",
+                ("kanban", "active"),
+            ).fetchall()
+        return [(dict(r).get("pid"), dict(r).get("last_heartbeat")) for r in rows]
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _reported_scheduler_pids() -> Any:
+    """What the host REPORTS: scheduler processes that exist right now."""
+    return _live_scheduler_pids()
+
+
+def _derived_scheduler_pids_heartbeating() -> Any:
+    """Independently: scheduler pids the registry has heard from recently."""
+    rows = _kanban_session_rows()
+    if rows is None:
+        return None
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=SCHEDULER_HEARTBEAT_WINDOW_MINUTES)
+    fresh: List[int] = []
+    for pid, beat in rows:
+        try:
+            ts = beat if isinstance(beat, datetime) else datetime.fromisoformat(
+                str(beat).replace("Z", "+00:00"))
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            if ts >= cutoff:
+                fresh.append(int(pid))
+        except (TypeError, ValueError):
+            continue
+    return sorted(set(fresh))
+
+
+def _every_live_scheduler_heartbeats(reported: Any, derived: Any) -> bool:
+    """A scheduler that exists must be one the registry has heard from."""
+    return set(reported or []) <= set(derived or [])
+
+
 REGISTRY: List[Claim] = [
     Claim(
         claim_id="posture_score_needs_evidence",
@@ -640,5 +720,24 @@ REGISTRY: List[Claim] = [
         incident=Incident(["rem-hyg-18"], "2026-08-21",
                           "_reconcile_pr_opened moves a scheduled/backlog task "
                           "with an open PR into pr_opened every cycle"),
+    ),
+    Claim(
+        claim_id="scheduler_heartbeat_is_fresh",
+        description=(
+            "Every kanban scheduler PROCESS that is alive must have heartbeat in "
+            "agent_sessions within the last ten minutes. On 2026-09-02 pid 29880 "
+            "ran for five hours with no heartbeat and no log line while the board "
+            "sat idle for 8h; the supervisor restarts only on EXIT, so an "
+            "alive-but-not-looping scheduler was never restarted, and it was "
+            "found by a human noticing nothing had moved."
+        ),
+        reported=_reported_scheduler_pids,
+        derived=_derived_scheduler_pids_heartbeating,
+        agree=_every_live_scheduler_heartbeats,
+        tier="propose",
+        tags=["autonomy", "kanban", "kpr-stale-03"],
+        incident=Incident(["kpr-stale-03"], "2026-09-02",
+                          "the silent scheduler was found and killed by hand while "
+                          "fixing the lease leak; this claim is its detector"),
     ),
 ]

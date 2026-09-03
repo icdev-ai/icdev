@@ -188,3 +188,63 @@ def test_the_withdrawn_claim_is_not_in_the_registry():
     description would assert something the evidence does not support — and it
     would fire 276 times on day one."""
     assert "done_is_not_reversed" not in {c.claim_id for c in C.REGISTRY}
+
+
+# --------------------------------------------------------------------------- #
+# 4. A live scheduler heartbeats (kpr-stale-03, 2026-09-02)
+# --------------------------------------------------------------------------- #
+def _fresh(minutes_ago: int) -> str:
+    from datetime import datetime, timedelta, timezone
+
+    return (datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)).isoformat()
+
+
+def test_scheduler_heartbeat_claim_is_registered_and_cited():
+    claim = _claim("scheduler_heartbeat_is_fresh")
+    assert claim.tier == "propose"
+    assert "kpr-stale-03" in claim.incident.task_ids
+    assert claim.incident.observed_on == "2026-09-02"
+
+
+def test_scheduler_sides_share_no_implementation():
+    """One side reads the PROCESS TABLE, the other the REGISTRY TABLE."""
+    import inspect
+
+    reported = inspect.getsource(C._reported_scheduler_pids) + inspect.getsource(C._live_scheduler_pids)
+    derived = (inspect.getsource(C._derived_scheduler_pids_heartbeating)
+               + inspect.getsource(C._kanban_session_rows))
+    assert "psutil" in reported and "psutil" not in derived
+    assert "agent_sessions" in derived and "agent_sessions" not in reported
+
+
+def test_a_live_scheduler_that_heartbeats_agrees(monkeypatch):
+    monkeypatch.setattr(C, "_live_scheduler_pids", lambda: [36760])
+    monkeypatch.setattr(C, "_kanban_session_rows", lambda: [(36760, _fresh(1))])
+    assert verify(_claim("scheduler_heartbeat_is_fresh")).verdict == "agrees"
+
+
+def test_a_live_scheduler_with_no_fresh_heartbeat_is_the_finding(monkeypatch):
+    """pid 29880: alive five hours, never heartbeat, never restarted."""
+    monkeypatch.setattr(C, "_live_scheduler_pids", lambda: [29880])
+    monkeypatch.setattr(C, "_kanban_session_rows", lambda: [(29880, _fresh(300))])
+    assert verify(_claim("scheduler_heartbeat_is_fresh")).verdict == "disagrees"
+
+
+def test_a_dead_registry_row_for_a_gone_process_is_not_a_finding(monkeypatch):
+    """A stale row for a pid that no longer exists is registry litter, not a
+    silent scheduler -- reaping it is session_registry's job."""
+    monkeypatch.setattr(C, "_live_scheduler_pids", lambda: [36760])
+    monkeypatch.setattr(C, "_kanban_session_rows", lambda: [(36760, _fresh(1)), (29880, _fresh(600))])
+    assert verify(_claim("scheduler_heartbeat_is_fresh")).verdict == "agrees"
+
+
+def test_no_scheduler_and_no_rows_is_unmeasurable_not_agreement(monkeypatch):
+    monkeypatch.setattr(C, "_live_scheduler_pids", lambda: [])
+    monkeypatch.setattr(C, "_kanban_session_rows", lambda: [])
+    assert verify(_claim("scheduler_heartbeat_is_fresh")).verdict == UNMEASURABLE
+
+
+def test_an_unreadable_process_table_is_none_never_empty(monkeypatch):
+    monkeypatch.setattr(C, "_live_scheduler_pids", lambda: None)
+    monkeypatch.setattr(C, "_kanban_session_rows", lambda: [(1, _fresh(1))])
+    assert verify(_claim("scheduler_heartbeat_is_fresh")).verdict == UNMEASURABLE

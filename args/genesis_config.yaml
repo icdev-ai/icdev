@@ -1877,6 +1877,31 @@ reflexes:
       threshold: 0
       operator: gte          # informational - 0 is `unmeasurable`, never a clean run
 
+  lease_litter_reflex:
+    enabled: true
+    risk_tier: green
+    schedule: every 1h
+    interval_seconds: 3600
+    timeout_seconds: 120
+    a2a_eligible: false
+    dry_run: false
+    # Acts one cycle may PERFORM. Every further candidate is still proven (dry
+    # run) and reported as `deferred`, never silently dropped. Refusals cost a
+    # proof each and are never bounded.
+    max_reaps_per_run: 25
+    description: >-
+      Lease litter sweep (kpr-stale-04). Feeds every held kanban:task lease to
+      the frozen restore act reap_dead_lease (autonomy-act-03), which re-proves
+      dead-pid AND no-heartbeat, writes the intent row, releases and confirms -
+      and REFUSES a live holder. On 2026-09-02 an operator cleared 20 leaked
+      leases by hand to unstarve the board and 92 more sat on done tasks: the
+      actuator existed and nothing ran it. This reflex carries no reaping rule
+      of its own. An unreadable lease store reports unmeasurable, never ok.
+    success_metric:
+      name: leases_reaped
+      threshold: 0
+      operator: gte          # informational - 0 is a clean sweep OR unmeasurable; `status` says which
+
 # ── Reflex Health & Alerting (crx-gen-02) ────────────────────────────────────
 # Turns critical-reflex failures into operator alerts on the /monitoring page
 # (via the shared `alerts` table) and backs the reflex health-trend queries in
