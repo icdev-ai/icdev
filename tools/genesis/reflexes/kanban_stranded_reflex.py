@@ -15,12 +15,29 @@ own findings are untouched beside it.
 
 GREEN tier — reads git + kanban_tasks, files suggested (quarantined) cards,
 requeues proven orphans through the field-set owner.
+
+kpr-stale-06 adds the SECOND proof beside it, ``details.empty_checkout_requeue``:
+a guard-parked ``validating`` row that is neither orphan (it has a branch) nor
+stranded (the branch has nothing unmerged) -- the shape ``stranded_audit`` counts
+CLEAN and nothing consumed. Its branch must be PROVABLY EMPTY and its worktree
+PROVABLY CLEAN (registered, ``git status --porcelain`` empty; an unregistered
+directory REFUSES); then the worktree is removed through git's own
+``worktree remove``, the LOCAL branch deleted (never an origin branch), and the
+row requeued -- under the SAME ``max_requeues_per_run`` cap as the orphan act,
+audited BEFORE acting.
 """
 IMPLEMENTATION_STATUS = "full"
 
 import sys
+from pathlib import Path
 
-from icdev.core.paths import repo_root
+# sys.path BOOTSTRAP first, so `python tools/genesis/reflexes/kanban_stranded_reflex.py`
+# reaches main() (kax-conflict-04); then the ONE root resolver.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from icdev.core.paths import repo_root  # noqa: E402
 
 BASE_DIR = repo_root(__file__)
 if str(BASE_DIR) not in sys.path:
@@ -64,8 +81,9 @@ def run(config: dict, state: object) -> dict:
     # The audit could not read the board: its findings are an empty list that
     # means "unknown", not "no orphans". Say so rather than act on nothing.
     if not result.get("success", False) or details.get("error"):
-        details["orphan_requeue"] = _unmeasurable(
-            str(details.get("error") or result.get("error") or "audit failed"), config)
+        err = str(details.get("error") or result.get("error") or "audit failed")
+        details["orphan_requeue"] = _unmeasurable(err, config)
+        details["empty_checkout_requeue"] = _unmeasurable(err, config)
         return result
 
     try:
@@ -76,6 +94,20 @@ def run(config: dict, state: object) -> dict:
         # The audit's report must not be lost because the act blew up.
         logger.exception("kanban_stranded_reflex: orphan requeue failed: %s", exc)
         details["orphan_requeue"] = _unmeasurable(str(exc), config)
+
+    # kpr-stale-06: the SECOND proof, for the row that is neither orphan nor
+    # stranded -- a guard park whose branch exists and is provably EMPTY and
+    # whose worktree is provably CLEAN. It shares ONE cap with the act above:
+    # what the orphan act already requeued this run counts against it.
+    try:
+        from tools.kanban import orphan_requeue as _oq
+
+        already = len((details.get("orphan_requeue") or {}).get("requeued") or [])
+        details["empty_checkout_requeue"] = _oq.act_on_empty_checkouts(
+            details, config or {}, already_requeued=already)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("kanban_stranded_reflex: empty-checkout requeue failed: %s", exc)
+        details["empty_checkout_requeue"] = _unmeasurable(str(exc), config)
     return result
 
 

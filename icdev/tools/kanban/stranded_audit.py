@@ -318,7 +318,8 @@ def audit_stranded_tasks(
         except Exception as exc:  # noqa: BLE001
             logger.warning("stranded_audit: DB unavailable (%s)", exc)
             return {"default_branch": default_branch, "total": 0, "stranded": [],
-                    "orphan_validating": [], "clean_count": 0, "error": str(exc)}
+                    "orphan_validating": [], "validating_with_branch": [],
+                    "clean_count": 0, "error": str(exc)}
     try:
         try:
             rows = conn.execute(
@@ -337,6 +338,7 @@ def audit_stranded_tasks(
 
     stranded: List[dict] = []
     orphan_validating: List[dict] = []
+    validating_with_branch: List[dict] = []
     clean = 0
     for row in rows:
         tid = row["id"] if not isinstance(row, (tuple, list)) else row[0]
@@ -351,12 +353,23 @@ def audit_stranded_tasks(
             orphan_validating.append({"id": tid, "status": status, "title": title})
         else:
             clean += 1
+            if status == "validating":
+                # NEITHER stranded NOR orphan (kpr-stale-06): a validating row
+                # whose branch exists with nothing unmerged. Still counted clean
+                # here -- nothing is stranded -- but it is stuck all the same,
+                # and this list is what orphan_requeue.act_on_empty_checkouts
+                # re-proves (branch provably empty, worktree provably clean)
+                # before it removes the checkout and requeues the row.
+                validating_with_branch.append({"id": tid, "status": status,
+                                               "title": title,
+                                               "unmerged_commits": unmerged})
 
     return {
         "default_branch": default_branch,
         "total": len(rows),
         "stranded": stranded,
         "orphan_validating": orphan_validating,
+        "validating_with_branch": validating_with_branch,
         "clean_count": clean,
         # State the posture rather than let an unmeasurable run look clean. When
         # this is "unavailable" the already-merged filter could not run, so the
