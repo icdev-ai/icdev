@@ -58,6 +58,13 @@ bare handler lacked, without any per-route wiring:
   both copies, the mirror, and the IQE path→canvas dispatch. All three touched
   test files are RED on the merge base per `red_first_gate.py`.
 
+## Migrated so far
+
+| Card | Old URL (now a 301) | Governed home | Canvas | Test |
+|---|---|---|---|---|
+| rmf-ui-01 | `/ato-compliance` | `/boundary/ato-compliance` | BDC | `tests/test_bdc_ato_compliance_page.py` |
+| rmf-ui-12 | `/stig-manager` | `/security/stig-manager` | SDC (owns STIGs) | `tests/test_sdc_stig_manager_page.py` |
+
 ## The shape the follow-up cards copy
 
 1. Add the route next to the exemplar's block on the target blueprint; `git mv`

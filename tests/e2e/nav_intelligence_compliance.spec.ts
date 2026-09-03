@@ -36,7 +36,9 @@ const COMPLIANCE_PAGES = [
   // Security
   { label: 'Security Canvas',      path: '/security/' },
   { label: 'Security Scans',       path: '/security-scan' },
-  { label: 'STIG Manager',         path: '/stig-manager' },
+  // rmf-ui-12: migrated onto the Security canvas (registry-registered, RBAC-guarded,
+  // IQE-dispatchable). The old /stig-manager answers with a 301 to this path.
+  { label: 'STIG Manager',         path: '/security/stig-manager' },
   { label: 'PR Intelligence',      path: '/pr-intel' },
   { label: 'SRE Operations',       path: '/sre' },
   // AI & Policy
