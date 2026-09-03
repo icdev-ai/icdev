@@ -58,17 +58,32 @@ bare handler lacked, without any per-route wiring:
   both copies, the mirror, and the IQE path→canvas dispatch. All three touched
   test files are RED on the merge base per `red_first_gate.py`.
 
-## Migrated so far
+## Landed so far
 
 | Card | Old URL | Governed home | Canvas | Test |
 |---|---|---|---|---|
 | rmf-ui-01 | `/ato-compliance` | `/boundary/ato-compliance` | BDC | `tests/test_bdc_ato_compliance_page.py` |
 | rmf-ui-13 | `/sbd` | `/security/sbd` | SDC | `tests/test_sdc_sbd_page.py` |
+| rmf-ui-14 | `/prod-audit` | `/security/prod-audit` | SDC | `tests/test_sdc_prod_audit_page.py` |
+| rmf-ui-15 | `/ai-transparency` | `/security/ai-transparency` | SDC | `tests/test_sdc_ai_transparency_page.py` |
 
 rmf-ui-13 is the first SDC move: the CISA Secure by Design 8-pillar assessment
 is hardening posture, a visibility surface, so it lands on the Security Design
 Canvas behind `sc_login_required`. Its IQE widget is wired to the canvas's own
 `/security/api/iqe-query` endpoint. The `/api/sbd/*` blueprint is unchanged.
+
+`/prod-audit` is a visibility surface (production-readiness checks, read-only
+posture), which is SDC's ground; its `/api/prod-audit/*` blueprint
+(`tools/dashboard/api/prod_audit.py`) did not move. SDC's template directory is
+`tools/dashboard/templates/security_canvas/` (the registry's completeness
+template), and its wrapper is `sc_login_required`.
+
+`/ai-transparency` is likewise a visibility surface (OMB M-25-21 / M-26-04 /
+NIST AI 600-1 / GAO-21-519SP posture reporting: AI inventory, model cards,
+cross-framework gaps); its `/api/ai-transparency/*` routes in `app.py` did not
+move. No AI-governance canvas exists to prefer instead — `aimc` is the AI/ML
+design catalog, `aadc` the default-off agentic-AI design canvas and
+`ai_observatory` a telemetry adapter — so SDC, the card's named default, holds.
 
 ## The shape the follow-up cards copy
 

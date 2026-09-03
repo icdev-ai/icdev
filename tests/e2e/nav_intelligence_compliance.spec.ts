@@ -43,11 +43,15 @@ const COMPLIANCE_PAGES = [
   // rmf-ui-13: migrated onto the Security canvas (registry-registered, RBAC-guarded,
   // IQE-dispatchable). The old /sbd answers with a 301 to this path.
   { label: 'Secure by Design',     path: '/security/sbd' },
-  { label: 'AI Transparency',      path: '/ai-transparency' },
+  // rmf-ui-15: migrated onto the Security canvas (registry-registered, RBAC-guarded,
+  // IQE-dispatchable). The old /ai-transparency answers with a 301 to this path.
+  { label: 'AI Transparency',      path: '/security/ai-transparency' },
   { label: 'AI Accountability',    path: '/ai-accountability' },
   { label: 'Control Inheritance',  path: '/control-inheritance' },
   { label: 'Compliance Debt',      path: '/compliance-debt' },
-  { label: 'Production Audit',     path: '/prod-audit' },
+  // rmf-ui-14: migrated onto the Security canvas (registry-registered, RBAC-guarded,
+  // IQE-dispatchable). The old /prod-audit answers with a 301 to this path.
+  { label: 'Production Audit',     path: '/security/prod-audit' },
   // Observability
   { label: 'Traces',               path: '/traces' },
   { label: 'Provenance',           path: '/provenance' },

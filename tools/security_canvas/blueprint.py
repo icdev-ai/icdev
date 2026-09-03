@@ -2159,6 +2159,47 @@ def create_security_blueprint():
         """CISA Secure by Design Assessment — 8-pillar assessment with automated gating."""
         return render_template("security_canvas/sbd.html")
 
+    # ── Production Audit (rmf-ui-14) ──────────────────────────────────────────
+    #
+    # Migrated from a bare `@app.route("/prod-audit")` in tools/dashboard/app.py,
+    # where it had no registry entry, no RBAC guard, no completeness gate and no
+    # IQE dispatch. On this blueprint it inherits all four: app.py attaches
+    # guard_component_access("sdc", min_il) as a before_request on every
+    # registered canvas blueprint, the registry's url_prefix + IQE adapter put
+    # /security/* on the path->canvas map, and the canvas completeness gate owns
+    # security_canvas/. A VISIBILITY surface -- production-readiness checks,
+    # read-only posture -- which is SDC's ground. The page drives the UNCHANGED
+    # /api/prod-audit/* blueprint (tools/dashboard/api/prod_audit.py) -- only the
+    # PAGE route moved. The old URL redirects here rather than 404ing: a silently
+    # dropped page is the failure mode a one-route-per-card migration refuses.
+
+    @bp.route("/prod-audit")
+    @sc_login_required
+    def sc_prod_audit_page():
+        """Production readiness audit — 30 checks, 6 categories (D291-D300)."""
+        return render_template("security_canvas/prod_audit.html")
+
+    # ── AI Transparency (rmf-ui-15) ───────────────────────────────────────────
+    #
+    # Migrated from a bare `@app.route("/ai-transparency")` in
+    # tools/dashboard/app.py, where it had no registry entry, no RBAC guard, no
+    # completeness gate and no IQE dispatch. Same shape as /prod-audit above: on
+    # this blueprint it inherits all four by construction. A VISIBILITY surface
+    # -- OMB M-25-21 / M-26-04 / NIST AI 600-1 / GAO-21-519SP posture reporting
+    # (AI inventory, model cards, cross-framework gaps), read-only -- which is
+    # SDC's ground. No AI-governance canvas is registered to prefer instead:
+    # `aimc` is the AI/ML design catalog, `aadc` the (default-off) agentic-AI
+    # design canvas, `ai_observatory` a telemetry adapter, and the card's rule
+    # is no FOURTH canvas. The page drives the UNCHANGED /api/ai-transparency/*
+    # routes in app.py -- only the PAGE route moved. The old URL redirects here
+    # rather than 404ing.
+
+    @bp.route("/ai-transparency")
+    @sc_login_required
+    def sc_ai_transparency_page():
+        """AI Transparency — OMB M-25-21, M-26-04, NIST AI 600-1, GAO-21-519SP (Phase 48, D307-D315)."""
+        return render_template("security_canvas/ai_transparency.html")
+
     @bp.route("/api/sdc-demo-run", methods=["POST"])
     @sc_login_required
     def sc_api_sdc_demo_run():
