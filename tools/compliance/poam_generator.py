@@ -48,7 +48,11 @@ def _get_connection(db_path=None):
     """Get a database connection."""
     if get_db_connection:
         return get_db_connection(db_path or DB_PATH, validate=True)
-    path = db_path or DB_PATH
+    # Path(), never a bare .exists(): every caller that passes --db hands this a
+    # STRING (argparse produces one), so the bare attribute access below raised
+    # AttributeError on every single invocation with an explicit database. The
+    # documented `--db` flag on these CLIs had never worked.
+    path = Path(db_path or DB_PATH)
     if not path.exists():
         raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = get_connection(db_path=str(path))
@@ -379,6 +383,19 @@ def generate_poam(project_id, output_path=None, db_path=None):
                 "output_file": str(out_file),
             },
             out_file,
+        )
+
+        # rmf-cyc-01: the POA&M is an ASSESS output (SP 800-37 Rev 2, Task A-6).
+        # Producing one is the `assess` step being under way, so the stage row
+        # is written here rather than by anyone remembering to.
+        from tools.compliance.rmf_stage_recorder import evidence_ref, record_artifact
+
+        record_artifact(
+            project_id,
+            "poam",
+            actor="poam_generator",
+            evidence=evidence_ref("file", out_file),
+            conn=conn,
         )
 
         print("POA&M generated successfully:")

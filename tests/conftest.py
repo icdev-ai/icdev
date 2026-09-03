@@ -2557,6 +2557,31 @@ CREATE TABLE IF NOT EXISTS asset_identity (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_identity_fabric_key
     ON asset_identity (tenant_id, fabric_key);
 
+-- rmf-cyc-01 — RMF lifecycle position, widened by migration 20260902233931 with
+-- the two clocks (started_at -> submitted_at is ours; submitted_at ->
+-- completed_at is the Authorizing Official's). tests/test_rmf_cycle_time.py
+-- builds its own database from the migration's own up.py rather than from here,
+-- deliberately: a schema transcribed by hand can only ever agree with itself.
+-- This entry is for every OTHER test that reaches the ATO dashboard or one of
+-- the five artifact producers incidentally.
+CREATE TABLE IF NOT EXISTS rmf_workflow_stages (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id      TEXT NOT NULL,
+    stage           TEXT NOT NULL CHECK(stage IN ('categorize', 'select', 'implement', 'assess', 'authorize', 'monitor')),
+    status          TEXT NOT NULL DEFAULT 'not_started' CHECK(status IN ('not_started', 'in_progress', 'complete', 'blocked')),
+    assigned_to     TEXT,
+    completed_at    TEXT,
+    notes           TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    classification  VARCHAR(50) DEFAULT 'CUI',
+    started_at      TEXT,
+    actor           TEXT,
+    evidence_ref    TEXT,
+    submitted_at    TEXT,
+    UNIQUE(project_id, stage)
+);
+
 -- ACF — Autonomous Capability Foundry (acf-db) — 6 platform findings tables.
 CREATE TABLE IF NOT EXISTS foundry_runs (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,

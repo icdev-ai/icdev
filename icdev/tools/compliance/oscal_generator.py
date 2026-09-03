@@ -304,10 +304,30 @@ def _get_sbom_records(conn, project_id):
     return [dict(r) for r in rows]
 
 
+# rmf-cyc-01: which RMF step each OSCAL artifact is evidence of. An OSCAL SSP is
+# still an SSP, so it is attributed by WHAT IT IS and not by the fact that this
+# module produced it. 'catalog' and 'profile' are deliberately absent — a control
+# catalogue is reference material, not a statement about one system's progress
+# through the lifecycle, and recording a stage for it would move a clock nobody
+# did any work on.
+_OSCAL_RMF_ARTIFACT_KIND = {
+    "ssp": "oscal_ssp",
+    "poam": "oscal_poam",
+    "assessment_plan": "oscal_assessment_plan",
+    "assessment_results": "oscal_assessment_results",
+    "component_definition": "oscal_component_definition",
+}
+
+
 def _store_oscal_artifact(conn, project_id, artifact_type, file_path, file_hash, schema_valid, validation_errors=None):
     """Insert or update an OSCAL artifact record in the oscal_artifacts table.
 
     Uses INSERT OR REPLACE on UNIQUE(project_id, artifact_type, format).
+
+    Also advances the RMF workflow stage this artifact is evidence of
+    (rmf-cyc-01). This is the one seam every OSCAL generator already passes
+    through on its success path, so wiring it here covers all five without five
+    separate call sites drifting apart.
     """
     errors_json = json.dumps(validation_errors) if validation_errors else None
     try:
@@ -333,6 +353,23 @@ def _store_oscal_artifact(conn, project_id, artifact_type, file_path, file_hash,
         conn.commit()
     except Exception as e:
         print(f"Warning: Could not store OSCAL artifact record: {e}", file=sys.stderr)
+
+    # OUTSIDE the try above, on purpose. The artifact file has been written and
+    # validated by the time this function is called; whether its INDEX ROW landed
+    # is a separate question, and losing the lifecycle record because the index
+    # insert failed would make the stage board disagree with the artifacts on
+    # disk. record_artifact() never raises.
+    artifact_kind = _OSCAL_RMF_ARTIFACT_KIND.get(artifact_type)
+    if artifact_kind:
+        from tools.compliance.rmf_stage_recorder import evidence_ref, record_artifact
+
+        record_artifact(
+            project_id,
+            artifact_kind,
+            actor="oscal_generator",
+            evidence=evidence_ref("oscal_artifacts", f"{project_id}/{artifact_type}"),
+            conn=conn,
+        )
 
 
 def _log_audit(conn, project_id, action, details):

@@ -32,7 +32,11 @@ STIG_TEMPLATES_DIR = BASE_DIR / "context" / "compliance" / "stig_templates"
 
 def _get_connection(db_path=None):
     """Get a database connection."""
-    path = db_path or DB_PATH
+    # Path(), never a bare .exists(): every caller that passes --db hands this a
+    # STRING (argparse produces one), so the bare attribute access below raised
+    # AttributeError on every single invocation with an explicit database. The
+    # documented `--db` flag on these CLIs had never worked.
+    path = Path(db_path or DB_PATH)
     if not path.exists():
         raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = get_connection(db_path=str(path))
@@ -650,6 +654,19 @@ def run_stig_check(
                 "output_file": str(out_file),
             },
             out_file,
+        )
+
+        # rmf-cyc-01: a STIG assessment is an ASSESS output (SP 800-37 Rev 2,
+        # Task A-4 assessment reports). Recorded from the success path, after
+        # the report has been written.
+        from tools.compliance.rmf_stage_recorder import evidence_ref, record_artifact
+
+        record_artifact(
+            project_id,
+            "stig_assessment",
+            actor="stig_checker",
+            evidence=evidence_ref("file", out_file),
+            conn=conn,
         )
 
         print("STIG check completed:")

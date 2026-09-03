@@ -1,0 +1,71 @@
+# CUI // SP-CTI
+# rmf-cyc-01 — the DENOMINATOR for "months -> 72 hours".
+#
+# A ratio needs two numbers and the pursuit narrative supplies one of them as a
+# word. "Months" is not a measurement: it has no scope, no date, no source, and
+# critically no statement of whether it INCLUDES the Authorizing Official's
+# queue. If it does — and every anecdotal "our last ATO took nine months" does —
+# then dividing it by an automation-only figure is precisely the blend this card
+# exists to refuse. So the baseline is DECLARED here, with its provenance
+# attached, and tools/compliance/rmf_cycle_time.py refuses the comparison rather
+# than computing an impressive-looking number over incompatible quantities.
+#
+# THREE KINDS OF BASELINE, and only the first is evidence:
+#
+#   measured_here    re-derived from THIS deployment's own recorded history —
+#                    the rmf_workflow_stages rows whose actor is manual
+#                    ('human:<who>'). Computed, never declared; the report
+#                    produces it directly and it needs no entry in this file.
+#   cited_external   a named document with a date. NONE IS SHIPPED. Inventing a
+#                    citation to make a comparison render is the fabrication
+#                    this whole file is a guard against; fill one in only with a
+#                    document you have actually read.
+#   claimed          an assertion made in a narrative, carried so the report can
+#                    name it as an assertion. Never promoted to evidence.
+
+# The target the platform claims. Also a claim, and labelled as one — the
+# report says `meets_target` against it, never "verified".
+target:
+  automation_hours: 72
+  kind: claimed
+  claimed_by: "RMF/cATO pursuit narrative"
+  verified: false
+
+# The pre-automation baseline the "months" half of the claim refers to.
+baseline:
+  id: traditional_ato_manual
+  kind: claimed
+  label: "Traditional manual RMF package assembly"
+  # NULL, on purpose. Nobody has recorded a number for this, and writing a
+  # plausible one here would give the report a denominator it has not earned.
+  # The report emits `comparison: null` with `baseline_unquantified` and names
+  # what must be filled in — which is the honest form of "months -> 72h has no
+  # denominator yet".
+  value_hours: null
+  value_note: >-
+    "Months" — never quantified, no scope, no source, no date. Replace with a
+    measured or cited figure before any improvement ratio is published.
+  # THE FIELD THAT MATTERS MOST. An anecdotal ATO duration is wall-clock from
+  # kickoff to the signed authorization and therefore CONTAINS the AO's queue.
+  # automation_time deliberately does not. Comparing them is comparing a
+  # different job.
+  includes_decision_latency: true
+  citation: null
+  as_of: null
+  verified: false
+
+# When a comparison against the declared baseline may be emitted at all. Both
+# default true; setting either to false is a decision to publish a ratio over
+# quantities that do not match, and should be argued for in the PR that does it.
+comparison:
+  require_quantified_baseline: true
+  refuse_when_baseline_includes_decision_latency: true
+
+# The independent, measured baseline: the same automation measurement taken over
+# MANUALLY actioned stages on this deployment. Its own denominator, reported
+# beside the declared one and never merged with it.
+measured_here:
+  # Below this many projects the measured baseline reports None rather than a
+  # median over one sample. One project is an anecdote wearing a statistic's
+  # name — and repetition by a single subject is not corroboration.
+  min_projects: 2

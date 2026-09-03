@@ -297,6 +297,21 @@ def collect_evidence(
             },
         )
 
+        # rmf-cyc-01: collecting control evidence IS RMF Step 7 MONITOR (Task
+        # M-2, ongoing assessment). A cATO posture that nothing records is
+        # exactly the "declared but never consumed" shape — the stage table held
+        # zero rows while this function was the platform's whole continuous
+        # -monitoring story.
+        from tools.compliance.rmf_stage_recorder import evidence_ref, record_artifact
+
+        record_artifact(
+            project_id,
+            "cato_evidence",
+            actor="cato_monitor",
+            evidence=evidence_ref("cato_evidence", evidence_id),
+            conn=conn,
+        )
+
         result = {
             "evidence_id": evidence_id,
             "control_id": control_id,
