@@ -35,7 +35,7 @@ const QUICK_ACTION_URLS: { useCaseId: string; label: string; url: string }[] = [
   // fedramp_auth_prep
   { useCaseId: 'fedramp_auth_prep', label: 'Compliance (FedRAMP)', url: '/compliance' },
   // privacy_impact_assessment
-  { useCaseId: 'privacy_impact_assessment', label: 'Audit Trail', url: '/prod-audit' },
+  { useCaseId: 'privacy_impact_assessment', label: 'Audit Trail', url: '/security/prod-audit' },
   // grant_tech_proposal
   { useCaseId: 'grant_tech_proposal', label: 'Digital Twin (Grant)', url: '/digital-twin' },
   // cjis_compliance_prep

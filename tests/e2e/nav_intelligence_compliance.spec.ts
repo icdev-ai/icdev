@@ -45,7 +45,9 @@ const COMPLIANCE_PAGES = [
   { label: 'AI Accountability',    path: '/ai-accountability' },
   { label: 'Control Inheritance',  path: '/control-inheritance' },
   { label: 'Compliance Debt',      path: '/compliance-debt' },
-  { label: 'Production Audit',     path: '/prod-audit' },
+  // rmf-ui-14: migrated onto the Security canvas (registry-registered, RBAC-guarded,
+  // IQE-dispatchable). The old /prod-audit answers with a 301 to this path.
+  { label: 'Production Audit',     path: '/security/prod-audit' },
   // Observability
   { label: 'Traces',               path: '/traces' },
   { label: 'Provenance',           path: '/provenance' },
