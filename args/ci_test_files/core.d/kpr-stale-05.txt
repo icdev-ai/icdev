@@ -1,0 +1,2 @@
+# kpr-stale-05 -- kanban_stranded_reflex requeues a proven orphan_validating row instead of only reporting it.
+tests/test_kanban_stranded_reflex_requeue.py

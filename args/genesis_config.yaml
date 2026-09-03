@@ -641,7 +641,13 @@ reflexes:
     # It ran 25 times, failed 14, tripped its breaker and filed ZERO cards -- a
     # daily audit that reports nothing is indistinguishable from a clean board.
     timeout_seconds: 1200
-    description: "Reconcile done/validating kanban tasks vs origin/main; file [STRANDED] suggested cards for branches with unmerged commits (built-but-never-merged)"
+    # kpr-stale-05: an `orphan_validating` row (validating, no branch, no
+    # worktree, no live lease, parked by a dispatch guard) is REQUEUED through
+    # requeue_task, at most this many per run; the rest are reported as
+    # `deferred` by name and taken next run, oldest park first. A row parked
+    # twice by the same guard within 24h is carded instead of requeued again.
+    max_requeues_per_run: 10
+    description: "Reconcile done/validating kanban tasks vs origin/main; file [STRANDED] suggested cards for branches with unmerged commits (built-but-never-merged); requeue proven orphan_validating rows (bounded)"
     success_metric:
       name: stranded_tasks_found
       threshold: 0
