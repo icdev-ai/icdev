@@ -53,7 +53,8 @@ const COMPLIANCE_PAGES = [
   // rmf-ui-15: migrated onto the Security canvas (registry-registered, RBAC-guarded,
   // IQE-dispatchable). The old /ai-transparency answers with a 301 to this path.
   { label: 'AI Transparency',      path: '/security/ai-transparency' },
-  { label: 'AI Accountability',    path: '/ai-accountability' },
+  // rmf-ui-16: same move for AI Accountability; /ai-accountability is a 301 to this path.
+  { label: 'AI Accountability',    path: '/security/ai-accountability' },
   { label: 'Control Inheritance',  path: '/control-inheritance' },
   { label: 'Compliance Debt',      path: '/compliance-debt' },
   // rmf-ui-14: migrated onto the Security canvas (registry-registered, RBAC-guarded,
