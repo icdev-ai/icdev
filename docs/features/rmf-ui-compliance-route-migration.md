@@ -67,6 +67,7 @@ bare handler lacked, without any per-route wiring:
 | rmf-ui-15 | `/ai-transparency` | `/security/ai-transparency` | SDC | `tests/test_sdc_ai_transparency_page.py` |
 | rmf-ui-12 | `/stig-manager` | `/security/stig-manager` | SDC (owns STIGs) | `tests/test_sdc_stig_manager_page.py` |
 | rmf-ui-13 | `/sbd` | `/security/sbd` | SDC | `tests/test_sdc_sbd_page.py` |
+| rmf-ui-07 | `/poam` | `/boundary/poam` | BDC | `tests/test_bdc_poam_page.py` |
 
 `/prod-audit` is a visibility surface (production-readiness checks, read-only
 posture), which is SDC's ground; its `/api/prod-audit/*` blueprint
@@ -85,6 +86,14 @@ rmf-ui-13 is an SDC move: the CISA Secure by Design 8-pillar assessment
 is hardening posture, a visibility surface, so it lands on the Security Design
 Canvas behind `sc_login_required`. Its IQE widget is wired to the canvas's own
 `/security/api/iqe-query` endpoint. The `/api/sbd/*` blueprint is unchanged.
+
+`/poam` (rmf-ui-07) is the findings approval workflow across the seven canvas
+DBs, an RMF artifact surface, so it lands on BDC. Its template already lived in
+a subdirectory (`poam/list.html`) and moved as `boundary_canvas/poam/list.html`;
+the `/api/poam/*` routes stay in `app.py`.
+`tests/test_history.py::test_poam_route_exists` was NOT touched: it GETs the
+NETWORK blueprint's own `/poam` (`/network/poam` at runtime), a different page
+that never went through `app.py`.
 
 ## The shape the follow-up cards copy
 
@@ -127,15 +136,17 @@ that the new one is not "cATO Dashboard". Everything else copies the exemplar:
 copies plus `compliance.html` and `mosa.html` repointed, the template moved and
 mirrored, `core.d/rmf-ui-05.txt`.
 
-## rmf-ui-10: `/mosa` → `/boundary/mosa`
+## rmf-ui-09: `/compliance-debt` → `/boundary/compliance-debt`
 
-An RMF ARTIFACT surface: the 10 U.S.C. §4401 modular open systems assessment
-sits with the acquisition/ATO package, so it lands on the Boundary canvas.
-Nothing to fold — BDC had no MOSA view, so the page keeps its title and its
-one data call. `/api/mosa/summary` stays in `app.py` next to the redirect;
-only the PAGE route moved. Everything copies the exemplar: `bdc_mosa_page` on
-the blueprint, a 301 from `app.py` (the handler no longer calls
-`render_template`, and the test walks its AST), both `base.html` copies plus
-`compliance.html` repointed, the template moved under `boundary_canvas/` with
-the IQE widget and a breadcrumb, mirrored under `icdev/`,
+An RMF artifact surface — POA&M, control and STIG debt burndown, ATO
+expirations and SLA compliance over the unchanged `/api/compliance-debt/*`
+blueprint — so it lands on BDC, the canvas that owns the ATO boundary. Copies
+the exemplar exactly: `bdc_compliance_debt_page` on the blueprint behind
+`bdc_login_required`, a 301 from `app.py`, both `base.html` copies plus
+`compliance.html` (the only other template linking it) repointed, the template
+moved and mirrored with the IQE widget and a breadcrumb, `core.d/rmf-ui-09.txt`
+gating `tests/test_bdc_compliance_debt_page.py`. The two ad-hoc e2e scripts
+naming the old path are repointed so their nav-href assertions describe the
+link that now exists.
+
 `core.d/rmf-ui-10.txt`.
