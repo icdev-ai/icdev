@@ -351,6 +351,18 @@ def main():
     _code_baseline = code_reload.snapshot()
     _started_at = time.time()
 
+    # In-cycle heartbeat (claim-verif-33c9f4cd11). The beat below is written
+    # ONCE per cycle, before the work, and on the live board a cycle with a
+    # dozen tasks in flight runs 9-37 minutes -- so a scheduler that was
+    # looping normally read as silent to scheduler_heartbeat_is_fresh (ten
+    # minutes) and was reaped from agent_sessions by any process that
+    # registered meanwhile (fifteen). The pump beats every minute WHILE a cycle
+    # works, and stops at the cycle ceiling, where "busy" becomes the
+    # alive-but-not-looping state the claim exists for.
+    _pump_state: dict = {"cycle": 0, "cycle_started": None, "working": False}
+    if _coord_reg is not None:
+        _start_heartbeat_pump(_pump_state, _coord_reg)
+
     cycle = 0
     while True:
         cycle += 1
@@ -407,6 +419,7 @@ def main():
             time.sleep(args.interval)
             continue
 
+        _pump_state.update(cycle=cycle, cycle_started=time.time(), working=True)
         try:
             # [DISPATCH POINT - main loop]
             reflex_name = kanban_run.__module__.rsplit(".", 1)[-1]
@@ -453,6 +466,15 @@ def main():
             logger.error(
                 "Cycle %d error: %s\n%s", cycle, exc, traceback.format_exc()
             )
+        finally:
+            _pump_state["working"] = False
+            _cycle_seconds = time.time() - (_pump_state.get("cycle_started") or time.time())
+            if _cycle_seconds > args.interval:
+                # The interval is the SLEEP between cycles, not the cycle's
+                # length; say how long the work actually took, because the
+                # claim's ten-minute window is read against exactly this.
+                logger.info("Cycle %d took %.0fs (interval %ds)",
+                            cycle, _cycle_seconds, args.interval)
 
         # AFTER the cycle's work, before the sleep: a restart mid-dispatch would
         # abandon a task it had just claimed. Does not return if it re-execs.
@@ -468,6 +490,72 @@ def main():
 #: Re-diagnose an unchanged idle state this often (cycles). At the default
 #: 60s interval that is roughly every 30 minutes.
 _IDLE_DIAGNOSIS_EVERY = 30
+
+#: How often the in-cycle pump beats agent_sessions while a cycle WORKS.
+#: scheduler_heartbeat_is_fresh reads ten silent minutes as "not looping" and
+#: session_registry reaps a row at fifteen; a beat a minute is well inside both.
+_PUMP_PERIOD_SECONDS = 60
+
+#: A cycle longer than this is not busy, it is the alive-but-not-looping state
+#: the claim exists for, so the pump WITHHOLDS the beat and says so. Measured
+#: 2026-09-03 on the live board: cycles of 9-37 minutes with 12+ tasks in
+#: flight, so an hour clears every observed cycle with headroom. Override with
+#: ICDEV_SCHEDULER_CYCLE_CEILING (seconds); never raise it to quiet a card.
+_CYCLE_CEILING_SECONDS = float(os.environ.get("ICDEV_SCHEDULER_CYCLE_CEILING") or 3600)
+
+
+def _pump_tick(state: dict, reg, now: float, *,
+               ceiling: float = _CYCLE_CEILING_SECONDS) -> str:
+    """One decision of the in-cycle heartbeat pump.
+
+    Returns what it did, so the decision is testable without a thread:
+      idle      no cycle is working (the main loop beats at each cycle start)
+      beat      the cycle is inside the ceiling; agent_sessions was refreshed,
+                with the cycle number and its age in the intent
+      withheld  the cycle is PAST the ceiling. Nothing is written: a heartbeat
+                on behalf of a cycle that long would be the pump asserting
+                what it cannot know, and the claim is meant to fire here.
+    """
+    started = state.get("cycle_started")
+    if not state.get("working") or started is None:
+        return "idle"
+    age = now - started
+    if age > ceiling:
+        return "withheld"
+    reg.heartbeat(intent=f"kanban scheduler — cycle {state.get('cycle')}, working {int(age)}s")
+    return "beat"
+
+
+def _start_heartbeat_pump(state: dict, reg, *, period: float = _PUMP_PERIOD_SECONDS,
+                          ceiling: float = _CYCLE_CEILING_SECONDS):
+    """Run `_pump_tick` every `period` seconds on a daemon thread.
+
+    A daemon thread, so it can never keep a dying scheduler alive, and every
+    tick is guarded, so a registry write that fails cannot take the loop down
+    with it -- the same rule the per-cycle heartbeat already follows.
+    """
+    import threading
+
+    def _run() -> None:
+        warned_for = None
+        while True:
+            time.sleep(period)
+            try:
+                outcome = _pump_tick(state, reg, time.time(), ceiling=ceiling)
+            except Exception as exc:  # noqa: BLE001 -- observability never kills the loop
+                logger.debug("heartbeat pump: beat failed: %s", exc)
+                continue
+            if outcome == "withheld" and warned_for != state.get("cycle"):
+                warned_for = state.get("cycle")
+                logger.warning(
+                    "kanban scheduler: cycle %s has run past the %.0fs ceiling; "
+                    "heartbeat WITHHELD so scheduler_heartbeat_is_fresh can see it",
+                    warned_for, ceiling,
+                )
+
+    thread = threading.Thread(target=_run, name="kanban-scheduler-heartbeat-pump", daemon=True)
+    thread.start()
+    return thread
 
 #: (cycle_last_diagnosed, last_summary) — module state so the reason survives
 #: between cycles without re-querying the board every 60 seconds.
