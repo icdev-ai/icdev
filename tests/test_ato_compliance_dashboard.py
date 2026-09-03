@@ -782,11 +782,24 @@ class TestDashboardPageRoute:
         )
 
     def test_ato_compliance_template_exists(self):
-        """tools/dashboard/templates/ato_compliance.html must exist."""
-        tmpl = BASE_DIR / "tools" / "dashboard" / "templates" / "ato_compliance.html"
+        """The template lives on the Boundary canvas (rmf-ui-01), not at the top level.
+
+        The page route migrated to /boundary/ato-compliance on
+        tools/boundary_canvas/blueprint.py; a top-level ato_compliance.html
+        would be a second, ungoverned home for the same page.
+        """
+        tmpl = (
+            BASE_DIR / "tools" / "dashboard" / "templates"
+            / "boundary_canvas" / "ato_compliance.html"
+        )
         assert tmpl.exists(), (
-            "Template ato_compliance.html not found. "
-            "Create tools/dashboard/templates/ato_compliance.html."
+            "Template boundary_canvas/ato_compliance.html not found. "
+            "The ATO Compliance Dashboard renders from the Boundary canvas."
+        )
+        legacy = BASE_DIR / "tools" / "dashboard" / "templates" / "ato_compliance.html"
+        assert not legacy.exists(), (
+            "tools/dashboard/templates/ato_compliance.html still exists -- "
+            "two homes for one page"
         )
 
     def test_ato_compliance_blueprint_in_api_init(self):
