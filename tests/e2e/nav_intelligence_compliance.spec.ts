@@ -22,7 +22,9 @@ const INTELLIGENCE_PAGES = [
 const COMPLIANCE_PAGES = [
   // Risk & ATO
   { label: 'POA&M Findings',       path: '/poam' },
-  { label: 'Compliance Hub',       path: '/compliance' },
+  // rmf-ui-11: the hub migrated onto the Boundary canvas LAST of the BDC set (it
+  // links the others). The old /compliance answers with a 301 to this path.
+  { label: 'Compliance Hub',       path: '/boundary/compliance-hub' },
   // rmf-ui-04: migrated onto the Boundary canvas (registry-registered, RBAC-guarded,
   // IQE-dispatchable). The old /oscal answers with a 301 to this path.
   { label: 'OSCAL',                path: '/boundary/oscal' },
