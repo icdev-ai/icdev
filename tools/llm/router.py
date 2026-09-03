@@ -1248,7 +1248,9 @@ class LLMRouter:
         except Exception:
             return request  # Never block the LLM call on compressor failure
 
-    def _pre_invoke_redaction(self, function: str, request: LLMRequest) -> Optional[str]:
+    def _pre_invoke_redaction(
+        self, function: str, request: LLMRequest, *, chain_key: Optional[str] = None
+    ) -> Optional[str]:
         """Sanitize PII in request messages before sending to any LLM.
 
         Applies to ALL modules. Checks if the function is in the enforced
@@ -1260,6 +1262,14 @@ class LLMRouter:
         that MUST run but is missing/errors raises RedactionUnavailableError
         (aborting the LLM call) instead of proceeding unredacted. Default is
         fail-open (log + proceed). Legitimate skips below never raise.
+
+        ``chain_key`` (rmf-wp-02) names the routing chain the request will
+        ACTUALLY travel when it is not ``function``'s own -- ``invoke_for_role``
+        resolves a ROLE chain (``cot_reasoner``, ``cod_judge``), so the
+        local-only decision must read that chain, not the function's. Reading
+        the function's chain there is fail-OPEN: a function routed locally whose
+        CoT roles reach a cloud model would skip redaction on the cloud hop.
+        Scope and exclusion checks stay keyed on ``function``.
         """
         # D-RDT-4: Config toggle — skip redaction if explicitly disabled
         rdcfg = self._config.get("redaction", {})
@@ -1299,7 +1309,7 @@ class LLMRouter:
             #
             # Use the one definition (cli_bridge.activate), which fails closed on
             # an unknown model and on an empty chain.
-            chain = self._get_chain_for_function(function)
+            chain = self._get_chain_for_function(chain_key or function)
             is_local = _chain_is_local_only(
                 chain, self._config.get("models", {}), self._config.get("providers", {})
             )
@@ -3227,6 +3237,17 @@ class LLMRouter:
                       e.g. 'cot_reasoner', 'cot_critic', 'cod_judge'.
             function: ICDEV™ function name, used for telemetry grouping.
             request:  LLMRequest to invoke.
+
+        rmf-wp-02: THIS PATH CARRIED PROPOSAL PROSE TO CLOUD PROVIDERS
+        UNREDACTED. ``invoke`` has run ``_pre_invoke_redaction`` on every call
+        since D-RDT-1, and ``cortex.complete`` reaches ``invoke`` -- so the
+        single-shot drafting paths in rfi_workbench and doc_generator were
+        covered. Their Chain-of-Debate / Chain-of-Thought paths are not
+        ``invoke``: ChainOrchestrator builds one request per role step and
+        hands each to THIS method, which resolved a chain, ranked it and called
+        the provider with the raw text. The sanitizer that gates every other
+        egress had no seat here. Same pre/post pair as ``invoke``, keyed on
+        the ROLE chain for the local-only decision (see ``chain_key``).
         """
         chain = self._get_chain_for_function(role_key)
         if not chain:
@@ -3236,6 +3257,10 @@ class LLMRouter:
                 function=role_key,
                 chain=[],
             )
+
+        _redaction_session = self._pre_invoke_redaction(
+            function, request, chain_key=role_key
+        )
 
         try:
             chain = self._get_rl_router().rank_models(role_key, chain)
@@ -3267,7 +3292,7 @@ class LLMRouter:
                     self._log_telemetry(function, request, response, model_id, provider_name, _latency)
                 except Exception:
                     pass
-                return response
+                return self._post_invoke_deanonymize(response, _redaction_session)
             except Exception as exc:
                 logger.warning(
                     "invoke_for_role: %s via %s/%s failed for %s: %s — trying next",

@@ -1847,6 +1847,43 @@ python -c "from tools.security.stub_gate import stub_status; print(stub_status()
 # described honestly. Wiring the probes is the follow-on; this removed the
 # fabrication that hid the need for it.
 
+# A DIC version leaves the canvas through ONE gated door, and CoT/CoD prose is redacted (rmf-wp-02)
+# A library, no CLI. Import it:
+#   from tools.document_intelligence.exporter import export_version, export_gate, EXPORT_FORMATS
+#   out = export_version(version_id, "docx", exported_by="alice")   # {artifact, gate}
+# Route: GET /document-intelligence/api/versions/<id>/export/<fmt>  (md|html|docx|pdf)
+#        GET /document-intelligence/api/versions/<id>/artifacts
+#        GET /document-intelligence/api/artifacts/<id>/download
+# DIC HAD NO EXPORT ROUTE. Its prose left the canvas by copy-paste, which passes
+# every TRUST gate the approve route enforces by never touching one. docgen has
+# had the right shape since cnr-doc-01 (TRUST gate -> WriteGuard gate ->
+# idr_artifacts); this is that shape on DIC's own tables. THREE GATES, IN ORDER,
+# EVERY ONE FAIL-CLOSED: placeholder_guard and citation_guard are the SAME
+# consistency_checker gates the approve route runs (the shared
+# placeholder_findings / citation_gate -- never a second copy), then WriteGuard
+# (run_full_quality_check) over the ASSEMBLED document -- docgen blocks publish
+# on it, DIC never called it. A gate that could not MEASURE is `unmeasured`,
+# blocks, and NO force_* opens it. A measured defect needs the matching flag AND
+# a non-empty force_reason (400 without), the reviewer role, and is audited
+# BEFORE the file exists: TRUST guards to idr_publish_audit, the decision as a
+# fail-closed dic.hitl_decision `dic_version.export_forced`. One dic_artifacts
+# row per export (migration 20260903194350): sha256, WriteGuard score, the full
+# gate report, forced/force_reason, and version_status AT EXPORT TIME -- export
+# does not require `approved`, so the row says what it was. docx is
+# rfi_docx_exporter.markdown_to_docx with the classification LABEL as the
+# marking, never its FOUO default; pdf only where fpdf2 is installed.
+# THE SANITIZER HALF, and the card's stated cause was half right: `invoke` has
+# run _pre_invoke_redaction since D-RDT-1 and cortex.complete reaches it, so the
+# single-shot rfi_workbench / doc_generator paths were covered. `invoke_for_role`
+# -- what ChainOrchestrator hands EVERY CoT/CoD step to -- was not, so a
+# debater or reasoner received the raw prompt. It now runs the same pre/post
+# pair, with the local-only decision read off the ROLE chain the request
+# travels (`chain_key`), not the function's; the orchestrator's legacy
+# direct-model branch redacts at the call site, never inside
+# _invoke_model_direct, which `invoke`'s two-tier hop reaches ALREADY sanitized
+# (a second pass re-detects a surrogate as PII and the round trip restores the
+# surrogate, not the original).
+
 # GEPA Optimizer — Genome Evolution Pressure Analyzer (MCP tool: gepa_optimizer)
 python tools/skills/gepa_optimizer.py --json           # Run optimization pass (prune low-fitness genome entries)
 python tools/skills/gepa_optimizer.py --dry-run --json # Scan without writing changes

@@ -41,6 +41,14 @@
     <h3 style="margin:0;color:#9bb8d8;font-size:13px;">Versions</h3>
     <div style="display:flex;align-items:center;gap:10px;">
       <span style="color:#7a8cb0;font-size:11px;">Active: {{ active_version_id[:16] }}…</span>
+      {% if active_version_id and role_levels.get(user_role, 0) >= 1 %}
+      <span id="dic-export-controls" style="display:flex;align-items:center;gap:4px;" title="Export the active version. Placeholder, citation and WriteGuard gates run first; a refusal names the gate.">
+        <span style="color:#7a8cb0;font-size:11px;">Export:</span>
+        <button onclick="exportVersion('docx')" style="background:#1a2e52;color:#7ab3f0;padding:4px 10px;border:1px solid #1e3a6e;border-radius:4px;cursor:pointer;font-size:11px;">DOCX</button>
+        <button onclick="exportVersion('html')" style="background:#1a2e52;color:#7ab3f0;padding:4px 10px;border:1px solid #1e3a6e;border-radius:4px;cursor:pointer;font-size:11px;">HTML</button>
+        <button onclick="exportVersion('md')" style="background:#1a2e52;color:#7ab3f0;padding:4px 10px;border:1px solid #1e3a6e;border-radius:4px;cursor:pointer;font-size:11px;">MD</button>
+      </span>
+      {% endif %}
       {% if versions|length >= 2 %}
       <button onclick="openDiffModal()" style="background:#1a2e52;color:#7ab3f0;padding:4px 12px;border:1px solid #1e3a6e;border-radius:4px;cursor:pointer;font-size:11px;">⟺ Compare</button>
       {% endif %}
@@ -1387,6 +1395,43 @@ function submitSuggestEdit() {
       statusEl.style.color = '#f87171';
       statusEl.textContent = 'Error: ' + e.message;
     });
+}
+
+// rmf-wp-02: gated export of the active version. A 409 names the refusing
+// gate and its findings; the user may re-request with a force flag AND a
+// reason (reviewer role), which the server audits before writing anything.
+function exportVersion(fmt, force) {
+  var vid = '{{ active_version_id }}';
+  if (!vid) { alert('No active version to export.'); return; }
+  var url = '/document-intelligence/api/versions/' + encodeURIComponent(vid) + '/export/' + encodeURIComponent(fmt);
+  if (force) {
+    var reason = prompt('Override the ' + force + ' gate? State the reason (audited):');
+    if (!reason || !reason.trim()) { return; }
+    var flag = force === 'placeholder_guard' ? 'force_placeholders'
+             : force === 'citation_guard' ? 'force_citations' : 'force_writeguard';
+    url += '?' + flag + '=1&force_reason=' + encodeURIComponent(reason.trim());
+  }
+  fetch(url, {credentials: 'same-origin'})
+    .then(function (r) { return r.json().then(function (j) { return {status: r.status, body: j}; }); })
+    .then(function (res) {
+      var j = res.body || {};
+      if (res.status === 200 && j.download_url) {
+        window.location.href = j.download_url;
+        return;
+      }
+      if (res.status === 409 && j.gate) {
+        var counts = [];
+        if ((j.placeholder_findings || []).length) counts.push((j.placeholder_findings || []).length + ' placeholder finding(s)');
+        if ((j.citation_findings || []).length) counts.push((j.citation_findings || []).length + ' citation finding(s)');
+        if (j.writeguard && j.writeguard.measured) counts.push('WriteGuard score ' + j.writeguard.overall_score);
+        var msg = (j.error || 'Export refused') + (counts.length ? '\n\n' + counts.join('\n') : '');
+        if ((j.unmeasured || []).length) { alert(msg); return; }
+        if (confirm(msg + '\n\nOverride this gate with an audited reason?')) { exportVersion(fmt, j.gate); }
+        return;
+      }
+      alert(j.error || ('Export failed (HTTP ' + res.status + ')'));
+    })
+    .catch(function (e) { alert('Export failed: ' + e); });
 }
 
 function openDiffModal() {

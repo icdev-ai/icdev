@@ -356,13 +356,29 @@ class ChainOrchestrator:
                     f"Role '{model_name}' unavailable for '{function}': {exc}"
                 ) from exc
         else:
-            # Legacy: direct model name — single attempt, no fallback chain
+            # Legacy: direct model name — single attempt, no fallback chain.
+            #
+            # rmf-wp-02: redact HERE, not inside _invoke_model_direct. That
+            # method is also the two-tier hop of `invoke`, which has ALREADY
+            # sanitized the request; running the sanitizer twice re-detects a
+            # surrogate as PII and the round-trip restores the first surrogate,
+            # not the original. This branch is the one caller that reaches it
+            # with raw text. Guarded on a real router: a MagicMock router
+            # (chain_orchestrator_test) would hand back a truthy mock session and
+            # a mock "de-anonymized" response.
+            _session = None
+            if isinstance(self.router, LLMRouter):
+                _session = self.router._pre_invoke_redaction(
+                    function, request, chain_key=model_name
+                )
             response = self.router._invoke_model_direct(model_name, request, function=function)
             if response is None:
                 raise RuntimeError(
                     f"Model '{model_name}' returned None for '{function}'. "
                     "Consider using a routing chain key instead of a direct model name."
                 )
+            if _session is not None:
+                response = self.router._post_invoke_deanonymize(response, _session)
 
         elapsed = time.time() - start
         if elapsed > timeout:
