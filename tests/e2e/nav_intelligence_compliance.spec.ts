@@ -36,7 +36,9 @@ const COMPLIANCE_PAGES = [
   // rmf-ui-01: migrated onto the Boundary canvas (registry-registered, RBAC-guarded,
   // IQE-dispatchable). The old /ato-compliance answers with a 301 to this path.
   { label: 'ATO Compliance Dashboard', path: '/boundary/ato-compliance' },
-  { label: 'FedRAMP 20x KSIs',     path: '/fedramp-20x' },
+  // rmf-ui-06: migrated onto the Boundary canvas like /ato-compliance above.
+  // The old /fedramp-20x answers with a 301 to this path.
+  { label: 'FedRAMP 20x KSIs',     path: '/boundary/fedramp-20x' },
   { label: 'MOSA',                 path: '/mosa' },
   // Security
   { label: 'Security Canvas',      path: '/security/' },
