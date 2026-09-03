@@ -174,7 +174,7 @@ def compliance_iqe_query():
     import logging as _log
     import tools.iqe.adapters.compliance  # noqa: F401 — registers compliance.* collections
     from tools.iqe.nl_to_iqe import nl_to_iqe
-    from tools.iqe.parser import Parser
+    from tools.iqe.parser import parse
     from tools.iqe.executor import execute_query
 
     data = request.get_json(silent=True) or {}
@@ -188,7 +188,7 @@ def compliance_iqe_query():
         result = nl_to_iqe(question, collections)
         iqe_str = result.get("iqe", "")
         explanation = result.get("explanation", "")
-        ast = Parser().parse(iqe_str)
+        ast = parse(iqe_str)
         conn = _get_db()
         try:
             rows = execute_query(ast, conn)

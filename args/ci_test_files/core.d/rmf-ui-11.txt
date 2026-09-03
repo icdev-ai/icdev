@@ -1,1 +1,2 @@
 tests/test_bdc_compliance_hub_page.py
+tests/test_compliance_iqe_query_route.py
