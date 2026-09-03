@@ -127,15 +127,15 @@ that the new one is not "cATO Dashboard". Everything else copies the exemplar:
 copies plus `compliance.html` and `mosa.html` repointed, the template moved and
 mirrored, `core.d/rmf-ui-05.txt`.
 
-## rmf-ui-03: `/ato-package` → `/boundary/ato-package`
+## rmf-ui-10: `/mosa` → `/boundary/mosa`
 
-The ATO Package Builder: the wizard that assembles SSP/SAR/POAM/SBOM into the
-accreditation package, over the unchanged `/api/ato-package/*` blueprint. An
-RMF artifact surface, so it lands on BDC beside the ATO boundary, enclave and
-cATO pages the canvas already owns; nothing on the canvas overlapped it, so
-there was no fold-or-land decision. Everything copies the exemplar:
-`bdc_ato_package_page` on the blueprint behind `bdc_login_required`, a 301
-from `app.py`, both `base.html` copies plus `compliance.html` repointed, the
-template moved (breadcrumb back to `/boundary/`, IQE widget after the project
-selector) and mirrored, the old top-level template deleted from both trees,
-`tests/test_bdc_ato_package_page.py` gated via `core.d/rmf-ui-03.txt`.
+An RMF ARTIFACT surface: the 10 U.S.C. §4401 modular open systems assessment
+sits with the acquisition/ATO package, so it lands on the Boundary canvas.
+Nothing to fold — BDC had no MOSA view, so the page keeps its title and its
+one data call. `/api/mosa/summary` stays in `app.py` next to the redirect;
+only the PAGE route moved. Everything copies the exemplar: `bdc_mosa_page` on
+the blueprint, a 301 from `app.py` (the handler no longer calls
+`render_template`, and the test walks its AST), both `base.html` copies plus
+`compliance.html` repointed, the template moved under `boundary_canvas/` with
+the IQE widget and a breadcrumb, mirrored under `icdev/`,
+`core.d/rmf-ui-10.txt`.

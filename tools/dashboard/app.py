@@ -5405,8 +5405,16 @@ def create_app(testing: bool = False) -> Flask:
 
     @app.route("/mosa")
     def mosa_page():
-        """MOSA Compliance — 10 U.S.C. §4401 modular open systems approach assessment."""
-        return render_template("mosa.html")
+        """MOSA Compliance — MIGRATED to the Boundary canvas (rmf-ui-10).
+
+        The governed page is ``/boundary/mosa`` on
+        tools/boundary_canvas/blueprint.py, where it is registry-registered,
+        RBAC-guarded and IQE-dispatchable. This handler stays as a redirect so
+        a bookmark, an e2e spec or a nav link that still names the old URL
+        lands on the page rather than a 404 — never a dropped page. The
+        /api/mosa/summary route below is unchanged; only the PAGE moved.
+        """
+        return redirect("/boundary/mosa", code=301)
 
     @app.route("/api/mosa/summary")
     def api_mosa_summary():
