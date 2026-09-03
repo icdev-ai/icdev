@@ -293,6 +293,54 @@ substrates:
       docmod_defacto_standards above), so an empty asset_identity here may be
       an empty UPSTREAM rather than a writer that never ran — `--ingest`
       reports each source's row count separately for that reason.
+  - ref: rmf_workflow_stages
+    note: >-
+      The RMF step ledger both cycle-time clocks are read from (rmf-cyc-01,
+      migration 20260902233931): automation_time spans started_at ->
+      submitted_at, decision_latency spans submitted_at -> completed_at.
+      Load-bearing on a READ path and silent when empty -- the ATO dashboard
+      (tools/ato_compliance/dashboard.py::get_rmf_stages) hands back six
+      synthetic not_started stages for a project with no rows, so an estate
+      nobody has assessed renders identically to one at the start of its
+      lifecycle. rmf-rail-01 made get_posture_score ask this table directly
+      and report rmf_pct None over no rows. 0 rows on the live board at
+      declaration time; the writers are the five artifact producers routed
+      through tools/compliance/rmf_stage_recorder.py, none of which has run
+      here yet.
+  - ref: asset_visibility_snapshots
+    note: >-
+      What each asset-visibility measurement SAID at the time it was taken
+      (rmf-vis-01, migration 20260902223458), one row per (fabric, run). It
+      is the only record from which a visibility trend can be drawn, and the
+      trend surface reads nothing else, so an empty table here is a trend
+      that cannot be drawn rather than a flat one. Every persisted row carries
+      the state (unmeasurable | not_assessed | assessed) beside the pct, and
+      pct is NULL under the first two -- a reader that COALESCEs it to 0 or
+      100 reintroduces the defect the table was built to refuse. 0 rows on
+      the live board at declaration time.
+  - ref: cato_evidence
+    note: >-
+      The per-control cATO evidence rows that every readiness figure divides
+      by: tools/compliance/cato_monitor.py::compute_cato_readiness (readiness
+      and automation percentages), tools/compliance/ato_packager.py (the
+      "evidence fresh" step and checklist item) and the cross-fabric roll-up
+      in tools/fabric/posture.py. Load-bearing on a READ path: with no rows
+      the readiness percentages were 0.0 -- indistinguishable from a measured
+      failure -- until rmf-rail-01 made them None, and the roll-up reports
+      not_assessed. 0 rows on the live board at declaration time; the writer
+      is cato_monitor.collect_evidence, which nothing on this deployment has
+      invoked.
+  - ref: project_controls
+    note: >-
+      The denominator of the ATO posture percentage
+      (tools/ato_compliance/dashboard.py::get_control_summary), of the
+      crosswalk coverage, and of the packager's "controls >= 80% implemented"
+      step. Old table, listed now because the failure was silent: over 0 rows
+      posture_pct read 0.0 and the composite ATO score graded the project F
+      with 55 artifact points awarded for the ABSENCE of POAM items and STIG
+      findings. rmf-rail-01 made every one of those None. 0 rows on the live
+      board at declaration time -- nothing here has assigned a control to a
+      project.
 
 # The five incidents this measurement was built for. Each is asserted to be
 # measurable — `--gate` fails when a case's class cannot be measured at all,
