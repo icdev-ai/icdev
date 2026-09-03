@@ -1249,7 +1249,12 @@ class LLMRouter:
             return request  # Never block the LLM call on compressor failure
 
     def _pre_invoke_redaction(
-        self, function: str, request: LLMRequest, *, chain_key: Optional[str] = None
+        self,
+        function: str,
+        request: LLMRequest,
+        *,
+        chain_key: Optional[str] = None,
+        egress_chain: Optional[List[str]] = None,
     ) -> Optional[str]:
         """Sanitize PII in request messages before sending to any LLM.
 
@@ -1309,7 +1314,11 @@ class LLMRouter:
             #
             # Use the one definition (cli_bridge.activate), which fails closed on
             # an unknown model and on an empty chain.
-            chain = self._get_chain_for_function(chain_key or function)
+            chain = (
+                list(egress_chain)
+                if egress_chain is not None
+                else self._get_chain_for_function(chain_key or function)
+            )
             is_local = _chain_is_local_only(
                 chain, self._config.get("models", {}), self._config.get("providers", {})
             )
@@ -1339,6 +1348,13 @@ class LLMRouter:
                 if not meta.get("skipped", True):
                     request.system_prompt = sanitized
 
+            try:
+                # The door that redacted this request. `invoke` hands an already
+                # redacted request to two-tier / _invoke_model_direct; that door
+                # reads the mark and does not redact (or audit) a second time.
+                request._redaction_session = sanitizer.session_id
+            except Exception:  # noqa: BLE001 -- a frozen request type; the gate still ran
+                pass
             return sanitizer.session_id
 
         except RedactionUnavailableError:
@@ -1471,6 +1487,17 @@ class LLMRouter:
         two-tier path returns is the REVIEW response alone, so a single row at
         the return would undercount the draft's tokens entirely.
         """
+        # The same gate every other door runs (invoke, invoke_streaming,
+        # invoke_for_role). This is ChainOrchestrator's LEGACY door -- a direct
+        # model name instead of a routing key -- and the two-tier draft/review
+        # door. A request `invoke` already redacted arrives MARKED and is left
+        # alone; an unmarked one is entering the router HERE and is redacted
+        # now, with locality judged on the one model that egresses.
+        _direct_session = None
+        if getattr(request, "_redaction_session", None) is None:
+            _direct_session = self._pre_invoke_redaction(
+                function or telemetry_function, request, egress_chain=[model_name]
+            )
         model_cfg = self._get_model_config(model_name)
         if not model_cfg:
             logger.warning("Two-tier: model '%s' not found in config", model_name)
@@ -1498,6 +1525,8 @@ class LLMRouter:
                 )
             except Exception as _tel_exc:  # noqa: BLE001
                 logger.warning("AI telemetry logging failed: %s", _tel_exc)
+            if _direct_session:
+                response = self._post_invoke_deanonymize(response, _direct_session)
             return response
         except (ForceLocalViolation, RedactionUnavailableError):
             # NEVER swallow an egress refusal into a None. The `return None` below
