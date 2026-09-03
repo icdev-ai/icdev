@@ -43,17 +43,22 @@ IMPLEMENTATION_STATUS = "full"
 
 import sys
 from collections import Counter
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-# The ONE root resolver (xit-decl-03): never a private parents[N] claim about
-# where this file sits, which is true today and silently wrong after a move.
+# sys.path BOOTSTRAP ONLY (kax-conflict-04): resolves the IMPORT root so that
+# `python <this file>` can find first-party code at all. It is never used as a
+# fact about where the repo is -- that is repo_root()'s job below (xit-decl-03),
+# and the two must be in this order or the import of repo_root itself fails.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from icdev.core.paths import repo_root  # noqa: E402
-
-BASE_DIR = repo_root(__file__)
-if str(BASE_DIR) not in sys.path:
-    sys.path.insert(0, str(BASE_DIR))
-
 from tools.logging.icdev_logger import get_logger  # noqa: E402
+
+#: The ONE root resolver, for the .env lookup in __main__.
+BASE_DIR = repo_root(__file__)
 
 logger = get_logger("icdev.genesis.lease_litter_reflex")
 
