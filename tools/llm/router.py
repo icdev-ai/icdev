@@ -1248,11 +1248,21 @@ class LLMRouter:
         except Exception:
             return request  # Never block the LLM call on compressor failure
 
-    def _pre_invoke_redaction(self, function: str, request: LLMRequest) -> Optional[str]:
+    def _pre_invoke_redaction(
+        self, function: str, request: LLMRequest, *, chain_key: Optional[str] = None
+    ) -> Optional[str]:
         """Sanitize PII in request messages before sending to any LLM.
 
         Applies to ALL modules. Checks if the function is in the enforced
         scope and whether routing is local-only (skips if configured).
+
+        ``chain_key`` names the routing chain that will actually EGRESS the
+        request when it is not the function's own: ``invoke_for_role`` routes
+        on a ROLE key (``cod_judge``, ``cot_critic``) while the originating
+        ``function`` still decides enforced scope and ``excluded_functions``.
+        The local-only skip must be judged on the chain the bytes leave
+        through, or a cloud role under a local function skips redaction for
+        a call that is not local at all.
 
         Returns session_id for de-anonymization, or None if skipped.
 
@@ -1299,7 +1309,7 @@ class LLMRouter:
             #
             # Use the one definition (cli_bridge.activate), which fails closed on
             # an unknown model and on an empty chain.
-            chain = self._get_chain_for_function(function)
+            chain = self._get_chain_for_function(chain_key or function)
             is_local = _chain_is_local_only(
                 chain, self._config.get("models", {}), self._config.get("providers", {})
             )
@@ -3242,6 +3252,14 @@ class LLMRouter:
         except Exception:
             pass  # RL ranking is best-effort
 
+        # The same egress gate `invoke` runs (D-RDT-4/5, trust-mask-01). This
+        # door had none: every Chain-of-Debate / -Thought / council role call
+        # went to _provider_invoke with the caller's raw text, so the judgment
+        # sections of an RFI draft (rfi_workbench._generate_draft, CoD) reached
+        # the provider unredacted while the single-shot sections did not. Scope
+        # and exclusions are keyed on the originating FUNCTION; the local-only
+        # skip is judged on the ROLE chain, which is what actually egresses.
+        _redaction_session = self._pre_invoke_redaction(function, request, chain_key=role_key)
         last_error: Optional[Exception] = None
 
         for model_name in chain:
@@ -3267,7 +3285,7 @@ class LLMRouter:
                     self._log_telemetry(function, request, response, model_id, provider_name, _latency)
                 except Exception:
                     pass
-                return response
+                return self._post_invoke_deanonymize(response, _redaction_session)
             except Exception as exc:
                 logger.warning(
                     "invoke_for_role: %s via %s/%s failed for %s: %s — trying next",
