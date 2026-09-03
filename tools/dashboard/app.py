@@ -5188,8 +5188,15 @@ def create_app(testing: bool = False) -> Flask:
 
     @app.route("/oscal")
     def oscal_page():
-        """OSCAL ecosystem — validation, catalog, format conversion (D302-D306)."""
-        return render_template("oscal.html")
+        """OSCAL ecosystem — MIGRATED to the Boundary canvas (rmf-ui-04).
+
+        The governed page is ``/boundary/oscal`` on
+        tools/boundary_canvas/blueprint.py, where it is registry-registered,
+        RBAC-guarded and IQE-dispatchable. This handler stays as a redirect so
+        a bookmark, an e2e spec or a nav link that still names the old URL
+        lands on the page rather than a 404 — never a dropped page.
+        """
+        return redirect("/boundary/oscal", code=301)
 
     @app.route("/prod-audit")
     def prod_audit_page():
