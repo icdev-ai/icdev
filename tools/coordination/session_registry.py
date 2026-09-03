@@ -136,6 +136,30 @@ def _live_columns(conn) -> set:
     return out
 
 
+def _own_session_id() -> str:
+    """The id THIS process writes under.
+
+    `get_session_id()` reads the environment, and a service's `<name>-<pid>` id
+    is inherited by everything it spawns (claim-verif-33c9f4cd11): a kanban
+    worker, and every command run inside it, carried `kanban-scheduler-22508`
+    and could rewrite the scheduler's own row. A descendant writes under
+    `child_session_id` instead; the parent's row is only ever written by the
+    process that claimed the name. Best-effort: if the helper is unavailable
+    the raw id is used, which is the pre-existing behaviour.
+    """
+    sid = get_session_id()
+    try:
+        from tools.coordination.service_identity import (
+            child_session_id,
+            is_inherited_identity,
+        )
+        if is_inherited_identity(sid):
+            return child_session_id(sid)
+    except Exception:  # noqa: BLE001 -- observability must never fail to name itself
+        pass
+    return sid
+
+
 def register(intent: Optional[str] = None) -> Dict[str, Any]:
     """Register (or refresh) the current session. Idempotent upsert.
 
@@ -146,7 +170,7 @@ def register(intent: Optional[str] = None) -> Dict[str, Any]:
     """
     if get_connection is None:
         return {"ok": False, "reason": "no db"}
-    sid = get_session_id()
+    sid = _own_session_id()
     now = _now()
     conn = _conn()
     _ensure_table(conn)
@@ -228,7 +252,7 @@ def heartbeat(intent: Optional[str] = None) -> bool:
     """Refresh last_heartbeat (+ intent if given). Registers if missing."""
     if get_connection is None:
         return False
-    sid = get_session_id()
+    sid = _own_session_id()
     conn = _conn()
     _ensure_table(conn)
     try:
@@ -288,7 +312,7 @@ def list_active(ttl_seconds: int = SESSION_TTL_SECONDS) -> List[Dict[str, Any]]:
 
 def others(ttl_seconds: int = SESSION_TTL_SECONDS) -> List[Dict[str, Any]]:
     """Active sessions other than the current one."""
-    sid = get_session_id()
+    sid = _own_session_id()
     return [s for s in list_active(ttl_seconds) if s.get("session_id") != sid]
 
 
@@ -301,7 +325,7 @@ def end_session() -> bool:
     try:
         conn.execute(
             "UPDATE agent_sessions SET status='ended', last_heartbeat=%s WHERE session_id = %s",
-            (_now(), get_session_id()),
+            (_now(), _own_session_id()),
         )
         conn.commit()
         return True

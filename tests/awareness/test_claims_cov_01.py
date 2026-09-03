@@ -248,3 +248,55 @@ def test_an_unreadable_process_table_is_none_never_empty(monkeypatch):
     monkeypatch.setattr(C, "_live_scheduler_pids", lambda: None)
     monkeypatch.setattr(C, "_kanban_session_rows", lambda: [(1, _fresh(1))])
     assert verify(_claim("scheduler_heartbeat_is_fresh")).verdict == UNMEASURABLE
+
+
+# --------------------------------------------------------------------------- #
+# The derived side reads SCHEDULER rows, not every `kanban` row
+# (claim-verif-33c9f4cd11, 2026-09-03)
+# --------------------------------------------------------------------------- #
+def _registry_with(monkeypatch, tmp_path, rows):
+    """A scratch agent_sessions holding `rows` of (session_id, agent_type, pid, beat)."""
+    from tools.coordination.session_registry import _DDL
+    from tools.db.storage import get_connection
+
+    db = tmp_path / "claims.db"
+    monkeypatch.setattr(C, "_conn", lambda: get_connection(db_path=str(db)))
+    conn = C._conn()
+    conn.execute(_DDL)
+    for sid, agent, pid, beat in rows:
+        conn.execute(
+            "INSERT INTO agent_sessions (session_id, agent_type, pid, host, cwd, "
+            "started_at, last_heartbeat, current_intent, status) "
+            "VALUES (%s, %s, %s, 'h', 'c', %s, %s, 'x', 'active')",
+            (sid, agent, pid, beat, beat),
+        )
+    conn.commit()
+    conn.close()
+
+
+def test_derived_side_reads_scheduler_rows_not_every_kanban_row(monkeypatch, tmp_path):
+    """Every process the scheduler spawns inherits ICDEV_AGENT=kanban, so a
+    worker's coordination-hook row and a one-shot command's child row are
+    `kanban` rows too. pid 31872 on the live card was one of those."""
+    _registry_with(monkeypatch, tmp_path, [
+        ("kanban-scheduler-22508", "kanban", 22508, _fresh(1)),
+        ("d1c00d4c-3ebc-49e0-b638-5be623f0ff4a", "kanban", 31872, _fresh(1)),
+        ("kanban-scheduler-22508/child-555", "kanban", 555, _fresh(1)),
+    ])
+    assert [pid for pid, _ in C._kanban_session_rows()] == [22508]
+    assert C._derived_scheduler_pids_heartbeating() == [22508]
+
+
+def test_no_scheduler_and_only_hook_rows_is_unmeasurable_not_agreement(monkeypatch, tmp_path):
+    """A board with NO scheduler used to read `agrees` whenever a worker's hook
+    row existed: reported [] is a subset of anything. Two empty sides now."""
+    _registry_with(monkeypatch, tmp_path, [
+        ("d1c00d4c-3ebc-49e0-b638-5be623f0ff4a", "kanban", 31872, _fresh(1)),
+    ])
+    monkeypatch.setattr(C, "_live_scheduler_pids", lambda: [])
+    assert verify(_claim("scheduler_heartbeat_is_fresh")).verdict == UNMEASURABLE
+
+
+def test_a_pre_sid_01_bare_name_row_is_still_a_scheduler_row(monkeypatch, tmp_path):
+    _registry_with(monkeypatch, tmp_path, [("kanban-scheduler", "kanban", 4242, _fresh(1))])
+    assert [pid for pid, _ in C._kanban_session_rows()] == [4242]
