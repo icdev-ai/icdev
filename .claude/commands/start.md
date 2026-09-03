@@ -252,8 +252,14 @@ with get_connection() as conn:
    - To stop kanban scheduler / pr watcher / genesis daemon: they are SUPERVISED —
      stopping one by name just makes the supervisor restart it, and a name filter
      is what produced three concurrent pr_watchers. Stop the supervisor instead.
-   - To stop everything: stop the SUPERVISOR (its pid is in
-     `.tmp/genesis/launcher.pid`), which stops its children with it.
+   - To stop everything: `python tools/genesis/shutdown_dashboard.py`
+     (`--dry-run` first to see the plan). It stops the SUPERVISOR (pid from
+     `.tmp/genesis/launcher.pid`, command line verified) and THEN its children
+     by recorded pid -- on Windows terminate() skips the launcher's own cleanup,
+     so the children orphan rather than stop -- then the ICDEV[FT] supervisor
+     and its child, and verifies pids and ports 5050/5200 afterwards. Agent
+     workers mid-build are reported and left running unless `--include-workers`.
+     `--pause` also sets Manual Build for the next start.
      Never `taskkill /f /im python.exe` — see step 0.
 
 ## Kanban Auto-Pickup
