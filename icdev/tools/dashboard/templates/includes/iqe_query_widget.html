@@ -22,7 +22,7 @@
     {% if _iqe_examples %}
     <div class="iqe-widget__chips">
       {% for ex in _iqe_examples %}
-      <button class="iqe-chip" onclick="icdevIQEFill('{{ _wid }}',{{ ex.query | tojson }})" title="{{ ex.query | e }}">{{ ex.label }}</button>
+      <button class="iqe-chip" onclick="icdevIQEFill('{{ _wid }}',{{ ex.query | tojson | forceescape }})" title="{{ ex.query | e }}">{{ ex.label }}</button>
       {% endfor %}
     </div>
     {% endif %}
