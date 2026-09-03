@@ -1,0 +1,4 @@
+# rmf-wp-01 — WHITEPAPER document type; template_id made load-bearing in
+# doc_generator.generate_document; the [:6] outline cap lifted; per-section
+# retrieval. Green alone and in-suite before promotion.
+tests/test_docgen_template_contract.py
