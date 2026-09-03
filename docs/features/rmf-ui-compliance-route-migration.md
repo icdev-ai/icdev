@@ -67,6 +67,7 @@ bare handler lacked, without any per-route wiring:
 | rmf-ui-15 | `/ai-transparency` | `/security/ai-transparency` | SDC | `tests/test_sdc_ai_transparency_page.py` |
 | rmf-ui-12 | `/stig-manager` | `/security/stig-manager` | SDC (owns STIGs) | `tests/test_sdc_stig_manager_page.py` |
 | rmf-ui-13 | `/sbd` | `/security/sbd` | SDC | `tests/test_sdc_sbd_page.py` |
+| rmf-ui-07 | `/poam` | `/boundary/poam` | BDC | `tests/test_bdc_poam_page.py` |
 | rmf-ui-11 | `/compliance` | `/boundary/compliance-hub` | BDC (the artifact hub, moved LAST) | `tests/test_bdc_compliance_hub_page.py` |
 
 `/prod-audit` is a visibility surface (production-readiness checks, read-only
@@ -86,6 +87,14 @@ rmf-ui-13 is an SDC move: the CISA Secure by Design 8-pillar assessment
 is hardening posture, a visibility surface, so it lands on the Security Design
 Canvas behind `sc_login_required`. Its IQE widget is wired to the canvas's own
 `/security/api/iqe-query` endpoint. The `/api/sbd/*` blueprint is unchanged.
+
+`/poam` (rmf-ui-07) is the findings approval workflow across the seven canvas
+DBs, an RMF artifact surface, so it lands on BDC. Its template already lived in
+a subdirectory (`poam/list.html`) and moved as `boundary_canvas/poam/list.html`;
+the `/api/poam/*` routes stay in `app.py`.
+`tests/test_history.py::test_poam_route_exists` was NOT touched: it GETs the
+NETWORK blueprint's own `/poam` (`/network/poam` at runtime), a different page
+that never went through `app.py`.
 
 ## The shape the follow-up cards copy
 

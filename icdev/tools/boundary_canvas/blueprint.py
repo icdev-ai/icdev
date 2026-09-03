@@ -1658,6 +1658,22 @@ def create_boundary_blueprint():
         """Continuous ATO Health — ATO health score, evidence freshness, certifications, timeline."""
         return render_template("boundary_canvas/cato_health.html")
 
+    # ── POA&M Findings (rmf-ui-07) ───────────────────────────────────────────
+    #
+    # Migrated from a bare `@app.route("/poam")` in tools/dashboard/app.py --
+    # the same move as the ATO Compliance Dashboard above (rmf-ui-01), one
+    # route per card. The page is the findings approval workflow across the
+    # seven canvas DBs, an RMF artifact surface, so the Boundary canvas is its
+    # governed home. It drives the UNCHANGED /api/poam/* routes in app.py --
+    # only the PAGE route moved -- and the old URL redirects here rather than
+    # 404ing.
+
+    @bp.route("/poam")
+    @bdc_login_required
+    def bdc_poam_page():
+        """POA&M — canvas findings approval workflow across the 7 canvas DBs."""
+        return render_template("boundary_canvas/poam/list.html")
+
     # ── OSCAL Ecosystem (rmf-ui-04) ──────────────────────────────────────────
     #
     # Migrated from a bare `@app.route("/oscal")` in tools/dashboard/app.py --
