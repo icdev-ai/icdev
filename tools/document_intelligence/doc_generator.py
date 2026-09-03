@@ -349,6 +349,13 @@ class GenerateResult:
     status: str = "pending_review"
     error: str = ""
     quality_gate: dict = field(default_factory=dict)
+    #: rmf-wp-01 — the template the caller asked for, and where the outline
+    #: actually came from: ``contract:<id>`` (the declared skeleton),
+    #: ``freeform`` (no template named), or ``freeform:unresolved:<id>`` (a
+    #: template was named and NO declaration knows it — recorded, never
+    #: silently a freeform draft wearing the template's name).
+    template_id: str = ""
+    outline_source: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -357,6 +364,8 @@ class GenerateResult:
             "title": self.title,
             "query": self.query,
             "collection_id": self.collection_id,
+            "template_id": self.template_id,
+            "outline_source": self.outline_source,
             "sections": [
                 {
                     "heading": s.heading,
@@ -711,6 +720,159 @@ def _parse_outline(raw: str | None) -> dict:
     return {}
 
 
+# ── rmf-wp-01: template_id is LOAD-BEARING ───────────────────────────────────
+#
+# ``generate_document`` accepted ``template_id`` and never referenced it again
+# — one grep hit, the signature — so every document got a freeform LLM outline
+# sliced at six sections while the declared skeletons in
+# ``constants.TEMPLATE_SECTIONS`` went unused. The template now resolves
+# through ``tools.quality.outline_contract.get_contract``, the ONE registry the
+# publish gate already validates drafts against, so the skeleton a draft is
+# built from and the skeleton it is later checked against cannot be two lists.
+
+_SKELETON_OUTLINE_PROMPT = """You are a technical writer preparing to draft a document whose section
+headings are FIXED by a declared template. Do not add, remove, rename or
+reorder any of them.
+
+Query: {query}
+Template: {template}
+
+Required sections, in order:
+{headings}
+
+Source evidence (grounded):
+{evidence}
+
+Produce a JSON outline: {{"title": "...", "sections": [{{"heading": "<exact required heading>", "summary": "..."}}]}}
+One entry per required heading, in the order given. A summary is one sentence
+naming what the evidence supports for that section; leave it empty when the
+evidence supports nothing for it."""
+
+# A runaway guard on the FREEFORM outline only — never applied to a declared
+# skeleton, whose length is exactly what was declared. The prompt already asks
+# the model for six or fewer; this bounds a model that ignores it, and it is
+# far above anything a freeform outline legitimately produces.
+_MAX_FREEFORM_SECTIONS_ENV = "ICDEV_DIC_MAX_FREEFORM_SECTIONS"
+_MAX_FREEFORM_SECTIONS_DEFAULT = 24
+
+_SECTION_RETRIEVAL_ENV = "ICDEV_DIC_SECTION_RETRIEVAL"
+_SECTION_TOP_K = 6
+
+
+def _max_freeform_sections() -> int:
+    try:
+        return max(1, int(os.environ.get(_MAX_FREEFORM_SECTIONS_ENV, _MAX_FREEFORM_SECTIONS_DEFAULT)))
+    except ValueError:
+        return _MAX_FREEFORM_SECTIONS_DEFAULT
+
+
+def _section_retrieval_enabled() -> bool:
+    """Per-section retrieval is ON unless stood down by env.
+
+    ``ICDEV_DIC_SECTION_RETRIEVAL=0`` restores one retrieval per document —
+    an auditable kill switch, not a code path to delete.
+    """
+    return os.environ.get(_SECTION_RETRIEVAL_ENV, "1").strip().lower() not in ("0", "false", "no", "off")
+
+
+def _resolve_template_contract(template_id: str | None):
+    """The declared skeleton for *template_id*, or None.
+
+    None means either no template was named, or a template was named that no
+    declaration knows. The caller records which, because a caller that asked
+    for WHITEPAPER and received a freeform outline must be able to see that.
+    """
+    if not template_id or not str(template_id).strip():
+        return None
+    try:
+        from tools.quality.outline_contract import get_contract
+    except Exception as exc:  # pragma: no cover - import environment
+        logger.warning("doc_generator: outline_contract unavailable (%s); drafting freeform", exc)
+        return None
+    contract = get_contract(str(template_id).strip())
+    if contract is None:
+        logger.warning(
+            "doc_generator: template_id %r resolves to no declared skeleton; "
+            "drafting a freeform outline and recording that", template_id,
+        )
+    return contract
+
+
+def _skeleton_outline(query: str, evidence: str, contract) -> dict:
+    """An outline whose headings ARE the contract's, whatever the model says.
+
+    The model is asked for a title and a one-line summary per fixed heading.
+    Its answer is advisory: headings are taken from the contract, in contract
+    order, and a summary is attached only where the model's entry matches a
+    required heading (by the same normalisation the publish gate uses). A
+    model that invents, drops or reorders sections changes nothing.
+    """
+    from tools.quality.outline_contract import heading_keys
+
+    raw = _llm_generate(_SKELETON_OUTLINE_PROMPT.format(
+        query=query,
+        template=contract.artifact_type,
+        headings="\n".join(f"{i}. {h}" for i, h in enumerate(contract.required, 1)),
+        evidence=evidence[:6000],
+    ))
+    proposed = _parse_outline(raw)
+    summaries: dict[str, str] = {}
+    for sec in proposed.get("sections") or []:
+        if not isinstance(sec, dict):
+            continue
+        for key in heading_keys(sec.get("heading", "")):
+            summaries.setdefault(key, str(sec.get("summary") or ""))
+    sections = []
+    for heading in contract.required:
+        summary = ""
+        for key in heading_keys(heading):
+            if summaries.get(key):
+                summary = summaries[key]
+                break
+        sections.append({"heading": heading, "summary": summary})
+    return {"title": proposed.get("title") or "", "sections": sections}
+
+
+def _section_query(query: str, heading: str, summary: str) -> str:
+    """What to retrieve FOR ONE SECTION.
+
+    The heading alone is a poor query ("References", "Executive Summary");
+    the document query alone is what every section already shares. The
+    outline's own one-line summary is the best hint when there is one, and
+    the heading is scoped to the document query when there is not.
+    """
+    summary = (summary or "").strip()
+    if summary:
+        return f"{heading}: {summary}"
+    return f"{query} {heading}".strip()
+
+
+def _merge_deprecated(document_wide: list, targeted: list) -> list:
+    """Union of currency findings, keyed by entity, document-wide first."""
+    seen: set[str] = set()
+    merged: list = []
+    for finding in list(document_wide) + list(targeted):
+        key = str((finding or {}).get("entity", "")) if isinstance(finding, dict) else repr(finding)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(finding)
+    return merged
+
+
+def _merge_results(targeted: list, document_wide: list) -> list:
+    """Targeted hits first, then document-wide ones not already present."""
+    seen = {str(getattr(r, "chunk_id", "")) for r in targeted}
+    merged = list(targeted)
+    for r in document_wide:
+        cid = str(getattr(r, "chunk_id", ""))
+        if cid in seen:
+            continue
+        seen.add(cid)
+        merged.append(r)
+    return merged
+
+
 def generate_document(
     query: str,
     collection_id: str | None,
@@ -801,12 +963,38 @@ def generate_document(
         source_text_fallback=_source_text_fallback,
     )
 
-    # 3. Build outline
-    outline_raw = _llm_generate(_OUTLINE_PROMPT.format(query=query, evidence=evidence[:6000]))
-    outline = _parse_outline(outline_raw)
+    # 3. Outline — the DECLARED skeleton when template_id resolves to one
+    #    (rmf-wp-01), the freeform LLM outline otherwise. The freeform outline
+    #    used to be sliced at [:6] whatever the model returned; a declared
+    #    skeleton is exactly as long as it was declared, and the freeform path
+    #    keeps only a runaway guard far above anything it legitimately yields.
+    contract = _resolve_template_contract(template_id)
+    if contract is not None:
+        outline_source = f"contract:{contract.artifact_type}"
+        outline = _skeleton_outline(query, evidence, contract)
+        sections_meta = outline["sections"]
+    else:
+        outline_source = (
+            f"freeform:unresolved:{str(template_id).strip()}" if template_id and str(template_id).strip()
+            else "freeform"
+        )
+        outline = _parse_outline(
+            _llm_generate(_OUTLINE_PROMPT.format(query=query, evidence=evidence[:6000]))
+        )
+        sections_meta = outline.get("sections") or [{"heading": "Overview", "summary": query}]
+        sections_meta = sections_meta[:_max_freeform_sections()]
     title = outline.get("title") or f"Draft: {query[:60]}"
-    sections_meta = outline.get("sections") or [{"heading": "Overview", "summary": query}]
     result.title = title
+    result.template_id = str(template_id or "").strip()
+    result.outline_source = outline_source
+
+    # Every result any section was shown, keyed by chunk id — the quality
+    # gate's allowed-source set must cover per-section retrievals too, or a
+    # section citing what it was legitimately shown is scored hallucinated.
+    shown_results: dict[str, object] = {
+        str(getattr(r, "chunk_id", "")): r for r in search_results
+    }
+    section_retrieval = _section_retrieval_enabled()
 
     # 4-6. Draft, CoT/CoD, verify, confidence-gate each section.
     try:
@@ -818,12 +1006,47 @@ def generate_document(
     flagged_headings: list[str] = []
     generated_sections: list[GeneratedSection] = []
 
-    for sec in sections_meta[:6]:
+    for sec in sections_meta:
         heading = sec.get("heading", "")
         summary = sec.get("summary", "")
 
-        # Build section-specific evidence
-        sec_evidence = evidence  # per-section targeted retrieval would improve this further
+        # Per-section retrieval (rmf-wp-01). Every section used to be drafted
+        # against the ONE document-wide retrieval, so "References" and
+        # "Executive Summary" saw the same eight chunks. Each section now asks
+        # for its own evidence — through the same governed-first seam, so the
+        # Cortex budget and the legacy fallback apply per ask — and the
+        # document-wide results follow the targeted ones, deduplicated, so a
+        # section whose targeted ask finds nothing is never drafted blind.
+        sec_results = search_results
+        sec_path, sec_detail, sec_deprecated = _evidence_path, _evidence_detail, _deprecated
+        if section_retrieval and heading:
+            sec_query = _section_query(query, heading, summary)
+
+            def _legacy_section_retrieval(_q=sec_query) -> list:
+                engine = DICSearchEngine(tenant_id=tenant_id)
+                return engine.search(_q, collection_id=collection_id, top_k=_SECTION_TOP_K)
+
+            targeted, t_path, t_detail, t_deprecated = _governed_retrieval(
+                sec_query,
+                collection_id=collection_id,
+                tenant_id=tenant_id,
+                classification=classification,
+                top_k=_SECTION_TOP_K,
+                legacy=_legacy_section_retrieval,
+            )
+            if targeted:
+                sec_results = _merge_results(targeted, search_results)
+                sec_path, sec_detail = t_path, t_detail
+                sec_deprecated = _merge_deprecated(_deprecated, t_deprecated)
+                for r in targeted:
+                    shown_results.setdefault(str(getattr(r, "chunk_id", "")), r)
+
+        sec_evidence = _build_evidence_pool(
+            search_results=sec_results,
+            kg_chunks=kg_chunks or [],
+            supplemental_text=supplemental_text,
+            source_text_fallback=_source_text_fallback,
+        )
 
         # 4. Draft — direct clean-prose prompt by default; CoT only when opted in.
         # CoT (reasoner→critic→synthesizer) tends to leak its reasoning into the
@@ -838,11 +1061,11 @@ def generate_document(
             raw_text = _llm_generate(
                 _SECTION_PROMPT.format(
                     title=title, heading=heading, summary=summary, evidence=sec_evidence,
-                    chunk_id=search_results[0].chunk_id if search_results else "N/A",
+                    chunk_id=sec_results[0].chunk_id if sec_results else "N/A",
                 )
                 # Advisory only — the guarantee is _apply_currency_guard below,
                 # which is deterministic and runs on the output.
-                + _currency_constraint(_deprecated)
+                + _currency_constraint(sec_deprecated)
             )
 
         if not raw_text:
@@ -873,11 +1096,11 @@ def generate_document(
         abstained = False
         low_confidence = False
         hitl_note = ""
-        citations = [r.citation.to_dict() for r in search_results[:3]] if search_results else []
+        citations = [r.citation.to_dict() for r in sec_results[:3]] if sec_results else []
 
-        if _has_verifier and search_results:
+        if _has_verifier and sec_results:
             try:
-                vr = verify(raw_text, [r.content for r in search_results])
+                vr = verify(raw_text, [r.content for r in sec_results])
                 confidence = _compute_section_confidence(vr)
 
                 if vr.abstained:
@@ -1049,7 +1272,7 @@ def generate_document(
             hitl_note=hitl_note,
             confabulation=confab,
             citation_report=_citation_report(
-                raw_text, search_results, _evidence_path, _evidence_detail, currency_report,
+                raw_text, sec_results, sec_path, sec_detail, currency_report,
             ),
         ))
 
@@ -1076,7 +1299,7 @@ def generate_document(
         if quality_gate is not None:
             try:
                 allowed_source_ids = {
-                    str(getattr(r, "chunk_id", "")) for r in search_results
+                    cid for cid, r in shown_results.items()
                     if getattr(r, "chunk_id", None) is not None
                 }
                 gate_status = quality_gate(generated_sections, allowed_source_ids, full_text)
