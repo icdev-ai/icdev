@@ -23,7 +23,9 @@ const COMPLIANCE_PAGES = [
   // Risk & ATO
   { label: 'POA&M Findings',       path: '/poam' },
   { label: 'Compliance Hub',       path: '/compliance' },
-  { label: 'OSCAL',                path: '/oscal' },
+  // rmf-ui-04: migrated onto the Boundary canvas (registry-registered, RBAC-guarded,
+  // IQE-dispatchable). The old /oscal answers with a 301 to this path.
+  { label: 'OSCAL',                path: '/boundary/oscal' },
   { label: 'Continuous ATO',       path: '/cato' },
   { label: 'ATO Package Builder',  path: '/ato-package' },
   // Linked by rmf-inert-01 — both rendered a real template over a real API and
