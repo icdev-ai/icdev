@@ -125,10 +125,17 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+<<<<<<< HEAD
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # sys.path BOOTSTRAP first, so `python tools/kanban/orphan_requeue.py --plan`
 # reaches main() (kax-conflict-04); then the ONE root resolver.
+=======
+from typing import Any, Callable, Dict, List, Optional
+
+# sys.path BOOTSTRAP first, so `python tools/kanban/orphan_requeue.py` reaches
+# main() (kax-conflict-04); then the ONE root resolver.
+>>>>>>> origin/kanban/kpr-stale-05
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
