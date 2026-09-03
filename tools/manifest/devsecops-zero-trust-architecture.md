@@ -7,6 +7,7 @@
 |------|------|-------------|-------|--------|
 | DevSecOps Profile Manager | tools/devsecops/profile_manager.py | DevSecOps profile CRUD, maturity detection, assessment | --project-id, --create, --detect, --assess, --update, --json | Profile + maturity level |
 | ZTA Maturity Scorer | tools/devsecops/zta_maturity_scorer.py | 7-pillar ZTA maturity scoring (DoD ZTA Strategy) | --project-id, --pillar, --all, --trend, --json | Pillar scores + aggregate |
+| ZIG -> ZTA Evidence Bridge | tools/devsecops/zta_zig_backfill.py | Carries ZIG orchestrator evidence notes into zta_posture_evidence. REFUSES a completion with no evidence_note — copying a tick would launder a checkbox into evidence (rmf-zt-02) | --survey, --backfill --project-id, --write, --json | Two counts: backfillable vs self_attested |
 | Pipeline Security Generator | tools/devsecops/pipeline_security_generator.py | Profile-driven GitLab CI security stage generation | --project-id, --json | YAML security stages |
 | Policy Generator | tools/devsecops/policy_generator.py | Kyverno/OPA policy-as-code generation (pod security, registry, RBAC) | --project-id, --engine kyverno\|opa, --json | Policy YAML/Rego |
 | Attestation Manager | tools/devsecops/attestation_manager.py | Image signing (Cosign/Notation) + SBOM attestation (SLSA Level 3) | --project-id, --generate, --verify, --json | Signing config + attestation |

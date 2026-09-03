@@ -4501,6 +4501,16 @@ python tools/devsecops/attestation_manager.py --project-id "proj-123" --generate
 python tools/devsecops/zta_maturity_scorer.py --project-id "proj-123" --all --json                             # Score all 7 ZTA pillars
 python tools/devsecops/zta_maturity_scorer.py --project-id "proj-123" --pillar user_identity --json            # Score individual pillar
 python tools/devsecops/zta_maturity_scorer.py --project-id "proj-123" --trend --json                           # Maturity trend
+python tools/devsecops/zta_maturity_scorer.py --project-id "proj-123" --all --human                            # Two numbers: evidence-backed vs self-attested
+# A pillar whose zta_posture_evidence rows carry no evidence_data reports UNMEASURED (score null),
+# never a ratio over a checkbox list (rmf-zt-02). The self-attested figure is reported BESIDE it and
+# is never merged in. UI: /security/zig/assessment -> "DoD 7-Pillar ZTA Posture".
+python -m tools.devsecops.zta_zig_backfill --survey --json                                                     # What can ZIG supply as ZTA evidence?
+python -m tools.devsecops.zta_zig_backfill --backfill --project-id "proj-123" --dry-run                        # Plan only; writes nothing
+python -m tools.devsecops.zta_zig_backfill --backfill --project-id "proj-123" --write                          # Carry orchestrator notes across
+# Writes a row ONLY for a ZIG completion carrying a real evidence_note. MEASURED 2026-09-02: all 91
+# completions are 'complete' by seed-script with NO note, so it writes nothing and says so — run the
+# seven tools/security_canvas/*_pillar_orchestrator.py first.
 python tools/compliance/nist_800_207_assessor.py --project-id "proj-123" --json                                # NIST 800-207 assessment
 python tools/compliance/nist_800_207_assessor.py --project-id "proj-123" --gate                                # NIST 800-207 gate
 python tools/devsecops/service_mesh_generator.py --project-id "proj-123" --mesh istio --json                   # Generate Istio service mesh

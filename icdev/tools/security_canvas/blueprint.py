@@ -2343,10 +2343,25 @@ def create_security_blueprint():
     @bp.route("/zig/assessment")
     @sc_login_required
     def zig_assessment_page():
-        """ZIG assessment page — run gap assessment, view results."""
+        """ZIG assessment page — run gap assessment, view results.
+
+        Also renders the DoD 7-pillar ZTA posture, whose two maturity numbers
+        (evidence-backed vs self-attested) are shown separately and labelled
+        (rmf-zt-02). READ-ONLY: latest_posture_summary reads what the scorer
+        last persisted and never runs an assessment on page load.
+        """
         from tools.security_canvas.zig_assessor import get_latest_zig_maturity
         latest = get_latest_zig_maturity()
-        return render_template("security_canvas/zig/assessment.html", latest=latest)
+        try:
+            from tools.devsecops.zta_maturity_scorer import latest_posture_summary
+            zta = latest_posture_summary()
+        except Exception:  # noqa: BLE001
+            # A broken panel must still SAY it is broken. Returning None would
+            # hide the section, which is indistinguishable from a clean board.
+            zta = {"state": "never_assessed", "error": "ZTA posture unavailable"}
+        return render_template(
+            "security_canvas/zig/assessment.html", latest=latest, zta=zta
+        )
 
     @bp.route("/zig/roadmap")
     @sc_login_required

@@ -980,8 +980,22 @@ def check_zta_posture(project_id, db_path=None):
             "overall_maturity": "traditional",
             "overall_score": 0.0,
             "pillar_scores": {},
-            "posture_evidence": {"total": 0, "current": 0, "stale": 0, "expired": 0},
-            "cato_contribution": 0.0,
+            # rmf-zt-02: the two numbers, kept apart, INSIDE posture_evidence
+            # beside the freshness counts they qualify. `evidence_backed` counts
+            # 'current' rows that actually carry evidence_data; `self_attested`
+            # counts 'current' rows that carry none. Summing them is what let a
+            # checkbox list contribute to a cATO readiness figure.
+            "posture_evidence": {
+                "total": 0,
+                "current": 0,
+                "stale": 0,
+                "expired": 0,
+                "evidence_backed": 0,
+                "self_attested": 0,
+            },
+            # None, never 0.0, until an evidence-backed score exists.
+            "cato_contribution": None,
+            "unmeasured_pillars": [],
         }
 
         # Query ZTA maturity scores
@@ -998,43 +1012,63 @@ def check_zta_posture(project_id, db_path=None):
                 result["zta_available"] = True
                 for row in maturity_rows:
                     pillar = row["pillar"]
+                    # A NULL score is an UNMEASURED pillar, never a zero — the
+                    # `or 0.0` here used to turn "nobody assessed this" into a
+                    # hard 0.0 that reads as a measured failure (rmf-zt-02).
                     if pillar == "overall":
-                        result["overall_score"] = row["score"] or 0.0
-                        result["overall_maturity"] = row["maturity_level"] or "traditional"
+                        result["overall_score"] = row["score"]
+                        result["overall_maturity"] = row["maturity_level"] or "unmeasured"
                     else:
                         result["pillar_scores"][pillar] = {
-                            "score": row["score"] or 0.0,
-                            "maturity_level": row["maturity_level"] or "traditional",
+                            "score": row["score"],
+                            "maturity_level": row["maturity_level"] or "unmeasured",
                         }
+                        if row["score"] is None:
+                            result["unmeasured_pillars"].append(pillar)
         except sqlite3.OperationalError:
             pass  # Table may not exist yet
 
         # Query ZTA posture evidence freshness
         try:
             posture_rows = conn.execute(
-                """SELECT status, COUNT(*) as cnt
+                """SELECT status, evidence_data
                    FROM zta_posture_evidence
-                   WHERE project_id = %s
-                   GROUP BY status""",
+                   WHERE project_id = %s""",
                 (project_id,),
             ).fetchall()
+
+            from tools.devsecops.zta_maturity_scorer import has_evidence_data
 
             for row in posture_rows:
                 status = row["status"]
                 if status in result["posture_evidence"]:
-                    result["posture_evidence"][status] = row["cnt"]
-                result["posture_evidence"]["total"] += row["cnt"]
+                    result["posture_evidence"][status] += 1
+                result["posture_evidence"]["total"] += 1
+                if status == "current":
+                    if has_evidence_data(row["evidence_data"]):
+                        result["posture_evidence"]["evidence_backed"] += 1
+                    else:
+                        result["posture_evidence"]["self_attested"] += 1
         except sqlite3.OperationalError:
             pass  # Table may not exist yet
 
-        # Compute cATO contribution: ZTA maturity score scaled to 0-100
-        if result["zta_available"]:
+        # Compute cATO contribution: ZTA maturity score scaled to 0-100. It stays
+        # None when the score is UNMEASURED — a 0.0 contribution is a claim that
+        # ZTA was assessed and contributed nothing, which is not what happened.
+        if result["zta_available"] and result["overall_score"] is not None:
             result["cato_contribution"] = round(result["overall_score"] * 100, 1)
 
+        _pe = result["posture_evidence"]
+        _score_txt = (
+            "UNMEASURED" if result["overall_score"] is None
+            else f"{result['overall_score']:.2f}"
+        )
         print(
             f"ZTA posture check: maturity={result['overall_maturity']} "
-            f"score={result['overall_score']:.2f} "
-            f"evidence={result['posture_evidence']['total']} items"
+            f"score={_score_txt} "
+            f"evidence={_pe['total']} items "
+            f"({_pe['evidence_backed']} evidence-backed, "
+            f"{_pe['self_attested']} self-attested)"
         )
 
         return result
@@ -1373,18 +1407,32 @@ def main():
             if args.json:
                 print(json.dumps(result, indent=2, default=str))
             else:
+                def _fmt(v):
+                    # "UNMEASURED", never 0.00 — the whole point of rmf-zt-02.
+                    return "UNMEASURED" if v is None else f"{v:.2f}"
+
+                pe = result["posture_evidence"]
                 print(f"ZTA Posture for {args.project_id}:")
                 print(f"  Available:  {result['zta_available']}")
                 print(f"  Maturity:   {result['overall_maturity']}")
-                print(f"  Score:      {result['overall_score']:.2f}")
+                print(f"  Score:      {_fmt(result['overall_score'])}")
                 print(
-                    f"  Evidence:   {result['posture_evidence']['total']} items "
-                    f"({result['posture_evidence']['current']} current)"
+                    f"  Evidence:   {pe['total']} items ({pe['current']} current) — "
+                    f"{pe['evidence_backed']} evidence-backed, "
+                    f"{pe['self_attested']} self-attested"
                 )
+                if result.get("unmeasured_pillars"):
+                    print(
+                        "  UNMEASURED pillars (not a clean bill of health): "
+                        + ", ".join(result["unmeasured_pillars"])
+                    )
                 if result["pillar_scores"]:
                     print("  Pillar Scores:")
                     for pillar, data in result["pillar_scores"].items():
-                        print(f"    {pillar:<30} {data['score']:.2f} ({data['maturity_level']})")
+                        print(
+                            f"    {pillar:<30} {_fmt(data['score'])} "
+                            f"({data['maturity_level']})"
+                        )
 
         elif args.mosa_evidence:
             result = collect_mosa_evidence(
