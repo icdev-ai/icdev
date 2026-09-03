@@ -126,3 +126,16 @@ that the new one is not "cATO Dashboard". Everything else copies the exemplar:
 `bdc_cato_health_page` on the blueprint, a 301 from `app.py`, both `base.html`
 copies plus `compliance.html` and `mosa.html` repointed, the template moved and
 mirrored, `core.d/rmf-ui-05.txt`.
+
+## rmf-ui-03: `/ato-package` → `/boundary/ato-package`
+
+The ATO Package Builder: the wizard that assembles SSP/SAR/POAM/SBOM into the
+accreditation package, over the unchanged `/api/ato-package/*` blueprint. An
+RMF artifact surface, so it lands on BDC beside the ATO boundary, enclave and
+cATO pages the canvas already owns; nothing on the canvas overlapped it, so
+there was no fold-or-land decision. Everything copies the exemplar:
+`bdc_ato_package_page` on the blueprint behind `bdc_login_required`, a 301
+from `app.py`, both `base.html` copies plus `compliance.html` repointed, the
+template moved (breadcrumb back to `/boundary/`, IQE widget after the project
+selector) and mirrored, the old top-level template deleted from both trees,
+`tests/test_bdc_ato_package_page.py` gated via `core.d/rmf-ui-03.txt`.

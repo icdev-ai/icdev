@@ -5870,8 +5870,15 @@ def create_app(testing: bool = False) -> Flask:
 
     @app.route("/ato-package")
     def ato_package_page():
-        """ATO Package Builder — wizard to assemble SSP/SAR/POAM/SBOM package."""
-        return render_template("ato_package.html")
+        """ATO Package Builder — MIGRATED to the Boundary canvas (rmf-ui-03).
+
+        The governed page is ``/boundary/ato-package`` on
+        tools/boundary_canvas/blueprint.py, where it is registry-registered,
+        RBAC-guarded and IQE-dispatchable. This handler stays as a redirect so
+        a bookmark, an e2e spec or a nav link that still names the old URL
+        lands on the page rather than a 404 — never a dropped page.
+        """
+        return redirect("/boundary/ato-package", code=301)
 
     @app.route("/ato-compliance")
     def ato_compliance_page():

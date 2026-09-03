@@ -1658,6 +1658,23 @@ def create_boundary_blueprint():
         """Continuous ATO Health — ATO health score, evidence freshness, certifications, timeline."""
         return render_template("boundary_canvas/cato_health.html")
 
+    # ── ATO Package Builder (rmf-ui-03) ──────────────────────────────────────
+    #
+    # Migrated from a bare `@app.route("/ato-package")` in tools/dashboard/app.py
+    # -- the same shape as rmf-ui-01 above: ungoverned there, registry-registered,
+    # RBAC-guarded and IQE-dispatchable here BY CONSTRUCTION. An RMF ARTIFACT
+    # surface: the wizard that assembles SSP/SAR/POAM/SBOM into the accreditation
+    # package, so it belongs beside the ATO boundary, enclave and cATO pages this
+    # canvas already owns. The page drives the UNCHANGED /api/ato-package/*
+    # blueprint (tools/dashboard/api/ato_package.py) -- only the PAGE route
+    # moved, and the old URL is a 301 here rather than a 404.
+
+    @bp.route("/ato-package")
+    @bdc_login_required
+    def bdc_ato_package_page():
+        """ATO Package Builder — wizard to assemble SSP/SAR/POAM/SBOM package."""
+        return render_template("boundary_canvas/ato_package.html")
+
     # ── OSCAL Ecosystem (rmf-ui-04) ──────────────────────────────────────────
     #
     # Migrated from a bare `@app.route("/oscal")` in tools/dashboard/app.py --
