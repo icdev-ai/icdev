@@ -2138,6 +2138,27 @@ def create_security_blueprint():
         """SDC Demo Runner — 3-scenario executive/customer/prospect demo."""
         return render_template("security_canvas/demo.html", page_title="SDC Demo Runner")
 
+    # ── CISA Secure by Design (rmf-ui-13) ────────────────────────────────────
+    #
+    # Migrated from a bare `@app.route("/sbd")` in tools/dashboard/app.py,
+    # where it had no registry entry, no RBAC guard, no completeness gate and
+    # no IQE dispatch. On this blueprint it inherits all four: app.py attaches
+    # guard_component_access("sdc", min_il) as a before_request on every
+    # registered canvas blueprint, the registry's url_prefix + IQE adapter put
+    # /security/* on the path->canvas map, and the canvas completeness gate
+    # owns security_canvas/. A visibility surface -- the 8-pillar CISA SbD
+    # assessment is hardening posture, SDC's domain. The page drives the
+    # UNCHANGED /api/sbd/* blueprint (tools/dashboard/api/sbd.py) -- only the
+    # PAGE route moved. The old URL redirects here rather than 404ing: a
+    # silently dropped page is the failure mode a one-route-per-card
+    # migration exists to refuse. Same shape as rmf-ui-01.
+
+    @bp.route("/sbd")
+    @sc_login_required
+    def sc_sbd_page():
+        """CISA Secure by Design Assessment — 8-pillar assessment with automated gating."""
+        return render_template("security_canvas/sbd.html")
+
     @bp.route("/api/sdc-demo-run", methods=["POST"])
     @sc_login_required
     def sc_api_sdc_demo_run():

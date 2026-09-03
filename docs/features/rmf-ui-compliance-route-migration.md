@@ -58,6 +58,18 @@ bare handler lacked, without any per-route wiring:
   both copies, the mirror, and the IQE path→canvas dispatch. All three touched
   test files are RED on the merge base per `red_first_gate.py`.
 
+## Migrated so far
+
+| Card | Old URL | Governed home | Canvas | Test |
+|---|---|---|---|---|
+| rmf-ui-01 | `/ato-compliance` | `/boundary/ato-compliance` | BDC | `tests/test_bdc_ato_compliance_page.py` |
+| rmf-ui-13 | `/sbd` | `/security/sbd` | SDC | `tests/test_sdc_sbd_page.py` |
+
+rmf-ui-13 is the first SDC move: the CISA Secure by Design 8-pillar assessment
+is hardening posture, a visibility surface, so it lands on the Security Design
+Canvas behind `sc_login_required`. Its IQE widget is wired to the canvas's own
+`/security/api/iqe-query` endpoint. The `/api/sbd/*` blueprint is unchanged.
+
 ## The shape the follow-up cards copy
 
 1. Add the route next to the exemplar's block on the target blueprint; `git mv`

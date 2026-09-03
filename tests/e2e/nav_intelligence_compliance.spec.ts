@@ -40,7 +40,9 @@ const COMPLIANCE_PAGES = [
   { label: 'PR Intelligence',      path: '/pr-intel' },
   { label: 'SRE Operations',       path: '/sre' },
   // AI & Policy
-  { label: 'Secure by Design',     path: '/sbd' },
+  // rmf-ui-13: migrated onto the Security canvas (registry-registered, RBAC-guarded,
+  // IQE-dispatchable). The old /sbd answers with a 301 to this path.
+  { label: 'Secure by Design',     path: '/security/sbd' },
   { label: 'AI Transparency',      path: '/ai-transparency' },
   { label: 'AI Accountability',    path: '/ai-accountability' },
   { label: 'Control Inheritance',  path: '/control-inheritance' },
