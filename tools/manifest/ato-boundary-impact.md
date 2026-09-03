@@ -35,3 +35,8 @@ nav-link only (PR #374), not by a shared table.
   coupling. A future consolidation card may revisit this, but it is out of scope
   today.
 
+
+## Cross-Fabric Posture Roll-Up (rmf-fab-02) — CUI // SP-CTI
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Cross-Fabric Posture Roll-Up | tools/fabric/posture.py | Five measures per fabric (control coverage, evidence freshness, open CAT I, POA&M age, ISA expiry), each carrying ITS OWN numerator, denominator and a plain-words statement of what the denominator is. Consumes BOTH cATO modules and LABELS each with its scope: `compliance/cato_monitor.py` (system) and `security_canvas/continuous_authorization.py` (per-application). Emits NO composite anywhere — `assert_no_blended_score` is the executable rule. A fabric never assessed reads `not_assessed` with `value: None`, never 0 and never 100; a missing table reads `source_unavailable`, never folded into `not_assessed`. Read-only: neither writing entry point is reachable from this module (pinned over its AST). | `--json`, `--fabric <key>`; library `roll_up(fabrics=None, system_db_path=None)` | {fabrics[], measures_by_state, fabrics_by_state, cato_scopes, scoring{blended:false}} |

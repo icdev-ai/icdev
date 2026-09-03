@@ -28,6 +28,26 @@
   .sev-cat2 { color: #ff9800; font-weight: 600; }
   .sev-cat3 { color: #ffeb3b; }
   .empty-msg { color: #7a8cb0; font-size: 12px; font-style: italic; padding: 10px 0; }
+  /* rmf-fab-02 — cross-fabric roll-up */
+  .fab-panel { margin: 28px 30px 0; padding: 16px; background: #0f1e36; border: 1px solid #1e3a6e; border-radius: 6px; }
+  .fab-panel h3 { font-size: 14px; margin: 0 0 4px; color: #9c27b0; }
+  .fab-panel .fab-sub { color: #7a8cb0; font-size: 12px; margin: 0 0 14px; }
+  .fab-card { border: 1px solid #1e3a6e; border-radius: 5px; padding: 12px 14px; margin-bottom: 12px; background: #0a1628; }
+  .fab-card h4 { margin: 0 0 2px; font-size: 13px; color: #e0e6f0; }
+  .fab-meta { color: #7a8cb0; font-size: 11px; margin: 0 0 10px; }
+  .fab-measures { width: 100%; border-collapse: collapse; }
+  .fab-measures th { text-align: left; padding: 6px 8px; font-size: 10px; color: #7a8cb0; text-transform: uppercase; border-bottom: 1px solid #1e3a6e; }
+  .fab-measures td { padding: 6px 8px; font-size: 12px; border-bottom: 1px solid #0f1e36; vertical-align: top; }
+  .fab-denom { color: #7a8cb0; font-size: 11px; }
+  .fab-state { display: inline-block; padding: 1px 7px; border-radius: 3px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+  .fab-measured { background: #1b5e20; color: #4caf50; }
+  .fab-unassessed { background: #1e2a40; color: #9aa8c4; }
+  .fab-unavailable { background: #4a2c00; color: #ff9800; }
+  .fab-scope { margin-top: 12px; padding-top: 10px; border-top: 1px dashed #1e3a6e; }
+  .fab-scope-row { font-size: 12px; padding: 3px 0; }
+  .fab-scope-label { color: #7a8cb0; font-size: 11px; }
+  .fab-note { color: #7a8cb0; font-size: 11px; font-style: italic; margin-top: 12px; line-height: 1.5; }
+  .fab-warn { color: #ff9800; }
 </style>
 
 <div class="cato-hero">
@@ -72,6 +92,100 @@
     {% endfor %}
   </tbody>
 </table>
+
+<div class="fab-panel">
+  <h3>Cross-Fabric Posture</h3>
+  <p class="fab-sub">
+    Five measures per fabric, each stated beside <em>its own denominator</em>, from
+    both cATO modules &mdash; labelled by scope and never blended. A fabric nobody has
+    assessed reads <strong>not assessed</strong>: that is not a clean bill of health.
+  </p>
+
+  {% if not fabric_posture or fabric_posture.get('unmeasurable') %}
+    <div class="fab-card">
+      <h4 class="fab-warn">Unmeasurable</h4>
+      <p class="fab-meta">
+        {{ (fabric_posture.unmeasurable_reason if fabric_posture else 'roll-up unavailable') }}
+      </p>
+      <p class="fab-note">
+        No fabric was assessed, so nothing here is a verdict about posture. Once the
+        fabric registry declares fabrics, each appears below with its own measures.
+      </p>
+    </div>
+  {% else %}
+    {% for f in fabric_posture.fabrics %}
+    <div class="fab-card">
+      <h4>{{ f.display_name }}
+        <span class="fab-state {% if f.fabric_state == 'assessed' %}fab-measured{% elif f.fabric_state == 'source_unavailable' %}fab-unavailable{% else %}fab-unassessed{% endif %}">
+          {{ f.fabric_state|replace('_', ' ') }}
+        </span>
+      </h4>
+      <p class="fab-meta">
+        {{ f.key }} &middot; classification {{ f.classification or 'unlabelled' }}
+        &middot; impact level {{ f.impact_level or 'undeclared' }}
+        &middot; {{ f.measures_by_state.measured }} of {{ fabric_posture.measure_keys|length }} measures resolved
+      </p>
+      <table class="fab-measures">
+        <thead>
+          <tr><th>Measure</th><th>Value</th><th>Denominator</th><th>Source</th></tr>
+        </thead>
+        <tbody>
+        {% for key in fabric_posture.measure_keys %}
+          {% set m = f.measures[key] %}
+          <tr>
+            <td>{{ key|replace('_', ' ') }}</td>
+            <td>
+              {% if m.state == 'measured' %}
+                <strong>{{ m.value }}</strong>
+                <span class="fab-denom">{{ m.unit|default('')|replace('_', ' ') }}</span>
+              {% else %}
+                <span class="fab-state {% if m.state == 'source_unavailable' %}fab-unavailable{% else %}fab-unassessed{% endif %}">
+                  {{ m.state|replace('_', ' ') }}
+                </span>
+              {% endif %}
+            </td>
+            <td class="fab-denom">
+              {% if m.state == 'measured' %}
+                of {{ m.denominator }} {{ m.denominator_of }}
+              {% else %}
+                {{ m.reason }}
+              {% endif %}
+            </td>
+            <td class="fab-denom">{{ m.source }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+
+      <div class="fab-scope">
+        {% for scope in ['system', 'application'] %}
+          {% set s = f.cato_sources[scope] %}
+          <div class="fab-scope-row">
+            <span class="fab-state {% if s.state == 'measured' %}fab-measured{% elif s.state == 'source_unavailable' %}fab-unavailable{% else %}fab-unassessed{% endif %}">
+              {{ s.state|replace('_', ' ') }}
+            </span>
+            <strong>{{ scope }} scope</strong>
+            <span class="fab-denom">&mdash; {{ s.module }}</span>
+            <div class="fab-scope-label">
+              {{ s.scope_label }}{% if s.reason %} &middot; {{ s.reason }}{% endif %}
+              {% if scope == 'application' and s.never_evaluated %}
+                &middot; never evaluated: {{ s.never_evaluated|join(', ') }}
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  {% endif %}
+
+  <p class="fab-note">
+    There is deliberately no overall number on this panel. The two cATO sources measure
+    different populations &mdash; system authorization boundaries against deployed
+    applications &mdash; and the five measures carry different denominators, so a single
+    figure across them would have no denominator at all.
+  </p>
+</div>
 
 <div id="control-detail" class="detail-panel" style="display:none">
   <h3>Control Findings — <span id="detail-name"></span></h3>

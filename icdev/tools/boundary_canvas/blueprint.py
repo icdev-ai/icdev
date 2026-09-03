@@ -1601,7 +1601,57 @@ def create_boundary_blueprint():
                     d["grade"] = None
                     d["cat1_findings"] = 0
                 designs.append(d)
-        return render_template("boundary_canvas/cato.html", designs=designs)
+        # rmf-fab-02: cross-fabric roll-up, rendered as a SECTION of this page.
+        # Read-only, and it degrades to `unmeasurable` (never an empty clean
+        # board) when the rmf-fab-01 registry has not landed.
+        try:
+            from tools.fabric.posture import roll_up
+            fabric_posture = roll_up()
+        except Exception as exc:  # noqa: BLE001 - a roll-up must never 500 this page
+            logger.warning("cross-fabric posture roll-up failed: %s", exc)
+            fabric_posture = {
+                "fabric_count": 0,
+                "fabrics": [],
+                "registry": {"state": "unreadable", "reason": str(exc)},
+                "unmeasurable": True,
+                "unmeasurable_reason": f"roll-up failed: {exc}",
+            }
+        return render_template(
+            "boundary_canvas/cato.html", designs=designs, fabric_posture=fabric_posture
+        )
+
+    @bp.route("/api/fabric-posture", methods=["GET"])
+    @bdc_login_required
+    def bdc_api_fabric_posture():
+        """Cross-fabric posture roll-up (rmf-fab-02) — READ ONLY.
+
+        GET with no POST sibling, by construction: this renders what the two
+        cATO modules have ALREADY recorded and evaluates nothing on read.
+        Five measures per fabric, each with its own denominator, and two cATO
+        sources each labelled with its scope. There is no composite anywhere in
+        the payload and ``assert_no_blended_score`` enforces that before it is
+        serialised.
+        """
+        from tools.fabric.posture import assert_no_blended_score, roll_up
+        try:
+            result = roll_up()
+            assert_no_blended_score(result)
+        except AssertionError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - never surface a 500 to the tile
+            logger.warning("cross-fabric posture roll-up failed: %s", exc)
+            result = {
+                "fabric_count": 0,
+                "fabrics": [],
+                "registry": {"state": "unreadable", "reason": str(exc)},
+                "unmeasurable": True,
+                "unmeasurable_reason": f"roll-up failed: {exc}",
+            }
+        fabric_key = request.args.get("fabric")
+        if fabric_key:
+            result["fabrics"] = [f for f in result["fabrics"] if f["key"] == fabric_key]
+            result["fabric_count"] = len(result["fabrics"])
+        return jsonify(result), 200
 
     @bp.route("/api/designs/<design_id>/findings", methods=["GET"])
     @bdc_login_required
