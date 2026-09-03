@@ -65,6 +65,7 @@ bare handler lacked, without any per-route wiring:
 | rmf-ui-01 | `/ato-compliance` | `/boundary/ato-compliance` | BDC | `tests/test_bdc_ato_compliance_page.py` |
 | rmf-ui-14 | `/prod-audit` | `/security/prod-audit` | SDC | `tests/test_sdc_prod_audit_page.py` |
 | rmf-ui-15 | `/ai-transparency` | `/security/ai-transparency` | SDC | `tests/test_sdc_ai_transparency_page.py` |
+| rmf-ui-12 | `/stig-manager` | `/security/stig-manager` | SDC (owns STIGs) | `tests/test_sdc_stig_manager_page.py` |
 
 `/prod-audit` is a visibility surface (production-readiness checks, read-only
 posture), which is SDC's ground; its `/api/prod-audit/*` blueprint

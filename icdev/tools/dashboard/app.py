@@ -5837,8 +5837,15 @@ def create_app(testing: bool = False) -> Flask:
 
     @app.route("/stig-manager")
     def stig_manager_page():
-        """STIG Benchmark Manager — import, track, and assess DISA STIG findings."""
-        return render_template("stig_manager.html")
+        """STIG Benchmark Manager — MIGRATED to the Security canvas (rmf-ui-12).
+
+        The governed page is ``/security/stig-manager`` on
+        tools/security_canvas/blueprint.py, where it is registry-registered,
+        RBAC-guarded and IQE-dispatchable. This handler stays as a redirect so
+        a bookmark, an e2e spec or a nav link that still names the old URL
+        lands on the page rather than a 404 — never a dropped page.
+        """
+        return redirect("/security/stig-manager", code=301)
 
     @app.route("/ato-package")
     def ato_package_page():

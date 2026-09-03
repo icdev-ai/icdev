@@ -2179,6 +2179,27 @@ def create_security_blueprint():
         """AI Transparency — OMB M-25-21, M-26-04, NIST AI 600-1, GAO-21-519SP (Phase 48, D307-D315)."""
         return render_template("security_canvas/ai_transparency.html")
 
+    # ── STIG Benchmark Manager (rmf-ui-12) ───────────────────────────────────────────
+    #
+    # Migrated from a bare `@app.route("/stig-manager")` in
+    # tools/dashboard/app.py, where it had no registry entry, no RBAC guard, no
+    # completeness gate and no IQE dispatch. On this blueprint it inherits all
+    # four: app.py attaches guard_component_access("sdc", min_il) as a
+    # before_request on every registered canvas blueprint, the registry's
+    # url_prefix + IQE adapter put /security/* on the path-to-canvas map, and
+    # the canvas completeness gate owns security_canvas/. SDC already owns
+    # STIGs (registry description: "Threat model, hardening, STIGs, attack-path
+    # analysis"). The page drives the UNCHANGED /api/stig-manager/* blueprint
+    # (tools/dashboard/api/stig_manager.py) -- only the PAGE route moved. The
+    # old URL redirects here rather than 404ing: a silently dropped page is the
+    # failure mode a one-route-per-card migration exists to refuse.
+
+    @bp.route("/stig-manager")
+    @sc_login_required
+    def sc_stig_manager_page():
+        """STIG Benchmark Manager — import, track, and assess DISA STIG findings."""
+        return render_template("security_canvas/stig_manager.html")
+
     @bp.route("/api/sdc-demo-run", methods=["POST"])
     @sc_login_required
     def sc_api_sdc_demo_run():
