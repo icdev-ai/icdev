@@ -20,6 +20,16 @@ A Python migration rather than SQL because the constraint body must be
 GENERATED from the constant; respelling the vocabulary in a .sql file would
 create the next stale copy.
 
+THIS REBUILD IS A PURE WIDENING, and that was checked rather than assumed. The
+deployed CHECK on the live board admitted two types the constant did not —
+``cato_evidence_collected`` and ``oscal_generated`` — and, uniquely,
+``tools/compliance/{cato_monitor,cato_scheduler,oscal_generator}.py`` write
+them with a RAW ``INSERT INTO audit_trail`` rather than through ``log_event``.
+The CHECK is therefore the only thing letting those three writers through, and
+regenerating it from a constant that omitted them would have started REFUSING
+three live compliance audit writers. Both names were added to
+``VALID_EVENT_TYPES`` in the same change, so this migration only ever adds.
+
 SQLite is a no-op by design: SQLite cannot ALTER a CHECK, and rebuilding
 audit_trail there would mean copying an append-only, hash-chained table. Fresh
 SQLite databases get the generated constraint from ``init_icdev_db.py``, which
