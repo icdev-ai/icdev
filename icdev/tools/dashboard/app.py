@@ -5354,8 +5354,15 @@ def create_app(testing: bool = False) -> Flask:
 
     @app.route("/sbd")
     def sbd_page():
-        """CISA Secure by Design Assessment — 8-pillar assessment with automated gating."""
-        return render_template("sbd.html")
+        """CISA Secure by Design — MIGRATED to the Security canvas (rmf-ui-13).
+
+        The governed page is ``/security/sbd`` on
+        tools/security_canvas/blueprint.py, where it is registry-registered,
+        RBAC-guarded and IQE-dispatchable. This handler stays as a redirect so
+        a bookmark, an e2e spec or a nav link that still names the old URL
+        lands on the page rather than a 404 — never a dropped page.
+        """
+        return redirect("/security/sbd", code=301)
 
     @app.route("/pr-intel")
     def pr_intel_page():
