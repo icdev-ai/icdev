@@ -1,9 +1,19 @@
+<!-- CUI // SP-CTI — Security Design Canvas AI Transparency (rmf-ui-15) -->
 {% extends "base.html" %}
 
-{% block title %}AI Transparency - ICDEV™ Dashboard{% endblock %}
+{% block title %}AI Transparency — Security Canvas — ICDEV™{% endblock %}
 
 {% block content %}
 <div class="container">
+    <!-- Breadcrumb -->
+    <nav aria-label="breadcrumb" style="margin-bottom:0.5rem;">
+        <span><a href="/" style="color:#1976d2;text-decoration:none;">Home</a></span>
+        <span style="color:#999;"> &gt; </span>
+        <span><a href="/security/" style="color:#1976d2;text-decoration:none;">Security Canvas</a></span>
+        <span style="color:#999;"> &gt; </span>
+        <span style="color:#333;">AI Transparency</span>
+    </nav>
+
     <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:1.5rem;">
         <div>
             <h1 style="margin-bottom:4px;">AI Transparency &amp; Accountability</h1>
@@ -51,6 +61,8 @@
             <div class="stat-label">Fairness Score</div>
         </div>
     </div>
+
+    {% include "includes/iqe_query_widget.html" %}
 
     <!-- Framework Assessments -->
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">

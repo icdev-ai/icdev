@@ -1,16 +1,21 @@
+<!-- CUI // SP-CTI — Security Design Canvas STIG Benchmark Manager (rmf-ui-12) -->
 {% extends "base.html" %}
-{% block title %}STIG Benchmark Manager - ICDEV™ Dashboard{% endblock %}
+{% block title %}STIG Benchmark Manager — Security Canvas — ICDEV™{% endblock %}
 {% block content %}
 <div class="container">
     <!-- Breadcrumb -->
     <nav aria-label="breadcrumb" style="margin-bottom:0.5rem;">
         <span><a href="/" style="color:#1976d2;text-decoration:none;">Home</a></span>
         <span style="color:#999;"> &gt; </span>
+        <span><a href="/security/" style="color:#1976d2;text-decoration:none;">Security Canvas</a></span>
+        <span style="color:#999;"> &gt; </span>
         <span style="color:#333;">STIG Manager</span>
     </nav>
 
     <h1>STIG Benchmark Manager</h1>
     <p class="text-muted">Manage STIG benchmark findings, track remediation progress, and monitor ATO readiness across all targets.</p>
+
+    {% include "includes/iqe_query_widget.html" %}
 
     <!-- CAT1 Alert Banner -->
     <div id="cat1-alert" style="display:none;background:#d32f2f;color:#fff;padding:1rem 1.25rem;border-radius:8px;margin-bottom:1.5rem;font-weight:600;font-size:1.05rem;">

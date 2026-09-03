@@ -1,16 +1,21 @@
+<!-- CUI // SP-CTI — Boundary Design Canvas Continuous ATO Health (rmf-ui-05) -->
 {% extends "base.html" %}
-{% block title %}Continuous ATO - ICDEV™ Dashboard{% endblock %}
+{% block title %}Continuous ATO Health — Boundary Canvas — ICDEV™{% endblock %}
 {% block content %}
 <div class="container">
     <!-- Breadcrumb -->
     <nav aria-label="breadcrumb" style="margin-bottom:0.5rem;">
         <span><a href="/" style="color:#1976d2;text-decoration:none;">Home</a></span>
         <span style="color:#999;"> &gt; </span>
-        <span style="color:#333;">Continuous ATO</span>
+        <span><a href="/boundary/" style="color:#1976d2;text-decoration:none;">Boundary Canvas</a></span>
+        <span style="color:#999;"> &gt; </span>
+        <span style="color:#333;">Continuous ATO Health</span>
     </nav>
 
-    <h1>Continuous ATO Dashboard</h1>
-    <p class="text-muted">Real-time Authorization to Operate health monitoring, evidence freshness, control implementation, and certification status.</p>
+    <h1>Continuous ATO Health</h1>
+    <p class="text-muted">Real-time Authorization to Operate health monitoring, evidence freshness, control implementation, and certification status. Per-design assessment scores live on the <a href="/boundary/cato" style="color:#1976d2;">cATO Dashboard</a>.</p>
+
+    {% include "includes/iqe_query_widget.html" %}
 
     <!-- ================================================================= -->
     <!-- 1. ATO Health Gauge                                                -->

@@ -1640,6 +1640,38 @@ def create_boundary_blueprint():
         """ATO Compliance Dashboard — control tracking, RMF stages, artifact readiness, crosswalk."""
         return render_template("boundary_canvas/ato_compliance.html")
 
+    # ── Continuous ATO Health (rmf-ui-05) ────────────────────────────────────
+    #
+    # Migrated from a bare `@app.route("/cato")` in tools/dashboard/app.py --
+    # the same shape as rmf-ui-01 above: ungoverned there, registry-registered,
+    # RBAC-guarded and IQE-dispatchable here BY CONSTRUCTION. It is NOT folded
+    # into /boundary/cato: that page is a per-design assessment table over
+    # bd_assessments and the fabric posture roll-up, while this one is the
+    # fleet-wide health gauge, evidence stream, certifications and timeline
+    # over the UNCHANGED /api/cato/* blueprint (tools/dashboard/api/cato.py)
+    # -- two views over two data models, so they keep two titles and two
+    # routes, cross-linked. Only the PAGE route moved; the old URL is a 301.
+
+    @bp.route("/cato-health")
+    @bdc_login_required
+    def bdc_cato_health_page():
+        """Continuous ATO Health — ATO health score, evidence freshness, certifications, timeline."""
+        return render_template("boundary_canvas/cato_health.html")
+
+    # ── OSCAL Ecosystem (rmf-ui-04) ──────────────────────────────────────────
+    #
+    # Migrated from a bare `@app.route("/oscal")` in tools/dashboard/app.py --
+    # the same shape as the rmf-ui-01 exemplar above. An RMF ARTIFACT surface
+    # (OSCAL SSP/SAP/SAR/POA&M validation, catalog lookup, format conversion)
+    # belongs on the canvas that already ships oscal_cato_exporter.py. The
+    # page drives the UNCHANGED /api/oscal/* routes -- only the PAGE route
+    # moved. The old URL redirects here rather than 404ing.
+
+    @bp.route("/oscal")
+    @bdc_login_required
+    def bdc_oscal_page():
+        """OSCAL ecosystem — validation, catalog, format conversion (D302-D306)."""
+        return render_template("boundary_canvas/oscal.html")
     # ── FedRAMP 20x KSI Dashboard (rmf-ui-06) ────────────────────────────────
     #
     # Migrated from a bare `@app.route("/fedramp-20x")` in tools/dashboard/app.py

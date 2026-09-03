@@ -337,13 +337,13 @@
 
             <!-- ── Compliance ────────────────────────────────────────────────── -->
             <li class="nav-dropdown">
-                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/compliance','/oscal','/prod-audit','/ai-transparency','/ai-accountability','/sbd','/cato','/compliance-debt','/ato-package','/ato-compliance','/boundary/ato-compliance','/fedramp-20x','/boundary/fedramp-20x','/control-inheritance','/mosa','/analytics','/poam','/security-scan','/pr-intel','/stig-manager','/sre','/iac','/migration','/migration-cost','/provenance','/traces','/xai'] or request.path.startswith('/security') or request.path.startswith('/security/zig') or request.path.startswith('/zta') or request.path.startswith('/integrity') %}active{% endif %}">Compliance ▾</a>
+                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/compliance','/oscal','/boundary/oscal','/prod-audit','/security/prod-audit','/ai-transparency','/security/ai-transparency','/security/stig-manager','/security/sbd','/ai-accountability','/sbd','/cato','/boundary/cato-health','/compliance-debt','/ato-package','/ato-compliance','/boundary/ato-compliance','/fedramp-20x','/boundary/fedramp-20x','/control-inheritance','/mosa','/analytics','/poam','/security-scan','/pr-intel','/stig-manager','/sre','/iac','/migration','/migration-cost','/provenance','/traces','/xai'] or request.path.startswith('/security') or request.path.startswith('/security/zig') or request.path.startswith('/zta') or request.path.startswith('/integrity') %}active{% endif %}">Compliance ▾</a>
                 <ul class="nav-dropdown-menu">
                     <li class="nav-section-label">Risk &amp; ATO</li>
                     <li><a href="/poam">POA&amp;M Findings</a></li>
                     <li><a href="/compliance">Compliance Hub</a></li>
-                    <li><a href="/oscal">OSCAL</a></li>
-                    <li><a href="/cato">Continuous ATO</a></li>
+                    <li><a href="/boundary/oscal">OSCAL</a></li>
+                    <li><a href="/boundary/cato-health">Continuous ATO</a></li>
                     <li><a href="/ato-package">ATO Package Builder</a></li>
                     <li><a href="/boundary/ato-compliance">ATO Compliance Dashboard</a></li>
                     <li><a href="/boundary/fedramp-20x">FedRAMP 20x KSIs</a></li>
@@ -362,17 +362,17 @@
                     <li><a href="/security-scan">Security Scans</a></li>
                     {% if integrity_enabled %}<li><a href="/integrity">Software Integrity (SIPA)</a></li>{% endif %}
                     <li><a href="/logs">Centralized Logs</a></li>
-                    <li><a href="/stig-manager">STIG Manager</a></li>
+                    <li><a href="/security/stig-manager">STIG Manager</a></li>
                     <li><a href="/pr-intel">PR Intelligence</a></li>
                     <li><a href="/sre">SRE Operations</a></li>
                     <li class="nav-dropdown-divider"></li>
                     <li class="nav-section-label">AI &amp; Policy</li>
-                    <li><a href="/sbd">Secure by Design</a></li>
-                    <li><a href="/ai-transparency">AI Transparency</a></li>
+                    <li><a href="/security/sbd">Secure by Design</a></li>
+                    <li><a href="/security/ai-transparency">AI Transparency</a></li>
                     <li><a href="/ai-accountability">AI Accountability</a></li>
                     <li><a href="/control-inheritance">Control Inheritance</a></li>
                     <li><a href="/compliance-debt">Compliance Debt</a></li>
-                    <li><a href="/prod-audit">Production Audit</a></li>
+                    <li><a href="/security/prod-audit">Production Audit</a></li>
                     <li class="nav-dropdown-divider"></li>
                     <li class="nav-section-label">Observability</li>
                     <li><a href="/traces">Traces</a></li>

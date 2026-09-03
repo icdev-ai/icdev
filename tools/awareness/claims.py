@@ -529,6 +529,9 @@ def _derived_tasks_without_an_open_pr() -> Any:
 #: The script name the launcher starts; a process whose command line carries
 #: it IS a scheduler, whatever the registry says about it.
 SCHEDULER_SCRIPT = "kanban_scheduler.py"
+#: The service name the scheduler claims (service_identity); its registry rows
+#: are `kanban-scheduler-<pid>`, or the bare name from a pre-sid-01 deployment.
+SCHEDULER_SERVICE = "kanban-scheduler"
 #: Ten cycles at the 60s interval. Well above one missed beat; a scheduler that
 #: has not heartbeat in ten minutes is not "busy", it is not looping.
 SCHEDULER_HEARTBEAT_WINDOW_MINUTES = 10
@@ -559,16 +562,33 @@ def _live_scheduler_pids() -> Any:
 
 
 def _kanban_session_rows() -> Any:
-    """(pid, last_heartbeat) for every active `kanban` row, from the REGISTRY
-    TABLE. None when unreadable. Shares nothing with the process scan."""
+    """(pid, last_heartbeat) for every active SCHEDULER row, from the REGISTRY
+    TABLE. None when unreadable. Shares nothing with the process scan.
+
+    Scheduler rows, not `agent_type = 'kanban'` rows (claim-verif-33c9f4cd11):
+    every process the scheduler spawns inherits `ICDEV_AGENT=kanban`, so a
+    worker session's coordination-hook row, and any one-shot command run inside
+    a worker, is a `kanban` row too. Reading those here put a hook process's pid
+    on the card as "what the primary data says" and, worse, let a board with NO
+    scheduler read `agrees` — the reported side empty, the derived side full of
+    hook rows. A scheduler row is one `is_service_session` recognises, which a
+    descendant's `.../child-<pid>` row deliberately is not.
+    """
+    from tools.coordination.service_identity import is_service_session
+
     try:
         with _conn() as conn:
             rows = conn.execute(
-                "SELECT pid, last_heartbeat FROM agent_sessions "
-                "WHERE agent_type = %s AND status = %s",
-                ("kanban", "active"),
+                "SELECT session_id, pid, last_heartbeat FROM agent_sessions "
+                "WHERE status = %s",
+                ("active",),
             ).fetchall()
-        return [(dict(r).get("pid"), dict(r).get("last_heartbeat")) for r in rows]
+        out = []
+        for r in rows:
+            d = dict(r)
+            if is_service_session(str(d.get("session_id") or ""), SCHEDULER_SERVICE):
+                out.append((d.get("pid"), d.get("last_heartbeat")))
+        return out
     except Exception:  # noqa: BLE001
         return None
 

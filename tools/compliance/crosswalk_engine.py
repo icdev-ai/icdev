@@ -143,11 +143,16 @@ FRAMEWORK_ALIASES = {
     "zero_trust": {None: "nist_800_207"},
 }
 
-# Impact level to crosswalk key mapping
+# Impact level to crosswalk key mapping. These are the columns
+# context/compliance/control_crosswalk.json ACTUALLY carries (`il4_required`,
+# ...); the bare `il4` this table named from the start matched no entry, so
+# get_controls_for_impact_level() returned [] for every level and the per-IL
+# counts in crosswalk_stats read 0 (found by rmf-fab-01, pinned by
+# tests/fabric/test_registry.py::test_crosswalk_il_keys_name_columns_the_data_actually_carries).
 IL_KEYS = {
-    "IL4": "il4",
-    "IL5": "il5",
-    "IL6": "il6",
+    "IL4": "il4_required",
+    "IL5": "il5_required",
+    "IL6": "il6_required",
 }
 
 
@@ -290,18 +295,26 @@ def _ensure_crosswalk_tables(conn):
         CREATE INDEX IF NOT EXISTS idx_crosswalk_framework
             ON control_crosswalk(framework_id);
 
+        -- The SAME shape init_icdev_db.py creates. This fallback used to declare
+        -- `implemented_controls` and a different gate_status vocabulary, so on a
+        -- database it bootstrapped itself the INSERT below (which names the LIVE
+        -- column, swp-scan-01) raised on every call (rmf-fab-01).
         CREATE TABLE IF NOT EXISTS project_framework_status (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             project_id TEXT NOT NULL,
             framework_id TEXT NOT NULL,
+            target_baseline TEXT,
             total_controls INTEGER DEFAULT 0,
-            implemented_controls INTEGER DEFAULT 0,
+            implemented_count INTEGER DEFAULT 0,
+            partially_implemented_count INTEGER DEFAULT 0,
+            planned_count INTEGER DEFAULT 0,
+            not_applicable_count INTEGER DEFAULT 0,
             coverage_pct REAL DEFAULT 0.0,
-            gate_status TEXT DEFAULT 'not_started'
-                CHECK(gate_status IN ('not_started', 'in_progress', 'compliant', 'non_compliant')),
-            last_assessed TIMESTAMP,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            gate_status TEXT DEFAULT 'incomplete'
+                CHECK(gate_status IN ('pass', 'fail', 'incomplete', 'waived')),
+            last_assessed TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now')),
             UNIQUE(project_id, framework_id)
         );
 
@@ -599,11 +612,10 @@ def compute_crosswalk_coverage(project_id, db_path=None):
         # Update project_framework_status table
         now = datetime.now(timezone.utc).isoformat()
         for fw_key, data in coverage.items():
-            gate = "not_started"
-            if data["coverage_pct"] >= 100.0:
-                gate = "compliant"
-            elif data["coverage_pct"] > 0:
-                gate = "in_progress"
+            # The live CHECK admits pass | fail | incomplete | waived. `compliant`
+            # / `in_progress` were never admitted, so the row was refused on PG
+            # as well. `fail` is a verdict, not derivable from coverage alone.
+            gate = "pass" if data["coverage_pct"] >= 100.0 else "incomplete"
 
             conn.execute(
                 # `implemented_controls` is not a column — the live column is
