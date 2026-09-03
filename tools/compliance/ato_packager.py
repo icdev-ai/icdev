@@ -343,7 +343,7 @@ def check_step_status(conn, step_id, project_id):
         else:
             impl_q += " WHERE implementation_status IN ('implemented', 'not_applicable')"
         implemented = _count(conn, impl_q, params)
-        pct = (implemented / total) * 100 if total > 0 else 0
+        pct = implemented / total * 100  # total == 0 returned "incomplete" above
         if pct >= 80:
             return "complete", f"{implemented}/{total} controls implemented ({pct:.0f}%)"
         elif pct >= 50:
@@ -407,7 +407,7 @@ def check_step_status(conn, step_id, project_id):
         else:
             current_q += " WHERE status = 'current'"
         current = _count(conn, current_q, params)
-        pct = (current / total) * 100 if total > 0 else 0
+        pct = current / total * 100  # total == 0 returned "incomplete" above
         if pct >= 50:
             return "complete", f"{current}/{total} evidence items current ({pct:.0f}%)"
         return "warning", f"{current}/{total} evidence items current ({pct:.0f}%) — need 50%"
@@ -658,14 +658,24 @@ def collect_checklist(conn, project_id):
         else:
             impl_q += " WHERE implementation_status IN ('implemented', 'not_applicable')"
         implemented = _count(conn, impl_q, params)
-        pct = (implemented / total * 100) if total > 0 else 0
-        checks.append(
-            {
-                "name": "Controls >= 80% Implemented",
-                "status": "PASS" if pct >= 80 else "FAIL",
-                "detail": f"{implemented}/{total} ({pct:.0f}%)",
-            }
-        )
+        if total > 0:
+            pct = implemented / total * 100
+            checks.append(
+                {
+                    "name": "Controls >= 80% Implemented",
+                    "status": "PASS" if pct >= 80 else "FAIL",
+                    "detail": f"{implemented}/{total} ({pct:.0f}%)",
+                }
+            )
+        else:
+            # No denominator: say so, never "0/0 (0%)" (rmf-rail-01).
+            checks.append(
+                {
+                    "name": "Controls >= 80% Implemented",
+                    "status": "FAIL",
+                    "detail": "No controls assigned",
+                }
+            )
     else:
         checks.append(
             {
