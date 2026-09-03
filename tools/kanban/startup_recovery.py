@@ -275,6 +275,32 @@ def _lease_holder_pid(task_id: str) -> Optional[int]:
         return None
 
 
+def _lease_session(task_id: str) -> Optional[str]:
+    """Session id of a LIVE REGISTERED holder of ``kanban:task:<id>``, or None.
+
+    The pid half (``_lease_holder_pid``) misses the holder that matters most
+    here: an operator's ``cli.py --claim``, whose pid exits a second after
+    claiming. On 2026-09-02 21:28 this sweep reset kpr-stale-03 -- claimed by
+    hand, PR in flight -- to backlog with "no live session was found working
+    it", while the claiming session heartbeat in agent_sessions the whole time.
+    Nothing read the session id on the lease.
+
+    Read through the shared verdict, like the pid half: the SAME
+    ``session_is_live`` the dispatch reaper consults, so startup recovery and
+    the reaper cannot disagree about what a claim is worth.
+    """
+    try:
+        from tools.kanban import lease_liveness
+
+        verdict = lease_liveness.task_lease_verdict(task_id)
+        if verdict.state == lease_liveness.STATE_LIVE and verdict.session_alive:
+            return verdict.holder_session
+        return None
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("startup-recovery: lease session check failed for %s: %s", task_id, exc)
+        return None
+
+
 def task_liveness(
     task_id: str,
     *,
@@ -309,6 +335,13 @@ def task_liveness(
     lease_pid = _lease_holder_pid(task_id)
     if lease_pid is not None:
         return Liveness(True, EV_LEASE, f"kanban:task:{task_id} held by live pid {lease_pid}")
+
+    lease_sid = _lease_session(task_id)
+    if lease_sid:
+        return Liveness(
+            True, EV_LEASE,
+            f"kanban:task:{task_id} held by live session {lease_sid} (claimed by hand)",
+        )
 
     if process_pids and task_id in process_pids:
         return Liveness(True, EV_PROCESS, f"live pid {process_pids[task_id]} working this task")

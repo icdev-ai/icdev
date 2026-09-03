@@ -9712,6 +9712,26 @@ def create_app(testing: bool = False) -> Flask:
         # do. `validating` and `pr_opened` stay OPEN on purpose: verification can fail,
         # and an unmerged PR is not landed work.
         _closed_statuses = ("done", "decomposed", "cancelled", "merged")
+
+        def _honest_pct(done: int, total: int) -> int:
+            """100 only when it is true, 0 only when it is; 1..99 otherwise.
+
+            int(round(100 * 293 / 294)) is 100, so the `mc` card read "293 / 294
+            done . 100%" while a `validating` row held it on screen (2026-09-02)
+            -- and a reader takes 100% for finished. The mirror error reads 1 of
+            294 done as 0%, i.e. as not started. Neither extreme may be rendered
+            unless it is literally the case. Same discipline as
+            args/perfect_score_gate.yaml, applied to a rounding rather than a
+            fallback arm.
+            """
+            if total <= 0:
+                return 0
+            if done >= total:
+                return 100
+            if done <= 0:
+                return 0
+            return max(1, min(99, int(round(100 * done / total))))
+
         try:
             from tools.kanban.gates import has_gate_id as _has_gate_id
         except Exception:  # noqa: BLE001 -- the card must render without the gates module
@@ -9743,7 +9763,7 @@ def create_app(testing: bool = False) -> Flask:
             # `done` here means CLOSED -- see _closed_statuses above. The per-status
             # breakdown fields below still itemise the open states individually.
             done = sum(counts.get(s, 0) for s in _closed_statuses)
-            pct = int(round(100 * done / total)) if total else 0
+            pct = _honest_pct(done, total)
             total_all += total
             done_all += done
             epics_out.append({
@@ -9757,6 +9777,15 @@ def create_app(testing: bool = False) -> Flask:
                 "backlog": counts.get("backlog", 0),
                 "failed": counts.get("failed", 0),
                 "needs_decomp": counts.get("needs_decomposition", 0),
+                # OPEN states that were counted in `total` and itemised NOWHERE.
+                # `pr_opened` and `validating` stay open on purpose (an unmerged
+                # PR is not landed work; verification can fail) and a
+                # `token_exhausted` task is parked for retry -- but with no
+                # bucket the rmf `inert` epic rendered "0 / 1 done . 0%" and no
+                # badge: a task with a PR open looked LOST (2026-09-02).
+                "pr_opened": counts.get("pr_opened", 0),
+                "validating": counts.get("validating", 0),
+                "token_exhausted": counts.get("token_exhausted", 0),
                 "pct": pct,
             })
         # ── Orphan detection ────────────────────────────────────────────────
@@ -9845,7 +9874,7 @@ def create_app(testing: bool = False) -> Flask:
             "recent_failures": [dict(r) for r in fail_rows],
             "total_tasks": total_all,
             "done_tasks": done_all,
-            "overall_pct": int(round(100 * done_all / total_all)) if total_all else 0,
+            "overall_pct": _honest_pct(done_all, total_all),
             "orphaned_tasks": len(orphans),
             "open_orphaned_tasks": open_orphans,
             "orphaned_sample": orphans[:10],
@@ -10065,18 +10094,46 @@ def create_app(testing: bool = False) -> Flask:
             # `escalate` is the discriminator, and it is the watcher's own
             # verdict rather than an inference. A later `merge` after an
             # escalation is a HUMAN's merge, so it must not read as autonomous.
+            # ONE definition of "recovered", in tools/dashboard/recovery_summary.py,
+            # so the rule this panel renders is the rule its tests exercise -- and
+            # ONE action vocabulary, exported from there, so this query cannot
+            # fetch fewer kinds than the classifier counts. It did: the hand-
+            # written list here fetched four names, and `rebase_failed` and
+            # `ci_retrigger` attempts never reached the classifier at all.
+            from tools.dashboard.recovery_summary import (
+                AUDIT_ACTIONS,
+                summarize_recovery,
+            )
+
+            _in = ",".join(["%s"] * len(AUDIT_ACTIONS))
             _rows = [dict(_r) for _r in _c.execute(
                 f"SELECT action, {_details} AS d, created_at FROM audit_trail "  # nosec B608
-                "WHERE action IN ('pr_watcher.rebase', 'pr_watcher.resume', "
-                "                 'pr_watcher.escalate', 'pr_watcher.merge') "
-                "AND created_at >= %s ORDER BY created_at",
-                (_cut,),
+                f"WHERE action IN ({_in}) AND created_at >= %s ORDER BY created_at",
+                (*AUDIT_ACTIONS, _cut),
             ).fetchall()]
-            # ONE definition of "recovered", in tools/dashboard/recovery_summary.py,
-            # so the rule this panel renders is the rule its tests exercise.
-            from tools.dashboard.recovery_summary import summarize_recovery
-
-            pr_recovery = summarize_recovery(_rows)
+            # THE BOARD IS THE SECOND OUTCOME SIGNAL. A merge the watcher merely
+            # CONFIRMED ("reconciled: PR is MERGED") is a status transition, not
+            # a `merge` audit row -- so rmf-disc-01 read "still trying" for an
+            # hour after the watcher itself marked it done (2026-09-02).
+            _tids = set()
+            for _r in _rows:
+                try:
+                    _tid = json.loads(_r.get("d") or "{}").get("task_id")
+                except (ValueError, TypeError):
+                    _tid = None
+                if _tid:
+                    _tids.add(_tid)
+            _task_status: dict = {}
+            if _tids:
+                _q = ",".join(["%s"] * len(_tids))
+                _task_status = {
+                    dict(_s)["id"]: dict(_s)["status"]
+                    for _s in _c.execute(
+                        f"SELECT id, status FROM kanban_tasks WHERE id IN ({_q})",  # nosec B608
+                        tuple(sorted(_tids)),
+                    ).fetchall()
+                }
+            pr_recovery = summarize_recovery(_rows, task_status=_task_status)
             _c.close()
         except Exception as _rec_exc:  # noqa: BLE001 — a panel must not 500
             app.logger.debug("autonomy: pr recovery lookup failed: %s", _rec_exc)

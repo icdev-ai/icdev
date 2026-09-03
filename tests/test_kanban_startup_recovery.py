@@ -129,6 +129,7 @@ def ctx(tmp_path, monkeypatch):
     monkeypatch.setattr(sr, "_send", lambda s, b, sev: sent.append((s, b, sev)))
     monkeypatch.setattr(sr, "scan_live_task_processes", lambda ids: {})
     monkeypatch.setattr(sr, "_lease_holder_pid", lambda tid: None)
+    monkeypatch.setattr(sr, "_lease_session", lambda tid: None)
     monkeypatch.setattr(sr, "foreign_scheduler_pid", lambda: 0)
 
     def _factory():
@@ -526,3 +527,41 @@ class TestExternalRepoProvenance:
         monkeypatch.setattr("tools.kanban.repo_registry.resolve_task_repo", _boom)
 
         assert sr._task_repo_root("kax-recover-04") == sr.BASE_DIR
+
+
+# --------------------------------------------------------------------------- #
+# 2026-09-02: a claim held by a live REGISTERED SESSION is not an orphan
+# --------------------------------------------------------------------------- #
+def test_a_claim_held_by_a_live_session_holds_the_reset(ctx, monkeypatch):
+    """kpr-stale-03: claimed by hand with `cli.py --claim`, PR in flight, reset to
+    backlog by this sweep at 21:28 with "no live session was found working it" --
+    the claiming pid had exited, and nothing read the session id on the lease."""
+    monkeypatch.setattr(sr, "_lease_session", lambda tid: "785a5ee7-claiming-session")
+    _insert_task(ctx["db"], LIVE_ID, "hand-built fix")
+
+    result = _recover(ctx)
+
+    assert _read(ctx["db"], LIVE_ID)["status"] == "in_progress"
+    assert result["held"][0]["reason"] == sr.EV_LEASE
+    assert "session 785a5ee7-claiming-session" in result["held"][0]["detail"]
+
+
+def test_lease_session_reads_the_shared_verdict(monkeypatch):
+    """No private opinion: `_lease_session` consumes lease_liveness' verdict, so
+    startup recovery and the dispatch reaper cannot disagree about a claim."""
+    from tools.kanban import lease_liveness as ll
+
+    live = ll.LeaseVerdict("x", "kanban:task:x", ll.STATE_LIVE,
+                           {"holder_session": "s-1", "pid": 1}, False, None, True)
+    monkeypatch.setattr(ll, "task_lease_verdict", lambda tid: live)
+    assert sr._lease_session("x") == "s-1"
+
+    litter = ll.LeaseVerdict("x", "kanban:task:x", ll.STATE_LITTER,
+                             {"holder_session": "s-1", "pid": 1}, False, False)
+    monkeypatch.setattr(ll, "task_lease_verdict", lambda tid: litter)
+    assert sr._lease_session("x") is None
+
+    pid_live = ll.LeaseVerdict("x", "kanban:task:x", ll.STATE_LIVE,
+                               {"holder_session": "s-1", "pid": 1}, True, None)
+    monkeypatch.setattr(ll, "task_lease_verdict", lambda tid: pid_live)
+    assert sr._lease_session("x") is None, "a pid-live lease is the pid half's answer, not this one's"

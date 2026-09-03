@@ -255,3 +255,65 @@ def test_describe_names_the_state_and_the_reason():
     assert "4242" in text and "heartbeat" in text and "not litter" in text
     v = ll.LeaseVerdict("t", "kanban:task:t", ll.STATE_LIVE, HOLDER, None, None)
     assert "cannot tell" in ll.describe(v) and "LIVE" in ll.describe(v)
+
+
+# --------------------------------------------------------------------------- #
+# 5. A live REGISTERED SESSION is the third signal (2026-09-02)
+# --------------------------------------------------------------------------- #
+def test_dead_pid_with_a_live_session_is_LIVE_not_litter(monkeypatch):
+    """The operator's claim. `cli.py --claim` records a pid that exits a second
+    later; on the pid alone every reader called it litter -- the reaper took the
+    task and startup recovery reset it -- while the claiming session heartbeat in
+    the registry the whole time (kpr-stale-03, 2026-09-02 21:28)."""
+    probes = _install(monkeypatch, _FakeLeases(holder=HOLDER, alive=False), heartbeating=False)
+    monkeypatch.setattr(ll, "session_is_live", lambda sid: sid == "local-abc")
+    v = ll.task_lease_verdict("t")
+    assert v.state == ll.STATE_LIVE
+    assert v.blocks_dispatch is True and v.reapable is False
+    assert v.session_alive is True and v.pid_alive is False
+    assert probes["calls"] == 0, "a live session settles it before the heartbeat is asked"
+
+
+def test_an_unregistered_session_falls_through_to_the_heartbeat(monkeypatch):
+    _install(monkeypatch, _FakeLeases(holder=HOLDER, alive=False), heartbeating=False)
+    monkeypatch.setattr(ll, "session_is_live", lambda sid: False)
+    v = ll.task_lease_verdict("t")
+    assert v.state == ll.STATE_LITTER
+    assert v.session_alive is None, "not consulted as evidence -- must not read as 'no session'"
+
+
+def test_a_live_pid_does_not_consult_the_session_registry(monkeypatch):
+    _install(monkeypatch, _FakeLeases(holder=HOLDER, alive=True), heartbeating=False)
+    calls = []
+    monkeypatch.setattr(ll, "session_is_live", lambda sid: calls.append(sid) or True)
+    assert ll.task_lease_verdict("t").state == ll.STATE_LIVE
+    assert calls == [], "a live pid settles it; the registry is not queried"
+
+
+def test_session_is_live_is_false_on_any_error(monkeypatch):
+    """The fail-safe direction: this signal may only WIDEN live. An unreadable
+    registry must not invent a live session and pin a task forever."""
+    broken = types.ModuleType("tools.coordination.session_registry")
+
+    def _boom(*a, **k):
+        raise RuntimeError("registry down")
+
+    broken.list_active = _boom
+    monkeypatch.setitem(sys.modules, "tools.coordination.session_registry", broken)
+    assert ll.session_is_live("anything") is False
+    assert ll.session_is_live(None) is False
+    assert ll.session_is_live("") is False
+
+
+def test_session_is_live_matches_a_registered_heartbeating_session(monkeypatch):
+    reg = types.ModuleType("tools.coordination.session_registry")
+    reg.list_active = lambda: [{"session_id": "785a5ee7-claiming"}, {"session_id": "other"}]
+    monkeypatch.setitem(sys.modules, "tools.coordination.session_registry", reg)
+    assert ll.session_is_live("785a5ee7-claiming") is True
+    assert ll.session_is_live("nobody") is False
+
+
+def test_describe_names_a_session_held_claim():
+    v = ll.LeaseVerdict("t", "kanban:task:t", ll.STATE_LIVE, HOLDER, False, None, True)
+    text = ll.describe(v)
+    assert "session local-abc" in text and "not litter" in text

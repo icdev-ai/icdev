@@ -875,6 +875,26 @@ def cmd_claim(task_id: str, json_out: bool) -> int:
             "branch": d.get("branch_name"),
             "commit": d.get("commit_summary"),
         })
+    # WHAT THIS CLAIM IS WORTH, said at the moment it is taken. The lease
+    # records THIS process's pid, and this process exits on the next line. On
+    # the pid alone every reader -- the dispatch reaper, startup recovery,
+    # --release -- reads a dead-pid lease as litter within seconds. The one
+    # thing that outlives the pid is the session id on the lease, and it
+    # protects the task ONLY if it names a REGISTERED session that keeps
+    # heartbeating (CLAUDE_SESSION_ID / ICDEV_SESSION_ID exported before the
+    # claim). Measured 2026-09-02: kpr-stale-03 was claimed from a shell, its
+    # PR was in flight, and startup recovery reset it to backlog with "no live
+    # session was found working it". The old message here promised the
+    # opposite.
+    holder = leases.holder(res) or {}
+    sid = holder.get("holder_session")
+    try:
+        from tools.kanban.lease_liveness import session_is_live
+
+        session_linked = bool(session_is_live(sid))
+    except Exception:  # noqa: BLE001 -- the claim stands; only the advice degrades
+        session_linked = False
+    info.update({"holder_session": sid, "session_linked": session_linked})
     if json_out:
         print(json.dumps(info, indent=2, default=str))
     else:
@@ -882,7 +902,15 @@ def cmd_claim(task_id: str, json_out: bool) -> int:
         print(f"    branch: {info.get('branch') or '(none recorded — start fresh off origin/main)'}")
         if info.get("commit"):
             print(f"    last commit: {str(info['commit'])[:100]}")
-        print("    runner will skip this task until you --release it.")
+        if session_linked:
+            print(f"    held by session {sid}: the runner and startup recovery will "
+                  "honour this claim while that session heartbeats (1h TTL backstop).")
+        else:
+            print(f"    NOTE: this lease is bound to pid {holder.get('pid')}, which exits "
+                  "now, and to an UNREGISTERED session id -- every reader will treat it "
+                  "as litter within seconds. To hold the task, export "
+                  "ICDEV_SESSION_ID=<your registered session id> before --claim, or "
+                  "gate it behind a manual gate (depends_on_task_id).")
     return 0
 
 

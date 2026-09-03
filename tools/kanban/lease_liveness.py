@@ -99,6 +99,11 @@ class LeaseVerdict:
     holder: Optional[Dict[str, Any]]
     pid_alive: Optional[bool]
     heartbeating: Optional[bool]
+    #: ``True`` when the holder's session id is a REGISTERED session that has
+    #: heartbeat within the TTL -- the third signal, consulted only when the pid
+    #: is dead. ``None`` when not consulted, which a reader must never render
+    #: as "no session".
+    session_alive: Optional[bool] = None
 
     @property
     def reapable(self) -> bool:
@@ -162,6 +167,38 @@ def task_is_heartbeating(task_id: str) -> bool:
                 pass
 
 
+def session_is_live(session_id: Optional[str]) -> bool:
+    """Is ``session_id`` a REGISTERED session that heartbeat within the TTL?
+
+    The third liveness signal, and the one a human's claim needs. A lease taken
+    by ``cli.py --claim`` records the pid of a process that exits a second
+    later, so on the pid alone it is litter to every reader: the dispatch
+    reaper takes the task, and startup recovery resets it. Measured
+    2026-09-02 21:28: kpr-stale-03, claimed by hand with its PR in flight, was
+    reset to backlog with "no live session was found working it" -- while the
+    claiming operator's session heartbeat in agent_sessions the whole time.
+    The session id on the lease is the link the pid cannot provide.
+
+    ``False`` on ANY error, deliberately. This signal can only ever make a
+    verdict MORE conservative (LIVE where it would have been litter), so an
+    unreadable registry must fall back to the two signals that already exist
+    rather than invent a live session and pin a task forever.
+    """
+    if not session_id:
+        return False
+    try:
+        import importlib
+
+        registry = importlib.import_module("tools.coordination.session_registry")
+        return any(
+            str(s.get("session_id")) == str(session_id)
+            for s in registry.list_active()
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("session liveness check failed for %s: %s", session_id, exc)
+        return False
+
+
 def task_lease_verdict(task_id: str) -> LeaseVerdict:
     """Classify ``kanban:task:<id>`` from BOTH signals.
 
@@ -183,6 +220,13 @@ def task_lease_verdict(task_id: str) -> LeaseVerdict:
         # a live worker loses its lease. The heartbeat is not consulted — it
         # could not change the answer, and it costs a board query.
         return LeaseVerdict(task_id, resource, STATE_LIVE, holder, pid_alive, None)
+
+    # A dead pid with a LIVE REGISTERED SESSION behind it is a human's claim
+    # (or any agent that set ICDEV_SESSION_ID before claiming). Consulted
+    # before the heartbeat because a claimed-but-never-dispatched task has no
+    # heartbeat to give -- exactly the case that used to read as litter.
+    if session_is_live(holder.get("holder_session")):
+        return LeaseVerdict(task_id, resource, STATE_LIVE, holder, False, None, True)
 
     beating = task_is_heartbeating(task_id)
     state = STATE_WORKING if beating else STATE_LITTER
@@ -226,6 +270,11 @@ def describe(verdict: LeaseVerdict) -> str:
         return (
             f"holder pid {pid} is gone and the task is not heartbeating "
             f"(session {sid}) — litter"
+        )
+    if verdict.session_alive:
+        return (
+            f"holder pid {pid} is gone but session {sid} is registered and "
+            f"heartbeating — a claim held by a live session, not litter"
         )
     if verdict.pid_alive is None:
         return (

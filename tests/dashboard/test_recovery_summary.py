@@ -159,3 +159,76 @@ def test_the_cap_keeps_the_newest_entries():
     got = summarize_recovery(rows, limit=5)
     assert len(got) == 5
     assert got[0]["task_id"] == "t-29", "newest first"
+
+
+# --------------------------------------------------------------------------- #
+# 4. The vocabulary is the WRITER's, and the board is an outcome (2026-09-02)
+# --------------------------------------------------------------------------- #
+from tools.dashboard.recovery_summary import AUDIT_ACTIONS, CLOSED_STATUSES  # noqa: E402
+
+
+def test_every_attempt_kind_the_watcher_writes_is_counted():
+    """`rebase_failed` and `ci_retrigger` ARE attempts. The first version counted
+    only `resume` and a bare `rebase` the watcher never writes, so rmf-disc-01
+    (rebased twice, resumed once) read as one attempt."""
+    got = _by_id(summarize_recovery([
+        _row("rebase_failed", "t-8", at="2026-09-02T22:02:34"),
+        _row("resume", "t-8", at="2026-09-02T22:02:35"),
+        _row("rebase_failed", "t-8", at="2026-09-02T22:03:29"),
+        _row("ci_retrigger", "t-9", at="2026-09-02T23:01:10"),
+    ]))
+    assert got["t-8"]["attempts"] == 3
+    assert got["t-9"]["attempts"] == 1 and got["t-9"]["kind"] == "ci_retrigger"
+
+
+def test_a_refunded_attempt_is_not_an_attempt():
+    """The watcher's own accounting withdrew it; the summary must agree, or a
+    refunded resume reads as a retry loop."""
+    assert summarize_recovery([_row("resume", "t-10"), _row("resume_refund", "t-10")]) == []
+
+
+def test_a_task_the_board_closed_after_an_attempt_recovered():
+    """THE 2026-09-02 defect: rmf-disc-01 was marked done by the watcher's own
+    reconcile ("PR is MERGED") -- a status transition, never a `merge` audit row
+    -- and read "still trying" for an hour."""
+    got = summarize_recovery([_row("resume", "rmf-disc-01")],
+                             task_status={"rmf-disc-01": "done"})
+    assert got[0]["outcome"] == RECOVERED
+    assert got[0]["board_status"] == "done"
+
+
+def test_escalation_still_wins_over_a_closed_board_row():
+    """A task closed AFTER the watcher gave up was closed by the human it asked for."""
+    got = summarize_recovery([_row("resume", "t-11"), _row("escalate", "t-11")],
+                             task_status={"t-11": "done"})
+    assert got[0]["outcome"] == NEEDED_A_HUMAN
+
+
+def test_an_open_board_row_is_still_unresolved():
+    got = summarize_recovery([_row("resume", "t-12")], task_status={"t-12": "pr_opened"})
+    assert got[0]["outcome"] == UNRESOLVED
+    assert got[0]["board_status"] == "pr_opened"
+
+
+def test_no_task_status_keeps_the_old_answer():
+    """Callers that pass nothing get exactly the pre-change behaviour."""
+    assert summarize_recovery([_row("resume", "t-13")])[0]["outcome"] == UNRESOLVED
+
+
+def test_the_audit_query_and_the_classifier_share_one_vocabulary():
+    """The SQL in app.py must fetch every kind the classifier can count, BY
+    REFERENCE -- the two drifted, and two attempt kinds silently vanished."""
+    src = (ROOT / "tools" / "dashboard" / "app.py").read_text(encoding="utf-8")
+    assert "AUDIT_ACTIONS" in src, "app.py no longer builds the recovery query from AUDIT_ACTIONS"
+    assert "'pr_watcher.rebase', 'pr_watcher.resume'" not in src, "a hand-written action list is back"
+    for kind in ("resume", "rebase", "rebase_failed", "ci_retrigger",
+                 "resume_refund", "rebase_refund", "escalate", "merge"):
+        assert f"pr_watcher.{kind}" in AUDIT_ACTIONS
+
+
+def test_closed_statuses_match_the_project_card():
+    """Two hand-maintained copies of 'what counts as closed' is the defect the
+    project cards had until 2026-08-28; this one is pinned to that one."""
+    src = (ROOT / "tools" / "dashboard" / "app.py").read_text(encoding="utf-8")
+    assert '_closed_statuses = ("done", "decomposed", "cancelled", "merged")' in src
+    assert CLOSED_STATUSES == ("done", "decomposed", "cancelled", "merged")
