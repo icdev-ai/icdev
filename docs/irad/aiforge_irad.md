@@ -42,9 +42,16 @@ DoD has 10,000+ legacy systems with 3–5 yr modernization backlogs. AI-ify iden
 
 ## Financial Estimates
 
-- **Total Cost:** $480K
-  - **Labor:** $380K (2.5 FTEs — ML engineer, full-stack, DevSecOps)
-  - **Non-Labor:** $100K (GovCloud Bedrock credits, air-gap compute, tooling)
+> **Figures are held in the private overlay, not in this public repository.**
+> Labor, non-labor and total cost for this IR&D proposal are real cost data and
+> load from `ICDEV_GOVCON_PROMPTS_PATH` (see `tools/govcon/section_prompts.py`)
+> at document-generation time. The placeholders below are the contract, not
+> the numbers; `tools/ci/domain_leak_gate.py` refuses a dollar figure on these
+> lines under `docs/irad/`.
+
+- **Total Cost:** `{{ irad.aiforge.total_cost }}`
+  - **Labor:** `{{ irad.aiforge.labor_cost }}` (`{{ irad.aiforge.fte }}` FTEs — ML engineer, full-stack, DevSecOps)
+  - **Non-Labor:** `{{ irad.aiforge.non_labor_cost }}` (GovCloud Bedrock credits, air-gap compute, tooling)
 
 ---
 

@@ -124,6 +124,19 @@ domain_leak_gate:
       pattern: '(?i)\blabor\b[^\n]{0,40}\$\s?[\d.,]+\s?[KMB]\b'
       severity: critical
       paths: *govcon_source
+    # IR&D proposals under docs/irad/ carried REAL labor / non-labor / total
+    # cost lines ($380K + 2.5 FTE, $290K + 2 FTE; found 2026-09-01, scrubbed
+    # 2026-09-03). Our own cost data, a different sensitivity class from bid
+    # strategy, in the same public tree. The market-sizing table in the same
+    # documents ($50-200M/yr cost avoidance) is public-domain estimation and
+    # is NOT matched: the rule keys on the three cost-line labels, not on a
+    # dollar sign. Surveyed: 6 hits pre-scrub, 0 post-scrub, 0 elsewhere.
+    - name: Cost line in an IR&D proposal document
+      pattern: '(?i)\*\*(?:labor|non-labor|total cost):\*\*[^\n]{0,20}\$\s?[\d.,]+\s?[KMB]\b'
+      severity: critical
+      paths:
+        - docs/irad/*
+        - icdev/data/docs/irad/*
     - name: Annual O&M or licensing rate in GovCon source
       pattern: '(?i)\bannual\s+(?:O&M|licensing|maintenance)\b[^\n]{0,40}\$\s?[\d.,]+\s?[KMB]\b'
       severity: critical

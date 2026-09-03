@@ -44,9 +44,16 @@ ANVIL TDD (RED→GREEN→REFACTOR) with Playwright E2E gates.
 
 ## Financial Estimates
 
-- **Total Cost:** $340K
-  - **Labor:** $290K (2 FTEs)
-  - **Non-Labor:** $50K (cloud, LLM, testbed)
+> **Figures are held in the private overlay, not in this public repository.**
+> Labor, non-labor and total cost for this IR&D proposal are real cost data and
+> load from `ICDEV_GOVCON_PROMPTS_PATH` (see `tools/govcon/section_prompts.py`)
+> at document-generation time. The placeholders below are the contract, not
+> the numbers; `tools/ci/domain_leak_gate.py` refuses a dollar figure on these
+> lines under `docs/irad/`.
+
+- **Total Cost:** `{{ irad.acoic.total_cost }}`
+  - **Labor:** `{{ irad.acoic.labor_cost }}` (`{{ irad.acoic.fte }}` FTEs)
+  - **Non-Labor:** `{{ irad.acoic.non_labor_cost }}` (cloud, LLM, testbed)
 
 ---
 
@@ -101,7 +108,7 @@ graph LR
 
 **How:** Forward Network / GNS3 / CSP diffs feed a drift engine that scores document impact. A RAG-backed pipeline regenerates affected docs and re-maps changes to NIST 800-53 controls. AI GameDay stress-tests the network to validate runbook accuracy.
 
-**Why:** Forward Network proves the topology is correct. ACOIC proves the **paperwork is still correct** when the topology changes. Palantir/SAIC sell static storage + manual updates. We sell autonomous compliance intelligence that pays for itself in one ATO cycle.
+**Why:** Forward Network proves the topology is correct. ACOIC proves the **paperwork is still correct** when the topology changes. Incumbent vendors sell static storage + manual updates. We sell autonomous compliance intelligence that pays for itself in one ATO cycle.
 
 ---
 
