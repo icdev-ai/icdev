@@ -439,6 +439,27 @@ VALID_EVENT_TYPES = (
     # indistinguishable from drift. Constraint rebuilt by migration
     # 20260821045946.
     "awareness.restore_act",
+    # Zero-trust stub gate (rmf-zt-01). ICDEV_ZT_ALLOW_STUB decides whether an
+    # unverifiable device posture / PDP answer may be honored, and until now it
+    # decided that silently. One event type with the surface namespaced in
+    # `action` (device_compliance_scanner.stub_honored,
+    # device_compliance_scanner.fail_closed), following the migration_canvas
+    # precedent rather than one type per adapter. Written by
+    # tools/security/stub_gate.py::record_stub_decision.
+    "zt.stub_gate",
+    # PRE-EXISTING DRIFT, found while rebuilding the CHECK for zt.stub_gate
+    # (rmf-zt-01). The DEPLOYED constraint admitted these two and this constant
+    # did not — and unlike every other caller here, tools/compliance/
+    # cato_monitor.py, cato_scheduler.py and oscal_generator.py write them with
+    # a RAW `INSERT INTO audit_trail`, bypassing log_event entirely. So the
+    # CHECK is the only thing letting those three writers through, and
+    # regenerating it from a constant that omitted them would have started
+    # REFUSING three live compliance audit writers. The constant was the stale
+    # copy, not the constraint. (Zero rows today only means those modules have
+    # not run on this database; converting them onto log_event is a separate
+    # card, and adding the names here does not make that unnecessary.)
+    "cato_evidence_collected",
+    "oscal_generated",
 )
 
 EVENT_TYPE_CONSTRAINT = "audit_trail_event_type_check"

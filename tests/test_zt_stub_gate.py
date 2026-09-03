@@ -141,6 +141,11 @@ class TestDeviceComplianceScanner:
         assert result["overall_pass"] is False
         assert result["compliance_score"] == 0.0
         assert result["health_score"] == 0.0
+        # rmf-zt-01: the 0.0 is a POLICY REFUSAL, not a measurement of the
+        # checks — which were unknown either way. `score_basis` is what keeps
+        # a reader from quoting it as "this device scored zero on its STIGs".
+        assert result["score_basis"] == "fail_closed_unknown_posture"
+        assert result["health_basis"] == "fail_closed_unknown_posture"
         assert any("UNKNOWN" in g for g in result["gaps"])
 
     def test_unknown_posture_scans_under_flag(self, monkeypatch):
@@ -155,11 +160,18 @@ class TestDeviceComplianceScanner:
         )
 
         result = _dcs.scan_device("host-dev.example.mil")
-        # Under the flag the scanner falls back to its dev score (0.75) and
-        # the unknown-posture gap is not injected.
-        assert result["health_score"] == 0.75
+        # rmf-zt-01: this case previously asserted health_score == 0.75 and
+        # overall_pass is True. BOTH were the defect, not the contract. The
+        # stub gate permits the scan to PROCEED; it does not manufacture a
+        # health number or a compliance verdict for a device nothing measured.
+        # 0.75 was a constant wearing the name of a measurement, and it is the
+        # number all six live registry rows carried.
+        assert result["health_score"] is None
+        assert result["health_basis"] == "unmeasured_stub_honored"
         assert not any("UNKNOWN" in g for g in result["gaps"])
-        assert result["overall_pass"] is True
+        assert result["compliance_score"] is None
+        assert result["overall_pass"] is None
+        assert len(result["unknown_checks"]) == 18
 
     def test_live_healthy_posture_scans_normally(self, monkeypatch):
         monkeypatch.delenv("ICDEV_ZT_ALLOW_STUB", raising=False)
@@ -172,9 +184,18 @@ class TestDeviceComplianceScanner:
             ),
         )
 
-        result = _dcs.scan_device("host-live.example.mil")
+        result = _dcs.scan_device(
+            "host-live.example.mil",
+            # rmf-zt-01: a live posture measures the two DERIVED checks and
+            # nothing else, so probe data is what makes the rest measurable.
+            # Without it this device is `unmeasured`, which is the fix.
+            context={c: True for c in _dcs.CIS_CONTROL_CHECKS}
+            | {c: True for c in _dcs.STIG_CHECKS},
+        )
         assert result["health_score"] == 0.92
+        assert result["health_basis"] == "measured"
         assert result["overall_pass"] is True
+        assert result["unknown_checks"] == []
         assert not any("UNKNOWN" in g for g in result["gaps"])
 
 

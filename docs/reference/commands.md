@@ -4511,6 +4511,18 @@ python tools/devsecops/zta_terraform_generator.py --project-path /path --modules
 python tools/devsecops/pdp_config_generator.py --project-id "proj-123" --pdp-type disa_icam --json             # PDP config
 python tools/devsecops/pdp_config_generator.py --project-id "proj-123" --pdp-type zscaler --mesh istio --json  # PEP config
 
+# ZT device compliance — three verdicts, and the flip survey behind them (rmf-zt-01)
+SC_STORAGE_BACKEND=sqlite python -m tools.security_canvas.zt_verdict_survey                # flip survey (report only)
+SC_STORAGE_BACKEND=sqlite python -m tools.security_canvas.zt_verdict_survey --json
+python -c "from tools.security.stub_gate import stub_status; print(stub_status())"          # is device posture stubbed?
+# scan_device() returns pass|fail|unknown per check; an absent probe is `unknown`
+# and is excluded from BOTH sides of every ratio. compliance_score/overall_pass/
+# health_score are None (never 0.0, never 1.0) when nothing was measured.
+# ICDEV_ZT_ALLOW_STUB writes a `zt.stub_gate` audit row on BOTH legs, and a
+# standing banner appears on every /security page while it is honored.
+# Survey measured 2026-09-02: 96 of 108 recorded checks flip (88.89%).
+# docs/audits/rmf-zt-01-zt-check-verdict-flip-survey.md
+
 # DoD MOSA (Phase 26 — Modular Open Systems Approach)
 python tools/compliance/mosa_assessor.py --project-id "proj-123" --json                                        # MOSA assessment
 python tools/compliance/mosa_assessor.py --project-id "proj-123" --gate                                        # MOSA gate check

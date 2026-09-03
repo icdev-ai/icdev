@@ -155,6 +155,27 @@ def create_security_blueprint():
         template_folder=str(_TEMPLATE_DIR),
     )
 
+    # ── Standing zero-trust stub banner (rmf-zt-01) ────────────────────────
+    # ICDEV_ZT_ALLOW_STUB lets an UNVERIFIABLE device posture be honored so
+    # dev/CI/e2e keep working without live CrowdStrike credentials. Every ZIG
+    # maturity number, device-pillar score and compliance figure on these pages
+    # is then computed over a posture nothing measured — and until now the only
+    # place that said so was an environment variable. The banner is STANDING:
+    # it renders on every /security page for as long as the gate is open.
+    #
+    # Its ABSENCE asserts the gate is CLOSED (the production default), not that
+    # the estate is healthy — `stub_status()` returns banner=None only when
+    # `stub_allowed()` is False.
+    @bp.context_processor
+    def _zt_stub_banner():
+        try:
+            from tools.security.stub_gate import stub_status
+
+            return {"zt_stub": stub_status()}
+        except Exception as exc:  # noqa: BLE001 - a broken import must not 500 the canvas
+            logger.warning("zero-trust stub status unavailable: %s", exc)
+            return {"zt_stub": {"enabled": None, "banner": None, "env_var": None}}
+
     # ── Auth wrapper (uses ICDEV dashboard session) ────────────────────────
     def sc_login_required(f):
         @wraps(f)
