@@ -23,10 +23,16 @@ import pytest
 
 @pytest.fixture(scope="module")
 def base_db(tmp_path_factory):
-    """One initialized ICDEV database for the module; each test copies it."""
-    import os
+    """One initialized ICDEV database for the module; each test copies it.
 
-    os.environ["ICDEV_STORAGE_BACKEND"] = "sqlite"
+    The backend is pinned through a module-scoped MonkeyPatch and UNDONE at
+    teardown. A bare ``os.environ[...] = "sqlite"`` here would leak out of this
+    module and silently re-point every later test in the same process — the
+    order-dependence that only ever surfaces in whatever PR happens to reshuffle
+    the shard, and which would land on the PostgreSQL job rather than here.
+    """
+    mp = pytest.MonkeyPatch()
+    mp.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
     from tools.db.init_icdev_db import main as init_main
 
     db_path = tmp_path_factory.mktemp("rmfprod") / "base.db"
@@ -38,7 +44,8 @@ def base_db(tmp_path_factory):
         pass
     finally:
         sys.argv = argv
-    return db_path
+    yield db_path
+    mp.undo()
 
 
 @pytest.fixture()
