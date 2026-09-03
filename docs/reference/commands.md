@@ -188,6 +188,67 @@ python tools/builder/forge_validator.py --gate               # FORGE gate for ch
 
 ---
 
+## Cross-Fabric Posture Roll-Up (rmf-fab-02)
+```bash
+python -m tools.fabric.posture                    # human report, all declared fabrics
+python -m tools.fabric.posture --json
+python -m tools.fabric.posture --fabric <key>     # one fabric
+```
+UI: `/boundary/cato` -> "Cross-Fabric Posture"   API: `GET /boundary/api/fabric-posture`
+
+FIVE MEASURES per fabric, each stated beside ITS OWN denominator, because the
+denominators genuinely differ: `control_coverage` over the SCORED controls in the
+latest compliance snapshot, `evidence_freshness` over the controls that HAVE a
+cATO evidence item (never the full catalogue -- that would report three fresh
+controls against a 300-control baseline as 1% fresh when what is true is that 297
+were never collected), `open_cat1` over the CAT I findings RECORDED,
+`poam_age` over the OPEN POA&M items, `isa_expiry` over the live ISAs.
+
+TWO cATO SOURCES, LABELLED BY SCOPE AND NEVER BLENDED. `compliance/cato_monitor.py`
+is SYSTEM scope -- one registered project is one authorization boundary, counted in
+controls and evidence items. `security_canvas/continuous_authorization.py` is
+APPLICATION scope -- one row per deployed application, each a weighted blend of six
+live signals. An average of "62% of this boundary's controls carry fresh evidence"
+and "this application's six signals weight to 0.89" is a number with no denominator,
+and a number with no denominator cannot be wrong. So there is NO composite anywhere
+in the output: not the BDC scorer's 0-100 `readiness_score`/`band`/`weights` (its
+per-component detail is taken, its composite discarded) and not the stored
+`posture_score` (the recorded `ato_state` is carried instead).
+`assert_no_blended_score` walks the whole payload for those keys and the API route
+calls it BEFORE serialising -- a rule stated only as a comment is one nobody
+re-derives.
+
+THREE STATES PER MEASURE, NEVER MERGED. `measured` (the numbers were read -- and a
+measured 0 open CAT I findings is a REAL answer, which is why it is kept apart from
+the next one), `not_assessed` (source reachable, nothing recorded: `value` is None,
+NEVER 0 and NEVER 100), `source_unavailable` (the table or module could not be
+reached at all -- a migration that never ran and a writer that never ran send you to
+different fixes). Conflating the first two is how a project nobody scanned passes a
+STIG gate whose pass condition is literally `cat1_open == 0`.
+
+READ-ONLY BY CONSTRUCTION. `evaluate_authorization` INSERTs a `zig_continuous_ato`
+row on every call and `check_evidence_freshness` UPDATEs evidence status; a roll-up
+calling either would report evidence it had just manufactured. Neither name appears
+in the module and a test reads its AST to prove it, because a behavioural test still
+passes when a future edit puts the call behind a branch it does not take. The API
+route is GET with no POST sibling.
+
+Fabrics come from `tools.fabric.registry` (rmf-fab-01). Until that lands the roll-up
+reports `unmeasurable` and the panel says so in words -- an empty section is
+indistinguishable from a clean board, which is the defect this card exists to refuse.
+
+MEASURED on this deployment 2026-09-02, and the numbers are the finding: EVERY
+measure reads `not_assessed` or `source_unavailable` for every fabric.
+`compliance_twin_snapshots`, `poam_items`, `cato_evidence` and `stig_findings` all
+hold 0 rows, and `zig_continuous_ato` does not exist at all -- it is created lazily
+by `evaluate_authorization`, which has never been called. Note also that
+`cato_monitor._get_connection` demands a SQLite FILE be present before it opens
+anything, whatever `ICDEV_STORAGE_BACKEND` says, so from a worktree or a PostgreSQL
+deployment with no local `data/icdev.db` the system source reports
+`source_unavailable` carrying that reason VERBATIM. That is a pre-existing defect in
+`cato_monitor`, reported rather than papered over; `system_db_path` lets a caller
+that knows where its evidence lives point at it.
+
 ## Compliance Commands
 ```bash
 python tools/compliance/ssp_generator.py --project-id "sparkpilot"
