@@ -402,16 +402,22 @@ def _check_extract_to_map(conn, opportunity_id: str) -> Tuple[bool, str]:
 
 
 def _check_map_to_draft(conn, opportunity_id: str) -> Tuple[bool, str]:
-    """MAP->DRAFT: capability coverage >= 60%."""
+    """MAP->DRAFT: capability coverage >= 60%.
+
+    Reads proposal_compliance_matrix, THE ONE matrix (rmf-rfp-01). This used
+    to read pg_compliance_matrix, which held 0 rows for every opportunity, so
+    the gate reported "No compliance matrix entries found" regardless of what
+    the auto-populate route had written.
+    """
     rows = conn.execute(
-        "SELECT compliance_status FROM pg_compliance_matrix WHERE opportunity_id = %s",
+        "SELECT compliance_status FROM proposal_compliance_matrix WHERE opportunity_id = %s",
         (opportunity_id,),
     ).fetchall()
     if not rows:
         return False, "No compliance matrix entries found"
     total = len(rows)
     addressed = sum(
-        1 for r in rows if (r["compliance_status"] if isinstance(r, dict) else r[0]) in ("addressed", "partial")
+        1 for r in rows if (r["compliance_status"] if isinstance(r, dict) else r[0]) in ("compliant", "partial")
     )
     coverage = addressed / total if total > 0 else 0.0
     if coverage >= 0.60:
@@ -708,14 +714,14 @@ def generate_handoff(opportunity_id: str) -> Dict[str, Any]:
 
         # Capability coverage
         cmatrix_rows = conn.execute(
-            "SELECT compliance_status FROM pg_compliance_matrix WHERE opportunity_id = %s",
+            "SELECT compliance_status FROM proposal_compliance_matrix WHERE opportunity_id = %s",
             (opportunity_id,),
         ).fetchall()
         total_reqs = len(cmatrix_rows)
         addressed = sum(
             1
             for r in cmatrix_rows
-            if (r["compliance_status"] if isinstance(r, dict) else r[0]) in ("addressed", "partial")
+            if (r["compliance_status"] if isinstance(r, dict) else r[0]) in ("compliant", "partial")
         )
         coverage = addressed / total_reqs if total_reqs > 0 else 0.0
 

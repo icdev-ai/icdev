@@ -216,10 +216,11 @@ def _get_next_iteration(conn, opportunity_id: str, review_type: str) -> int:
 def _run_compliance_critic(opportunity_id: str, sections: List[Dict], review_type: str) -> List[Dict]:
     """Check Section M requirement coverage and shall statement gaps.
 
-    For each requirement in pg_compliance_matrix with source_section='M':
-        - 'gap' status        -> critical finding
-        - 'partial' status    -> major finding
-        - 'na' / 'addressed'  -> no finding
+    For each requirement in proposal_compliance_matrix (THE ONE matrix,
+    rmf-rfp-01) with requirement_type='M':
+        - 'not_addressed' / 'non_compliant' -> critical finding
+        - 'partial'                          -> major finding
+        - 'not_applicable' / 'compliant'     -> no finding
 
     Also checks formatting compliance (page/word limits) when available.
     """
@@ -227,18 +228,18 @@ def _run_compliance_critic(opportunity_id: str, sections: List[Dict], review_typ
     conn = _get_db()
 
     # ── Section M requirement coverage ────────────────────────────────
-    if _table_exists(conn, "pg_compliance_matrix"):
+    if _table_exists(conn, "proposal_compliance_matrix"):
         matrix_rows = conn.execute(
-            "SELECT id, requirement_id, requirement_text, compliance_status, "
-            "assigned_section, evaluation_factor "
-            "FROM pg_compliance_matrix WHERE opportunity_id = %s AND source_section = 'M'",
+            "SELECT id, section_ref, requirement_text, compliance_status, "
+            "proposal_section_id, evaluation_factor "
+            "FROM proposal_compliance_matrix WHERE opportunity_id = %s AND requirement_type = 'M'",
             (opportunity_id,),
         ).fetchall()
 
         total_reqs = len(matrix_rows)
-        gaps = [r for r in matrix_rows if r["compliance_status"] == "gap"]
+        gaps = [r for r in matrix_rows if r["compliance_status"] in ("not_addressed", "non_compliant")]
         partials = [r for r in matrix_rows if r["compliance_status"] == "partial"]
-        addressed = [r for r in matrix_rows if r["compliance_status"] == "addressed"]
+        addressed = [r for r in matrix_rows if r["compliance_status"] == "compliant"]
 
         for gap_req in gaps:
             findings.append(
@@ -252,9 +253,9 @@ def _run_compliance_critic(opportunity_id: str, sections: List[Dict], review_typ
                     ),
                     "recommendation": (
                         f"Create or assign a proposal section addressing requirement "
-                        f"'{gap_req['requirement_id']}'. Map to Section M evaluation criteria."
+                        f"'{gap_req['section_ref']}'. Map to Section M evaluation criteria."
                     ),
-                    "section_id": gap_req["assigned_section"],
+                    "section_id": gap_req["proposal_section_id"],
                 }
             )
 
@@ -269,10 +270,10 @@ def _run_compliance_critic(opportunity_id: str, sections: List[Dict], review_typ
                         f"as a weakness."
                     ),
                     "recommendation": (
-                        f"Expand response for requirement '{part_req['requirement_id']}' "
+                        f"Expand response for requirement '{part_req['section_ref']}' "
                         f"to fully address all evaluation sub-criteria."
                     ),
-                    "section_id": part_req["assigned_section"],
+                    "section_id": part_req["proposal_section_id"],
                 }
             )
 
@@ -299,11 +300,12 @@ def _run_compliance_critic(opportunity_id: str, sections: List[Dict], review_typ
                 "severity": "minor",
                 "category": "compliance",
                 "finding_text": (
-                    "Compliance matrix (pg_compliance_matrix) not populated. "
+                    "Compliance matrix (proposal_compliance_matrix) not present on this database. "
                     "Cannot verify Section M requirement coverage."
                 ),
                 "recommendation": (
-                    f"Run: python tools/govcon/compliance_populator.py --populate --opp-id {opportunity_id} --json"
+                    f"Upload the RFP (POST /rfp/upload with opportunity_id={opportunity_id}) or "
+                    f"POST /api/proposals/opportunities/{opportunity_id}/compliance/batch with the parsed solicitation."
                 ),
                 "section_id": None,
             }

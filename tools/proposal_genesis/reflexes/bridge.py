@@ -9,7 +9,7 @@ Assembles handoff from:
   - CRM data (pg_crm_accounts, pg_crm_contacts, pg_crm_interactions)
   - Win themes (pg_win_themes)
   - Cost volumes (pg_cost_volumes)
-  - Compliance matrix (pg_compliance_matrix)
+  - Compliance matrix (proposal_compliance_matrix -- the one matrix, rmf-rfp-01)
   - Teaming partners (pg_teaming_workshare)
   - Capture plans (pg_capture_plans)
 
@@ -130,7 +130,7 @@ def _get_compliance_summary(opp_id: str) -> Dict[str, int]:
     try:
         rows = conn.execute(
             "SELECT compliance_status, COUNT(*) as cnt "
-            "FROM pg_compliance_matrix WHERE opportunity_id = %s "
+            "FROM proposal_compliance_matrix WHERE opportunity_id = %s "
             "GROUP BY compliance_status",
             (opp_id,),
         ).fetchall()

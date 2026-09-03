@@ -7783,3 +7783,21 @@ PR. A task correcting one file's weight writes its own
 `args/ci_test_timings/<task-id>.json` instead; snapshots merge
 newest-`generated_at`-wins per path, the same collision-free discipline `core.d/`
 gave `core.txt`.
+
+## RFP shredder + the ONE compliance matrix (rmf-rfp-01)
+
+```bash
+python tools/govcon/compliance_matrix_builder.py --opportunity-id "opp-xxx" --ingest solicitation.pdf --json  # parse + store L/M/C rows
+python tools/govcon/compliance_matrix_builder.py --opportunity-id "opp-xxx" --coverage --json
+python tools/govcon/compliance_matrix_builder.py --opportunity-id "opp-xxx" --gate --json
+python tools/govcon/solicitation_parser.py --input solicitation.pdf --json                  # the parse the routes consume
+# Routes (the matrix is populated by a ROUTE, not only this CLI):
+#   POST /rfp/upload                      multipart rfp_file [+ profile, opportunity_id] -> workbench session seeded
+#                                         from Section L; with opportunity_id, the L/M/C matrix is built too
+#   POST /api/proposals/opportunities/<id>/compliance/batch
+#        {"items": [...]}                 hand-built rows (unchanged)
+#        {"parsed": {...}, "section_text": {"L": "...", "M": "...", "C": "..."}}
+#                                         solicitation_parser output and/or raw section bodies
+# ONE TABLE: proposal_compliance_matrix. pg_compliance_matrix was folded in and
+# dropped by migration 20260903185253; vocabulary in tools/govcon/compliance_matrix_schema.py.
+```

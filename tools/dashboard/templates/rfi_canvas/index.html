@@ -60,6 +60,50 @@
 
     <div id="upload-error" style="display:none;background:#2d0a0a;border:1px solid #e94560;color:#f87171;border-radius:5px;padding:10px 14px;margin-top:12px;font-size:12px;"></div>
 
+    <!-- RFP upload (rmf-rfp-01): Section L instructions become the response sections;
+         an opportunity id also populates that opportunity's L/M compliance matrix. -->
+    <div style="border-top:1px solid #1e3a6e;margin-top:18px;padding-top:14px;">
+      <div style="color:#7ab3f0;font-weight:600;font-size:13px;margin-bottom:8px;">📐 Upload a Solicitation (RFP / RFQ)</div>
+      <form id="rfp-upload-form" enctype="multipart/form-data">
+        <div style="display:grid;grid-template-columns:1fr 240px 240px 220px;gap:12px;align-items:end;">
+          <div>
+            <label style="display:block;color:#b8d0e8;font-size:12px;font-weight:600;margin-bottom:6px;">RFP Document <span style="color:#e94560;">*</span></label>
+            <input type="file" id="rfp-file-input" name="rfp_file" accept=".pdf,.docx,.doc" style="width:100%;color:#b8d0e8;font-size:12px;">
+            <div id="rfp-file-selected" style="color:#4ade80;font-size:11px;margin-top:4px;"></div>
+          </div>
+          <div>
+            <label style="display:block;color:#b8d0e8;font-size:12px;font-weight:600;margin-bottom:6px;">Company Profile</label>
+            <select name="profile" style="width:100%;background:#050d1f;color:#b8d0e8;border:1px solid #1a3560;border-radius:5px;padding:8px 10px;font-size:13px;">
+              {% for p in profiles %}
+              <option value="{{ p }}" {% if p == 'own_company' %}selected{% endif %}>{{ p|replace('_',' ')|title }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label style="display:block;color:#b8d0e8;font-size:12px;font-weight:600;margin-bottom:6px;">Opportunity (builds the L/M matrix)</label>
+            {% if opportunities %}
+            <select name="opportunity_id" style="width:100%;background:#050d1f;color:#b8d0e8;border:1px solid #1a3560;border-radius:5px;padding:8px 10px;font-size:13px;">
+              <option value="">— none (session only) —</option>
+              {% for o in opportunities %}
+              <option value="{{ o.id }}">{{ o.solicitation_number }} — {{ (o.title or '')[:48] }}</option>
+              {% endfor %}
+            </select>
+            {% else %}
+            <input type="text" name="opportunity_id" placeholder="opportunity id (optional)" style="width:100%;background:#050d1f;color:#b8d0e8;border:1px solid #1a3560;border-radius:5px;padding:8px 10px;font-size:13px;">
+            {% endif %}
+          </div>
+          <div>
+            <button type="submit" id="rfp-upload-btn" disabled
+              style="width:100%;background:#0f3460;color:#7ab3f0;border:1px solid #1e3a6e;border-radius:5px;padding:10px 12px;font-size:13px;font-weight:600;cursor:not-allowed;">
+              📐 Parse RFP &amp; Seed from Section L
+            </button>
+          </div>
+        </div>
+      </form>
+      <div id="rfp-upload-error" style="display:none;background:#2d0a0a;border:1px solid #e94560;color:#f87171;border-radius:5px;padding:10px 14px;margin-top:12px;font-size:12px;"></div>
+      <div style="color:#5a6e8c;font-size:11px;margin-top:6px;">One workbench section per Section L instruction (L.x). With an opportunity selected, Section L/M/C requirements are written to that opportunity's compliance matrix — the same one <code>/api/proposals/…/compliance</code> reads.</div>
+    </div>
+
     <!-- Workflow steps -->
     <div style="border-top:1px solid #1e3a6e;margin-top:18px;padding-top:14px;">
       <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;text-align:center;">
@@ -176,6 +220,51 @@ dropZone.addEventListener('drop', (e) => {
     fileInput.dispatchEvent(new Event('change'));
   }
 });
+
+// ── RFP upload (rmf-rfp-01): Section L seeds the workbench; an opportunity id builds its L/M matrix ──
+(function () {
+  const rfpForm = document.getElementById('rfp-upload-form');
+  if (!rfpForm) return;
+  const rfpInput = document.getElementById('rfp-file-input');
+  const rfpBtn = document.getElementById('rfp-upload-btn');
+  const rfpName = document.getElementById('rfp-file-selected');
+  const rfpErr = document.getElementById('rfp-upload-error');
+  rfpInput.addEventListener('change', function () {
+    if (rfpInput.files.length) {
+      rfpName.textContent = rfpInput.files[0].name;
+      rfpBtn.disabled = false;
+      rfpBtn.style.cursor = 'pointer';
+    }
+  });
+  rfpForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    rfpBtn.disabled = true;
+    rfpErr.style.display = 'none';
+    rfpBtn.textContent = 'Parsing RFP...';
+    fetch('/rfp/upload', {method: 'POST', body: new FormData(rfpForm)})
+      .then(r => r.json())
+      .then(d => {
+        if (d.error) {
+          rfpErr.textContent = d.error;
+          rfpErr.style.display = 'block';
+          rfpBtn.disabled = false;
+          rfpBtn.textContent = '📐 Parse RFP & Seed from Section L';
+          return;
+        }
+        if (d.matrix && d.matrix.status === 'error') {
+          // The session exists; say what did not happen instead of hiding it.
+          alert('Session created, but the compliance matrix was not built: ' + d.matrix.error);
+        }
+        window.location.href = d.redirect;
+      })
+      .catch(err => {
+        rfpErr.textContent = 'Upload failed: ' + err.message;
+        rfpErr.style.display = 'block';
+        rfpBtn.disabled = false;
+        rfpBtn.textContent = '📐 Parse RFP & Seed from Section L';
+      });
+  });
+})();
 
 document.getElementById('upload-form').addEventListener('submit', function(e) {
   e.preventDefault();

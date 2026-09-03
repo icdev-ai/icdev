@@ -3,6 +3,8 @@
 Routes:
   GET  /rfi/                                               — upload + session list
   POST /rfi/upload                                         — upload PDF, parse, create session
+  POST /rfp/upload                                         — upload a solicitation; Section L seeds the
+                                                             session; opportunity_id -> L/M matrix (rmf-rfp-01)
   GET  /rfi/<session_id>                                   — workbench for a session
   GET  /api/rfi/<session_id>/sections                      — list sections JSON
   POST /api/rfi/<session_id>/sections/<sid>/generate       — AI generate
@@ -49,7 +51,30 @@ def _allowed(filename):
 def rfi_index():
     sessions = wb.list_sessions()
     profiles = wb.list_profiles()
-    return render_template("rfi_canvas/index.html", sessions=sessions, profiles=profiles)
+    opportunities = _list_open_opportunities()
+    return render_template(
+        "rfi_canvas/index.html", sessions=sessions, profiles=profiles, opportunities=opportunities,
+    )
+
+
+def _list_open_opportunities(limit: int = 100) -> list:
+    """Open proposal opportunities an RFP upload can build a matrix for.
+
+    Best-effort: a database without the proposals schema yields [] and the
+    upload form still works with a typed opportunity id.
+    """
+    try:
+        db = wb.get_db()
+        rows = db.execute(
+            "SELECT id, solicitation_number, title FROM proposal_opportunities "
+            "WHERE status NOT IN ('won', 'lost', 'no_bid', 'cancelled', 'submitted') "
+            "ORDER BY updated_at DESC LIMIT %s",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception as exc:  # noqa: BLE001 - the form degrades to a text field
+        logger.debug("open opportunities unavailable for the RFP upload form: %s", exc)
+        return []
 
 
 @rfi_canvas_bp.route("/rfi/upload", methods=["POST"])
@@ -87,6 +112,72 @@ def rfi_upload():
     })
 
 
+@rfi_canvas_bp.route("/rfp/upload", methods=["POST"])
+def rfp_upload():
+    """Upload a solicitation (RFP/RFQ), seed a workbench session from Section L,
+    and -- when an opportunity_id is supplied -- populate that opportunity's
+    L/M compliance matrix through compliance_matrix_builder (rmf-rfp-01).
+
+    Mirrors POST /rfi/upload. solicitation_parser had no route and no UI
+    before this; its output reached nothing but response_drafter.
+    """
+    if "rfp_file" not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+    f = request.files["rfp_file"]
+    if not f.filename or not _allowed(f.filename):
+        return jsonify({"error": "Only PDF and DOCX files are accepted"}), 400
+
+    profile_name = request.form.get("profile", "own_company")
+    opportunity_id = (request.form.get("opportunity_id") or "").strip() or None
+    _UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    upload_path = _UPLOAD_DIR / f.filename
+    f.save(str(upload_path))
+
+    parse_error = None
+    try:
+        from tools.govcon.solicitation_parser import parse_solicitation
+        parsed = parse_solicitation(str(upload_path))
+    except Exception as exc:
+        logger.warning("RFP parse failed: %s", exc)
+        parse_error = str(exc)
+        parsed = {
+            "source": "solicitation_document",
+            "solicitation_number": "RFP-UNKNOWN",
+            "title": f.filename,
+            "section_l_instructions": [],
+            "section_m_factors": [],
+            "volume_structure": [],
+        }
+
+    session_id = wb.create_session(
+        rfi_number=parsed.get("solicitation_number") or "RFP-UNKNOWN",
+        rfi_title=parsed.get("title") or f.filename,
+        profile_name=profile_name,
+        upload_filename=f.filename,
+        parsed_data=parsed,
+    )
+    parse_summary = wb.get_parse_summary(wb.get_session(session_id))
+
+    matrix = None
+    if opportunity_id:
+        try:
+            from tools.govcon.compliance_matrix_builder import ingest_solicitation
+            matrix = ingest_solicitation(str(upload_path), opportunity_id, parsed=parsed)
+        except Exception as exc:
+            logger.warning("RFP matrix build failed for %s: %s", opportunity_id, exc)
+            matrix = {"status": "error", "opportunity_id": opportunity_id, "error": str(exc)}
+
+    return jsonify({
+        "session_id": session_id,
+        "redirect": f"/rfi/{session_id}",
+        "document_kind": "rfp",
+        "parse_summary": parse_summary,
+        "parse_error": parse_error,
+        "opportunity_id": opportunity_id,
+        "matrix": matrix,
+    })
+
+
 @rfi_canvas_bp.route("/rfi/<session_id>")
 def rfi_workbench_page(session_id):
     session = wb.get_session(session_id)
@@ -94,7 +185,11 @@ def rfi_workbench_page(session_id):
         abort(404)
     sections = wb.get_sections(session_id)
     profiles = wb.list_profiles()
-    return render_template("rfi_canvas/workbench.html", session=session, sections=sections, profiles=profiles)
+    parse_summary = wb.get_parse_summary(session)
+    return render_template(
+        "rfi_canvas/workbench.html",
+        session=session, sections=sections, profiles=profiles, parse_summary=parse_summary,
+    )
 
 
 # ── API: sections ─────────────────────────────────────────────────────────────
