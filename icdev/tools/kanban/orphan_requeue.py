@@ -69,9 +69,16 @@ from __future__ import annotations
 
 import sys
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from icdev.core.paths import repo_root
+# sys.path BOOTSTRAP first, so `python tools/kanban/orphan_requeue.py` reaches
+# main() (kax-conflict-04); then the ONE root resolver.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from icdev.core.paths import repo_root  # noqa: E402
 
 BASE_DIR = repo_root(__file__)
 if str(BASE_DIR) not in sys.path:

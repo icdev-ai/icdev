@@ -19,8 +19,15 @@ requeues proven orphans through the field-set owner.
 IMPLEMENTATION_STATUS = "full"
 
 import sys
+from pathlib import Path
 
-from icdev.core.paths import repo_root
+# sys.path BOOTSTRAP first, so `python tools/genesis/reflexes/kanban_stranded_reflex.py`
+# reaches main() (kax-conflict-04); then the ONE root resolver.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from icdev.core.paths import repo_root  # noqa: E402
 
 BASE_DIR = repo_root(__file__)
 if str(BASE_DIR) not in sys.path:
