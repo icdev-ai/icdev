@@ -68,6 +68,7 @@ bare handler lacked, without any per-route wiring:
 | rmf-ui-12 | `/stig-manager` | `/security/stig-manager` | SDC (owns STIGs) | `tests/test_sdc_stig_manager_page.py` |
 | rmf-ui-13 | `/sbd` | `/security/sbd` | SDC | `tests/test_sdc_sbd_page.py` |
 | rmf-ui-07 | `/poam` | `/boundary/poam` | BDC | `tests/test_bdc_poam_page.py` |
+| rmf-ui-08 | `/control-inheritance` | `/boundary/control-inheritance` | BDC | `tests/test_bdc_control_inheritance_page.py` |
 
 `/prod-audit` is a visibility surface (production-readiness checks, read-only
 posture), which is SDC's ground; its `/api/prod-audit/*` blueprint
@@ -94,6 +95,14 @@ the `/api/poam/*` routes stay in `app.py`.
 `tests/test_history.py::test_poam_route_exists` was NOT touched: it GETs the
 NETWORK blueprint's own `/poam` (`/network/poam` at runtime), a different page
 that never went through `app.py`.
+
+`/control-inheritance` (rmf-ui-08) is the CSP vs customer responsibility
+mapping (inherited / shared / customer-owned controls per provider), which is
+boundary/inheritance content by definition, so it lands on BDC. The sweep saw
+no `/api/` prefix in its template because the script composes its URLs from
+`const API = '/api/control-inheritance'`; it calls `/csps`, `/summary`,
+`/model`, `/gap` and `/controls` on that prefix, all served by the unchanged
+`tools/dashboard/api/control_inheritance.py` blueprint.
 
 ## The shape the follow-up cards copy
 

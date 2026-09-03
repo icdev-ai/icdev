@@ -269,7 +269,11 @@ def test_control_inheritance_summary_marked_reference_model(icdev_db, monkeypatc
 
 
 def test_control_inheritance_template_has_reference_badge():
-    tpl = (Path(ci_mod.__file__).resolve().parent.parent / "templates" / "control_inheritance.html")
+    # rmf-ui-08: the page moved onto the Boundary canvas template directory.
+    tpl = (
+        Path(ci_mod.__file__).resolve().parent.parent
+        / "templates" / "boundary_canvas" / "control_inheritance.html"
+    )
     html = tpl.read_text(encoding="utf-8")
     assert "Typical inheritance (reference)" in html, (
         "the consuming page must badge the reference-model posture"
