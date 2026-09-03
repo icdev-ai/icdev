@@ -1164,7 +1164,7 @@ DEVSECOPS_ZTA_TABLES: Dict[str, str] = {
                 'data', 'visibility_analytics', 'automation_orchestration', 'overall'
             )),
             score REAL CHECK(score >= 0.0 AND score <= 1.0),
-            maturity_level TEXT CHECK(maturity_level IN ('traditional', 'advanced', 'optimal')),
+            maturity_level TEXT CHECK(maturity_level IN ('traditional', 'advanced', 'optimal', 'unmeasured')),
             evidence TEXT,
             assessed_by TEXT DEFAULT 'icdev-devsecops-agent',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

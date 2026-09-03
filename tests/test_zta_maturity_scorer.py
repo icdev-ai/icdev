@@ -41,11 +41,15 @@ CREATE TABLE IF NOT EXISTS projects (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- `implementation_status`, matching init_icdev_db.py and every live database.
+-- This fixture used to declare `status`, a column that exists NOWHERE, so the
+-- whole suite passed while the scorer raised UndefinedColumn against the real
+-- schema (rmf-zt-02).
 CREATE TABLE IF NOT EXISTS project_controls (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id TEXT NOT NULL,
     control_id TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'planned',
+    implementation_status TEXT NOT NULL DEFAULT 'planned',
     UNIQUE(project_id, control_id)
 );
 
@@ -131,7 +135,8 @@ def zta_db(tmp_path):
     )
     for control_id in TRACED_CONTROLS:
         conn.execute(
-            "INSERT INTO project_controls (project_id, control_id, status) VALUES (%s, %s, %s)",
+            "INSERT INTO project_controls (project_id, control_id, implementation_status) "
+            "VALUES (%s, %s, %s)",
             (
                 PROJECT_ID,
                 control_id,
@@ -226,11 +231,43 @@ class TestScorePillar:
         assert result["pillar"] == "network"
 
     def test_score_is_between_0_and_1(self, zta_db):
+        # TRACED_PILLAR, not "user_identity": the fixture seeds control rows for
+        # this pillar ONLY, and since rmf-zt-02 a pillar with no rows anywhere
+        # scores None/'unmeasured' rather than a fabricated 0.0. Asserting a
+        # range needs a pillar that was actually MEASURED — the assertion is
+        # unchanged, its input is narrowed to one it can be true of.
         with _patch_db(zta_db), _patch_config():
-            result = score_pillar(PROJECT_ID, "user_identity")
+            result = score_pillar(PROJECT_ID, TRACED_PILLAR)
+        assert result["score"] is not None
         assert 0.0 <= result["score"] <= 1.0
 
+    def test_pillar_with_no_evidence_anywhere_is_unmeasured(self, zta_db):
+        # The other half of the same fact: "user_identity" has no control rows
+        # and no posture evidence, so it must report UNMEASURED rather than the
+        # 0.0/'traditional' the old scorer produced (rmf-zt-02).
+        with _patch_db(zta_db), _patch_config():
+            result = score_pillar(PROJECT_ID, "user_identity")
+        assert result["score"] is None
+        assert result["maturity_level"] == "unmeasured"
+
     def test_score_persisted_to_db(self, zta_db):
+        # TRACED_PILLAR for the same reason as above: "data" has no seeded rows,
+        # so it now persists a NULL score, and this test is about PERSISTENCE.
+        with _patch_db(zta_db), _patch_config():
+            score_pillar(PROJECT_ID, TRACED_PILLAR)
+        conn = _tconnect(zta_db)
+        row = conn.execute(
+            "SELECT * FROM zta_maturity_scores WHERE project_id = %s AND pillar = %s",
+            (PROJECT_ID, TRACED_PILLAR),
+        ).fetchone()
+        conn.close()
+        assert row is not None
+        assert row["pillar"] == TRACED_PILLAR
+        assert row["score"] is not None
+
+    def test_unmeasured_pillar_is_still_persisted(self, zta_db):
+        # An unmeasured pillar must leave a ROW — a missing row is
+        # indistinguishable from an assessment that never ran.
         with _patch_db(zta_db), _patch_config():
             score_pillar(PROJECT_ID, "data")
         conn = _tconnect(zta_db)
@@ -240,8 +277,8 @@ class TestScorePillar:
         ).fetchone()
         conn.close()
         assert row is not None
-        assert row["pillar"] == "data"
-        assert row["score"] is not None
+        assert row["score"] is None
+        assert row["maturity_level"] == "unmeasured"
 
 
 # ---------------------------------------------------------------------------

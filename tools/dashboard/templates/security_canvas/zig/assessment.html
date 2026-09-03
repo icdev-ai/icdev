@@ -13,6 +13,21 @@
 .score-box{background:#2a2a4a;border-radius:8px;padding:14px;text-align:center;}
 .score-val{font-size:1.6rem;font-weight:700;color:#e94560;}
 .score-lbl{font-size:0.75rem;color:#aaa;margin-top:4px;}
+/* rmf-zt-02 — the two ZTA maturity numbers, side by side and never merged. */
+.zta-pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:14px;}
+.zta-num{background:#2a2a4a;border-radius:8px;padding:14px 16px;}
+.zta-num-lbl{font-size:0.78rem;color:#cbd5e1;font-weight:600;}
+.zta-sub{color:#7a869a;font-weight:400;}
+.zta-num-val{font-size:1.5rem;font-weight:700;color:#4ade80;margin-top:6px;}
+.zta-attested{color:#f59e0b;}
+.zta-unmeasured{color:#8b93a5;font-size:0.8rem;font-weight:600;letter-spacing:0.04em;}
+.zta-num-band{font-size:0.7rem;color:#8b93a5;margin-top:2px;text-transform:uppercase;}
+.zta-note{background:#20203a;border-left:3px solid #60a5fa;border-radius:4px;padding:10px 14px;margin:12px 0;color:#c3cad6;font-size:0.8rem;line-height:1.5;}
+.zta-note-warn{border-left-color:#f59e0b;}
+.zta-table{width:100%;border-collapse:collapse;margin-top:14px;font-size:0.8rem;}
+.zta-table th{text-align:left;color:#8b93a5;font-weight:600;padding:6px 8px;border-bottom:1px solid #2a2a4a;}
+.zta-table td{padding:6px 8px;border-bottom:1px solid #22223a;color:#c3cad6;}
+.zta-rule{color:#4a5468;letter-spacing:-1px;}
 </style>
 {% endblock %}
 {% block content %}
@@ -58,6 +73,115 @@
   </div>
   {% endif %}
 
+  {# ── DoD 7-Pillar ZTA Posture (rmf-zt-02) ──────────────────────────────
+     THE TWO NUMBERS ARE RENDERED SEPARATELY AND LABELLED, and are never
+     combined into one figure. "Evidence-backed" is what this deployment can
+     PROVE (a zta_posture_evidence row carrying evidence_data, or a recorded
+     NIST 800-53 control status); "self-attested" is what it has merely TICKED
+     (status='current' with evidence_data NULL). One number cannot say both,
+     and the blended one is the one that reads as reassurance.
+
+     An UNMEASURED pillar draws a dashed rule, never an empty bar — an empty bar
+     is exactly what a MEASURED 0% looks like, and those two send a reader to
+     opposite places. #}
+  <div class="assess-card">
+    <h3 style="color:#fff;margin:0 0 4px;">DoD 7-Pillar ZTA Posture</h3>
+    <div style="color:#888;font-size:0.78rem;margin-bottom:16px;">
+      Two maturity numbers, reported separately. They are never merged.
+    </div>
+
+    {% if zta and zta.get('error') %}
+    <div class="zta-note zta-note-warn">
+      <strong>ZTA posture unavailable.</strong> {{ zta.error }}
+      The panel could not read the store.
+      <em>This is not a clean bill of health.</em>
+    </div>
+
+    {% elif not zta or zta.state == 'never_assessed' %}
+    <div class="zta-note zta-note-warn">
+      <strong>Never assessed.</strong> No ZTA maturity score has ever been
+      persisted for this deployment. Nobody has looked.
+      <em>This is not a clean bill of health.</em>
+      <div style="margin-top:8px;color:#888;font-family:monospace;font-size:0.75rem;">
+        python tools/devsecops/zta_maturity_scorer.py --project-id &lt;id&gt; --all --human
+      </div>
+    </div>
+
+    {% else %}
+    <div class="zta-pair">
+      <div class="zta-num">
+        <div class="zta-num-lbl">Evidence-backed <span class="zta-sub">(proven)</span></div>
+        <div class="zta-num-val {{ 'zta-unmeasured' if zta.evidence_backed_score is none }}">
+          {% if zta.evidence_backed_score is none %}UNMEASURED{% else %}{{ (zta.evidence_backed_score * 100)|round(1) }}%{% endif %}
+        </div>
+        <div class="zta-num-band">{{ zta.evidence_backed_maturity|upper }}</div>
+      </div>
+      <div class="zta-num">
+        <div class="zta-num-lbl">Self-attested <span class="zta-sub">(claimed)</span></div>
+        <div class="zta-num-val zta-attested {{ 'zta-unmeasured' if zta.self_attested_score is none }}">
+          {% if zta.self_attested_score is none %}NOTHING CLAIMED{% else %}{{ (zta.self_attested_score * 100)|round(1) }}%{% endif %}
+        </div>
+        <div class="zta-num-band">{{ zta.self_attested_maturity|upper }}</div>
+      </div>
+    </div>
+
+    {% if zta.state == 'unmeasured' %}
+    <div class="zta-note zta-note-warn">
+      <strong>UNMEASURED.</strong> An assessment ran and no pillar had an
+      evidence-backed signal behind it. A self-attested figure is a count of
+      ticks, not a measurement — do not read it as posture.
+      <em>This is not a clean bill of health.</em>
+    </div>
+    {% elif zta.state == 'partial' %}
+    <div class="zta-note">
+      <strong>Partial coverage.</strong>
+      {{ zta.measured_pillars|length }} of {{ zta.declared_pillars }} pillars had
+      an evidence-backed signal. The unmeasured ones are excluded from the score
+      above, so it describes only the measured subset.
+    </div>
+    {% endif %}
+
+    <table class="zta-table">
+      <thead>
+        <tr>
+          <th>Pillar</th>
+          <th>Evidence-backed</th>
+          <th>Self-attested</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in zta.pillars %}
+        <tr>
+          <td>{{ p.label }}</td>
+          <td>
+            {% if p.score is none %}
+            <span class="zta-rule">&#9472;&#9472;&#9472;&#9472;&#9472;</span>
+            <span class="zta-unmeasured">UNMEASURED</span>
+            {% else %}
+            {{ (p.score * 100)|round(1) }}%
+            <span class="zta-num-band">{{ p.maturity_level }}</span>
+            {% endif %}
+          </td>
+          <td class="zta-attested">
+            {% if p.self_attested_score is none %}
+            <span class="zta-unmeasured">&mdash;</span>
+            {% else %}
+            {{ (p.self_attested_score * 100)|round(1) }}%
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% if zta.assessed_at %}
+    <div style="color:#666;font-size:0.72rem;margin-top:10px;">
+      Last assessed {{ zta.assessed_at }} &middot; read-only, this page runs no assessment.
+    </div>
+    {% endif %}
+    {% endif %}
+  </div>
+
   <div class="assess-card">
     <h3 style="color:#fff;margin:0 0 16px;">What Gets Assessed</h3>
     <ul style="color:#aaa;line-height:1.8;font-size:0.85rem;margin:0;padding-left:20px;">
@@ -65,7 +189,8 @@
       <li>Capability implementation status across all 42 target-level capabilities</li>
       <li>Per-pillar weighted maturity score (7 pillars × individual weights)</li>
       <li>FY2027 readiness percentage (Discovery + Phase 1 + Phase 2)</li>
-      <li>ZTA posture bridge from existing <code>zta_maturity_scorer.py</code> signals</li>
+      <li>ZTA posture bridge from existing <code>zta_maturity_scorer.py</code> signals —
+          shown above as TWO numbers (evidence-backed vs self-attested), never merged</li>
     </ul>
   </div>
 

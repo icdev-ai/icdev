@@ -212,13 +212,23 @@ def handle_zta_posture_check(args: dict) -> dict:
         return {"error": "zta_maturity_scorer not available"}
 
     result = score_all(project_id)
+    # rmf-zt-02: overall_score is None when NO pillar had an evidence-backed
+    # signal. `cato_ready` is then None too, never False — "not ready" and "we
+    # have not looked" send an assessor to different places, and only the first
+    # is a finding about the system.
+    overall = result.get("overall_score")
     posture = {
         "project_id": project_id,
-        "overall_score": result.get("overall_score", 0),
-        "overall_maturity": result.get("overall_maturity", "traditional"),
+        "overall_score": overall,
+        "overall_maturity": result.get("overall_maturity") or "unmeasured",
         "pillar_scores": result.get("pillar_scores", {}),
+        # The second number, carried through separately and never merged.
+        "self_attested_score": result.get("self_attested_score"),
+        "self_attested_maturity": result.get("self_attested_maturity"),
+        "measured_pillars": result.get("measured_pillars", []),
+        "unmeasured_pillars": result.get("unmeasured_pillars", []),
         "weakest_pillars": result.get("weakest_pillars", []),
-        "cato_ready": result.get("overall_score", 0) >= 0.34,
+        "cato_ready": None if overall is None else overall >= 0.34,
         "recommendation": result.get("recommendation", ""),
     }
     return posture
