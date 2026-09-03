@@ -5214,8 +5214,15 @@ def create_app(testing: bool = False) -> Flask:
 
     @app.route("/fedramp-20x")
     def fedramp_20x_page():
-        """FedRAMP 20x KSI Dashboard — KSI evidence generation, maturity levels, authorization package (Phase 53, D338)."""
-        return render_template("fedramp_20x.html")
+        """FedRAMP 20x KSI Dashboard — MIGRATED to the Boundary canvas (rmf-ui-06).
+
+        The governed page is ``/boundary/fedramp-20x`` on
+        tools/boundary_canvas/blueprint.py, where it is registry-registered,
+        RBAC-guarded and IQE-dispatchable. This handler stays as a redirect so
+        a bookmark, an e2e spec or a nav link that still names the old URL
+        lands on the page rather than a 404 — never a dropped page.
+        """
+        return redirect("/boundary/fedramp-20x", code=301)
 
     @app.route("/evidence")
     def evidence_page():

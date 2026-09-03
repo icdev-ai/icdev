@@ -1640,6 +1640,22 @@ def create_boundary_blueprint():
         """ATO Compliance Dashboard — control tracking, RMF stages, artifact readiness, crosswalk."""
         return render_template("boundary_canvas/ato_compliance.html")
 
+    # ── FedRAMP 20x KSI Dashboard (rmf-ui-06) ────────────────────────────────
+    #
+    # Migrated from a bare `@app.route("/fedramp-20x")` in tools/dashboard/app.py
+    # -- an RMF ARTIFACT surface (KSI evidence, maturity levels, authorization
+    # package) that had no registry entry, no RBAC guard, no completeness gate
+    # and no IQE dispatch, and was an orphan until rmf-inert-01 linked it. On
+    # this blueprint it inherits all four by construction, exactly as the
+    # rmf-ui-01 exemplar above. The page drives the UNCHANGED /api/fedramp-20x/*
+    # blueprint -- only the PAGE route moved; the old URL is a 301 here.
+
+    @bp.route("/fedramp-20x")
+    @bdc_login_required
+    def bdc_fedramp_20x_page():
+        """FedRAMP 20x KSI Dashboard — KSI evidence generation, maturity levels, authorization package."""
+        return render_template("boundary_canvas/fedramp_20x.html")
+
     @bp.route("/api/fabric-posture", methods=["GET"])
     @bdc_login_required
     def bdc_api_fabric_posture():

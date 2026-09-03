@@ -9,7 +9,7 @@ const CANVASES = [
   { name: 'Supply Chain SCRM',  path: '/supply_chain' },
   { name: 'Digital Twin',       path: '/digital-twin' },
   { name: 'OSCAL',              path: '/oscal' },
-  { name: 'FedRAMP 20x',        path: '/fedramp-20x' },
+  { name: 'FedRAMP 20x',        path: '/boundary/fedramp-20x' },
   { name: 'Strategos',          path: '/strategos' },
   { name: 'Innovation',         path: '/innovation' },
   { name: 'CPMP',               path: '/cpmp' },

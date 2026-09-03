@@ -93,7 +93,7 @@ def test_page_loads(driver, results):
     """Page renders with correct heading and no server errors."""
     print("\n[1] Page load")
     try:
-        driver.get(f"{BASE_URL}/fedramp-20x")
+        driver.get(f"{BASE_URL}/boundary/fedramp-20x")
         WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.TAG_NAME, "h1"))
         )
@@ -287,7 +287,7 @@ def test_no_js_errors(driver, results):
     """No SEVERE JavaScript console errors on the page (excluding favicon)."""
     print("\n[10] JS errors")
     try:
-        driver.get(f"{BASE_URL}/fedramp-20x")
+        driver.get(f"{BASE_URL}/boundary/fedramp-20x")
         time.sleep(1)
         errors = check_js_errors(driver)
         if errors:
