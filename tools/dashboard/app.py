@@ -5355,8 +5355,15 @@ def create_app(testing: bool = False) -> Flask:
 
     @app.route("/cato")
     def cato_page():
-        """Continuous ATO — real-time ATO health score and evidence freshness."""
-        return render_template("cato.html")
+        """Continuous ATO Health — MIGRATED to the Boundary canvas (rmf-ui-05).
+
+        The governed page is ``/boundary/cato-health`` on
+        tools/boundary_canvas/blueprint.py, where it is registry-registered,
+        RBAC-guarded and IQE-dispatchable. This handler stays as a redirect so
+        a bookmark, an e2e spec or a nav link that still names the old URL
+        lands on the page rather than a 404 — never a dropped page.
+        """
+        return redirect("/boundary/cato-health", code=301)
 
     @app.route("/control-inheritance")
     def control_inheritance_page():
