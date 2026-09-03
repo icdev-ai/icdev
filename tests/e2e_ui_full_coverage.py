@@ -225,7 +225,7 @@ NAV_STRUCTURE = {
             ("POA&M Findings",   "/boundary/poam"),
             ("Compliance Hub",   "/compliance"),
             ("OSCAL",            "/oscal"),
-            ("Continuous ATO",   "/cato"),
+            ("Continuous ATO",   "/boundary/cato-health"),
             ("MOSA",             "/mosa"),
             ("Security Canvas",  "/security/"),
             ("Security Scans",   "/security-scan"),
@@ -648,7 +648,7 @@ def check_compliance_suite(page: Page, r: R) -> None:
     compliance_pages = [
         ("/compliance",        ["Compliance", "Control", "posture"]),
         ("/boundary/poam",     ["POA", "finding", "Finding"]),
-        ("/cato",              ["ATO", "Continuous", "authorization"]),
+        ("/boundary/cato-health", ["ATO", "Continuous", "authorization"]),
         ("/oscal",             ["OSCAL", "catalog", "Catalog"]),
         ("/security-scan",     ["Security", "Scan", "SAST"]),
         ("/security/stig-manager", ["STIG", "finding", "Finding"]),

@@ -1640,6 +1640,24 @@ def create_boundary_blueprint():
         """ATO Compliance Dashboard — control tracking, RMF stages, artifact readiness, crosswalk."""
         return render_template("boundary_canvas/ato_compliance.html")
 
+    # ── Continuous ATO Health (rmf-ui-05) ────────────────────────────────────
+    #
+    # Migrated from a bare `@app.route("/cato")` in tools/dashboard/app.py --
+    # the same shape as rmf-ui-01 above: ungoverned there, registry-registered,
+    # RBAC-guarded and IQE-dispatchable here BY CONSTRUCTION. It is NOT folded
+    # into /boundary/cato: that page is a per-design assessment table over
+    # bd_assessments and the fabric posture roll-up, while this one is the
+    # fleet-wide health gauge, evidence stream, certifications and timeline
+    # over the UNCHANGED /api/cato/* blueprint (tools/dashboard/api/cato.py)
+    # -- two views over two data models, so they keep two titles and two
+    # routes, cross-linked. Only the PAGE route moved; the old URL is a 301.
+
+    @bp.route("/cato-health")
+    @bdc_login_required
+    def bdc_cato_health_page():
+        """Continuous ATO Health — ATO health score, evidence freshness, certifications, timeline."""
+        return render_template("boundary_canvas/cato_health.html")
+
     # ── POA&M Findings (rmf-ui-07) ───────────────────────────────────────────
     #
     # Migrated from a bare `@app.route("/poam")` in tools/dashboard/app.py --
