@@ -126,6 +126,9 @@ class TestFailClosedFlagUnset:
         assert result["overall_pass"] is False
         assert result["compliance_score"] == 0.0
         assert result["health_score"] == 0.0
+        # rmf-zt-01: the refusal is LABELLED, so the 0.0 cannot be read as a
+        # measurement of the CIS/STIG checks (which were all unknown).
+        assert result["score_basis"] == "fail_closed_unknown_posture"
         assert any("UNKNOWN" in g for g in result["gaps"])
 
     def test_pdp_disa_icam_denies_via_top_level(self, monkeypatch):
@@ -187,8 +190,16 @@ class TestDevRestoredFlagSet:
 
         result = _dcs.scan_device("host-sweep-dev.example.mil")
 
-        assert result["overall_pass"] is True
-        assert result["health_score"] == 0.75
+        # rmf-zt-01: the flag restores the SCAN, never a verdict. It used to
+        # assert overall_pass is True and health_score == 0.75 for a device
+        # with zero probe data behind it — dev-permissive had quietly come to
+        # mean dev-fabricated, and the fabrication reached the ZIG maturity
+        # score. The scan proceeds (no fail-closed gap) and reports that it
+        # measured nothing.
+        assert result["overall_pass"] is None
+        assert result["health_score"] is None
+        assert result["compliance_score"] is None
+        assert result["coverage"]["measured_checks"] == 0
         assert not any("UNKNOWN" in g for g in result["gaps"])
 
     def test_pdp_stub_adapters_permit_under_flag(self, monkeypatch):

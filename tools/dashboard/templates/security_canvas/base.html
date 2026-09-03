@@ -14,6 +14,16 @@
 {% if config.get('CLASSIFICATION_BANNER') %}
 <div style="background:#e74c3c;color:#fff;text-align:center;padding:2px;font-size:11px;font-weight:700;letter-spacing:2px;">{{ config.get('CLASSIFICATION_BANNER') }}</div>
 {% endif %}
+{# rmf-zt-01: standing notice while ICDEV_ZT_ALLOW_STUB is honored. Every ZIG
+   maturity number and device-compliance score on these pages is then computed
+   over a posture nothing measured. Rendered on `zt_stub.banner` being present
+   (never on truthiness of the dict), so an unavailable stub-status read shows
+   nothing rather than a fabricated all-clear. #}
+{% if zt_stub is defined and zt_stub.banner %}
+<div id="zt-stub-banner" data-zt-stub="1" role="status" style="background:#8a4b00;color:#ffdca8;text-align:center;padding:4px 8px;font-size:11px;font-weight:700;letter-spacing:1px;border-bottom:1px solid #c07000;">
+  &#9888; {{ zt_stub.banner }}
+</div>
+{% endif %}
 {% endblock %}
 <nav class="navbar">
   <div class="nav-brand">

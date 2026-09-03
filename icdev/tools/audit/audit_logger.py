@@ -423,6 +423,14 @@ VALID_EVENT_TYPES = (
     # indistinguishable from drift. Constraint rebuilt by migration
     # 20260821045946.
     "awareness.restore_act",
+    # Zero-trust stub gate (rmf-zt-01). ICDEV_ZT_ALLOW_STUB decides whether an
+    # unverifiable device posture / PDP answer may be honored, and until now it
+    # decided that silently. One event type with the surface namespaced in
+    # `action` (device_compliance_scanner.stub_honored,
+    # device_compliance_scanner.fail_closed), following the migration_canvas
+    # precedent rather than one type per adapter. Written by
+    # tools/security/stub_gate.py::record_stub_decision.
+    "zt.stub_gate",
 )
 
 EVENT_TYPE_CONSTRAINT = "audit_trail_event_type_check"

@@ -1,0 +1,7 @@
+{
+  "description": "audit_event_type_zt_stub_gate",
+  "date": "2026-09-03",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}
