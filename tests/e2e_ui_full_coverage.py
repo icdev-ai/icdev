@@ -226,7 +226,7 @@ NAV_STRUCTURE = {
             ("Compliance Hub",   "/compliance"),
             ("OSCAL",            "/oscal"),
             ("Continuous ATO",   "/boundary/cato-health"),
-            ("MOSA",             "/mosa"),
+            ("MOSA",             "/boundary/mosa"),
             ("Security Canvas",  "/security/"),
             ("Security Scans",   "/security-scan"),
             ("STIG Manager",     "/security/stig-manager"),

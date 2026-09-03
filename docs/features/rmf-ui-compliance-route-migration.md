@@ -126,3 +126,16 @@ that the new one is not "cATO Dashboard". Everything else copies the exemplar:
 `bdc_cato_health_page` on the blueprint, a 301 from `app.py`, both `base.html`
 copies plus `compliance.html` and `mosa.html` repointed, the template moved and
 mirrored, `core.d/rmf-ui-05.txt`.
+
+## rmf-ui-10: `/mosa` → `/boundary/mosa`
+
+An RMF ARTIFACT surface: the 10 U.S.C. §4401 modular open systems assessment
+sits with the acquisition/ATO package, so it lands on the Boundary canvas.
+Nothing to fold — BDC had no MOSA view, so the page keeps its title and its
+one data call. `/api/mosa/summary` stays in `app.py` next to the redirect;
+only the PAGE route moved. Everything copies the exemplar: `bdc_mosa_page` on
+the blueprint, a 301 from `app.py` (the handler no longer calls
+`render_template`, and the test walks its AST), both `base.html` copies plus
+`compliance.html` repointed, the template moved under `boundary_canvas/` with
+the IQE widget and a breadcrumb, mirrored under `icdev/`,
+`core.d/rmf-ui-10.txt`.
