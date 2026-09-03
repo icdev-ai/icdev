@@ -255,6 +255,14 @@ def load_fabrics() -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         fabrics = _coerce_fabrics(raw)
         meta["entry_point"] = name
         meta["state"] = "loaded" if fabrics else "declared_empty"
+        # rmf-fab-01 excludes SYNTHETIC fixture fabrics from this seam by default
+        # and says how many; carry that through so "no fabrics declared" is never
+        # read as "the registry is empty" on a deployment that has not set its
+        # private overlay.
+        if isinstance(raw, dict):
+            for key in ("reason", "synthetic_excluded", "fabric_count_declared", "source"):
+                if raw.get(key) not in (None, "", 0):
+                    meta[key] = raw[key]
         return fabrics, meta
 
     meta["reason"] = f"no entry point among {list(_REGISTRY_LOADERS)}"
