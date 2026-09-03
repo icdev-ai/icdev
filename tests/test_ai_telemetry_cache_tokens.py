@@ -401,6 +401,11 @@ def _stub_direct_router(response):
     from tools.llm.router import LLMRouter
 
     router = LLMRouter.__new__(LLMRouter)
+    # _invoke_model_direct is a redaction door now (it reads self._config's
+    # `redaction` block before the provider call). This double exercises the
+    # LEDGER, not the gate, so it declares redaction off rather than growing
+    # a sanitizer, a routing table and a locality check it has no opinion on.
+    router._config = {"redaction": {"enabled": False}}
     router._get_model_config = lambda name: {"provider": "anthropic", "model_id": "test-model"}
     router._get_provider = lambda name: object()
     router._provider_invoke = lambda *a, **kw: response
