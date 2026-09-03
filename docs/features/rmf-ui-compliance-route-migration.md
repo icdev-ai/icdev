@@ -58,6 +58,19 @@ bare handler lacked, without any per-route wiring:
   both copies, the mirror, and the IQE path→canvas dispatch. All three touched
   test files are RED on the merge base per `red_first_gate.py`.
 
+## Landed follow-ups
+
+| Card | Old route | Governed home | Canvas | Test |
+|---|---|---|---|---|
+| rmf-ui-07 | `/poam` | `/boundary/poam` | bdc | `tests/test_bdc_poam_page.py` (`core.d/rmf-ui-07.txt`) |
+
+`/poam` was the findings approval workflow across the seven canvas DBs; its
+template already lived in a subdirectory (`poam/list.html`), so it moved as
+`boundary_canvas/poam/list.html`. The `/api/poam/*` routes stay in `app.py`.
+`tests/test_history.py::test_poam_route_exists` was NOT touched: it GETs the
+NETWORK blueprint's own `/poam` (`/network/poam` at runtime), which is a
+different page and never went through `app.py`.
+
 ## The shape the follow-up cards copy
 
 1. Add the route next to the exemplar's block on the target blueprint; `git mv`

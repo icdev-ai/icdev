@@ -222,7 +222,7 @@ NAV_STRUCTURE = {
     },
     "Compliance ▾": {
         "Compliance": [
-            ("POA&M Findings",   "/poam"),
+            ("POA&M Findings",   "/boundary/poam"),
             ("Compliance Hub",   "/compliance"),
             ("OSCAL",            "/oscal"),
             ("Continuous ATO",   "/cato"),
@@ -647,7 +647,7 @@ def check_compliance_suite(page: Page, r: R) -> None:
     print("\n══ 8. Compliance Page Suite ═══════════════════════════════════")
     compliance_pages = [
         ("/compliance",        ["Compliance", "Control", "posture"]),
-        ("/poam",              ["POA", "finding", "Finding"]),
+        ("/boundary/poam",     ["POA", "finding", "Finding"]),
         ("/cato",              ["ATO", "Continuous", "authorization"]),
         ("/oscal",             ["OSCAL", "catalog", "Catalog"]),
         ("/security-scan",     ["Security", "Scan", "SAST"]),

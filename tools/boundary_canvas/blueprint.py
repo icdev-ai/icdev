@@ -1640,6 +1640,22 @@ def create_boundary_blueprint():
         """ATO Compliance Dashboard — control tracking, RMF stages, artifact readiness, crosswalk."""
         return render_template("boundary_canvas/ato_compliance.html")
 
+    # ── POA&M Findings (rmf-ui-07) ───────────────────────────────────────────
+    #
+    # Migrated from a bare `@app.route("/poam")` in tools/dashboard/app.py --
+    # the same move as the ATO Compliance Dashboard above (rmf-ui-01), one
+    # route per card. The page is the findings approval workflow across the
+    # seven canvas DBs, an RMF artifact surface, so the Boundary canvas is its
+    # governed home. It drives the UNCHANGED /api/poam/* routes in app.py --
+    # only the PAGE route moved -- and the old URL redirects here rather than
+    # 404ing.
+
+    @bp.route("/poam")
+    @bdc_login_required
+    def bdc_poam_page():
+        """POA&M — canvas findings approval workflow across the 7 canvas DBs."""
+        return render_template("boundary_canvas/poam/list.html")
+
     @bp.route("/api/fabric-posture", methods=["GET"])
     @bdc_login_required
     def bdc_api_fabric_posture():
