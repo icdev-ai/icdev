@@ -322,8 +322,17 @@ def main():
         claim_service_identity("kanban-scheduler", "kanban")
         from tools.coordination import session_registry as _coord_reg
         _coord_reg.register(intent="kanban scheduler — dispatching due tasks")
-    except Exception:
+    except Exception as _reg_exc:  # noqa: BLE001
         _coord_reg = None
+        # LOUD, not `pass`. A scheduler the registry cannot see is one the
+        # scheduler_heartbeat_is_fresh claim will flag and the supervisor will
+        # never restart: on 2026-09-02 pid 29880 ran five hours unregistered
+        # and was found by a human noticing the board had not moved.
+        logger.warning(
+            "kanban scheduler: coordination registration FAILED (%s) -- this "
+            "process will not heartbeat in agent_sessions and will read as a "
+            "silent scheduler until restarted", _reg_exc,
+        )
 
     # guard-6: Orphan cleanup on startup -- kill any Claude CLI subprocesses
     # left over from a previous run that may have crashed.
@@ -370,8 +379,17 @@ def main():
         try:
             if _coord_reg is not None:
                 _coord_reg.heartbeat(intent=f"kanban scheduler — cycle {cycle}")
-        except Exception:
-            pass
+            elif cycle % 30 == 0:
+                logger.warning(
+                    "kanban scheduler: cycle %d running UNREGISTERED -- no "
+                    "heartbeat reaches agent_sessions", cycle,
+                )
+        except Exception as _hb_exc:  # noqa: BLE001
+            if cycle % 30 == 0:
+                logger.warning(
+                    "kanban scheduler: heartbeat failed at cycle %d (%s)",
+                    cycle, _hb_exc,
+                )
 
         # Pause gate: manual (dashboard "Pause Scheduler" button) or automatic
         # (an interactive Claude/Cursor session is active). Skips the dispatch /

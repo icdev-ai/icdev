@@ -226,6 +226,11 @@ REFLEX_NAMES = [
     # that measures zero claims reports `unmeasurable`, never ok, and its
     # per-claim verdicts are what the `verified_claim` capability class reads.
     "claim_verifier_reflex",
+    # kpr-stale-04: feeds every held kanban:task lease to the frozen restore act
+    # reap_dead_lease hourly. The actuator existed (autonomy-act-03) and nothing
+    # ran it; 20 leaked leases were cleared by hand on 2026-09-02 and 92 more
+    # sat on done tasks. No reaping rule of its own -- the act proves and refuses.
+    "lease_litter_reflex",
 ]
 
 # Backward-compat aliases for module-level access used by other code
