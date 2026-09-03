@@ -2334,6 +2334,17 @@ python tools/genesis/daemon.py --once --json                  # Single pass (run
 python tools/genesis/daemon.py --status --json                # Show status of all 14 reflexes
 python tools/genesis/daemon.py --reflex research --json       # Run one reflex immediately
 python tools/genesis/daemon.py --reflex scout --json          # GitHub competitor intel
+# Stop the ICDEV service stack in the one order that does not fight itself
+python tools/genesis/shutdown_dashboard.py --dry-run      # plan; touch nothing
+python tools/genesis/shutdown_dashboard.py                # supervisor, then its children, then ICDEV[FT]
+python tools/genesis/shutdown_dashboard.py --pause        # also set Manual Build for the next start
+python tools/genesis/shutdown_dashboard.py --keep-ft --json
+# The supervisor's pid comes from .tmp/genesis/launcher.pid and its command line is
+# verified (a reused pid is refused). Children are stopped by pid RECORDED from the
+# tree before anything is touched, never by name -- start.md: a name filter is what
+# produced three concurrent pr_watchers. Agent workers (grandchildren) are reported
+# and left running unless --include-workers. Exit 0 stopped/already down, 1 a
+# survivor or listener on 5050/5200 remains, 2 the tree could not be measured.
 python tools/genesis/daemon.py --reflex audit --json          # Self-scan (code quality + SAST)
 python tools/genesis/daemon.py --reflex comply --json         # cATO evidence + crosswalk + SbD
 python tools/genesis/daemon.py --reflex ingest --json         # RSS → innovation_signals
