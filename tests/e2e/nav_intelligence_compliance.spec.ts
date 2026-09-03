@@ -41,7 +41,9 @@ const COMPLIANCE_PAGES = [
   { label: 'SRE Operations',       path: '/sre' },
   // AI & Policy
   { label: 'Secure by Design',     path: '/sbd' },
-  { label: 'AI Transparency',      path: '/ai-transparency' },
+  // rmf-ui-15: migrated onto the Security canvas (registry-registered, RBAC-guarded,
+  // IQE-dispatchable). The old /ai-transparency answers with a 301 to this path.
+  { label: 'AI Transparency',      path: '/security/ai-transparency' },
   { label: 'AI Accountability',    path: '/ai-accountability' },
   { label: 'Control Inheritance',  path: '/control-inheritance' },
   { label: 'Compliance Debt',      path: '/compliance-debt' },

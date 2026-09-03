@@ -5205,8 +5205,15 @@ def create_app(testing: bool = False) -> Flask:
 
     @app.route("/ai-transparency")
     def ai_transparency_page():
-        """AI Transparency — OMB M-25-21, M-26-04, NIST AI 600-1, GAO-21-519SP (Phase 48, D307-D315)."""
-        return render_template("ai_transparency.html")
+        """AI Transparency — MIGRATED to the Security canvas (rmf-ui-15).
+
+        The governed page is ``/security/ai-transparency`` on
+        tools/security_canvas/blueprint.py, where it is registry-registered,
+        RBAC-guarded and IQE-dispatchable. This handler stays as a redirect so
+        a bookmark, an e2e spec or a nav link that still names the old URL
+        lands on the page rather than a 404 — never a dropped page.
+        """
+        return redirect("/security/ai-transparency", code=301)
 
 
     @app.route("/ai-accountability")
