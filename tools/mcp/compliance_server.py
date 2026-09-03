@@ -41,6 +41,28 @@ def _import_tool(module_path, func_name):
         return None
 
 
+def _available_stig_ids():
+    """The STIG templates that actually ship, for the ``stig_check`` enum.
+
+    Derived, never hand-listed. An enum is a promise the caller reads before
+    it calls; listing a profile whose template is not on disk turns that
+    promise into a FileNotFoundError.
+    """
+    lister = _import_tool("tools.compliance.stig_checker", "_list_stig_templates")
+    ids = sorted(lister() or []) if lister else []
+    return ids or ["webapp"]
+
+
+def _control_mapper_statuses():
+    """The implementation statuses ``create_mapping`` will accept.
+
+    Read from the callee's own constant so the schema and the ValueError it
+    would raise can never drift apart.
+    """
+    statuses = _import_tool("tools.compliance.control_mapper", "VALID_STATUSES")
+    return list(statuses) if statuses else ["planned", "implemented", "not_applicable"]
+
+
 # ---------------------------------------------------------------------------
 # Tool handlers
 # ---------------------------------------------------------------------------
@@ -101,8 +123,15 @@ def handle_poam_generate(args: dict) -> dict:
 
 
 def handle_stig_check(args: dict) -> dict:
-    """Run STIG compliance checks against a project."""
-    check = _import_tool("tools.compliance.stig_checker", "check_project")
+    """Run STIG compliance checks against a project.
+
+    ``stig_checker`` has always exported ``run_stig_check``; this handler asked
+    for ``check_project``, so ``_import_tool`` returned None and every call
+    answered a "not available yet" stub for a module that shipped complete
+    (rmf-inert-01). ``stig_profile`` is still accepted as an alias for the
+    checker's own ``stig_id``.
+    """
+    check = _import_tool("tools.compliance.stig_checker", "run_stig_check")
     if not check:
         return {"error": "stig_checker module not available yet", "status": "pending"}
 
@@ -110,8 +139,16 @@ def handle_stig_check(args: dict) -> dict:
     if not project_id:
         raise ValueError("'project_id' is required")
 
-    stig_profile = args.get("stig_profile", "webapp")
-    return check(project_id, stig_profile=stig_profile, db_path=str(DB_PATH))
+    stig_id = args.get("stig_id") or args.get("stig_profile") or "webapp"
+    # DB_PATH, not str(DB_PATH): stig_checker._get_connection calls
+    # path.exists(), which a str does not have. Every other handler in this
+    # file passes a str because its callee takes one; these three do not.
+    return check(
+        project_id,
+        stig_id=stig_id,
+        gate=bool(args.get("gate", False)),
+        db_path=DB_PATH,
+    )
 
 
 def handle_sbom_generate(args: dict) -> dict:
@@ -138,40 +175,96 @@ def handle_sbom_generate(args: dict) -> dict:
 
 
 def handle_cui_mark(args: dict) -> dict:
-    """Apply CUI markings to a file or content string."""
-    mark_file = _import_tool("tools.compliance.cui_marker", "mark_file")
-    mark_content = _import_tool("tools.compliance.cui_marker", "mark_content")
+    """Apply CUI markings to a file.
 
-    file_path = args.get("file_path")
-    content = args.get("content")
-    marking = args.get("marking", "CUI // SP-CTI")
+    Found by the same sweep as the three the card named: this asked for
+    ``mark_file`` and ``mark_content``, neither of which ``cui_marker`` has
+    ever exported, so it always fell through to "cui_marker module not
+    available". The real exports are ``mark_document`` (banner top and bottom,
+    for the DOCUMENT_EXTENSIONS) and ``mark_code_file`` (a comment header, for
+    the COMMENT_STYLES) — routed here exactly as ``mark_directory`` routes them.
 
-    if file_path and mark_file:
-        result = mark_file(file_path, marking=marking)
-        return {"file": file_path, "marked": True, "details": result}
-
-    if content and mark_content:
-        marked = mark_content(content, marking=marking)
-        return {"marked_content": marked}
-
-    if not mark_file and not mark_content:
+    The ``content`` and ``marking`` parameters are gone from the schema rather
+    than faked: marking a STRING is a capability this module does not have, and
+    the banner text comes from ``args/cui_markings.yaml``, not from a caller.
+    """
+    mark_document = _import_tool("tools.compliance.cui_marker", "mark_document")
+    mark_code_file = _import_tool("tools.compliance.cui_marker", "mark_code_file")
+    if not mark_document or not mark_code_file:
         return {"error": "cui_marker module not available"}
 
-    return {"error": "Provide either 'file_path' or 'content'"}
+    file_path = args.get("file_path")
+    if not file_path:
+        raise ValueError("'file_path' is required")
+
+    from pathlib import Path as _Path
+
+    from tools.compliance.cui_marker import COMMENT_STYLES, DOCUMENT_EXTENSIONS
+
+    ext = _Path(file_path).suffix.lower()
+    dry_run = bool(args.get("dry_run", False))
+
+    if ext in DOCUMENT_EXTENSIONS:
+        result = mark_document(file_path, dry_run=dry_run)
+    elif ext in COMMENT_STYLES:
+        result = mark_code_file(file_path, dry_run=dry_run)
+    else:
+        return {
+            "file": file_path,
+            "marked": False,
+            "error": f"Unsupported extension '{ext}'. Supported: "
+            + ", ".join(sorted(set(COMMENT_STYLES) | DOCUMENT_EXTENSIONS)),
+        }
+
+    # mark_document/mark_code_file return None when the file is ALREADY marked
+    # — that is "nothing to do", not a failure, and the two must not read alike.
+    return {
+        "file": file_path,
+        "marked": result is not None,
+        "already_marked": result is None,
+        "dry_run": dry_run,
+        "path": str(result) if result else None,
+    }
 
 
 def handle_control_map(args: dict) -> dict:
-    """Map a project activity to NIST 800-53 controls."""
-    map_activity = _import_tool("tools.compliance.control_mapper", "map_activity")
-    if not map_activity:
+    """Record a project's implementation of a NIST 800-53 control.
+
+    This asked for ``map_activity`` — a function that has never existed in any
+    module in the tree, so the tool answered "control_mapper module not
+    available" for a mapper that shipped complete. The DECLARED capability was
+    wrong too: ``control_mapper`` maps a project to a CONTROL, never an
+    activity to a set of controls, so the schema moved with the handler rather
+    than the handler inventing an activity crosswalk (rmf-inert-01).
+    """
+    create_mapping = _import_tool("tools.compliance.control_mapper", "create_mapping")
+    if not create_mapping:
         return {"error": "control_mapper module not available"}
 
-    activity = args.get("activity")
     project_id = args.get("project_id")
-    if not activity:
-        raise ValueError("'activity' is required")
+    control_id = args.get("control_id")
+    if not project_id:
+        raise ValueError("'project_id' is required")
+    if not control_id:
+        raise ValueError("'control_id' is required")
 
-    return map_activity(activity, project_id=project_id, db_path=str(DB_PATH))
+    row_id = create_mapping(
+        project_id,
+        control_id,
+        implementation_status=args.get("implementation_status", "planned"),
+        description=args.get("description"),
+        responsible_role=args.get("responsible_role"),
+        evidence_path=args.get("evidence_path"),
+        # A Path, not a str — control_mapper._get_connection calls path.exists()
+        # when tools.compat.db_utils is unavailable.
+        db_path=DB_PATH,
+    )
+    return {
+        "mapping_id": row_id,
+        "project_id": project_id,
+        "control_id": control_id.upper(),
+        "implementation_status": args.get("implementation_status", "planned"),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -181,7 +274,7 @@ def handle_control_map(args: dict) -> dict:
 
 def handle_cssp_assess(args: dict) -> dict:
     """Run CSSP assessment per DI 8530.01."""
-    assess = _import_tool("tools.compliance.cssp_assessor", "assess_project")
+    assess = _import_tool("tools.compliance.cssp_assessor", "run_cssp_assessment")
     if not assess:
         return {"error": "cssp_assessor module not available yet", "status": "pending"}
 
@@ -190,7 +283,13 @@ def handle_cssp_assess(args: dict) -> dict:
         raise ValueError("'project_id' is required")
 
     functional_area = args.get("functional_area", "all")
-    return assess(project_id, functional_area=functional_area, db_path=str(DB_PATH))
+    # A Path, not a str — cssp_assessor._get_connection calls path.exists().
+    return assess(
+        project_id,
+        functional_area=functional_area,
+        gate=bool(args.get("gate", False)),
+        db_path=DB_PATH,
+    )
 
 
 def handle_cssp_report(args: dict) -> dict:
@@ -859,11 +958,19 @@ def create_server() -> MCPServer:
             "type": "object",
             "properties": {
                 "project_id": {"type": "string", "description": "UUID of the project"},
-                "stig_profile": {
+                "stig_id": {
                     "type": "string",
-                    "description": "STIG profile to check against",
-                    "enum": ["webapp", "container", "database", "linux", "network"],
+                    "description": "STIG template to check against",
+                    # Derived from the templates on disk, never hand-listed: the
+                    # previous enum offered five profiles for one template, so
+                    # four of the five raised FileNotFoundError (rmf-inert-01).
+                    "enum": _available_stig_ids(),
                     "default": "webapp",
+                },
+                "gate": {
+                    "type": "boolean",
+                    "description": "Evaluate the security gate (0 CAT1 Open = pass)",
+                    "default": False,
                 },
             },
             "required": ["project_id"],
@@ -887,31 +994,58 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="cui_mark",
-        description="Apply CUI (Controlled Unclassified Information) markings to a file or content string. Adds CUI // SP-CTI banners and designation indicators.",
+        description=(
+            "Apply CUI (Controlled Unclassified Information) markings to a file. "
+            "Documents get top and bottom banners; source files get a comment header. "
+            "The marking text comes from args/cui_markings.yaml, not from the caller."
+        ),
         input_schema={
             "type": "object",
             "properties": {
-                "file_path": {"type": "string", "description": "Path to file to mark with CUI banners"},
-                "content": {"type": "string", "description": "Content string to mark (alternative to file_path)"},
-                "marking": {"type": "string", "description": "CUI marking text", "default": "CUI // SP-CTI"},
+                "file_path": {"type": "string", "description": "Path to the file to mark"},
+                "dry_run": {
+                    "type": "boolean",
+                    "description": "Report what would be marked without writing",
+                    "default": False,
+                },
             },
+            "required": ["file_path"],
         },
         handler=handle_cui_mark,
     )
 
     server.register_tool(
         name="control_map",
-        description="Map a project activity (e.g., code.commit, test.execute, deploy) to relevant NIST 800-53 controls. Records the mapping in the database.",
+        description=(
+            "Record a project's implementation of a NIST 800-53 control "
+            "(status, description, responsible role, evidence path). Upserts the "
+            "mapping in project_controls."
+        ),
         input_schema={
             "type": "object",
             "properties": {
-                "activity": {
+                "project_id": {"type": "string", "description": "UUID of the project"},
+                "control_id": {
                     "type": "string",
-                    "description": "Activity type (e.g., code.commit, test.execute, security.scan, deploy.staging)",
+                    "description": "NIST 800-53 control id (e.g. AC-2, AU-12)",
                 },
-                "project_id": {"type": "string", "description": "UUID of the project (optional)"},
+                "implementation_status": {
+                    "type": "string",
+                    "description": "Implementation status of the control",
+                    "enum": sorted(_control_mapper_statuses()),
+                    "default": "planned",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "How the control is implemented for this project",
+                },
+                "responsible_role": {
+                    "type": "string",
+                    "description": "Role accountable for the control",
+                },
+                "evidence_path": {"type": "string", "description": "Path to supporting evidence"},
             },
-            "required": ["activity"],
+            "required": ["project_id", "control_id"],
         },
         handler=handle_control_map,
     )
@@ -930,6 +1064,11 @@ def create_server() -> MCPServer:
                     "description": "Functional area to assess (default: all)",
                     "enum": ["all", "Identify", "Protect", "Detect", "Respond", "Sustain"],
                     "default": "all",
+                },
+                "gate": {
+                    "type": "boolean",
+                    "description": "Evaluate the CSSP gate (0 critical not_satisfied = pass)",
+                    "default": False,
                 },
             },
             "required": ["project_id"],

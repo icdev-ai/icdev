@@ -26,6 +26,10 @@ const COMPLIANCE_PAGES = [
   { label: 'OSCAL',                path: '/oscal' },
   { label: 'Continuous ATO',       path: '/cato' },
   { label: 'ATO Package Builder',  path: '/ato-package' },
+  // Linked by rmf-inert-01 — both rendered a real template over a real API and
+  // were reachable only by typing the URL, so nothing had ever loaded them.
+  { label: 'ATO Compliance Dashboard', path: '/ato-compliance' },
+  { label: 'FedRAMP 20x KSIs',     path: '/fedramp-20x' },
   { label: 'MOSA',                 path: '/mosa' },
   // Security
   { label: 'Security Canvas',      path: '/security/' },
