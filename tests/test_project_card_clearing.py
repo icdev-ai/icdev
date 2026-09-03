@@ -170,3 +170,67 @@ def test_the_epic_counts_and_the_orphan_predicate_share_one_closed_set():
     assert "NOT IN ('done', 'decomposed', 'cancelled', 'merged')" not in src, (
         "a literal copy of the closed set reappeared beside the named tuple"
     )
+
+
+# --------------------------------------------------------------------------- #
+# 2026-09-02: an open row must be VISIBLE in the breakdown, and 100% must be true
+# --------------------------------------------------------------------------- #
+def _epic(client, key, ek):
+    card = _card(client, key)
+    assert card is not None, "the card hid while it held open work"
+    return next(e for e in card["epics"] if e["key"] == ek)
+
+
+def _two_work_keys() -> tuple[str, str, str]:
+    raw = yaml.safe_load((_ROOT / "args" / "projects.yaml").read_text(encoding="utf-8"))
+    projects = raw["projects"] if isinstance(raw, dict) and "projects" in raw else raw
+    card = next(p for p in projects if p.get("key") == "ftl")
+    keys = [e["key"] for e in card.get("epics", []) if e["key"] != "gate"]
+    assert len(keys) >= 2, "the ftl card needs two work epics for this test"
+    return card["task_prefix"], keys[0], keys[1]
+
+
+@pytest.mark.parametrize("open_status", ["pr_opened", "validating", "token_exhausted"])
+def test_an_open_row_is_itemised_not_just_counted(client, icdev_db, open_status):
+    """`pr_opened` was counted in `total` and itemised NOWHERE, so the rmf `inert`
+    epic rendered "0 / 1 done . 0%" with no badge -- a task with a PR open looked
+    lost. Every open state that is counted must have a bucket."""
+    prefix, ek = _pick_project()
+    _seed(icdev_db, [(f"{prefix}{ek}-9001", open_status)])
+    e = _epic(client, "ftl", ek)
+    assert e["total"] == 1 and e["done"] == 0
+    assert e[open_status] == 1, f"a {open_status!r} row must appear in its own bucket"
+
+
+def test_pct_is_never_100_while_work_remains(client, icdev_db):
+    """int(round(100 * 293 / 294)) is 100: the mc card read '293 / 294 . 100%'
+    while a validating row held it on screen."""
+    prefix, ek = _pick_project()
+    rows = [(f"{prefix}{ek}-{9000 + i}", "done") for i in range(293)]
+    rows.append((f"{prefix}{ek}-9999", "validating"))
+    _seed(icdev_db, rows)
+    e = _epic(client, "ftl", ek)
+    assert e["done"] == 293 and e["total"] == 294
+    assert e["pct"] == 99, "100% means finished; this epic is not"
+    assert _card(client, "ftl")["overall_pct"] == 99
+
+
+def test_pct_is_never_0_once_anything_is_done(client, icdev_db):
+    """The mirror error: 1 of 294 done rounds to 0%, i.e. reads as not started."""
+    prefix, ek = _pick_project()
+    rows = [(f"{prefix}{ek}-{9000 + i}", "scheduled") for i in range(293)]
+    rows.append((f"{prefix}{ek}-9999", "done"))
+    _seed(icdev_db, rows)
+    assert _epic(client, "ftl", ek)["pct"] == 1, "0% means nothing done; one task is"
+
+
+def test_pct_is_exactly_100_when_an_epic_is_finished(client, icdev_db):
+    """The other direction, so the clamp cannot hide a real 100: one finished
+    epic beside one open epic on the same card."""
+    prefix, done_key, open_key = _two_work_keys()
+    _seed(icdev_db, [
+        (f"{prefix}{done_key}-9001", "done"), (f"{prefix}{done_key}-9002", "done"),
+        (f"{prefix}{open_key}-9001", "scheduled"),
+    ])
+    assert _epic(client, "ftl", done_key)["pct"] == 100
+    assert _epic(client, "ftl", open_key)["pct"] == 0

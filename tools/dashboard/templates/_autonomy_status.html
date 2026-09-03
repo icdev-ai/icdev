@@ -155,7 +155,11 @@
     // no CSS renders as unstyled text that looks like a broken panel.
     // escapeHTML is the file's existing helper — a task id and a reason are
     // DATA, arriving from a branch name and a PR url.
-    var kind = (r.kind === 'rebase') ? 'rebased' : 'resumed';
+    // Every key is a pr_watcher action literal (recovery_summary._ATTEMPT_KINDS);
+    // an unknown kind reads as a resume rather than as nothing.
+    var KIND_LABEL = {resume: 'resumed', rebase: 'rebased',
+                      rebase_failed: 'rebase failed on', ci_retrigger: 're-fired CI for'};
+    var kind = KIND_LABEL[r.kind] || 'resumed';
     // ONE ROW PER TASK, carrying its attempt count and its OUTCOME
     // (rem-hyg-16). Five rows reading "resumed task-c49fb2727d" looked like
     // five successes; it was one task retried to the cap and then fixed by
@@ -171,6 +175,11 @@
       + '<div class="auto-branch-row">'
       + '  <span class="auto-branch-name">' + escapeHTML(kind + ' ' + (r.task_id || '') + tries) + '</span>'
       + '  <span class="auto-meta" style="color:' + oc.col + ';">' + escapeHTML(oc.txt) + '</span>'
+      // The board's own word on the task, beside the watcher's -- a row that
+      // reads "still trying" while the board says `done` is the 2026-09-02 defect.
+      + (r.board_status
+          ? '  <span class="auto-meta" title="current board status">' + escapeHTML(r.board_status) + '</span>'
+          : '')
       + '  <span class="auto-meta">' + escapeHTML((r.reason || '').slice(0, 70)) + '</span>'
       + '</div>';
   }

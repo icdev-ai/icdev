@@ -206,3 +206,52 @@ def test_set_status_and_release_climb_the_same_ladder():
         src = inspect.getsource(door)
         assert "_release_task_lease(" in src, door.__name__
         assert "reap_if_litter(" not in src, f"{door.__name__} grew its own ladder"
+
+
+# ── --claim says what its lease is actually worth (2026-09-02) ──────────────
+class TestClaimSaysWhatTheLeaseIsWorth:
+    """``--claim`` used to end with "runner will skip this task until you
+    --release it". From a shell that is false: the lease records THIS process's
+    pid, which exits on the next line, and every reader treats a dead-pid lease
+    as litter within seconds. kpr-stale-03 was claimed by hand with its PR in
+    flight and reset to backlog by startup recovery 34 minutes later. The
+    promise now depends on whether the lease's session id is a REGISTERED,
+    heartbeating session, and the CLI says which case it is.
+    """
+
+    @staticmethod
+    def _widen(db_path):
+        raw = sqlite3.connect(str(db_path))
+        raw.execute("ALTER TABLE kanban_tasks ADD COLUMN branch_name TEXT")
+        raw.execute("ALTER TABLE kanban_tasks ADD COLUMN commit_summary TEXT")
+        raw.commit()
+        raw.close()
+
+    def test_an_unlinked_claim_is_reported_as_litter_in_waiting(self, ctx, monkeypatch, capsys):
+        self._widen(ctx["db"])
+        monkeypatch.setattr(lease_liveness, "session_is_live", lambda sid: False)
+        assert ctx["cli"].cmd_claim(TASK, json_out=False) == 0
+        assert _status(ctx["db"]) == "in_progress", "the claim itself still stands"
+        out = capsys.readouterr().out
+        assert "runner will skip this task until you --release it" not in out, (
+            "the old promise is back, and it is false from a one-shot process"
+        )
+        assert "litter" in out and "ICDEV_SESSION_ID" in out
+
+    def test_a_session_linked_claim_is_reported_as_held(self, ctx, monkeypatch, capsys):
+        self._widen(ctx["db"])
+        monkeypatch.setattr(lease_liveness, "session_is_live", lambda sid: True)
+        assert ctx["cli"].cmd_claim(TASK, json_out=False) == 0
+        out = capsys.readouterr().out
+        assert "honour this claim" in out and "heartbeats" in out
+
+    def test_json_output_carries_the_link_verdict(self, ctx, monkeypatch, capsys):
+        self._widen(ctx["db"])
+        seen = []
+        monkeypatch.setattr(lease_liveness, "session_is_live",
+                            lambda sid: seen.append(sid) or False)
+        assert ctx["cli"].cmd_claim(TASK, json_out=True) == 0
+        body = json.loads(capsys.readouterr().out)
+        assert body["claimed"] is True
+        assert body["session_linked"] is False
+        assert body["holder_session"] == seen[0], "the verdict was asked about the lease's own session"

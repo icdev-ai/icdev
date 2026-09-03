@@ -409,6 +409,11 @@
       var badges = [];
       if (e.in_progress)     badges.push('<span class="proj-badge badge-progress">' + e.in_progress + ' in flight</span>');
       if (e.scheduled)       badges.push('<span class="proj-badge badge-progress">' + e.scheduled + ' scheduled</span>');
+      // Open states that are counted in `total`; without a badge each of these
+      // rendered as a task that had simply vanished from the breakdown.
+      if (e.pr_opened)       badges.push('<span class="proj-badge badge-progress" title="unmerged PR — not landed work">' + e.pr_opened + ' PR open</span>');
+      if (e.validating)      badges.push('<span class="proj-badge badge-progress" title="verification can still fail">' + e.validating + ' validating</span>');
+      if (e.token_exhausted) badges.push('<span class="proj-badge badge-backlog" title="parked for retry">' + e.token_exhausted + ' parked</span>');
       if (e.backlog)         badges.push('<span class="proj-badge badge-backlog">' + e.backlog + ' queued</span>');
       if (e.failed)          badges.push('<span class="proj-badge badge-failed">' + e.failed + ' failed</span>');
       if (e.needs_decomp)    badges.push('<span class="proj-badge badge-needs-decomp" title="Queued for auto-decompose">&#8674; ' + e.needs_decomp + ' decompose</span>');
