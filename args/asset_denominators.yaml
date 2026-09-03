@@ -1,0 +1,176 @@
+# CUI // SP-CTI
+#
+# Asset-visibility DENOMINATORS — the declaration (rmf-vis-01).
+#
+# WHAT THIS FILE IS FOR
+#
+# `tools/assets/visibility.py` can always count what the discovery stack HAS
+# seen. It cannot, from that alone, say what fraction of the estate that is —
+# a numerator with no denominator is a count, not a coverage percentage, and
+# printing one anyway is the defect this whole card exists to refuse. This
+# file is the only place a deployment declares how big a fabric IS, and
+# therefore the only thing that can turn a count into a percentage.
+#
+# NO DENOMINATOR HERE MEANS `visibility_pct: null` AND THE WORDS "not
+# assessed". It does NOT mean 0% (which reads as "we see nothing") and it does
+# not mean 100% (which reads as "we see everything"). Both are claims about an
+# estate nobody has measured. args/perfect_score_gate.yaml is ratcheted to 0
+# for precisely this shape.
+#
+# THE FOUR KINDS ARE RANKED, BEST FIRST, and the rank is not cosmetic — when
+# more than one resolves for a fabric the best one WINS and the losers are
+# reported verbatim under `alternates`, never averaged into it. Two sources
+# that disagree about the size of an estate is a finding for a human;
+# splitting the difference deletes it.
+#
+#   approved_cmdb        rank 0, confidence high, unit: assets
+#       A configuration-management database record count that somebody has
+#       APPROVED. This is the only kind where a person has committed to "this
+#       is the estate" — every other kind is a proxy for that sentence.
+#
+#   ip_allocation_plan   rank 1, confidence medium, unit: addresses
+#       Addresses ALLOCATED to the fabric. A plan is an intent, not an
+#       observation: an allocated address with nothing plugged into it counts,
+#       so this OVER-states the estate and therefore UNDER-states visibility.
+#       Biased in the safe direction, which is why it outranks the two below.
+#
+#   dhcp_scope           rank 2, confidence low, unit: leases
+#       Leases in scope. Sees only DHCP clients — every statically addressed
+#       switch, router, firewall and server on the fabric is STRUCTURALLY
+#       invisible to it, and those are the assets an RMF package cares about
+#       most. Under-states the estate, so it OVER-states visibility. That
+#       direction of bias is why it ranks below a plan.
+#
+#   derived_if_mib       rank 3, confidence inferred, unit: ports
+#       Derived, not declared: the discovery stack already walks IF-MIB
+#       (tools/network/discovery.py OID 1.3.6.1.2.1.2.2.1.2), so a switch
+#       reports its own port count and the fabric's access ports are an upper
+#       bound on directly attached endpoints. It counts PORTS, NOT ASSETS —
+#       an unused port counts, an uplink counts, and a port with a downstream
+#       switch behind it counts once for many assets. `denominator_unit` says
+#       so on every row and on every render, because "43% of 148 ports" and
+#       "43% of 148 assets" are different claims.
+#
+# NOTHING IS DECLARED ON THIS DEPLOYMENT, and that is a MEASUREMENT, not an
+# oversight. Probed 2026-09-02 against the live PostgreSQL board: there is no
+# CMDB table, no IP-allocation table and no DHCP-scope table in the schema
+# (`information_schema.tables` matching %cmdb%/%dhcp%/%ip_alloc%: zero), and
+# `derived_if_mib` needs SNMP discovery, whose adapter ships disabled with
+# pysnmp absent. So every fabric here reports `not_assessed` and a null
+# percentage — which is the acceptance criterion, demonstrated on real data
+# rather than asserted in a fixture.
+#
+# ADDING ONE is a block under `fabrics:` keyed by the SAME fabric id
+# args/discovery_adapters.yaml uses. `as_of` is the DENOMINATOR'S own clock
+# (when the CMDB was approved), never ours — stale evidence must stay
+# distinguishable from fresh, so it is persisted separately from measured_at.
+
+classification: CUI // SP-CTI
+version: 1
+
+# The ranked vocabulary. `visibility.py` names no vendor, product or protocol;
+# the ranking, the confidence priors and the units all arrive as data from
+# here. Editing a rank changes which declaration wins — it never changes what
+# a number MEANS, because the unit travels with it.
+kinds:
+  - kind: approved_cmdb
+    rank: 0
+    confidence: high
+    unit: assets
+    # Which way a wrong number moves the percentage. Stated per kind so a
+    # reader can discount in the right DIRECTION rather than merely knowing
+    # the number is soft.
+    bias: none_declared
+    description: >-
+      An approved configuration-management record count. The only kind where a
+      human has committed to "this is the estate".
+  - kind: ip_allocation_plan
+    rank: 1
+    confidence: medium
+    unit: addresses
+    bias: under_states_visibility
+    description: >-
+      Addresses allocated to the fabric. Over-states the estate (an allocated
+      address need not be occupied), so it under-states visibility.
+  - kind: dhcp_scope
+    rank: 2
+    confidence: low
+    unit: leases
+    bias: over_states_visibility
+    description: >-
+      Leases in scope. Blind to every statically addressed device, so it
+      under-states the estate and over-states visibility.
+  - kind: derived_if_mib
+    rank: 3
+    confidence: inferred
+    unit: ports
+    # Two biases pulling opposite ways, so the net direction is UNKNOWN and
+    # says so: unused ports and uplinks inflate the denominator (under-stating
+    # visibility), while ports are only counted on switches discovery ALREADY
+    # SEES, so an unseen switch takes its ports with it (over-stating it).
+    bias: unknown
+    description: >-
+      Derived from the IF-MIB interface tables the discovery stack already
+      walks. Counts PORTS, not assets — an upper bound on attachment points.
+
+# How `derived_if_mib` is computed when a fabric declares it. These are the
+# only knobs, and they are DATA rather than code so that no interface-naming
+# convention is hard-coded in a Python module.
+derived_if_mib:
+  # Interface names matching any of these (case-insensitive, prefix match) are
+  # not attachment points and are excluded from the port count. A loopback
+  # attaches nothing; a VLAN interface is a logical construct on ports already
+  # counted; a management port reaches the switch itself, which is an asset the
+  # numerator has already counted once.
+  exclude_name_prefixes:
+    - lo
+    - loopback
+    - null
+    - vlan
+    - tunnel
+    - port-channel
+    - po
+    - bundle-ether
+    - mgmt
+    - management
+    - virtual
+  # Count only interfaces whose IF-MIB ifOperStatus is one of these, or leave
+  # empty to count every interface regardless of state. Empty is the default:
+  # a DOWN access port is still an attachment point the estate HAS, and
+  # filtering to `up` would make the denominator shrink every time an endpoint
+  # was switched off — which would make visibility rise for no reason.
+  require_oper_status: []
+
+# Per-fabric declarations. A fabric absent from this map has NO denominator,
+# which is reported as `not_assessed` and never as 0% or 100%.
+fabrics: {}
+
+# ── A worked example, deliberately left commented out ─────────────────────
+#
+# Uncommenting this without a real CMDB behind it would manufacture exactly
+# the fabricated percentage this card refuses. `value` must be a count
+# somebody can point at; `declared_by` is who to ask when it is wrong.
+#
+# fabrics:
+#   enterprise:
+#     - kind: approved_cmdb
+#       value: 1420
+#       as_of: "2026-08-31T00:00:00+00:00"
+#       declared_by: "ISSM, Enterprise enclave"
+#       note: >-
+#         Row count of the approved hardware baseline as signed off at the
+#         2026-08 configuration control board.
+#     - kind: dhcp_scope
+#       value: 980
+#       as_of: "2026-09-01T00:00:00+00:00"
+#       declared_by: "Network operations"
+#       note: >-
+#         Loses the ranking to the CMDB above and is reported as an alternate,
+#         never averaged with it.
+#   lab-gns3:
+#     - kind: derived_if_mib
+#       declared_by: "derived — no value is declared for this kind"
+#       note: >-
+#         Computed from the interface tables discovery already collected. A
+#         fabric whose devices carry no interface data reports `unmeasured`
+#         and still yields a null percentage.

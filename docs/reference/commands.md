@@ -1872,6 +1872,80 @@ fingerprint rule; it was written out by hand at five sites in
 `tools/security_canvas/` and all five now delegate. A resolver that
 re-implemented it a sixth time could drift from the key it claims to resolve onto.
 
+### Asset visibility that cannot fabricate a percentage (rmf-vis-01)
+```bash
+python -m tools.assets.visibility --measure --json        # per fabric; never blends fabrics
+python -m tools.assets.visibility --measure --fabric enterprise
+python -m tools.assets.visibility --measure --record      # append to asset_visibility_snapshots
+python -m tools.assets.visibility --denominators          # the ranked declaration
+python -m tools.assets.visibility --history --limit 20 --json
+```
+TWO NUMBERS, AND ONLY ONE OF THEM NEEDS A DENOMINATOR.
+
+**Corroboration depth** is distinct `(asset, source)` PAIRS over distinct assets.
+It needs nothing declared, so it is a real measurement on every deployment —
+including one with no CMDB at all — and it is the number the report leads with.
+PAIRS, NEVER ROWS: `odc_gap_scores` holds 91 rows carrying ONE distinct value for
+ONE subject, a single stuck writer that any row-counting confidence model rates as
+extremely well corroborated, and the same trap is live here because the ZIG scanner
+re-registers a device on every sweep. Depth is `None` — never 0.0 — over an empty
+asset set.
+
+**`visibility_pct`** needs an authoritative denominator registered in
+`args/asset_denominators.yaml`. Without one it is `None` and every renderer prints
+the words **"not assessed"** — never 0 (which reads as "we see nothing") and never
+100 (which reads as "we see everything"). Both would be claims about an estate
+nobody has sized, and `args/perfect_score_gate.yaml` is ratcheted to 0 for exactly
+that shape. `_rate()` is the ONE place a percentage is computed here, and
+`tests/assets/test_visibility.py` asks the real `perfect_score_census.scan_source`
+predicate about this module rather than writing a second copy of the rule.
+
+FOUR RANKED KINDS, and the losers are REPORTED, never averaged in:
+
+| kind | rank | confidence | unit | what a wrong number does |
+|------|------|------------|------|--------------------------|
+| `approved_cmdb` | 0 | high | assets | the only kind where a human committed to "this is the estate" |
+| `ip_allocation_plan` | 1 | medium | addresses | over-states the estate, so it UNDER-states visibility |
+| `dhcp_scope` | 2 | low | leases | blind to every statically addressed device, so it OVER-states visibility |
+| `derived_if_mib` | 3 | inferred | ports | derived from the IF-MIB tables discovery already walks; counts PORTS, not assets |
+
+`denominator_source`, `denominator_confidence` and `denominator_unit` are persisted
+and rendered beside the number, because "43% against an approved CMDB" and "43% of
+a switch's own port count" are different claims and a reader who cannot tell them
+apart has been misled by an arithmetically correct number. `denominator_as_of` is
+the denominator's OWN clock, kept apart from `measured_at`.
+
+A NUMERATOR OVER ITS DENOMINATOR IS NOT CLAMPED TO 100 — that means the denominator
+is wrong or stale, which is the one fact worth acting on, and
+`numerator_exceeds_denominator` says so.
+
+A `source='synthetic'` row is NOT an observation: the live board's 24 `ni_devices`
+rows all carry "Synthetic demo device — fabricated, not an observed asset" in their
+own notes column. They are excluded BY NAME, COUNTED under `excluded`, and never
+silently dropped. A row whose evidence class is NULL is a different fact
+(`unattributed_source`) and gets its own bucket.
+
+Fabric attribution is DERIVED and its absence is a finding: `asset_identity` carries
+no fabric column, so the fabric and evidence class are recovered by joining back on
+`ni_device_id` and reading `properties_json.discovery.fabric` (the rmf-disc-01 sink
+writes it there for this reason). An asset no fabric claims lands in `(unattributed)`
+— its own bucket, never folded into a declared fabric.
+
+MEASURED on the live board 2026-09-02: `asset_identity` holds 0 rows, so `--measure`
+reports UNMEASURABLE and **exits 2** — a measurement that could not be produced is
+never the same as one that found nothing. Ingesting the real 24 board rows into a
+THROWAWAY database (the live board untouched) excludes all 24 as synthetic and every
+fabric reports `not assessed`. Relabelled to a real evidence class in that throwaway,
+the same 24 rows give: no denominator -> `not_assessed`/`None` with depth 1.0
+measured; `approved_cmdb=40` -> 60.0% with `dhcp_scope=12` reported as an alternate
+and never averaged; `derived_if_mib` -> 33.3% of 72 **ports** with the unit caveat
+attached; a stale `approved_cmdb=10` -> **240.0%**, unclamped, flagged.
+
+Snapshots are APPEND-ONLY (`asset_visibility_snapshots`, migration `20260902223458`,
+registered in `APPEND_ONLY_TABLES`). A correction is a new snapshot: an RMF/cATO
+package's coverage history IS this series, and re-running the measurement tomorrow
+answers a different question.
+
 ---
 
 ## Observability & XAI Commands

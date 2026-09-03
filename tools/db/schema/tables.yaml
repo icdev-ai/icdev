@@ -257,6 +257,7 @@ tables:
   approval_items: it
   approval_workflows: it
   asset_identity: it
+  asset_visibility_snapshots: it
   atlas_assessments: it
   atlas_critique_findings: it
   atlas_critique_sessions: it
