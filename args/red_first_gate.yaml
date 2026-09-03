@@ -121,6 +121,31 @@ run:
 # while the set churns, which is exactly how a gap regrows behind a green gate
 # (see args/ci_test_backlog.txt, which is enumerated for the same reason).
 exemptions:
+  - pattern: "tests/llm/test_role_invoke_redaction.py"
+    reason: >-
+      A CONSUMER SWEEP OVER A SEAM ANOTHER PR CLOSED FIRST, so nothing here can
+      go red against main. rmf-wp-02 diagnosed invoke_for_role as the door that
+      egressed CoD/CoT proposal prose unredacted and built the same fix; #2028
+      landed it on main while the card was in flight (its
+      tests/test_invoke_for_role_redaction.py is the discriminating proof for
+      the router doors, 5 failed at its merge base). This file pins what #2028
+      does not: that rfi_workbench and doc_generator -- the two modules the
+      card names -- dispatch only through redacting doors, by AST, plus a
+      structural belt on invoke_for_role's pre/post pair. Both hold on main by
+      construction, so a red-first proof is not the right question. Scoped to
+      this one file; GATED by args/ci_test_files/core.d/rmf-wp-02.txt.
+  - pattern: "tests/test_ai_telemetry_cache_tokens.py"
+    reason: >-
+      THE EDIT GIVES A TEST DOUBLE THE ATTRIBUTE THE METHOD NOW READS AND
+      ASSERTS NOTHING NEW. _invoke_model_direct became a redaction door
+      (feat/sanitizer-egress-pin), so a bare `LLMRouter.__new__` stub built to
+      exercise only its telemetry write must declare `_config` with redaction
+      off, or the gate raises AttributeError before the ledger is reached. The
+      assertions -- one ai_telemetry row per real two-tier provider call, with
+      cache token counts -- are unchanged, so there is no behaviour for a
+      red-first proof to discriminate against. The guard for the door itself
+      is tests/test_invoke_for_role_redaction.py in the same PR, which is
+      `discriminating` (5 failed at the merge base, 8 pass here).
   - pattern: "tests/test_rfi_grounding.py"
     reason: >-
       THE EDIT REPLACES PURSUIT-SENSITIVE FIXTURE DATA AND ASSERTS NOTHING NEW,

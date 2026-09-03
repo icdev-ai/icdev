@@ -114,6 +114,10 @@ _TEMPLATES = [
     {"id": "ARCH_NETWORK", "name": "Network Architecture", "description": "Network topology, segmentation strategy, traffic flows, and security controls.", "flagship": False, "category": "techwriter", "kind": "architecture"},
     {"id": "ARCH_APPLICATION", "name": "Application Architecture", "description": "System context, component diagram, API contracts, data flow, and deployment architecture.", "flagship": False, "category": "techwriter", "kind": "architecture"},
     {"id": "ARCH_SYSTEM", "name": "System Architecture", "description": "End-to-end system boundary, stakeholders, interfaces, and quality attributes.", "flagship": False, "category": "techwriter", "kind": "architecture"},
+    # rmf-wp-01: the whitepaper / RFP-volume document type. Its skeleton is
+    # TEMPLATE_SECTIONS["WHITEPAPER"]; naming it here is what makes AI-Assist
+    # (/api/generate) draft against that skeleton instead of a freeform outline.
+    {"id": "WHITEPAPER", "name": "Whitepaper", "description": "Position paper with a BLUF executive summary, problem statement, approach, measured evidence, and recommendations.", "flagship": False, "category": "techwriter", "kind": "whitepaper"},
 ]
 
 _PAGES = [
@@ -818,15 +822,21 @@ def techwriter():
     finally:
         conn.close()
     from tools.document_intelligence.constants import (
+        TEMPLATE_SECTIONS,
         TEMPLATE_TYPES,
         TEMPLATE_TYPE_TO_WRITEGUARD_MODE,
     )
     tw_templates = [t for t in _TEMPLATES if t.get("category") == "techwriter"]
+    # rmf-wp-01: the page used to carry its own {'STANDARD_GUIDE': 9, ...}
+    # map beside the declared skeletons — a copy that would have shown every
+    # new template as "7 sections" forever. Derive it from the declaration.
+    section_counts = {k: len(v) for k, v in TEMPLATE_SECTIONS.items()}
     return render_template(
         "document_intelligence/techwriter.html",
         active_docs=active_docs,
         template_types=TEMPLATE_TYPES,
         type_to_mode=TEMPLATE_TYPE_TO_WRITEGUARD_MODE,
+        section_counts=section_counts,
         tw_templates=tw_templates,
         current_user=current_user,
         pages=_PAGES,
@@ -1040,6 +1050,13 @@ def api_import_from_docgen():
     writeguard_mode = TEMPLATE_TYPE_TO_WRITEGUARD_MODE.get(template_type, "default")
     wg_result_id = (session or {}).get("wg_result_id")
 
+    # The connection is closed on EVERY exit below — the early Path A return,
+    # the success return and the except — via the finally. It used to be opened
+    # here and never closed on the error path, so a failed import (no DB in a
+    # test, a refused INSERT) returned 500 and left a write transaction open on
+    # a connection nothing referenced (tests/test_dic_techwriter.py's
+    # transaction-leak guard caught it, rmf-wp-01).
+    conn = None
     try:
         conn = _conn()
         import uuid as _uuid
@@ -1186,6 +1203,12 @@ def api_import_from_docgen():
     except Exception as exc:
         logger.warning("dic: import-from-docgen error: %s", exc)
         return jsonify({"error": str(exc)}), 500
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001 — closing is best-effort on the way out
+                pass
 
 
 @dic_bp.route("/freshness")

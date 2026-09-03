@@ -529,6 +529,9 @@ def _derived_tasks_without_an_open_pr() -> Any:
 #: The script name the launcher starts; a process whose command line carries
 #: it IS a scheduler, whatever the registry says about it.
 SCHEDULER_SCRIPT = "kanban_scheduler.py"
+#: The service name the scheduler claims (service_identity); its registry rows
+#: are `kanban-scheduler-<pid>`, or the bare name from a pre-sid-01 deployment.
+SCHEDULER_SERVICE = "kanban-scheduler"
 #: Ten cycles at the 60s interval. Well above one missed beat; a scheduler that
 #: has not heartbeat in ten minutes is not "busy", it is not looping.
 SCHEDULER_HEARTBEAT_WINDOW_MINUTES = 10
@@ -559,16 +562,33 @@ def _live_scheduler_pids() -> Any:
 
 
 def _kanban_session_rows() -> Any:
-    """(pid, last_heartbeat) for every active `kanban` row, from the REGISTRY
-    TABLE. None when unreadable. Shares nothing with the process scan."""
+    """(pid, last_heartbeat) for every active SCHEDULER row, from the REGISTRY
+    TABLE. None when unreadable. Shares nothing with the process scan.
+
+    Scheduler rows, not `agent_type = 'kanban'` rows (claim-verif-33c9f4cd11):
+    every process the scheduler spawns inherits `ICDEV_AGENT=kanban`, so a
+    worker session's coordination-hook row, and any one-shot command run inside
+    a worker, is a `kanban` row too. Reading those here put a hook process's pid
+    on the card as "what the primary data says" and, worse, let a board with NO
+    scheduler read `agrees` — the reported side empty, the derived side full of
+    hook rows. A scheduler row is one `is_service_session` recognises, which a
+    descendant's `.../child-<pid>` row deliberately is not.
+    """
+    from tools.coordination.service_identity import is_service_session
+
     try:
         with _conn() as conn:
             rows = conn.execute(
-                "SELECT pid, last_heartbeat FROM agent_sessions "
-                "WHERE agent_type = %s AND status = %s",
-                ("kanban", "active"),
+                "SELECT session_id, pid, last_heartbeat FROM agent_sessions "
+                "WHERE status = %s",
+                ("active",),
             ).fetchall()
-        return [(dict(r).get("pid"), dict(r).get("last_heartbeat")) for r in rows]
+        out = []
+        for r in rows:
+            d = dict(r)
+            if is_service_session(str(d.get("session_id") or ""), SCHEDULER_SERVICE):
+                out.append((d.get("pid"), d.get("last_heartbeat")))
+        return out
     except Exception:  # noqa: BLE001
         return None
 
@@ -601,6 +621,371 @@ def _derived_scheduler_pids_heartbeating() -> Any:
 def _every_live_scheduler_heartbeats(reported: Any, derived: Any) -> bool:
     """A scheduler that exists must be one the registry has heard from."""
     return set(reported or []) <= set(derived or [])
+
+
+# --------------------------------------------------------------------------- #
+# 10-13. The four RMF standing claims  (rmf-ui-02)
+# --------------------------------------------------------------------------- #
+# Every mitigation in the RMF project reduces to ONE rule: a surface may not
+# render a number whose supporting evidence nothing independently re-derived.
+# Each card below fixed one face of that defect with a fixture-based unit test
+# pinning the function it changed. These four claims run the same question
+# against the LIVE surface and the LIVE primary data every six hours, so a
+# regression is a `disagrees` verdict on the board rather than a tile nobody
+# questions.
+#
+# The derived side of each reads YAML with `yaml.safe_load` and tables with raw
+# SQL, and shares NOTHING with the module it checks: no loader, no resolver, no
+# classifier. Where a vocabulary or a mapping has to be known (the ZT pillar ->
+# DevSecOps stage map, the classification-method vocabulary), it is copied here
+# as a local constant ON PURPOSE, exactly as `_EVIDENCE_TABLE` above is --
+# importing the surface's own constant would make the "independent" side a
+# re-run of the reported side.
+#
+# MEASURED ON THE LIVE BOARD 2026-09-03 before registration: asset_identity 0
+# rows, asset_visibility_snapshots 0 rows, zta_posture_evidence 0 rows,
+# zta_maturity_scores 8 rows ALL `unmeasured` with a NULL score,
+# rmf_workflow_stages 0 rows. Every one of these claims therefore agrees today
+# on the honest side of the ledger -- the surfaces report unmeasured, the
+# substrates ARE empty -- and that agreement is a measurement, not a vacuous
+# one: a surface rendering a percentage, a maturity band, a reduction ratio or
+# a classification method over those same empty tables is precisely the
+# regression each card removed. The verifier's both-sides-empty rule is not
+# reached, because each side carries the scalar the surface actually asserts
+# (`measurable: False`, `total: 0`, `ratio_emitted: False`, an unmeasured
+# pillar map), and a scalar is a real answer.
+
+
+def _yaml_at(relpath: str) -> Any:
+    """Read one repo YAML file directly. None when unreadable -- never {}."""
+    import yaml
+    from icdev.core.paths import repo_root
+
+    try:
+        with open(repo_root(__file__) / relpath, encoding="utf-8") as fh:
+            data = yaml.safe_load(fh)
+    except Exception:  # noqa: BLE001
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _count_rows(table: str) -> Any:
+    """COUNT(*) over one table through the platform connection.
+
+    None when the table cannot be read -- an unmigrated database is
+    UNMEASURABLE, never "zero rows".
+    """
+    try:
+        with _conn() as conn:
+            row = conn.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()  # nosec B608
+        return int(dict(row).get("n") or 0)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+# ---- 10. asset_visibility_has_denominator  (rmf-vis-01) ------------------- #
+# THE DEFECT. "Asset visibility: 100%" over an estate nobody has sized -- the
+# `seen / total * 100 if total else 100.0` shape, drawing a full green bar for
+# a fabric nothing has ever scanned. rmf-vis-01 made visibility_pct None unless
+# an authoritative denominator is DECLARED for the fabric in
+# args/asset_denominators.yaml, and unmeasurable while asset_identity is empty.
+#
+# Reported: what `measure()` renders -- per fabric, the percentage it shows and
+# the denominator kind it credits. Derived: the YAML read directly (which
+# fabrics declare a recognised kind at all) and a raw COUNT of asset_identity.
+# A percentage for a fabric with no declaration, or a `measurable` report over
+# an identity table with no rows, is the fabrication coming back.
+def _reported_visibility() -> Any:
+    from tools.assets.visibility import measure
+
+    report = measure()
+    assessed: Dict[str, Dict[str, Any]] = {}
+    for fab in report.get("fabrics") or []:
+        if fab.get("visibility_pct") is not None:
+            assessed[str(fab.get("fabric_id"))] = {
+                "pct": fab.get("visibility_pct"),
+                "source": fab.get("denominator_source"),
+            }
+    return {
+        "measurable": bool(report.get("measurable")),
+        "identity_rows": (report.get("identity") or {}).get("total"),
+        "assessed": assessed,
+    }
+
+
+def _derived_visibility_denominators() -> Any:
+    cfg = _yaml_at("args/asset_denominators.yaml")
+    rows = _count_rows("asset_identity")
+    if cfg is None or rows is None:
+        return None
+    kinds = {
+        str(k.get("kind")) for k in (cfg.get("kinds") or []) if isinstance(k, dict)
+    }
+    declared: Dict[str, List[str]] = {}
+    for fabric_id, decls in (cfg.get("fabrics") or {}).items():
+        if isinstance(decls, dict):
+            decls = [decls]
+        recognised = sorted(
+            str(d.get("kind")) for d in (decls or [])
+            if isinstance(d, dict) and str(d.get("kind")) in kinds
+        )
+        if recognised:
+            declared[str(fabric_id)] = recognised
+    return {"identity_rows": rows, "declared": declared}
+
+
+def _visibility_pct_is_backed(reported: Any, derived: Any) -> bool:
+    """A percentage only ever stands on a DECLARED denominator, over a
+    non-empty identity table -- and the kind it credits is one the fabric
+    actually declares. One-directional: a declared fabric with no percentage
+    is `not_assessed` and fine (nothing observed there yet)."""
+    if reported.get("measurable") and not (derived.get("identity_rows") or 0):
+        return False
+    for fabric_id, shown in (reported.get("assessed") or {}).items():
+        declared = (derived.get("declared") or {}).get(fabric_id)
+        if not declared:
+            return False
+        if shown.get("source") not in declared:
+            return False
+    return True
+
+
+# ---- 11. zt_score_has_evidence  (rmf-zt-02) ------------------------------- #
+# THE DEFECT. zta_maturity_scorer averaged posture_score over
+# zta_posture_evidence rows whose evidence_data was NULL -- a ratio over a
+# checkbox list -- and over an EMPTY table it was structurally 0/5, so a
+# pillar nobody had assessed persisted a number and a 'traditional' band that
+# cato_monitor, the ZIG bridge and the MCP zta_posture_check all read as
+# measured. rmf-zt-02 made an unmeasured pillar persist score NULL and
+# maturity_level 'unmeasured'.
+#
+# Reported: `get_latest_score()`, the read-only accessor the ZIG bridge
+# consumes -- which pillars carry a number. Derived: for the SAME project (its
+# id read straight off zta_maturity_scores), which pillars have ANY
+# evidence-backed signal in the primary tables: a project_controls row for one
+# of the pillar's NIST controls, a 'current' zta_posture_evidence row with
+# non-empty evidence_data for one of its evidence types, or a devsecops_profiles
+# row where the pillar maps to a stage. Config is read with yaml directly.
+#: The scorer's own pillar -> stage map, copied so this side imports nothing
+#: from it. A pillar mapping to no stage cannot be evidenced by a profile row.
+_ZT_PILLAR_STAGES = {
+    "user_identity": (), "device": (), "network": ("policy_as_code",),
+    "application_workload": ("sast", "container_scan", "image_signing"),
+    "data": ("secret_detection", "sbom_attestation"),
+    "visibility_analytics": ("sca", "license_compliance"),
+    "automation_orchestration": ("rasp", "policy_as_code"),
+}
+#: evidence_data values that are PRESENT and still carry nothing. A scalar 0 or
+#: false is evidence ("measured, and it was zero"); these are ticks.
+_ZT_EMPTY_EVIDENCE = {"", "null", "none", "{}", "[]", '""', "''"}
+
+
+def _reported_zt_scores() -> Any:
+    from tools.devsecops.zta_maturity_scorer import get_latest_score
+
+    latest = get_latest_score()
+    if latest is None:
+        return None                       # never assessed -> unmeasurable
+    return {
+        "project_id": latest.get("project_id"),
+        "scored": sorted(latest.get("pillar_scores") or {}),
+        "unmeasured": sorted(latest.get("unmeasured_pillars") or []),
+        "overall_scored": latest.get("overall_score") is not None,
+    }
+
+
+def _zt_evidence_present(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, (bytes, bytearray)):
+        value = value.decode("utf-8", "replace")
+    if isinstance(value, str):
+        return value.strip().lower() not in _ZT_EMPTY_EVIDENCE
+    if isinstance(value, (dict, list, tuple, set)):
+        return len(value) > 0
+    return True                           # 0 / False are measurements
+
+
+def _derived_zt_evidence_backed() -> Any:
+    cfg = _yaml_at("args/zta_config.yaml")
+    if cfg is None:
+        return None
+    pillars = cfg.get("pillars") or {}
+    try:
+        with _conn() as conn:
+            latest = conn.execute(
+                "SELECT project_id FROM zta_maturity_scores "
+                "ORDER BY created_at DESC LIMIT 1"
+            ).fetchone()
+            if not latest:
+                return None
+            project_id = dict(latest)["project_id"]
+            controls = {
+                str(dict(r)["control_id"]) for r in conn.execute(
+                    "SELECT control_id FROM project_controls WHERE project_id = %s",
+                    (project_id,),
+                ).fetchall()
+            }
+            evidenced_types = {
+                str(dict(r)["evidence_type"]) for r in conn.execute(
+                    "SELECT evidence_type, evidence_data FROM zta_posture_evidence "
+                    "WHERE project_id = %s AND status = %s",
+                    (project_id, "current"),
+                ).fetchall()
+                if _zt_evidence_present(dict(r).get("evidence_data"))
+            }
+            profile = conn.execute(
+                "SELECT active_stages FROM devsecops_profiles WHERE project_id = %s",
+                (project_id,),
+            ).fetchone()
+    except Exception:  # noqa: BLE001
+        return None
+
+    backed: List[str] = []
+    for pillar, spec in pillars.items():
+        spec = spec or {}
+        nist = {str(c) for c in (spec.get("nist_800_53_controls") or [])}
+        types = {str(t) for t in (spec.get("evidence_types") or [])}
+        has_signal = bool(nist & controls) or bool(types & evidenced_types)
+        if profile is not None and _ZT_PILLAR_STAGES.get(str(pillar)):
+            has_signal = True             # a profile row IS an observation
+        if has_signal:
+            backed.append(str(pillar))
+    return {"project_id": project_id, "evidence_backed": sorted(backed)}
+
+
+def _scored_pillar_has_evidence(reported: Any, derived: Any) -> bool:
+    """Every pillar the surface shows a NUMBER for holds a signal in primary
+    data, for the same project; an overall number needs at least one. A pillar
+    with evidence and no number is a stale assessment, not a fabrication, and
+    is deliberately not asserted."""
+    if reported.get("project_id") != derived.get("project_id"):
+        return False
+    backed = set(derived.get("evidence_backed") or [])
+    if not set(reported.get("scored") or []) <= backed:
+        return False
+    return not (reported.get("overall_scored") and not backed)
+
+
+# ---- 12. rmf_baseline_recorded  (rmf-cyc-01) ------------------------------ #
+# THE DEFECT. "Months -> 72 hours" with no denominator: the "months" half was a
+# word, never a number, and every anecdotal ATO duration is wall-clock to the
+# signed authorization and so CONTAINS the AO's queue -- dividing it by an
+# automation-only clock is the blend wearing a percentage. rmf-cyc-01 declares
+# the baseline in args/rmf_cycle_baseline.yaml with its provenance and REFUSES
+# the comparison until it is quantified and AO-queue-free.
+#
+# Reported: whether `collect_report()` emits a `comparison` (a reduction
+# ratio) and against what baseline_hours. Derived: the YAML read directly --
+# is a baseline RECORDED (value_hours present, not including decision latency
+# under the file's own rules) -- and a raw COUNT of rmf_workflow_stages, since
+# a ratio also needs an automation clock and a clock needs rows.
+def _reported_rmf_ratio() -> Any:
+    from tools.compliance.rmf_cycle_time import collect_report
+
+    report = collect_report()
+    source = report.get("baseline_source") or {}
+    comparison = source.get("comparison") or None
+    return {
+        "state": report.get("state"),
+        "ratio_emitted": comparison is not None,
+        "baseline_hours": (comparison or {}).get("baseline_hours"),
+        "refused": sorted(source.get("comparison_refused") or []),
+    }
+
+
+def _derived_rmf_baseline() -> Any:
+    cfg = _yaml_at("args/rmf_cycle_baseline.yaml")
+    rows = _count_rows("rmf_workflow_stages")
+    if cfg is None or rows is None:
+        return None
+    baseline = cfg.get("baseline") or {}
+    rules = cfg.get("comparison") or {}
+    hours = baseline.get("value_hours")
+    includes_queue = bool(baseline.get("includes_decision_latency"))
+    permitted = rows > 0
+    if rules.get("require_quantified_baseline", True) and hours is None:
+        permitted = False
+    if rules.get("refuse_when_baseline_includes_decision_latency", True) and includes_queue:
+        permitted = False
+    return {
+        "declared_hours": hours,
+        "includes_decision_latency": includes_queue,
+        "stage_rows": rows,
+        "ratio_permitted": permitted,
+    }
+
+
+def _ratio_only_over_a_recorded_baseline(reported: Any, derived: Any) -> bool:
+    """A ratio is emitted only when the declaration permits one, and then
+    against the hours the declaration records. A permitted-but-unemitted ratio
+    is fine: the automation clock may be unmeasured for reasons of its own."""
+    if not reported.get("ratio_emitted"):
+        return True
+    if not derived.get("ratio_permitted"):
+        return False
+    return reported.get("baseline_hours") == derived.get("declared_hours")
+
+
+# ---- 13. classification_method_declared  (rmf-ident-01) ------------------- #
+# THE DEFECT. Three asset stacks, no shared key, and a classification label
+# with no record of HOW it was arrived at. rmf-ident-01 added
+# classification_method (rule | oui | model | human_confirmed) to the canonical
+# asset_identity row, where NULL is a FOURTH state -- nothing has classified
+# it -- that must never be read as 'rule'.
+#
+# Reported: the `stats()` histogram the CLI renders, which buckets NULL as
+# 'unclassified'. Derived: a raw GROUP BY over the same column. The two must
+# agree bucket for bucket -- a surface that COALESCEs NULL into a method, or
+# drops the unclassified bucket, moves rows between them -- and no stored value
+# may sit outside the vocabulary.
+_CLASSIFICATION_METHODS = ("rule", "oui", "model", "human_confirmed")
+_UNCLASSIFIED = "unclassified"
+
+
+def _reported_classification_methods() -> Any:
+    from tools.assets.identity import stats
+
+    out = stats()
+    if not out.get("measurable"):
+        return None
+    return {
+        "total": out.get("total"),
+        "methods": dict(out.get("classification_method") or {}),
+    }
+
+
+def _derived_classification_methods() -> Any:
+    try:
+        with _conn() as conn:
+            rows = conn.execute(
+                "SELECT classification_method AS m, COUNT(*) AS n "
+                "FROM asset_identity GROUP BY classification_method"
+            ).fetchall()
+    except Exception:  # noqa: BLE001
+        return None
+    methods: Dict[str, int] = {}
+    outside: List[str] = []
+    for row in rows:
+        record = dict(row)
+        method = record.get("m")
+        key = _UNCLASSIFIED if method is None else str(method)
+        methods[key] = methods.get(key, 0) + int(record.get("n") or 0)
+        if method is not None and str(method) not in _CLASSIFICATION_METHODS:
+            outside.append(str(method))
+    return {
+        "total": sum(methods.values()),
+        "methods": methods,
+        "outside_vocabulary": sorted(set(outside)),
+    }
+
+
+def _methods_declared_bucket_for_bucket(reported: Any, derived: Any) -> bool:
+    if derived.get("outside_vocabulary"):
+        return False
+    if reported.get("total") != derived.get("total"):
+        return False
+    return dict(reported.get("methods") or {}) == dict(derived.get("methods") or {})
 
 
 REGISTRY: List[Claim] = [
@@ -739,5 +1124,84 @@ REGISTRY: List[Claim] = [
         incident=Incident(["kpr-stale-03"], "2026-09-02",
                           "the silent scheduler was found and killed by hand while "
                           "fixing the lease leak; this claim is its detector"),
+    ),
+    Claim(
+        claim_id="asset_visibility_has_denominator",
+        description=(
+            "A fabric that shows a visibility PERCENTAGE must have an "
+            "authoritative denominator declared for it in "
+            "args/asset_denominators.yaml, credited by the kind it declares, "
+            "over a non-empty asset_identity table. The shape it refuses is "
+            "`seen / total * 100 if total else 100.0` -- a full green bar for "
+            "a fabric nothing has ever scanned."
+        ),
+        reported=_reported_visibility,
+        derived=_derived_visibility_denominators,
+        agree=_visibility_pct_is_backed,
+        tier="propose",
+        tags=["rmf", "assets", "rmf-vis-01"],
+        incident=Incident(["rmf-vis-01"], "2026-09-02",
+                          "visibility_pct is None, never 0.0 or 100.0, without a "
+                          "declared denominator; corroboration depth is the number "
+                          "that needs none"),
+    ),
+    Claim(
+        claim_id="zt_score_has_evidence",
+        description=(
+            "Every ZT pillar the latest persisted assessment shows a NUMBER "
+            "for must hold an evidence-backed signal in primary data for that "
+            "project: a project_controls row, a 'current' zta_posture_evidence "
+            "row with non-empty evidence_data, or a DevSecOps profile. The "
+            "scorer used to average over a checkbox list and, over an empty "
+            "table, persist 0/5 as a 'traditional' band."
+        ),
+        reported=_reported_zt_scores,
+        derived=_derived_zt_evidence_backed,
+        agree=_scored_pillar_has_evidence,
+        tier="propose",
+        tags=["rmf", "zero-trust", "rmf-zt-02"],
+        incident=Incident(["rmf-zt-02"], "2026-09-02",
+                          "an unmeasured pillar persists score NULL and "
+                          "maturity_level 'unmeasured'; self-attested and "
+                          "evidence-backed are two numbers"),
+    ),
+    Claim(
+        claim_id="rmf_baseline_recorded",
+        description=(
+            "The RMF cycle-time report emits a months->72h reduction ratio "
+            "ONLY when args/rmf_cycle_baseline.yaml records a quantified "
+            "baseline that excludes the AO's queue, and then against exactly "
+            "the hours it records. An anecdotal ATO duration contains the "
+            "decision latency; dividing it by an automation-only clock is the "
+            "blend wearing a percentage."
+        ),
+        reported=_reported_rmf_ratio,
+        derived=_derived_rmf_baseline,
+        agree=_ratio_only_over_a_recorded_baseline,
+        tier="propose",
+        tags=["rmf", "compliance", "rmf-cyc-01"],
+        incident=Incident(["rmf-cyc-01"], "2026-09-02",
+                          "the baseline is declared with its provenance and the "
+                          "comparison is refused until it is quantified and "
+                          "AO-queue-free"),
+    ),
+    Claim(
+        claim_id="classification_method_declared",
+        description=(
+            "The asset-identity histogram of HOW each asset was classified "
+            "(rule | oui | model | human_confirmed) must match a raw GROUP BY "
+            "over asset_identity bucket for bucket, with NULL as its own "
+            "'unclassified' bucket and no value outside the vocabulary. NULL "
+            "is a fourth state -- nothing has classified it -- and must never "
+            "be read as 'rule'."
+        ),
+        reported=_reported_classification_methods,
+        derived=_derived_classification_methods,
+        agree=_methods_declared_bucket_for_bucket,
+        tier="propose",
+        tags=["rmf", "assets", "rmf-ident-01"],
+        incident=Incident(["rmf-ident-01"], "2026-09-02",
+                          "classification_method lives on the canonical "
+                          "asset_identity row under a CHECK, nullable on purpose"),
     ),
 ]

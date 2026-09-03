@@ -24,10 +24,12 @@
 
       {% for tmpl in tw_templates %}
       {% set kind_color = {
-        'guide': '#7ab3f0', 'sop': '#fbbf24', 'runbook': '#f87171', 'architecture': '#a78bfa'
+        'guide': '#7ab3f0', 'sop': '#fbbf24', 'runbook': '#f87171', 'architecture': '#a78bfa',
+        'whitepaper': '#34d399'
       }.get(tmpl.kind, '#94a3b8') %}
       {% set kind_bg = {
-        'guide': '#0f2040', 'sop': '#2e1a05', 'runbook': '#2e0505', 'architecture': '#1a1040'
+        'guide': '#0f2040', 'sop': '#2e1a05', 'runbook': '#2e0505', 'architecture': '#1a1040',
+        'whitepaper': '#052e1f'
       }.get(tmpl.kind, '#1e293b') %}
       <div class="tw-template-card" style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:16px;cursor:pointer;transition:border-color 0.2s;"
            onclick="createTechDoc('{{ tmpl.id }}', '{{ tmpl.name }}')"
@@ -39,11 +41,10 @@
         </div>
         <p style="color:#7a8cb0;font-size:12px;margin:0 0 12px;line-height:1.5;">{{ tmpl.description }}</p>
         <div style="font-size:11px;color:#4a6a8a;">
-          {% set sections = {
-            'STANDARD_GUIDE': 9, 'SOP': 8, 'RUNBOOK': 7,
-            'ARCH_NETWORK': 7, 'ARCH_APPLICATION': 7, 'ARCH_SYSTEM': 7
-          } %}
-          {{ sections.get(tmpl.id, 7) }} sections · WriteGuard: {{ type_to_mode.get(tmpl.id, 'default') | replace('_', ' ') }}
+          {# section_counts is derived from constants.TEMPLATE_SECTIONS by the
+             route (rmf-wp-01); a template with no declared skeleton shows '?'
+             rather than a number nobody measured. #}
+          {{ (section_counts or {}).get(tmpl.id, '?') }} sections · WriteGuard: {{ type_to_mode.get(tmpl.id, 'default') | replace('_', ' ') }}
         </div>
       </div>
       {% endfor %}
@@ -96,7 +97,8 @@
       {% for doc in active_docs %}
       {% set kind_color = {
         'STANDARD_GUIDE': '#7ab3f0', 'SOP': '#fbbf24', 'RUNBOOK': '#f87171',
-        'ARCH_NETWORK': '#a78bfa', 'ARCH_APPLICATION': '#a78bfa', 'ARCH_SYSTEM': '#a78bfa'
+        'ARCH_NETWORK': '#a78bfa', 'ARCH_APPLICATION': '#a78bfa', 'ARCH_SYSTEM': '#a78bfa',
+        'WHITEPAPER': '#34d399'
       }.get(doc.template_type, '#94a3b8') %}
       {% set needs_review = doc.get('review_status') == 'pending_review' and (doc.get('assigned_to') or '') == (current_user or '') %}
       <a href="/document-intelligence/doc/{{ doc.doc_id }}" class="tw-doc-card" data-needs-review="{{ 1 if needs_review else 0 }}"
@@ -156,6 +158,7 @@ function createTechDoc(templateId, templateName) {
     templateId === 'RUNBOOK' ? 'Database Failover Runbook' :
     templateId === 'ARCH_NETWORK' ? 'Enterprise Network Architecture' :
     templateId === 'ARCH_APPLICATION' ? 'Application Platform Architecture' :
+    templateId === 'WHITEPAPER' ? 'Continuous ATO Across Classification Fabrics' :
     'System Architecture Overview'
   );
   document.getElementById('create-status').style.display = 'none';

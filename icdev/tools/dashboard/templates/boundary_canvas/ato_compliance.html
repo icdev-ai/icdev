@@ -1,10 +1,13 @@
+<!-- CUI // SP-CTI — Boundary Design Canvas ATO Compliance Dashboard (rmf-ui-01) -->
 {% extends "base.html" %}
-{% block title %}ATO Compliance Dashboard - ICDEV™{% endblock %}
+{% block title %}ATO Compliance Dashboard — Boundary Canvas — ICDEV™{% endblock %}
 {% block content %}
 <div class="container">
     <!-- Breadcrumb -->
     <nav aria-label="breadcrumb" style="margin-bottom:0.5rem;">
         <span><a href="/" style="color:#1976d2;text-decoration:none;">Home</a></span>
+        <span style="color:#999;"> &gt; </span>
+        <span><a href="/boundary/" style="color:#1976d2;text-decoration:none;">Boundary Canvas</a></span>
         <span style="color:#999;"> &gt; </span>
         <span style="color:#333;">ATO Compliance Dashboard</span>
     </nav>
@@ -19,6 +22,8 @@
                style="flex:1;padding:8px 12px;border:1px solid #ccc;border-radius:4px;font-size:0.95rem;">
         <button onclick="loadAll()" style="padding:8px 20px;background:#1976d2;color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Load</button>
     </div>
+
+    {% include "includes/iqe_query_widget.html" %}
 
     <!-- ======================================================= -->
     <!-- 1. Posture Score Gauge                                   -->
@@ -37,7 +42,7 @@
             <!-- Component bars -->
             <div id="component-bars" style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.8rem;margin-top:1.5rem;max-width:600px;margin-left:auto;margin-right:auto;">
                 <div style="padding:0.6rem 0.8rem;border:1px solid #ddd;border-radius:6px;">
-                    <div style="display:flex;justify-content:space-between;margin-bottom:0.3rem;">
+                    <div style="display:flex;justify-content:space-between;gap:0.5rem;margin-bottom:0.3rem;">
                         <span style="font-size:0.8rem;font-weight:600;">Controls</span>
                         <span id="ctrl-pct" style="font-size:0.8rem;font-weight:bold;">--%</span>
                     </div>
@@ -46,7 +51,7 @@
                     </div>
                 </div>
                 <div style="padding:0.6rem 0.8rem;border:1px solid #ddd;border-radius:6px;">
-                    <div style="display:flex;justify-content:space-between;margin-bottom:0.3rem;">
+                    <div style="display:flex;justify-content:space-between;gap:0.5rem;margin-bottom:0.3rem;">
                         <span style="font-size:0.8rem;font-weight:600;">RMF</span>
                         <span id="rmf-pct" style="font-size:0.8rem;font-weight:bold;">--%</span>
                     </div>
@@ -55,7 +60,7 @@
                     </div>
                 </div>
                 <div style="padding:0.6rem 0.8rem;border:1px solid #ddd;border-radius:6px;">
-                    <div style="display:flex;justify-content:space-between;margin-bottom:0.3rem;">
+                    <div style="display:flex;justify-content:space-between;gap:0.5rem;margin-bottom:0.3rem;">
                         <span style="font-size:0.8rem;font-weight:600;">Artifacts</span>
                         <span id="art-pct" style="font-size:0.8rem;font-weight:bold;">--%</span>
                     </div>
@@ -138,7 +143,20 @@ function getProjectId() {
     return document.getElementById('project-id-input').value.trim();
 }
 
+// A null percentage is NOT ASSESSED. `x || 0` turns it into a red 0%, which
+// is the fabrication rmf-rail-01 removed from the API; the page must not put
+// it back. Compare against null explicitly: a measured 0 is a real finding.
+function isMeasured(v) {
+    return v !== null && v !== undefined;
+}
+function pctText(v) {
+    return isMeasured(v) ? `${v}%` : 'not assessed';
+}
+function pctWidth(v) {
+    return isMeasured(v) ? v : 0;
+}
 function pctColor(pct) {
+    if (!isMeasured(pct)) return '#9e9e9e';
     if (pct >= 80) return '#2e7d32';
     if (pct >= 50) return '#f57f17';
     return '#c62828';
@@ -163,31 +181,46 @@ async function loadAll() {
 
 function renderPosture(posture) {
     if (!posture) return;
-    const score = posture.score || 0;
-    const grade = posture.grade || 'F';
+    const measured = isMeasured(posture.score);
+    const score = measured ? posture.score : null;
+    const grade = measured ? (posture.grade || '--') : null;
     const comp = posture.components || {};
-    const deg = Math.round(score / 100 * 360);
-    const gradeColor = GRADE_COLORS[grade] || '#555';
+    const unmeasured = posture.unmeasured_components || [];
 
-    document.getElementById('posture-score-val').textContent = score;
+    document.getElementById('posture-score-val').textContent = measured ? score : '--';
     const gradeEl = document.getElementById('posture-grade');
-    gradeEl.textContent = grade;
-    gradeEl.style.color = gradeColor;
+    if (measured) {
+        gradeEl.textContent = grade;
+        gradeEl.style.color = GRADE_COLORS[grade] || '#555';
+        gradeEl.title = '';
+    } else {
+        gradeEl.textContent = 'not assessed';
+        gradeEl.style.color = '#9e9e9e';
+        gradeEl.title = unmeasured.length
+            ? `Unmeasured: ${unmeasured.join(', ')}`
+            : 'No component was measured';
+    }
 
-    const gaugeColor = score >= 80 ? '#4caf50' : score >= 60 ? '#ff9800' : '#f44336';
-    document.getElementById('posture-gauge').style.background =
-        `conic-gradient(${gaugeColor} 0deg, ${gaugeColor} ${deg}deg, #eee ${deg}deg, #eee 360deg)`;
+    if (measured) {
+        const deg = Math.round(score / 100 * 360);
+        const gaugeColor = score >= 80 ? '#4caf50' : score >= 60 ? '#ff9800' : '#f44336';
+        document.getElementById('posture-gauge').style.background =
+            `conic-gradient(${gaugeColor} 0deg, ${gaugeColor} ${deg}deg, #eee ${deg}deg, #eee 360deg)`;
+    } else {
+        // An empty gauge, not a full red one: nothing was measured.
+        document.getElementById('posture-gauge').style.background = '#eee';
+    }
 
-    const ctrlPct = comp.control_pct || 0;
-    const rmfPct = comp.rmf_pct || 0;
-    const artPct = comp.artifact_pct || 0;
+    const ctrlPct = comp.control_pct;
+    const rmfPct = comp.rmf_pct;
+    const artPct = comp.artifact_pct;
 
-    document.getElementById('ctrl-pct').textContent = `${ctrlPct}%`;
-    document.getElementById('rmf-pct').textContent = `${rmfPct}%`;
-    document.getElementById('art-pct').textContent = `${artPct}%`;
-    document.getElementById('bar-ctrl').style.width = `${ctrlPct}%`;
-    document.getElementById('bar-rmf').style.width = `${rmfPct}%`;
-    document.getElementById('bar-art').style.width = `${artPct}%`;
+    document.getElementById('ctrl-pct').textContent = pctText(ctrlPct);
+    document.getElementById('rmf-pct').textContent = pctText(rmfPct);
+    document.getElementById('art-pct').textContent = pctText(artPct);
+    document.getElementById('bar-ctrl').style.width = `${pctWidth(ctrlPct)}%`;
+    document.getElementById('bar-rmf').style.width = `${pctWidth(rmfPct)}%`;
+    document.getElementById('bar-art').style.width = `${pctWidth(artPct)}%`;
 }
 
 function renderRMFStages(stages) {
@@ -228,7 +261,7 @@ function renderControls(ctrl) {
         {label:'Partial', val: ctrl.partially_implemented || 0, color:'#f57f17'},
         {label:'Planned', val: ctrl.planned || 0, color:'#9e9e9e'},
         {label:'N/A', val: ctrl.not_applicable || 0, color:'#607d8b'},
-        {label:'Posture', val: `${ctrl.posture_pct || 0}%`, color: pctColor(ctrl.posture_pct || 0)},
+        {label:'Posture', val: pctText(ctrl.posture_pct), color: pctColor(ctrl.posture_pct)},
     ];
     statsEl.innerHTML = statCards.map(c => `
         <div class="card" style="padding:1rem;text-align:center;">
@@ -275,7 +308,7 @@ function renderArtifacts(artData) {
         el.innerHTML = '<div style="padding:1.5rem;border:1px solid #eee;border-radius:8px;text-align:center;color:#999;">No artifact data</div>';
         return;
     }
-    const readiness = artData.readiness_score || 0;
+    const readiness = artData.readiness_score;  // null = no artifact produced
     el.innerHTML = arts.map(a => {
         const icon = ARTIFACT_ICONS[a.type] || '📄';
         const color = ARTIFACT_STATUS_COLOR[a.status] || '#9e9e9e';
@@ -295,11 +328,12 @@ function renderArtifacts(artData) {
     }).join('');
 
     // Append readiness score card
-    const scoreColor = readiness >= 70 ? '#2e7d32' : readiness >= 40 ? '#f57f17' : '#c62828';
+    const scoreColor = !isMeasured(readiness) ? '#9e9e9e'
+        : readiness >= 70 ? '#2e7d32' : readiness >= 40 ? '#f57f17' : '#c62828';
     el.innerHTML += `
         <div style="padding:1.4rem;border:2px solid ${scoreColor};border-radius:8px;background:#fafafa;display:flex;flex-direction:column;align-items:center;justify-content:center;">
             <div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;color:#555;margin-bottom:0.5rem;">Readiness Score</div>
-            <div style="font-size:2.5rem;font-weight:bold;color:${scoreColor};">${readiness}</div>
+            <div style="font-size:2.5rem;font-weight:bold;color:${scoreColor};">${isMeasured(readiness) ? readiness : '--'}</div>
             <div style="font-size:0.78rem;color:#888;">out of 100</div>
         </div>`;
 }

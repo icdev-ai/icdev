@@ -90,7 +90,9 @@ def get_control_summary(project_id: str, *, conn: Any = None) -> dict:
             "planned": int,
             "not_applicable": int,
             "compensating": int,
-            "posture_pct": float,       # (implemented + partial) / total * 100
+            "posture_pct": float|None, # (implemented + partial) / total * 100;
+                                       # None -- never 0.0 -- over a project
+                                       # with no controls assigned (rmf-rail-01)
             "families": [
                 {"family": str, "total": int, "implemented": int,
                  "partially_implemented": int, "planned": int,
@@ -126,7 +128,10 @@ def get_control_summary(project_id: str, *, conn: Any = None) -> dict:
         not_applicable = status_counts.get("not_applicable", 0)
         compensating = status_counts.get("compensating", 0)
 
-        posture_pct = round((implemented + partial) / total * 100, 1) if total else 0.0
+        # None, never 0.0, over an empty denominator: a project with no
+        # controls assigned has not been ASSESSED, and 0.0 reads as "assessed
+        # and nothing implemented" (rmf-rail-01; args/perfect_score_gate.yaml).
+        posture_pct = round((implemented + partial) / total * 100, 1) if total else None
 
         # Per-family breakdown — join project_controls to compliance_controls if available
         families: list[dict] = []
@@ -214,7 +219,8 @@ def get_control_summary(project_id: str, *, conn: Any = None) -> dict:
             "planned": 0,
             "not_applicable": 0,
             "compensating": 0,
-            "posture_pct": 0.0,
+            # A failed read is not a measured zero.
+            "posture_pct": None,
             "families": [],
         }
     finally:
@@ -338,7 +344,8 @@ def get_artifact_status(project_id: str, *, conn: Any = None) -> dict:
 
         {
             "project_id": str,
-            "readiness_score": int,   # 0-100 composite
+            "readiness_score": int|None,   # 0-100 composite; None when no
+                                           # artifact of any kind exists
             "artifacts": [
                 {"type": str, "count": int, "status": str, "detail": str},
                 ...
@@ -480,6 +487,15 @@ def get_artifact_status(project_id: str, *, conn: Any = None) -> dict:
         if sbom_status == "present":
             score += 15
 
+        # THE CHECKLIST AWARDS POINTS FOR ABSENCE: no POAM items reads "ok"
+        # (+30) and no open STIG findings reads "ok" (+25), so a project that
+        # was never assessed scores 55 -- an absent probe read as a pass, the
+        # rmf-zt-01 shape one table over. When NOTHING was produced there is
+        # no artifact readiness to report; None, never 0 and never 55.
+        produced = any(a.get("count", 0) > 0 for a in artifacts)
+        if not produced:
+            score = None
+
         return {
             "project_id": project_id,
             "readiness_score": score,
@@ -490,7 +506,8 @@ def get_artifact_status(project_id: str, *, conn: Any = None) -> dict:
         logger.error("get_artifact_status failed for %s: %s", project_id, exc)
         return {
             "project_id": project_id,
-            "readiness_score": 0,
+            # A failed read is not a measured zero.
+            "readiness_score": None,
             "artifacts": [],
         }
     finally:
@@ -590,7 +607,8 @@ def get_crosswalk_summary(project_id: str, *, conn: Any = None) -> dict:
             # Return placeholder framework summary based on control family coverage
             total = len(rows)
             covered_count = len(implemented_controls)
-            base_pct = round(covered_count / total * 100, 1) if total else 0.0
+            # None, never 0.0, when the project maps no controls at all.
+            base_pct = round(covered_count / total * 100, 1) if total else None
             frameworks = [
                 {
                     "key": "nist_800_53",
@@ -622,6 +640,28 @@ def get_crosswalk_summary(project_id: str, *, conn: Any = None) -> dict:
                 pass
 
 
+def _rmf_stages_recorded(project_id: str, conn: Any) -> bool | None:
+    """Has ANY rmf_workflow_stages row ever been written for this project?
+
+    ``get_rmf_stages`` returns six synthetic ``not_started`` stages for a
+    project with no rows, so a ratio over its result cannot tell an estate
+    nobody has assessed from one at the start of its lifecycle. This asks the
+    table directly. True | False | None -- an unreadable table is None, never
+    False.
+    """
+    try:
+        if not _table_exists(conn, "rmf_workflow_stages"):
+            return None
+        row = conn.execute(
+            "SELECT COUNT(*) FROM rmf_workflow_stages WHERE project_id = %s",
+            (project_id,),
+        ).fetchone()
+        return _scalar(row) > 0
+    except Exception as exc:
+        logger.warning("_rmf_stages_recorded failed for %s: %s", project_id, exc)
+        return None
+
+
 def get_posture_score(project_id: str, *, conn: Any = None) -> dict:
     """Return composite ATO posture score (0-100) with letter grade.
 
@@ -630,16 +670,27 @@ def get_posture_score(project_id: str, *, conn: Any = None) -> dict:
       - RMF stage progress: 30%
       - Artifact readiness: 20%
 
+    EVERY COMPONENT IS None WHEN NOTHING WAS MEASURED, and the composite is
+    None -- never 0 and never grade F -- while any component is. A project
+    with no controls assigned, no RMF stage ever recorded and no artifact
+    produced used to score 16 (F): 0.0 control coverage, 0.0 RMF progress
+    and 55 artifact points awarded for the ABSENCE of POAM items and STIG
+    findings. That is a grade for an estate nobody assessed (rmf-rail-01).
+    ``unmeasured_components`` names what is missing so the surface can say
+    "not assessed" instead of drawing a red gauge.
+
     Returns::
 
         {
             "project_id": str,
-            "score": int,          # 0-100
-            "grade": str,          # A/B/C/D/F
+            "score": int|None,     # 0-100; None while any component is None
+            "grade": str|None,     # A/B/C/D/F; None with the score
+            "score_basis": str,    # all_components | unmeasured | error
+            "unmeasured_components": [str, ...],
             "components": {
-                "control_pct": float,
-                "rmf_pct": float,
-                "artifact_pct": float,
+                "control_pct": float|None,
+                "rmf_pct": float|None,
+                "artifact_pct": float|None,
             },
         }
     """
@@ -647,60 +698,85 @@ def get_posture_score(project_id: str, *, conn: Any = None) -> dict:
     close_after = conn is None
 
     try:
-        # 1. Control coverage
+        # 1. Control coverage -- None over a project with no controls.
         ctrl = get_control_summary(project_id, conn=_conn)
-        control_pct = float(ctrl.get("posture_pct", 0.0))
+        raw_ctrl = ctrl.get("posture_pct")
+        control_pct = float(raw_ctrl) if raw_ctrl is not None else None
 
-        # 2. RMF stage progress
+        # 2. RMF stage progress -- None unless a stage row was ever RECORDED.
+        # get_rmf_stages hands back six synthetic not_started stages for a
+        # project with no rows; a ratio over those is a constant wearing the
+        # name of a measurement. A measured 0.0 (rows exist, none complete)
+        # is a real finding and still renders as one.
         stages = get_rmf_stages(project_id, conn=_conn)
-        completed = sum(1 for s in stages if s["status"] == "complete")
-        in_prog = sum(1 for s in stages if s["status"] == "in_progress")
-        rmf_pct = round((completed + in_prog * 0.5) / len(stages) * 100, 1)
-
-        # 3. Artifact readiness
-        artifacts = get_artifact_status(project_id, conn=_conn)
-        artifact_pct = float(artifacts.get("readiness_score", 0))
-
-        # Composite: 50% control, 30% RMF, 20% artifact
-        composite = round(
-            control_pct * 0.50 + rmf_pct * 0.30 + artifact_pct * 0.20,
-            1,
-        )
-        score = min(100, max(0, int(composite)))
-
-        # Letter grade
-        if score >= 90:
-            grade = "A"
-        elif score >= 80:
-            grade = "B"
-        elif score >= 70:
-            grade = "C"
-        elif score >= 60:
-            grade = "D"
+        if _rmf_stages_recorded(project_id, _conn) and stages:
+            completed = sum(1 for s in stages if s["status"] == "complete")
+            in_prog = sum(1 for s in stages if s["status"] == "in_progress")
+            rmf_pct = round((completed + in_prog * 0.5) / len(stages) * 100, 1)
         else:
-            grade = "F"
+            rmf_pct = None
+
+        # 3. Artifact readiness -- None when no artifact was ever produced.
+        artifacts = get_artifact_status(project_id, conn=_conn)
+        raw_art = artifacts.get("readiness_score")
+        artifact_pct = float(raw_art) if raw_art is not None else None
+
+        components = {
+            "control_pct": control_pct,
+            "rmf_pct": rmf_pct,
+            "artifact_pct": artifact_pct,
+        }
+        unmeasured = [k for k, v in components.items() if v is None]
+
+        if unmeasured:
+            # A composite over a subset under the unscoped name "score" is a
+            # scoped computation wearing an unscoped name; refuse it.
+            score = None
+            grade = None
+            basis = "unmeasured"
+        else:
+            # Composite: 50% control, 30% RMF, 20% artifact
+            composite = round(
+                control_pct * 0.50 + rmf_pct * 0.30 + artifact_pct * 0.20,
+                1,
+            )
+            score = min(100, max(0, int(composite)))
+            basis = "all_components"
+
+            # Letter grade
+            if score >= 90:
+                grade = "A"
+            elif score >= 80:
+                grade = "B"
+            elif score >= 70:
+                grade = "C"
+            elif score >= 60:
+                grade = "D"
+            else:
+                grade = "F"
 
         return {
             "project_id": project_id,
             "score": score,
             "grade": grade,
-            "components": {
-                "control_pct": control_pct,
-                "rmf_pct": rmf_pct,
-                "artifact_pct": artifact_pct,
-            },
+            "score_basis": basis,
+            "unmeasured_components": unmeasured,
+            "components": components,
         }
 
     except Exception as exc:
         logger.error("get_posture_score failed for %s: %s", project_id, exc)
+        # A failed read is not a score of 0 and not a grade of F.
         return {
             "project_id": project_id,
-            "score": 0,
-            "grade": "F",
+            "score": None,
+            "grade": None,
+            "score_basis": "error",
+            "unmeasured_components": ["control_pct", "rmf_pct", "artifact_pct"],
             "components": {
-                "control_pct": 0.0,
-                "rmf_pct": 0.0,
-                "artifact_pct": 0.0,
+                "control_pct": None,
+                "rmf_pct": None,
+                "artifact_pct": None,
             },
         }
     finally:

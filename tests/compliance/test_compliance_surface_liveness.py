@@ -340,6 +340,12 @@ def test_cui_mark_names_an_unsupported_extension_rather_than_silently_passing(mc
 
 ORPHANS_CLOSED = ["/ato-compliance", "/fedramp-20x"]
 
+# rmf-ui-01: an orphan that has since MIGRATED onto a governed canvas is linked
+# at its governed home, and the old app.py route survives as a redirect. Keyed
+# by the old route so the two lists cannot drift apart: a route in this map is
+# still in ORPHANS_CLOSED (the redirect must exist) but is linked at the value.
+GOVERNED_HOME = {"/ato-compliance": "/boundary/ato-compliance"}
+
 
 def _all_template_text():
     roots = [REPO / "tools" / "dashboard" / "templates"]
@@ -356,9 +362,15 @@ def test_page_route_is_linked_from_a_template(route):
     """An href, not merely a fetch() of its API — a page you cannot reach is inert."""
     text = _all_template_text()
     assert text, "no dashboard templates found"
-    assert re.search(rf'href="{re.escape(route)}(/|"|\?)', text), (
-        f"{route} is still an orphan: no template links to it"
+    home = GOVERNED_HOME.get(route, route)
+    assert re.search(rf'href="{re.escape(home)}(/|"|\?)', text), (
+        f"{route} is still an orphan: no template links to {home}"
     )
+    if home != route:
+        # Migrated: the nav must point at the GOVERNED home, not the redirect.
+        assert not re.search(rf'href="{re.escape(route)}(/|"|\?)', text), (
+            f"{route} is still linked at its ungoverned URL instead of {home}"
+        )
 
 
 @pytest.mark.parametrize("route", ORPHANS_CLOSED)

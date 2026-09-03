@@ -630,6 +630,14 @@ def auto_reassess(project_id, project_dir=None, db_path=None):
         conn.close()
 
 
+def _pct_text(value):
+    """Render a percentage for the console; an unmeasured one says so.
+
+    ``f"{None}%"`` prints ``None%``, which reads as a value. rmf-rail-01.
+    """
+    return "not measured" if value is None else f"{value}%"
+
+
 def compute_cato_readiness(project_id, db_path=None):
     """Compute cATO readiness score for a project.
 
@@ -644,6 +652,11 @@ def compute_cato_readiness(project_id, db_path=None):
         Dict with total_controls, controls_with_evidence,
         controls_with_fresh_evidence, readiness_pct, automated_pct,
         and by_frequency breakdown.
+
+        ``readiness_pct`` and ``automated_pct`` are None -- never 0.0 -- when
+        the project holds no evidence at all: a zero there is indistinguishable
+        from a measured failure, which is why tools/fabric/posture.py refused
+        to carry them (rmf-fab-02) and why rmf-rail-01 fixed them at source.
     """
     conn = _get_connection(db_path)
     try:
@@ -663,8 +676,9 @@ def compute_cato_readiness(project_id, db_path=None):
                 "total_controls": 0,
                 "controls_with_evidence": 0,
                 "controls_with_fresh_evidence": 0,
-                "readiness_pct": 0.0,
-                "automated_pct": 0.0,
+                # None, never 0.0: nothing was measured (rmf-rail-01).
+                "readiness_pct": None,
+                "automated_pct": None,
                 "total_evidence_items": 0,
                 "by_frequency": {},
             }
@@ -710,11 +724,12 @@ def compute_cato_readiness(project_id, db_path=None):
         except sqlite3.OperationalError:
             pass
 
-        readiness_pct = 0.0
+        # None -- never 0.0 -- over an empty denominator (rmf-rail-01).
+        readiness_pct = None
         if total_controls > 0:
             readiness_pct = round(len(controls_with_fresh) / total_controls * 100, 1)
 
-        automated_pct = 0.0
+        automated_pct = None
         if total_evidence > 0:
             automated_pct = round(automated_count / total_evidence * 100, 1)
 
@@ -728,8 +743,8 @@ def compute_cato_readiness(project_id, db_path=None):
             "by_frequency": freq_counts,
         }
 
-        print(f"cATO readiness: {readiness_pct}% ({len(controls_with_fresh)}/{total_controls} controls fresh)")
-        print(f"  Automation: {automated_pct}% of evidence is automated")
+        print(f"cATO readiness: {_pct_text(readiness_pct)} ({len(controls_with_fresh)}/{total_controls} controls fresh)")
+        print(f"  Automation: {_pct_text(automated_pct)} of evidence is automated")
 
         return result
 
@@ -880,7 +895,7 @@ def get_cato_dashboard_data(project_id, db_path=None):
         }
 
         print(f"cATO dashboard data generated for project {project_id}")
-        print(f"  Readiness: {readiness['readiness_pct']}%")
+        print(f"  Readiness: {_pct_text(readiness['readiness_pct'])}")
         print(f"  Upcoming expirations (30d): {len(upcoming_expirations)}")
         print(f"  Controls needing attention: {len(controls_needing_attention)}")
 
@@ -1225,8 +1240,8 @@ def _format_readiness_report(readiness):
         f"  Controls with evidence:        {readiness['controls_with_evidence']}",
         f"  Controls with FRESH evidence:  {readiness['controls_with_fresh_evidence']}",
         "",
-        f"  Readiness Score:  {readiness['readiness_pct']}%",
-        f"  Automation Rate:  {readiness['automated_pct']}%",
+        f"  Readiness Score:  {_pct_text(readiness['readiness_pct'])}",
+        f"  Automation Rate:  {_pct_text(readiness['automated_pct'])}",
         "",
         "  Evidence by Automation Frequency:",
     ]
@@ -1254,8 +1269,8 @@ def _format_dashboard_report(dashboard):
         f"  Generated: {dashboard.get('generated_at', 'N/A')}",
         "",
         "  --- Readiness ---",
-        f"  Score:       {readiness.get('readiness_pct', 0)}%",
-        f"  Automation:  {readiness.get('automated_pct', 0)}%",
+        f"  Score:       {_pct_text(readiness.get('readiness_pct'))}",
+        f"  Automation:  {_pct_text(readiness.get('automated_pct'))}",
         "",
         "  --- Evidence Freshness ---",
         f"  Current:     {freshness.get('current', 0)}",

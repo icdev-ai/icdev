@@ -1249,12 +1249,25 @@ class LLMRouter:
             return request  # Never block the LLM call on compressor failure
 
     def _pre_invoke_redaction(
-        self, function: str, request: LLMRequest, *, chain_key: Optional[str] = None
+        self,
+        function: str,
+        request: LLMRequest,
+        *,
+        chain_key: Optional[str] = None,
+        egress_chain: Optional[List[str]] = None,
     ) -> Optional[str]:
         """Sanitize PII in request messages before sending to any LLM.
 
         Applies to ALL modules. Checks if the function is in the enforced
         scope and whether routing is local-only (skips if configured).
+
+        ``chain_key`` names the routing chain that will actually EGRESS the
+        request when it is not the function's own: ``invoke_for_role`` routes
+        on a ROLE key (``cod_judge``, ``cot_critic``) while the originating
+        ``function`` still decides enforced scope and ``excluded_functions``.
+        The local-only skip must be judged on the chain the bytes leave
+        through, or a cloud role under a local function skips redaction for
+        a call that is not local at all.
 
         Returns session_id for de-anonymization, or None if skipped.
 
@@ -1262,14 +1275,6 @@ class LLMRouter:
         that MUST run but is missing/errors raises RedactionUnavailableError
         (aborting the LLM call) instead of proceeding unredacted. Default is
         fail-open (log + proceed). Legitimate skips below never raise.
-
-        ``chain_key`` (rmf-wp-02) names the routing chain the request will
-        ACTUALLY travel when it is not ``function``'s own -- ``invoke_for_role``
-        resolves a ROLE chain (``cot_reasoner``, ``cod_judge``), so the
-        local-only decision must read that chain, not the function's. Reading
-        the function's chain there is fail-OPEN: a function routed locally whose
-        CoT roles reach a cloud model would skip redaction on the cloud hop.
-        Scope and exclusion checks stay keyed on ``function``.
         """
         # D-RDT-4: Config toggle — skip redaction if explicitly disabled
         rdcfg = self._config.get("redaction", {})
@@ -1309,7 +1314,11 @@ class LLMRouter:
             #
             # Use the one definition (cli_bridge.activate), which fails closed on
             # an unknown model and on an empty chain.
-            chain = self._get_chain_for_function(chain_key or function)
+            chain = (
+                list(egress_chain)
+                if egress_chain is not None
+                else self._get_chain_for_function(chain_key or function)
+            )
             is_local = _chain_is_local_only(
                 chain, self._config.get("models", {}), self._config.get("providers", {})
             )
@@ -1339,6 +1348,13 @@ class LLMRouter:
                 if not meta.get("skipped", True):
                     request.system_prompt = sanitized
 
+            try:
+                # The door that redacted this request. `invoke` hands an already
+                # redacted request to two-tier / _invoke_model_direct; that door
+                # reads the mark and does not redact (or audit) a second time.
+                request._redaction_session = sanitizer.session_id
+            except Exception:  # noqa: BLE001 -- a frozen request type; the gate still ran
+                pass
             return sanitizer.session_id
 
         except RedactionUnavailableError:
@@ -1471,6 +1487,17 @@ class LLMRouter:
         two-tier path returns is the REVIEW response alone, so a single row at
         the return would undercount the draft's tokens entirely.
         """
+        # The same gate every other door runs (invoke, invoke_streaming,
+        # invoke_for_role). This is ChainOrchestrator's LEGACY door -- a direct
+        # model name instead of a routing key -- and the two-tier draft/review
+        # door. A request `invoke` already redacted arrives MARKED and is left
+        # alone; an unmarked one is entering the router HERE and is redacted
+        # now, with locality judged on the one model that egresses.
+        _direct_session = None
+        if getattr(request, "_redaction_session", None) is None:
+            _direct_session = self._pre_invoke_redaction(
+                function or telemetry_function, request, egress_chain=[model_name]
+            )
         model_cfg = self._get_model_config(model_name)
         if not model_cfg:
             logger.warning("Two-tier: model '%s' not found in config", model_name)
@@ -1498,6 +1525,8 @@ class LLMRouter:
                 )
             except Exception as _tel_exc:  # noqa: BLE001
                 logger.warning("AI telemetry logging failed: %s", _tel_exc)
+            if _direct_session:
+                response = self._post_invoke_deanonymize(response, _direct_session)
             return response
         except (ForceLocalViolation, RedactionUnavailableError):
             # NEVER swallow an egress refusal into a None. The `return None` below
@@ -3237,17 +3266,6 @@ class LLMRouter:
                       e.g. 'cot_reasoner', 'cot_critic', 'cod_judge'.
             function: ICDEV™ function name, used for telemetry grouping.
             request:  LLMRequest to invoke.
-
-        rmf-wp-02: THIS PATH CARRIED PROPOSAL PROSE TO CLOUD PROVIDERS
-        UNREDACTED. ``invoke`` has run ``_pre_invoke_redaction`` on every call
-        since D-RDT-1, and ``cortex.complete`` reaches ``invoke`` -- so the
-        single-shot drafting paths in rfi_workbench and doc_generator were
-        covered. Their Chain-of-Debate / Chain-of-Thought paths are not
-        ``invoke``: ChainOrchestrator builds one request per role step and
-        hands each to THIS method, which resolved a chain, ranked it and called
-        the provider with the raw text. The sanitizer that gates every other
-        egress had no seat here. Same pre/post pair as ``invoke``, keyed on
-        the ROLE chain for the local-only decision (see ``chain_key``).
         """
         chain = self._get_chain_for_function(role_key)
         if not chain:
@@ -3258,15 +3276,19 @@ class LLMRouter:
                 chain=[],
             )
 
-        _redaction_session = self._pre_invoke_redaction(
-            function, request, chain_key=role_key
-        )
-
         try:
             chain = self._get_rl_router().rank_models(role_key, chain)
         except Exception:
             pass  # RL ranking is best-effort
 
+        # The same egress gate `invoke` runs (D-RDT-4/5, trust-mask-01). This
+        # door had none: every Chain-of-Debate / -Thought / council role call
+        # went to _provider_invoke with the caller's raw text, so the judgment
+        # sections of an RFI draft (rfi_workbench._generate_draft, CoD) reached
+        # the provider unredacted while the single-shot sections did not. Scope
+        # and exclusions are keyed on the originating FUNCTION; the local-only
+        # skip is judged on the ROLE chain, which is what actually egresses.
+        _redaction_session = self._pre_invoke_redaction(function, request, chain_key=role_key)
         last_error: Optional[Exception] = None
 
         for model_name in chain:

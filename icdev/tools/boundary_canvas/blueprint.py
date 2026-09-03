@@ -1620,6 +1620,41 @@ def create_boundary_blueprint():
             "boundary_canvas/cato.html", designs=designs, fabric_posture=fabric_posture
         )
 
+    # ── ATO Compliance Dashboard (rmf-ui-01) ─────────────────────────────────
+    #
+    # Migrated from a bare `@app.route("/ato-compliance")` in
+    # tools/dashboard/app.py, where it had no registry entry, no RBAC guard, no
+    # completeness gate and no IQE dispatch. On this blueprint it inherits all
+    # four: app.py attaches guard_component_access("bdc", min_il) as a
+    # before_request on every registered canvas blueprint, the registry's
+    # url_prefix + IQE adapter put /boundary/* on the path->canvas map, and the
+    # canvas completeness gate owns boundary_canvas/. The page drives the
+    # UNCHANGED /api/ato-compliance/* blueprint (tools/dashboard/api/
+    # ato_compliance.py) -- only the PAGE route moved. The old URL redirects
+    # here rather than 404ing: a silently dropped page is the failure mode a
+    # one-route-per-card migration exists to refuse.
+
+    @bp.route("/ato-compliance")
+    @bdc_login_required
+    def bdc_ato_compliance_page():
+        """ATO Compliance Dashboard — control tracking, RMF stages, artifact readiness, crosswalk."""
+        return render_template("boundary_canvas/ato_compliance.html")
+
+    # ── OSCAL Ecosystem (rmf-ui-04) ──────────────────────────────────────────
+    #
+    # Migrated from a bare `@app.route("/oscal")` in tools/dashboard/app.py --
+    # the same shape as the rmf-ui-01 exemplar above. An RMF ARTIFACT surface
+    # (OSCAL SSP/SAP/SAR/POA&M validation, catalog lookup, format conversion)
+    # belongs on the canvas that already ships oscal_cato_exporter.py. The
+    # page drives the UNCHANGED /api/oscal/* routes -- only the PAGE route
+    # moved. The old URL redirects here rather than 404ing.
+
+    @bp.route("/oscal")
+    @bdc_login_required
+    def bdc_oscal_page():
+        """OSCAL ecosystem — validation, catalog, format conversion (D302-D306)."""
+        return render_template("boundary_canvas/oscal.html")
+
     @bp.route("/api/fabric-posture", methods=["GET"])
     @bdc_login_required
     def bdc_api_fabric_posture():

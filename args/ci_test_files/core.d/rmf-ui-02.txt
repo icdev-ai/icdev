@@ -1,0 +1,2 @@
+# rmf-ui-02 -- the four RMF standing claims, registered with two independent derivations each
+tests/awareness/test_claims_rmf_ui_02.py

@@ -225,6 +225,38 @@ python tools/awareness/capability_consumption.py --class verified_claim --json
 # counted; a human running the CLI records nothing, on purpose. Budget 0 in
 # args/liveness_gate.yaml: a verifier nobody runs FAILS capability_liveness.
 
+# A service's session id is INHERITED by everything it spawns (claim-verif-33c9f4cd11)
+python tools/awareness/claim_verifier.py --claim scheduler_heartbeat_is_fresh
+python -c "from tools.coordination.service_identity import is_inherited_identity as f; import os; print(f(os.environ.get('ICDEV_SESSION_ID','')))"
+# The claim above filed its first live card on 2026-09-03 for a scheduler that
+# was LOOPING NORMALLY: reported `[22508]` (the process table), derived
+# `[31872]` (the registry). TWO reductions were wrong and the data was not.
+#  * `claim_service_identity` writes `kanban-scheduler-<pid>` and
+#    `ICDEV_AGENT=kanban` into os.environ, and every kanban worker session --
+#    and every command run inside one -- inherits both. Any of them touching
+#    session_registry wrote THE SCHEDULER'S ROW: register() replaced its pid,
+#    heartbeat() refreshed it on the child's behalf, the Stop hook's
+#    end_session() could mark it ended; and the claim's derived side read every
+#    `agent_type='kanban'` row, so a worker's coordination-hook row (pid 31872)
+#    was "what the primary data says", and a board with NO scheduler read
+#    `agrees` against hook rows. Ownership is now PROCESS-LOCAL
+#    (service_identity._OWNED, a set, never an env var): an id embedding a pid
+#    that is not ours for a name we never claimed is a descendant's, and the
+#    registry writes it as `<parent-id>/child-<pid>`; `is_service_session`
+#    refuses child ids, and the claim reads scheduler rows through it. A
+#    service re-executed by code_reload (a NEW pid on Windows, the old id in
+#    the env) claims its name again in main() and keeps its row.
+#  * The scheduler's heartbeat was written ONCE per cycle, before the work, and
+#    a cycle with a dozen tasks in flight runs 9-37 minutes on this board --
+#    outside the claim's ten-minute window and session_registry's fifteen-minute
+#    reap. A pump thread now beats every minute WHILE a cycle works and
+#    WITHHOLDS the beat past ICDEV_SCHEDULER_CYCLE_CEILING (3600s, above every
+#    cycle measured), where "busy" becomes the alive-but-not-looping state the
+#    claim exists for; a cycle longer than the interval logs its duration.
+# NOT fixed here, and named: leases still key on the raw inherited id, so a
+# child's lease reads as the scheduler's; and DaemonBase.run_forever and
+# pr_watcher heartbeat once per loop the same way, unpumped.
+
 # Is intervention actually FALLING? The AUTONOMY card held to its own standard (autonomy-lrn-02)
 python -m tools.awareness.autonomy_loop                  # human report, 7-day window
 python -m tools.awareness.autonomy_loop --json --window-days 30
@@ -1847,6 +1879,40 @@ python -c "from tools.security.stub_gate import stub_status; print(stub_status()
 # described honestly. Wiring the probes is the follow-on; this removed the
 # fabrication that hid the need for it.
 
+# No rate in the RMF surfaces returns 0.0 or 100.0 over an empty denominator (rmf-rail-01)
+python -m pytest tests/test_rmf_honesty_rails.py -q           # the rail: behavioural + structural
+python tools/ci/perfect_score_census.py --check               # 100.0 fallback over a ratio: 0 sites, ceiling 0
+python tools/workflow/coherence_checker.py --check substrate_liveness --gate
+python tools/awareness/capability_consumption.py --probe-diff origin/main   # what a branch reads that is EMPTY
+# MEASURED on the live board 2026-09-03: project_controls, cato_evidence,
+# rmf_workflow_stages and asset_visibility_snapshots ALL hold 0 rows -- and over
+# that estate the ATO dashboard reported posture_pct 0.0 ("assessed, nothing
+# implemented"), graded the project F at 16 points (0.0 controls, 0.0 RMF
+# progress over SIX SYNTHETIC not_started stages, and 55 artifact points awarded
+# for the ABSENCE of POAM items and STIG findings -- the rmf-zt-01 "absent probe
+# reads as a pass" shape one table over), and compute_cato_readiness returned
+# readiness_pct 0.0 / automated_pct 0.0 over no evidence at all. rmf-fab-02 had
+# already refused to CARRY those two numbers and re-derived its own; this fixes
+# them at source. Every one is now None, never 0.0, and a MEASURED zero (one
+# planned control, one stale manual evidence row) stays a real 0.0 -- the two
+# are asserted side by side because confusing them is the whole defect.
+# get_posture_score refuses a composite while ANY component is unmeasured
+# (`score_basis: unmeasured`, `unmeasured_components` named) -- a composite over
+# a subset under the unscoped name "score" is a scoped computation wearing an
+# unscoped name. The page renders a null as "not assessed" with an EMPTY gauge:
+# `x || 0` in the template would put the red 0% straight back.
+# TWO RAILS, and they are different tests. Behavioural: each rate against an
+# empty denominator. Structural: an AST scan of the 16 RMF modules for a RATIO
+# (perfect_score_census.computes_ratio -- the same predicate, not a copy)
+# falling back to 0 / 0.0 / 100 / 100.0 through a conditional expression --
+# the rem-hyg-13 census widened to the ZERO fallback, scoped to these modules
+# ONLY because tree-wide `if x else 0` is ~1,167 ordinary counters. Zero sites.
+# Registered as substrates (args/capability_consumption.yaml): rmf_workflow_stages,
+# asset_visibility_snapshots, cato_evidence, project_controls -- so a branch that
+# designs against them is TOLD they are empty (--probe-diff names all four).
+# The fix for the empties is a WRITER, and it is not this card: nothing on this
+# deployment has assigned a control to a project or collected cATO evidence.
+
 # A DIC version leaves the canvas through ONE gated door, and CoT/CoD prose is redacted (rmf-wp-02)
 # A library, no CLI. Import it:
 #   from tools.document_intelligence.exporter import export_version, export_gate, EXPORT_FORMATS
@@ -1876,13 +1942,15 @@ python -c "from tools.security.stub_gate import stub_status; print(stub_status()
 # run _pre_invoke_redaction since D-RDT-1 and cortex.complete reaches it, so the
 # single-shot rfi_workbench / doc_generator paths were covered. `invoke_for_role`
 # -- what ChainOrchestrator hands EVERY CoT/CoD step to -- was not, so a
-# debater or reasoner received the raw prompt. It now runs the same pre/post
-# pair, with the local-only decision read off the ROLE chain the request
-# travels (`chain_key`), not the function's; the orchestrator's legacy
-# direct-model branch redacts at the call site, never inside
-# _invoke_model_direct, which `invoke`'s two-tier hop reaches ALREADY sanitized
-# (a second pass re-detects a surrogate as PII and the round trip restores the
-# surrogate, not the original).
+# debater or reasoner received the raw prompt. #2028 closed that seam while this
+# card was in flight (the same pre/post pair, the local-only skip judged on the
+# ROLE chain via `chain_key`, and `_invoke_model_direct` redacting a request
+# that `invoke` has not ALREADY marked, so the two-tier hop is never sanitized
+# twice). This card independently arrived at the same diagnosis, adopted #2028's
+# router verbatim, and pins the CONSUMERS: tests/llm/test_role_invoke_redaction.py
+# sweeps rfi_workbench and doc_generator by AST so every LLM dispatch there is
+# `router.invoke`, `cortex.complete` or a ChainOrchestrator entry -- never a
+# provider or `_invoke_model_direct` call that would step around the seam.
 
 # GEPA Optimizer — Genome Evolution Pressure Analyzer (MCP tool: gepa_optimizer)
 python tools/skills/gepa_optimizer.py --json           # Run optimization pass (prune low-fitness genome entries)
@@ -1978,6 +2046,39 @@ python -m tools.compliance.rmf_stage_recorder --project-id "proj-123" --actor hu
 # so it probes the catalogue and adds exactly the missing columns rather than
 # guessing which of three populations it faces.
 #
+# WHITEPAPER document type, and template_id made LOAD-BEARING (rmf-wp-01)
+python -m tools.quality.outline_contract --artifact-type WHITEPAPER       # the declared skeleton, 9 sections
+python -m tools.quality.outline_contract --list                            # every template a draft can be built from
+# A library otherwise. generate_document(query, collection_id, template_id="WHITEPAPER")
+# doc_generator.generate_document ACCEPTED template_id AND NEVER REFERENCED IT
+# AGAIN -- one grep hit, the signature. Every document got a freeform LLM
+# outline sliced at [:6] while the twelve skeletons in constants.TEMPLATE_SECTIONS
+# went unused, and every section was drafted against ONE document-wide
+# retrieval. Now: template_id resolves through outline_contract.get_contract
+# (the SAME registry the publish gate validates against, so the skeleton a
+# draft is built from and the one it is checked against cannot be two lists);
+# the headings are the contract's, in order, WHATEVER the model returns (its
+# outline answer is advisory -- title and per-heading summaries only); the
+# [:6] slice is gone (a declared skeleton is exactly as long as declared; the
+# freeform path keeps ICDEV_DIC_MAX_FREEFORM_SECTIONS=24 as a runaway guard);
+# and every section runs its OWN retrieval through the same governed-first
+# seam, targeted hits first and the document-wide ones after, deduplicated
+# (ICDEV_DIC_SECTION_RETRIEVAL=0 stands it down). The result RECORDS where the
+# outline came from -- `outline_source`: contract:<id> | freeform |
+# freeform:unresolved:<id> -- so a caller that asked for WHITEPAPER and got a
+# freeform draft can see that. WHITEPAPER is declared in TEMPLATE_TYPES,
+# TEMPLATE_SECTIONS, TEMPLATE_TYPE_TO_WRITEGUARD_MODE (bluf_exec, a mode
+# content_modes.py already defines), DOCGEN_DOCTYPE_TO_TEMPLATE and
+# blueprint._TEMPLATES; outline_contract needed NO edit. The Tech Writer page's
+# hand-typed {'STANDARD_GUIDE': 9, ...} section-count map is gone -- the route
+# derives it from TEMPLATE_SECTIONS.
+# THE CHECK FOLLOWS THE CONSTANT. Migration 20260903100336 REBUILDS
+# dic_documents.template_type's CHECK from TEMPLATE_TYPES (a Python migration,
+# never a respelled list). Measured 2026-09-03: the live PG table carried NO
+# such constraint at all -- migration 230's inline CHECK never landed there --
+# so on PG this ADDS one. SQLite is a stated no-op: a SQLite database that ran
+# 230 keeps the six-name inline CHECK and refuses a WHITEPAPER row on INSERT.
+
 # TWO COMPLIANCE AUDIT EVENTS WERE WRITTEN AND NEVER ADMITTED (same card).
 # oscal_generator._log_audit has always written `oscal_generated` and
 # cato_monitor._log_audit_event `cato_evidence_collected`; neither was in

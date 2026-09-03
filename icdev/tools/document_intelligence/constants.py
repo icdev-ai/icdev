@@ -79,6 +79,11 @@ TEMPLATE_TYPES: list[str] = [
     "ARCH_NETWORK",
     "ARCH_APPLICATION",
     "ARCH_SYSTEM",
+    # rmf-wp-01: the whitepaper / RFP-volume document type. The CHECK on
+    # dic_documents.template_type is REBUILT from this list by migration
+    # 20260903100336 — add a type here and scaffold a migration that calls the
+    # same rebuild; never respell the list in SQL.
+    "WHITEPAPER",
 ]
 
 WRITEGUARD_MODES: list[str] = [
@@ -88,6 +93,9 @@ WRITEGUARD_MODES: list[str] = [
     "sop_runbook",
     "policy_language",
     "runbook",
+    # tools/writing/content_modes.py: "first paragraph contains an explicit
+    # ask, recommendation, and quantified impact" — the whitepaper's BLUF.
+    "bluf_exec",
 ]
 
 TEMPLATE_TYPE_TO_WRITEGUARD_MODE: dict[str, str] = {
@@ -97,6 +105,7 @@ TEMPLATE_TYPE_TO_WRITEGUARD_MODE: dict[str, str] = {
     "ARCH_NETWORK": "architecture_doc",
     "ARCH_APPLICATION": "architecture_doc",
     "ARCH_SYSTEM": "architecture_doc",
+    "WHITEPAPER": "bluf_exec",
 }
 
 # docgen (IDR) doc_type -> Tech Writer template. Single source of truth for the
@@ -122,6 +131,7 @@ DOCGEN_DOCTYPE_TO_TEMPLATE: dict[str, str] = {
     "poam": "STANDARD_GUIDE",
     "boundary_narrative": "ARCH_NETWORK",
     "evidence_package": "STANDARD_GUIDE",
+    "whitepaper": "WHITEPAPER",
 }
 DOCGEN_DEFAULT_TEMPLATE: str = "ARCH_SYSTEM"
 
@@ -164,5 +174,16 @@ TEMPLATE_SECTIONS: dict[str, list[str]] = {
     "ARCH_SYSTEM": [
         "Mission and Goals", "Stakeholders", "System Boundary",
         "Key Components", "Interfaces", "Quality Attributes", "Decision Log",
+    ],
+    # rmf-wp-01. Nine sections, deliberately MORE than the six the freeform
+    # outline used to be sliced at: a skeleton that fit under the old cap could
+    # never have shown the cap was gone. "Evidence and Measured Results" is
+    # where the honesty rails bite — a whitepaper claim without a denominator
+    # is a claim the RMF card series refuses everywhere else.
+    "WHITEPAPER": [
+        "Executive Summary", "Problem Statement", "Background and Context",
+        "Proposed Approach", "Technical Architecture", "Evidence and Measured Results",
+        "Security and Compliance Considerations", "Recommendations and Next Steps",
+        "References",
     ],
 }

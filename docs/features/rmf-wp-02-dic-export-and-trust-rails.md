@@ -71,21 +71,20 @@ hard-coded FOUO default), `pdf` (only when fpdf2 is installed; without it
 `unavailable` instead). Export buttons sit beside the version strip on the
 document page; a 409 names the gate and offers the audited override.
 
-### The redaction seam (`tools/llm/router.py`, `tools/llm/chain_orchestrator.py`)
+### The redaction seam (`tools/llm/router.py`)
 
+PR #2028 (`fix(llm): invoke_for_role runs the same redaction gate as invoke`)
+merged while this card was in flight and closed exactly this hole:
 `invoke_for_role` now runs the same `_pre_invoke_redaction` /
-`_post_invoke_deanonymize` pair `invoke` runs. `_pre_invoke_redaction` gained
-a `chain_key` so the local-only decision reads the **role** chain the request
-actually travels, not the function's. Reading the function's chain there is
-fail-open: a locally routed function whose CoT roles reach a cloud model would
-skip redaction on the cloud hop.
-
-`ChainOrchestrator`'s legacy direct-model branch (a model name that is not a
-routing key) redacts at the call site rather than inside
-`_invoke_model_direct`, because that method is also the two-tier hop of
-`invoke`, which has already sanitized the request. Running the sanitizer twice
-re-detects a surrogate as PII and the round trip restores the first surrogate,
-not the original.
+`_post_invoke_deanonymize` pair `invoke` runs, the local-only skip is judged
+on the **role** chain the request travels (`chain_key`), and
+`_invoke_model_direct` redacts a request that `invoke` has not already marked,
+so the two-tier hop is never sanitized twice. This card arrived at the same
+diagnosis independently, adopted #2028's router verbatim on merge, and pins the
+**consumers** instead: an AST sweep asserts every LLM dispatch in
+`rfi_workbench` and `doc_generator` is `router.invoke`, `cortex.complete` or a
+`ChainOrchestrator` entry, never a provider or `_invoke_model_direct` call that
+would step around the seam.
 
 ## Verification
 
@@ -96,12 +95,12 @@ not the original.
   sha256 matches the file, and a download; forces without a reason are 400,
   with a reason mark the row and write both audit rows; the migration's
   `format` CHECK and the runtime DDL are rendered from `EXPORT_FORMATS`.
-- `tests/llm/test_role_invoke_redaction.py`: a fake sanitizer proves the
-  provider received the redacted text and the caller got the de-anonymized
-  reply through `invoke_for_role` and through the orchestrator's direct
-  branch; fail-closed blocks the hop; the local-only decision is asked about
-  the role chain; an AST sweep asserts `rfi_workbench` and `doc_generator`
-  dispatch only through redacting seams.
+- `tests/llm/test_role_invoke_redaction.py`: the AST sweep over
+  `rfi_workbench` and `doc_generator`, plus a structural belt that
+  `invoke_for_role` still carries the pre/post pair. The router doors
+  themselves are pinned by #2028's `tests/test_invoke_for_role_redaction.py`.
+  Exempt from the red-first gate with a written reason: it asserts a property
+  main already satisfies, by design.
 
 ## Not done, on purpose
 
