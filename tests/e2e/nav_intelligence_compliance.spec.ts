@@ -21,7 +21,8 @@ const INTELLIGENCE_PAGES = [
 
 const COMPLIANCE_PAGES = [
   // Risk & ATO
-  { label: 'POA&M Findings',       path: '/poam' },
+  // rmf-ui-07: migrated onto the Boundary canvas. The old /poam answers with a 301 to this path.
+  { label: 'POA&M Findings',       path: '/boundary/poam' },
   { label: 'Compliance Hub',       path: '/compliance' },
   // rmf-ui-04: migrated onto the Boundary canvas (registry-registered, RBAC-guarded,
   // IQE-dispatchable). The old /oscal answers with a 301 to this path.
