@@ -1,10 +1,13 @@
+<!-- CUI // SP-CTI — Boundary Design Canvas ATO Compliance Dashboard (rmf-ui-01) -->
 {% extends "base.html" %}
-{% block title %}ATO Compliance Dashboard - ICDEV™{% endblock %}
+{% block title %}ATO Compliance Dashboard — Boundary Canvas — ICDEV™{% endblock %}
 {% block content %}
 <div class="container">
     <!-- Breadcrumb -->
     <nav aria-label="breadcrumb" style="margin-bottom:0.5rem;">
         <span><a href="/" style="color:#1976d2;text-decoration:none;">Home</a></span>
+        <span style="color:#999;"> &gt; </span>
+        <span><a href="/boundary/" style="color:#1976d2;text-decoration:none;">Boundary Canvas</a></span>
         <span style="color:#999;"> &gt; </span>
         <span style="color:#333;">ATO Compliance Dashboard</span>
     </nav>
@@ -19,6 +22,8 @@
                style="flex:1;padding:8px 12px;border:1px solid #ccc;border-radius:4px;font-size:0.95rem;">
         <button onclick="loadAll()" style="padding:8px 20px;background:#1976d2;color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Load</button>
     </div>
+
+    {% include "includes/iqe_query_widget.html" %}
 
     <!-- ======================================================= -->
     <!-- 1. Posture Score Gauge                                   -->

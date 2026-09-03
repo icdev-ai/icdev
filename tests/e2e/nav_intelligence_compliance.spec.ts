@@ -28,7 +28,9 @@ const COMPLIANCE_PAGES = [
   { label: 'ATO Package Builder',  path: '/ato-package' },
   // Linked by rmf-inert-01 — both rendered a real template over a real API and
   // were reachable only by typing the URL, so nothing had ever loaded them.
-  { label: 'ATO Compliance Dashboard', path: '/ato-compliance' },
+  // rmf-ui-01: migrated onto the Boundary canvas (registry-registered, RBAC-guarded,
+  // IQE-dispatchable). The old /ato-compliance answers with a 301 to this path.
+  { label: 'ATO Compliance Dashboard', path: '/boundary/ato-compliance' },
   { label: 'FedRAMP 20x KSIs',     path: '/fedramp-20x' },
   { label: 'MOSA',                 path: '/mosa' },
   // Security

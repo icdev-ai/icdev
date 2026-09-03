@@ -9412,7 +9412,7 @@ projects:
   - 'Epic zt: ZT checks stop failing OPEN; maturity refuses to score over empty evidence -- rmf-zt-01..02'
   - 'Epic wp: whitepaper document type, the dead template_id parameter, DIC export + TRUST rails -- rmf-wp-01..02'
   - 'Epic rfp: wire the solicitation shredder and the Section L/M compliance matrix -- rmf-rfp-01'
-  - 'Epic ui: migrate ungoverned compliance routes into BDC/SDC one per card; register 4 standing claims -- rmf-ui-01..02'
+  - 'Epic ui: migrate ungoverned compliance routes into BDC/SDC one per card (rmf-ui-01 the exemplar, rmf-ui-03..16 one route each); register 4 standing claims -- rmf-ui-01..16'
   epics:
   - {key: gate, title: GATE, priority: critical}
   - {key: leak, title: "PUBLIC-REPO DISCLOSURE", priority: critical}

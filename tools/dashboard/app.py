@@ -5833,8 +5833,15 @@ def create_app(testing: bool = False) -> Flask:
 
     @app.route("/ato-compliance")
     def ato_compliance_page():
-        """ATO Compliance Dashboard — control tracking, RMF stages, artifact readiness, crosswalk."""
-        return render_template("ato_compliance.html")
+        """ATO Compliance Dashboard — MIGRATED to the Boundary canvas (rmf-ui-01).
+
+        The governed page is ``/boundary/ato-compliance`` on
+        tools/boundary_canvas/blueprint.py, where it is registry-registered,
+        RBAC-guarded and IQE-dispatchable. This handler stays as a redirect so
+        a bookmark, an e2e spec or a nav link that still names the old URL
+        lands on the page rather than a 404 — never a dropped page.
+        """
+        return redirect("/boundary/ato-compliance", code=301)
 
     @app.route("/analytics")
     def analytics_page():
