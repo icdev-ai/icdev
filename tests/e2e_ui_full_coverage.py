@@ -232,7 +232,7 @@ NAV_STRUCTURE = {
             ("STIG Manager",     "/security/stig-manager"),
             ("SRE Operations",   "/sre"),
             ("AI Transparency",  "/ai-transparency"),
-            ("AI Accountability", "/ai-accountability"),
+            ("AI Accountability", "/security/ai-accountability"),
             ("Traces",           "/traces"),
             ("Provenance",       "/provenance"),
             ("XAI",              "/xai"),
@@ -653,7 +653,7 @@ def check_compliance_suite(page: Page, r: R) -> None:
         ("/security-scan",     ["Security", "Scan", "SAST"]),
         ("/security/stig-manager", ["STIG", "finding", "Finding"]),
         ("/ai-transparency",   ["Transparency", "AI", "explainab"]),
-        ("/ai-accountability", ["Accountability", "AI", "audit"]),
+        ("/security/ai-accountability", ["Accountability", "AI", "audit"]),
         ("/traces",            ["Trace", "trace", "span"]),
         ("/provenance",        ["Provenance", "lineage", "artifact"]),
     ]
