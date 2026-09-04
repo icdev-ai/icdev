@@ -9956,6 +9956,10 @@ def _has_open_pr(task_id: str) -> bool:
 
 
 _open_pr_branch_cache: Dict[str, Tuple[float, Set[str]]] = {}
+#: The SAME listing, keyed head branch -> PR number (mfx-own-01). Filled by the
+#: one `gh pr list` call `_open_pr_head_branches` already makes; nothing asks
+#: the forge a second time for a number it printed the first time.
+_open_pr_numbers_cache: Dict[str, Tuple[float, Dict[str, int]]] = {}
 _OPEN_PR_CACHE_TTL_SECONDS = 45.0
 
 #: Monotonic stamp of the last _open_pr_head_branches call that could not
@@ -9985,7 +9989,7 @@ def _open_pr_head_branches(repo_root: str) -> Set[str]:
 
         result = _sp.run(
             ["gh", "pr", "list", "--state", "open", "--limit", "200",
-             "--json", "headRefName"],
+             "--json", "headRefName,number"],
             capture_output=True, text=True, timeout=20, cwd=repo_root,
         )
         if result.returncode != 0:
@@ -9999,19 +10003,95 @@ def _open_pr_head_branches(repo_root: str) -> Set[str]:
                 repo_root, result.returncode,
             )
             return set()
+        numbers: Dict[str, int] = {}
         if result.stdout.strip():
-            branches = {
-                str(p.get("headRefName"))
-                for p in _json.loads(result.stdout)
-                if p.get("headRefName")
-            }
+            for p in _json.loads(result.stdout):
+                head = p.get("headRefName")
+                if not head:
+                    continue
+                branches.add(str(head))
+                try:
+                    numbers[str(head)] = int(p.get("number"))
+                except (TypeError, ValueError):
+                    pass
     except Exception as exc:
         _open_pr_listing_failed_at[repo_root] = time.monotonic()
         logger.debug("open-PR branch listing unavailable for %s: %s", repo_root, exc)
         return set()
     _open_pr_listing_failed_at.pop(repo_root, None)
-    _open_pr_branch_cache[repo_root] = (time.monotonic(), branches)
+    stamp = time.monotonic()
+    _open_pr_branch_cache[repo_root] = (stamp, branches)
+    _open_pr_numbers_cache[repo_root] = (stamp, numbers)
     return branches
+
+
+def _open_pr_for_branch(repo_root: str, branch: str) -> Optional[int]:
+    """The number of the OPEN PR whose head is *branch*, or None (mfx-own-01).
+
+    None covers BOTH "the forge answered and there is no such PR" and "the
+    forge could not be asked". That conflation is the right one for every
+    caller of this function: each only ever moves a task FORWARD on positive
+    evidence that its PR exists, so an unanswerable forge is a no-op rather
+    than a wrong move in either direction.
+
+    Reads the per-cycle listing `_open_pr_head_branches` already makes; it
+    never runs a second `gh` call of its own.
+    """
+    _open_pr_head_branches(repo_root)  # refresh the cache if it is stale
+    cached = _open_pr_numbers_cache.get(repo_root)
+    if not cached:
+        return None
+    return cached[1].get(branch)
+
+
+def _hand_parked_task_to_pr_watcher(task_id: str, *, context: str) -> Optional[int]:
+    """token_exhausted + an OPEN PR on kanban/<id>  ->  pr_opened  (mfx-own-01).
+
+    MEASURED 2026-09-03: rmf-rfp-01 and rmf-wp-02 parked `token exhaustion:
+    parked for retry 2/60` with PRs #2040 / #2042 OPEN and red on CI. Their
+    resume_at then slid forward every cycle for SIX HOURS and no worker ever
+    started: respawn guard 2 in the dispatcher refuses a task whose
+    branch has an open PR (correctly -- it is what stops duplicate PRs), so
+    every token-retry dispatch was refused and `_token_retry_backoff` pushed
+    resume_at out again; and pr_watcher polls `pr_opened` / `ci_failed` /
+    `merge_conflict` / `changes_requested`, never `token_exhausted`. Two
+    correct guards composed into a task owned by NEITHER actor. A human fixed
+    both CI failures by hand.
+
+    THIS IS A HAND-OFF, NOT A THIRD DISPATCHER. The task moves to `pr_opened`
+    with actor=scheduler and a reason naming the PR and the new owner, so the
+    watcher's existing resume-on-CI-failure path picks it up on its next poll.
+    Nothing here spawns a worker -- dispatching from this state is exactly the
+    duplicate PR the respawn guard exists to prevent.
+
+    Returns the PR number when the task was handed off, None otherwise. None is
+    also what an unavailable forge returns: the move happens only on POSITIVE
+    evidence that the PR exists (`_open_pr_for_branch`), never on its absence.
+    Called at park time (`_check_completed`), on every retry evaluation while
+    the task is parked (`_check_token_exhausted_tasks`), and the same hand-off
+    runs at startup from `tools/kanban/startup_recovery.py`.
+    """
+    try:
+        root = str(_task_repo_root(task_id))
+    except Exception:  # noqa: BLE001 — a bad repo target reads as ICDev
+        root = str(BASE_DIR)
+    number = _open_pr_for_branch(root, f"kanban/{task_id}")
+    if number is None:
+        return None
+    _move_task(
+        task_id, "pr_opened", actor="scheduler",
+        reason=(f"open PR #{number} found while parked ({context}); "
+                f"handed to pr_watcher"),
+    )
+    # A resume_at for a task the scheduler no longer owns is a lie the next
+    # evaluation would read; the retry counter is kept, because it bounds the
+    # token budget across the task's WHOLE life and a hand-off is not a reset.
+    _clear_resume_at(task_id)
+    logger.info(
+        "parked hand-off: %s token_exhausted -> pr_opened (open PR #%d, %s)",
+        task_id, number, context,
+    )
+    return number
 
 
 def _open_pr_listing_unavailable(repo_root: str) -> bool:
@@ -10741,6 +10821,11 @@ def _startup_recover_stale_in_progress() -> None:
             )
         for held in result["held"]:
             print(f"  Kanban: startup-recovery HELD {held['id']} — {held['detail']}")
+        for handed in (result.get("handed_to_pr_watcher") or {}).get("handed", []):
+            print(
+                f"  Kanban: startup-recovery handed {handed['id']} token_exhausted "
+                f"-> pr_opened (open PR #{handed['pr_number']}; pr_watcher owns it)"
+            )
     except Exception as exc:
         logger.warning("startup-recovery sweep failed: %s", exc)
 
@@ -11152,6 +11237,15 @@ def _check_completed():
                                        f"{retry_count + 1}/{TOKEN_MAX_RETRY_COUNT}"))
                     resume_at = _parse_resume_at(reset_hint)
                     _save_resume_at(task_id, resume_at)
+                    # mfx-own-01: the exhaustion is RECORDED above (the lifetime
+                    # count reads that transition), and then -- if this branch
+                    # already carries an open PR -- the task is handed to
+                    # pr_watcher rather than left for a retry the respawn guard
+                    # would refuse every cycle. None when there is no such PR
+                    # or the forge could not be asked; the park stands then.
+                    _handed_pr = _hand_parked_task_to_pr_watcher(
+                        task_id, context="at park",
+                    )
                     wait_seconds = max(0, (resume_at - datetime.now(timezone.utc)).total_seconds())
                     wait_minutes = int(wait_seconds / 60) + 1
                     reset_msg = f" (reset hint: {reset_hint})" if reset_hint else ""
@@ -11195,12 +11289,19 @@ def _check_completed():
                             "evidence) — executor NOT degraded", task_id,
                         )
 
-                    print(
-                        f"  Kanban: {task_id} TOKEN EXHAUSTED"
-                        f"{reset_msg} — retry {retry_count}/"
-                        f"{TOKEN_MAX_RETRY_COUNT}, will resume at "
-                        f"{resume_local} (~{wait_minutes} min)"
-                    )
+                    if _handed_pr is not None:
+                        print(
+                            f"  Kanban: {task_id} TOKEN EXHAUSTED{reset_msg} — "
+                            f"open PR #{_handed_pr} on its branch, handed to "
+                            f"pr_watcher as pr_opened (no scheduler retry)"
+                        )
+                    else:
+                        print(
+                            f"  Kanban: {task_id} TOKEN EXHAUSTED"
+                            f"{reset_msg} — retry {retry_count}/"
+                            f"{TOKEN_MAX_RETRY_COUNT}, will resume at "
+                            f"{resume_local} (~{wait_minutes} min)"
+                        )
                     # Notify via Telegram
                     _send_notification(task_dict, event="token_exhausted")
                     try:
@@ -11208,14 +11309,24 @@ def _check_completed():
                             send as tg_send,
                         )
 
+                        if _handed_pr is not None:
+                            _resume_line = (
+                                f"Open PR #{_handed_pr} found on its branch — "
+                                f"handed to pr_watcher (pr_opened); the "
+                                f"scheduler will not retry it."
+                            )
+                        else:
+                            _resume_line = (
+                                f"Will auto-resume at {resume_local} "
+                                f"(~{wait_minutes} min)."
+                            )
                         tg_send(
                             f"Token limit: {task_dict.get('title', task_id)[:50]}",
                             (
                                 f"Claude token/rate limit hit on retry "
                                 f"{retry_count}/{TOKEN_MAX_RETRY_COUNT}."
                                 f"{reset_msg}\n"
-                                f"Will auto-resume at {resume_local} "
-                                f"(~{wait_minutes} min)."
+                                f"{_resume_line}"
                             ),
                             severity="warning",
                         )
@@ -11715,6 +11826,20 @@ def _check_token_exhausted_tasks() -> list:
         for row in rows:
             task = dict(row)
             task_id = task["id"]
+
+            # 0. An OPEN PR on this branch means pr_watcher owns the task, not
+            #    the retry loop (mfx-own-01). Asked BEFORE the resume_at wait:
+            #    the watcher can act on a red PR now, and a scheduler retry of
+            #    this task would only ever be refused by the respawn guard and
+            #    backed off again -- the six-hour slide measured 2026-09-03.
+            #    Costs nothing extra: the open-PR listing is cached per cycle.
+            try:
+                if _hand_parked_task_to_pr_watcher(
+                    task_id, context="retry evaluation",
+                ) is not None:
+                    continue
+            except Exception as _ho_exc:  # noqa: BLE001 — never wedge the sweep
+                logger.debug("parked hand-off check failed for %s: %s", task_id, _ho_exc)
 
             # 1. Load persisted resume_at (preferred)
             resume_at = _load_resume_at(task_id)

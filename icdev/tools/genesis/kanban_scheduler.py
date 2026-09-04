@@ -254,6 +254,19 @@ def main():
                 "(failure_count unchanged -- interruption is not a failure)",
                 _recovery["swept"], len(_recovery["reset"]), len(_recovery["held"]),
             )
+            _handed = _recovery.get("handed_to_pr_watcher") or {}
+            if _handed.get("handed"):
+                logger.info(
+                    "Startup recovery: %d parked task(s) with an open PR handed to "
+                    "pr_watcher as pr_opened: %s",
+                    len(_handed["handed"]),
+                    ", ".join(f"{h['id']} (#{h['pr_number']})" for h in _handed["handed"]),
+                )
+            elif _handed.get("forge_unavailable"):
+                logger.info(
+                    "Startup recovery: %d parked task(s) NOT checked for an open PR "
+                    "-- the forge could not be asked", _handed.get("swept", 0),
+                )
     except Exception as exc:
         logger.warning("Startup recovery failed: %s", str(exc).encode("ascii", errors="replace").decode("ascii"))
 

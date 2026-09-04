@@ -54,7 +54,6 @@ Library only, no CLI. The route is
 """
 from __future__ import annotations
 
-import logging
 import hashlib
 import json
 import os
@@ -65,7 +64,7 @@ from typing import Any
 
 from tools.logging.icdev_logger import get_logger
 
-_log = logging.getLogger(__name__)
+_log = get_logger(__name__)
 
 logger = get_logger(__name__)
 
