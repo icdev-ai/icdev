@@ -30,7 +30,9 @@ const COMPLIANCE_PAGES = [
   // rmf-ui-05: migrated onto the Boundary canvas beside rmf-ui-01. The old
   // /cato answers with a 301 to this path.
   { label: 'Continuous ATO',       path: '/boundary/cato-health' },
-  { label: 'ATO Package Builder',  path: '/ato-package' },
+  // rmf-ui-03: migrated onto the Boundary canvas (registry-registered, RBAC-guarded,
+  // IQE-dispatchable). The old /ato-package answers with a 301 to this path.
+  { label: 'ATO Package Builder',  path: '/boundary/ato-package' },
   // Linked by rmf-inert-01 — both rendered a real template over a real API and
   // were reachable only by typing the URL, so nothing had ever loaded them.
   // rmf-ui-01: migrated onto the Boundary canvas (registry-registered, RBAC-guarded,
