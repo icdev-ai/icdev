@@ -54,6 +54,7 @@ Library only, no CLI. The route is
 """
 from __future__ import annotations
 
+import logging
 import hashlib
 import json
 import os
@@ -63,6 +64,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 from tools.logging.icdev_logger import get_logger
+
+_log = logging.getLogger(__name__)
 
 logger = get_logger(__name__)
 
@@ -432,10 +435,19 @@ def render(fmt: str, doc_text: str, title: str, classification: str,
         safe_cls = _html.escape(str(classification or "CUI"))
         try:
             import markdown as _md
-
-            body_html = _sanitize_html(_md.markdown(doc_text, extensions=["tables", "fenced_code"]))
-        except Exception:  # noqa: BLE001
+        except ImportError as exc:
+            # tsg-iso-03: an optional third-party import inside a swallowing handler
+            # is indistinguishable from working code -- the handler must SAY it fired.
+            _log.warning("python-markdown is not installed (%s); exporting the body as <pre>", exc)
+            _md = None
+        if _md is None:
             body_html = f"<pre>{_html.escape(doc_text)}</pre>"
+        else:
+            try:
+                body_html = _sanitize_html(_md.markdown(doc_text, extensions=["tables", "fenced_code"]))
+            except Exception as exc:  # noqa: BLE001 -- a render failure, reported, then the plain body
+                _log.warning("markdown render failed (%s); exporting the body as <pre>", exc)
+                body_html = f"<pre>{_html.escape(doc_text)}</pre>"
         html = (
             "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
             f"<title>{safe_title}</title>\n<style>\n"
