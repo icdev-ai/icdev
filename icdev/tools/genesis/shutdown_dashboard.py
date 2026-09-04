@@ -6,6 +6,7 @@
     python tools/genesis/shutdown_dashboard.py --dry-run    # plan; touch nothing
     python tools/genesis/shutdown_dashboard.py --pause      # also set Manual Build
     python tools/genesis/shutdown_dashboard.py --keep-ft    # leave ICDEV[FT] serving
+    python tools/genesis/shutdown_dashboard.py --keep-rt    # leave ICDEV[RT] serving
     python tools/genesis/shutdown_dashboard.py --json
 
 WHY AN ORDER, and why a script. `.claude/commands/start.md` already states the
@@ -29,11 +30,14 @@ that derivation, run the same way every time:
      workers mid-build; killing them discards work (measured 2026-08-29: ~40
      minutes gone). They are listed with their command lines; `--include-workers`
      stops them too, and is a decision, not a default.
-  4. THE FT SUPERVISOR, THEN ITS CHILD, the same way (`supervise_ft.py` restarts
-     `launch_ft.py` on exit). `--keep-ft` skips both.
-  5. VERIFY, never assume: every recorded pid re-tested dead; ports 5050 and
-     5200 re-tested for a listener. A survivor is reported with its pid and the
-     exit code says so.
+  4. THE EXTERNAL SUPERVISORS, EACH THEN ITS CHILD, the same way: ICDEV[FT]
+     (`supervise_ft.py` restarts `launch_ft.py` on exit, :5200) and ICDEV[RT]
+     (`supervise_rt.py` restarts `launch_rt.py`, :5300). They are declared in
+     EXTERNAL_SUPERVISORS -- one table, so a third stack is a row, not a
+     branch. `--keep-ft` / `--keep-rt` skip one pair.
+  5. VERIFY, never assume: every recorded pid re-tested dead; ports 5050, 5200
+     and 5300 re-tested for a listener. A survivor is reported with its pid and
+     the exit code says so.
   6. THE STALE LOCK is removed only after the pid it names is confirmed dead --
      the launcher removes it on a clean exit and cannot after a terminate.
 
@@ -68,11 +72,17 @@ BASE_DIR = repo_root(__file__)
 #: What `launch.py` runs -- the only command line the lock's pid may carry.
 SUPERVISOR_FRAGMENTS = ("tools/genesis/launch.py", "tools\\genesis\\launch.py",
                         "tools/genesis/launcher.py", "tools\\genesis\\launcher.py")
-#: The ICDEV[FT] auto-redeploy supervisor and the child it restarts.
-FT_SUPERVISOR_FRAGMENT = "supervise_ft.py"
-FT_CHILD_FRAGMENT = "launch_ft.py"
+#: The external auto-redeploy supervisors, each with the child it restarts on
+#: exit and the port that child serves: (key, supervisor script, child script,
+#: port). Stopping order is supervisor THEN child, per row; `--keep-<key>`
+#: skips a row. Add a stack here, never as a fourth branch in plan_and_run.
+EXTERNAL_SUPERVISORS = (
+    ("ft", "supervise_ft.py", "launch_ft.py", 5200),
+    ("rt", "supervise_rt.py", "launch_rt.py", 5300),
+)
+EXTERNAL_KEYS = tuple(row[0] for row in EXTERNAL_SUPERVISORS)
 #: Ports whose listener must be gone when we are done.
-DEFAULT_PORTS = (5050, 5200)
+DEFAULT_PORTS = (5050,) + tuple(row[3] for row in EXTERNAL_SUPERVISORS)
 DEFAULT_GRACE = 10.0
 
 STATE_STOPPED = "stopped"
@@ -174,8 +184,9 @@ def _service_name(cmd: Optional[str]) -> str:
     return "unlisted"
 
 
-def _ft_supervisors(api) -> List[int]:
-    """The REAL supervise_ft.py processes: the innermost of any wrapper chain.
+def _external_supervisors(api, fragment: str) -> List[int]:
+    """The REAL supervisor processes for ``fragment`` (supervise_ft.py,
+    supervise_rt.py): the innermost of any wrapper chain.
 
     Git Bash cannot exec(), so the shell that launched the supervisor keeps a
     command line naming the script one level UP the tree, and the harness's own
@@ -184,7 +195,7 @@ def _ft_supervisors(api) -> List[int]:
     a candidate is a wrapper, and stopping it would stop the shell, not the
     service.
     """
-    cands = set(api.find_by_cmdline(FT_SUPERVISOR_FRAGMENT))
+    cands = set(api.find_by_cmdline(fragment))
     return sorted(pid for pid in cands
                   if not any(child in cands for child in api.children(pid)))
 
@@ -218,8 +229,9 @@ def _stop(api, pid: int, grace: float, dry_run: bool) -> Dict[str, Any]:
 
 
 def plan_and_run(*, api=None, pid_file: Optional[Path] = None, grace: float = DEFAULT_GRACE,
-                 dry_run: bool = False, keep_ft: bool = False, include_workers: bool = False,
-                 ports=DEFAULT_PORTS, pause: bool = False) -> Dict[str, Any]:
+                 dry_run: bool = False, keep_ft: bool = False, keep_rt: bool = False,
+                 include_workers: bool = False, ports=DEFAULT_PORTS,
+                 pause: bool = False) -> Dict[str, Any]:
     """The whole procedure. Never raises; the report says what it did and why."""
     report: Dict[str, Any] = {
         "dry_run": dry_run, "grace_seconds": grace, "steps": [], "survivors": [],
@@ -313,27 +325,30 @@ def plan_and_run(*, api=None, pid_file: Optional[Path] = None, grace: float = DE
         report["workers_left_running"] = []
         report["steps"].append(step)
 
-    # ---- 4. the FT supervisor, then its child -------------------------------
-    step = {"step": "ft", "skipped": keep_ft, "results": []}
-    if not keep_ft:
-        for spid in _ft_supervisors(api):
-            kids = [{"pid": k, "cmd": (api.cmdline(k) or "")[:90]} for k in api.children(spid)]
-            res = _stop(api, spid, grace, dry_run)
-            recorded.append(spid)
-            entry = {"supervisor": spid, "result": res, "children": [],
-                     "outcome": "would_stop" if dry_run else ("stopped" if res["dead"] else "SURVIVED")}
-            for k in kids:
-                if not dry_run and not api.pid_exists(k["pid"]):
-                    entry["children"].append({**k, "outcome": "gone_with_supervisor"})
-                    continue
-                kres = _stop(api, k["pid"], grace, dry_run)
-                recorded.append(k["pid"])
-                entry["children"].append({**k, "result": kres,
-                                          "outcome": "would_stop" if dry_run else ("stopped" if kres["dead"] else "SURVIVED")})
-            step["results"].append(entry)
-        if not step["results"]:
-            step["outcome"] = "no_ft_supervisor_running"
-    report["steps"].append(step)
+    # ---- 4. the external supervisors, each then its child --------------------
+    keep = {"ft": keep_ft, "rt": keep_rt}
+    for key, sup_script, child_script, _port in EXTERNAL_SUPERVISORS:
+        step = {"step": key, "skipped": bool(keep.get(key)), "results": [],
+                "supervisor_script": sup_script, "child_script": child_script}
+        if not keep.get(key):
+            for spid in _external_supervisors(api, sup_script):
+                kids = [{"pid": k, "cmd": (api.cmdline(k) or "")[:90]} for k in api.children(spid)]
+                res = _stop(api, spid, grace, dry_run)
+                recorded.append(spid)
+                entry = {"supervisor": spid, "result": res, "children": [],
+                         "outcome": "would_stop" if dry_run else ("stopped" if res["dead"] else "SURVIVED")}
+                for k in kids:
+                    if not dry_run and not api.pid_exists(k["pid"]):
+                        entry["children"].append({**k, "outcome": "gone_with_supervisor"})
+                        continue
+                    kres = _stop(api, k["pid"], grace, dry_run)
+                    recorded.append(k["pid"])
+                    entry["children"].append({**k, "result": kres,
+                                              "outcome": "would_stop" if dry_run else ("stopped" if kres["dead"] else "SURVIVED")})
+                step["results"].append(entry)
+            if not step["results"]:
+                step["outcome"] = f"no_{sup_script}_running"
+        report["steps"].append(step)
 
     # ---- 5. verify, never assume -------------------------------------------
     if not dry_run:
@@ -355,7 +370,8 @@ def plan_and_run(*, api=None, pid_file: Optional[Path] = None, grace: float = DE
 
     if dry_run:
         report["state"] = "dry_run"
-    elif lock.get("state") == "down" and not any(s.get("results") for s in report["steps"] if s.get("step") == "ft"):
+    elif lock.get("state") == "down" and not any(
+            s.get("results") for s in report["steps"] if s.get("step") in EXTERNAL_KEYS):
         report["state"] = STATE_ALREADY_DOWN
     elif report["survivors"] or report["listeners"]:
         report["state"] = STATE_SURVIVORS
@@ -390,15 +406,15 @@ def _human(report: Dict[str, Any]) -> str:
         elif name == "workers":
             for r in s.get("results", []):
                 lines.append(f"  worker {r['pid']:>6} -> {r.get('outcome')}")
-        elif name == "ft":
+        elif name in EXTERNAL_KEYS:
             if s.get("skipped"):
-                lines.append("  ft: kept (--keep-ft)")
+                lines.append(f"  {name}: kept (--keep-{name})")
             elif not s.get("results"):
-                lines.append("  ft: no supervise_ft.py running")
+                lines.append(f"  {name}: no {s.get('supervisor_script')} running")
             for r in s.get("results", []):
-                lines.append(f"  ft supervisor {r['supervisor']} -> {r['outcome']}")
+                lines.append(f"  {name} supervisor {r['supervisor']} -> {r['outcome']}")
                 for k in r.get("children", []):
-                    lines.append(f"    ft child {k['pid']} -> {k.get('outcome')}")
+                    lines.append(f"    {name} child {k['pid']} -> {k.get('outcome')}")
     for w in report.get("workers_left_running", []):
         lines.append(f"  LEFT RUNNING (agent worker, not stopped without --include-workers): "
                      f"pid {w['pid']} {w['cmd'][:60]}")
@@ -419,6 +435,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--grace", type=float, default=DEFAULT_GRACE,
                     help=f"seconds to wait after terminate before kill (default {DEFAULT_GRACE:g})")
     ap.add_argument("--keep-ft", action="store_true", help="leave the ICDEV[FT] supervisor serving")
+    ap.add_argument("--keep-rt", action="store_true", help="leave the ICDEV[RT] supervisor serving")
     ap.add_argument("--include-workers", action="store_true",
                     help="also stop the scheduler's agent workers (discards in-flight builds)")
     ap.add_argument("--pause", action="store_true",
@@ -431,7 +448,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                          "its lock here -- a worktree's .tmp/ is empty and reads as 'down'")
     args = ap.parse_args(argv)
     report = plan_and_run(pid_file=args.pid_file, grace=args.grace, dry_run=args.dry_run,
-                          keep_ft=args.keep_ft, include_workers=args.include_workers,
+                          keep_ft=args.keep_ft, keep_rt=args.keep_rt,
+                          include_workers=args.include_workers,
                           pause=args.pause,
                           ports=tuple(args.ports) if args.ports else DEFAULT_PORTS)
     print(json.dumps(report, indent=2, default=str) if args.json else _human(report))

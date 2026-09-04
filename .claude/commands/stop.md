@@ -10,6 +10,7 @@ process table and the ports — never from a log file.
 
 DASHBOARD_PORT: read from `.env` (`ICDEV_DASHBOARD_PORT`, default 5050)
 FT_PORT: 5200
+RT_PORT: 5300
 PORTAL_PORT: 8443
 
 ## What the script does, in order
@@ -28,11 +29,14 @@ PORTAL_PORT: 8443
 3. **Agent workers mid-build are REPORTED and left running.** They are the
    scheduler's grandchildren; killing them discards work (~40 minutes lost on
    2026-08-29). `--include-workers` stops them too — a decision, not a default.
-4. **The ICDEV[FT] supervisor (`supervise_ft.py`), then its `launch_ft.py`
-   child** — the innermost of any wrapper chain (Git Bash cannot `exec()`, so
-   the shells above it carry the same command line). `--keep-ft` skips both.
-5. **Verify, never assume:** every recorded pid re-tested dead; ports 5050 and
-   5200 re-tested for a listener. A survivor is exit 1 with its pid.
+4. **The external supervisors, each then its child** — ICDEV[FT]
+   (`supervise_ft.py` → `launch_ft.py`, port 5200) and ICDEV[RT]
+   (`supervise_rt.py` → `launch_rt.py`, port 5300). Each supervisor is the
+   innermost of any wrapper chain (Git Bash cannot `exec()`, so the shells
+   above it carry the same command line). `--keep-ft` / `--keep-rt` skip one
+   pair; the table is `EXTERNAL_SUPERVISORS` in the script.
+5. **Verify, never assume:** every recorded pid re-tested dead; ports 5050,
+   5200 and 5300 re-tested for a listener. A survivor is exit 1 with its pid.
 6. The stale `launcher.pid` is removed only after its pid is confirmed dead.
 
 Exit codes: **0** stopped and verified (or already down) · **1** a survivor or a
@@ -47,8 +51,8 @@ lock, reused pid) — never a clean answer.
 > anywhere else, pass `--pid-file C:\AI\ICDev\.tmp\genesis\launcher.pid`.
 
 0. **See the plan before touching anything.** A dry run records the supervisor,
-   every child with its service name, any agent workers, the FT pair and the
-   current listeners, and acts on none of it:
+   every child with its service name, any agent workers, the FT and RT pairs
+   and the current listeners, and acts on none of it:
    ```powershell
    $env:PYTHONPATH = "C:\AI\ICDev"
    python tools/genesis/shutdown_dashboard.py --dry-run
@@ -57,7 +61,8 @@ lock, reused pid) — never a clean answer.
    default) or stop it with `--include-workers` in step 1.
 
 1. **Stop the stack.** Add `--pause` when the board should NOT dispatch on the
-   next start (sets Manual Build); add `--keep-ft` to leave ICDEV[FT] serving:
+   next start (sets Manual Build); add `--keep-ft` / `--keep-rt` to leave
+   ICDEV[FT] / ICDEV[RT] serving:
    ```powershell
    $env:PYTHONPATH = "C:\AI\ICDev"
    python tools/genesis/shutdown_dashboard.py --pause
@@ -85,21 +90,21 @@ lock, reused pid) — never a clean answer.
    name does not qualify; review the table before the last line regardless.
 
 3. **Prove it from the record.** The supervisor must read DOWN with no lock,
-   and no listener may remain on the three ports:
+   and no listener may remain on the four ports:
    ```powershell
    $env:PYTHONPATH = "C:\AI\ICDev"
    python tools/genesis/supervisor_status.py
    Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
-     Where-Object { $_.LocalPort -in 5050, 5200, 8443 } |
+     Where-Object { $_.LocalPort -in 5050, 5200, 5300, 8443 } |
      Format-Table LocalPort, OwningProcess -AutoSize
    ```
    An empty table is the answer. A row names the owning pid — verify its
    command line before stopping it, as in step 1.
 
 4. **Report to the user:** which pids were stopped and in what order, any
-   worker deliberately left running, the FT pair's outcome, the build mode
-   (`manual` means nothing dispatches on the next `/start` until
-   `python tools/kanban/cli.py --build-mode auto`), and the three empty ports.
+   worker deliberately left running, the FT and RT pairs' outcomes, the build
+   mode (`manual` means nothing dispatches on the next `/start` until
+   `python tools/kanban/cli.py --build-mode auto`), and the four empty ports.
 
 ## Do NOT
 
@@ -118,5 +123,6 @@ lock, reused pid) — never a clean answer.
 
 `/start`. Step 0 there reads `supervisor_status.py` first and, finding it DOWN,
 runs the PG cleanup and the stuck-task reset before `--ensure` launches a fresh
-supervisor. If the build mode was paused here, resume with
+supervisor, and its step 8b brings ICDEV[FT] and ICDEV[RT] back under their
+own supervisors. If the build mode was paused here, resume with
 `python tools/kanban/cli.py --build-mode auto` when you want dispatch back.
