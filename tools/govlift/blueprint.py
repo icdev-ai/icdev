@@ -37,6 +37,22 @@ def create_govlift_blueprint() -> Blueprint:
     bp = Blueprint("govlift", __name__, url_prefix="")
 
     _CLS = "CUI // SP-CTI"
+    # rmf-ui-17: the IQE widget every govlift page includes reads its POST
+    # target from the render context; nothing passed one, so each widget
+    # rendered data-api="" and could not ask anything. The route is under
+    # /govlift, which this prefix-less blueprint owns -- the bare /api/iqe-query
+    # it declared collided with ohc and ai_observatory and belongs to the
+    # app-level canvas dispatcher.
+    _IQE_CTX = {
+        "iqe_canvas": "govlift",
+        "iqe_api_route": "/govlift/api/iqe-query",
+        "iqe_title": "IQE Query — GovLift",
+        "iqe_examples": [
+            {"label": "All workloads", "query": "foreach w in govlift.workloads select w.name, w.status, w.wave_id"},
+            {"label": "Migration waves", "query": "foreach v in govlift.waves select v.name, v.status, v.scheduled_at"},
+            {"label": "Open STIG findings", "query": 'foreach f in govlift.stig where f.status = "open" select f.rule_id, f.severity, f.title'},
+        ],
+    }
 
     # ── Page Routes ──────────────────────────────────────────────────────────
 
@@ -52,7 +68,7 @@ def create_govlift_blueprint() -> Blueprint:
             "migrations": get_migration_summary(),
             "audit": get_audit_summary(),
         }
-        return render_template("govlift/index.html", data=data, classification=_CLS)
+        return render_template("govlift/index.html", data=data, classification=_CLS, **_IQE_CTX)
 
     @bp.route("/govlift/workloads")
     def govlift_workloads():
@@ -61,7 +77,7 @@ def create_govlift_blueprint() -> Blueprint:
             "workloads": list_workloads(limit=100),
             "summary": get_scanner_summary(),
         }
-        return render_template("govlift/workloads.html", data=data, classification=_CLS)
+        return render_template("govlift/workloads.html", data=data, classification=_CLS, **_IQE_CTX)
 
     @bp.route("/govlift/waves")
     def govlift_waves():
@@ -71,7 +87,7 @@ def create_govlift_blueprint() -> Blueprint:
             "waves": list_waves(),
             "summary": summary,
         }
-        return render_template("govlift/waves.html", data=data, classification=_CLS)
+        return render_template("govlift/waves.html", data=data, classification=_CLS, **_IQE_CTX)
 
     @bp.route("/govlift/executor")
     def govlift_executor():
@@ -80,7 +96,7 @@ def create_govlift_blueprint() -> Blueprint:
             "migrations": list_migrations(limit=50),
             "summary": get_migration_summary(),
         }
-        return render_template("govlift/executor.html", data=data, classification=_CLS)
+        return render_template("govlift/executor.html", data=data, classification=_CLS, **_IQE_CTX)
 
     @bp.route("/govlift/stig")
     def govlift_stig():
@@ -102,7 +118,7 @@ def create_govlift_blueprint() -> Blueprint:
                 "not_reviewed": sum(v.get("not_reviewed", 0) for v in summary.get("by_severity", {}).values()),
             },
         }
-        return render_template("govlift/stig.html", data=data, classification=_CLS)
+        return render_template("govlift/stig.html", data=data, classification=_CLS, **_IQE_CTX)
 
     @bp.route("/govlift/audit")
     def govlift_audit():
@@ -111,7 +127,7 @@ def create_govlift_blueprint() -> Blueprint:
             "log": list_audit_log(limit=200),
             "summary": get_audit_summary(),
         }
-        return render_template("govlift/audit.html", data=data, classification=_CLS)
+        return render_template("govlift/audit.html", data=data, classification=_CLS, **_IQE_CTX)
 
     @bp.route("/govlift/workloads/<workload_id>")
     def govlift_workload_detail(workload_id):
@@ -129,7 +145,7 @@ def create_govlift_blueprint() -> Blueprint:
             "migrations": list_migrations(workload_id=workload_id, limit=20),
             "stig_checks": list_stig_checks(workload_id=workload_id, limit=50),
         }
-        return render_template("govlift/workload_detail.html", data=data, classification=_CLS)
+        return render_template("govlift/workload_detail.html", data=data, classification=_CLS, **_IQE_CTX)
 
     @bp.route("/govlift/waves/<wave_id>")
     def govlift_wave_detail(wave_id):
@@ -142,7 +158,7 @@ def create_govlift_blueprint() -> Blueprint:
             "workloads": list_workloads(wave_id=wave_id, limit=100),
             "migrations": list_migrations(wave_id=wave_id, limit=50),
         }
-        return render_template("govlift/wave_detail.html", data=data, classification=_CLS)
+        return render_template("govlift/wave_detail.html", data=data, classification=_CLS, **_IQE_CTX)
 
     @bp.route("/govlift/migrations/<migration_id>")
     def govlift_migration_detail(migration_id):
@@ -157,7 +173,7 @@ def create_govlift_blueprint() -> Blueprint:
             "workload": wl,
             "wave": wave,
         }
-        return render_template("govlift/migration_detail.html", data=data, classification=_CLS)
+        return render_template("govlift/migration_detail.html", data=data, classification=_CLS, **_IQE_CTX)
 
     @bp.route("/govlift/stig/<check_id>")
     def govlift_stig_detail(check_id):
@@ -169,7 +185,7 @@ def create_govlift_blueprint() -> Blueprint:
             "check": chk,
             "workload": wl,
         }
-        return render_template("govlift/stig_detail.html", data=data, classification=_CLS)
+        return render_template("govlift/stig_detail.html", data=data, classification=_CLS, **_IQE_CTX)
 
     # ── JSON API ─────────────────────────────────────────────────────────────
 
@@ -351,7 +367,7 @@ def create_govlift_blueprint() -> Blueprint:
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
-    @bp.route("/api/iqe-query", methods=["POST"])
+    @bp.route("/govlift/api/iqe-query", methods=["POST"])
     def govlift_iqe_query():
         from tools.iqe.nl_to_iqe import nl_to_iqe
         from tools.iqe.parser import IQESyntaxError, parse
