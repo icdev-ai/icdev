@@ -162,6 +162,18 @@ class WatcherReport:
 # ────────────────────────────────────────────────────────────────────────────
 
 
+def _accepts_kwarg(fn, name: str) -> bool:
+    """Does `fn` take keyword `name` (or **kwargs)? A rebase stub injected by a
+    test may have the old three-argument shape; never break it by passing more."""
+    import inspect
+
+    try:
+        params = inspect.signature(fn).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    return any(p.kind is inspect.Parameter.VAR_KEYWORD or p.name == name for p in params)
+
+
 def load_config(path: Optional[pathlib.Path] = None) -> dict:
     p = path or DEFAULT_CONFIG
     if not p.exists():
@@ -2103,8 +2115,19 @@ class PRWatcher:
 
             rebase = rebase_and_push
 
+        kwargs: Dict[str, Any] = {"base": base}
+        # THE UNION RUNG (mfx-sib-03) rides INSIDE this attempt: after
+        # classify_conflict said `real`, before any resume is spent, and under
+        # this same per-base-era budget -- a real conflict on a declared
+        # sibling-append file costs one rebase attempt whether the union
+        # resolves it or refuses. The declared table is the config block;
+        # handing it over keeps the watcher's config the one source of rules.
+        union_cfg = self.config.get("union_resolver")
+        if union_cfg is not None and _accepts_kwarg(rebase, "union_rules"):
+            kwargs["union_rules"] = union_cfg
+
         try:
-            verdict = dict(rebase(task_id, branch, base=base))
+            verdict = dict(rebase(task_id, branch, **kwargs))
         except Exception as exc:  # noqa: BLE001 — must never stop the poll
             logger.warning("pr_watcher: auto-rebase errored for %s: %s", task_id, exc)
             verdict = {"attempted": True, "pushed": False,
@@ -2112,7 +2135,39 @@ class PRWatcher:
         # The era this attempt belongs to. Recorded on the audit row by the
         # caller, and read back by _attempts_against_another_base.
         verdict["base_sha"] = base_sha
+        self._audit_union_rung(task_id, state, verdict)
         return verdict
+
+    def _audit_union_rung(self, task_id: str, state: dict, verdict: dict) -> None:
+        """One `pr_watcher.union_resolved` / `.union_refused` row per attempt
+        the rung actually RAN on, naming the rules it used (mfx-sib-03).
+
+        Written beside the caller's `rebase` / `rebase_failed` row, never
+        instead of it: those two are the attempt ledger `_rebase_attempts`
+        counts, and this row explains what happened INSIDE the attempt. A rung
+        that never ran (no conflict, switched off, no unmerged file) writes
+        nothing -- a row saying "nothing happened" is noise the ledger has
+        been drowned in before.
+        """
+        union = verdict.get("union") or {}
+        outcome = union.get("outcome")
+        if outcome not in ("resolved", "refused"):
+            return
+        reason = (
+            f"{outcome}: files={union.get('files') or []} "
+            f"rules={union.get('rules_used') or []} "
+            f"verifiers={union.get('verifiers') or []}"
+        )
+        if union.get("reason"):
+            reason += f" -- {union['reason']}"
+        self._audit(WatcherAction(
+            task_id=task_id,
+            pr_url=(state.get("url") or "").strip(),
+            classification=KanbanState.MERGE_CONFLICT.value,
+            action=f"union_{outcome}",
+            reason=reason[:2000],
+            base_sha=verdict.get("base_sha", ""),
+        ))
 
     def _hitl_alert(self, task_id: str, pr_url: str, reason: str) -> None:
         """Raise a FIRING alert when a task genuinely needs a human.

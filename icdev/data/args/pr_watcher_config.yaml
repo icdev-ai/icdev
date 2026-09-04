@@ -11,6 +11,39 @@ max_resume_cycles_per_task: 5
 auto_merge_enabled: true
 auto_merge_require_approval: false
 
+# "CI is green" means the REQUIRED checks are green -- the forge's rule, read
+# from branch protection (task-det-295a9bb95e).
+#
+# `Test (Windows)` is NON-REQUIRED ON PURPOSE: icdev-ci.yml says "a Windows-only
+# flake cannot block a merge", and branch protection requires Lint / Test /
+# Security Scan / Helm Lint alone. This watcher read EVERY check, so one red
+# Windows run classified PR #1859 `ci_failed` with its required set fully
+# green, spent all five resumes on a branch that had no defect in it, escalated
+# to "manual intervention required" and filed a NEEDED-A-HUMAN card. #1841 was
+# the same shape; 2 of the 11 `ci_failed` escalations since 2026-08-14 were
+# this. The forge merged both -- because the forge only ever asked about the
+# required set.
+#
+# The set is READ from the default branch's protection rule (the GitHub
+# branches/<name>/protection endpoint) through
+# merge_readiness.fetch_required_checks -- never a list here, which would
+# drift the day `E2E (Playwright)` or `Test (Windows)` is promoted (the
+# CLAUDE.md note on promoting E2E already names the three hard-coded copies
+# that disagree with GitHub). A failing check OUTSIDE the set is named on the
+# audit row ("ignored non-required failing check(s): ...") and in the
+# merge-readiness reason, never dropped.
+#
+# UNRESOLVED IS NOT EMPTY. No protection rule, a token that may not read it,
+# a rule with no required checks -- every one reads as None and the watcher
+# counts every check, exactly as before; it says so in the log. An EMPTY
+# required set is deliberately None too: merging on nothing is the direction
+# with consequences. The answer is cached (including an unresolved one) for
+# `required_checks_cache_seconds`, so it costs one call per window.
+#
+# `false` restores the old read -- a flag flip, not a revert.
+required_checks_only: true
+required_checks_cache_seconds: 300
+
 # Take a GREEN PR out of draft so auto-merge can actually run.
 #
 # Without this the pipeline is autonomous right up to the last step and then
@@ -24,6 +57,19 @@ auto_merge_require_approval: false
 # is how a MANUAL-ONLY card (e.g. AGOV) expresses "a human decides when this
 # ships". For those the draft IS the brake, and it stays on. Set false to
 # require a human on every PR regardless.
+#
+# A HOLD LABEL ALSO STOPS THIS, not merely the merge (kpr-watch-04). Any of
+# hold / do-not-merge / "do not merge" / wip / no-automerge / blocked on the PR
+# suppresses BOTH the un-draft and the merge, on the task-linked path as well as
+# the unlinked sweep. Un-drafting here is not a human clicking "Ready for
+# review"; it is a step of the watcher's own merge sequence, and that sequence
+# must not run for a PR somebody has explicitly marked not-finished. A person
+# may still un-draft by hand at any time — the merge is refused afterwards, so
+# the two controls stay independent where that matters. The label list lives in
+# `NO_AUTOMERGE_LABELS` in tools/ci/merge_readiness.py, deliberately in code
+# rather than here: it is the vocabulary the shared merge-readiness classifier
+# reports as the `held_label` state, and a per-deployment list would let a label
+# mean two different things again.
 auto_ready_draft_prs: true
 
 # Truncate CI log excerpts before injecting as resume context
@@ -106,6 +152,64 @@ hold_on_sibling_conflict: true
 # unavailable git reports checked:false, which is never read as a finding.
 landed_check_on_poll: true
 
+# Stale-branch guard (kpr-stale-02) — THE SAFETY HOLE this closes.
+#
+# Nothing in this watcher ever asked how far behind the default branch a PR
+# was. The merge decision reads `mergeable`, and GitHub reports MERGEABLE for a
+# branch arbitrarily far behind main so long as nothing collides TEXTUALLY. So
+# the CONFLICTING interlock only ever caught the subset that happened to
+# collide; the non-conflicting subset merged CLEANLY and re-applied its whole
+# diff over a tree that had moved on — a revert wearing a feature's clothes.
+# #1651 was -38/+26 on rest_v1.py and 36 commits behind main. It was closed by
+# a human; nothing in the pipeline could see it. `auto_rebase_on_conflict`
+# above is not the answer on its own: it repairs a branch that has ALREADY gone
+# DIRTY, which is exactly the subset that never had this problem.
+#
+# THE FORGE'S OWN VERDICT IS NOT ENOUGH, and this is the trap to avoid.
+# `mergeStateStatus == BEHIND` is authoritative when it appears, but it appears
+# ONLY when the base branch has "require branches to be up to date"
+# (`required_status_checks.strict`) turned on. Measured on this repo
+# 2026-08-18: strict is FALSE. mergeStateStatus is CLEAN for a branch 217
+# commits behind main, so a check keyed on it alone could never fire once. The
+# measured count below is the real check; the forge verdict is the belt.
+#
+# WHERE THE NUMBER COMES FROM. Measured 2026-08-18 over the last 120 MERGED
+# PRs, counting commits on main that each branch was missing at the moment it
+# merged (`merge-base(main-at-merge, head)..main-at-merge`):
+#
+#     0 commits behind : 41 (34.2%)      p50 =  1
+#     1-2              : 38 (31.7%)      p75 =  3
+#     3-5              : 31 (25.8%)      p90 =  5
+#     6-10             : 10 ( 8.3%)      p95 =  6
+#     11+              :  0 ( 0.0%)      max =  8
+#
+# The routine population tops out at 8. The known true positive, #1651, was 36
+# behind when it was closed (217 today). So 10 sits two commits above the
+# highest routine merge ever observed and an order of magnitude below the case
+# it exists to catch: it would have fired on 0 of those 120 merges and on
+# #1651. It is NOT a number chosen to keep the check quiet — lower it and it
+# starts refusing the p95 of ordinary work, which the repair path (a rebase per
+# PR) can absorb but which CLAUDE.md is right to call refusing routine work.
+# Re-measure before changing it; do not raise it to get a PR through.
+#
+# THE REPAIR DIFFERS BY DOOR, and only one of them pushes:
+#   * a task-linked kanban/<id> branch is handed to the SAME `_maybe_rebase`
+#     path `auto_rebase_on_conflict` uses — same ownership refusal, same
+#     per-base-era budget, same audit. When it declines (not this task's
+#     branch, budget spent, disabled) the PR is held and a HITL alert names a
+#     human, because a hold nobody can see is how work goes quiet.
+#   * an UNLINKED PR is reported and left alone. The unlinked sweep never
+#     pushes — it has no task to carry the state and no claim on the branch.
+#
+# FAIL-OPEN, and never silently. When the count cannot be measured (no gh, a
+# fork PR, a rate limit) the PR is NOT held, and the report prints "?" rather
+# than 0 — an unmeasured branch and a branch level with main are different
+# facts, and only one of them is evidence. Same posture landed_check takes for
+# the same class of question. Set refuse_merge_when_behind false to disable the
+# hold entirely; `python -m tools.ci.merge_readiness` still reports it.
+refuse_merge_when_behind: true
+max_behind_commits: 10
+
 # Bounded self-heal of a stale done-gate block (kpr-rvfy-03).
 # The enforced done-gate reads only the LATEST kanban_verifications row, and
 # nothing writes one except a dispatch — so a green PR whose verification went
@@ -169,3 +273,107 @@ restart_on_code_change: true
 # Escape hatch: any of hold / do-not-merge / wip / no-automerge / blocked as a
 # LABEL, or leave the PR as a draft. Requested changes are never merged over.
 merge_unlinked_prs: true
+
+# ── protected_paths (kpr-watch-05) ────────────────────────────────────────────
+# THE STANDING HAZARD. This watcher auto-merges any CI-green kanban/* branch,
+# including one that edits the watcher. A defect in the merge-eligibility ladder
+# therefore merges ITSELF into main, and every cycle after that runs on the new,
+# wrong rule with no human in the path. That is not episodic — it is true
+# whenever any card touches these files, which is why two separate cards had to
+# invent per-episode manual gates for it. A per-episode gate cannot fix a
+# standing hazard.
+#
+# A PR whose changed files intersect this list is refused by BOTH merge paths
+# (the task-linked auto-merge and the unlinked sweep) and reported as the
+# `protected_path` state, so it is visible rather than silently skipped. Merge
+# it by hand after reading the diff.
+#
+# THIS FILE IS ON THE LIST ON PURPOSE. A PR that weakens or empties
+# `protected_paths` must not be able to auto-merge itself in.
+# tools/kanban/gates.py already states the principle: "A gate that cannot
+# protect itself is not a control."
+#
+# Matching is exact-or-directory-prefix: `tools/ci/pr_watcher.py` matches that
+# file and NOT `tools/ci/pr_watcher_helpers.py`; a bare directory entry matches
+# everything beneath it. If the changed-file set cannot be determined at all,
+# the PR is treated as protected — a merge gate that opens when it cannot see is
+# not a gate.
+protected_paths:
+  - tools/ci/pr_watcher.py
+  - args/pr_watcher_config.yaml
+  - .claude/hooks/pre_tool_use.py
+  - tools/kanban/task_factory.py
+  - tools/kanban/gates.py
+
+# ── union_resolver (mfx-sib-03) ──────────────────────────────────────────────
+# A REAL conflict on a sibling-append file has ONE correct resolution: the
+# union. Between 2026-09-03 and 09-04 an operator applied it ten times by hand
+# on exactly these files (a canvas blueprint gaining one route block per card,
+# the `request.path in [...]` list in base.html gaining one token per card, a
+# coverage table gaining one row per card, a Playwright spec gaining one test
+# per card), and twice a WRONG rule shipped a broken file that only ruff or a
+# later Playwright collect caught. So rules are chosen BY FILE from this table
+# and never guessed from content. Each entry's `rules` are tried IN ORDER on
+# every conflicting hunk; `other_side_when_empty` applies to every declared
+# file before any of them. A conflicted file no entry matches REFUSES, and the
+# rebase aborts with the branch untouched. Mirror copies (icdev/tools/...,
+# icdev/data/args/...) match by their canonical path.
+#
+# After resolving, the rung VERIFIES before anything is staged for push:
+# `ast.parse` + ruff on .py, typescript syntactic diagnostics (or a
+# string/comment-aware delimiter balance when no typescript module is
+# resolvable, and the verdict records which) on .ts, a Jinja parse on .html,
+# a load on .yaml/.json, no conflict marker + `git diff --check` on all, and
+# each entry's `tests` (pytest targets; `{parent}` / `{stem}` come from the
+# conflicted file) ONCE on the completed rebase. Any failure refuses.
+#
+# It runs INSIDE the rebase attempt `max_rebase_attempts_per_task` already
+# budgets per base era, after the doc-only additive resolver declines and
+# before the abort, so a real conflict still costs exactly one attempt.
+# pr_watcher writes `pr_watcher.union_resolved` / `pr_watcher.union_refused`
+# audit rows naming the rules used. Rules:
+#   keep_both_blocks   both inserted at one point: main's block, then the card's
+#   table_rows         keep_both_blocks restricted to `| ... |` rows, deduped
+#   quoted_list_line   one quoted-token line: main's tokens plus the card's new ones
+#   adjacent_edits     edits of DIFFERENT base lines that merely abut merge line-by-line
+#   python -m tools.kanban.union_resolver --list-rules
+#   python -m tools.kanban.union_resolver --worktree <path> --dry-run --json
+union_resolver:
+  enabled: true
+  verify:
+    pytest_timeout_seconds: 900
+  files:
+    # Canvas blueprints: each migration card appends one route block, and its
+    # page tests prove the canvas still renders after the union.
+    - path: tools/boundary_canvas/blueprint.py
+      rules: [keep_both_blocks, adjacent_edits]
+      tests: ["tests/test_bdc_*_page.py"]
+    - path: tools/security_canvas/blueprint.py
+      rules: [keep_both_blocks, adjacent_edits]
+      tests: ["tests/test_sdc_*_page.py"]
+    - path: tools/*/blueprint.py
+      rules: [keep_both_blocks, adjacent_edits]
+      tests: ["tests/{parent}"]
+    # app.py: each card turns one bare page route into a redirect, and two
+    # cards' redirect docstrings sit a few lines apart.
+    - path: tools/dashboard/app.py
+      rules: [keep_both_blocks, adjacent_edits]
+    # The Compliance dropdown's `request.path in [...]` list, one token per card.
+    - path: tools/dashboard/templates/base.html
+      rules: [quoted_list_line, adjacent_edits]
+    - path: tools/dashboard/templates/**/*.html
+      rules: [adjacent_edits, keep_both_blocks]
+    # Playwright specs: one test per card appended at the same point; a nav
+    # table where two cards migrated adjacent rows.
+    - path: tests/e2e/*.spec.ts
+      rules: [keep_both_blocks, adjacent_edits]
+    - path: tests/e2e_ui_full_coverage.py
+      rules: [adjacent_edits, keep_both_blocks]
+    - path: tests/e2e_cloud_migration_security.py
+      rules: [adjacent_edits, keep_both_blocks]
+    # The `Pages:` line, a backtick-quoted token list.
+    - path: .claude/commands/start.md
+      rules: [quoted_list_line, adjacent_edits]
+    # Feature docs carrying a per-card coverage table.
+    - path: docs/features/*.md
+      rules: [table_rows, keep_both_blocks, adjacent_edits]

@@ -168,6 +168,12 @@ def _identity_args(repo_root: str, runner: Optional[Callable]) -> List[str]:
     ]
 
 
+#: How many times one rebase may stop on a conflict and be resolved before we
+#: give up. Every replayed commit can stop once; a kanban branch carries a
+#: handful of commits, so this is a runaway guard, not a budget.
+MAX_CONFLICT_STOPS = 25
+
+
 def _verdict(**kw: Any) -> Dict[str, Any]:
     base = {
         "attempted": False,
@@ -179,6 +185,9 @@ def _verdict(**kw: Any) -> Dict[str, Any]:
         "commits_ahead": None,
         "old_sha": "",
         "new_sha": "",
+        # The union rung's verdict (mfx-sib-03): None when it never ran, else
+        # {outcome, files, rules_used, verifiers, tests, reason}.
+        "union": None,
     }
     base.update(kw)
     return base
@@ -209,19 +218,63 @@ def _cleanup(repo_root: str, path: Optional[str], runner) -> None:
         pass
 
 
+def _unmerged_files(cwd, runner) -> list:
+    """Paths the index still holds in an unmerged state (empty on any error)."""
+    status = _git(["diff", "--name-only", "--diff-filter=U"], cwd=cwd, runner=runner)
+    if getattr(status, "returncode", 1) != 0:
+        return []
+    return [f.strip() for f in (_out(status) or "").splitlines() if f.strip()]
+
+
+def _union_resolve(cwd, union_rules, runner) -> Optional[Dict[str, Any]]:
+    """The union rung (mfx-sib-03): rules chosen BY FILE from the declared table.
+
+    Runs only after `_auto_resolve_conflicts` declined. Returns the outcome
+    dict, or None when the rung is switched off (``union_rules is False``).
+    A rung that errors is reported as `refused`, never raised: a recovery
+    attempt must not stall the watcher, and an unexplained abort is the exact
+    silence this card exists to remove.
+    """
+    if union_rules is False:
+        return None
+    try:
+        from tools.kanban import union_resolver
+
+        outcome = union_resolver.resolve_index_conflicts(
+            cwd, rules_cfg=union_rules if isinstance(union_rules, dict) else None,
+            runner=runner)
+    except Exception as exc:  # noqa: BLE001 -- the rung must never stall the watcher
+        logger.warning("rebase_recovery: union rung errored: %s", exc)
+        return {"outcome": "refused", "files": [], "rules_used": [], "verifiers": [],
+                "tests": [], "reason": f"union rung errored: {exc}"}
+    return outcome.to_dict()
+
+
+def _fold_union(summary: Optional[Dict[str, Any]], outcome: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """One summary across every conflict stop of a single rebase."""
+    if outcome is None:
+        return summary
+    if summary is None:
+        return dict(outcome)
+    for key in ("files", "rules_used", "verifiers", "tests"):
+        merged = list(summary.get(key) or [])
+        merged.extend(x for x in (outcome.get(key) or []) if x not in merged)
+        summary[key] = merged
+    summary["outcome"] = outcome.get("outcome", summary.get("outcome"))
+    summary["reason"] = outcome.get("reason", "")
+    return summary
+
+
 def _auto_resolve_conflicts(cwd, runner) -> list:
     """Resolve provably-additive conflicts in place; return the notes.
 
     Empty list means nothing was resolved — either there was nothing safe to do,
     or a file the resolver does not understand is conflicted, in which case the
-    caller aborts exactly as before.
+    caller falls through to the union rung, and from there to the abort.
     """
     from tools.kanban.conflict_resolvers import is_resolvable_path, resolve_file
 
-    status = _git(["diff", "--name-only", "--diff-filter=U"], cwd=cwd, runner=runner)
-    if getattr(status, "returncode", 1) != 0:
-        return []
-    files = [f.strip() for f in (_out(status) or "").splitlines() if f.strip()]
+    files = _unmerged_files(cwd, runner)
     if not files:
         return []
     # ALL of them must be resolvable. Resolving some and aborting on the rest
@@ -250,6 +303,7 @@ def rebase_and_push(
     repo_root: Optional[str] = None,
     runner: Optional[Callable] = None,
     dry_run: bool = False,
+    union_rules: Any = None,
 ) -> Dict[str, Any]:
     """Rebase `branch` onto ``origin/<base>`` in a scratch worktree and push it.
 
@@ -260,6 +314,11 @@ def rebase_and_push(
 
     ``dry_run`` performs the rebase probe (which touches only a temp directory
     and the local object store) and stops before the push.
+
+    ``union_rules`` is the `union_resolver` config block (mfx-sib-03): None
+    reads it from args/pr_watcher_config.yaml, a dict is used as given, and
+    False switches the rung off. The verdict's ``union`` key reports what the
+    rung did.
     """
     root = str(repo_root or ROOT)
 
@@ -297,7 +356,18 @@ def rebase_and_push(
     try:
         ident = _identity_args(tmp, runner)
         reb = _git([*ident, "rebase", f"origin/{base}"], cwd=tmp, runner=runner)
-        if getattr(reb, "returncode", 1) != 0:
+        union_summary: Optional[Dict[str, Any]] = None
+        stops = 0
+        while getattr(reb, "returncode", 1) != 0:
+            stops += 1
+            if stops > MAX_CONFLICT_STOPS:
+                _git(["rebase", "--abort"], cwd=tmp, runner=runner)
+                return _verdict(
+                    attempted=True, conflict=True, branch=branch, base=base,
+                    old_sha=old_sha, union=union_summary,
+                    reason=(f"rebase onto origin/{base} stopped on conflicts more "
+                            f"than {MAX_CONFLICT_STOPS} times; giving up"),
+                )
             # Before giving up: some conflicts are not disagreements. Two
             # branches each appending an independent block to a shared reference
             # file, or each allocating "the next free" section number, resolve
@@ -306,38 +376,58 @@ def rebase_and_push(
             # a worktree round-trip.
             #
             # resolve_conflicts refuses anything it cannot prove is additive, and
-            # never touches code, so an unresolved file still lands on the abort
-            # path below unchanged.
+            # never touches code, so an unresolved file falls through to the
+            # union rung, and from there to the abort path below unchanged.
             resolved_notes = _auto_resolve_conflicts(tmp, runner)
             if resolved_notes:
-                cont = _git(
-                    [*ident, "-c", "core.editor=true", "rebase", "--continue"],
-                    cwd=tmp, runner=runner)
-                if getattr(cont, "returncode", 1) == 0:
-                    logger.info(
-                        "rebase_recovery: auto-resolved %d additive conflict(s) on %s: %s",
-                        len(resolved_notes), branch, "; ".join(resolved_notes[:3]))
-                    reb = cont
-                else:
+                how = "auto-resolved %d additive conflict(s): %s" % (
+                    len(resolved_notes), "; ".join(resolved_notes[:3]))
+            else:
+                # THE UNION RUNG (mfx-sib-03). A REAL conflict on a DECLARED
+                # sibling-append file -- a canvas blueprint gaining one route
+                # block per card, the `request.path in [...]` list gaining one
+                # token per card, a coverage table gaining one row -- has one
+                # correct resolution, and an operator applied it ten times by
+                # hand on 2026-09-03/04. Rules are chosen by FILE from
+                # args/pr_watcher_config.yaml, never guessed from content; the
+                # result is verified (ast + ruff, typescript, Jinja, git diff
+                # --check, declared page tests) before anything is pushed; an
+                # undeclared file or a failed verifier refuses, and the abort
+                # below leaves the branch untouched.
+                outcome = _union_resolve(tmp, union_rules, runner)
+                union_summary = _fold_union(union_summary, outcome)
+                if outcome is None or outcome.get("outcome") != "resolved":
+                    detail = (_err(reb) or _out(reb)).splitlines()
+                    why = detail[-1][:200] if detail else "no detail"
+                    if outcome is not None and outcome.get("reason"):
+                        why += "; union rung: " + str(outcome["reason"])[:300]
                     _git(["rebase", "--abort"], cwd=tmp, runner=runner)
                     return _verdict(
                         attempted=True, conflict=True, branch=branch, base=base,
-                        old_sha=old_sha,
-                        reason=("auto-resolved the additive conflicts but "
-                                "`rebase --continue` still failed: "
-                                + (_err(cont) or "")[:160]),
+                        old_sha=old_sha, union=union_summary,
+                        reason="rebase onto origin/%s hit conflicts: %s" % (base, why),
                     )
-            else:
-                detail = (_err(reb) or _out(reb)).splitlines()
-                _git(["rebase", "--abort"], cwd=tmp, runner=runner)
-                return _verdict(
-                    attempted=True, conflict=True, branch=branch, base=base,
-                    old_sha=old_sha,
-                    reason=(
-                        "rebase onto origin/%s hit conflicts: %s"
-                        % (base, detail[-1][:200] if detail else "no detail")
-                    ),
-                )
+                how = "union-resolved %s" % ", ".join(
+                    outcome.get("rules_used") or outcome.get("files") or [])
+            cont = _git(
+                [*ident, "-c", "core.editor=true", "rebase", "--continue"],
+                cwd=tmp, runner=runner)
+            if getattr(cont, "returncode", 1) == 0:
+                logger.info("rebase_recovery: %s on %s; rebase continued", how, branch)
+                reb = cont
+                continue
+            if _unmerged_files(tmp, runner):
+                # The NEXT replayed commit stopped on a conflict of its own.
+                # Round again: each stop is resolved and verified on its own.
+                reb = cont
+                continue
+            _git(["rebase", "--abort"], cwd=tmp, runner=runner)
+            return _verdict(
+                attempted=True, conflict=True, branch=branch, base=base,
+                old_sha=old_sha, union=union_summary,
+                reason=(how + " but `rebase --continue` still failed: "
+                        + (_err(cont) or "")[:160]),
+            )
 
         count = _git(
             ["rev-list", "--count", f"origin/{base}..HEAD"], cwd=tmp, runner=runner
@@ -351,17 +441,45 @@ def rebase_and_push(
             # Report it and let the caller escalate — a human should close it.
             return _verdict(
                 attempted=True, branch=branch, base=base, old_sha=old_sha,
-                new_sha=new_sha, commits_ahead=0,
+                new_sha=new_sha, commits_ahead=0, union=union_summary,
                 reason=(
                     f"rebase left no commits ahead of origin/{base} — the branch's "
                     "work is already on the base; not pushing an empty branch"
                 ),
             )
 
+        if union_summary and union_summary.get("tests"):
+            # The declared page tests run ONCE, on the COMPLETED tree, before
+            # the push. Per conflict stop the tree is mid-replay and a later
+            # commit could still change the file; the tree about to be pushed
+            # is the one that has to pass. A failure pushes nothing.
+            from tools.kanban import union_resolver
+
+            timeout = union_resolver.DEFAULT_PYTEST_TIMEOUT
+            if isinstance(union_rules, dict):
+                try:
+                    timeout = int((union_rules.get("verify") or {}).get(
+                        "pytest_timeout_seconds", timeout))
+                except (TypeError, ValueError):
+                    pass
+            ok, detail = union_resolver.run_declared_tests(
+                tmp, union_summary["tests"], timeout=timeout)
+            union_summary.setdefault("verifiers", []).append("pytest")
+            if not ok:
+                union_summary["outcome"] = "refused"
+                union_summary["reason"] = detail
+                return _verdict(
+                    attempted=True, conflict=True, branch=branch, base=base,
+                    old_sha=old_sha, new_sha=new_sha, commits_ahead=ahead,
+                    union=union_summary,
+                    reason=("union-resolved rebase failed its declared tests; "
+                            "not pushing: " + detail[:300]),
+                )
+
         if dry_run:
             return _verdict(
                 attempted=True, branch=branch, base=base, old_sha=old_sha,
-                new_sha=new_sha, commits_ahead=ahead,
+                new_sha=new_sha, commits_ahead=ahead, union=union_summary,
                 reason=f"dry-run: rebase clean ({ahead} commit(s)), push skipped",
             )
 
@@ -378,7 +496,7 @@ def rebase_and_push(
         if getattr(push, "returncode", 1) != 0:
             return _verdict(
                 attempted=True, branch=branch, base=base, old_sha=old_sha,
-                new_sha=new_sha, commits_ahead=ahead,
+                new_sha=new_sha, commits_ahead=ahead, union=union_summary,
                 reason=(
                     "force-with-lease push rejected (branch moved under us?): "
                     f"{_err(push)[:200]}"
@@ -390,7 +508,7 @@ def rebase_and_push(
         )
         return _verdict(
             attempted=True, pushed=True, branch=branch, base=base,
-            old_sha=old_sha, new_sha=new_sha, commits_ahead=ahead,
+            old_sha=old_sha, new_sha=new_sha, commits_ahead=ahead, union=union_summary,
             reason=f"rebased onto origin/{base} and force-pushed ({ahead} commit(s))",
         )
     except Exception as exc:  # noqa: BLE001 — a recovery attempt must never stall the watcher

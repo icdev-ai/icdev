@@ -304,3 +304,76 @@ protected_paths:
   - .claude/hooks/pre_tool_use.py
   - tools/kanban/task_factory.py
   - tools/kanban/gates.py
+
+# ── union_resolver (mfx-sib-03) ──────────────────────────────────────────────
+# A REAL conflict on a sibling-append file has ONE correct resolution: the
+# union. Between 2026-09-03 and 09-04 an operator applied it ten times by hand
+# on exactly these files (a canvas blueprint gaining one route block per card,
+# the `request.path in [...]` list in base.html gaining one token per card, a
+# coverage table gaining one row per card, a Playwright spec gaining one test
+# per card), and twice a WRONG rule shipped a broken file that only ruff or a
+# later Playwright collect caught. So rules are chosen BY FILE from this table
+# and never guessed from content. Each entry's `rules` are tried IN ORDER on
+# every conflicting hunk; `other_side_when_empty` applies to every declared
+# file before any of them. A conflicted file no entry matches REFUSES, and the
+# rebase aborts with the branch untouched. Mirror copies (icdev/tools/...,
+# icdev/data/args/...) match by their canonical path.
+#
+# After resolving, the rung VERIFIES before anything is staged for push:
+# `ast.parse` + ruff on .py, typescript syntactic diagnostics (or a
+# string/comment-aware delimiter balance when no typescript module is
+# resolvable, and the verdict records which) on .ts, a Jinja parse on .html,
+# a load on .yaml/.json, no conflict marker + `git diff --check` on all, and
+# each entry's `tests` (pytest targets; `{parent}` / `{stem}` come from the
+# conflicted file) ONCE on the completed rebase. Any failure refuses.
+#
+# It runs INSIDE the rebase attempt `max_rebase_attempts_per_task` already
+# budgets per base era, after the doc-only additive resolver declines and
+# before the abort, so a real conflict still costs exactly one attempt.
+# pr_watcher writes `pr_watcher.union_resolved` / `pr_watcher.union_refused`
+# audit rows naming the rules used. Rules:
+#   keep_both_blocks   both inserted at one point: main's block, then the card's
+#   table_rows         keep_both_blocks restricted to `| ... |` rows, deduped
+#   quoted_list_line   one quoted-token line: main's tokens plus the card's new ones
+#   adjacent_edits     edits of DIFFERENT base lines that merely abut merge line-by-line
+#   python -m tools.kanban.union_resolver --list-rules
+#   python -m tools.kanban.union_resolver --worktree <path> --dry-run --json
+union_resolver:
+  enabled: true
+  verify:
+    pytest_timeout_seconds: 900
+  files:
+    # Canvas blueprints: each migration card appends one route block, and its
+    # page tests prove the canvas still renders after the union.
+    - path: tools/boundary_canvas/blueprint.py
+      rules: [keep_both_blocks, adjacent_edits]
+      tests: ["tests/test_bdc_*_page.py"]
+    - path: tools/security_canvas/blueprint.py
+      rules: [keep_both_blocks, adjacent_edits]
+      tests: ["tests/test_sdc_*_page.py"]
+    - path: tools/*/blueprint.py
+      rules: [keep_both_blocks, adjacent_edits]
+      tests: ["tests/{parent}"]
+    # app.py: each card turns one bare page route into a redirect, and two
+    # cards' redirect docstrings sit a few lines apart.
+    - path: tools/dashboard/app.py
+      rules: [keep_both_blocks, adjacent_edits]
+    # The Compliance dropdown's `request.path in [...]` list, one token per card.
+    - path: tools/dashboard/templates/base.html
+      rules: [quoted_list_line, adjacent_edits]
+    - path: tools/dashboard/templates/**/*.html
+      rules: [adjacent_edits, keep_both_blocks]
+    # Playwright specs: one test per card appended at the same point; a nav
+    # table where two cards migrated adjacent rows.
+    - path: tests/e2e/*.spec.ts
+      rules: [keep_both_blocks, adjacent_edits]
+    - path: tests/e2e_ui_full_coverage.py
+      rules: [adjacent_edits, keep_both_blocks]
+    - path: tests/e2e_cloud_migration_security.py
+      rules: [adjacent_edits, keep_both_blocks]
+    # The `Pages:` line, a backtick-quoted token list.
+    - path: .claude/commands/start.md
+      rules: [quoted_list_line, adjacent_edits]
+    # Feature docs carrying a per-card coverage table.
+    - path: docs/features/*.md
+      rules: [table_rows, keep_both_blocks, adjacent_edits]

@@ -7885,6 +7885,17 @@ python tools/kanban/cli.py --claim <task-id>            # again: RENEWS the runn
 python tools/kanban/cli.py --release <task-id>          # end the keeper session, free the lease
 python -m tools.kanban.interactive_claim --status <task-id> [--json]   # what holds it: keeper pid, expiry, intent, log
 python tools/awareness/restore_acts.py --plan           # reports the lease as held by a running process
+### Union rung for declared append-shaped files (mfx-sib-03)
+
+```bash
+# A REAL rebase conflict on a DECLARED sibling-append file has ONE resolution: the union.
+# Rules are chosen BY FILE (args/pr_watcher_config.yaml -> union_resolver.files), never by content.
+python -m tools.kanban.union_resolver --list-rules                       # the rules and the declared table
+python -m tools.kanban.union_resolver --worktree <path> --dry-run --json # resolve in memory, write nothing
+python -m tools.kanban.union_resolver --worktree <path> --mode merge     # a `git merge main` from the card's branch
+# Runs inside rebase_recovery.rebase_and_push after the doc-only resolver declines and before the abort,
+# under the same per-base-era rebase budget; pr_watcher audits union_resolved / union_refused with the rules.
+python tools/kanban/rebase_recovery.py --task <id> --dry-run --json      # the whole rebase, rung included
 ```
 
 ### AWS emulator seam — the ONE floci switch (flx-seam-01, flx-seam-02)
