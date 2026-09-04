@@ -1,0 +1,2 @@
+# kpr-stale-06 -- a guard park whose branch is provably EMPTY and whose worktree is provably CLEAN is removed through git and requeued; unregistered dirs, dirty worktrees and branches ahead refuse.
+tests/test_kanban_empty_checkout_requeue.py

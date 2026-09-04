@@ -641,7 +641,22 @@ reflexes:
     # It ran 25 times, failed 14, tripped its breaker and filed ZERO cards -- a
     # daily audit that reports nothing is indistinguishable from a clean board.
     timeout_seconds: 1200
-    description: "Reconcile done/validating kanban tasks vs origin/main; file [STRANDED] suggested cards for branches with unmerged commits (built-but-never-merged)"
+    # kpr-stale-05: an `orphan_validating` row (validating, no branch, no
+    # worktree, no live lease, parked by a dispatch guard) is REQUEUED through
+    # requeue_task, at most this many per run; the rest are reported as
+    # `deferred` by name and taken next run, oldest park first. A row parked
+    # twice by the same guard within 24h is carded instead of requeued again.
+    # kpr-stale-06: the SAME cap also bounds the second act -- a guard-parked
+    # `validating` row whose branch EXISTS and is provably EMPTY (0 ahead of
+    # origin/main by `git cherry` AND an ancestor of it) and whose worktree is
+    # ABSENT or REGISTERED and provably CLEAN. That checkout is removed through
+    # `git worktree remove` (never rmtree), its LOCAL branch deleted (never an
+    # origin branch), audited BEFORE acting, then requeued. What the orphan act
+    # requeued this run counts against this number; an unregistered directory,
+    # a dirty worktree or a branch ahead REFUSES by name. Surveyed 2026-09-03:
+    # 53 of 65 guard parks lifetime had their branch at park time.
+    max_requeues_per_run: 10
+    description: "Reconcile done/validating kanban tasks vs origin/main; file [STRANDED] suggested cards for branches with unmerged commits (built-but-never-merged); requeue proven orphan_validating rows and proven empty-checkout parks (bounded, audited)"
     success_metric:
       name: stranded_tasks_found
       threshold: 0
