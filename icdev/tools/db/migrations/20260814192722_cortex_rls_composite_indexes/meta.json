@@ -1,0 +1,14 @@
+{
+  "description": "Composite indexes matching the RLS predicate shape on the Cortex tables (ctx-perf-05)",
+  "date": "2026-08-14",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true,
+  "task": "ctx-perf-05",
+  "tables": [
+    "cortex_audit",
+    "cortex_search_history",
+    "cortex_chat_sessions",
+    "cortex_messages"
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "id": "027",
+  "name": "compliance_twin_schema",
+  "description": "Add cATO Twin canonical schema: compliance_twin_snapshots (control x project x framework x timestamp -> implementation_status + evidence_ref), compliance_twin_violations, compliance_twin_runs. Implements OSCAL model for BDC Phase 1.",
+  "created_at": "2026-04-17",
+  "author": "icdev-bdc-cato-twin-phase-1",
+  "database": "icdev",
+  "reversible": true,
+  "requires_downtime": false
+}

@@ -17,7 +17,7 @@ Gathers from DB:
     - Teaming workshare agreements (pg_teaming_workshare, pg_teaming_partners)
     - Pricing assumptions and BOE (pg_cost_volumes, pg_lcat_allocations)
     - Risk items from review findings (pg_review_findings)
-    - CDRL requirements (pg_compliance_matrix where source_section = 'C')
+    - CDRL requirements (proposal_compliance_matrix where requirement_type = 'C')
     - CMMC compliance status (pg_cmmc_supply_chain)
     - Bid decision rationale (pg_bid_decisions)
 
@@ -322,15 +322,20 @@ def _gather_risks(conn, opp_id: str) -> Dict[str, Any]:
 
 
 def _gather_cdrls(conn, opp_id: str) -> Dict[str, Any]:
-    """Fetch CDRL requirements from compliance matrix (source_section = 'C')."""
+    """Fetch CDRL requirements from THE compliance matrix (requirement_type = 'C').
+
+    proposal_compliance_matrix, since rmf-rfp-01 folded pg_compliance_matrix
+    into it; Section C rows are what compliance_matrix_builder.parse_section_c
+    extracts.
+    """
     try:
         rows = conn.execute(
-            "SELECT * FROM pg_compliance_matrix "
-            "WHERE opportunity_id = %s AND source_section = 'C' "
-            "ORDER BY requirement_id",
+            "SELECT * FROM proposal_compliance_matrix "
+            "WHERE opportunity_id = %s AND requirement_type = 'C' "
+            "ORDER BY sort_order, section_ref",
             (opp_id,),
         ).fetchall()
-        cols = [d[0] for d in conn.execute("SELECT * FROM pg_compliance_matrix LIMIT 0").description]
+        cols = [d[0] for d in conn.execute("SELECT * FROM proposal_compliance_matrix LIMIT 0").description]
         return {"data": [dict(zip(cols, r)) for r in rows], "record_count": len(rows)}
     except Exception:
         return {"data": [], "record_count": 0}

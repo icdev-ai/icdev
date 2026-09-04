@@ -1,0 +1,11 @@
+{
+  "id": "028",
+  "name": "odc_mitre_coverage",
+  "description": "Add mitre_coverage table for ODC twin — tracks MITRE ATT&CK technique coverage by signal source and state. Append-only per NIST AU; each state change creates a new row.",
+  "created_at": "2026-04-18",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true,
+  "requires_downtime": false,
+  "notes": "Idempotent (CREATE TABLE IF NOT EXISTS). mitre_coverage is append-only (D6, NIST AU). State CHECK enforced in DDL."
+}

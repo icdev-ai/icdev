@@ -1053,7 +1053,8 @@ document.addEventListener('DOMContentLoaded', () => {
   window.__rfi_profile_name = "{{ session.profile_name }}";
   window.__rfi_session_meta = {
     rfi_number: "{{ session.rfi_number }}",
-    parse_fallback: {{ 'true' if (session.rfi_number == 'RFI-UNKNOWN' or not session.get('parsed_data') or not session.get('parsed_data', {}).get('questionnaire_parts')) else 'false' }},
+    parse_fallback: {{ 'true' if (parse_summary and parse_summary.parse_fallback) else 'false' }},
+    document_kind: "{{ parse_summary.document_kind if parse_summary else 'rfi' }}",
   };
   checkParseWarning();
   // Resume generate-all polling if a run is in flight (e.g. page was

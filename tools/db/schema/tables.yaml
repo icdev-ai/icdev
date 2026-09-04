@@ -1091,7 +1091,6 @@ tables:
   pg_capture_plans: it
   pg_cmmc_supply_chain: it
   pg_competitor_awards: it
-  pg_compliance_matrix: it
   pg_contract_vehicles: it
   pg_cost_line_items: it
   pg_cost_volumes: it

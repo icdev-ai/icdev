@@ -32873,32 +32873,6 @@ CREATE TABLE public.pg_competitor_awards (
 
 
 --
--- Name: pg_compliance_matrix; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.pg_compliance_matrix (
-    id text NOT NULL,
-    opportunity_id text NOT NULL,
-    requirement_id text NOT NULL,
-    requirement_text text NOT NULL,
-    source_section text NOT NULL,
-    evaluation_factor text,
-    evaluation_weight real,
-    assigned_volume text,
-    assigned_section text,
-    compliance_status text DEFAULT 'gap'::text,
-    amendment_version integer DEFAULT 0,
-    notes text,
-    created_at text NOT NULL,
-    updated_at text NOT NULL,
-    classification character varying(50) DEFAULT 'CUI'::character varying,
-    tenant_id text,
-    CONSTRAINT pg_compliance_matrix_compliance_status_check CHECK ((compliance_status = ANY (ARRAY['addressed'::text, 'partial'::text, 'gap'::text, 'na'::text]))),
-    CONSTRAINT pg_compliance_matrix_source_section_check CHECK ((source_section = ANY (ARRAY['L'::text, 'M'::text, 'C'::text, 'attachment'::text, 'amendment'::text])))
-);
-
-
---
 -- Name: pg_cost_volumes; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -34461,8 +34435,11 @@ CREATE TABLE public.proposal_compliance_matrix (
     created_at text DEFAULT now(),
     updated_at text DEFAULT now(),
     tenant_id text,
+    evaluation_factor text,
+    evaluation_weight real,
+    amendment_version integer DEFAULT 0,
     CONSTRAINT proposal_compliance_matrix_compliance_status_check CHECK ((compliance_status = ANY (ARRAY['compliant'::text, 'partial'::text, 'non_compliant'::text, 'not_applicable'::text, 'not_addressed'::text]))),
-    CONSTRAINT proposal_compliance_matrix_requirement_type_check CHECK ((requirement_type = ANY (ARRAY['L'::text, 'M'::text, 'N'::text, 'other'::text])))
+    CONSTRAINT proposal_compliance_matrix_requirement_type_check CHECK ((requirement_type = ANY (ARRAY['L'::text, 'M'::text, 'N'::text, 'other'::text, 'C'::text, 'attachment'::text, 'amendment'::text])))
 );
 
 
@@ -61159,14 +61136,6 @@ ALTER TABLE ONLY public.pg_competitor_awards
 
 
 --
--- Name: pg_compliance_matrix pg_compliance_matrix_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.pg_compliance_matrix
-    ADD CONSTRAINT pg_compliance_matrix_pkey PRIMARY KEY (id);
-
-
---
 -- Name: pg_cost_volumes pg_cost_volumes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -78324,20 +78293,6 @@ CREATE INDEX idx_pg_capture_act_plan ON public.pg_capture_activities USING btree
 --
 
 CREATE INDEX idx_pg_capture_opp ON public.pg_capture_plans USING btree (opportunity_id);
-
-
---
--- Name: idx_pg_cmatrix_opp; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_pg_cmatrix_opp ON public.pg_compliance_matrix USING btree (opportunity_id);
-
-
---
--- Name: idx_pg_cmatrix_status; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_pg_cmatrix_status ON public.pg_compliance_matrix USING btree (compliance_status);
 
 
 --
