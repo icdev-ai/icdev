@@ -349,3 +349,16 @@ def test_the_claim_derived_side_reads_the_forge_not_the_scheduler():
     src_reported = inspect.getsource(C._reported_parked_tasks_older_than_a_cycle)
     assert "token_exhausted" in src_reported
     assert "gh" not in src_reported
+
+
+# --------------------------------------------------------------------------- #
+# 6. The scheduler ENTRYPOINT reports the hand-off it just made
+# --------------------------------------------------------------------------- #
+def test_the_scheduler_entrypoint_reports_what_startup_recovery_handed_off():
+    """`tools.genesis.kanban_scheduler` runs recover_interrupted_tasks at
+    process start and logs its counts; a hand-off it made silently would be
+    the same defect one log line over. Read as text: importing the entrypoint
+    module starts a scheduler."""
+    src = (ROOT / "tools" / "genesis" / "kanban_scheduler.py").read_text(encoding="utf-8")
+    assert "handed_to_pr_watcher" in src
+    assert "forge_unavailable" in src, "an unasked forge must not read as 'nothing parked'"
