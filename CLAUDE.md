@@ -994,6 +994,16 @@ python tools/genesis/daemon.py --reflex detector_findings_reflex   # the 6h refl
 # RECURS after its card closed (`-r2`, `card_count`); `idempotency_key` on the
 # spec is the second lock inside create_tasks. Cards land in `suggested` (HITL
 # quarantine) by default — `seed_status` in args/genesis_config.yaml.
+# A CARD CLOSED EARLY IS NOT A RECURRENCE (task-f05d2bc8d1). A recovery finding
+# is a window over audit rows and `escalate` outranks any later merge, so it
+# CANNOT clear before last-attempt + window_hours whatever a human does; a
+# `done` card inside that window used to read as "did not hold" and draw a
+# DISPATCHED -r2 for a subject already delivered — 3 of 3 -r2 recovery cards on
+# the live board (2026-09-04). A Finding may now carry `earliest_clear_at`
+# (recovery only); a terminal card before it is HELD (finding stays active on
+# its task_id, seen_count rises, `held_closed_early` reported) and -rN is filed
+# only by a MEASURABLE run after that time, or when a `cleared` finding
+# reappears. born_red / status_churn carry no such time and keep the plain rule.
 # UNMEASURABLE CLEARS NOTHING: an idle board, an unmigrated baseline, an empty
 # audit window each report that they could not measure, and only a MEASURABLE
 # run that no longer reports a finding marks it `cleared`. `detector_runs` is
@@ -1912,6 +1922,45 @@ python tools/awareness/capability_consumption.py --probe-diff origin/main   # wh
 # designs against them is TOLD they are empty (--probe-diff names all four).
 # The fix for the empties is a WRITER, and it is not this card: nothing on this
 # deployment has assigned a control to a project or collected cATO evidence.
+
+# A DIC version leaves the canvas through ONE gated door, and CoT/CoD prose is redacted (rmf-wp-02)
+# A library, no CLI. Import it:
+#   from tools.document_intelligence.exporter import export_version, export_gate, EXPORT_FORMATS
+#   out = export_version(version_id, "docx", exported_by="alice")   # {artifact, gate}
+# Route: GET /document-intelligence/api/versions/<id>/export/<fmt>  (md|html|docx|pdf)
+#        GET /document-intelligence/api/versions/<id>/artifacts
+#        GET /document-intelligence/api/artifacts/<id>/download
+# DIC HAD NO EXPORT ROUTE. Its prose left the canvas by copy-paste, which passes
+# every TRUST gate the approve route enforces by never touching one. docgen has
+# had the right shape since cnr-doc-01 (TRUST gate -> WriteGuard gate ->
+# idr_artifacts); this is that shape on DIC's own tables. THREE GATES, IN ORDER,
+# EVERY ONE FAIL-CLOSED: placeholder_guard and citation_guard are the SAME
+# consistency_checker gates the approve route runs (the shared
+# placeholder_findings / citation_gate -- never a second copy), then WriteGuard
+# (run_full_quality_check) over the ASSEMBLED document -- docgen blocks publish
+# on it, DIC never called it. A gate that could not MEASURE is `unmeasured`,
+# blocks, and NO force_* opens it. A measured defect needs the matching flag AND
+# a non-empty force_reason (400 without), the reviewer role, and is audited
+# BEFORE the file exists: TRUST guards to idr_publish_audit, the decision as a
+# fail-closed dic.hitl_decision `dic_version.export_forced`. One dic_artifacts
+# row per export (migration 20260903194350): sha256, WriteGuard score, the full
+# gate report, forced/force_reason, and version_status AT EXPORT TIME -- export
+# does not require `approved`, so the row says what it was. docx is
+# rfi_docx_exporter.markdown_to_docx with the classification LABEL as the
+# marking, never its FOUO default; pdf only where fpdf2 is installed.
+# THE SANITIZER HALF, and the card's stated cause was half right: `invoke` has
+# run _pre_invoke_redaction since D-RDT-1 and cortex.complete reaches it, so the
+# single-shot rfi_workbench / doc_generator paths were covered. `invoke_for_role`
+# -- what ChainOrchestrator hands EVERY CoT/CoD step to -- was not, so a
+# debater or reasoner received the raw prompt. #2028 closed that seam while this
+# card was in flight (the same pre/post pair, the local-only skip judged on the
+# ROLE chain via `chain_key`, and `_invoke_model_direct` redacting a request
+# that `invoke` has not ALREADY marked, so the two-tier hop is never sanitized
+# twice). This card independently arrived at the same diagnosis, adopted #2028's
+# router verbatim, and pins the CONSUMERS: tests/llm/test_role_invoke_redaction.py
+# sweeps rfi_workbench and doc_generator by AST so every LLM dispatch there is
+# `router.invoke`, `cortex.complete` or a ChainOrchestrator entry -- never a
+# provider or `_invoke_model_direct` call that would step around the seam.
 
 # GEPA Optimizer — Genome Evolution Pressure Analyzer (MCP tool: gepa_optimizer)
 python tools/skills/gepa_optimizer.py --json           # Run optimization pass (prune low-fitness genome entries)

@@ -2221,6 +2221,28 @@ def create_security_blueprint():
         """CISA Secure by Design Assessment — 8-pillar assessment with automated gating."""
         return render_template("security_canvas/sbd.html")
 
+    # ── AI Accountability (rmf-ui-16) ─────────────────────────────────────────
+    #
+    # Migrated from a bare `@app.route("/ai-accountability")` in
+    # tools/dashboard/app.py, where it had no registry entry, no RBAC guard, no
+    # completeness gate and no IQE dispatch. Same shape as /ai-transparency
+    # above: on this blueprint it inherits all four by construction. A
+    # VISIBILITY surface -- human oversight plans, appeals, CAIO designation,
+    # incident response and ethics reviews (Phase 49, D316-D321), read-only
+    # posture reporting -- which is SDC's ground. No AI-governance canvas is
+    # registered to prefer instead (rmf-ui-15 checked: `aimc` is the AI/ML
+    # design catalog, `aadc` the default-off agentic-AI design canvas,
+    # `ai_observatory` a telemetry adapter), and the card's rule is no FOURTH
+    # canvas. The page drives the UNCHANGED /api/ai-accountability/* blueprint
+    # (tools/dashboard/api/ai_accountability.py) -- only the PAGE route moved.
+    # The old URL redirects here rather than 404ing.
+
+    @bp.route("/ai-accountability")
+    @sc_login_required
+    def sc_ai_accountability_page():
+        """AI Accountability — oversight plans, appeals, CAIO, incidents, ethics reviews (Phase 49, D316-D321)."""
+        return render_template("security_canvas/ai_accountability.html")
+
     @bp.route("/api/sdc-demo-run", methods=["POST"])
     @sc_login_required
     def sc_api_sdc_demo_run():

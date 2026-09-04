@@ -23,21 +23,29 @@ const COMPLIANCE_PAGES = [
   // Risk & ATO
   // rmf-ui-07: migrated onto the Boundary canvas. The old /poam answers with a 301 to this path.
   { label: 'POA&M Findings',       path: '/boundary/poam' },
-  { label: 'Compliance Hub',       path: '/compliance' },
+  // rmf-ui-11: the hub migrated onto the Boundary canvas LAST of the BDC set (it
+  // links the others). The old /compliance answers with a 301 to this path.
+  { label: 'Compliance Hub',       path: '/boundary/compliance-hub' },
   // rmf-ui-04: migrated onto the Boundary canvas (registry-registered, RBAC-guarded,
   // IQE-dispatchable). The old /oscal answers with a 301 to this path.
   { label: 'OSCAL',                path: '/boundary/oscal' },
   // rmf-ui-05: migrated onto the Boundary canvas beside rmf-ui-01. The old
   // /cato answers with a 301 to this path.
   { label: 'Continuous ATO',       path: '/boundary/cato-health' },
-  { label: 'ATO Package Builder',  path: '/ato-package' },
+  // rmf-ui-03: migrated onto the Boundary canvas (registry-registered, RBAC-guarded,
+  // IQE-dispatchable). The old /ato-package answers with a 301 to this path.
+  { label: 'ATO Package Builder',  path: '/boundary/ato-package' },
   // Linked by rmf-inert-01 — both rendered a real template over a real API and
   // were reachable only by typing the URL, so nothing had ever loaded them.
   // rmf-ui-01: migrated onto the Boundary canvas (registry-registered, RBAC-guarded,
   // IQE-dispatchable). The old /ato-compliance answers with a 301 to this path.
   { label: 'ATO Compliance Dashboard', path: '/boundary/ato-compliance' },
-  { label: 'FedRAMP 20x KSIs',     path: '/fedramp-20x' },
-  { label: 'MOSA',                 path: '/mosa' },
+  // rmf-ui-06: migrated onto the Boundary canvas like /ato-compliance above.
+  // The old /fedramp-20x answers with a 301 to this path.
+  { label: 'FedRAMP 20x KSIs',     path: '/boundary/fedramp-20x' },
+  // rmf-ui-10: migrated onto the Boundary canvas (registry-registered, RBAC-guarded,
+  // IQE-dispatchable). The old /mosa answers with a 301 to this path.
+  { label: 'MOSA',                 path: '/boundary/mosa' },
   // Security
   { label: 'Security Canvas',      path: '/security/' },
   { label: 'Security Scans',       path: '/security-scan' },
@@ -53,11 +61,14 @@ const COMPLIANCE_PAGES = [
   // rmf-ui-15: migrated onto the Security canvas (registry-registered, RBAC-guarded,
   // IQE-dispatchable). The old /ai-transparency answers with a 301 to this path.
   { label: 'AI Transparency',      path: '/security/ai-transparency' },
-  { label: 'AI Accountability',    path: '/ai-accountability' },
+  // rmf-ui-16: same move for AI Accountability; /ai-accountability is a 301 to this path.
+  { label: 'AI Accountability',    path: '/security/ai-accountability' },
   // rmf-ui-08: migrated onto the Boundary canvas (registry-registered, RBAC-guarded,
   // IQE-dispatchable). The old /control-inheritance answers with a 301 to this path.
   { label: 'Control Inheritance',  path: '/boundary/control-inheritance' },
-  { label: 'Compliance Debt',      path: '/compliance-debt' },
+  // rmf-ui-09: migrated onto the Boundary canvas (registry-registered, RBAC-guarded,
+  // IQE-dispatchable). The old /compliance-debt answers with a 301 to this path.
+  { label: 'Compliance Debt',      path: '/boundary/compliance-debt' },
   // rmf-ui-14: migrated onto the Security canvas (registry-registered, RBAC-guarded,
   // IQE-dispatchable). The old /prod-audit answers with a 301 to this path.
   { label: 'Production Audit',     path: '/security/prod-audit' },

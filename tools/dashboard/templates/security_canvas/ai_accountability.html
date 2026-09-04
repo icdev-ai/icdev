@@ -1,9 +1,19 @@
+<!-- CUI // SP-CTI — Security Design Canvas AI Accountability (rmf-ui-16) -->
 {% extends "base.html" %}
 
-{% block title %}AI Accountability - ICDEV™ Dashboard{% endblock %}
+{% block title %}AI Accountability — Security Canvas — ICDEV™{% endblock %}
 
 {% block content %}
 <div class="container">
+    <!-- Breadcrumb -->
+    <nav aria-label="breadcrumb" style="margin-bottom:0.5rem;">
+        <span><a href="/" style="color:#1976d2;text-decoration:none;">Home</a></span>
+        <span style="color:#999;"> &gt; </span>
+        <span><a href="/security/" style="color:#1976d2;text-decoration:none;">Security Canvas</a></span>
+        <span style="color:#999;"> &gt; </span>
+        <span style="color:#333;">AI Accountability</span>
+    </nav>
+
     <h1>AI Accountability</h1>
     <p class="text-muted">Human oversight, appeals, CAIO designation, incident response, ethics reviews (Phase 49, D316-D321)</p>
 
@@ -34,6 +44,8 @@
             <div class="stat-label" style="color:#666;">Ethics Reviews</div>
         </div>
     </div>
+
+    {% include "includes/iqe_query_widget.html" %}
 
     <!-- Recent Appeals -->
     <h2>Recent Appeals</h2>

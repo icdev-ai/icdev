@@ -516,3 +516,84 @@ def test_each_detector_is_committed_before_the_next_runs(conn, seeded):
     rec2 = _TxnRecorder(conn)
     df.consume({}, conn=rec2, seed=False, runners={"status_churn": _first, "recovery": _second})
     assert "commit" not in rec2.events and rec2.events.count("rollback") >= 2
+
+
+# --------------------------------------------------------------------------
+# recurrence vs. "closed early" (task-f05d2bc8d1)
+#
+# A recovery finding is derived from audit rows inside a 24h window and
+# `escalate` outranks any later merge, so the finding CANNOT leave the summary
+# before last-attempt + window_hours whatever a human does. A card closed
+# before that time is not "the fix did not hold" -- it is a card closed early.
+# Measured 2026-09-04: all 3 of 3 `-r2` recovery cards on the live board were
+# this shape, and each was DISPATCHED against a subject already delivered.
+# --------------------------------------------------------------------------
+def _recovery_finding(subject, *, last_attempt_at, window_hours=24):
+    entry = {"task_id": subject, "attempts": 5, "kind": "resume",
+             "reason": "CI failed", "at": last_attempt_at,
+             "escalated": True, "merged": False, "outcome": "needed_a_human"}
+    found = df.recovery_findings([entry], window_hours=window_hours)
+    assert len(found) == 1
+    return found[0]
+
+
+def test_recovery_findings_carry_their_earliest_clear_time():
+    at = datetime(2026, 9, 3, 12, 22, 1, tzinfo=timezone.utc)
+    f = _recovery_finding("rmf-ui-12", last_attempt_at=at, window_hours=24)
+    assert f["earliest_clear_at"] == (at + timedelta(hours=24)).isoformat()
+    # a string stamp (SQLite) is read the same way as a driver datetime (PG)
+    g = _recovery_finding("rmf-ui-12", last_attempt_at=at.isoformat(), window_hours=6)
+    assert g["earliest_clear_at"] == (at + timedelta(hours=6)).isoformat()
+    # the other detectors carry no such time and keep the plain rule
+    assert df.churn_findings(CHURN_REPORT)[0]["earliest_clear_at"] is None
+    assert df.born_red_findings(BORN_RED_REPORT)[0]["earliest_clear_at"] is None
+    # an entry with no readable stamp cannot claim a clear time
+    assert _recovery_finding("x", last_attempt_at=None)["earliest_clear_at"] is None
+
+
+def test_recovery_card_closed_before_earliest_clear_is_not_a_recurrence(conn, seeded):
+    now = datetime.now(timezone.utc)
+    f = _recovery_finding("rmf-ui-12", last_attempt_at=now - timedelta(hours=4))
+    earliest = datetime.fromisoformat(f["earliest_clear_at"])
+    assert earliest > now
+    runners = _runners(recovery=("findings", [f]))
+    first = df.consume({}, conn=conn, runners=runners)
+    card = first["cards_seeded"][0]
+    # the human landed it and the board says done -- BEFORE the window can clear
+    conn.execute("INSERT INTO kanban_tasks (id, title, status) VALUES (?, ?, ?)",
+                 (card, "delivered", "done"))
+    conn.commit()
+
+    again = df.consume({}, conn=conn, runners=runners)
+    assert again["cards_seeded"] == [] and again["findings_recurring"] == 0
+    assert again["detectors"]["recovery"]["held_closed_early"] == 1
+    assert again["findings_held_closed_early"] == 1
+    row = _rows(conn, f"SELECT status, seen_count, card_count, task_id FROM {df.FINDINGS_TABLE}")[0]
+    assert row == {"status": "active", "seen_count": 2, "card_count": 1, "task_id": card}
+    assert not _rows(conn, "SELECT id FROM kanban_tasks WHERE id = ?", card + "-r2")
+
+    # ... and a MEASURABLE run AFTER that time that still reports it is the
+    # real thing: the fix did not hold, and a -r2 is owed.
+    later = df.consume({}, conn=conn, runners=runners, now=earliest + timedelta(minutes=1))
+    assert later["findings_recurring"] == 1
+    assert later["cards_seeded"] == [df.card_id_for(f["finding_id"], 2)]
+    assert later["detectors"]["recovery"]["held_closed_early"] == 0
+    row = _rows(conn, f"SELECT status, seen_count, card_count, task_id FROM {df.FINDINGS_TABLE}")[0]
+    assert row == {"status": "active", "seen_count": 3, "card_count": 2,
+                   "task_id": card + "-r2"}
+
+
+def test_recovery_finding_that_cleared_and_came_back_recurs_whatever_the_clock_says(conn, seeded):
+    now = datetime.now(timezone.utc)
+    f = _recovery_finding("rmf-ui-12", last_attempt_at=now - timedelta(hours=1))
+    runners = _runners(recovery=("findings", [f]))
+    card = df.consume({}, conn=conn, runners=runners)["cards_seeded"][0]
+    conn.execute("INSERT INTO kanban_tasks (id, title, status) VALUES (?, ?, ?)",
+                 (card, "delivered", "done"))
+    conn.commit()
+    df.consume({}, conn=conn, runners=_runners(recovery=("clean", [])))
+    assert _rows(conn, f"SELECT status FROM {df.FINDINGS_TABLE}")[0]["status"] == "cleared"
+    # seen `cleared` and reappearing IS "did not hold" -- the clock is irrelevant
+    back = df.consume({}, conn=conn, runners=runners)
+    assert back["findings_recurring"] == 1
+    assert back["cards_seeded"] == [df.card_id_for(f["finding_id"], 2)]

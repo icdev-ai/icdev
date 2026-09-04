@@ -1,0 +1,3 @@
+# rmf-wp-02 -- DIC gated export (dic_artifacts) and the invoke_for_role redaction seam.
+tests/document_intelligence/test_export.py
+tests/llm/test_role_invoke_redaction.py

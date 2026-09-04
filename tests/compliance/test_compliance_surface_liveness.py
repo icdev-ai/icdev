@@ -344,7 +344,10 @@ ORPHANS_CLOSED = ["/ato-compliance", "/fedramp-20x"]
 # at its governed home, and the old app.py route survives as a redirect. Keyed
 # by the old route so the two lists cannot drift apart: a route in this map is
 # still in ORPHANS_CLOSED (the redirect must exist) but is linked at the value.
-GOVERNED_HOME = {"/ato-compliance": "/boundary/ato-compliance"}
+GOVERNED_HOME = {
+    "/ato-compliance": "/boundary/ato-compliance",
+    "/fedramp-20x": "/boundary/fedramp-20x",  # rmf-ui-06
+}
 
 
 def _all_template_text():

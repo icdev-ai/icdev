@@ -1,16 +1,21 @@
+<!-- CUI // SP-CTI — Boundary Design Canvas MOSA Compliance (rmf-ui-10) -->
 {% extends "base.html" %}
-{% block title %}MOSA Compliance - ICDEV™ Dashboard{% endblock %}
+{% block title %}MOSA Compliance — Boundary Canvas — ICDEV™{% endblock %}
 {% block content %}
 <div class="container">
     <!-- Breadcrumb -->
     <nav aria-label="breadcrumb" style="margin-bottom:0.5rem;">
         <span><a href="/" style="color:#1976d2;text-decoration:none;">Home</a></span>
         <span style="color:#999;"> &gt; </span>
+        <span><a href="/boundary/" style="color:#1976d2;text-decoration:none;">Boundary Canvas</a></span>
+        <span style="color:#999;"> &gt; </span>
         <span style="color:#333;">MOSA Compliance</span>
     </nav>
 
     <h1>MOSA Compliance &mdash; Modular Open Systems Approach</h1>
     <p class="text-muted">10 U.S.C. &sect;4401 compliance assessment &mdash; coupling, cohesion, circular dependencies</p>
+
+    {% include "includes/iqe_query_widget.html" %}
 
     <!-- ================================================================= -->
     <!-- 1. Stat Cards                                                      -->

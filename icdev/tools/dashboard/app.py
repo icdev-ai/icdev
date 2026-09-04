@@ -3806,9 +3806,20 @@ def create_app(testing: bool = False) -> Flask:
             _log.getLogger(__name__).warning("core IQE error: %s", exc)
             return jsonify({"error": str(exc), "iqe": iqe_str}), 500
 
+    # rmf-ui-17: /api/iqe-query is the canvas-keyed contract (the demo-mode guard
+    # above already exempts it by name, and tools/testing/route_smoke.py smokes
+    # it). It was never bound here -- three prefix-less blueprints claimed it
+    # instead, and the winner imported a module that does not exist. Both rules
+    # resolve to this one endpoint; tests/test_iqe_query_route_ownership.py
+    # fails on any blueprint that declares the bare rule again.
+    @app.route("/api/iqe-query", methods=["POST"])
     @app.route("/api/iqe/dispatch", methods=["POST"])
     def iqe_dispatch():
-        """Canvas-aware IQE dispatcher — routes question to correct adapter by canvas name."""
+        """Canvas-aware IQE dispatcher — routes question to correct adapter by canvas name.
+
+        Bound at /api/iqe-query (the mini-bar contract) and /api/iqe/dispatch
+        (what base.html has posted to since the bar shipped).
+        """
         import logging as _dlog
         from tools.iqe.nl_to_iqe import nl_to_iqe
         from tools.iqe.parser import parse as _iqe_parse, IQESyntaxError as _IQESyntaxError
@@ -5228,8 +5239,15 @@ def create_app(testing: bool = False) -> Flask:
 
     @app.route("/ai-accountability")
     def ai_accountability_page():
-        """AI Accountability — oversight, appeals, CAIO, incidents, ethics (Phase 49, D316-D321)."""
-        return render_template("ai_accountability.html")
+        """AI Accountability — MIGRATED to the Security canvas (rmf-ui-16).
+
+        The governed page is ``/security/ai-accountability`` on
+        tools/security_canvas/blueprint.py, where it is registry-registered,
+        RBAC-guarded and IQE-dispatchable. This handler stays as a redirect so
+        a bookmark, an e2e spec or a nav link that still names the old URL
+        lands on the page rather than a 404 — never a dropped page.
+        """
+        return redirect("/security/ai-accountability", code=301)
 
     @app.route("/code-quality")
     def code_quality_page():
@@ -5238,8 +5256,15 @@ def create_app(testing: bool = False) -> Flask:
 
     @app.route("/fedramp-20x")
     def fedramp_20x_page():
-        """FedRAMP 20x KSI Dashboard — KSI evidence generation, maturity levels, authorization package (Phase 53, D338)."""
-        return render_template("fedramp_20x.html")
+        """FedRAMP 20x KSI Dashboard — MIGRATED to the Boundary canvas (rmf-ui-06).
+
+        The governed page is ``/boundary/fedramp-20x`` on
+        tools/boundary_canvas/blueprint.py, where it is registry-registered,
+        RBAC-guarded and IQE-dispatchable. This handler stays as a redirect so
+        a bookmark, an e2e spec or a nav link that still names the old URL
+        lands on the page rather than a 404 — never a dropped page.
+        """
+        return redirect("/boundary/fedramp-20x", code=301)
 
     @app.route("/evidence")
     def evidence_page():
@@ -5417,8 +5442,16 @@ def create_app(testing: bool = False) -> Flask:
 
     @app.route("/mosa")
     def mosa_page():
-        """MOSA Compliance — 10 U.S.C. §4401 modular open systems approach assessment."""
-        return render_template("mosa.html")
+        """MOSA Compliance — MIGRATED to the Boundary canvas (rmf-ui-10).
+
+        The governed page is ``/boundary/mosa`` on
+        tools/boundary_canvas/blueprint.py, where it is registry-registered,
+        RBAC-guarded and IQE-dispatchable. This handler stays as a redirect so
+        a bookmark, an e2e spec or a nav link that still names the old URL
+        lands on the page rather than a 404 — never a dropped page. The
+        /api/mosa/summary route below is unchanged; only the PAGE moved.
+        """
+        return redirect("/boundary/mosa", code=301)
 
     @app.route("/api/mosa/summary")
     def api_mosa_summary():
@@ -5448,8 +5481,16 @@ def create_app(testing: bool = False) -> Flask:
 
     @app.route("/compliance")
     def compliance_page():
-        """Compliance Hub — unified posture across all compliance modules."""
-        return render_template("compliance.html")
+        """Compliance Hub — MIGRATED to the Boundary canvas (rmf-ui-11).
+
+        The governed page is ``/boundary/compliance-hub`` on
+        tools/boundary_canvas/blueprint.py, where it is registry-registered,
+        RBAC-guarded and IQE-dispatchable. This handler stays as a redirect so
+        a bookmark, an e2e spec or a nav link that still names the old URL
+        lands on the page rather than a 404 — never a dropped page. The
+        /api/compliance/* handlers below did not move.
+        """
+        return redirect("/boundary/compliance-hub", code=301)
 
     @app.route("/api/compliance/posture")
     def api_compliance_posture():
@@ -5865,8 +5906,15 @@ def create_app(testing: bool = False) -> Flask:
 
     @app.route("/compliance-debt")
     def compliance_debt_page():
-        """Compliance Debt Burndown — POAM, control, and STIG debt tracking."""
-        return render_template("compliance_debt.html")
+        """Compliance Debt Burndown — MIGRATED to the Boundary canvas (rmf-ui-09).
+
+        The governed page is ``/boundary/compliance-debt`` on
+        tools/boundary_canvas/blueprint.py, where it is registry-registered,
+        RBAC-guarded and IQE-dispatchable. This handler stays as a redirect so
+        a bookmark, an e2e spec or a nav link that still names the old URL
+        lands on the page rather than a 404 — never a dropped page.
+        """
+        return redirect("/boundary/compliance-debt", code=301)
 
     @app.route("/stig-manager")
     def stig_manager_page():
@@ -5882,8 +5930,15 @@ def create_app(testing: bool = False) -> Flask:
 
     @app.route("/ato-package")
     def ato_package_page():
-        """ATO Package Builder — wizard to assemble SSP/SAR/POAM/SBOM package."""
-        return render_template("ato_package.html")
+        """ATO Package Builder — MIGRATED to the Boundary canvas (rmf-ui-03).
+
+        The governed page is ``/boundary/ato-package`` on
+        tools/boundary_canvas/blueprint.py, where it is registry-registered,
+        RBAC-guarded and IQE-dispatchable. This handler stays as a redirect so
+        a bookmark, an e2e spec or a nav link that still names the old URL
+        lands on the page rather than a 404 — never a dropped page.
+        """
+        return redirect("/boundary/ato-package", code=301)
 
     @app.route("/ato-compliance")
     def ato_compliance_page():

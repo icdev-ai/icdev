@@ -56,7 +56,17 @@ export async function archiveNetSessions(
   storageState?: any,
 ): Promise<void> {
   const present = ids.filter(Boolean) as string[];
-  if (!present.length) return;
+  if (!present.length) {
+    // Say so. "Nothing to archive" and "the id was never recorded" were the
+    // same silence for two weeks of nightly runs while the wizard left a row
+    // behind every night; a cleanup that was never told what to clean must
+    // not read identically to one that succeeded.
+    console.warn(
+      `[${specName}] no session id was recorded, so nothing was archived — ` +
+        'if the wizard created one before the failure it remains in_progress',
+    );
+    return;
+  }
 
   const api = await playwright.request.newContext({
     baseURL: (testInfo.project.use as { baseURL?: string }).baseURL,

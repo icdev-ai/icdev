@@ -1,12 +1,15 @@
+<!-- CUI // SP-CTI — Boundary Design Canvas Compliance Hub (rmf-ui-11) -->
 {% extends "base.html" %}
-{% block title %}Unified Compliance Posture - ICDEV™ Dashboard{% endblock %}
+{% block title %}Compliance Hub — Boundary Canvas — ICDEV™{% endblock %}
 {% block content %}
 <div class="container">
     <!-- Breadcrumb -->
     <nav aria-label="breadcrumb" style="margin-bottom:0.5rem;">
         <span><a href="/" style="color:#1976d2;text-decoration:none;">Home</a></span>
         <span style="color:#999;"> &gt; </span>
-        <span style="color:#333;">Compliance</span>
+        <span><a href="/boundary/" style="color:#1976d2;text-decoration:none;">Boundary Canvas</a></span>
+        <span style="color:#999;"> &gt; </span>
+        <span style="color:#333;">Compliance Hub</span>
     </nav>
 
     <h1>Unified Compliance Posture</h1>
@@ -327,11 +330,11 @@
             <h3 style="margin:0 0 0.4rem;font-size:1rem;">Continuous ATO</h3>
             <p style="margin:0;font-size:0.85rem;color:#666;">Real-time authorization monitoring and evidence collection</p>
         </a>
-        <a href="/compliance-debt" class="card" style="padding:1.2rem;text-decoration:none;color:inherit;">
+        <a href="/boundary/compliance-debt" class="card" style="padding:1.2rem;text-decoration:none;color:inherit;">
             <h3 style="margin:0 0 0.4rem;font-size:1rem;">Compliance Debt</h3>
             <p style="margin:0;font-size:0.85rem;color:#666;">Track and burn down POAM, control, and STIG debt</p>
         </a>
-        <a href="/ato-package" class="card" style="padding:1.2rem;text-decoration:none;color:inherit;">
+        <a href="/boundary/ato-package" class="card" style="padding:1.2rem;text-decoration:none;color:inherit;">
             <h3 style="margin:0 0 0.4rem;font-size:1rem;">ATO Package Builder</h3>
             <p style="margin:0;font-size:0.85rem;color:#666;">Assemble authorization packages for FedRAMP / DoD</p>
         </a>
@@ -339,7 +342,7 @@
             <h3 style="margin:0 0 0.4rem;font-size:1rem;">ATO Compliance Dashboard</h3>
             <p style="margin:0;font-size:0.85rem;color:#666;">Control tracking, RMF stages, artifact readiness, and framework crosswalk</p>
         </a>
-        <a href="/fedramp-20x" class="card" style="padding:1.2rem;text-decoration:none;color:inherit;">
+        <a href="/boundary/fedramp-20x" class="card" style="padding:1.2rem;text-decoration:none;color:inherit;">
             <h3 style="margin:0 0 0.4rem;font-size:1rem;">FedRAMP 20x KSIs</h3>
             <p style="margin:0;font-size:0.85rem;color:#666;">Key Security Indicator evidence, maturity levels, and authorization package</p>
         </a>
@@ -351,7 +354,7 @@
             <h3 style="margin:0 0 0.4rem;font-size:1rem;">Control Inheritance</h3>
             <p style="margin:0;font-size:0.85rem;color:#666;">Map inherited controls from cloud providers and shared services</p>
         </a>
-        <a href="/mosa" class="card" style="padding:1.2rem;text-decoration:none;color:inherit;">
+        <a href="/boundary/mosa" class="card" style="padding:1.2rem;text-decoration:none;color:inherit;">
             <h3 style="margin:0 0 0.4rem;font-size:1rem;">MOSA</h3>
             <p style="margin:0;font-size:0.85rem;color:#666;">Modular Open Systems Approach compliance assessment</p>
         </a>
@@ -367,7 +370,7 @@
             <h3 style="margin:0 0 0.4rem;font-size:1rem;">AI Transparency</h3>
             <p style="margin:0;font-size:0.85rem;color:#666;">AI model cards, decision logs, and explainability</p>
         </a>
-        <a href="/ai-accountability" class="card" style="padding:1.2rem;text-decoration:none;color:inherit;">
+        <a href="/security/ai-accountability" class="card" style="padding:1.2rem;text-decoration:none;color:inherit;">
             <h3 style="margin:0 0 0.4rem;font-size:1rem;">AI Accountability</h3>
             <p style="margin:0;font-size:0.85rem;color:#666;">AI governance, bias tracking, and accountability framework</p>
         </a>
