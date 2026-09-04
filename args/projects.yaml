@@ -9501,3 +9501,32 @@ projects:
   - key: gate
     title: GATE
     priority: medium
+
+- key: mfx
+  name: "Manual-Fix Elimination -- automate the 2026-09-02..04 interventions"
+  description: >-
+    Over 2026-09-02..04 one operator session repaired the board by hand roughly
+    twenty times: ten sibling-append conflicts resolved as unions (about six hours),
+    two duplicate-after-squash PRs closed, two cards parked token_exhausted behind an
+    open PR nobody owned, two boot-order identity failures, four crash-looping CI
+    runners re-registered, a spec that stopped parsing and broke every E2E shard, a
+    mirror-drift and an undeclared-import red PR each fixed by hand, and two dead CI
+    runs cancelled to unclog a serial queue. Each card here removes ONE of those
+    interventions at its root, with the measurement that motivated it in the
+    description. Rule of the project: a fix that hides the cause (a raised timeout, a
+    widened budget, a catch-all pattern) is refused; a fix that removes the cause or
+    hands the case to the actor that owns it is what ships.
+  task_prefix: mfx-
+  default_open: true
+  briefs:
+  - 'Epic sib: sibling cards appending to the same lines -- serialize dispatch, derive the shared lines, union rung in the watcher -- mfx-sib-01..03'
+  - 'Epic mrg: linked PRs squash-merge, which collapses stacked resolutions and spawns duplicate PRs -- mfx-mrg-01..02'
+  - 'Epic own: a parked task with an open PR is owned by nobody; a CLI --claim cannot hold a task -- mfx-own-01..02'
+  - 'Epic boot: services start before PostgreSQL accepts; CI runner tokens expire into a crash loop -- mfx-boot-01..02'
+  - 'Epic ci: a spec that does not parse fails every E2E shard silently; drift and import censuses only at CI; no concurrency cancel -- mfx-ci-01..02'
+  epics:
+  - {key: sib, title: "SIBLING-APPEND CONFLICTS", priority: critical}
+  - {key: mrg, title: "MERGE METHOD", priority: high}
+  - {key: own, title: "TASK OWNERSHIP GAPS", priority: high}
+  - {key: boot, title: "BOOT ORDER & RUNNERS", priority: high}
+  - {key: ci, title: "CI GATES", priority: medium}
