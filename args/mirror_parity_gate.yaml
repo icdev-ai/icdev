@@ -62,7 +62,19 @@ extensions:
 # two names resolve to the SAME module object, so there is no stale half — and
 # "fixing" one by copying the body back would recreate the separate stale copy
 # it was written to delete. The ceiling comes down to match; never raise it.
-budget: 13
+#
+# 13 -> 9 on 2026-09-04 (mfx-ci-01). The SAME move as rem-cap-04, finished: the
+# shim marker required the phrase "re-export", and three of the five real shims
+# say "Backward-compat shim" instead — `tools/billing/tier.py`,
+# `tools/testing/qa_agent_runner.py`, `tools/testing/selector_healer.py` — so
+# they were counted as drift by a rule that exists to exclude them. Measured
+# both ways on this tree: 12 under the old marker, 9 under the new one. The
+# predicate now lives ONCE, in `mirror_parity.is_mirror_shim`, and
+# `coherence_checker._is_mirror_shim` delegates to it, so the pre-commit hook
+# and this gate cannot disagree about what a shim is. One reconciliation is in
+# the drop too: `icdev/tools/slides/constants.py` had been missing the
+# PALETTE_CORPORATE_STATUS its twin carried since #2007.
+budget: 9
 
 # Not counted, with the reason. A gate that fires on a difference which is
 # correct gets switched off, so exclusions are declared rather than discovered.
