@@ -1,21 +1,22 @@
 # CUI // SP-CTI
-"""rmf-ui-13: /sbd is GOVERNED -- it lives on the Security Design Canvas.
+"""rmf-ui-10: /mosa is GOVERNED -- it lives on the Boundary canvas.
 
-CISA Secure by Design was one of ~15 compliance pages that were bare
-``@app.route`` handlers in a 10,500-line app.py: no registry entry, NO RBAC
-GUARD, no completeness gate, no IQE dispatch. A route on the Security Design
-Canvas blueprint gets all of those by construction -- app.py attaches
-``guard_component_access("sdc", <min_il>)`` as a ``before_request`` on every
+The MOSA Compliance page (10 U.S.C. 4401 modular open systems assessment) was
+one of ~15 compliance pages that were bare ``@app.route`` handlers in a
+10,500-line app.py: no registry entry, NO RBAC GUARD, no completeness gate, no
+IQE dispatch. A route on the Boundary & Supply Chain Canvas blueprint gets all
+of those by construction -- app.py attaches
+``guard_component_access("bdc", <min_il>)`` as a ``before_request`` on every
 registered canvas blueprint, the registry's ``url_prefix`` + IQE adapter put
-``/security/*`` on the client-side path->canvas map, and the canvas
+``/boundary/*`` on the client-side path->canvas map, and the canvas
 completeness gate owns the template directory.
 
-ONE route per card, on purpose (rmf-ui-01 is the exemplar this file clones):
-a 15-route move is unreviewable and its failure mode is a silently dropped
-page. So this file pins exactly one migration end to end -- the governed home
-renders, the old URL redirects rather than 404s, both base.html copies link
-the new path, the template is mirrored, and the page lands on the ``sdc`` IQE
-canvas.
+ONE route per card, on purpose -- this file is the rmf-ui-01 exemplar's shape
+applied to the tenth route. It pins exactly one migration end to end: the
+governed home renders and still drives the UNCHANGED ``/api/mosa/summary``
+route, the old URL redirects rather than 404s, both base.html copies link the
+new path, no template links the old one, the template is mirrored, and the
+page lands on the ``bdc`` IQE canvas.
 
 Every test here is RED on the merge base (the route is a bare app.py handler
 there), which is what the red-first gate records.
@@ -30,27 +31,22 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 
-NEW_PATH = "/security/sbd"
-OLD_PATH = "/sbd"
+NEW_PATH = "/boundary/mosa"
+OLD_PATH = "/mosa"
 
-BLUEPRINT = REPO / "tools" / "security_canvas" / "blueprint.py"
-BLUEPRINT_MIRROR = REPO / "icdev" / "tools" / "security_canvas" / "blueprint.py"
+BLUEPRINT = REPO / "tools" / "boundary_canvas" / "blueprint.py"
+BLUEPRINT_MIRROR = REPO / "icdev" / "tools" / "boundary_canvas" / "blueprint.py"
 APP_PY = REPO / "tools" / "dashboard" / "app.py"
 APP_PY_MIRROR = REPO / "icdev" / "tools" / "dashboard" / "app.py"
-TEMPLATE = REPO / "tools" / "dashboard" / "templates" / "security_canvas" / "sbd.html"
-TEMPLATE_MIRROR = (
-    REPO / "icdev" / "tools" / "dashboard" / "templates" / "security_canvas" / "sbd.html"
-)
-OLD_TEMPLATE = REPO / "tools" / "dashboard" / "templates" / "sbd.html"
-OLD_TEMPLATE_MIRROR = REPO / "icdev" / "tools" / "dashboard" / "templates" / "sbd.html"
+TEMPLATE_DIR = REPO / "tools" / "dashboard" / "templates"
+TEMPLATE_DIR_MIRROR = REPO / "icdev" / "tools" / "dashboard" / "templates"
+TEMPLATE = TEMPLATE_DIR / "boundary_canvas" / "mosa.html"
+TEMPLATE_MIRROR = TEMPLATE_DIR_MIRROR / "boundary_canvas" / "mosa.html"
+OLD_TEMPLATE = TEMPLATE_DIR / "mosa.html"
+OLD_TEMPLATE_MIRROR = TEMPLATE_DIR_MIRROR / "mosa.html"
 BASE_HTML_COPIES = (
-    REPO / "tools" / "dashboard" / "templates" / "base.html",
-    REPO / "icdev" / "tools" / "dashboard" / "templates" / "base.html",
-)
-# rmf-ui-11 moved the hub onto the Boundary canvas as boundary_canvas/compliance_hub.html.
-HUB_TEMPLATE_COPIES = (
-    REPO / "tools" / "dashboard" / "templates" / "boundary_canvas" / "compliance_hub.html",
-    REPO / "icdev" / "tools" / "dashboard" / "templates" / "boundary_canvas" / "compliance_hub.html",
+    TEMPLATE_DIR / "base.html",
+    TEMPLATE_DIR_MIRROR / "base.html",
 )
 START_MD = REPO / ".claude" / "commands" / "start.md"
 
@@ -64,10 +60,11 @@ def _read(path: Path) -> str:
 def _isolated_app(blueprint, url_prefix):
     """A FRESH Flask app carrying the dashboard's rendering context.
 
-    Same shape as tests/test_bdc_ato_compliance_page.py: registering onto the
-    shared ``tools.dashboard.app`` singleton is order-dependent, so copy the
-    singleton's template folder, filters, globals and context processors onto
-    a fresh app and register the blueprint there.
+    Same shape as tests/cortex/test_blueprint_routes.py: registering onto the
+    shared ``tools.dashboard.app`` singleton is order-dependent (and 404s on CI
+    for a default-off canvas -- ``bdc`` is one), so copy the singleton's
+    template folder, filters, globals and context processors onto a fresh app
+    and register the blueprint there.
     """
     from flask import Flask
 
@@ -91,67 +88,64 @@ def _isolated_app(blueprint, url_prefix):
 
 
 @pytest.fixture
-def sdc_blueprint(monkeypatch):
-    monkeypatch.setenv("ICDEV_SECURITY_ENABLED", "true")
-    monkeypatch.setenv("ICDEV_SDC_ENABLED", "true")
-    monkeypatch.setenv("SC_STORAGE_BACKEND", "sqlite")
-    monkeypatch.delenv("ICDEV_AUTH_BYPASS", raising=False)
-    monkeypatch.delenv("ICDEV_DASHBOARD_API_KEY", raising=False)
-    from tools.security_canvas.blueprint import create_security_blueprint
+def bdc_blueprint(monkeypatch):
+    monkeypatch.setenv("ICDEV_BOUNDARY_ENABLED", "true")
+    monkeypatch.setenv("ICDEV_BDC_ENABLED", "true")
+    monkeypatch.setenv("BDC_STORAGE_BACKEND", "sqlite")
+    from tools.boundary_canvas.blueprint import create_boundary_blueprint
 
-    bp = create_security_blueprint()
-    assert bp is not None, "Security canvas blueprint did not build"
+    bp = create_boundary_blueprint()
+    assert bp is not None, "Boundary canvas blueprint did not build"
     return bp
 
 
 @pytest.fixture
-def sdc_app(sdc_blueprint):
-    return _isolated_app(sdc_blueprint, "/security")
+def bdc_app(bdc_blueprint):
+    return _isolated_app(bdc_blueprint, "/boundary")
 
 
 def _login(client):
     with client.session_transaction() as sess:
         sess["user_id"] = "tester"
         sess["username"] = "tester"
+        sess["bdc_user"] = "tester"
 
 
 # ── 1. The governed home renders, with the page's own API and the IQE widget ─
 
-def test_governed_page_renders_for_an_authenticated_session(sdc_app):
-    with sdc_app.test_client() as client:
+def test_governed_page_renders_for_an_authenticated_session(bdc_app):
+    with bdc_app.test_client() as client:
         _login(client)
         resp = client.get(NEW_PATH)
     assert resp.status_code == 200, resp.data[:400]
     body = resp.data.decode("utf-8", errors="replace")
-    assert "Secure by Design" in body
+    assert "MOSA Compliance" in body
     # The page still drives its own API -- only the PAGE route moved.
-    assert "/api/sbd/stats" in body
-    # IQE-dispatchable: the widget is on the page (8-point gate, point 8),
-    # wired to the Security canvas's own IQE endpoint.
+    assert "/api/mosa/summary" in body
+    # And it says where it lives: a breadcrumb back to the canvas home.
+    assert 'href="/boundary/"' in body
+    # IQE-dispatchable: the widget is on the page (8-point gate, point 8).
     assert 'class="iqe-widget"' in body
-    assert 'data-api="/security/api/iqe-query"' in body
-    # Breadcrumb back to the canvas root.
-    assert 'href="/security/"' in body
 
 
-def test_route_is_declared_on_the_security_blueprint(sdc_app):
-    rules = {r.rule for r in sdc_app.url_map.iter_rules()}
-    assert NEW_PATH in rules, sorted(r for r in rules if "security" in r)
+def test_route_is_declared_on_the_boundary_blueprint(bdc_app):
+    rules = {r.rule for r in bdc_app.url_map.iter_rules()}
+    assert NEW_PATH in rules, sorted(r for r in rules if "boundary" in r)
 
 
 # ── 2. RBAC: refused anonymous, both by the canvas's own wrapper and the
 #       registry-level guard app.py attaches to every canvas blueprint ─────────
 
-def test_anonymous_request_is_refused_by_the_canvas_wrapper(sdc_app):
-    with sdc_app.test_client() as client:
+def test_anonymous_request_is_refused_by_the_canvas_wrapper(bdc_app):
+    with bdc_app.test_client() as client:
         resp = client.get(NEW_PATH)
     assert resp.status_code in (301, 302, 401), resp.status_code
     if resp.status_code in (301, 302):
         assert "/login" in resp.headers.get("Location", "")
 
 
-def test_component_guard_refuses_anonymous_when_enforced(sdc_blueprint, monkeypatch):
-    """The SAME guard app.py installs -- guard_component_access("sdc", min_il).
+def test_component_guard_refuses_anonymous_when_enforced(bdc_blueprint, monkeypatch):
+    """The SAME guard app.py installs -- guard_component_access("bdc", min_il).
 
     An isolated app has no ``login_page`` endpoint, so the guard answers 401
     (its documented fallback) rather than redirecting. A 404 here would mean
@@ -161,10 +155,10 @@ def test_component_guard_refuses_anonymous_when_enforced(sdc_blueprint, monkeypa
     from tools.config.component_registry import get_registry
     from tools.security.canvas_access import guard_component_access
 
-    comp = get_registry().get("sdc")
-    assert comp is not None, "sdc is not in the component registry"
-    sdc_blueprint.before_request(guard_component_access("sdc", comp.min_il))
-    app = _isolated_app(sdc_blueprint, "/security")
+    comp = get_registry().get("bdc")
+    assert comp is not None, "bdc is not in the component registry"
+    bdc_blueprint.before_request(guard_component_access("bdc", comp.min_il))
+    app = _isolated_app(bdc_blueprint, "/boundary")
     with app.test_client() as client:
         resp = client.get(NEW_PATH)
     assert resp.status_code in (302, 401), resp.status_code
@@ -228,26 +222,15 @@ def test_both_base_html_copies_agree():
     assert _read(BASE_HTML_COPIES[0]) == _read(BASE_HTML_COPIES[1]), "base.html copies diverged"
 
 
-@pytest.mark.parametrize("hub_html", HUB_TEMPLATE_COPIES, ids=["tools", "icdev"])
-def test_compliance_hub_links_the_governed_home(hub_html):
-    """compliance.html is the hub that links its siblings; it must not keep the old href."""
-    text = _read(hub_html)
-    assert f'href="{NEW_PATH}"' in text, f"{hub_html}: no link to {NEW_PATH}"
-    assert f'href="{OLD_PATH}"' not in text, f"{hub_html}: still links the ungoverned {OLD_PATH}"
-
-
-def test_no_template_links_the_old_path():
-    roots = (
-        REPO / "tools" / "dashboard" / "templates",
-        REPO / "icdev" / "tools" / "dashboard" / "templates",
-    )
-    offenders = [
+@pytest.mark.parametrize("root", [TEMPLATE_DIR, TEMPLATE_DIR_MIRROR], ids=["tools", "icdev"])
+def test_no_template_links_the_ungoverned_url(root):
+    """compliance.html (the hub) linked /mosa too -- every href is repointed."""
+    offenders = sorted(
         str(p.relative_to(REPO))
-        for root in roots if root.exists()
         for p in root.rglob("*.html")
         if f'href="{OLD_PATH}"' in _read(p)
-    ]
-    assert not offenders, f"templates still link {OLD_PATH}: {offenders}"
+    )
+    assert not offenders, f"templates still linking {OLD_PATH}: {offenders}"
 
 
 # ── 5. The template lives on the canvas and is mirrored; the old one is gone ─
@@ -263,20 +246,20 @@ def test_template_lives_on_the_canvas_and_is_mirrored():
 
 def test_blueprint_route_references_the_canvas_template():
     src = _read(BLUEPRINT)
-    assert 'render_template("security_canvas/sbd.html"' in src or (
-        "render_template(\n" in src and '"security_canvas/sbd.html"' in src
-    ), "blueprint does not render security_canvas/sbd.html"
+    assert 'render_template("boundary_canvas/mosa.html"' in src or (
+        "render_template(\n" in src and '"boundary_canvas/mosa.html"' in src
+    ), "blueprint does not render boundary_canvas/mosa.html"
     assert src == _read(BLUEPRINT_MIRROR), "blueprint and its icdev/ mirror diverged"
 
 
-# ── 6. IQE dispatch: the path lands on the sdc canvas ───────────────────────
+# ── 6. IQE dispatch: the path lands on the bdc canvas ───────────────────────
 
-def test_path_canvas_map_dispatches_the_page_to_sdc():
+def test_path_canvas_map_dispatches_the_page_to_bdc():
     from tools.config.component_registry import get_registry
 
     for regex_src, canvas in get_registry().get_iqe_path_canvas():
         if re.search(regex_src, NEW_PATH):
-            assert canvas == "sdc", f"{NEW_PATH} dispatches to {canvas!r}, not sdc"
+            assert canvas == "bdc", f"{NEW_PATH} dispatches to {canvas!r}, not bdc"
             break
     else:
         pytest.fail(f"{NEW_PATH} matches no entry of the IQE path->canvas map")

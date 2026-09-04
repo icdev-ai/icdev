@@ -73,7 +73,11 @@ def ao_api_confab():
     return jsonify(get_confabulation_flags(days=days))
 
 
-@bp.route("/api/iqe-query", methods=["POST"])
+# rmf-ui-17: the page template has always pointed its widget at
+# /ai-observatory/api/iqe-query; the route was declared at the bare
+# /api/iqe-query on this prefix-less blueprint, so the widget 404'd and the
+# rule collided with ohc and govlift.
+@bp.route("/ai-observatory/api/iqe-query", methods=["POST"])
 def ao_api_iqe_query():
     """IQE query against observatory.decisions and observatory.confabulation_flags."""
     from tools.iqe.nl_to_iqe import nl_to_iqe

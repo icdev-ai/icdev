@@ -405,7 +405,7 @@ def check_secondary_nav(page: Page, r: Result) -> None:
 
     link_checks = [
         ("/agents",       ["Agent", "agent"],           "agents:heading"),
-        ("/compliance",   ["Compliance", "Control"],     "compliance:heading"),
+        ("/boundary/compliance-hub", ["Compliance", "Control"], "compliance:heading"),
         ("/genesis",      ["Genesis", "Daemon", "Reflex"], "genesis:heading"),
         ("/kanban",       ["Kanban", "Task", "Board"],   "kanban_nav:heading"),
         ("/oracle",       ["Oracle", "Prediction"],      "oracle:heading"),

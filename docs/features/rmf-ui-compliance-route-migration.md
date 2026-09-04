@@ -68,6 +68,7 @@ bare handler lacked, without any per-route wiring:
 | rmf-ui-12 | `/stig-manager` | `/security/stig-manager` | SDC (owns STIGs) | `tests/test_sdc_stig_manager_page.py` |
 | rmf-ui-13 | `/sbd` | `/security/sbd` | SDC | `tests/test_sdc_sbd_page.py` |
 | rmf-ui-07 | `/poam` | `/boundary/poam` | BDC | `tests/test_bdc_poam_page.py` |
+| rmf-ui-11 | `/compliance` | `/boundary/compliance-hub` | BDC (the artifact hub, moved LAST) | `tests/test_bdc_compliance_hub_page.py` |
 | rmf-ui-16 | `/ai-accountability` | `/security/ai-accountability` | SDC | `tests/test_sdc_ai_accountability_page.py` |
 
 `/prod-audit` is a visibility surface (production-readiness checks, read-only
@@ -145,3 +146,18 @@ that the new one is not "cATO Dashboard". Everything else copies the exemplar:
 `bdc_cato_health_page` on the blueprint, a 301 from `app.py`, both `base.html`
 copies plus `compliance.html` and `mosa.html` repointed, the template moved and
 mirrored, `core.d/rmf-ui-05.txt`.
+
+## rmf-ui-09: `/compliance-debt` → `/boundary/compliance-debt`
+
+An RMF artifact surface — POA&M, control and STIG debt burndown, ATO
+expirations and SLA compliance over the unchanged `/api/compliance-debt/*`
+blueprint — so it lands on BDC, the canvas that owns the ATO boundary. Copies
+the exemplar exactly: `bdc_compliance_debt_page` on the blueprint behind
+`bdc_login_required`, a 301 from `app.py`, both `base.html` copies plus
+`compliance.html` (the only other template linking it) repointed, the template
+moved and mirrored with the IQE widget and a breadcrumb, `core.d/rmf-ui-09.txt`
+gating `tests/test_bdc_compliance_debt_page.py`. The two ad-hoc e2e scripts
+naming the old path are repointed so their nav-href assertions describe the
+link that now exists.
+
+`core.d/rmf-ui-10.txt`.
