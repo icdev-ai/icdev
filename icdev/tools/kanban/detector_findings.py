@@ -41,6 +41,25 @@ finding is FIRST seen, and again only if it RECURS after its card was closed
 (``card_count`` says how often). ``idempotency_key`` on the seeded spec is the
 second lock, inside ``create_tasks`` itself.
 
+A CARD CLOSED EARLY IS NOT A RECURRENCE (task-f05d2bc8d1). A recovery finding
+is derived from pr_watcher audit rows inside a 24h window, and ``escalate``
+outranks any later merge (rem-hyg-16, correct and untouched), so the finding
+CANNOT leave the summary before last-attempt + window_hours whatever a human
+does -- fixing the PR, landing it and releasing the lease all leave the row in
+place. The recurrence rule used to read a card marked ``done`` inside that
+window as "the fix did not hold" and file a ``-r2``, which was then DISPATCHED
+against a subject already delivered. Measured on the live board 2026-09-04:
+3 of 3 ``card_count=2`` recovery findings had their first card closed before
+the finding's earliest possible clear time; the 10 whose card closed AFTER
+``cleared_at`` never recurred. So a Finding may carry ``earliest_clear_at``
+(recovery: the newest counted attempt row's stamp + window_hours, both already
+in hand), and a TERMINAL card while ``now < earliest_clear_at`` is held -- the
+finding stays active on its existing task_id, ``seen_count`` rises, nothing is
+filed, and the hold is REPORTED (``held_closed_early``). A ``-rN`` is filed
+only when a MEASURABLE run after that time still reports the subject, or when
+the finding was seen ``cleared`` and reappears -- the plain meaning of "did not
+hold". born_red and status_churn carry no such time and keep the plain rule.
+
 UNMEASURABLE CLEARS NOTHING. status_churn on an idle board, born_red_survey on
 an unmigrated baseline, recovery_summary with no audit rows, migration_drift on
 a database with no migration history — each reports
@@ -68,6 +87,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
+from tools.common.helpers import parse_utc_timestamp
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger("icdev.kanban.detector_findings")
@@ -147,16 +167,25 @@ class Finding(dict):
     observation the SAME finding; ``evidence`` is the detector's own row,
     verbatim; ``derivation`` is the command that re-derives it; ``advice`` is
     what to do about it.
+
+    ``earliest_clear_at`` is OPTIONAL: the instant before which the detector
+    structurally cannot stop reporting this finding, whatever anybody does
+    about it (a window over audit rows). A detector that has no such time
+    leaves it None, and the recurrence rule then reads a closed card at face
+    value. It is carried on the in-memory finding of the run that computed it
+    and never persisted -- every run re-derives it from the rows it read.
     """
 
     def __init__(self, detector: str, subject: str, fingerprint: str, *,
                  title: str, priority: str, task_type: str,
-                 evidence: Mapping[str, Any], derivation: str, advice: str):
+                 evidence: Mapping[str, Any], derivation: str, advice: str,
+                 earliest_clear_at: Any = None):
         super().__init__(
             detector=detector, subject=str(subject), fingerprint=str(fingerprint),
             title=title, priority=priority, task_type=task_type,
             evidence={k: _iso(v) for k, v in dict(evidence).items()},
             derivation=derivation, advice=advice,
+            earliest_clear_at=_iso(earliest_clear_at) if earliest_clear_at is not None else None,
         )
         self["finding_id"] = finding_ident(detector, self["subject"], self["fingerprint"])
 
@@ -283,6 +312,11 @@ def recovery_findings(entries: Sequence[Mapping[str, Any]],
         if not task_id:
             continue
         reason = str(entry.get("reason") or "").strip()
+        # The newest counted attempt row is `at`; the window keeps that row
+        # (and so the `needed_a_human` verdict) until at + window_hours.
+        last_attempt = parse_utc_timestamp(entry.get("at"))
+        earliest_clear_at = (
+            last_attempt + timedelta(hours=int(window_hours)) if last_attempt else None)
         advice = (
             f"pr_watcher attempted this task {entry.get('attempts')} time(s) "
             f"({entry.get('kind') or 'resume'}) and ESCALATED. Its last recorded reason: "
@@ -307,6 +341,7 @@ def recovery_findings(entries: Sequence[Mapping[str, Any]],
                 f"# or: Home (/) -> Autonomous Recovery panel, {window_hours}h window"
             ),
             advice=advice,
+            earliest_clear_at=earliest_clear_at,
         ))
     return out
 
@@ -716,6 +751,21 @@ def _record_run(conn, detector: str, state: str, reason: str, findings: Optional
     )
 
 
+def _before_earliest_clear(f: Mapping[str, Any], now_dt: datetime) -> bool:
+    """True while this finding COULD NOT yet have left its detector's report.
+
+    A finding with no ``earliest_clear_at`` (born_red, status_churn) returns
+    False and keeps the plain rule; an unreadable stamp is the same as none,
+    so a malformed value can never hold a finding forever.
+    """
+    earliest = parse_utc_timestamp(f.get("earliest_clear_at"))
+    if earliest is None:
+        return False
+    if now_dt.tzinfo is None:
+        now_dt = now_dt.replace(tzinfo=timezone.utc)
+    return now_dt < earliest
+
+
 def _card_status(conn, task_id: Optional[str]) -> Optional[str]:
     if not task_id:
         return None
@@ -824,6 +874,7 @@ def consume(config: Optional[Mapping[str, Any]] = None, *, conn=None, seed: bool
         "findings_seen": 0,
         "findings_new": 0,
         "findings_recurring": 0,
+        "findings_held_closed_early": 0,
         "findings_cleared": 0,
         "cards_seeded": [],
         "cards_deferred": 0,
@@ -863,7 +914,7 @@ def consume(config: Optional[Mapping[str, Any]] = None, *, conn=None, seed: bool
                 "reason": res.get("reason") or "",
                 # None, never 0, when the run could not measure.
                 "findings": len(findings) if state in (RUN_FINDINGS, RUN_CLEAN) else None,
-                "new": 0, "recurring": 0, "cleared": 0,
+                "new": 0, "recurring": 0, "held_closed_early": 0, "cleared": 0,
                 "summary": res.get("summary") or {},
                 "elapsed_seconds": round(time.monotonic() - t0, 1),
             }
@@ -887,11 +938,17 @@ def consume(config: Optional[Mapping[str, Any]] = None, *, conn=None, seed: bool
                         revision = int(prior.get("card_count") or 0) + 1
                     else:
                         card_state = _card_status(conn, prior.get("task_id"))
-                        recurred = (
-                            str(prior.get("status")) == FINDING_CLEARED
-                            or card_state in TERMINAL_CARD_STATUSES
-                        )
-                        if recurred:
+                        was_cleared = str(prior.get("status")) == FINDING_CLEARED
+                        card_closed = card_state in TERMINAL_CARD_STATUSES
+                        # A terminal card while the detector structurally cannot
+                        # have stopped reporting yet is a card closed EARLY, not
+                        # a fix that did not hold: hold the finding on its card.
+                        closed_early = (
+                            card_closed and not was_cleared
+                            and _before_earliest_clear(f, now_dt))
+                        if closed_early:
+                            entry["held_closed_early"] += 1
+                        elif was_cleared or card_closed:
                             entry["recurring"] += 1
                             revision = int(prior.get("card_count") or 0) + 1
                     if seed:
@@ -908,6 +965,7 @@ def consume(config: Optional[Mapping[str, Any]] = None, *, conn=None, seed: bool
                     report["findings_cleared"] += entry["cleared"]
             report["findings_new"] += entry["new"]
             report["findings_recurring"] += entry["recurring"]
+            report["findings_held_closed_early"] += entry["held_closed_early"]
 
             if seed:
                 _record_run(conn, name, state, entry["reason"], entry["findings"],
