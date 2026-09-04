@@ -9,9 +9,10 @@ CLAUDE.md's PreToolUse rule requires a fire-rate survey *before* a check is
 armed, and states that refusing **1.63%** of routine work is already grounds for
 standing a check down. This is that survey for the three checks mfx-ci-01 adds.
 
-Every number below was measured **twice, by two independent sessions**, and
-where the two disagree both readings are printed. A figure that only one
-observer can reproduce is reported as such rather than averaged away.
+Every number below was measured **twice, by two independent sessions**. Where
+the two disagreed, the disagreement was traced to a cause in code rather than
+averaged away or explained by load — see the withdrawn census figure under
+[Result — latency](#result--latency), which was measuring the empty path.
 
 ## What was armed
 
@@ -123,25 +124,64 @@ Medians, **never best-of-N**: a hook costs what it usually costs, not what its
 luckiest run did. The bare interpreter floor on this host is ~41 ms, so a
 subprocess check can never be cheaper than that.
 
-| Scenario | Mirror | Census (obs. A) | Census (obs. B) | Added total |
-|----------|-------:|----------------:|----------------:|------------:|
-| nothing staged under `tools/<pkg>/` | 0 ms | 0 ms | 0 ms | **0 ms** — both skipped |
-| 1 staged file | 80 / 77 ms | 127 ms | 350 ms | 207–427 ms |
-| 3 staged files | 79 / 78 ms | 126 ms | 353 ms | 206–431 ms |
-| 60 staged files, one package | 97 ms | 126 ms | 544 ms | 224–641 ms |
+Medians over the **shipped code path**, corroborated by two sessions. The bare
+interpreter floor on this host is ~41 ms, so a subprocess check can never be
+cheaper than that.
 
-**The mirror numbers agree to within 3 ms between observers. The census numbers
-do not, and the gap is not explained.** Observer A measured n=7 with a tight
-spread (min 123, max 134 ms); observer B measured n=7 at ~2.8x that. The most
-likely cause is host load — five agent sessions were live on this machine — but
-that was not proven, so both are printed. **The conclusion holds at either
-reading**: the worst case (641 ms at 60 staged files) is inside the 1 s budget,
-and the common commit pays **0** because the scope walk finds nothing and
+| Scenario | Mirror | Census | Added total |
+|----------|-------:|-------:|------------:|
+| nothing staged under `tools/<pkg>/` | 0 ms | 0 ms | **0 ms** — both skipped |
+| 1 staged file | 77–80 ms | 359 / ~350 ms | ~437 ms |
+| 3 staged files | 78–79 ms | ~354 ms | ~432 ms |
+| 60 staged files, one package | 97 ms | ~404–579 ms | ~501–676 ms |
+| *(contrast)* census with **no** `--staged` | — | **28.1 s** | 40x the budget |
+
+Worst realistic added cost is **~437 ms at 3 files and ~677 ms at 60**, inside
+the 1 s budget. The common commit pays **0**: the scope walk finds nothing and
 neither subprocess is spawned. The hook's own budget note is 155 ms for the
 pre-existing checks.
 
-Quote the range. A single figure here did not survive re-measurement once
-already (see below).
+**The two checks have different shapes and must never be described with one.**
+Mirror is effectively flat in file count (78 → 97 ms across a 20x change) —
+it hashes only the named pairs. The census **rises** (359 → ~580 ms), because a
+per-file AST parse sits on top of a fixed ~240 ms first-party walk
+(`_first_party_names`, 3455 names over `tools/` + `icdev/tools/`).
+
+The 28.1 s figure is why the hook passes `--staged` **explicitly** rather than
+relying on a default: losing that scoping costs 40x the entire hook budget.
+
+### A withdrawn number, and why it is the card's own subject matter
+
+An earlier draft of this section published a census cost of **126 ms, flat
+across 1, 3 and 60 staged files**, and explained the disagreement with a second
+observer's ~350 ms as host load. **That was wrong, and the flat series was the
+tell.**
+
+`git add` on an **unmodified tracked file stages nothing**. The probe staged
+nothing, `_staged_files()` returned `[]`, and every run timed
+`build_report(only=[])` — the empty path, 3 ms of work plus interpreter start —
+while the rows were labelled 1, 3 and 60 files. Proven directly:
+
+```
+$ git add -- tools/dx/mirror_parity.py        # unmodified, already committed
+$ git diff --cached --name-only | wc -l
+0
+$ python -c "...; print(_staged_files(Path('.')))"
+[]
+```
+
+Re-measured with files **genuinely** modified and staged, the shipped
+`--staged --check` path costs **359 ms** for one file — which is the second
+observer's ~350 ms, so there was never a disagreement to explain.
+
+> **A series that does not move when its input moves 60x is not a stable
+> measurement. It is a measurement of nothing.**
+
+That is the same defect as the census sandbox artifact above, and the same
+defect as `posture_score` returning 100.0 for canvases nobody assessed
+(rem-hyg-09). A survey written to catch stable-but-meaningless numbers
+published one about itself, and the host-load hypothesis was a story fitted to
+a number rather than a cause traced to code.
 
 ### Why `--files` and not `--paths <pkg>`
 
@@ -320,6 +360,10 @@ print(json.dumps({
 4. `missing_from_mirror` is a **note, never a block**: it is ungated in the gate
    YAML and in CI, and the backlog is ~300 files (59 distinct in this sample
    alone).
-5. **Quote ranges, name your observer, and state the unit.** Three figures in
-   the first draft of this card did not survive re-measurement, and every one of
-   them was a single run reported as a fact.
+5. **Quote ranges, name your observer, and state the unit.** Four figures in
+   the first draft of this card did not survive re-measurement.
+6. **A flat series across a changing input is a red flag, not a clean result.**
+   Before publishing a timing, prove the probe exercised the path it names — the
+   census figure here was a scan of zero files wearing the label "1, 3 and 60
+   files". Assert the scope (`assert len(_staged_files(root)) == n`) inside the
+   harness, the way the corrected one now does.

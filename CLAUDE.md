@@ -1602,16 +1602,28 @@ npx playwright test --list                              # every spec PARSES; no 
 # alone is drift too.
 # MEASURED 2026-09-04 on this checkout, and the numbers ARE the design argument:
 #   nothing staged under tools/<pkg>/     0 ms   both checks skipped entirely
-#   3 staged files (this commit's shape)  79 ms mirror + 126 ms census
-#   60 staged files in one package        97 ms  -- per-file, so it barely grows
+#   3 staged files (this commit's shape)  78 ms mirror + 359 ms census
+#   60 staged files in one package        97 ms mirror + ~400-580 ms census
 #   (for contrast) --paths db            512 ms  -- 6.4x, the walk not taken
-# MEDIANS over n=7, never best-of-N: a hook costs what it USUALLY costs, not what
-# its luckiest run did. An independent re-measure under different load (five
-# concurrent agent sessions) put the census at ~350ms and 60 files at ~544ms;
-# both readings are inside the 1s budget, so quote the range, not one number.
-# The 512ms figure replaced a 4486ms one measured on a single COLD invocation --
-# 6.4x is the honest ratio, and the walk is avoided for CORRECTNESS OF SCOPE
-# first (a package backlog is not the committer's to fix) and cost second.
+#   (for contrast) census with NO --staged     ~28 s  -- 40x the whole budget
+# So the WORST realistic added cost is ~437 ms at 3 files and ~677 ms at 60,
+# inside the 1s budget, and the common commit still pays 0.
+# MIRROR IS FLAT IN FILE COUNT (78 -> 97 over a 20x change); THE CENSUS IS NOT
+# (359 -> ~580), because a per-file AST parse sits on top of a fixed ~240 ms
+# first-party walk. Do not describe them with one shape.
+# THREE FIGURES HERE WERE WRONG BEFORE THEY WERE RIGHT, and the reasons are the
+# card's own subject matter: 4486 ms for `--paths db` was a single COLD run
+# (truth 512 ms, 6.4x not 46x); "1.8s warm / 14.6s cold" for --list reproduced
+# for nobody (truth ~2-4 s warm); and a flat "126 ms" census across 1, 3 and 60
+# files was THE EMPTY PATH -- `git add` on an UNMODIFIED tracked file stages
+# nothing, so `_staged_files()` returned [] and the probe timed a scan of zero
+# files while labelled 1/3/60. A SERIES THAT DOES NOT MOVE WHEN ITS INPUT MOVES
+# 60x IS NOT A STABLE MEASUREMENT, IT IS A MEASUREMENT OF NOTHING -- the same
+# shape as the sandbox artifact above, and as `posture_score` 100.0 for canvases
+# nobody assessed. Every number here is now the SHIPPED code path, corroborated
+# by a second session (359 ms here, ~350 ms there).
+# The walk is avoided for CORRECTNESS OF SCOPE first (a package backlog is not
+# the committer's to fix) and cost second.
 # The hook's own budget note is 155ms; the common commit still pays 0.
 #
 # CONTENT DRIFT ONLY. A staged file whose twin is MISSING is a NOTE, never a
