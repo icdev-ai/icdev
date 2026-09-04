@@ -3806,9 +3806,20 @@ def create_app(testing: bool = False) -> Flask:
             _log.getLogger(__name__).warning("core IQE error: %s", exc)
             return jsonify({"error": str(exc), "iqe": iqe_str}), 500
 
+    # rmf-ui-17: /api/iqe-query is the canvas-keyed contract (the demo-mode guard
+    # above already exempts it by name, and tools/testing/route_smoke.py smokes
+    # it). It was never bound here -- three prefix-less blueprints claimed it
+    # instead, and the winner imported a module that does not exist. Both rules
+    # resolve to this one endpoint; tests/test_iqe_query_route_ownership.py
+    # fails on any blueprint that declares the bare rule again.
+    @app.route("/api/iqe-query", methods=["POST"])
     @app.route("/api/iqe/dispatch", methods=["POST"])
     def iqe_dispatch():
-        """Canvas-aware IQE dispatcher — routes question to correct adapter by canvas name."""
+        """Canvas-aware IQE dispatcher — routes question to correct adapter by canvas name.
+
+        Bound at /api/iqe-query (the mini-bar contract) and /api/iqe/dispatch
+        (what base.html has posted to since the bar shipped).
+        """
         import logging as _dlog
         from tools.iqe.nl_to_iqe import nl_to_iqe
         from tools.iqe.parser import parse as _iqe_parse, IQESyntaxError as _IQESyntaxError
