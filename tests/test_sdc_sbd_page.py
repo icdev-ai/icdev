@@ -47,9 +47,10 @@ BASE_HTML_COPIES = (
     REPO / "tools" / "dashboard" / "templates" / "base.html",
     REPO / "icdev" / "tools" / "dashboard" / "templates" / "base.html",
 )
+# rmf-ui-11 moved the hub onto the Boundary canvas as boundary_canvas/compliance_hub.html.
 HUB_TEMPLATE_COPIES = (
-    REPO / "tools" / "dashboard" / "templates" / "compliance.html",
-    REPO / "icdev" / "tools" / "dashboard" / "templates" / "compliance.html",
+    REPO / "tools" / "dashboard" / "templates" / "boundary_canvas" / "compliance_hub.html",
+    REPO / "icdev" / "tools" / "dashboard" / "templates" / "boundary_canvas" / "compliance_hub.html",
 )
 START_MD = REPO / ".claude" / "commands" / "start.md"
 

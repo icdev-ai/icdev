@@ -1754,6 +1754,26 @@ def create_boundary_blueprint():
         """MOSA Compliance — 10 U.S.C. §4401 modular open systems approach assessment."""
         return render_template("boundary_canvas/mosa.html")
 
+    # ── Compliance Hub (rmf-ui-11) ───────────────────────────────────────────
+    #
+    # Migrated from a bare `@app.route("/compliance")` in tools/dashboard/app.py
+    # -- the same shape as rmf-ui-01 above: ungoverned there, registry-registered,
+    # RBAC-guarded and IQE-dispatchable here BY CONSTRUCTION. This is the RMF
+    # ARTIFACT hub -- the unified posture across every compliance module and the
+    # page that LINKS the others -- so it moved LAST of the BDC set, after every
+    # sibling had repointed its own card here. It drives the UNCHANGED
+    # /api/compliance/{posture,unified-posture,evidence-chain} handlers, which
+    # stay in app.py beside their data; only the PAGE route moved. The template
+    # is compliance_hub.html, not compliance.html: boundary_canvas/compliance.html
+    # is BDC's own per-design compliance view and already exists. The old URL is
+    # a 301 here, never a 404.
+
+    @bp.route("/compliance-hub")
+    @bdc_login_required
+    def bdc_compliance_hub_page():
+        """Compliance Hub — unified posture across all compliance modules."""
+        return render_template("boundary_canvas/compliance_hub.html")
+
     @bp.route("/api/fabric-posture", methods=["GET"])
     @bdc_login_required
     def bdc_api_fabric_posture():
