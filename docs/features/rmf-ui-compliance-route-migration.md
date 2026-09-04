@@ -148,3 +148,5 @@ moved and mirrored with the IQE widget and a breadcrumb, `core.d/rmf-ui-09.txt`
 gating `tests/test_bdc_compliance_debt_page.py`. The two ad-hoc e2e scripts
 naming the old path are repointed so their nav-href assertions describe the
 link that now exists.
+
+`core.d/rmf-ui-10.txt`.

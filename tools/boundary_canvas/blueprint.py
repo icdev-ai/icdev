@@ -1720,6 +1720,23 @@ def create_boundary_blueprint():
         """Compliance Debt Burndown — POAM, control, and STIG debt tracking."""
         return render_template("boundary_canvas/compliance_debt.html")
 
+    # ── MOSA Compliance (rmf-ui-10) ──────────────────────────────────────────
+    #
+    # Migrated from a bare `@app.route("/mosa")` in tools/dashboard/app.py --
+    # the same shape as the rmf-ui-01 exemplar above. An RMF ARTIFACT surface:
+    # the 10 U.S.C. 4401 modular open systems assessment sits with the
+    # acquisition/ATO package, so it lands on the Boundary canvas where it is
+    # registry-registered, RBAC-guarded and IQE-dispatchable BY CONSTRUCTION.
+    # The page drives the UNCHANGED /api/mosa/summary route, which stays in
+    # app.py -- only the PAGE route moved. The old URL is a 301 here, never a
+    # 404.
+
+    @bp.route("/mosa")
+    @bdc_login_required
+    def bdc_mosa_page():
+        """MOSA Compliance — 10 U.S.C. §4401 modular open systems approach assessment."""
+        return render_template("boundary_canvas/mosa.html")
+
     @bp.route("/api/fabric-posture", methods=["GET"])
     @bdc_login_required
     def bdc_api_fabric_posture():
