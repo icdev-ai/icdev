@@ -7839,3 +7839,12 @@ python tools/govcon/solicitation_parser.py --input solicitation.pdf --json      
 # ONE TABLE: proposal_compliance_matrix. pg_compliance_matrix was folded in and
 # dropped by migration 20260903185253; vocabulary in tools/govcon/compliance_matrix_schema.py.
 ```
+
+### Interactive claim keeper (mfx-own-02)
+```bash
+python tools/kanban/cli.py --claim <task-id> [--intent "what you are doing"] [--ttl 7200]   # hold a task from a plain shell
+python tools/kanban/cli.py --claim <task-id>            # again: RENEWS the running keeper's TTL
+python tools/kanban/cli.py --release <task-id>          # end the keeper session, free the lease
+python -m tools.kanban.interactive_claim --status <task-id> [--json]   # what holds it: keeper pid, expiry, intent, log
+python tools/awareness/restore_acts.py --plan           # reports the lease as held by a running process
+```

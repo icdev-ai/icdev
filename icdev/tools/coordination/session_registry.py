@@ -316,8 +316,13 @@ def others(ttl_seconds: int = SESSION_TTL_SECONDS) -> List[Dict[str, Any]]:
     return [s for s in list_active(ttl_seconds) if s.get("session_id") != sid]
 
 
-def end_session() -> bool:
-    """Mark the current session ended (called from the Stop hook)."""
+def end_session(session_id: Optional[str] = None) -> bool:
+    """Mark a session ended -- the current one (the Stop hook), or ``session_id``.
+
+    The explicit form exists for an interactive claim's keeper (mfx-own-02):
+    ``cli.py --release`` runs in a shell with no identity of its own and must
+    end the KEEPER's row, not the shell's.
+    """
     if get_connection is None:
         return False
     conn = _conn()
@@ -325,7 +330,7 @@ def end_session() -> bool:
     try:
         conn.execute(
             "UPDATE agent_sessions SET status='ended', last_heartbeat=%s WHERE session_id = %s",
-            (_now(), _own_session_id()),
+            (_now(), session_id or _own_session_id()),
         )
         conn.commit()
         return True
