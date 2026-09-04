@@ -9,7 +9,7 @@ finished had two options — be refused, or bypass the verification. Neither one
 lands the work.
 
 This module is the third option: **satisfy** the gate. ``preflight()`` proves the
-PR is landable, ``land()`` merges it via the same ``gh pr merge --squash --auto``
+PR is landable, ``land()`` merges it via the same ``gh pr merge --merge --auto``
 call the watcher uses and then CONFIRMS the PR actually reached ``MERGED``
 before the caller is allowed to write ``done``.
 
@@ -52,7 +52,7 @@ from tools.logging.icdev_logger import get_logger
 
 logger = get_logger("icdev.kanban.land")
 
-# How many times to re-read the PR after asking gh to merge it. `--squash
+# How many times to re-read the PR after asking gh to merge it. `--merge
 # --auto` can return success while GitHub queues the merge behind branch
 # protection, so a single read would report "not merged" for a PR that lands two
 # seconds later. Bounded: an unconfirmed merge refuses, it never assumes.

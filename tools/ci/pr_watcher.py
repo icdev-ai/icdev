@@ -91,6 +91,37 @@ RESUME_COOLDOWN_SECONDS = 600
 
 DEFAULT_CI_LOG_MAX = 4000
 
+#: How a linked PR is landed: a MERGE COMMIT, never a squash (mfx-mrg-01).
+#:
+#: A squash puts a NEW commit on main carrying the branch's content while the
+#: branch keeps its original commits, so `origin/main..kanban/<id>` still lists
+#: them afterwards and every ancestry-based reader -- the worker that finishes a
+#: minute later and opens a DUPLICATE PR that can only land as a revert
+#: (#2015/#2014, #1985/#1983, #2056/#2053, #2049/#2053), `reclaim_worktree`'s
+#: ahead count, orphan_requeue's `branch_ahead` -- reads the branch as unmerged.
+#: And a sibling resolution STACKED on the first sibling's branch collapses the
+#: moment that sibling squash-merges: its merge base against main is still the
+#: old main, so the first sibling's hunks are re-applied beside its own and go
+#: CONFLICTING (#2046/#2047/#2048 within a minute of #2045, 2026-09-03).
+#: A merge commit makes the branch an ANCESTOR of main: `main..branch` is empty
+#: by construction and the stacked sibling's merge base becomes the landed head.
+#:
+#: SURVEYED over the last 100 merged PRs (2026-09-04): 66 linked, 57 squashed,
+#: 9 already landed as merge commits. Of the 60 linked branches still on origin,
+#: 51 read AHEAD of main (the residue above) and 15 carry a non-linear history a
+#: merge commit preserves. landed_check resolves every one of the 9 merge
+#: commits at its `merge_ref` tier (`Merge pull request #N from
+#: icdev-ai/kanban/<id>` always names the branch, so the id is always in the
+#: subject) while 7 of the 57 squashes resolved to NOTHING, their squash
+#: subject carrying no task id. No consumer in the tree expects one squash per
+#: PR: `_branch_has_unmerged_commits`, stranded_audit and the duplicate-PR
+#: reaper compare by patch-id (`git cherry`), which reads both shapes.
+#: Both parents allow merge commits (`mergeCommitAllowed` true on icdev and
+#: icdev_ft, measured the same day). Spelled ONCE, here, and read by
+#: `_auto_merge` and by the acceptance test that replays the flag's git
+#: semantics in a throwaway repository.
+MERGE_METHOD_FLAG = "--merge"
+
 # Source prefix for the HITL alerts this watcher raises. Spelled once: the
 # dashboard, tools/kanban/cli.py and tools/kanban/hitl_notify.py all key off the
 # same string, and a sweep that parses it loosely can invent a task id.
@@ -1673,9 +1704,11 @@ class PRWatcher:
             # would only re-wait for a verdict the caller already holds. Where a
             # repo DOES allow auto-merge the first call still wins, so nothing
             # changes for a deployment that has it.
+            # MERGE_METHOD_FLAG, never `--squash`: see the constant for the
+            # survey and the two failure shapes a squash produces.
             attempts = (
-                ["gh", "pr", "merge", pr_url, "--squash", "--auto"],
-                ["gh", "pr", "merge", pr_url, "--squash"],
+                ["gh", "pr", "merge", pr_url, MERGE_METHOD_FLAG, "--auto"],
+                ["gh", "pr", "merge", pr_url, MERGE_METHOD_FLAG],
             )
             last_err = ""
             for i, cmd in enumerate(attempts):
