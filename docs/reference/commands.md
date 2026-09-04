@@ -2392,6 +2392,12 @@ python tools/genesis/daemon.py --enable research              # Enable a reflex
 python tools/genesis/daemon.py --disable evolve               # Disable a reflex
 python tools/genesis/daemon.py --reset heal --json            # Reset circuit breaker
 
+# CI runner health (mfx-boot-02) -- re-register a crash-looping self-hosted runner (FT and RT)
+python tools/genesis/daemon.py --reflex ci_runner_health --json   # one cycle through the daemon (acts)
+python tools/genesis/reflexes/ci_runner_health.py                 # hand-run: DRY RUN, proves and acts on nothing
+python tools/genesis/reflexes/ci_runner_health.py --apply         # hand-run, acting
+# Fleet declaration (repo, compose dir, container/runner/project names, NO token): args/ci_runners.yaml
+
 # Knowledge Bridge (Promoter)
 python tools/genesis/promoter.py --list --json                                      # List all GKPs
 python tools/genesis/promoter.py --list --status-filter pending_review --json       # Pending review

@@ -1917,6 +1917,35 @@ reflexes:
       threshold: 0
       operator: gte          # informational - 0 is a clean sweep OR unmeasurable; `status` says which
 
+  ci_runner_health:
+    enabled: true
+    risk_tier: green
+    schedule: every 15m
+    interval_seconds: 900
+    timeout_seconds: 600     # a confirm waits up to 90s per act, two acts per run
+    a2a_eligible: false
+    dry_run: false
+    # Acts one cycle may PERFORM. Further proven candidates are reported
+    # `deferred`, never dropped. The fleet declaration (repos, compose dirs,
+    # container/runner/project names, NO token) is args/ci_runners.yaml.
+    max_reregistrations_per_run: 2
+    description: >-
+      CI runner health (mfx-boot-02). A self-hosted runner whose registration
+      token expired crash-loops in Restarting (1) while the forge lists it
+      offline and every job in that repo QUEUES with no red anywhere -
+      measured 2026-09-03 and twice before, recovered by hand each time. Each
+      run intersects the forge's offline set with docker's Restarting set; a
+      container in BOTH whose log carries a registration-failure signature is
+      re-registered through one docker compose up -d with a token minted at
+      that moment and handed over in the environment only. A container in only
+      one set is reported, never touched. Audited before acting, bounded,
+      cooled per container, and unmeasurable - never ok - when gh or docker
+      cannot answer.
+    success_metric:
+      name: runners_reregistered
+      threshold: 0
+      operator: gte          # informational - 0 is a healthy fleet OR unmeasurable; `status` says which
+
 # ── Reflex Health & Alerting (crx-gen-02) ────────────────────────────────────
 # Turns critical-reflex failures into operator alerts on the /monitoring page
 # (via the shared `alerts` table) and backs the reflex health-trend queries in
