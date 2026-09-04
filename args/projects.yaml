@@ -9429,3 +9429,75 @@ projects:
   - {key: wp, title: "WHITEPAPER ENGINE", priority: high}
   - {key: rfp, title: "RFP VOLUME", priority: medium}
   - {key: ui, title: "CANVAS SURFACES & CLAIMS", priority: medium}
+- key: fni
+  name: ICDEV[FT] - News Intelligence
+  description: 'Paste a financial news URL, or pick a headline from Yahoo Finance
+    (default), Alpaca per-ticker news, or a curated list of free financial,
+    government-economic, geopolitical and sector RSS feeds, and get a
+    multi-perspective read. Builds in icdev-ai/icdev_ft, NOT here: registered
+    in args/kanban_external_repos.yaml as repo icdev_ft behind
+    ICDEV_KANBAN_REPO_FT and held behind fni-gate-00.
+
+    THE PERSPECTIVES ARE THE COMMITTEE. The seven experts in
+    icdev_fin/fathomdesk/experts.py each read the article through their own
+    lens (LLM prose, one batched call), the three-lens reasoner decodes author
+    intent, omissions and contradictions vs macro data (the deterministic half
+    already lives in news_reason.py; this wires the declared-but-dead
+    news_reasoning router function), and the existing bull/bear/neutral
+    Chain-of-Debate scorer weighs it. TRUST RULE 1 HOLDS: a model may extract,
+    classify or write prose; category, impact, direction, net score and
+    confidence are computed. Every LLM seam is injectable and fails open to the
+    deterministic result.
+
+    TWO EGRESS POSTURES, STATED. Headline feed hosts are an enforced allow-list.
+    A pasted article URL is any https host, ledgered on every fetch, private and
+    loopback hosts refused. A paywalled or blocked article degrades to the
+    headline plus RSS summary and is labelled headline_only, never presented as
+    a full read.
+
+    ADVISORY ONLY. latest_intel_for feeds auto-analyze behind a per-request flag
+    AND advisory.enabled in args/news_sources.yaml, shipped false: the news
+    sentiment study found the keyword channel did not clear the IC bar, so it
+    stays context until a human flips it. Nothing here places a trade.'
+  task_prefix: fni-
+  default_open: true
+  briefs:
+  - 'SRC: a declared list of free RSS/Atom sources (Yahoo default, government
+    economic feeds, financial, geopolitical, sector) parsed with the standard
+    library only, pulled on demand behind a short in-process cache, on an
+    enforced feed-host allow-list; Alpaca per-ticker news as a second built-in
+    source on an already-allowed host.'
+  - 'FET: fetch a pasted article through the existing trafilatura seam, ledger
+    every attempt in an append-only table, refuse private hosts, degrade to
+    headline_only rather than refuse.'
+  - 'ANA: the orchestrator -- classify, reason, seven expert reads, debate,
+    link tickers to positions and board signals, persist and dedupe by URL and
+    content hash.'
+  - 'API + UI: /api/v1/news routes as jobs, a /news page with source picker,
+    headline list, URL box, analysis view and history.'
+  - 'SIG: the advisory seam into auto-analyze, off by default.'
+  epics:
+  - key: src
+    title: SRC - news sources, stdlib RSS parser, on-demand headlines
+    priority: high
+  - key: fet
+    title: FET - article fetch, ledger, migration and store
+    priority: high
+  - key: ana
+    title: ANA - reasoning, expert reads, orchestrator, persistence
+    priority: high
+  - key: api
+    title: API - /api/v1/news router, openapi and generated types
+    priority: high
+  - key: ui
+    title: UI - the /news page
+    priority: high
+  - key: sig
+    title: SIG - advisory seam into the committee, off by default
+    priority: medium
+  - key: doc
+    title: DOC - CLAUDE.md section, feature doc, live feed smoke
+    priority: medium
+  - key: gate
+    title: GATE
+    priority: medium
