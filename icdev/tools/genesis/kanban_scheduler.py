@@ -312,27 +312,20 @@ def main():
     # Cross-session coordination: register the scheduler as an agent session so
     # interactive Claude/Cursor sessions can SEE that kanban is active and what
     # it's dispatching (LLM-agnostic; tools/coordination). Best-effort.
-    _coord_reg = None
-    try:
-        # DISTINCT PER PROCESS (autonomy-sid-01). A fixed id made two
-        # schedulers indistinguishable to leases.acquire, which refuses a
-        # hard lease only when it is held by ANOTHER session — so the guard
-        # against two workers building one task could not see two workers.
-        from tools.coordination.service_identity import claim_service_identity
-        claim_service_identity("kanban-scheduler", "kanban")
-        from tools.coordination import session_registry as _coord_reg
-        _coord_reg.register(intent="kanban scheduler — dispatching due tasks")
-    except Exception as _reg_exc:  # noqa: BLE001
-        _coord_reg = None
-        # LOUD, not `pass`. A scheduler the registry cannot see is one the
-        # scheduler_heartbeat_is_fresh claim will flag and the supervisor will
-        # never restart: on 2026-09-02 pid 29880 ran five hours unregistered
-        # and was found by a human noticing the board had not moved.
-        logger.warning(
-            "kanban scheduler: coordination registration FAILED (%s) -- this "
-            "process will not heartbeat in agent_sessions and will read as a "
-            "silent scheduler until restarted", _reg_exc,
-        )
+    #
+    # RETRIED WITH BACKOFF, never given up on after one failure (mfx-boot-01).
+    # On 2026-09-03 and 2026-09-04 the supervisor started this process while
+    # PostgreSQL was still in recovery; the one registration attempt raised,
+    # `_coord_reg` became None for the life of the process, and the scheduler
+    # ran the whole day with no agent_sessions row -- `not recorded` to
+    # supervisor_status, invisible to code_staleness and to the
+    # scheduler_heartbeat_is_fresh claim -- until a human restarted it by pid.
+    # The "never restart" rule (pid 29880's five silent hours on 2026-09-02) is
+    # about the LOOP, which is untouched: registration is re-attempted at the
+    # top of due cycles, each attempt logged, and `_coord_reg` becomes the
+    # registry the moment a row exists.
+    _coord_mod, _registration = _coordination_setup()
+    _coord_reg = _ensure_registered(_registration, _coord_mod, cycle=0)
 
     # guard-6: Orphan cleanup on startup -- kill any Claude CLI subprocesses
     # left over from a previous run that may have crashed.
@@ -388,9 +381,22 @@ def main():
             logger.debug("heartbeat write failed: %s", exc)
 
         # Coordination heartbeat — keep the scheduler visible to other sessions.
+        # Still unregistered? Re-attempt on the due cycles (mfx-boot-01), and
+        # start the pump the moment a row exists so the first registered cycle
+        # is heartbeat while it works, not only at its boundary.
+        if _coord_reg is None and _registration is not None:
+            _coord_reg = _ensure_registered(_registration, _coord_mod, cycle=cycle)
+            if _coord_reg is not None:
+                _start_heartbeat_pump(_pump_state, _coord_reg)
         try:
             if _coord_reg is not None:
                 _coord_reg.heartbeat(intent=f"kanban scheduler — cycle {cycle}")
+            elif _registration is not None and not _registration.exhausted:
+                if cycle % 30 == 0:
+                    logger.warning(
+                        "kanban scheduler: cycle %d running UNREGISTERED -- "
+                        "registration retry %s", cycle, _registration.describe(),
+                    )
             elif cycle % 30 == 0:
                 logger.warning(
                     "kanban scheduler: cycle %d running UNREGISTERED -- no "
@@ -556,6 +562,55 @@ def _start_heartbeat_pump(state: dict, reg, *, period: float = _PUMP_PERIOD_SECO
     thread = threading.Thread(target=_run, name="kanban-scheduler-heartbeat-pump", daemon=True)
     thread.start()
     return thread
+
+
+_REGISTRATION_INTENT = "kanban scheduler — dispatching due tasks"
+
+
+def _coordination_setup(service_name: str = "kanban-scheduler", agent: str = "kanban"):
+    """Claim this process's identity and build its registration retry.
+
+    Returns `(session_registry module, RegistrationRetry)`, or `(None, None)`
+    when the coordination package itself cannot be imported -- the one case
+    that is NOT a transient database condition and so is not retried. Nothing
+    here touches the database: the first attempt is `_ensure_registered`'s.
+    """
+    try:
+        # DISTINCT PER PROCESS (autonomy-sid-01). A fixed id made two
+        # schedulers indistinguishable to leases.acquire, which refuses a
+        # hard lease only when it is held by ANOTHER session — so the guard
+        # against two workers building one task could not see two workers.
+        from tools.coordination.service_identity import claim_service_identity
+        claim_service_identity(service_name, agent)
+        from tools.coordination import session_registry
+        from tools.coordination.registration_retry import RegistrationRetry
+    except Exception as exc:  # noqa: BLE001 -- observability never stops the scheduler
+        logger.warning(
+            "kanban scheduler: coordination unavailable (%s) -- this process "
+            "will not heartbeat in agent_sessions", exc,
+        )
+        return None, None
+    retry = RegistrationRetry(
+        "kanban scheduler", session_registry.register,
+        intent=_REGISTRATION_INTENT, log=logger,
+    )
+    return session_registry, retry
+
+
+def _ensure_registered(retry, registry, *, cycle: int):
+    """Attempt registration if one is due; return the registry once a row exists.
+
+    None means "not registered (yet)" -- the caller keeps looping and asks
+    again next cycle. An attempt that raises is a FAILED attempt, never an
+    exception out of the loop.
+    """
+    if retry is None or registry is None:
+        return None
+    try:
+        retry.attempt(cycle)
+    except Exception as exc:  # noqa: BLE001 -- the retry logs its own failures
+        logger.warning("kanban scheduler: registration attempt errored: %s", exc)
+    return registry if retry.registered else None
 
 #: (cycle_last_diagnosed, last_summary) — module state so the reason survives
 #: between cycles without re-querying the board every 60 seconds.

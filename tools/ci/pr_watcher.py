@@ -3658,20 +3658,15 @@ class PRWatcher:
         # `os.execv`, and a re-exec that fails leaves a long-lived process
         # serving old code while looking healthy. The row is the difference
         # between "it self-updates" as a design claim and as an observation.
-        try:
-            # DISTINCT PER PROCESS (autonomy-sid-01). Two pr_watchers race
-            # on auto-merge, which /start's own notes warn about, and a
-            # shared id hid that from every coordination surface.
-            from tools.coordination.service_identity import (
-                claim_service_identity,
-            )
-
-            claim_service_identity("pr-watcher", "pr_watcher")
-            from tools.coordination import session_registry as _reg
-
-            _reg.register(intent="pr watcher — merging eligible kanban PRs")
-        except Exception:  # noqa: BLE001 — observability must not stop the poll
-            pass
+        # RETRIED WITH BACKOFF (mfx-boot-01). This used to register ONCE inside
+        # a `try` whose `except` was `pass`: started while PostgreSQL was still
+        # in recovery (two consecutive boots, 2026-09-03/04) the watcher ran
+        # all day with no agent_sessions row and nothing said so. The loop
+        # below is untouched -- a watcher that cannot register must still
+        # merge -- but every attempt is now logged and re-attempted on the due
+        # iterations until one lands.
+        _registration = _coordination_registration()
+        _registration_attempt(_registration, 0)
 
         started_at = time.time()
         baseline = code_reload.snapshot()
@@ -3682,10 +3677,14 @@ class PRWatcher:
             iteration += 1
             # Keep the session row fresh — see tools/daemon/base.py for why a
             # boot-only registration makes a long-running process disappear.
+            # Unregistered still? Attempt again if this iteration is due.
             try:
-                from tools.coordination import session_registry as _sreg
+                if _registration is not None and not _registration.registered:
+                    _registration_attempt(_registration, iteration)
+                if _registration is None or _registration.registered:
+                    from tools.coordination import session_registry as _sreg
 
-                _sreg.heartbeat()
+                    _sreg.heartbeat()
             except Exception:  # noqa: BLE001 — liveness reporting is not a dep
                 pass
             try:
@@ -3716,6 +3715,47 @@ class PRWatcher:
             except Exception as exc:  # noqa: BLE001 — watching must not kill it
                 logger.warning("pr_watcher: code-change check failed: %s", exc)
             time.sleep(max(1, int(interval)))
+
+
+_REGISTRATION_INTENT = "pr watcher — merging eligible kanban PRs"
+
+
+def _coordination_registration(service_name: str = "pr-watcher", agent: str = "pr_watcher"):
+    """Claim this process's identity and build its registration retry.
+
+    None when the coordination package itself cannot be imported -- not a
+    transient database condition, so not retried. Touches no database.
+    """
+    try:
+        # DISTINCT PER PROCESS (autonomy-sid-01). Two pr_watchers race
+        # on auto-merge, which /start's own notes warn about, and a
+        # shared id hid that from every coordination surface.
+        from tools.coordination.service_identity import claim_service_identity
+
+        claim_service_identity(service_name, agent)
+        from tools.coordination import session_registry
+        from tools.coordination.registration_retry import RegistrationRetry
+    except Exception as exc:  # noqa: BLE001 — observability must not stop the poll
+        logger.warning(
+            "pr_watcher: coordination unavailable (%s) -- this process will "
+            "not heartbeat in agent_sessions", exc,
+        )
+        return None
+    return RegistrationRetry(
+        "pr_watcher", session_registry.register,
+        intent=_REGISTRATION_INTENT, log=logger,
+    )
+
+
+def _registration_attempt(retry, iteration: int) -> Optional[str]:
+    """One due registration attempt; a failure is logged by the retry, never raised."""
+    if retry is None:
+        return None
+    try:
+        return retry.attempt(iteration)
+    except Exception as exc:  # noqa: BLE001 — the poll must go on
+        logger.warning("pr_watcher: registration attempt errored: %s", exc)
+        return "failed"
 
 
 # ────────────────────────────────────────────────────────────────────────────
