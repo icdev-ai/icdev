@@ -231,6 +231,15 @@ REFLEX_NAMES = [
     # ran it; 20 leaked leases were cleared by hand on 2026-09-02 and 92 more
     # sat on done tasks. No reaping rule of its own -- the act proves and refuses.
     "lease_litter_reflex",
+    # mfx-boot-02: a self-hosted CI runner whose registration token expired
+    # crash-loops in `Restarting (1)` while the forge lists it offline and every
+    # job QUEUES with no red anywhere -- measured 2026-09-03 and twice before,
+    # recovered by hand each time. Reads the forge's offline set x docker's
+    # Restarting set; a container in BOTH, whose log carries a registration-
+    # failure signature, is re-registered through ONE `docker compose up -d`
+    # with a token minted at that moment (env only, never persisted). A
+    # container in only one set is reported and never touched.
+    "ci_runner_health",
 ]
 
 # Backward-compat aliases for module-level access used by other code
