@@ -65,6 +65,32 @@ jobs:
       - name: Ruff lint
         working-directory: ${{ github.workspace }}
         run: python -m ruff check tools/ tests/ --select E,F,W --ignore E402,E501,E701,E702,E721,E722,E731,E741,F404
+      # Every Playwright spec must PARSE, and it must fail in the REQUIRED set
+      # (mfx-ci-01). The #2052 squash left tests/e2e/key_pages_smoke.spec.ts
+      # unparseable; Playwright loads every spec before running one, so ALL FOUR
+      # E2E shards on main failed at collection with 0 tests executed -- for
+      # hours, because `E2E (Playwright)` is not a required check and nothing
+      # parses .ts at commit time. `--list` loads and transforms every spec with
+      # no browser and no dashboard (`webServer` and globalSetup are skipped for
+      # --list; ICDEV_NO_SERVER makes that explicit), 1.8s warm / 14.6s cold
+      # measured 2026-09-04. It is a PARSE gate only: `forbidOnly` is not applied
+      # to `--list` (probed: a `test.only` lists clean under CI=1), so a stray
+      # `.only` is still the E2E job's to refuse.
+      # SURVEYED over the last 200 first-parent commits on main:
+      # 22 touched tests/e2e, 2 fail `--list` -- #2052 and the #2051 merge that
+      # landed on top of it, the same broken file -- and 0 routine refusals.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - name: Install Node dependencies (Playwright runner only; no browsers)
+        run: npm ci
+      - name: Playwright specs parse (`--list`, no browser, no server)
+        working-directory: ${{ github.workspace }}
+        env:
+          ICDEV_E2E_ENV_DIAG: "0"
+          ICDEV_NO_SERVER: "1"
+        run: npx playwright test --list
 
   # ── Tier 1: Unit Tests (pure Python — no LLM) ───────────────────────────
   # ── Tier 1: the gates that run ONCE, not once per shard ──────────────────
