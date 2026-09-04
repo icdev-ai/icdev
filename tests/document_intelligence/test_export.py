@@ -432,3 +432,16 @@ def test_exporter_gate_reports_are_serialisable_and_writeguard_runs_last(writegu
     assert report["blocked"] and report["gate"] == "placeholder_guard"
     assert writeguard.calls == []
     json.dumps(report)
+
+
+def test_the_exporter_logs_through_the_icdev_logger_only():
+    """mfx-own-01 (log_standard): `_log` was a raw logging.getLogger beside the
+    ICDEV get_logger the module already imported, so its two warnings bypassed
+    the platform log standard. One logger, the platform's."""
+    import inspect
+
+    from tools.document_intelligence import exporter
+
+    src = inspect.getsource(exporter)
+    assert "logging.getLogger" not in src
+    assert exporter._log.name == exporter.logger.name
