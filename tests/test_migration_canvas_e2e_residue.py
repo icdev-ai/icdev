@@ -136,6 +136,38 @@ def test_a_spec_that_creates_a_session_also_closes_it():
         )
 
 
+def test_a_spec_that_creates_a_session_records_its_id_from_the_response():
+    """The close only lands for an id the spec actually recorded.
+
+    mc-reflex-5da296f8 wired the archive and it still archived nothing on any
+    nightly run from 2026-08-21 to 2026-09-03 — 22 `in_progress` rows on the
+    live board, every one this spec's footprint, zero `net_session_status_changed`
+    audit rows. The spec read the id off `page.url()` after a fixed
+    `waitForTimeout(1000)`; the create route notifies Telegram synchronously
+    (10s timeout) before returning the id and the wizard rewrites the URL only
+    once the response lands, so under suite load the read saw `/new`, recorded
+    nothing, tolerated it (`toMatch(/(nmig|new)/)`), and afterAll had nothing to
+    do. The id must come from the create POST's own response, and a spec that
+    made a row it cannot name must fail rather than pass.
+    """
+    for spec, src in _session_creating_specs():
+        if "Create Session & Continue" not in src:
+            continue
+        assert "waitForResponse" in src and "/api/network-migration" in src, (
+            f"{spec.name} does not take the session id from the create POST's "
+            f"response; a URL read after a fixed sleep misses it under load and "
+            f"the archive is then told nothing"
+        )
+        assert re.search(r"expect\(createdSessionId\)\.toMatch\(/\^nmig-", src), (
+            f"{spec.name} does not assert that it recorded the session it "
+            f"created — a run that makes a row and cannot name it must not pass"
+        )
+        assert "waitForTimeout(1000);\n\n    const url = page.url();" not in src, (
+            f"{spec.name} still reads the session id off the URL after a fixed "
+            f"sleep"
+        )
+
+
 # ── Writer 2: the agent-driven E2E command ──────────────────────────────────
 
 def test_e2e_command_closes_the_session_it_opens():
