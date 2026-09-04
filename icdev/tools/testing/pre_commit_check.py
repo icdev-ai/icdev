@@ -348,12 +348,16 @@ def _run_domain_leak_gate(root: Path = BASE_DIR) -> bool:
 # hand. The predicate is args/mirror_parity_gate.yaml's rule 2 -- "a file YOU
 # changed must never be drifted, whatever the budget says" -- applied to the
 # STAGED files, which is the only scope a hook may block on: `--paths db` hashes
-# 864 pairs (~4s) and reports a package's pre-existing backlog, which the author
-# neither caused nor can fix without stepping on the PR that owns it.
+# 864 pairs (512ms median; --files is 79ms, so 6.4x) and, more importantly,
+# reports a package's PRE-EXISTING backlog, which the author neither caused nor
+# can fix without stepping on the PR that owns it.
 #
 # SURVEYED BEFORE ARMING over the last 200 first-parent commits on origin/main
-# (2026-09-04, .tmp/mfx_survey.py replayed against each commit's own tree): see
-# the mfx-ci-01 block in CLAUDE.md for the fire rate and the incident replay.
+# (2026-09-04, replayed against each commit's own tree through the SHIPPED
+# predicates, never a second copy): 142 commits in scope, 4 fires (2.00%), and
+# ZERO of them routine -- all four were real unreconciled drift, each later
+# repaired BY HAND. Method, every number, and the replay script in full:
+#   docs/audits/mfx-ci-01-precommit-gate-fire-rate-survey.md
 #
 # Content drift ONLY. A staged file whose twin is MISSING is reported as a note
 # and never blocks: missing_from_mirror is deliberately ungated in the gate YAML

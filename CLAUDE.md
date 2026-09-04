@@ -1532,8 +1532,11 @@ npx playwright test --list                              # every spec PARSES; no 
 #
 # THE REQUIRED `Lint` JOB NOW PARSES EVERY SPEC. `--list` loads and transforms
 # all 65 spec files with NO browser and NO dashboard (`webServer` and
-# globalSetup do not run for --list; ICDEV_NO_SERVER states it) -- 1.8s warm,
-# 14.6s cold, after an `npm ci` the job did not previously need. It is a PARSE
+# globalSetup do not run for --list; ICDEV_NO_SERVER states it) -- ~2.15s
+# median over five warm runs (1.94-2.61s; an independent measure on this host
+# saw 6.7s under load), after an `npm ci` the job did not previously need. Quote
+# the RANGE: a single figure from one run does not survive re-measurement, and
+# an earlier "1.8s warm / 14.6s cold" here reproduced as neither. It is a PARSE
 # gate and NOTHING MORE: `forbidOnly` is not applied to --list (probed -- a
 # `test.only` lists clean under CI=1), so a stray `.only` is still the E2E job's
 # to refuse, and no browser is installed here. Never `|| true`, never
@@ -1548,9 +1551,16 @@ npx playwright test --list                              # every spec PARSES; no 
 # alone is drift too.
 # MEASURED 2026-09-04 on this checkout, and the numbers ARE the design argument:
 #   nothing staged under tools/<pkg>/     0 ms   both checks skipped entirely
-#   3 staged files (this commit's shape)  84 ms mirror + 132 ms census
+#   3 staged files (this commit's shape)  79 ms mirror + 126 ms census
 #   60 staged files in one package        97 ms  -- per-file, so it barely grows
-#   (for contrast) --paths db           4486 ms  -- 46x, the walk not taken
+#   (for contrast) --paths db            512 ms  -- 6.4x, the walk not taken
+# MEDIANS over n=7, never best-of-N: a hook costs what it USUALLY costs, not what
+# its luckiest run did. An independent re-measure under different load (five
+# concurrent agent sessions) put the census at ~350ms and 60 files at ~544ms;
+# both readings are inside the 1s budget, so quote the range, not one number.
+# The 512ms figure replaced a 4486ms one measured on a single COLD invocation --
+# 6.4x is the honest ratio, and the walk is avoided for CORRECTNESS OF SCOPE
+# first (a package backlog is not the committer's to fix) and cost second.
 # The hook's own budget note is 155ms; the common commit still pays 0.
 #
 # CONTENT DRIFT ONLY. A staged file whose twin is MISSING is a NOTE, never a
@@ -1558,7 +1568,9 @@ npx playwright test --list                              # every spec PARSES; no 
 # the CI test, and the backlog is ~300 files -- blocking on it refuses routine
 # work. Excluded extensions are READ from that gate file, never respelled (.md
 # manifest shards are merge=union and diverge transiently BY DESIGN -- they were
-# 124 of the survey's 128 raw candidates). The census blocks on an UNREGISTERED
+# 124 of the survey's 131 raw (commit, file) EVENTS -- 60 distinct files;
+# events and distinct files are different quantities and are never merged).
+# The census blocks on an UNREGISTERED
 # site only; a ceiling breach the commit did not cause is reported and left to
 # CI. Both fail OPEN on any error -- no `gh`, no yaml, an unreadable report --
 # because CI is the backstop and a hook that wedges a commit gets `--no-verify`d.
@@ -1596,7 +1608,11 @@ npx playwright test --list                              # every spec PARSES; no 
 #           unresolvable and read as undeclared third-party. Re-derived against
 #           the real tree those files report 0 sites. Counting them would have
 #           reported 1.00% for a check that refuses nothing.
-# Re-derive: .tmp/mfx_mirror_replay.py (mirror) and .tmp/mfx_survey.py (all four).
+# Method, every number above, and the replay script IN FULL:
+#   docs/audits/mfx-ci-01-precommit-gate-fire-rate-survey.md
+# (a scratch path under .tmp/ is disposable and must never be cited as the way
+# to re-derive a published number -- same rule as never documenting a command
+# whose file does not exist).
 # Do NOT raise a budget, a timeout or a census ceiling to get a commit through,
 # and NEVER edit args/mirror_drift_baseline.yaml -- the fix is `--fix` and a
 # `git add` of the icdev/ copy.

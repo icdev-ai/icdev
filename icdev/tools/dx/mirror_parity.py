@@ -24,8 +24,11 @@ Usage:
 
 ``--files`` (mfx-ci-01) audits ONLY the named files against their twins — the
 shape a pre-commit hook needs. ``--paths db`` hashes every pair in the package
-(864 pairs, ~4s measured 2026-09-04) to answer a question about the three files
-a commit staged; ``--files`` answers it in well under a second, and it never
+(864 pairs, 512ms median measured 2026-09-04) to answer a question about the
+three files a commit staged, and it reports that package's PRE-EXISTING backlog,
+which the committing author neither caused nor can fix without stepping on the
+PR that owns it -- correctness of scope, not just the 6.4x. ``--files`` answers
+the question in 79ms; it never
 calls ``git ls-files --ignored`` because a staged file is by definition tracked.
 Either spelling of a path is accepted (``tools/…`` or ``icdev/tools/…``) and is
 resolved to the SAME pair, so a change to the mirror alone is drift too.

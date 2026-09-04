@@ -45,8 +45,8 @@ jobs:
       # hours, because `E2E (Playwright)` is not a required check and nothing
       # parses .ts at commit time. `--list` loads and transforms every spec with
       # no browser and no dashboard (`webServer` and globalSetup are skipped for
-      # --list; ICDEV_NO_SERVER makes that explicit), 1.8s warm / 14.6s cold
-      # measured 2026-09-04. It is a PARSE gate only: `forbidOnly` is not applied
+      # --list; ICDEV_NO_SERVER makes that explicit), ~2.15s median over five
+      # warm runs (1.94-2.61s) measured 2026-09-04. It is a PARSE gate only: `forbidOnly` is not applied
       # to `--list` (probed: a `test.only` lists clean under CI=1), so a stray
       # `.only` is still the E2E job's to refuse.
       # SURVEYED over the last 200 first-parent commits on main:
