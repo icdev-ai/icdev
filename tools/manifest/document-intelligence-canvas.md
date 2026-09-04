@@ -366,3 +366,9 @@ Content modes in `tools/writing/content_modes.py`:
 - `standard_guide` — checks AWS/Azure/GCP/Oracle coverage, References section
 - `architecture_doc` — checks decision log, security section, warns if no `[DIAGRAM:]` marker
 - `sop_runbook` — checks numbered steps, Rollback, Prerequisites, Verification; suppresses tone+clichés
+
+## Export (rmf-wp-02)
+
+| Tool | Purpose |
+|------|---------|
+| `tools/document_intelligence/exporter.py` | rmf-wp-02. DIC had NO export route. `export_version(version_id, fmt, *, force_*, force_reason, on_overrides)` runs the SAME placeholder + citation gates the approve route runs (`consistency_checker.check_version_consistency` / `check_version_citations`, the shared grounding primitives) and THEN WriteGuard (`run_full_quality_check`) over the assembled document -- docgen blocks publish on it, DIC never called it. Every gate fails CLOSED: a gate that could not measure is `unmeasured` and no `force_*` opens it; a measured defect needs the matching flag AND a non-empty reason, audited by the route BEFORE the file is written. Renders `md` / `html` (docgen's sanitised renderer) / `docx` (`rfi_docx_exporter.markdown_to_docx`, classification LABEL as the marking) / `pdf` (fpdf2 only) and INSERTs one `dic_artifacts` row per export (sha256, WriteGuard score, full gate report, `forced`, `version_status` at export time) -- migration 20260903194350. Library only; the route is `GET /document-intelligence/api/versions/<id>/export/<fmt>`, plus `/api/versions/<id>/artifacts` and `/api/artifacts/<id>/download`. Artifact dir: `ICDEV_DIC_ARTIFACT_DIR` (default `data/document_intelligence/artifacts`). | (import) + HTTP | `{artifact, gate}` / `ExportBlocked` / `ExportUnavailable` |
