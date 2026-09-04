@@ -69,7 +69,10 @@ test.describe('Key Pages Smoke Tests', () => {
     expect(resp.headers()['location']).toContain('/security/ai-transparency');
   });
 
-<<<<<<< HEAD
+  test('compliance (Compliance Hub) page loads at its governed home', async ({ page }) => {
+    // rmf-ui-11: the hub lives on the Boundary canvas; the old URL is a 301 to it.
+    const resp = await page.request.get('/boundary/compliance-hub');
+
   test('ai-accountability (AI Accountability) page loads at its governed home', async ({ page }) => {
     // rmf-ui-16: the page lives on the Security canvas; the old URL is a 301 to it.
     const resp = await page.request.get('/security/ai-accountability');
@@ -84,11 +87,6 @@ test.describe('Key Pages Smoke Tests', () => {
 
   test('compliance page loads', async ({ page }) => {
     const resp = await page.request.get('/compliance');
-=======
-  test('compliance (Compliance Hub) page loads at its governed home', async ({ page }) => {
-    // rmf-ui-11: the hub lives on the Boundary canvas; the old URL is a 301 to it.
-    const resp = await page.request.get('/boundary/compliance-hub');
->>>>>>> origin/main
     expect(resp.status()).toBeLessThan(400);
   });
 
