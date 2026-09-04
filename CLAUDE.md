@@ -994,6 +994,16 @@ python tools/genesis/daemon.py --reflex detector_findings_reflex   # the 6h refl
 # RECURS after its card closed (`-r2`, `card_count`); `idempotency_key` on the
 # spec is the second lock inside create_tasks. Cards land in `suggested` (HITL
 # quarantine) by default — `seed_status` in args/genesis_config.yaml.
+# A CARD CLOSED EARLY IS NOT A RECURRENCE (task-f05d2bc8d1). A recovery finding
+# is a window over audit rows and `escalate` outranks any later merge, so it
+# CANNOT clear before last-attempt + window_hours whatever a human does; a
+# `done` card inside that window used to read as "did not hold" and draw a
+# DISPATCHED -r2 for a subject already delivered — 3 of 3 -r2 recovery cards on
+# the live board (2026-09-04). A Finding may now carry `earliest_clear_at`
+# (recovery only); a terminal card before it is HELD (finding stays active on
+# its task_id, seen_count rises, `held_closed_early` reported) and -rN is filed
+# only by a MEASURABLE run after that time, or when a `cleared` finding
+# reappears. born_red / status_churn carry no such time and keep the plain rule.
 # UNMEASURABLE CLEARS NOTHING: an idle board, an unmigrated baseline, an empty
 # audit window each report that they could not measure, and only a MEASURABLE
 # run that no longer reports a finding marks it `cleared`. `detector_runs` is
