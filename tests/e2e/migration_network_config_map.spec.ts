@@ -108,26 +108,43 @@ test.describe('Network Migration Wizard — Config Mapping Lifecycle', () => {
     });
 
     // Step 3: Create session and continue.
+    //
+    // The id is taken from the create POST's own response, never from the URL
+    // after a fixed sleep. The route runs a synchronous Telegram notify (10s
+    // timeout) and a KG update BEFORE it returns the id, and the wizard only
+    // rewrites the URL once the response lands — so under nightly-suite load a
+    // `waitForTimeout(1000)` read the URL while it still said `/new`, recorded
+    // no id, and afterAll archived nothing, silently. Every nightly run from
+    // 2026-08-21 to 2026-09-03 left its session `in_progress` that way (22 on
+    // the live board, all this fixture's footprint) while reporting green.
+    const createResponse = page.waitForResponse(
+      (r) =>
+        r.request().method() === 'POST' &&
+        /\/migration-canvas\/api\/network-migration$/.test(r.url()),
+    );
     await page.getByRole('button', { name: /Create Session & Continue/ }).click();
-    await page.waitForTimeout(1000);
-
-    const url = page.url();
-    // Record the session before asserting anything about it: a failure here is
-    // exactly when residue is most likely, and afterAll can only clean up what
-    // it was told about.
-    const created = url.split('/').pop() || '';
-    if (created.startsWith('nmig')) {
-      createdSessionId = created;
+    const createResp = await createResponse;
+    expect(createResp.ok()).toBeTruthy();
+    const createdBody = await createResp.json();
+    // Record the session before asserting anything else about it: a failure
+    // here is exactly when residue is most likely, and afterAll can only clean
+    // up what it was told about.
+    if (typeof createdBody.id === 'string' && createdBody.id.startsWith('nmig')) {
+      createdSessionId = createdBody.id;
       authState = await page.context().storageState();
     }
-    expect(url).toMatch(/\/migration-canvas\/network-migration\/(nmig|new)/);
-    // The wizard may redirect to a real session id or stay on /new; both are OK if config import UI appears.
+    // A test that made a real row on the board and cannot say which one is not
+    // allowed to pass — that is the exact shape that left the residue.
+    expect(createdSessionId).toMatch(/^nmig-[0-9a-f]{12}$/);
+
+    // The wizard rewrites the URL to the session id once the POST returns.
+    await expect(page).toHaveURL(/\/migration-canvas\/network-migration\/nmig-[0-9a-f]{12}$/);
     const afterCreateText = await page.textContent('body');
     expect(afterCreateText).toContain('Step 2 — Config / Diagram Import');
 
     // Step 1 COA recommendation should default to side-by-side parallel.
-    const sessionId = created;
-    if (sessionId && sessionId.startsWith('nmig')) {
+    const sessionId = createdSessionId as string;
+    {
       const recResponse = await page.request.get(
         `/migration-canvas/api/network-migration/${sessionId}/recommend-coa`
       );
