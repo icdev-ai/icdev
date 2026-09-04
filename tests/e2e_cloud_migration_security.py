@@ -9,7 +9,7 @@ Batch 1 (from article):
   /security-scan, /migration, /sbd, /pr-intel, /iac
 
 Batch 2 (additional recommendations):
-  /boundary/cato-health (was /cato), /control-inheritance, /migration-cost, /compliance-debt, /stig-manager, /ato-package
+  /boundary/cato-health (was /cato), /control-inheritance, /migration-cost, /boundary/compliance-debt (was /compliance-debt), /stig-manager, /boundary/ato-package (was /ato-package)
 
 Validates: page loads, HTTP 200, no JS errors, API endpoints respond, navbar links present.
 """
@@ -38,9 +38,9 @@ PAGES = [
     {"path": "/boundary/cato-health", "title": "Continuous ATO", "api": "/api/cato/health"},
     {"path": "/control-inheritance", "title": "Control Inheritance", "api": "/api/control-inheritance/csps"},
     {"path": "/migration-cost", "title": "Migration Cost", "api": "/api/migration-cost/portfolio"},
-    {"path": "/compliance-debt", "title": "Compliance Debt", "api": "/api/compliance-debt/summary"},
+    {"path": "/boundary/compliance-debt", "title": "Compliance Debt", "api": "/api/compliance-debt/summary"},
     {"path": "/security/stig-manager", "title": "STIG Manager", "api": "/api/stig-manager/stats"},
-    {"path": "/ato-package", "title": "ATO Package", "api": "/api/ato-package/status?project_id=test"},
+    {"path": "/boundary/ato-package", "title": "ATO Package", "api": "/api/ato-package/status?project_id=test"},
 ]
 
 # Additional API endpoints to test

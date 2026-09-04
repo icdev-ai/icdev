@@ -24,11 +24,41 @@ Routes:
   POST /api/ops/models/run     — create experiment run
   POST /api/ops/incidents      — create incident
   POST /api/ops/slos           — define SLO
+  POST /api/ops/iqe-query      — IQE widget query over the ohc.* collections
+                                 (rmf-ui-17: under the /api/ops namespace this
+                                 blueprint owns, never the bare /api/iqe-query
+                                 that belongs to the app-level canvas dispatcher)
 """
 
 from __future__ import annotations
 
 from flask import Blueprint, jsonify, render_template, request
+
+# rmf-ui-17: every OHC page includes includes/iqe_query_widget.html, which reads
+# iqe_api_route / iqe_canvas / iqe_examples from the render context. Nothing
+# passed them, so every widget rendered data-api="" and answered "IQE endpoint
+# not configured for this page". The examples are the seed queries under
+# context/iqe/queries/ohc/.
+IQE_API_ROUTE = "/api/ops/iqe-query"
+IQE_COLLECTIONS = [
+    "ohc.experiments", "ohc.runs", "ohc.models",
+    "ohc.datasets", "ohc.adapters", "ohc.drift_events",
+]
+_IQE_CTX = {
+    "iqe_canvas": "ohc",
+    "iqe_api_route": IQE_API_ROUTE,
+    "iqe_title": "IQE Query — Operations Hub",
+    "iqe_examples": [
+        {"label": "Adapter health",
+         "query": "foreach a in ohc.adapters select a.adapter_name, a.domain, a.available, a.latency_ms, a.error, a.last_checked"},
+        {"label": "Production models",
+         "query": 'foreach m in ohc.models where m.stage = "production" select m.model_name, m.version, m.framework, m.metrics, m.promoted_at'},
+        {"label": "Drift events",
+         "query": "foreach d in ohc.drift_events where d.drift_detected = 1 select d.dataset_name, d.drift_score, d.created_at"},
+        {"label": "Recent runs",
+         "query": "foreach r in ohc.runs select r.run_name, r.status, r.metrics, r.duration_ms, r.created_at"},
+    ],
+}
 
 
 def create_ops_hub_blueprint() -> Blueprint:
@@ -56,14 +86,14 @@ def create_ops_hub_blueprint() -> Blueprint:
         overview = get_ops_overview()
         return render_template("ops_hub/index.html",
                                overview=overview,
-                               classification="CUI // SP-CTI")
+                               classification="CUI // SP-CTI", **_IQE_CTX)
 
     @bp.route("/ops/llm")
     def ops_llm():
         from tools.ops_hub.llmops_engine import get_llmops_summary
         data = get_llmops_summary()
         return render_template("ops_hub/llm.html", data=data,
-                               classification="CUI // SP-CTI")
+                               classification="CUI // SP-CTI", **_IQE_CTX)
 
     @bp.route("/ops/models")
     def ops_models():
@@ -88,7 +118,7 @@ def create_ops_hub_blueprint() -> Blueprint:
             "drift": drift,
         }
         return render_template("ops_hub/models.html", data=data,
-                               classification="CUI // SP-CTI")
+                               classification="CUI // SP-CTI", **_IQE_CTX)
 
     @bp.route("/ops/slos")
     def ops_slos():
@@ -108,7 +138,7 @@ def create_ops_hub_blueprint() -> Blueprint:
             },
         }
         return render_template("ops_hub/slos.html", data=data,
-                               classification="CUI // SP-CTI")
+                               classification="CUI // SP-CTI", **_IQE_CTX)
 
     @bp.route("/ops/incidents")
     def ops_incidents():
@@ -127,7 +157,7 @@ def create_ops_hub_blueprint() -> Blueprint:
             },
         }
         return render_template("ops_hub/incidents.html", data=data,
-                               classification="CUI // SP-CTI")
+                               classification="CUI // SP-CTI", **_IQE_CTX)
 
     @bp.route("/ops/runbooks")
     def ops_runbooks():
@@ -145,14 +175,14 @@ def create_ops_hub_blueprint() -> Blueprint:
             },
         }
         return render_template("ops_hub/runbooks.html", data=data,
-                               classification="CUI // SP-CTI")
+                               classification="CUI // SP-CTI", **_IQE_CTX)
 
     @bp.route("/ops/topology")
     def ops_topology():
         from tools.ops_hub.aiops_engine import get_topology
         data = get_topology()
         return render_template("ops_hub/topology.html", data=data,
-                               classification="CUI // SP-CTI")
+                               classification="CUI // SP-CTI", **_IQE_CTX)
 
     @bp.route("/ops/self-healing")
     def ops_self_healing():
@@ -172,7 +202,7 @@ def create_ops_hub_blueprint() -> Blueprint:
             },
         }
         return render_template("ops_hub/self_healing.html", data=data,
-                               classification="CUI // SP-CTI")
+                               classification="CUI // SP-CTI", **_IQE_CTX)
 
     # ── JSON API Routes ──────────────────────────────────────────────────────
 
@@ -348,12 +378,45 @@ def create_ops_hub_blueprint() -> Blueprint:
 
     # ── IQE Query ────────────────────────────────────────────────────────────
 
-    @bp.route("/api/iqe-query", methods=["POST"])
+    @bp.route(IQE_API_ROUTE, methods=["POST"])
     def ohc_iqe_query():
-        from tools.iqe.engine import handle_iqe_query
-        body = request.get_json(force=True, silent=True) or {}
-        result = handle_iqe_query(canvas="ohc", query=body.get("query", ""),
-                                   context_id=body.get("context_id"))
-        return jsonify(result)
+        """IQE widget query — translate NL to IQE and execute against the ohc.* collections.
+
+        rmf-ui-17. This used to be ``@bp.route("/api/iqe-query")`` on a blueprint
+        whose url_prefix is '' -- the same rule two other prefix-less blueprints
+        (govlift, ai_observatory) declared and the one the app-level canvas
+        dispatcher answers -- and its body imported ``tools.iqe.engine``, which
+        exists nowhere in the tree. Flask raises nothing for a rule registered
+        twice; the loser is silently unreachable, and here the winner 500'd.
+        Same shape as tools/boundary_canvas/blueprint.py::bdc_api_iqe_query.
+        """
+        from tools.iqe.nl_to_iqe import nl_to_iqe
+        from tools.iqe.parser import IQESyntaxError, parse
+        from tools.iqe.executor import execute_query
+        import tools.iqe.adapters.ohc  # noqa: F401 — registers ohc.* collections
+
+        data = request.get_json(silent=True) or {}
+        question = (data.get("question") or data.get("query") or "").strip()
+        if not question:
+            return jsonify({"error": "question is required"}), 400
+
+        translation = nl_to_iqe(question, IQE_COLLECTIONS)
+        iqe_str = translation.get("iqe", "")
+        explanation = translation.get("explanation", "")
+
+        if not data.get("execute", True):
+            return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation}), 200
+
+        try:
+            ast = parse(iqe_str)
+            rows = execute_query(ast, None)
+            return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation,
+                            "results": rows, "row_count": len(rows)}), 200
+        except IQESyntaxError as exc:
+            return jsonify({"error": f"IQE syntax error: {exc}", "iqe": iqe_str}), 400
+        except Exception as exc:
+            from tools.logging.icdev_logger import get_logger as _get_logger
+            _get_logger("ops_hub.blueprint").warning("OHC IQE query error: %s", exc)
+            return jsonify({"error": str(exc), "iqe": iqe_str}), 500
 
     return bp

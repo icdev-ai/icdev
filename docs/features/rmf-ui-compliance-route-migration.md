@@ -137,23 +137,17 @@ that the new one is not "cATO Dashboard". Everything else copies the exemplar:
 copies plus `compliance.html` and `mosa.html` repointed, the template moved and
 mirrored, `core.d/rmf-ui-05.txt`.
 
-## rmf-ui-11: `/compliance` → `/boundary/compliance-hub`
+## rmf-ui-09: `/compliance-debt` → `/boundary/compliance-debt`
 
-The hub itself, moved LAST of the BDC set on purpose: it is the page that links
-every other compliance page, so migrating it before its siblings would have
-churned its hrefs on each of their PRs. By the time it moved, rmf-ui-01/04/05
-and rmf-ui-12..15 had each repointed their own card on it, and
-`tests/test_bdc_compliance_hub_page.py` now pins that the hub links every one
-of those siblings at its governed home and none at its old URL — the hub is the
-one place a stale href would keep an ungoverned page reachable from the nav.
+An RMF artifact surface — POA&M, control and STIG debt burndown, ATO
+expirations and SLA compliance over the unchanged `/api/compliance-debt/*`
+blueprint — so it lands on BDC, the canvas that owns the ATO boundary. Copies
+the exemplar exactly: `bdc_compliance_debt_page` on the blueprint behind
+`bdc_login_required`, a 301 from `app.py`, both `base.html` copies plus
+`compliance.html` (the only other template linking it) repointed, the template
+moved and mirrored with the IQE widget and a breadcrumb, `core.d/rmf-ui-09.txt`
+gating `tests/test_bdc_compliance_debt_page.py`. The two ad-hoc e2e scripts
+naming the old path are repointed so their nav-href assertions describe the
+link that now exists.
 
-Two things differ from the exemplar. The template is
-`boundary_canvas/compliance_hub.html`, not `compliance.html`: BDC already served
-`/boundary/compliance/<design_id>` from `boundary_canvas/compliance.html` (its per-design
-compliance view), so the moved file needed its own name and the test pins that
-the two title blocks differ. And the three `/api/compliance/*` handlers the
-page drives (`posture`, `unified-posture`, `evidence-chain`) stay in `app.py`
-beside their data — a test walks the AST to keep them there. Everything else
-copies the exemplar: `bdc_compliance_hub_page` on the blueprint, a 301 from
-`app.py`, both `base.html` copies plus `aiify/posture.html` repointed, the
-template moved and mirrored, `core.d/rmf-ui-11.txt`.
+`core.d/rmf-ui-10.txt`.
