@@ -1,0 +1,11 @@
+{
+  "description": "Allow reflective_reranked / reflective_degraded in rag_retrieval_log.retrieval_mode (trust-self-02)",
+  "date": "2026-08-15",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true,
+  "task": "trust-self-02",
+  "tables": [
+    "rag_retrieval_log"
+  ]
+}

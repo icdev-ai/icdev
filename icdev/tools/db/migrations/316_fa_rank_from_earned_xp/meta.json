@@ -1,0 +1,7 @@
+{
+  "id": "316_fa_rank_from_earned_xp",
+  "description": "Recompute fa_users.level from EARNED XP now that migration 315 can tell earned from attendance. fa_users.level is a cache written only when XP is awarded, so after 315 the live learner still displayed rank 'operative' — bought with 1465 XP of daily logins against 250 XP of demonstrated work — until their next award happened to refresh it. Written in Python rather than SQL so the thresholds come from xp_to_level() instead of being duplicated into a CHECK-style ladder that would drift from it",
+  "created": "2026-07-30",
+  "targets": ["icdev.db"],
+  "adrs": []
+}

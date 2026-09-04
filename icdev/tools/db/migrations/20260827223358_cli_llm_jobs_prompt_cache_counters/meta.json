@@ -1,0 +1,7 @@
+{
+  "description": "cli_llm_jobs prompt cache counters",
+  "date": "2026-08-27",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

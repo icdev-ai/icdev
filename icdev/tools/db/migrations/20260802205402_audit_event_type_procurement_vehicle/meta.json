@@ -1,0 +1,7 @@
+{
+  "description": "Rebuild audit_trail.event_type CHECK from VALID_EVENT_TYPES so govcon.procurement_vehicle is admitted",
+  "date": "2026-08-02",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": false
+}

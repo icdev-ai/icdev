@@ -1,0 +1,10 @@
+{
+  "id": "023",
+  "name": "sharepoint",
+  "description": "Create 4 SharePoint integration tables: sharepoint_sites (url/title/last_modified), sharepoint_lists (site_id/name/item_count), sharepoint_items (list_id/title/payload JSON/modified_at), sharepoint_documents (site_id/path/size/mime_type/content_hash).",
+  "created_at": "2026-04-14",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true,
+  "requires_downtime": false
+}

@@ -1,0 +1,7 @@
+{
+  "description": "rmf_workflow_stages: started_at/actor/evidence_ref/submitted_at — the boundary between automation_time and decision_latency (rmf-cyc-01)",
+  "date": "2026-09-02",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

@@ -1,0 +1,7 @@
+{
+  "description": "Backfill canvas access grants for tenants predating G-02 (replaces the never-run 168_seed_canvas_grants.py)",
+  "date": "2026-08-15",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": false
+}

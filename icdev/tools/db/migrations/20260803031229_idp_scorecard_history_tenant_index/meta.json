@@ -1,0 +1,9 @@
+{
+  "id": "20260803031229_idp_scorecard_history_tenant_index",
+  "description": "Guarantee idp_scorecard_history.tenant_id on any database that predates it, and index the tenant predicate every IDP history read now carries (idp-mt-01). The creating migration ships tenant_id in its own CREATE TABLE, but CREATE TABLE IF NOT EXISTS never alters an existing table and the recorder's INSERT names the column, so the add is explicit and conditional rather than assumed. Both indexes lead with tenant_id because every read is now either tenant_id = ? or tenant_id IS NULL; the pre-existing indexes are kept for --all-tenants reads, which carry no tenant predicate.",
+  "date": "2026-08-03",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "tables_affected": ["idp_scorecard_history"],
+  "reversible": true
+}
