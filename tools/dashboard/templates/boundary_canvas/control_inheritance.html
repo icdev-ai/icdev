@@ -1,12 +1,19 @@
+{# CUI // SP-CTI — Boundary Design Canvas Control Inheritance Visualizer (rmf-ui-08) #}
 {% extends "base.html" %}
 
-{% block title %}Control Inheritance Visualizer - ICDEV™ Dashboard{% endblock %}
+{% block title %}Control Inheritance — Boundary Canvas — ICDEV™{% endblock %}
 
 {% block content %}
 <div class="container">
-    <nav aria-label="Breadcrumb" style="margin-bottom:1rem;">
-        <span><a href="/">Home</a> &gt; Control Inheritance</span>
-    </nav>
+    <div class="breadcrumbs" aria-label="Breadcrumb" style="margin-bottom:1rem;">
+        <a href="/">Home</a>
+        <span class="separator">/</span>
+        <a href="/boundary/">Boundary Canvas</a>
+        <span class="separator">/</span>
+        <span class="current">Control Inheritance</span>
+    </div>
+
+    {% include "includes/iqe_query_widget.html" %}
 
     <h1>Control Inheritance Visualizer</h1>
     <p class="text-muted">Visualize shared responsibility between your agency and CSP. Identify inherited, shared, and customer-owned controls for FedRAMP/cloud migration.</p>

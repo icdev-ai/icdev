@@ -1691,6 +1691,24 @@ def create_boundary_blueprint():
         """ATO Package Builder — wizard to assemble SSP/SAR/POAM/SBOM package."""
         return render_template("boundary_canvas/ato_package.html")
 
+    # ── Control Inheritance Visualizer (rmf-ui-08) ───────────────────────────
+    #
+    # Migrated from a bare `@app.route("/control-inheritance")` in
+    # tools/dashboard/app.py -- the same move as the ATO Compliance Dashboard
+    # above (rmf-ui-01), one route per card. CSP vs customer responsibility
+    # mapping (inherited / shared / customer-owned controls per provider) is
+    # boundary/inheritance content by definition, so the Boundary canvas is
+    # its governed home. The page drives the UNCHANGED
+    # tools/dashboard/api/control_inheritance.py blueprint
+    # (/api/control-inheritance/{csps,summary,model,gap,controls}) -- only
+    # the PAGE route moved -- and the old URL redirects here rather than 404ing.
+
+    @bp.route("/control-inheritance")
+    @bdc_login_required
+    def bdc_control_inheritance_page():
+        """Control Inheritance Visualizer — CSP vs customer responsibility mapping."""
+        return render_template("boundary_canvas/control_inheritance.html")
+
     # ── OSCAL Ecosystem (rmf-ui-04) ──────────────────────────────────────────
     #
     # Migrated from a bare `@app.route("/oscal")` in tools/dashboard/app.py --
