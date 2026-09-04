@@ -57,7 +57,9 @@ const COMPLIANCE_PAGES = [
   { label: 'AI Transparency',      path: '/security/ai-transparency' },
   { label: 'AI Accountability',    path: '/ai-accountability' },
   { label: 'Control Inheritance',  path: '/control-inheritance' },
-  { label: 'Compliance Debt',      path: '/compliance-debt' },
+  // rmf-ui-09: migrated onto the Boundary canvas (registry-registered, RBAC-guarded,
+  // IQE-dispatchable). The old /compliance-debt answers with a 301 to this path.
+  { label: 'Compliance Debt',      path: '/boundary/compliance-debt' },
   // rmf-ui-14: migrated onto the Security canvas (registry-registered, RBAC-guarded,
   // IQE-dispatchable). The old /prod-audit answers with a 301 to this path.
   { label: 'Production Audit',     path: '/security/prod-audit' },

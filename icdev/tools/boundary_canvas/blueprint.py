@@ -1704,6 +1704,22 @@ def create_boundary_blueprint():
         """FedRAMP 20x KSI Dashboard — KSI evidence generation, maturity levels, authorization package."""
         return render_template("boundary_canvas/fedramp_20x.html")
 
+    # ── Compliance Debt Burndown (rmf-ui-09) ─────────────────────────────────
+    #
+    # Migrated from a bare `@app.route("/compliance-debt")` in
+    # tools/dashboard/app.py -- the same shape as the rmf-ui-01 exemplar above.
+    # An RMF ARTIFACT surface (POA&M, control and STIG debt burndown, ATO
+    # expirations, SLA compliance) belongs on the canvas that owns the ATO
+    # boundary. The page drives the UNCHANGED /api/compliance-debt/* blueprint
+    # (tools/dashboard/api/compliance_debt.py) -- only the PAGE route moved.
+    # The old URL redirects here rather than 404ing.
+
+    @bp.route("/compliance-debt")
+    @bdc_login_required
+    def bdc_compliance_debt_page():
+        """Compliance Debt Burndown — POAM, control, and STIG debt tracking."""
+        return render_template("boundary_canvas/compliance_debt.html")
+
     @bp.route("/api/fabric-posture", methods=["GET"])
     @bdc_login_required
     def bdc_api_fabric_posture():

@@ -5863,8 +5863,15 @@ def create_app(testing: bool = False) -> Flask:
 
     @app.route("/compliance-debt")
     def compliance_debt_page():
-        """Compliance Debt Burndown — POAM, control, and STIG debt tracking."""
-        return render_template("compliance_debt.html")
+        """Compliance Debt Burndown — MIGRATED to the Boundary canvas (rmf-ui-09).
+
+        The governed page is ``/boundary/compliance-debt`` on
+        tools/boundary_canvas/blueprint.py, where it is registry-registered,
+        RBAC-guarded and IQE-dispatchable. This handler stays as a redirect so
+        a bookmark, an e2e spec or a nav link that still names the old URL
+        lands on the page rather than a 404 — never a dropped page.
+        """
+        return redirect("/boundary/compliance-debt", code=301)
 
     @app.route("/stig-manager")
     def stig_manager_page():
