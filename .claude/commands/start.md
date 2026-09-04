@@ -214,6 +214,39 @@ with get_connection() as conn:
    > produced three concurrent `pr_watcher` processes racing on auto-merge. Let
    > the supervisor own its children; it stops them by verified PID.
 
+8b. **ICDEV[FT] and ICDEV[RT] — each under ITS OWN supervisor, never beside a live one.**
+
+   `C:\ai\icdev_ft\supervise_ft.py` serves `launch_ft.py` on 127.0.0.1:5200 and
+   `C:\ai\icdev_rt\supervise_rt.py` serves `launch_rt.py` on 127.0.0.1:5300. Each
+   polls origin/main, redeploys fast-forward only, and rolls back on a failed
+   deep-health probe — the same shape as step 8, in a different checkout. Both
+   need `PYTHONPATH=C:\AI\ICDev` for the `tools.*` tree, and FT needs
+   PostgreSQL accepting connections (step 0's cleanup already proved it; on a
+   fresh boot PG reports "the database system is starting up" for a minute and
+   the FT child fails its first probe — the supervisor retries, so wait, do not
+   start a second one). A second supervisor beside a live one fights it for the
+   port, so the LISTENER is checked first, exactly as step 1 does for 5050:
+   ```powershell
+   $env:PYTHONPATH = "C:\AI\ICDev"
+   foreach ($svc in @(
+       @{ name = "icdev_ft"; dir = "C:\ai\icdev_ft"; script = "supervise_ft.py"; port = 5200 },
+       @{ name = "icdev_rt"; dir = "C:\ai\icdev_rt"; script = "supervise_rt.py"; port = 5300 })) {
+     $up = Get-NetTCPConnection -State Listen -LocalPort $svc.port -ErrorAction SilentlyContinue
+     if ($up) { "$($svc.name): already serving on $($svc.port) (pid $($up.OwningProcess)) -- not starting a second supervisor"; continue }
+     New-Item -ItemType Directory -Force "$($svc.dir)\.tmp" | Out-Null
+     $p = Start-Process python -ArgumentList $svc.script -WorkingDirectory $svc.dir -RedirectStandardOutput "$($svc.dir)\.tmp\supervisor.log" -RedirectStandardError "$($svc.dir)\.tmp\supervisor_err.log" -WindowStyle Hidden -PassThru
+     "$($svc.name): supervisor PID $($p.Id)"
+   }
+   Start-Sleep -Seconds 20
+   foreach ($port in 5200, 5300) {
+     try { $r = Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 "http://127.0.0.1:$port/api/v1/health/deep"; "port $($port): RUNNING (HTTP $($r.StatusCode))" }
+     catch { "port $($port): NOT RUNNING yet -- read <checkout>\.tmp\supervisor.log; FT waits for PostgreSQL" }
+   }
+   ```
+   Stop them with `/stop` — `shutdown_dashboard.py` stops both pairs by verified
+   pid (supervisor first, then its child) and `--keep-ft` / `--keep-rt` keep one.
+   Never `Stop-Process` a `launch_*.py` child by name: its supervisor restarts it.
+
 9. **Prove liveness from the record, never from `.tmp/*.log`.**
 
    The supervisor and `/start` write to **different paths** — the supervisor logs
@@ -244,6 +277,8 @@ with get_connection() as conn:
      - Health: `http://localhost:PORTAL_PORT/health`
      - Log: `.tmp/api_gateway.log`
    - **Poll Trigger**: `.tmp/poll_trigger.log`
+   - **ICDEV[FT]**: `http://127.0.0.1:5200` under `C:\ai\icdev_ft\supervise_ft.py` — log `C:\ai\icdev_ft\.tmp\supervisor.log`
+   - **ICDEV[RT]**: `http://127.0.0.1:5300` under `C:\ai\icdev_rt\supervise_rt.py` — log `C:\ai\icdev_rt\.tmp\supervisor.log`
    - **Kanban Scheduler**: `.tmp/kanban_scheduler.log` (promotes backlog → in_progress, dispatches to Claude CLI every 60s)
    - **Genesis Daemon**: `.tmp/genesis_daemon.log` (heal every 5m, awareness every 3h, scout every 2h, 90+ reflexes in `daemon.REFLEX_NAMES`)
    - To stop dashboard: `Get-Process python | Where-Object { $_.CommandLine -like "*dashboard/app*" } | Stop-Process -Force`
@@ -256,8 +291,9 @@ with get_connection() as conn:
      (`--dry-run` first to see the plan). It stops the SUPERVISOR (pid from
      `.tmp/genesis/launcher.pid`, command line verified) and THEN its children
      by recorded pid -- on Windows terminate() skips the launcher's own cleanup,
-     so the children orphan rather than stop -- then the ICDEV[FT] supervisor
-     and its child, and verifies pids and ports 5050/5200 afterwards. Agent
+     so the children orphan rather than stop -- then the ICDEV[FT] and ICDEV[RT]
+     supervisors, each before its child, and verifies pids and ports
+     5050/5200/5300 afterwards (`--keep-ft` / `--keep-rt` keep one). Agent
      workers mid-build are reported and left running unless `--include-workers`.
      `--pause` also sets Manual Build for the next start.
      Never `taskkill /f /im python.exe` — see step 0.

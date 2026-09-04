@@ -22,6 +22,7 @@ from tools.genesis import shutdown_dashboard as S  # noqa: E402
 
 SUP, DASH, SCHED, WATCH, WORKER = 20344, 13616, 30596, 7056, 41000
 FT_SUP, FT_CHILD = 37068, 1192
+RT_SUP, RT_CHILD = 37700, 19636
 
 
 class FakeApi:
@@ -74,6 +75,8 @@ def _tree():
         WORKER: {"cmd": "claude -p ... kanban/rmf-fab-02", "children": []},
         FT_SUP: {"cmd": "python supervise_ft.py", "children": [FT_CHILD]},
         FT_CHILD: {"cmd": "python C:/AI/icdev_ft/launch_ft.py --port 5200", "children": []},
+        RT_SUP: {"cmd": "python supervise_rt.py", "children": [RT_CHILD]},
+        RT_CHILD: {"cmd": "python C:/AI/icdev_rt/launch_rt.py --host 127.0.0.1 --port 5300", "children": []},
     }
 
 
@@ -93,12 +96,14 @@ def _run(api, tmp_path, pid=SUP, **kw):
 # --------------------------------------------------------------------------- #
 def test_supervisor_goes_first_and_children_only_by_recorded_pid(tmp_path, monkeypatch):
     monkeypatch.setattr(S, "_read_lock", lambda pf: {"state": "up", "pid": SUP, "reason": None})
-    api = FakeApi(_tree(), listeners={5050: DASH, 5200: FT_CHILD})
+    api = FakeApi(_tree(), listeners={5050: DASH, 5200: FT_CHILD, 5300: RT_CHILD})
     rep = _run(api, tmp_path)
     touched = [pid for _, pid in api.calls]
     assert touched[0] == SUP, "the supervisor must go first, or it respawns what we stop"
     assert set(touched[1:4]) == {DASH, SCHED, WATCH}
     assert touched.index(FT_SUP) < touched.index(FT_CHILD), "FT supervisor before its child"
+    assert touched.index(RT_SUP) < touched.index(RT_CHILD), "RT supervisor before its child"
+    assert not api.pid_exists(RT_SUP) and not api.pid_exists(RT_CHILD), "the RT pair is stopped too"
     assert WORKER not in touched, "agent workers are never stopped by default"
     assert rep["state"] == S.STATE_STOPPED and rep["survivors"] == [] and rep["listeners"] == {}
     assert S.exit_code(rep) == 0
@@ -124,6 +129,29 @@ def test_keep_ft_leaves_the_ft_pair_alone(tmp_path, monkeypatch):
     rep = _run(api, tmp_path, keep_ft=True)
     assert api.pid_exists(FT_SUP) and api.pid_exists(FT_CHILD)
     assert next(s for s in rep["steps"] if s["step"] == "ft")["skipped"] is True
+    assert not api.pid_exists(RT_SUP), "--keep-ft keeps FT only; the RT pair still stops"
+
+
+def test_keep_rt_leaves_the_rt_pair_alone(tmp_path, monkeypatch):
+    """ICDEV[RT] is the second external stack (supervise_rt.py -> launch_rt.py
+    on :5300). It is a ROW in EXTERNAL_SUPERVISORS, and --keep-rt skips that
+    row and nothing else."""
+    monkeypatch.setattr(S, "_read_lock", lambda pf: {"state": "up", "pid": SUP, "reason": None})
+    api = FakeApi(_tree(), listeners={5300: RT_CHILD})
+    rep = _run(api, tmp_path, keep_rt=True)
+    assert api.pid_exists(RT_SUP) and api.pid_exists(RT_CHILD)
+    assert not api.pid_exists(FT_SUP) and not api.pid_exists(FT_CHILD)
+    rt = next(s for s in rep["steps"] if s["step"] == "rt")
+    assert rt["skipped"] is True and rt["supervisor_script"] == "supervise_rt.py"
+    # a kept pair is still LISTENING, and the report says so rather than reading clean
+    assert rep["listeners"] == {"5300": RT_CHILD} and rep["state"] == S.STATE_SURVIVORS
+
+
+def test_the_external_table_declares_both_stacks_and_their_ports():
+    keys = {row[0]: row for row in S.EXTERNAL_SUPERVISORS}
+    assert keys["ft"][1:] == ("supervise_ft.py", "launch_ft.py", 5200)
+    assert keys["rt"][1:] == ("supervise_rt.py", "launch_rt.py", 5300)
+    assert set(S.DEFAULT_PORTS) == {5050, 5200, 5300}
 
 
 def test_a_wrapper_shell_around_the_ft_supervisor_is_not_stopped(tmp_path, monkeypatch):
