@@ -44,5 +44,6 @@
 | `/resolve_failed_test` | [resolve_failed_test.md](resolve_failed_test.md) | Resolve failed test |
 | `/review` | [review.md](review.md) | Code review workflow |
 | `/start` | [start.md](start.md) | Start ICDEV™ dashboard and portal |
+| `/stop` | [stop.md](stop.md) | Stop the ICDEV™ service stack in order via shutdown_dashboard.py, then prove it |
 | `/test` | [test.md](test.md) | Test runner workflow |
 | `/test_e2e` | [test_e2e.md](test_e2e.md) | E2E test runner workflow |

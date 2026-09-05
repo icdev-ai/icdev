@@ -1,0 +1,3 @@
+# flx-twin-01 — floci twin adapter (broker-governed reads, four verdicts,
+# `emulated` provenance asserted structurally).
+tests/test_floci_twin_adapter.py

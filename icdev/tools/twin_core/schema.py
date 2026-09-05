@@ -61,6 +61,29 @@ TARGET_CSPS: tuple[str, ...] = (
     "local",
 )
 
+#: How a twin snapshot's estate was OBSERVED (flx-twin-01).
+#:
+#: Deliberately the ``ni_devices.source`` vocabulary (rmf-disc-02), where
+#: ``synthetic`` is spelled out as "NOT evidence of anything" and the inventory
+#: feed excludes it BY NAME. The same rule holds one layer up: a twin that
+#: freezes an EMULATOR's state has observed a disposable local container, not a
+#: deployed estate, and a reader that cannot tell the two apart will rank an
+#: emulator's S3 buckets alongside a real inventory.
+#:
+#: ``observed`` is the only value that asserts a real estate, and no adapter in
+#: this tree writes it today — it exists so that ``emulated`` is a POSITIVE
+#: statement rather than the absence of one.
+SNAPSHOT_PROVENANCES: tuple[str, ...] = ("observed", "emulated", "synthetic", "unknown")
+
+#: What a snapshot's provenance is when nothing said. ``unknown``, never
+#: ``observed``: an unlabelled row is one whose provenance was never recorded,
+#: and defaulting it to the strongest claim is how an emulated estate would come
+#: to read as a measured one.
+DEFAULT_SNAPSHOT_PROVENANCE = "unknown"
+
+#: The provenance a twin over an emulator MUST write.
+PROVENANCE_EMULATED = "emulated"
+
 # Severity ordering for aggregation (lower index = worse).
 _SEVERITY_RANK = {s: i for i, s in enumerate(SEVERITIES)}
 # Verdict ordering for aggregation (lower index = worse); unknown is least severe.
