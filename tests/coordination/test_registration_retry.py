@@ -188,8 +188,18 @@ def flaky_registry(tmp_path, monkeypatch):
     monkeypatch.setattr(sr, "_table_ready", False)
     monkeypatch.setattr(code_identity, "boot_identity", lambda: {})
     monkeypatch.setattr(si, "_OWNED", set())
-    for var in (si.SESSION_ENV, si.AGENT_ENV):
+    # get_session_id() reads CLAUDE_SESSION_ID *before* ICDEV_SESSION_ID, so
+    # clearing si.SESSION_ENV alone leaves a leaked CLAUDE_SESSION_ID winning
+    # and the service registers under someone else's id. Any test in this
+    # process that sets one without restoring it (tests/coordination/
+    # test_code_identity.py::_as_session sets BOTH, unmonkeypatched) lands its
+    # id on our row -- and in shard 4 that file runs 33 entries ahead of this
+    # one, so the order is CI's, not a local accident.
+    import tools.airgap.hook_compat as _hc
+
+    for var in ("CLAUDE_SESSION_ID", si.SESSION_ENV, si.AGENT_ENV):
         monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(_hc, "_session_id", None)  # the cached fallback uuid
     return db, calls
 
 
