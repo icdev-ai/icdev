@@ -151,10 +151,14 @@ anything above.
 1. **NEVER source a performance, cost or capacity claim from emulator timings.**
    An emulator reproduces the AWS **API contract**, not AWS's **performance
    characteristics**. Twin cost/latency estimates stay sourced from the
-   catalog/estimate engines and stay labelled `estimate=True`. This guard is
-   quoted verbatim in `docs/reference/commands.md`, in the `flx-ci-01` report
-   path and in the `flx-twin-01` manifest row precisely so it travels with the
-   capability rather than sitting in a spike nobody re-reads.
+   catalog/estimate engines and stay labelled `estimate=True`. It travels WITH
+   the capability rather than sitting in a spike nobody re-reads, and the four
+   sites are named so the claim is checkable: `docs/reference/commands.md`
+   (twice), the `flx-ci-01` report path in `tools/ci/floci_iac_gate.py`, the
+   `IDC Floci Adapter` row in `tools/manifest/design-canvases.md`, and the
+   `flx-twin-01` block in `CLAUDE.md`. `tests/cloud/test_flx_docs.py`
+   re-derives all four, because a documented claim nothing re-checks is exactly
+   the shape this addendum exists to correct.
 2. **IAM policy sandbox stays NO-GO** (pattern 3 above). The PDP/PEP ABAC engine
    in `tools/security/` already answers IAM questions offline and
    deterministically; adding a partial emulation gives a second answer to the

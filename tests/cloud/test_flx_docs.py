@@ -275,6 +275,43 @@ def test_the_floci_modules_are_registered_in_their_topic_shard(shard, module, tr
     assert (_ROOT / module).exists(), f"{module} was registered and does not exist"
 
 
+# ── The guard TRAVELS with the capability, and that is re-derived ──────────
+#
+# The addendum claims the performance-claim guard now sits on the capability
+# rather than in a spike nobody re-reads, and NAMES four sites. That claim was
+# WRONG when first written -- it cited the `flx-twin-01` manifest row, which
+# does not carry the guard (CLAUDE.md's flx-twin-01 block does). A documented
+# claim nothing re-derives is precisely the shape this card exists to correct,
+# so the sites are checked rather than asserted in prose.
+
+_GUARD = "performance, cost or capacity"
+
+_GUARD_SITES = (
+    "docs/reference/commands.md",
+    "tools/ci/floci_iac_gate.py",
+    "tools/manifest/design-canvases.md",
+    "CLAUDE.md",
+)
+
+
+@pytest.mark.parametrize("site", _GUARD_SITES)
+def test_the_performance_claim_guard_reaches_the_capability_itself(site):
+    assert _GUARD in _read(_ROOT / site), (
+        f"{site} does not carry the standing performance-claim guard, but the "
+        "spike addendum names it as one of the sites the guard travels to"
+    )
+
+
+def test_the_addendum_names_every_site_it_claims_the_guard_reaches():
+    """The other direction: a site named in prose that carries nothing."""
+    addendum = _read(_SPIKE).split(_ADDENDUM_MARK, 1)[1]
+    for site in _GUARD_SITES:
+        assert site in addendum, (
+            f"{site} carries the guard and the addendum does not name it -- the "
+            "list a reader would check against is incomplete"
+        )
+
+
 # ── The finding this card measured while writing the feature doc ───────────
 
 def test_the_emulator_declares_ONE_image_pin_or_the_two_agree():
