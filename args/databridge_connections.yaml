@@ -237,3 +237,56 @@ connections:
         - 127.0.0.1
         - "::1"
       egress_denylist: []
+
+  # floci-oci OCI service emulator (flx-oci-01) — the LOCAL emulated estate.
+  #
+  # A FOURTH CONNECTION. Four emulators, four ports, and a deployment may run
+  # any subset. floci-oci answers /health (like floci-gcp) but is NOT a
+  # LocalStack drop-in — /_localstack/health 404s.
+  #
+  # `endpoint` is deliberately NOT pinned here, for the same reason as the three
+  # rows above: tools/cloud/emulator_oci.py is the ONE OCI emulator switch and a
+  # second copy in this row would be a second switch. The seam decides WHERE;
+  # this row decides the CEILING on where.
+  #
+  # READ ONLY, and the connector enforces it rather than relying on this line:
+  # FlociOciConnector.capabilities.supports_write is False and write() returns
+  # an `unsupported` refusal naming TWO reasons — the absent OCI IaC executor
+  # AND the stubbed OCI provider layer (docs/spikes/flx-oci-parity.md §1).
+  - id: floci-oci-emulator-local
+    name: floci-oci OCI Emulator (local)
+    connector_name: floci_oci
+    connector_type: saas_api
+    auth_method: none
+    sync_direction: read
+    status: configured
+    classification: UNCLASSIFIED
+    impact_level: IL2
+    config:
+      # THE ENDPOINT HOST, AND NOTHING ELSE. Enforced by
+      # FlociOciConnector._assert_endpoint_allowed at the point the destination
+      # is decided, so it covers every table read rather than only the ones
+      # routed through one helper.
+      #
+      # NOT enforced by saas_base._guard_egress, for the reason measured on all
+      # three sibling emulators: egress_guard is an INTERNET SSRF gate and
+      # refuses this connector's own default endpoint twice over —
+      # `http://localhost:4599` is scheme_not_https, and the https spelling is
+      # denied_ip_range. A loopback emulator over plain http is precisely the
+      # destination that guard exists to refuse. This is a HOST allowlist, not
+      # an SSRF gate, and it performs no DNS resolution.
+      #
+      # THE METADATA HAZARD: measured 2026-09-05, floci-oci serves no instance
+      # metadata surface — /opc/v2 and friends were not among the eight services
+      # it answers. As on the GCP row, what this list bounds is where the SEAM
+      # may point, which is a question about ICDEV's own configuration rather
+      # than about this emulator's surface area.
+      #
+      # Three entries because they are three spellings of ONE destination: this
+      # machine's emulator. A deployment running floci-oci on another host must
+      # add that host here, which is the review this list exists to force.
+      egress_allowlist:
+        - localhost
+        - 127.0.0.1
+        - "::1"
+      egress_denylist: []

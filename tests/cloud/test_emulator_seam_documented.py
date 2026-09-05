@@ -58,6 +58,7 @@ _SEAMS = (
     _SEAM,
     _ROOT / "tools" / "cloud" / "emulator_az.py",
     _ROOT / "tools" / "cloud" / "emulator_gcp.py",
+    _ROOT / "tools" / "cloud" / "emulator_oci.py",
 )
 _COMMANDS_DOC = _ROOT / "docs" / "reference" / "commands.md"
 _MANIFEST_SHARD = Path("tools") / "manifest" / "cloud-agnostic-architecture.md"
@@ -73,7 +74,7 @@ _ASSIGNMENT_RE = re.compile(r"^([A-Z][A-Z0-9_]*)=(.*)$")
 def _seam_env_names() -> set[str]:
     """Every emulator env name ANY seam's source mentions as a whole string.
 
-    Derived across all three seams (:data:`_SEAMS`) because the document these
+    Derived across all four seams (:data:`_SEAMS`) because the document these
     names are checked against is one file. A per-seam derivation makes the two
     directions disagree: a key one seam reads is, to another seam, invented.
     """

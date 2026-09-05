@@ -219,7 +219,16 @@ def test_remote_docker_host_is_left_unset(floci):
 #: redpandadata/redpanda:latest, rancher/k3s:latest, and the caller's own
 #: image), and without the socket Cloud SQL and Kafka return 500 while
 #: **Cloud Run returns a fabricated 200**. See docs/spikes/flx-gcp-parity.md.
-_SOCKET_GRANTED_SERVICES = {"floci", "floci-az", "floci-gcp"}
+#: `floci-oci` is the OCI emulator (flx-oci-01), where exactly ONE service
+#: spawns a container -- OKE, measured, starting `rancher/k3s:v1.30.1-k3s1`
+#: (version-pinned, unlike the GCP sibling's two `:latest` tags). That grant is
+#: made KNOWING OKE IS BROKEN in 0.4.0: the emulator starts k3s without a
+#: `--token`, the container exits immediately, and the API still reports
+#: `lifecycleState: ACTIVE`. It is granted for shape-parity with the three
+#: siblings and so a later release works with no compose change; a deployment
+#: that wants neither may drop the mount, and OKE then fails honestly with a
+#: 500. See docs/spikes/flx-oci-parity.md §5 and sandbox-coverage Gap 68.
+_SOCKET_GRANTED_SERVICES = {"floci", "floci-az", "floci-gcp", "floci-oci"}
 
 
 def test_only_profiled_emulators_are_granted_the_docker_socket(compose):
@@ -239,10 +248,10 @@ def test_only_profiled_emulators_are_granted_the_docker_socket(compose):
         default, which is precisely the deployment surprise this test exists to
         prevent.
 
-    The set was ``{"floci"}`` until flx-az-01 added the Azure emulator and
-    ``{"floci", "floci-az"}`` until flx-gcp-01 added the GCP one. Each widening
-    was by ENUMERATION rather than by relaxing the predicate, so a FOURTH grant
-    still fails here.
+    The set was ``{"floci"}`` until flx-az-01 added the Azure emulator,
+    ``{"floci", "floci-az"}`` until flx-gcp-01 added the GCP one, and those
+    three until flx-oci-01 added the OCI one. Each widening was by ENUMERATION
+    rather than by relaxing the predicate, so a FIFTH grant still fails here.
     """
     granted = {
         name

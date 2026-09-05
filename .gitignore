@@ -72,6 +72,15 @@ data/floci-az/
 # directory from floci).
 data/floci-gcp/
 
+# floci-oci OCI-emulator persistent state (flx-oci-01). A FOURTH entry, for the
+# same reason as the second and third: `data/floci/` ends in a slash and matches
+# the directory `floci` only, so neither it nor the floci-az / floci-gcp rules
+# cover `floci-oci`. Without this line the OCI emulator's tenancy, compartments,
+# buckets and vaults land in this PUBLIC repo. FLOCI_OCI_STORAGE_MODE=persistent
+# writes under ./data/floci-oci (the image's own /app/data -- the same target as
+# floci-az and floci-gcp, a different directory from floci).
+data/floci-oci/
+
 # Alert spool and failed-audit dead-letter file — per-machine runtime state.
 data/alerts/
 data/failed_audit_entries.jsonl
