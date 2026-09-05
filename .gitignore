@@ -48,6 +48,13 @@ data/studio_artifacts/
 # a system's control posture published.
 data/ato_packages/
 
+# floci AWS-emulator persistent state (flx-compose-01). FLOCI_STORAGE_MODE
+# =persistent makes the emulator write its buckets, queues, tables and Lambda
+# bundles under ./data/floci — per-machine runtime state that would otherwise be
+# committed to this PUBLIC repo. Anchored to `data/floci/` and NOT a bare
+# unanchored `data/`: that pattern once silently dropped a code directory here.
+data/floci/
+
 # Alert spool and failed-audit dead-letter file — per-machine runtime state.
 data/alerts/
 data/failed_audit_entries.jsonl
