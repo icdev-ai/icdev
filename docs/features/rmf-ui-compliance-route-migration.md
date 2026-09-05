@@ -68,6 +68,9 @@ bare handler lacked, without any per-route wiring:
 | rmf-ui-12 | `/stig-manager` | `/security/stig-manager` | SDC (owns STIGs) | `tests/test_sdc_stig_manager_page.py` |
 | rmf-ui-13 | `/sbd` | `/security/sbd` | SDC | `tests/test_sdc_sbd_page.py` |
 | rmf-ui-07 | `/poam` | `/boundary/poam` | BDC | `tests/test_bdc_poam_page.py` |
+| rmf-ui-11 | `/compliance` | `/boundary/compliance-hub` | BDC (the artifact hub, moved LAST) | `tests/test_bdc_compliance_hub_page.py` |
+| rmf-ui-16 | `/ai-accountability` | `/security/ai-accountability` | SDC | `tests/test_sdc_ai_accountability_page.py` |
+| rmf-ui-08 | `/control-inheritance` | `/boundary/control-inheritance` | BDC | `tests/test_bdc_control_inheritance_page.py` |
 
 `/prod-audit` is a visibility surface (production-readiness checks, read-only
 posture), which is SDC's ground; its `/api/prod-audit/*` blueprint
@@ -82,6 +85,15 @@ move. No AI-governance canvas exists to prefer instead — `aimc` is the AI/ML
 design catalog, `aadc` the default-off agentic-AI design canvas and
 `ai_observatory` a telemetry adapter — so SDC, the card's named default, holds.
 
+`/ai-accountability` (rmf-ui-16) is the same kind of surface one door over:
+human oversight plans, appeals, CAIO designation, incident response and ethics
+reviews (Phase 49), read-only posture reporting. It follows rmf-ui-15 onto SDC
+for the same reason and with the same canvas check; its
+`/api/ai-accountability/*` blueprint (`tools/dashboard/api/ai_accountability.py`)
+did not move. The SaaS portal's own `/ai-accountability` page
+(`tools/saas/portal/app.py`, its own template folder) is a different surface
+and is untouched.
+
 rmf-ui-13 is an SDC move: the CISA Secure by Design 8-pillar assessment
 is hardening posture, a visibility surface, so it lands on the Security Design
 Canvas behind `sc_login_required`. Its IQE widget is wired to the canvas's own
@@ -94,6 +106,14 @@ the `/api/poam/*` routes stay in `app.py`.
 `tests/test_history.py::test_poam_route_exists` was NOT touched: it GETs the
 NETWORK blueprint's own `/poam` (`/network/poam` at runtime), a different page
 that never went through `app.py`.
+
+`/control-inheritance` (rmf-ui-08) is the CSP vs customer responsibility
+mapping (inherited / shared / customer-owned controls per provider), which is
+boundary/inheritance content by definition, so it lands on BDC. The sweep saw
+no `/api/` prefix in its template because the script composes its URLs from
+`const API = '/api/control-inheritance'`; it calls `/csps`, `/summary`,
+`/model`, `/gap` and `/controls` on that prefix, all served by the unchanged
+`tools/dashboard/api/control_inheritance.py` blueprint.
 
 ## The shape the follow-up cards copy
 

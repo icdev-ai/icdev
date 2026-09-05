@@ -1,0 +1,55 @@
+# CUI // SP-CTI
+#
+# floci RUNTIME BASE IMAGES -- the images floci pulls at run time for its
+# container-backed services (flx-airgap-02). Distinct from `images-floci.txt`,
+# which pins the emulator's OWN image: having floci cached is necessary and NOT
+# sufficient, because none of these ship inside it.
+#
+# Bundle them for the high side with:
+#     python tools/airgap/image_vendor.py --save --topic floci-runtime --json
+#
+# EVERY DIGEST HERE WAS MEASURED, not read off a README: `docker events
+# --filter type=image` recorded while a live floci 2.0.1 was driven through
+# each container-backed service with boto3. Method, dates and the per-service
+# attribution are in args/floci_runtime_images.yaml, which is the declaration
+# of record -- `tests/cloud/test_floci_runtime_images.py` asserts the two agree,
+# so ONE measured fact cannot come to be spelled two ways.
+#
+# VENDOR THE VARIANTS YOU DECLARE. Lambda needs one image PER RUNTIME and RDS
+# one PER ENGINE, so this file is the full measured set and not a shopping list:
+# a deployment running only a python Lambda over postgres needs four of these
+# eleven. `python -m tools.cloud.runtime_images --check --services lambda,rds
+# --variants python3.11,postgres` says which.
+
+# lambda/python3.11 -- public.ecr.aws/lambda/python:3.11
+public.ecr.aws/lambda/python@sha256:755093e1da2ba33f6bd2295c5a6a7ed8b94f1ef347b6ca649874d9cbef5a3e3c
+
+# lambda/nodejs20.x -- public.ecr.aws/lambda/nodejs:20
+public.ecr.aws/lambda/nodejs@sha256:a4440274d6f0fb4e6cb92cd5f2a97254efe6612f631d9974b197ecbd4a61fcab
+
+# rds/postgres -- postgres:16.3-alpine
+postgres@sha256:36ed71227ae36305d26382657c0b96cbaf298427b3f1eaeb10d77a6dea3eec41
+
+# rds/mysql -- mysql:8.0.36
+mysql@sha256:a532724022429812ec797c285c1b540a644c15e248579c6bfdf12a8fbaab4964
+
+# elasticache/redis -- valkey/valkey:8
+valkey/valkey@sha256:98c6217ccc2fe5e6c4b5dcd5c40eef4de2a68924e7ecef50d5a0a30b57dfaef6
+
+# elasticache/memcached -- memcached:1.6
+memcached@sha256:75c93cc91e76853da7c029e74d6e8dbd44774dd3713c93be8cd1971ad26120a4
+
+# opensearch -- opensearchproject/opensearch:2.19.5
+opensearchproject/opensearch@sha256:4ee82ecb35d837a6186c81aaa64c8a5bce71aa956edbd87f1f684ab56af52c44
+
+# kafka -- redpandadata/redpanda:latest   # MUTABLE TAG upstream -- re-measure, never assume
+redpandadata/redpanda@sha256:468bd13a9f2bd24794cb7fddc867c767fb1008b9a07b297b89fde48c564d7d96
+
+# ec2 -- public.ecr.aws/amazonlinux/amazonlinux:2023
+public.ecr.aws/amazonlinux/amazonlinux@sha256:fb70bd54d4a849293bfef9785ce63aa1eac2557e0167af4f32f56286bd35d783
+
+# eks -- rancher/k3s:latest   # MUTABLE TAG upstream -- re-measure, never assume
+rancher/k3s@sha256:5e0707cfd1239b358ef73f3254bc3eadc027dd30cd5ec6ca41e29e47652a1b8c
+
+# ecr -- registry:2
+registry@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373

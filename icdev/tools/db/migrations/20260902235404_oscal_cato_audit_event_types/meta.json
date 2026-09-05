@@ -1,0 +1,7 @@
+{
+  "description": "admit oscal_generated and cato_evidence_collected — both written since their producers were authored, both refused by the CHECK (rmf-cyc-01)",
+  "date": "2026-09-02",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

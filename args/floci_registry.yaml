@@ -1,0 +1,110 @@
+# CUI // SP-CTI — floci's registry posture and its per-registry credentials (flx-airgap-03)
+#
+# WHAT THIS FILE IS, AND WHAT flx-airgap-02 ALREADY ANSWERED
+# -----------------------------------------------------------
+# args/floci_runtime_images.yaml enumerates the eleven base images floci pulls
+# at run time, MEASURED. tools/cloud/runtime_images.py asks whether the LOCAL
+# CACHE already holds them, because a site that can pre-seed each host's cache
+# needs nothing else.
+#
+# A REGISTRY-MANDATING SITE CANNOT PRE-SEED EACH HOST. Its images must be
+# SERVED, by an internal mirror, to whatever daemon floci is talking to. This
+# file declares that posture. It changes the ANSWER the one rule gives; it does
+# NOT add a second rule. The question is unchanged and is the only question:
+#
+#     would this deployment need an EXTERNAL pull at run time?
+#
+# A cached image pulls nothing. An uncached image served by an INTERNAL mirror
+# pulls internally — no public-internet dependency, so no air-gap violation. An
+# uncached image with no mirror, or with a mirror that is not internal, pulls
+# from the public internet and is the finding.
+#
+# SHIPPED DISABLED, ON PURPOSE. With `enabled: false` every image resolves to
+# its own registry exactly as flx-airgap-02 left it, so this file cannot change
+# a verdict on a deployment that has not opted in. The operator decision of
+# 2026-09-05 (locally hosted Docker) is that posture.
+#
+# ── THE THREE `FLOCI_DOCKER_*` NAMES ARE THREE DIFFERENT THINGS ────────────
+# Confusing them makes a working service report a fabricated refusal, which is
+# why docker-compose.yml already documents two of them at length:
+#
+#   FLOCI_DOCKER_SOCKET        Read by tools/cloud/emulator.py::docker_basis().
+#                              How the ICDEV *Python process on the host* would
+#                              reach a daemon. MEASURED 2026-09-04: setting it
+#                              to the compose MOUNT spelling makes
+#                              service_supported("lambda") return a FABRICATED
+#                              False on Windows. Nothing here reads it.
+#   FLOCI_DOCKER_SOCKET_MOUNT  The compose bind-mount SOURCE. A path on the
+#                              host filesystem, not an endpoint.
+#   FLOCI_DOCKER_DOCKER_HOST   THIS FILE'S CONCERN. The daemon *floci itself*
+#                              talks to when it starts a service container. It
+#                              becomes DOCKER_HOST inside the floci container.
+#                              Unset -> the mounted socket, i.e. this host.
+#
+# ── A CREDENTIAL IS A REFERENCE, NEVER A LITERAL ───────────────────────────
+# Every `*_ref` below must start with `env:`, `vault:`, `aws:` or `file:` — the
+# same prefixes tools/databridge/seed_connections.py enforces, and a test pins
+# the two tuples equal so they cannot drift apart. A value that is not one of
+# those is REFUSED, not warned about: a warning still lands the secret in git,
+# and this file is committed to a PUBLIC repository.
+#
+# `plain:` is deliberately NOT accepted even though tools/rag/secret_ref.py
+# resolves it. That prefix exists to carry a literal, which is the one thing
+# this file must never hold.
+
+enabled: false
+
+# Informational, and the ONLY place the third name is written down as data.
+# Compose reads the environment variable, not this key — a YAML file cannot set
+# a container's environment. This records what the variable should be set to on
+# a remote-daemon deployment so the runbook and the compose file cannot drift.
+#   unset / null   floci uses the socket mounted into it (today's posture)
+#   tcp://…:2376   a remote daemon, which is what a registry-mandating site
+#                  that centralises its container runtime usually has
+docker_host: null
+
+# Which registry actually serves each upstream registry's images.
+#
+# `registry` is the host as it appears in the image ref. The eleven measured
+# images span exactly two: `public.ecr.aws` (the Lambda runtimes) and
+# `docker.io` (everything else — a ref like `postgres:16.3-alpine` names no
+# host and Docker Hub is the implicit default).
+#
+# `mechanism` is load-bearing and is NOT decoration:
+#
+#   daemon_registry_mirror  the daemon's own `registry-mirrors` setting. Per
+#                           Docker's documented behaviour this rewrites DOCKER
+#                           HUB PULLS ONLY — it does not redirect
+#                           public.ecr.aws, ghcr.io or quay.io. Declaring it
+#                           for any registry other than docker.io is REFUSED,
+#                           because a mirror that cannot redirect the pull it
+#                           claims to redirect produces a green verdict for a
+#                           deployment that still reaches the internet.
+#   repository_rewrite      the images are re-hosted in the mirror under its
+#                           own path and floci is pointed at them explicitly.
+#                           This is what public.ecr.aws requires.
+registries: []
+
+# A worked example. Uncomment, set `enabled: true`, and replace the host with
+# the site's own mirror. Every credential stays a reference.
+#
+# registries:
+#   - registry: "docker.io"
+#     mirror: "registry.internal.example.mil:5000"
+#     mechanism: daemon_registry_mirror
+#     username_ref: "env:FLOCI_MIRROR_USERNAME"
+#     password_ref: "env:FLOCI_MIRROR_PASSWORD"
+#     note: >-
+#       Serves postgres, mysql, valkey, memcached, opensearchproject, bitnami
+#       kafka and the two ECS/EKS bases. Load them with
+#       `python tools/airgap/image_vendor.py --load --topic floci-runtime`
+#       against the mirror's own host, or push them from the vendored bundle.
+#
+#   - registry: "public.ecr.aws"
+#     mirror: "registry.internal.example.mil:5000"
+#     mechanism: repository_rewrite
+#     username_ref: "env:FLOCI_MIRROR_USERNAME"
+#     password_ref: "env:FLOCI_MIRROR_PASSWORD"
+#     note: >-
+#       The two Lambda runtime bases. `registry-mirrors` cannot redirect these
+#       — re-host them and set floci's per-runtime image mapping.

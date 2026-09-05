@@ -521,12 +521,19 @@ def classify_task(
             "detail": live.detail}
 
 
-def _record_transition(conn, task_id: str, reason: str) -> None:
-    """Append the reset to the kanban_status_transitions ledger (best-effort).
+def _record_transition(
+    conn, task_id: str, reason: str, *,
+    from_status: str = "in_progress", to_status: str = "backlog",
+) -> None:
+    """Append this sweep's move to the kanban_status_transitions ledger (best-effort).
 
     Without a row here the board shows a task back in backlog with nothing
     naming who moved it, and the stale-reaper's actor check (which reads the most
     recent transition) has no record of this sweep at all.
+
+    The edge defaults to the reset (``in_progress -> backlog``); the parked
+    hand-off (mfx-own-01) writes ``token_exhausted -> pr_opened`` through the
+    same writer, so the two sweeps cannot spell the actor differently.
     """
     try:
         from tools.kanban.transition_reason import resolve_transition_reason
@@ -537,9 +544,9 @@ def _record_transition(conn, task_id: str, reason: str) -> None:
             "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (
                 "kst-" + secrets.token_hex(6),
-                task_id, "in_progress", "backlog", "startup-recovery",
+                task_id, from_status, to_status, "startup-recovery",
                 resolve_transition_reason(
-                    reason, from_status="in_progress", to_status="backlog",
+                    reason, from_status=from_status, to_status=to_status,
                     actor="startup-recovery",
                 ),
                 datetime.now(timezone.utc).isoformat(),
@@ -547,6 +554,162 @@ def _record_transition(conn, task_id: str, reason: str) -> None:
         )
     except Exception as exc:  # noqa: BLE001 — ledger write must never block recovery
         logger.debug("startup-recovery: transition row for %s skipped: %s", task_id, exc)
+
+
+def open_pr_numbers_by_branch(repo_root: Path) -> Optional[Dict[str, int]]:
+    """Head branch -> PR number for every OPEN PR in *repo_root*, or None.
+
+    None means the forge could not be asked (no gh, no auth, no network, an
+    unparseable answer). It is kept apart from ``{}`` -- "asked, and there are
+    no open PRs" -- because the two lead to different readings of a parked
+    task: the first is UNMEASURED, the second is "the scheduler still owns it".
+    """
+    try:
+        proc = subprocess.run(  # nosec B603 B607 — fixed argv, shell=False
+            ["gh", "pr", "list", "--state", "open", "--limit", "200",
+             "--json", "headRefName,number"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=30, cwd=str(repo_root), check=False,
+        )
+    except Exception as exc:  # noqa: BLE001 — every failure is "could not ask"
+        logger.debug("startup-recovery: open-PR listing could not run: %s", exc)
+        return None
+    if proc.returncode != 0:
+        logger.debug("startup-recovery: open-PR listing exited %s", proc.returncode)
+        return None
+    raw = (proc.stdout or "").strip()
+    if not raw:
+        # gh printing nothing told us nothing (the same rule _pr_open_state
+        # applies in the scheduler): UNKNOWN, never "no PRs".
+        return None
+    try:
+        rows = json.loads(raw)
+    except ValueError:
+        return None
+    out: Dict[str, int] = {}
+    for row in rows or []:
+        head = row.get("headRefName") if isinstance(row, dict) else None
+        if not head:
+            continue
+        try:
+            out[str(head)] = int(row.get("number"))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+HANDOFF_REASON_TEMPLATE = "open PR #{number} found while parked (startup recovery); handed to pr_watcher"
+
+
+def hand_off_parked_tasks_with_open_pr(
+    *,
+    conn_factory: Optional[Callable[[], Any]] = None,
+    list_open_prs: Optional[Callable[[Path], Optional[Dict[str, int]]]] = None,
+    dry_run: bool = False,
+    repo_root: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """token_exhausted + an OPEN PR on kanban/<id> -> pr_opened, at startup (mfx-own-01).
+
+    MEASURED 2026-09-03: rmf-rfp-01 and rmf-wp-02 parked ``token exhaustion:
+    parked for retry 2/60`` with PRs #2040 / #2042 OPEN and red on CI, and their
+    resume_at slid forward every cycle for SIX HOURS. The dispatcher's respawn
+    guard refuses a task whose branch has an open PR (correctly), and
+    pr_watcher polls ``pr_opened`` / ``ci_failed`` / ..., never
+    ``token_exhausted`` -- so the task was owned by NEITHER actor until a human
+    fixed both CI failures by hand.
+
+    The scheduler makes this hand-off at park time and on every retry
+    evaluation; this is the same move for a board that parked a task under a
+    scheduler that has since been restarted (the restart is when the parked
+    set is most likely to be stale). It moves a task FORWARD ONLY, on POSITIVE
+    evidence the PR exists: an unavailable forge hands nothing off and says so
+    (``forge_unavailable``), because "could not ask" is not "no PR".
+
+    *list_open_prs* maps a repo root to ``{head branch: PR number}`` or None
+    (could not ask); it defaults to ``open_pr_numbers_by_branch`` and is asked
+    once per distinct repo root among the parked tasks.
+    Returns ``{swept, handed[], forge_unavailable, dry_run}``. Never raises.
+    """
+    out: Dict[str, Any] = {
+        "swept": 0, "handed": [], "forge_unavailable": False, "dry_run": dry_run,
+    }
+    if conn_factory is None:
+        try:
+            from tools.db.storage import get_connection as _get_connection
+
+            conn_factory = _get_connection
+        except Exception as exc:  # noqa: BLE001
+            out["reason"] = f"storage unavailable: {exc}"
+            return out
+
+    conn = None
+    try:
+        conn = conn_factory()
+        rows = [
+            dict(r) for r in conn.execute(
+                "SELECT id, title FROM kanban_tasks WHERE status = 'token_exhausted'"
+            ).fetchall()
+        ]
+        out["swept"] = len(rows)
+        if not rows:
+            return out
+
+        lister = list_open_prs or open_pr_numbers_by_branch
+        listings: Dict[str, Optional[Dict[str, int]]] = {}
+        now_iso = datetime.now(timezone.utc).isoformat()
+        for row in rows:
+            task_id = row.get("id")
+            if not task_id:
+                continue
+            root = repo_root or _task_repo_root(task_id)
+            key = str(root)
+            if key not in listings:
+                listings[key] = lister(root)
+            numbers = listings[key]
+            if numbers is None:
+                out["forge_unavailable"] = True
+                continue
+            number = numbers.get(f"kanban/{task_id}")
+            if number is None:
+                continue
+            reason = HANDOFF_REASON_TEMPLATE.format(number=number)
+            entry = {"id": task_id, "title": row.get("title"), "pr_number": number,
+                     "reason": reason}
+            out["handed"].append(entry)
+            if dry_run:
+                continue
+            # Guarded on the status it read: a task that moved between the
+            # SELECT and this UPDATE is not overwritten.
+            conn.execute(
+                "UPDATE kanban_tasks SET status = 'pr_opened', updated_at = %s "
+                "WHERE id = %s AND status = 'token_exhausted'",
+                (now_iso, task_id),
+            )
+            _record_transition(
+                conn, task_id, reason,
+                from_status="token_exhausted", to_status="pr_opened",
+            )
+            logger.info(
+                "startup-recovery: %s token_exhausted -> pr_opened (open PR #%d; "
+                "handed to pr_watcher)", task_id, number,
+            )
+        if out["handed"] and not dry_run:
+            conn.commit()
+    except Exception as exc:  # noqa: BLE001 — a failed hand-off must not stop the scheduler
+        out["reason"] = str(exc)[:200]
+        logger.warning("startup-recovery: parked hand-off failed: %s", out["reason"])
+        try:
+            if conn is not None:
+                conn.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+    finally:
+        try:
+            if conn is not None:
+                conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+    return out
 
 
 def foreign_scheduler_pid() -> int:
@@ -711,12 +874,21 @@ def recover_interrupted_tasks(
 ) -> Dict[str, Any]:
     """Reset genuinely orphaned in_progress tasks; hold everything still alive.
 
-    Returns ``{swept, reset[], held[], dry_run, sweep_skipped, reason}``. Never
-    raises — a broken recovery must not stop the scheduler from starting.
+    Returns ``{swept, reset[], held[], dry_run, sweep_skipped, reason,
+    handed_to_pr_watcher}``. Never raises — a broken recovery must not stop the
+    scheduler from starting.
+
+    ``handed_to_pr_watcher`` is the parked hand-off (mfx-own-01): every
+    ``token_exhausted`` task whose branch has an OPEN PR is moved to
+    ``pr_opened`` so pr_watcher owns it. It runs here, rather than in either
+    entrypoint, because both restart paths call this function and a hand-off
+    in only one of them would leave the other restart with the six-hour slide.
     """
     out: Dict[str, Any] = {
         "swept": 0, "reset": [], "held": [], "dry_run": dry_run,
         "sweep_skipped": False, "reason": None,
+        "handed_to_pr_watcher": {"swept": 0, "handed": [],
+                                 "forge_unavailable": False, "dry_run": dry_run},
     }
 
     if respect_foreign_owner:
@@ -736,6 +908,16 @@ def recover_interrupted_tasks(
             out["sweep_skipped"] = True
             out["reason"] = f"storage unavailable: {exc}"
             return out
+
+    # The parked hand-off first: it touches a DISJOINT status set, so order
+    # between the two sweeps is immaterial, and running it before the
+    # in_progress sweep means an early `return` below cannot skip it.
+    try:
+        out["handed_to_pr_watcher"] = hand_off_parked_tasks_with_open_pr(
+            conn_factory=conn_factory, dry_run=dry_run, repo_root=repo_root,
+        )
+    except Exception as exc:  # noqa: BLE001 — never block the reset sweep
+        logger.warning("startup-recovery: parked hand-off skipped: %s", exc)
 
     decisions: List[Dict[str, Any]] = []
     conn = None

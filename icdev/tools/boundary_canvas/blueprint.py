@@ -1691,6 +1691,24 @@ def create_boundary_blueprint():
         """ATO Package Builder — wizard to assemble SSP/SAR/POAM/SBOM package."""
         return render_template("boundary_canvas/ato_package.html")
 
+    # ── Control Inheritance Visualizer (rmf-ui-08) ───────────────────────────
+    #
+    # Migrated from a bare `@app.route("/control-inheritance")` in
+    # tools/dashboard/app.py -- the same move as the ATO Compliance Dashboard
+    # above (rmf-ui-01), one route per card. CSP vs customer responsibility
+    # mapping (inherited / shared / customer-owned controls per provider) is
+    # boundary/inheritance content by definition, so the Boundary canvas is
+    # its governed home. The page drives the UNCHANGED
+    # tools/dashboard/api/control_inheritance.py blueprint
+    # (/api/control-inheritance/{csps,summary,model,gap,controls}) -- only
+    # the PAGE route moved -- and the old URL redirects here rather than 404ing.
+
+    @bp.route("/control-inheritance")
+    @bdc_login_required
+    def bdc_control_inheritance_page():
+        """Control Inheritance Visualizer — CSP vs customer responsibility mapping."""
+        return render_template("boundary_canvas/control_inheritance.html")
+
     # ── OSCAL Ecosystem (rmf-ui-04) ──────────────────────────────────────────
     #
     # Migrated from a bare `@app.route("/oscal")` in tools/dashboard/app.py --
@@ -1753,6 +1771,26 @@ def create_boundary_blueprint():
     def bdc_mosa_page():
         """MOSA Compliance — 10 U.S.C. §4401 modular open systems approach assessment."""
         return render_template("boundary_canvas/mosa.html")
+
+    # ── Compliance Hub (rmf-ui-11) ───────────────────────────────────────────
+    #
+    # Migrated from a bare `@app.route("/compliance")` in tools/dashboard/app.py
+    # -- the same shape as rmf-ui-01 above: ungoverned there, registry-registered,
+    # RBAC-guarded and IQE-dispatchable here BY CONSTRUCTION. This is the RMF
+    # ARTIFACT hub -- the unified posture across every compliance module and the
+    # page that LINKS the others -- so it moved LAST of the BDC set, after every
+    # sibling had repointed its own card here. It drives the UNCHANGED
+    # /api/compliance/{posture,unified-posture,evidence-chain} handlers, which
+    # stay in app.py beside their data; only the PAGE route moved. The template
+    # is compliance_hub.html, not compliance.html: boundary_canvas/compliance.html
+    # is BDC's own per-design compliance view and already exists. The old URL is
+    # a 301 here, never a 404.
+
+    @bp.route("/compliance-hub")
+    @bdc_login_required
+    def bdc_compliance_hub_page():
+        """Compliance Hub — unified posture across all compliance modules."""
+        return render_template("boundary_canvas/compliance_hub.html")
 
     @bp.route("/api/fabric-posture", methods=["GET"])
     @bdc_login_required

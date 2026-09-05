@@ -1,0 +1,44 @@
+-- Migration: 20260817011242_docmod_defacto_evidence_provenance
+-- CUI // SP-CTI
+--
+-- cef-fnd-04 — say WHERE a learned de-facto standard came from, and what CLASS
+-- of evidence it is.
+--
+-- WHY
+--
+-- docmod_defacto_standards held 0 rows, and the reason was not a missing writer:
+-- defacto_learner.recompute() ran on the nightly sweep and read ni_devices,
+-- which holds 0 rows. The writer worked and had nothing to learn from — the
+-- "empty substrate" shape, one layer up.
+--
+-- The fix gives the learner more than one feed (args/docmod/inventory_feeds.yaml)
+-- so a deployment inventory is no longer the only thing it can learn from. That
+-- immediately creates a question the old schema could not answer: a row derived
+-- from a DESIGN topology and a row derived from a DEPLOYED inventory are not the
+-- same claim, and merging them silently would turn "16 designs draw this" into
+-- "this is what we run" — which is precisely the kind of laundering this table
+-- exists to prevent.
+--
+-- So two columns, not one:
+--
+--   source_feed    WHICH feed produced the row (feeds.*.id in the YAML).
+--   evidence_kind  WHAT CLASS of evidence it is (feeds.*.evidence_kind:
+--                  `inventory` = observed deployed estate, `design` = a modelled
+--                  topology, and whatever a future feed declares). The learner
+--                  computes share_pct WITHIN a feed, never across two, so a
+--                  share is always a share of like evidence.
+--
+-- DEFAULTS
+--
+-- Both default to '' rather than NULL. The table is fully recomputed on every
+-- sweep (DELETE by domain, then INSERT), so no pre-existing row can survive to
+-- carry a default — and on a database that has never run the sweep the table is
+-- empty anyway. '' keeps the read path free of a NULL branch.
+--
+-- No index: every read of this table is already scoped by (domain, category) on
+-- idx_docmod_defacto_domain, and the table holds one row per distinct deployed
+-- configuration — hundreds, not millions. An index here would cost writes on
+-- every sweep and save nothing.
+
+ALTER TABLE docmod_defacto_standards ADD COLUMN source_feed TEXT DEFAULT '';
+ALTER TABLE docmod_defacto_standards ADD COLUMN evidence_kind TEXT DEFAULT '';

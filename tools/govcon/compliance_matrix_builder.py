@@ -23,7 +23,19 @@ Architecture:
     - Amendment detector: diff new RFP version against original, highlight changes
     - Export: JSON, markdown table, CSV
 
-DB table: pg_compliance_matrix (source_section IN ('L','M','C','attachment','amendment'))
+DB table: proposal_compliance_matrix -- THE ONE matrix (rmf-rfp-01). The
+requirement_type column carries the source section (REQUIREMENT_TYPES in
+compliance_matrix_schema.py) and compliance_status carries the proposal
+vocabulary (compliant/partial/non_compliant/not_applicable/not_addressed).
+This module used to write pg_compliance_matrix, a second table with the same
+purpose whose only writer had zero callers; it held 0 rows on the live board
+while five readers computed coverage over it. Migration 20260903185253 folded
+it into proposal_compliance_matrix and dropped it.
+
+Consumed by a ROUTE, not only this CLI: POST /api/proposals/opportunities/<id>/
+compliance/batch accepts `parsed` (solicitation_parser output) and/or
+`section_text` and calls build_from_parsed(); POST /rfp/upload calls
+ingest_solicitation() when handed an opportunity_id.
 
 Usage:
     python tools/govcon/compliance_matrix_builder.py --opportunity-id "opp-xxx" --parse-l "text..." --json
@@ -59,6 +71,12 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.govcon.compliance_matrix_schema import (  # noqa: E402
+    ADDRESSED_STATUSES,
+    COMPLIANCE_STATUSES,
+    MATRIX_TABLE,
+    REQUIREMENT_TYPES,
+)
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger("icdev.govcon.compliance_matrix_builder")
@@ -365,7 +383,7 @@ def parse_section_l(text: str, opportunity_id: str) -> List[Dict]:
                     "L",
                     now,
                     evaluation_factor="volume_structure",
-                    assigned_volume=vol_name,
+                    volume_ref=vol_name,
                 )
             )
 
@@ -650,26 +668,37 @@ def _make_requirement(
     timestamp: str,
     evaluation_factor: Optional[str] = None,
     evaluation_weight: Optional[float] = None,
-    assigned_volume: Optional[str] = None,
-    assigned_section: Optional[str] = None,
-    compliance_status: str = "gap",
+    volume_ref: Optional[str] = None,
+    section_ref: Optional[str] = None,
+    compliance_status: str = "not_addressed",
     amendment_version: int = 0,
     notes: Optional[str] = None,
+    sort_order: int = 0,
 ) -> Dict[str, Any]:
-    """Build a requirement dict matching pg_compliance_matrix schema."""
+    """Build a requirement dict matching the proposal_compliance_matrix schema.
+
+    `source_section` (L/M/C/attachment/amendment) lands in `requirement_type`;
+    `section_ref` is the citable reference inside that section ("L.4.2",
+    "M Factor 1") and defaults to the bare section letter when the extractor
+    has nothing finer.
+    """
+    if source_section not in REQUIREMENT_TYPES:
+        raise ValueError(f"unknown requirement_type {source_section!r}; expected one of {REQUIREMENT_TYPES}")
+    if compliance_status not in COMPLIANCE_STATUSES:
+        raise ValueError(f"unknown compliance_status {compliance_status!r}; expected one of {COMPLIANCE_STATUSES}")
     return {
         "id": _gen_id("cmx"),
         "opportunity_id": opportunity_id,
-        "requirement_id": _gen_id("req"),
+        "section_ref": (section_ref or source_section)[:200],
+        "volume_ref": volume_ref,
         "requirement_text": requirement_text[:2000],
-        "source_section": source_section,
+        "requirement_type": source_section,
         "evaluation_factor": evaluation_factor,
         "evaluation_weight": evaluation_weight,
-        "assigned_volume": assigned_volume,
-        "assigned_section": assigned_section,
         "compliance_status": compliance_status,
         "amendment_version": amendment_version,
         "notes": notes,
+        "sort_order": sort_order,
         "created_at": timestamp,
         "updated_at": timestamp,
         "_content_hash": _content_hash(requirement_text),
@@ -682,12 +711,14 @@ def _make_requirement(
 
 
 def _store_requirements(requirements: List[Dict], conn=None) -> Dict:
-    """Store parsed requirements into pg_compliance_matrix.
+    """Store parsed requirements into proposal_compliance_matrix.
 
-    Deduplicates by content_hash per opportunity.
+    Deduplicates on (opportunity_id, requirement_text) -- the same key the
+    /api/proposals batch route and the govcon auto-populate route dedupe on, so
+    a requirement is one row whichever door wrote it.
 
     Returns:
-        Dict with stored_count, duplicate_count, total.
+        Dict with stored_count, duplicate_count.
     """
     close_conn = False
     if conn is None:
@@ -700,9 +731,8 @@ def _store_requirements(requirements: List[Dict], conn=None) -> Dict:
     for req in requirements:
         opp_id = req["opportunity_id"]
 
-        # Dedup check: same text for same opportunity
         existing = conn.execute(
-            "SELECT id FROM pg_compliance_matrix WHERE opportunity_id = %s AND requirement_text = %s",
+            f"SELECT id FROM {MATRIX_TABLE} WHERE opportunity_id = %s AND requirement_text = %s",
             (opp_id, req["requirement_text"][:2000]),
         ).fetchone()
 
@@ -711,24 +741,24 @@ def _store_requirements(requirements: List[Dict], conn=None) -> Dict:
             continue
 
         conn.execute(
-            "INSERT INTO pg_compliance_matrix "
-            "(id, opportunity_id, requirement_id, requirement_text, source_section, "
-            "evaluation_factor, evaluation_weight, assigned_volume, assigned_section, "
-            "compliance_status, amendment_version, notes, created_at, updated_at) "
+            f"INSERT INTO {MATRIX_TABLE} "
+            "(id, opportunity_id, section_ref, volume_ref, requirement_text, requirement_type, "
+            "compliance_status, notes, sort_order, evaluation_factor, evaluation_weight, "
+            "amendment_version, created_at, updated_at) "
             "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 req["id"],
                 req["opportunity_id"],
-                req["requirement_id"],
+                req.get("section_ref") or req["requirement_type"],
+                req.get("volume_ref"),
                 req["requirement_text"],
-                req["source_section"],
+                req["requirement_type"],
+                req.get("compliance_status", "not_addressed"),
+                req.get("notes"),
+                req.get("sort_order", 0),
                 req.get("evaluation_factor"),
                 req.get("evaluation_weight"),
-                req.get("assigned_volume"),
-                req.get("assigned_section"),
-                req.get("compliance_status", "gap"),
                 req.get("amendment_version", 0),
-                req.get("notes"),
                 req["created_at"],
                 req["updated_at"],
             ),
@@ -759,7 +789,8 @@ def build_matrix(opportunity_id: str) -> Dict:
     conn = _get_db()
 
     rows = conn.execute(
-        "SELECT * FROM pg_compliance_matrix WHERE opportunity_id = %s ORDER BY source_section, created_at",
+        f"SELECT * FROM {MATRIX_TABLE} WHERE opportunity_id = %s "
+        "ORDER BY requirement_type, sort_order, created_at",
         (opportunity_id,),
     ).fetchall()
 
@@ -770,17 +801,17 @@ def build_matrix(opportunity_id: str) -> Dict:
             "opportunity_id": opportunity_id,
             "total": 0,
             "matrix": [],
-            "by_section": {"L": 0, "M": 0, "C": 0},
-            "by_status": {"addressed": 0, "partial": 0, "gap": 0, "na": 0},
+            "by_section": {t: 0 for t in REQUIREMENT_TYPES},
+            "by_status": {s: 0 for s in COMPLIANCE_STATUSES},
         }
 
     matrix = [dict(r) for r in rows]
-    by_section = {"L": 0, "M": 0, "C": 0, "attachment": 0, "amendment": 0}
-    by_status = {"addressed": 0, "partial": 0, "gap": 0, "na": 0}
+    by_section = {t: 0 for t in REQUIREMENT_TYPES}
+    by_status = {s: 0 for s in COMPLIANCE_STATUSES}
 
     for item in matrix:
-        src = item.get("source_section", "")
-        status = item.get("compliance_status", "gap")
+        src = item.get("requirement_type", "")
+        status = item.get("compliance_status", "not_addressed")
         if src in by_section:
             by_section[src] += 1
         if status in by_status:
@@ -895,7 +926,7 @@ _VOLUME_KEYWORDS = {
 def auto_map_sections(opportunity_id: str) -> Dict:
     """Auto-map requirements to proposal volumes/sections using keyword matching.
 
-    Assigns `assigned_volume` based on keyword overlap between requirement text
+    Assigns `volume_ref` based on keyword overlap between requirement text
     and volume archetypes.  Does NOT overwrite existing manual assignments.
 
     Args:
@@ -907,8 +938,8 @@ def auto_map_sections(opportunity_id: str) -> Dict:
     conn = _get_db()
 
     rows = conn.execute(
-        "SELECT id, requirement_text, assigned_volume, assigned_section, source_section "
-        "FROM pg_compliance_matrix WHERE opportunity_id = %s",
+        "SELECT id, requirement_text, volume_ref, requirement_type "
+        f"FROM {MATRIX_TABLE} WHERE opportunity_id = %s",
         (opportunity_id,),
     ).fetchall()
 
@@ -925,7 +956,7 @@ def auto_map_sections(opportunity_id: str) -> Dict:
 
     for row in rows:
         # Skip if already manually assigned
-        if row["assigned_volume"] and row["assigned_volume"].strip():
+        if row["volume_ref"] and row["volume_ref"].strip():
             already_mapped += 1
             continue
 
@@ -940,15 +971,15 @@ def auto_map_sections(opportunity_id: str) -> Dict:
                 best_volume = vol_type
 
         if best_volume and best_score >= 1:
-            # Try to find matching proposal volume
-            assigned_section = None
-            if best_volume in volume_map:
-                assigned_section = volume_map[best_volume].get("title")
+            # Prefer the opportunity's own volume title when one is registered
+            # for this archetype; the archetype key otherwise.
+            volume_ref = best_volume
+            if best_volume in volume_map and volume_map[best_volume].get("title"):
+                volume_ref = volume_map[best_volume]["title"]
 
             conn.execute(
-                "UPDATE pg_compliance_matrix SET assigned_volume = %s, "
-                "assigned_section = %s, updated_at = %s WHERE id = %s",
-                (best_volume, assigned_section, _now(), row["id"]),
+                f"UPDATE {MATRIX_TABLE} SET volume_ref = %s, updated_at = %s WHERE id = %s",
+                (volume_ref, _now(), row["id"]),
             )
             mapped += 1
         else:
@@ -984,7 +1015,7 @@ def get_coverage(opportunity_id: str) -> Dict:
     conn = _get_db()
 
     rows = conn.execute(
-        "SELECT source_section, assigned_volume, compliance_status FROM pg_compliance_matrix WHERE opportunity_id = %s",
+        f"SELECT requirement_type, volume_ref, compliance_status FROM {MATRIX_TABLE} WHERE opportunity_id = %s",
         (opportunity_id,),
     ).fetchall()
 
@@ -1004,9 +1035,9 @@ def get_coverage(opportunity_id: str) -> Dict:
     vol_totals = {}
     vol_addressed = {}
     for r in rows:
-        vol = r["assigned_volume"] or "unassigned"
+        vol = r["volume_ref"] or "unassigned"
         vol_totals[vol] = vol_totals.get(vol, 0) + 1
-        if r["compliance_status"] in ("addressed", "partial"):
+        if r["compliance_status"] in ADDRESSED_STATUSES:
             vol_addressed[vol] = vol_addressed.get(vol, 0) + 1
 
     by_volume = {}
@@ -1023,9 +1054,9 @@ def get_coverage(opportunity_id: str) -> Dict:
     sec_totals = {}
     sec_addressed = {}
     for r in rows:
-        sec = r["source_section"] or "other"
+        sec = r["requirement_type"] or "other"
         sec_totals[sec] = sec_totals.get(sec, 0) + 1
-        if r["compliance_status"] in ("addressed", "partial"):
+        if r["compliance_status"] in ADDRESSED_STATUSES:
             sec_addressed[sec] = sec_addressed.get(sec, 0) + 1
 
     by_section = {}
@@ -1040,7 +1071,7 @@ def get_coverage(opportunity_id: str) -> Dict:
 
     # Overall
     total_all = len(rows)
-    addressed_all = sum(1 for r in rows if r["compliance_status"] in ("addressed", "partial"))
+    addressed_all = sum(1 for r in rows if r["compliance_status"] in ADDRESSED_STATUSES)
     overall_pct = round((addressed_all / total_all) * 100, 1) if total_all > 0 else 0.0
 
     return {
@@ -1083,8 +1114,8 @@ def detect_amendments(
 
     # Fetch existing requirements for this opportunity
     existing_rows = conn.execute(
-        "SELECT id, requirement_text, source_section, compliance_status "
-        "FROM pg_compliance_matrix WHERE opportunity_id = %s",
+        "SELECT id, requirement_text, requirement_type, compliance_status "
+        f"FROM {MATRIX_TABLE} WHERE opportunity_id = %s ORDER BY sort_order, created_at",
         (opportunity_id,),
     ).fetchall()
     existing_list = [r["requirement_text"] for r in existing_rows]
@@ -1118,7 +1149,7 @@ def detect_amendments(
                     {
                         "id": row["id"],
                         "requirement_text": row["requirement_text"],
-                        "source_section": row["source_section"],
+                        "requirement_type": row["requirement_type"],
                     }
                 )
         elif tag == "replace":
@@ -1203,11 +1234,12 @@ def export_matrix(opportunity_id: str, fmt: str = "json") -> str:
             [
                 "ID",
                 "Source Section",
+                "Section Ref",
                 "Requirement",
                 "Evaluation Factor",
                 "Weight",
-                "Assigned Volume",
-                "Assigned Section",
+                "Volume",
+                "Proposal Section",
                 "Compliance Status",
                 "Amendment",
                 "Notes",
@@ -1217,12 +1249,13 @@ def export_matrix(opportunity_id: str, fmt: str = "json") -> str:
             writer.writerow(
                 [
                     item.get("id", ""),
-                    item.get("source_section", ""),
-                    item.get("requirement_text", "")[:200],
+                    item.get("requirement_type", ""),
+                    item.get("section_ref", ""),
+                    (item.get("requirement_text") or "")[:200],
                     item.get("evaluation_factor", ""),
                     item.get("evaluation_weight", ""),
-                    item.get("assigned_volume", ""),
-                    item.get("assigned_section", ""),
+                    item.get("volume_ref", ""),
+                    item.get("proposal_section_id", ""),
                     item.get("compliance_status", ""),
                     item.get("amendment_version", 0),
                     item.get("notes", ""),
@@ -1239,17 +1272,18 @@ def export_matrix(opportunity_id: str, fmt: str = "json") -> str:
             f"M={matrix_data['by_section'].get('M', 0)} "
             f"C={matrix_data['by_section'].get('C', 0)}",
             "",
-            "| # | Section | Requirement | Factor | Volume | Status |",
-            "|---|---------|-------------|--------|--------|--------|",
+            "| # | Section | Ref | Requirement | Factor | Volume | Status |",
+            "|---|---------|-----|-------------|--------|--------|--------|",
         ]
         for i, item in enumerate(items, 1):
-            req_short = (item.get("requirement_text", "")[:60]).replace("|", "\\|")
+            req_short = ((item.get("requirement_text") or "")[:60]).replace("|", "\\|")
             lines.append(
                 f"| {i} "
-                f"| {item.get('source_section', '')} "
+                f"| {item.get('requirement_type', '')} "
+                f"| {item.get('section_ref', '') or ''} "
                 f"| {req_short} "
                 f"| {item.get('evaluation_factor', '') or ''} "
-                f"| {item.get('assigned_volume', '') or ''} "
+                f"| {item.get('volume_ref', '') or ''} "
                 f"| {item.get('compliance_status', '')} |"
             )
         return "\n".join(lines)
@@ -1267,10 +1301,10 @@ def export_matrix(opportunity_id: str, fmt: str = "json") -> str:
 def evaluate_gate(opportunity_id: str) -> Dict:
     """Evaluate compliance matrix gate.
 
-    Gate criteria:
-        PASS: 0 requirements with status='gap' that have source_section='M'
+    Gate criteria (proposal_compliance_matrix vocabulary):
+        PASS: 0 Section M requirements with status not_addressed / non_compliant
         WARN: Any requirements with status='partial'
-        FAIL: Any Section M requirements with status='gap'
+        FAIL: Any Section M requirements with status not_addressed / non_compliant
 
     Args:
         opportunity_id: The opportunity to evaluate.
@@ -1282,15 +1316,16 @@ def evaluate_gate(opportunity_id: str) -> Dict:
 
     # Count Section M gaps (FAIL condition)
     m_gaps = conn.execute(
-        "SELECT COUNT(*) as c FROM pg_compliance_matrix "
-        "WHERE opportunity_id = %s AND source_section = 'M' AND compliance_status = 'gap'",
+        f"SELECT COUNT(*) as c FROM {MATRIX_TABLE} "
+        "WHERE opportunity_id = %s AND requirement_type = 'M' "
+        "AND compliance_status IN ('not_addressed', 'non_compliant')",
         (opportunity_id,),
     ).fetchone()
     m_gap_count = m_gaps["c"] if m_gaps else 0
 
     # Count all partials (WARN condition)
     partials = conn.execute(
-        "SELECT COUNT(*) as c FROM pg_compliance_matrix WHERE opportunity_id = %s AND compliance_status = 'partial'",
+        f"SELECT COUNT(*) as c FROM {MATRIX_TABLE} WHERE opportunity_id = %s AND compliance_status = 'partial'",
         (opportunity_id,),
     ).fetchone()
     partial_count = partials["c"] if partials else 0
@@ -1298,15 +1333,15 @@ def evaluate_gate(opportunity_id: str) -> Dict:
     # Count total and addressed
     totals = conn.execute(
         "SELECT COUNT(*) as total, "
-        "SUM(CASE WHEN compliance_status = 'addressed' THEN 1 ELSE 0 END) as addressed, "
-        "SUM(CASE WHEN compliance_status = 'gap' THEN 1 ELSE 0 END) as gaps "
-        "FROM pg_compliance_matrix WHERE opportunity_id = %s",
+        "SUM(CASE WHEN compliance_status = 'compliant' THEN 1 ELSE 0 END) as addressed, "
+        "SUM(CASE WHEN compliance_status IN ('not_addressed', 'non_compliant') THEN 1 ELSE 0 END) as gaps "
+        f"FROM {MATRIX_TABLE} WHERE opportunity_id = %s",
         (opportunity_id,),
     ).fetchone()
 
-    total_count = totals["total"] if totals else 0
-    addressed_count = totals["addressed"] if totals else 0
-    total_gaps = totals["gaps"] if totals else 0
+    total_count = (totals["total"] if totals else 0) or 0
+    addressed_count = (totals["addressed"] if totals else 0) or 0
+    total_gaps = (totals["gaps"] if totals else 0) or 0
 
     conn.close()
 
@@ -1315,7 +1350,7 @@ def evaluate_gate(opportunity_id: str) -> Dict:
     if m_gap_count > 0:
         gate_result = "fail"
         findings.append(
-            f"BLOCKING: {m_gap_count} Section M evaluation criteria have status='gap'. "
+            f"BLOCKING: {m_gap_count} Section M evaluation criteria are not addressed. "
             f"All evaluation factors must be addressed."
         )
     elif partial_count > 0:
@@ -1344,6 +1379,258 @@ def evaluate_gate(opportunity_id: str) -> Dict:
 
 
 # =========================================================================
+# STRUCTURED INGEST -- the route's entry point (rmf-rfp-01)
+# =========================================================================
+
+_ROMAN = {"I": "1", "II": "2", "III": "3", "IV": "4", "V": "5", "VI": "6", "VII": "7", "VIII": "8"}
+_RE_VOLUME_MENTION = re.compile(r"\bVolume\s+([IVX]+|\d+)\b", re.IGNORECASE)
+
+
+def _volume_lookup(parsed: Dict) -> Dict[str, str]:
+    """Map every spelling of a parsed volume number to its display label."""
+    lookup: Dict[str, str] = {}
+    for vol in parsed.get("volume_structure") or []:
+        num = str(vol.get("volume", "")).upper()
+        if not num:
+            continue
+        label = f"Volume {num}"
+        if vol.get("title"):
+            label = f"Volume {num} - {vol['title']}"
+        lookup[num] = label
+        if num in _ROMAN:
+            lookup[_ROMAN[num]] = label
+    return lookup
+
+
+def _volume_for(text: str, lookup: Dict[str, str]) -> Optional[str]:
+    """The parsed volume an instruction names, if it names one."""
+    m = _RE_VOLUME_MENTION.search(text or "")
+    if not m:
+        return None
+    return lookup.get(m.group(1).upper())
+
+
+def requirements_from_parsed(opportunity_id: str, parsed: Dict) -> List[Dict]:
+    """Turn solicitation_parser.parse_solicitation() output into matrix rows.
+
+    Structured items only: one L row per Section L instruction (section_ref
+    is the instruction number, e.g. "L.4.2"), one M row per evaluation factor
+    and per subfactor (evaluation_weight from the factor's weight_pct), one M
+    row each for the basis of award and the relative-importance statement.
+    Returns [] for a parse that produced none of those -- a caller wanting the
+    regex extraction over raw section bodies passes `section_text` to
+    build_from_parsed() instead.
+    """
+    if not parsed:
+        return []
+    now = _now()
+    lookup = _volume_lookup(parsed)
+    rows: List[Dict] = []
+    order = 0
+
+    for item in parsed.get("section_l_instructions") or []:
+        number = str(item.get("number") or "").strip()
+        title = (item.get("title") or "").strip()
+        body = (item.get("text") or "").strip()
+        text = f"{title}: {body}" if title and body else (title or body)
+        if not text:
+            continue
+        order += 1
+        rows.append(
+            _make_requirement(
+                opportunity_id,
+                text,
+                "L",
+                now,
+                section_ref=number or "L",
+                volume_ref=_volume_for(f"{title} {body}", lookup),
+                evaluation_factor="instruction",
+                sort_order=order,
+            )
+        )
+
+    for factor in parsed.get("section_m_factors") or []:
+        fnum = str(factor.get("factor") or "").strip()
+        name = (factor.get("name") or "").strip()
+        if not name:
+            continue
+        weight = factor.get("weight_pct")
+        order += 1
+        text = f"Evaluation Factor {fnum}: {name}" if fnum else f"Evaluation Factor: {name}"
+        if weight is not None:
+            text += f" (weight {weight}%)"
+        rows.append(
+            _make_requirement(
+                opportunity_id,
+                text,
+                "M",
+                now,
+                section_ref=f"M Factor {fnum}" if fnum else "M",
+                evaluation_factor=name,
+                evaluation_weight=float(weight) if weight is not None else None,
+                sort_order=order,
+            )
+        )
+        for sub in factor.get("subfactors") or []:
+            snum = str(sub.get("number") or "").strip()
+            sname = (sub.get("name") or "").strip()
+            if not sname:
+                continue
+            order += 1
+            rows.append(
+                _make_requirement(
+                    opportunity_id,
+                    f"Subfactor {snum}: {sname}" if snum else f"Subfactor: {sname}",
+                    "M",
+                    now,
+                    section_ref=f"M Subfactor {snum}" if snum else f"M Factor {fnum}",
+                    evaluation_factor=name,
+                    sort_order=order,
+                )
+            )
+
+    basis = parsed.get("basis_of_award")
+    if basis:
+        label = "lowest price technically acceptable" if basis == "lpta" else "best value tradeoff"
+        order += 1
+        rows.append(
+            _make_requirement(
+                opportunity_id, f"Basis of award: {label}", "M", now,
+                section_ref="M", evaluation_factor="basis_of_award", sort_order=order,
+            )
+        )
+    rel = (parsed.get("relative_importance") or "").strip()
+    if rel:
+        order += 1
+        rows.append(
+            _make_requirement(
+                opportunity_id, f"Relative importance: {rel}", "M", now,
+                section_ref="M", evaluation_factor="relative_importance", sort_order=order,
+            )
+        )
+
+    return rows
+
+
+def build_from_parsed(
+    opportunity_id: str,
+    parsed: Optional[Dict] = None,
+    section_text: Optional[Dict[str, str]] = None,
+    conn=None,
+) -> Dict:
+    """Populate the matrix for an opportunity from a parsed solicitation.
+
+    `parsed` is solicitation_parser.parse_solicitation() output (structured L
+    instructions / M factors). `section_text` maps a section letter (L, M, C)
+    to that section's raw body, run through the regex extractors above. Either
+    or both may be given; both are deduplicated on (opportunity, text) by
+    _store_requirements, so re-running is idempotent.
+
+    Returns the per-section extraction counts beside what was stored, and the
+    matrix total afterwards, so a caller can tell "nothing new" from "nothing
+    at all".
+    """
+    close_conn = False
+    if conn is None:
+        conn = _get_db()
+        close_conn = True
+
+    extracted = {"L": 0, "M": 0, "C": 0}
+    requirements: List[Dict] = []
+
+    for req in requirements_from_parsed(opportunity_id, parsed or {}):
+        extracted[req["requirement_type"]] = extracted.get(req["requirement_type"], 0) + 1
+        requirements.append(req)
+
+    section_text = section_text or {}
+    for letter, extractor in (("L", parse_section_l), ("M", parse_section_m), ("C", parse_section_c)):
+        body = section_text.get(letter) or ""
+        if not body.strip():
+            continue
+        found = extractor(body, opportunity_id)
+        extracted[letter] += len(found)
+        requirements.extend(found)
+
+    store_result = _store_requirements(requirements, conn)
+
+    total_row = conn.execute(
+        f"SELECT COUNT(*) as c FROM {MATRIX_TABLE} WHERE opportunity_id = %s", (opportunity_id,)
+    ).fetchone()
+    total = (total_row["c"] if total_row else 0) or 0
+
+    _audit(
+        conn,
+        "build_from_parsed",
+        f"Opportunity {opportunity_id}: extracted L={extracted['L']} M={extracted['M']} "
+        f"C={extracted['C']}, stored {store_result['stored_count']}, "
+        f"duplicates {store_result['duplicate_count']}",
+    )
+    conn.commit()
+    if close_conn:
+        conn.close()
+
+    return {
+        "status": "ok",
+        "opportunity_id": opportunity_id,
+        "source": "solicitation",
+        "extracted": extracted,
+        "created": store_result["stored_count"],
+        "duplicates": store_result["duplicate_count"],
+        "total_in_matrix": total,
+    }
+
+
+def ingest_solicitation(file_path: str, opportunity_id: str, parsed: Optional[Dict] = None) -> Dict:
+    """Parse a solicitation document and populate the opportunity's matrix.
+
+    Runs solicitation_parser over the file (unless `parsed` is supplied by a
+    caller that already parsed it), slices the UCF sections so the regex
+    extractors see the real L/M/C bodies, and stores through build_from_parsed.
+    Also records the document on proposal_opportunities.rfp_document_path when
+    that column is empty, which is what response_drafter grounds against.
+    """
+    from tools.govcon.rfi_document_parser import extract_text
+    from tools.govcon.solicitation_parser import _split_ucf_sections, parse_solicitation
+
+    path = Path(file_path)
+    if parsed is None:
+        parsed = parse_solicitation(str(path))
+
+    section_text: Dict[str, str] = {}
+    try:
+        text = extract_text(path)
+        bodies = _split_ucf_sections(text)
+        for letter in ("L", "M", "C"):
+            if bodies.get(letter):
+                section_text[letter] = bodies[letter]
+    except Exception as exc:  # noqa: BLE001 - the structured parse still lands
+        logger.warning("ingest_solicitation: section bodies unavailable for %s: %s", path.name, exc)
+
+    conn = _get_db()
+    try:
+        result = build_from_parsed(opportunity_id, parsed, section_text, conn=conn)
+        try:
+            row = conn.execute(
+                "SELECT rfp_document_path FROM proposal_opportunities WHERE id = %s", (opportunity_id,)
+            ).fetchone()
+            if row is not None and not row["rfp_document_path"]:
+                conn.execute(
+                    "UPDATE proposal_opportunities SET rfp_document_path = %s WHERE id = %s",
+                    (str(path.resolve()), opportunity_id),
+                )
+                conn.commit()
+                result["rfp_document_path_set"] = True
+        except Exception as exc:  # noqa: BLE001 - best-effort; the matrix is the deliverable
+            logger.warning("ingest_solicitation: could not record rfp_document_path: %s", exc)
+    finally:
+        conn.close()
+
+    result["file"] = path.name
+    result["section_bodies"] = sorted(section_text)
+    return result
+
+
+# =========================================================================
 # CLI
 # =========================================================================
 
@@ -1359,6 +1646,10 @@ def main():
     group.add_argument("--parse-m-file", metavar="FILE", help="Parse Section M from a file")
     group.add_argument("--parse-c", metavar="TEXT", help="Parse Section C/PWS text and store requirements")
     group.add_argument("--parse-c-file", metavar="FILE", help="Parse Section C/PWS from a file")
+    group.add_argument(
+        "--ingest", metavar="FILE",
+        help="Parse a solicitation PDF/DOCX with solicitation_parser and store its L/M/C requirements",
+    )
     group.add_argument("--build", action="store_true", help="Build full compliance matrix from stored requirements")
     group.add_argument("--auto-map", action="store_true", help="Auto-map requirements to proposal volumes/sections")
     group.add_argument("--coverage", action="store_true", help="Show coverage percentage per volume and section")
@@ -1423,6 +1714,14 @@ def main():
             "extracted": len(requirements),
             **store_result,
         }
+
+    # --- Ingest a whole solicitation document ---
+    elif args.ingest:
+        try:
+            result = ingest_solicitation(args.ingest, opp_id)
+            result["action"] = "ingest"
+        except (FileNotFoundError, ValueError) as exc:
+            result = {"status": "error", "message": str(exc)}
 
     # --- Build matrix ---
     elif args.build:
@@ -1505,9 +1804,11 @@ def _print_human(result):
         print(f"  By Section:  L={by_sec.get('L', 0)}  M={by_sec.get('M', 0)}  C={by_sec.get('C', 0)}")
         by_st = result.get("by_status", {})
         print(
-            f"  By Status:   Addressed={by_st.get('addressed', 0)}  "
+            f"  By Status:   Compliant={by_st.get('compliant', 0)}  "
             f"Partial={by_st.get('partial', 0)}  "
-            f"Gap={by_st.get('gap', 0)}  N/A={by_st.get('na', 0)}"
+            f"Not addressed={by_st.get('not_addressed', 0)}  "
+            f"Non-compliant={by_st.get('non_compliant', 0)}  "
+            f"N/A={by_st.get('not_applicable', 0)}"
         )
 
     elif "overall_coverage" in result:

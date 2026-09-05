@@ -121,6 +121,12 @@ prefixes:
   # hardening work inside this PUBLIC checkout. Same repo, same env var: the
   # stream is dispatchable exactly when ICDEV_KANBAN_REPO_FT is set.
   ftp: icdev_ft
+  # fni -- ICDEV[FT] News Intelligence (card fni, 2026-09-04). Registered BEFORE
+  # seeding, per the ftl-/ftp- discipline above: an unregistered fni- task
+  # resolves to the ICDev default and the dispatcher would build a news-analysis
+  # feature for the trading parent inside this PUBLIC checkout. Same repo, same
+  # env var; additionally held behind fni-gate-00.
+  fni: icdev_ft
   # rt -- ICDEV[RT], the retirement + insurance planning parent. Same discipline
   # as ftl-/ftp- above: registered before seeding so the stream cannot fall
   # through to the ICDev default. Dispatchable exactly when

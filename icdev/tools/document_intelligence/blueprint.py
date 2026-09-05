@@ -36,6 +36,10 @@ Routes:
   POST /document-intelligence/api/techwriter/research            AI research + draft for a section
   POST /document-intelligence/api/techwriter/diagram             generate Mermaid diagram syntax
   POST /document-intelligence/api/import-from-docgen            import docgen session → new tech writer doc
+
+  GET  /document-intelligence/api/versions/<id>/export/<fmt>     gated export (md|html|docx|pdf) → dic_artifacts row (rmf-wp-02)
+  GET  /document-intelligence/api/versions/<id>/artifacts        artifacts exported for a version
+  GET  /document-intelligence/api/artifacts/<id>/download        stream an exported artifact
 """
 from __future__ import annotations
 
@@ -3777,6 +3781,188 @@ def api_version_sections(version_id):
         return jsonify({"error": str(exc)}), 500
     finally:
         conn.close()
+
+
+# ── API: Export (rmf-wp-02) ───────────────────────────────────────────────────
+#
+# DIC had NO export route. The gates below are the SAME placeholder and
+# citation gates the approve route runs (consistency_checker), plus WriteGuard
+# over the assembled document -- docgen blocks publish on it, DIC never called
+# it. All of it lives in tools/document_intelligence/exporter.py; this route
+# owns RBAC, the force_* contract and the audit rows, mirroring docgen's
+# api_publish.
+
+_TRUTHY = {"1", "true", "yes", "on"}
+
+
+def _flag(name: str) -> bool:
+    return (request.args.get(name) or "").strip().lower() in _TRUTHY
+
+
+@dic_bp.route("/api/versions/<version_id>/export/<fmt>", methods=["GET"])
+def api_version_export(version_id: str, fmt: str):
+    """Export one version as ``fmt`` after the TRUST + WriteGuard gate.
+
+    Query: ``force_placeholders`` / ``force_citations`` / ``force_writeguard``
+    (truthy) with a MANDATORY ``force_reason`` -- a reasonless force is a 400,
+    not a silent publish (docgen precedent). Any force needs the ``reviewer``
+    role; a plain export needs ``editor``.
+
+    200 ``{artifact, gate, download_url}``; 400 bad format / reasonless force;
+    403; 404 unknown version; 409 a gate refused (``gate`` names it, findings
+    attached; ``unmeasured`` means the gate could not run and NO flag opens
+    it); 501 the format's renderer is not installed here.
+    """
+    from tools.document_intelligence import exporter
+
+    fmt = (fmt or "").strip().lower()
+    if fmt not in exporter.EXPORT_FORMATS:
+        return jsonify({"error": f"unsupported format '{fmt}'",
+                        "formats": list(exporter.EXPORT_FORMATS)}), 400
+
+    force_placeholders = _flag("force_placeholders")
+    force_citations = _flag("force_citations")
+    force_writeguard = _flag("force_writeguard")
+    force_reason = (request.args.get("force_reason") or "").strip()
+    any_force = force_placeholders or force_citations or force_writeguard
+    if any_force and not force_reason:
+        return jsonify({
+            "error": "force_reason is required when overriding an export gate",
+            "gate": None,
+        }), 400
+
+    cid = _collection_id_from_version(version_id) or "default"
+    if not _require_role(cid, "reviewer" if any_force else "editor"):
+        return _forbid("reviewer" if any_force else "editor")
+
+    reviewer = (request.args.get("reviewer") or "").strip() or _current_user()
+    tenant_id, classification = _security_context()
+
+    def _audit_overrides(overrides: dict) -> None:
+        # BEFORE the file exists. The TRUST guards go to the append-only
+        # idr_publish_audit (its CHECK admits PUBLISH_GATES only); the
+        # WriteGuard override is a human decision recorded fail-closed as a
+        # dic.hitl_decision event, so a forced export with no audit row cannot
+        # stand.
+        for gate_name in (exporter.GATE_PLACEHOLDER, exporter.GATE_CITATION):
+            if gate_name in overrides:
+                _record_publish_override(version_id, gate_name, overrides[gate_name],
+                                         reviewer, tenant_id)
+        _record_hitl_decision(
+            "dic_version", version_id, "export_forced", reviewer,
+            {"version_id": version_id, "format": fmt,
+             "gates": sorted(overrides.keys()), "reason": force_reason},
+        )
+        logger.warning("dic export OVERRIDE: version=%s gates=%s reviewer=%s reason=%s",
+                       version_id, sorted(overrides.keys()), reviewer, force_reason)
+
+    try:
+        result = exporter.export_version(
+            version_id, fmt,
+            exported_by=reviewer,
+            force_placeholders=force_placeholders,
+            force_citations=force_citations,
+            force_writeguard=force_writeguard,
+            force_reason=force_reason,
+            tenant_id=tenant_id,
+            classification=classification,
+            on_overrides=_audit_overrides,
+        )
+    except LookupError:
+        return jsonify({"error": "version not found", "version_id": version_id}), 404
+    except exporter.ExportUnavailable as exc:
+        return jsonify({"error": str(exc), "format": fmt}), 501
+    except exporter.ExportBlocked as exc:
+        report = exc.report
+        _GATE_MESSAGE = {
+            exporter.GATE_PLACEHOLDER: "unresolved [PLACEHOLDER] tokens",
+            exporter.GATE_CITATION: "citation defects (missing/hallucinated [source: …] tags)",
+            exporter.GATE_WRITEGUARD: "a WriteGuard quality verdict below the publish bar",
+        }
+        if report.get("unmeasured"):
+            message = (
+                f"Cannot export: the {report['gate']} gate could not measure this version "
+                "-- never export text no gate could inspect. No force_* flag opens this."
+            )
+        else:
+            message = (
+                "Cannot export: document has "
+                + _GATE_MESSAGE.get(report["gate"], "gate defects")
+                + " -- resolve them, or re-request with the matching force_* flag "
+                  "and a force_reason after review."
+            )
+        return jsonify({
+            "error": message,
+            "gate": report.get("gate"),
+            "unmeasured": report.get("unmeasured") or [],
+            "placeholder_findings": report.get("placeholder_findings") or [],
+            "citation_findings": report.get("citation_findings") or [],
+            "writeguard": report.get("writeguard") or {},
+            "version_id": version_id,
+        }), 409
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("dic export failed: version=%s fmt=%s", version_id, fmt)
+        return jsonify({"error": f"export failed: {exc}"}), 500
+
+    artifact = result["artifact"]
+    return jsonify({
+        "artifact": artifact,
+        "gate": result["gate"],
+        "download_url": url_for("dic.api_artifact_download",
+                                artifact_id=artifact["artifact_id"]),
+    })
+
+
+@dic_bp.route("/api/versions/<version_id>/artifacts", methods=["GET"])
+def api_version_artifacts(version_id: str):
+    from tools.document_intelligence import exporter
+
+    try:
+        rows = exporter.list_artifacts(version_id)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": str(exc)}), 500
+    tenant_id, _ = _security_context()
+    rows = [r for r in rows if _artifact_visible(r, tenant_id)]
+    for r in rows:
+        r["download_url"] = url_for("dic.api_artifact_download", artifact_id=r["artifact_id"])
+    return jsonify({"version_id": version_id, "artifacts": rows})
+
+
+def _artifact_visible(row: dict, request_tenant: str | None) -> bool:
+    """Cross-tenant IDOR guard (docgen's _tenant_visible). A row with no tenant
+    and a request with none/default are visible; a MISMATCH is not."""
+    row_tenant = (row.get("tenant_id") or "").strip()
+    req = (request_tenant or "").strip()
+    if not req or req == "default" or not row_tenant or row_tenant == "default":
+        return True
+    return row_tenant == req
+
+
+@dic_bp.route("/api/artifacts/<artifact_id>/download", methods=["GET"])
+def api_artifact_download(artifact_id: str):
+    """Stream an exported artifact. 404 for an unknown id, a different tenant,
+    or a file no longer on disk (the row stays -- it is the record)."""
+    import mimetypes
+
+    from flask import abort, send_file
+
+    from tools.document_intelligence import exporter
+
+    row = exporter.get_artifact(artifact_id)
+    tenant_id, _ = _security_context()
+    if not row or not _artifact_visible(row, tenant_id):
+        abort(404)
+    file_path = row.get("file_path")
+    if not file_path or not Path(file_path).is_file():
+        return jsonify({"error": "artifact file not found on disk",
+                        "artifact_id": artifact_id}), 404
+    mime, _ = mimetypes.guess_type(file_path)
+    return send_file(
+        Path(file_path).resolve(),
+        mimetype=mime or "application/octet-stream",
+        as_attachment=True,
+        download_name=f"{row.get('version_id', 'document')}.{row.get('format', 'bin')}",
+    )
 
 
 # ── API: Style Gate ───────────────────────────────────────────────────────────

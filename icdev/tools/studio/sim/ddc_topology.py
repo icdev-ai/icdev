@@ -18,7 +18,9 @@ import re
 from pathlib import Path
 
 from tools.studio.sim.base_topology import (
-    BaseTopologyBuilder, DockerServiceSpec, LinkSpec, NodeSpec, ProbeSpec, TopologySpec,
+    CANVAS_EMULATOR_HOST_PORTS, EMULATOR_CONTAINER_PORT, EMULATOR_IMAGE,
+    BaseTopologyBuilder, DockerServiceSpec, LinkSpec, NodeSpec, ProbeSpec,
+    TopologySpec, emulator_health_url,
 )
 
 # resource_type → (gns3_node_type, role_label)
@@ -128,16 +130,16 @@ class DDCTopologyBuilder(BaseTopologyBuilder):
             ProbeSpec(name="topology_deployed", type="topology_deployed"),
             ProbeSpec(name="link_count", type="link_count",
                       expected_value=len(links)),
-            ProbeSpec(name="localstack_apply", type="localstack_apply"),
+            ProbeSpec(name="emulator_apply", type="emulator_apply"),
         ]
 
         docker_services = [
             DockerServiceSpec(
-                name="icdev-localstack-ddc",
-                image="localstack/localstack:3.8",
-                ports={4566: 4566},
+                name="icdev-floci-ddc",
+                image=EMULATOR_IMAGE,
+                ports={CANVAS_EMULATOR_HOST_PORTS["ddc"]: EMULATOR_CONTAINER_PORT},
                 env={"DEFAULT_REGION": "us-east-1"},
-                healthcheck_url="http://localhost:4566/_localstack/health",
+                healthcheck_url=emulator_health_url(CANVAS_EMULATOR_HOST_PORTS["ddc"]),
             ),
         ]
 

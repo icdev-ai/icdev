@@ -274,6 +274,46 @@ def release(resource: str) -> bool:
     return _do()
 
 
+def handover(resource: str, new_session: str, *, pid: Optional[int] = None) -> bool:
+    """Re-bind a lease THIS session holds to ``new_session`` (and ``pid``).
+
+    For an interactive claim (mfx-own-02): the CLI takes the lease under its
+    own one-shot identity -- the same refusal every other claimant gets -- and
+    then hands it to a keeper process that will register and heartbeat under
+    ``new_session``. A release-then-acquire would open a window in which the
+    runner could take the task; this rewrites the holder under the file lock
+    instead. ``acquired_at`` is refreshed so the pid-reuse guard in
+    :func:`holder_is_alive` measures from the handover, not the original take.
+
+    Refuses (``False``) when there is no unexpired lease or another session
+    holds it -- a session may hand over only what it owns.
+    """
+    sid = get_session_id()
+    lock_path, meta_path = _paths(resource)
+
+    def _do() -> bool:
+        cur = _read_meta(meta_path)
+        if not cur or _is_expired(cur) or cur.get("holder_session") != sid:
+            return False
+        cur["handed_over_from"] = sid
+        cur["holder_session"] = new_session
+        if pid is not None:
+            cur["pid"] = int(pid)
+        now = _now()
+        cur["acquired_at_ts"] = now
+        cur["acquired_at"] = _iso(now)
+        meta_path.write_text(json.dumps(cur), encoding="utf-8", newline="")
+        return True
+
+    if FileLock is not None:
+        try:
+            with FileLock(str(lock_path), timeout=5):
+                return _do()
+        except Exception:
+            return _do()
+    return _do()
+
+
 def release_all_for_session(session_id: Optional[str] = None) -> int:
     """Release every lease held by a session (called from the Stop hook)."""
     sid = session_id or get_session_id()

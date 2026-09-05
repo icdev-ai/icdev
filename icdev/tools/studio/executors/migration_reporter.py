@@ -136,7 +136,7 @@ def run(run_id: str, project_id: str, canvas: str = "") -> dict:
             f"1. Trigger **{canvas.upper()} Apply Approval** step to proceed with deployment",
             "2. Review Terraform Plan Report and confirm resource changes",
             "3. After Apply Approval: Terraform Apply will run automatically",
-            "4. Set AWS credentials in `.env` (or `LOCALSTACK_ENDPOINT` for local testing)",
+            "4. Set AWS credentials in `.env` (or `FLOCI_ENABLED=true` for local testing)",
             "5. Archive this report as ATO evidence",
             "",
         ]

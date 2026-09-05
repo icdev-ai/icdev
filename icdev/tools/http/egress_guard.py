@@ -71,6 +71,39 @@ def _ip_is_denied(ip: ipaddress._BaseAddress) -> bool:
     )
 
 
+def host_allowed(host: str, cfg: dict) -> tuple[bool, str]:
+    """Apply ONLY the allow/deny HOST rules to *host*. No scheme, no DNS.
+
+    Factored out of ``egress_guard`` so the rule has one statement rather than
+    two. ``egress_guard`` is an INTERNET gate: https-only, and every resolved
+    address range-checked, which by construction refuses loopback. A destination
+    that is loopback ON PURPOSE -- a local service emulator reached over plain
+    http -- can therefore never pass it, so a connector talking to one either
+    calls no guard at all (declared allowlist, nothing enforcing it: the defect
+    cef-fnd-03 named) or calls a guard that refuses every legitimate call.
+
+    This is the part of the decision that still applies: WHICH HOST may be
+    contacted. Deny beats allow, suffix-matched, identical to the rules inside
+    ``egress_guard`` because it IS those rules. An empty allowlist means "no
+    allowlist restriction", preserving the module's default-off semantics.
+
+    It is deliberately NOT an SSRF gate and must not be described as one: it
+    performs no DNS resolution, so a hostname that passes here can still resolve
+    to 169.254.169.254. Use it only where the range check is known to be the
+    wrong instrument, and say so at the call site.
+    """
+    host_l = str(host or "").lower()
+    if not host_l:
+        return (False, "no_host")
+    denylist = [str(h).lower() for h in (cfg.get("denylist") or [])]
+    if any(host_l == d or host_l.endswith("." + d) for d in denylist):
+        return (False, "denylisted")
+    allowlist = [str(h).lower() for h in (cfg.get("allowlist") or [])]
+    if allowlist and not any(host_l == a or host_l.endswith("." + a) for a in allowlist):
+        return (False, "not_allowlisted")
+    return (True, "ok")
+
+
 def egress_guard(url: str, cfg: dict, resolver=None) -> tuple[bool, str, list[str]]:
     """Decide whether ``url`` may be contacted. Returns (allowed, reason, ips).
 
@@ -88,15 +121,11 @@ def egress_guard(url: str, cfg: dict, resolver=None) -> tuple[bool, str, list[st
     host = parts.hostname
     if not host:
         return (False, "no_host", [])
-    host_l = host.lower()
-
     # Denylist beats allowlist. Suffix match so "example.com" covers subdomains.
-    denylist = [str(h).lower() for h in (cfg.get("denylist") or [])]
-    if any(host_l == d or host_l.endswith("." + d) for d in denylist):
-        return (False, "denylisted", [])
-    allowlist = [str(h).lower() for h in (cfg.get("allowlist") or [])]
-    if allowlist and not any(host_l == a or host_l.endswith("." + a) for a in allowlist):
-        return (False, "not_allowlisted", [])
+    # One statement of that rule, shared with host_allowed() above.
+    ok, reason = host_allowed(host, cfg)
+    if not ok:
+        return (False, reason, [])
 
     # A literal-IP host skips DNS but is still range-checked.
     try:
@@ -138,4 +167,4 @@ def egress_guard(url: str, cfg: dict, resolver=None) -> tuple[bool, str, list[st
         return (False, "unresolved", [])
     return (True, "ok", ips)
 
-__all__ = ["egress_guard"]
+__all__ = ["egress_guard", "host_allowed"]

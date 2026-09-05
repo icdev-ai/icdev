@@ -7,6 +7,33 @@ on:
   pull_request:
     branches: [master, main]
 
+# ONE RUN PER REF, and a newer push cancels the older run (mfx-ci-02).
+# MEASURED 2026-09-03 23:30-00:30 UTC: eight ICDEV CI runs queued behind one in
+# progress (the account's job cap makes a ~19-job run effectively serial), and
+# two of them were for commits a newer push on the same branch had ALREADY
+# superseded. An operator cancelled the dead runs by hand to move a green PR
+# forward ~35 minutes. This file declared no `concurrency:` at all.
+#   * `github.ref`, so a `pull_request` run (refs/pull/N/merge) and a `push`
+#     run (refs/heads/<branch>) for the same commit sit in DIFFERENT groups and
+#     never cancel each other -- they report different checks.
+#   * Prefixed with the workflow name, so another workflow that later adopts a
+#     concurrency group cannot land in this one and cancel a CI run.
+#   * main INCLUDED: a superseded main run is dead too. The consumers that read
+#     main runs were checked -- shard-timings.yml asks for `--status success`
+#     (a cancelled run is never read as a measurement, and it is not a failure
+#     either: crx-test-06's five outcomes keep `cancelled` apart), and
+#     e2e_flake_survey counts `cancelled` separately. merge_readiness and the
+#     done door read the PR's status rollup, which GitHub scopes to the HEAD
+#     sha, so the cancelled run on the OLD sha is never seen by the new one.
+#   * The `test` / `e2e` aggregators keep `if: always()` and so still run on a
+#     cancelled run, reporting `!= success` against the dead sha. That is the
+#     correct reading: a cancelled run is not green.
+# Workflow-level ONLY. A job-level `concurrency:` would carve that job out of
+# this group; tests/ci/test_ci_concurrency.py refuses one.
+concurrency:
+  group: icdev-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   # Absolute checkout root keeps Python imports stable even if a step changes
   # cwd. The relative "." broke coherence/RLS checks on runners where the
@@ -38,6 +65,32 @@ jobs:
       - name: Ruff lint
         working-directory: ${{ github.workspace }}
         run: python -m ruff check tools/ tests/ --select E,F,W --ignore E402,E501,E701,E702,E721,E722,E731,E741,F404
+      # Every Playwright spec must PARSE, and it must fail in the REQUIRED set
+      # (mfx-ci-01). The #2052 squash left tests/e2e/key_pages_smoke.spec.ts
+      # unparseable; Playwright loads every spec before running one, so ALL FOUR
+      # E2E shards on main failed at collection with 0 tests executed -- for
+      # hours, because `E2E (Playwright)` is not a required check and nothing
+      # parses .ts at commit time. `--list` loads and transforms every spec with
+      # no browser and no dashboard (`webServer` and globalSetup are skipped for
+      # --list; ICDEV_NO_SERVER makes that explicit), ~2.15s median over five
+      # warm runs (1.94-2.61s) measured 2026-09-04. It is a PARSE gate only: `forbidOnly` is not applied
+      # to `--list` (probed: a `test.only` lists clean under CI=1), so a stray
+      # `.only` is still the E2E job's to refuse.
+      # SURVEYED over the last 200 first-parent commits on main:
+      # 22 touched tests/e2e, 2 fail `--list` -- #2052 and the #2051 merge that
+      # landed on top of it, the same broken file -- and 0 routine refusals.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - name: Install Node dependencies (Playwright runner only; no browsers)
+        run: npm ci
+      - name: Playwright specs parse (`--list`, no browser, no server)
+        working-directory: ${{ github.workspace }}
+        env:
+          ICDEV_E2E_ENV_DIAG: "0"
+          ICDEV_NO_SERVER: "1"
+        run: npx playwright test --list
 
   # ── Tier 1: Unit Tests (pure Python — no LLM) ───────────────────────────
   # ── Tier 1: the gates that run ONCE, not once per shard ──────────────────

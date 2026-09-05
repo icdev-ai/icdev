@@ -223,7 +223,7 @@ NAV_STRUCTURE = {
     "Compliance ▾": {
         "Compliance": [
             ("POA&M Findings",   "/boundary/poam"),
-            ("Compliance Hub",   "/compliance"),
+            ("Compliance Hub",   "/boundary/compliance-hub"),
             ("OSCAL",            "/oscal"),
             ("Continuous ATO",   "/boundary/cato-health"),
             ("MOSA",             "/boundary/mosa"),
@@ -232,7 +232,7 @@ NAV_STRUCTURE = {
             ("STIG Manager",     "/security/stig-manager"),
             ("SRE Operations",   "/sre"),
             ("AI Transparency",  "/ai-transparency"),
-            ("AI Accountability", "/ai-accountability"),
+            ("AI Accountability", "/security/ai-accountability"),
             ("Traces",           "/traces"),
             ("Provenance",       "/provenance"),
             ("XAI",              "/xai"),
@@ -646,14 +646,14 @@ def check_compliance_suite(page: Page, r: R) -> None:
     """Verify Compliance pages load and display expected content."""
     print("\n══ 8. Compliance Page Suite ═══════════════════════════════════")
     compliance_pages = [
-        ("/compliance",        ["Compliance", "Control", "posture"]),
+        ("/boundary/compliance-hub", ["Compliance", "Control", "posture"]),
         ("/boundary/poam",     ["POA", "finding", "Finding"]),
         ("/boundary/cato-health", ["ATO", "Continuous", "authorization"]),
         ("/oscal",             ["OSCAL", "catalog", "Catalog"]),
         ("/security-scan",     ["Security", "Scan", "SAST"]),
         ("/security/stig-manager", ["STIG", "finding", "Finding"]),
         ("/ai-transparency",   ["Transparency", "AI", "explainab"]),
-        ("/ai-accountability", ["Accountability", "AI", "audit"]),
+        ("/security/ai-accountability", ["Accountability", "AI", "audit"]),
         ("/traces",            ["Trace", "trace", "span"]),
         ("/provenance",        ["Provenance", "lineage", "artifact"]),
     ]
@@ -776,7 +776,7 @@ def check_mini_bar(page: Page, r: R) -> None:
     """Verify mini-bar (ask-anything) is present and functional on all pages."""
     print("\n══ 11. Mini-Bar (Ask Anything) — All Sections ════════════════")
     test_pages = [
-        "/", "/kanban", "/chat", "/compliance", "/data/contracts",
+        "/", "/kanban", "/chat", "/boundary/compliance-hub", "/data/contracts",
         "/finetune", "/studio/workflows", "/genesis",
     ]
     for path in test_pages:

@@ -416,7 +416,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--changed", nargs="*", help="limit the scan to these files")
     parser.add_argument("--staged", action="store_true", help="scan only staged files")
     parser.add_argument("--prune", action="store_true")
+    parser.add_argument("--root", default=None,
+                        help="checkout to scan (default: the one this tool lives in); "
+                             "the gate config is always read from the tool's own checkout")
     args = parser.parse_args(argv)
+    repo = Path(args.root).resolve() if args.root else REPO
 
     if args.prune:
         dropped = prune()
@@ -425,11 +429,11 @@ def main(argv: list[str] | None = None) -> int:
 
     only = None
     if args.staged:
-        only = _staged_files(REPO)
+        only = _staged_files(repo)
     elif args.changed is not None:
         only = list(args.changed)
 
-    report = build_report(REPO, only)
+    report = build_report(repo, only)
 
     if args.json:
         print(json.dumps(report, indent=2))

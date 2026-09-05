@@ -1,0 +1,1 @@
+tests/test_bdc_control_inheritance_page.py

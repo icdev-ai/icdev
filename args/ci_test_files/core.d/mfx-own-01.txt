@@ -1,0 +1,2 @@
+# mfx-own-01 -- a task parked token_exhausted whose branch has an OPEN PR is handed to pr_watcher as pr_opened.
+tests/kanban/test_parked_task_with_open_pr_is_handed_off.py

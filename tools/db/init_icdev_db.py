@@ -5628,20 +5628,25 @@ CREATE TABLE IF NOT EXISTS proposal_section_dependencies (
 CREATE INDEX IF NOT EXISTS idx_prop_dep_section ON proposal_section_dependencies(section_id);
 CREATE INDEX IF NOT EXISTS idx_prop_dep_depends ON proposal_section_dependencies(depends_on_section_id);
 
--- L/M/N compliance matrix: links RFP requirements to proposal sections
+-- L/M/N compliance matrix: links RFP requirements to proposal sections.
+-- THE ONE compliance matrix (rmf-rfp-01): pg_compliance_matrix was folded into
+-- it by migration 20260903185253. Both CHECKs derive from
+-- tools/govcon/compliance_matrix_schema.py (placeholders substituted below).
 CREATE TABLE IF NOT EXISTS proposal_compliance_matrix (
     id TEXT PRIMARY KEY,
     opportunity_id TEXT NOT NULL REFERENCES proposal_opportunities(id),
     section_ref TEXT NOT NULL,
     volume_ref TEXT,
     requirement_text TEXT NOT NULL,
-    requirement_type TEXT DEFAULT 'L' CHECK(requirement_type IN ('L', 'M', 'N', 'other')),
-    compliance_status TEXT DEFAULT 'not_addressed' CHECK(compliance_status IN (
-        'compliant', 'partial', 'non_compliant', 'not_applicable', 'not_addressed')),
+    requirement_type TEXT DEFAULT 'L' CHECK(requirement_type IN (@@CMX_REQUIREMENT_TYPES@@)),
+    compliance_status TEXT DEFAULT 'not_addressed' CHECK(compliance_status IN (@@CMX_COMPLIANCE_STATUSES@@)),
     proposal_section_id TEXT REFERENCES proposal_sections(id),
     response_summary TEXT,
     notes TEXT,
     sort_order INTEGER DEFAULT 0,
+    evaluation_factor TEXT,
+    evaluation_weight REAL,
+    amendment_version INTEGER DEFAULT 0,
     classification TEXT DEFAULT 'CUI',
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
@@ -9256,28 +9261,9 @@ CREATE INDEX IF NOT EXISTS idx_pg_team_assess_opp ON pg_teaming_assessments(oppo
 -- Proposal Genesis Enhancement (3-Engine Research, §3.11-§3.18)
 -- ================================================================
 
--- §3.11 Compliance Matrix (R5 enhancement + R22 Trace)
-CREATE TABLE IF NOT EXISTS pg_compliance_matrix (
-    id                  TEXT PRIMARY KEY,
-    opportunity_id      TEXT NOT NULL,
-    requirement_id      TEXT NOT NULL,
-    requirement_text    TEXT NOT NULL,
-    source_section      TEXT NOT NULL CHECK(source_section IN ('L', 'M', 'C', 'attachment', 'amendment')),
-    evaluation_factor   TEXT,
-    evaluation_weight   REAL,
-    assigned_volume     TEXT,
-    assigned_section    TEXT,
-    compliance_status   TEXT DEFAULT 'gap' CHECK(compliance_status IN ('addressed', 'partial', 'gap', 'na')),
-    amendment_version   INTEGER DEFAULT 0,
-    notes               TEXT,
-    created_at          TEXT NOT NULL,
-    updated_at          TEXT NOT NULL,
-    tenant_id TEXT,
-    classification TEXT DEFAULT 'CUI',
-    FOREIGN KEY (opportunity_id) REFERENCES proposal_opportunities(id)
-);
-CREATE INDEX IF NOT EXISTS idx_pg_cmatrix_opp ON pg_compliance_matrix(opportunity_id);
-CREATE INDEX IF NOT EXISTS idx_pg_cmatrix_status ON pg_compliance_matrix(compliance_status);
+-- §3.11 Compliance Matrix (R5 enhancement + R22 Trace): pg_compliance_matrix
+-- was REMOVED by rmf-rfp-01 (migration 20260903185253). The L/M/C matrix is
+-- proposal_compliance_matrix, above -- one table, one coverage number.
 
 -- §3.12 AI Color Team Review Simulator (R15 Review)
 CREATE TABLE IF NOT EXISTS pg_review_findings (
@@ -11306,6 +11292,17 @@ _AUDIT_EVENT_TYPES_SQL = ",\n".join(
     f"        '{_t}'" for _t in _VALID_EVENT_TYPES
 )
 SCHEMA_SQL = SCHEMA_SQL.replace("@@AUDIT_EVENT_TYPES@@", _AUDIT_EVENT_TYPES_SQL)
+
+# rmf-rfp-01: the ONE compliance matrix's two CHECKs derive from the tuples the
+# builder, the migration and the API share, so the vocabulary cannot drift.
+from tools.govcon.compliance_matrix_schema import (  # noqa: E402
+    COMPLIANCE_STATUSES as _CMX_STATUSES,
+    REQUIREMENT_TYPES as _CMX_TYPES,
+    sql_in_list as _cmx_sql_in_list,
+)
+
+SCHEMA_SQL = SCHEMA_SQL.replace("@@CMX_REQUIREMENT_TYPES@@", _cmx_sql_in_list(_CMX_TYPES))
+SCHEMA_SQL = SCHEMA_SQL.replace("@@CMX_COMPLIANCE_STATUSES@@", _cmx_sql_in_list(_CMX_STATUSES))
 
 
 # Phase 64: RAG columns on projects table

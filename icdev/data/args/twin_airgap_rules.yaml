@@ -89,3 +89,50 @@ rules:
       - "nat-public"
     applies_to: ["egress", "route", "gateway", "destination", "cidr"]
     recommendation: "Replace public egress with an internal-only path; classified enclaves have no default route to the internet."
+
+  # ── flx-airgap-02 ────────────────────────────────────────────────────────
+  #
+  # WHY THIS RULE CANNOT BE A `denied_host_suffixes` ENTRY, and that is the
+  # whole reason it exists. Every rule above is DENY-BY-MATCH over strings the
+  # target CONTAINS: `airgap-internal-registry` fires because the design
+  # literally names `docker.io/foo`. An emulator's container-backed
+  # dependency is ABSENT from the configuration — a floci config that declares
+  # a Lambda contains no image reference at all, and floci resolves
+  # `public.ecr.aws/lambda/python:3.11` at RUN TIME, on first use, from the
+  # public internet. A string matcher is structurally blind to it: there is no
+  # string. So this rule is DERIVE-THEN-CHECK — derive the required image set
+  # from the declared services (args/floci_runtime_images.yaml, every entry
+  # MEASURED from `docker events` against a live floci), then ask the LOCAL
+  # DAEMON whether it already holds them.
+  #
+  # THE DISCRIMINATOR IS THE LOCAL CACHE, per the operator decision of
+  # 2026-09-05 (locally hosted Docker, not a remote daemon and not an internal
+  # registry mirror). A populated local cache IS a valid air-gap posture: the
+  # requirement is that NOTHING PULLS AT RUN TIME, not that a registry exists.
+  # The internal-registry variant (FLOCI_DOCKER_DOCKER_HOST plus per-registry
+  # credentials) is a named follow-on, flx-airgap-03 — deferred, never dropped.
+  #
+  # `unmeasured` IS NOT CLEAN and does not use `severity`. A host whose docker
+  # daemon cannot be asked has PROVEN NOTHING, and emitting a blocker there
+  # would refuse every CI runner and every air-gapped reviewer machine, which
+  # is how a gate earns itself a `|| true`. It emits at
+  # `unmeasured_severity` under the `-unmeasured` rule id instead, so it is
+  # visible, attributable, and not silently folded into either answer.
+  - id: airgap-emulator-runtime-images
+    category: security
+    description: >-
+      An emulator configuration whose container-backed services would pull a
+      runtime base image at run time cannot work on a disconnected host.
+    # The marker that selects the derive-then-check evaluator. Its presence is
+    # what makes this rule different in KIND from the four above; a rule
+    # without it is still an ordinary string matcher.
+    emulator_runtime_images: true
+    # `medium`, and deliberately NOT the blocker severity. See above.
+    unmeasured_severity: medium
+    applies_to: ["image", "container", "emulator", "service"]
+    recommendation: >-
+      Pre-populate the local Docker image cache before disconnecting the host —
+      `python tools/airgap/image_vendor.py --load --topic floci-runtime` on the
+      high side, having vendored it with `--save` on a connected one. Verify
+      with `python -m tools.cloud.runtime_images --check`. Procedure:
+      docs/ops/airgap-runbook.md.

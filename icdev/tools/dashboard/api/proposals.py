@@ -1104,11 +1104,43 @@ def create_compliance_item(opp_id):
 @proposals_api.route("/opportunities/<opp_id>/compliance/batch", methods=["POST"])
 @require_role("admin", "bd", "capture_mgr", "pm", "reviewer")
 def batch_create_compliance(opp_id):
-    """POST /api/proposals/<opp_id>/compliance/batch — Batch create compliance items."""
+    """POST /api/proposals/<opp_id>/compliance/batch — Batch create compliance items.
+
+    Two payload shapes, one table (rmf-rfp-01):
+
+      {"items": [...]}                       hand-built rows, unchanged
+      {"parsed": {...}, "section_text": {}}  a solicitation: `parsed` is
+                                             solicitation_parser output and
+                                             `section_text` maps L/M/C to raw
+                                             section bodies; either or both.
+                                             compliance_matrix_builder extracts
+                                             the L/M/C requirements and stores
+                                             them, deduplicated on text.
+
+    The second shape is what gives the Section L/M matrix builder a ROUTE --
+    it had a CLI and zero callers.
+    """
     data = request.get_json(force=True, silent=True) or {}
     items = data.get("items", [])
-    if not items:
-        return jsonify({"error": "items array is required"}), 400
+    parsed = data.get("parsed")
+    section_text = data.get("section_text")
+    if parsed is not None and not isinstance(parsed, dict):
+        return jsonify({"error": "parsed must be an object (solicitation_parser output)"}), 400
+    if section_text is not None and not isinstance(section_text, dict):
+        return jsonify({"error": "section_text must map section letters to text"}), 400
+    if not items and not parsed and not section_text:
+        return jsonify({"error": "items array, or parsed / section_text, is required"}), 400
+
+    if parsed or section_text:
+        from tools.govcon.compliance_matrix_builder import build_from_parsed
+
+        conn = _get_db()
+        try:
+            result = build_from_parsed(opp_id, parsed or {}, section_text or {}, conn=conn)
+        finally:
+            conn.close()
+        return jsonify(result), 201
+
     conn = _get_db()
     try:
         created = 0
@@ -2482,9 +2514,9 @@ def get_orphaned_requirements(opp_id):
     try:
         rows = conn.execute(
             """SELECT * FROM proposal_compliance_matrix
-               WHERE opportunity_id = %s AND section_id IS NULL
+               WHERE opportunity_id = %s AND proposal_section_id IS NULL
                  AND compliance_status != 'not_applicable'
-               ORDER BY requirement_number""",
+               ORDER BY sort_order, section_ref""",
             (opp_id,),
         ).fetchall()
         return jsonify({"orphaned": [dict(r) for r in rows], "count": len(rows)})

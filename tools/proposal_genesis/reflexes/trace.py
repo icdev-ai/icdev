@@ -64,7 +64,7 @@ def _get_opportunities_with_matrices() -> List[Dict]:
     try:
         rows = conn.execute(f"""
             SELECT DISTINCT cm.opportunity_id, po.title, po.status
-            FROM pg_compliance_matrix cm
+            FROM proposal_compliance_matrix cm
             JOIN proposal_opportunities po ON po.id = cm.opportunity_id
             WHERE po.status IN ('tracking', 'drafting', 'reviewing')
             ORDER BY po.created_at DESC
@@ -83,7 +83,7 @@ def _compute_coverage(opp_id: str) -> Dict[str, Any]:
     try:
         rows = conn.execute(
             "SELECT compliance_status, COUNT(*) as cnt "
-            "FROM pg_compliance_matrix "
+            "FROM proposal_compliance_matrix "
             "WHERE opportunity_id = %s "
             "GROUP BY compliance_status",
             (opp_id,),
@@ -103,9 +103,10 @@ def _compute_coverage(opp_id: str) -> Dict[str, Any]:
     if total == 0:
         return {"total": 0, "coverage_pct": 0.0, "breakdown": breakdown}
 
-    # L = compliant, M = partial, N/C = non-compliant/gap
-    compliant = breakdown.get("L", 0) + breakdown.get("compliant", 0)
-    partial = breakdown.get("M", 0) + breakdown.get("partial", 0)
+    # proposal_compliance_matrix vocabulary (rmf-rfp-01): compliant / partial
+    # are addressed; not_addressed / non_compliant / not_applicable are not.
+    compliant = breakdown.get("compliant", 0)
+    partial = breakdown.get("partial", 0)
     covered = compliant + partial
     coverage_pct = (covered / total) * 100 if total > 0 else 0.0
 
@@ -128,9 +129,9 @@ def _check_unmapped_sections(opp_id: str) -> Dict[str, Any]:
             """
             SELECT psd.id, psd.section_id
             FROM proposal_section_drafts psd
-            LEFT JOIN pg_compliance_matrix cm
+            LEFT JOIN proposal_compliance_matrix cm
                 ON cm.opportunity_id = psd.opportunity_id
-                AND cm.section_reference = psd.section_id
+                AND cm.proposal_section_id = psd.section_id
             WHERE psd.opportunity_id = %s
             AND cm.id IS NULL
             AND psd.status IN ('draft', 'approved')

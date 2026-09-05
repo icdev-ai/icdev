@@ -9,7 +9,7 @@ Batch 1 (from article):
   /security-scan, /migration, /sbd, /pr-intel, /iac
 
 Batch 2 (additional recommendations):
-  /boundary/cato-health (was /cato), /control-inheritance, /migration-cost, /boundary/compliance-debt (was /compliance-debt), /stig-manager, /boundary/ato-package (was /ato-package)
+  /boundary/cato-health (was /cato), /boundary/control-inheritance (was /control-inheritance), /migration-cost, /boundary/compliance-debt (was /compliance-debt), /stig-manager, /boundary/ato-package (was /ato-package)
 
 Validates: page loads, HTTP 200, no JS errors, API endpoints respond, navbar links present.
 """
@@ -36,7 +36,7 @@ PAGES = [
     {"path": "/iac", "title": "IaC Gallery", "api": "/api/iac/stats"},
     # Batch 2: Additional recommendations
     {"path": "/boundary/cato-health", "title": "Continuous ATO", "api": "/api/cato/health"},
-    {"path": "/control-inheritance", "title": "Control Inheritance", "api": "/api/control-inheritance/csps"},
+    {"path": "/boundary/control-inheritance", "title": "Control Inheritance", "api": "/api/control-inheritance/csps"},
     {"path": "/migration-cost", "title": "Migration Cost", "api": "/api/migration-cost/portfolio"},
     {"path": "/boundary/compliance-debt", "title": "Compliance Debt", "api": "/api/compliance-debt/summary"},
     {"path": "/security/stig-manager", "title": "STIG Manager", "api": "/api/stig-manager/stats"},

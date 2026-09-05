@@ -7920,15 +7920,13 @@ def _is_mirror_shim(path: Path) -> bool:
     canonical example is ``tools/llm/agent_loop.py`` — it must never be flagged
     as drift. Physically-separate full copies are NOT shims and are compared.
     """
+    # ONE copy of the rule (mfx-ci-01): the auditor owns it so the pre-commit
+    # hook's per-file audit and this gate cannot disagree about what a shim is.
     try:
-        text = path.read_text(encoding="utf-8", errors="replace")
-    except Exception:
+        from tools.dx.mirror_parity import is_mirror_shim
+    except Exception:  # noqa: BLE001 -- the auditor is stdlib-only; this is belt and braces
         return False
-    if text.count("\n") >= 120:
-        return False
-    imports_twin = re.search(r"from\s+icdev\.tools[\w.]*\s+import\b", text) is not None
-    marks_reexport = "re-export" in text.lower()
-    return imports_twin and marks_reexport
+    return is_mirror_shim(path)
 
 
 def _rel_under_excluded(rel_posix: str) -> bool:

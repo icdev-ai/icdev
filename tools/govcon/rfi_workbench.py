@@ -122,10 +122,74 @@ def create_session(rfi_number, rfi_title, profile_name, upload_filename, parsed_
     return sid
 
 
+def is_rfp_parse(parsed_data) -> bool:
+    """True when `parsed_data` is solicitation_parser output (an RFP/RFQ), not
+    rfi_document_parser output (an RFI questionnaire)."""
+    parsed_data = parsed_data or {}
+    if parsed_data.get("source") == "solicitation_document":
+        return True
+    return "section_l_instructions" in parsed_data and "questionnaire_parts" not in parsed_data
+
+
+def _rfp_section_rows(parsed_data) -> list:
+    """Workbench sections for an RFP: ONE PER SECTION L INSTRUCTION (rmf-rfp-01).
+
+    Section L is what tells the offeror what to write, so its numbered items
+    (L.4.2 ...) are the response sections. `part` groups them under the
+    proposal volume the instruction names when it names one (via
+    volume_structure), else under Section L itself. A parse with no L items
+    falls back to one section per parsed volume, and a parse with neither
+    seeds NOTHING -- the RFI questionnaire defaults describe a different
+    document, and seeding them would fabricate what the RFP asks for.
+    """
+    rows = []
+    volumes = parsed_data.get("volume_structure") or []
+    vol_label = {}
+    roman = {"I": "1", "II": "2", "III": "3", "IV": "4", "V": "5", "VI": "6"}
+    for v in volumes:
+        num = str(v.get("volume", "")).upper()
+        if not num:
+            continue
+        label = f"Volume {num}" + (f" — {v['title']}" if v.get("title") else "")
+        vol_label[num] = label
+        if num in roman:
+            vol_label[roman[num]] = label
+    vol_re = re.compile(r"\bVolume\s+([IVX]+|\d+)\b", re.IGNORECASE)
+
+    seen = set()
+    for item in parsed_data.get("section_l_instructions") or []:
+        number = str(item.get("number") or "").strip()
+        title = (item.get("title") or "").strip() or (f"Instruction {number}" if number else "Instruction")
+        text = (item.get("text") or "").strip()
+        key = (number, title)
+        if key in seen:
+            continue
+        seen.add(key)
+        m = vol_re.search(f"{title} {text}")
+        part = "section_l"
+        topic = "Section L"
+        if m and m.group(1).upper() in vol_label:
+            label = vol_label[m.group(1).upper()]
+            part = "volume_" + label.split()[1].lower()
+            topic = label
+        rows.append((part, number or "L", title, topic, text))
+    if rows:
+        return rows
+
+    for v in volumes:
+        num = str(v.get("volume", "")).upper()
+        if not num:
+            continue
+        rows.append((f"volume_{num.lower()}", num, v.get("title") or f"Volume {num}", f"Volume {num}", ""))
+    return rows
+
+
 def _seed_sections(session_id, parsed_data):
     db = get_db()
     parts = parsed_data.get("questionnaire_parts", [])
-    if parts:
+    if is_rfp_parse(parsed_data):
+        rows = _rfp_section_rows(parsed_data)
+    elif parts:
         seen = set()
         rows = []
         for p in parts:
@@ -2374,8 +2438,24 @@ def get_parse_summary(session: dict) -> dict:
     """Return parse metadata for the upload-feedback banner."""
     parsed = session.get("parsed_data") or {}
     rfi_number = session.get("rfi_number", "RFI-UNKNOWN")
+    if is_rfp_parse(parsed):
+        l_items = parsed.get("section_l_instructions") or []
+        volumes = parsed.get("volume_structure") or []
+        return {
+            "document_kind": "rfp",
+            "parse_fallback": rfi_number in ("RFI-UNKNOWN", "RFP-UNKNOWN", "") or not (l_items or volumes),
+            "rfi_number": rfi_number,
+            "rfi_title": session.get("rfi_title", ""),
+            "section_l_instructions_count": len(l_items),
+            "section_m_factors_count": len(parsed.get("section_m_factors") or []),
+            "volumes_count": len(volumes),
+            "clins_count": len(parsed.get("clins") or []),
+            "objectives_count": 0,
+            "questionnaire_parts_count": 0,
+        }
     parse_fallback = rfi_number == "RFI-UNKNOWN" or not parsed.get("questionnaire_parts")
     return {
+        "document_kind": "rfi",
         "parse_fallback": parse_fallback,
         "rfi_number": rfi_number,
         "rfi_title": session.get("rfi_title", ""),

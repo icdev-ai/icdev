@@ -22,9 +22,10 @@ from tools.studio.executors._base import (  # noqa: E402
     artifacts_dir, resolve_canvas, get_iac_artifacts, filter_artifacts,
     docker_available, pull_image, docker_run,
     docker_aws_flags, aws_env, detect_mode,
-    LOCALSTACK_PROVIDER_OVERRIDE, TFVARS_DEFAULTS,
-    localstack_docker_endpoint,
+    FLOCI_PROVIDER_OVERRIDE, TFVARS_DEFAULTS,
+    emulator_docker_endpoint, is_emulated,
 )
+from tools.cloud import emulator  # noqa: E402
 
 _TF_IMAGE = "hashicorp/terraform:1.9"
 
@@ -79,12 +80,11 @@ def run(run_id: str, project_id: str, canvas: str = "") -> dict:
             tmp_path = Path(tmp)
             for p in tf_paths:
                 shutil.copy2(p, tmp_path / p.name)
-            if mode in ("localstack", "sam"):
-                raw_ep = env.get("LOCALSTACK_ENDPOINT", "http://localhost:4566")
-                docker_ep = localstack_docker_endpoint(raw_ep)
-                region = env.get("AWS_DEFAULT_REGION", "us-east-1")
-                (tmp_path / "localstack_override.tf").write_text(
-                    LOCALSTACK_PROVIDER_OVERRIDE.format(ep=docker_ep, region=region),
+            if is_emulated(mode):
+                docker_ep = emulator_docker_endpoint(emulator.endpoint(env))
+                region = env.get("AWS_DEFAULT_REGION") or emulator.region(env)
+                (tmp_path / "floci_override.tf").write_text(
+                    FLOCI_PROVIDER_OVERRIDE.format(ep=docker_ep, region=region),
                     encoding="utf-8", newline="",
                 )
             (tmp_path / "auto.tfvars").write_text(TFVARS_DEFAULTS, encoding="utf-8", newline="")

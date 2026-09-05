@@ -1,0 +1,334 @@
+{# CUI // SP-CTI — Boundary Design Canvas Control Inheritance Visualizer (rmf-ui-08) #}
+{% extends "base.html" %}
+
+{% block title %}Control Inheritance — Boundary Canvas — ICDEV™{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="breadcrumbs" aria-label="Breadcrumb" style="margin-bottom:1rem;">
+        <a href="/">Home</a>
+        <span class="separator">/</span>
+        <a href="/boundary/">Boundary Canvas</a>
+        <span class="separator">/</span>
+        <span class="current">Control Inheritance</span>
+    </div>
+
+    {% include "includes/iqe_query_widget.html" %}
+
+    <h1>Control Inheritance Visualizer</h1>
+    <p class="text-muted">Visualize shared responsibility between your agency and CSP. Identify inherited, shared, and customer-owned controls for FedRAMP/cloud migration.</p>
+    <!-- nav-comp-06: the inherited/shared/customer split is a FedRAMP reference
+         model (API responses carry data_source: "reference_model"), NOT an
+         assessed responsibility assignment for this specific boundary. -->
+    <div id="reference-badge" style="display:inline-block;margin:0 0 1rem;padding:0.3rem 0.75rem;background:#ede7f6;color:#4527a0;border:1px solid #b39ddb;border-radius:999px;font-size:0.8rem;font-weight:bold;">
+        Typical inheritance (reference)
+        <span style="font-weight:normal;color:#5e35b1;">— FedRAMP reference model, not an assessed posture</span>
+    </div>
+
+    <!-- CSP Selector -->
+    <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap;margin:1.5rem 0;padding:1rem;border:1px solid #ddd;border-radius:8px;background:#fafafa;">
+        <label for="csp-select" style="font-weight:bold;">Cloud Service Provider:</label>
+        <select id="csp-select" style="padding:0.4rem 0.8rem;border:1px solid #ccc;border-radius:4px;font-size:0.95rem;">
+            <option value="aws_govcloud">Loading...</option>
+        </select>
+        <label for="project-input" style="font-weight:bold;margin-left:1rem;">Project ID:</label>
+        <input type="text" id="project-input" placeholder="Optional project ID" style="padding:0.4rem;border:1px solid #ccc;border-radius:4px;width:200px;">
+        <button onclick="reloadAll()" style="padding:0.4rem 1rem;background:#1976d2;color:#fff;border:none;border-radius:4px;cursor:pointer;">Apply</button>
+    </div>
+
+    <!-- Responsibility Summary Cards -->
+    <h2>Responsibility Summary</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1rem;margin:1rem 0;">
+        <div id="card-inherited" class="stat-card" style="padding:1.5rem;border:2px solid #1976d2;border-radius:8px;text-align:center;background:#e3f2fd;">
+            <div style="font-size:0.85rem;color:#1565c0;font-weight:bold;text-transform:uppercase;">Inherited (CSP Owns)</div>
+            <div id="count-inherited" style="font-size:2.5rem;font-weight:bold;color:#1976d2;">--</div>
+            <div id="pct-inherited" style="font-size:0.9rem;color:#666;">--</div>
+        </div>
+        <div id="card-shared" class="stat-card" style="padding:1.5rem;border:2px solid #f57c00;border-radius:8px;text-align:center;background:#fff3e0;">
+            <div style="font-size:0.85rem;color:#e65100;font-weight:bold;text-transform:uppercase;">Shared Responsibility</div>
+            <div id="count-shared" style="font-size:2.5rem;font-weight:bold;color:#f57c00;">--</div>
+            <div id="pct-shared" style="font-size:0.9rem;color:#666;">--</div>
+        </div>
+        <div id="card-customer" class="stat-card" style="padding:1.5rem;border:2px solid #d32f2f;border-radius:8px;text-align:center;background:#ffebee;">
+            <div style="font-size:0.85rem;color:#c62828;font-weight:bold;text-transform:uppercase;">Customer Owned</div>
+            <div id="count-customer" style="font-size:2.5rem;font-weight:bold;color:#d32f2f;">--</div>
+            <div id="pct-customer" style="font-size:0.9rem;color:#666;">--</div>
+        </div>
+    </div>
+
+    <!-- Inheritance Matrix -->
+    <h2 style="margin-top:2rem;">Inheritance Matrix</h2>
+    <div id="matrix-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0.75rem;margin:1rem 0;">
+        <p style="color:#999;">Loading matrix...</p>
+    </div>
+
+    <!-- Gap Analysis Panel -->
+    <h2 style="margin-top:2rem;">Gap Analysis</h2>
+    <p class="text-muted">Customer-responsible and shared controls not yet fully implemented.</p>
+    <div id="gap-notice" style="margin:0.5rem 0;padding:0.5rem 1rem;background:#fff3e0;border-left:4px solid #f57c00;border-radius:4px;display:none;">
+        Enter a Project ID above to see gap analysis.
+    </div>
+    <div class="table-container">
+        <table id="gap-table" aria-label="Control gap analysis">
+            <thead>
+                <tr>
+                    <th>Control ID</th>
+                    <th>Family</th>
+                    <th>Title</th>
+                    <th>Responsibility</th>
+                    <th>Status</th>
+                    <th>Priority</th>
+                </tr>
+            </thead>
+            <tbody id="gap-body">
+                <tr><td colspan="6" style="text-align:center;color:#999;">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Detailed Controls Table -->
+    <h2 style="margin-top:2rem;">Detailed Controls</h2>
+    <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap;margin:0.75rem 0;">
+        <label for="filter-family" style="font-weight:bold;">Family:</label>
+        <select id="filter-family" onchange="loadControls()" style="padding:0.3rem 0.6rem;border:1px solid #ccc;border-radius:4px;">
+            <option value="">All Families</option>
+        </select>
+        <label for="filter-resp" style="font-weight:bold;">Responsibility:</label>
+        <select id="filter-resp" onchange="loadControls()" style="padding:0.3rem 0.6rem;border:1px solid #ccc;border-radius:4px;">
+            <option value="">All</option>
+            <option value="inherited">Inherited</option>
+            <option value="shared">Shared</option>
+            <option value="customer">Customer</option>
+        </select>
+    </div>
+    <div class="table-container">
+        <table id="controls-table" aria-label="Detailed control list">
+            <thead>
+                <tr>
+                    <th>Control ID</th>
+                    <th>Family</th>
+                    <th>Title</th>
+                    <th>Responsibility</th>
+                    <th>Implementation Status</th>
+                    <th>Owner</th>
+                </tr>
+            </thead>
+            <tbody id="controls-body">
+                <tr><td colspan="6" style="text-align:center;color:#999;">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+(function() {
+    const API = '/api/control-inheritance';
+    const RESP_COLORS = {
+        inherited: {bg: '#e3f2fd', border: '#1976d2', text: '#1565c0'},
+        shared:    {bg: '#fff3e0', border: '#f57c00', text: '#e65100'},
+        customer:  {bg: '#ffebee', border: '#d32f2f', text: '#c62828'}
+    };
+
+    function getCSP() {
+        return document.getElementById('csp-select').value;
+    }
+    function getProjectId() {
+        return document.getElementById('project-input').value.trim();
+    }
+
+    function badge(responsibility) {
+        var c = RESP_COLORS[responsibility] || RESP_COLORS.customer;
+        return '<span style="display:inline-block;padding:0.15rem 0.5rem;border-radius:12px;font-size:0.8rem;font-weight:bold;background:' +
+            c.bg + ';color:' + c.text + ';border:1px solid ' + c.border + ';">' +
+            responsibility + '</span>';
+    }
+
+    function statusBadge(status) {
+        if (!status) return '<span style="color:#999;">--</span>';
+        var colors = {
+            implemented: '#388e3c',
+            partially_implemented: '#f57c00',
+            planned: '#1976d2',
+            not_applicable: '#9e9e9e',
+            compensating: '#7b1fa2',
+            not_started: '#d32f2f'
+        };
+        var color = colors[status] || '#666';
+        return '<span style="display:inline-block;padding:0.15rem 0.5rem;border-radius:12px;font-size:0.8rem;background:' +
+            color + ';color:#fff;">' + status.replace(/_/g, ' ') + '</span>';
+    }
+
+    function priorityBadge(priority) {
+        var color = priority === 'high' ? '#d32f2f' : '#f57c00';
+        return '<span style="display:inline-block;padding:0.15rem 0.5rem;border-radius:12px;font-size:0.8rem;font-weight:bold;background:' +
+            color + ';color:#fff;">' + priority.toUpperCase() + '</span>';
+    }
+
+    // Load CSP dropdown
+    async function loadCSPs() {
+        try {
+            var resp = await fetch(API + '/csps');
+            var data = await resp.json();
+            var sel = document.getElementById('csp-select');
+            sel.innerHTML = '';
+            (data.csps || []).forEach(function(c) {
+                var opt = document.createElement('option');
+                opt.value = c.id;
+                opt.textContent = c.name;
+                sel.appendChild(opt);
+            });
+        } catch(e) {
+            console.error('Failed to load CSPs:', e);
+        }
+    }
+
+    // Load summary cards
+    async function loadSummary() {
+        try {
+            var url = API + '/summary?csp=' + encodeURIComponent(getCSP());
+            var pid = getProjectId();
+            if (pid) url += '&project_id=' + encodeURIComponent(pid);
+            var resp = await fetch(url);
+            var data = await resp.json();
+            var s = data.summary || {};
+            ['inherited', 'shared', 'customer'].forEach(function(cat) {
+                var info = s[cat] || {count: 0, percent: 0};
+                document.getElementById('count-' + cat).textContent = info.count;
+                document.getElementById('pct-' + cat).textContent = info.percent + '% of total (' + (data.total_controls || 0) + ')';
+            });
+        } catch(e) {
+            console.error('Failed to load summary:', e);
+        }
+    }
+
+    // Load inheritance matrix
+    async function loadMatrix() {
+        try {
+            var resp = await fetch(API + '/model?csp=' + encodeURIComponent(getCSP()));
+            var data = await resp.json();
+            var grid = document.getElementById('matrix-grid');
+            grid.innerHTML = '';
+
+            // Populate family filter dropdown
+            var famSel = document.getElementById('filter-family');
+            var prev = famSel.value;
+            famSel.innerHTML = '<option value="">All Families</option>';
+
+            (data.families || []).forEach(function(fam) {
+                var c = RESP_COLORS[fam.responsibility] || RESP_COLORS.customer;
+                var card = document.createElement('div');
+                card.style.cssText = 'padding:0.75rem;border:2px solid ' + c.border +
+                    ';border-radius:8px;background:' + c.bg + ';';
+                card.innerHTML =
+                    '<div style="font-weight:bold;font-size:1.1rem;color:' + c.text + ';">' + fam.family + '</div>' +
+                    '<div style="font-size:0.85rem;color:#555;margin:0.25rem 0;">' + fam.label + '</div>' +
+                    '<div style="margin:0.25rem 0;">' + badge(fam.responsibility) + '</div>' +
+                    '<div style="font-size:0.8rem;color:#666;">' + fam.control_count + ' controls</div>';
+                grid.appendChild(card);
+
+                // Add to family filter
+                var opt = document.createElement('option');
+                opt.value = fam.family;
+                opt.textContent = fam.family + ' - ' + fam.label;
+                famSel.appendChild(opt);
+            });
+            if (prev) famSel.value = prev;
+        } catch(e) {
+            document.getElementById('matrix-grid').innerHTML = '<p style="color:#c62828;">Error loading matrix.</p>';
+        }
+    }
+
+    // Load gap analysis
+    async function loadGaps() {
+        var pid = getProjectId();
+        var body = document.getElementById('gap-body');
+        var notice = document.getElementById('gap-notice');
+        if (!pid) {
+            notice.style.display = 'block';
+            body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;">No project selected.</td></tr>';
+            return;
+        }
+        notice.style.display = 'none';
+        try {
+            var resp = await fetch(API + '/gap?csp=' + encodeURIComponent(getCSP()) +
+                '&project_id=' + encodeURIComponent(pid));
+            var data = await resp.json();
+            if (data.error) {
+                body.innerHTML = '<tr><td colspan="6" style="color:#c62828;">' + data.error + '</td></tr>';
+                return;
+            }
+            var gaps = data.gaps || [];
+            if (gaps.length === 0) {
+                body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#388e3c;font-weight:bold;">No gaps found — all controls implemented.</td></tr>';
+                return;
+            }
+            body.innerHTML = gaps.map(function(g) {
+                return '<tr>' +
+                    '<td>' + g.control_id + '</td>' +
+                    '<td>' + g.family + '</td>' +
+                    '<td>' + g.title + '</td>' +
+                    '<td>' + badge(g.responsibility) + '</td>' +
+                    '<td>' + statusBadge(g.implementation_status) + '</td>' +
+                    '<td>' + priorityBadge(g.priority) + '</td>' +
+                    '</tr>';
+            }).join('');
+        } catch(e) {
+            body.innerHTML = '<tr><td colspan="6" style="color:#c62828;">Error loading gap analysis.</td></tr>';
+        }
+    }
+
+    // Load detailed controls
+    async function loadControlsInner() {
+        var body = document.getElementById('controls-body');
+        try {
+            var url = API + '/controls?csp=' + encodeURIComponent(getCSP());
+            var pid = getProjectId();
+            if (pid) url += '&project_id=' + encodeURIComponent(pid);
+            var fam = document.getElementById('filter-family').value;
+            if (fam) url += '&family=' + encodeURIComponent(fam);
+            var resp = document.getElementById('filter-resp').value;
+            if (resp) url += '&responsibility=' + encodeURIComponent(resp);
+
+            var r = await fetch(url);
+            var data = await r.json();
+            var controls = data.controls || [];
+            if (controls.length === 0) {
+                body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;">No controls found.</td></tr>';
+                return;
+            }
+            body.innerHTML = controls.map(function(c) {
+                return '<tr>' +
+                    '<td>' + c.control_id + '</td>' +
+                    '<td>' + c.family + '</td>' +
+                    '<td>' + c.title + '</td>' +
+                    '<td>' + badge(c.responsibility) + '</td>' +
+                    '<td>' + statusBadge(c.implementation_status) + '</td>' +
+                    '<td>' + (c.responsible_role || '<span style="color:#999;">--</span>') + '</td>' +
+                    '</tr>';
+            }).join('');
+        } catch(e) {
+            body.innerHTML = '<tr><td colspan="6" style="color:#c62828;">Error loading controls.</td></tr>';
+        }
+    }
+
+    // Expose for filter dropdowns
+    window.loadControls = loadControlsInner;
+
+    // Reload everything
+    window.reloadAll = async function() {
+        await Promise.all([loadSummary(), loadMatrix(), loadGaps(), loadControlsInner()]);
+    };
+
+    // Init
+    (async function() {
+        await loadCSPs();
+        await window.reloadAll();
+    })();
+
+    // Reload when CSP changes
+    document.getElementById('csp-select').addEventListener('change', function() {
+        window.reloadAll();
+    });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,97 @@
+# CUI // SP-CTI
+# mfx-boot-02 -- the self-hosted CI runner fleet, DECLARED.
+# Consumed by tools/genesis/reflexes/ci_runner_health.py.
+#
+# NO TOKEN IN THIS FILE, EVER. A registration token is valid for about an hour
+# and is minted at the moment it is needed:
+#     gh api -X POST repos/<owner>/<repo>/actions/runners/registration-token
+# It travels to `docker compose` in the process ENVIRONMENT (never argv, which
+# the process table shows) and is never written to the audit row, the log, or
+# the reflex report.
+#
+# THE INCIDENT. Measured 2026-09-03 (and twice before): every docker runner --
+# icdev-ft-runner, -2, -3 and icdev-rt-runner -- sat in `Restarting (1)` for
+# hours with
+#     Http response code: NotFound from 'POST .../actions/runner-registration'
+# (an expired registration token baked into the container's env), the forge
+# listed each one `offline`, and every job in icdev_ft / icdev_rt QUEUED with
+# no red anywhere. A PR then waits with every check `pending` at 0s and the repo
+# merely looks slow. The recovery was performed BY HAND each time:
+#     RUNNER_TOKEN=$(gh api -X POST repos/<owner>/<repo>/actions/runners/registration-token --jq .token) \
+#     RUNNER_CONTAINER=<container> RUNNER_NAME=<runner_name> docker compose -p <project> up -d
+# The reflex performs exactly that act, for exactly the containers declared
+# here, and nothing else.
+#
+# WHAT IS DECLARED, per container: the compose PROJECT (Compose scopes volumes
+# by project, and two runners sharing one config volume fight over the same
+# registration -- on 2026-08-30 an RT `up` adopted FT's `runner` project and
+# recreated icdev-ft-runner out from under it), the container name and the
+# runner name the forge lists it under. The reflex REFUSES to act on a
+# container whose live `com.docker.compose.project` label disagrees with the
+# project declared here: that is precisely the cross-fleet adoption above.
+#
+# `compose_dir` is a path on THIS host. The declaration is per deployment, the
+# same way args/genesis_config.yaml's asset_discovery targets are; a host with
+# no runner fleet leaves `repos: []` and the reflex reports `unmeasurable` /
+# `no_runners_declared` rather than a clean sweep it did not make.
+
+version: 1
+
+# Acts one cycle may PERFORM. Every further candidate is still proven and
+# reported as `deferred`, never silently dropped.
+max_reregistrations_per_run: 2
+
+# A container re-registered inside this window is REFUSED (`recently_acted`):
+# the act is idempotent but not free, and a container that is still crash-
+# looping after a fresh token has a different defect (an image built before the
+# 2026-09-02 entrypoint fix, a volume that must be cleared by hand) that a
+# second token cannot repair. Read from the reflex's own audit_trail intent
+# rows -- no new table.
+reregister_cooldown_seconds: 21600   # 6h
+
+# After `docker compose up`, how long to wait for the forge to list the runner
+# `online` before reporting `applied_unconfirmed`. The runner takes ~10-30s to
+# configure and connect.
+confirm_wait_seconds: 90
+confirm_poll_seconds: 10
+
+# Command timeouts.
+gh_timeout_seconds: 30
+docker_timeout_seconds: 60
+compose_timeout_seconds: 300
+
+# THE PROOF. A container that is Restarting AND offline is re-registered ONLY
+# when its recent log carries one of these signatures -- every one taken from a
+# live crash loop. A container crash-looping for any OTHER reason (OOM, a
+# broken image, a run.sh fault) is REPORTED as `restarting_unproven` and never
+# touched: a fresh token cannot fix it, and recreating the container would
+# destroy the evidence.
+registration_failure_signatures:
+  - "actions/runner-registration"          # POST .../runner-registration -> NotFound (expired token)
+  - "Response status code does not indicate success: 404"
+  - "registration has been deleted from the server"
+  - "Cannot configure the runner because it is already configured"
+  - "not registered and no RUNNER_TOKEN supplied"
+
+# How many log lines to read for the proof.
+log_tail_lines: 40
+
+repos:
+  - repo: icdev-ai/icdev_ft
+    compose_dir: C:/ai/icdev_ft/.ci/runner
+    containers:
+      - container: icdev-ft-runner
+        runner_name: icdev-ft-docker
+        project: runner                   # Compose's default: the directory name
+      - container: icdev-ft-runner-2
+        runner_name: icdev-ft-docker-2
+        project: icdev-ft-runner-2
+      - container: icdev-ft-runner-3
+        runner_name: icdev-ft-docker-3
+        project: icdev-ft-runner-3
+  - repo: icdev-ai/icdev_rt
+    compose_dir: C:/ai/icdev_rt/.ci/runner
+    containers:
+      - container: icdev-rt-runner
+        runner_name: icdev-rt-docker
+        project: icdev-rt-runner          # explicit `name:` in RT's compose file

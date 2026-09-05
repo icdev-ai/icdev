@@ -1,0 +1,3 @@
+tests/test_bdc_compliance_hub_page.py
+tests/test_compliance_iqe_query_route.py
+tests/test_iqe_widget_chip_attribute.py

@@ -148,5 +148,12 @@ prefix:
     owner: it
   - match: "(cf_|cloud_|csp_|container_|firmware_|runbook)"
     owner: it
+  # floci_ — the local AWS emulator's own tables (flx-twin-01). `it`, not
+  # `core`: the emulator is an ICDEV[IT] development and rehearsal aid (the IaC
+  # executors, the DataBridge connector, the canvas simulators), not kernel
+  # bookkeeping that both parents install. A PREFIX rule rather than a manifest
+  # line, because a manifest line is generated and a rule is the decision.
+  - match: "floci_"
+    owner: it
   - match: "(legacy_|migration_|translation_|sysml_|doors_|model_|des_|digital_|simulation_|coa_|monte_|intake_|spec_|readiness_|project_|approval_|integration_|sync_)"
     owner: it
