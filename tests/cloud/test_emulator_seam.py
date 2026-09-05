@@ -13,6 +13,7 @@ import logging
 from pathlib import Path
 
 import pytest
+import yaml
 
 from tools.cloud import emulator
 
@@ -287,13 +288,16 @@ def test_feature_flags_honours_the_deprecated_alias(monkeypatch):
     assert IntegrationFeatureFlags.localstack().enabled is True
 
 
-def test_feature_flags_reason_no_longer_names_a_compose_profile_that_does_not_exist(
+def test_feature_flags_reason_names_a_compose_profile_that_actually_EXISTS(
     monkeypatch,
 ):
-    """docker-compose.yml declares exactly one profile, and it is `llm-proxy`.
+    """The reason may name a profile only while docker-compose.yml declares it.
 
     Telling an operator to run `docker compose --profile localstack up -d` sent
-    them at a profile that has never existed in this tree.
+    them at a profile that has never existed in this tree. flx-compose-01
+    declares a `floci` profile, so the reason can finally point somewhere real
+    -- and this test RE-DERIVES the profile from the compose file rather than
+    trusting the string, which is the whole difference between the two.
     """
     from tools.databridge.feature_flags import IntegrationFeatureFlags
 
@@ -303,10 +307,59 @@ def test_feature_flags_reason_no_longer_names_a_compose_profile_that_does_not_ex
 
     assert "--profile localstack" not in reason
     assert "FLOCI_ENABLED" in reason
+    assert "--profile floci" in reason
 
     compose = _ROOT / "docker-compose.yml"
-    if compose.exists():
-        assert "localstack" not in compose.read_text(encoding="utf-8").lower()
+    declared = {
+        p
+        for svc in yaml.safe_load(compose.read_text(encoding="utf-8"))["services"].values()
+        for p in (svc.get("profiles") or [])
+    }
+    named = reason.split("--profile ", 1)[1].split()[0]
+    assert named in declared, (
+        f"the reason sends an operator at `--profile {named}`, which "
+        f"docker-compose.yml does not declare. Declared: {sorted(declared)}"
+    )
+
+
+def test_compose_declares_no_localstack_SERVICE_or_PROFILE():
+    """The emulator of record is floci; `localstack` must name nothing here.
+
+    NARROWED from a substring search over the whole file (flx-compose-01). That
+    search was right about the intent and wrong about the vocabulary: floci is a
+    documented LocalStack drop-in and KEEPS the `/_localstack/health` path, so
+    the floci service's healthcheck legitimately contains the string. Matching
+    on it would have forced either an obfuscated health URL or no healthcheck at
+    all -- weakening a real probe to satisfy an over-broad assertion.
+
+    So this asserts the thing that actually matters, structurally: no service
+    and no profile is NAMED localstack. That is strictly stronger than the
+    substring check for this question, because a comment can no longer satisfy
+    or break it. The remaining literal occurrences are then pinned to the health
+    path alone, so the vocabulary cannot creep back in.
+    """
+    compose = _ROOT / "docker-compose.yml"
+    raw = compose.read_text(encoding="utf-8")
+    doc = yaml.safe_load(raw)
+
+    assert "localstack" not in doc["services"]
+    declared = {
+        p for svc in doc["services"].values() for p in (svc.get("profiles") or [])
+    }
+    assert "localstack" not in declared, declared
+    assert emulator.MODE in declared, declared
+
+    # Every surviving mention in the DECLARATION itself is part of the drop-in
+    # health path -- nothing configured is naming an emulator ICDEV no longer
+    # uses. Comment lines are excluded on purpose: the floci block explains the
+    # LOCALSTACK_* compat layer and the superseded spike, and prose describing
+    # why the name is gone is not the name coming back.
+    declaration = [
+        ln for ln in raw.splitlines() if ln.strip() and not ln.lstrip().startswith("#")
+    ]
+    for line in declaration:
+        if "localstack" in line.lower():
+            assert emulator.HEALTH_PATH in line, line
 
 
 def test_feature_flags_endpoint_region_credentials_delegate(monkeypatch):

@@ -948,6 +948,108 @@ services:
           cpus: '0.25'
           memory: 256M
 
+  # ====================================================================
+  # floci — AWS API Emulator (OPT-IN, OFF BY DEFAULT) (flx-compose-01)
+  # ====================================================================
+  # floci is MIT-licensed, Java/Quarkus, listens on 4566, and is a documented
+  # LocalStack drop-in: it keeps the `/_localstack/health` path and translates
+  # LOCALSTACK_* env vars by default. `tools/cloud/emulator.py` (flx-seam-01) is
+  # the ONE switch every ICDEV caller reads; this service is the thing that
+  # switch points at. Do not add a second emulator service.
+  #
+  # Behind the `floci` compose profile, so it does NOT start with a plain
+  # `docker compose up` and `/start` does not launch it. Starting it is a
+  # DELIBERATE act:
+  #     echo FLOCI_ENABLED=true >> .env         # the ICDEV-side switch
+  #     docker compose --profile floci up -d    # the emulator itself
+  #
+  # `icdev enable floci` will be the first line once flx-compose-02 registers
+  # the toggle in args/component_registry.yaml. It is NOT a command today --
+  # verified 2026-09-04, `floci` is absent from tools/cli/enable.py::TOGGLES --
+  # and documenting one that does not exist costs a reader a whole cycle
+  # deciding whether the tree or the doc is broken.
+  #
+  # NEVER source a performance, cost or capacity claim from emulator timings.
+  # An emulator reproduces the AWS *API contract*, not its performance
+  # characteristics — the standing guard from
+  # docs/spikes/twx-spk-01-localstack-go-no-go.md, which this project supersedes
+  # on the air-gap question ONLY (floci carries no auth-token image).
+  #
+  # SUPPLY CHAIN: the tag is PINNED to 2.0.1 and must never be `:latest` in the
+  # committed file — an air-gapped bundle has to be reproducible. Pin by digest
+  # (@sha256:...) and record it in the SBOM before any real deployment.
+  #
+  # ── THE DOCKER SOCKET IS A SECURITY DECISION ────────────────────────────
+  # A container holding the host Docker socket is ROOT-EQUIVALENT ON THE HOST.
+  # It is mounted here because container-backed services (Lambda, RDS,
+  # ElastiCache, OpenSearch, MSK, ECS/EC2/EKS) cannot work without it. The
+  # decision, its mitigations and its revisit conditions are recorded as Gap 65
+  # in docs/security/sandbox-coverage.md — a coherence-checked file.
+  #
+  # THE MOUNT SOURCE IS AN ENV VAR, AND ITS NAME IS DELIBERATELY *NOT*
+  # `FLOCI_DOCKER_SOCKET`. That name is read by
+  # `tools/cloud/emulator.py::docker_basis()` to answer a DIFFERENT question —
+  # how the ICDEV *Python process on the host* would reach the daemon. MEASURED
+  # on this Windows host 2026-09-04: setting FLOCI_DOCKER_SOCKET to the mount
+  # spelling below makes `docker_backed()` return False and
+  # `service_supported("lambda")` return False — a FABRICATED refusal for a
+  # Lambda that works, because the socket is mounted into the container even
+  # though that path does not exist on the Windows filesystem.
+  #
+  # `//var/run/docker.sock` (LEADING DOUBLE SLASH) is one spelling that serves
+  # both hosts, which is why this file is not OS-specific:
+  #   * Windows / Docker Desktop — the engine is exposed to Linux containers at
+  #     this path, and the double slash survives MSYS/Git Bash path conversion.
+  #     A single `/var/run/...` is rewritten and the mount silently binds the
+  #     wrong thing. (The host-side endpoint is the named pipe
+  #     npipe:////./pipe/docker_engine — that is NOT a bind-mount source.)
+  #   * Linux — `//x` and `/x` name the same file, so it resolves unchanged.
+  #
+  # FLOCI_DOCKER_DOCKER_HOST is deliberately LEFT UNSET (operator decision
+  # 2026-09-05: locally hosted Docker for now). floci talks to the daemon it is
+  # handed. A remote daemon and an internal registry mirror are named follow-ons
+  # (flx-airgap-02), not dropped.
+  floci:
+    profiles: ["floci"]
+    image: floci/floci:2.0.1
+    container_name: icdev-floci
+    ports:
+      # Loopback-only: an emulator holding the host docker socket must not be
+      # reachable off-host. Services on icdev-net still reach it by name.
+      - "127.0.0.1:4566:4566"            # AWS API edge port
+      - "127.0.0.1:6379-6399:6379-6399"  # ElastiCache / Redis proxy range
+      - "127.0.0.1:7001-7099:7001-7099"  # OpenSearch / MSK proxy range
+    environment:
+      # State survives a restart; ./data/floci is gitignored (flx-compose-01).
+      FLOCI_STORAGE_MODE: persistent
+      # ICDEV's target partition. Kept in step with emulator.DEFAULT_REGION.
+      FLOCI_DEFAULT_REGION: ${FLOCI_REGION:-us-gov-west-1}
+      # floci isolates state per account id; 12 digits or the seam warns.
+      FLOCI_DEFAULT_ACCOUNT_ID: ${FLOCI_ACCOUNT_ID:-000000000000}
+    volumes:
+      - ./data/floci:/var/lib/floci
+      - ${FLOCI_DOCKER_SOCKET_MOUNT:-//var/run/docker.sock}:/var/run/docker.sock
+    networks:
+      - icdev-net
+    healthcheck:
+      # floci keeps LocalStack's health path — that is what "drop-in" means.
+      # Mirrors tools/cloud/emulator.py::HEALTH_PATH; keep the two in step.
+      test: ["CMD", "curl", "-sf", "http://localhost:4566/_localstack/health"]
+      <<: *healthcheck-defaults
+      # A JVM emulator bringing up many service backends needs far longer than
+      # the shared 10s to become healthy. An explicit key beats the merge key.
+      start_period: 60s
+    logging: *default-logging
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+
 # ======================================================================
 # Networks
 # ======================================================================
