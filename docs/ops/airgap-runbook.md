@@ -375,7 +375,204 @@ different program that does not implement the `test` subcommand.
 
 ---
 
-## 12. Escape hatches
+## 12. floci container-backed services — the images that are pulled at RUN TIME
+
+**The claim this section exists to make honest:** having the `floci/floci:2.0.1`
+image cached is **necessary and not sufficient**. floci does not carry the
+runtimes for its container-backed services inside its own image. Lambda, RDS,
+ElastiCache, OpenSearch, MSK and ECS/EC2/EKS each start a **separate container
+from a separate base image**, which floci resolves **from the public internet on
+first use of that service**. On a disconnected high side that pull fails at
+exactly the moment a demo runs — and nothing before this told you which images
+would have been fetched.
+
+Every image below was **measured, not read off a README**: `docker events
+--filter type=image` recorded while a live floci 2.0.1 was driven through each
+service with boto3 (2026-09-05, Docker 28.5.1). The declaration of record is
+[`args/floci_runtime_images.yaml`](../../args/floci_runtime_images.yaml); the
+pins the vendor consumes are `vendor/images/images-floci-runtime.txt`, and
+`tests/cloud/test_floci_runtime_images.py` asserts the two agree so one measured
+fact cannot come to be spelled two ways.
+
+### 12.1 What to vendor
+
+| service | variant | image |
+|---|---|---|
+| Lambda | `python3.11` | `public.ecr.aws/lambda/python:3.11` |
+| Lambda | `nodejs20.x` | `public.ecr.aws/lambda/nodejs:20` |
+| RDS | `postgres` | `postgres:16.3-alpine` |
+| RDS | `mysql` | `mysql:8.0.36` |
+| ElastiCache | `redis` | `valkey/valkey:8` |
+| ElastiCache | `memcached` | `memcached:1.6` |
+| OpenSearch | — | `opensearchproject/opensearch:2.19.5` |
+| MSK / Kafka | — | `redpandadata/redpanda:latest` — mutable tag |
+| EC2 | — | `public.ecr.aws/amazonlinux/amazonlinux:2023` |
+| EKS | — | `rancher/k3s:latest` — mutable tag |
+| ECR (implied by ECS/EKS) | — | `registry:2` |
+
+The full set vendors to **1.91 GB across 11 tars** (1,905,578,496 bytes),
+measured 2026-09-05: `--save --topic floci-runtime` reported `verified` with 0
+failures and `manifest_digest_verified: true` on every one. That is well under
+the ~6.3 GB `docker image ls` reports for the same eleven, because `docker save`
+writes each shared layer once. Re-verifying the media with no daemon at all took
+2.8 s.
+
+**Vendor the variants you declare, not the table.** The image set is a function
+of declared configuration, not of the service: a `python3.11` Lambda and a
+`nodejs20.x` Lambda pull *different* images, as do a postgres and a mysql RDS
+instance. A deployment running one python Lambda over postgres needs four of
+these eleven, not all of them. Ask:
+
+```bash
+python -m tools.cloud.runtime_images --check --services lambda,rds --variants python3.11,postgres
+```
+
+**Two of floci's own backing images are named by the mutable tag `:latest`**
+(redpanda for MSK, k3s for EKS). The digests recorded are what `:latest`
+resolved to on the measured date; upstream can move them under the same tag
+without notice. A re-vendor must **re-measure**, never assume.
+
+**Two things this table cannot enumerate for you, and both are yours:**
+
+1. **Your own workload images.** ECS and EKS pull whatever image *your* task
+   definition or pod spec names. During the measurement run floci pulled
+   `alpine:3.19` purely because the probe's task definition said so — that is a
+   workload image, not a floci runtime base, and it is deliberately absent from
+   the declaration. Mirror your workload images too.
+2. **Variants you add later.** A Lambda runtime or RDS engine not in the table
+   above has never been measured here. `--check` reports the service as
+   `variant_undetermined` rather than guessing, because guessing produces either
+   a fabricated blocker or a fabricated clean bill.
+
+### 12.2 Vendor on the connected side, load on the high side
+
+The image cache is the delivery mechanism, per the operator decision of
+2026-09-05: container-backed services reach the **local** Docker daemon on the
+emulator host. **A populated local cache is a valid air-gap posture** — the
+requirement is that nothing pulls at run time, not that a registry exists.
+
+```bash
+# -- LOW SIDE (connected) ------------------------------------------------
+# 1. Pull every image you need into the local cache, then vendor it.
+#    --save NEVER pulls: a pin absent from the cache is reported and the run
+#    exits non-zero. That is the designed refusal -- resolve it with an
+#    explicit `docker pull`, so nothing is fetched that nobody pinned.
+python tools/airgap/image_vendor.py --save --topic floci-runtime --json
+
+# 2. Transport vendor/images/floci-runtime/ on removable media.
+
+# -- HIGH SIDE (disconnected) --------------------------------------------
+# 3. Verify the media BEFORE loading it. Needs no docker daemon at all.
+python tools/airgap/image_vendor.py --verify --topic floci-runtime --no-daemon-probe --json
+
+# 4. Load into the local cache.
+python tools/airgap/image_vendor.py --load --topic floci-runtime --json
+
+# 5. Prove the emulator will not pull. THIS is the acceptance check.
+python -m tools.cloud.runtime_images --check
+```
+
+Step 5 exits **0 satisfied / 1 blocked / 2 could not measure**. Exit 2 is not
+clean: it means the docker daemon could not be asked, which proves nothing.
+
+### 12.3 How verification by digest actually works
+
+A pin is a **digest, never a tag** — `parse_pin` refuses `floci/floci:2.0.1`,
+because a tag is mutable and a bundle built from one cannot be shown to contain
+what was intended. `--verify` re-hashes every blob in the tar against its own
+filename (OCI content addressing) and matches `index.json`'s manifest digest to
+the pin. That is a cryptographic proof the tar holds the pinned image, and it
+needs no daemon — which matters, because media is verified before there is
+anywhere to load it.
+
+**A loaded bundle carries no tag, and that is normal.** Measured 2026-09-05: an
+image delivered by `docker save repo@sha256:...` then `docker load` resolves by
+**neither** `repo:tag` **nor** `repo@sha256:...` — it has `RepoTags=[]` and
+`RepoDigests=[]` and does not appear in `docker image ls`. It resolves by image
+ID alone. So do not conclude a load failed because `docker image ls` looks
+unchanged; ask `runtime_images --check`, which tries three rungs and reports
+which one answered:
+
+| basis | meaning |
+|---|---|
+| `present_tagged` | the ref resolves and its RepoDigest matches the pin (the pulled case) |
+| `present_by_digest` | `repo@sha256:...` resolves |
+| `present_by_id` | the pin's digest resolves as an image ID — **the loaded-bundle case** |
+| `digest_mismatch` | present under the tag, but a **different image**. Re-vendor; do not re-mirror. |
+| `absent` | no rung answered. It will pull. |
+
+### 12.4 Telling a mirrored miss from a real outage
+
+Both look identical from the dashboard: a container-backed service that does not
+come up. They need opposite repairs, so discriminate before you debug.
+
+**Ask the cache first — it is one command and it is decisive:**
+
+```bash
+python -m tools.cloud.runtime_images --check --json
+```
+
+| symptom | verdict | reading |
+|---|---|---|
+| `state: blocked`, the failing service's image in `missing` | **mirrored miss** | The image was never vendored. Vendor it on the low side; nothing on this host will fix it. |
+| `state: blocked`, image in `mismatched` | **mirrored miss** | Present under the tag at a *different* digest. The bundle is stale, or was built from a moved `:latest`. Re-measure and re-vendor. |
+| `state: satisfied` and the service still fails | **real outage** | The image is here. This is a floci, resource or configuration fault — debug the service. |
+| `state: unmeasured` | **neither, yet** | The docker daemon could not be asked. Fix that first; you have measured nothing. |
+
+**The corroborating signal is whether a container exists at all.** floci names
+every service container `floci-*` — measured 2026-09-05: `floci-rds-db-<id>`,
+`floci-opensearch-<domain>`, `floci-msk-<hex>`, `floci-eks-<cluster>`,
+`floci-valkey-<group>`, `floci-memcached-<id>`, `floci-ec2-<instance-id>`,
+`floci-ecr-registry`, and `floci-<function-name>-<hex>` for Lambda:
+
+```bash
+docker ps -a --filter "name=floci-"     # is there a container for the service at all?
+docker logs icdev-floci --tail 100      # a pull attempt appears here
+```
+
+* **No container, and the emulator log shows a pull attempt** — a disconnected
+  host cannot resolve the registry, so the pull stalls and then fails on DNS or
+  connect. That is a **mirrored miss**, whatever the AWS-level error says.
+* **A container exists** (running, restarting or exited) **with logs of its own**
+  — the image was found and started. That is a **real outage**; read the
+  container's logs, not the emulator's.
+
+Do **not** diagnose from the AWS API response. floci surfaces a missing base
+image as an ordinary service failure, so the boto3 error is the same shape
+either way — which is precisely why the cache check exists.
+
+### 12.5 The gate
+
+`airgap-emulator-runtime-images` in `args/twin_airgap_rules.yaml` makes an
+emulator configuration that would need an external pull at run time a
+`deployment_blocker`. It is the only rule in that file that is **not**
+deny-by-match over strings the design contains: a floci config that declares a
+Lambda contains no image reference at all, so no string matcher can see this
+dependency. It derives the required set from the declared services and asks the
+local cache.
+
+`unmeasured` is deliberately **not** a blocker. A host whose docker daemon
+cannot be asked has proven nothing, and blocking every CI runner and reviewer
+laptop is how a gate earns itself a `|| true`. It is emitted at `medium` under
+the `-unmeasured` rule id, so it is visible and attributable and never folded
+into either answer.
+
+### 12.6 Sites that mandate an internal registry
+
+This section describes the **local-cache** posture, which is what ICDEV supports
+today. Sites whose policy requires images to be served by an internal registry
+rather than pre-seeded into each host's cache need `FLOCI_DOCKER_DOCKER_HOST`
+plus floci's per-registry credential settings. That is **flx-airgap-03**, a named
+follow-on — deferred, not dropped. `FLOCI_DOCKER_DOCKER_HOST` is deliberately
+left unset in `docker-compose.yml` until it lands.
+
+The gate is unaffected either way: `airgap-emulator-runtime-images` asks whether
+a run-time pull would be needed, and an image served by an internal registry
+still has to be reachable without one.
+
+---
+
+## 13. Escape hatches
 
 | Variable | Effect |
 |---|---|

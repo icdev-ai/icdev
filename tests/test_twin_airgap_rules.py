@@ -22,7 +22,11 @@ def test_config_loads_and_enabled():
     assert cfg.get("enabled") is True
     ids = {r["id"] for r in cfg["rules"]}
     assert ids == {"airgap-internal-registry", "airgap-internal-package-mirror",
-                   "airgap-no-external-api", "airgap-no-public-egress"}
+                   "airgap-no-external-api", "airgap-no-public-egress",
+                   # flx-airgap-02. Unlike the four above it is NOT a
+                   # deny-by-match string rule -- it derives the emulator's
+                   # run-time image set and checks the local cache.
+                   "airgap-emulator-runtime-images"}
 
 
 # ── negative fixtures: each MUST trip its rule ────────────────────────────────
