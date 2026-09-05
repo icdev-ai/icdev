@@ -149,6 +149,46 @@ jobs:
       - name: Swallowed-INSERT gate
         working-directory: ${{ github.workspace }}
         run: python tools/dev/check_swallowed_inserts.py
+      # mfx-sib-02. The Compliance dropdown's active-path list and the
+      # `- Pages:` line in .claude/commands/start.md are both DERIVED, and both
+      # checks run HERE rather than in `lint` for the SAME reason the
+      # swallowed-INSERT gate above does: `lint` installs only ruff, and both
+      # halves import `icdev.core.paths` through `tools/__init__.py`. Measured
+      # on run 33946644203 -- the nav half in `lint` died on
+      # `ModuleNotFoundError: No module named 'icdev.core.paths'`, i.e. it
+      # failed for the wrong reason. icdev-core is a GIT dependency, not a PyPI
+      # one, so installing it into a 30-second linting job would buy fast
+      # feedback with a network clone and another failure surface. The fast
+      # local feedback comes from .githooks/pre-commit instead, which runs the
+      # nav half in milliseconds and only when the commit stages one of the
+      # four files that can change the answer.
+      #
+      # The cheap half runs FIRST so a hand-edited nav block reds the job
+      # without paying for an app import.
+      #
+      # Exit codes are load-bearing: 0 clean, 1 a hand edit has drifted from the
+      # derivation, 2 the check could not be produced. Do NOT add `|| true` --
+      # a 2 must stay red, because a generator whose config or markers vanished
+      # reporting "no drift" is exactly the failure this gate exists to close.
+      - name: Derived nav paths (Compliance dropdown)
+        working-directory: ${{ github.workspace }}
+        run: python tools/dashboard/nav_paths.py --check --nav-only
+      # The expensive half: the Pages line is derived from the app's url_map,
+      # which means creating the app (~16s measured).
+      #
+      # The probe runs in a SUBPROCESS WITH A SCRUBBED ENVIRONMENT: which
+      # blueprints register depends on .env toggles, and the same checkout
+      # measured 4568 rules under one operator's ambient environment and 2370
+      # under a bare one (2026-09-04). Every component in
+      # args/component_registry.yaml is forced ON, so a runner with no .env and
+      # a workstation with a full one derive the same list.
+      #
+      # `--pages-only` -- the nav half already ran in the step above, and
+      # running it twice for one answer is what sharding the gates was meant to
+      # stop.
+      - name: Derived start.md Pages line (url_map)
+        working-directory: ${{ github.workspace }}
+        run: python tools/dashboard/nav_paths.py --check --pages-only
       # idp-score-01-d4. A SMOKE gate, not a quality bar: it proves the sweep
       # walks all ~68 components in args/component_registry.yaml and produces a
       # verdict for each without raising. --dry-run writes nothing, so this
