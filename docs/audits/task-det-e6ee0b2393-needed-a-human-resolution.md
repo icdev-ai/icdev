@@ -47,7 +47,7 @@ python -m pytest tests/test_bdc_*_page.py tests/test_sdc_*_page.py -q
 #  ->  30 failed, 198 passed        (at 586a9a580)
 ```
 
-**CI reported THREE.** `icdev-ci.yml:528` runs `pytest "${CI_TESTS[@]}"
+**CI reported THREE.** `icdev-ci.yml:528` (merged tree) runs `pytest "${CI_TESTS[@]}"
 --tb=short -x`, so shards 2, 3 and 4 each aborted at their first failing file
 and shard 1 held none of the fifteen. All 15 files were already gated at the
 branch tip (17 `rmf-ui-*` fragments in `args/ci_test_files/core.d/`, identical
@@ -215,16 +215,18 @@ No detector, threshold or window was touched.
 and it is the reason five resumes could not converge. Removing it is a real
 candidate, and the tree is already inconsistent about it — the `Test (Windows)`
 tier runs `pytest "${WIN_TESTS[@]}" -v --tb=short --durations=15` with **no
-`-x`**, while every shard of the gated tier carries it. The crx-test-05 spike
-also ran its 4-shard characterisation deliberately "WITHOUT -x so one pass
-surfaces every order-dependent file rather than one per shard"
-(`icdev-ci.yml:399`) — that comment describes the SPIKE, not the shipped job,
-and is cited here only as evidence that a no-`-x` shard run is feasible.
+`-x`** (`icdev-ci.yml:696`), while every shard of the gated tier carries it
+(`:528`). The crx-test-05 spike also ran its 4-shard characterisation
+deliberately "WITHOUT -x so one pass surfaces every order-dependent file rather
+than one per shard" (`:439`) — that comment describes the SPIKE, not the
+shipped job, and is cited only as evidence that a no-`-x` shard run is
+feasible. (All three line numbers are read from the MERGED tree, i.e. what main
+becomes when #2091 lands; on main today they are 40 lines lower.)
 
 But `-x` on a sharded gate also buys the fast abort that keeps a red branch off
-six runners for the full ~12 minutes, and changing it is a CI-cost decision
-that needs its own survey of how often a shard's first failure is its only
-failure. Recorded here as the evidence for that card, not applied.
+the four shard runners for the full ~12 minutes, and changing it is a CI-cost
+decision that needs its own survey of how often a shard's first failure is its
+only failure. Recorded here as the evidence for that card, not applied.
 
 ## Closing this card — the finding clears by AGEING OUT, not by the merge
 
