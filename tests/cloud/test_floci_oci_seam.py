@@ -469,6 +469,71 @@ def test_the_storage_mode_variable_is_the_one_that_was_measured_to_work():
     assert emulator_oci.storage_mode({"FLOCI_OCI_PERSISTENCE": "persistent"}) == "memory"
 
 
+def test_the_storage_mode_is_reported_where_an_operator_reads_health():
+    """An accessor nothing calls is the declared-but-unconsumed defect at
+    function scale, so `storage_mode()` has exactly one consumer: the
+    connector's health picture.
+
+    It matters there. `memory` -- the default -- means every bucket, vault and
+    queue this connector reports is GONE when the container stops, which changes
+    what a reader should conclude from an empty estate. And it is labelled
+    DECLARED rather than probed: the emulator does not publish it on `/health`,
+    so this is what the deployment ASKED for.
+    """
+    conn = _FakeConnector({"/health": _HEALTH_BODY})
+    health = conn.health_check()
+    assert health["status"] == "disabled", "off by default -- no probe was made"
+
+    import os
+
+    old = dict(os.environ)
+    os.environ["FLOCI_OCI_ENABLED"] = "true"
+    try:
+        health = _FakeConnector({"/health": _HEALTH_BODY}).health_check()
+    finally:
+        os.environ.clear()
+        os.environ.update(old)
+    assert health["storage_mode"] == "memory"
+    assert health["storage_mode_is_declared_not_probed"] is True
+
+
+def test_the_docker_rung_is_currently_unreachable_and_that_is_measured():
+    """`simulate_delta`'s container-backed rung serves a WORKING container-backed
+    service, and on floci-oci 0.4.0 that set is EMPTY.
+
+    Both `CONTAINER_BACKED_SERVICES` and `FABRICATED_ACTIVE_WITH_DOCKER` are
+    exactly `{"oke"}`, so the `high` rung above always wins and the `medium` one
+    never fires. That is kept rather than deleted -- a later release adding a
+    working container-backed service would otherwise silently get no
+    docker-socket finding -- and asserted rather than left as silent dead code.
+
+    IF THIS FAILS the two sets have diverged, which is good news: the rung is
+    now live. Add a case exercising it and update this docstring.
+    """
+    working = set(emulator_oci.CONTAINER_BACKED_SERVICES) - set(
+        emulator_oci.FABRICATED_ACTIVE_WITH_DOCKER
+    )
+    assert working == set(), (
+        f"{sorted(working)} is now container-backed and NOT broken, so "
+        "simulate_delta's `medium` rung is reachable -- add a test for it"
+    )
+    # ...and the consequence, exercised: even with the socket PROVEN absent, an
+    # `oke` delta reports the `high` fabrication finding and never the `medium`
+    # docker one.
+    import os
+
+    old = dict(os.environ)
+    os.environ["DOCKER_HOST"] = "/nope/absent.sock"
+    try:
+        out = twin_mod.FlociOciTwinAdapter().simulate_delta("local", {"services": ["oke"]})
+    finally:
+        os.environ.clear()
+        os.environ.update(old)
+    rules = {v.get("rule_id") for v in out["violations"]}
+    assert "floci-oci-service-fabricates-active" in rules
+    assert "floci-oci-service-unsupported-locally" not in rules
+
+
 def test_only_the_exercised_modes_are_declared_supported():
     """The card also claims `hybrid` and `wal`; they were NOT measured, so they
     are not enumerated. An unmeasured value passes through with a warning

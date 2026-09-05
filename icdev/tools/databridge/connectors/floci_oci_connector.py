@@ -205,6 +205,20 @@ class FlociOciConnector(SaaSBaseConnector):
         docker = {
             "docker_backed": emulator_oci.docker_backed(),
             "docker_basis": emulator_oci.docker_basis(),
+            # DOES THE ESTATE SURVIVE A RESTART? Part of the health picture, and
+            # the one place `emulator_oci.storage_mode()` is consumed -- an
+            # accessor nothing calls is the declared-but-unconsumed defect at
+            # function scale. `memory` (the default) means every bucket, vault
+            # and queue this connector reports is gone when the container stops,
+            # which changes what a reader should conclude from an empty estate.
+            #
+            # DECLARED, NOT PROBED: read from ICDEV's env, not from the
+            # emulator, which does not publish it on /health. It says what this
+            # deployment ASKED for -- and three plausible spellings of the
+            # variable are silently ignored by the emulator, so an operator who
+            # used one of those sees `memory` here, correctly.
+            "storage_mode": emulator_oci.storage_mode(),
+            "storage_mode_is_declared_not_probed": True,
         }
         url = f"{self._endpoint}{emulator_oci.HEALTH_PATH}"
         try:

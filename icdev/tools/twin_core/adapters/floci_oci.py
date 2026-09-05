@@ -537,6 +537,17 @@ class FlociOciTwinAdapter(TwinAdapter):
                     detail=service,
                 ))
             elif not emulator_oci.data_plane_supported(service):
+                # UNREACHABLE ON 0.4.0, DELIBERATELY KEPT, AND TESTED AS SUCH.
+                # This branch serves a container-backed service that is NOT
+                # broken -- and on floci-oci 0.4.0 that set is EMPTY, because
+                # CONTAINER_BACKED_SERVICES and FABRICATED_ACTIVE_WITH_DOCKER
+                # are both exactly {"oke"}, so the rung above always wins.
+                # Deleting it would mean a later release that adds a WORKING
+                # container-backed service silently gets no docker-socket
+                # finding; keeping it silently would be dead code wearing a
+                # safety net's name. So the coincidence is asserted by
+                # `test_the_docker_rung_is_currently_unreachable_and_that_is_measured`,
+                # which fails the day the two sets diverge and this goes live.
                 violations.append(canonical_violation(
                     "medium",
                     "service_parity",
