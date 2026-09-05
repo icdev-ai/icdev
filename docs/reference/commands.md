@@ -7506,6 +7506,64 @@ python -m tools.ci.merge_readiness --max-behind 5            # override the thre
 python -m tools.ci.merge_readiness --no-measure-behind       # skip the /compare calls
 python -m tools.ci.merge_readiness --from-json prs.json --default-branch main
 
+# A PROTECTED-PATH PR ON THE CONFLICT ARM — refused before the resume ladder,
+# and the survey that decided how far the refusal goes (mfx-mrg-03)
+python -m tools.ci.protected_conflict_survey                 # human table
+python -m tools.ci.protected_conflict_survey --json
+python -m tools.ci.protected_conflict_survey --window-days 30
+python -m tools.ci.protected_conflict_survey --no-forge      # every episode unmeasurable
+python -m tools.ci.protected_conflict_survey --facts-cache .tmp/facts.json
+# `_refuse_protected` was called in ONE place on the task-linked path -- inside
+# the MERGEABLE arm, immediately before the un-draft and `_auto_merge` -- while
+# `_maybe_rebase` and the resume ladder live in the `MERGE_CONFLICT` arm. Not
+# "later in one ladder": a DIFFERENT BRANCH of it. A PR conflicting from the
+# moment it opened could never reach the rung that would refuse it, and the rung
+# fired only once the PR was mergeable -- exactly when it is no longer needed to
+# prevent wasted work. MEASURED on #2064 (mfx-mrg-01), which changed
+# tools/ci/pr_watcher.py, the FIRST entry in `protected_paths`: 63
+# `rebase_failed`, 5 `resume`, an `escalate` -- and 0 of its 165 `pr_watcher.*`
+# audit rows mention `protected`. The ledger, the panel and the escalation all
+# named something else ("resume cap reached"), which was never the reason.
+#
+# NOW: the question is asked and `protected_path_hold` is audited BEFORE any
+# `_maybe_rebase` call, and the PR is held with a `wait` naming the paths
+# instead of entering the resume ladder. In the mergeable arm the refusal moved
+# back ahead of the UN-DRAFT -- where kpr-watch-05 put it, before a later fix
+# moved the un-draft up and silently overtook it -- and so also ahead of the
+# behind-main `_maybe_rebase`.
+#
+# WHAT IT DELIBERATELY DOES NOT SUPPRESS IS THE SURVEY'S FINDING, NOT A TASTE.
+# Replaying all 210 recorded conflict-ladder episodes through the SHIPPED
+# predicate (`merge_readiness.protected_hits`, never a second copy):
+#   catches            32 of 210 (15.24%)
+#   holding one rung earlier (ahead of `_maybe_rebase`) would have taken a
+#                      SUCCESSFUL rebase from 11 of those 32 -- 8 of them a
+#                      single pushed rebase and NOTHING ELSE before the PR
+#                      merged (#1724 #1734 #1751 #1789 #1821 #1682 #1686 #1695).
+#                      3.81% of the population, above the 1.63% this file
+#                      already calls refusing routine work.
+#   as shipped         0 false positives, 13 rebases preserved, 74 resumes and
+#                      21 escalated episodes saved.
+# So the bounded rebase STAYS and `max_rebase_attempts_per_task` is UNCHANGED.
+# Do NOT "tidy" the hold up one rung to match the card's suggested shape --
+# re-run the survey first; a control that stops work it was never meant to stop
+# gets switched off.
+#
+# TWO OPPOSITE DEFAULTS, on purpose. `_protected_hits` (the MERGE refusal) is
+# FAIL-CLOSED: an unreadable file list reads as protected, because a merge gate
+# that opens when it cannot see is not a gate. `_protected_hits_seen` (this
+# hold) is FAIL-OPEN and returns None for an unmeasured PR, which takes the
+# unchanged ladder -- stopping the watcher spending resumes is not merging, and
+# stopping on an unreadable listing would hold work the ladder would
+# legitimately have repaired. It reads ONLY the open-PR index the poll already
+# fetched for the sibling map, so it costs no extra `gh` call.
+# `unmeasurable` in the survey is never folded into either side.
+# REST, never GraphQL: the outage behind this card refused every `gh pr view`
+# while `gh api repos/.../pulls/N` answered normally.
+# Report only, deliberately no --gate (kpr-fix-03). Exit 2 = the survey could
+# not be produced, which is never the same as a clean survey.
+# Method and every number: docs/audits/mfx-mrg-03-protected-conflict-divert-survey.md
+
 # SURFACED (kpr-watch-03) — the same classification where somebody will see it.
 # A report nobody opens is not observability, and for two cards the only place
 # this answer existed was a CLI you had to think to run.
