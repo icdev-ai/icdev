@@ -106,6 +106,45 @@ DEFAULT_SECRET_KEY = "test"
 # floci keeps LocalStack's health path -- that is what "drop-in" means here.
 HEALTH_PATH = "/_localstack/health"
 
+# ── The image, pinned, in ONE place ────────────────────────────────────────
+#
+# PINNED, never `:latest`, and never respelled. Every committed declaration of
+# the emulator container -- the compose profile, the twelve canvas simulation
+# topologies in tools/studio/sim, anything a generator emits -- reads `IMAGE`
+# from here. A tag written out a second time is a second fact to keep in step,
+# and the failure mode is silent: two declarations drift, one deployment runs
+# 2.0.1 and another runs whatever `latest` resolved to that morning, and the
+# only symptom is a behaviour difference nobody can attribute.
+#
+# `:latest` is refused for the air-gap reason as much as the reproducibility
+# one -- an unpinned tag is a run-time pull, and a run-time pull cannot happen
+# on the disconnected side this emulator was chosen to serve.
+IMAGE_REPOSITORY = "floci/floci"
+IMAGE_TAG = "2.0.1"
+IMAGE = f"{IMAGE_REPOSITORY}:{IMAGE_TAG}"
+
+#: The port floci listens on INSIDE its container. Always 4566 -- the host-side
+#: port is a deployment's choice, this one is the emulator's.
+CONTAINER_PORT = 4566
+
+# floci's proxy ranges: host ports it forwards to CONTAINER-BACKED services.
+#   6379-6399  ElastiCache / Redis
+#   7001-7099  the external-service proxy range (Lambda, RDS, OpenSearch, ...)
+#
+# DECLARED HERE, DELIBERATELY NOT PUBLISHED BY EVERY CALLER. Reaching a service
+# through one of these needs a docker socket mounted into the emulator, and a
+# caller that publishes 119 host ports it cannot serve through has declared a
+# capability nothing can consume -- while colliding with any second emulator on
+# the same host, and with a local Redis on 6379. Publish them where a socket is
+# actually mounted (the compose profile); everywhere else, honour them by
+# keeping the API port out of the ranges.
+PROXY_PORT_RANGES: tuple[tuple[int, int], ...] = ((6379, 6399), (7001, 7099))
+
+
+def in_proxy_range(port: int) -> bool:
+    """Is ``port`` inside one of floci's container-backed proxy ranges?"""
+    return any(low <= port <= high for low, high in PROXY_PORT_RANGES)
+
 # ── status() values ────────────────────────────────────────────────────────
 STATUS_ENABLED = "enabled"
 STATUS_DISABLED = "disabled"
