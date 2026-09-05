@@ -65,11 +65,11 @@ _ENDPOINT_OVERRIDE_SERVICES = (
 def _build_connector(endpoint: str, region: str, access_key: str, secret_key: str, timeout: float):
     """Return a configured emulator connector without triggering health checks.
 
-    The DataBridge connector still carries its ``LocalStack`` name — renaming it
-    is flx-bridge-01's card, and importing a name that does not exist yet would
-    take this adapter down at import for a cosmetic gain.
+    The connector is ``FlociConnector`` as of flx-bridge-01; the ``LocalStack``
+    name is gone from the registry, so a caller left asking for it gets ``None``
+    rather than a stale instance.
     """
-    from tools.databridge.connectors.localstack_connector import LocalStackConnector  # noqa: PLC0415
+    from tools.databridge.connectors.floci_connector import FlociConnector  # noqa: PLC0415
 
     cfg = {
         "endpoint": endpoint,
@@ -78,7 +78,7 @@ def _build_connector(endpoint: str, region: str, access_key: str, secret_key: st
         "secret_key": secret_key,
         "timeout": timeout,
     }
-    c = LocalStackConnector()
+    c = FlociConnector()
     c._config = cfg
     c._endpoint = endpoint
     c._base_url = endpoint

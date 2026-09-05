@@ -126,7 +126,7 @@ class IntegrationFeatureFlags:
     # ------------------------------------------------------------------
     #
     # These four keep their `localstack_*` names because callers import them by
-    # name (localstack_connector, infra_canvas adapters, dockerfile_generator),
+    # name (floci_connector, infra_canvas adapters, dockerfile_generator),
     # and they keep the FeatureStatus shape. What changed is that they no
     # longer ANSWER the question -- tools/cloud/emulator.py is the one switch
     # (flx-seam-01). A second reader of LOCALSTACK_ENABLED here is how this
