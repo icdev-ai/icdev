@@ -456,3 +456,64 @@ def test_artifacts_are_not_written_into_the_tracked_source_tree(seeded_board):
     assert written, "the cycle must have written its artifacts"
     for path in written:
         assert seeded_board["out"] in path.parents or path.parent.parent == seeded_board["out"]
+
+
+# ---------------------------------------------------------------------------
+# The DAEMON'S dispatch conditions — a reflex proven only by a direct call has
+# not been proven at all
+# ---------------------------------------------------------------------------
+
+def test_the_daemon_dispatches_run_with_a_trust_kernel_not_a_connection():
+    """The second positional argument is the TrustKernel, never a DB handle.
+
+    `_run_reflex_impl_inner` calls `module.run(config, trust)`. A reflex that
+    treated arg 2 as a connection would raise on every cycle while a direct
+    `run({})` in a test passed, so the signature is pinned against the
+    daemon's own call site rather than against the docstring.
+    """
+    import inspect
+
+    params = list(inspect.signature(reflex.run).parameters)
+    assert params[:2] == ["ctx", "trust"], params
+    # It must tolerate being handed the kernel positionally, as the daemon does.
+    out = reflex.run({"dry_run": True, "db_path": ":memory:"}, object())
+    assert out["success"] is True
+
+
+def test_a_producing_cycle_persists_through_the_daemon_connection_scope(seeded_board):
+    """THE CALLER MUST WORK WHERE IT IS ACTUALLY CALLED FROM.
+
+    `tools/genesis/daemon.py::_run_reflex_impl_inner` wraps every reflex in
+    `reflex_connection_scope()`, which ROLLS BACK and closes any connection
+    opened inside the block and left open. A producer that wrote without
+    committing would therefore report a healthy cycle whose rows silently
+    vanished at scope exit -- the reflex would work by hand, forever, and
+    write nothing on the 24h cadence, while the metric read green.
+
+    Every other end-to-end test here calls `reflex.run` directly, which is
+    exactly the shape that cannot see this. So this one enters the scope.
+    """
+    from tools.db.storage import get_connection, reflex_connection_scope
+
+    with reflex_connection_scope():
+        result = reflex.run(
+            {"db_path": seeded_board["db"], "artifact_dir": str(seeded_board["out"])}
+        )
+        assert result["status"] == "ok", result["refusals"]
+        assert result["artifacts_produced"] >= 1
+
+    # Re-open AFTER the scope has exited and done its reclamation. Reading the
+    # counts from `result` would prove nothing -- those were measured on the
+    # inside, which is precisely the side a rollback does not affect.
+    conn = get_connection(db_path=seeded_board["db"])
+    persisted = {
+        table: dict(conn.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone())["n"]
+        for table in ("rmf_workflow_stages", "stig_findings", "cato_evidence")
+    }
+    conn.close()
+
+    assert persisted["rmf_workflow_stages"] >= 1, (
+        "the stage rows did not survive the daemon's connection scope"
+    )
+    assert persisted["stig_findings"] >= 1, persisted
+    assert persisted["cato_evidence"] >= 1, persisted
