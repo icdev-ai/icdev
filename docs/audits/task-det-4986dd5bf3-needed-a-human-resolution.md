@@ -13,8 +13,13 @@ board **11h27m before this card dispatched**:
 
 | Criterion | Measured 2026-09-05 |
 |---|---|
-| the derivation no longer reports `rmf-ui-10` | `[]` — 89 `pr_watcher.*` rows in the 24h window, none for this subject |
+| the derivation no longer reports `rmf-ui-10` | `[]` — the window held 88–89 rows across two readings 20 min apart (`resume` 29, `merge` 50, `escalate` 6, `rebase` 3); **none for this subject** |
 | `detector_findings.4986dd5bf38b3dcb` reads `cleared` | `status=cleared`, `cleared_at=2026-09-05 06:03:51`; card dispatched `17:30:48` |
+
+
+> The row count is a **rolling** 24h window over exactly four actions
+> (`_recovery_rows` fetches `resume`/`rebase`/`escalate`/`merge` only) and moves
+> between readings; the stable fact is that **none of them name `rmf-ui-10`**.
 
 The deliverable is on the default branch — verified against `origin/main`, not
 taken from the board:
