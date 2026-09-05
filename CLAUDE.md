@@ -1008,6 +1008,7 @@ python -m tools.kanban.detector_findings --json          # run status_churn + bo
 python -m tools.kanban.detector_findings --dry-run       # run the detectors; write NOTHING (no rows, no cards)
 python -m tools.kanban.detector_findings --list          # browse the projection (--detector, --status active|cleared)
 python -m tools.kanban.detector_findings --stats         # per-detector denominator: never_ran | unmeasurable | clean | findings
+python -m tools.kanban.detector_findings --records       # card vs RECORD, re-derived; runs no detector
 python tools/genesis/daemon.py --reflex detector_findings_reflex   # the 6h reflex, once, through the daemon
 # THE DEFECT. status_churn (kpr-watch-11), born_red_survey (rem-hyg-14) and
 # recovery_summary (rem-hyg-16) were each built because a human found the defect
@@ -1022,6 +1023,43 @@ python tools/genesis/daemon.py --reflex detector_findings_reflex   # the 6h refl
 # RECURS after its card closed (`-r2`, `card_count`); `idempotency_key` on the
 # spec is the second lock inside create_tasks. Cards land in `suggested` (HITL
 # quarantine) by default — `seed_status` in args/genesis_config.yaml.
+# A RECORD IS NOT A DISPATCHABLE CARD (autonomy-act-04). summarize_recovery is
+# RIGHT that `escalate` outranks any later `merge` -- counting a post-escalation
+# merge as a recovery is the inflation rem-hyg-16 exists to refuse, and NOTHING
+# here changes that verdict, its threshold or its window (recovery_summary.py is
+# byte-identical). The objection is one layer up, about SEEDING: a
+# `needed_a_human` finding whose subject has since merged and gone terminal is a
+# true statement about the PAST, and a card for it dispatches a worker session
+# against a delivered subject -- a dispatch that CANNOT go RED, because there is
+# nothing left to change. THE RULE IS A CONJUNCTION of two pieces of primary
+# data, no elapsed time and no threshold: a `pr_watcher.merge` row NEWER than the
+# newest `pr_watcher.escalate` row for the subject, AND the subject task CLOSED
+# on the board (recovery_summary.CLOSED_STATUSES, IMPORTED, never respelled).
+# MEASURED over all 25 recorded `recovery` findings, live board 2026-09-05:
+# 16 record / 9 card; every subject `done` (22) or `pr_opened` (3), NONE
+# abandoned or stuck; and the merge that answered the escalation was the
+# WATCHER'S OWN (`auto-merge ok`) for 12 of the 16 -- the escalation asked for a
+# human and no human came. An earlier reading the same afternoon read 15/10:
+# mfx-sib-02 merged between them, so BOTH are quoted -- one figure off a live
+# board is not a measurement.
+# THE FINDING IS STILL RECORDED. _upsert_finding, seen_count and _clear_missing
+# are untouched; only the CARD is withheld, and every record is SURFACED on the
+# run report (`records[]`, both stamps and the merge's own reason), as a RECORD
+# line in the human report, and through `--records`.
+# EVERY UNKNOWN KEEPS THE CARD: an unreadable order, a subject not on the board,
+# a subject still in flight, an unreadable board. `superseded` is None -- NEVER
+# False -- with no escalation to order against. A wasted dispatch and a silently
+# demoted escalation are not the same price.
+# NOT CAUGHT, ON PURPOSE and measured: 6 findings keep a card although their
+# subject is closed, because the subject carries NO `pr_watcher.merge` row at all
+# (it landed through a door the watcher does not record). "The subject is closed"
+# ALONE drops the ordering half, which is the only thing separating "the
+# escalation was answered" from "the board moved on". Widening it is a separate
+# card with its own survey.
+# NO MIGRATION: the disposition is re-derived from primary data every run and
+# never persisted -- a stored verdict about an ORDER goes stale the moment
+# either row's successor is written.
+# Survey: docs/audits/autonomy-act-04-record-not-card-survey.md
 # A CARD CLOSED EARLY IS NOT A RECURRENCE (task-f05d2bc8d1). A recovery finding
 # is a window over audit rows and `escalate` outranks any later merge, so it
 # CANNOT clear before last-attempt + window_hours whatever a human does; a
