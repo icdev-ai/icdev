@@ -482,8 +482,8 @@ def test_the_emulated_provider_override_is_written_for_floci_not_for_aws(tmp_pat
     env = {"FLOCI_ENABLED": "true", "FLOCI_ENDPOINT": "http://localhost:4566"}
     assert _base.detect_mode(env) == emulator.MODE
 
-    rendered = _base.LOCALSTACK_PROVIDER_OVERRIDE.format(
-        ep=_base.localstack_docker_endpoint(emulator.endpoint(env)),
+    rendered = _base.FLOCI_PROVIDER_OVERRIDE.format(
+        ep=_base.emulator_docker_endpoint(emulator.endpoint(env)),
         region=emulator.region(env),
     )
     # localhost is rewritten so a terraform container can reach the host.

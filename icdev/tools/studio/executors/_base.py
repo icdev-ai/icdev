@@ -336,8 +336,14 @@ def detect_mode(env: dict[str, str]) -> str:
     return "dry_run"
 
 
-def localstack_docker_endpoint(endpoint: str) -> str:
-    """Rewrite localhost/127.0.0.1 → host.docker.internal for Docker containers."""
+def emulator_docker_endpoint(endpoint: str) -> str:
+    """Rewrite localhost/127.0.0.1 → host.docker.internal for Docker containers.
+
+    Renamed from `localstack_docker_endpoint` (flx-studio-01). The body is
+    unchanged: the rewrite is about DOCKER NETWORKING — a container cannot
+    reach the host's loopback by that name — and has nothing to do with which
+    emulator is listening on the other end.
+    """
     return endpoint.replace("localhost", "host.docker.internal").replace(
         "127.0.0.1", "host.docker.internal"
     )
@@ -361,7 +367,18 @@ def docker_aws_flags(env: dict[str, str], mode: str) -> list[str]:
     return flags
 
 
-LOCALSTACK_PROVIDER_OVERRIDE = """\
+# Renamed from `LOCALSTACK_PROVIDER_OVERRIDE` (flx-studio-01). ONLY THE NAME
+# MOVED — the block's bytes are deliberately untouched, including the two
+# comment lines that still say "LocalStack". floci is a LocalStack drop-in and
+# consumes the identical stock `hashicorp/aws` shape (endpoints{},
+# s3_use_path_style, skip_*, dummy credentials), so there is nothing here that
+# SHOULD change, and editing prose in the same commit would make the rename
+# indistinguishable from a behaviour change — the failure mode is GREEN, since
+# a dropped endpoints{} entry or a flipped skip_* still parses and terraform
+# simply talks to somewhere else. tests/cloud/test_studio_provider_override.py
+# holds the pre-rename block frozen and compares byte for byte.
+# The wording is flx-docs-01's to update, named rather than dropped.
+FLOCI_PROVIDER_OVERRIDE = """\
 # LocalStack/SAM endpoint override — auto-injected by ICDEV Studio executor
 provider "aws" {{
   access_key                  = "test"

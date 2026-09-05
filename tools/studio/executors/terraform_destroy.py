@@ -31,8 +31,8 @@ from tools.studio.executors._base import (  # noqa: E402
     artifacts_dir, resolve_canvas, get_iac_artifacts, filter_artifacts,
     is_emulated,
     aws_env, detect_mode, docker_aws_flags, docker_available, pull_image,
-    docker_run, localstack_docker_endpoint,
-    LOCALSTACK_PROVIDER_OVERRIDE, TFVARS_DEFAULTS,
+    docker_run, emulator_docker_endpoint,
+    FLOCI_PROVIDER_OVERRIDE, TFVARS_DEFAULTS,
 )
 from tools.cloud import emulator  # noqa: E402
 
@@ -141,13 +141,13 @@ def run_destroy(run_id: str, project_id: str, canvas: str = "") -> dict:
                               "message": f"State loaded from {state_file.name}"})
 
             if is_emulated(mode):
-                docker_ep = localstack_docker_endpoint(emulator.endpoint(env))
+                docker_ep = emulator_docker_endpoint(emulator.endpoint(env))
                 region = env.get("AWS_DEFAULT_REGION") or emulator.region(env)
-                (tmp_path / "localstack_override.tf").write_text(
-                    LOCALSTACK_PROVIDER_OVERRIDE.format(ep=docker_ep, region=region),
+                (tmp_path / "floci_override.tf").write_text(
+                    FLOCI_PROVIDER_OVERRIDE.format(ep=docker_ep, region=region),
                     encoding="utf-8", newline="",
                 )
-                findings.append({"severity": "info", "check": "localstack_override",
+                findings.append({"severity": "info", "check": "floci_override",
                                   "message": f"Provider overridden → {docker_ep}"})
 
             (tmp_path / "auto.tfvars").write_text(TFVARS_DEFAULTS, encoding="utf-8", newline="")
