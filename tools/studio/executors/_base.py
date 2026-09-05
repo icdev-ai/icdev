@@ -367,19 +367,23 @@ def docker_aws_flags(env: dict[str, str], mode: str) -> list[str]:
     return flags
 
 
-# Renamed from `LOCALSTACK_PROVIDER_OVERRIDE` (flx-studio-01). ONLY THE NAME
-# MOVED — the block's bytes are deliberately untouched, including the two
-# comment lines that still say "LocalStack". floci is a LocalStack drop-in and
+# Renamed from `LOCALSTACK_PROVIDER_OVERRIDE` (flx-studio-01), which moved ONLY
+# THE NAME: the block's bytes stayed untouched, including two comment lines that
+# still said "LocalStack", because editing prose in the same commit would make a
+# rename indistinguishable from a behaviour change — and the failure mode is
+# GREEN, since a dropped endpoints{} entry or a flipped skip_* still parses and
+# terraform simply talks to somewhere else. That wording was deferred to
+# flx-docs-01, named rather than dropped, and flx-docs-01 has now updated it:
+# the header and the s3_use_path_style rationale name the emulator instead of
+# the retired product. NOTHING ELSE MOVED — floci is a LocalStack drop-in and
 # consumes the identical stock `hashicorp/aws` shape (endpoints{},
 # s3_use_path_style, skip_*, dummy credentials), so there is nothing here that
-# SHOULD change, and editing prose in the same commit would make the rename
-# indistinguishable from a behaviour change — the failure mode is GREEN, since
-# a dropped endpoints{} entry or a flipped skip_* still parses and terraform
-# simply talks to somewhere else. tests/cloud/test_studio_provider_override.py
-# holds the pre-rename block frozen and compares byte for byte.
-# The wording is flx-docs-01's to update, named rather than dropped.
+# SHOULD change. tests/cloud/test_studio_provider_override.py still holds the
+# pre-rename block frozen and now compares every NON-COMMENT line byte for
+# byte, which is a STRICTER guarantee than the old whole-block equality: the
+# comments are free to be corrected and the terraform is not.
 FLOCI_PROVIDER_OVERRIDE = """\
-# LocalStack/SAM endpoint override — auto-injected by ICDEV Studio executor
+# floci/SAM endpoint override — auto-injected by ICDEV Studio executor
 provider "aws" {{
   access_key                  = "test"
   secret_key                  = "test"
@@ -387,7 +391,7 @@ provider "aws" {{
   skip_credentials_validation = true
   skip_metadata_api_check     = true
   skip_requesting_account_id  = true
-  # Force path-style S3 URLs so Docker containers can reach LocalStack
+  # Force path-style S3 URLs so Docker containers can reach the emulator
   # (virtual-hosted style — bucket.host — breaks inside Docker networking)
   s3_use_path_style           = true
   endpoints {{

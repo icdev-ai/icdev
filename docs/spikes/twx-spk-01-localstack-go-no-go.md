@@ -77,3 +77,105 @@ clearly labeled `estimate=True`.
 **Decision owner:** requires human sign-off on the paid subscription before any
 `twx-ls-*` task is scheduled. This spike seeds **no** ungated build tasks
 automatically.
+
+---
+
+## Addendum — 2026-09-05: SUPERSEDED ON THE LICENSING QUESTION ONLY (flx)
+
+**Nothing above this line has been edited.** This section is appended, dated and
+signed to the `flx` project (`args/projects.yaml`, prefix `flx-`); the spike's
+original text stands exactly as it was written on the evidence available then.
+A rewritten spike destroys the reasoning that made the original call defensible,
+and a reader who cannot see the superseded verdict cannot tell a decision that
+was **reversed** from one that was **never made**.
+
+### The spike was RIGHT, and it is the FACT that moved — not the reasoning
+
+The 2026 LocalStack image consolidation is real and the spike's reading of it was
+correct: an emulator whose container validates an auth token at start is a
+non-starter on a disconnected high side, and a per-seat commercial subscription
+has to be justified by one pattern's value alone. Every "no" above followed from
+those two facts. **Neither fact changed. The product did.**
+
+**floci** (MIT, Java/Quarkus, port 4566, release `2.0.1` 2026-09-01 — the
+version pinned in `tools/cloud/emulator.py::DEFAULT_IMAGE`; no upstream URL is
+cited here because none is recorded anywhere in this tree, and inventing one is
+the fabrication these documents exist to refuse) is a documented LocalStack
+drop-in: it keeps
+`/_localstack/health`, translates `LOCALSTACK_*` environment variables by
+default, and consumes the identical stock `hashicorp/aws` provider shape
+(`endpoints{}`, `s3_use_path_style`, `skip_*`, dummy credentials). It validates
+**no token** and carries **no subscription**. So the *conclusion* "an AWS
+emulator cannot be used air-gapped or without a paid seat" no longer follows —
+not because the argument was wrong, but because its premise was about a
+different product.
+
+**What that does NOT license.** "Air-gap-capable" here means the image can be
+pre-pulled, pinned by digest and loaded on the high side; it does **not** mean
+disconnected operation is free. Two measurements from the `flx` work say so:
+having `floci/floci:2.0.1` cached is **necessary and not sufficient** — floci
+resolves eleven further container base images from the public internet on first
+use of a container-backed service (`args/floci_runtime_images.yaml`, measured
+from `docker events` 2026-09-05) — and the emulator needs the host Docker socket
+for Lambda/RDS/ElastiCache/OpenSearch/MSK/ECS/EC2/EKS, which is
+**root-equivalence on the host** (recorded as Gap 65 in
+`docs/security/sandbox-coverage.md`, not waved through). The spike's *footprint*
+finding (§2 — a multi-hundred-MB Docker container, against this repo's
+pure-Python/offline preference) therefore **STANDS UNCHANGED**. What moved is
+licensing, and only licensing.
+
+### Per-pattern re-disposition
+
+| # | Pattern | Spike verdict | Now | Why |
+|---|---------|---------------|-----|-----|
+| 1 | PDC / IaC CI gate | GO — conditional, cloud-CI only | **BUILT** (`flx-ci-01`) | The condition the spike attached was the paid subscription. floci removes it. `tools/ci/floci_iac_gate.py` + `.github/workflows/floci-iac-gate.yml`: `workflow_dispatch`, a weekly schedule and a `floci-gate` label — **never one of the four required checks** (runners here are near-serial; an emulator in front of every merge is how a gate earns itself a bypass). |
+| 2 | Cloud Pods fixtures | DEFER — Pro feature | **DEFER, unchanged** | The reason was never only the licence: our fixtures are already pure-Python, and floci ships no Cloud Pods equivalent to adopt. Nothing to revisit. |
+| 3 | IAM policy sandbox | **NO-GO** | **NO-GO — CARRIED FORWARD UNCHANGED** | See the standing guards below. The ZTA/ABAC engine already models IAM decisions offline; a partial emulation would be a **second opinion**, and the licence was never the objection. |
+| 4 | Chaos injection | NO-GO | **NO-GO, unchanged** | Out of scope for a design-time twin; belongs to a runtime resilience programme. Untouched by the licensing change. |
+| 5 | IDC runtime engine (twin over a live emulator) | PARTIAL — keep flag-gated | **BUILT, still flag-gated** (`flx-twin-01`) | `tools/twin_core/adapters/floci.py` reads the connector's seven logical tables **through** `tools/databridge/broker.py` (the `flx-bridge-02` grant), off by default, `unknown` never `pass`, and every snapshot carries provenance `emulated`. The spike's instruction not to couple the IDC twin's verdict logic to the emulator is kept: this is a **separate** adapter, not a dependency of the IDC one. |
+
+The spike's own follow-up `twx-ls-01` — "an opt-in cloud-CI job behind a
+`LOCALSTACK_CI` flag, requiring human sign-off on the paid subscription" — is
+**superseded by `flx-ci-01`**, which builds that job against floci. There is no
+subscription to sign off. The operator decisions that DID gate the work are
+dated and recorded in the `flx` card: replace LocalStack outright, must run
+air-gapped, mount the Docker socket, default region `us-gov-west-1`, persistent
+state, ship the opt-in CI IaC gate, register a Twin Observatory adapter, do all
+four CSPs (2026-09-04); locally-hosted Docker for now (2026-09-05).
+
+### The two standing guards CARRY FORWARD UNCHANGED
+
+Neither depends on which emulator is running, and neither is softened by
+anything above.
+
+1. **NEVER source a performance, cost or capacity claim from emulator timings.**
+   An emulator reproduces the AWS **API contract**, not AWS's **performance
+   characteristics**. Twin cost/latency estimates stay sourced from the
+   catalog/estimate engines and stay labelled `estimate=True`. It travels WITH
+   the capability rather than sitting in a spike nobody re-reads, and the four
+   sites are named so the claim is checkable: `docs/reference/commands.md`
+   (twice), the `flx-ci-01` report path in `tools/ci/floci_iac_gate.py`, the
+   `IDC Floci Adapter` row in `tools/manifest/design-canvases.md`, and the
+   `flx-twin-01` block in `CLAUDE.md`. `tests/cloud/test_flx_docs.py`
+   re-derives all four, because a documented claim nothing re-checks is exactly
+   the shape this addendum exists to correct.
+2. **IAM policy sandbox stays NO-GO** (pattern 3 above). The PDP/PEP ABAC engine
+   in `tools/security/` already answers IAM questions offline and
+   deterministically; adding a partial emulation gives a second answer to the
+   same question with no rule for choosing between them.
+
+### Where the superseding work is recorded
+
+- ADR: `docs/reference/adrs.md`, **Phase 79 — FLX**, D398–D401. **D382's
+  LocalStack half is superseded on the licensing question only**; its Batfish
+  half (spk-02) is untouched.
+- Feature doc: `docs/features/phase-flx-floci-emulator.md`.
+- Commands: `docs/reference/commands.md` (the floci sections).
+- Cards: `flx-seam-01/02`, `flx-compose-01/02`, `flx-bridge-01/02`,
+  `flx-studio-01/02`, `flx-sim-01`, `flx-gen-01`, `flx-airgap-01/02/03`,
+  `flx-twin-01`, `flx-ci-01/02`, `flx-docs-01`. **Not built:** the Azure, GCP and
+  OCI siblings (`flx-az-01`, `flx-gcp-01`, `flx-oci-01`) — each gated on its own
+  **dated parity measurement**, exactly as this spike gated LocalStack, and none
+  of them inherits floci's AWS parity by being made by the same authors.
+
+**Addendum author:** `flx-docs-01`, 2026-09-05.

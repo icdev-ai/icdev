@@ -1,0 +1,4 @@
+# flx-docs-01 -- the dated superseded-by-floci addendum to twx-spk-01, the ADRs,
+# the feature doc, and the commands/manifest registrations. Also the deferred
+# provider-block wording flx-studio-01 named this card as the owner of.
+tests/cloud/test_flx_docs.py
