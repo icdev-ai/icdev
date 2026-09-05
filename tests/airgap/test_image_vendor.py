@@ -372,3 +372,59 @@ def test_list_bundles_reports_an_empty_root_without_inventing_content(tmp_path, 
     out = iv.list_bundles()
     assert out["topics"] == []
     assert out["buckets"] == []
+
+
+# ---------------------------------------------------------------------------
+# The shipped floci pin — one measured fact, spelled the same in both places
+# ---------------------------------------------------------------------------
+
+
+def _repo_root() -> Path:
+    from icdev.core.paths import repo_root
+
+    return repo_root(__file__)
+
+
+def test_the_shipped_floci_pin_is_a_digest_and_parses():
+    """The committed pin must survive the same refusal every operator pin gets."""
+    pins = _read_shipped_floci_pins()
+    assert len(pins) == 1
+    assert pins[0]["repo"] == "floci/floci"
+    assert pins[0]["digest"].startswith("sha256:")
+
+
+def _read_shipped_floci_pins():
+    path = _repo_root() / "vendor" / "images" / "images-floci.txt"
+    assert path.exists(), f"the floci pin file is missing: {path}"
+    return [
+        iv.parse_pin(line)
+        for line in (
+            raw.split("#", 1)[0].strip()
+            for raw in path.read_text(encoding="utf-8").splitlines()
+        )
+        if line
+    ]
+
+
+def test_the_floci_pin_agrees_with_the_measured_digest():
+    """ONE measured fact must not come to be spelled two ways.
+
+    The digest was measured against Docker Hub by flx-ci-01 and declared in
+    args/floci_iac_gate.yaml. This vendor's pin file repeats it, so the two
+    can drift — and a bundle vendored against a digest the IaC gate no longer
+    recognises is exactly the unattributable disagreement that config's own
+    comment warns about. Assert them equal rather than trusting a comment.
+    """
+    import yaml
+
+    gate = yaml.safe_load(
+        (_repo_root() / "args" / "floci_iac_gate.yaml").read_text(encoding="utf-8")
+    )
+    measured = gate.get("image_digest")
+    assert measured, "args/floci_iac_gate.yaml declares no image_digest"
+
+    pinned = _read_shipped_floci_pins()[0]
+    assert pinned["digest"] == measured, (
+        f"vendor/images/images-floci.txt pins {pinned['digest']} but "
+        f"args/floci_iac_gate.yaml measured {measured}"
+    )

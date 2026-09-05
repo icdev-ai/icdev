@@ -78,10 +78,36 @@ docker CLI, no bucket, or a legacy `docker-v1` tar that records no manifest
 digest). **`unmeasured` is never a clean bundle**, and `--verify` exits 2 there
 so a caller cannot read "could not measure" as "clean".
 
-## No floci pin is committed yet
+## The floci pin, and where its digest came from
 
-Deliberate. The floci digest has to be **measured** by resolving the real image,
-and `floci/floci:2.0.1` was not in this host's cache when this tool was built
-(verified 2026-09-05). Writing a plausible-looking digest here would be exactly
-the fabrication the tool exists to prevent. Resolve it on a connected host with
-the `docker image inspect` line above and commit the result.
+`images-floci.txt` pins
+`floci/floci@sha256:4e451c39c7bb88e3cd4f87e8fc0c25d5b47695a51185d521e2241fa00486e8eb`.
+
+**That digest is not this card's measurement.** It was measured against Docker
+Hub on 2026-09-05 by `flx-ci-01` and is declared in
+`args/floci_iac_gate.yaml::image_digest` (`floci/floci:2.0.1`, published
+2026-09-01). It is repeated here because `--save` needs a pin file, and two
+spellings of one measured fact can drift — so
+`tests/airgap/test_image_vendor.py::test_the_floci_pin_agrees_with_the_measured_digest`
+asserts the two files still agree. A bundle vendored against a digest the IaC
+gate no longer recognises is exactly the unattributable disagreement that
+config's own comment warns about.
+
+**The digest is independently corroborated.** `flx-ci-01` measured it against
+Docker Hub; this tool re-derived it from the OCI layout of the locally cached
+image, and the two agree. Two derivations that share no code arriving at the
+same digest is worth more than either alone.
+
+**Measured on this host 2026-09-05** — a real floci bundle, full round trip:
+
+| act | result |
+|---|---|
+| `--save --topic floci` | `verified` — 139,021,824 bytes, 10 blobs, `manifest_digest_verified: true` |
+| `--verify --topic floci` | `verified`, `in_local_daemon: true` |
+| `--verify --no-daemon-probe` | `verified`, `in_local_daemon: null` — the high-side case, proved with no daemon |
+| `--load --topic floci` | `verified`, `digest_verified_in_daemon: true` |
+
+Note the cache is a moving target: when this tool was first built earlier the
+same day the image was **absent**, and `--save` correctly reported
+`absent_from_local_cache` and exited non-zero rather than pulling. Both the
+refusal and the success are the designed behaviour.
