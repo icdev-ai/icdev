@@ -125,6 +125,114 @@ jobs:
         if: failure()
         run: docker logs icdev-floci-iac-gate --tail 200 || echo "no container to read"
 
+  # ── The DOCKER-ONLY test half (flx-test-01) ─────────────────────────────
+  # tests/cloud/test_floci_container_docker.py is EXCLUDED from the merge gate
+  # (args/test_gating_gate.yaml) because it needs a Docker daemon, so this is
+  # the ONLY place it runs. Excluded is not "unrun": a file that is neither
+  # gated nor executed anywhere is exactly the dead-suite defect the test-gating
+  # policy exists to close, and an exclusion whose reason cites this job is a
+  # promise this job has to keep.
+  #
+  # A SEPARATE JOB, not a step on the gate above. The two ask different
+  # questions -- that one replays preapply_gate against a real AWS API surface,
+  # this one proves the seam's own constants are right -- and a failure in
+  # either must be attributable on its own. They also run in parallel rather
+  # than serially behind a 30-minute gate.
+  floci-docker-suite:
+    name: docker-only floci suite
+    runs-on: ubuntu-latest
+    # Same admission rule as the gate job, deliberately duplicated rather than
+    # inherited: a `needs:` would make this wait for a 30-minute job it shares
+    # no evidence with, and would SKIP it whenever that job fails -- which is
+    # precisely when the seam's constants are worth re-deriving.
+    if: >-
+      github.repository == 'icdev-ai/icdev' &&
+      (github.event_name != 'pull_request' ||
+       contains(github.event.pull_request.labels.*.name, 'floci-gate'))
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        # testcontainers-floci is declared in requirements.txt, so no second
+        # install line here -- a job that pip-installed its own dependency would
+        # let the declaration rot without anything going red. boto3 is NOT
+        # declared (five of the seven floci tables need it, and the twin adapter
+        # scores its absence `warn`/`sdk_unavailable` on purpose), so this job
+        # installs it explicitly to exercise the measured path rather than the
+        # degraded one.
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install "boto3>=1.34"
+
+      - name: Pre-pull the pinned emulator image
+        # Pulled HERE, by name, rather than implicitly by the container start.
+        # The suite asserts it runs `emulator.IMAGE` and never the library's
+        # `latest` default; pulling the pin explicitly means a tag that has gone
+        # missing fails on a line that says so instead of inside a fixture.
+        run: |
+          IMAGE="$(python -c 'from tools.cloud import emulator; print(emulator.IMAGE)')"
+          echo "pinned image: $IMAGE"
+          docker pull "$IMAGE"
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+
+      - name: Run the docker-only floci suite
+        # NO `|| true` and NO `continue-on-error`.
+        #
+        # `-p no:randomly` is not used and no marker selection happens here: the
+        # file is named explicitly, which is the same discipline the gated run
+        # uses. `--no-header -ra` surfaces any SKIP in the log, because a suite
+        # that skipped itself on a runner WITH Docker is unmeasured, not green,
+        # and the next step is what refuses it.
+        run: |
+          python -m pytest tests/cloud/test_floci_container_docker.py \
+            -v --no-header -ra --tb=short \
+            --junitxml=floci-docker-suite.xml
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          ICDEV_STORAGE_BACKEND: sqlite
+
+      - name: Refuse a suite that skipped itself
+        # THE POINT OF THIS STEP. `pytest.importorskip` makes the file harmless
+        # on a laptop with no Docker; on THIS runner a skip means the one job
+        # that ever runs these assertions ran none of them, and would report
+        # green. A gated file gets this from skip_census; an excluded file has
+        # to bring its own, and this is it.
+        if: always()
+        run: |
+          python - <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          try:
+              root = ET.parse("floci-docker-suite.xml").getroot()
+          except Exception as exc:
+              sys.exit("no JUnit report to read (%r) -- the suite did not run" % (exc,))
+          suites = root.iter("testsuite")
+          tests = skipped = 0
+          for s in suites:
+              tests += int(s.get("tests", 0))
+              skipped += int(s.get("skipped", 0))
+          print("tests=%d skipped=%d" % (tests, skipped))
+          if tests == 0:
+              sys.exit("the docker-only suite collected NOTHING")
+          if skipped:
+              sys.exit("%d/%d skipped on a runner that has Docker -- unmeasured, "
+                       "not green" % (skipped, tests))
+          PY
+
+      - name: Upload the suite report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: floci-docker-suite-evidence
+          path: floci-docker-suite.xml
+          if-no-files-found: warn
+
 # NEVER SOURCE A PERFORMANCE, COST OR CAPACITY CLAIM FROM THIS JOB. An emulator
 # reproduces the AWS API CONTRACT, not its performance characteristics. That is
 # the standing guard from docs/spikes/twx-spk-01-localstack-go-no-go.md and it

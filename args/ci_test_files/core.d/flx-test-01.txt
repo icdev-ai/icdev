@@ -1,0 +1,5 @@
+# flx-test-01 -- the floci suite's Docker split, and the rules that hold it:
+# the docker-only file is excluded LAWFULLY (reason + a job that runs it +
+# a refusal of a skipped run), its library is declared, and the gated
+# no-Docker half cannot silently acquire a Docker dependency.
+tests/cloud/test_floci_docker_split_is_lawful.py
