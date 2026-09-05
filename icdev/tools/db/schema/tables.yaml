@@ -598,6 +598,7 @@ tables:
   firmware_vex_records: it
   fisma_ir_incidents: it
   flaky_tasks_filed: it
+  floci_az_twin_snapshots: it
   floci_twin_snapshots: it
   forecast_audit: it
   forecast_jobs: it

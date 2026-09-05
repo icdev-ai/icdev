@@ -2356,3 +2356,52 @@ that.
   accepting tenant-supplied rather than operator-supplied input. Any one of
   those makes **bypass-documented** the wrong decision and requires re-deciding
   between `sandboxed` and refusing the grant.
+
+### Gap 66 — floci-az emulator holds the host Docker socket (`docker-compose.yml`, `floci-az` profile)
+
+- **File:** `docker-compose.yml` — service `floci-az` (flx-az-01); switch at
+  `tools/cloud/emulator_az.py`.
+- **Decision:** **bypass-documented** — the SAME decision as Gap 65, on the same
+  grounds, for the Azure sibling. Recorded as its own entry rather than folded
+  into Gap 65 because a socket grant is an operator decision per service, and a
+  second service silently inheriting the first's exemption is exactly what
+  `test_only_profiled_emulators_are_granted_the_docker_socket` now refuses.
+- **Why the grant exists:** Azure Functions spawns runtime containers as
+  *siblings* of the emulator, so without the socket that service cannot run at
+  all. The operator decision of 2026-09-05 (locally hosted Docker, for now)
+  applies unchanged: the LOCAL daemon, no remote `FLOCI_AZ_DOCKER_DOCKER_HOST`,
+  no internal registry mirror.
+- **Why it is acceptable:**
+  - **The service is behind the `floci-az` compose profile**, so it never starts
+    with a plain `docker compose up`. Asserted over the WHOLE granted set, not
+    one name.
+  - **Loopback-only port publishing** (`127.0.0.1:4577:4577`) — an emulator
+    holding the host socket must not be reachable off-host. The container-backed
+    proxy ranges are declared in `emulator_az.PROXY_PORT_RANGES` and
+    deliberately NOT published; publishing them would also collide with the
+    `floci` profile's own 6379-6399 range on any host running both.
+  - **The image tag is pinned** (`floci/floci-az:0.12.0`, never `:latest`), with
+    the digest recorded in `emulator_az.IMAGE_DIGEST`.
+  - **Input is operator-supplied, not tenant-supplied.** ICDEV reads this
+    emulator through one governed DataBridge grant scoped to
+    `twin_observatory_analyst`, READ ONLY, and there is no Azure IaC executor —
+    nothing in this tree applies a change through it.
+  - **Persistent state is gitignored.** `FLOCI_AZ_STORAGE_MODE=persistent` writes
+    under `./data/floci-az` (the image's own `/app/data`, not `/var/lib/floci`),
+    and this repo is PUBLIC. `data/floci-az/` needed its OWN `.gitignore` entry:
+    the existing `data/floci/` rule ends in a slash and does not cover it.
+  - **Never a source of a performance, cost or capacity claim** — the standing
+    guard from `docs/spikes/twx-spk-01-localstack-go-no-go.md`.
+- **One extra hazard this emulator has and Gap 65 does not:** floci-az serves an
+  **IMDS token endpoint** at `/metadata/identity/oauth2/token` and issues real
+  signed JWTs (measured 2026-09-05). The connection row's `egress_allowlist`
+  (`localhost`, `127.0.0.1`, `::1`) is what stops a mis-set seam dialling the
+  real link-local `169.254.169.254` instead, and it is enforced at the point the
+  destination is decided rather than per URL.
+- **Revisit if:** the profile is started anywhere automatically; the socket mount
+  moves onto a default-profile service; `FLOCI_AZ_DOCKER_DOCKER_HOST` is set to a
+  **remote** daemon (a different trust question — the grant then crosses a host
+  boundary); the emulator is exposed off-loopback or run on a shared/CI host; an
+  Azure IaC executor is added (the read-only premise above then no longer holds);
+  or floci-az begins accepting tenant-supplied rather than operator-supplied
+  input.

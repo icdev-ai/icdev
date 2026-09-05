@@ -1064,6 +1064,92 @@ services:
           cpus: '0.5'
           memory: 1G
 
+
+  # ====================================================================
+  # floci-az — Azure API Emulator (OPT-IN, OFF BY DEFAULT) (flx-az-01)
+  # ====================================================================
+  # The Azure sibling of the `floci` service above. MIT, Java/Quarkus, and it
+  # listens on 4577 — a DIFFERENT emulator, not a second profile over the same
+  # one, so the two can run side by side without colliding.
+  #
+  # It is NOT a LocalStack drop-in and inherits no compat contract from its AWS
+  # sibling: measured 2026-09-05, `/_localstack/health` returns **501** here and
+  # the health path is `/_floci/health`. See docs/spikes/flx-az-parity.md.
+  #
+  #     docker compose --profile floci-az up -d
+  #
+  # `icdev enable floci-az` flips the ICDEV-side switch (FLOCI_AZ_ENABLED); the
+  # container is the other half and is started by the line above.
+  #
+  # READ AND INVENTORY ONLY. ICDEV has tools/cloud/aws_config_executor.py and
+  # NO Azure analogue, so nothing here executes Azure IaC — the seam says so
+  # (emulator_az.IAC_EXECUTION_SUPPORTED is False) and a test asserts it.
+  floci-az:
+    profiles: ["floci-az"]
+    # PINNED, never `:latest`. Kept in step with emulator_az.IMAGE by hand —
+    # YAML cannot import a Python constant — and a test pins them equal.
+    # Digest measured 2026-09-05:
+    #   sha256:0c673d49bb75b502ea0750f1c1347777483ffc33945539e1d9254438cb441a03
+    image: floci/floci-az:0.12.0
+    container_name: icdev-floci-az
+    ports:
+      # Loopback-only: an emulator holding the host docker socket must not be
+      # reachable off-host. Services on icdev-net still reach it by name.
+      - "127.0.0.1:4577:4577"            # Azure API edge port
+      # The container-backed proxy ranges are DECLARED in
+      # emulator_az.PROXY_PORT_RANGES and deliberately NOT published here:
+      # 5000-5099 (ACR), 5672/5673 (Event Hubs / Service Bus AMQP),
+      # 6379-6399 (Cache), 6443-7443 (AKS) is ~1,100 host ports, and publishing
+      # them collides with the `floci` profile's own 6379-6399 Redis range on
+      # any host running both. Publish a range only where something consumes it.
+    environment:
+      # MEASURED 2026-09-05: `persistent` is accepted, the banner reports
+      # "Storage mode: persistent", and a blob written before a `docker restart`
+      # was readable after it. The path is the image's own
+      # FLOCI_AZ_STORAGE_PERSISTENT_PATH=/app/data — NOT /var/lib/floci, which
+      # is where the AWS sibling keeps state.
+      FLOCI_AZ_STORAGE_MODE: persistent
+      # Azure Government's region name. NOT `us-gov-west-1` — that is AWS's
+      # spelling and matches no Azure region. Kept in step with
+      # emulator_az.DEFAULT_REGION and the `azure_gov` twin preset.
+      FLOCI_AZ_DEFAULT_REGION: ${FLOCI_AZ_REGION:-usgovvirginia}
+      # The daemon floci-az starts service containers on. Per the operator
+      # decision of 2026-09-05 this is the LOCAL daemon; a remote
+      # FLOCI_AZ_DOCKER_DOCKER_HOST and an internal registry mirror are named
+      # follow-ons, not dropped.
+      DOCKER_HOST: ${FLOCI_AZ_DOCKER_DOCKER_HOST:-unix:///var/run/docker.sock}
+    volumes:
+      # ./data/floci-az is gitignored (flx-az-01). NOTE the anchor: the existing
+      # `data/floci/` rule ends in a slash and does NOT cover this directory, so
+      # it needed its own entry — without it, per-machine emulator state lands
+      # in this PUBLIC repo.
+      - ./data/floci-az:/app/data
+      # Azure Functions spawns runtime containers and needs the socket. The
+      # leading double slash is required on Windows: a single `/var/run/...` is
+      # rewritten by MSYS/Git Bash path conversion and the mount silently binds
+      # the wrong thing.
+      - ${FLOCI_AZ_DOCKER_SOCKET_MOUNT:-//var/run/docker.sock}:/var/run/docker.sock
+    networks:
+      - icdev-net
+    healthcheck:
+      # floci-az's OWN health path. `/_localstack/health` answers 501 here.
+      # Mirrors emulator_az.HEALTH_PATH; keep the two in step.
+      test: ["CMD", "curl", "-sf", "http://localhost:4577/_floci/health"]
+      <<: *healthcheck-defaults
+      # Measured cold start on this host was ~13s to `healthy`, but a JVM
+      # emulator bringing up 24 service backends needs headroom over the shared
+      # 10s. An explicit key beats the merge key.
+      start_period: 60s
+    logging: *default-logging
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
 # ======================================================================
 # Networks
 # ======================================================================

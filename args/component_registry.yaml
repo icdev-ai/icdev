@@ -2174,6 +2174,38 @@ components:
   min_il: IL4
   default_roles: []
 
+# flx-az-01: the local AZURE emulator (`floci-az`). A SEPARATE component from
+# `floci` above, not a mode of it — they are different emulators on different
+# ports, and a deployment may legitimately run one, both or neither. Coupling
+# them would start a second 305 MB JVM container nobody asked for.
+#
+# Same `kind: core_extension` reasoning: no page, no blueprint, no IQE
+# collections, so it is not under the 8-point canvas completeness gate.
+#
+# env_flag is FLOCI_AZ_ENABLED — the flag tools/cloud/emulator_az.py actually
+# reads — and NOT the ICDEV_FLOCI_AZ_ENABLED the loader would otherwise default
+# to. Same trap as the floci entry: the default would have `icdev enable
+# floci-az` write a variable the seam never consults, and `icdev status` would
+# report the emulator enabled on a deployment whose emulator is off.
+#
+# There is NO deprecated-alias question here, unlike floci: floci-az is not a
+# LocalStack drop-in (measured 2026-09-05, `/_localstack/health` returns 501),
+# so no LOCALSTACK_* name was ever honoured and none is read.
+- key: floci_az
+  kind: core_extension
+  cli_name: floci-az
+  display_name: Floci Azure Emulator
+  description: Local Azure emulator (floci-az) used by the Twin Observatory and
+    the DataBridge connector. READ AND INVENTORY ONLY — ICDEV ships no Azure IaC
+    executor, so nothing here executes Azure infrastructure changes. The switch
+    is tools/cloud/emulator_az.py. Enabling this flag is the ICDEV-side half;
+    the container starts with `docker compose --profile floci-az up -d`.
+  env_flag: FLOCI_AZ_ENABLED
+  default_enabled: false
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+
 # ═══════════════════════════════════════════════════════════════════════════
 # IQE / AI-brief path → canvas map (cvx-nav-01)
 # ═══════════════════════════════════════════════════════════════════════════

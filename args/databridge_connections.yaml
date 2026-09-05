@@ -130,3 +130,57 @@ connections:
         - 127.0.0.1
         - "::1"
       egress_denylist: []
+
+  # floci-az Azure service emulator (flx-az-01) — the LOCAL emulated estate.
+  #
+  # A SECOND CONNECTION, not a second config on the floci row. The two are
+  # different emulators on different ports with different health paths, and a
+  # deployment may legitimately run one, both or neither.
+  #
+  # `endpoint` is deliberately NOT pinned here, for the same reason as the floci
+  # row above: tools/cloud/emulator_az.py is the ONE Azure emulator switch and a
+  # second copy in this row would be a second switch. The seam decides WHERE;
+  # this row decides the CEILING on where.
+  #
+  # READ ONLY, and the connector enforces it rather than relying on this line:
+  # FlociAzConnector.capabilities.supports_write is False and write() returns an
+  # `unsupported` refusal naming the absent Azure IaC executor. sync_direction
+  # below records the same fact where an operator reads it.
+  - id: floci-az-emulator-local
+    name: floci-az Azure Emulator (local)
+    connector_name: floci_az
+    connector_type: saas_api
+    auth_method: none
+    sync_direction: read
+    status: configured
+    classification: UNCLASSIFIED
+    impact_level: IL2
+    config:
+      # THE ENDPOINT HOST, AND NOTHING ELSE. Enforced by
+      # FlociAzConnector._assert_endpoint_allowed at the point the destination
+      # is decided, so it covers every ARM fan-out call rather than only the
+      # ones routed through one helper.
+      #
+      # NOT enforced by saas_base._guard_egress, and the reason is the same one
+      # measured for the AWS emulator on 2026-09-05: egress_guard is an INTERNET
+      # SSRF gate and refuses this connector's own default endpoint twice over —
+      # `http://localhost:4577` is scheme_not_https, and the https spelling is
+      # denied_ip_range. A loopback emulator over plain http is precisely the
+      # destination that guard exists to refuse. The applicable half of its rule
+      # (which HOST) is applied from its own `host_allowed`; the inapplicable
+      # half is named rather than quietly dropped. This is a HOST allowlist, not
+      # an SSRF gate, and it performs no DNS resolution.
+      #
+      # IT MATTERS MORE HERE THAN FOR THE AWS EMULATOR. floci-az serves an IMDS
+      # token endpoint of its own at /metadata/identity/oauth2/token — measured
+      # 2026-09-05, it issues a real signed JWT. A seam mis-set toward the real
+      # link-local 169.254.169.254 must be refused, not dialled.
+      #
+      # Three entries because they are three spellings of ONE destination: this
+      # machine's emulator. A deployment running floci-az on another host must
+      # add that host here, which is the review this list exists to force.
+      egress_allowlist:
+        - localhost
+        - 127.0.0.1
+        - "::1"
+      egress_denylist: []

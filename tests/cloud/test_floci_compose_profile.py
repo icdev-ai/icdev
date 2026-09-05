@@ -207,14 +207,34 @@ def test_remote_docker_host_is_left_unset(floci):
     )
 
 
-def test_floci_is_the_only_service_granted_the_docker_socket(compose):
-    """The socket grant is exactly one service, and that service is profiled.
+#: Services allowed to mount the host docker socket. ENUMERATED, never a
+#: pattern: each entry is an emulator that spawns service containers and each
+#: one is an operator decision recorded in docs/security/sandbox-coverage.md.
+#: `floci` is the AWS emulator (Gap 65); `floci-az` is the Azure emulator
+#: (flx-az-01) -- Azure Functions spawns runtime containers the same way.
+_SOCKET_GRANTED_SERVICES = {"floci", "floci-az"}
 
-    This is the invariant the sandbox-coverage decision (Gap 65) rests on: the
-    grant is acceptable BECAUSE it never starts by default. A second service
-    mounting the socket -- or this mount moving onto a default-profile service
-    -- makes `bypass-documented` the wrong decision, so it must fail here
-    rather than be discovered in a deployment.
+
+def test_only_profiled_emulators_are_granted_the_docker_socket(compose):
+    """The socket grant is confined to enumerated emulators, and ALL are profiled.
+
+    This is the invariant the sandbox-coverage decision (Gap 65) rests on, and
+    it is TWO claims, not one. The grant is acceptable BECAUSE it never starts
+    by default, so:
+
+      * no service outside :data:`_SOCKET_GRANTED_SERVICES` may mount the
+        socket -- a new grant is an operator decision and must be recorded in
+        docs/security/sandbox-coverage.md before it appears here; and
+      * EVERY granted service must sit behind a profile. This is the half that
+        actually carries the safety property, and it is asserted over the whole
+        set rather than over one hardcoded name -- widening the set without it
+        would let a second emulator inherit the exemption while starting by
+        default, which is precisely the deployment surprise this test exists to
+        prevent.
+
+    The set was ``{"floci"}`` until flx-az-01 added the Azure emulator. It was
+    widened by enumeration rather than by relaxing the predicate, so a THIRD
+    grant still fails here.
     """
     granted = {
         name
@@ -222,10 +242,11 @@ def test_floci_is_the_only_service_granted_the_docker_socket(compose):
         for vol in (svc.get("volumes") or [])
         if str(vol).endswith(":/var/run/docker.sock")
     }
-    assert granted == {"floci"}, granted
-    assert compose["services"]["floci"].get("profiles"), (
-        "the socket grant is only acceptable behind a profile"
-    )
+    assert granted == _SOCKET_GRANTED_SERVICES, granted
+    for name in granted:
+        assert compose["services"][name].get("profiles"), (
+            f"the socket grant is only acceptable behind a profile; {name} has none"
+        )
 
 
 @pytest.mark.parametrize("platform", ["linux", "win32", "darwin"])
