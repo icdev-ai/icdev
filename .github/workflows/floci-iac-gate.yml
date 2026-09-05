@@ -1,0 +1,129 @@
+# CUI // SP-CTI
+name: floci IaC Gate (opt-in)
+
+# WHAT THIS PROVES, and nothing else in the pipeline asks it:
+# does `tools/infra_canvas/preapply_gate.py`'s verdict on a Terraform plan
+# match what a REAL AWS API surface accepts? The gate has only ever been
+# checked against fixtures written beside it; floci is an independent
+# derivation that has never read our IQE queries.
+#
+# twx-spk-01 rated this pattern GO (conditional, cloud-CI only) and the single
+# thing blocking it was LocalStack's paid subscription. floci removes that --
+# MIT, no auth token, no feature gates. This SUPERSEDES that spike on the
+# air-gap question only; every other finding in it still stands, including the
+# standing guard repeated at the bottom of this file.
+#
+# ── THIS IS NEVER ONE OF THE FOUR REQUIRED CHECKS ─────────────────────────
+# The required set is Lint, Test, Security Scan, Helm Lint. Do not add this
+# job to it. GitHub-hosted runners on this account are near-serial -- roughly
+# one run at a time -- so a job that stood up an emulator on every PR would put
+# itself in front of every merge on the board, and that is how a gate earns
+# itself a bypass. It runs when a human ASKS: a dispatch, a `floci-gate` label,
+# or the weekly sweep.
+#
+# WHICH GATE. There are TWO in the tree and they are unrelated:
+#   tools/infra_canvas/preapply_gate.py   243 lines, has a CLI, runs the
+#                                         context/iqe/queries/infra/*.iqe checks
+#                                         over the plan delta.  <-- THIS ONE
+#   tools/infra_canvas/pre_apply_gate.py   74 lines, "IDC IaC Twin Phase 1",
+#                                         blocks on CAT1 via assess_infra_design.
+# Reconciling that pair is flx-ci-02, filed rather than done here: a job that
+# silently picked one of them would bless the duplicate.
+
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: "Override the pinned floci image (blank = args/floci_iac_gate.yaml)"
+        required: false
+        default: ""
+      fixture:
+        description: "Run one fixture canvas only (blank = all)"
+        required: false
+        default: ""
+  schedule:
+    # Weekly, Tuesday 06:00 UTC -- deliberately clear of gate-promoter (Mon 04:00)
+    # and shard-timings, because those runners are the same near-serial pool.
+    - cron: "0 6 * * 2"
+  pull_request:
+    # `labeled` ONLY, not `synchronize`. A labelled PR that pushes ten times
+    # would otherwise queue ten emulator runs ahead of every other merge. To
+    # re-check after a push, remove and re-add the label, or dispatch.
+    types: [labeled]
+
+# One run per ref; a newer request cancels a superseded one (mfx-ci-02).
+concurrency:
+  group: floci-iac-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  floci-iac-gate:
+    name: preapply_gate vs a real AWS API surface
+    runs-on: ubuntu-latest
+    # The label gate. A PR without `floci-gate` never starts this job at all --
+    # not "starts and skips", which would still occupy the queue.
+    if: >-
+      github.repository == 'icdev-ai/icdev' &&
+      (github.event_name != 'pull_request' ||
+       contains(github.event.pull_request.labels.*.name, 'floci-gate'))
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run the gate against floci
+        id: gate
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          ICDEV_STORAGE_BACKEND: sqlite
+          # THE SWITCH, and it is asserted rather than assumed: the driver
+          # calls detect_mode() and REFUSES to plan or apply unless it answers
+          # an emulated mode. A runner with AWS credentials and no switch would
+          # otherwise get `aws`, and this job would apply to a real account.
+          FLOCI_ENABLED: "true"
+          FLOCI_ENDPOINT: "http://localhost:4566"
+          FLOCI_CI_IMAGE: ${{ github.event.inputs.image || '' }}
+        # NO `|| true` and NO `continue-on-error`. Exit 2 is COULD NOT RUN and
+        # it stays RED -- a gate that could not run is not a gate that found
+        # nothing. Exit 1 is a finding. Exit 0 covers `clean` and
+        # `not_configured`, and the driver states which in words.
+        run: |
+          python tools/ci/floci_iac_gate.py \
+            --json \
+            --out floci-iac-gate.json \
+            --artifacts floci-iac-gate-artifacts \
+            ${{ github.event.inputs.fixture && format('--fixture {0}', github.event.inputs.fixture) || '' }}
+
+      - name: Upload the plan JSON, the gate output and the apply report
+        # `if: always()` -- the evidence is most wanted on the run that FAILED.
+        # A gate whose evidence is not captured is the red-first defect in
+        # another costume: the verdict is asserted and the artifact proving it
+        # fired is absent.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: floci-iac-gate-evidence
+          path: |
+            floci-iac-gate.json
+            floci-iac-gate-artifacts/
+          if-no-files-found: warn
+
+      - name: Emulator container logs
+        if: failure()
+        run: docker logs icdev-floci-iac-gate --tail 200 || echo "no container to read"
+
+# NEVER SOURCE A PERFORMANCE, COST OR CAPACITY CLAIM FROM THIS JOB. An emulator
+# reproduces the AWS API CONTRACT, not its performance characteristics. That is
+# the standing guard from docs/spikes/twx-spk-01-localstack-go-no-go.md and it
+# survives the switch from LocalStack to floci unchanged.

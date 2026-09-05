@@ -7937,3 +7937,56 @@ than fall through to `aws` — so a stray endpoint downgrades every real
 NEVER source a performance, cost or capacity claim from emulator timings: an
 emulator reproduces the AWS **API contract**, not its performance characteristics
 (the standing guard from `docs/spikes/twx-spk-01-localstack-go-no-go.md`).
+
+### The opt-in floci IaC gate (flx-ci-01)
+
+```bash
+python tools/ci/floci_iac_gate.py --json
+python tools/ci/floci_iac_gate.py --fixture flocigate_ok
+python tools/ci/floci_iac_gate.py --no-start            # an emulator is already up
+python tools/ci/floci_iac_gate.py --artifacts .tmp/floci-gate --out report.json
+python tools/ci/floci_iac_gate.py --image floci/floci:2.0.1
+```
+
+Does `tools/infra_canvas/preapply_gate.py`'s verdict on a Terraform plan match
+what a real AWS API surface ACCEPTS? plan -> gate -> apply (through the existing
+`tools/studio/executors/terraform_apply.py`) over two fixture canvases, against
+a pinned floci container. twx-spk-01 rated this pattern GO (conditional,
+cloud-CI only) and the only thing blocking it was LocalStack's paid
+subscription; floci removes that, so this SUPERSEDES the spike on the air-gap
+question **only**.
+
+Workflow: `.github/workflows/floci-iac-gate.yml` — `workflow_dispatch`, a weekly
+schedule, and a `floci-gate` label. **NEVER one of the four required checks**
+(Lint, Test, Security Scan, Helm Lint): runners here are near-serial, so a job
+that stood up an emulator on every PR would sit in front of every merge on the
+board, and that is how a gate earns itself a bypass.
+
+FOUR CELLS, ONE FINDING. `gate pass + api accepted` = `agree_permitted`;
+`gate pass + api REJECTED` = `gate_missed_rejection` — **the finding**, the gate
+is wrong about what is buildable; `gate fail + api accepted` =
+`gate_stricter_than_api`, which is what a compliance gate IS and is NEVER a
+finding (AWS will happily build an untagged bucket); `gate fail + api rejected`
+= `agree_refused`. Either side unmeasured is `unmeasurable`, never agreement.
+
+TWO FIXTURES, because a run over the compliant one alone is green whether the
+gate discriminates or has silently stopped evaluating. `expect_gate` /
+`expect_api` are DECLARED in `args/floci_iac_gate.yaml` and a mismatch is its
+own finding.
+
+Exit 0 clean — or `not_configured` (an empty `image:`, an operator stand-down),
+which is stated in words and never presented as a clean gate. Exit 1 a finding.
+Exit **2 COULD NOT RUN, and it stays RED**: a gate that could not run is not a
+gate that found nothing.
+
+The image is PINNED (`floci/floci:2.0.1`, digest verified against Docker Hub
+2026-09-05), never `latest` or `nightly` — the job's whole output is a
+comparison against an API surface, and an unpinned surface makes a disagreement
+unattributable. Override for one run with `--image` or `FLOCI_CI_IMAGE`.
+
+The host docker socket is deliberately NOT mounted into the emulator, so
+container-backed services (Lambda, RDS, ElastiCache, OpenSearch, MSK,
+ECS/EC2/EKS) cannot be exercised; a fixture using one is REFUSED before
+planning, as is a resource `FLOCI_PROVIDER_OVERRIDE` does not redirect — an
+unredirected resource is sent to REAL AWS and the auth error looks exactly like
+a broken emulator.
