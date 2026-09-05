@@ -108,3 +108,39 @@ The detector's window is a rolling 24h over four actions
 `18:32:39` escalate on 2026-09-04, so it ages out at `18:32:39` on 2026-09-05
 regardless of any repair — which is exactly why the audit, not the clearance,
 is the evidence that the cause was found.
+
+## Landing status
+
+The repair is pushed and **CI is fully green on the new head**
+`eadc21bc3a1aa1d6be89f27c38dfeb14db972e75` — all 18 checks `success`, PR #2066
+`mergeable_state: clean`, including `Test Shard 4 of 4`, the one check that had
+been red since 2026-09-04.
+
+It is **not merged**, and the reason is an outage rather than a defect. Every
+`gh pr view` on this host has returned
+
+```
+GraphQL: API rate limit already exceeded for user ID 263484343.
+```
+
+continuously from `13:20` to at least `19:13` on 2026-09-05, while
+`gh api rate_limit` reports REST **and** GraphQL at 5000/5000 — the documented
+shared-token secondary limit. The done-gate's `pr_readable` rung refuses:
+
+```
+REFUSED: mfx-boot-01: PR state unreadable - refusing to merge blind
+  [ok] pr_recorded  https://github.com/icdev-ai/icdev/pull/2066
+  [XX] pr_readable  gh pr view failed: GraphQL: API rate limit already exceeded
+```
+
+That refusal is the gate **working**: it is fail-closed on every unknown, and
+merging blind is precisely what it exists to prevent. `pr_watcher` is polling
+this PR every ~34s and recording the identical failure, so it will merge the
+moment the limit clears.
+
+A raw `gh api .../merge` would have gone through — and was deliberately not
+used. #2066 is a kanban-linked PR on a `kanban/<id>` branch, exactly the
+population `kpr-rvfy-05` refuses a raw merge for, and it would have written
+`done` without any of the thirteen `land.py` checks. The correct end state for
+this card is a repaired, green, ready PR plus the sanctioned door, not a
+bypassed one.
