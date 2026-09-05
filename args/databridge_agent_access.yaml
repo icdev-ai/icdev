@@ -184,6 +184,50 @@ connectors:
       - twin_observatory_analyst
     classification_ceiling: UNCLASSIFIED
 
+
+  # floci-az Azure service emulator (flx-az-01) — THE LOCAL EMULATED ESTATE.
+  #
+  # A SEPARATE GRANT from `floci` above, deliberately. They are different
+  # emulators, and an operator who authorized a read of the AWS emulated estate
+  # has said nothing about the Azure one. Granting both from one entry would
+  # make enabling the second a silent consequence of the first.
+  #
+  # READ ONLY BY CONSTRUCTION, not by convention: FlociAzConnector declares
+  # supports_write=False and its write() returns `unsupported` naming the absent
+  # Azure IaC executor. ICDEV has tools/cloud/aws_config_executor.py and no
+  # Azure analogue, so there is nothing here that could apply a change.
+  #
+  # The table list is pinned against floci_az_connector.TABLES (module level,
+  # not a class attribute) by a test, so a table added to the connector later is
+  # a NEW authorization decision that cannot be skipped.
+  - name: floci_az
+    description: >-
+      Local floci-az Azure service emulator (loopback, off by default, no
+      credentials). Read-only view of the EMULATED estate: emulator health,
+      subscriptions and resource groups, plus resources, virtual networks,
+      network security groups, storage accounts, key vaults and managed
+      identities — every resource-type table enumerated PER RESOURCE GROUP,
+      because a subscription-scoped ARM list returns empty for a populated
+      estate on this emulator (measured 2026-09-05). Emulated state is never
+      evidence about a real estate — a reader must mark it as such.
+    connection_id: floci-az-emulator-local
+    tables:
+      - health
+      - subscriptions
+      - resource_groups
+      - resources
+      - virtual_networks
+      - network_security_groups
+      - storage_accounts
+      - key_vaults
+      - managed_identities
+    # Scoped to the twin observer role, matching the `floci` grant. An empty
+    # list grants EVERY agent including runtime-generated SMEs, and an emulator
+    # that is handed a docker socket and issues its own IMDS tokens is not a
+    # source to hand to an unreviewed SME.
+    agents:
+      - twin_observatory_analyst
+    classification_ceiling: UNCLASSIFIED
 # ---------------------------------------------------------------------------
 # Further examples, left commented. These reach CUSTOMER systems and each needs
 # its own operator review, its own db_connections row and its own secret

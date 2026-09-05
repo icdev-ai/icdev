@@ -55,6 +55,14 @@ data/ato_packages/
 # unanchored `data/`: that pattern once silently dropped a code directory here.
 data/floci/
 
+# floci-az AZURE-emulator persistent state (flx-az-01). A SEPARATE entry, and
+# it has to be: the rule above ends in a slash, so `data/floci/` matches the
+# directory `floci` and NOT `floci-az`. Without this line the Azure emulator's
+# blobs, queues, tables and ARM resources land in this PUBLIC repo.
+# FLOCI_AZ_STORAGE_MODE=persistent writes under ./data/floci-az (the image's
+# own /app/data, not /var/lib/floci — the two emulators differ).
+data/floci-az/
+
 # Alert spool and failed-audit dead-letter file — per-machine runtime state.
 data/alerts/
 data/failed_audit_entries.jsonl
