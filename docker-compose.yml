@@ -1005,10 +1005,21 @@ services:
   #     npipe:////./pipe/docker_engine — that is NOT a bind-mount source.)
   #   * Linux — `//x` and `/x` name the same file, so it resolves unchanged.
   #
-  # FLOCI_DOCKER_DOCKER_HOST is deliberately LEFT UNSET (operator decision
-  # 2026-09-05: locally hosted Docker for now). floci talks to the daemon it is
-  # handed. A remote daemon and an internal registry mirror are named follow-ons
-  # (flx-airgap-02), not dropped.
+  # FLOCI_DOCKER_DOCKER_HOST is the THIRD name and a third distinct thing: the
+  # daemon floci ITSELF starts service containers on. It becomes DOCKER_HOST
+  # inside the container (flx-airgap-03). It is still UNSET BY DEFAULT — the
+  # operator decision of 2026-09-05 (locally hosted Docker) is the default
+  # `unix:///var/run/docker.sock`, which is exactly where the volume below
+  # mounts the host socket, so an unset variable reproduces the previous
+  # behaviour rather than clearing DOCKER_HOST to an empty string and breaking
+  # the daemon lookup. A registry-mandating site that centralises its container
+  # runtime sets it to `tcp://…:2376`.
+  #
+  # Which registry serves the images that daemon pulls, and the per-registry
+  # credentials for it, are declared in args/floci_registry.yaml (shipped
+  # DISABLED). Read the posture with
+  # `python -m tools.cloud.floci_registry --show`. Keep the default in step
+  # with floci_registry.DEFAULT_CONTAINER_DOCKER_HOST — a test pins them equal.
   floci:
     profiles: ["floci"]
     image: floci/floci:2.0.1
@@ -1026,6 +1037,9 @@ services:
       FLOCI_DEFAULT_REGION: ${FLOCI_REGION:-us-gov-west-1}
       # floci isolates state per account id; 12 digits or the seam warns.
       FLOCI_DEFAULT_ACCOUNT_ID: ${FLOCI_ACCOUNT_ID:-000000000000}
+      # The daemon floci starts service containers on (flx-airgap-03). See the
+      # three-names note above; the default IS the socket mounted below.
+      DOCKER_HOST: ${FLOCI_DOCKER_DOCKER_HOST:-unix:///var/run/docker.sock}
     volumes:
       - ./data/floci:/var/lib/floci
       - ${FLOCI_DOCKER_SOCKET_MOUNT:-//var/run/docker.sock}:/var/run/docker.sock

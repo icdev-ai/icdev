@@ -8008,10 +8008,72 @@ layer once — and re-verifies with NO daemon in 2.8 s.
 
 Operator procedure (what to vendor, how to load, how to verify by digest, and
 how to tell a mirrored miss from a real outage): §12 of
-[docs/ops/airgap-runbook.md](../ops/airgap-runbook.md). The internal-registry
-variant (`FLOCI_DOCKER_DOCKER_HOST` plus per-registry credentials) is the named
-follow-on **flx-airgap-03** — deferred by the operator decision of 2026-09-05,
-never dropped.
+[docs/ops/airgap-runbook.md](../ops/airgap-runbook.md).
+
+### floci pulls from an INTERNAL REGISTRY (flx-airgap-03)
+
+```bash
+python -m tools.cloud.floci_registry --show                    # the declared posture
+python -m tools.cloud.floci_registry --check                   # refuse an unusable declaration
+python -m tools.cloud.floci_registry --origins --json          # per image: internal or EXTERNAL
+python -m tools.cloud.runtime_images --check --json            # the verdict, with its `basis`
+```
+
+A registry-mandating site cannot pre-seed each host's cache — its images must be
+SERVED. ONE RULE, ONE QUESTION: `airgap-emulator-runtime-images` has always asked
+*would this need an EXTERNAL pull at run time*, and that question now has two
+ways to answer no. A cached image pulls nothing; an uncached image redirected to
+an INTERNAL mirror pulls internally. There is deliberately NO second rule — two
+rules could disagree about what a run-time pull is, and a reviewer would have two
+verdicts and no way to choose.
+
+INTERNAL MEANS WHAT THE AIR-GAP RULES ALREADY SAY IT MEANS: the mirror host is
+judged against `allowlist.internal_host_suffixes` in `args/twin_airgap_rules.yaml`
+— the same list `airgap-internal-registry` uses. So declaring a mirror does NOT
+silence the finding: `mirror.gcr.io` is still an external pull, and that negative
+direction is asserted beside the positive one.
+
+THE THREE `FLOCI_DOCKER_*` NAMES ARE THREE DIFFERENT THINGS, and confusing them
+makes a working service report a fabricated refusal. `FLOCI_DOCKER_SOCKET` is how
+the ICDEV HOST PYTHON PROCESS reaches a daemon (`emulator.docker_basis()`);
+`FLOCI_DOCKER_SOCKET_MOUNT` is the compose bind-mount SOURCE; and
+`FLOCI_DOCKER_DOCKER_HOST` — this card's — is the daemon FLOCI ITSELF starts
+service containers on, becoming `DOCKER_HOST` in the container. It defaults to
+`unix:///var/run/docker.sock`, exactly where compose mounts the socket, so unset
+reproduces the operator decision of 2026-09-05 rather than clearing `DOCKER_HOST`
+to an empty string. A test pins the compose default to the module constant.
+
+`mechanism` IS LOAD-BEARING. Docker's `registry-mirrors` redirects DOCKER HUB
+PULLS ONLY and does not intercept `public.ecr.aws`, so `daemon_registry_mirror`
+on any registry but `docker.io` is REFUSED at load time — believing it reports a
+clean verdict for a host that still reaches Amazon on first Lambda invoke.
+Re-host those two images and declare `repository_rewrite`.
+
+A CREDENTIAL IS A REFERENCE, NEVER A LITERAL: `username_ref` / `password_ref`
+must start with `env:`, `vault:`, `aws:` or `file:` — the same prefixes
+`seed_connections.py` enforces, pinned equal by a test — and a literal is
+REFUSED, not warned about, because a warning still lands the secret in git and
+this repository is public. `plain:` is not accepted even though
+`tools/rag/secret_ref.py` resolves it; that prefix exists to carry a literal.
+`floci_registry` never RESOLVES a reference and an AST test proves it imports no
+`subprocess`, `socket`, `requests`, `urllib` or `httpx`.
+
+`basis` IS REPORTED BESIDE `state`, NEVER FOLDED INTO IT: `local_cache` |
+`internal_mirror` | `cache_and_mirror` | `external_pull_required`. MIRROR
+COMPLETENESS IS NOT VERIFIED and the report says so — nothing here contacts a
+registry, so what is established is that the pull is INTERNAL, never that the
+mirror holds the image; that is a different question with a different repair
+(load the vendored bundle into the mirror). `absent_from_cache` is reported under
+EVERY posture and never folded into `missing`: "would be pulled from outside" and
+"is not on this disk" are different facts and only the first is an air-gap
+finding. An unreadable cache stays `unmeasured` under any posture — a mirror
+cannot answer what is on the disk — and a MALFORMED declaration is not "no
+mirror": it reads external and names itself in `registry_posture.basis`, because
+the fail-closed direction for an air-gap gate is to surface the blocker.
+
+`args/floci_registry.yaml` ships `enabled: false`, so the default verdict is
+byte-identical to the flx-airgap-02 posture. Procedure: §12.6 of
+[docs/ops/airgap-runbook.md](../ops/airgap-runbook.md).
 
 LEAVE `FLOCI_ENDPOINT` UNSET UNLESS YOU MEAN IT. An endpoint declared while the
 switch is off is a CONTRADICTION, and `detect_mode()` answers `dry_run` rather

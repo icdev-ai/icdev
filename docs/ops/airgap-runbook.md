@@ -557,18 +557,126 @@ laptop is how a gate earns itself a `|| true`. It is emitted at `medium` under
 the `-unmeasured` rule id, so it is visible and attributable and never folded
 into either answer.
 
-### 12.6 Sites that mandate an internal registry
+### 12.6 Sites that mandate an internal registry (flx-airgap-03)
 
-This section describes the **local-cache** posture, which is what ICDEV supports
-today. Sites whose policy requires images to be served by an internal registry
-rather than pre-seeded into each host's cache need `FLOCI_DOCKER_DOCKER_HOST`
-plus floci's per-registry credential settings. That is **flx-airgap-03**, a named
-follow-on — deferred, not dropped. `FLOCI_DOCKER_DOCKER_HOST` is deliberately
-left unset in `docker-compose.yml` until it lands.
+§12.1–12.5 describe the **local-cache** posture: vendor the eleven measured
+images and load them into each host before it is disconnected. A
+registry-mandating site cannot do that — its images must be **served**, by an
+internal mirror, to whatever daemon floci talks to.
 
-The gate is unaffected either way: `airgap-emulator-runtime-images` asks whether
-a run-time pull would be needed, and an image served by an internal registry
-still has to be reachable without one.
+**One rule, one question.** `airgap-emulator-runtime-images` has always asked
+*would this deployment need an EXTERNAL pull at run time?* That question is
+unchanged; it now has two ways to answer *no*. A cached image pulls nothing. An
+uncached image whose pull is redirected to an **internal** mirror pulls
+internally, so there is no public-internet dependency and no air-gap violation.
+There is deliberately no second rule — two rules could disagree about what a
+run-time pull is, and then a reviewer has two verdicts and no way to choose.
+
+**Internal means what the air-gap rules already say it means.** The mirror host
+is judged against `allowlist.internal_host_suffixes` in
+`args/twin_airgap_rules.yaml` — the same list `airgap-internal-registry` matches
+registry hosts against. Declaring a mirror is therefore *not* enough to silence
+the finding: `mirror.gcr.io` is still an external pull.
+
+#### The three `FLOCI_DOCKER_*` names
+
+Confusing them makes a working service report a fabricated refusal. They are
+three different things:
+
+| Variable | Answers | Read by |
+|---|---|---|
+| `FLOCI_DOCKER_SOCKET` | how the ICDEV **host Python process** reaches a daemon | `tools/cloud/emulator.py::docker_basis()` |
+| `FLOCI_DOCKER_SOCKET_MOUNT` | the compose **bind-mount source** (a host path) | `docker-compose.yml` volumes |
+| `FLOCI_DOCKER_DOCKER_HOST` | the daemon **floci itself** starts service containers on | `docker-compose.yml` → the container's `DOCKER_HOST` |
+
+Measured 2026-09-04: setting `FLOCI_DOCKER_SOCKET` to the *mount* spelling makes
+`service_supported("lambda")` return a fabricated `False` on Windows. Keep them
+apart.
+
+`FLOCI_DOCKER_DOCKER_HOST` defaults to `unix:///var/run/docker.sock` — exactly
+where compose mounts the host socket — so leaving it unset reproduces the
+operator decision of 2026-09-05 (locally hosted Docker) rather than clearing
+`DOCKER_HOST` to an empty string. Set it to `tcp://…:2376` for a remote daemon.
+
+#### Declaring the mirror
+
+`args/floci_registry.yaml`, shipped `enabled: false` so it cannot change a
+verdict on a deployment that has not opted in.
+
+```yaml
+enabled: true
+docker_host: "tcp://runtime-host.internal.example.mil:2376"
+registries:
+  - registry: "docker.io"
+    mirror: "registry.internal.example.mil:5000"
+    mechanism: daemon_registry_mirror
+    username_ref: "env:FLOCI_MIRROR_USERNAME"
+    password_ref: "env:FLOCI_MIRROR_PASSWORD"
+  - registry: "public.ecr.aws"
+    mirror: "registry.internal.example.mil:5000"
+    mechanism: repository_rewrite
+    username_ref: "env:FLOCI_MIRROR_USERNAME"
+    password_ref: "env:FLOCI_MIRROR_PASSWORD"
+```
+
+The eleven measured images span exactly those two registries (a ref like
+`postgres:16.3-alpine` names no host, and Docker Hub is the implicit default).
+A test asserts that, so a third registry appearing in the table cannot leave the
+worked example mirroring an incomplete set while reading as a complete posture.
+
+**`mechanism` is load-bearing, not decoration.** Docker's `registry-mirrors`
+daemon setting redirects **Docker Hub pulls only** — it does not intercept
+`public.ecr.aws`. Declaring `daemon_registry_mirror` for any registry other than
+`docker.io` is **refused at load time**, because believing it would report a
+clean air-gap verdict for a host that still reaches Amazon on the first Lambda
+invoke. Re-host those images in the mirror and declare `repository_rewrite`.
+
+**A credential is a reference, never a literal.** `username_ref` / `password_ref`
+must start with `env:`, `vault:`, `aws:` or `file:` — the same prefixes
+`tools/databridge/seed_connections.py` enforces, pinned equal by a test. A
+literal is **refused**, not warned about: a warning still lands the secret in
+git, and this repository is public. `plain:` is not accepted even though
+`tools/rag/secret_ref.py` resolves it — that prefix exists to carry a literal.
+Nothing in `tools/cloud/floci_registry.py` ever *resolves* a reference; it
+answers a question about air-gap posture and has no use for the value.
+
+```bash
+python -m tools.cloud.floci_registry --check            # refuse an unusable declaration
+python -m tools.cloud.floci_registry --show             # the posture, credentials as REFS
+python -m tools.cloud.floci_registry --origins --json   # per image: internal or EXTERNAL
+python -m tools.cloud.runtime_images --check --json     # the verdict, with its `basis`
+```
+
+#### What a mirrored `satisfied` does and does not claim
+
+`basis` is reported beside `state` and never folded into it:
+
+| `basis` | Means |
+|---|---|
+| `local_cache` | every required image is on this host's disk |
+| `internal_mirror` | none is cached; an internal mirror serves them all |
+| `cache_and_mirror` | some cached, the rest mirrored |
+| `external_pull_required` | the finding — a pull would leave the enclave |
+
+**Mirror completeness is not verified, and the report says so.** Nothing in this
+chain contacts a registry: `ALLOWED_DOCKER_COMMANDS` in
+`tools/airgap/image_vendor.py` contains no `pull` and no `manifest`, and
+flx-airgap-03 does not widen it. What is established is that the pull is
+*internal* — the air-gap question. Whether the mirror actually holds the image is
+a different question with a different repair (load the vendored bundle into the
+mirror, §12.4), and folding the two together would turn an operations gap into
+an air-gap violation or, far worse, the other way round.
+
+`absent_from_cache` is therefore reported under **every** posture, so a mirrored
+deployment can still see which images its hosts do not hold. It is never folded
+into `missing`: "would be pulled from outside" and "is not on this disk" are
+different facts, and only the first is an air-gap finding.
+
+An **unreadable cache stays `unmeasured` under any posture** — a mirror says
+where a pull goes, and can never answer what is on the disk. A **malformed
+declaration** is not "no mirror": it reads external and names itself in
+`registry_posture.basis`, because the fail-closed direction for an air-gap gate
+is to surface the blocker, not to bless the deployment.
 
 ---
 
