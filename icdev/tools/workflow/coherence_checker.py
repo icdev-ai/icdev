@@ -8640,8 +8640,28 @@ def _live_table_columns() -> Tuple[Dict[str, Set[str]], str, str]:
                 pass
 
 
-def _load_insert_schema_gate() -> Tuple[Set[str], Dict[str, str]]:
-    """Load ``(ignored_tables, grandfathered)`` from args/insert_schema_gate.yaml.
+def _read_insert_schema_keys(raw: Dict[str, Any], section: str) -> Dict[str, str]:
+    """Read one ``key -> reason`` section of the gate config.
+
+    Keys are ``<repo-relative path>:<table>:<column>`` — deliberately
+    line-number-free so an unrelated edit above the statement does not
+    invalidate the entry.
+    """
+    out: Dict[str, str] = {}
+    entries = raw.get(section) or {}
+    if isinstance(entries, dict):
+        for key, reason in entries.items():
+            if isinstance(key, str):
+                out[key.replace("\\", "/")] = str(reason or "")
+    elif isinstance(entries, list):  # tolerate a bare list of keys
+        for key in entries:
+            if isinstance(key, str):
+                out[key.replace("\\", "/")] = ""
+    return out
+
+
+def _load_insert_schema_gate() -> Tuple[Set[str], Dict[str, str], Dict[str, str]]:
+    """Load ``(ignored_tables, grandfathered, foreign_database)``.
 
     Schema::
 
@@ -8649,37 +8669,47 @@ def _load_insert_schema_gate() -> Tuple[Set[str], Dict[str, str]]:
           - some_table_owned_by_another_database
         grandfathered:
           "tools/govcon/x.py:audit_trail:actor": "swp-scan-01 backlog"
+        foreign_database:
+          "tools/saas/tenant_manager.py:tenants:compartments": "writes platform.db"
 
-    Grandfather keys are ``<repo-relative path>:<table>:<column>`` — deliberately
-    line-number-free so an unrelated edit above the statement does not
-    invalidate the entry. A missing file or missing pyyaml yields empty sets:
-    fail-safe CLOSED, so an unreadable allowlist makes the gate stricter.
+    ``grandfathered`` and ``foreign_database`` carry the SAME key shape and are
+    read apart because they mean opposite things. A grandfathered key is DEBT —
+    a real defect somebody must fix, downgraded so the backlog does not block
+    unrelated work. A foreign_database key is NOT a defect at all: the module
+    writes a database this check never read, so the "missing" column exists in
+    the schema the statement really runs against, and the entry records the
+    measurement proving it. Reporting the second as the first is how a backlog
+    accumulates excuses nobody can act on.
+
+    ``ignore_tables`` is a blunter instrument and is deliberately kept for the
+    case it fits: a table NAME nothing in the tree writes against this database.
+    It cannot express a per-module collision — ``users`` is written both by
+    ``tools/saas/tenant_manager.py`` (the platform database) and by
+    ``tools/saas/auth/saml_auth.py`` (this one), so ignoring the name would
+    switch off the half that works.
+
+    A missing file or missing pyyaml yields empty sets: fail-safe CLOSED, so an
+    unreadable allowlist makes the gate stricter.
     """
     if not _INSERT_SCHEMA_CONFIG.exists() or not _HAS_YAML:
-        return set(), {}
+        return set(), {}, {}
     try:
         raw = yaml.safe_load(_INSERT_SCHEMA_CONFIG.read_text(encoding="utf-8")) or {}
     except Exception:
-        return set(), {}
+        return set(), {}, {}
     if not isinstance(raw, dict):
-        return set(), {}
+        return set(), {}, {}
 
     ignored = {
         str(t).lower()
         for t in (raw.get("ignore_tables") or [])
         if isinstance(t, (str, int))
     }
-    grandfathered: Dict[str, str] = {}
-    entries = raw.get("grandfathered") or {}
-    if isinstance(entries, dict):
-        for key, reason in entries.items():
-            if isinstance(key, str):
-                grandfathered[key.replace("\\", "/")] = str(reason or "")
-    elif isinstance(entries, list):  # tolerate a bare list of keys
-        for key in entries:
-            if isinstance(key, str):
-                grandfathered[key.replace("\\", "/")] = ""
-    return ignored, grandfathered
+    return (
+        ignored,
+        _read_insert_schema_keys(raw, "grandfathered"),
+        _read_insert_schema_keys(raw, "foreign_database"),
+    )
 
 
 def check_insert_schema_parity(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
@@ -8717,10 +8747,11 @@ def check_insert_schema_parity(changed_files: Optional[List[Path]] = None) -> Co
             ),
         )
 
-    ignored_tables, grandfathered = _load_insert_schema_gate()
+    ignored_tables, grandfathered, foreign_database = _load_insert_schema_gate()
 
     new_findings: List[str] = []
     excused_keys: Set[str] = set()
+    foreign_keys: Set[str] = set()
     statements = 0
     validated = 0
     unknown_tables: Set[str] = set()
@@ -8751,6 +8782,12 @@ def check_insert_schema_parity(changed_files: Optional[List[Path]] = None) -> Co
             absent = sorted(set(cols) - table_cols)
             for column in absent:
                 key = f"{rel}:{table}:{column}"
+                if key in foreign_database:
+                    # Not a defect: the module writes another database, and the
+                    # entry carries the measurement. Excused, never counted as
+                    # backlog.
+                    foreign_keys.add(key)
+                    continue
                 if key in grandfathered:
                     excused_keys.add(key)
                     continue
@@ -8760,7 +8797,9 @@ def check_insert_schema_parity(changed_files: Optional[List[Path]] = None) -> Co
     # diff-scoped run has not looked at the files the other entries name.
     stale: List[str] = []
     if not changed_files:
-        stale = sorted(set(grandfathered) - excused_keys)
+        stale = sorted(
+            (set(grandfathered) - excused_keys) | (set(foreign_database) - foreign_keys)
+        )
 
     actual = [
         f"{statements} static INSERT statement(s) parsed; {validated} validated "
@@ -8778,9 +8817,9 @@ def check_insert_schema_parity(changed_files: Optional[List[Path]] = None) -> Co
             extra=new_findings,
             message=(
                 f"{len(new_findings)} INSERT column(s) do not exist in the live schema "
-                f"({len(excused_keys)} grandfathered). These raise at runtime and are "
-                "usually swallowed — fix the column list, or add a migration that adds "
-                "the column, before merging."
+                f"({len(excused_keys)} grandfathered, {len(foreign_keys)} writing another "
+                "database). These raise at runtime and are usually swallowed — fix the "
+                "column list, or add a migration that adds the column, before merging."
             ),
         )
 
@@ -8790,6 +8829,8 @@ def check_insert_schema_parity(changed_files: Optional[List[Path]] = None) -> Co
             bits.append(f"{len(excused_keys)} grandfathered mismatch(es) remain")
         if stale:
             bits.append(f"{len(stale)} stale allowlist entry(ies) can be removed")
+        if foreign_keys:
+            bits.append(f"{len(foreign_keys)} excused as writing another database")
         return CoherenceCheck(
             check_id=check_id,
             check_name=check_name,
@@ -8806,10 +8847,21 @@ def check_insert_schema_parity(changed_files: Optional[List[Path]] = None) -> Co
         check_name=check_name,
         status="pass",
         expected=expected,
-        actual=actual + [f"{len(unknown_tables)} table(s) absent from this database were skipped"],
+        actual=actual
+        + [
+            f"{len(unknown_tables)} table(s) absent from this database were skipped",
+            f"{len(foreign_keys)} column(s) excused as writing another database",
+        ],
         missing=[],
         extra=[],
-        message=f"All {validated} validated INSERT statement(s) match the live schema",
+        message=(
+            f"All {validated} validated INSERT statement(s) match the live schema"
+            + (
+                f" ({len(foreign_keys)} column(s) excused as writing another database)"
+                if foreign_keys
+                else ""
+            )
+        ),
     )
 
 

@@ -126,7 +126,7 @@ Each was verified by opening the other database and confirming the column exists
 | `tools/appforge/reflexes/build.py` | `kg_edges` | The INSERT lives inside an f-string that is **generated child-app source**. It is never executed by this module; it targets the generated app's own database. |
 | `tools/ndc/seed_dewie_demo.py` | `ni_devices` | Opens `sqlite3.connect("data/network_canvas.db")` at module level — a dedicated file, never the icdev instance. **No longer reported:** migration 329 added `downstream_count` / `properties_json` / `annual_maintenance_cost` to the *icdev* copy of `ni_devices`, which already carried `rack_location` and `criticality_score`, so that table became a superset of what the seed writes and the scanner fell silent. The classification stands; it is simply not in the regression allowlist, because an allowlist entry asserts that a finding still fires. |
 | `tools/playground/seed_data.py` | `projects`, `poam_items` | `seed_playground_db()` takes an explicit `db_path` and `CREATE`s both tables — with `compliance_score`, `finding`, `milestone`, `due_date` — in the same `executescript`. |
-| `tools/finetune/doc_extractor.py` | `rag_ingestion_log` | `_get_db()` takes a caller-supplied `db_path` and returns a `sqlite3.Connection` (`PRAGMA journal_mode=WAL`, `INSERT OR IGNORE`). |
+| ~~`tools/finetune/doc_extractor.py`~~ | ~~`rag_ingestion_log`~~ | **Misclassified — it was a real defect (mfx-ci-03, 2026-09-05).** "`_get_db()` takes a caller-supplied `db_path`" proves only that a caller *may* name another database; the default is `DB_PATH = data/icdev.db`, i.e. this one. The INSERT named `chunk_count` where the live column is `chunks_created`, and it did not name `source_type` at all — `NOT NULL`, no default — so it raised twice over into `except Exception: logger.warning(...)` while `extract_document` returned `success: True`. Measured on the live board: `rag_ingestion_log` held 2,004 rows, every one `source_type='compliance_reference'` from `rag_compliance_corpus`, and **zero** from this writer. Both defects fixed; the guard is `tests/test_finetune_doc_extractor_ingestion_log.py`, which reads the row back. |
 | `tools/kanban/seed_dsyn_kanban.py` | `canvas_events` | **Not SQL at all.** The text sits inside a kanban task *description* telling a future session what to write. The AST walk cannot distinguish prose-in-a-string from a query. |
 
 ### One category (i) resolved as a documented skip
@@ -208,9 +208,10 @@ watches is worse than one that is honestly scoped.
   sweep that can verify each one applies cleanly, rather than copied in blind.
 * `tools/ndc/seed_dewie_demo.py` hardcodes the relative path `data/network_canvas.db`,
   which resolves against the current working directory.
-* `tools/finetune/doc_extractor.py::_get_db()` calls `get_connection(db_path=str(db_path))`
-  with `db_path` possibly `None`, yielding a file literally named `"None"`. It also uses
-  SQLite-only `INSERT OR IGNORE`.
+* ~~`tools/finetune/doc_extractor.py::_get_db()` calls `get_connection(db_path=str(db_path))`~~ **Fixed by mfx-ci-03** — `str(None)` is the
+  literal string `"None"`, a database of that name rather than the configured default,
+  so the absence is now passed through as an absence. It still uses `INSERT OR IGNORE`,
+  which `translate_sql` rewrites for PostgreSQL.
 
 ---
 
