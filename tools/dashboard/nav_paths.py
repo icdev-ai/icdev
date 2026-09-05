@@ -67,12 +67,20 @@ import tempfile
 from pathlib import Path
 from typing import Any, Iterable
 
-from icdev.core.paths import repo_root
+# sys.path BOOTSTRAP, and it must precede the first first-party import: run as
+# `python tools/dashboard/nav_paths.py` this file's directory is on sys.path
+# and the repo root is not, so `import icdev...` below would die with
+# ModuleNotFoundError before main() is reached (kax-conflict-04). `parents[2]`
+# here resolves the IMPORT root -- it is the bootstrap idiom, not a self-root
+# site, and it stays correct if this module moves because the line moves with
+# it. The REPO root is still resolved by the one resolver, immediately below.
+_BOOTSTRAP_ROOT = Path(__file__).resolve().parents[2]
+if str(_BOOTSTRAP_ROOT) not in sys.path:
+    sys.path.insert(0, str(_BOOTSTRAP_ROOT))
+
+from icdev.core.paths import repo_root  # noqa: E402
 
 BASE_DIR = repo_root(__file__)
-
-if str(BASE_DIR) not in sys.path:
-    sys.path.insert(0, str(BASE_DIR))
 
 CONFIG_RELPATH = "args/nav_paths.yaml"
 
