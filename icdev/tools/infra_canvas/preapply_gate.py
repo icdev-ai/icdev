@@ -14,7 +14,17 @@ Return schema::
         "gate": "pass" | "fail",
         "violations": [{"source", "check", "severity", "detail", "affected"}],
         "delta": {"add": [...], "modify": [...], "delete": [...]},
+        "skipped": [{"check", "reason", "detail"}],
     }
+
+``skipped`` is what tells `pass over eight satisfied rules` apart from `pass
+over an empty rule set`. See ``_run_iqe_checks``.
+
+THIS IS THE GATE THE floci IaC JOB EXERCISES (flx-ci-01,
+``.github/workflows/floci-iac-gate.yml``). There is a second, unrelated file
+next door -- ``tools/infra_canvas/pre_apply_gate.py``, "IDC IaC Twin Phase 1",
+which imports the plan into an IDC graph and blocks on CAT1. Reconciling the
+pair is flx-ci-02; neither file may quietly become the other.
 """
 from __future__ import annotations
 
@@ -50,11 +60,23 @@ _IQE_QUERIES_DIR = (
 _REPLACE_ACTIONS = frozenset({"delete", "create"})
 
 
-def _load_iqe_queries() -> list[tuple[str, Any]]:
-    """Load and parse all .iqe files from context/iqe/queries/infra/."""
+#: Collections this gate REGISTERS on its executor. A query over anything else
+#: cannot be answered here and is SKIPPED, not failed -- see `_run_iqe_checks`.
+_PROVIDED_COLLECTIONS = frozenset({"infra.resources"})
+
+
+def _load_iqe_queries() -> tuple[list[tuple[str, Any]], list[dict[str, str]]]:
+    """Load and parse all .iqe files from context/iqe/queries/infra/.
+
+    Returns ``(parsed, skipped)``. A file that will not PARSE used to be
+    dropped on the floor by a bare ``except IQESyntaxError: pass`` -- so a
+    query that stopped parsing simply stopped being a check, and the gate went
+    on reporting `pass` with one fewer rule behind it. It is now reported.
+    """
     if not _IQE_QUERIES_DIR.exists():
-        return []
+        return [], []
     queries: list[tuple[str, Any]] = []
+    skipped: list[dict[str, str]] = []
     for qfile in sorted(_IQE_QUERIES_DIR.glob("*.iqe")):
         src = qfile.read_text(encoding="utf-8")
         code = "\n".join(
@@ -62,12 +84,25 @@ def _load_iqe_queries() -> list[tuple[str, Any]]:
             if not line.strip().startswith("#")
         ).strip()
         if not code:
+            skipped.append({"check": qfile.stem, "reason": "empty"})
             continue
         try:
             queries.append((qfile.stem, iqe_parse(code)))
-        except IQESyntaxError:
-            pass
-    return queries
+        except IQESyntaxError as exc:
+            skipped.append({
+                "check": qfile.stem,
+                "reason": "parse_error",
+                "detail": str(exc),
+            })
+    return queries, skipped
+
+
+def _query_collection(ast: Any) -> str | None:
+    """Dotted name of the collection a parsed IQE query reads, if discoverable."""
+    parts = getattr(getattr(ast, "collection", None), "parts", None)
+    if not parts:
+        return None
+    return ".".join(str(p) for p in parts)
 
 
 def _resource_change_to_row(rc: dict[str, Any]) -> dict[str, Any] | None:
@@ -126,19 +161,58 @@ def _compute_delta(resource_changes: list[dict[str, Any]]) -> dict[str, Any]:
     return {"add": adds, "modify": modifies, "delete": deletes}
 
 
-def _run_iqe_checks(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Run all context/iqe/queries/infra/*.iqe against planned resource rows."""
-    if not rows:
-        return []
-    queries = _load_iqe_queries()
-    if not queries:
-        return []
+def _run_iqe_checks(
+    rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    """Run the applicable context/iqe/queries/infra/*.iqe against planned rows.
+
+    Returns ``(violations, skipped)``.
+
+    APPLICABLE IS THE WORD. This directory is the INFRA CANVAS' query library,
+    not this gate's rule set: three of its eight files
+    (``0{3,4,5}_ai_*.iqe``) read ``infra.ai_decisions``, an IDC dashboard
+    collection this gate never registers. Running them raised inside the
+    executor, each raise was recorded as a CAT3 violation, and so
+    ``run_gate`` returned **fail for every plan ever put through it** --
+    including a fully compliant one. Measured 2026-09-05: a compliant
+    single-bucket plan failed on exactly those three "IQE query error" rows
+    and nothing else. ``tools/twin_core/adapters/idc.py::simulate_delta`` is a
+    live consumer.
+
+    A query the gate cannot SERVE and a query that BROKE are different facts
+    and are no longer merged: the first is skipped and named, the second is
+    still a CAT3 violation. Neither is silent -- a check that quietly stopped
+    running is how a gate reports clean with fewer rules behind it than anyone
+    believes.
+    """
+    queries, skipped = _load_iqe_queries()
+
+    runnable: list[tuple[str, Any]] = []
+    for name, ast in queries:
+        collection = _query_collection(ast)
+        if collection not in _PROVIDED_COLLECTIONS:
+            skipped.append({
+                "check": name,
+                "reason": "collection_not_provided",
+                "detail": (
+                    f"reads {collection or 'an unreadable collection'}; this "
+                    f"gate provides {sorted(_PROVIDED_COLLECTIONS)}"
+                ),
+            })
+            continue
+        runnable.append((name, ast))
+
+    # No rows means the plan creates and modifies nothing -- there is nothing
+    # for a resource query to match. Reported through `skipped` above, which is
+    # already populated, so an empty plan still says which checks did not run.
+    if not rows or not runnable:
+        return [], skipped
 
     ex = Executor()
     ex.register_collection("infra.resources", lambda _conn: rows)
 
     violations: list[dict[str, Any]] = []
-    for name, ast in queries:
+    for name, ast in runnable:
         try:
             hits = ex.run(ast, None)
         except Exception as exc:  # noqa: BLE001
@@ -162,7 +236,7 @@ def _run_iqe_checks(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     h.get("id") or h.get("resource_name", "") for h in hits
                 ],
             })
-    return violations
+    return violations, skipped
 
 
 def run_gate(plan_json: dict[str, Any]) -> dict[str, Any]:
@@ -183,11 +257,15 @@ def run_gate(plan_json: dict[str, Any]) -> dict[str, Any]:
         if row is not None:
             rows.append(row)
 
-    violations = _run_iqe_checks(rows)
+    violations, skipped = _run_iqe_checks(rows)
     return {
         "gate": "fail" if violations else "pass",
         "violations": violations,
         "delta": delta,
+        # WHICH CHECKS DID NOT RUN. `pass` over an empty rule set and `pass`
+        # over eight satisfied rules are different facts, and a verdict alone
+        # cannot tell them apart. Never counted as violations, never as passes.
+        "skipped": skipped,
     }
 
 
