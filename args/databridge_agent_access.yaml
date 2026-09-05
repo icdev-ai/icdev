@@ -159,7 +159,8 @@ connectors:
   # of the four verdicts structurally unreachable, which is the same defect as
   # a check with no probe behind it. A table added to the connector later is a
   # NEW authorization decision and must be added here by hand; the grant is
-  # pinned against FlociConnector.TABLES so that decision cannot be skipped.
+  # pinned against floci_connector.TABLES (module level, not a class attribute)
+  # so that decision cannot be skipped.
   - name: floci
     description: >-
       Local floci AWS service emulator (loopback, off by default, dummy
