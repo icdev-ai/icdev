@@ -10,6 +10,11 @@ Called by .githooks/pre-commit. Blocks the commit if:
   3. Any blueprint.py fails to import (would cause 500 on all its routes)
   4. Any nav route returns non-200 or contains error text (catches runtime failures
      that CodeLens + Coherence cannot detect)
+  5. A staged file under tools/<pkg>/ (or icdev/tools/<pkg>/) leaves its mirror
+     twin with different bytes (mfx-ci-01 -- what test_mirror_drift_baseline
+     fails on 20 minutes later, run here in ~0.1s over the staged files only)
+  6. A staged .py under tools/ imports an UNDECLARED third-party package inside
+     a swallowing handler (mfx-ci-01 -- the tsg-iso-03 census, --staged)
 
 Exit 0 = all checks pass (commit proceeds).
 Exit 1 = a check failed (commit blocked with error message).
@@ -334,6 +339,185 @@ def _run_domain_leak_gate(root: Path = BASE_DIR) -> bool:
     return False
 
 
+# --------------------------------------------------------------------------- #
+# Mirror parity on the staged files (mfx-ci-01)
+# --------------------------------------------------------------------------- #
+# rmf-rfp-01 changed tools/db/schema/pg_consolidated.sql and tools/db/schema/
+# tables.yaml and not their icdev/ twins; tests/test_mirror_drift_baseline.py went
+# red on `db` twenty minutes after the push and a human mirrored 199 files by
+# hand. The predicate is args/mirror_parity_gate.yaml's rule 2 -- "a file YOU
+# changed must never be drifted, whatever the budget says" -- applied to the
+# STAGED files, which is the only scope a hook may block on: `--paths db` hashes
+# 864 pairs (512ms median; --files is 79ms, so 6.4x) and, more importantly,
+# reports a package's PRE-EXISTING backlog, which the author neither caused nor
+# can fix without stepping on the PR that owns it.
+#
+# SURVEYED BEFORE ARMING over the last 200 first-parent commits on origin/main
+# (2026-09-04, replayed against each commit's own tree through the SHIPPED
+# predicates, never a second copy): 142 commits in scope, 4 fires (2.00%), and
+# ZERO of them routine -- all four were real unreconciled drift, each later
+# repaired BY HAND. Method, every number, and the replay script in full:
+#   docs/audits/mfx-ci-01-precommit-gate-fire-rate-survey.md
+#
+# Content drift ONLY. A staged file whose twin is MISSING is reported as a note
+# and never blocks: missing_from_mirror is deliberately ungated in the gate YAML
+# and in the CI test, and the backlog is ~300 files -- blocking on it would refuse
+# routine work. Extensions the gate declares excluded (.md manifest shards are
+# merge=union and diverge transiently by design) are filtered out here by reading
+# that declaration, never a second copy of it.
+MIRROR_PARITY_TOOL = Path("tools") / "dx" / "mirror_parity.py"
+MIRROR_GATE_FILE = Path("args") / "mirror_parity_gate.yaml"
+
+
+def _mirror_scope(name_status: list[tuple[str, str]]) -> list[str]:
+    """Staged ADD/MODIFY/RENAME paths under tools/<pkg>/ or icdev/tools/<pkg>/.
+
+    A deletion has no bytes to compare, and a top-level tools/*.py has no package
+    twin. Returns [] for the common commit, which then pays nothing.
+    """
+    out: list[str] = []
+    for status, path in name_status:
+        if not status or status[0] not in ("A", "M", "R"):
+            continue
+        parts = path.split("/")
+        if parts[:2] == ["icdev", "tools"]:
+            parts = parts[2:]
+        elif parts[:1] == ["tools"]:
+            parts = parts[1:]
+        else:
+            continue
+        if len(parts) >= 2 and "__pycache__" not in parts:
+            out.append(path)
+    return out
+
+
+def _mirror_excluded_extensions(root: Path = BASE_DIR) -> set[str]:
+    """The gate's own declared exclusions -- read, never respelled."""
+    path = root / MIRROR_GATE_FILE
+    if not path.is_file():
+        return set()
+    try:
+        import yaml  # noqa: PLC0415 -- pyyaml is declared; only on the mirror path
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return set()
+    return {str(e.get("ext")) for e in (data.get("excluded_extensions") or []) if e.get("ext")}
+
+
+def _run_mirror_parity(files: list[str], root: Path = BASE_DIR) -> bool:
+    """Refuse a commit that leaves a staged file drifted from its mirror twin.
+
+    Shells out to the SAME tool CI's test reads (`mirror_parity.py --files`), so
+    the report here and the failure there cannot describe two different
+    comparisons. Returns True (allow) whenever the tool cannot run -- CI is the
+    backstop and will not be so forgiving.
+    """
+    tool = BASE_DIR / MIRROR_PARITY_TOOL
+    if not tool.is_file() or not files:
+        return True
+    print(f"[pre-commit] Mirror parity ({len(files)} staged file(s) under tools/)...")
+    try:
+        result = subprocess.run(
+            [sys.executable, str(tool), "--files", ",".join(files), "--json", "--root", str(root)],
+            capture_output=True, text=True, cwd=str(root), timeout=120,
+            encoding="utf-8", errors="replace",
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(f"[pre-commit] Mirror parity: SKIPPED -- could not run ({exc})")
+        return True
+    import json  # noqa: PLC0415
+    try:
+        report = json.loads(result.stdout)
+    except (ValueError, TypeError):
+        print("[pre-commit] Mirror parity: SKIPPED -- unreadable report")
+        if result.stderr and result.stderr.strip():
+            print(result.stderr.strip())
+        return True
+
+    excluded = _mirror_excluded_extensions()
+    drift = [f for f in report.get("content_drift") or [] if Path(f).suffix not in excluded]
+    missing = [f for f in report.get("missing_from_mirror") or [] if Path(f).suffix not in excluded]
+    if missing:
+        print(
+            f"[pre-commit] NOTE: {len(missing)} staged file(s) have no icdev/tools/ twin "
+            "(reported, not blocking): " + ", ".join(missing)
+        )
+    if not drift:
+        print("[pre-commit] Mirror parity: OK")
+        return True
+
+    pkgs = sorted({f.split("/", 1)[0] for f in drift})
+    print("[pre-commit] BLOCKED: a staged file differs from its icdev/tools/ mirror twin:")
+    for rel in drift:
+        print(f"  tools/{rel}  !=  icdev/tools/{rel}")
+    print(
+        "[pre-commit] The packaged copy is what a wheel install and every child app run; "
+        "a fix on one side only is half live and fails silently. Reconcile with:\n"
+        f"  python tools/dx/mirror_parity.py --files {','.join('tools/' + f for f in drift)} --fix\n"
+        f"  (or the whole package: python tools/dx/mirror_parity.py --paths {','.join(pkgs)} --fix)\n"
+        "then `git add` the icdev/ copies and retry. Never edit args/mirror_drift_baseline.yaml "
+        "to get a commit through."
+    )
+    return False
+
+
+# --------------------------------------------------------------------------- #
+# Undeclared-import census on the staged .py files (mfx-ci-01 / tsg-iso-03)
+# --------------------------------------------------------------------------- #
+# rmf-wp-02 imported `markdown` inside a bare `except Exception` in exporter.py;
+# the CI census refused it 20 minutes after the push. `--staged` is one subprocess
+# and an AST parse of the staged .py files only (0.13s with nothing in scope,
+# ~0.5s for two files, measured 2026-09-04).
+UNDECLARED_IMPORT_TOOL = Path("tools") / "ci" / "undeclared_import_census.py"
+
+
+def _run_undeclared_import_census(root: Path = BASE_DIR) -> bool:
+    """Refuse a commit that stages a NEW undeclared-import-in-a-swallowing-handler.
+
+    Blocks on an UNREGISTERED site only. The census's other failure mode -- the
+    grandfathered list over its ceiling -- is tree state the author did not cause
+    unless this commit stages the census itself, so it is reported and left to
+    CI. Returns True (allow) whenever the census cannot run.
+    """
+    tool = BASE_DIR / UNDECLARED_IMPORT_TOOL
+    if not tool.is_file():
+        return True
+    try:
+        result = subprocess.run(
+            [sys.executable, str(tool), "--staged", "--check", "--json", "--root", str(root)],
+            capture_output=True, text=True, cwd=str(root), timeout=120,
+            encoding="utf-8", errors="replace",
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(f"[pre-commit] Undeclared-import census: SKIPPED -- could not run ({exc})")
+        return True
+    if result.returncode == 0:
+        print("[pre-commit] Undeclared-import census: OK")
+        return True
+    import json  # noqa: PLC0415
+    try:
+        report = json.loads(result.stdout)
+        unregistered = list(report.get("unregistered") or [])
+        over_ceiling = bool(report.get("over_ceiling"))
+    except (ValueError, TypeError, AttributeError):
+        unregistered, over_ceiling = [{"file": "?", "line": "?", "module": "?"}], False
+
+    if not unregistered and over_ceiling:
+        print(
+            "[pre-commit] NOTE: args/undeclared_import_census.txt is over its ceiling "
+            "independently of this commit -- CI is red on it; undeclared_max may only go DOWN."
+        )
+        return True
+
+    print("[pre-commit] BLOCKED: this commit adds an undeclared third-party import inside a "
+          "handler that swallows the ImportError:")
+    for site in unregistered[:20]:
+        print(f"  {site.get('file')}:{site.get('line')}  imports {site.get('module')!r}")
+    if result.stderr and result.stderr.strip():
+        print(result.stderr.strip())
+    return False
+
+
 def _run_blueprint_import_check() -> bool:
     """Run the coherence blueprint_imports check."""
     print("[pre-commit] Checking blueprint imports...")
@@ -498,6 +682,20 @@ def main() -> int:
     # Domain leak gate -- every staged file, any suffix. Its --staged mode is
     # one subprocess and a regex pass over the staged paths only.
     if not _run_domain_leak_gate():
+        failed = True
+
+    # Mirror parity -- only when this commit stages a file under tools/<pkg>/ or
+    # icdev/tools/<pkg>/. Compares the STAGED files to their twins, nothing else.
+    mirror_files = _mirror_scope(name_status)
+    if mirror_files and not _run_mirror_parity(mirror_files):
+        failed = True
+
+    # Undeclared-import census -- only when a .py under tools/ is staged. The
+    # tool's own --staged mode scans those files and no others.
+    if any(
+        f.endswith(".py") and (f.startswith("tools/") or f.startswith("icdev/tools/"))
+        for f in staged
+    ) and not _run_undeclared_import_census():
         failed = True
 
     # Always run blueprint import check when Python files change

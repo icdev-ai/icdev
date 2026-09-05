@@ -1,0 +1,6 @@
+# flx-airgap-03 — floci's registry posture: FLOCI_DOCKER_DOCKER_HOST, the
+# per-registry credential references, and the ONE rule extended to answer
+# "would this pull leave the enclave" under BOTH postures.
+# One fragment per task (never core.txt): two PRs writing two differently-named
+# files cannot collide.
+tests/cloud/test_floci_registry.py

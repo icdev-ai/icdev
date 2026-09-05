@@ -533,6 +533,13 @@ def seeded_db(live_db):
     from icdev.tools.databridge.seed_connections import seed
 
     result = seed()
+    # flx-bridge-02 added a second descriptor (floci-emulator-local). This
+    # fixture's subject is the rss connection the `external` rung reads, so
+    # NARROW THE SET THE ASSERTION SCANS rather than restating the whole
+    # descriptor file, which every future connection would have to be added to.
+    # The assertion below is unchanged and still fails on a seed() that created
+    # nothing — narrowing the subject must never drop the check.
+    result = dict(result, created=[i for i in result["created"] if i == "federal-register-nist"])
     assert result["created"] == ["federal-register-nist"]
     return live_db
 

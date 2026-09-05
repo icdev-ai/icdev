@@ -69,3 +69,224 @@ connections:
       egress_allowlist:
         - www.federalregister.gov
       egress_denylist: []
+
+  # -------------------------------------------------------------------------
+  # floci AWS service emulator (flx-bridge-02) — the LOCAL emulated estate.
+  #
+  # auth_method IS `none`, AND THAT IS THE MEASURED ANSWER, not a convenience.
+  # tools/cloud/emulator.py::credentials() is hard-wired to return the dummy
+  # pair ("test", "test") and DELIBERATELY does not read the ambient AWS
+  # environment — its docstring says why: those values are handed to
+  # `docker run -e` and into a Terraform provider block, so honouring a real
+  # AWS_ACCESS_KEY_ID would give live GovCloud keys to a container talking to
+  # localhost. There is therefore no credential to reference, and declaring
+  # `auth_secret_ref: env:FLOCI_ACCESS_KEY_ID` would be three separate defects
+  # at once: the seeder refuses a ref under auth_method `none`; under any other
+  # auth_method the broker resolves it and injects it under `api_key`, a key
+  # this connector never reads (declared and never consumed); and
+  # resolve_secret() raises on an unset variable, so a shipped grant would
+  # refuse EVERY call on any deployment that had not exported it.
+  #
+  # That also keeps tests/test_databridge_first_grant.py's standing rule intact
+  # without weakening it: no shipped grant reaches a credentialed system.
+  #
+  # `endpoint` is deliberately NOT pinned here. flx-seam-01 made
+  # tools/cloud/emulator.py the ONE emulator switch, and a second copy in this
+  # row would be a second switch. The seam decides WHERE; this row decides the
+  # CEILING on where — which is exactly what egress_allowlist below is.
+  - id: floci-emulator-local
+    name: floci AWS Emulator (local)
+    connector_name: floci
+    connector_type: saas_api
+    auth_method: none
+    sync_direction: read
+    status: configured
+    classification: UNCLASSIFIED
+    impact_level: IL2
+    config:
+      # THE ENDPOINT HOST, AND NOTHING ELSE. Enforced by
+      # FlociConnector._assert_endpoint_allowed at the point the destination is
+      # decided, so it covers the boto3 tables too — five of the seven never
+      # pass through urllib, so a per-URL guard would have covered two.
+      #
+      # NOT enforced by saas_base._guard_egress, and the reason is measured
+      # (2026-09-05): egress_guard is an INTERNET SSRF gate and refuses this
+      # connector's own default endpoint twice over —
+      # `http://localhost:4566/_localstack/health` -> scheme_not_https, and the
+      # https spelling -> denied_ip_range. A loopback emulator reached over
+      # plain http is precisely the destination that guard exists to refuse. The
+      # applicable half of its rule (which HOST) is applied from its own
+      # `host_allowed`; the inapplicable half (https-only, resolve-then-range-
+      # check) is named rather than quietly dropped. This is a HOST allowlist,
+      # not an SSRF gate, and it performs no DNS resolution.
+      #
+      # Three entries because they are three spellings of ONE destination —
+      # this machine's emulator. A deployment running floci on another host must
+      # add that host here, which is the review this list exists to force.
+      # Matching is egress_guard's suffix rule, so `localhost` also covers
+      # `*.localhost`; every such name resolves to loopback anyway.
+      egress_allowlist:
+        - localhost
+        - 127.0.0.1
+        - "::1"
+      egress_denylist: []
+
+  # floci-az Azure service emulator (flx-az-01) — the LOCAL emulated estate.
+  #
+  # A SECOND CONNECTION, not a second config on the floci row. The two are
+  # different emulators on different ports with different health paths, and a
+  # deployment may legitimately run one, both or neither.
+  #
+  # `endpoint` is deliberately NOT pinned here, for the same reason as the floci
+  # row above: tools/cloud/emulator_az.py is the ONE Azure emulator switch and a
+  # second copy in this row would be a second switch. The seam decides WHERE;
+  # this row decides the CEILING on where.
+  #
+  # READ ONLY, and the connector enforces it rather than relying on this line:
+  # FlociAzConnector.capabilities.supports_write is False and write() returns an
+  # `unsupported` refusal naming the absent Azure IaC executor. sync_direction
+  # below records the same fact where an operator reads it.
+  - id: floci-az-emulator-local
+    name: floci-az Azure Emulator (local)
+    connector_name: floci_az
+    connector_type: saas_api
+    auth_method: none
+    sync_direction: read
+    status: configured
+    classification: UNCLASSIFIED
+    impact_level: IL2
+    config:
+      # THE ENDPOINT HOST, AND NOTHING ELSE. Enforced by
+      # FlociAzConnector._assert_endpoint_allowed at the point the destination
+      # is decided, so it covers every ARM fan-out call rather than only the
+      # ones routed through one helper.
+      #
+      # NOT enforced by saas_base._guard_egress, and the reason is the same one
+      # measured for the AWS emulator on 2026-09-05: egress_guard is an INTERNET
+      # SSRF gate and refuses this connector's own default endpoint twice over —
+      # `http://localhost:4577` is scheme_not_https, and the https spelling is
+      # denied_ip_range. A loopback emulator over plain http is precisely the
+      # destination that guard exists to refuse. The applicable half of its rule
+      # (which HOST) is applied from its own `host_allowed`; the inapplicable
+      # half is named rather than quietly dropped. This is a HOST allowlist, not
+      # an SSRF gate, and it performs no DNS resolution.
+      #
+      # IT MATTERS MORE HERE THAN FOR THE AWS EMULATOR. floci-az serves an IMDS
+      # token endpoint of its own at /metadata/identity/oauth2/token — measured
+      # 2026-09-05, it issues a real signed JWT. A seam mis-set toward the real
+      # link-local 169.254.169.254 must be refused, not dialled.
+      #
+      # Three entries because they are three spellings of ONE destination: this
+      # machine's emulator. A deployment running floci-az on another host must
+      # add that host here, which is the review this list exists to force.
+      egress_allowlist:
+        - localhost
+        - 127.0.0.1
+        - "::1"
+      egress_denylist: []
+
+  # floci-gcp GCP service emulator (flx-gcp-01) — the LOCAL emulated estate.
+  #
+  # A THIRD CONNECTION. Three emulators, three ports, three health paths, and a
+  # deployment may run any subset.
+  #
+  # `endpoint` is deliberately NOT pinned here, for the same reason as the two
+  # rows above: tools/cloud/emulator_gcp.py is the ONE GCP emulator switch and a
+  # second copy in this row would be a second switch. The seam decides WHERE;
+  # this row decides the CEILING on where.
+  #
+  # READ ONLY, and the connector enforces it rather than relying on this line:
+  # FlociGcpConnector.capabilities.supports_write is False and write() returns
+  # an `unsupported` refusal naming the absent GCP IaC executor. sync_direction
+  # below records the same fact where an operator reads it.
+  - id: floci-gcp-emulator-local
+    name: floci-gcp GCP Emulator (local)
+    connector_name: floci_gcp
+    connector_type: saas_api
+    auth_method: none
+    sync_direction: read
+    status: configured
+    classification: UNCLASSIFIED
+    impact_level: IL2
+    config:
+      # THE ENDPOINT HOST, AND NOTHING ELSE. Enforced by
+      # FlociGcpConnector._assert_endpoint_allowed at the point the destination
+      # is decided, so it covers every table read rather than only the ones
+      # routed through one helper.
+      #
+      # NOT enforced by saas_base._guard_egress, for the reason measured on both
+      # sibling emulators: egress_guard is an INTERNET SSRF gate and refuses this
+      # connector's own default endpoint twice over — `http://localhost:4588` is
+      # scheme_not_https, and the https spelling is denied_ip_range. A loopback
+      # emulator over plain http is precisely the destination that guard exists
+      # to refuse. This is a HOST allowlist, not an SSRF gate, and it performs no
+      # DNS resolution.
+      #
+      # THE METADATA HAZARD IS SMALLER HERE THAN ON THE AZURE ROW, and the
+      # allowlist is kept anyway. Measured 2026-09-05: floci-gcp serves NO
+      # /computeMetadata surface (404), so there is no emulator token endpoint to
+      # confuse with the real link-local 169.254.169.254. What this list bounds
+      # is where the SEAM may point — a question about ICDEV's own configuration,
+      # not about this emulator's surface area.
+      #
+      # Three entries because they are three spellings of ONE destination: this
+      # machine's emulator. A deployment running floci-gcp on another host must
+      # add that host here, which is the review this list exists to force.
+      egress_allowlist:
+        - localhost
+        - 127.0.0.1
+        - "::1"
+      egress_denylist: []
+
+  # floci-oci OCI service emulator (flx-oci-01) — the LOCAL emulated estate.
+  #
+  # A FOURTH CONNECTION. Four emulators, four ports, and a deployment may run
+  # any subset. floci-oci answers /health (like floci-gcp) but is NOT a
+  # LocalStack drop-in — /_localstack/health 404s.
+  #
+  # `endpoint` is deliberately NOT pinned here, for the same reason as the three
+  # rows above: tools/cloud/emulator_oci.py is the ONE OCI emulator switch and a
+  # second copy in this row would be a second switch. The seam decides WHERE;
+  # this row decides the CEILING on where.
+  #
+  # READ ONLY, and the connector enforces it rather than relying on this line:
+  # FlociOciConnector.capabilities.supports_write is False and write() returns
+  # an `unsupported` refusal naming TWO reasons — the absent OCI IaC executor
+  # AND the stubbed OCI provider layer (docs/spikes/flx-oci-parity.md §1).
+  - id: floci-oci-emulator-local
+    name: floci-oci OCI Emulator (local)
+    connector_name: floci_oci
+    connector_type: saas_api
+    auth_method: none
+    sync_direction: read
+    status: configured
+    classification: UNCLASSIFIED
+    impact_level: IL2
+    config:
+      # THE ENDPOINT HOST, AND NOTHING ELSE. Enforced by
+      # FlociOciConnector._assert_endpoint_allowed at the point the destination
+      # is decided, so it covers every table read rather than only the ones
+      # routed through one helper.
+      #
+      # NOT enforced by saas_base._guard_egress, for the reason measured on all
+      # three sibling emulators: egress_guard is an INTERNET SSRF gate and
+      # refuses this connector's own default endpoint twice over —
+      # `http://localhost:4599` is scheme_not_https, and the https spelling is
+      # denied_ip_range. A loopback emulator over plain http is precisely the
+      # destination that guard exists to refuse. This is a HOST allowlist, not
+      # an SSRF gate, and it performs no DNS resolution.
+      #
+      # THE METADATA HAZARD: measured 2026-09-05, floci-oci serves no instance
+      # metadata surface — /opc/v2 and friends were not among the eight services
+      # it answers. As on the GCP row, what this list bounds is where the SEAM
+      # may point, which is a question about ICDEV's own configuration rather
+      # than about this emulator's surface area.
+      #
+      # Three entries because they are three spellings of ONE destination: this
+      # machine's emulator. A deployment running floci-oci on another host must
+      # add that host here, which is the review this list exists to force.
+      egress_allowlist:
+        - localhost
+        - 127.0.0.1
+        - "::1"
+      egress_denylist: []

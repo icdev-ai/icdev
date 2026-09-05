@@ -38,6 +38,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 _REPO_MARKERS = ("args/projects.yaml", "goals/manifest.md")
 
@@ -835,26 +836,44 @@ def _task_lease_resource(task_id: str) -> str:
     return f"kanban:task:{task_id}"
 
 
-def cmd_claim(task_id: str, json_out: bool) -> int:
+def cmd_claim(task_id: str, json_out: bool, intent: Optional[str] = None,
+              ttl_seconds: Optional[int] = None) -> int:
     """Take exclusive ownership of a task for interactive (CLI) work.
 
     Acquires the per-task coordination lease so the autonomous kanban runner
     skips it, moves it to in_progress, and prints the task's stored branch +
     commit so you continue that branch rather than rebuilding it.
+
+    THE LEASE IS MADE TO HOLD (mfx-own-02). A shell has no registered session
+    and its pid exits on the next line, so the lease this door took used to be
+    litter to every reader within seconds -- measured 2026-09-03, an operator
+    holding rmf-ui-13 by hand while a second session repaired the same branch.
+    ``tools.kanban.interactive_claim.claim`` now takes the lease under this
+    process's identity (the same refusal every claimant gets) and hands it to a
+    detached KEEPER that registers a dedicated ``cli-claim-<id>-*`` session
+    (``agent_type`` cli, the stated ``--intent``), re-takes the lease under its
+    own live pid and heartbeats until the TTL (``--ttl``, default 2h; running
+    ``--claim`` again renews it) or ``--release``. The inherited service
+    identity is never reused (claim-verif-33c9f4cd11).
     """
     from tools.coordination import leases
+    from tools.kanban import interactive_claim
     res = _task_lease_resource(task_id)
-    lease = leases.acquire(res, intent="cli-manual", ttl_seconds=3600, block=False)
-    if lease is None:
+    outcome = interactive_claim.claim(task_id, intent=intent, ttl_seconds=ttl_seconds)
+    if not outcome.get("claimed"):
         h = leases.holder(res) or {}
-        out = {"claimed": False, "task_id": task_id, "held_by": h.get("holder_session")}
+        out = {"claimed": False, "task_id": task_id,
+               "held_by": outcome.get("held_by") or h.get("holder_session"),
+               "reason": outcome.get("reason")}
         if json_out:
             print(json.dumps(out, indent=2))
         else:
-            print(f"  CANNOT CLAIM {task_id}: held by session {h.get('holder_session', '?')}")
+            print(f"  CANNOT CLAIM {task_id}: held by session {out['held_by'] or '?'}")
+            if out["reason"]:
+                print(f"    {out['reason']}")
         return 1
     now = _now()
-    info = {"claimed": True, "task_id": task_id}
+    info = {"claimed": True, "task_id": task_id, "renewed": bool(outcome.get("renewed"))}
     with get_connection() as conn:
         row = conn.execute(
             "SELECT status, branch_name, commit_summary FROM kanban_tasks WHERE id = %s",
@@ -865,27 +884,21 @@ def cmd_claim(task_id: str, json_out: bool) -> int:
             return 1
         d = dict(row)
         prior = d.get("status")
-        conn.execute(
-            "UPDATE kanban_tasks SET status = %s, updated_at = %s WHERE id = %s",
-            ("in_progress", now, task_id),
-        )
-        _record_manual_transition(conn, task_id, prior, "in_progress")
+        if prior != "in_progress":
+            conn.execute(
+                "UPDATE kanban_tasks SET status = %s, updated_at = %s WHERE id = %s",
+                ("in_progress", now, task_id),
+            )
+            _record_manual_transition(conn, task_id, prior, "in_progress")
         info.update({
             "prior_status": prior,
             "branch": d.get("branch_name"),
             "commit": d.get("commit_summary"),
         })
-    # WHAT THIS CLAIM IS WORTH, said at the moment it is taken. The lease
-    # records THIS process's pid, and this process exits on the next line. On
-    # the pid alone every reader -- the dispatch reaper, startup recovery,
-    # --release -- reads a dead-pid lease as litter within seconds. The one
-    # thing that outlives the pid is the session id on the lease, and it
-    # protects the task ONLY if it names a REGISTERED session that keeps
-    # heartbeating (CLAUDE_SESSION_ID / ICDEV_SESSION_ID exported before the
-    # claim). Measured 2026-09-02: kpr-stale-03 was claimed from a shell, its
-    # PR was in flight, and startup recovery reset it to backlog with "no live
-    # session was found working it". The old message here promised the
-    # opposite.
+    # WHAT THIS CLAIM IS WORTH, said at the moment it is taken -- and READ
+    # BACK from the lease and the registry, never assumed from the keeper's
+    # report. `session_linked` is the same ``session_is_live`` the dispatch
+    # reaper and startup recovery consult, asked about the lease's own holder.
     holder = leases.holder(res) or {}
     sid = holder.get("holder_session")
     try:
@@ -894,23 +907,36 @@ def cmd_claim(task_id: str, json_out: bool) -> int:
         session_linked = bool(session_is_live(sid))
     except Exception:  # noqa: BLE001 -- the claim stands; only the advice degrades
         session_linked = False
-    info.update({"holder_session": sid, "session_linked": session_linked})
+    info.update({
+        "holder_session": sid,
+        "session_linked": session_linked,
+        "keeper": outcome.get("keeper"),
+        "keeper_pid": outcome.get("pid"),
+        "expires_at": outcome.get("expires_at"),
+        "keeper_reason": outcome.get("reason"),
+        "keeper_log": outcome.get("log"),
+    })
     if json_out:
         print(json.dumps(info, indent=2, default=str))
     else:
-        print(f"  CLAIMED {task_id} (was {info.get('prior_status')}) -> in_progress")
+        verb = "RENEWED" if info["renewed"] else "CLAIMED"
+        print(f"  {verb} {task_id} (was {info.get('prior_status')}) -> in_progress")
         print(f"    branch: {info.get('branch') or '(none recorded — start fresh off origin/main)'}")
         if info.get("commit"):
             print(f"    last commit: {str(info['commit'])[:100]}")
         if session_linked:
-            print(f"    held by session {sid}: the runner and startup recovery will "
-                  "honour this claim while that session heartbeats (1h TTL backstop).")
+            print(f"    held by session {sid} (keeper pid {info['keeper_pid']}, "
+                  f"until {info['expires_at']}): the runner and startup recovery "
+                  "will honour this claim while that session heartbeats. "
+                  "`--claim` again renews it; `--release` ends it.")
         else:
-            print(f"    NOTE: this lease is bound to pid {holder.get('pid')}, which exits "
-                  "now, and to an UNREGISTERED session id -- every reader will treat it "
-                  "as litter within seconds. To hold the task, export "
-                  "ICDEV_SESSION_ID=<your registered session id> before --claim, or "
-                  "gate it behind a manual gate (depends_on_task_id).")
+            print(f"    NOTE: this lease is NOT linked to a registered, heartbeating "
+                  f"session (keeper: {info['keeper']} -- {info['keeper_reason']}). "
+                  "Every reader will treat it as litter within seconds. Re-run "
+                  "--claim once the cause is fixed, or gate the task behind a "
+                  "manual gate (depends_on_task_id).")
+            if info.get("keeper_log"):
+                print(f"    keeper log: {info['keeper_log']}")
     return 0
 
 
@@ -962,6 +988,7 @@ def cmd_release(task_id: str, json_out: bool) -> int:
         print(json.dumps({
             "released": released,
             "reclaimed_from_exited_session": reclaimed,
+            "interactive_claim_ended": bool(out.get("interactive")),
             "task_id": task_id,
             "prior_holder": (prior or {}).get("holder_session"),
             "still_held_by": (still or {}).get("holder_session"),
@@ -971,6 +998,10 @@ def cmd_release(task_id: str, json_out: bool) -> int:
     elif released and reclaimed:
         print(f"  RELEASED: {task_id} (reclaimed from exited session "
               f"{(prior or {}).get('holder_session')}, pid {(prior or {}).get('pid')})")
+    elif released and out.get("interactive"):
+        print(f"  RELEASED: {task_id} (interactive claim by session "
+              f"{(prior or {}).get('holder_session')} ended; its keeper stops on "
+              "its next beat)")
     elif released:
         print(f"  RELEASED: {task_id}")
     elif still and worker_alive:
@@ -1007,7 +1038,8 @@ def _release_task_lease(task_id: str) -> dict:
     Returns a dict; ``state`` is one of:
 
       none       nothing held — not claimed, or already expired
-      released   this session held it and let go
+      released   this session held it and let go — or an interactive claim's
+                 keeper session was ended by name (``interactive`` is True)
       reclaimed  the holder had exited and the task was not heartbeating
       kept       a live holder, or a heartbeating worker — left alone, with ``why``
     """
@@ -1016,9 +1048,22 @@ def _release_task_lease(task_id: str) -> dict:
 
     resource = _task_lease_resource(task_id)
     prior = leases.holder(resource)
-    released = leases.release(resource) if prior is not None else False
+    released = False
     reclaimed = False
+    interactive = False
     verdict = None
+    if prior is not None:
+        # Rung 0 (mfx-own-02): an INTERACTIVE claim -- a ``cli-claim-<id>-*``
+        # keeper session -- is ended by name. The shell releasing it has no
+        # identity to match against and the keeper's pid is ALIVE, so neither
+        # ownership nor the two-signal reap below could ever let it go.
+        from tools.kanban import interactive_claim
+
+        if interactive_claim.claim_session_for(task_id, prior.get("holder_session")):
+            interactive = bool(interactive_claim.release(task_id).get("released"))
+            released = interactive
+    if not released and prior is not None:
+        released = leases.release(resource)
     if not released and prior is not None:
         verdict, reclaimed = lease_liveness.reap_if_litter(task_id)
         released = reclaimed
@@ -1037,6 +1082,7 @@ def _release_task_lease(task_id: str) -> dict:
         "state": state,
         "released": released,
         "reclaimed": reclaimed,
+        "interactive": interactive,
         "prior": prior,
         "still": still,
         "prior_holder": (prior or {}).get("holder_session"),
@@ -1263,8 +1309,15 @@ def main():
     parser.add_argument("--claim", metavar="TASK_ID",
                         help="Take exclusive ownership of a task for interactive work "
                              "(runner will skip it); prints its branch/commit to continue")
+    parser.add_argument("--intent", metavar="TEXT",
+                        help="With --claim: what you are doing with the task, recorded "
+                             "on the keeper session (default: 'manual repair of <id>')")
+    parser.add_argument("--ttl", dest="claim_ttl", type=int, metavar="SECONDS",
+                        help="With --claim: how long the claim holds before its keeper "
+                             "lets go (default 7200; --claim again renews it)")
     parser.add_argument("--release", metavar="TASK_ID",
-                        help="Release a task lease so the runner can take it back")
+                        help="Release a task lease so the runner can take it back "
+                             "(ends an interactive claim's keeper session)")
     parser.add_argument("--pause-runner", action="store_true",
                         help="Pause the autonomous kanban runner for this session")
     parser.add_argument("--resume-runner", action="store_true",
@@ -1280,7 +1333,8 @@ def main():
     args = parser.parse_args()
 
     if args.claim:
-        sys.exit(cmd_claim(args.claim, args.json_out))
+        sys.exit(cmd_claim(args.claim, args.json_out, intent=args.intent,
+                           ttl_seconds=args.claim_ttl))
 
     elif args.release:
         sys.exit(cmd_release(args.release, args.json_out))

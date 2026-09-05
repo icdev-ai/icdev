@@ -5,15 +5,27 @@
 # Canvas-specific steps (1–4): tools/data/
 # Shared executor steps (5–12): tools/studio/executors/  (see shared_iac_executors.yaml)
 #
-# Modes (auto-detected from .env):
-#   aws        — deploys to real AWS (set AWS_ACCESS_KEY_ID etc.)
-#   localstack — local testing via LocalStack (set LOCALSTACK_ENDPOINT)
-#   sam        — SAM local (set AWS_SAM_LOCAL=true)
-#   dry_run    — no credentials → terraform plan only (safe, no charges)
+# Modes are auto-detected from the environment by
+# tools/studio/executors/_base.py::detect_mode() — the vocabulary is in
+# executor_modes below.
 
 description: "DDC: data lineage audit, schema migration, IaC generation, DBA gate, Terraform/Ansible validate, migration report, apply approval, Terraform apply, AWS verification, post-deploy validation"
 category: deploy
 canvas: ddc
+
+# The executor mode vocabulary — DATA, deliberately not a comment.
+# tools/studio/executors/_base.py::detect_mode() is the ONE thing that decides
+# which of these a run gets, and tests/cloud/test_workflow_template_modes.py
+# asserts these keys ARE its return set and that each one is REACHABLE from the
+# environment described beside it. A comment nothing reads is how this block
+# went on naming the RETIRED emulator after the seam was renamed to `floci`
+# (flx-seam-01 / flx-studio-01): a declaration and the code describing two
+# different systems, with nothing going red.
+executor_modes:
+  aws:     "real AWS account — AWS_ACCESS_KEY_ID set and no emulator endpoint declared"
+  floci:   "the local AWS emulator — FLOCI_ENABLED=true"
+  sam:     "SAM local — AWS_SAM_LOCAL=true"
+  dry_run: "terraform plan only, nothing applied — no credentials, or an endpoint declared while the switch is off"
 
 steps:
   # ── Canvas-specific steps (DDC only) ─────────────────────────────────────

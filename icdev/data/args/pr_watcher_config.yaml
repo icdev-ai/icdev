@@ -11,6 +11,39 @@ max_resume_cycles_per_task: 5
 auto_merge_enabled: true
 auto_merge_require_approval: false
 
+# "CI is green" means the REQUIRED checks are green -- the forge's rule, read
+# from branch protection (task-det-295a9bb95e).
+#
+# `Test (Windows)` is NON-REQUIRED ON PURPOSE: icdev-ci.yml says "a Windows-only
+# flake cannot block a merge", and branch protection requires Lint / Test /
+# Security Scan / Helm Lint alone. This watcher read EVERY check, so one red
+# Windows run classified PR #1859 `ci_failed` with its required set fully
+# green, spent all five resumes on a branch that had no defect in it, escalated
+# to "manual intervention required" and filed a NEEDED-A-HUMAN card. #1841 was
+# the same shape; 2 of the 11 `ci_failed` escalations since 2026-08-14 were
+# this. The forge merged both -- because the forge only ever asked about the
+# required set.
+#
+# The set is READ from the default branch's protection rule (the GitHub
+# branches/<name>/protection endpoint) through
+# merge_readiness.fetch_required_checks -- never a list here, which would
+# drift the day `E2E (Playwright)` or `Test (Windows)` is promoted (the
+# CLAUDE.md note on promoting E2E already names the three hard-coded copies
+# that disagree with GitHub). A failing check OUTSIDE the set is named on the
+# audit row ("ignored non-required failing check(s): ...") and in the
+# merge-readiness reason, never dropped.
+#
+# UNRESOLVED IS NOT EMPTY. No protection rule, a token that may not read it,
+# a rule with no required checks -- every one reads as None and the watcher
+# counts every check, exactly as before; it says so in the log. An EMPTY
+# required set is deliberately None too: merging on nothing is the direction
+# with consequences. The answer is cached (including an unresolved one) for
+# `required_checks_cache_seconds`, so it costs one call per window.
+#
+# `false` restores the old read -- a flag flip, not a revert.
+required_checks_only: true
+required_checks_cache_seconds: 300
+
 # Take a GREEN PR out of draft so auto-merge can actually run.
 #
 # Without this the pipeline is autonomous right up to the last step and then
@@ -24,6 +57,19 @@ auto_merge_require_approval: false
 # is how a MANUAL-ONLY card (e.g. AGOV) expresses "a human decides when this
 # ships". For those the draft IS the brake, and it stays on. Set false to
 # require a human on every PR regardless.
+#
+# A HOLD LABEL ALSO STOPS THIS, not merely the merge (kpr-watch-04). Any of
+# hold / do-not-merge / "do not merge" / wip / no-automerge / blocked on the PR
+# suppresses BOTH the un-draft and the merge, on the task-linked path as well as
+# the unlinked sweep. Un-drafting here is not a human clicking "Ready for
+# review"; it is a step of the watcher's own merge sequence, and that sequence
+# must not run for a PR somebody has explicitly marked not-finished. A person
+# may still un-draft by hand at any time — the merge is refused afterwards, so
+# the two controls stay independent where that matters. The label list lives in
+# `NO_AUTOMERGE_LABELS` in tools/ci/merge_readiness.py, deliberately in code
+# rather than here: it is the vocabulary the shared merge-readiness classifier
+# reports as the `held_label` state, and a per-deployment list would let a label
+# mean two different things again.
 auto_ready_draft_prs: true
 
 # Truncate CI log excerpts before injecting as resume context
@@ -106,6 +152,150 @@ hold_on_sibling_conflict: true
 # unavailable git reports checked:false, which is never read as a finding.
 landed_check_on_poll: true
 
+# Superseded-PR guard (mfx-mrg-02) — CLOSE the duplicate instead of holding
+# the whole queue behind it.
+#
+# THE DEFECT, four times in two days. #2015's single commit merged in #2014
+# FORTY-TWO SECONDS earlier; #1985's in #1983, eighty-two seconds earlier; #2056
+# was the kpr-stale-06 branch re-opened after #2053 had already squashed it; and
+# #2049 (kpr-stale-05) had both its commits absorbed into #2053. Each then sat
+# CONFLICTING or "ahead" indefinitely, and — because it was still OPEN — each
+# held `no_sibling_conflict` against every other PR touching the same files.
+# #2015 blocked #2016 on compliance_server.py. Every one was diagnosed by a
+# human running `gh pr view <sibling> --json commits` and closed by hand.
+#
+# NONE OF THE GUARDS ABOVE COULD SEE IT, and each asks a question that is nearly
+# this one and is not: `landed_check_on_poll` greps commit SUBJECTS for the TASK
+# ID, so kpr-stale-05's work landing inside a PR whose subject names
+# kpr-stale-06 is invisible to it; `refuse_merge_when_behind` measures distance
+# from main, and a duplicate at the SAME head sha as a merged PR is 0 behind;
+# `sibling_conflict_check` lists which OPEN PRs share a file, which is the thing
+# the duplicate was jamming rather than the thing that finds it. And
+# `_supersede_stale_prs` in reflexes/kanban.py closes a task's OTHER OPEN PRs at
+# PR-open time, same task only — three of these four cases are a MERGED sibling
+# and one is a different task entirely.
+#
+# THE SIGNAL IS THE COMMIT LIST. GitHub keeps a merged PR's commit oids whatever
+# merge method was used, so a SQUASH — which leaves nothing on main carrying the
+# branch's shas — is still answerable. The rule: our head sha is in a merged
+# family sibling's commit list AND every commit we can see is in that list.
+# Requiring the HEAD closes the truncation hole (`gh` caps the commits
+# connection, and a short list of OURS would make the subset test trivially
+# true). "Family" is the same head branch, or our branch / PR number NAMED in
+# the sibling's title or body — never a title resemblance.
+#
+# SURVEYED BEFORE ARMING, over the live board 2026-09-05
+# (docs/audits/mfx-mrg-02-superseded-pr-survey.md). Of the 15 open PRs, EIGHT
+# fire — and all eight are duplicates at an IDENTICAL head sha to an
+# already-merged PR, verified one by one. That 53% is the MEASURED SIZE OF THE
+# DEFECT on a board mid-incident, not a threshold and not routine work being
+# refused: a legitimate PR always holds at least one commit no merged PR has,
+# and the subset rule cannot fire on it. Recall on the recent closed-unmerged
+# population is 2 of 2 — the two known incidents. Dropping the family
+# requirement adds ZERO further fires, so it is kept: it costs nothing and it is
+# what guarantees the close can cite a PR number.
+#
+# WHAT IT DOES AND DOES NOT DO. It comments the evidence and CLOSES. It never
+# merges, never un-drafts, never force-pushes and never deletes a branch —
+# closing removes nothing from main and the comment says how to reopen. If the
+# task is not already terminal, `landed_check` is asked whether its work is on
+# main and the task is completed ONLY on a checked, positive answer; a sibling
+# containing our commits proves the PR is redundant and does NOT prove the
+# task's own deliverable landed, so an unchecked or negative report completes
+# nothing and says so on the audit row.
+#
+# FAIL-OPEN. No gh, a refused listing, a PR with no head sha or no commit list
+# all report `checked: false`, which is never a finding — the PR takes exactly
+# the path it took before. Audit rows: `close_superseded`, `superseded_warn`
+# (report-only / dry run) and `superseded_close_failed`, all under the
+# `superseded` classification.
+#
+# Set superseded_close false to audit without closing. Set superseded_check
+# false to skip the merged listing entirely.
+superseded_check: true
+superseded_close: true
+
+# How many recently-merged PRs to consider. `commits` is an expensive field:
+# measured 2026-09-05, `--limit 60` is refused by GitHub's GraphQL node budget
+# ("up to 600,000 possible nodes ... maximum limit of 500,000") and `--limit 40`
+# succeeds. That budget scales with how many commits the page happens to carry,
+# so a refusal HALVES the page and retries once rather than leaving the check
+# permanently and silently unchecked. Raising this does not make the check
+# stronger — it makes it likelier to be refused.
+superseded_merged_limit: 40
+
+# The second leg: `git cherry` says every commit on the branch is already
+# upstream BY PATCH ID while the two-dot diff against the base is not empty —
+# i.e. merging it would REMOVE what the base has. This is the cherry-picked or
+# rebased duplicate, whose shas therefore differ.
+#
+# OFF, and the measurement is why. On the live board 2026-09-05 it fires on 3 of
+# the 15 open PRs and all three are a STRICT SUBSET of the commit-containment
+# leg's 8 — it found nothing that leg did not, because the four cases the card
+# was written for were squash-merged siblings, and a squash's patch id matches
+# none of the branch's individual commits. A leg that has never independently
+# found anything must not be the thing that closes somebody's PR. It costs two
+# local git calls per PR when on.
+superseded_revert_leg: false
+
+# Stale-branch guard (kpr-stale-02) — THE SAFETY HOLE this closes.
+#
+# Nothing in this watcher ever asked how far behind the default branch a PR
+# was. The merge decision reads `mergeable`, and GitHub reports MERGEABLE for a
+# branch arbitrarily far behind main so long as nothing collides TEXTUALLY. So
+# the CONFLICTING interlock only ever caught the subset that happened to
+# collide; the non-conflicting subset merged CLEANLY and re-applied its whole
+# diff over a tree that had moved on — a revert wearing a feature's clothes.
+# #1651 was -38/+26 on rest_v1.py and 36 commits behind main. It was closed by
+# a human; nothing in the pipeline could see it. `auto_rebase_on_conflict`
+# above is not the answer on its own: it repairs a branch that has ALREADY gone
+# DIRTY, which is exactly the subset that never had this problem.
+#
+# THE FORGE'S OWN VERDICT IS NOT ENOUGH, and this is the trap to avoid.
+# `mergeStateStatus == BEHIND` is authoritative when it appears, but it appears
+# ONLY when the base branch has "require branches to be up to date"
+# (`required_status_checks.strict`) turned on. Measured on this repo
+# 2026-08-18: strict is FALSE. mergeStateStatus is CLEAN for a branch 217
+# commits behind main, so a check keyed on it alone could never fire once. The
+# measured count below is the real check; the forge verdict is the belt.
+#
+# WHERE THE NUMBER COMES FROM. Measured 2026-08-18 over the last 120 MERGED
+# PRs, counting commits on main that each branch was missing at the moment it
+# merged (`merge-base(main-at-merge, head)..main-at-merge`):
+#
+#     0 commits behind : 41 (34.2%)      p50 =  1
+#     1-2              : 38 (31.7%)      p75 =  3
+#     3-5              : 31 (25.8%)      p90 =  5
+#     6-10             : 10 ( 8.3%)      p95 =  6
+#     11+              :  0 ( 0.0%)      max =  8
+#
+# The routine population tops out at 8. The known true positive, #1651, was 36
+# behind when it was closed (217 today). So 10 sits two commits above the
+# highest routine merge ever observed and an order of magnitude below the case
+# it exists to catch: it would have fired on 0 of those 120 merges and on
+# #1651. It is NOT a number chosen to keep the check quiet — lower it and it
+# starts refusing the p95 of ordinary work, which the repair path (a rebase per
+# PR) can absorb but which CLAUDE.md is right to call refusing routine work.
+# Re-measure before changing it; do not raise it to get a PR through.
+#
+# THE REPAIR DIFFERS BY DOOR, and only one of them pushes:
+#   * a task-linked kanban/<id> branch is handed to the SAME `_maybe_rebase`
+#     path `auto_rebase_on_conflict` uses — same ownership refusal, same
+#     per-base-era budget, same audit. When it declines (not this task's
+#     branch, budget spent, disabled) the PR is held and a HITL alert names a
+#     human, because a hold nobody can see is how work goes quiet.
+#   * an UNLINKED PR is reported and left alone. The unlinked sweep never
+#     pushes — it has no task to carry the state and no claim on the branch.
+#
+# FAIL-OPEN, and never silently. When the count cannot be measured (no gh, a
+# fork PR, a rate limit) the PR is NOT held, and the report prints "?" rather
+# than 0 — an unmeasured branch and a branch level with main are different
+# facts, and only one of them is evidence. Same posture landed_check takes for
+# the same class of question. Set refuse_merge_when_behind false to disable the
+# hold entirely; `python -m tools.ci.merge_readiness` still reports it.
+refuse_merge_when_behind: true
+max_behind_commits: 10
+
 # Bounded self-heal of a stale done-gate block (kpr-rvfy-03).
 # The enforced done-gate reads only the LATEST kanban_verifications row, and
 # nothing writes one except a dispatch — so a green PR whose verification went
@@ -169,3 +359,34 @@ restart_on_code_change: true
 # Escape hatch: any of hold / do-not-merge / wip / no-automerge / blocked as a
 # LABEL, or leave the PR as a draft. Requested changes are never merged over.
 merge_unlinked_prs: true
+
+# ── protected_paths (kpr-watch-05) ────────────────────────────────────────────
+# THE STANDING HAZARD. This watcher auto-merges any CI-green kanban/* branch,
+# including one that edits the watcher. A defect in the merge-eligibility ladder
+# therefore merges ITSELF into main, and every cycle after that runs on the new,
+# wrong rule with no human in the path. That is not episodic — it is true
+# whenever any card touches these files, which is why two separate cards had to
+# invent per-episode manual gates for it. A per-episode gate cannot fix a
+# standing hazard.
+#
+# A PR whose changed files intersect this list is refused by BOTH merge paths
+# (the task-linked auto-merge and the unlinked sweep) and reported as the
+# `protected_path` state, so it is visible rather than silently skipped. Merge
+# it by hand after reading the diff.
+#
+# THIS FILE IS ON THE LIST ON PURPOSE. A PR that weakens or empties
+# `protected_paths` must not be able to auto-merge itself in.
+# tools/kanban/gates.py already states the principle: "A gate that cannot
+# protect itself is not a control."
+#
+# Matching is exact-or-directory-prefix: `tools/ci/pr_watcher.py` matches that
+# file and NOT `tools/ci/pr_watcher_helpers.py`; a bare directory entry matches
+# everything beneath it. If the changed-file set cannot be determined at all,
+# the PR is treated as protected — a merge gate that opens when it cannot see is
+# not a gate.
+protected_paths:
+  - tools/ci/pr_watcher.py
+  - args/pr_watcher_config.yaml
+  - .claude/hooks/pre_tool_use.py
+  - tools/kanban/task_factory.py
+  - tools/kanban/gates.py

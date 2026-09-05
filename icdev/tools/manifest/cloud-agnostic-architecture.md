@@ -30,3 +30,4 @@
 | Terraform Generator IBM | tools/infra/terraform_generator_ibm.py | IBM Cloud Terraform generator — VPC, IKS, PostgreSQL, COS, Key Protect with CUI headers. | --project-id, --region, --json | .tf files |
 | Terraform Generator On-Prem | tools/infra/terraform_generator_onprem.py | On-premises Terraform generator — self-managed K8s, Docker Compose, local PostgreSQL. | --project-id, --target k8s\|docker, --json | .tf / docker-compose files |
 
+| AWS Emulator Seam | tools/cloud/emulator.py | The ONE AWS-emulator (floci) switch — enabled/endpoint/region/account_id/credentials/docker_backed/status; `degraded_no_docker` so a container-backed table says `unsupported_without_docker` and never `[]`. LOCALSTACK_* honoured as deprecated aliases (flx-seam-01) | (library) enabled() / endpoint() / region() / account_id() / credentials() / docker_backed() / service_supported() / status() | bool / str / tuple / Optional[bool] |

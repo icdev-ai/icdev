@@ -51,6 +51,7 @@ from typing import Any, Dict, FrozenSet, List, Optional, Tuple
 import yaml
 
 from tools.ci import error_classifier as ec
+from tools.ci import pr_superseded as sup
 from tools.ci.merge_readiness import (
     BEHIND_MAIN,
     DEFAULT_MAX_BEHIND_COMMITS,
@@ -152,6 +153,16 @@ _PR_URL_RE = re.compile(
 CONFLICT_REAL = "real"
 CONFLICT_UNION_ONLY = "union_only"
 CONFLICT_PHANTOM = "phantom"
+
+#: Task statuses nothing here may move. `reconcile_stranded_tasks` keeps its
+#: own tuple for its own scan; this is the one the superseded path reads.
+_TERMINAL_TASK_STATUSES = ("done", "cancelled", "decomposed", "superseded")
+
+#: A PR whose work is ALREADY on the default branch through a MERGED sibling
+#: (mfx-mrg-02). Its own classification, never folded into `merge_conflict` or
+#: `done`: the first sends it to a rebase it does not need and the second to a
+#: merge that can only revert. The remedy is to CLOSE it.
+SUPERSEDED = "superseded"
 
 
 @dataclass
@@ -605,7 +616,7 @@ _NO_AUTOMERGE_LABELS = NO_AUTOMERGE_LABELS
 #: the same thing on both paths, and that starts with fetching it.
 _GH_JSON_FIELDS = (
     "state,statusCheckRollup,reviews,mergeable,mergeStateStatus,isDraft,labels,"
-    "headRefName,headRefOid,baseRefName,updatedAt,createdAt,number,url"
+    "headRefName,headRefOid,baseRefName,updatedAt,createdAt,number,url,commits"
 )
 
 
@@ -886,6 +897,7 @@ class PRWatcher:
         rebase_fn=None,
         behind_probe=None,
         gh_runner=None,
+        gh_close_runner=None,
         dry_run: bool = False,
     ):
         self.config = config or load_config()
@@ -897,6 +909,10 @@ class PRWatcher:
         self._fetch_logs = fetch_logs or fetch_ci_logs
         self._auto_merge_runner = auto_merge_runner or subprocess.run
         self._pr_list_runner = pr_list_runner or subprocess.run
+        # mfx-mrg-02: CLOSING a superseded PR is a different act from merging
+        # one, and a test asserting "this never merges" must be able to tell the
+        # two apart. Separate seam, never the merge runner.
+        self._gh_close_runner = gh_close_runner or subprocess.run
         self._rebase_fn = rebase_fn
         # kpr-stale-02: (base, head sha) -> commits behind, or None for
         # UNMEASURED. Injectable so tests never touch a live forge.
@@ -1161,6 +1177,170 @@ class PRWatcher:
         except Exception as exc:  # noqa: BLE001 — advisory check, never fatal
             logger.debug("pr_watcher: landed-check batch failed: %s", exc)
             return {}
+
+    # ── superseded PRs (mfx-mrg-02) ─────────────────────────────────
+
+    def _merged_pr_index(self, repo: str | None = None) -> Optional[List[dict]]:
+        """Recently MERGED PRs with their commit lists. ``None`` = UNREADABLE.
+
+        One `gh pr list` per poll, in the same once-per-cycle shape as
+        `_open_pr_index` and `_landed_map` above — a per-PR call would put a
+        commits-connection query on every task, every 30 seconds.
+
+        ``None`` is deliberately not ``[]``: an unreadable listing means the
+        question was not asked, and `decide_superseded` refuses to answer rather
+        than reporting "no sibling found". This module CLOSES pull requests.
+        """
+        if not self.config.get("superseded_check", True):
+            return None
+        try:
+            return sup.fetch_merged_prs(
+                runner=self._pr_list_runner,
+                limit=int(self.config.get(
+                    "superseded_merged_limit", sup.DEFAULT_MERGED_LIMIT)),
+                repo=repo,
+            )
+        except Exception as exc:  # noqa: BLE001 — advisory, never fatal
+            logger.debug("pr_watcher: merged-PR listing failed: %s", exc)
+            return None
+
+    def _superseded_verdict(
+        self, state: dict, merged_index: Optional[List[dict]],
+    ) -> "sup.SupersedeVerdict":
+        """Is this PR a duplicate of a MERGED sibling?
+
+        The revert leg costs two local git calls, so it only runs when the
+        commit-containment leg has already declined AND the leg is switched on.
+        MEASURED 2026-09-05 on this board it contributes nothing the first leg
+        does not already find (3 fires, all a strict subset of the 8), which is
+        why it ships OFF: a leg that has never found anything must not be the
+        thing that closes somebody's PR.
+        """
+        pr = {
+            "number": state.get("number"),
+            "url": state.get("url") or "",
+            "title": state.get("title") or "",
+            "body": state.get("body") or "",
+            "headRefName": state.get("headRefName") or "",
+            "headRefOid": state.get("headRefOid") or "",
+            "commits": state.get("commits") or [],
+        }
+        verdict = sup.decide_superseded(pr, merged_index)
+        if verdict.superseded or not verdict.checked:
+            return verdict
+        if not self.config.get("superseded_revert_leg", False):
+            return verdict
+        base = (state.get("baseRefName") or "").strip() or self._default_branch()
+        evidence = sup.revert_evidence(pr["headRefName"], base)
+        return sup.decide_superseded(pr, merged_index, revert=evidence)
+
+    def _close_superseded(
+        self, pr_url: str, task_id: str, verdict: "sup.SupersedeVerdict",
+    ) -> Dict[str, Any]:
+        """Comment the evidence, then close. Never merge, never un-draft.
+
+        A close with no derivation on it is indistinguishable from a bot losing
+        somebody's work, so the comment goes on FIRST and carries the sibling,
+        the shared sha, the two-dot stat and the command that re-derives all
+        three. `gh pr close --comment` does both in one call, so there is no
+        window in which the PR is closed with nothing said.
+        """
+        if self.dry_run:
+            return {"closed": False, "reason": "dry run"}
+        try:
+            proc = self._gh_close_runner(
+                ["gh", "pr", "close", pr_url, "--comment",
+                 sup.comment_body(verdict)],
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=60,
+            )
+        except Exception as exc:  # noqa: BLE001 — a failed close is reported
+            logger.warning("pr_watcher: closing %s failed: %s", pr_url, exc)
+            return {"closed": False, "reason": "gh pr close errored: %s" % exc}
+        if getattr(proc, "returncode", 1) != 0:
+            return {"closed": False,
+                    "reason": (getattr(proc, "stderr", "") or "")[:200]}
+        logger.info(
+            "pr_watcher: closed %s — superseded by #%s (%s); task %s",
+            pr_url, verdict.sibling_number, verdict.basis, task_id)
+        return {"closed": True, "reason": ""}
+
+    def _handle_superseded(
+        self, task: dict, pr_url: str, verdict: "sup.SupersedeVerdict",
+        get_conn, landed_map: Dict[str, dict], *, resume_cycle: int = 0,
+    ) -> Optional[WatcherAction]:
+        """Close a superseded PR, then complete the task IF its work landed.
+
+        Returns the WatcherAction the caller reports and audits, or ``None`` to
+        fall through to the normal ladder — which is what a REPORT-only
+        deployment and a failed close both do, because a PR that is still open
+        must keep being polled by everything that was polling it before.
+
+        THE TASK IS THE SECOND HALF, and skipping it would trade one defect for
+        another: closing the PR without completing a delivered task leaves the
+        card to age out and be RE-DISPATCHED, which builds the work a third
+        time. `landed_check` answers it, and it is the ONLY thing that may —
+        the sibling containing our commits proves the PR is redundant, and it
+        does NOT prove the task's own deliverable reached main (#2053 named
+        kpr-stale-06 in its subject while carrying kpr-stale-05's commits). An
+        unchecked or negative report completes NOTHING.
+        """
+        detail = "superseded by #%s (%s, %s): %s" % (
+            verdict.sibling_number, verdict.family, verdict.basis,
+            verdict.reason)
+        logger.warning("pr_watcher: %s is %s", pr_url, detail)
+
+        if not self.config.get("superseded_close", True) or self.dry_run:
+            self._audit(WatcherAction(
+                task_id=task["id"], pr_url=pr_url,
+                classification=SUPERSEDED, action="superseded_warn",
+                reason=(detail + ("; dry run" if self.dry_run else
+                                  "; superseded_close=false"))[:500],
+                resume_cycle=resume_cycle,
+            ))
+            return None
+
+        outcome = self._close_superseded(pr_url, task["id"], verdict)
+        if not outcome.get("closed"):
+            # A close that did not happen must not be reported as one, and the
+            # PR keeps its old path — silently swallowing this would leave the
+            # duplicate jamming the queue with an audit row claiming otherwise.
+            self._audit(WatcherAction(
+                task_id=task["id"], pr_url=pr_url,
+                classification=SUPERSEDED, action="superseded_close_failed",
+                reason=(detail + "; close failed: "
+                        + str(outcome.get("reason", "")))[:500],
+                resume_cycle=resume_cycle,
+            ))
+            return None
+
+        # An alert about a PR nobody can act on is spent with it.
+        self._resolve_hitl_alert(task["id"])
+
+        landed = landed_map.get(task["id"]) or {}
+        completed = ""
+        if (task.get("status") not in _TERMINAL_TASK_STATUSES
+                and landed.get("checked") and landed.get("landed")):
+            if _set_task_status(
+                get_conn, task["id"], "done",
+                reason=("work landed on the default branch; PR %s superseded "
+                        "by #%s" % (pr_url, verdict.sibling_number)),
+            ):
+                completed = "; task completed (landed: %s)" % landed.get(
+                    "confidence")
+        elif task.get("status") not in _TERMINAL_TASK_STATUSES:
+            # NAMED, never silent. The PR is redundant and the task is not
+            # provably delivered — those are two different facts and the second
+            # one is the one a human has to decide about.
+            completed = "; task NOT completed (landed-check: %s)" % (
+                "unchecked" if not landed.get("checked") else "not on main")
+
+        return WatcherAction(
+            task_id=task["id"], pr_url=pr_url,
+            classification=SUPERSEDED, action="close_superseded",
+            reason=(detail + completed)[:500],
+            resume_cycle=resume_cycle,
+        )
 
     def _sibling_conflicts(self, candidate_url: str, file_map: Dict[str, set]) -> Dict[str, set]:
         """Return {other_pr_url: shared_integrity_files} for OPEN PRs that touch a
@@ -2606,6 +2786,18 @@ class PRWatcher:
             if self.config.get("landed_check_on_poll", True)
             else {}
         )
+        # MERGED-sibling map (mfx-mrg-02). The one question none of the guards
+        # above asks: has this PR's work ALREADY landed under a different
+        # NUMBER? `landed_map` greps commit subjects for the TASK ID, so a
+        # sibling that absorbed another task's branch (#2053 absorbing
+        # kpr-stale-05) is invisible to it; `_behind_by` measures distance from
+        # main, and a duplicate at the SAME head sha as a merged PR is 0 behind.
+        # `None` means the listing could not be read — never `[]`.
+        merged_index = (
+            self._merged_pr_index()
+            if self.config.get("superseded_check", True)
+            else None
+        )
 
         for task in tasks:
             report.tasks_checked += 1
@@ -2652,6 +2844,34 @@ class PRWatcher:
             # watcher went on to merge. Re-emitting the same key every cycle is
             # harmless: fire_event only promotes wakes that are still pending.
             self._emit_wake_events(pr_url, classification, state)
+
+            # SUPERSEDED (mfx-mrg-02). BEFORE every other branch below, because
+            # every one of them is the wrong thing to do to a duplicate: the
+            # conflict path spends a rebase and then five LLM resumes on a
+            # branch with nothing left to contribute, and the DONE path
+            # un-drafts it and merges a revert. Four cases in two days —
+            # #2015/#2014 (42s apart), #1985/#1983 (82s), #2056/#2053,
+            # #2049/#2053 — and each held `no_sibling_conflict` against every
+            # open PR touching the same files until a human closed it.
+            #
+            # It never merges and never un-drafts. Closing removes nothing from
+            # main, the branch is untouched, and the comment says how to reopen.
+            #
+            # FAIL-OPEN: `checked: False` (no gh, a refused listing, a PR with
+            # no head sha) leaves the PR on exactly the path it took before.
+            if merged_index is not None:
+                verdict = self._superseded_verdict(state, merged_index)
+                if verdict.checked and verdict.superseded:
+                    action = self._handle_superseded(
+                        task, pr_url, verdict, get_conn, landed_map,
+                        resume_cycle=self._resume_cycle(
+                            task["id"], pr_url=pr_url),
+                    )
+                    if action is not None:
+                        report.actions.append(action)
+                        self._audit(action)
+                        continue
+
             # WHICH KIND of conflict (kpr-watch-07). Computed once per task per
             # poll and reused by the rebase and resume paths below — a second
             # call would re-run two merges against a live forge every 30s.
