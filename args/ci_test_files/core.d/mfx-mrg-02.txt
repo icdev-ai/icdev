@@ -1,0 +1,4 @@
+# mfx-mrg-02 - a PR whose head commits already landed through a MERGED sibling is
+# CLOSED, never merged and never un-drafted. The classifier and its consumer.
+tests/ci/test_pr_superseded.py
+tests/ci/test_pr_watcher_superseded.py
