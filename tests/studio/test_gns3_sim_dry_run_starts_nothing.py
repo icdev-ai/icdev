@@ -20,6 +20,15 @@ that is the assertion that goes red at the merge base.
 Nothing here touches Docker, GNS3 or an emulator: every reachability probe and
 the container starter itself are replaced with recorders, so what is measured
 is the DECISION run_sim makes, which is the thing that was wrong.
+
+WHY THE MODULE-LEVEL IMPORTS ARE THIN. The discriminating test must fail at the
+merge base ON ITS ASSERTION. A module-level `from ... import
+CANVAS_EMULATOR_HOST_PORTS` would make the whole file a COLLECTION ERROR there
+-- which the red-first gate accepts, and which proves only that a name was
+added. That is the "correct-looking and worthless" test this repo has a written
+rule about. So the fixture reaches dry_run the way the merge base itself does,
+by having nothing reachable, passes `dry_run=` only when a caller asks for it,
+and every new symbol is imported inside the test that asserts on it.
 """
 from __future__ import annotations
 
@@ -33,9 +42,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from tools.studio.executors import gns3_sim  # noqa: E402
-from tools.studio.sim import base_topology  # noqa: E402
 from tools.studio.sim.base_topology import (  # noqa: E402
-    CANVAS_EMULATOR_HOST_PORTS,
     DockerServiceSpec,
     LinkSpec,
     NodeSpec,
@@ -58,10 +65,13 @@ class _StubBuilder:
             links=[LinkSpec(a_node="a", b_node="b")],
             probes=[ProbeSpec(name="topology_deployed", type="topology_deployed"),
                     ProbeSpec(name="emulator_apply", type="emulator_apply")],
+            # Literals, not the constants under test: this stub exists to make
+            # "started nothing" a CHOICE, and it must be constructible against
+            # the merge-base tree for the RED to land on an assertion.
             docker_services=[DockerServiceSpec(
                 name="icdev-floci-stub",
-                image=base_topology.EMULATOR_IMAGE,
-                ports={4599: base_topology.EMULATOR_CONTAINER_PORT},
+                image="floci/floci:2.0.1",
+                ports={4599: 4566},
                 healthcheck_url="http://localhost:4599/_localstack/health",
             )],
             teardown_after=False,
@@ -117,7 +127,12 @@ def sim(monkeypatch, tmp_path):
             monkeypatch.setitem(
                 sys.modules, "tools.network.adapters.gns3_adapter",
                 _fake_adapter_module())
-        return gns3_sim.run_sim("run-1", "proj-1", "stub", dry_run=dry_run)
+        # `dry_run=` only when asked. The discriminating case reaches dry_run
+        # through an OUTAGE, which is a call the merge-base signature accepts --
+        # so its failure there is the assertion, not a TypeError.
+        if dry_run:
+            return gns3_sim.run_sim("run-1", "proj-1", "stub", dry_run=True)
+        return gns3_sim.run_sim("run-1", "proj-1", "stub")
 
     return run, started
 
@@ -300,6 +315,8 @@ def test_the_executor_accepts_the_flag_sim_hub_has_always_passed():
 
 
 def test_no_two_canvases_bind_the_same_emulator_host_port():
+    from tools.studio.sim.base_topology import CANVAS_EMULATOR_HOST_PORTS
+
     ports = list(CANVAS_EMULATOR_HOST_PORTS.values())
     assert len(ports) == len(set(ports)), (
         "two canvas emulators on one host port: %r" % (CANVAS_EMULATOR_HOST_PORTS,)
@@ -309,12 +326,14 @@ def test_no_two_canvases_bind_the_same_emulator_host_port():
 def test_no_canvas_takes_the_deployments_own_emulator_port():
     """4566 belongs to the compose-managed floci, never to a canvas sim."""
     from tools.cloud import emulator as seam
+    from tools.studio.sim.base_topology import CANVAS_EMULATOR_HOST_PORTS
 
     assert seam.CONTAINER_PORT not in CANVAS_EMULATOR_HOST_PORTS.values()
 
 
 def test_no_canvas_host_port_falls_inside_flocis_proxy_ranges():
     from tools.cloud import emulator as seam
+    from tools.studio.sim.base_topology import CANVAS_EMULATOR_HOST_PORTS
 
     offenders = {c: p for c, p in CANVAS_EMULATOR_HOST_PORTS.items()
                  if seam.in_proxy_range(p)}
@@ -328,6 +347,7 @@ def test_every_canvas_emulator_container_reads_the_one_pinned_image(canvas):
     import importlib
 
     from tools.cloud import emulator as seam
+    from tools.studio.sim.base_topology import CANVAS_EMULATOR_HOST_PORTS
 
     mod = importlib.import_module("tools.studio.sim.%s_topology" % canvas)
     builder = getattr(mod, canvas.upper() + "TopologyBuilder")()
