@@ -960,8 +960,14 @@ services:
   # Behind the `floci` compose profile, so it does NOT start with a plain
   # `docker compose up` and `/start` does not launch it. Starting it is a
   # DELIBERATE act:
-  #     icdev enable floci                      # sets FLOCI_ENABLED=true in .env
-  #     docker compose --profile floci up -d
+  #     echo FLOCI_ENABLED=true >> .env         # the ICDEV-side switch
+  #     docker compose --profile floci up -d    # the emulator itself
+  #
+  # `icdev enable floci` will be the first line once flx-compose-02 registers
+  # the toggle in args/component_registry.yaml. It is NOT a command today --
+  # verified 2026-09-04, `floci` is absent from tools/cli/enable.py::TOGGLES --
+  # and documenting one that does not exist costs a reader a whole cycle
+  # deciding whether the tree or the doc is broken.
   #
   # NEVER source a performance, cost or capacity claim from emulator timings.
   # An emulator reproduces the AWS *API contract*, not its performance

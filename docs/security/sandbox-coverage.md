@@ -2299,8 +2299,11 @@ that.
   - **The service is behind the `floci` compose profile.** A service carrying a
     `profiles:` key does not start on a bare `docker compose up`, is not in
     `/start`, and is not in the 24-service default set. Starting it is two
-    deliberate acts: `icdev enable floci` then
-    `docker compose --profile floci up -d`. Pinned by
+    deliberate acts: setting `FLOCI_ENABLED=true` (the ICDEV-side switch) and
+    `docker compose --profile floci up -d` (the emulator itself). `icdev enable
+    floci` becomes the first of those once flx-compose-02 registers the toggle;
+    it is not a command today (verified 2026-09-04 against
+    `tools/cli/enable.py::TOGGLES`). Pinned by
     `tests/cloud/test_floci_compose_profile.py::test_floci_is_absent_from_the_default_start_set`,
     which asserts on the *absence of a `profiles` key* across every service
     rather than on the profile string, and carries a negative control so it
