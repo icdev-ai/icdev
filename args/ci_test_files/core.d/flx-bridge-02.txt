@@ -1,0 +1,3 @@
+# flx-bridge-02 -- the governed door to the floci emulator: connection row,
+# agent grant, and an egress allowlist that is ENFORCED rather than declared.
+tests/databridge/test_floci_grant.py

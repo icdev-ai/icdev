@@ -106,7 +106,13 @@ def export_canvas(canvas: str, promote_ready: bool = False) -> dict[str, Any]:
         expected_output = json.dumps({
             "gate": gate,
             "probes": output_data.get("probes", []),
-            "localstack": output_data.get("localstack", {}),
+            # `emulator` since flx-sim-01; `localstack` is the pre-rename key
+            # and is still READ so training pairs already on disk keep parsing.
+            # An artifact is a record of a run that happened -- rewriting the
+            # reader is the only way to keep it readable, and dropping the old
+            # key would silently export `{}` for every historical pair.
+            "emulator": output_data.get("emulator",
+                                        output_data.get("localstack", {})),
         }, separators=(",", ":"))
 
         result = add_example(

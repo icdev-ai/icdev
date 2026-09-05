@@ -48,6 +48,39 @@ data/studio_artifacts/
 # a system's control posture published.
 data/ato_packages/
 
+# floci AWS-emulator persistent state (flx-compose-01). FLOCI_STORAGE_MODE
+# =persistent makes the emulator write its buckets, queues, tables and Lambda
+# bundles under ./data/floci — per-machine runtime state that would otherwise be
+# committed to this PUBLIC repo. Anchored to `data/floci/` and NOT a bare
+# unanchored `data/`: that pattern once silently dropped a code directory here.
+data/floci/
+
+# floci-az AZURE-emulator persistent state (flx-az-01). A SEPARATE entry, and
+# it has to be: the rule above ends in a slash, so `data/floci/` matches the
+# directory `floci` and NOT `floci-az`. Without this line the Azure emulator's
+# blobs, queues, tables and ARM resources land in this PUBLIC repo.
+# FLOCI_AZ_STORAGE_MODE=persistent writes under ./data/floci-az (the image's
+# own /app/data, not /var/lib/floci — the two emulators differ).
+data/floci-az/
+
+# floci-gcp GCP-emulator persistent state (flx-gcp-01). A THIRD entry, for the
+# same reason the second one was needed: every rule here ends in a slash and so
+# matches exactly one directory name. Without this line the GCP emulator's
+# buckets, Pub/Sub topics, secrets, key rings and BigQuery datasets land in this
+# PUBLIC repo. FLOCI_GCP_STORAGE_MODE=persistent writes under ./data/floci-gcp
+# (the image's own /app/data — the same target as floci-az, a different
+# directory from floci).
+data/floci-gcp/
+
+# floci-oci OCI-emulator persistent state (flx-oci-01). A FOURTH entry, for the
+# same reason as the second and third: `data/floci/` ends in a slash and matches
+# the directory `floci` only, so neither it nor the floci-az / floci-gcp rules
+# cover `floci-oci`. Without this line the OCI emulator's tenancy, compartments,
+# buckets and vaults land in this PUBLIC repo. FLOCI_OCI_STORAGE_MODE=persistent
+# writes under ./data/floci-oci (the image's own /app/data -- the same target as
+# floci-az and floci-gcp, a different directory from floci).
+data/floci-oci/
+
 # Alert spool and failed-audit dead-letter file — per-machine runtime state.
 data/alerts/
 data/failed_audit_entries.jsonl
@@ -193,6 +226,12 @@ vendor/drivers/msedgedriver/*
 !vendor/drivers/chromedriver/
 vendor/drivers/chromedriver/*
 !vendor/drivers/chromedriver/.gitkeep
+# Image bundles (flx-airgap-01): the PIN and the README are evidence and are
+# tracked; the .tar bundles are hundreds of MB and travel on transport media.
+!vendor/images/
+vendor/images/*
+!vendor/images/README.md
+!vendor/images/images-*.txt
 # But keep dashboard static vendor (JS/CSS libs for air-gap)
 !tools/dashboard/static/vendor/
 

@@ -2392,6 +2392,12 @@ python tools/genesis/daemon.py --enable research              # Enable a reflex
 python tools/genesis/daemon.py --disable evolve               # Disable a reflex
 python tools/genesis/daemon.py --reset heal --json            # Reset circuit breaker
 
+# CI runner health (mfx-boot-02) -- re-register a crash-looping self-hosted runner (FT and RT)
+python tools/genesis/daemon.py --reflex ci_runner_health --json   # one cycle through the daemon (acts)
+python tools/genesis/reflexes/ci_runner_health.py                 # hand-run: DRY RUN, proves and acts on nothing
+python tools/genesis/reflexes/ci_runner_health.py --apply         # hand-run, acting
+# Fleet declaration (repo, compose dir, container/runner/project names, NO token): args/ci_runners.yaml
+
 # Knowledge Bridge (Promoter)
 python tools/genesis/promoter.py --list --json                                      # List all GKPs
 python tools/genesis/promoter.py --list --status-filter pending_review --json       # Pending review
@@ -2631,6 +2637,44 @@ python -m tools.kanban.lane_conflicts --task <task-id>
 # a second divergent copy is worse than none). Those took the board from 3 live findings of
 # which 0 were real to 0 live / 8 latent. REPORT ONLY at the create_tasks seam; arming it needs
 # a fire-rate survey first, exactly as rem-hyg-03/04 do for the identity check.
+
+# Kanban — refuse to dispatch a card while an in-flight SIBLING owns a file it declares (mfx-sib-01)
+python -m tools.kanban.sibling_overlap --survey                    # replay recorded dispatches
+python -m tools.kanban.sibling_overlap --survey --window-days 30 --json
+python -m tools.kanban.sibling_overlap --holds                     # what would be held NOW
+# lane_conflicts (above) REPORTS a seed-time race; this one REFUSES a dispatch-time one, and it
+# is armed. The MERGE door has serialized siblings since hold_on_sibling_conflict; DISPATCH did
+# not. Ten rmf-ui-* cards -- one route per card, by design -- each appended to the same lines of
+# the same canvas blueprint.py, the same nav dropdown and the same feature doc on 2026-09-03/04.
+# Four were built concurrently and three of the four were GUARANTEED to conflict: whichever
+# landed first made every open sibling CONFLICTING, classify_conflict read `real`, the
+# --force-with-lease rebase aborted four times per card, five LLM resumes burned, then
+# pr_watcher.escalate and a human unioned the hunks by hand. Ten times, ~6 hours.
+# A HOLD IS A WAIT, NOT A PARK: the card stays `scheduled` and yields its selection slot (dropped
+# BEFORE the slot truncation, for the same reason _drop_respawn_guarded is -- a task that keeps
+# its place occupies a slot it can never use and starves everything behind it), and is
+# re-evaluated next cycle. When the sibling reaches `done` the hold evaporates with no action.
+# The reason is written ONCE PER EPISODE on a `scheduled -> scheduled` row (actor
+# `sibling-serializer`), never once per 60s cycle, and the count is reported as `sibling_holds`.
+# NEVER A SECOND COPY OF EITHER INPUT: declared paths come from
+# artifact_evidence.declared_artifacts, and "safe to co-edit" from
+# coordination_paths.is_coordination_path -- which IS pr_watcher._is_additive_path, so the
+# dispatch door and the merge door cannot disagree about what a collision is. The predicate the
+# admission calls and the predicate the survey replays are the SAME function.
+# `scheduled` is deliberately NOT an in-flight status: two waiting cards holding each other is a
+# deadlock, not serialization.
+# SURVEYED BEFORE ARMING over 1,977 recorded dispatches (30 days to 2026-09-04): 451 had an
+# in-flight same-epic sibling, 21 would have been HELD (1.06% -- below the 1.63% CLAUDE.md calls
+# refusing routine work, and under the card's 2% ceiling), and 18 of the 21 (85.71%) went on to
+# record a real merge conflict. It fires on exactly the ten rmf-ui cards. The cost is three NAMED
+# holds -- cef-bck-01, rmf-ui-14, rmf-ui-15, 0.15% of dispatches -- delayed one cycle for a
+# collision that would not have happened.
+# declared_artifacts reads PROSE and UNDER-approximates, so a card naming no path is never held:
+# the honest failure direction, since an unheld pair costs a rebase while a held one costs
+# throughput on work that may never collide. UNMEASURABLE, never a clean zero, over a window with
+# no dispatches. Do NOT widen the additive-path list to quieten a hold -- that list is shared
+# with the merge door. Stand it down with `serialize_overlapping_siblings: false` in
+# args/genesis_config.yaml or KANBAN_SERIALIZE_SIBLINGS=0, never a shell neutraliser.
 
 # Kanban — re-queue a task for a clean rebuild without faking a failure (kax-recover-02)
 python tools/kanban/cli.py --requeue <task-id> --reason "closing stale PR; rebuild on main"
@@ -7833,3 +7877,475 @@ python tools/govcon/solicitation_parser.py --input solicitation.pdf --json      
 # ONE TABLE: proposal_compliance_matrix. pg_compliance_matrix was folded in and
 # dropped by migration 20260903185253; vocabulary in tools/govcon/compliance_matrix_schema.py.
 ```
+
+### Interactive claim keeper (mfx-own-02)
+```bash
+python tools/kanban/cli.py --claim <task-id> [--intent "what you are doing"] [--ttl 7200]   # hold a task from a plain shell
+python tools/kanban/cli.py --claim <task-id>            # again: RENEWS the running keeper's TTL
+python tools/kanban/cli.py --release <task-id>          # end the keeper session, free the lease
+python -m tools.kanban.interactive_claim --status <task-id> [--json]   # what holds it: keeper pid, expiry, intent, log
+python tools/awareness/restore_acts.py --plan           # reports the lease as held by a running process
+```
+
+### AWS emulator seam — the ONE floci switch (flx-seam-01, flx-seam-02)
+`tools/cloud/emulator.py` is a LIBRARY: it has no argparse and no `__main__`, so
+there is no CLI to document. Import it.
+
+```python
+from tools.cloud import emulator
+
+if emulator.enabled():
+    client = boto3.client("s3", endpoint_url=emulator.endpoint(),
+                          region_name=emulator.region())
+
+# A container-backed service with no docker socket must say so, never return [].
+if not emulator.service_supported("lambda"):
+    return {"status": emulator.UNSUPPORTED_WITHOUT_DOCKER}
+```
+
+```bash
+# What is this deployment's verdict right now? (no network with probe=False)
+python -c "from tools.cloud import emulator; print(emulator.status(probe=False))"
+python -c "from tools.cloud import emulator; print(emulator.status())"   # costs one HTTP GET
+python -c "from tools.cloud import emulator; print(emulator.docker_backed(), emulator.docker_basis())"
+```
+
+`status()` returns `disabled | unreachable | degraded_no_docker | enabled`, in
+that severity order. `degraded_no_docker` is load-bearing: the emulator is up but
+the docker socket is PROVEN absent, so Lambda/RDS/ElastiCache/OpenSearch/MSK/
+ECS/EC2/EKS cannot be served — a caller answering for one of those reports
+`unsupported_without_docker`, NEVER an empty list. `docker_backed()` is TRI-STATE
+and `None` is not `False`: a Windows named pipe is not reliably stat-able
+(measured 2026-09-04, Docker Desktop 28.5.1 running, `os.path.exists` on the pipe
+returned False), so an unproven socket permits the call and lets the emulator's
+own error be the evidence.
+
+Configuration is `FLOCI_ENABLED` (default **false**, air-gap-safe),
+`FLOCI_ENDPOINT`, `FLOCI_REGION`, `FLOCI_ACCOUNT_ID` and `FLOCI_DOCKER_SOCKET` —
+all documented with their defaults in `.env.example`. `LOCALSTACK_ENABLED`,
+`LOCALSTACK_ENDPOINT` and `LOCALSTACK_REGION` are DEPRECATED ALIASES (deprecated
+2026-09-04), still read, each logging one warning per alias per process.
+There is deliberately no credential setting: `credentials()` always returns the
+dummy `("test", "test")` pair, because these values reach `docker run -e` and a
+Terraform provider block aimed at localhost.
+
+### floci runtime base images — what the emulator PULLS at run time (flx-airgap-02)
+
+```bash
+python -m tools.cloud.runtime_images --list                    # the measured table
+python -m tools.cloud.runtime_images --check                   # probe the local cache
+python -m tools.cloud.runtime_images --check --json
+python -m tools.cloud.runtime_images --check --services lambda,rds --variants python3.11,postgres
+python -m tools.cloud.runtime_images --measure-help            # how the table was measured
+python tools/airgap/image_vendor.py --save --topic floci-runtime --json   # low side
+python tools/airgap/image_vendor.py --verify --topic floci-runtime --no-daemon-probe --json
+python tools/airgap/image_vendor.py --load --topic floci-runtime --json   # high side
+```
+
+Having `floci/floci:2.0.1` cached is NECESSARY AND NOT SUFFICIENT. floci does
+not carry its container-backed runtimes inside its own image — Lambda, RDS,
+ElastiCache, OpenSearch, MSK and ECS/EC2/EKS each start a SEPARATE container
+from a base image floci resolves FROM THE PUBLIC INTERNET on first use of that
+service, which on a disconnected high side fails at exactly the moment a demo
+runs.
+
+MEASURED, never read off a README: `docker events --filter type=image` recorded
+while a live floci 2.0.1 was driven through every container-backed service with
+boto3 (2026-09-05, Docker 28.5.1). Eleven images, declared with digests and
+per-service attribution in `args/floci_runtime_images.yaml`; the vendor pins are
+`vendor/images/images-floci-runtime.txt` and a test asserts the two agree.
+
+THE IMAGE SET IS A FUNCTION OF DECLARED CONFIGURATION, NOT OF THE SERVICE, and
+that is why a bare per-service list is wrong. A `python3.11` Lambda pulls
+`public.ecr.aws/lambda/python:3.11` and a `nodejs20.x` one pulls
+`public.ecr.aws/lambda/nodejs:20`; RDS `postgres` pulls `postgres:16.3-alpine`
+and `mysql` pulls `mysql:8.0.36`; ElastiCache splits by API AND engine — Redis
+goes through CreateReplicationGroup and pulls `valkey/valkey:8` (floci REFUSES
+`Engine=redis` on CreateCacheCluster), memcached pulls `memcached:1.6`. MSK is
+`redpandadata/redpanda:latest` and EKS is `rancher/k3s:latest` — MUTABLE TAGS,
+flagged as such, so a re-vendor must re-measure rather than assume.
+
+`alpine:3.19` was pulled during the same measured run and is DELIBERATELY ABSENT
+from the table: it was named by the probe's own ECS task definition. That is a
+WORKLOAD image, not a floci runtime base — an ECS/EKS deployment must mirror its
+own workload images too, and no table here can enumerate them for it.
+
+PRESENCE IS A THREE-RUNG LADDER, and checking the tag alone is a FABRICATED
+BLOCKER. Measured 2026-09-05: `docker save repo@sha256:…` then `docker load` —
+which is exactly how `image_vendor` delivers to the high side — produces an
+image with `RepoTags=[]` AND `RepoDigests=[]` that does not appear in
+`docker image ls` and resolves by IMAGE ID alone. So the check tries
+`present_tagged` (ref resolves, RepoDigest matches), `present_by_digest`, then
+`present_by_id`, and REPORTS WHICH ANSWERED. `digest_mismatch` (present under
+the tag, different image) is kept apart from `absent` because the repair differs
+— re-vendor, don't re-mirror.
+
+FOUR VERDICTS, NEVER MERGED: `satisfied` (nothing will pull) | `blocked` (a
+required image is PROVEN absent) | `indeterminate` (a service is declared whose
+VARIANT could not be resolved — a Lambda naming no runtime; guessing fabricates
+either a blocker or a clean bill) | `unmeasured` (the daemon could not be asked
+— NEVER a clean bill of health). Exit 0/1/1/2.
+
+NOTHING IN THIS PATH CAN PULL. Every docker call goes through `image_vendor`'s
+one allowlisted door, whose command set is `version|image|save|load` — so a
+`--check` on a disconnected host cannot fabricate the green cache it is
+measuring. There is no second subprocess site.
+
+THE GATE: `airgap-emulator-runtime-images` in `args/twin_airgap_rules.yaml`
+makes a configuration that would need an external pull at run time a
+`deployment_blocker`. It is the ONLY rule in that file that is not
+deny-by-match over strings the design CONTAINS — a floci config declaring a
+Lambda contains no image reference at all, so a string matcher is structurally
+blind to it; this one derives the requirement and checks the cache. `unmeasured`
+is emitted at `medium` under a `-unmeasured` rule id and is deliberately NOT a
+blocker: a host whose daemon cannot be asked has proven nothing, and refusing
+every CI runner is how a gate earns itself a `|| true`.
+
+MEASURED end to end 2026-09-05: the full set vendors to 1.91 GB across 11 tars
+(all `verified`, `manifest_digest_verified: true`, 0 failures) — well under the
+~6.3 GB `docker image ls` reports, because `docker save` writes each shared
+layer once — and re-verifies with NO daemon in 2.8 s.
+
+Operator procedure (what to vendor, how to load, how to verify by digest, and
+how to tell a mirrored miss from a real outage): §12 of
+[docs/ops/airgap-runbook.md](../ops/airgap-runbook.md).
+
+### floci pulls from an INTERNAL REGISTRY (flx-airgap-03)
+
+```bash
+python -m tools.cloud.floci_registry --show                    # the declared posture
+python -m tools.cloud.floci_registry --check                   # refuse an unusable declaration
+python -m tools.cloud.floci_registry --origins --json          # per image: internal or EXTERNAL
+python -m tools.cloud.runtime_images --check --json            # the verdict, with its `basis`
+```
+
+A registry-mandating site cannot pre-seed each host's cache — its images must be
+SERVED. ONE RULE, ONE QUESTION: `airgap-emulator-runtime-images` has always asked
+*would this need an EXTERNAL pull at run time*, and that question now has two
+ways to answer no. A cached image pulls nothing; an uncached image redirected to
+an INTERNAL mirror pulls internally. There is deliberately NO second rule — two
+rules could disagree about what a run-time pull is, and a reviewer would have two
+verdicts and no way to choose.
+
+INTERNAL MEANS WHAT THE AIR-GAP RULES ALREADY SAY IT MEANS: the mirror host is
+judged against `allowlist.internal_host_suffixes` in `args/twin_airgap_rules.yaml`
+— the same list `airgap-internal-registry` uses. So declaring a mirror does NOT
+silence the finding: `mirror.gcr.io` is still an external pull, and that negative
+direction is asserted beside the positive one.
+
+THE THREE `FLOCI_DOCKER_*` NAMES ARE THREE DIFFERENT THINGS, and confusing them
+makes a working service report a fabricated refusal. `FLOCI_DOCKER_SOCKET` is how
+the ICDEV HOST PYTHON PROCESS reaches a daemon (`emulator.docker_basis()`);
+`FLOCI_DOCKER_SOCKET_MOUNT` is the compose bind-mount SOURCE; and
+`FLOCI_DOCKER_DOCKER_HOST` — this card's — is the daemon FLOCI ITSELF starts
+service containers on, becoming `DOCKER_HOST` in the container. It defaults to
+`unix:///var/run/docker.sock`, exactly where compose mounts the socket, so unset
+reproduces the operator decision of 2026-09-05 rather than clearing `DOCKER_HOST`
+to an empty string. A test pins the compose default to the module constant.
+
+`mechanism` IS LOAD-BEARING. Docker's `registry-mirrors` redirects DOCKER HUB
+PULLS ONLY and does not intercept `public.ecr.aws`, so `daemon_registry_mirror`
+on any registry but `docker.io` is REFUSED at load time — believing it reports a
+clean verdict for a host that still reaches Amazon on first Lambda invoke.
+Re-host those two images and declare `repository_rewrite`.
+
+A CREDENTIAL IS A REFERENCE, NEVER A LITERAL: `username_ref` / `password_ref`
+must start with `env:`, `vault:`, `aws:` or `file:` — the same prefixes
+`seed_connections.py` enforces, pinned equal by a test — and a literal is
+REFUSED, not warned about, because a warning still lands the secret in git and
+this repository is public. `plain:` is not accepted even though
+`tools/rag/secret_ref.py` resolves it; that prefix exists to carry a literal.
+`floci_registry` never RESOLVES a reference and an AST test proves it imports no
+`subprocess`, `socket`, `requests`, `urllib` or `httpx`.
+
+`basis` IS REPORTED BESIDE `state`, NEVER FOLDED INTO IT: `local_cache` |
+`internal_mirror` | `cache_and_mirror` | `external_pull_required`. MIRROR
+COMPLETENESS IS NOT VERIFIED and the report says so — nothing here contacts a
+registry, so what is established is that the pull is INTERNAL, never that the
+mirror holds the image; that is a different question with a different repair
+(load the vendored bundle into the mirror). `absent_from_cache` is reported under
+EVERY posture and never folded into `missing`: "would be pulled from outside" and
+"is not on this disk" are different facts and only the first is an air-gap
+finding. An unreadable cache stays `unmeasured` under any posture — a mirror
+cannot answer what is on the disk — and a MALFORMED declaration is not "no
+mirror": it reads external and names itself in `registry_posture.basis`, because
+the fail-closed direction for an air-gap gate is to surface the blocker.
+
+`args/floci_registry.yaml` ships `enabled: false`, so the default verdict is
+byte-identical to the flx-airgap-02 posture. Procedure: §12.6 of
+[docs/ops/airgap-runbook.md](../ops/airgap-runbook.md).
+
+LEAVE `FLOCI_ENDPOINT` UNSET UNLESS YOU MEAN IT. An endpoint declared while the
+switch is off is a CONTRADICTION, and `detect_mode()` answers `dry_run` rather
+than fall through to `aws` — so a stray endpoint downgrades every real
+`terraform apply` to plan-only.
+
+NEVER source a performance, cost or capacity claim from emulator timings: an
+emulator reproduces the AWS **API contract**, not its performance characteristics
+(the standing guard from `docs/spikes/twx-spk-01-localstack-go-no-go.md`).
+
+### The opt-in floci IaC gate (flx-ci-01)
+
+```bash
+python tools/ci/floci_iac_gate.py --json
+python tools/ci/floci_iac_gate.py --fixture flocigate_ok
+python tools/ci/floci_iac_gate.py --no-start            # an emulator is already up
+python tools/ci/floci_iac_gate.py --artifacts .tmp/floci-gate --out report.json
+python tools/ci/floci_iac_gate.py --image floci/floci:2.0.1
+```
+
+Does `tools/infra_canvas/preapply_gate.py`'s verdict on a Terraform plan match
+what a real AWS API surface ACCEPTS? plan -> gate -> apply (through the existing
+`tools/studio/executors/terraform_apply.py`) over two fixture canvases, against
+a pinned floci container. twx-spk-01 rated this pattern GO (conditional,
+cloud-CI only) and the only thing blocking it was LocalStack's paid
+subscription; floci removes that, so this SUPERSEDES the spike on the air-gap
+question **only**.
+
+Workflow: `.github/workflows/floci-iac-gate.yml` — `workflow_dispatch`, a weekly
+schedule, and a `floci-gate` label. **NEVER one of the four required checks**
+(Lint, Test, Security Scan, Helm Lint): runners here are near-serial, so a job
+that stood up an emulator on every PR would sit in front of every merge on the
+board, and that is how a gate earns itself a bypass.
+
+FOUR CELLS, ONE FINDING. `gate pass + api accepted` = `agree_permitted`;
+`gate pass + api REJECTED` = `gate_missed_rejection` — **the finding**, the gate
+is wrong about what is buildable; `gate fail + api accepted` =
+`gate_stricter_than_api`, which is what a compliance gate IS and is NEVER a
+finding (AWS will happily build an untagged bucket); `gate fail + api rejected`
+= `agree_refused`. Either side unmeasured is `unmeasurable`, never agreement.
+
+TWO FIXTURES, because a run over the compliant one alone is green whether the
+gate discriminates or has silently stopped evaluating. `expect_gate` /
+`expect_api` are DECLARED in `args/floci_iac_gate.yaml` and a mismatch is its
+own finding.
+
+Exit 0 clean — or `not_configured` (an empty `image:`, an operator stand-down),
+which is stated in words and never presented as a clean gate. Exit 1 a finding.
+Exit **2 COULD NOT RUN, and it stays RED**: a gate that could not run is not a
+gate that found nothing.
+
+The image is PINNED (`floci/floci:2.0.1`, digest verified against Docker Hub
+2026-09-05), never `latest` or `nightly` — the job's whole output is a
+comparison against an API surface, and an unpinned surface makes a disagreement
+unattributable. Override for one run with `--image` or `FLOCI_CI_IMAGE`.
+
+The host docker socket is deliberately NOT mounted into the emulator, so
+container-backed services (Lambda, RDS, ElastiCache, OpenSearch, MSK,
+ECS/EC2/EKS) cannot be exercised; a fixture using one is REFUSED before
+planning, as is a resource `FLOCI_PROVIDER_OVERRIDE` does not redirect — an
+unredirected resource is sent to REAL AWS and the auth error looks exactly like
+a broken emulator.
+## Air-Gap Container-Image Vendor (flx-airgap-01)
+
+`tools/airgap/` vendored Python wheels, npm packages and browser drivers and had
+**nothing that saved or loaded a container image** (measured 2026-09-04), so
+"ship a pinned floci image to the high side" had no mechanism to fit into. This
+is that mechanism, built to the `wheel_vendor.py` precedent.
+
+```bash
+# low side — the image must ALREADY be in the local daemon's cache
+python tools/airgap/image_vendor.py --save --topic floci --json
+
+# transport vendor/images/floci/ to the high side, then
+python tools/airgap/image_vendor.py --verify --topic floci --json
+python tools/airgap/image_vendor.py --verify --topic floci --no-daemon-probe   # tars alone, no docker
+python tools/airgap/image_vendor.py --load --topic floci --json
+python tools/airgap/image_vendor.py --list --json
+```
+
+**A pin is a DIGEST, never a tag.** `vendor/images/images-<topic>.txt` holds
+`repo@sha256:<64 hex>`; `floci/floci:2.0.1` is refused, because a tag is mutable
+and a bundle built from one cannot be shown to contain what was intended.
+Resolve one with
+`docker image inspect <ref> --format '{{index .RepoDigests 0}}'`.
+
+**THE SOURCE IS THE LOCAL IMAGE CACHE AND NOTHING PULLS** (operator decision
+2026-09-05: locally hosted Docker). A pin absent from the cache is reported under
+`absent_from_local_cache` and fails the run — a vendor that fetched on demand
+could not run on the disconnected side it exists to serve. Enforced
+structurally: `ALLOWED_DOCKER_COMMANDS` is a frozenset of `version|image|save|
+load` with no `pull`, `run`, `tag` or `push`, `_docker()` refuses anything else,
+and `tests/airgap/test_image_vendor.py` reads the module's AST to prove
+`subprocess` is reached from nowhere but that one door.
+
+**What `--verify` proves, without a daemon.** `docker save` writes an OCI layout
+in which every blob under `blobs/sha256/` is named by its own sha256 and
+`index.json` records the manifest digest a `repo@sha256:…` reference names
+(measured, Docker 28.5.1). So verification re-hashes every blob against its
+filename *and* matches `index.json`'s digest to the pin — a cryptographic proof
+the tar holds the pinned image, needing no docker at all, which matters because
+media is verified before there is anywhere to load it. Measured 2026-09-05 on a
+real `alpine` bundle: one flipped byte is caught twice over (the recorded tar
+hash, and independently blob content-addressing, which names the offending
+layer) and `--load` refuses the bundle *before* importing it.
+
+**Three statuses, never merged.** `verified` (checked, passed) | `failed`
+(checked, FAILED — a real finding) | `unmeasured` (could not check: no docker
+CLI, no bucket, or a legacy `docker-v1` tar, which records no manifest digest
+and so reports `manifest_digest_verified: null` with a reason rather than
+passing). **`unmeasured` is never a clean bundle** — `--verify` exits **2**
+there, so a caller cannot read "could not measure" as "clean" the way exit 0
+would allow. Post-load digest verification is likewise three-valued: an engine
+whose image store does not index a digest-saved image by its manifest digest
+*cannot answer*, and cannot-answer is not wrong — the tar proof already
+established what the bytes are.
+
+Unlike `wheel_vendor.py`, this does **not** refuse to run under `is_airgap()`:
+`pip download` can only fail air-gapped, but `docker save` reads a local cache
+and touches no network, so the same refusal here would be fabricated and would
+block the one host most likely to need to re-cut a bundle.
+
+Convention and the reason no floci pin is committed yet: `vendor/images/README.md`.
+
+## Floci Cloud Emulator — the rest of the surface (flx-docs-01)
+
+`docs/features/phase-flx-floci-emulator.md` is the feature doc; ADRs D398–D401
+in `docs/reference/adrs.md` carry the decisions; and
+`docs/spikes/twx-spk-01-localstack-go-no-go.md` carries a **dated addendum**
+recording that its LocalStack NO-GO is superseded **on the licensing question
+only** — every other finding in it, including the two standing guards below,
+stands unchanged.
+
+The seam (`flx-seam-01/02`), the run-time images (`flx-airgap-02`), the registry
+posture (`flx-airgap-03`), the image vendor (`flx-airgap-01`) and the IaC gate
+(`flx-ci-01`) are documented in their own sections above. This one covers the
+`flx` surfaces that had no commands entry.
+
+### Turn it on — two deliberate acts (flx-compose-01, flx-compose-02)
+
+```bash
+icdev enable floci                          # writes FLOCI_ENABLED=true to .env
+icdev status                                # floci among the active toggles
+docker compose --profile floci up -d        # the pinned floci/floci:2.0.1 profile
+curl -s http://127.0.0.1:4566/_localstack/health
+icdev disable floci
+```
+
+`floci` is declared in `args/component_registry.yaml` as a **`core_extension`,
+not a `canvas`** — it has no page, no blueprint and no IQE collections, so a
+canvas entry would put it under the 8-point page-completeness gate for a surface
+that does not exist (precedent: `sag`). Its `env_flag` is **`FLOCI_ENABLED`**,
+not the loader's `ICDEV_<KEY>_ENABLED` default: an entry omitting that field
+would have `icdev enable floci` write a variable `tools/cloud/emulator.py` never
+reads, and `icdev status` would then report floci enabled on a deployment whose
+emulator is off — one fact, two derivations, disagreeing.
+
+It is **not** in the 24-service default set and `/start` does not launch it.
+Starting it is two acts on purpose: the profile mounts the **host Docker
+socket**, which is **root-equivalence on the host**, recorded with its
+mitigations and revisit conditions as Gap 65 in
+`docs/security/sandbox-coverage.md`. `LOCALSTACK_ENABLED` is deliberately NOT an
+`extra_env_flag` — it is a deprecated READ-fallback the seam still honours, and
+listing it would make the CLI author a deprecated name into `.env`.
+
+### The governed door — DataBridge (flx-bridge-01, flx-bridge-02)
+
+```bash
+python -m tools.databridge.seed_connections --dry-run --json   # validate, write nothing
+python -m tools.databridge.seed_connections --seed --json      # db_connections <- args/databridge_connections.yaml
+python -m tools.databridge.seed_connections --verify --json
+python -c "from icdev.tools.databridge import broker; print(broker.list_available('twin_observatory_analyst'))"
+```
+
+```python
+from tools.databridge import broker
+out = broker.fetch("twin_observatory_analyst", "floci", "s3_buckets")
+out.connector_status   # ok | disabled | unsupported_without_docker | error
+```
+
+Two files, on purpose: `args/databridge_connections.yaml` is the **endpoint**
+(`floci-emulator-local`, egress allowlist, classification LABEL `UNCLASSIFIED`,
+IL2) and `args/databridge_agent_access.yaml` is the **authorization** (connector
++ all seven declared tables, scoped to `twin_observatory_analyst`).
+
+`auth_method` is **`none`**, and that is the MEASURED answer rather than a
+convenience: `emulator.credentials()` is hard-wired to the dummy pair and
+deliberately does not read the ambient AWS environment, so there is no
+credential to reference. `auth_secret_ref: env:FLOCI_ACCESS_KEY_ID` would be
+three defects at once — the seeder REFUSES a ref under `none`; under any other
+`auth_method` the broker injects it as `api_key`, which this connector never
+reads; and `resolve_secret()` raises on an unset variable, so the shipped grant
+would refuse EVERY call on a deployment that had not exported it.
+
+The seven logical tables are `health`, `services`, `s3_buckets`,
+`dynamodb_tables`, `lambda_functions`, `sqs_queues`, `ecr_repositories`. Each
+declares `docker_backed`, and **a container-backed table on a socket-less host
+returns `unsupported_without_docker`, never `[]`** — an unanswerable question is
+not an empty answer, which is the `rmf-disc-02` defect exactly. The old
+`localstack` registry key is **GONE, not aliased**: the registry answers `None`
+for it, which is a loud failure, where two live names for one connector are two
+things to keep in step and a caller left on the old one never learns it is
+stale.
+
+### The twin — a library, no CLI (flx-twin-01)
+
+```python
+from tools.twin_core.registry import TwinRegistry
+
+twin = TwinRegistry.get("floci")
+snap = twin.take_snapshot("local", label="pre-apply")   # 7 BROKERED reads
+env  = twin.simulate_delta("local", {"services": ["lambda", "s3"]})
+twin.latest_status("local")   # newest PERSISTED verdict; probes nothing
+```
+
+Every read goes through `tools/databridge/broker.py::fetch` as
+`twin_observatory_analyst` — importing `FlociConnector` and calling `read()`
+would return the SAME rows with NO authorization check and NO audit row, the
+ungoverned side channel `cef-fnd-03` exists to close. Four verdicts, and
+**`unknown` is never `pass`**; `resource_count` is `None` — never 0 — when
+nothing was measured. Every snapshot carries provenance `emulated`. Table
+`floci_twin_snapshots`, migration `20260905070028`. Full detail in the CLAUDE.md
+`flx-twin-01` block and `tools/manifest/twin-core.md`.
+
+### Studio executors and the sim topologies (flx-studio-01/02, flx-sim-01)
+
+```bash
+python -c "from tools.studio.executors import _base; print(_base.detect_mode({}))"
+python -m tools.studio.executors.gns3_sim --canvas pdc --dry-run --json   # forces dry_run; starts NOTHING
+python -m pytest tests/cloud/test_workflow_template_modes.py -q
+```
+
+`detect_mode()` answers `floci | sam | aws | dry_run`, and that vocabulary is
+**data** in `args/workflow_templates/shared_iac_executors.yaml` and
+`ddc_workflow.yaml` (key `executor_modes`) rather than prose — `yaml.safe_load`
+discards comments, so the old block was structurally unreachable by any checker.
+`FLOCI_PROVIDER_OVERRIDE` and `emulator_docker_endpoint` replace the
+LocalStack-named pair; `tests/cloud/test_studio_provider_override.py` holds the
+provider block frozen so a rename can never smuggle a behaviour change — the
+failure mode there is GREEN, since a dropped `endpoints{}` entry or a flipped
+`skip_*` still parses and terraform simply talks to somewhere else.
+
+`gns3_sim.run_sim` used to start a canvas's declared containers **only** when
+`mode == "dry_run"` — the one mode meant to touch nothing — and in none of
+`dual`/`gns3_only`/`cloud_only`. Both halves are now right, and `--dry-run` is
+read BEFORE the reachability probes: a caller that wants to touch nothing must
+not have its answer decided by whether something happened to be listening.
+
+### ONE pre-apply gate (flx-ci-02)
+
+```bash
+python tools/infra_canvas/preapply_gate.py --gate plan.json
+```
+
+There were TWO. `pre_apply_gate.py` (74 lines, `check_plan`) had **zero runtime
+callers**, returned the IDENTICAL verdict for a compliant and a violating plan
+over the `flx-ci-01` fixtures, and was structurally incapable of passing any
+real incremental plan — its rules are estate-completeness questions ("is there a
+KMS service in this design?") asked of a plan **delta**. Deleted, not merged:
+folding estate rules into a delta gate would import the very defect that made
+them useless. Nothing was lost — the 13-rule rulebook
+(`infra_engine.assess_infra_design`) is consumed live by
+`tools/infra_canvas/blueprint.py` over the FULL design graph, which is the
+question those rules actually answer.
+
+### The two standing guards, carried forward UNCHANGED from twx-spk-01
+
+1. **NEVER source a performance, cost or capacity claim from emulator timings.**
+   An emulator reproduces the AWS **API contract**, not AWS's **performance
+   characteristics**. Twin cost/latency estimates stay sourced from the
+   catalog/estimate engines and stay labelled `estimate=True`.
+2. **The IAM policy sandbox stays NO-GO.** The PDP/PEP ABAC engine in
+   `tools/security/` already models IAM decisions offline and deterministically;
+   a partial emulation would be a second opinion with no rule for choosing
+   between them. The licence was never the objection here.

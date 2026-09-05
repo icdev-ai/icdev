@@ -168,7 +168,55 @@ def claim_seeded_tasks(created: list[str]) -> dict:
             )
         else:
             out["claimed"].append(task_id)
+            _keep_seeded_claim(task_id)
     return out
+
+
+def _is_service_process() -> bool:
+    """Did THIS process claim a service identity (scheduler, daemon, watcher)?
+
+    Process-local by construction (``service_identity._OWNED`` is a set, never
+    an environment variable), so a worker shell spawned by the scheduler --
+    which INHERITS ``ICDEV_SESSION_ID=kanban-scheduler-<pid>`` -- reads False
+    here, exactly as claim-verif-33c9f4cd11 requires.
+    """
+    try:
+        from tools.coordination.service_identity import _OWNED
+
+        return bool(_OWNED)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _keep_seeded_claim(task_id: str) -> None:
+    """Hand a seed's claim to a keeper when the seeder is not a service (mfx-own-02).
+
+    A service's session is registered and heartbeating, so its lease already
+    reads ``live``. A one-shot seeder's is not: its pid exits with the process
+    and its ``local-<uuid>`` id is registered nowhere, so 17 of the 20 litter
+    leases claim-verif-a6a1517970 flagged were exactly this call. The keeper
+    (``tools.kanban.interactive_claim``) registers a dedicated ``cli`` session
+    and heartbeats it for ``SEED_CLAIM_TTL_SECONDS``; ``cli.py --release`` or
+    ``--set-status done`` ends it. Best-effort, like the claim itself: a keeper
+    that could not start is SAID, never hidden, because a seeded task whose
+    claim rots in seconds is the old behaviour wearing the new one's name.
+    """
+    if _is_service_process():
+        return
+    try:
+        from tools.kanban import interactive_claim
+
+        kept = interactive_claim.keep(
+            task_id, intent=f"seeded-and-claimed by {interactive_claim.AGENT_TYPE} session",
+            ttl_seconds=SEED_CLAIM_TTL_SECONDS)
+    except Exception as exc:  # noqa: BLE001 -- the claim stands; only its keeper failed
+        logger.warning("task_factory: %s claimed but no keeper holds it (%s) -- the "
+                       "lease reads as litter once this process exits", task_id, exc)
+        return
+    if kept.get("keeper") != "running":
+        logger.warning("task_factory: %s claimed but its keeper is %s (%s) -- the "
+                       "lease reads as litter once this process exits", task_id,
+                       kept.get("keeper"), kept.get("reason"))
 
 
 def create_tasks(task_specs: list[dict], *, claim: bool = False) -> list[str]:

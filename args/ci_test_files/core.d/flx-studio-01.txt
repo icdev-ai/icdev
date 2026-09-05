@@ -1,0 +1,1 @@
+tests/cloud/test_studio_provider_override.py

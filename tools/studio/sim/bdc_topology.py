@@ -5,7 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from tools.studio.sim.base_topology import (
-    BaseTopologyBuilder, DockerServiceSpec, LinkSpec, NodeSpec, ProbeSpec, TopologySpec,
+    CANVAS_EMULATOR_HOST_PORTS, EMULATOR_CONTAINER_PORT, EMULATOR_IMAGE,
+    BaseTopologyBuilder, DockerServiceSpec, LinkSpec, NodeSpec, ProbeSpec,
+    TopologySpec, emulator_health_url,
 )
 
 
@@ -43,11 +45,11 @@ class BDCTopologyBuilder(BaseTopologyBuilder):
             ],
             docker_services=[
                 DockerServiceSpec(
-                    name="icdev-localstack-bdc",
-                    image="localstack/localstack:3.8",
-                    ports={4566: 4566},
+                    name="icdev-floci-bdc",
+                    image=EMULATOR_IMAGE,
+                    ports={CANVAS_EMULATOR_HOST_PORTS["bdc"]: EMULATOR_CONTAINER_PORT},
                     env={"DEFAULT_REGION": "us-gov-west-1"},
-                    healthcheck_url="http://localhost:4566/_localstack/health",
+                    healthcheck_url=emulator_health_url(CANVAS_EMULATOR_HOST_PORTS["bdc"]),
                 ),
             ],
             metadata={"enclaves": 2, "classification_levels": ["CUI", "CUI//SP-CTI"]},

@@ -647,12 +647,12 @@
 | Sim Hub | tools\studio\sim\sim_hub.py | Auto-registered: sim/sim_hub.py | --json | JSON |
 | Training Exporter | tools\studio\sim\training_exporter.py | Auto-registered: sim/training_exporter.py | --json | JSON |
 | Studio Sim | tools\iqe\adapters\studio_sim.py | Auto-registered: adapters/studio_sim.py | --json | JSON |
-| Localstack Adapter | tools\infra_canvas\adapters\localstack_adapter.py | Auto-registered: adapters/localstack_adapter.py | --json | JSON |
+| Floci Adapter | tools\infra_canvas\adapters\floci_adapter.py | Infrastructure Canvas AWS-emulator adapter — reads the ONE seam tools/cloud/emulator.py; env vars + terraform local apply/destroy (flx-gen-01) | (library) | JSON |
 | Gameday Orchestrator | tools\genesis\reflexes\gameday_orchestrator.py | Auto-registered: reflexes/gameday_orchestrator.py | --json | JSON |
 | Sim Training Export | tools\genesis\reflexes\sim_training_export.py | Auto-registered: reflexes/sim_training_export.py | --json | JSON |
 | Aws Controltower Connector | tools\databridge\connectors\aws_controltower_connector.py | Auto-registered: connectors/aws_controltower_connector.py | --json | JSON |
 | Gns3 Connector | tools\databridge\connectors\gns3_connector.py | Auto-registered: connectors/gns3_connector.py | --json | JSON |
-| Localstack Connector | tools\databridge\connectors\localstack_connector.py | Auto-registered: connectors/localstack_connector.py | --json | JSON |
+| Floci Connector | tools\databridge\connectors\floci_connector.py | Auto-registered: connectors/floci_connector.py | --json | JSON |
 | Servicenow Itsm Connector | tools\databridge\connectors\servicenow_itsm_connector.py | Auto-registered: connectors/servicenow_itsm_connector.py | --json | JSON |
 
 

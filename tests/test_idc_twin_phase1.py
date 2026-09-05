@@ -4,7 +4,9 @@
 
 Covers:
 - terraform_show_importer: parse terraform show -json → IDC graph nodes/edges
-- pre_apply_gate: run IDC compliance checks against a terraform plan -json
+- infra_engine over an imported plan: IDC compliance findings for a plan -json
+  (the `pre_apply_gate` wrapper this file used to cover was deleted by
+  flx-ci-02 -- see the tombstone below the importer tests)
 - snapshot writer: persist IDC graph snapshot with timestamp + snapshot_id
 - DB tables: idc_twin_snapshots, idc_twin_violations
 
@@ -327,124 +329,33 @@ class TestTerraformShowImporter:
 
 
 # ---------------------------------------------------------------------------
-# ── pre_apply_gate ───────────────────────────────────────────────────────────
+# ── pre-apply gate: DELETED by flx-ci-02 ─────────────────────────────
 # ---------------------------------------------------------------------------
-
-
-class TestPreApplyGate:
-    """Verify pre-apply compliance gate checks terraform plans for violations."""
-
-    def test_gate_returns_dict(self):
-        from tools.infra_canvas.pre_apply_gate import check_plan
-
-        result = check_plan(MINIMAL_TF_PLAN)
-        assert isinstance(result, dict)
-
-    def test_gate_has_passed_key(self):
-        from tools.infra_canvas.pre_apply_gate import check_plan
-
-        result = check_plan(MINIMAL_TF_PLAN)
-        assert "passed" in result
-
-    def test_gate_has_violations_key(self):
-        from tools.infra_canvas.pre_apply_gate import check_plan
-
-        result = check_plan(MINIMAL_TF_PLAN)
-        assert "violations" in result
-
-    def test_gate_violations_is_list(self):
-        from tools.infra_canvas.pre_apply_gate import check_plan
-
-        result = check_plan(MINIMAL_TF_PLAN)
-        assert isinstance(result["violations"], list)
-
-    def test_gate_has_score(self):
-        from tools.infra_canvas.pre_apply_gate import check_plan
-
-        result = check_plan(MINIMAL_TF_PLAN)
-        assert "score" in result
-        assert isinstance(result["score"], (int, float))
-
-    def test_gate_has_snapshot_id(self):
-        from tools.infra_canvas.pre_apply_gate import check_plan
-
-        result = check_plan(MINIMAL_TF_PLAN)
-        assert "snapshot_id" in result
-        assert result["snapshot_id"]  # non-empty
-
-    def test_plan_no_kms_fails_storage_check(self):
-        """A plan with S3 but no KMS should produce an encryption violation."""
-        from tools.infra_canvas.pre_apply_gate import check_plan
-
-        result = check_plan(TF_PLAN_NO_KMS)
-        assert result["passed"] is False
-        rule_ids = [v.get("rule_id") for v in result["violations"]]
-        assert "IDC-ENC-001" in rule_ids or "IDC-ENC-002" in rule_ids or "IDC-ENC-003" in rule_ids
-
-    def test_plan_no_kms_passed_false(self):
-        from tools.infra_canvas.pre_apply_gate import check_plan
-
-        result = check_plan(TF_PLAN_NO_KMS)
-        assert result["passed"] is False
-
-    def test_minimal_passing_plan_no_enc_violations(self):
-        """A plan with only KMS + IAM should not trigger encryption violations."""
-        from tools.infra_canvas.pre_apply_gate import check_plan
-
-        result = check_plan(TF_PLAN_MINIMAL_PASSING)
-        # No storage or DB resources → no ENC violations
-        rule_ids = [v.get("rule_id") for v in result["violations"]]
-        assert "IDC-ENC-001" not in rule_ids
-        assert "IDC-ENC-002" not in rule_ids
-
-    def test_gate_violation_has_required_fields(self):
-        from tools.infra_canvas.pre_apply_gate import check_plan
-
-        result = check_plan(TF_PLAN_NO_KMS)
-        if result["violations"]:
-            v = result["violations"][0]
-            assert "rule_id" in v
-            assert "title" in v
-            assert "severity" in v
-
-    def test_gate_cat1_violation_fails_gate(self):
-        """Any CAT1 violation must set passed=False."""
-        from tools.infra_canvas.pre_apply_gate import check_plan
-
-        result = check_plan(TF_PLAN_NO_KMS)
-        cat1_violations = [v for v in result["violations"] if v.get("severity") == "CAT1"]
-        if cat1_violations:
-            assert result["passed"] is False
-
-    def test_gate_score_between_0_and_100(self):
-        from tools.infra_canvas.pre_apply_gate import check_plan
-
-        result = check_plan(MINIMAL_TF_PLAN)
-        assert 0.0 <= result["score"] <= 100.0
-
-    def test_gate_empty_plan_returns_result(self):
-        """Empty plan (no resource_changes) should return valid result without crash."""
-        from tools.infra_canvas.pre_apply_gate import check_plan
-
-        result = check_plan({"format_version": "0.1", "resource_changes": []})
-        assert isinstance(result, dict)
-        assert "passed" in result
-
-    def test_gate_has_graph_snapshot(self):
-        """Gate result should include the IDC graph derived from the plan."""
-        from tools.infra_canvas.pre_apply_gate import check_plan
-
-        result = check_plan(MINIMAL_TF_PLAN)
-        assert "graph" in result
-        assert "nodes" in result["graph"]
-
-    def test_gate_has_assessed_at(self):
-        from tools.infra_canvas.pre_apply_gate import check_plan
-
-        result = check_plan(MINIMAL_TF_PLAN)
-        assert "assessed_at" in result
-        # Should be an ISO-format timestamp containing 'T'
-        assert "T" in result["assessed_at"]
+#
+# `TestPreApplyGate` lived here and asserted the return shape of
+# `tools/infra_canvas/pre_apply_gate.py::check_plan` -- {"passed", "score",
+# "snapshot_id", "assessed_at", ...}.  That module was one of TWO pre-apply
+# gates in `tools/infra_canvas/` taking the same input and answering the same
+# question with two verdict vocabularies.  flx-ci-02 measured the pair and
+# deleted this one; the surviving gate is
+# `tools/infra_canvas/preapply_gate.py::run_gate`, tested by
+# `tests/test_preapply_gate.py` and `tests/ci/test_floci_iac_gate.py`.
+#
+# The class is DELETED rather than migrated because its subject was the
+# WRAPPER'S SHAPE, and that shape is gone.  What the wrapper actually did --
+# `import_terraform_plan` then `assess_infra_design` -- is two lines, still
+# exercised by `TestTerraformShowImporter` above and by `TestFullGateFlow`
+# below, which now calls them directly.
+#
+# WHY DELETION AND NOT A MERGE: check_plan had zero runtime callers, and its
+# rules are ESTATE-COMPLETENESS questions ("is there a KMS service in this
+# design?") asked of a plan DELTA -- so it returned `passed=True` only for a
+# plan that was itself the whole estate.  The rulebook is not lost:
+# `infra_engine.assess_infra_design` is consumed live by
+# `tools/infra_canvas/blueprint.py` over the full design graph, which is the
+# input those rules were written for.  Full derivation:
+# `docs/audits/flx-ci-02-two-preapply-gates.md`.
+# Standing guard: `tests/infra_canvas/test_one_preapply_gate.py`.
 
 
 # ---------------------------------------------------------------------------
@@ -588,12 +499,17 @@ class TestFullGateFlow:
     """End-to-end: plan → importer → assessment → snapshot → violations persisted."""
 
     def test_full_flow_no_kms_produces_violations_in_db(self, tmp_path):
-        from tools.infra_canvas.pre_apply_gate import check_plan
+        from tools.infra_canvas.terraform_show_importer import import_terraform_plan
+        from tools.infra_canvas.infra_engine import assess_infra_design
         from tools.infra_canvas.snapshot_writer import write_snapshot, write_violations
         import sqlite3
 
         db = str(tmp_path / "test.db")
-        result = check_plan(TF_PLAN_NO_KMS)
+        graph = import_terraform_plan(TF_PLAN_NO_KMS)
+        result = {
+            "graph": graph,
+            "violations": assess_infra_design(graph)["findings"],
+        }
         sid = write_snapshot(result["graph"], db_path=db, source="terraform_plan")
         write_violations(sid, result["violations"], db_path=db)
 
@@ -611,12 +527,17 @@ class TestFullGateFlow:
 
     def test_full_flow_passing_plan_zero_enc_violations(self, tmp_path):
         """Minimal passing plan (KMS + IAM + Secrets Manager) has zero encryption violations."""
-        from tools.infra_canvas.pre_apply_gate import check_plan
+        from tools.infra_canvas.terraform_show_importer import import_terraform_plan
+        from tools.infra_canvas.infra_engine import assess_infra_design
         from tools.infra_canvas.snapshot_writer import write_snapshot, write_violations
         import sqlite3
 
         db = str(tmp_path / "test.db")
-        result = check_plan(TF_PLAN_MINIMAL_PASSING)
+        graph = import_terraform_plan(TF_PLAN_MINIMAL_PASSING)
+        result = {
+            "graph": graph,
+            "violations": assess_infra_design(graph)["findings"],
+        }
         sid = write_snapshot(result["graph"], db_path=db, source="terraform_plan")
         write_violations(sid, result["violations"], db_path=db)
 
@@ -630,12 +551,17 @@ class TestFullGateFlow:
         assert enc_violation_count == 0
 
     def test_snapshot_id_from_gate_matches_db(self, tmp_path):
-        from tools.infra_canvas.pre_apply_gate import check_plan
+        from tools.infra_canvas.terraform_show_importer import import_terraform_plan
+        from tools.infra_canvas.infra_engine import assess_infra_design
         from tools.infra_canvas.snapshot_writer import write_snapshot
         import sqlite3
 
         db = str(tmp_path / "test.db")
-        result = check_plan(MINIMAL_TF_PLAN)
+        graph = import_terraform_plan(MINIMAL_TF_PLAN)
+        result = {
+            "graph": graph,
+            "violations": assess_infra_design(graph)["findings"],
+        }
         sid = write_snapshot(result["graph"], db_path=db)
 
         conn = sqlite3.connect(db)

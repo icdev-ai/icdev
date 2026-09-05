@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Set
 
 from tools.awareness.claim_verifier import Claim, Incident, independent_observations
 
@@ -496,14 +496,17 @@ def _reported_dispatchable_tasks() -> Any:
     return sorted({str(dict(r).get("id")) for r in rows or []})
 
 
-def _derived_tasks_without_an_open_pr() -> Any:
-    """The same set, minus every task the FORGE says already has an open PR."""
+def _forge_open_head_branches() -> Optional[Set[str]]:
+    """Head branch of every OPEN PR, straight from `gh`; None if it cannot answer.
+
+    An unreachable forge is UNMEASURABLE, never "no open PRs" — the latter
+    would report every board clean whenever `gh` was unavailable. Deliberately
+    NOT the scheduler's cached listing: the claims that read this exist to
+    check the scheduler's own view of the board against a second system.
+    """
     import json
     import subprocess  # nosec B404 — gh only, fixed argv, shell=False
 
-    dispatchable = _reported_dispatchable_tasks()
-    if dispatchable is None:
-        return None
     try:
         result = subprocess.run(  # nosec B603 B607
             ["gh", "pr", "list", "--state", "open", "--limit", "300",
@@ -513,14 +516,96 @@ def _derived_tasks_without_an_open_pr() -> Any:
         )
         if result.returncode != 0:
             return None
-        branches = {str(pr.get("headRefName") or "")
-                    for pr in json.loads(result.stdout or "[]")}
+        return {str(pr.get("headRefName") or "")
+                for pr in json.loads(result.stdout or "[]")}
     except Exception:  # noqa: BLE001
-        # An unreachable forge is UNMEASURABLE, never "no open PRs" — the latter
-        # would report every board clean whenever `gh` was unavailable.
+        return None
+
+
+def _derived_tasks_without_an_open_pr() -> Any:
+    """The same set, minus every task the FORGE says already has an open PR."""
+    dispatchable = _reported_dispatchable_tasks()
+    if dispatchable is None:
+        return None
+    branches = _forge_open_head_branches()
+    if branches is None:
         return None
     with_pr = {t for t in dispatchable if "kanban/" + t in branches}
     return sorted(set(dispatchable) - with_pr)
+
+
+# --------------------------------------------------------------------------- #
+# 8b. A parked task with an open PR is OWNED  (mfx-own-01, 2026-09-03)
+# --------------------------------------------------------------------------- #
+# rmf-rfp-01 and rmf-wp-02 parked `token exhaustion: parked for retry 2/60`
+# with PRs #2040 / #2042 OPEN and red on CI, and their resume_at slid forward
+# every cycle for six hours. The dispatcher's respawn guard refuses a task
+# whose branch has an open PR (correctly) and pr_watcher polls only
+# pr_opened / ci_failed / merge_conflict / changes_requested -- so a parked
+# task with an open PR was owned by NEITHER, and a human landed both by hand.
+#
+# The two sides are the BOARD and the FORGE. `reported` is what the board says
+# is parked and waiting for a scheduler retry; `derived` is which kanban/<id>
+# branches the forge says carry an open PR. A task in BOTH is the finding: the
+# scheduler cannot retry it (the respawn guard) and the watcher cannot see it
+# (not pr_opened). One scheduler cycle of grace, because the hand-off runs at
+# park time and at every retry evaluation, and a task parked seconds ago has
+# not yet had its evaluation.
+SCHEDULER_CYCLE_SECONDS = 60
+
+
+def _parse_board_ts(raw: Any) -> Optional[datetime]:
+    if raw is None:
+        return None
+    if isinstance(raw, datetime):
+        return raw if raw.tzinfo else raw.replace(tzinfo=timezone.utc)
+    text = str(raw).strip().replace("Z", "+00:00")
+    if "T" not in text and " " in text:
+        text = text.replace(" ", "T", 1)
+    try:
+        dt = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def _reported_parked_tasks_older_than_a_cycle() -> Any:
+    """Tasks the board says are parked token_exhausted, and have been for more
+    than one scheduler cycle -- i.e. the retry loop has had its chance to
+    notice an open PR and hand the task off."""
+    try:
+        with _conn() as conn:
+            rows = conn.execute(
+                "SELECT id, updated_at FROM kanban_tasks "
+                "WHERE status = 'token_exhausted'",
+            ).fetchall()
+    except Exception:  # noqa: BLE001
+        return None
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=SCHEDULER_CYCLE_SECONDS)
+    parked: List[str] = []
+    for r in rows or []:
+        rec = dict(r)
+        ts = _parse_board_ts(rec.get("updated_at"))
+        # An unparseable timestamp is OLD, not fresh: the grace exists to
+        # excuse a task parked seconds ago, and a row that cannot prove that
+        # does not get the excuse.
+        if ts is None or ts < cutoff:
+            parked.append(str(rec.get("id")))
+    return sorted(parked)
+
+
+def _derived_forge_open_kanban_task_ids() -> Any:
+    """The task id behind every OPEN kanban/<id> PR, from the forge alone."""
+    branches = _forge_open_head_branches()
+    if branches is None:
+        return None
+    return sorted({b[len("kanban/"):] for b in branches if b.startswith("kanban/")})
+
+
+def _no_parked_task_has_an_open_pr(reported: Any, derived: Any) -> bool:
+    """A task that is BOTH parked (board) and has an open PR (forge) is owned by
+    nobody -- that intersection is the finding. Disjoint sets agree."""
+    return not (set(reported or ()) & set(derived or ()))
 
 
 # --------------------------------------------------------------------------- #
@@ -1105,6 +1190,26 @@ REGISTRY: List[Claim] = [
         incident=Incident(["rem-hyg-18"], "2026-08-21",
                           "_reconcile_pr_opened moves a scheduled/backlog task "
                           "with an open PR into pr_opened every cycle"),
+    ),
+    Claim(
+        claim_id="parked_task_with_open_pr_is_owned",
+        description=(
+            "A task parked token_exhausted whose branch has an OPEN PR must be "
+            "handed to pr_watcher as pr_opened, never left to nobody. On "
+            "2026-09-03 rmf-rfp-01 and rmf-wp-02 parked for retry with PRs "
+            "#2040 / #2042 open and red on CI; the respawn guard refused every "
+            "scheduler retry, the watcher never polls token_exhausted, and their "
+            "resume_at slid forward for six hours until a human fixed both."
+        ),
+        reported=_reported_parked_tasks_older_than_a_cycle,
+        derived=_derived_forge_open_kanban_task_ids,
+        agree=_no_parked_task_has_an_open_pr,
+        tier="propose",
+        tags=["kanban", "autonomy", "mfx-own-01", "rmf-rfp-01", "rmf-wp-02"],
+        incident=Incident(["mfx-own-01"], "2026-09-03",
+                          "the scheduler hands a parked task with an open PR to "
+                          "pr_watcher at park time, on every retry evaluation and "
+                          "at startup recovery"),
     ),
     Claim(
         claim_id="scheduler_heartbeat_is_fresh",

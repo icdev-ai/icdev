@@ -1,0 +1,187 @@
+# CUI // SP-CTI — floci runtime base images, MEASURED (flx-airgap-02)
+#
+# WHAT THIS FILE IS
+# -----------------
+# floci's container-backed services (Lambda, RDS, ElastiCache, OpenSearch, MSK,
+# ECS/EC2/EKS) do not ship their runtime inside the floci image. Each one starts
+# a SEPARATE container from a base image floci pulls FROM THE PUBLIC INTERNET
+# THE FIRST TIME THAT SERVICE IS USED. On a disconnected high side that pull
+# fails at exactly the moment a demo runs.
+#
+# This file is the enumeration of that image set, so it can be pre-populated
+# into the local daemon's cache before the host is disconnected.
+#
+# HOW EVERY ENTRY HERE WAS OBTAINED, AND IT WAS NOT READ OFF A README
+# -------------------------------------------------------------------
+# `docker events --filter type=image` was recorded while a live floci 2.0.1
+# (`docker compose --profile floci up -d floci`) was driven through every
+# container-backed service with boto3 against http://127.0.0.1:4566. Each `ref`
+# below is a line the DAEMON logged as a `pull`; each `digest` is the
+# `RepoDigests[0]` of the resulting cached image. Measured 2026-09-05 on Docker
+# 28.5.1 / Windows 11, floci 2.0.1 (edition `community`, original_edition
+# `floci-always-free`).
+#
+# Re-derive the whole table with:
+#     python -m tools.cloud.runtime_images --measure-help
+#
+# THE IMAGE SET IS A FUNCTION OF DECLARED CONFIGURATION, NOT OF THE SERVICE
+# -------------------------------------------------------------------------
+# This is the finding that makes a bare per-service list wrong. MEASURED:
+#   * a `python3.11` Lambda pulls public.ecr.aws/lambda/python:3.11, while a
+#     `nodejs20.x` Lambda pulls public.ecr.aws/lambda/nodejs:20;
+#   * an RDS instance with `Engine=postgres` pulls postgres:16.3-alpine, while
+#     `Engine=mysql` pulls mysql:8.0.36;
+#   * ElastiCache splits by API AND by engine — Redis goes through
+#     CreateReplicationGroup and pulls valkey/valkey:8, memcached goes through
+#     CreateCacheCluster and pulls memcached:1.6. floci REFUSES
+#     `Engine=redis` on CreateCacheCluster ("For Redis/Valkey use
+#     CreateReplicationGroup"), so these are genuinely two different paths.
+# So `variant` is load-bearing. A deployment vendors the variants it declares —
+# vendoring "all of them" is a 5 GB answer to a 400 MB question, and vendoring
+# one and assuming it covers the service is how the demo fails.
+#
+# WHAT IS DELIBERATELY NOT IN THIS TABLE
+# ---------------------------------------
+# `alpine:3.19` was pulled during the same measured run and is ABSENT here on
+# purpose: it was the image named by the probe's own ECS *task definition*. That
+# is the WORKLOAD image, chosen by whoever writes the task definition, not a
+# floci runtime base — floci would have pulled whatever that field said. A
+# deployment running ECS/EKS must mirror its own workload images TOO, and no
+# table in this repository can enumerate them for it. Stated in the runbook.
+#
+# ADDING AN ENTRY MEANS MEASURING IT. Do not add a plausible-looking row: a
+# digest nobody observed is exactly the fabrication `vendor/images/README.md`
+# was written against, and it would be believed.
+
+enabled: true
+
+emulator: floci
+emulator_image: floci/floci:2.0.1
+measured_on: "2026-09-05"
+measured_against:
+  docker_server_version: "28.5.1"
+  host_platform: "Windows 11 / Docker Desktop"
+  floci_version: "2.0.1"
+  floci_edition: "community"
+  method: "docker events --filter type=image, recorded while boto3 exercised each service"
+
+# A pulled-at-run-time image is a run-time PULL, and a run-time pull cannot
+# happen on the disconnected side. Every entry is therefore something an
+# air-gapped deployment must hold in its local cache BEFORE it is disconnected.
+images:
+  - ref: "public.ecr.aws/lambda/python:3.11"
+    digest: "sha256:755093e1da2ba33f6bd2295c5a6a7ed8b94f1ef347b6ca649874d9cbef5a3e3c"
+    service: lambda
+    variant: "python3.11"
+    note: "One image PER LAMBDA RUNTIME. Vendor the runtimes the deployment declares."
+
+  - ref: "public.ecr.aws/lambda/nodejs:20"
+    digest: "sha256:a4440274d6f0fb4e6cb92cd5f2a97254efe6612f631d9974b197ecbd4a61fcab"
+    service: lambda
+    variant: "nodejs20.x"
+    note: "Measured alongside python3.11 to prove the per-runtime split is real."
+
+  - ref: "postgres:16.3-alpine"
+    digest: "sha256:36ed71227ae36305d26382657c0b96cbaf298427b3f1eaeb10d77a6dea3eec41"
+    service: rds
+    variant: "postgres"
+
+  - ref: "mysql:8.0.36"
+    digest: "sha256:a532724022429812ec797c285c1b540a644c15e248579c6bfdf12a8fbaab4964"
+    service: rds
+    variant: "mysql"
+
+  - ref: "valkey/valkey:8"
+    digest: "sha256:98c6217ccc2fe5e6c4b5dcd5c40eef4de2a68924e7ecef50d5a0a30b57dfaef6"
+    service: elasticache
+    variant: "redis"
+    note: "Redis is served by VALKEY, via CreateReplicationGroup — not CreateCacheCluster."
+
+  - ref: "memcached:1.6"
+    digest: "sha256:75c93cc91e76853da7c029e74d6e8dbd44774dd3713c93be8cd1971ad26120a4"
+    service: elasticache
+    variant: "memcached"
+
+  - ref: "opensearchproject/opensearch:2.19.5"
+    digest: "sha256:4ee82ecb35d837a6186c81aaa64c8a5bce71aa956edbd87f1f684ab56af52c44"
+    service: opensearch
+    variant: null
+    note: "Largest of the set. Creating a domain took 115s on the measured host."
+
+  - ref: "redpandadata/redpanda:latest"
+    digest: "sha256:468bd13a9f2bd24794cb7fddc867c767fb1008b9a07b297b89fde48c564d7d96"
+    service: kafka
+    variant: null
+    mutable_tag: true
+    note: >-
+      MSK is served by REDPANDA, and floci names it by the MUTABLE tag `:latest`.
+      The digest recorded here is what `:latest` resolved to on the measured
+      date; it can move under the same tag without notice, so a re-vendor must
+      re-measure rather than assume.
+
+  - ref: "public.ecr.aws/amazonlinux/amazonlinux:2023"
+    digest: "sha256:fb70bd54d4a849293bfef9785ce63aa1eac2557e0167af4f32f56286bd35d783"
+    service: ec2
+    variant: null
+    note: "EC2 RunInstances starts an Amazon Linux container, whatever ImageId is given."
+
+  - ref: "rancher/k3s:latest"
+    digest: "sha256:5e0707cfd1239b358ef73f3254bc3eadc027dd30cd5ec6ca41e29e47652a1b8c"
+    service: eks
+    variant: null
+    mutable_tag: true
+    note: "EKS is served by k3s, also by a MUTABLE `:latest` tag. Same caveat as redpanda."
+
+  - ref: "registry:2"
+    digest: "sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373"
+    service: ecr
+    variant: null
+    note: >-
+      floci backs ECR with a real registry container (`floci-ecr-registry`). It
+      was pulled during the ECS/EKS probes, not by an explicit ECR call, so it
+      is attributed to `ecr` and required whenever ECS or EKS is used — see
+      `implies` below.
+
+# ECS pulled NO runtime base of its own during the measured run: the only image
+# it fetched was the one its task definition named. So `ecs` requires nothing
+# from `images` directly, and requires `ecr` because the registry container came
+# up alongside it. Declaring that here rather than hard-coding it in Python
+# keeps "which services need what" reviewable.
+implies:
+  ecs: [ecr]
+  eks: [ecr]
+
+# How a service NAME is recognised in a design graph or an IaC plan. Matched
+# against harvested strings, case-insensitively, on a word boundary.
+service_tokens:
+  lambda: ["lambda", "aws_lambda_function", "aws::lambda::function"]
+  rds: ["rds", "aws_db_instance", "aws_rds_cluster", "aws::rds::dbinstance"]
+  elasticache:
+    ["elasticache", "aws_elasticache_cluster", "aws_elasticache_replication_group",
+     "aws::elasticache::cachecluster"]
+  opensearch:
+    ["opensearch", "elasticsearch", "aws_opensearch_domain",
+     "aws_elasticsearch_domain", "aws::opensearchservice::domain"]
+  kafka: ["msk", "kafka", "aws_msk_cluster", "aws_msk_serverless_cluster",
+          "aws::msk::cluster"]
+  ecs: ["ecs", "aws_ecs_cluster", "aws_ecs_service", "aws_ecs_task_definition",
+        "aws::ecs::cluster"]
+  ec2: ["ec2", "aws_instance", "aws::ec2::instance"]
+  eks: ["eks", "aws_eks_cluster", "aws::eks::cluster"]
+  ecr: ["ecr", "aws_ecr_repository", "aws::ecr::repository"]
+
+# How a VARIANT is recognised, per service. A service detected with no variant
+# token is reported `variant_undetermined` — never silently resolved to a
+# default, and never silently dropped. We cannot say which base image an
+# unspecified Lambda runtime needs, and guessing produces either a fabricated
+# blocker or a fabricated clean bill.
+variant_tokens:
+  lambda:
+    python3.11: ["python3.11", "python3-11"]
+    nodejs20.x: ["nodejs20.x", "nodejs20", "nodejs20x"]
+  rds:
+    postgres: ["postgres", "postgresql", "aurora-postgresql"]
+    mysql: ["mysql", "aurora-mysql", "mariadb"]
+  elasticache:
+    redis: ["redis", "valkey"]
+    memcached: ["memcached"]

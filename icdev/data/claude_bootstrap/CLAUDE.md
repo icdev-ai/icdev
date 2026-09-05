@@ -952,6 +952,34 @@ python tools/hooks/fire_rate_survey.py --check gh_pr_merge_bypass --live-git
 #   ICDEV_GH_PR_MERGE_GUARD_OFFLINE=1  skip the forge lookup only; the offline
 #                                      signals still refuse
 
+# A claim from a PLAIN SHELL now HOLDS -- `--claim` hands its lease to a keeper (mfx-own-02)
+python tools/kanban/cli.py --claim <task-id> --intent "repairing its PR by hand" [--ttl 7200]
+python tools/kanban/cli.py --claim <task-id>                    # again: RENEWS the running keeper
+python tools/kanban/cli.py --release <task-id>                  # ends the keeper session, frees the lease
+python -m tools.kanban.interactive_claim --status <task-id>     # keeper pid, expiry, intent, log
+# MEASURED 2026-09-03: an operator ran `--claim rmf-ui-13` to hold the task while
+# repairing its PR by hand; the CLI answered that the lease was bound to a pid
+# that exits on the next line and an UNREGISTERED session id, so every reader
+# would read it as litter within seconds -- and a second session repaired the
+# same branch at 14:01. Only a registered SERVICE session could make the lease
+# hold; a shell is not one. Now `claim()` takes the lease synchronously under
+# the caller's identity (the same refusal every claimant gets), `leases.handover`
+# re-binds it -- no release/acquire window -- to a dedicated
+# `cli-claim-<task>-t<hex>` id, and a detached KEEPER registers that id in
+# agent_sessions (agent_type `cli`, your `--intent`), re-takes the lease under
+# its own live pid and heartbeats every 60s until the TTL, `--release`, a lost
+# lease or a terminal task status. Every reader then finds what it already
+# honours: `lease_liveness` reads `live` by pid and, to a reader that cannot see
+# the pid, by registered session; the dispatch window yields; startup recovery
+# keeps the row; `restore_acts --plan` refuses "the holder process is running".
+# NEVER THE INHERITED IDENTITY (claim-verif-33c9f4cd11): a shell inside a kanban
+# worker carries the scheduler's `ICDEV_SESSION_ID`; the keeper's env is
+# rewritten before the registry is touched, and the `t<hex>` suffix can never
+# parse as a `<name>-<pid>` service id. A dead keeper is OUR litter and the next
+# `--claim` replaces it. `create_tasks(claim=True)` from a non-service process
+# (`service_identity._OWNED` empty) hands its seed claims to the same keeper.
+# State and log per task: .tmp/coordination/claims/<task>.{json,log}.
+
 # Is a task's status OSCILLATING — two writers taking turns? (kpr-watch-11)
 python -m tools.kanban.status_churn --json
 python -m tools.kanban.status_churn --window-hours 6
@@ -1415,6 +1443,29 @@ python tools/ci/gated_test_list.py --check --list core --shard 2/4   # validate,
 # while leaving order WITHIN a shard deterministic.
 # Files that must share a process: args/ci_test_files/shard_pins.txt.
 
+# ONE ICDEV CI run per ref -- a newer push CANCELS the superseded run (mfx-ci-02)
+python -m pytest tests/ci/test_ci_concurrency.py -q      # the declaration, and its consumers
+gh run list --workflow "ICDEV CI" --branch <branch> --limit 5   # one in progress, the rest cancelled
+# MEASURED 2026-09-03 23:30-00:30 UTC: eight ICDEV CI runs queued behind one in
+# progress (the account's job cap makes a ~19-job run effectively serial), two of
+# them for commits a newer push had ALREADY superseded; an operator cancelled
+# the dead runs by hand to move a green PR forward ~35 minutes. icdev-ci.yml
+# declared no `concurrency:` at all. Now, at WORKFLOW level:
+#   concurrency: { group: icdev-ci-${{ github.ref }}, cancel-in-progress: true }
+# `github.ref` (never head_ref, which is EMPTY on a push): a `pull_request` run
+# and a `push` run for the same commit sit in DIFFERENT groups and report
+# different checks. The workflow-name prefix keeps another workflow's group out.
+# main is INCLUDED -- a superseded main run is dead too -- and every consumer of
+# a main run was checked: shard-timings.yml asks `--status success` (a
+# cancelled run is neither a measurement nor a failure; crx-test-06 keeps
+# `cancelled` its own outcome and e2e_flake_survey counts it apart), and
+# merge_readiness / the done door read the PR's HEAD-sha rollup, in which the
+# cancellation on the OLD sha is simply absent. A job-level `concurrency:` would
+# carve that job OUT of the group and keep it queueing for an abandoned sha;
+# the test refuses one. Playwright is not a separate workflow here (the E2E
+# shards are icdev-ci.yml jobs); the test finds every workflow that runs
+# `npx playwright test` and requires the declaration on each.
+
 # The shards are BIN-PACKED by measured duration, not file count (crx-test-07)
 python tools/ci/shard_timings.py --show                              # what the loader merges
 python tools/ci/shard_timings.py --balance --shards 4                # the partition it produces
@@ -1510,6 +1561,124 @@ python tools/ci/census_growth.py --base origin/main --root .
 # nothing. args/undeclared_import_census.txt and args/kanban_raw_insert_census.txt
 # are the same discipline and are deliberately NOT registered: unrelated to test
 # gating and unsurveyed. Adding one is a `CENSUSES` entry plus its own survey.
+
+# A cheap static check that runs only on CI is a MANUAL FIX 20 minutes later (mfx-ci-01)
+python tools/dx/mirror_parity.py --files tools/db/storage.py --json     # ONE pair, not the package
+python tools/dx/mirror_parity.py --files tools/db/storage.py --fix --gate
+python tools/ci/undeclared_import_census.py --staged --check
+python tools/testing/pre_commit_check.py                # both, plus everything it already ran
+npx playwright test --list                              # every spec PARSES; no browser, no server
+# THREE RED PRs IN ONE DAY, each fixed by hand, each a check that could have run
+# at `git commit` in under a second:
+#  * the #2052 squash left tests/e2e/key_pages_smoke.spec.ts unparseable and ALL
+#    FOUR E2E shards on main failed at COLLECTION -- Playwright loads every spec
+#    before it runs one, so 840 tests in 65 files executed ZERO -- and it went
+#    unnoticed for hours because `E2E (Playwright)` is not a required check and
+#    nothing parses .ts at commit time;
+#  * rmf-rfp-01 changed tools/db/schema/{pg_consolidated.sql,tables.yaml} without
+#    their icdev/ twins; test_mirror_drift_baseline went red on `db` and a human
+#    mirrored 199 files;
+#  * rmf-wp-02 imported `markdown` inside a bare `except Exception` in
+#    exporter.py and the tsg-iso-03 census refused it.
+#
+# THE REQUIRED `Lint` JOB NOW PARSES EVERY SPEC. `--list` loads and transforms
+# all 65 spec files with NO browser and NO dashboard (`webServer` and
+# globalSetup do not run for --list; ICDEV_NO_SERVER states it) -- ~2.15s
+# median over five warm runs (1.94-2.61s; an independent measure on this host
+# saw 6.7s under load), after an `npm ci` the job did not previously need. Quote
+# the RANGE: a single figure from one run does not survive re-measurement, and
+# an earlier "1.8s warm / 14.6s cold" here reproduced as neither. It is a PARSE
+# gate and NOTHING MORE: `forbidOnly` is not applied to --list (probed -- a
+# `test.only` lists clean under CI=1), so a stray `.only` is still the E2E job's
+# to refuse, and no browser is installed here. Never `|| true`, never
+# `continue-on-error` -- a parse gate behind either gates nothing.
+#
+# THE HOOK BLOCKS ON THE STAGED FILES AND NOTHING ELSE. That is the only scope a
+# hook may block on: `--paths db` hashes 864 pairs to answer a question about the
+# three files a commit staged, and it reports a package's PRE-EXISTING backlog,
+# which the author neither caused nor can fix without stepping on the PR that
+# owns it. Hence `--files` (mfx-ci-01), which audits ONLY the named pairs.
+# Either spelling resolves to the SAME pair, so a change to the packaged copy
+# alone is drift too.
+# MEASURED 2026-09-04 on this checkout, and the numbers ARE the design argument:
+#   nothing staged under tools/<pkg>/     0 ms   both checks skipped entirely
+#   3 staged files (this commit's shape)  78 ms mirror + 359 ms census
+#   60 staged files in one package        97 ms mirror + ~400-580 ms census
+#   (for contrast) --paths db            512 ms  -- 6.4x, the walk not taken
+#   (for contrast) census with NO --staged     ~28 s  -- 40x the whole budget
+# So the WORST realistic added cost is ~437 ms at 3 files and ~677 ms at 60,
+# inside the 1s budget, and the common commit still pays 0.
+# MIRROR IS FLAT IN FILE COUNT (78 -> 97 over a 20x change); THE CENSUS IS NOT
+# (359 -> ~580), because a per-file AST parse sits on top of a fixed ~240 ms
+# first-party walk. Do not describe them with one shape.
+# THREE FIGURES HERE WERE WRONG BEFORE THEY WERE RIGHT, and the reasons are the
+# card's own subject matter: 4486 ms for `--paths db` was a single COLD run
+# (truth 512 ms, 6.4x not 46x); "1.8s warm / 14.6s cold" for --list reproduced
+# for nobody (truth ~2-4 s warm); and a flat "126 ms" census across 1, 3 and 60
+# files was THE EMPTY PATH -- `git add` on an UNMODIFIED tracked file stages
+# nothing, so `_staged_files()` returned [] and the probe timed a scan of zero
+# files while labelled 1/3/60. A SERIES THAT DOES NOT MOVE WHEN ITS INPUT MOVES
+# 60x IS NOT A STABLE MEASUREMENT, IT IS A MEASUREMENT OF NOTHING -- the same
+# shape as the sandbox artifact above, and as `posture_score` 100.0 for canvases
+# nobody assessed. Every number here is now the SHIPPED code path, corroborated
+# by a second session (359 ms here, ~350 ms there).
+# The walk is avoided for CORRECTNESS OF SCOPE first (a package backlog is not
+# the committer's to fix) and cost second.
+# The hook's own budget note is 155ms; the common commit still pays 0.
+#
+# CONTENT DRIFT ONLY. A staged file whose twin is MISSING is a NOTE, never a
+# block: missing_from_mirror is ungated in args/mirror_parity_gate.yaml and in
+# the CI test, and the backlog is ~300 files -- blocking on it refuses routine
+# work. Excluded extensions are READ from that gate file, never respelled (.md
+# manifest shards are merge=union and diverge transiently BY DESIGN -- they were
+# 124 of the survey's 131 raw (commit, file) EVENTS -- 60 distinct files;
+# events and distinct files are different quantities and are never merged).
+# The census blocks on an UNREGISTERED
+# site only; a ceiling breach the commit did not cause is reported and left to
+# CI. Both fail OPEN on any error -- no `gh`, no yaml, an unreadable report --
+# because CI is the backstop and a hook that wedges a commit gets `--no-verify`d.
+#
+# ONE COPY OF THE SHIM RULE. `coherence_checker._is_mirror_shim` DELEGATES to
+# `mirror_parity.is_mirror_shim`, so the hook and the gate cannot disagree about
+# what a shim is. The marker admits "shim" as well as "re-export": three of the
+# five real shims (testing/qa_agent_runner, testing/selector_healer,
+# billing/tier) say "Backward-compat shim" and the narrower marker counted them
+# as DRIFT -- they were 3 of the survey's 7 post-exclusion candidates, every one
+# a false refusal. A shim's two names resolve to ONE module object (xit-decl-02),
+# so there is no stale half and comparing bytes is meaningless.
+# audit_path/audit_all deliberately do NOT apply the shim rule: the recorded
+# args/mirror_drift_baseline.yaml was measured without it and its test refuses an
+# empty file, so the package report keeps its historical meaning.
+#
+# SURVEYED BEFORE ARMING, 200 first-parent commits on origin/main, replayed
+# against EACH COMMIT'S OWN TREE through the SHIPPED predicate (_mirror_scope and
+# is_mirror_shim themselves, never a second copy):
+#   e2e     22 in scope, 2 fires (1.00%) -- BOTH the same broken file, #2052 and
+#           the #2051 merge that landed on top of it. 0 routine refusals.
+#   mirror  142 in scope, 4 fires (2.00% of all commits) -- and ZERO are routine
+#           work. All four were REAL unreconciled drift, and the proof is that
+#           every one was later repaired BY HAND: db/schema/tables.yaml is the
+#           rmf-rfp-01 incident; slides/constants.py sat drifted for weeks and
+#           was reconciled by THIS card; genesis/daemon.py by a later commit; and
+#           workflow/validated_commit.py cost an ENTIRE FOLLOW-UP CARD, #1986
+#           "mirror the PYTHONPATH fix into icdev/, where the wheel reads it"
+#           (kpr-rvfy-06). The hook would have made that PR unnecessary.
+#           The shim rule saved 3 refusals and the extension rule 124.
+#   census  141 in scope, 0 routine fires, and it fires on its incident
+#           (exporter.py:434 `markdown`). Two apparent fires were SANDBOX
+#           ARTIFACTS of the replay, not findings: it copies only the changed
+#           .py files, so first-party modules (`cui_marker`, `audit_logger`) are
+#           unresolvable and read as undeclared third-party. Re-derived against
+#           the real tree those files report 0 sites. Counting them would have
+#           reported 1.00% for a check that refuses nothing.
+# Method, every number above, and the replay script IN FULL:
+#   docs/audits/mfx-ci-01-precommit-gate-fire-rate-survey.md
+# (a scratch path under .tmp/ is disposable and must never be cited as the way
+# to re-derive a published number -- same rule as never documenting a command
+# whose file does not exist).
+# Do NOT raise a budget, a timeout or a census ceiling to get a commit through,
+# and NEVER edit args/mirror_drift_baseline.yaml -- the fix is `--fix` and a
+# `git add` of the icdev/ copy.
 
 # Which open PRs are awaiting merge, and WHY is each one not merging? (kpr-watch-01)
 python -m tools.ci.merge_readiness --json          # every open PR, task-linked or not
@@ -1962,6 +2131,48 @@ python tools/awareness/capability_consumption.py --probe-diff origin/main   # wh
 # `router.invoke`, `cortex.complete` or a ChainOrchestrator entry -- never a
 # provider or `_invoke_model_direct` call that would step around the seam.
 
+# A crash-looping self-hosted CI runner is re-registered with a fresh token (mfx-boot-02)
+python tools/genesis/daemon.py --reflex ci_runner_health --json     # one cycle through the daemon (ACTS)
+python tools/genesis/reflexes/ci_runner_health.py                   # hand-run: DRY RUN, proves and acts on nothing
+python tools/genesis/reflexes/ci_runner_health.py --apply           # hand-run, acting
+python tools/awareness/capability_consumption.py --class reflex --json
+# MEASURED 2026-09-03 (and twice before): every docker runner -- icdev-ft-runner,
+# -2, -3, icdev-rt-runner -- sat in `Restarting (1)` for hours with `NotFound
+# from POST .../actions/runner-registration` (an expired registration token
+# baked into the container's env), the forge listed each one offline, and every
+# job in icdev_ft / icdev_rt QUEUED with no red anywhere. Recovered BY HAND each
+# time: mint a token, `docker compose -p <project> up -d`. The reflex (15 min)
+# performs exactly that act for exactly the fleet DECLARED in
+# args/ci_runners.yaml -- repo, compose dir, container / runner / compose-project
+# names, and NO TOKEN (tested by shape). The token is minted at the moment of
+# the act and travels in the child's ENVIRONMENT only: never argv, never a row.
+# TWO SIGNALS, AND ONLY THEIR INTERSECTION IS ACTED ON: the forge's offline set
+# (`gh api repos/<repo>/actions/runners`) x docker's Restarting set
+# (`docker ps -a`). A container in one set only is REPORTED and never touched
+# -- offline-but-Up is a network event a token does not fix, Restarting-but-
+# online is a race the next poll settles. A candidate is then PROVEN from its
+# own log: a registration-failure signature (each one taken from a live crash
+# loop) or it is `restarting_unproven` -- recreating a container that is
+# crash-looping for another reason destroys the evidence and fixes nothing.
+# A live compose-project label that disagrees with the declaration REFUSES:
+# on 2026-08-30 an RT `up` adopted FT's `runner` project and recreated
+# icdev-ft-runner out from under it.
+# prove -> audit -> apply -> confirm, in that order: the intent row
+# (`self_heal_triggered` / ci_runner_health.reregister.intent -- an EXISTING
+# type, so no CHECK rebuild) is written with raise_on_error BEFORE the act, and
+# no row means no act. apply is ONE `docker compose up -d`; the module never
+# runs `docker rm`, `compose down` or drops a volume, by test. confirm re-reads
+# docker AND the forge: `applied` means the forge lists the runner online;
+# `applied_unconfirmed` is never `applied`. Bounded per run (deferred
+# candidates are still proven and NAMED) and cooled per container from its own
+# intent rows -- a runner still looping after a fresh token has a different
+# defect a second token cannot repair. UNMEASURABLE, never ok, when the
+# declaration, docker or the forge cannot answer; `success` stays True so a
+# host with no docker does not trip the breaker and make the reflex inert.
+# Registered in BOTH daemon.REFLEX_NAMES and args/genesis_config.yaml, and
+# dispatched once through the daemon on the day it landed -- a reflex that has
+# never run fails capability_liveness at budget 0, on purpose.
+
 # GEPA Optimizer — Genome Evolution Pressure Analyzer (MCP tool: gepa_optimizer)
 python tools/skills/gepa_optimizer.py --json           # Run optimization pass (prune low-fitness genome entries)
 python tools/skills/gepa_optimizer.py --dry-run --json # Scan without writing changes
@@ -2134,6 +2345,92 @@ python tools/govcon/compliance_matrix_builder.py --opportunity-id "opp-xxx" --ga
 # pg_compliance_matrix again. Apply it on a live PG board with
 # `python tools/db/migrate.py --up`; SQLite keeps its old CHECK (a CHECK cannot
 # be ALTERed there) and a fresh SQLite database derives the new one from init.
+
+# A twin over the EMULATOR, read through the broker, marked `emulated` (flx-twin-01)
+# A library, no CLI. Import it:
+#   from tools.twin_core.registry import TwinRegistry
+#   twin = TwinRegistry.get("floci")
+#   snap = twin.take_snapshot("local", label="pre-apply")   # 7 brokered reads
+#   env  = twin.simulate_delta("local", {"services": ["lambda", "s3"]})
+#   twin.latest_status("local")   # the newest PERSISTED verdict; probes nothing
+# The twelfth adapter in tools/twin_core/adapters/ (filesystem-discovered), over
+# the LOCAL floci AWS emulator. `floci` is a `core_extension` in
+# args/component_registry.yaml, not a canvas -- it has no page, so the 8-point
+# page gate does not apply; the adapter renders inside the existing Twin
+# Observatory and emits the existing `twin_snapshot_taken` event.
+#
+# EVERY READ GOES THROUGH tools/databridge/broker.py::fetch as
+# `twin_observatory_analyst` -- the flx-bridge-02 grant -- so each of the seven
+# logical tables is authorized against the manifest and lands one
+# databridge_agent_access_log row. MEASURED 2026-09-05 on a scratch board: 57
+# rows, 28 allowed and 29 denied, every one under that agent id. Importing
+# FlociConnector and calling read() would return the SAME rows with NO
+# authorization check and NO audit row -- the ungoverned side channel cef-fnd-03
+# exists to close, and nothing about the values would look wrong. A structural
+# AST test refuses a direct connector read and pins the import list to
+# declarations + capability predicates (TABLES, boto3_available,
+# table_needs_boto3, table_is_docker_backed, table_service).
+#
+# THE BROKER NOW RELAYS THE CONNECTOR'S STATUS, and it had to. `fetch` read
+# `response.data` and nothing else, so a connector answering `disabled`,
+# `unsupported_without_docker` or `error` came back as `ok=True, row_count=0` --
+# indistinguishable from a table that answered and held no rows. That is the
+# exact conflation floci_connector._unsupported_response was written to prevent,
+# undone one layer up. FetchOutcome gains `connector_status` /
+# `connector_errors`; `ok` is deliberately UNCHANGED, so no existing caller's
+# verdict moves.
+#
+# FOUR VERDICTS, AND UNKNOWN IS NEVER PASS. Every one MEASURED live against
+# floci/floci:2.0.1 on 2026-09-05:
+#   pass     every declared table answered. resource_count 0 with an empty
+#            emulator and 1 after creating one bucket -- a MEASURED zero.
+#   warn     a container-backed table reported `unsupported_without_docker`
+#            (FLOCI_DOCKER_SOCKET pointed at an absent unix socket: lambda_
+#            functions refused, 6/7 answered, rc still 1), or a boto3-backed
+#            table has no SDK. boto3 is NOT in requirements.txt, so five of the
+#            seven tables error on a host without it -- that error did not come
+#            from the emulator, no socket opened, and scoring it `fail` would
+#            blame the estate for a local tooling gap. It is an UNANSWERED
+#            table, basis `sdk_unavailable`, kept apart from the docker case
+#            because the repairs differ.
+#   fail     a REACHABLE emulator returned an error.
+#   unknown  disabled | unreachable | broker_denied. resource_count is None --
+#            NEVER 0 -- because an unreachable emulator holds an UNKNOWN number
+#            of buckets and 0 asserts it holds none.
+# `saas_base.connect` returns False whenever health_check is not `healthy`, so
+# the connector's own `disabled` status NEVER reaches a brokered read and both
+# "switched off" and "on but nothing answered" arrive as one broker refusal. The
+# verdict is `unknown` either way; the BASIS is recovered from STRUCTURED facts
+# -- broker.list_available() for the grant, emulator.enabled() for the switch --
+# and never from the refusal's prose. Measured: FLOCI_ENABLED unset ->
+# `disabled`; set with no container -> `unreachable`; no connection row ->
+# `broker_denied`. Do NOT collapse them: one is a flag, one is
+# `docker compose --profile floci up -d`.
+#
+# PROVENANCE IS THE WHOLE DESIGN, and it is asserted THREE ways. target_csp is
+# `aws` / us-gov-west-1 so the GovCloud presets in args/twin_target_presets.yaml
+# and their service_parity flags apply to simulate_delta -- but every snapshot
+# carries provenance `emulated` (twin_core.schema.PROVENANCE_EMULATED, the
+# ni_devices.source vocabulary where `synthetic` is spelled out as "NOT evidence
+# of anything"). A floci S3 bucket is a container's in-process state and ranking
+# it beside a real inventory is the rmf-disc-02 defect one layer up. So:
+# `_persist_snapshot` takes NO provenance parameter and binds the module
+# constant; a test reads its AST and refuses one (a behavioural test over
+# today's callers -- which pass none -- would still pass the day somebody
+# threads a kwarg through); and migration 20260905070028 DERIVES a CHECK from
+# schema.SNAPSHOT_PROVENANCES, so the database refuses one too.
+# simulate_delta carries `provenance` in `extra` on EVERY envelope including a
+# clean one -- a consumer that only learns the estate was emulated when
+# something is wrong will read a clean run as evidence about a real deployment.
+#
+# Table `floci_twin_snapshots` (owner `it` by PREFIX RULE in
+# args/schema_ownership_rules.yaml, never a manifest line), registered as a
+# substrate in args/capability_consumption.yaml -- it reads `absent` until
+# `python tools/db/migrate.py --up` runs, which is the tool's own distinction
+# between "a migration never ran" and "a writer never ran".
+# NEVER source a performance, cost or capacity claim from this twin: an emulator
+# reproduces the AWS API contract, not its performance characteristics
+# (docs/spikes/twx-spk-01-localstack-go-no-go.md's standing guard).
 
 ### Python Dependencies
 See `requirements.txt`. Key: sqlite3, pathlib, json (stdlib); openai, anthropic, python-dotenv (optional); pyyaml, jinja2, flask, pytest (ICDEV™).

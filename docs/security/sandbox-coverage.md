@@ -2270,3 +2270,291 @@ that.
   than operator-supplied, or if `chaincode_query` output is ever fed to a parser
   richer than `json.loads` / an LLM prompt.
 
+### Gap 65 — floci emulator holds the host Docker socket (`docker-compose.yml`, `floci` profile)
+
+- **File:** `docker-compose.yml` — service `floci` (flx-compose-01); switch at
+  `tools/cloud/emulator.py` (flx-seam-01).
+- **Risk:** The service bind-mounts the host Docker socket
+  (`${FLOCI_DOCKER_SOCKET_MOUNT:-//var/run/docker.sock}:/var/run/docker.sock`).
+  **A container holding the host Docker socket is root-equivalent on that
+  host** — it can start a privileged container, bind-mount `/`, and read or
+  write anything the daemon can. This is not a sandbox escape hatch that might
+  theoretically be reachable; it is a deliberate grant, and it is the single
+  most consequential line in the compose file. The emulator additionally
+  ingests whatever an ICDEV caller sends it (Terraform plans, Lambda bundles,
+  S3 objects) and executes container-backed services from those inputs.
+- **Decision:** **bypass-documented** — an operator-gated grant, off by
+  default, never reached by any ICDEV default path.
+- **Rationale:** The grant buys the container-backed services and nothing else:
+  Lambda, RDS, ElastiCache, OpenSearch, MSK and ECS/EC2/EKS are implemented by
+  floci as *sibling containers*, so without the socket those services cannot be
+  emulated at all. The in-process services (S3, DynamoDB, SQS, SNS, ECR, IAM,
+  SSM, STS, KMS) need no socket and work with the mount removed. Sandboxing the
+  emulator itself is not available: nesting it inside `SandboxExecutor` would
+  mean handing the socket to the sandbox instead, which relocates the grant
+  rather than removing it. The operator approved the grant on 2026-09-05 for a
+  **locally hosted** Docker daemon, on a developer workstation, for
+  API-contract testing only.
+- **Guardrails:**
+  - **The service is behind the `floci` compose profile.** A service carrying a
+    `profiles:` key does not start on a bare `docker compose up`, is not in
+    `/start`, and is not in the 24-service default set. Starting it is two
+    deliberate acts: setting `FLOCI_ENABLED=true` (the ICDEV-side switch) and
+    `docker compose --profile floci up -d` (the emulator itself). `icdev enable
+    floci` becomes the first of those once flx-compose-02 registers the toggle;
+    it is not a command today (verified 2026-09-04 against
+    `tools/cli/enable.py::TOGGLES`). Pinned by
+    `tests/cloud/test_floci_compose_profile.py::test_floci_is_absent_from_the_default_start_set`,
+    which asserts on the *absence of a `profiles` key* across every service
+    rather than on the profile string, and carries a negative control so it
+    cannot pass over an empty default set.
+  - **Loopback-only publication.** Every published port is bound to
+    `127.0.0.1`, so a socket-holding container is not reachable off-host. Same
+    posture as the `litellm-proxy` profile in the same file. Pinned by
+    `test_every_published_port_is_loopback_only`.
+  - **The image tag is pinned** (`floci/floci:2.0.1`, never `:latest`) so an
+    air-gapped bundle is reproducible and the socket is not handed to an image
+    that changed under the deployment. Pinned by
+    `test_image_is_pinned_and_never_latest`. Pin by digest (`@sha256:...`) and
+    record it in the SBOM before any real deployment.
+  - **`FLOCI_DOCKER_DOCKER_HOST` is left unset**, so floci reaches only the
+    daemon it was handed. A remote daemon and an internal registry mirror are
+    named follow-ons (flx-airgap-02), not silently configured here. Pinned by
+    `test_remote_docker_host_is_left_unset`.
+  - **The mount source is a distinct variable from the seam's socket
+    variable**, and this is a correctness guardrail, not a naming preference.
+    `FLOCI_DOCKER_SOCKET` is read by `emulator.docker_basis()` to answer how the
+    ICDEV *Python process on the host* would reach the daemon; the compose
+    mount source is a path inside Docker Desktop's Linux VM namespace that does
+    not exist on the Windows filesystem. MEASURED 2026-09-04 on the Windows
+    host: giving them one name makes `docker_backed()` return `False` and
+    `service_supported("lambda")` return `False` for a Lambda that works — a
+    fabricated refusal, the same defect class as a fabricated `[]` pointing the
+    other way. Pinned on a POSIX *and* a Windows platform by
+    `test_mount_variable_is_not_the_seams_socket_variable`.
+  - **Persistent state is gitignored.** `FLOCI_STORAGE_MODE=persistent` writes
+    buckets, queues, tables and Lambda bundles under `./data/floci`, and this
+    repo is PUBLIC. `data/floci/` is ignored — anchored, never a bare `data/`,
+    which once silently dropped a code directory here. Pinned by
+    `test_emulator_state_is_gitignored` and
+    `test_the_pattern_is_anchored_and_not_a_bare_data_directory` through git's
+    own `check-ignore` predicate rather than a substring search, with a
+    negative control asserting a tracked file under `data/` stays visible.
+  - **Never a source of a performance, cost or capacity claim.** An emulator
+    reproduces the AWS *API contract*, not its performance characteristics —
+    the standing guard from
+    `docs/spikes/twx-spk-01-localstack-go-no-go.md`, which the flx project
+    supersedes on the air-gap question **only** (floci carries no auth-token
+    image).
+- **Revisit if:** the profile is started anywhere automatically (a reflex, a
+  CI job, `/start`, or a `depends_on` from a default-profile service); the
+  socket mount moves out from behind the profile onto a default service;
+  `FLOCI_DOCKER_DOCKER_HOST` is set to a **remote** daemon (a different trust
+  question — the grant then crosses a host boundary, and flx-airgap-02 must
+  carry its own decision here); the emulator is exposed off-loopback or run on
+  a shared/CI host rather than a developer workstation; or floci begins
+  accepting tenant-supplied rather than operator-supplied input. Any one of
+  those makes **bypass-documented** the wrong decision and requires re-deciding
+  between `sandboxed` and refusing the grant.
+
+### Gap 66 — floci-az emulator holds the host Docker socket (`docker-compose.yml`, `floci-az` profile)
+
+- **File:** `docker-compose.yml` — service `floci-az` (flx-az-01); switch at
+  `tools/cloud/emulator_az.py`.
+- **Decision:** **bypass-documented** — the SAME decision as Gap 65, on the same
+  grounds, for the Azure sibling. Recorded as its own entry rather than folded
+  into Gap 65 because a socket grant is an operator decision per service, and a
+  second service silently inheriting the first's exemption is exactly what
+  `test_only_profiled_emulators_are_granted_the_docker_socket` now refuses.
+- **Why the grant exists:** Azure Functions spawns runtime containers as
+  *siblings* of the emulator, so without the socket that service cannot run at
+  all. The operator decision of 2026-09-05 (locally hosted Docker, for now)
+  applies unchanged: the LOCAL daemon, no remote `FLOCI_AZ_DOCKER_DOCKER_HOST`,
+  no internal registry mirror.
+- **Why it is acceptable:**
+  - **The service is behind the `floci-az` compose profile**, so it never starts
+    with a plain `docker compose up`. Asserted over the WHOLE granted set, not
+    one name.
+  - **Loopback-only port publishing** (`127.0.0.1:4577:4577`) — an emulator
+    holding the host socket must not be reachable off-host. The container-backed
+    proxy ranges are declared in `emulator_az.PROXY_PORT_RANGES` and
+    deliberately NOT published; publishing them would also collide with the
+    `floci` profile's own 6379-6399 range on any host running both.
+  - **The image tag is pinned** (`floci/floci-az:0.12.0`, never `:latest`), with
+    the digest recorded in `emulator_az.IMAGE_DIGEST`.
+  - **Input is operator-supplied, not tenant-supplied.** ICDEV reads this
+    emulator through one governed DataBridge grant scoped to
+    `twin_observatory_analyst`, READ ONLY, and there is no Azure IaC executor —
+    nothing in this tree applies a change through it.
+  - **Persistent state is gitignored.** `FLOCI_AZ_STORAGE_MODE=persistent` writes
+    under `./data/floci-az` (the image's own `/app/data`, not `/var/lib/floci`),
+    and this repo is PUBLIC. `data/floci-az/` needed its OWN `.gitignore` entry:
+    the existing `data/floci/` rule ends in a slash and does not cover it.
+  - **Never a source of a performance, cost or capacity claim** — the standing
+    guard from `docs/spikes/twx-spk-01-localstack-go-no-go.md`.
+- **One extra hazard this emulator has and Gap 65 does not:** floci-az serves an
+  **IMDS token endpoint** at `/metadata/identity/oauth2/token` and issues real
+  signed JWTs (measured 2026-09-05). The connection row's `egress_allowlist`
+  (`localhost`, `127.0.0.1`, `::1`) is what stops a mis-set seam dialling the
+  real link-local `169.254.169.254` instead, and it is enforced at the point the
+  destination is decided rather than per URL.
+- **Revisit if:** the profile is started anywhere automatically; the socket mount
+  moves onto a default-profile service; `FLOCI_AZ_DOCKER_DOCKER_HOST` is set to a
+  **remote** daemon (a different trust question — the grant then crosses a host
+  boundary); the emulator is exposed off-loopback or run on a shared/CI host; an
+  Azure IaC executor is added (the read-only premise above then no longer holds);
+  or floci-az begins accepting tenant-supplied rather than operator-supplied
+  input.
+
+### Gap 67 — floci-gcp emulator holds the host Docker socket (`docker-compose.yml`, `floci-gcp` profile)
+
+- **File:** `docker-compose.yml` — service `floci-gcp` (flx-gcp-01); switch at
+  `tools/cloud/emulator_gcp.py`.
+- **Risk:** The service bind-mounts the host Docker socket
+  (`${FLOCI_GCP_DOCKER_SOCKET_MOUNT:-//var/run/docker.sock}:/var/run/docker.sock`).
+  **A container holding the host Docker socket is root-equivalent on that
+  host** — it can start a privileged container, bind-mount `/`, and read or
+  write anything the daemon can. Identical in kind to Gap 65 and Gap 66, and
+  the grant is made a third time deliberately rather than inherited.
+- **Decision:** **bypass-documented** — an operator-gated grant, off by
+  default, never reached by any ICDEV default path.
+- **Rationale:** MEASURED 2026-09-05 (see `docs/spikes/flx-gcp-parity.md` §5),
+  by observing what each service actually started rather than reading a service
+  list: **Cloud SQL** spawns `postgres:15.18-alpine`, **Managed Kafka** spawns
+  `redpandadata/redpanda:latest`, **GKE** spawns `rancher/k3s:latest`, and
+  **Cloud Run** spawns *the caller's own image*. Without the socket, Cloud SQL
+  and Kafka return HTTP 500 and those services cannot be emulated at all. Every
+  other lane the ICDEV connector reads — GCS, Pub/Sub, Secret Manager, KMS, IAM,
+  BigQuery, Resource Manager — needs no socket and works with the mount removed.
+  Sandboxing the emulator itself is not available: nesting it inside
+  `SandboxExecutor` would mean handing the socket to the sandbox instead, which
+  relocates the grant rather than removing it. The operator approved the grant
+  on 2026-09-05 for a **locally hosted** Docker daemon, on a developer
+  workstation, for API-contract testing only.
+- **Guardrails:**
+  - **The service is behind the `floci-gcp` compose profile**, so it does not
+    start on a bare `docker compose up` and is not in `/start`. Starting it is
+    two deliberate acts: `FLOCI_GCP_ENABLED=true` and
+    `docker compose --profile floci-gcp up -d`. Pinned by
+    `tests/cloud/test_floci_compose_profile.py::test_only_profiled_emulators_are_granted_the_docker_socket`,
+    which asserts the socket-granted set is EXACTLY the three enumerated
+    emulators and that every one of them is profiled — so a FOURTH grant fails
+    that test rather than inheriting this exemption.
+  - **Loopback-only publication.** The single published port (4588) is bound to
+    `127.0.0.1`. Pinned by `test_every_published_port_is_loopback_only`.
+  - **The image tag is pinned** (`floci/floci-gcp:0.8.0`, never `:latest`), and
+    the digest measured on 2026-09-05
+    (`sha256:5037d304aded5ab4ccf4697239131521fe66b8952f411f6c1781c9166d2ab01b`)
+    is recorded in `emulator_gcp.IMAGE_DIGEST`. Pin by digest and record it in
+    the SBOM before any real deployment.
+  - **`FLOCI_GCP_DOCKER_DOCKER_HOST` is left unset**, so floci-gcp reaches only
+    the daemon it was handed. A remote daemon and an internal registry mirror
+    are named follow-ons, not silently configured here.
+  - **The mount source is a distinct variable from the seam's socket variable**
+    (`FLOCI_GCP_DOCKER_SOCKET_MOUNT` vs `FLOCI_GCP_DOCKER_SOCKET`), for the
+    correctness reason established at Gap 65: they answer different questions,
+    and conflating them turns an honest `None` into a fabricated `False`.
+  - **No IaC execution.** `emulator_gcp.IAC_EXECUTION_SUPPORTED` is `False`,
+    `FlociGcpConnector.capabilities.supports_write` is `False`, and `write()`
+    returns a refusal naming the absent executor. ICDEV has
+    `tools/cloud/aws_config_executor.py` and no GCP analogue.
+  - **Persistent state is gitignored.** `FLOCI_GCP_STORAGE_MODE=persistent`
+    writes buckets, topics, secrets and key rings under `./data/floci-gcp`, and
+    this repo is PUBLIC. It needed its OWN `.gitignore` entry: every rule there
+    ends in a slash, so neither `data/floci/` nor `data/floci-az/` covers it.
+  - **Never a source of a performance, cost or capacity claim** — the standing
+    guard from `docs/spikes/twx-spk-01-localstack-go-no-go.md`.
+- **Two ways this emulator's risk profile differs from Gap 66, both measured:**
+  - **It serves NO metadata endpoint.** `GET /computeMetadata/v1/...` returns
+    404, so unlike floci-az there is no emulator-issued token surface to confuse
+    with the real link-local `169.254.169.254`. The connection row's
+    `egress_allowlist` is kept regardless — it bounds where the SEAM may point,
+    which is a question about ICDEV's configuration.
+  - **Cloud Run fails SILENTLY without the socket.** Measured: a socket-less
+    deploy returns HTTP **200** with a service body carrying `uid`,
+    `createTime`, `traffic` and a `urls` entry — indistinguishable from a real
+    deployment. That is why `simulate_delta` raises Cloud Run's severity to
+    `high` while the other container-backed services stay `medium`: the others
+    fail loudly with a 500.
+- **Revisit if:** the profile is started anywhere automatically; the socket mount
+  moves onto a default-profile service; `FLOCI_GCP_DOCKER_DOCKER_HOST` is set to
+  a **remote** daemon (a different trust question — the grant then crosses a host
+  boundary); the emulator is exposed off-loopback or run on a shared/CI host; a
+  GCP IaC executor is added (the read-only premise above then no longer holds);
+  or floci-gcp begins accepting tenant-supplied rather than operator-supplied
+  input.
+
+### Gap 68 — floci-oci emulator holds the host Docker socket (`docker-compose.yml`, `floci-oci` profile)
+
+- **File:** `docker-compose.yml` — service `floci-oci` (flx-oci-01); switch at
+  `tools/cloud/emulator_oci.py`.
+- **Risk:** The service bind-mounts the host Docker socket
+  (`${FLOCI_OCI_DOCKER_SOCKET_MOUNT:-//var/run/docker.sock}:/var/run/docker.sock`).
+  **A container holding the host Docker socket is root-equivalent on that
+  host** — it can start a privileged container, bind-mount `/`, and read or
+  write anything the daemon can. Identical in kind to Gaps 65, 66 and 67, and
+  the grant is made a fourth time deliberately rather than inherited.
+- **Decision:** **bypass-documented** — an operator-gated grant, off by
+  default, never reached by any ICDEV default path.
+- **Rationale, and it is WEAKER than its three siblings' — read this before
+  keeping the mount.** MEASURED 2026-09-05 (see `docs/spikes/flx-oci-parity.md`
+  §5), by observing what actually started rather than reading a service list:
+  **exactly one** of floci-oci's eight services spawns a container — **OKE**,
+  which starts `rancher/k3s:v1.30.1-k3s1`. And **that service does not work**:
+  the emulator starts k3s without a `--token`, the container exits immediately
+  (`level=fatal msg="--token is required"`), and the API nonetheless reports
+  `lifecycleState: ACTIVE` with a `kubernetes` endpoint that has no listener.
+  So on release 0.4.0 the socket buys **no working capability at all**. It is
+  granted for two narrow reasons: shape-parity with the three sibling profiles,
+  so a later release that fixes OKE needs no compose change; and because the
+  ten inventory lanes ICDEV actually reads are unaffected either way (listing
+  spawns no container, measured).
+  **A deployment that wants neither may delete the mount line safely** — and
+  arguably should. Without the socket OKE fails *honestly* with an HTTP 500 and
+  records nothing, which is the more informative failure; with it, a rehearsal
+  gets a fabricated `ACTIVE`. Nothing in ICDEV depends on OKE. Sandboxing the
+  emulator itself is not available: nesting it inside `SandboxExecutor` would
+  mean handing the socket to the sandbox instead, which relocates the grant
+  rather than removing it. The operator approved the local-Docker grant on
+  2026-09-05 for a developer workstation, for API-contract testing only.
+- **Guardrails:**
+  - **The service is behind the `floci-oci` compose profile**, so it does not
+    start on a bare `docker compose up` and is not in `/start`. Starting it is
+    two deliberate acts: `FLOCI_OCI_ENABLED=true` and
+    `docker compose --profile floci-oci up -d`. Pinned by
+    `tests/cloud/test_floci_compose_profile.py::test_only_profiled_emulators_are_granted_the_docker_socket`,
+    which asserts the socket-granted set is EXACTLY the four enumerated
+    emulators and that every one of them is profiled — so a FIFTH grant fails
+    that test rather than inheriting this exemption.
+  - **Loopback-only publication.** The single published port (4599) is bound to
+    `127.0.0.1`. Pinned by `test_every_published_port_is_loopback_only`.
+  - **The image tag is pinned** (`floci/floci-oci:0.4.0`, never `:latest`), and
+    the digest measured on 2026-09-05
+    (`sha256:584fd7f977077ab040063d7c2efaaaa1beabacccd903f5297eaa7bbe8f744a8b`)
+    is recorded in `emulator_oci.IMAGE_DIGEST`. Pin by digest and record it in
+    the SBOM before any real deployment. The one image it spawns is
+    version-pinned too (`rancher/k3s:v1.30.1-k3s1`), unlike the GCP sibling's
+    two `:latest` tags — so an air-gap cache for this emulator is enumerable by
+    digest.
+  - **`FLOCI_OCI_DOCKER_DOCKER_HOST` is left unset**, so floci-oci reaches only
+    the daemon it was handed. A remote daemon and an internal registry mirror
+    are named follow-ons, not silently configured here.
+  - **The mount source is a distinct variable from the seam's socket variable**
+    (`FLOCI_OCI_DOCKER_SOCKET_MOUNT` vs `FLOCI_OCI_DOCKER_SOCKET`), for the
+    correctness reason established at Gap 65: they answer different questions,
+    and conflating them turns an honest `None` into a fabricated `False`.
+  - **No IaC execution, and no provider reach either.**
+    `emulator_oci.IAC_EXECUTION_SUPPORTED` is `False`,
+    `FlociOciConnector.capabilities.supports_write` is `False`, and `write()`
+    returns a refusal naming BOTH the absent OCI IaC executor and the stubbed
+    OCI provider layer. ICDEV's OCI provider classes make no network call at
+    all (`docs/spikes/flx-oci-parity.md` §1), so the blast radius of this
+    emulator inside ICDEV is the DataBridge connector and the twin adapter, and
+    nothing else.
+- **Re-review if:** the socket mount moves onto a default-profile service;
+  `FLOCI_OCI_DOCKER_DOCKER_HOST` is set to a **remote** daemon (a different
+  trust question — the grant then crosses a host boundary); the emulator is
+  exposed off-loopback or run on a shared/CI host; an OCI IaC executor is added
+  or the OCI providers are implemented (the read-only premise above then no
+  longer holds); or floci-oci begins accepting tenant-supplied rather than
+  operator-supplied input.
