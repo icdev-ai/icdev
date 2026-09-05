@@ -42,6 +42,23 @@ from tools.cloud import emulator
 _ROOT = Path(__file__).resolve().parents[2]
 _ENV_EXAMPLE = _ROOT / ".env.example"
 _SEAM = _ROOT / "tools" / "cloud" / "emulator.py"
+
+#: EVERY emulator seam, because `.env.example` is ONE file and the key-set tests
+#: below are about that file (flx-gcp-01). Scoped to `_SEAM` alone, the reverse
+#: direction called `FLOCI_AZ_*` and `FLOCI_GCP_*` "keys the seam never reads" --
+#: which was true of the AWS seam and false of the tree, so a correctly
+#: documented sibling key read as invented configuration.
+#:
+#: Widening it also closed a real gap pointing the other way: floci-az shipped
+#: SIX keys its seam reads and `.env.example` documented NONE of them, so an
+#: operator could not discover that the Azure emulator was configurable at all.
+#: The AWS-specific tests below (deprecation dates, the no-CLI rule) keep using
+#: `_SEAM`, because those ARE properties of that one module.
+_SEAMS = (
+    _SEAM,
+    _ROOT / "tools" / "cloud" / "emulator_az.py",
+    _ROOT / "tools" / "cloud" / "emulator_gcp.py",
+)
 _COMMANDS_DOC = _ROOT / "docs" / "reference" / "commands.md"
 _MANIFEST_SHARD = Path("tools") / "manifest" / "cloud-agnostic-architecture.md"
 
@@ -54,15 +71,23 @@ _ASSIGNMENT_RE = re.compile(r"^([A-Z][A-Z0-9_]*)=(.*)$")
 
 
 def _seam_env_names() -> set[str]:
-    """Every emulator env name the seam's source mentions as a whole string."""
-    tree = ast.parse(_SEAM.read_text(encoding="utf-8"))
-    return {
-        node.value
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Constant)
-        and isinstance(node.value, str)
-        and _ENV_NAME_RE.fullmatch(node.value)
-    }
+    """Every emulator env name ANY seam's source mentions as a whole string.
+
+    Derived across all three seams (:data:`_SEAMS`) because the document these
+    names are checked against is one file. A per-seam derivation makes the two
+    directions disagree: a key one seam reads is, to another seam, invented.
+    """
+    names: set[str] = set()
+    for seam in _SEAMS:
+        tree = ast.parse(seam.read_text(encoding="utf-8"))
+        names |= {
+            node.value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and _ENV_NAME_RE.fullmatch(node.value)
+        }
+    return names
 
 
 def _env_example_lines() -> list[str]:

@@ -2206,6 +2206,40 @@ components:
   min_il: IL4
   default_roles: []
 
+# flx-gcp-01: the local GCP emulator (`floci-gcp`). A THIRD separate component,
+# for the same reason the second one was: three emulators, three ports, and a
+# deployment may run any subset. This one is a 92 MB NATIVE image rather than a
+# JVM, which changes its cost but not the argument.
+#
+# Same `kind: core_extension` reasoning: no page, no blueprint, no IQE
+# collections, so it is not under the 8-point canvas completeness gate.
+#
+# env_flag is FLOCI_GCP_ENABLED — the flag tools/cloud/emulator_gcp.py actually
+# reads — and NOT the ICDEV_FLOCI_GCP_ENABLED the loader would otherwise default
+# to. Same trap as both entries above.
+#
+# NOTE what enabling this flag does NOT do. GCP client libraries take no
+# endpoint override and read standard *_EMULATOR_HOST variables, so pointing a
+# client at the emulator means EXPORTING environment. The seam returns that
+# mapping (emulator_gcp.emulator_host_env) and never writes os.environ — which
+# process sees those names stays the caller's decision, because setting them
+# process-wide would redirect every GCP client in the process, including any
+# talking to real Google Cloud.
+- key: floci_gcp
+  kind: core_extension
+  cli_name: floci-gcp
+  display_name: Floci GCP Emulator
+  description: Local GCP emulator (floci-gcp) used by the Twin Observatory and
+    the DataBridge connector. READ AND INVENTORY ONLY — ICDEV ships no GCP IaC
+    executor, so nothing here executes GCP infrastructure changes. The switch
+    is tools/cloud/emulator_gcp.py. Enabling this flag is the ICDEV-side half;
+    the container starts with `docker compose --profile floci-gcp up -d`.
+  env_flag: FLOCI_GCP_ENABLED
+  default_enabled: false
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+
 # ═══════════════════════════════════════════════════════════════════════════
 # IQE / AI-brief path → canvas map (cvx-nav-01)
 # ═══════════════════════════════════════════════════════════════════════════

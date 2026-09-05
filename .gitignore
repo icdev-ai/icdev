@@ -63,6 +63,15 @@ data/floci/
 # own /app/data, not /var/lib/floci — the two emulators differ).
 data/floci-az/
 
+# floci-gcp GCP-emulator persistent state (flx-gcp-01). A THIRD entry, for the
+# same reason the second one was needed: every rule here ends in a slash and so
+# matches exactly one directory name. Without this line the GCP emulator's
+# buckets, Pub/Sub topics, secrets, key rings and BigQuery datasets land in this
+# PUBLIC repo. FLOCI_GCP_STORAGE_MODE=persistent writes under ./data/floci-gcp
+# (the image's own /app/data — the same target as floci-az, a different
+# directory from floci).
+data/floci-gcp/
+
 # Alert spool and failed-audit dead-letter file — per-machine runtime state.
 data/alerts/
 data/failed_audit_entries.jsonl

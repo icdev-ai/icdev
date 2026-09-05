@@ -2405,3 +2405,81 @@ that.
   Azure IaC executor is added (the read-only premise above then no longer holds);
   or floci-az begins accepting tenant-supplied rather than operator-supplied
   input.
+
+### Gap 67 — floci-gcp emulator holds the host Docker socket (`docker-compose.yml`, `floci-gcp` profile)
+
+- **File:** `docker-compose.yml` — service `floci-gcp` (flx-gcp-01); switch at
+  `tools/cloud/emulator_gcp.py`.
+- **Risk:** The service bind-mounts the host Docker socket
+  (`${FLOCI_GCP_DOCKER_SOCKET_MOUNT:-//var/run/docker.sock}:/var/run/docker.sock`).
+  **A container holding the host Docker socket is root-equivalent on that
+  host** — it can start a privileged container, bind-mount `/`, and read or
+  write anything the daemon can. Identical in kind to Gap 65 and Gap 66, and
+  the grant is made a third time deliberately rather than inherited.
+- **Decision:** **bypass-documented** — an operator-gated grant, off by
+  default, never reached by any ICDEV default path.
+- **Rationale:** MEASURED 2026-09-05 (see `docs/spikes/flx-gcp-parity.md` §5),
+  by observing what each service actually started rather than reading a service
+  list: **Cloud SQL** spawns `postgres:15.18-alpine`, **Managed Kafka** spawns
+  `redpandadata/redpanda:latest`, **GKE** spawns `rancher/k3s:latest`, and
+  **Cloud Run** spawns *the caller's own image*. Without the socket, Cloud SQL
+  and Kafka return HTTP 500 and those services cannot be emulated at all. Every
+  other lane the ICDEV connector reads — GCS, Pub/Sub, Secret Manager, KMS, IAM,
+  BigQuery, Resource Manager — needs no socket and works with the mount removed.
+  Sandboxing the emulator itself is not available: nesting it inside
+  `SandboxExecutor` would mean handing the socket to the sandbox instead, which
+  relocates the grant rather than removing it. The operator approved the grant
+  on 2026-09-05 for a **locally hosted** Docker daemon, on a developer
+  workstation, for API-contract testing only.
+- **Guardrails:**
+  - **The service is behind the `floci-gcp` compose profile**, so it does not
+    start on a bare `docker compose up` and is not in `/start`. Starting it is
+    two deliberate acts: `FLOCI_GCP_ENABLED=true` and
+    `docker compose --profile floci-gcp up -d`. Pinned by
+    `tests/cloud/test_floci_compose_profile.py::test_only_profiled_emulators_are_granted_the_docker_socket`,
+    which asserts the socket-granted set is EXACTLY the three enumerated
+    emulators and that every one of them is profiled — so a FOURTH grant fails
+    that test rather than inheriting this exemption.
+  - **Loopback-only publication.** The single published port (4588) is bound to
+    `127.0.0.1`. Pinned by `test_every_published_port_is_loopback_only`.
+  - **The image tag is pinned** (`floci/floci-gcp:0.8.0`, never `:latest`), and
+    the digest measured on 2026-09-05
+    (`sha256:5037d304aded5ab4ccf4697239131521fe66b8952f411f6c1781c9166d2ab01b`)
+    is recorded in `emulator_gcp.IMAGE_DIGEST`. Pin by digest and record it in
+    the SBOM before any real deployment.
+  - **`FLOCI_GCP_DOCKER_DOCKER_HOST` is left unset**, so floci-gcp reaches only
+    the daemon it was handed. A remote daemon and an internal registry mirror
+    are named follow-ons, not silently configured here.
+  - **The mount source is a distinct variable from the seam's socket variable**
+    (`FLOCI_GCP_DOCKER_SOCKET_MOUNT` vs `FLOCI_GCP_DOCKER_SOCKET`), for the
+    correctness reason established at Gap 65: they answer different questions,
+    and conflating them turns an honest `None` into a fabricated `False`.
+  - **No IaC execution.** `emulator_gcp.IAC_EXECUTION_SUPPORTED` is `False`,
+    `FlociGcpConnector.capabilities.supports_write` is `False`, and `write()`
+    returns a refusal naming the absent executor. ICDEV has
+    `tools/cloud/aws_config_executor.py` and no GCP analogue.
+  - **Persistent state is gitignored.** `FLOCI_GCP_STORAGE_MODE=persistent`
+    writes buckets, topics, secrets and key rings under `./data/floci-gcp`, and
+    this repo is PUBLIC. It needed its OWN `.gitignore` entry: every rule there
+    ends in a slash, so neither `data/floci/` nor `data/floci-az/` covers it.
+  - **Never a source of a performance, cost or capacity claim** — the standing
+    guard from `docs/spikes/twx-spk-01-localstack-go-no-go.md`.
+- **Two ways this emulator's risk profile differs from Gap 66, both measured:**
+  - **It serves NO metadata endpoint.** `GET /computeMetadata/v1/...` returns
+    404, so unlike floci-az there is no emulator-issued token surface to confuse
+    with the real link-local `169.254.169.254`. The connection row's
+    `egress_allowlist` is kept regardless — it bounds where the SEAM may point,
+    which is a question about ICDEV's configuration.
+  - **Cloud Run fails SILENTLY without the socket.** Measured: a socket-less
+    deploy returns HTTP **200** with a service body carrying `uid`,
+    `createTime`, `traffic` and a `urls` entry — indistinguishable from a real
+    deployment. That is why `simulate_delta` raises Cloud Run's severity to
+    `high` while the other container-backed services stay `medium`: the others
+    fail loudly with a 500.
+- **Revisit if:** the profile is started anywhere automatically; the socket mount
+  moves onto a default-profile service; `FLOCI_GCP_DOCKER_DOCKER_HOST` is set to
+  a **remote** daemon (a different trust question — the grant then crosses a host
+  boundary); the emulator is exposed off-loopback or run on a shared/CI host; a
+  GCP IaC executor is added (the read-only premise above then no longer holds);
+  or floci-gcp begins accepting tenant-supplied rather than operator-supplied
+  input.

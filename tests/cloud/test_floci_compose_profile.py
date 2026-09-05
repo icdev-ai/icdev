@@ -211,8 +211,15 @@ def test_remote_docker_host_is_left_unset(floci):
 #: pattern: each entry is an emulator that spawns service containers and each
 #: one is an operator decision recorded in docs/security/sandbox-coverage.md.
 #: `floci` is the AWS emulator (Gap 65); `floci-az` is the Azure emulator
-#: (flx-az-01) -- Azure Functions spawns runtime containers the same way.
-_SOCKET_GRANTED_SERVICES = {"floci", "floci-az"}
+#: (flx-az-01) -- Azure Functions spawns runtime containers the same way;
+#: `floci-gcp` is the GCP emulator (flx-gcp-01), where Cloud SQL, Managed
+#: Kafka, GKE and Cloud Run each spawn one. That last grant is MEASURED rather
+#: than assumed from a service list: on 2026-09-05 those four were the ones
+#: observed to actually start a container (postgres:15.18-alpine,
+#: redpandadata/redpanda:latest, rancher/k3s:latest, and the caller's own
+#: image), and without the socket Cloud SQL and Kafka return 500 while
+#: **Cloud Run returns a fabricated 200**. See docs/spikes/flx-gcp-parity.md.
+_SOCKET_GRANTED_SERVICES = {"floci", "floci-az", "floci-gcp"}
 
 
 def test_only_profiled_emulators_are_granted_the_docker_socket(compose):
@@ -232,9 +239,10 @@ def test_only_profiled_emulators_are_granted_the_docker_socket(compose):
         default, which is precisely the deployment surprise this test exists to
         prevent.
 
-    The set was ``{"floci"}`` until flx-az-01 added the Azure emulator. It was
-    widened by enumeration rather than by relaxing the predicate, so a THIRD
-    grant still fails here.
+    The set was ``{"floci"}`` until flx-az-01 added the Azure emulator and
+    ``{"floci", "floci-az"}`` until flx-gcp-01 added the GCP one. Each widening
+    was by ENUMERATION rather than by relaxing the predicate, so a FOURTH grant
+    still fails here.
     """
     granted = {
         name
