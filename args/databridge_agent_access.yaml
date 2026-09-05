@@ -228,6 +228,58 @@ connectors:
     agents:
       - twin_observatory_analyst
     classification_ceiling: UNCLASSIFIED
+
+  # floci-gcp GCP service emulator (flx-gcp-01) — THE LOCAL EMULATED ESTATE.
+  #
+  # A THIRD SEPARATE GRANT. An operator who authorized reads of the AWS and
+  # Azure emulated estates has said nothing about the GCP one.
+  #
+  # READ ONLY BY CONSTRUCTION, not by convention: FlociGcpConnector declares
+  # supports_write=False and its write() returns `unsupported` naming the absent
+  # GCP IaC executor. ICDEV has tools/cloud/aws_config_executor.py and no GCP
+  # analogue, so there is nothing here that could apply a change.
+  #
+  # The table list is pinned against floci_gcp_connector.TABLES (module level,
+  # not a class attribute) by a test, so a table added to the connector later is
+  # a NEW authorization decision that cannot be skipped.
+  #
+  # `enabled_services` IS NOT A HEALTH TABLE and is granted knowing that. It
+  # returns the emulator's declared/compiled-in service names, MEASURED
+  # byte-identical on a deployment that cannot start a container — the connector
+  # strips the always-"running" status so no caller can render it as one.
+  - name: floci_gcp
+    description: >-
+      Local floci-gcp GCP service emulator (loopback, off by default, no
+      credentials). Read-only view of the EMULATED estate: emulator health and
+      declared-service enablement, the configured project, plus GCS buckets,
+      Pub/Sub topics, Secret Manager secrets, KMS key rings, IAM service
+      accounts, Cloud SQL instances, BigQuery datasets and GKE clusters — one
+      project-scoped request each, because project-scoped lists reflect writes
+      on this emulator (measured 2026-09-05), unlike the Azure sibling.
+      Firestore and Datastore are ABSENT: they answer gRPC only, so this
+      HTTP connector cannot read them at all. Emulated state is never evidence
+      about a real estate — a reader must mark it as such.
+    connection_id: floci-gcp-emulator-local
+    tables:
+      - health
+      - enabled_services
+      - project
+      - buckets
+      - topics
+      - secrets
+      - key_rings
+      - service_accounts
+      - sql_instances
+      - datasets
+      - gke_clusters
+    # Scoped to the twin observer role, matching the two grants above. An empty
+    # list grants EVERY agent including runtime-generated SMEs, and an emulator
+    # that is handed a docker socket — this one spawns Postgres, Redpanda, k3s
+    # and arbitrary caller-named images — is not a source to hand to an
+    # unreviewed SME.
+    agents:
+      - twin_observatory_analyst
+    classification_ceiling: UNCLASSIFIED
 # ---------------------------------------------------------------------------
 # Further examples, left commented. These reach CUSTOMER systems and each needs
 # its own operator review, its own db_connections row and its own secret

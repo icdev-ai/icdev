@@ -1,0 +1,4 @@
+# flx-gcp-01 — floci-gcp GCP emulator seam, connector and twin.
+# One fragment named for the task rather than an append to core.txt: two PRs
+# writing two differently-named files cannot collide (tsg-policy-03).
+tests/cloud/test_floci_gcp_seam.py

@@ -1150,6 +1150,108 @@ services:
         reservations:
           cpus: '0.5'
           memory: 1G
+
+  # floci-gcp — GCP API Emulator (OPT-IN, OFF BY DEFAULT) (flx-gcp-01)
+  # ====================================================================
+  # The GCP sibling of `floci` and `floci-az` above. MIT, Java/Quarkus, and it
+  # listens on 4588 — a THIRD emulator, so all three can run side by side.
+  #
+  # It inherits no compat contract from either sibling. Measured 2026-09-05:
+  # `/_localstack/health` AND `/_floci/health` both return **404** here, and the
+  # health path is plain `/health`. See docs/spikes/flx-gcp-parity.md.
+  #
+  #     docker compose --profile floci-gcp up -d
+  #
+  # `icdev enable floci-gcp` flips the ICDEV-side switch (FLOCI_GCP_ENABLED);
+  # the container is the other half and is started by the line above.
+  #
+  # THE CLIENT CONTRACT IS DIFFERENT, and it is why this card exists: GCP
+  # client libraries take no endpoint-override parameter and read standard
+  # *_EMULATOR_HOST variables instead. Nothing is set here for that — the seam
+  # (emulator_gcp.emulator_host_env) hands a caller the mapping to export, so
+  # the decision about WHICH processes talk to the emulator stays with the
+  # caller rather than being made for the whole host by a compose file.
+  #
+  # READ AND INVENTORY ONLY. ICDEV has tools/cloud/aws_config_executor.py and
+  # NO GCP analogue, so nothing here executes GCP IaC — the seam says so
+  # (emulator_gcp.IAC_EXECUTION_SUPPORTED is False) and a test asserts it.
+  floci-gcp:
+    profiles: ["floci-gcp"]
+    # PINNED, never `:latest`. Kept in step with emulator_gcp.IMAGE by hand —
+    # YAML cannot import a Python constant — and a test pins them equal.
+    # Digest measured 2026-09-05:
+    #   sha256:5037d304aded5ab4ccf4697239131521fe66b8952f411f6c1781c9166d2ab01b
+    image: floci/floci-gcp:0.8.0
+    container_name: icdev-floci-gcp
+    ports:
+      # Loopback-only: an emulator holding the host docker socket must not be
+      # reachable off-host. Services on icdev-net still reach it by name.
+      #
+      # ONE PORT, and there is nothing else to publish. Measured 2026-09-05:
+      # 4588/tcp is the only listening socket in the container (the gRPC server
+      # is MULTIPLEXED onto it rather than taking a second port), and spawned
+      # service containers are addressed by Docker BRIDGE IP with their ports
+      # EXPOSED AND UNPUBLISHED — a Cloud SQL instance came back as
+      # 172.17.0.3:5432. So unlike the floci-az profile above there are no
+      # proxy port ranges to declare or withhold.
+      - "127.0.0.1:4588:4588"            # GCP API edge port (REST *and* gRPC)
+    environment:
+      # MEASURED 2026-09-05: `persistent` is accepted and the startup banner
+      # reports "Storage:   persistent" where the default reports "memory".
+      # The path is the image's own FLOCI_GCP_STORAGE_PERSISTENT_PATH=/app/data
+      # — NOT /var/lib/floci, which is where the AWS sibling keeps state.
+      FLOCI_GCP_STORAGE_MODE: persistent
+      # A GCP region name. NOT `us-gov-west-1` (AWS's) and NOT `usgovvirginia`
+      # (Azure's) — a third vocabulary. Kept in step with
+      # emulator_gcp.DEFAULT_REGION.
+      FLOCI_GCP_DEFAULT_REGION: ${FLOCI_GCP_REGION:-us-central1}
+      # The daemon floci-gcp starts service containers on. Per the operator
+      # decision of 2026-09-05 this is the LOCAL daemon; a remote
+      # FLOCI_GCP_DOCKER_DOCKER_HOST and an internal registry mirror are named
+      # follow-ons, not dropped.
+      DOCKER_HOST: ${FLOCI_GCP_DOCKER_SOCKET_MOUNT_TARGET:-unix:///var/run/docker.sock}
+    volumes:
+      # ./data/floci-gcp is gitignored (flx-gcp-01). NOTE the anchor: the
+      # existing `data/floci/` rule ends in a slash and matches the directory
+      # `floci` only, so neither it nor `data/floci-az/` covers this one.
+      # Without its own entry, per-machine emulator state lands in this PUBLIC
+      # repo.
+      - ./data/floci-gcp:/app/data
+      # Cloud SQL, Managed Kafka, GKE and Cloud Run spawn runtime containers
+      # and need the socket — measured, by what they actually started
+      # (postgres:15.18-alpine, redpandadata/redpanda:latest,
+      # rancher/k3s:latest, and the user's own image respectively).
+      # The leading double slash is required on Windows: a single
+      # `/var/run/...` is rewritten by MSYS/Git Bash path conversion and the
+      # mount silently binds the wrong thing.
+      - ${FLOCI_GCP_DOCKER_SOCKET_MOUNT:-//var/run/docker.sock}:/var/run/docker.sock
+    networks:
+      - icdev-net
+    healthcheck:
+      # floci-gcp's OWN health path — plain `/health`. BOTH siblings' paths
+      # (`/_localstack/health`, `/_floci/health`) answer 404 here.
+      # Mirrors emulator_gcp.HEALTH_PATH; keep the two in step.
+      test: ["CMD", "curl", "-sf", "http://localhost:4588/health"]
+      <<: *healthcheck-defaults
+      # Measured cold start on this host was well under 10s — it is a NATIVE
+      # binary, not a JVM, and logs "started in 0.019s". The headroom is kept
+      # anyway: `start_period` bounds how long a slow host may take before the
+      # container flaps unhealthy, and sizing it to the fastest observed start
+      # makes a loaded CI runner look broken.
+      start_period: 60s
+    logging: *default-logging
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          # Half the floci-az allowance: a 92 MB native image, not a 305 MB
+          # JVM. The spawned service containers carry their own limits and are
+          # not covered by these.
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.25'
+          memory: 512M
 # ======================================================================
 # Networks
 # ======================================================================

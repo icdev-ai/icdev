@@ -85,3 +85,26 @@ presets:
     network_constraints:
       airgap: false
     reviewed_at: "2026-07-01"
+
+  # GCP Assured Workloads (flx-gcp-01). NOTE `region_scope: assured_workloads`,
+  # which is NOT a cosmetic label: every GCP entry in
+  # context/cloud/csp_service_registry.json carries `govcloud_available: false`
+  # and `assured_workloads: true`, so a `government` scope would mark all 8
+  # unavailable and a `commercial` one would drop the government question. The
+  # scope is read by target_presets._available_in_target.
+  #
+  # us-central1 matches the floci-gcp emulator's default region, so a delta
+  # rehearsed locally is scored against the same region name it was rehearsed
+  # under. It is a COMMERCIAL region that Assured Workloads can cover — GCP has
+  # no separate GovCloud-style partition, which is the structural difference
+  # from the AWS and Azure presets above.
+  gcp_assured_workloads:
+    display_name: "GCP Assured Workloads (FedRAMP High)"
+    csp: gcp
+    region: us-central1
+    region_scope: assured_workloads
+    classification: CUI
+    compliance_framework: fedramp_high
+    network_constraints:
+      airgap: false
+    reviewed_at: "2026-09-05"
