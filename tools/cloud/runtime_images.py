@@ -122,6 +122,15 @@ UNMEASURED = "unmeasured"
 #: The rungs that mean "this host can start the container with no network".
 PRESENT_STATES = frozenset({PRESENT_TAGGED, PRESENT_BY_DIGEST, PRESENT_BY_ID})
 
+# ── HOW a verdict was reached (flx-airgap-03). Reported beside `state`, never
+#    folded into it: "every image is on this disk" and "an internal mirror
+#    serves them" are both `satisfied` and need different repairs. ───────────
+BASIS_LOCAL_CACHE = "local_cache"
+BASIS_INTERNAL_MIRROR = "internal_mirror"
+BASIS_MIXED = "cache_and_mirror"
+BASIS_EXTERNAL_PULL = "external_pull_required"
+BASIS_NOTHING_REQUIRED = "nothing_container_backed"
+
 _CONFIG_CACHE: dict | None = None
 
 
@@ -420,6 +429,42 @@ def cache_states(
 # ---------------------------------------------------------------------------
 
 
+def _registry_posture(registry_config: dict | None = None) -> dict[str, Any]:
+    """How this deployment would OBTAIN an uncached image (flx-airgap-03).
+
+    Returns a summary plus a per-ref ``origin`` callable. Every failure mode
+    degrades to "the pull is EXTERNAL", which is both today's posture and the
+    fail-closed direction for an air-gap gate: an unreadable mirror declaration
+    must surface the blocker, never bless the deployment.
+    """
+    try:
+        from tools.cloud import floci_registry
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("registry declaration unavailable (%s) — every pull reads external", exc)
+        # `exc` is unbound once this block exits, so the message is captured NOW
+        # rather than closed over — a lambda reading it would NameError at the
+        # exact moment the degraded path is exercised.
+        why = f"registry module unavailable: {exc}"
+        return {
+            "summary": {"declared": False, "basis": why},
+            "origin": lambda ref: {"ref": ref, "external": True,
+                                   "origin": "unmeasured_declaration", "reason": why},
+        }
+    try:
+        cfg = registry_config if registry_config is not None else floci_registry.load_declaration()
+        summary = floci_registry.posture(cfg)
+    except Exception as exc:  # noqa: BLE001
+        # A MALFORMED declaration is not "no mirror". Say which it was.
+        logger.error("registry declaration is unusable (%s) — every pull reads external", exc)
+        why = f"declaration refused: {exc}"
+        return {
+            "summary": {"declared": False, "basis": why},
+            "origin": lambda ref: {"ref": ref, "external": True,
+                                   "origin": "declaration_refused", "reason": why},
+        }
+    return {"summary": summary, "origin": lambda ref: floci_registry.pull_origin(ref, cfg)}
+
+
 def evaluate(
     target: Any = None,
     *,
@@ -427,11 +472,25 @@ def evaluate(
     variants: Optional[Iterable[str]] = None,
     config: dict | None = None,
     prober: Optional[Callable[[Mapping[str, Any]], dict]] = None,
+    registry_config: dict | None = None,
 ) -> dict[str, Any]:
     """Would this deployment need an EXTERNAL PULL at run time?
 
     Pass a ``target`` (design graph / IaC plan) to derive services and variants
     from it, or pass ``services``/``variants`` explicitly.
+
+    TWO WAYS TO ANSWER "NO", AND ONE QUESTION (flx-airgap-03). An image already
+    in the local cache pulls nothing. An image NOT cached still has to come from
+    somewhere, and if that somewhere is an INTERNAL MIRROR the pull does not
+    leave the enclave either. ``registry_config`` (default:
+    ``args/floci_registry.yaml``) is what says which. Shipped disabled, so the
+    default verdict is byte-identical to the flx-airgap-02 posture — the local
+    cache as the only discriminator.
+
+    ``absent_from_cache`` is reported WHATEVER the registry posture, so a
+    mirrored deployment can still see which images its hosts do not hold. It is
+    never folded into ``missing``: "would be pulled from outside" and "is not on
+    this disk" are different facts and only the first is an air-gap finding.
     """
     cfg = config if config is not None else load_declaration()
     report: dict[str, Any] = {
@@ -446,6 +505,10 @@ def evaluate(
         "present": [],
         "unmeasured": [],
         "mismatched": [],
+        "absent_from_cache": [],
+        "mirror_served": [],
+        "registry_posture": None,
+        "basis": None,
         "reason": None,
     }
 
@@ -472,26 +535,47 @@ def evaluate(
     report["requirements"] = [r["ref"] for r in required]
     report["variant_undetermined"] = undetermined
 
+    posture = _registry_posture(registry_config)
+    report["registry_posture"] = posture["summary"]
+
     if not required and not undetermined:
         # Honest: nothing container-backed is declared, so nothing will pull.
         report["state"] = STATE_SATISFIED
+        report["basis"] = BASIS_NOTHING_REQUIRED
         report["reason"] = "no container-backed service declared"
         return report
 
     states = cache_states(required, prober=prober)
-    report["missing"] = [s for s in states if s["state"] == ABSENT]
-    report["mismatched"] = [s for s in states if s["state"] == DIGEST_MISMATCH]
     report["unmeasured"] = [s for s in states if s["state"] == UNMEASURED]
     report["present"] = [s for s in states if s["state"] in PRESENT_STATES]
+    report["absent_from_cache"] = [
+        s for s in states if s["state"] in (ABSENT, DIGEST_MISMATCH)
+    ]
+
+    # flx-airgap-03. An uncached image still has to come from somewhere, and
+    # WHERE FROM is what decides whether this is an air-gap finding. With no
+    # mirror declared every origin reads external and `missing`/`mismatched`
+    # hold exactly what they held before this card.
+    for row in report["absent_from_cache"]:
+        origin = posture["origin"](row["ref"])
+        enriched = dict(row)
+        enriched["pull_origin"] = origin
+        if not origin.get("external", True):
+            report["mirror_served"].append(enriched)
+        elif row["state"] == DIGEST_MISMATCH:
+            report["mismatched"].append(enriched)
+        else:
+            report["missing"].append(enriched)
 
     # Ordered worst-first. A blocked image is a proven finding and outranks a
     # variant we could not resolve, which outranks a cache we could not read.
     if report["missing"] or report["mismatched"]:
         report["state"] = STATE_BLOCKED
+        report["basis"] = BASIS_EXTERNAL_PULL
         report["reason"] = (
             f"{len(report['missing'])} required image(s) absent from the local cache, "
-            f"{len(report['mismatched'])} present at a different digest — "
-            f"these WILL be pulled at run time"
+            f"{len(report['mismatched'])} present at a different digest, with no internal "
+            f"mirror serving them — these WILL be pulled from OUTSIDE the enclave at run time"
         )
     elif report["unmeasured"]:
         report["state"] = STATE_UNMEASURED
@@ -502,8 +586,33 @@ def evaluate(
             "cannot determine which base image these declare: "
             + ", ".join(undetermined)
         )
+    elif report["mirror_served"]:
+        # Satisfied, and the basis says HOW — a mirrored deployment must never
+        # read as "all cached", because the two need different repairs when the
+        # next image is added and because nothing here proved the mirror holds
+        # it (floci_registry.pull_origin reports verified: False on every row).
+        report["state"] = STATE_SATISFIED
+        report["basis"] = (
+            BASIS_INTERNAL_MIRROR if not report["present"] else BASIS_MIXED
+        )
+        mirrors = sorted({
+            r["pull_origin"].get("mirror") for r in report["mirror_served"]
+            if r["pull_origin"].get("mirror")
+        })
+        parts = []
+        if report["present"]:
+            parts.append(f"{len(report['present'])} required image(s) already cached")
+        parts.append(
+            f"{len(report['mirror_served'])} served by internal mirror(s) "
+            f"{', '.join(mirrors) or '—'}"
+        )
+        report["reason"] = (
+            " and ".join(parts) + " — no pull leaves the enclave. MIRROR COMPLETENESS IS "
+            "NOT VERIFIED: nothing here contacts a registry."
+        )
     else:
         report["state"] = STATE_SATISFIED
+        report["basis"] = BASIS_LOCAL_CACHE
         report["reason"] = f"all {len(required)} required image(s) already cached"
     return report
 

@@ -87,6 +87,7 @@ def _emulator_runtime_image_violations(
     severity: str,
     source_canvas: str | None,
     runtime_image_probe: Any = None,
+    registry_config: Any = None,
 ) -> list[dict]:
     """Blockers for emulator base images that would be PULLED at run time (flx-airgap-02).
 
@@ -140,7 +141,9 @@ def _emulator_runtime_image_violations(
             detail=f"runtime_images module unavailable: {exc}",
         )]
 
-    report = runtime_images.evaluate(target, prober=runtime_image_probe)
+    report = runtime_images.evaluate(
+        target, prober=runtime_image_probe, registry_config=registry_config
+    )
     state = report.get("state")
 
     if state == runtime_images.STATE_SATISFIED:
@@ -187,6 +190,7 @@ def evaluate_airgap(
     config: dict | None = None,
     active: bool | None = None,
     runtime_image_probe: Any = None,
+    registry_config: Any = None,
 ) -> list[dict]:
     """Return canonical air-gap violations for ``target`` (a graph or IaC plan).
 
@@ -203,6 +207,13 @@ def evaluate_airgap(
             ``emulator_runtime_images`` rule (flx-airgap-02). ``None`` asks the
             local docker daemon. Every OTHER rule here is a pure string match
             over ``target`` and is unaffected by it.
+        registry_config: injectable registry declaration for the same rule
+            (flx-airgap-03). ``None`` reads ``args/floci_registry.yaml``. An
+            uncached image served by an INTERNAL mirror pulls internally and is
+            not an air-gap violation; one with no mirror, or a mirror this
+            system's own allowlist does not call internal, still is. Same rule,
+            same meaning of "run-time pull" — see
+            :func:`tools.cloud.floci_registry.pull_origin`.
 
     Every violation carries ``severity='deployment_blocker'`` (→ ``blocker``) and
     ``method='airgap-rule'``.
@@ -237,6 +248,7 @@ def evaluate_airgap(
                     severity=severity,
                     source_canvas=source_canvas,
                     runtime_image_probe=runtime_image_probe,
+                    registry_config=registry_config,
                 )
             )
             continue
