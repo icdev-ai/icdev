@@ -319,14 +319,57 @@ reverify_when_missing: false
 # repair path here assumes there is a CI result to react to. #1462 sat that way
 # with zero checks: not failing, not running, simply absent.
 #
-# Age is measured from the PR's createdAt, not updatedAt: a comment or a label
-# moves updatedAt, so a chatty PR would never look old enough to have missed its
-# run.
+# Age is measured from the HEAD SHA, not from the PR's createdAt and never from
+# updatedAt (which a comment or a label moves, so a chatty PR would never look
+# old enough to have missed its run).
+#
+# ANCHORED TO THE PUSH, BECAUSE THAT IS WHAT THE SENTENCE ABOVE DESCRIBES
+# (kpr-watch-12). Aged from `createdAt` this grace was spent forever after a
+# PR's first 15 minutes and EVERY subsequent push got ZERO -- measured on #2088,
+# 28.5 minutes old at its escalation with a head sha 1.2 minutes old. The anchor
+# is the head commit's `committedDate` (a rebase rewrites it, so a force-push is
+# dated by the rebase), falling back to `createdAt` when the head is not in the
+# commits list. A commit date is at or BEFORE the push, so the age it yields
+# OVERSTATES how long the sha has sat there -- biased toward escalating, which
+# is the conservative direction for a predicate that closes a real PR.
+#
+# Do NOT raise this to quieten a premature escalation. A longer wait does not fix
+# a predicate that cannot tell a queued run from an absent one, and the grace is
+# also what the ONE close/reopen per PR is spent against -- spend it early and
+# the second episode has nothing left. Narrow the predicate instead.
 ci_missing_grace_minutes: 15
+
+# Ask the forge whether a workflow run EXISTS for the head sha before calling it
+# a workflow that never fired (kpr-watch-12).
+#
+# A run exists for 32-84 seconds before its first check run appears in
+# `statusCheckRollup` -- measured on three consecutive runs of PR #2088 (>=84s,
+# 65s, 32s) against a 30s poll interval -- so inside that gap a healthy queued
+# run and an absent one are the SAME empty rollup. One `gh api
+# .../actions/runs?head_sha=` separates them.
+#
+# Asked LAST and only for a PR whose rollup is empty AND whose head sha is
+# already past the grace, so it costs nothing on a healthy board. FAIL-OPEN: a
+# missing gh, a rate limit or an unparseable body all read as "no run", because
+# "unmeasurable" is not "a run exists" and the alternative silently disables the
+# rung on the deployment where the forge is unwell. Only a run YOUNGER than the
+# grace counts -- one that has produced no check in 40 minutes is STUCK, and
+# that PR is exactly what the rung hands to a human.
+#
+# Set false to take the grace anchor alone (it withholds the larger share of
+# spurious firings by itself). Never a shell neutraliser.
+ci_probe_workflow_runs: true
 
 # Re-triggers are capped at ONE per PR. The fix is a close/reopen to re-fire
 # pull_request workflows; if that does not bring CI back, the cause is
 # infrastructure and a second attempt only delays telling a human.
+#
+# THE CAP IS SPENT ON THE FIRST EMPTY ROLLUP, LIFETIME. That is why the
+# predicate above had to be narrowed rather than this number raised: #2088 spent
+# its one re-trigger on a healthy 80-second-old run and the close/reopen's new
+# run CANCELLED it (mfx-ci-02's cancel-in-progress) before it materialised a
+# single check, leaving the budget empty for the real episode 10 minutes later.
+# A second re-trigger would only cancel a second healthy run.
 max_ci_retriggers_per_pr: 1
 
 # Re-exec the daemon when its own code changes on disk.

@@ -903,6 +903,11 @@ class PRWatcher:
         # re-checked once, and if it still fails the PR stays held until a human
         # or a dispatch changes something.
         self._reverify_attempts: Dict[str, int] = {}
+        # kpr-watch-12: head sha -> True once the forge has confirmed a
+        # workflow run for it. POSITIVE ANSWERS ONLY (see
+        # `_run_exists_for_head`); a negative one becomes positive in
+        # seconds and must be re-asked every poll.
+        self._head_run_cache: Dict[str, bool] = {}
 
     # ── helpers ─────────────────────────────────────────────────────
 
@@ -1491,6 +1496,112 @@ class PRWatcher:
         return self._count_audit_actions(
             task_id, ("pr_watcher.ci_retrigger",), pr_url=pr_url)
 
+    def _head_pushed_at(self, state: dict) -> Tuple[Optional[datetime], str]:
+        """When the CURRENT head sha arrived, and which source said so.
+
+        Returns ``(stamp, basis)`` — ``basis`` is ``head_commit`` for the head
+        commit's own ``committedDate``, ``pr_created`` for the fallback, and
+        ``unmeasured`` when neither can be read.
+
+        A COMMIT DATE IS A PROXY FOR A PUSH TIME, and a deliberate one: the forge
+        exposes no push timestamp on a PR, and ``commits`` is already in
+        `_GH_JSON_FIELDS`, so this costs no extra call. It is a LOWER bound (the
+        push is at or after the commit), so the age it yields is an UPPER bound
+        — it OVERSTATES how long the sha has been sitting there, which biases the
+        caller toward escalating. That is the conservative direction for a
+        predicate whose True triggers a close/reopen.
+
+        A rebase rewrites the committer date, so a force-pushed head is dated by
+        the rebase rather than by the original authorship — measured on #2088,
+        ``00bb0b9d5`` committed 04:55:38 and its run created 04:55:47.
+
+        MATCHED ON ``oid``, NEVER "the last one". An unmatched head means the
+        commits list is stale or truncated, and anchoring the grace to a sha that
+        is not the head is worse than the fallback, which is the shipped
+        behaviour.
+        """
+        head = (state.get("headRefOid") or "").strip()
+        if head:
+            for commit in state.get("commits") or []:
+                if not isinstance(commit, dict):
+                    continue
+                if (commit.get("oid") or "").strip() != head:
+                    continue
+                stamp = _parse_iso(commit.get("committedDate"))
+                if stamp is not None:
+                    return stamp, "head_commit"
+                break
+        stamp = _parse_iso(state.get("createdAt"))
+        return (stamp, "pr_created") if stamp is not None else (None, "unmeasured")
+
+    def _run_exists_for_head(self, state: dict, grace_minutes: int) -> bool:
+        """True when the forge HAS a workflow run for this head sha, still QUEUING.
+
+        AN EMPTY ROLLUP IS NOT A WORKFLOW THAT NEVER FIRED (kpr-watch-12). A run
+        exists for 32-84 seconds before its first check run appears in
+        `statusCheckRollup` — measured on three consecutive runs of PR #2088
+        (>=84s, 65s, 32s) — while this loop polls every `poll_interval_seconds`
+        (30). Inside that gap a healthy queued run is indistinguishable from an
+        absent one from the rollup alone, so the rollup alone cannot answer the
+        question the caller is asking. This asks the one endpoint that can.
+
+        "WITHIN THE GRACE WINDOW" IS LOAD-BEARING. A run created 40 minutes ago
+        that has still produced no check run is STUCK, not queued, and that is
+        precisely the PR the rung exists to hand to a human; withholding there
+        would disable it. Only a run younger than the grace counts as queueing.
+
+        FAIL-OPEN, and the direction is chosen rather than inherited: a missing
+        `gh`, a rate limit, an unparseable body all return False — "unmeasurable"
+        is NOT "a run exists". The alternative silently disables the rung on the
+        deployment where the forge is unwell, which is #1462's failure mode. The
+        cheap anchor in `_ci_never_fired` already absorbs the sub-poll-interval
+        artifact without reaching the forge at all, so this rung is the check and
+        not the belt.
+
+        Asked LAST and only for a PR whose rollup is empty AND whose head sha is
+        already past the grace — the same cost ordering `_stale_verdict` takes
+        for the one condition that can reach the forge.
+        """
+        if not self.config.get("ci_probe_workflow_runs", True):
+            return False
+        head = (state.get("headRefOid") or "").strip()
+        if not head:
+            return False
+        if self._head_run_cache.get(head):
+            # A POSITIVE answer only. A run that exists cannot un-exist, but a
+            # negative one becomes positive within seconds — caching that would
+            # freeze the 32-84s materialisation gap in for the watcher's life.
+            return True
+        runner = self._gh_runner or subprocess.run
+        path = ("repos/{owner}/{repo}/actions/runs?head_sha=%s&per_page=20"
+                % head)
+        try:
+            proc = runner(
+                ["gh", "api", path, "--jq", ".workflow_runs[] | {created_at}"],
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=30,
+            )
+        except Exception:  # noqa: BLE001 — unmeasured, never a crash in the poll
+            logger.debug("pr_watcher: workflow-run probe failed for %s", head[:9])
+            return False
+        if getattr(proc, "returncode", 1) != 0:
+            return False
+        now = datetime.now(timezone.utc)
+        for line in (getattr(proc, "stdout", "") or "").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                created = _parse_iso(json.loads(line).get("created_at"))
+            except (ValueError, TypeError, AttributeError):
+                continue
+            if created is None:
+                continue
+            if (now - created).total_seconds() / 60.0 < grace_minutes:
+                self._head_run_cache[head] = True
+                return True
+        return False
+
     def _ci_never_fired(self, state: dict) -> bool:
         """True when a PR has NO checks at all and is old enough that it should.
 
@@ -1500,25 +1611,39 @@ class PRWatcher:
         running, simply absent — and no code in this loop had an opinion about
         it, so it waited for a person.
 
-        Age is measured from createdAt, not updatedAt: a comment or a label moves
-        updatedAt, so a chatty PR would never look old enough to have missed its
-        run. The grace period exists because a PR opened seconds ago legitimately
-        has an empty rollup while GitHub queues the workflow.
+        THE GRACE IS ANCHORED TO THE HEAD SHA, NOT THE PR (kpr-watch-12). It used
+        to age from `createdAt`, which meant it was spent forever after a PR's
+        first 15 minutes and EVERY subsequent push had ZERO grace — while this
+        docstring said the grace exists "because a PR opened seconds ago
+        legitimately has an empty rollup while GitHub queues the workflow". That
+        is a statement about a PUSH, and it is now anchored to one. Measured on
+        #2088: 28.5 minutes old at its escalation, head sha 1.2 minutes old.
+        Still never `updatedAt`, which a comment or a label moves — a chatty PR
+        would never look old enough to have missed its run.
+
+        TWO RUNGS, CHEAPEST FIRST, and they catch different subsets. Replayed
+        over every recorded firing of this predicate
+        (docs/audits/kpr-watch-12-ci-never-fired-narrowing-survey.md), the head
+        sha anchor withholds 19 of 23 close/reopen re-triggers and the forge
+        probe 14 — the probe cannot see a run that is about to exist, and the
+        anchor cannot tell a queued run from an absent one once the sha is
+        genuinely old. Together they withhold 2 of 30 escalations and 19 of 23
+        re-triggers, and ZERO of the 31 firings on a branch where no workflow run
+        had EVER fired. The rung is narrowed, never removed.
+
+        An unmeasurable age still returns False — cannot age it, so do not act
+        on it. The recovery this gates closes a real PR.
         """
         if state.get("statusCheckRollup"):
             return False
-        created = (state.get("createdAt") or "").strip()
-        if not created:
+        stamp, _basis = self._head_pushed_at(state)
+        if stamp is None:
             return False  # cannot age it, so do not act on it
-        try:
-            stamp = datetime.fromisoformat(created.replace("Z", "+00:00"))
-        except ValueError:
-            return False
-        if stamp.tzinfo is None:
-            stamp = stamp.replace(tzinfo=timezone.utc)
         grace = int(self.config.get("ci_missing_grace_minutes", 15))
         age_min = (datetime.now(timezone.utc) - stamp).total_seconds() / 60.0
-        return age_min >= grace
+        if age_min < grace:
+            return False
+        return not self._run_exists_for_head(state, grace)
 
     def _retrigger_ci(self, task_id: str, pr_url: str) -> Dict[str, Any]:
         """Close and reopen the PR so `pull_request` workflows fire again.
