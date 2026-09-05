@@ -352,6 +352,26 @@ substrates:
       discovering it. Every row carries provenance `emulated` -- an emulated
       estate is NOT evidence about a real one, and a non-zero count here says
       nothing about any deployed fleet.
+  - ref: floci_oci_twin_snapshots
+    note: >-
+      Every snapshot the floci-oci twin adapter freezes of the LOCAL Oracle
+      Cloud emulator (flx-oci-01, migration 20260905115811). Listed the day it
+      was created, for the same reason as floci_twin_snapshots above: the
+      emulator ships OFF (FLOCI_OCI_ENABLED, default false), so a deployment
+      that never turns it on will never write a row and a reader designing
+      against this table must be TOLD it is empty rather than discover it.
+      Every row carries provenance `emulated`. TWO CAVEATS BEYOND ITS SIBLINGS.
+      A non-zero count here says nothing about any deployed fleet AND nothing
+      about ICDEV's OCI support: the emulator's only ICDEV consumers are the
+      DataBridge connector and this twin, because the OCI provider layer is
+      stubbed (docs/spikes/flx-oci-parity.md §1). And rows counted from the
+      `clusters` lane are RECORDS, not running clusters -- floci-oci 0.4.0
+      reports OKE `lifecycleState: ACTIVE` for clusters whose k3s container
+      died on start, which is why every snapshot names `unverified_tables`.
+      NOTE the two sibling tables `floci_az_twin_snapshots` and
+      `floci_gcp_twin_snapshots` are the same shape and are NOT registered
+      here; their absence from this list is an omission, not a claim that they
+      hold rows.
 
 # The five incidents this measurement was built for. Each is asserted to be
 # measurable — `--gate` fails when a case's class cannot be measured at all,

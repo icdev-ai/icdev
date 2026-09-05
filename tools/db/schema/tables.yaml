@@ -600,6 +600,7 @@ tables:
   flaky_tasks_filed: it
   floci_az_twin_snapshots: it
   floci_gcp_twin_snapshots: it
+  floci_oci_twin_snapshots: it
   floci_twin_snapshots: it
   forecast_audit: it
   forecast_jobs: it

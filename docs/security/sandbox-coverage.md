@@ -2483,3 +2483,78 @@ that.
   GCP IaC executor is added (the read-only premise above then no longer holds);
   or floci-gcp begins accepting tenant-supplied rather than operator-supplied
   input.
+
+### Gap 68 — floci-oci emulator holds the host Docker socket (`docker-compose.yml`, `floci-oci` profile)
+
+- **File:** `docker-compose.yml` — service `floci-oci` (flx-oci-01); switch at
+  `tools/cloud/emulator_oci.py`.
+- **Risk:** The service bind-mounts the host Docker socket
+  (`${FLOCI_OCI_DOCKER_SOCKET_MOUNT:-//var/run/docker.sock}:/var/run/docker.sock`).
+  **A container holding the host Docker socket is root-equivalent on that
+  host** — it can start a privileged container, bind-mount `/`, and read or
+  write anything the daemon can. Identical in kind to Gaps 65, 66 and 67, and
+  the grant is made a fourth time deliberately rather than inherited.
+- **Decision:** **bypass-documented** — an operator-gated grant, off by
+  default, never reached by any ICDEV default path.
+- **Rationale, and it is WEAKER than its three siblings' — read this before
+  keeping the mount.** MEASURED 2026-09-05 (see `docs/spikes/flx-oci-parity.md`
+  §5), by observing what actually started rather than reading a service list:
+  **exactly one** of floci-oci's eight services spawns a container — **OKE**,
+  which starts `rancher/k3s:v1.30.1-k3s1`. And **that service does not work**:
+  the emulator starts k3s without a `--token`, the container exits immediately
+  (`level=fatal msg="--token is required"`), and the API nonetheless reports
+  `lifecycleState: ACTIVE` with a `kubernetes` endpoint that has no listener.
+  So on release 0.4.0 the socket buys **no working capability at all**. It is
+  granted for two narrow reasons: shape-parity with the three sibling profiles,
+  so a later release that fixes OKE needs no compose change; and because the
+  ten inventory lanes ICDEV actually reads are unaffected either way (listing
+  spawns no container, measured).
+  **A deployment that wants neither may delete the mount line safely** — and
+  arguably should. Without the socket OKE fails *honestly* with an HTTP 500 and
+  records nothing, which is the more informative failure; with it, a rehearsal
+  gets a fabricated `ACTIVE`. Nothing in ICDEV depends on OKE. Sandboxing the
+  emulator itself is not available: nesting it inside `SandboxExecutor` would
+  mean handing the socket to the sandbox instead, which relocates the grant
+  rather than removing it. The operator approved the local-Docker grant on
+  2026-09-05 for a developer workstation, for API-contract testing only.
+- **Guardrails:**
+  - **The service is behind the `floci-oci` compose profile**, so it does not
+    start on a bare `docker compose up` and is not in `/start`. Starting it is
+    two deliberate acts: `FLOCI_OCI_ENABLED=true` and
+    `docker compose --profile floci-oci up -d`. Pinned by
+    `tests/cloud/test_floci_compose_profile.py::test_only_profiled_emulators_are_granted_the_docker_socket`,
+    which asserts the socket-granted set is EXACTLY the four enumerated
+    emulators and that every one of them is profiled — so a FIFTH grant fails
+    that test rather than inheriting this exemption.
+  - **Loopback-only publication.** The single published port (4599) is bound to
+    `127.0.0.1`. Pinned by `test_every_published_port_is_loopback_only`.
+  - **The image tag is pinned** (`floci/floci-oci:0.4.0`, never `:latest`), and
+    the digest measured on 2026-09-05
+    (`sha256:584fd7f977077ab040063d7c2efaaaa1beabacccd903f5297eaa7bbe8f744a8b`)
+    is recorded in `emulator_oci.IMAGE_DIGEST`. Pin by digest and record it in
+    the SBOM before any real deployment. The one image it spawns is
+    version-pinned too (`rancher/k3s:v1.30.1-k3s1`), unlike the GCP sibling's
+    two `:latest` tags — so an air-gap cache for this emulator is enumerable by
+    digest.
+  - **`FLOCI_OCI_DOCKER_DOCKER_HOST` is left unset**, so floci-oci reaches only
+    the daemon it was handed. A remote daemon and an internal registry mirror
+    are named follow-ons, not silently configured here.
+  - **The mount source is a distinct variable from the seam's socket variable**
+    (`FLOCI_OCI_DOCKER_SOCKET_MOUNT` vs `FLOCI_OCI_DOCKER_SOCKET`), for the
+    correctness reason established at Gap 65: they answer different questions,
+    and conflating them turns an honest `None` into a fabricated `False`.
+  - **No IaC execution, and no provider reach either.**
+    `emulator_oci.IAC_EXECUTION_SUPPORTED` is `False`,
+    `FlociOciConnector.capabilities.supports_write` is `False`, and `write()`
+    returns a refusal naming BOTH the absent OCI IaC executor and the stubbed
+    OCI provider layer. ICDEV's OCI provider classes make no network call at
+    all (`docs/spikes/flx-oci-parity.md` §1), so the blast radius of this
+    emulator inside ICDEV is the DataBridge connector and the twin adapter, and
+    nothing else.
+- **Re-review if:** the socket mount moves onto a default-profile service;
+  `FLOCI_OCI_DOCKER_DOCKER_HOST` is set to a **remote** daemon (a different
+  trust question — the grant then crosses a host boundary); the emulator is
+  exposed off-loopback or run on a shared/CI host; an OCI IaC executor is added
+  or the OCI providers are implemented (the read-only premise above then no
+  longer holds); or floci-oci begins accepting tenant-supplied rather than
+  operator-supplied input.

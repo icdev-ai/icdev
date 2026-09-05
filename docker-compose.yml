@@ -1252,6 +1252,96 @@ services:
         reservations:
           cpus: '0.25'
           memory: 512M
+
+  floci-oci:
+    profiles: ["floci-oci"]
+    # PINNED, never `:latest`. Kept in step with emulator_oci.IMAGE by hand —
+    # YAML cannot import a Python constant — and a test pins them equal.
+    # Digest measured 2026-09-05:
+    #   sha256:584fd7f977077ab040063d7c2efaaaa1beabacccd903f5297eaa7bbe8f744a8b
+    image: floci/floci-oci:0.4.0
+    container_name: icdev-floci-oci
+    ports:
+      # Loopback-only: an emulator holding the host docker socket must not be
+      # reachable off-host. Services on icdev-net still reach it by name.
+      #
+      # ONE PORT. Measured 2026-09-05: 4599/tcp is the only listening socket in
+      # the container. As on the GCP profile there are no proxy port ranges to
+      # declare — and note that the emulator advertises `http://localhost:4599`
+      # (the CONTAINER's port) inside resource bodies whatever the host mapping
+      # is, so a client must compose URLs from the seam rather than follow one
+      # out of a response.
+      - "127.0.0.1:4599:4599"            # OCI API edge port
+    environment:
+      # MEASURED 2026-09-05: `persistent` is accepted and the startup banner
+      # reports "Storage:   persistent" where the default reports "memory".
+      #
+      # THE VARIABLE NAME IS LOAD-BEARING. Three plausible spellings —
+      # FLOCI_OCI_PERSISTENCE, FLOCI_PERSISTENCE, FLOCI_OCI_PERSISTENCE_MODE —
+      # are SILENTLY IGNORED and leave the banner reading "memory". An operator
+      # who uses one of those believes they enabled persistence and did not.
+      FLOCI_OCI_STORAGE_MODE: persistent
+      # An OCI region name. A FOURTH vocabulary: not `us-gov-west-1` (AWS), not
+      # `usgovvirginia` (Azure), not `us-central1` (GCP). Honoured — measured,
+      # it changes both the banner and the region code embedded in every OCID
+      # the emulator mints. Kept in step with emulator_oci.DEFAULT_REGION.
+      FLOCI_OCI_DEFAULT_REGION: ${FLOCI_OCI_REGION:-us-ashburn-1}
+      # The daemon floci-oci starts service containers on. Per the operator
+      # decision of 2026-09-05 this is the LOCAL daemon; a remote
+      # FLOCI_OCI_DOCKER_DOCKER_HOST and an internal registry mirror are named
+      # follow-ons, not dropped.
+      DOCKER_HOST: ${FLOCI_OCI_DOCKER_SOCKET_MOUNT_TARGET:-unix:///var/run/docker.sock}
+    volumes:
+      # ./data/floci-oci is gitignored (flx-oci-01). NOTE the anchor: the
+      # existing `data/floci/` rule ends in a slash and matches the directory
+      # `floci` only, so none of it, `data/floci-az/` or `data/floci-gcp/`
+      # covers this one. Without its own entry, per-machine emulator state
+      # lands in this PUBLIC repo.
+      - ./data/floci-oci:/app/data
+      # ONE service spawns a runtime container — OKE, measured, by what it
+      # actually started: rancher/k3s:v1.30.1-k3s1 (version-pinned, unlike the
+      # GCP sibling's two `:latest` tags).
+      #
+      # THE SOCKET IS MOUNTED KNOWING OKE IS BROKEN IN 0.4.0: the emulator
+      # starts k3s without a `--token`, the container exits immediately, and
+      # the API still reports lifecycleState ACTIVE. Mounting it keeps this
+      # profile identical in shape to its three siblings and lets a later
+      # release work with no compose change; nothing in ICDEV depends on OKE.
+      # Without the socket, OKE fails honestly with a 500 — which is the more
+      # informative failure, so a deployment that wants neither may drop this
+      # line safely.
+      #
+      # The leading double slash is required on Windows: a single
+      # `/var/run/...` is rewritten by MSYS/Git Bash path conversion and the
+      # mount silently binds the wrong thing.
+      - ${FLOCI_OCI_DOCKER_SOCKET_MOUNT:-//var/run/docker.sock}:/var/run/docker.sock
+    networks:
+      - icdev-net
+    healthcheck:
+      # floci-oci's OWN health path — plain `/health`, the same spelling as
+      # floci-gcp but NOT a shared contract: `/_localstack/health` and
+      # `/_floci/health` both answer 404 here, so this is not a LocalStack
+      # drop-in. Mirrors emulator_oci.HEALTH_PATH; keep the two in step.
+      test: ["CMD", "curl", "-sf", "http://localhost:4599/health"]
+      <<: *healthcheck-defaults
+      # Measured cold start on this host was 0.015s — a NATIVE binary, not a
+      # JVM. The headroom is kept anyway: `start_period` bounds how long a slow
+      # host may take before the container flaps unhealthy, and sizing it to
+      # the fastest observed start makes a loaded CI runner look broken.
+      start_period: 60s
+    logging: *default-logging
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          # Matches the GCP allowance: a 76 MB native image, not a JVM. The one
+          # spawned container (k3s) carries its own limits and is not covered
+          # by these.
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.25'
+          memory: 512M
 # ======================================================================
 # Networks
 # ======================================================================

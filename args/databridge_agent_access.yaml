@@ -280,6 +280,66 @@ connectors:
     agents:
       - twin_observatory_analyst
     classification_ceiling: UNCLASSIFIED
+
+  # floci-oci OCI service emulator (flx-oci-01) — THE LOCAL EMULATED ESTATE.
+  #
+  # A FOURTH SEPARATE GRANT. An operator who authorized reads of the AWS, Azure
+  # and GCP emulated estates has said nothing about the OCI one.
+  #
+  # READ ONLY BY CONSTRUCTION, not by convention, and for TWO reasons rather
+  # than one: FlociOciConnector declares supports_write=False and its write()
+  # returns `unsupported` naming BOTH the absent OCI IaC executor (ICDEV has
+  # tools/cloud/aws_config_executor.py and no OCI analogue) AND the stubbed OCI
+  # provider layer — OCIObjectStorageProvider.list_objects is `return []` and
+  # its siblings are the same shape, so no endpoint can reach them. See
+  # docs/spikes/flx-oci-parity.md §1.
+  #
+  # The table list is pinned against floci_oci_connector.TABLES (module level,
+  # not a class attribute) by a test, so a table added to the connector later is
+  # a NEW authorization decision that cannot be skipped.
+  #
+  # `enabled_services` IS NOT A HEALTH TABLE and is granted knowing that. It
+  # returns the emulator's declared/compiled-in service names, MEASURED
+  # byte-identical on a deployment that cannot start a container — the connector
+  # strips the always-"running" status so no caller can render it as one. It
+  # also carries `self_reports_disagree`, because this emulator's startup log
+  # names seven services and its /health map names eight.
+  - name: floci_oci
+    description: >-
+      Local floci-oci OCI service emulator (loopback, off by default, no
+      credentials). Read-only view of the EMULATED estate: emulator health and
+      declared-service enablement, plus Object Storage buckets, Identity
+      compartments/users/groups/policies, Vault vaults, KMS keys, Queue queues,
+      Streaming streams, Functions applications and OKE clusters — one
+      compartment-scoped request each, because compartmentId is honoured on this
+      emulator (measured 2026-09-05: a bogus compartment returns zero rows),
+      unlike the Azure sibling's subscription-scope trap. OKE rows carry
+      `lifecycle_is_unverified`: floci-oci 0.4.0 starts k3s without a --token,
+      the container exits immediately, and the API keeps reporting ACTIVE.
+      Emulated state is never evidence about a real estate — a reader must mark
+      it as such.
+    connection_id: floci-oci-emulator-local
+    tables:
+      - health
+      - enabled_services
+      - buckets
+      - compartments
+      - users
+      - groups
+      - policies
+      - vaults
+      - keys
+      - queues
+      - streams
+      - applications
+      - clusters
+    # Scoped to the twin observer role, matching the three grants above. An
+    # empty list grants EVERY agent including runtime-generated SMEs, and an
+    # emulator that is handed a docker socket — this one spawns k3s — is not a
+    # source to hand to an unreviewed SME.
+    agents:
+      - twin_observatory_analyst
+    classification_ceiling: UNCLASSIFIED
 # ---------------------------------------------------------------------------
 # Further examples, left commented. These reach CUSTOMER systems and each needs
 # its own operator review, its own db_connections row and its own secret

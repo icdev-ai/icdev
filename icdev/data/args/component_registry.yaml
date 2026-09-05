@@ -2240,6 +2240,46 @@ components:
   min_il: IL4
   default_roles: []
 
+# flx-oci-01: the local OCI emulator (`floci-oci`). A FOURTH separate component,
+# for the same reason the second and third were: four emulators, four ports, and
+# a deployment may run any subset. A 76 MB NATIVE image, like its GCP sibling.
+#
+# Same `kind: core_extension` reasoning: no page, no blueprint, no IQE
+# collections, so it is not under the 8-point canvas completeness gate. That is
+# not a shortcut here — it is the card's own instruction. flx-oci-01 says to
+# ship the compose profile WITHOUT wiring a canvas to it if measured parity does
+# not cover what ICDEV's OCI paths need, and it does not: see
+# docs/spikes/flx-oci-parity.md §1.
+#
+# env_flag is FLOCI_OCI_ENABLED — the flag tools/cloud/emulator_oci.py actually
+# reads — and NOT the ICDEV_FLOCI_OCI_ENABLED the loader would otherwise default
+# to. Same trap as all three entries above.
+#
+# NOTE what enabling this flag does NOT do, and it is a sharper caveat than the
+# GCP one. It does not make ICDEV's OCI support work. ICDEV's OCI provider
+# classes are STUBS that return constants with no network call —
+# OCIObjectStorageProvider.list_objects is `return []` — so no endpoint can
+# reach them, and the only two ICDEV sites that accept a `service_endpoint`
+# target Generative AI inference, which this emulator does not serve. The
+# emulator feeds the DataBridge connector and the Twin adapter, and nothing else
+# in the tree can consume it.
+- key: floci_oci
+  kind: core_extension
+  cli_name: floci-oci
+  display_name: Floci OCI Emulator
+  description: Local Oracle Cloud emulator (floci-oci) used by the Twin
+    Observatory and the DataBridge connector. READ AND INVENTORY ONLY — ICDEV
+    ships no OCI IaC executor AND its OCI provider layer is stubbed, so nothing
+    here executes or even reads OCI infrastructure outside those two consumers.
+    The switch is tools/cloud/emulator_oci.py. Enabling this flag is the
+    ICDEV-side half; the container starts with
+    `docker compose --profile floci-oci up -d`.
+  env_flag: FLOCI_OCI_ENABLED
+  default_enabled: false
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+
 # ═══════════════════════════════════════════════════════════════════════════
 # IQE / AI-brief path → canvas map (cvx-nav-01)
 # ═══════════════════════════════════════════════════════════════════════════
