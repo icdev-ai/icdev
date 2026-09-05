@@ -2892,6 +2892,26 @@ python tools/ci/workflows/icdev_sdlc.py 123          # Run full SDLC pipeline
 
 ---
 
+## Derived Nav Surfaces (mfx-sib-02)
+
+The Compliance dropdown's `request.path in [...]` active-path list in
+`base.html` and the `- Pages:` line in `.claude/commands/start.md` are
+GENERATED between markers. Do not hand-edit either — a route-migration card
+adds its menu link and its 301 redirect, then regenerates.
+
+```bash
+python tools/dashboard/nav_paths.py --write               # regenerate both blocks
+python tools/dashboard/nav_paths.py --check               # exit 1 on drift
+python tools/dashboard/nav_paths.py --check --nav-only    # static half (no Flask, ms)
+python tools/dashboard/nav_paths.py --check --pages-only  # url_map half (~16s)
+python tools/dashboard/nav_paths.py --json
+```
+
+Exit codes: `0` clean · `1` drift · `2` the derivation could not be produced
+(never reported as clean). Config: `args/nav_paths.yaml`.
+
+---
+
 ## Forge Studio Blueprint Commands
 ```bash
 # Tier classification (deterministic 12-signal heuristic)

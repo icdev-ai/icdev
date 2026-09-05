@@ -518,6 +518,66 @@ def _run_undeclared_import_census(root: Path = BASE_DIR) -> bool:
     return False
 
 
+# ---------------------------------------------------------------------------
+# Derived nav surfaces (mfx-sib-02)
+# ---------------------------------------------------------------------------
+NAV_PATHS_TOOL = Path("tools") / "dashboard" / "nav_paths.py"
+
+#: Staged paths that can move the Compliance dropdown's active-path list. The
+#: list is derived from the dropdown's own menu links and from app.py's 301
+#: redirects, so exactly those two files (plus the generator's own config and
+#: the icdev/ mirror) can change the answer.
+NAV_SCOPE = (
+    "tools/dashboard/templates/base.html",
+    "icdev/tools/dashboard/templates/base.html",
+    "tools/dashboard/app.py",
+    "icdev/tools/dashboard/app.py",
+    "args/nav_paths.yaml",
+)
+
+
+def _nav_paths_in_scope(files: list[str]) -> bool:
+    return any(f in NAV_SCOPE for f in files)
+
+
+def _run_nav_paths_check(staged: list[str], root: Path = BASE_DIR) -> bool:
+    """Is the generated Compliance active-path block still its derivation?
+
+    `--nav-only` on purpose. The Pages half of the same generator has to create
+    the Flask app to read its url_map (~16s measured); this half is a template
+    parse and an AST walk, so it costs milliseconds and only runs at all when
+    the commit stages one of the four files that can change the answer. CI
+    (`test-gates`) runs BOTH halves -- this is the fast path, not the backstop.
+
+    Returns True (allow) whenever the gate cannot be resolved.
+    """
+    tool = BASE_DIR / NAV_PATHS_TOOL
+    if not tool.is_file():
+        return True
+    try:
+        result = subprocess.run(
+            [sys.executable, str(tool), "--check", "--nav-only"],
+            capture_output=True, text=True, cwd=str(root), timeout=120,
+            encoding="utf-8", errors="replace",
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(f"[pre-commit] Nav path derivation: SKIPPED -- could not run ({exc})")
+        return True
+    if result.returncode == 0:
+        print("[pre-commit] Nav path derivation: OK")
+        return True
+    print(
+        "[pre-commit] BLOCKED: the generated nav active-path block no longer matches "
+        "its derivation.\n"
+        "  Do not hand-edit it. Add your menu link and your 301 redirect, then run:\n"
+        "    python tools/dashboard/nav_paths.py --write"
+    )
+    for stream in (result.stdout, result.stderr):
+        if stream and stream.strip():
+            print(stream.strip())
+    return False
+
+
 def _run_blueprint_import_check() -> bool:
     """Run the coherence blueprint_imports check."""
     print("[pre-commit] Checking blueprint imports...")
@@ -696,6 +756,12 @@ def main() -> int:
         f.endswith(".py") and (f.startswith("tools/") or f.startswith("icdev/tools/"))
         for f in staged
     ) and not _run_undeclared_import_census():
+        failed = True
+
+    # Derived nav surfaces -- only when this commit stages one of the four
+    # files that can change the derivation. A commit touching none of them
+    # pays nothing.
+    if _nav_paths_in_scope(staged) and not _run_nav_paths_check(staged):
         failed = True
 
     # Always run blueprint import check when Python files change

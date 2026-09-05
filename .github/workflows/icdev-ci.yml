@@ -55,7 +55,24 @@ jobs:
           # job paid the full install. (crx-test-05)
           cache: pip
           cache-dependency-path: requirements.txt
-      - run: pip install ruff
+      # pyyaml is for the nav-derivation gate below, which reads
+      # args/nav_paths.yaml. It is stdlib-plus-yaml on purpose so it can run in
+      # THIS job, where a PR gets its first red in ~30s, rather than only in
+      # test-gates behind a full requirements install.
+      - run: pip install ruff pyyaml
+      # mfx-sib-02. The Compliance dropdown's active-path list is DERIVED from
+      # the dropdown's own menu links and from the 301 redirects app.py
+      # declares. `--nav-only` is a template parse and an AST walk -- no Flask,
+      # no database, milliseconds. The Pages half of the same generator needs
+      # the real url_map and so runs in `test-gates`, which installs Flask.
+      #
+      # Exit codes are load-bearing: 0 clean, 1 a hand edit has drifted from the
+      # derivation, 2 the check could not be produced. Do NOT add `|| true` --
+      # a 2 must stay red, because a generator whose config or markers vanished
+      # reporting "no drift" is exactly the failure this gate exists to close.
+      - name: Derived nav paths (Compliance dropdown)
+        working-directory: ${{ github.workspace }}
+        run: python tools/dashboard/nav_paths.py --check --nav-only
       # NO --fix. An auto-fix step here rewrites the files IN THE RUNNER, so the
       # lint below then passes against a tree nobody committed: the gate goes
       # green while the debt stays in the repo forever. That is how 10 dead
@@ -149,6 +166,24 @@ jobs:
       - name: Swallowed-INSERT gate
         working-directory: ${{ github.workspace }}
         run: python tools/dev/check_swallowed_inserts.py
+      # mfx-sib-02, the expensive half. The `- Pages:` line in
+      # .claude/commands/start.md is derived from the app's url_map, which means
+      # creating the app (~16s measured). It runs HERE rather than in `lint`
+      # because it needs Flask and the whole blueprint tree.
+      #
+      # The probe runs in a SUBPROCESS WITH A SCRUBBED ENVIRONMENT: which
+      # blueprints register depends on .env toggles, and the same checkout
+      # measured 4568 rules under one operator's ambient environment and 2370
+      # under a bare one (2026-09-04). Every component in
+      # args/component_registry.yaml is forced ON, so a runner with no .env and
+      # a workstation with a full one derive the same list.
+      #
+      # `--pages-only` -- the nav half already ran in `lint`, and running it
+      # twice for one answer is what sharding the gates was meant to stop.
+      # Exit 2 (could not produce the derivation) stays red; no `|| true`.
+      - name: Derived start.md Pages line (url_map)
+        working-directory: ${{ github.workspace }}
+        run: python tools/dashboard/nav_paths.py --check --pages-only
       # idp-score-01-d4. A SMOKE gate, not a quality bar: it proves the sweep
       # walks all ~68 components in args/component_registry.yaml and produces a
       # verdict for each without raising. --dry-run writes nothing, so this
