@@ -13,7 +13,9 @@ from pathlib import Path
 from typing import Optional
 
 from tools.studio.sim.base_topology import (
-    BaseTopologyBuilder, DockerServiceSpec, LinkSpec, NodeSpec, ProbeSpec, TopologySpec,
+    CANVAS_EMULATOR_HOST_PORTS, EMULATOR_CONTAINER_PORT, EMULATOR_IMAGE,
+    BaseTopologyBuilder, DockerServiceSpec, LinkSpec, NodeSpec, ProbeSpec,
+    TopologySpec, emulator_health_url,
 )
 
 _FRAMEWORK_MAP = {
@@ -139,7 +141,7 @@ class AIMCTopologyBuilder(BaseTopologyBuilder):
                 ProbeSpec(name="link_count",  type="link_count", expected_value=len(links)),
                 ProbeSpec(name="mlflow_up",   type="http_get",
                           target_node="model-registry", port=5001, path="/health"),
-                ProbeSpec(name="localstack_apply", type="localstack_apply"),
+                ProbeSpec(name="emulator_apply", type="emulator_apply"),
             ],
             docker_services=[
                 DockerServiceSpec(
@@ -149,11 +151,11 @@ class AIMCTopologyBuilder(BaseTopologyBuilder):
                     healthcheck_url="http://localhost:5001/health",
                 ),
                 DockerServiceSpec(
-                    name="icdev-localstack-aimc",
-                    image="localstack/localstack:3.8",
-                    ports={4570: 4566},
+                    name="icdev-floci-aimc",
+                    image=EMULATOR_IMAGE,
+                    ports={CANVAS_EMULATOR_HOST_PORTS["aimc"]: EMULATOR_CONTAINER_PORT},
                     env={"DEFAULT_REGION": "us-east-1"},
-                    healthcheck_url="http://localhost:4570/_localstack/health",
+                    healthcheck_url=emulator_health_url(CANVAS_EMULATOR_HOST_PORTS["aimc"]),
                 ),
             ],
             metadata={

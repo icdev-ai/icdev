@@ -14,7 +14,9 @@ from pathlib import Path
 from typing import Optional
 
 from tools.studio.sim.base_topology import (
-    BaseTopologyBuilder, DockerServiceSpec, LinkSpec, NodeSpec, ProbeSpec, TopologySpec,
+    CANVAS_EMULATOR_HOST_PORTS, EMULATOR_CONTAINER_PORT, EMULATOR_IMAGE,
+    BaseTopologyBuilder, DockerServiceSpec, LinkSpec, NodeSpec, ProbeSpec,
+    TopologySpec, emulator_health_url,
 )
 
 # Gitlab CI stage → GNS3 role
@@ -173,7 +175,7 @@ class PDCTopologyBuilder(BaseTopologyBuilder):
                 ProbeSpec(name="link_count", type="link_count", expected_value=len(links)),
                 ProbeSpec(name="gitlab_up", type="http_get",
                           target_node="scm", port=8929, path="/-/health"),
-                ProbeSpec(name="localstack_apply", type="localstack_apply"),
+                ProbeSpec(name="emulator_apply", type="emulator_apply"),
             ],
             docker_services=[
                 DockerServiceSpec(
@@ -183,11 +185,11 @@ class PDCTopologyBuilder(BaseTopologyBuilder):
                     healthcheck_url="http://localhost:8929/-/health",
                 ),
                 DockerServiceSpec(
-                    name="icdev-localstack-pdc",
-                    image="localstack/localstack:3.8",
-                    ports={4567: 4566},
+                    name="icdev-floci-pdc",
+                    image=EMULATOR_IMAGE,
+                    ports={CANVAS_EMULATOR_HOST_PORTS["pdc"]: EMULATOR_CONTAINER_PORT},
                     env={"DEFAULT_REGION": "us-east-1"},
-                    healthcheck_url="http://localhost:4567/_localstack/health",
+                    healthcheck_url=emulator_health_url(CANVAS_EMULATOR_HOST_PORTS["pdc"]),
                 ),
             ],
             metadata={"stages": stages, "source": source, "stage_count": len(stages)},
