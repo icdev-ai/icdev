@@ -1,0 +1,4 @@
+# flx-airgap-02 — floci runtime base images + the air-gap deployment_blocker rule.
+# One fragment per task (never core.txt): two PRs writing two differently-named
+# files cannot collide.
+tests/cloud/test_floci_runtime_images.py

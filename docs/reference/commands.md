@@ -7929,6 +7929,90 @@ There is deliberately no credential setting: `credentials()` always returns the
 dummy `("test", "test")` pair, because these values reach `docker run -e` and a
 Terraform provider block aimed at localhost.
 
+### floci runtime base images — what the emulator PULLS at run time (flx-airgap-02)
+
+```bash
+python -m tools.cloud.runtime_images --list                    # the measured table
+python -m tools.cloud.runtime_images --check                   # probe the local cache
+python -m tools.cloud.runtime_images --check --json
+python -m tools.cloud.runtime_images --check --services lambda,rds --variants python3.11,postgres
+python -m tools.cloud.runtime_images --measure-help            # how the table was measured
+python tools/airgap/image_vendor.py --save --topic floci-runtime --json   # low side
+python tools/airgap/image_vendor.py --verify --topic floci-runtime --no-daemon-probe --json
+python tools/airgap/image_vendor.py --load --topic floci-runtime --json   # high side
+```
+
+Having `floci/floci:2.0.1` cached is NECESSARY AND NOT SUFFICIENT. floci does
+not carry its container-backed runtimes inside its own image — Lambda, RDS,
+ElastiCache, OpenSearch, MSK and ECS/EC2/EKS each start a SEPARATE container
+from a base image floci resolves FROM THE PUBLIC INTERNET on first use of that
+service, which on a disconnected high side fails at exactly the moment a demo
+runs.
+
+MEASURED, never read off a README: `docker events --filter type=image` recorded
+while a live floci 2.0.1 was driven through every container-backed service with
+boto3 (2026-09-05, Docker 28.5.1). Eleven images, declared with digests and
+per-service attribution in `args/floci_runtime_images.yaml`; the vendor pins are
+`vendor/images/images-floci-runtime.txt` and a test asserts the two agree.
+
+THE IMAGE SET IS A FUNCTION OF DECLARED CONFIGURATION, NOT OF THE SERVICE, and
+that is why a bare per-service list is wrong. A `python3.11` Lambda pulls
+`public.ecr.aws/lambda/python:3.11` and a `nodejs20.x` one pulls
+`public.ecr.aws/lambda/nodejs:20`; RDS `postgres` pulls `postgres:16.3-alpine`
+and `mysql` pulls `mysql:8.0.36`; ElastiCache splits by API AND engine — Redis
+goes through CreateReplicationGroup and pulls `valkey/valkey:8` (floci REFUSES
+`Engine=redis` on CreateCacheCluster), memcached pulls `memcached:1.6`. MSK is
+`redpandadata/redpanda:latest` and EKS is `rancher/k3s:latest` — MUTABLE TAGS,
+flagged as such, so a re-vendor must re-measure rather than assume.
+
+`alpine:3.19` was pulled during the same measured run and is DELIBERATELY ABSENT
+from the table: it was named by the probe's own ECS task definition. That is a
+WORKLOAD image, not a floci runtime base — an ECS/EKS deployment must mirror its
+own workload images too, and no table here can enumerate them for it.
+
+PRESENCE IS A THREE-RUNG LADDER, and checking the tag alone is a FABRICATED
+BLOCKER. Measured 2026-09-05: `docker save repo@sha256:…` then `docker load` —
+which is exactly how `image_vendor` delivers to the high side — produces an
+image with `RepoTags=[]` AND `RepoDigests=[]` that does not appear in
+`docker image ls` and resolves by IMAGE ID alone. So the check tries
+`present_tagged` (ref resolves, RepoDigest matches), `present_by_digest`, then
+`present_by_id`, and REPORTS WHICH ANSWERED. `digest_mismatch` (present under
+the tag, different image) is kept apart from `absent` because the repair differs
+— re-vendor, don't re-mirror.
+
+FOUR VERDICTS, NEVER MERGED: `satisfied` (nothing will pull) | `blocked` (a
+required image is PROVEN absent) | `indeterminate` (a service is declared whose
+VARIANT could not be resolved — a Lambda naming no runtime; guessing fabricates
+either a blocker or a clean bill) | `unmeasured` (the daemon could not be asked
+— NEVER a clean bill of health). Exit 0/1/1/2.
+
+NOTHING IN THIS PATH CAN PULL. Every docker call goes through `image_vendor`'s
+one allowlisted door, whose command set is `version|image|save|load` — so a
+`--check` on a disconnected host cannot fabricate the green cache it is
+measuring. There is no second subprocess site.
+
+THE GATE: `airgap-emulator-runtime-images` in `args/twin_airgap_rules.yaml`
+makes a configuration that would need an external pull at run time a
+`deployment_blocker`. It is the ONLY rule in that file that is not
+deny-by-match over strings the design CONTAINS — a floci config declaring a
+Lambda contains no image reference at all, so a string matcher is structurally
+blind to it; this one derives the requirement and checks the cache. `unmeasured`
+is emitted at `medium` under a `-unmeasured` rule id and is deliberately NOT a
+blocker: a host whose daemon cannot be asked has proven nothing, and refusing
+every CI runner is how a gate earns itself a `|| true`.
+
+MEASURED end to end 2026-09-05: the full set vendors to 1.91 GB across 11 tars
+(all `verified`, `manifest_digest_verified: true`, 0 failures) — well under the
+~6.3 GB `docker image ls` reports, because `docker save` writes each shared
+layer once — and re-verifies with NO daemon in 2.8 s.
+
+Operator procedure (what to vendor, how to load, how to verify by digest, and
+how to tell a mirrored miss from a real outage): §12 of
+[docs/ops/airgap-runbook.md](../ops/airgap-runbook.md). The internal-registry
+variant (`FLOCI_DOCKER_DOCKER_HOST` plus per-registry credentials) is the named
+follow-on **flx-airgap-03** — deferred by the operator decision of 2026-09-05,
+never dropped.
+
 LEAVE `FLOCI_ENDPOINT` UNSET UNLESS YOU MEAN IT. An endpoint declared while the
 switch is off is a CONTRADICTION, and `detect_mode()` answers `dry_run` rather
 than fall through to `aws` — so a stray endpoint downgrades every real
