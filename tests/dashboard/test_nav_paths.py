@@ -114,6 +114,39 @@ def test_an_alias_to_a_page_outside_this_menu_is_not_pulled_in():
             assert old not in derived, f"{old} -> {target} is not in the Compliance menu"
 
 
+#: A menu link whose URL only exists once the app is built.
+DYNAMIC_LINK = '<li><a href="{{ url_for(\'x.y\') }}">Dynamic</a></li>'
+NEWLINE = chr(10)
+
+
+def test_a_jinja_built_menu_link_is_reported_not_silently_dropped(tmp_path):
+    """`href="{{ url_for(...) }}"` is a menu link this derivation cannot read.
+
+    Dropping it silently would stop that page highlighting its own dropdown --
+    the exact defect this module exists to end, reintroduced by the fix. It is
+    REPORTED and never raised: refusing a legitimate `url_for` link would make
+    the gate a false refusal, which is what earns a check a `|| true`.
+    """
+    assert nav_paths.unresolvable_hrefs("compliance") == [], (
+        "measured 0 on this tree; if this fires, a menu link has become "
+        "invisible to the derivation and must be reported to whoever added it"
+    )
+
+    sandbox = _sandbox(tmp_path)
+    target = sandbox / "tools/dashboard/templates/base.html"
+    text = target.read_text(encoding="utf-8")
+    marker = '<li><a href="/pr-intel">'
+    edited = text.replace(marker, DYNAMIC_LINK + NEWLINE + (" " * 20) + marker, 1)
+    assert edited != text, "the anchor link is gone from the Compliance menu"
+    target.write_text(edited, encoding="utf-8")
+
+    found = nav_paths.unresolvable_hrefs("compliance", root=sandbox)
+    assert len(found) == 1, found
+    assert "url_for" in found[0]
+    # and it is NOT quietly folded into the literal list
+    assert "{{" not in " ".join(nav_paths.menu_hrefs("compliance", root=sandbox))
+
+
 def test_derived_list_is_sorted_and_deduplicated():
     derived = nav_paths.derive_nav_paths("compliance")
     assert derived == sorted(set(derived))

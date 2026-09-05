@@ -188,6 +188,11 @@ def _replace_block(path: Path, marker: str, body: str) -> bool:
 
 _HREF_RE = re.compile(r'href="(/[^"#?\s]*)"')
 
+#: An href whose value is computed by Jinja. It is a menu link and it is NOT a
+#: literal path, so the static derivation can neither resolve it nor pretend it
+#: is absent.
+_DYNAMIC_HREF_RE = re.compile(r'(href="\s*\{[{%].*?")', re.DOTALL)
+
 
 def _menu_block(html: str, anchor: str) -> str:
     """The ``<ul class="nav-dropdown-menu">`` belonging to the ``anchor`` trigger."""
@@ -217,15 +222,32 @@ def _menu_block(html: str, anchor: str) -> str:
     raise DeriveError(f"unterminated nav-dropdown-menu for '{anchor}'")
 
 
-def menu_hrefs(dropdown: str, root: Path | None = None) -> list[str]:
-    """Every internal page the dropdown's own menu links to."""
+def _menu_html(dropdown: str, root: Path | None = None) -> str:
     entry = _dropdown_config(dropdown, root)
     targets = nav_targets(root)
     if not targets:
         raise DeriveError("no nav targets declared")
-    html = targets[0].read_text(encoding="utf-8")
-    block = _menu_block(html, entry["anchor"])
-    return sorted({h for h in _HREF_RE.findall(block)})
+    return _menu_block(targets[0].read_text(encoding="utf-8"), entry["anchor"])
+
+
+def menu_hrefs(dropdown: str, root: Path | None = None) -> list[str]:
+    """Every internal page the dropdown's own menu links to."""
+    return sorted(set(_HREF_RE.findall(_menu_html(dropdown, root))))
+
+
+def unresolvable_hrefs(dropdown: str, root: Path | None = None) -> list[str]:
+    """Menu links this static derivation CANNOT read -- reported, never dropped.
+
+    An ``href="{{ url_for('bp.page') }}"`` is a real menu link whose URL only
+    exists once the app is built, so ``menu_hrefs`` cannot see it and the page
+    would silently stop highlighting its own dropdown -- the exact defect this
+    module exists to end, reintroduced by the fix. It is REPORTED rather than
+    raised: refusing a legitimate ``url_for`` link would make this gate a false
+    refusal, and a false refusal is what earns a check a ``|| true``.
+
+    Measured 2026-09-04: 0 on the Compliance menu, all 30 links are literals.
+    """
+    return sorted(set(_DYNAMIC_HREF_RE.findall(_menu_html(dropdown, root))))
 
 
 def _redirect_target(node: ast.AST) -> str | None:
@@ -328,15 +350,17 @@ def write_nav(root: Path | None = None) -> dict[str, Any]:
     cfg = load_config(root).get("nav", {}) or {}
     changed: list[str] = []
     paths: dict[str, list[str]] = {}
+    unresolvable: dict[str, list[str]] = {}
     for dropdown in (cfg.get("dropdowns") or {}):
         paths[dropdown] = derive_nav_paths(dropdown, root)
+        unresolvable[dropdown] = unresolvable_hrefs(dropdown, root)
         block = render_nav_block(dropdown, root)
         for target in nav_targets(root):
             if not target.exists():
                 raise DeriveError(f"nav target is missing: {target}")
             if _replace_block(target, NAV_MARKER, block):
                 changed.append(str(target.relative_to(base)))
-    return {"paths": paths, "changed": changed}
+    return {"paths": paths, "changed": changed, "unresolvable_hrefs": unresolvable}
 
 
 def check_nav(root: Path | None = None) -> dict[str, Any]:
@@ -344,8 +368,10 @@ def check_nav(root: Path | None = None) -> dict[str, Any]:
     cfg = load_config(root).get("nav", {}) or {}
     diffs: list[str] = []
     paths: dict[str, list[str]] = {}
+    unresolvable: dict[str, list[str]] = {}
     for dropdown in (cfg.get("dropdowns") or {}):
         paths[dropdown] = derive_nav_paths(dropdown, root)
+        unresolvable[dropdown] = unresolvable_hrefs(dropdown, root)
         expected = render_nav_block(dropdown, root)
         for target in nav_targets(root):
             actual = read_block(target, NAV_MARKER)
@@ -356,7 +382,12 @@ def check_nav(root: Path | None = None) -> dict[str, Any]:
                     f"{target.relative_to(base)}: '{NAV_MARKER}' block differs from the "
                     f"derivation — regenerate with `{REGEN_HINT}`"
                 )
-    return {"ok": not diffs, "diffs": diffs, "paths": paths}
+    return {
+        "ok": not diffs,
+        "diffs": diffs,
+        "paths": paths,
+        "unresolvable_hrefs": unresolvable,
+    }
 
 
 # ── pages derivation (url_map, scrubbed subprocess) ──────────────────────────
@@ -541,6 +572,16 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(f"ERROR: {exc}", file=sys.stderr)
         return 2
+
+    for dropdown, hrefs in (result.get("nav") or {}).get("unresolvable_hrefs", {}).items():
+        if hrefs:
+            # A warning, never a failure -- see unresolvable_hrefs().
+            print(
+                f"WARNING: {len(hrefs)} link(s) in the '{dropdown}' menu are built by "
+                f"Jinja and cannot be derived statically, so they will not highlight "
+                f"the trigger: {', '.join(hrefs)}",
+                file=sys.stderr,
+            )
 
     diffs = [d for section in result.values() if section for d in section.get("diffs", [])]
     changed = [c for section in result.values() if section for c in section.get("changed", [])]
