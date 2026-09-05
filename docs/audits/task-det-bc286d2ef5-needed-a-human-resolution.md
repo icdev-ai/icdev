@@ -19,8 +19,13 @@ repaired by hand and the branch went `CONFLICTING` -> `MERGEABLE`.
 | Criterion | Before | After |
 |---|---|---|
 | PR #2070 `mergeable` | `CONFLICTING` / `DIRTY` | `MERGEABLE` |
+| PR #2070 CI | `failure` on **all 3** runs it ever had | green |
 | derivation `outcome` for `mfx-sib-03` | `needed_a_human` | `unresolved`, then cleared |
 | `detector_findings` `bc286d2ef5868050` | `active`, `seen_count=4` | `cleared` |
+
+Three independent blockers, not one: the branch was **red on Security Scan from
+the day it opened**, it collided with a stale mirror, and it changes two
+`protected_paths` so the watcher was never permitted to merge it at all.
 
 ## The actual cause: a MIRROR BACKFILL COLLISION, not a plain sibling append
 
@@ -67,7 +72,45 @@ Both conflict hunks had **one empty side**, so the union is not a judgement call
 | line 155 | empty | mfx-mrg-02's `superseded_*` block (88 lines) | take main's |
 | line 396 | mfx-sib-03's `union_resolver:` block (75 lines) | empty | take ours |
 
-## Why the automation could never have finished this — TWO independent reasons
+## Why the automation could never have finished this — THREE independent reasons
+
+The conflict was the *loudest* blocker, not the only one, and not even the first
+one in the ladder. Any ONE of these three would have stopped the merge.
+
+### 0. THE PR WAS NEVER GREEN. Security Scan failed on every run it ever had.
+
+`gh run list --branch kanban/mfx-sib-03 --workflow "ICDEV CI"` — three completed
+runs before this repair, **all three `failure`**:
+
+| run | head | failing jobs |
+|---|---|---|
+| 33897813235 (09-04 16:55) | `00a656af8` | Security Scan |
+| 33901549038 (09-04 17:37) | `c312ff990` | Security Scan, Test Shard 4 |
+| 33943717066 (09-05 04:07) | `40a9eb48d` | Security Scan, Test Shard 4 |
+
+Both are defects in the card's **own** commit, both reproduce locally, and
+neither was introduced by the main merge — each passes on `origin/main` and
+fails on `40a9eb48d`:
+
+- **`Security Scan`** — exactly one bandit high+high, `B701` at
+  `tools/kanban/union_resolver.py:668`: `jinja2.Environment()` defaults to
+  `autoescape=False`. Nothing is ever *rendered* there (the Environment exists
+  only to `parse` a resolved `.html` and raise `UnionRefused` on a syntax
+  error), so `autoescape=True` is behaviourally inert and satisfies the gate
+  honestly — a `#nosec` on a security gate would not.
+- **`Test Shard 4`** — `test_manifest_merge_rehearsal.py::
+  test_commands_doc_appends_merge_cleanly_under_union`, *"union left the
+  ```bash fences unbalanced"*, both `[worktree]` and `[merge-tree]`. The card's
+  `docs/reference/commands.md` section was inserted immediately **before** the
+  closing fence of the mfx-own-02 block, so that block never closed, the new
+  ```` ```bash ```` read as its close, and the section's own trailing fence
+  opened a run to end of file. Fence count went odd. Closing the previous fence
+  restores it (386 fence lines, balanced; rehearsal 18 passed).
+
+**This is what makes the `resume` half of the ladder a reasonable thing to have
+tried and the escalation a correct verdict.** The first five resumes on 09-04
+were against `ci_failed`, which is genuinely an LLM's job; five attempts simply
+never found either defect. What no resume could ever have fixed is §1 and §2.
 
 ### 1. The retries were per-BASE-ERA, and the base era advanced on unrelated commits
 
@@ -139,10 +182,21 @@ Recorded here as the evidence for that card, not applied.
    `test_pr_watcher_superseded` + `test_pr_watcher_union_conflict` +
    `test_pr_watcher_rebase` + `test_pr_watcher` + `test_pr_superseded`
    -> **104 passed, 1 skipped**.
-6. Pushed as a fast-forward (`40a9eb48d..1cb466935`). No force-push, no rebase,
-   no branch deleted.
-7. Landed through the governed door (`cli.py --set-status mfx-sib-03 done
+6. Fixed the two pre-existing red checks (§0), each in its own commit with the
+   reproduction recorded: `autoescape=True` on the parse-only Jinja
+   Environment, mirrored byte-identically into `icdev/`
+   (`bandit … --severity-level high --confidence-level high` -> exit 0, 0
+   issues); and the unclosed fence in `docs/reference/commands.md`
+   (`test_manifest_merge_rehearsal` -> 18 passed).
+7. Pushed as fast-forwards only (`40a9eb48d..1cb466935..43d6974da..b69434bce`).
+   No force-push, no rebase, no branch deleted.
+8. Landed through the governed door (`cli.py --set-status mfx-sib-03 done
    --merge`), because the protected-path rung means the watcher cannot.
+
+Deliberately **not** touched: `icdev/data/docs/reference/commands.md` was
+already diverged from its canonical copy on `origin/main` and this card never
+wrote to it. That is the same `args/` ↔ `icdev/data/` drift class as the root
+cause above, one directory over, and reconciling it is not this PR's business.
 
 No detector, threshold or window was touched. No budget, timeout or census
 ceiling was raised.
