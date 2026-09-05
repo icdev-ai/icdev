@@ -2270,3 +2270,86 @@ that.
   than operator-supplied, or if `chaincode_query` output is ever fed to a parser
   richer than `json.loads` / an LLM prompt.
 
+### Gap 65 — floci emulator holds the host Docker socket (`docker-compose.yml`, `floci` profile)
+
+- **File:** `docker-compose.yml` — service `floci` (flx-compose-01); switch at
+  `tools/cloud/emulator.py` (flx-seam-01).
+- **Risk:** The service bind-mounts the host Docker socket
+  (`${FLOCI_DOCKER_SOCKET_MOUNT:-//var/run/docker.sock}:/var/run/docker.sock`).
+  **A container holding the host Docker socket is root-equivalent on that
+  host** — it can start a privileged container, bind-mount `/`, and read or
+  write anything the daemon can. This is not a sandbox escape hatch that might
+  theoretically be reachable; it is a deliberate grant, and it is the single
+  most consequential line in the compose file. The emulator additionally
+  ingests whatever an ICDEV caller sends it (Terraform plans, Lambda bundles,
+  S3 objects) and executes container-backed services from those inputs.
+- **Decision:** **bypass-documented** — an operator-gated grant, off by
+  default, never reached by any ICDEV default path.
+- **Rationale:** The grant buys the container-backed services and nothing else:
+  Lambda, RDS, ElastiCache, OpenSearch, MSK and ECS/EC2/EKS are implemented by
+  floci as *sibling containers*, so without the socket those services cannot be
+  emulated at all. The in-process services (S3, DynamoDB, SQS, SNS, ECR, IAM,
+  SSM, STS, KMS) need no socket and work with the mount removed. Sandboxing the
+  emulator itself is not available: nesting it inside `SandboxExecutor` would
+  mean handing the socket to the sandbox instead, which relocates the grant
+  rather than removing it. The operator approved the grant on 2026-09-05 for a
+  **locally hosted** Docker daemon, on a developer workstation, for
+  API-contract testing only.
+- **Guardrails:**
+  - **The service is behind the `floci` compose profile.** A service carrying a
+    `profiles:` key does not start on a bare `docker compose up`, is not in
+    `/start`, and is not in the 24-service default set. Starting it is two
+    deliberate acts: `icdev enable floci` then
+    `docker compose --profile floci up -d`. Pinned by
+    `tests/cloud/test_floci_compose_profile.py::test_floci_is_absent_from_the_default_start_set`,
+    which asserts on the *absence of a `profiles` key* across every service
+    rather than on the profile string, and carries a negative control so it
+    cannot pass over an empty default set.
+  - **Loopback-only publication.** Every published port is bound to
+    `127.0.0.1`, so a socket-holding container is not reachable off-host. Same
+    posture as the `litellm-proxy` profile in the same file. Pinned by
+    `test_every_published_port_is_loopback_only`.
+  - **The image tag is pinned** (`floci/floci:2.0.1`, never `:latest`) so an
+    air-gapped bundle is reproducible and the socket is not handed to an image
+    that changed under the deployment. Pinned by
+    `test_image_is_pinned_and_never_latest`. Pin by digest (`@sha256:...`) and
+    record it in the SBOM before any real deployment.
+  - **`FLOCI_DOCKER_DOCKER_HOST` is left unset**, so floci reaches only the
+    daemon it was handed. A remote daemon and an internal registry mirror are
+    named follow-ons (flx-airgap-02), not silently configured here. Pinned by
+    `test_remote_docker_host_is_left_unset`.
+  - **The mount source is a distinct variable from the seam's socket
+    variable**, and this is a correctness guardrail, not a naming preference.
+    `FLOCI_DOCKER_SOCKET` is read by `emulator.docker_basis()` to answer how the
+    ICDEV *Python process on the host* would reach the daemon; the compose
+    mount source is a path inside Docker Desktop's Linux VM namespace that does
+    not exist on the Windows filesystem. MEASURED 2026-09-04 on the Windows
+    host: giving them one name makes `docker_backed()` return `False` and
+    `service_supported("lambda")` return `False` for a Lambda that works — a
+    fabricated refusal, the same defect class as a fabricated `[]` pointing the
+    other way. Pinned on a POSIX *and* a Windows platform by
+    `test_mount_variable_is_not_the_seams_socket_variable`.
+  - **Persistent state is gitignored.** `FLOCI_STORAGE_MODE=persistent` writes
+    buckets, queues, tables and Lambda bundles under `./data/floci`, and this
+    repo is PUBLIC. `data/floci/` is ignored — anchored, never a bare `data/`,
+    which once silently dropped a code directory here. Pinned by
+    `test_emulator_state_is_gitignored` and
+    `test_the_pattern_is_anchored_and_not_a_bare_data_directory` through git's
+    own `check-ignore` predicate rather than a substring search, with a
+    negative control asserting a tracked file under `data/` stays visible.
+  - **Never a source of a performance, cost or capacity claim.** An emulator
+    reproduces the AWS *API contract*, not its performance characteristics —
+    the standing guard from
+    `docs/spikes/twx-spk-01-localstack-go-no-go.md`, which the flx project
+    supersedes on the air-gap question **only** (floci carries no auth-token
+    image).
+- **Revisit if:** the profile is started anywhere automatically (a reflex, a
+  CI job, `/start`, or a `depends_on` from a default-profile service); the
+  socket mount moves out from behind the profile onto a default service;
+  `FLOCI_DOCKER_DOCKER_HOST` is set to a **remote** daemon (a different trust
+  question — the grant then crosses a host boundary, and flx-airgap-02 must
+  carry its own decision here); the emulator is exposed off-loopback or run on
+  a shared/CI host rather than a developer workstation; or floci begins
+  accepting tenant-supplied rather than operator-supplied input. Any one of
+  those makes **bypass-documented** the wrong decision and requires re-deciding
+  between `sandboxed` and refusing the grant.
