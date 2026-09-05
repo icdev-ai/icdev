@@ -43,20 +43,29 @@
 
 version: databridge-agent-access-1.0
 
-# Master switch. On, for exactly one grant — see below.
+# Master switch. On, for two grants — see below.
 #
 # What "on" is NOT allowed to mean: a shipped grant against a CUSTOMER system.
 # The rule this file has always stated is that an install must not silently
 # authorise agents against systems the operator never reviewed, and that rule is
-# unchanged. The grant below is a PUBLIC, credential-free, read-only government
-# publications feed — a source whose entire content is already world-readable,
-# so authorising it discloses nothing and its blast radius is the reading of a
-# public web page.
+# unchanged. Both shipped grants are credential-free and read-only:
 #
-# Anything with credentials — Splunk, ServiceNow, SolarWinds, Tenable, a private
-# GitHub org — stays commented out, stays a per-deployment decision, and belongs
-# to the operator, not to this file. Enforced by tests/test_databridge_first_grant.py,
-# which fails on a shipped grant carrying an auth_secret_ref.
+#   rss    a PUBLIC government publications feed — its entire content is
+#          already world-readable, so authorising it discloses nothing and its
+#          blast radius is the reading of a public web page.
+#   floci  a LOCAL service emulator on loopback, off by default, holding
+#          EMULATED state and reached with a hard-wired dummy credential pair.
+#          Its blast radius on a default install is nothing at all, because the
+#          connector returns `disabled` before opening a socket.
+#
+# THE COUNT IS NOT THE RULE, and reading it as one is how the rule gets waived
+# by arithmetic. The rule is the PROPERTIES: no credential, read-only, scoped to
+# named roles, ceiling at UNCLASSIFIED, and a connection whose destination is
+# bounded. Anything with credentials — Splunk, ServiceNow, SolarWinds, Tenable,
+# a private GitHub org — stays commented out, stays a per-deployment decision,
+# and belongs to the operator, not to this file. Enforced by
+# tests/test_databridge_first_grant.py, which fails on ANY shipped grant
+# carrying an auth_secret_ref.
 enabled: true
 
 connectors:
@@ -108,6 +117,70 @@ connectors:
       - doc_reviewer
       - docgen_analyst
       - cortex_analyst
+    classification_ceiling: UNCLASSIFIED
+
+  # -------------------------------------------------------------------------
+  # floci AWS service emulator (flx-bridge-02) — THE LOCAL EMULATED ESTATE.
+  #
+  # This is the second shipped grant, and it is a deliberate reversal of what
+  # flx-bridge-01 wrote one card earlier ("floci must not ship as an agent
+  # grant; it is a per-deployment decision"). That position was right while
+  # nothing consumed the connector. flx-twin-01 is the consumer, and its whole
+  # design is that it reads THROUGH this broker rather than importing the
+  # connector — "a direct import is an ungoverned side channel that the whole
+  # cef-fnd-03 design exists to close". Leaving the grant out would not have
+  # kept the emulator unreachable; it would have pushed its one reader onto the
+  # ungoverned path. So the grant is the safer of the two options, not the
+  # laxer one.
+  #
+  # WHY SHIPPING THIS ON IS NOT AUTHORISING AN UNREVIEWED SYSTEM — the rule at
+  # the top of this file, applied rather than waived. Each leg is independently
+  # sufficient:
+  #   * the emulator is OFF by default (FLOCI_ENABLED, default false), and off
+  #     means the connector returns `disabled` before any socket opens, so a
+  #     default install's blast radius is nothing at all;
+  #   * it is LOOPBACK ONLY, bounded by the connection row's egress_allowlist,
+  #     which is enforced at the point the endpoint is chosen;
+  #   * it is CREDENTIAL-FREE in the strongest sense — emulator.credentials()
+  #     is hard-wired to the dummy pair and deliberately refuses to read the
+  #     ambient AWS environment, so there is no secret to leak and no
+  #     auth_secret_ref to resolve;
+  #   * it holds EMULATED state, which flx-twin-01 marks `emulated` provenance
+  #     precisely because it is not evidence of any real estate;
+  #   * read-only, like every grant here — the broker has no write path, and
+  #     the connector's write() is unreachable through it.
+  #
+  # ALL SEVEN LOGICAL TABLES, and that is the connector's whole declared
+  # surface rather than "everything the AWS API offers". flx-twin-01's verdict
+  # ladder needs every one of them: `pass` requires every declared table to
+  # answer, and `warn` is reachable ONLY through a container-backed table
+  # reporting `unsupported_without_docker` — today that is `lambda_functions`,
+  # derived from emulator.CONTAINER_BACKED_SERVICES. Dropping it would make one
+  # of the four verdicts structurally unreachable, which is the same defect as
+  # a check with no probe behind it. A table added to the connector later is a
+  # NEW authorization decision and must be added here by hand; the grant is
+  # pinned against FlociConnector.TABLES so that decision cannot be skipped.
+  - name: floci
+    description: >-
+      Local floci AWS service emulator (loopback, off by default, dummy
+      credentials). Read-only view of the EMULATED estate: emulator health and
+      service list, plus S3 buckets, DynamoDB tables, Lambda functions, SQS
+      queues and ECR repositories. Emulated state is never evidence about a
+      real estate — a reader must mark it as such.
+    connection_id: floci-emulator-local
+    tables:
+      - health
+      - services
+      - s3_buckets
+      - dynamodb_tables
+      - lambda_functions
+      - sqs_queues
+      - ecr_repositories
+    # Scoped to the twin observer role. An empty list grants EVERY agent
+    # including runtime-generated SMEs, and an emulator that can be handed a
+    # docker socket is not a source to hand to an unreviewed SME.
+    agents:
+      - twin_observatory_analyst
     classification_ceiling: UNCLASSIFIED
 
 # ---------------------------------------------------------------------------

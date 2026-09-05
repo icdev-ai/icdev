@@ -73,6 +73,7 @@ import json
 import socket
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any, Dict, List, Optional
 
@@ -232,10 +233,63 @@ class FlociConnector(SaaSBaseConnector):
         # The health endpoint needs no auth; boto3 handles AWS SigV4.
         return {}
 
+    def _assert_endpoint_allowed(self, endpoint: str) -> None:
+        """Refuse an endpoint whose HOST the connection does not allow.
+
+        THE ENDPOINT IS THE ONLY DESTINATION THIS CONNECTOR HAS, and it comes
+        from the seam (``FLOCI_ENDPOINT``), so the connection row does not pin
+        it -- flx-seam-01 made the seam the one switch and a second copy here
+        would be a second switch. What the row DOES carry is the ceiling: which
+        host the seam is permitted to point at. A seam mis-set to
+        ``http://169.254.169.254`` is then refused rather than dialled.
+
+        WHY NOT ``_guard_egress``, WHICH THIS CLASS INHERITS. ``egress_guard``
+        is an internet SSRF gate and refuses this connector's own default
+        endpoint TWICE OVER -- measured 2026-09-05:
+        ``http://localhost:4566/_localstack/health`` -> ``scheme_not_https``,
+        and the https spelling -> ``denied_ip_range``. A loopback emulator
+        reached over plain http is precisely the destination that guard exists
+        to refuse. Calling it here would refuse every legitimate read; declaring
+        ``egress_allowlist`` and calling nothing is the OTHER failure, and it is
+        the one cef-fnd-03 named by name ("a per-connection egress_allowlist was
+        declared and never enforced"). So the applicable half of the rule is
+        applied, from ``egress_guard``'s own ``host_allowed`` rather than a
+        second copy of it, and the inapplicable half is named here rather than
+        quietly dropped.
+
+        Checked at the point the destination is DECIDED, not per URL, because
+        the boto3 client never passes through ``_http_get_noauth`` -- a per-URL
+        guard would cover two of the seven tables and leave five unguarded.
+
+        An empty allowlist is no restriction, matching ``egress_guard``'s
+        default-off semantics: a direct caller that does ``connect({})`` is
+        unaffected, and only a connection row that declares an allowlist binds.
+        """
+        allowlist = list(self._config.get("egress_allowlist") or [])
+        denylist = list(self._config.get("egress_denylist") or [])
+        if not allowlist and not denylist:
+            return
+
+        from tools.http.egress_guard import host_allowed
+
+        host = urllib.parse.urlsplit(endpoint).hostname or ""
+        allowed, reason = host_allowed(host, {"allowlist": allowlist, "denylist": denylist})
+        if not allowed:
+            raise PermissionError(
+                f"floci endpoint {endpoint!r} refused ({reason}): host {host or '<none>'!r} "
+                f"is not in this connection's egress_allowlist. This is a HOST "
+                f"allowlist, not an SSRF gate -- it performs no DNS resolution."
+            )
+
     def _ensure_configured(self) -> None:
         if self._endpoint:
             return
-        self._endpoint = self._config.get("endpoint", emulator.endpoint())
+        endpoint = self._config.get("endpoint", emulator.endpoint())
+        # Before anything is cached: a refused endpoint must not be reachable by
+        # calling twice, and the early return above would make the second call a
+        # no-op.
+        self._assert_endpoint_allowed(endpoint)
+        self._endpoint = endpoint
         self._region = self._config.get("region", emulator.region())
         ak, sk = emulator.credentials()
         self._access_key = self._config.get("access_key", ak)
