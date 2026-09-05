@@ -7990,3 +7990,64 @@ ECS/EC2/EKS) cannot be exercised; a fixture using one is REFUSED before
 planning, as is a resource `FLOCI_PROVIDER_OVERRIDE` does not redirect — an
 unredirected resource is sent to REAL AWS and the auth error looks exactly like
 a broken emulator.
+## Air-Gap Container-Image Vendor (flx-airgap-01)
+
+`tools/airgap/` vendored Python wheels, npm packages and browser drivers and had
+**nothing that saved or loaded a container image** (measured 2026-09-04), so
+"ship a pinned floci image to the high side" had no mechanism to fit into. This
+is that mechanism, built to the `wheel_vendor.py` precedent.
+
+```bash
+# low side — the image must ALREADY be in the local daemon's cache
+python tools/airgap/image_vendor.py --save --topic floci --json
+
+# transport vendor/images/floci/ to the high side, then
+python tools/airgap/image_vendor.py --verify --topic floci --json
+python tools/airgap/image_vendor.py --verify --topic floci --no-daemon-probe   # tars alone, no docker
+python tools/airgap/image_vendor.py --load --topic floci --json
+python tools/airgap/image_vendor.py --list --json
+```
+
+**A pin is a DIGEST, never a tag.** `vendor/images/images-<topic>.txt` holds
+`repo@sha256:<64 hex>`; `floci/floci:2.0.1` is refused, because a tag is mutable
+and a bundle built from one cannot be shown to contain what was intended.
+Resolve one with
+`docker image inspect <ref> --format '{{index .RepoDigests 0}}'`.
+
+**THE SOURCE IS THE LOCAL IMAGE CACHE AND NOTHING PULLS** (operator decision
+2026-09-05: locally hosted Docker). A pin absent from the cache is reported under
+`absent_from_local_cache` and fails the run — a vendor that fetched on demand
+could not run on the disconnected side it exists to serve. Enforced
+structurally: `ALLOWED_DOCKER_COMMANDS` is a frozenset of `version|image|save|
+load` with no `pull`, `run`, `tag` or `push`, `_docker()` refuses anything else,
+and `tests/airgap/test_image_vendor.py` reads the module's AST to prove
+`subprocess` is reached from nowhere but that one door.
+
+**What `--verify` proves, without a daemon.** `docker save` writes an OCI layout
+in which every blob under `blobs/sha256/` is named by its own sha256 and
+`index.json` records the manifest digest a `repo@sha256:…` reference names
+(measured, Docker 28.5.1). So verification re-hashes every blob against its
+filename *and* matches `index.json`'s digest to the pin — a cryptographic proof
+the tar holds the pinned image, needing no docker at all, which matters because
+media is verified before there is anywhere to load it. Measured 2026-09-05 on a
+real `alpine` bundle: one flipped byte is caught twice over (the recorded tar
+hash, and independently blob content-addressing, which names the offending
+layer) and `--load` refuses the bundle *before* importing it.
+
+**Three statuses, never merged.** `verified` (checked, passed) | `failed`
+(checked, FAILED — a real finding) | `unmeasured` (could not check: no docker
+CLI, no bucket, or a legacy `docker-v1` tar, which records no manifest digest
+and so reports `manifest_digest_verified: null` with a reason rather than
+passing). **`unmeasured` is never a clean bundle** — `--verify` exits **2**
+there, so a caller cannot read "could not measure" as "clean" the way exit 0
+would allow. Post-load digest verification is likewise three-valued: an engine
+whose image store does not index a digest-saved image by its manifest digest
+*cannot answer*, and cannot-answer is not wrong — the tar proof already
+established what the bytes are.
+
+Unlike `wheel_vendor.py`, this does **not** refuse to run under `is_airgap()`:
+`pip download` can only fail air-gapped, but `docker save` reads a local cache
+and touches no network, so the same refusal here would be fabricated and would
+block the one host most likely to need to re-cut a bundle.
+
+Convention and the reason no floci pin is committed yet: `vendor/images/README.md`.
