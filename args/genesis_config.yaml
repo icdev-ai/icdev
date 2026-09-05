@@ -805,6 +805,34 @@ reflexes:
       name: tasks_activated
       threshold: 0
       operator: gte
+    # mfx-sib-01 — refuse to dispatch a card while a SIBLING in its own epic is
+    # in_progress/pr_opened and the two cards' DECLARED artifact paths overlap
+    # on a NON-ADDITIVE file. The merge door has serialized siblings since
+    # hold_on_sibling_conflict; dispatch did not, so ten rmf-ui-* cards were
+    # built concurrently on 2026-09-03/04 and every one but the first landed
+    # CONFLICTING — four pr_watcher.rebase_failed rows and five burned LLM
+    # resumes per card, then a human unioned the hunks by hand, ten times.
+    #
+    # A hold is a WAIT, not a park: the card stays `scheduled`, yields its
+    # selection slot, and is re-evaluated next cycle.
+    #
+    # SURVEYED BEFORE ARMING — 30 days to 2026-09-04, 1,977 scheduler dispatches
+    # (python -m tools.kanban.sibling_overlap --survey):
+    #
+    #     with an in-flight same-epic sibling      451    23.07%
+    #     HELD (declared paths overlap)             21     1.06%
+    #     ... of the holds, later conflicted        18    85.71%
+    #     rmf-ui cards held                         10    all ten
+    #
+    # 1.06% is below the 1.63% CLAUDE.md calls refusing routine work, and under
+    # the 2% this card set. The cost is three named holds — cef-bck-01,
+    # rmf-ui-14, rmf-ui-15 (0.15% of dispatches) — delayed a cycle for a
+    # collision that would not have happened.
+    #
+    # Stand it down with KANBAN_SERIALIZE_SIBLINGS=0, never a shell neutraliser.
+    # Re-survey before changing this; do NOT widen the additive-path list to
+    # quieten a hold — that list is shared with the merge door.
+    serialize_overlapping_siblings: true
 
   remediation_lens:
     enabled: true
