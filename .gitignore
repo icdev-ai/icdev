@@ -200,6 +200,12 @@ vendor/drivers/msedgedriver/*
 !vendor/drivers/chromedriver/
 vendor/drivers/chromedriver/*
 !vendor/drivers/chromedriver/.gitkeep
+# Image bundles (flx-airgap-01): the PIN and the README are evidence and are
+# tracked; the .tar bundles are hundreds of MB and travel on transport media.
+!vendor/images/
+vendor/images/*
+!vendor/images/README.md
+!vendor/images/images-*.txt
 # But keep dashboard static vendor (JS/CSS libs for air-gap)
 !tools/dashboard/static/vendor/
 

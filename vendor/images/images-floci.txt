@@ -1,0 +1,25 @@
+# CUI // SP-CTI
+#
+# floci — the AWS API emulator (flx project). Bundle it for the high side with:
+#     python tools/airgap/image_vendor.py --save --topic floci --json
+#
+# A DIGEST, NEVER A TAG. `floci/floci:2.0.1` is refused by parse_pin: a tag is
+# mutable, so a bundle built from one cannot be shown to contain what was
+# intended.
+#
+# PROVENANCE OF THIS DIGEST, and it is not this card's measurement: it was
+# measured against Docker Hub on 2026-09-05 by flx-ci-01 and is declared in
+# `args/floci_iac_gate.yaml::image_digest` (floci/floci:2.0.1, published
+# 2026-09-01). `tests/airgap/test_image_vendor.py::test_the_floci_pin_agrees_
+# with_the_measured_digest` asserts the two files still agree, so ONE measured
+# fact cannot come to be spelled two ways.
+#
+# NOT the `-compat` variant: it adds Python 3, the AWS CLI and boto3, is a
+# larger image, and changes nothing about the API surface — `/_localstack/health`
+# is served by the plain image.
+#
+# This host's local cache did NOT hold the image when the vendor was built
+# (verified 2026-09-05), so `--save` here reports `absent_from_local_cache` and
+# exits non-zero rather than pulling. That is the designed refusal, not a defect:
+# pull it on a connected host first, then vendor.
+floci/floci@sha256:4e451c39c7bb88e3cd4f87e8fc0c25d5b47695a51185d521e2241fa00486e8eb
