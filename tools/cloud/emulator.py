@@ -79,6 +79,23 @@ logger = get_logger(__name__)
 # against the old string is a stale comparison a test can find.
 MODE = "floci"
 
+# ── The image ──────────────────────────────────────────────────────────────
+#
+# PINNED, and never ``:latest`` — an air-gapped rebuild has to be reproducible,
+# and a moving tag makes "the image we tested" unanswerable. Pin by digest
+# (``@sha256:...``) and record it in the SBOM before any real deployment.
+#
+# Read by tools/infra_canvas/dockerfile_generator.py, which emits this into
+# CUSTOMER compose files (flx-gen-01). docker-compose.yml carries the same
+# literal for ICDEV's own opt-in `floci` profile — YAML cannot import a Python
+# constant, so those two are kept in step by hand; change both or neither.
+DEFAULT_IMAGE_REPOSITORY = "floci/floci"
+DEFAULT_IMAGE_TAG = "2.0.1"
+DEFAULT_IMAGE = f"{DEFAULT_IMAGE_REPOSITORY}:{DEFAULT_IMAGE_TAG}"
+
+#: Port the emulator serves the AWS API edge on.
+DEFAULT_PORT = 4566
+
 # ── Defaults ───────────────────────────────────────────────────────────────
 DEFAULT_ENDPOINT = "http://localhost:4566"
 DEFAULT_REGION = "us-gov-west-1"

@@ -7,10 +7,12 @@ audit logging, and health probing (ADR D360+).
 
 Available adapters
 ------------------
-LocalStackAdapter  — AWS service emulation via LocalStack
-                     Feature flag: LOCALSTACK_ENABLED in .env
+FlociAdapter  — AWS service emulation via floci (flx-gen-01)
+                Switch: ``tools/cloud/emulator.py`` — FLOCI_ENABLED in .env,
+                default false, with LOCALSTACK_ENABLED honoured as a
+                deprecated alias.
 """
 
-from tools.infra_canvas.adapters.localstack_adapter import LocalStackAdapter
+from tools.infra_canvas.adapters.floci_adapter import FlociAdapter
 
-__all__ = ["LocalStackAdapter"]
+__all__ = ["FlociAdapter"]
