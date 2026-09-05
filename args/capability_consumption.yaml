@@ -341,6 +341,17 @@ substrates:
       findings. rmf-rail-01 made every one of those None. 0 rows on the live
       board at declaration time -- nothing here has assigned a control to a
       project.
+  - ref: floci_twin_snapshots
+    note: >-
+      Every snapshot the floci twin adapter freezes of the LOCAL AWS emulator
+      (flx-twin-01, migration 20260905070028). Listed the day it was created,
+      before it can hold anything, because its emptiness is the interesting
+      state: the emulator ships OFF (FLOCI_ENABLED, default false) and a
+      deployment that never turns it on will never write a row here, so a
+      reader designing against this table must be told it is empty rather than
+      discovering it. Every row carries provenance `emulated` -- an emulated
+      estate is NOT evidence about a real one, and a non-zero count here says
+      nothing about any deployed fleet.
 
 # The five incidents this measurement was built for. Each is asserted to be
 # measurable — `--gate` fails when a case's class cannot be measured at all,

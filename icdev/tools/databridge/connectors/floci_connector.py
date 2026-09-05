@@ -128,6 +128,31 @@ def table_service(table: str) -> Optional[str]:
     return mapped[0] if mapped else None
 
 
+def boto3_available() -> bool:
+    """Is the AWS SDK importable in THIS process?
+
+    A CAPABILITY predicate, not a read of the emulated estate — it opens no
+    socket and answers nothing about what the emulator holds, so a caller may
+    consult it without going through the broker.
+
+    It exists because ``boto3`` is NOT a declared dependency (it is commented
+    out in ``requirements.txt``), so five of the seven logical tables answer
+    ``status="error"`` on any host that lacks it. A reader that scores those as
+    a FAILURE blames the emulator for a missing local SDK; a reader that scores
+    them as an EMPTY result commits the ``rmf-disc-02`` defect this connector
+    was written to avoid. Both are wrong, and neither is recoverable from the
+    status string alone. Exposed rather than left private so the one reader that
+    needs the distinction (``twin_core.adapters.floci``) asks the connector's
+    OWN gate rather than pattern-matching its error prose.
+    """
+    return _BOTO3_AVAILABLE
+
+
+def table_needs_boto3(table: str) -> bool:
+    """Does *table* require the AWS SDK? Derived from the read map, not a list."""
+    return table in _BOTO3_READ_MAP
+
+
 def table_is_docker_backed(table: str) -> bool:
     """Does *table* need a docker socket to answer?
 

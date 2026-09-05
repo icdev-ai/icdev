@@ -91,6 +91,24 @@ class FetchOutcome:
     #: row is missing" and "the fetch was refused" are different facts, and a
     #: caller that wants to alert on the first must not have to parse prose.
     audited: bool = True
+    #: The CONNECTOR's own ``ConnectorResponse.status``, relayed verbatim
+    #: (``""`` when the call never reached a connector — a denial, an air-gap
+    #: refusal, an unresolvable connection).
+    #:
+    #: WHY THIS HAD TO EXIST (flx-twin-01). The broker reads ``response.data``
+    #: and nothing else, so a connector answering ``disabled``,
+    #: ``unsupported_without_docker`` or ``error`` came back here as
+    #: ``ok=True, row_count=0`` — indistinguishable from a table that answered
+    #: and held no rows. That is precisely the conflation
+    #: ``floci_connector._unsupported_response`` was written to prevent
+    #: ("empty means no functions; unsupported means this deployment cannot
+    #: answer"), undone one layer up. The status is now RELAYED; ``ok`` is
+    #: deliberately unchanged, so no existing caller's verdict moves.
+    connector_status: str = ""
+    #: The connector's own ``errors`` list, relayed. Distinct from ``error``,
+    #: which is the BROKER's refusal reason — a connector that reported a
+    #: problem and a broker that refused the call are different findings.
+    connector_errors: list = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -102,6 +120,8 @@ class FetchOutcome:
             "error": self.error,
             "redactions": self.redactions,
             "audited": self.audited,
+            "connector_status": self.connector_status,
+            "connector_errors": list(self.connector_errors),
         }
 
 
@@ -459,6 +479,8 @@ def fetch(
         return _deny(f"connector error: {exc}")
 
     rows = list(getattr(response, "data", None) or [])[:limit]
+    conn_status = str(getattr(response, "status", "") or "")
+    conn_errors = list(getattr(response, "errors", None) or [])
     try:
         _audit(agent_id, connector, table, "allowed", "",
                rows=len(rows), redactions=redactions)
@@ -472,6 +494,7 @@ def fetch(
         return FetchOutcome(
             ok=False, connector=connector, table=table,
             row_count=0, redactions=redactions, audited=False,
+            connector_status=conn_status, connector_errors=conn_errors,
             error=(f"fetch succeeded but its audit row could not be written, so "
                    f"the rows are withheld: {exc}"),
         )
@@ -479,6 +502,7 @@ def fetch(
     return FetchOutcome(
         ok=True, connector=connector, table=table,
         rows=rows, row_count=len(rows), redactions=redactions,
+        connector_status=conn_status, connector_errors=conn_errors,
     )
 
 
