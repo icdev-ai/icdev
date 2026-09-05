@@ -1038,6 +1038,36 @@ class PRWatcher:
         files = entry.get("files") if entry else None
         return protected_hits(files, paths) or []
 
+    def _protected_hits_seen(
+        self, pr_url: str, index: Optional[Dict[str, dict]],
+    ) -> Optional[List[str]]:
+        """Protected paths this PR touches, read from a listing ALREADY IN HAND.
+
+        THE OPPOSITE DEFAULT FROM `_protected_hits`, and the asymmetry is the
+        whole point of having two (mfx-mrg-03). That one answers "may this PR be
+        merged" and is FAIL-CLOSED: a PR whose file list is unavailable reads as
+        protected, because a merge gate that opens when it cannot see is not a
+        gate. This one answers "should the watcher stop spending resumes on this
+        PR" — stopping is not merging, and stopping on an unreadable listing
+        would hold work the ladder would legitimately have repaired. So `None`
+        means UNMEASURED and the caller leaves the PR on exactly the path it took
+        before; `[]` means measured and clean. The fail-closed refusal at the
+        merge rung is untouched.
+
+        Reads ONLY the open-PR index `poll_once` already fetched for the sibling
+        map — no second `gh pr list`, on a door the measured outage behind this
+        card was refusing. A PR absent from that listing (an external repo, a
+        failed call, `sibling_conflict_check` off) is unmeasured, not clean.
+        """
+        paths = self._protected_paths()
+        if not paths:
+            return []
+        entry = (index or {}).get(pr_url)
+        files = entry.get("files") if entry else None
+        if files is None:
+            return None
+        return protected_hits(files, paths) or []
+
     def _protected_already_held(self, pr_url: str) -> bool:
         """Has this PR's hold already been recorded?
 
@@ -2839,6 +2869,68 @@ class PRWatcher:
                         self._audit(action)
                         continue
 
+            # PROTECTED PATH, ASKED BEFORE THE CONFLICT ARM (mfx-mrg-03).
+            #
+            # THE REFUSAL WAS ON THE ARM A CONFLICTING PR NEVER ENTERS. Until
+            # now `_refuse_protected` was called in ONE place on this path —
+            # inside the MERGEABLE arm, immediately before the un-draft and
+            # `_auto_merge` — while `_maybe_rebase` and the resume ladder live
+            # in the `MERGE_CONFLICT` arm. Not "later in one ladder": a
+            # DIFFERENT BRANCH of it. A PR that is conflicting from the moment
+            # it opens can therefore never reach the rung that would refuse it,
+            # and the rung only ever fires once the PR is mergeable — precisely
+            # when it is no longer needed to prevent wasted work.
+            #
+            # MEASURED on #2064 (mfx-mrg-01), which changed `tools/ci/
+            # pr_watcher.py`, the FIRST entry in `protected_paths`: 63
+            # `rebase_failed`, 5 `resume` and an `escalate`, and 0 of its 165
+            # `pr_watcher.*` audit rows mention `protected`. Every one of those
+            # acts was spent on a PR this watcher was structurally forbidden
+            # from merging, and nothing in the ledger, the panel or the
+            # escalation said so.
+            #
+            # A protected PR needs a human either way. Making it burn five LLM
+            # resumes and then escalate on a spent resume cap first does not
+            # change that; it hides the reason and spends the budget that is the
+            # board's signal for "automation is out of options".
+            #
+            # WHAT THE REFUSAL SUPPRESSES, AND WHAT IT DELIBERATELY DOES NOT.
+            # It suppresses the RESUME ladder and the escalation. It does NOT
+            # suppress the bounded automatic REBASE, and that narrowing is the
+            # survey's finding rather than a preference. Replaying all 210
+            # recorded conflict-ladder episodes through the shipped predicate
+            # (`tools/ci/protected_conflict_survey.py`), the divert catches 32
+            # (15.24%) and would, taken as far as `_maybe_rebase`, have taken a
+            # SUCCESSFUL rebase away from 11 of them — 8 of those needed nothing
+            # else at all before the PR merged (rb=1, rbf=0, res=0, esc=0:
+            # #1724, #1734, #1751, #1789, #1821, #1682, #1686, #1695). That is
+            # 3.81% of the population, above the 1.63% CLAUDE.md already calls
+            # refusing routine work, and "a control that stops work it was never
+            # meant to stop gets switched off". Kept, therefore, and bounded by
+            # the UNCHANGED `max_rebase_attempts_per_task`.
+            # The refusal is still ASKED and AUDITED here, before any
+            # `_maybe_rebase` call, so the ledger states the real reason from the
+            # first poll instead of a later spent-resume-cap escalation that was
+            # never the reason. Full method and numbers:
+            # docs/audits/mfx-mrg-03-protected-conflict-divert-survey.md.
+            #
+            # FAIL-OPEN, deliberately, and the opposite default from the merge
+            # refusal: `_protected_hits_seen` returns None when the listing
+            # cannot answer, and an unmeasured PR takes the unchanged ladder.
+            # This refusal prevents WASTED WORK; the fail-closed one that
+            # prevents an unreviewed MERGE is `_refuse_protected`, still called
+            # in the mergeable arm below and again inside `_auto_merge`.
+            protected_conflict = (
+                self._protected_hits_seen(pr_url, sibling_index)
+                if classification == KanbanState.MERGE_CONFLICT
+                else None
+            )
+            if protected_conflict:
+                # BEFORE the conflict arm, and before `_maybe_rebase`. Writes
+                # `protected_path_hold` exactly once per PR (it dedupes on the
+                # audit trail) and says so at debug every cycle after.
+                self._refuse_protected(pr_url, task["id"])
+
             # WHICH KIND of conflict (kpr-watch-07). Computed once per task per
             # poll and reused by the rebase and resume paths below — a second
             # call would re-run two merges against a live forge every 30s.
@@ -3092,6 +3184,63 @@ class PRWatcher:
                         self._audit(action)
                         continue
 
+                    # PROTECTED PATH — RESTORED TO AHEAD OF THE UN-DRAFT
+                    # (mfx-mrg-03). kpr-watch-05 put this refusal "AHEAD OF THE
+                    # UN-DRAFT" for a stated reason: un-drafting is visible, hard
+                    # to walk back, and burns the one brake a human still has.
+                    # The un-draft below was later moved UP to fix a different
+                    # bug (a green PR held behind a sibling never got taken out
+                    # of draft), which silently overtook the guard — the refusal
+                    # sat ~200 lines further down, and every protected PR that
+                    # reached this arm was un-drafted before anything asked
+                    # whether it could ever be merged.
+                    #
+                    # It is also ahead of the BEHIND-MAIN rung, which calls
+                    # `_maybe_rebase` and pushes. Costs nothing measured: of the
+                    # 13 successful rebases the survey found on protected PRs,
+                    # ALL 13 carry `classification=merge_conflict` and none came
+                    # from this rung — so unlike the conflict arm, there is no
+                    # repaired branch here to preserve.
+                    #
+                    # Deliberately AFTER the enforced done-gate and its
+                    # `_maybe_reverify` — a protected PR is landed by a human
+                    # through `cli.py --set-status <id> done --merge`, and that
+                    # door runs the SAME done-gate, so the verification has to
+                    # keep refreshing while the PR waits.
+                    #
+                    # FAIL-CLOSED here, unlike the refusal above: this is the
+                    # merge decision. `_auto_merge` refuses again as the last
+                    # line, so the chokepoint survives a future caller.
+                    #
+                    # The listing ALREADY IN HAND is asked first, and only for
+                    # its one unambiguous answer. Moving this rung up past the
+                    # sibling / landed / behind-main holds means PRs that used
+                    # to `continue` before reaching it now reach it, and
+                    # `_refuse_protected` costs a `gh pr list` per poll — the
+                    # GraphQL door the outage behind this card was refusing. A
+                    # PR PRESENT in the index is measured (the index is keyed by
+                    # url, so a present entry can only be this PR's), so a
+                    # measured-clean answer needs no second call. Anything else —
+                    # absent, unreadable, or a hit that must be audited — goes to
+                    # the fail-closed path exactly as before.
+                    seen = self._protected_hits_seen(pr_url, sibling_index)
+                    protected = ([] if seen == []
+                                 else self._refuse_protected(pr_url, task["id"]))
+                    if protected:
+                        action = WatcherAction(
+                            task_id=task["id"], pr_url=pr_url,
+                            classification="done", action="wait",
+                            reason=(
+                                "held: touches protected path(s): "
+                                + ", ".join(protected)
+                                + " — a human must review and merge this by hand."
+                            )[:500],
+                            resume_cycle=cycle,
+                        )
+                        report.actions.append(action)
+                        self._audit(action)
+                        continue
+
                     # UN-DRAFT FIRST, before any hold can `continue` past this.
                     #
                     # Auto-merge must work regardless of who opened the PR — a
@@ -3309,14 +3458,13 @@ class PRWatcher:
                     # branch a blocked merge takes.
                     # Belt-and-braces: normally the un-draft above already ran,
                     # but a PR can be converted back to a draft between polls.
-                    # AHEAD OF THE UN-DRAFT (kpr-watch-05). `_auto_merge`
-                    # refuses a protected PR too, but by then `_mark_ready` has
-                    # already cleared the draft — and the comment above says why
-                    # that must not happen for a PR that was not about to merge:
-                    # un-drafting is visible and hard to walk back, and the draft
-                    # is exactly the brake the per-episode manual gates relied on.
-                    if approved_ok and self._refuse_protected(pr_url, task["id"]):
-                        approved_ok = False
+                    #
+                    # The protected-path refusal that used to sit HERE moved up
+                    # to ahead of the un-draft (mfx-mrg-03) — where kpr-watch-05
+                    # said it belonged and where it now actually is. It `continue`s
+                    # rather than clearing `approved_ok`, so this arm can no
+                    # longer be reached by a protected PR at all; `_auto_merge`
+                    # still refuses one as its own last line.
                     if approved_ok and state.get("isDraft"):
                         approved_ok = self._mark_ready(
                             pr_url, task["id"], self._connection(), state=state)
@@ -3483,6 +3631,46 @@ class PRWatcher:
                         resume_cycle=cycle,
                         base_sha=verdict.get("base_sha", ""),
                     ))
+                    continue
+
+                # THE HOLD (mfx-mrg-03) — see the note above `conflict_kind`.
+                #
+                # The rebase rung above has had its bounded attempt, because the
+                # survey measured that rung repairing 11 of the 32 episodes this
+                # refusal catches. EVERYTHING BELOW THIS LINE is the resume
+                # ladder and the escalation, and none of it can produce a merge
+                # this watcher is allowed to perform: `_refuse_protected` refuses
+                # in the mergeable arm and `_auto_merge` refuses again as its
+                # last line, so a resumed agent's best possible outcome is a PR
+                # that still waits for a human. Five LLM resumes, a HITL alert
+                # and an escalation announcing a spent resume cap are then
+                # all spent describing something else.
+                #
+                # The `wait` row is written EVERY poll, like every other hold on
+                # this path, because `merge_stall` attributes a stall from a 24h
+                # window of `reason` text (args/merge_stall.yaml, pattern
+                # "protected path"): a hold recorded only once ages out of that
+                # window and the PR reads as an unexplained `alarm`. The
+                # `protected_path_hold` row above keeps its own once-per-PR
+                # dedupe (kpr-watch-05).
+                if protected_conflict:
+                    action = WatcherAction(
+                        task_id=task["id"], pr_url=pr_url,
+                        classification=classification.value,
+                        action="wait",
+                        reason=(
+                            "held: touches protected path(s): "
+                            + ", ".join(protected_conflict)
+                            + " — no resume and no escalation, because this "
+                              "watcher may not merge the result whatever an "
+                              "agent does to the branch. A human must review "
+                              "and merge it by hand."
+                        )[:500],
+                        resume_cycle=cycle,
+                        base_sha=verdict.get("base_sha", ""),
+                    )
+                    report.actions.append(action)
+                    self._audit(action)
                     continue
 
             # Resume classes: CI_FAILED / MERGE_CONFLICT / CHANGES_REQUESTED
