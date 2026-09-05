@@ -60,6 +60,28 @@ only when a MEASURABLE run after that time still reports the subject, or when
 the finding was seen ``cleared`` and reappears -- the plain meaning of "did not
 hold". born_red and status_churn carry no such time and keep the plain rule.
 
+A RECORD IS NOT A DISPATCHABLE CARD (autonomy-act-04). ``summarize_recovery``
+gives ``escalate`` priority over any later ``merge``, and that is CORRECT --
+counting a post-escalation merge as a recovery is exactly the inflation
+rem-hyg-16 exists to refuse. Nothing here changes that verdict, its threshold
+or its window. The objection is one layer up, about SEEDING: a
+``needed_a_human`` finding whose subject has since merged and gone terminal is
+a true statement about the PAST with no remaining work, and a card for it
+dispatches a worker session against a delivered subject -- a dispatch that
+CANNOT go RED, because there is nothing left to change. Measured on the live
+board 2026-09-05 over all 25 recorded ``recovery`` findings: every subject was
+``done`` (21) or ``pr_opened`` (4), NONE abandoned or stuck; 16 carried a
+``pr_watcher.merge`` after their escalation and for 12 of those the merge was
+the WATCHER'S OWN (``auto-merge ok``) -- the escalation asked for a human and
+no human came. The rule is a CONJUNCTION of two pieces of primary data, no
+elapsed time and no threshold: a ``merge`` row NEWER than the newest
+``escalate`` row for the subject, AND the subject task CLOSED on the board. It
+holds for 15 of the 25. The finding is still RECORDED, upserted and cleared
+exactly as before -- suppressing the row would delete the measurement, and only
+the CARD is at issue. EVERY UNKNOWN KEEPS THE CARD: an unreadable order, a
+subject not on the board, a subject still in flight. A wasted dispatch and a
+silently demoted escalation are not the same price.
+
 UNMEASURABLE CLEARS NOTHING. status_churn on an idle board, born_red_survey on
 an unmigrated baseline, recovery_summary with no audit rows, migration_drift on
 a database with no migration history — each reports
@@ -73,6 +95,7 @@ Seeds through ``tools.kanban.task_factory.create_tasks``, never a raw INSERT.
     python -m tools.kanban.detector_findings --json          # run, seed, report
     python -m tools.kanban.detector_findings --dry-run       # run; write NOTHING
     python -m tools.kanban.detector_findings --list          # browse the projection
+    python -m tools.kanban.detector_findings --records       # card vs record, re-derived
     python -m tools.kanban.detector_findings --list --detector born_red --status cleared
     python -m tools.kanban.detector_findings --stats
 """
@@ -112,6 +135,12 @@ RUN_ERROR = "error"
 
 FINDING_ACTIVE = "active"
 FINDING_CLEARED = "cleared"
+
+#: What ``consume`` does with a finding it has just projected (autonomy-act-04).
+#: A finding is ALWAYS recorded; this decides only whether anybody is asked to
+#: do something about it.
+DISPOSITION_CARD = "card"      # somebody has to act
+DISPOSITION_RECORD = "record"  # a true statement about the past; nothing to act on
 
 #: A card in one of these is no longer anybody's work item, so a finding that
 #: comes back while its card sits here has RECURRED and earns a fresh card.
@@ -174,18 +203,25 @@ class Finding(dict):
     leaves it None, and the recurrence rule then reads a closed card at face
     value. It is carried on the in-memory finding of the run that computed it
     and never persisted -- every run re-derives it from the rows it read.
+
+    ``merge_after_escalation`` is OPTIONAL and carried the SAME way, for the
+    same reason (autonomy-act-04): it is the ORDER of two audit rows, and a
+    stored verdict about an order would go stale the moment either row's
+    successor is written. Re-derived from primary data on every run.
     """
 
     def __init__(self, detector: str, subject: str, fingerprint: str, *,
                  title: str, priority: str, task_type: str,
                  evidence: Mapping[str, Any], derivation: str, advice: str,
-                 earliest_clear_at: Any = None):
+                 earliest_clear_at: Any = None,
+                 merge_after_escalation: Optional[Mapping[str, Any]] = None):
         super().__init__(
             detector=detector, subject=str(subject), fingerprint=str(fingerprint),
             title=title, priority=priority, task_type=task_type,
             evidence={k: _iso(v) for k, v in dict(evidence).items()},
             derivation=derivation, advice=advice,
             earliest_clear_at=_iso(earliest_clear_at) if earliest_clear_at is not None else None,
+            merge_after_escalation=dict(merge_after_escalation) if merge_after_escalation else None,
         )
         self["finding_id"] = finding_ident(detector, self["subject"], self["fingerprint"])
 
@@ -296,13 +332,21 @@ def born_red_findings(report: Mapping[str, Any]) -> List[Finding]:
 
 
 def recovery_findings(entries: Sequence[Mapping[str, Any]],
-                      window_hours: int) -> List[Finding]:
+                      window_hours: int, *,
+                      rows: Optional[Sequence[Mapping[str, Any]]] = None) -> List[Finding]:
     """recovery_summary.summarize_recovery() -> findings.
 
     Only ``needed_a_human`` is a finding: it is the watcher's OWN verdict
     ("resume cap reached, manual intervention required"), so it needs no
     inference. ``recovered`` is the system working and ``unresolved`` is a
     verdict not yet reached — neither is a work item.
+
+    ``rows`` are the pr_watcher audit rows the entries were collapsed FROM. When
+    given, each finding carries ``merge_after_escalation`` — the ORDER of its
+    subject's newest ``escalate`` and any later ``merge``, which is what decides
+    whether the finding is a card or a record (autonomy-act-04). Asking the
+    detector's OWN rows means the disposition can never be derived from evidence
+    the verdict was not.
     """
     out: List[Finding] = []
     for entry in entries or []:
@@ -342,8 +386,134 @@ def recovery_findings(entries: Sequence[Mapping[str, Any]],
             ),
             advice=advice,
             earliest_clear_at=earliest_clear_at,
+            merge_after_escalation=(
+                merge_after_escalation(rows, task_id) if rows is not None else None),
         ))
     return out
+
+
+# ---------------------------------------------------------------------------
+# Card disposition — a RECORD is not a work item (autonomy-act-04)
+# ---------------------------------------------------------------------------
+def merge_after_escalation(rows: Sequence[Mapping[str, Any]],
+                           subject: str) -> Dict[str, Any]:
+    """Did a ``pr_watcher.merge`` land AFTER the newest ``pr_watcher.escalate``?
+
+    ``rows`` are ``recovery_rows()``/``watcher_outcome_rows()`` output: an
+    ``action``, a JSON ``d`` payload carrying ``task_id``/``reason``, and a
+    ``created_at``. TWO AUDIT ROWS AND THEIR ORDER, and nothing else — no
+    elapsed time, no threshold, no inference from a board status.
+
+    ``measurable`` is False when there is no readable escalation to order
+    against, and ``superseded`` is then None — NEVER False. "I cannot tell" and
+    "no, the escalation still stands" send a caller to opposite places, and
+    merging them is how an escalation nobody answered goes quiet.
+    """
+    escalated_at: Optional[datetime] = None
+    merges: List[tuple] = []
+    for row in rows or []:
+        record = dict(row)
+        kind = str(record.get("action") or "").split(".")[-1]
+        if kind not in ("escalate", "merge"):
+            continue
+        try:
+            payload = json.loads(record.get("d") or "{}")
+        except (TypeError, ValueError):
+            continue
+        if str(payload.get("task_id") or "") != str(subject):
+            continue
+        at = parse_utc_timestamp(record.get("created_at"))
+        if at is None:
+            continue
+        if kind == "escalate":
+            if escalated_at is None or at > escalated_at:
+                escalated_at = at
+        else:
+            merges.append((at, str(payload.get("reason") or "")[:160]))
+
+    if escalated_at is None:
+        return {"measurable": False, "superseded": None, "escalated_at": None,
+                "merged_at": None, "merge_reason": None,
+                "reason": f"no readable pr_watcher.escalate row for {subject}"}
+    later = sorted(m for m in merges if m[0] > escalated_at)
+    if not later:
+        return {"measurable": True, "superseded": False,
+                "escalated_at": escalated_at.isoformat(), "merged_at": None,
+                "merge_reason": None,
+                "reason": "the escalation is the newer of the two rows"}
+    return {"measurable": True, "superseded": True,
+            "escalated_at": escalated_at.isoformat(),
+            "merged_at": later[0][0].isoformat(),
+            "merge_reason": later[0][1],
+            "reason": "a pr_watcher.merge landed after the escalation"}
+
+
+def card_disposition(f: Mapping[str, Any], *,
+                     subject_status: Optional[str]) -> Dict[str, Any]:
+    """CARD or RECORD for one projected finding. PURE.
+
+    THE OBJECTION THIS ANSWERS (autonomy-act-04). ``summarize_recovery`` is
+    RIGHT that ``escalate`` outranks any later ``merge`` — counting a
+    post-escalation merge as a recovery is exactly the inflation rem-hyg-16
+    exists to refuse, and NOTHING here changes that verdict, its threshold or
+    its window. The objection is one layer up, about SEEDING: a
+    ``needed_a_human`` finding whose subject has since merged and gone terminal
+    is a true statement about the past with no remaining work, and filing it as
+    a DISPATCHABLE card sends a worker session against a delivered subject.
+    Such a dispatch cannot go RED — there is nothing left to change.
+
+    THE CONJUNCTION IS THE CONTROL, and both halves are primary data:
+      * a ``pr_watcher.merge`` row NEWER than the newest ``pr_watcher.escalate``
+        row for the subject (the ORDER of two audit rows), AND
+      * the subject task is CLOSED on the board.
+    Measured on the live board 2026-09-05, all 25 recorded ``recovery``
+    findings: 15 hold both, and the merge that answered the escalation was the
+    watcher's OWN (``auto-merge ok``) for 12 of the 16 subjects that merged
+    after escalating — the escalation asked for a human and no human came.
+
+    EVERY UNKNOWN KEEPS THE CARD. An unreadable order, a subject that is not on
+    the board, a subject still in flight: each returns CARD. A card filed
+    against delivered work costs a wasted dispatch; an escalation silently
+    demoted to a record costs the one signal the watcher has for "I gave up".
+    Those are not the same price.
+
+    The finding is RECORDED either way — suppressing the row would delete the
+    measurement, and only the CARD is at issue.
+    """
+    # Mirrors ``_compute_project_progress``'s notion of closed EXACTLY, by
+    # importing the one declaration rather than respelling it.
+    from tools.dashboard.recovery_summary import CLOSED_STATUSES
+
+    def _card(reason: str, **extra: Any) -> Dict[str, Any]:
+        return {"disposition": DISPOSITION_CARD, "reason": reason, **extra}
+
+    if str(f.get("detector") or "") != DETECTOR_RECOVERY:
+        return _card("not a recovery finding — the rule is scoped to the "
+                     "watcher's own escalations")
+    order = dict(f.get("merge_after_escalation") or {})
+    if not order:
+        return _card("escalation/merge order UNMEASURED: no watcher rows were read")
+    if not order.get("measurable"):
+        return _card(f"escalation/merge order UNMEASURABLE: {order.get('reason')}")
+    if not order.get("superseded"):
+        return _card(str(order.get("reason") or "the escalation still stands"))
+    if subject_status is None:
+        return _card("the subject is not on the board — its status cannot be read",
+                     **{k: order.get(k) for k in ("escalated_at", "merged_at")})
+    if str(subject_status) not in CLOSED_STATUSES:
+        return _card(f"the subject is `{subject_status}`, not closed — work may remain",
+                     subject_status=str(subject_status),
+                     **{k: order.get(k) for k in ("escalated_at", "merged_at")})
+    return {
+        "disposition": DISPOSITION_RECORD,
+        "reason": (f"a pr_watcher.merge at {order['merged_at']} landed AFTER the "
+                   f"escalation at {order['escalated_at']}, and the subject is "
+                   f"`{subject_status}`: nothing is left to land"),
+        "subject_status": str(subject_status),
+        "escalated_at": order.get("escalated_at"),
+        "merged_at": order.get("merged_at"),
+        "merge_reason": order.get("merge_reason"),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -428,6 +598,26 @@ def recovery_rows(conn, window_hours: int) -> List[dict]:
     ).fetchall()]
 
 
+def watcher_outcome_rows(conn, *, window_hours: Optional[int] = None) -> List[dict]:
+    """The two pr_watcher actions ``merge_after_escalation`` orders.
+
+    ``window_hours=None`` is LIFETIME — what the browse surface and the survey
+    read, because a finding projected days ago has its escalation outside any
+    recent window and would otherwise report UNMEASURABLE. ``consume`` does NOT
+    call this: it orders against the rows ``recovery_rows`` already fetched, so
+    the disposition and the verdict are derived from the same evidence.
+    """
+    pg = str(getattr(conn, "_backend", "")).startswith("postgres")
+    details = "details::text" if pg else "details"
+    sql = (f"SELECT action, {details} AS d, created_at FROM audit_trail "  # nosec B608
+           "WHERE action IN ('pr_watcher.escalate','pr_watcher.merge')")
+    params: tuple = ()
+    if window_hours is not None:
+        sql += " AND created_at >= %s"
+        params = ((_now() - timedelta(hours=int(window_hours))).isoformat(),)
+    return [dict(r) for r in conn.execute(sql + " ORDER BY created_at", params).fetchall()]
+
+
 def run_recovery(conn, cfg: Mapping[str, Any]) -> dict:
     from tools.dashboard.recovery_summary import summarize_recovery
 
@@ -446,7 +636,7 @@ def run_recovery(conn, cfg: Mapping[str, Any]) -> dict:
         outcomes[e["outcome"]] = outcomes.get(e["outcome"], 0) + 1
     summary = {"window_hours": window_hours, "rows": len(rows),
                "tasks_attempted": len(entries), "outcomes": outcomes}
-    findings = recovery_findings(entries, window_hours)
+    findings = recovery_findings(entries, window_hours, rows=rows)
     return _result(RUN_FINDINGS if findings else RUN_CLEAN, findings, summary=summary)
 
 
@@ -766,11 +956,31 @@ def _before_earliest_clear(f: Mapping[str, Any], now_dt: datetime) -> bool:
     return now_dt < earliest
 
 
-def _card_status(conn, task_id: Optional[str]) -> Optional[str]:
+def _task_status(conn, task_id: Optional[str]) -> Optional[str]:
+    """One task's board status, or None when it is not on the board at all.
+
+    Read for a finding's CARD (has it been closed?) and for a recovery
+    finding's SUBJECT (has the work landed?) — the same question of the same
+    column, so it is one function.
+    """
     if not task_id:
         return None
     row = conn.execute("SELECT status FROM kanban_tasks WHERE id = %s", (task_id,)).fetchone()
     return str(dict(row)["status"]) if row else None
+
+
+def _disposition(conn, f: Mapping[str, Any]) -> Dict[str, Any]:
+    """``card_disposition`` with the one board read it needs (autonomy-act-04)."""
+    if str(f.get("detector") or "") != DETECTOR_RECOVERY:
+        return card_disposition(f, subject_status=None)
+    try:
+        subject_status = _task_status(conn, str(f.get("subject") or ""))
+    except Exception as exc:  # noqa: BLE001 — an unreadable board KEEPS the card
+        logger.warning("detector_findings: subject status unreadable for %s: %s",
+                       f.get("subject"), exc)
+        return {"disposition": DISPOSITION_CARD,
+                "reason": f"the board could not be read: {type(exc).__name__}"}
+    return card_disposition(f, subject_status=subject_status)
 
 
 # ---------------------------------------------------------------------------
@@ -875,7 +1085,13 @@ def consume(config: Optional[Mapping[str, Any]] = None, *, conn=None, seed: bool
         "findings_new": 0,
         "findings_recurring": 0,
         "findings_held_closed_early": 0,
+        "findings_record_only": 0,
         "findings_cleared": 0,
+        # Every finding filed as a RECORD instead of a card, with the two audit
+        # stamps that decided it. The finding is projected either way; this is
+        # where it is SURFACED, because a suppression nobody can see is a
+        # suppression nobody can audit.
+        "records": [],
         "cards_seeded": [],
         "cards_deferred": 0,
         "errors": [],
@@ -914,7 +1130,8 @@ def consume(config: Optional[Mapping[str, Any]] = None, *, conn=None, seed: bool
                 "reason": res.get("reason") or "",
                 # None, never 0, when the run could not measure.
                 "findings": len(findings) if state in (RUN_FINDINGS, RUN_CLEAN) else None,
-                "new": 0, "recurring": 0, "held_closed_early": 0, "cleared": 0,
+                "new": 0, "recurring": 0, "held_closed_early": 0,
+                "record_only": 0, "cleared": 0,
                 "summary": res.get("summary") or {},
                 "elapsed_seconds": round(time.monotonic() - t0, 1),
             }
@@ -928,7 +1145,20 @@ def consume(config: Optional[Mapping[str, Any]] = None, *, conn=None, seed: bool
                 for f in findings:
                     prior = existing.get(f["finding_id"])
                     revision = None
-                    if prior is None:
+                    # A RECORD is filed, never dispatched (autonomy-act-04).
+                    # Asked FIRST, so a delivered subject is never counted as
+                    # new or recurring work on ANY run — the projection row
+                    # carries no task_id, so without this the "still owed its
+                    # first card" branch would re-file it every cycle.
+                    disp = _disposition(conn, f)
+                    if disp["disposition"] == DISPOSITION_RECORD:
+                        entry["record_only"] += 1
+                        report["records"].append({
+                            "detector": name, "finding_id": f["finding_id"],
+                            "subject": f["subject"], "title": f["title"],
+                            **{k: v for k, v in disp.items() if k != "disposition"},
+                        })
+                    elif prior is None:
                         entry["new"] += 1
                         revision = 1
                     elif not prior.get("task_id"):
@@ -937,7 +1167,7 @@ def consume(config: Optional[Mapping[str, Any]] = None, *, conn=None, seed: bool
                         entry["new"] += 1
                         revision = int(prior.get("card_count") or 0) + 1
                     else:
-                        card_state = _card_status(conn, prior.get("task_id"))
+                        card_state = _task_status(conn, prior.get("task_id"))
                         was_cleared = str(prior.get("status")) == FINDING_CLEARED
                         card_closed = card_state in TERMINAL_CARD_STATUSES
                         # A terminal card while the detector structurally cannot
@@ -966,6 +1196,7 @@ def consume(config: Optional[Mapping[str, Any]] = None, *, conn=None, seed: bool
             report["findings_new"] += entry["new"]
             report["findings_recurring"] += entry["recurring"]
             report["findings_held_closed_early"] += entry["held_closed_early"]
+            report["findings_record_only"] += entry["record_only"]
 
             if seed:
                 _record_run(conn, name, state, entry["reason"], entry["findings"],
@@ -1067,6 +1298,64 @@ def list_findings(conn=None, *, detector: Optional[str] = None,
                 pass
 
 
+def dispositions(conn=None, *, window_hours: Optional[int] = None,
+                 status: Optional[str] = None) -> Dict[str, Any]:
+    """Every projected ``recovery`` finding, with its disposition RE-DERIVED.
+
+    The browse surface for what ``consume`` filed as a record rather than a
+    card — and the SURVEY, so a fire rate is measured with the SHIPPED
+    predicate (``merge_after_escalation`` and ``card_disposition`` themselves)
+    and never with a second copy of the rule.
+
+    ``window_hours=None`` reads pr_watcher rows LIFETIME, which is what a
+    survey over historical findings needs; ``consume`` orders against its own
+    24h window. The predicate is the same function either way.
+
+    ``measured`` is False when nothing could be read: no projection, or no
+    escalate/merge rows at all. UNMEASURABLE IS NOT "no records".
+    """
+    own = conn is None
+    if own:
+        from tools.db.storage import get_connection
+        conn = get_connection()
+    try:
+        if not tables_present(conn):
+            return {"state": "unmigrated", "measured": False, "findings": [],
+                    "record_only": None, "card": None}
+        findings = list_findings(conn, detector=DETECTOR_RECOVERY, status=status,
+                                 limit=10_000)
+        rows = watcher_outcome_rows(conn, window_hours=window_hours)
+        if not findings:
+            return {"state": "no_findings", "measured": False, "findings": [],
+                    "record_only": None, "card": None, "watcher_rows": len(rows)}
+        out: List[Dict[str, Any]] = []
+        for rec in findings:
+            subject = str(rec.get("subject") or "")
+            probe = dict(rec)
+            probe["merge_after_escalation"] = merge_after_escalation(rows, subject)
+            disp = card_disposition(probe, subject_status=_task_status(conn, subject))
+            out.append({
+                "finding_id": rec.get("finding_id"), "subject": subject,
+                "finding_status": rec.get("status"), "task_id": rec.get("task_id"),
+                "seen_count": rec.get("seen_count"), "card_count": rec.get("card_count"),
+                **disp,
+            })
+        record_only = sum(1 for r in out if r["disposition"] == DISPOSITION_RECORD)
+        return {
+            "state": "ok", "measured": True, "window_hours": window_hours,
+            "watcher_rows": len(rows), "findings": out,
+            "record_only": record_only, "card": len(out) - record_only,
+            # `pct if total else 100.0` here would breach args/perfect_score_gate.yaml.
+            "record_only_pct": (round(100.0 * record_only / len(out), 1) if out else None),
+        }
+    finally:
+        if own:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
 def stats(conn=None) -> dict:
     """Per-detector denominator. ``state`` is never a clean zero by accident."""
     own = conn is None
@@ -1121,11 +1410,16 @@ def render(report: dict) -> str:
         n = d["findings"]
         lines.append(
             f"  {name:<14} {d['state']:<12} findings={'?' if n is None else n:<4} "
-            f"new={d['new']} recurring={d['recurring']} cleared={d['cleared']} "
+            f"new={d['new']} recurring={d['recurring']} record={d.get('record_only', 0)} "
+            f"cleared={d['cleared']} "
             f"({d['elapsed_seconds']}s)" + (f"  — {d['reason']}" if d.get("reason") else ""))
     lines.append(
         f"  seen={report.get('findings_seen')} new={report.get('findings_new')} "
-        f"recurring={report.get('findings_recurring')} cleared={report.get('findings_cleared')}")
+        f"recurring={report.get('findings_recurring')} "
+        f"record_only={report.get('findings_record_only')} "
+        f"cleared={report.get('findings_cleared')}")
+    for rec in report.get("records") or []:
+        lines.append(f"  RECORD {rec['subject']} — {rec['reason']}")
     planned = report.get("cards_planned") or []
     if report.get("dry_run"):
         lines.append(f"  would seed {len(planned)} card(s): {', '.join(planned) or '-'}")
@@ -1146,6 +1440,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         help="run the detectors; write NOTHING (no rows, no cards)")
     parser.add_argument("--list", action="store_true", help="browse the projection")
     parser.add_argument("--stats", action="store_true", help="per-detector denominator")
+    parser.add_argument("--records", action="store_true",
+                        help="re-derive the card/record disposition of every projected "
+                             "recovery finding (autonomy-act-04); runs no detector")
+    parser.add_argument("--window-hours", type=int, default=None,
+                        help="--records: pr_watcher rows to order against (default lifetime)")
     parser.add_argument("--detector", choices=DETECTORS)
     parser.add_argument("--status", choices=(FINDING_ACTIVE, FINDING_CLEARED))
     parser.add_argument("--max-cards", type=int, default=None)
@@ -1163,6 +1462,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                       f"{r['task_id'] or '-':<26} {r['title']}")
             if not rows:
                 print("(no findings projected)")
+        return 0
+    if args.records:
+        d = dispositions(window_hours=args.window_hours, status=args.status)
+        if args.json:
+            print(json.dumps(d, indent=2, default=str))
+        else:
+            for r in d.get("findings") or []:
+                print(f"{r['disposition']:<7} {r['subject']:<28} "
+                      f"{str(r.get('finding_status')):<8} {r['reason']}")
+            if not d.get("measured"):
+                print(f"UNMEASURED — {d['state']}: no disposition can be derived")
+            else:
+                print(f"\n{d['record_only']} record / {d['card']} card "
+                      f"of {len(d['findings'])} projected recovery finding(s) "
+                      f"({d['record_only_pct']}% record)")
         return 0
     if args.stats:
         s = stats()

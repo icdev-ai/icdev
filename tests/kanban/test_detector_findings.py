@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
@@ -597,3 +598,250 @@ def test_recovery_finding_that_cleared_and_came_back_recurs_whatever_the_clock_s
     back = df.consume({}, conn=conn, runners=runners)
     assert back["findings_recurring"] == 1
     assert back["cards_seeded"] == [df.card_id_for(f["finding_id"], 2)]
+
+
+# --------------------------------------------------------------------------
+# card vs RECORD (autonomy-act-04)
+#
+# `summarize_recovery` is RIGHT that `escalate` outranks any later `merge`, and
+# nothing here changes that verdict. The objection is one layer up: a
+# `needed_a_human` finding whose subject has since merged AND gone terminal is
+# a true statement about the past with no remaining work, and a card for it
+# dispatches a worker session against a delivered subject -- a dispatch that
+# cannot go RED. Measured on the live board 2026-09-05 over all 25 recorded
+# recovery findings: 16 record / 9 card.
+# --------------------------------------------------------------------------
+def _watch_row(action, subject, at, reason=""):
+    return {"action": f"pr_watcher.{action}",
+            "d": json.dumps({"task_id": subject, "reason": reason}),
+            "created_at": at.isoformat() if hasattr(at, "isoformat") else at}
+
+
+ESC = datetime(2026, 9, 4, 0, 3, 45, tzinfo=timezone.utc)
+
+
+def test_merge_after_escalation_is_the_order_of_two_audit_rows():
+    after = df.merge_after_escalation(
+        [_watch_row("escalate", "rmf-ui-10", ESC),
+         _watch_row("merge", "rmf-ui-10", ESC + timedelta(minutes=56), "auto-merge ok")],
+        "rmf-ui-10")
+    assert after["measurable"] is True and after["superseded"] is True
+    assert after["escalated_at"] == ESC.isoformat()
+    assert after["merged_at"] == (ESC + timedelta(minutes=56)).isoformat()
+    assert after["merge_reason"] == "auto-merge ok"
+
+    # a merge BEFORE the escalation is not an answer to it
+    before = df.merge_after_escalation(
+        [_watch_row("merge", "rmf-ui-10", ESC - timedelta(hours=2)),
+         _watch_row("escalate", "rmf-ui-10", ESC)], "rmf-ui-10")
+    assert before["measurable"] is True and before["superseded"] is False
+
+    # the NEWEST escalation is the one ordered against: a fresh escalation
+    # after a merge means the subject is live again
+    relapsed = df.merge_after_escalation(
+        [_watch_row("escalate", "rmf-ui-10", ESC),
+         _watch_row("merge", "rmf-ui-10", ESC + timedelta(hours=1)),
+         _watch_row("escalate", "rmf-ui-10", ESC + timedelta(hours=2))], "rmf-ui-10")
+    assert relapsed["superseded"] is False
+
+    # another subject's rows are not this subject's evidence
+    other = df.merge_after_escalation(
+        [_watch_row("escalate", "rmf-ui-10", ESC),
+         _watch_row("merge", "rmf-ui-11", ESC + timedelta(hours=1))], "rmf-ui-10")
+    assert other["superseded"] is False
+
+
+def test_no_escalation_is_UNMEASURABLE_and_never_a_no():
+    for rows in ([], [_watch_row("merge", "rmf-ui-10", ESC)],
+                 [{"action": "pr_watcher.escalate", "d": "{not json}",
+                   "created_at": ESC.isoformat()}],
+                 [_watch_row("escalate", "rmf-ui-10", None)]):
+        order = df.merge_after_escalation(rows, "rmf-ui-10")
+        assert order["measurable"] is False, rows
+        # None, NEVER False: "cannot tell" and "the escalation stands" send a
+        # caller to opposite places.
+        assert order["superseded"] is None, rows
+
+
+def _ordered_finding(subject="rmf-ui-10", *, superseded=True):
+    rows = [_watch_row("escalate", subject, ESC)]
+    if superseded:
+        rows.append(_watch_row("merge", subject, ESC + timedelta(minutes=56),
+                               "auto-merge ok"))
+    entry = {"task_id": subject, "attempts": 5, "kind": "resume", "reason": "CI failed",
+             "at": ESC - timedelta(minutes=1), "escalated": True, "merged": superseded,
+             "outcome": "needed_a_human"}
+    found = df.recovery_findings([entry], window_hours=24, rows=rows)
+    assert len(found) == 1
+    return found[0]
+
+
+def test_recovery_findings_carry_the_order_only_when_handed_the_rows():
+    assert _ordered_finding()["merge_after_escalation"]["superseded"] is True
+    # no rows -> no claim about the order at all, and the caller must keep the card
+    entry = {"task_id": "x", "attempts": 1, "kind": "resume", "reason": "",
+             "at": ESC, "escalated": True, "merged": False, "outcome": "needed_a_human"}
+    assert df.recovery_findings([entry], window_hours=24)[0]["merge_after_escalation"] is None
+    # the other detectors carry none either
+    assert df.churn_findings(CHURN_REPORT)[0]["merge_after_escalation"] is None
+
+
+def test_a_record_needs_BOTH_the_order_and_a_closed_subject():
+    f = _ordered_finding()
+    got = df.card_disposition(f, subject_status="done")
+    assert got["disposition"] == df.DISPOSITION_RECORD
+    assert got["merged_at"] and got["escalated_at"] and got["subject_status"] == "done"
+    assert "nothing is left to land" in got["reason"]
+    # every other closed status the board recognises, through the ONE declaration
+    from tools.dashboard.recovery_summary import CLOSED_STATUSES
+    for status in CLOSED_STATUSES:
+        assert df.card_disposition(f, subject_status=status)["disposition"] == \
+            df.DISPOSITION_RECORD
+
+
+def test_every_unknown_keeps_the_card():
+    superseded = _ordered_finding()
+    cases = {
+        # the subject is still in flight -- 6 of the 9 cards due on 2026-09-05
+        "in flight": (superseded, "pr_opened"),
+        "failed": (superseded, "failed"),
+        # the subject is not on the board at all: its status cannot be READ
+        "off board": (superseded, None),
+        # the escalation is the newer of the two rows
+        "not superseded": (_ordered_finding(superseded=False), "done"),
+        # nothing was read -- UNMEASURABLE is not "no"
+        "unmeasured": (df.recovery_findings(
+            [{"task_id": "x", "attempts": 1, "kind": "resume", "reason": "", "at": ESC,
+              "escalated": True, "merged": False, "outcome": "needed_a_human"}],
+            window_hours=24)[0], "done"),
+        # the rule is scoped to the watcher's own escalations
+        "other detector": (_finding(df.DETECTOR_BORN_RED, "tests/test_x.py"), "done"),
+    }
+    for label, (f, status) in cases.items():
+        got = df.card_disposition(f, subject_status=status)
+        assert got["disposition"] == df.DISPOSITION_CARD, label
+        assert got["reason"], label
+
+
+def test_closed_is_read_from_the_one_declaration_never_respelled():
+    """A second copy of "what counts as closed" is the defect the project cards
+    carried until 2026-08-28. `card_disposition` imports the declaration."""
+    import inspect
+
+    src = inspect.getsource(df.card_disposition)
+    assert "from tools.dashboard.recovery_summary import CLOSED_STATUSES" in src
+    whole = Path(df.__file__).read_text(encoding="utf-8")
+    assert "decomposed" not in whole, "CLOSED_STATUSES has been respelled here"
+
+
+def test_a_delivered_subject_is_RECORDED_and_never_dispatched(conn, seeded):
+    f = _ordered_finding("rmf-ui-10")
+    conn.execute("INSERT INTO kanban_tasks (id, title, status) VALUES (?, ?, ?)",
+                 ("rmf-ui-10", "the subject", "done"))
+    conn.commit()
+    runners = _runners(recovery=("findings", [f]))
+
+    report = df.consume({}, conn=conn, runners=runners)
+    # NO card, and it is not counted as work owed
+    assert report["cards_seeded"] == [] and report["cards_planned"] == []
+    assert report["findings_new"] == 0 and report["findings_recurring"] == 0
+    assert seeded == []
+    # ... but the finding IS recorded, and SURFACED with both stamps
+    assert report["findings_record_only"] == 1
+    assert report["detectors"]["recovery"]["record_only"] == 1
+    rec = report["records"][0]
+    assert rec["subject"] == "rmf-ui-10" and rec["finding_id"] == f["finding_id"]
+    assert rec["merged_at"] and rec["escalated_at"] and rec["merge_reason"] == "auto-merge ok"
+    row = _rows(conn, f"SELECT * FROM {df.FINDINGS_TABLE}")[0]
+    assert row["status"] == "active" and row["seen_count"] == 1 and row["task_id"] is None
+
+    # A projection row with no task_id is normally "still owed its first card".
+    # A record must not re-enter that branch on every cycle, or the suppression
+    # merely moves the flood from the board into the candidate list.
+    again = df.consume({}, conn=conn, runners=runners)
+    assert again["cards_seeded"] == [] and again["findings_new"] == 0
+    assert again["findings_record_only"] == 1
+    row = _rows(conn, f"SELECT * FROM {df.FINDINGS_TABLE}")[0]
+    assert row["seen_count"] == 2 and row["card_count"] == 0 and row["task_id"] is None
+
+
+def test_a_subject_still_in_flight_still_seeds_its_card(conn, seeded):
+    f = _ordered_finding("mfx-boot-01")
+    conn.execute("INSERT INTO kanban_tasks (id, title, status) VALUES (?, ?, ?)",
+                 ("mfx-boot-01", "the subject", "pr_opened"))
+    conn.commit()
+    report = df.consume({}, conn=conn, runners=_runners(recovery=("findings", [f])))
+    assert report["cards_seeded"] == [df.card_id_for(f["finding_id"])]
+    assert report["findings_new"] == 1 and report["findings_record_only"] == 0
+
+
+def test_a_record_does_not_clear_the_finding_or_touch_an_existing_card(conn, seeded):
+    """The measurement survives: only the CARD is at issue."""
+    live = _ordered_finding("rmf-ui-10", superseded=False)
+    conn.execute("INSERT INTO kanban_tasks (id, title, status) VALUES (?, ?, ?)",
+                 ("rmf-ui-10", "the subject", "pr_opened"))
+    conn.commit()
+    card = df.consume({}, conn=conn, runners=_runners(
+        recovery=("findings", [live])))["cards_seeded"][0]
+
+    # the PR merges and the subject goes done: the SAME finding is now a record
+    conn.execute("UPDATE kanban_tasks SET status = 'done' WHERE id = 'rmf-ui-10'")
+    conn.commit()
+    later = df.consume({}, conn=conn, runners=_runners(
+        recovery=("findings", [_ordered_finding("rmf-ui-10")])))
+    assert later["findings_record_only"] == 1 and later["cards_seeded"] == []
+    row = _rows(conn, f"SELECT * FROM {df.FINDINGS_TABLE}")[0]
+    # still ACTIVE, still counted, still pointing at the card it already has
+    assert row["status"] == "active" and row["seen_count"] == 2
+    assert row["task_id"] == card and row["card_count"] == 1
+
+
+def test_an_unreadable_board_keeps_the_card(conn, seeded):
+    class _Boom:
+        def __init__(self, inner):
+            self._inner = inner
+
+        def execute(self, sql, params=None):
+            if "FROM kanban_tasks" in sql:
+                raise RuntimeError("board unreachable")
+            return self._inner.execute(sql, params)
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+    f = _ordered_finding("rmf-ui-10")
+    report = df.consume({}, conn=_Boom(conn), runners=_runners(recovery=("findings", [f])))
+    assert report["findings_record_only"] == 0
+    assert report["cards_seeded"] == [df.card_id_for(f["finding_id"])]
+
+
+def test_dispositions_is_UNMEASURED_rather_than_zero_records(conn):
+    empty = df.dispositions(conn)
+    assert empty["measured"] is False and empty["state"] == "no_findings"
+    # never 0 -- "nothing projected" is not "nothing suppressed"
+    assert empty["record_only"] is None and empty["card"] is None
+
+
+def test_dispositions_re_derives_with_the_shipped_predicate(conn, seeded):
+    f = _ordered_finding("rmf-ui-10")
+    conn.execute("INSERT INTO kanban_tasks (id, title, status) VALUES (?, ?, ?)",
+                 ("rmf-ui-10", "the subject", "done"))
+    conn.commit()
+    df.consume({}, conn=conn, runners=_runners(recovery=("findings", [f])))
+    # the browse surface reads pr_watcher rows from the audit trail itself, so
+    # a finding projected days ago can still be ordered (lifetime by default)
+    for action, at, reason in (("escalate", ESC, ""),
+                               ("merge", ESC + timedelta(minutes=56), "auto-merge ok")):
+        conn.execute(
+            "INSERT INTO audit_trail (event_type, actor, action, details, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("pr_watcher", "pr_watcher", f"pr_watcher.{action}",
+             json.dumps({"task_id": "rmf-ui-10", "reason": reason}), at.isoformat()))
+    conn.commit()
+
+    got = df.dispositions(conn)
+    assert got["measured"] is True and got["record_only"] == 1 and got["card"] == 0
+    assert got["record_only_pct"] == 100.0
+    row = got["findings"][0]
+    assert row["subject"] == "rmf-ui-10" and row["disposition"] == df.DISPOSITION_RECORD
+    assert row["merged_at"] and row["escalated_at"]
