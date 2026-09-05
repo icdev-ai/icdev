@@ -36,6 +36,26 @@ pydantic>=2.0            # Test data validation (TestResult, E2ETestResult model
 # that cliff. See docs/spikes/cdp-00-*.md defect D3.
 selenium>=4.15.0
 
+# === floci emulator, docker-only test half (flx-test-01) ===
+# The DISTRIBUTION is `testcontainers-floci`; the top-level module it installs is
+# the generic name `floci`. Declared rather than left to the CI job's own `pip
+# install` line for the selenium reason directly above: an undeclared test
+# dependency is a cliff a clean install only discovers at the first call, and a
+# reader cannot tell from the tree what the docker suite needs.
+#
+# It is a pure-Python wheel (py3-none-any) and so installs offline like selenium.
+# What is NOT air-gap safe is the floci/floci IMAGE the container starts, and
+# that is a separate concern already handled by the pinned-digest local cache
+# (flx-airgap-01/02) — nothing here pulls at run time provided the suite passes
+# the pinned `emulator.IMAGE`, which tests/cloud/test_floci_container_docker.py
+# asserts rather than assumes (the library's own default tag is `latest`).
+#
+# ONLY tests/cloud/test_floci_container_docker.py imports it, that file is
+# EXCLUDED from the merge gate in args/test_gating_gate.yaml, and it guards the
+# import with pytest.importorskip — so a deployment that skips this line loses
+# the docker suite and nothing else.
+testcontainers-floci>=0.1.1
+
 # === Compliance ===
 # cyclonedx-bom>=4.0     # SBOM generation (install when needed)
 # oscal-pydantic>=1.0    # OSCAL Pydantic models for type-safe validation (optional, D303)

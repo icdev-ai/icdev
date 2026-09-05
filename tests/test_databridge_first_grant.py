@@ -49,6 +49,19 @@ def _grants() -> list[dict]:
     return [g for g in (raw.get("connectors") or []) if isinstance(g, dict)]
 
 
+def _grant_named(name: str) -> dict:
+    """The one grant called *name*.
+
+    Was `(grant,) = _grants()`, which read "the grant" while meaning "the only
+    grant" — an assumption that expired the moment a second one shipped. The
+    subject of the tests below is the cef-fnd-03 rss grant specifically.
+    """
+    matches = [g for g in _grants() if str(g.get("name")) == name]
+    if len(matches) != 1:
+        raise AssertionError(f"expected exactly one grant named {name!r}, got {len(matches)}")
+    return matches[0]
+
+
 def _descriptors() -> list[dict]:
     raw = yaml.safe_load(CONNECTIONS_PATH.read_text(encoding="utf-8")) or {}
     return [c for c in (raw.get("connections") or []) if isinstance(c, dict)]
@@ -59,15 +72,17 @@ def _descriptors() -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-def test_the_manifest_is_enabled_with_exactly_one_grant():
-    """Zero authorized connectors was the defect; 33 would be a different one."""
-    manifest = broker.load_manifest()
-    assert manifest["enabled"] is True
-    assert len(manifest["connectors"]) == 1
+# `test_the_manifest_is_enabled_with_exactly_one_grant` lived here and counted
+# grants. flx-bridge-02 shipped a second one (the loopback floci emulator) and a
+# COUNT cannot tell the two kinds apart, so its successor is
+# tests/databridge/test_floci_grant.py::test_exactly_one_shipped_grant_reaches_
+# off_box, which derives "off-box" from each connection's own egress_allowlist
+# rather than from a number, and asserts the properties the number was a proxy
+# for. Strictly stronger, and correctly named for what it counts.
 
 
 def test_the_grant_is_fully_specified():
-    (grant,) = _grants()
+    grant = _grant_named("rss")
     assert grant["name"] == "rss"
     assert grant["description"].strip()
     assert grant["connection_id"] == "federal-register-nist"
@@ -384,6 +399,13 @@ def seeded_db(live_db):
     from icdev.tools.databridge.seed_connections import seed
 
     result = seed()
+    # flx-bridge-02 added a second descriptor. This fixture's subject is the rss
+    # round trip, so NARROW THE SET THE ASSERTION SCANS rather than restating the
+    # whole descriptor file, which every future connection would have to be added
+    # to. The assertion below is unchanged and still fails on a seed() that
+    # created nothing — narrowing the subject must never drop the check. The
+    # floci row is pinned in its own gated suite.
+    result = dict(result, created=[i for i in result["created"] if i == "federal-register-nist"])
     assert result["created"] == ["federal-register-nist"]
     return live_db
 

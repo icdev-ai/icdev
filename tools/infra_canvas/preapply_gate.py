@@ -20,11 +20,25 @@ Return schema::
 ``skipped`` is what tells `pass over eight satisfied rules` apart from `pass
 over an empty rule set`. See ``_run_iqe_checks``.
 
-THIS IS THE GATE THE floci IaC JOB EXERCISES (flx-ci-01,
-``.github/workflows/floci-iac-gate.yml``). There is a second, unrelated file
-next door -- ``tools/infra_canvas/pre_apply_gate.py``, "IDC IaC Twin Phase 1",
-which imports the plan into an IDC graph and blocks on CAT1. Reconciling the
-pair is flx-ci-02; neither file may quietly become the other.
+THIS IS THE PRE-APPLY GATE. Singular, since flx-ci-02 -- it is what the floci
+IaC job exercises (flx-ci-01, ``.github/workflows/floci-iac-gate.yml``) and
+what ``tools/twin_core/adapters/idc.py::simulate_delta`` calls.
+
+A second file used to sit next door (``pre_apply_gate.py``, "IDC IaC Twin
+Phase 1") taking the same input and answering the same question with a
+different verdict vocabulary. It was measured and deleted, not merged: it had
+ZERO runtime callers, and it returned the identical verdict for the compliant
+and the violating flx-ci-01 fixture because its rules asked
+ESTATE-COMPLETENESS questions ("is there a KMS service in this design?") of a
+plan DELTA -- so it could only ever pass a plan that was itself the whole
+estate. Nothing was lost with it: its rulebook, ``infra_engine.
+assess_infra_design``, is consumed live by ``tools/infra_canvas/blueprint.py``
+over the full design graph, which is the input those rules were written for.
+
+Derivation: ``docs/audits/flx-ci-02-two-preapply-gates.md``.
+A SECOND GATE UNDER ``tools/infra_canvas/`` NOW FAILS
+``tests/infra_canvas/test_one_preapply_gate.py`` -- including a shim, which is
+just a second gate with a redirect.
 """
 from __future__ import annotations
 

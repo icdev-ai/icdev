@@ -246,14 +246,25 @@ class TestFixtures:
 
 
 class TestPreapplyGate:
-    def test_the_job_names_one_gate_and_it_is_the_243_line_one(self, workflow_text):
+    def test_the_job_names_one_gate_and_it_is_the_surviving_one(self, workflow_text):
+        """The job names its gate, and the gate it names is the only one left.
+
+        THIS ASSERTION INVERTED, deliberately. While TWO pre-apply gates existed
+        this test required the workflow to name BOTH -- the one it used and the
+        one it did not -- because a job that silently picks one of a duplicate
+        pair blesses the pair. flx-ci-02 measured the pair and deleted the
+        loser, so naming it now points a reader at a file that does not exist,
+        which CLAUDE.md forbids for exactly the reason it forbids a documented
+        command with no file behind it.
+        """
         assert gate.PREAPPLY_GATE_MODULE == "tools/infra_canvas/preapply_gate.py"
         assert (REPO_ROOT / gate.PREAPPLY_GATE_MODULE).exists()
-        # Named in the workflow too, beside the one it is NOT.
         assert "tools/infra_canvas/preapply_gate.py" in workflow_text
-        assert "tools/infra_canvas/pre_apply_gate.py" in workflow_text, (
-            "the workflow must say which of the two gates it uses; a job that "
-            "silently picks one blesses the duplicate"
+
+        # The duplicate is gone; nothing may advertise it as a live alternative.
+        assert not (REPO_ROOT / "tools/infra_canvas/pre_apply_gate.py").exists(), (
+            "the second pre-apply gate is back -- see "
+            "tests/infra_canvas/test_one_preapply_gate.py before restoring it"
         )
 
     def test_a_query_over_an_unprovided_collection_is_skipped_not_failed(self):

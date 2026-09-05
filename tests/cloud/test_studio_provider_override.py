@@ -15,8 +15,18 @@ GREEN: an ``endpoints{}`` entry dropped or a ``skip_*`` flag flipped produces a
 provider block terraform still parses, so ``terraform validate`` passes and the
 plan simply talks to somewhere else. So the whole block is frozen here as it
 stood BEFORE the rename (read out of ``_base.py`` at merge base ``b4e0f214f``,
-2026-09-04) and the two are compared BYTE FOR BYTE with the same ``ep`` and
+2026-09-04) and compared against what ships today with the same ``ep`` and
 ``region`` substituted in.
+
+WHAT flx-docs-01 CHANGED, AND WHY IT IS STRICTER
+------------------------------------------------
+``_base.py`` deferred the two comment lines that still said "LocalStack" to
+flx-docs-01 BY NAME. That card corrected them, and the baseline below was NOT
+re-frozen -- re-freezing would hand back a free pass on the terraform in the
+same act. The comparison is SPLIT instead: every NON-COMMENT line is still byte
+identical to the frozen block, and the comment lines are asserted separately by
+position, by count and by content. Prose is now free to be corrected; the
+terraform is not.
 
 floci consumes the identical shape -- it is a LocalStack drop-in speaking the
 stock ``hashicorp/aws`` provider's ``endpoints{}`` / ``s3_use_path_style`` /
@@ -135,20 +145,44 @@ def test_the_docker_endpoint_rewrite_is_identical_under_the_new_name(raw, expect
     assert _base.emulator_docker_endpoint(raw) == expected
 
 
-# -- The block itself did not move -----------------------------------------
+# -- The TERRAFORM did not move; the COMMENTS did, on purpose ---------------
+#
+# flx-studio-01 froze the WHOLE block and said so: "if a later card
+# legitimately needs to change this block, this test fails and that is the
+# intended cost". flx-docs-01 is that card -- ``_base.py`` named it as the owner
+# of the two comment lines still carrying the retired product's name. So the
+# baseline is not re-frozen wholesale, which would give back a free pass on the
+# terraform as well. It is SPLIT: every NON-COMMENT line stays byte-identical to
+# the pre-rename block, and the comment lines are asserted separately, by count,
+# by position and by content. That is STRICTLY STRONGER than the equality it
+# replaces -- prose is now free to be corrected and the terraform is not, where
+# before a single new baseline would have licensed both.
 
-def test_the_rendered_provider_block_is_byte_identical_to_the_pre_rename_one():
-    """THE CARD'S ACCEPTANCE CRITERION. Same ep, same region, same bytes."""
+
+def _split(block: str) -> tuple[list[str], dict[int, str]]:
+    """(non-comment lines, {index: comment line}) for a rendered block."""
+    lines = block.splitlines()
+    code = [ln for ln in lines if not ln.lstrip().startswith("#")]
+    comments = {i: ln for i, ln in enumerate(lines) if ln.lstrip().startswith("#")}
+    return code, comments
+
+
+def test_every_non_comment_line_is_byte_identical_to_the_pre_rename_block():
+    """THE CARD'S ACCEPTANCE CRITERION, narrowed to what must never move.
+
+    A dropped ``endpoints{}`` entry or a flipped ``skip_*`` still PARSES, so
+    ``terraform validate`` is not the check that would catch it -- and it is
+    exactly the kind of edit a "we updated the comments" commit could carry.
+    """
     ep = "http://host.docker.internal:4566"
     region = "us-gov-west-1"
 
-    assert (
-        _base.FLOCI_PROVIDER_OVERRIDE.format(ep=ep, region=region)
-        == _FROZEN_PRE_RENAME_TEMPLATE.format(ep=ep, region=region)
-    )
+    now, _ = _split(_base.FLOCI_PROVIDER_OVERRIDE.format(ep=ep, region=region))
+    then, _ = _split(_FROZEN_PRE_RENAME_TEMPLATE.format(ep=ep, region=region))
+    assert now == then
 
 
-def test_the_block_is_byte_identical_for_every_region_and_endpoint_pair():
+def test_the_non_comment_lines_match_for_every_region_and_endpoint_pair():
     """The two placeholders are the ONLY things that may differ between renders.
 
     Rendering both templates over several (ep, region) pairs proves the
@@ -162,10 +196,55 @@ def test_the_block_is_byte_identical_for_every_region_and_endpoint_pair():
         ("http://10.0.0.5:4566", "us-gov-east-1"),
     ]
     for ep, region in pairs:
-        assert (
-            _base.FLOCI_PROVIDER_OVERRIDE.format(ep=ep, region=region)
-            == _FROZEN_PRE_RENAME_TEMPLATE.format(ep=ep, region=region)
-        ), f"the provider block changed for ep={ep} region={region}"
+        now, _ = _split(_base.FLOCI_PROVIDER_OVERRIDE.format(ep=ep, region=region))
+        then, _ = _split(_FROZEN_PRE_RENAME_TEMPLATE.format(ep=ep, region=region))
+        assert now == then, f"the provider block changed for ep={ep} region={region}"
+
+
+def test_no_comment_was_deleted_or_moved_while_the_wording_was_corrected():
+    """A comment may be REWORDED. It may not disappear.
+
+    Position and count are compared against the frozen block, so "we updated
+    the comments" cannot quietly become "we removed the one explaining why
+    path-style S3 is forced".
+    """
+    ep = "http://host.docker.internal:4566"
+    region = "us-gov-west-1"
+
+    _, now = _split(_base.FLOCI_PROVIDER_OVERRIDE.format(ep=ep, region=region))
+    _, then = _split(_FROZEN_PRE_RENAME_TEMPLATE.format(ep=ep, region=region))
+    assert list(now.keys()) == list(then.keys()), (
+        "a comment line was added, removed or moved: comment lines sit at "
+        f"{sorted(now)} and used to sit at {sorted(then)}"
+    )
+
+
+def test_the_comments_no_longer_name_the_retired_product():
+    """flx-docs-01's half of the deferred work, stated as an outcome.
+
+    ``_base.py`` deferred this wording here by name. The emulator is floci; a
+    generated ``.tf`` telling an operator the override is for LocalStack sends
+    them to a product this deployment does not run.
+    """
+    ep = "http://host.docker.internal:4566"
+    rendered = _base.FLOCI_PROVIDER_OVERRIDE.format(ep=ep, region="us-gov-west-1")
+    _, comments = _split(rendered)
+    for line in comments.values():
+        assert "LocalStack" not in line, f"a comment still names LocalStack: {line!r}"
+    assert any("floci" in line for line in comments.values()), (
+        "no comment names the emulator that is actually running"
+    )
+
+
+def test_the_frozen_baseline_still_records_the_old_wording():
+    """The baseline is the RECORD of what the block was, and stays one.
+
+    Editing it to match today would delete the evidence that flx-studio-01's
+    rename really did change nothing -- the same move as rewriting a superseded
+    spike instead of appending to it.
+    """
+    assert "LocalStack/SAM endpoint override" in _FROZEN_PRE_RENAME_TEMPLATE
+    assert "so Docker containers can reach LocalStack" in _FROZEN_PRE_RENAME_TEMPLATE
 
 
 def test_the_rendered_block_still_carries_every_endpoint_and_skip_flag():

@@ -662,6 +662,42 @@ reflexes:
       threshold: 0
       operator: gte
 
+  # mfx-own-03: the act ABOVE, given a consumer the audit above cannot starve.
+  # MEASURED 2026-09-05 on the live board: `kanban_stranded_reflex` walks 3,892
+  # `done` rows to reach the 2 `validating` rows these acts care about; its
+  # recorded durations run to 1200.2s against its own 1200s watchdog; 242
+  # recorded runs carry `orphan_requeue` ZERO times, five of them since the act
+  # landed; and three consecutive timeouts opened its breaker on 2026-09-04,
+  # after which tools/daemon/base.py skips it entirely. Of 73 lifetime guard
+  # parks the first exit was a human 63 times and that reflex zero times.
+  # This one runs the SAME two proofs from tools/kanban/orphan_requeue.py over
+  # candidates read straight off the board -- one indexed query -- so a park is
+  # answered in minutes and an audit that legitimately times out trips only its
+  # OWN breaker. Do NOT re-couple them, and do NOT respond to a park by raising
+  # the guard's 30s worktree timeout: the guard's own comment forbids hiding
+  # the cause, and a longer timeout only widens the window.
+  kanban_requeue_reflex:
+    enabled: true
+    risk_tier: green
+    schedule: "every 30m"
+    interval_seconds: 1800
+    # Seconds of work, not minutes: one `SELECT ... WHERE status='validating'`
+    # plus a handful of git probes per candidate. The default budget is ample;
+    # it is stated so a future candidate burst cannot silently run past it.
+    timeout_seconds: 300
+    # Shared by BOTH acts, exactly as in the block above: what the orphan act
+    # requeues this cycle counts against the empty-checkout act. The remainder
+    # is reported as `deferred` BY NAME and taken next cycle, oldest park first.
+    # A row parked twice by the same guard within 24h is CARDED, never requeued
+    # a third time -- a recurring park is the cause, and the card carries the
+    # guard's own refusal text verbatim.
+    max_requeues_per_run: 10
+    description: "Requeue a proven guard-parked `validating` row (no branch/worktree/live lease, or a provably empty checkout) through requeue_task -- candidates read from the board, never from the whole-board stranded audit"
+    success_metric:
+      name: parked_rows_requeued
+      threshold: 0
+      operator: gte
+
   detector_findings_reflex:
     enabled: true
     risk_tier: green

@@ -152,6 +152,92 @@ hold_on_sibling_conflict: true
 # unavailable git reports checked:false, which is never read as a finding.
 landed_check_on_poll: true
 
+# Superseded-PR guard (mfx-mrg-02) — CLOSE the duplicate instead of holding
+# the whole queue behind it.
+#
+# THE DEFECT, four times in two days. #2015's single commit merged in #2014
+# FORTY-TWO SECONDS earlier; #1985's in #1983, eighty-two seconds earlier; #2056
+# was the kpr-stale-06 branch re-opened after #2053 had already squashed it; and
+# #2049 (kpr-stale-05) had both its commits absorbed into #2053. Each then sat
+# CONFLICTING or "ahead" indefinitely, and — because it was still OPEN — each
+# held `no_sibling_conflict` against every other PR touching the same files.
+# #2015 blocked #2016 on compliance_server.py. Every one was diagnosed by a
+# human running `gh pr view <sibling> --json commits` and closed by hand.
+#
+# NONE OF THE GUARDS ABOVE COULD SEE IT, and each asks a question that is nearly
+# this one and is not: `landed_check_on_poll` greps commit SUBJECTS for the TASK
+# ID, so kpr-stale-05's work landing inside a PR whose subject names
+# kpr-stale-06 is invisible to it; `refuse_merge_when_behind` measures distance
+# from main, and a duplicate at the SAME head sha as a merged PR is 0 behind;
+# `sibling_conflict_check` lists which OPEN PRs share a file, which is the thing
+# the duplicate was jamming rather than the thing that finds it. And
+# `_supersede_stale_prs` in reflexes/kanban.py closes a task's OTHER OPEN PRs at
+# PR-open time, same task only — three of these four cases are a MERGED sibling
+# and one is a different task entirely.
+#
+# THE SIGNAL IS THE COMMIT LIST. GitHub keeps a merged PR's commit oids whatever
+# merge method was used, so a SQUASH — which leaves nothing on main carrying the
+# branch's shas — is still answerable. The rule: our head sha is in a merged
+# family sibling's commit list AND every commit we can see is in that list.
+# Requiring the HEAD closes the truncation hole (`gh` caps the commits
+# connection, and a short list of OURS would make the subset test trivially
+# true). "Family" is the same head branch, or our branch / PR number NAMED in
+# the sibling's title or body — never a title resemblance.
+#
+# SURVEYED BEFORE ARMING, over the live board 2026-09-05
+# (docs/audits/mfx-mrg-02-superseded-pr-survey.md). Of the 15 open PRs, EIGHT
+# fire — and all eight are duplicates at an IDENTICAL head sha to an
+# already-merged PR, verified one by one. That 53% is the MEASURED SIZE OF THE
+# DEFECT on a board mid-incident, not a threshold and not routine work being
+# refused: a legitimate PR always holds at least one commit no merged PR has,
+# and the subset rule cannot fire on it. Recall on the recent closed-unmerged
+# population is 2 of 2 — the two known incidents. Dropping the family
+# requirement adds ZERO further fires, so it is kept: it costs nothing and it is
+# what guarantees the close can cite a PR number.
+#
+# WHAT IT DOES AND DOES NOT DO. It comments the evidence and CLOSES. It never
+# merges, never un-drafts, never force-pushes and never deletes a branch —
+# closing removes nothing from main and the comment says how to reopen. If the
+# task is not already terminal, `landed_check` is asked whether its work is on
+# main and the task is completed ONLY on a checked, positive answer; a sibling
+# containing our commits proves the PR is redundant and does NOT prove the
+# task's own deliverable landed, so an unchecked or negative report completes
+# nothing and says so on the audit row.
+#
+# FAIL-OPEN. No gh, a refused listing, a PR with no head sha or no commit list
+# all report `checked: false`, which is never a finding — the PR takes exactly
+# the path it took before. Audit rows: `close_superseded`, `superseded_warn`
+# (report-only / dry run) and `superseded_close_failed`, all under the
+# `superseded` classification.
+#
+# Set superseded_close false to audit without closing. Set superseded_check
+# false to skip the merged listing entirely.
+superseded_check: true
+superseded_close: true
+
+# How many recently-merged PRs to consider. `commits` is an expensive field:
+# measured 2026-09-05, `--limit 60` is refused by GitHub's GraphQL node budget
+# ("up to 600,000 possible nodes ... maximum limit of 500,000") and `--limit 40`
+# succeeds. That budget scales with how many commits the page happens to carry,
+# so a refusal HALVES the page and retries once rather than leaving the check
+# permanently and silently unchecked. Raising this does not make the check
+# stronger — it makes it likelier to be refused.
+superseded_merged_limit: 40
+
+# The second leg: `git cherry` says every commit on the branch is already
+# upstream BY PATCH ID while the two-dot diff against the base is not empty —
+# i.e. merging it would REMOVE what the base has. This is the cherry-picked or
+# rebased duplicate, whose shas therefore differ.
+#
+# OFF, and the measurement is why. On the live board 2026-09-05 it fires on 3 of
+# the 15 open PRs and all three are a STRICT SUBSET of the commit-containment
+# leg's 8 — it found nothing that leg did not, because the four cases the card
+# was written for were squash-merged siblings, and a squash's patch id matches
+# none of the branch's individual commits. A leg that has never independently
+# found anything must not be the thing that closes somebody's PR. It costs two
+# local git calls per PR when on.
+superseded_revert_leg: false
+
 # Stale-branch guard (kpr-stale-02) — THE SAFETY HOLE this closes.
 #
 # Nothing in this watcher ever asked how far behind the default branch a PR

@@ -43,20 +43,29 @@
 
 version: databridge-agent-access-1.0
 
-# Master switch. On, for exactly one grant — see below.
+# Master switch. On, for two grants — see below.
 #
 # What "on" is NOT allowed to mean: a shipped grant against a CUSTOMER system.
 # The rule this file has always stated is that an install must not silently
 # authorise agents against systems the operator never reviewed, and that rule is
-# unchanged. The grant below is a PUBLIC, credential-free, read-only government
-# publications feed — a source whose entire content is already world-readable,
-# so authorising it discloses nothing and its blast radius is the reading of a
-# public web page.
+# unchanged. Both shipped grants are credential-free and read-only:
 #
-# Anything with credentials — Splunk, ServiceNow, SolarWinds, Tenable, a private
-# GitHub org — stays commented out, stays a per-deployment decision, and belongs
-# to the operator, not to this file. Enforced by tests/test_databridge_first_grant.py,
-# which fails on a shipped grant carrying an auth_secret_ref.
+#   rss    a PUBLIC government publications feed — its entire content is
+#          already world-readable, so authorising it discloses nothing and its
+#          blast radius is the reading of a public web page.
+#   floci  a LOCAL service emulator on loopback, off by default, holding
+#          EMULATED state and reached with a hard-wired dummy credential pair.
+#          Its blast radius on a default install is nothing at all, because the
+#          connector returns `disabled` before opening a socket.
+#
+# THE COUNT IS NOT THE RULE, and reading it as one is how the rule gets waived
+# by arithmetic. The rule is the PROPERTIES: no credential, read-only, scoped to
+# named roles, ceiling at UNCLASSIFIED, and a connection whose destination is
+# bounded. Anything with credentials — Splunk, ServiceNow, SolarWinds, Tenable,
+# a private GitHub org — stays commented out, stays a per-deployment decision,
+# and belongs to the operator, not to this file. Enforced by
+# tests/test_databridge_first_grant.py, which fails on ANY shipped grant
+# carrying an auth_secret_ref.
 enabled: true
 
 connectors:
@@ -110,6 +119,227 @@ connectors:
       - cortex_analyst
     classification_ceiling: UNCLASSIFIED
 
+  # -------------------------------------------------------------------------
+  # floci AWS service emulator (flx-bridge-02) — THE LOCAL EMULATED ESTATE.
+  #
+  # This is the second shipped grant, and it is a deliberate reversal of what
+  # flx-bridge-01 wrote one card earlier ("floci must not ship as an agent
+  # grant; it is a per-deployment decision"). That position was right while
+  # nothing consumed the connector. flx-twin-01 is the consumer, and its whole
+  # design is that it reads THROUGH this broker rather than importing the
+  # connector — "a direct import is an ungoverned side channel that the whole
+  # cef-fnd-03 design exists to close". Leaving the grant out would not have
+  # kept the emulator unreachable; it would have pushed its one reader onto the
+  # ungoverned path. So the grant is the safer of the two options, not the
+  # laxer one.
+  #
+  # WHY SHIPPING THIS ON IS NOT AUTHORISING AN UNREVIEWED SYSTEM — the rule at
+  # the top of this file, applied rather than waived. Each leg is independently
+  # sufficient:
+  #   * the emulator is OFF by default (FLOCI_ENABLED, default false), and off
+  #     means the connector returns `disabled` before any socket opens, so a
+  #     default install's blast radius is nothing at all;
+  #   * it is LOOPBACK ONLY, bounded by the connection row's egress_allowlist,
+  #     which is enforced at the point the endpoint is chosen;
+  #   * it is CREDENTIAL-FREE in the strongest sense — emulator.credentials()
+  #     is hard-wired to the dummy pair and deliberately refuses to read the
+  #     ambient AWS environment, so there is no secret to leak and no
+  #     auth_secret_ref to resolve;
+  #   * it holds EMULATED state, which flx-twin-01 marks `emulated` provenance
+  #     precisely because it is not evidence of any real estate;
+  #   * read-only, like every grant here — the broker has no write path, and
+  #     the connector's write() is unreachable through it.
+  #
+  # ALL SEVEN LOGICAL TABLES, and that is the connector's whole declared
+  # surface rather than "everything the AWS API offers". flx-twin-01's verdict
+  # ladder needs every one of them: `pass` requires every declared table to
+  # answer, and `warn` is reachable ONLY through a container-backed table
+  # reporting `unsupported_without_docker` — today that is `lambda_functions`,
+  # derived from emulator.CONTAINER_BACKED_SERVICES. Dropping it would make one
+  # of the four verdicts structurally unreachable, which is the same defect as
+  # a check with no probe behind it. A table added to the connector later is a
+  # NEW authorization decision and must be added here by hand; the grant is
+  # pinned against floci_connector.TABLES (module level, not a class attribute)
+  # so that decision cannot be skipped.
+  - name: floci
+    description: >-
+      Local floci AWS service emulator (loopback, off by default, dummy
+      credentials). Read-only view of the EMULATED estate: emulator health and
+      service list, plus S3 buckets, DynamoDB tables, Lambda functions, SQS
+      queues and ECR repositories. Emulated state is never evidence about a
+      real estate — a reader must mark it as such.
+    connection_id: floci-emulator-local
+    tables:
+      - health
+      - services
+      - s3_buckets
+      - dynamodb_tables
+      - lambda_functions
+      - sqs_queues
+      - ecr_repositories
+    # Scoped to the twin observer role. An empty list grants EVERY agent
+    # including runtime-generated SMEs, and an emulator that can be handed a
+    # docker socket is not a source to hand to an unreviewed SME.
+    agents:
+      - twin_observatory_analyst
+    classification_ceiling: UNCLASSIFIED
+
+
+  # floci-az Azure service emulator (flx-az-01) — THE LOCAL EMULATED ESTATE.
+  #
+  # A SEPARATE GRANT from `floci` above, deliberately. They are different
+  # emulators, and an operator who authorized a read of the AWS emulated estate
+  # has said nothing about the Azure one. Granting both from one entry would
+  # make enabling the second a silent consequence of the first.
+  #
+  # READ ONLY BY CONSTRUCTION, not by convention: FlociAzConnector declares
+  # supports_write=False and its write() returns `unsupported` naming the absent
+  # Azure IaC executor. ICDEV has tools/cloud/aws_config_executor.py and no
+  # Azure analogue, so there is nothing here that could apply a change.
+  #
+  # The table list is pinned against floci_az_connector.TABLES (module level,
+  # not a class attribute) by a test, so a table added to the connector later is
+  # a NEW authorization decision that cannot be skipped.
+  - name: floci_az
+    description: >-
+      Local floci-az Azure service emulator (loopback, off by default, no
+      credentials). Read-only view of the EMULATED estate: emulator health,
+      subscriptions and resource groups, plus resources, virtual networks,
+      network security groups, storage accounts, key vaults and managed
+      identities — every resource-type table enumerated PER RESOURCE GROUP,
+      because a subscription-scoped ARM list returns empty for a populated
+      estate on this emulator (measured 2026-09-05). Emulated state is never
+      evidence about a real estate — a reader must mark it as such.
+    connection_id: floci-az-emulator-local
+    tables:
+      - health
+      - subscriptions
+      - resource_groups
+      - resources
+      - virtual_networks
+      - network_security_groups
+      - storage_accounts
+      - key_vaults
+      - managed_identities
+    # Scoped to the twin observer role, matching the `floci` grant. An empty
+    # list grants EVERY agent including runtime-generated SMEs, and an emulator
+    # that is handed a docker socket and issues its own IMDS tokens is not a
+    # source to hand to an unreviewed SME.
+    agents:
+      - twin_observatory_analyst
+    classification_ceiling: UNCLASSIFIED
+
+  # floci-gcp GCP service emulator (flx-gcp-01) — THE LOCAL EMULATED ESTATE.
+  #
+  # A THIRD SEPARATE GRANT. An operator who authorized reads of the AWS and
+  # Azure emulated estates has said nothing about the GCP one.
+  #
+  # READ ONLY BY CONSTRUCTION, not by convention: FlociGcpConnector declares
+  # supports_write=False and its write() returns `unsupported` naming the absent
+  # GCP IaC executor. ICDEV has tools/cloud/aws_config_executor.py and no GCP
+  # analogue, so there is nothing here that could apply a change.
+  #
+  # The table list is pinned against floci_gcp_connector.TABLES (module level,
+  # not a class attribute) by a test, so a table added to the connector later is
+  # a NEW authorization decision that cannot be skipped.
+  #
+  # `enabled_services` IS NOT A HEALTH TABLE and is granted knowing that. It
+  # returns the emulator's declared/compiled-in service names, MEASURED
+  # byte-identical on a deployment that cannot start a container — the connector
+  # strips the always-"running" status so no caller can render it as one.
+  - name: floci_gcp
+    description: >-
+      Local floci-gcp GCP service emulator (loopback, off by default, no
+      credentials). Read-only view of the EMULATED estate: emulator health and
+      declared-service enablement, the configured project, plus GCS buckets,
+      Pub/Sub topics, Secret Manager secrets, KMS key rings, IAM service
+      accounts, Cloud SQL instances, BigQuery datasets and GKE clusters — one
+      project-scoped request each, because project-scoped lists reflect writes
+      on this emulator (measured 2026-09-05), unlike the Azure sibling.
+      Firestore and Datastore are ABSENT: they answer gRPC only, so this
+      HTTP connector cannot read them at all. Emulated state is never evidence
+      about a real estate — a reader must mark it as such.
+    connection_id: floci-gcp-emulator-local
+    tables:
+      - health
+      - enabled_services
+      - project
+      - buckets
+      - topics
+      - secrets
+      - key_rings
+      - service_accounts
+      - sql_instances
+      - datasets
+      - gke_clusters
+    # Scoped to the twin observer role, matching the two grants above. An empty
+    # list grants EVERY agent including runtime-generated SMEs, and an emulator
+    # that is handed a docker socket — this one spawns Postgres, Redpanda, k3s
+    # and arbitrary caller-named images — is not a source to hand to an
+    # unreviewed SME.
+    agents:
+      - twin_observatory_analyst
+    classification_ceiling: UNCLASSIFIED
+
+  # floci-oci OCI service emulator (flx-oci-01) — THE LOCAL EMULATED ESTATE.
+  #
+  # A FOURTH SEPARATE GRANT. An operator who authorized reads of the AWS, Azure
+  # and GCP emulated estates has said nothing about the OCI one.
+  #
+  # READ ONLY BY CONSTRUCTION, not by convention, and for TWO reasons rather
+  # than one: FlociOciConnector declares supports_write=False and its write()
+  # returns `unsupported` naming BOTH the absent OCI IaC executor (ICDEV has
+  # tools/cloud/aws_config_executor.py and no OCI analogue) AND the stubbed OCI
+  # provider layer — OCIObjectStorageProvider.list_objects is `return []` and
+  # its siblings are the same shape, so no endpoint can reach them. See
+  # docs/spikes/flx-oci-parity.md §1.
+  #
+  # The table list is pinned against floci_oci_connector.TABLES (module level,
+  # not a class attribute) by a test, so a table added to the connector later is
+  # a NEW authorization decision that cannot be skipped.
+  #
+  # `enabled_services` IS NOT A HEALTH TABLE and is granted knowing that. It
+  # returns the emulator's declared/compiled-in service names, MEASURED
+  # byte-identical on a deployment that cannot start a container — the connector
+  # strips the always-"running" status so no caller can render it as one. It
+  # also carries `self_reports_disagree`, because this emulator's startup log
+  # names seven services and its /health map names eight.
+  - name: floci_oci
+    description: >-
+      Local floci-oci OCI service emulator (loopback, off by default, no
+      credentials). Read-only view of the EMULATED estate: emulator health and
+      declared-service enablement, plus Object Storage buckets, Identity
+      compartments/users/groups/policies, Vault vaults, KMS keys, Queue queues,
+      Streaming streams, Functions applications and OKE clusters — one
+      compartment-scoped request each, because compartmentId is honoured on this
+      emulator (measured 2026-09-05: a bogus compartment returns zero rows),
+      unlike the Azure sibling's subscription-scope trap. OKE rows carry
+      `lifecycle_is_unverified`: floci-oci 0.4.0 starts k3s without a --token,
+      the container exits immediately, and the API keeps reporting ACTIVE.
+      Emulated state is never evidence about a real estate — a reader must mark
+      it as such.
+    connection_id: floci-oci-emulator-local
+    tables:
+      - health
+      - enabled_services
+      - buckets
+      - compartments
+      - users
+      - groups
+      - policies
+      - vaults
+      - keys
+      - queues
+      - streams
+      - applications
+      - clusters
+    # Scoped to the twin observer role, matching the three grants above. An
+    # empty list grants EVERY agent including runtime-generated SMEs, and an
+    # emulator that is handed a docker socket — this one spawns k3s — is not a
+    # source to hand to an unreviewed SME.
+    agents:
+      - twin_observatory_analyst
+    classification_ceiling: UNCLASSIFIED
 # ---------------------------------------------------------------------------
 # Further examples, left commented. These reach CUSTOMER systems and each needs
 # its own operator review, its own db_connections row and its own secret
