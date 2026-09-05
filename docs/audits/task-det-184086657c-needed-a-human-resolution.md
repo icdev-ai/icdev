@@ -124,3 +124,46 @@ this measurement. Two candidate narrowings, neither surveyed yet:
 
 The detector is **not** at fault and nothing about it was touched: it recorded the
 watcher's own verdict faithfully, which is the rem-hyg-16 rule working as designed.
+
+## Re-deriving every number here
+
+```bash
+# the finding, and whether it still reports
+python - <<'PY'
+from tools.awareness.claims import _recovery_rows
+from tools.dashboard.recovery_summary import summarize_recovery
+print([e for e in summarize_recovery(_recovery_rows(), limit=10_000)
+       if e['task_id'] == 'flx-airgap-01'])
+PY
+
+# the watcher's own ledger for this PR (44 rows)
+python - <<'PY'
+import json
+from tools.awareness.claims import _conn
+conn = _conn()
+for r in conn.execute(
+        "SELECT created_at, action, details::text AS d FROM audit_trail "
+        "WHERE action LIKE 'pr_watcher.%' AND details::text LIKE %s "
+        "ORDER BY created_at", ('%flx-airgap-01%',)).fetchall():
+    r = dict(r)
+    print(r['created_at'], r['action'], json.loads(r['d']).get('reason'))
+PY
+
+# the gap this card is about: run created -> first check run visible
+gh api "repos/icdev-ai/icdev/actions/runs?branch=kanban/flx-airgap-01" \
+  --jq '.workflow_runs[] | "\(.id) \(.head_sha[0:9]) created=\(.created_at) \(.conclusion)"'
+gh api "repos/icdev-ai/icdev/commits/44f4f0b7d/check-runs?per_page=100" \
+  --jq '[.check_runs[].started_at] | sort | .[0]'     # 2026-09-05T05:07:47Z
+
+# the class, lifetime, by reason
+python - <<'PY'
+import json, collections
+from tools.awareness.claims import _conn
+c = collections.Counter()
+for r in _conn().execute(
+        "SELECT details::text AS d FROM audit_trail "
+        "WHERE action = 'pr_watcher.escalate'").fetchall():
+    c[json.loads(dict(r)['d']).get('reason', '')[:70]] += 1
+print(c.most_common())
+PY
+```
