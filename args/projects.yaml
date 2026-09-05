@@ -9530,3 +9530,56 @@ projects:
   - {key: own, title: "TASK OWNERSHIP GAPS", priority: high}
   - {key: boot, title: "BOOT ORDER & RUNNERS", priority: high}
   - {key: ci, title: "CI GATES", priority: medium}
+
+- key: flx
+  name: "Floci Cloud Emulator -- replace LocalStack across twin, Studio and DataBridge"
+  description: >-
+    ICDEV references LocalStack from three mutually-unaware places and none of
+    them can reach an emulator today: the DataBridge feature flag names a
+    docker-compose profile that does not exist, the Studio executors key a
+    second competing switch on LOCALSTACK_ENDPOINT alone, and the twelve canvas
+    sim topologies declare containers that gns3_sim starts only in dry_run --
+    the one mode meant to touch nothing. The real blocker was never wiring:
+    twx-spk-01 ruled LocalStack NO-GO for air-gap because its 2026 image
+    validates an auth token at container start, and priced commercial CI per
+    seat. floci (MIT, Quarkus, port 4566, a documented LocalStack drop-in that
+    keeps /_localstack/health and translates LOCALSTACK_* by default) removes
+    exactly that constraint, so a pinned pre-pulled image runs disconnected.
+    This project replaces LocalStack outright behind ONE seam, gives the
+    emulator a governed DataBridge door and a Twin Observatory adapter, ships
+    the opt-in IaC CI gate the spike called pattern 1, and then extends to the
+    Azure/GCP/OCI siblings -- each only after its parity is MEASURED. Rule of
+    the project: an emulated estate is never readable as an observed one
+    (provenance `emulated`), a docker-backed table with no socket reports
+    unsupported_without_docker and never an empty list, and no performance,
+    cost or capacity claim is ever sourced from emulator timings.
+  task_prefix: flx-
+  default_open: true
+  briefs:
+  - 'Epic seam: ONE switch -- tools/cloud/emulator.py; feature_flags.localstack() and executors detect_mode() both delegate; LOCALSTACK_* kept as deprecated aliases -- flx-seam-01..02'
+  - 'Epic compose: pinned floci profile, persistent volume, Docker socket (a documented security decision), .gitignore data/floci/, icdev enable floci -- flx-compose-01..02'
+  - 'Epic bridge: connector rename + docker_backed tables, connections row with an env: secret ref, agent grant, seeder verify -- flx-bridge-01..02'
+  - 'Epic studio: executors + provider override renamed; workflow-template four-mode declarations -- flx-studio-01..02'
+  - 'Epic sim: twelve topologies swapped and the gns3_sim dry_run container inversion fixed, red-first -- flx-sim-01'
+  - 'Epic gen: infra_canvas adapter + dockerfile_generator emit floci into generated customer compose -- flx-gen-01'
+  - 'Epic airgap: tools/airgap/image_vendor.py (no container-image bundler exists today), FLOCI_DOCKER_* registry config, twin airgap rule, runbook -- flx-airgap-01..02'
+  - 'Epic twin: a floci twin adapter reading THROUGH the DataBridge broker, provenance emulated, unknown never pass -- flx-twin-01'
+  - 'Epic test: gated suite with no Docker, plus testcontainers-floci kept off the default runners by a written exclusion rule -- flx-test-01'
+  - 'Epic ci: opt-in floci IaC gate, never one of the four required checks, naming ONE pre-apply gate -- flx-ci-01'
+  - 'Epic docs: dated superseded-by-floci addendum to twx-spk-01 (never a rewrite), ADR, feature doc, commands, manifest -- flx-docs-01'
+  - 'Epics az/gcp/oci: one sibling emulator each, AFTER the AWS seam is proven, each gated on a dated parity measurement; no IaC-execution claim without an executor -- flx-az-01, flx-gcp-01, flx-oci-01'
+  epics:
+  - {key: seam, title: "THE ONE SWITCH", priority: critical}
+  - {key: compose, title: "COMPOSE PROFILE & TOGGLE", priority: critical}
+  - {key: bridge, title: "GOVERNED DATABRIDGE DOOR", priority: high}
+  - {key: studio, title: "STUDIO EXECUTORS", priority: high}
+  - {key: sim, title: "CANVAS SIM TOPOLOGIES", priority: high}
+  - {key: gen, title: "GENERATED CUSTOMER COMPOSE", priority: medium}
+  - {key: airgap, title: "AIR-GAP IMAGE BUNDLE", priority: high}
+  - {key: twin, title: "TWIN OBSERVATORY ADAPTER", priority: high}
+  - {key: test, title: "TEST HARNESS", priority: high}
+  - {key: ci, title: "OPT-IN IAC GATE", priority: medium}
+  - {key: docs, title: "DOCS, ADR & SPIKE ADDENDUM", priority: medium}
+  - {key: az, title: "AZURE SIBLING", priority: low}
+  - {key: gcp, title: "GCP SIBLING", priority: low}
+  - {key: oci, title: "OCI SIBLING", priority: low}
