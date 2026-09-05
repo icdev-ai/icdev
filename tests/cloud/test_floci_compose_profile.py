@@ -342,6 +342,17 @@ def _check_ignore(relpath: str) -> bool:
     return proc.returncode == 0
 
 
+def _tracked(relpath: str) -> bool:
+    """Is `relpath` in git's index? Used to prove a negative control is real."""
+    proc = subprocess.run(
+        ["git", "ls-files", "--error-unmatch", relpath],
+        cwd=_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    return proc.returncode == 0
+
+
 def test_emulator_state_is_gitignored():
     """The real predicate -- git's own -- not a substring search of .gitignore."""
     assert _check_ignore("data/floci/x")
@@ -350,8 +361,14 @@ def test_emulator_state_is_gitignored():
 
 
 def test_the_pattern_is_anchored_and_not_a_bare_data_directory():
-    """An unanchored `data/` once silently dropped a CODE directory here. The
-    negative control is a tracked file under data/ that must stay visible."""
+    """An unanchored `data/` once silently dropped a CODE directory here.
+
+    The negative control is a file git actually TRACKS under data/ (453 of them
+    exist). Tracking is what makes it a control: git would keep reporting a
+    tracked file whatever .gitignore said, so a path that is both tracked and
+    NOT matched by any pattern proves the new rule did not widen into a
+    directory carrying real content.
+    """
     lines = [
         ln.strip()
         for ln in _GITIGNORE.read_text(encoding="utf-8").splitlines()
@@ -360,7 +377,10 @@ def test_the_pattern_is_anchored_and_not_a_bare_data_directory():
     assert "data/floci/" in lines
     assert "data/" not in lines
     assert "data" not in lines
-    assert not _check_ignore("data/gns3-config/gns3_server.conf")
+
+    control = "data/cam_artifacts/proj-analytics-k8s-aws/1e207af7-7709-48fd-84b2-15158083a0e2/snapshot_restore.py"
+    assert _tracked(control), f"{control} is no longer tracked; pick another control"
+    assert not _check_ignore(control)
 
 
 def test_the_ignored_path_is_the_one_compose_mounts(floci):
