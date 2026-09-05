@@ -1149,33 +1149,42 @@ jobs:
           trap _abort SIGTERM SIGINT
           npx playwright test --shard=${{ matrix.shard }}/${{ strategy.job-total }}
       - name: Run DWO V&V specs (dwo-vv-03-d5)
-        # The three DWO V&V specs live in tests/e2e/ and are collected by the
-        # sweep above, but each self-skips unless its own env var is set. They are
-        # held out of that sweep deliberately: dwo_restart_durability spawns a
-        # dashboard on a free port, kills it, and starts it again, which does not
-        # belong in an invocation that ~800 other tests share. Giving them their
-        # own `npx playwright test` call is the wiring dwo-vv-03-d5 asks for — CI
-        # exercises all three, and the shared sweep is untouched.
+        # These DWO V&V specs live in tests/e2e/ and are collected by the sweep
+        # above, but self-skip unless their own env var is set. They are held out
+        # of that sweep deliberately, and the reason is PROCESS OWNERSHIP:
+        # dwo_restart_durability spawns a dashboard on a free port, kills it, and
+        # starts it again, which does not belong in an invocation that ~800 other
+        # tests share; dwo_trigger_linkage owns a gateway probe of its own. Giving
+        # them their own `npx playwright test` call is the wiring dwo-vv-03-d5
+        # asks for — CI exercises them, and the shared sweep is untouched.
         #
-        # This runs BEFORE "Stop dashboard server" on purpose: dwo_mcp_step_execution
-        # and dwo_trigger_linkage drive the job's dashboard through baseURL.
-        # ICDEV_NO_SERVER=1 is inherited from the job env, so Playwright starts no
-        # second server of its own.
+        # dwo_mcp_step_execution IS DELIBERATELY NO LONGER LISTED HERE. Its guard
+        # was about the BACKEND, not process ownership, and that premise expired
+        # when e2p-back-03 unpinned sqlite; the guard is gone and the sweep now
+        # runs the spec like any other. Listing it here too would run it twice per
+        # job and five times per CI run. The evidence for dropping the guard is
+        # the record THIS STEP produced — it passed here, on PostgreSQL, on all
+        # four shards, while the sweep beside it skipped the same file. Do not
+        # re-add it; the full measurement is in the spec's describe block.
+        #
+        # This runs BEFORE "Stop dashboard server" on purpose: dwo_trigger_linkage
+        # drives the job's dashboard through baseURL. ICDEV_NO_SERVER=1 is
+        # inherited from the job env, so Playwright starts no second server of its
+        # own.
         #
         # ICDEV_PW_RUN_TAG gives this invocation its own report + artifact paths.
         # Without it Playwright would clear outputDir and overwrite the
         # results.json the sweep just wrote, and the uploaded artifact would
         # describe only this handful of specs.
         #
-        # Expected today: dwo_mcp_step_execution and dwo_restart_durability PASS;
-        # dwo_trigger_linkage SKIPS at its probe until dwo-evt-04 registers
-        # /api/studio/event-sources and /api/studio/triggers. A skip is a pass to
-        # `playwright test`, so this step goes green now and starts exercising the
-        # trigger path for real the moment that surface merges — no edit here.
+        # Expected today: dwo_restart_durability PASSES; dwo_trigger_linkage SKIPS
+        # at its probe until dwo-evt-04 registers /api/studio/event-sources and
+        # /api/studio/triggers. A skip is a pass to `playwright test`, so this step
+        # goes green now and starts exercising the trigger path for real the moment
+        # that surface merges — no edit here.
         env:
           ICDEV_E2E_DWO_RESTART: "1"
           ICDEV_E2E_DWO_TRIGGER: "1"
-          ICDEV_E2E_DWO_MCP: "1"
           ICDEV_PW_RUN_TAG: dwo
         run: |
           _abort() {
@@ -1187,7 +1196,6 @@ jobs:
           trap _abort SIGTERM SIGINT
           npx playwright test \
             tests/e2e/dwo_restart_durability.spec.ts \
-            tests/e2e/dwo_mcp_step_execution.spec.ts \
             tests/e2e/dwo_trigger_linkage.spec.ts
       - name: Stop dashboard server
         if: always()
