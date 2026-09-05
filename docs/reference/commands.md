@@ -7848,3 +7848,54 @@ python tools/kanban/cli.py --release <task-id>          # end the keeper session
 python -m tools.kanban.interactive_claim --status <task-id> [--json]   # what holds it: keeper pid, expiry, intent, log
 python tools/awareness/restore_acts.py --plan           # reports the lease as held by a running process
 ```
+
+### AWS emulator seam — the ONE floci switch (flx-seam-01, flx-seam-02)
+`tools/cloud/emulator.py` is a LIBRARY: it has no argparse and no `__main__`, so
+there is no CLI to document. Import it.
+
+```python
+from tools.cloud import emulator
+
+if emulator.enabled():
+    client = boto3.client("s3", endpoint_url=emulator.endpoint(),
+                          region_name=emulator.region())
+
+# A container-backed service with no docker socket must say so, never return [].
+if not emulator.service_supported("lambda"):
+    return {"status": emulator.UNSUPPORTED_WITHOUT_DOCKER}
+```
+
+```bash
+# What is this deployment's verdict right now? (no network with probe=False)
+python -c "from tools.cloud import emulator; print(emulator.status(probe=False))"
+python -c "from tools.cloud import emulator; print(emulator.status())"   # costs one HTTP GET
+python -c "from tools.cloud import emulator; print(emulator.docker_backed(), emulator.docker_basis())"
+```
+
+`status()` returns `disabled | unreachable | degraded_no_docker | enabled`, in
+that severity order. `degraded_no_docker` is load-bearing: the emulator is up but
+the docker socket is PROVEN absent, so Lambda/RDS/ElastiCache/OpenSearch/MSK/
+ECS/EC2/EKS cannot be served — a caller answering for one of those reports
+`unsupported_without_docker`, NEVER an empty list. `docker_backed()` is TRI-STATE
+and `None` is not `False`: a Windows named pipe is not reliably stat-able
+(measured 2026-09-04, Docker Desktop 28.5.1 running, `os.path.exists` on the pipe
+returned False), so an unproven socket permits the call and lets the emulator's
+own error be the evidence.
+
+Configuration is `FLOCI_ENABLED` (default **false**, air-gap-safe),
+`FLOCI_ENDPOINT`, `FLOCI_REGION`, `FLOCI_ACCOUNT_ID` and `FLOCI_DOCKER_SOCKET` —
+all documented with their defaults in `.env.example`. `LOCALSTACK_ENABLED`,
+`LOCALSTACK_ENDPOINT` and `LOCALSTACK_REGION` are DEPRECATED ALIASES (deprecated
+2026-09-04), still read, each logging one warning per alias per process.
+There is deliberately no credential setting: `credentials()` always returns the
+dummy `("test", "test")` pair, because these values reach `docker run -e` and a
+Terraform provider block aimed at localhost.
+
+LEAVE `FLOCI_ENDPOINT` UNSET UNLESS YOU MEAN IT. An endpoint declared while the
+switch is off is a CONTRADICTION, and `detect_mode()` answers `dry_run` rather
+than fall through to `aws` — so a stray endpoint downgrades every real
+`terraform apply` to plan-only.
+
+NEVER source a performance, cost or capacity claim from emulator timings: an
+emulator reproduces the AWS **API contract**, not its performance characteristics
+(the standing guard from `docs/spikes/twx-spk-01-localstack-go-no-go.md`).
