@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -291,10 +292,22 @@ def test_the_azure_subscription_scope_trap_is_not_inherited():
     A sibling seam inheriting the Azure fan-out "to be safe" would add a
     per-scope loop that nothing here needs and a comment citing a trap this
     emulator does not have.
+
+    Asserted over the seam's API and its path TEMPLATES rather than by slicing
+    its text: every lane is scoped by exactly the two nouns OCI has, so there is
+    no third scope for a fan-out to iterate.
     """
-    src = _SEAM_SRC.read_text(encoding="utf-8")
     assert not hasattr(emulator_oci, "SUBSCRIPTION_SCOPE_IS_EMPTY")
-    assert "fan_out" not in src and "fan-out" not in src.lower().split('"""')[2]
+    assert not hasattr(emulator_oci, "resource_paths_for_scopes")
+    placeholders: set[str] = set()
+    for template in emulator_oci.REST_RESOURCE_PATHS.values():
+        placeholders |= set(re.findall(r"\{(\w+)\}", template))
+    assert placeholders <= {"namespace", "compartment"}, placeholders
+    # The twin's read ladder carries no `partial` rung either -- one request per
+    # lane cannot half-answer.
+    assert "partial" not in twin_mod.classify_read(
+        type("O", (), {"ok": True, "connector_status": "partial"})()
+    )
 
 
 def test_no_host_proxy_port_ranges_are_declared():
