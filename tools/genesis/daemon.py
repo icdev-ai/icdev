@@ -157,6 +157,11 @@ REFLEX_NAMES = [
     # this list and args/genesis_config.yaml -- the daemon dispatches from
     # HERE, and a reflex present in only the config has never run (xbm-wake-02).
     "asset_discovery",
+    # rmf-inert-02: the CALLER for the ATO evidence stack (24h). Eight tables an
+    # ATO package is assembled from held zero rows while every generator and the
+    # rmf-cyc-01 stage recorder sat on main, invoked by nobody. Registered in
+    # BOTH this list and args/genesis_config.yaml, for the reason above.
+    "ato_evidence_cycle",
     "dic_integration",     # dsyn-reflex-02: DIC Canvas Synergy — 15-min cadence
     "dic_review_cadence",  # dsyn-suggest-02: nightly collection review overdue check
     "dic_digest",          # dic-syn-gn: weekly digest of new docs + freshness alerts
