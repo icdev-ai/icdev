@@ -11,13 +11,27 @@
 #   step_7: Validation Run    (AST parse + dry-run of generated Python script)
 #   step_8: Migration Report  (aggregates all step results)
 #   step_9: Apply Approval    (HITL gate before deployment)
-#   step_10: Terraform Apply  (Docker — aws/localstack/sam/dry_run)
+#   step_10: Terraform Apply  (Docker — mode from executor_modes below)
 #   step_11: AWS Config Execute (boto3 post-provisioning verification)
 #   step_12: Post-deploy Validation
 
 description: "Shared IaC executor step definitions for all ICDEV Studio canvases"
 category: shared
 executor_root: tools/studio/executors/
+
+# The executor mode vocabulary — DATA, deliberately not a comment.
+# tools/studio/executors/_base.py::detect_mode() is the ONE thing that decides
+# which of these a run gets, and tests/cloud/test_workflow_template_modes.py
+# asserts these keys ARE its return set and that each one is REACHABLE from the
+# environment described beside it. A comment nothing reads is how this block
+# went on naming the RETIRED emulator after the seam was renamed to `floci`
+# (flx-seam-01 / flx-studio-01): a declaration and the code describing two
+# different systems, with nothing going red.
+executor_modes:
+  aws:     "real AWS account — AWS_ACCESS_KEY_ID set and no emulator endpoint declared"
+  floci:   "the local AWS emulator — FLOCI_ENABLED=true"
+  sam:     "SAM local — AWS_SAM_LOCAL=true"
+  dry_run: "terraform plan only, nothing applied — no credentials, or an endpoint declared while the switch is off"
 
 steps:
   - id: terraform_plan
@@ -80,8 +94,9 @@ steps:
     required: true
     timeout: 900
     description: >
-      Applies Terraform IaC inside Docker. Modes: aws (real AWS),
-      localstack (LocalStack), sam (SAM local), dry_run (plan only).
+      Applies Terraform IaC inside Docker. The mode is chosen by
+      _base.py::detect_mode() from the environment — see executor_modes at the
+      top of this file for the vocabulary and what selects each one.
       State saved to data/studio_artifacts/<canvas>/tfstate/state_<uid>.tfstate.
 
   - id: aws_config_execute
