@@ -161,17 +161,52 @@ retried sixteen times**, and in the audit log it is indistinguishable from a
 real conflict train. Same finding as mfx-sib-03; recorded again because it
 recurred, unchanged.
 
-### A live forge outage sits underneath all of it
+### A live forge outage sits underneath all of it — and it is a SECONDARY limit
 
 130 `pr_watcher.wait` rows, of which **104 are `fetch failed: gh pr view
 failed: exit=1 stderr=GraphQL: API rate limit already exceeded`**, continuous
-from 13:20:47Z to 19:24:47Z at ~34s intervals. `gh api rate_limit` reported
-5000/5000 remaining on `core` and `graphql` throughout, and REST calls
-(`gh api repos/…/pulls/2091`) answered normally, so the limit is on the
-GraphQL path `gh pr view` takes and not on the token's budget. Every forge read
-in this record was therefore taken through REST. The outage is a fleet event —
-it explains why the watcher was making no progress on ANY PR this evening, and
-it is not attributable to this branch.
+from 13:20:47Z to 19:24:47Z at ~34s intervals, and still failing at 20:4xZ.
+
+**The budget is not exhausted.** Measured side by side, in one breath:
+
+```bash
+gh api rate_limit --jq '.resources | {core,graphql}'
+#  -> graphql: {"limit":5000,"remaining":5000,"used":0}
+gh pr view 2091 --json number,state
+#  -> GraphQL: API rate limit already exceeded for user ID 263484343.
+gh api repos/icdev-ai/icdev/pulls/2091 --jq .number
+#  -> 2091
+```
+
+5000 of 5000 remaining, zero used, and the call fails anyway — while REST on
+the same token answers normally. This is a **secondary (abuse-detection)
+limit**, not budget exhaustion, and the difference is operationally load-
+bearing: the standing advice to "read `rate_limit` and sleep until `reset`" is
+wrong here, because `reset` describes a budget nothing spent. Every forge read
+in this record was therefore taken through REST.
+
+`tools/kanban/land.py`'s `pr_readable` rung REFUSED the governed merge on
+exactly this — *"PR state unreadable - refusing to merge blind"* — which is the
+door behaving correctly. It was not worked around; a raw `gh pr merge` on a
+kanban-linked PR is what kpr-rvfy-05 exists to refuse, and editing a merge gate
+so it tolerates an outage is the `|| true` move in a different costume.
+
+## A second gap, named and NOT closed here: the watcher has no backoff
+
+`tools/ci/pr_watcher.py` contains no backoff, no consecutive-failure counter
+and no rate-limit handling at all — `grep -nE "backoff|consecutive|rate
+limit|ratelimit" tools/ci/pr_watcher.py` returns **nothing**. So on a forge
+outage it re-issues the same failing GraphQL call every ~34 seconds
+indefinitely: 104 identical failures over six hours, none of them widening the
+interval.
+
+A secondary rate limit is *extended* by continued requests, so a fixed-cadence
+retry plausibly sustains the very limit it is waiting out. That makes this more
+than cosmetic — but "plausibly" is the honest word: this record measures the
+cadence and the absence of backoff, and does NOT measure that the retries are
+what keeps the limit alive. Establishing that needs a controlled quiet period,
+which is a fleet decision and not this card's to take. Recorded as the evidence
+for that card.
 
 ## What was done
 
@@ -197,7 +232,17 @@ it is not attributable to this branch.
    `ruff check` on the changed set.
 6. Pushed as a fast-forward only (`586a9a580..65a08e4c0`). No force-push, no
    rebase, no branch deleted. PR #2091 went `mergeable: null`/`unknown` ->
-   **`mergeable: true`**.
+   **`mergeable: true`**, and its ICDEV CI run 33988669756 went from `failure`
+   on every run the branch had ever had to **17/17 green** — Lint, Security
+   Scan, Test Gates, all four Test shards, the `Test` aggregator, all four E2E
+   shards, `E2E (Playwright)`, Test (Windows), Test (PostgreSQL), Doc Coherence
+   Gate, Helm Lint.
+7. The governed door (`cli.py --set-status mfx-sib-02 done --merge`) is refused
+   by its own `pr_readable` rung while the GraphQL outage lasts. The PR is left
+   green and mergeable for it. The claim keeper does NOT stand in the way:
+   `pr_watcher` polls `in_progress` alongside `pr_opened`
+   (`pr_watcher.py:507`) and does not consult the coordination lease, so it can
+   land #2091 itself the moment the forge answers.
 
 `coherence_checker --tier fast --gate` reports one FAIL,
 `capability_liveness` (`mcp_dispatch_tool` 468 over a 467 budget,
