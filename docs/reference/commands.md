@@ -2632,6 +2632,44 @@ python -m tools.kanban.lane_conflicts --task <task-id>
 # which 0 were real to 0 live / 8 latent. REPORT ONLY at the create_tasks seam; arming it needs
 # a fire-rate survey first, exactly as rem-hyg-03/04 do for the identity check.
 
+# Kanban — refuse to dispatch a card while an in-flight SIBLING owns a file it declares (mfx-sib-01)
+python -m tools.kanban.sibling_overlap --survey                    # replay recorded dispatches
+python -m tools.kanban.sibling_overlap --survey --window-days 30 --json
+python -m tools.kanban.sibling_overlap --holds                     # what would be held NOW
+# lane_conflicts (above) REPORTS a seed-time race; this one REFUSES a dispatch-time one, and it
+# is armed. The MERGE door has serialized siblings since hold_on_sibling_conflict; DISPATCH did
+# not. Ten rmf-ui-* cards -- one route per card, by design -- each appended to the same lines of
+# the same canvas blueprint.py, the same nav dropdown and the same feature doc on 2026-09-03/04.
+# Four were built concurrently and three of the four were GUARANTEED to conflict: whichever
+# landed first made every open sibling CONFLICTING, classify_conflict read `real`, the
+# --force-with-lease rebase aborted four times per card, five LLM resumes burned, then
+# pr_watcher.escalate and a human unioned the hunks by hand. Ten times, ~6 hours.
+# A HOLD IS A WAIT, NOT A PARK: the card stays `scheduled` and yields its selection slot (dropped
+# BEFORE the slot truncation, for the same reason _drop_respawn_guarded is -- a task that keeps
+# its place occupies a slot it can never use and starves everything behind it), and is
+# re-evaluated next cycle. When the sibling reaches `done` the hold evaporates with no action.
+# The reason is written ONCE PER EPISODE on a `scheduled -> scheduled` row (actor
+# `sibling-serializer`), never once per 60s cycle, and the count is reported as `sibling_holds`.
+# NEVER A SECOND COPY OF EITHER INPUT: declared paths come from
+# artifact_evidence.declared_artifacts, and "safe to co-edit" from
+# coordination_paths.is_coordination_path -- which IS pr_watcher._is_additive_path, so the
+# dispatch door and the merge door cannot disagree about what a collision is. The predicate the
+# admission calls and the predicate the survey replays are the SAME function.
+# `scheduled` is deliberately NOT an in-flight status: two waiting cards holding each other is a
+# deadlock, not serialization.
+# SURVEYED BEFORE ARMING over 1,977 recorded dispatches (30 days to 2026-09-04): 451 had an
+# in-flight same-epic sibling, 21 would have been HELD (1.06% -- below the 1.63% CLAUDE.md calls
+# refusing routine work, and under the card's 2% ceiling), and 18 of the 21 (85.71%) went on to
+# record a real merge conflict. It fires on exactly the ten rmf-ui cards. The cost is three NAMED
+# holds -- cef-bck-01, rmf-ui-14, rmf-ui-15, 0.15% of dispatches -- delayed one cycle for a
+# collision that would not have happened.
+# declared_artifacts reads PROSE and UNDER-approximates, so a card naming no path is never held:
+# the honest failure direction, since an unheld pair costs a rebase while a held one costs
+# throughput on work that may never collide. UNMEASURABLE, never a clean zero, over a window with
+# no dispatches. Do NOT widen the additive-path list to quieten a hold -- that list is shared
+# with the merge door. Stand it down with `serialize_overlapping_siblings: false` in
+# args/genesis_config.yaml or KANBAN_SERIALIZE_SIBLINGS=0, never a shell neutraliser.
+
 # Kanban — re-queue a task for a clean rebuild without faking a failure (kax-recover-02)
 python tools/kanban/cli.py --requeue <task-id> --reason "closing stale PR; rebuild on main"
 python tools/kanban/cli.py --requeue <id1> <id2> --requeue-status scheduled --json

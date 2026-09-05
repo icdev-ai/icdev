@@ -3092,6 +3092,12 @@ def _get_due_tasks() -> list:
         # them — see _drop_respawn_guarded.
         result = _drop_respawn_guarded(result)
 
+        # Serialize a card against an in-flight SIBLING that edits the same file
+        # (mfx-sib-01). Same reason as the filter above: a held task must yield
+        # its selection slot BEFORE the truncation, or it occupies a slot it can
+        # never use. See _drop_sibling_overlapped.
+        result = _drop_sibling_overlapped(result)
+
         # Cap scheduled results to available slots (prevents burst on restart)
         result = result[:available_slots]
 
@@ -10060,6 +10066,120 @@ def _tasks_with_recent_success(task_ids: List[str], within_minutes: int = 30) ->
             conn.close()
 
 
+#: Holds recorded by the most recent ``_drop_sibling_overlapped`` call, so
+#: ``run()`` can report the per-cycle count without re-asking the board.
+#:
+#: ``None`` means the admission did NOT RUN this cycle — the board was at
+#: capacity, or the check is stood down. That is deliberately not the same as an
+#: empty list: reporting a cycle that never looked as "0 holds" is the fabricated
+#: clean zero this repo refuses everywhere else, and it would also let last
+#: cycle's count be read as this cycle's.
+_LAST_SIBLING_HOLDS: Optional[List[dict]] = None
+
+#: One wait row per (task, sibling) episode rather than one per cycle. A hold
+#: that lasts an afternoon is ONE wait, and writing it every 60s would bury the
+#: transition log under a fact that has not changed.
+_SIBLING_HOLD_RECORDED: Set[str] = set()
+
+
+def _serialize_overlapping_siblings_enabled() -> bool:
+    """Read ``reflexes.kanban.serialize_overlapping_siblings`` (default ON).
+
+    ``KANBAN_SERIALIZE_SIBLINGS=0`` stands it down without editing config, which
+    is the auditable escape hatch CLAUDE.md asks for. Any unreadable config
+    leaves the check ON: the surveyed fire rate is 1.06%, so failing open here
+    would silently restore the defect the survey measured.
+    """
+    import os as _os  # noqa: PLC0415 — module-local, matching this file's idiom
+
+    override = _os.environ.get("KANBAN_SERIALIZE_SIBLINGS")
+    if override is not None:
+        return override.strip().lower() not in {"0", "false", "no", "off"}
+    try:
+        import yaml as _yaml  # noqa: PLC0415
+
+        with open(BASE_DIR / "args" / "genesis_config.yaml", encoding="utf-8") as fh:
+            cfg = _yaml.safe_load(fh) or {}
+        kanban_cfg = (cfg.get("reflexes") or {}).get("kanban") or {}
+        return bool(kanban_cfg.get("serialize_overlapping_siblings", True))
+    except Exception as exc:  # noqa: BLE001 — an unreadable config is not an opt-out
+        logger.debug("sibling serialization config unreadable, staying on: %s", exc)
+        return True
+
+
+def _drop_sibling_overlapped(tasks: List[dict]) -> List[dict]:
+    """Hold a task whose in-flight SIBLING already owns a file it declares.
+
+    THE DEFECT (mfx-sib-01). Ten ``rmf-ui-*`` cards — "one route per card" — each
+    appended to the same lines of the same canvas ``blueprint.py``, the same nav
+    dropdown and the same feature doc. Whichever landed first made every open
+    sibling CONFLICTING, ``pr_watcher`` classified that ``real`` (git conflicts
+    too), its rebase aborted four times per card, five LLM resumes burned, and a
+    human unioned the hunks by hand. Ten times, roughly six hours.
+
+    The MERGE door has serialized siblings since ``hold_on_sibling_conflict``.
+    DISPATCH did not, so four siblings were built concurrently and three of the
+    four were guaranteed to conflict — the expensive place to find out, because
+    by then the work is written.
+
+    A HOLD IS A WAIT, NOT A PARK. The task stays ``scheduled``, yields its
+    selection slot to something that can actually run (the same reason
+    ``_drop_respawn_guarded`` filters before the truncation), and is re-evaluated
+    next cycle. When the sibling reaches ``done`` the hold evaporates with no
+    further action. Nothing on the task row changes.
+
+    The predicate is ``tools.kanban.sibling_overlap.overlap`` — the same function
+    the survey replayed — over
+    ``tools.kanban.artifact_evidence.declared_artifacts`` and
+    ``pr_watcher._is_additive_path``. No second copy of any of the three.
+
+    SURVEYED BEFORE ARMING over 1,977 recorded dispatches (30 days to
+    2026-09-04): 21 holds, 1.06%, below the 1.63% CLAUDE.md calls refusing
+    routine work; 18 of the 21 (85.71%) went on to record a real merge conflict;
+    it fires on exactly the ten rmf-ui cards. Re-derive with
+    ``python -m tools.kanban.sibling_overlap --survey``.
+
+    FAIL-OPEN. Anything unreadable returns the candidate list untouched — a
+    missed hold costs one rebase, a wedged scheduler costs the whole queue.
+    """
+    global _LAST_SIBLING_HOLDS
+    if not tasks or not _serialize_overlapping_siblings_enabled():
+        return tasks
+    _LAST_SIBLING_HOLDS = []
+    try:
+        from tools.kanban.sibling_overlap import find_holds
+
+        holds = find_holds(tasks)
+    except Exception as exc:  # noqa: BLE001 — never wedge dispatch
+        logger.warning("sibling-overlap admission skipped: %s", exc)
+        _LAST_SIBLING_HOLDS = None  # did not measure — never report that as zero
+        return tasks
+    if not holds:
+        _SIBLING_HOLD_RECORDED.clear()
+        return tasks
+
+    _LAST_SIBLING_HOLDS = [h.to_dict() for h in holds.values()]
+    print(
+        f"  Kanban: holding {len(holds)} task(s) behind an in-flight sibling "
+        f"that edits the same file: "
+        f"{', '.join(f'{h.task_id}<-{h.sibling_id}' for h in holds.values())}"
+    )
+    for hold in holds.values():
+        logger.info("dispatch window: %s %s — yielding its slot",
+                    hold.task_id, hold.reason)
+        episode = f"{hold.task_id}->{hold.sibling_id}"
+        if episode not in _SIBLING_HOLD_RECORDED:
+            _SIBLING_HOLD_RECORDED.add(episode)
+            _record_status_transition(
+                hold.task_id, "scheduled", "scheduled",
+                actor="sibling-serializer", reason=hold.reason,
+            )
+    # Episodes that cleared this cycle may legitimately be re-recorded later.
+    _SIBLING_HOLD_RECORDED.intersection_update(
+        {f"{h.task_id}->{h.sibling_id}" for h in holds.values()})
+    return [t for t in tasks if t.get("id") not in holds]
+
+
 def _drop_respawn_guarded(tasks: List[dict]) -> List[dict]:
     """Remove tasks the dispatcher would refuse to dispatch anyway.
 
@@ -12358,7 +12478,11 @@ def _decompose_one_task(task: dict, ai_narrative: bool = False) -> dict:
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Kanban Executor Reflex."""
-    global _current_exec_tier
+    global _current_exec_tier, _LAST_SIBLING_HOLDS
+    # Unmeasured until the admission actually runs this cycle (mfx-sib-01). A
+    # stale list from the previous cycle read as this one's would be a count
+    # nobody took, which is the defect the whole surrounding file guards against.
+    _LAST_SIBLING_HOLDS = None
     tier = tier_resolver.resolve_tiers().exec_tier
     if tier != _current_exec_tier:
         logger.info("Executor tier changed to %s", tier)
@@ -13005,6 +13129,15 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         "metric_value": len(processed),
         "details": {
             "tasks_activated": len(processed),
+            # mfx-sib-01: cards that yielded their slot to avoid building on top
+            # of an in-flight sibling. Reported per cycle so a serialization hold
+            # is legible as a WAIT rather than as an idle board. NULL — never 0 —
+            # when the admission did not run (stood down, or the board was at
+            # capacity before the selection window was ever filtered).
+            "sibling_holds": (
+                None if _LAST_SIBLING_HOLDS is None else len(_LAST_SIBLING_HOLDS)),
+            "sibling_hold_detail": (
+                None if _LAST_SIBLING_HOLDS is None else list(_LAST_SIBLING_HOLDS)),
             "telegram_commands": len(tg_results),
             "completed_this_cycle": completed,
             "decomposed_this_cycle": decomposed_this_cycle,
