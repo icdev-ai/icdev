@@ -34,7 +34,9 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 
 def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
-    conn = get_connection(db_path=str(db_path))
+    # str(None) is the literal string "None" — a database of that name, not the
+    # configured default. Pass the absence through as an absence.
+    conn = get_connection(db_path=str(db_path) if db_path is not None else None)
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
@@ -272,8 +274,9 @@ def extract_document(
             _file_hash(file_path)
             conn.execute(
                 """INSERT OR IGNORE INTO rag_ingestion_log
-                   (source_table, source_id, chunk_count, status, started_at, completed_at)
-                   VALUES (%s, %s, %s, 'completed', %s, %s)""",
+                   (source_type, source_table, source_id, chunks_created,
+                    status, started_at, completed_at)
+                   VALUES ('document_extraction', %s, %s, %s, 'completed', %s, %s)""",
                 (f"ft_document:{dataset_id}", doc_id, len(chunks), _now(), _now()),
             )
             conn.commit()

@@ -213,6 +213,100 @@ def test_ignore_tables_suppresses_a_colliding_name(tmp_path, monkeypatch):
     assert result.status == "pass", result.message
 
 
+# ---------------------------------------------------------------------------
+# foreign_database — excused, and NOT counted as backlog (mfx-ci-03)
+# ---------------------------------------------------------------------------
+
+
+def test_foreign_database_entry_passes_rather_than_warning(tmp_path, monkeypatch):
+    """A site writing another database is not debt, so it must not WARN.
+
+    ``grandfathered`` downgrades a real defect so a backlog does not block
+    unrelated work; ``foreign_database`` records a measurement proving there is
+    no defect at all. Reporting the second as the first is how 104 excuses
+    nobody could act on accumulated behind this file.
+    """
+    result = _run(
+        tmp_path,
+        monkeypatch,
+        {"tools/x/writer.py": 'SQL = "INSERT INTO kanban_tasks (id, source) VALUES (%s, %s)"\n'},
+        _SCHEMA,
+        config=(
+            "foreign_database:\n"
+            '  "tools/x/writer.py:kanban_tasks:source": "writes platform.db, measured"\n'
+        ),
+    )
+    assert result.status == "pass", result.message
+    assert result.missing == []
+    assert "another database" in " ".join(result.actual + [result.message])
+
+
+def test_foreign_database_is_counted_apart_from_grandfathered(tmp_path, monkeypatch):
+    """Two sections, two counts — never one number covering both."""
+    result = _run(
+        tmp_path,
+        monkeypatch,
+        {
+            "tools/x/writer.py": 'SQL = "INSERT INTO kanban_tasks (id, source) VALUES (%s, %s)"\n',
+            "tools/y/other.py": 'SQL = "INSERT INTO kanban_tasks (id, owner) VALUES (%s, %s)"\n',
+        },
+        _SCHEMA,
+        config=(
+            "grandfathered:\n"
+            '  "tools/y/other.py:kanban_tasks:owner": "real defect, swp-scan-01"\n'
+            "foreign_database:\n"
+            '  "tools/x/writer.py:kanban_tasks:source": "writes platform.db, measured"\n'
+        ),
+    )
+    assert result.status == "warn", result.message
+    # The grandfathered DEBT is what `missing` reports; the excused site is not.
+    assert result.missing == ["tools/y/other.py:kanban_tasks:owner"]
+    assert "1 grandfathered mismatch(es) remain" in result.message
+    assert "1 excused as writing another database" in result.message
+
+
+def test_a_stale_foreign_database_entry_is_reported(tmp_path, monkeypatch):
+    """An excuse that no longer fires rots exactly like a grandfathered one."""
+    result = _run(
+        tmp_path,
+        monkeypatch,
+        {"tools/x/writer.py": 'SQL = "INSERT INTO kanban_tasks (id, title) VALUES (%s, %s)"\n'},
+        _SCHEMA,
+        config=(
+            "foreign_database:\n"
+            '  "tools/x/writer.py:kanban_tasks:source": "writes platform.db, measured"\n'
+        ),
+    )
+    assert result.status == "warn", result.message
+    assert result.extra == ["tools/x/writer.py:kanban_tasks:source"]
+
+
+def test_a_foreign_database_entry_never_excuses_a_different_site(tmp_path, monkeypatch):
+    """The key is per (file, table, column) — a name collision is per MODULE.
+
+    ``users`` is written by tools/saas/tenant_manager.py against the SaaS
+    platform database AND by tools/saas/auth/saml_auth.py against this one. A
+    table-name suppression would switch off the half that works; this key
+    cannot.
+    """
+    result = _run(
+        tmp_path,
+        monkeypatch,
+        {
+            "tools/x/writer.py": 'SQL = "INSERT INTO kanban_tasks (id, source) VALUES (%s, %s)"\n',
+            "tools/y/other.py": 'SQL = "INSERT INTO kanban_tasks (id, source) VALUES (%s, %s)"\n',
+        },
+        _SCHEMA,
+        config=(
+            "foreign_database:\n"
+            '  "tools/x/writer.py:kanban_tasks:source": "writes platform.db, measured"\n'
+        ),
+    )
+    assert result.status == "fail", result.message
+    assert any("tools/y/other.py" in e for e in result.extra)
+    assert not any("tools/x/writer.py" in e for e in result.extra)
+
+
 def test_unreadable_config_fails_closed(tmp_path, monkeypatch):
     """A malformed allowlist must make the gate stricter, never looser."""
     result = _run(
@@ -437,15 +531,45 @@ def test_check_has_a_fix_tier():
 
 
 def test_repo_baseline_is_wellformed():
-    """Every grandfathered key names a file that exists, in path:table:column form."""
-    ignored, grandfathered = cc._load_insert_schema_gate()
-    assert grandfathered, "baseline is empty — the swp-scan-01 backlog should be recorded"
+    """Every key in either section names a file that exists, path:table:column.
+
+    The swp-scan-01 backlog is deliberately allowed to be EMPTY. It was drained
+    to zero by mfx-ci-03, and an empty ``grandfathered`` is the goal state
+    rather than a missing one — asserting it non-empty would make finishing the
+    work fail.
+    """
+    ignored, grandfathered, foreign = cc._load_insert_schema_gate()
     assert isinstance(ignored, set)
-    for key, reason in grandfathered.items():
-        parts = key.split(":")
-        assert len(parts) == 3, f"malformed key: {key}"
-        rel, table, column = parts
-        assert (cc.PROJECT_ROOT / rel).is_file(), f"grandfathered file is gone: {rel}"
-        assert cc._SQL_IDENTIFIER_RE.match(table), key
-        assert cc._SQL_IDENTIFIER_RE.match(column), key
-        assert reason, f"entry without a reason: {key}"
+    for section, entries in (("grandfathered", grandfathered), ("foreign_database", foreign)):
+        for key, reason in entries.items():
+            parts = key.split(":")
+            assert len(parts) == 3, f"malformed {section} key: {key}"
+            rel, table, column = parts
+            assert (cc.PROJECT_ROOT / rel).is_file(), f"{section} file is gone: {rel}"
+            assert cc._SQL_IDENTIFIER_RE.match(table), key
+            assert cc._SQL_IDENTIFIER_RE.match(column), key
+            assert reason, f"{section} entry without a reason: {key}"
+
+
+def test_no_key_is_both_debt_and_excused():
+    """A site is a defect or it is not. It cannot be filed as both."""
+    _, grandfathered, foreign = cc._load_insert_schema_gate()
+    overlap = sorted(set(grandfathered) & set(foreign))
+    assert not overlap, (
+        "these keys are listed as BOTH a grandfathered defect and an excused "
+        "foreign-database write:\n  " + "\n  ".join(overlap)
+    )
+
+
+def test_the_shipped_foreign_database_entries_carry_a_measurement():
+    """An excuse without a measurement is an assertion, and rots unnoticed.
+
+    Each shipped entry states what was read in the OTHER database. The check is
+    deliberately shallow — it cannot verify a measurement — but it refuses the
+    bare "backlog" placeholder that let 104 stale excuses accumulate.
+    """
+    _, _, foreign = cc._load_insert_schema_gate()
+    assert foreign, "the mfx-ci-03 triage recorded six foreign-database sites"
+    for key, reason in foreign.items():
+        assert "backlog" not in reason.lower(), f"placeholder reason on {key}: {reason}"
+        assert len(reason.split()) >= 8, f"reason too thin to act on: {key}: {reason}"
