@@ -7885,6 +7885,8 @@ python tools/kanban/cli.py --claim <task-id>            # again: RENEWS the runn
 python tools/kanban/cli.py --release <task-id>          # end the keeper session, free the lease
 python -m tools.kanban.interactive_claim --status <task-id> [--json]   # what holds it: keeper pid, expiry, intent, log
 python tools/awareness/restore_acts.py --plan           # reports the lease as held by a running process
+```
+
 ### Union rung for declared append-shaped files (mfx-sib-03)
 
 ```bash
