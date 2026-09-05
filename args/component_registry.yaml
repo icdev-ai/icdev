@@ -42,7 +42,7 @@
 #   attributed to a default team, because a wrong owner routes an incident to
 #   nobody while reading as answered.
 #
-#   Current state: 0 of 68 components declare an owner. That is a measured
+#   Current state: 0 of 71 components declare an owner. That is a measured
 #   baseline, not an oversight — this repository has no CODEOWNERS file, no
 #   team roster and no maintainer metadata beyond a single pyproject author, so
 #   there was nothing to backfill from without guessing. Populate these fields
@@ -2128,6 +2128,51 @@ components:
   min_il: IL4
   default_roles:
   - developer
+
+# flx-compose-02: the local AWS emulator (`floci`). Declared here because the
+# registry is what makes a component visible to `icdev enable` / `disable` /
+# `status` / `list`, the `icdev setup` TUI and the generated .env — flx-compose-01
+# shipped the pinned compose profile and told operators to run
+# `icdev enable floci`, and that command did not exist.
+#
+# `kind: core_extension`, not `canvas`: floci has no page, no blueprint and no
+# IQE collections, so the dashboard's core-extension loop skips it (it registers
+# a blueprint only when blueprint_attr is set) and nothing mounts on a route.
+# Declaring it a canvas would put it under the 8-point completeness gate for a
+# surface that does not exist.
+#
+# env_flag is FLOCI_ENABLED — the flag tools/cloud/emulator.py actually reads —
+# and NOT the ICDEV_FLOCI_ENABLED the loader would otherwise default to
+# (`ICDEV_<KEY>_ENABLED`). That default is the trap: it would have `icdev enable
+# floci` write a variable the seam never consults, and `icdev status` would then
+# report floci enabled on a deployment whose emulator is off. One fact, one
+# flag. tests/cloud/test_floci_component_registration.py asserts the registry
+# and the seam answer identically across the whole truthy vocabulary.
+#
+# default_enabled: false matches emulator.enabled()'s own default and the
+# documented air-gap-safe posture — an operator opts in explicitly, and a
+# deployment that configures nothing reaches no emulator. Enabling the toggle is
+# only the ICDEV-side half; `docker compose --profile floci up -d` is the other.
+#
+# LOCALSTACK_ENABLED is deliberately NOT an extra_env_flag. It is a deprecated
+# READ-fallback the seam still honours for existing deployments; extra_env_flags
+# flip together, so listing it would make the CLI author a deprecated name into
+# .env, and it would not close the read gap anyway — Component.is_enabled
+# consults the primary flag only. That single divergence (alias set, canonical
+# unset) is asserted as a known bound in the test module.
+- key: floci
+  kind: core_extension
+  cli_name: floci
+  display_name: Floci AWS Emulator
+  description: Local AWS emulator (floci, a LocalStack drop-in) used by the IaC
+    executors, the DataBridge connector and the canvas simulators. The switch is
+    tools/cloud/emulator.py. Enabling this flag is the ICDEV-side half; the
+    container starts with `docker compose --profile floci up -d`.
+  env_flag: FLOCI_ENABLED
+  default_enabled: false
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
 
 # ═══════════════════════════════════════════════════════════════════════════
 # IQE / AI-brief path → canvas map (cvx-nav-01)
