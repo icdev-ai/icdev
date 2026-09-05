@@ -10,7 +10,7 @@ Uses boto3 to verify and configure resources after Terraform Apply:
 
 Modes (auto-detected from .env):
   aws        — real AWS (AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY + AWS_DEFAULT_REGION)
-  localstack — LocalStack (LOCALSTACK_ENDPOINT=http://localhost:4566)
+  floci      — local AWS emulator (FLOCI_ENABLED=true; FLOCI_ENDPOINT, default http://localhost:4566)
   sam        — SAM local (AWS_SAM_LOCAL=true)
   dry_run    — no credentials → reports what WOULD be verified/configured (safe)
 
@@ -32,7 +32,7 @@ sys.path.insert(0, str(_ROOT))
 
 from tools.studio.executors._base import (  # noqa: E402
     artifacts_dir, resolve_canvas, get_iac_artifacts, filter_artifacts,
-    aws_env, detect_mode, boto3_client,
+    aws_env, detect_mode, boto3_client, is_emulated,
 )
 
 
@@ -175,7 +175,7 @@ def run_aws_config(run_id: str, project_id: str, canvas: str = "") -> dict:
     findings.append({"severity": "info", "check": "mode",
                       "message": f"Mode: {mode.upper()} — "
                                  + ("reporting what would run (no credentials)" if dry_run
-                                    else f"executing against {'LocalStack' if mode == 'localstack' else 'AWS'}")})
+                                    else f"executing against {'the emulator' if is_emulated(mode) else 'AWS'}")})
 
     if not tf_paths:
         findings.append({"severity": "warn", "check": "no_tf",

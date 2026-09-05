@@ -4,7 +4,7 @@ Applies Terraform IaC using Docker (hashicorp/terraform:1.9).
 
 Modes (auto-detected from .env):
   aws        — real AWS  (AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY + AWS_DEFAULT_REGION)
-  localstack — LocalStack (LOCALSTACK_ENDPOINT=http://localhost:4566)
+  floci      — local AWS emulator (FLOCI_ENABLED=true; FLOCI_ENDPOINT, default http://localhost:4566)
   sam        — SAM local  (AWS_SAM_LOCAL=true)
   dry_run    — no credentials → terraform plan only (safe, no charges)
 
@@ -28,9 +28,10 @@ sys.path.insert(0, str(_ROOT))
 from tools.studio.executors._base import (  # noqa: E402
     artifacts_dir, resolve_canvas, get_iac_artifacts, filter_artifacts,
     aws_env, detect_mode, docker_aws_flags, docker_available, pull_image,
-    docker_run, localstack_docker_endpoint,
+    docker_run, localstack_docker_endpoint, is_emulated,
     LOCALSTACK_PROVIDER_OVERRIDE, TFVARS_DEFAULTS,
 )
+from tools.cloud import emulator  # noqa: E402
 
 _TF_IMAGE = "hashicorp/terraform:1.9"
 
@@ -104,7 +105,7 @@ def run_apply(run_id: str, project_id: str, canvas: str = "") -> dict:
     findings.append({"severity": "info", "check": "mode",
                       "message": f"Mode: {mode.upper()} — "
                                  + {"aws": "deploying to real AWS",
-                                    "localstack": f"LocalStack at {env.get('LOCALSTACK_ENDPOINT')}",
+                                    emulator.MODE: f"emulator at {emulator.endpoint(env)}",
                                     "sam": "SAM local endpoint",
                                     "dry_run": "no credentials — running terraform plan only (safe)"}[mode]})
 
@@ -119,10 +120,9 @@ def run_apply(run_id: str, project_id: str, canvas: str = "") -> dict:
             for p in tf_paths:
                 shutil.copy2(p, tmp_path / p.name)
 
-            if mode in ("localstack", "sam"):
-                raw_ep = env.get("LOCALSTACK_ENDPOINT", "http://localhost:4566")
-                docker_ep = localstack_docker_endpoint(raw_ep)
-                region = env.get("AWS_DEFAULT_REGION", "us-east-1")
+            if is_emulated(mode):
+                docker_ep = localstack_docker_endpoint(emulator.endpoint(env))
+                region = env.get("AWS_DEFAULT_REGION") or emulator.region(env)
                 (tmp_path / "localstack_override.tf").write_text(
                     LOCALSTACK_PROVIDER_OVERRIDE.format(ep=docker_ep, region=region),
                     encoding="utf-8", newline="",

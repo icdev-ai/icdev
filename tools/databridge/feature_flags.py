@@ -122,20 +122,27 @@ class IntegrationFeatureFlags:
             return 10.0
 
     # ------------------------------------------------------------------
-    # LocalStack — AWS service emulation
+    # AWS service emulation (floci) — DELEGATES to tools/cloud/emulator.py
     # ------------------------------------------------------------------
+    #
+    # These four keep their `localstack_*` names because callers import them by
+    # name (localstack_connector, infra_canvas adapters, dockerfile_generator),
+    # and they keep the FeatureStatus shape. What changed is that they no
+    # longer ANSWER the question -- tools/cloud/emulator.py is the one switch
+    # (flx-seam-01). A second reader of LOCALSTACK_ENABLED here is how this
+    # module and detect_mode() came to disagree about whether an emulator was
+    # in play; do not reintroduce one.
 
     @staticmethod
     def localstack() -> FeatureStatus:
-        """Returns enabled if LOCALSTACK_ENABLED=true in environment.
+        """Is the AWS emulator switched on? Delegates to ``emulator.enabled()``.
 
-        Required env vars when enabled:
-          LOCALSTACK_ENABLED=true
-          LOCALSTACK_ENDPOINT=http://localhost:4566   (or compose service name)
-          LOCALSTACK_REGION=us-east-1                 (optional, default us-east-1)
+        ``FLOCI_ENABLED``, default false, with ``LOCALSTACK_ENABLED`` honoured
+        as a deprecated alias.
         """
-        raw = os.getenv("LOCALSTACK_ENABLED", "false")
-        if _truthy(raw):
+        from tools.cloud import emulator  # noqa: PLC0415
+
+        if emulator.enabled():
             return FeatureStatus(
                 enabled=True,
                 status=IntegrationStatus.ENABLED,
@@ -145,32 +152,40 @@ class IntegrationFeatureFlags:
             enabled=False,
             status=IntegrationStatus.DISABLED_BY_CONFIG,
             reason=(
-                "LocalStack integration is disabled. "
-                "Set LOCALSTACK_ENABLED=true in .env to enable. "
-                "Run: docker compose --profile localstack up -d"
+                "AWS emulator (floci) integration is disabled. "
+                "Set FLOCI_ENABLED=true in .env to enable "
+                "(LOCALSTACK_ENABLED is honoured as a deprecated alias), and "
+                f"point FLOCI_ENDPOINT at a running emulator "
+                f"(default {emulator.DEFAULT_ENDPOINT}). "
+                "Safe to leave disabled on air-gap environments."
             ),
         )
 
     @staticmethod
     def localstack_endpoint() -> str:
-        """Return the configured LocalStack endpoint URL."""
-        return os.getenv("LOCALSTACK_ENDPOINT", "http://localhost:4566").rstrip("/")
+        """Emulator endpoint URL. Delegates to ``emulator.endpoint()``."""
+        from tools.cloud import emulator  # noqa: PLC0415
+
+        return emulator.endpoint()
 
     @staticmethod
     def localstack_region() -> str:
-        return os.getenv("LOCALSTACK_REGION", "us-east-1")
+        """Emulator region. Delegates to ``emulator.region()``.
+
+        NOTE the default moved from ``us-east-1`` to ``us-gov-west-1`` with the
+        seam — ICDEV's target partition. ``FLOCI_REGION`` (or the deprecated
+        ``LOCALSTACK_REGION``) still overrides it.
+        """
+        from tools.cloud import emulator  # noqa: PLC0415
+
+        return emulator.region()
 
     @staticmethod
     def localstack_credentials() -> tuple[str, str]:
-        """Return (access_key_id, secret_access_key) for LocalStack.
+        """Dummy AWS credentials. Delegates to ``emulator.credentials()``."""
+        from tools.cloud import emulator  # noqa: PLC0415
 
-        LocalStack accepts any non-empty credential values. 'test'/'test'
-        is the conventional dummy pair used in development.
-        """
-        return (
-            os.getenv("AWS_ACCESS_KEY_ID", "test"),
-            os.getenv("AWS_SECRET_ACCESS_KEY", "test"),
-        )
+        return emulator.credentials()
 
     @staticmethod
     def localstack_timeout() -> float:
