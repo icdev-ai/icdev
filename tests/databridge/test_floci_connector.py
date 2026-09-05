@@ -456,19 +456,30 @@ def test_list_available_answers_the_grant_question_not_the_reachability_one():
     ``broker.list_available()`` reads ``args/databridge_agent_access.yaml`` and
     NEVER touches the registry -- so it cannot say whether a connector module
     would import, and a connector missing from it is UNGRANTED rather than
-    unreachable. ``floci`` is deliberately ungranted: that manifest is an
-    authorization boundary whose shipped grant is one public, credential-free
-    feed, and an emulator that can be handed a docker socket is a per-deployment
-    decision for the operator, not a default.
+    unreachable. The two directions are asserted here together precisely because
+    they are independent: ``floci`` is now GRANTED (flx-bridge-02) and that fact
+    still says nothing about whether the module resolves; reachability is
+    asserted at the top of this file, in a fresh interpreter.
 
-    Reachability is asserted at the top of this file, in a fresh interpreter.
+    THIS ASSERTION IS INVERTED FROM WHAT THIS CARD SHIPPED, on purpose and by a
+    later card in the same series. flx-bridge-01 wrote "floci must not ship as
+    an agent grant; it is a per-deployment decision", which was right while
+    NOTHING consumed the connector. flx-twin-01 is the consumer and its design
+    requires reading through the broker -- "a direct import is an ungoverned
+    side channel that the whole cef-fnd-03 design exists to close" -- so
+    withholding the grant would not have kept the emulator unreachable, it would
+    have pushed its one reader onto the ungoverned path. The safety story moved
+    from "ungranted" to the properties pinned in
+    tests/databridge/test_floci_grant.py: off by default, loopback-bounded,
+    credential-free, role-scoped, read-only.
     """
     from icdev.tools.databridge import broker
     from icdev.tools.databridge.registry import get_connector_instance
 
     granted = {entry["connector"] for entry in broker.list_available()}
-    assert "floci" not in granted, (
-        "floci must not ship as an agent grant; it is a per-deployment decision"
+    assert "floci" in granted, (
+        "flx-bridge-02 grants floci to the twin observer; without it flx-twin-01 "
+        "has no governed door and must import the connector directly"
     )
-    # ... and being ungranted says nothing about whether it resolves.
+    # ... and being granted says nothing about whether it resolves.
     assert get_connector_instance("floci") is not None
