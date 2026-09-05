@@ -43,6 +43,12 @@ MOUNT_VAR = "FLOCI_DOCKER_SOCKET_MOUNT"
 #: The one spelling that serves Docker Desktop on Windows AND a Linux host.
 MOUNT_DEFAULT = "//var/run/docker.sock"
 
+#: A declared socket that exists on NO host, so a test using it measures the
+#: seam rather than the runner. `MOUNT_DEFAULT` is unusable for that: on a
+#: Linux CI runner with Docker installed it names the LIVE socket, which is how
+#: an earlier version of this file passed on Windows and failed on CI.
+ABSENT_SOCKET = "unix:///nonexistent-icdev-floci-probe/docker.sock"
+
 
 @pytest.fixture(scope="module")
 def compose() -> dict:
@@ -244,6 +250,15 @@ def test_mount_variable_is_not_the_seams_socket_variable(monkeypatch, platform):
     What must hold on every platform is that setting the compose mount variable
     does not MOVE the seam's answer, while setting the seam's own variable
     does.
+
+    THE VALUE FED TO THE SEAM'S VARIABLE IS DELIBERATELY NOT THE REAL MOUNT
+    SPELLING, and CI is what taught this file that. `docker_basis()` stats the
+    REAL filesystem for a declared path, and on a Linux runner with Docker
+    installed `//var/run/docker.sock` IS the live socket -- so an assertion
+    that it reads absent passes on Windows and fails on CI. That is the very
+    mistake the paragraph above names. The absent-path probe below cannot exist
+    on any host, so what is pinned is which VARIABLE the seam consumes rather
+    than what this machine happens to have mounted.
     """
     # NOTE: `emulator.sys` IS the stdlib sys module -- this patch is
     # process-global for the duration of the test, and monkeypatch is what
@@ -253,39 +268,50 @@ def test_mount_variable_is_not_the_seams_socket_variable(monkeypatch, platform):
 
     baseline = emulator.docker_backed({})
 
-    # The compose mount name is invisible to the seam: same answer either way.
+    # The compose mount name is invisible to the seam: same answer either way,
+    # and for the REAL mount spelling, which is the value that will be set.
     correct = {MOUNT_VAR: MOUNT_DEFAULT}
     assert emulator.docker_backed(correct) is baseline
     assert emulator.service_supported("lambda", correct) is emulator.service_supported(
         "lambda", {}
     )
+    # Invisible for the absent-path probe too, so the equality above is not an
+    # accident of this host agreeing with the baseline.
+    assert emulator.docker_backed({MOUNT_VAR: ABSENT_SOCKET}) is baseline
 
     # The seam's OWN variable does move it -- which is why the two must not
-    # share a name. The mount spelling names no file on any host (it is a path
-    # inside Docker Desktop's Linux VM), so the seam reads a definite absence.
-    conflated = {"FLOCI_DOCKER_SOCKET": MOUNT_DEFAULT}
+    # share a name. `unix://` + a path that exists on no host makes this a
+    # statement about the seam, not about the runner.
+    conflated = {"FLOCI_DOCKER_SOCKET": ABSENT_SOCKET}
+    assert emulator.docker_basis(conflated) == emulator.BASIS_SOCKET_ABSENT
     assert emulator.docker_backed(conflated) is False
     assert emulator.service_supported("lambda", conflated) is False
 
 
-def test_conflating_the_two_socket_variables_fabricates_a_refusal_on_windows(
-    monkeypatch,
-):
-    """The measured incident itself, pinned on the host it was measured on.
+def test_conflating_the_two_socket_variables_fabricates_a_refusal(monkeypatch):
+    """The SHAPE of the measured incident, pinned host-independently.
 
-    On Windows the seam answers `None` (cannot tell -- a named pipe is not
-    reliably stat-able) with nothing declared. Feeding it the compose mount
-    spelling turns that honest `None` into a definite `False`, and
-    `service_supported("lambda")` flips from True to False for a Lambda the
-    mounted socket would have served. `None` is not `False`, and this is what
-    that distinction is protecting.
+    MEASURED 2026-09-04 on the authoring Windows host: with nothing declared the
+    seam answers `None` (cannot tell -- a Windows named pipe is not reliably
+    stat-able), and feeding it the compose mount spelling
+    `//var/run/docker.sock` -- a path inside Docker Desktop's Linux VM, so
+    absent from the Windows filesystem -- turned that honest `None` into a
+    definite `False`, flipping `service_supported("lambda")` from True to False
+    for a Lambda the mounted socket would have served.
+
+    That real path is NOT used here: on a Linux CI runner it names the live
+    docker socket, so the same assertion would be measuring the runner. The
+    absent-path probe reproduces the identical transition -- an honest `None`
+    becoming a fabricated `False` -- on every host.
+
+    `None` is not `False`, and this is the distinction that protects.
     """
     monkeypatch.setattr(sys, "platform", "win32")  # process-global; restored
 
     assert emulator.docker_backed({}) is None
     assert emulator.service_supported("lambda", {}) is True
 
-    conflated = {"FLOCI_DOCKER_SOCKET": MOUNT_DEFAULT}
+    conflated = {"FLOCI_DOCKER_SOCKET": ABSENT_SOCKET}
     assert emulator.docker_backed(conflated) is False
     assert emulator.service_supported("lambda", conflated) is False
 
