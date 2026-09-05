@@ -645,7 +645,7 @@
 | Sim Training Export | tools\genesis\reflexes\sim_training_export.py | Auto-registered: reflexes/sim_training_export.py | --json | JSON |
 | Aws Controltower Connector | tools\databridge\connectors\aws_controltower_connector.py | Auto-registered: connectors/aws_controltower_connector.py | --json | JSON |
 | Gns3 Connector | tools\databridge\connectors\gns3_connector.py | Auto-registered: connectors/gns3_connector.py | --json | JSON |
-| Localstack Connector | tools\databridge\connectors\localstack_connector.py | Auto-registered: connectors/localstack_connector.py | --json | JSON |
+| Floci Connector | tools\databridge\connectors\floci_connector.py | Auto-registered: connectors/floci_connector.py | --json | JSON |
 | Servicenow Itsm Connector | tools\databridge\connectors\servicenow_itsm_connector.py | Auto-registered: connectors/servicenow_itsm_connector.py | --json | JSON |
 
 

@@ -11,7 +11,7 @@
 | 2 | Cloud Pods fixtures (seed deterministic state) | **DEFER** | Useful for e2e fixtures but a Pro feature; our fixtures are already pure-Python. Revisit only if pattern 1 is adopted. |
 | 3 | IAM policy sandbox | **NO-GO** | The Zero-Trust / ABAC engine (`tools/security/…`, PDP/PEP) already models IAM decisions offline. LocalStack IAM is a partial emulation — adds a Docker dep for marginal gain. |
 | 4 | Chaos injection | **NO-GO** | Out of scope for design-time twins; belongs to a runtime resilience program, not the IDC design twin. |
-| 5 | IDC runtime engine (twin executes against live LocalStack) | **PARTIAL — already prototyped, keep flag-gated** | `tools/databridge/connectors/localstack_connector.py` already exists (see below). Keep it as an **optional** read surface; do NOT make the IDC twin depend on it. |
+| 5 | IDC runtime engine (twin executes against live LocalStack) | **PARTIAL — already prototyped, keep flag-gated** | `tools/databridge/connectors/floci_connector.py` already exists (see below; it was `localstack_connector.py` when this spike was written and was renamed by flx-bridge-01). Keep it as an **optional** read surface; do NOT make the IDC twin depend on it. |
 
 **Net:** adopt **one** pattern (PDC/IaC CI gate) as an opt-in cloud-only CI job; keep the existing connector flag-gated; skip the rest. No change to the default (offline, heuristic) twin path.
 
@@ -34,11 +34,14 @@ This conflicts with the repo's stated *"pure-Python / offline tooling"*
 preference. Acceptable ONLY in a cloud CI runner that already has Docker;
 unacceptable as a local-dev or air-gap dependency.
 
-### 3. An IDC LocalStack connector ALREADY exists
-`tools/databridge/connectors/localstack_connector.py`:
+### 3. An IDC emulator connector ALREADY exists
+`tools/databridge/connectors/floci_connector.py` (named `localstack_connector.py` when
+this spike was written; renamed, with registry key `floci`, by flx-bridge-01):
 - DataBridge connector (same pattern as `GNS3Connector`) — single egress point,
   secret resolution, audit logging, health probing.
-- Feature flag **`LOCALSTACK_ENABLED` in `.env`, default `false` (air-gap safe)**:
+- Feature flag **`FLOCI_ENABLED` in `.env`, default `false` (air-gap safe)** — read
+  through the one switch `tools/cloud/emulator.py` (flx-seam-01), with
+  `LOCALSTACK_ENABLED` honoured as a deprecated alias:
   when disabled, `health_check()` returns `disabled` and all calls return a
   disabled response — **no exceptions**.
 - Logical tables: `health`, `services`, `s3_buckets`, `dynamodb_tables`,
