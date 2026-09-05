@@ -17,7 +17,7 @@ the newest `rebase_failed` fired at 18:51:21Z, minutes before the repair began.
 |---|---|---|
 | PR #2091 `mergeable` | `null` / `mergeable_state: unknown`, 30 `rebase_failed` rows | `true` |
 | the 15 nav page tests | 30 failures, CI reported **3** | 246 passed |
-| branch vs `origin/main` | 28 behind, conflicting | merged, fast-forward push |
+| branch vs `origin/main` | 29 behind, conflicting | merged, fast-forward push |
 | `detector_findings` `e6ee0b239376f4bb` | `active`, `seen_count=3` | clears by ageing out (below) |
 
 Two independent blockers, and NEITHER was reachable by an LLM resume:
