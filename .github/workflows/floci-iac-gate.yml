@@ -21,14 +21,16 @@ name: floci IaC Gate (opt-in)
 # itself a bypass. It runs when a human ASKS: a dispatch, a `floci-gate` label,
 # or the weekly sweep.
 #
-# WHICH GATE. There are TWO in the tree and they are unrelated:
-#   tools/infra_canvas/preapply_gate.py   243 lines, has a CLI, runs the
+# WHICH GATE. There is now exactly ONE:
+#   tools/infra_canvas/preapply_gate.py   has a CLI, runs the
 #                                         context/iqe/queries/infra/*.iqe checks
 #                                         over the plan delta.  <-- THIS ONE
-#   tools/infra_canvas/pre_apply_gate.py   74 lines, "IDC IaC Twin Phase 1",
-#                                         blocks on CAT1 via assess_infra_design.
-# Reconciling that pair is flx-ci-02, filed rather than done here: a job that
-# silently picked one of them would bless the duplicate.
+# When flx-ci-01 wrote this job there were TWO, and it had to NAME the one it
+# used rather than choose -- a job that silently picks one of a duplicate pair
+# blesses the pair. flx-ci-02 measured the pair and deleted the other: it had
+# zero runtime callers and returned the same verdict for the compliant and the
+# violating fixture, because its rules asked estate-completeness questions of a
+# plan delta. See docs/audits/flx-ci-02-two-preapply-gates.md.
 
 on:
   workflow_dispatch:

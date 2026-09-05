@@ -11,18 +11,24 @@ it. floci is an INDEPENDENT derivation: an AWS API surface that has never read
 our IQE queries. Plan -> gate -> apply, in that order, which is the gate's real
 position in the pipeline.
 
-WHICH GATE. There are TWO in this tree and they are unrelated:
+WHICH GATE. There is now exactly ONE, and this module names it in one place --
+``PREAPPLY_GATE_MODULE``. ``tools/infra_canvas/preapply_gate.py`` (has a CLI)
+runs the ``context/iqe/queries/infra/*.iqe`` checks over the plan delta and
+returns ``{"gate": "pass"|"fail", "violations": [...], "delta": {...},
+"skipped": [...]}``.
 
-  * ``tools/infra_canvas/preapply_gate.py`` (243 lines, has a CLI) runs the
-    ``context/iqe/queries/infra/*.iqe`` checks over the plan delta and returns
-    ``{"gate": "pass"|"fail", "violations": [...], "delta": {...}}``.
-    **THIS MODULE USES THAT ONE, and names it in one place** -- ``PREAPPLY_GATE_MODULE``.
-  * ``tools/infra_canvas/pre_apply_gate.py`` (74 lines, "IDC IaC Twin Phase 1")
-    imports the plan into an IDC graph, runs ``assess_infra_design`` and blocks
-    on CAT1, returning ``{"passed": bool, "score": float, ...}``.
-
-Reconciling that pair is flx-ci-02, filed rather than done here: a job that
-silently picked one of them would bless the duplicate.
+When flx-ci-01 wrote this job there were TWO, and it had to NAME the one it
+used rather than choose, because a job that silently picks one of a duplicate
+pair blesses the pair. flx-ci-02 then measured the pair and DELETED the other
+(``pre_apply_gate.py``, "IDC IaC Twin Phase 1"): it had zero runtime callers,
+and it could not tell the ``flocigate_ok`` fixture from the ``flocigate_violating``
+one -- identical verdict both times -- because its rules asked
+ESTATE-COMPLETENESS questions ("is there a KMS service in this design?") of a
+plan DELTA. Its rulebook was not lost: ``infra_engine.assess_infra_design`` is
+consumed live by ``tools/infra_canvas/blueprint.py`` over the full design
+graph, which is the input those rules were written for.
+Derivation: ``docs/audits/flx-ci-02-two-preapply-gates.md``.
+Standing guard: ``tests/infra_canvas/test_one_preapply_gate.py``.
 
 THE FOUR CELLS, AND ONLY ONE IS A FINDING
 -----------------------------------------
