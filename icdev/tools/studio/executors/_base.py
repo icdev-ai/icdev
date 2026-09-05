@@ -49,6 +49,8 @@ _ROOT = Path(__file__).resolve().parents[3]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+from tools.cloud import emulator  # noqa: E402 — needs the sys.path bootstrap above
+
 # ── Canvas resolution ──────────────────────────────────────────────────────
 
 class CanvasResolutionError(RuntimeError):
@@ -287,17 +289,48 @@ def aws_env() -> dict[str, str]:
     merged = {**os.environ, **load_dotenv()}
     keys = [
         "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_DEFAULT_REGION",
-        "AWS_SESSION_TOKEN", "AWS_REGION", "LOCALSTACK_ENDPOINT", "AWS_SAM_LOCAL",
+        "AWS_SESSION_TOKEN", "AWS_REGION", "AWS_SAM_LOCAL",
+        # The emulator seam (flx-seam-01). LOCALSTACK_* stay in the allowlist
+        # because emulator._read() honours them as deprecated aliases — drop
+        # them here and the alias resolves to nothing on this path only.
+        "FLOCI_ENABLED", "FLOCI_ENDPOINT", "FLOCI_REGION", "FLOCI_ACCOUNT_ID",
+        "LOCALSTACK_ENABLED", "LOCALSTACK_ENDPOINT", "LOCALSTACK_REGION",
     ]
     return {k: merged[k] for k in keys if merged.get(k)}
 
 
+def is_emulated(mode: str) -> bool:
+    """True for modes that target a LOCAL emulator rather than a real account.
+
+    One predicate, so a caller cannot be left comparing against a mode string
+    that has moved on. `sam` rides along because SAM local takes the identical
+    endpoint-override treatment for IaC purposes.
+    """
+    return mode in (emulator.MODE, "sam")
+
+
 def detect_mode(env: dict[str, str]) -> str:
-    """Return 'localstack' | 'sam' | 'aws' | 'dry_run'."""
-    if env.get("LOCALSTACK_ENDPOINT"):
-        return "localstack"
+    """Return 'floci' | 'sam' | 'aws' | 'dry_run'.
+
+    DECIDED BY THE SEAM, not by an env var merely being SET. The old rule was
+    `if env.get("LOCALSTACK_ENDPOINT")`, which meant leftover configuration
+    turned on an emulator nobody had enabled — while
+    `feature_flags.localstack()` read a DIFFERENT variable and could say the
+    opposite. tools/cloud/emulator.py is the one answer.
+
+    THE CONTRADICTION CASE IS REFUSED, and it is the safety-critical one. An
+    endpoint declared while the switch is OFF used to return `localstack`
+    (local, harmless). Falling through to `aws` on the strength of AWS
+    credentials that also happen to be set would send a `terraform apply`
+    written for a local emulator at a REAL account. Neither reading is
+    defensible, so it degrades to `dry_run` — plan only, nothing applied.
+    """
+    if emulator.enabled(env):
+        return emulator.MODE
     if env.get("AWS_SAM_LOCAL", "").lower() in ("true", "1"):
         return "sam"
+    if emulator.endpoint_declared(env):
+        return "dry_run"
     if env.get("AWS_ACCESS_KEY_ID"):
         return "aws"
     return "dry_run"
@@ -318,11 +351,12 @@ def docker_aws_flags(env: dict[str, str], mode: str) -> list[str]:
                    "AWS_SESSION_TOKEN", "AWS_REGION"]:
             if env.get(k):
                 flags += ["-e", f"{k}={env[k]}"]
-    elif mode in ("localstack", "sam"):
+    elif is_emulated(mode):
+        ak, sk = emulator.credentials(env)
         flags += [
-            "-e", "AWS_ACCESS_KEY_ID=test",
-            "-e", "AWS_SECRET_ACCESS_KEY=test",
-            "-e", f"AWS_DEFAULT_REGION={env.get('AWS_DEFAULT_REGION', 'us-east-1')}",
+            "-e", f"AWS_ACCESS_KEY_ID={ak}",
+            "-e", f"AWS_SECRET_ACCESS_KEY={sk}",
+            "-e", f"AWS_DEFAULT_REGION={env.get('AWS_DEFAULT_REGION') or emulator.region(env)}",
         ]
     return flags
 
@@ -409,19 +443,32 @@ def docker_run(image: str, workspace: str, env_flags: list[str],
 # ── boto3 client factory ───────────────────────────────────────────────────
 
 def boto3_client(service: str):
-    """Build a boto3 client, honouring LocalStack/SAM endpoint overrides."""
-    merged = {**os.environ, **load_dotenv()}
-    region = merged.get("AWS_DEFAULT_REGION") or merged.get("AWS_REGION") or "us-east-1"
-    kwargs: dict = {"region_name": region}
+    """Build a boto3 client, honouring the emulator/SAM endpoint override.
 
-    endpoint = merged.get("LOCALSTACK_ENDPOINT")
-    if not endpoint and merged.get("AWS_SAM_LOCAL", "").lower() in ("true", "1"):
-        endpoint = "http://localhost:4566"
-    if endpoint:
-        kwargs["endpoint_url"] = endpoint
-        kwargs["aws_access_key_id"] = "test"
-        kwargs["aws_secret_access_key"] = "test"
-    elif merged.get("AWS_ACCESS_KEY_ID"):
+    THE OVERRIDE IS DECIDED BY detect_mode(), not by reading LOCALSTACK_ENDPOINT
+    again. This function used to point at the emulator whenever that variable
+    was set — so it could target an emulator while `feature_flags.localstack()`
+    reported the integration disabled, which is half of the defect flx-seam-01
+    exists to remove. One decision, one place.
+    """
+    merged = {**os.environ, **load_dotenv()}
+    mode = detect_mode(merged)
+    kwargs: dict = {}
+
+    if is_emulated(mode):
+        ak, sk = emulator.credentials(merged)
+        kwargs["region_name"] = (merged.get("AWS_DEFAULT_REGION")
+                                 or merged.get("AWS_REGION")
+                                 or emulator.region(merged))
+        kwargs["endpoint_url"] = emulator.endpoint(merged)
+        kwargs["aws_access_key_id"] = ak
+        kwargs["aws_secret_access_key"] = sk
+        import boto3
+        return boto3.client(service, **kwargs)
+
+    kwargs["region_name"] = (merged.get("AWS_DEFAULT_REGION")
+                             or merged.get("AWS_REGION") or "us-east-1")
+    if merged.get("AWS_ACCESS_KEY_ID"):
         kwargs["aws_access_key_id"] = merged["AWS_ACCESS_KEY_ID"]
         kwargs["aws_secret_access_key"] = merged.get("AWS_SECRET_ACCESS_KEY", "")
         if merged.get("AWS_SESSION_TOKEN"):

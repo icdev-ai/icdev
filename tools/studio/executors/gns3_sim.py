@@ -37,6 +37,7 @@ sys.path.insert(0, str(_ROOT))
 from tools.studio.executors._base import (  # noqa: E402
     artifacts_dir, resolve_canvas, load_dotenv,
 )
+from tools.cloud import emulator  # noqa: E402
 
 # ── topology builder registry ──────────────────────────────────────────────
 
@@ -353,7 +354,7 @@ def run_sim(run_id: str, project_id: str, canvas: str = "") -> dict:
 
     # Detect simulation mode
     gns3_url = env.get("GNS3_URL", "http://localhost:3080")
-    ls_endpoint = env.get("LOCALSTACK_ENDPOINT", "http://localhost:4566")
+    ls_endpoint = emulator.endpoint(env)
     gns3_ok = _gns3_reachable(gns3_url)
     ls_ok = _cloud_emulator_reachable(ls_endpoint, "/_localstack/health")
 
