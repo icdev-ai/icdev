@@ -8197,3 +8197,155 @@ and touches no network, so the same refusal here would be fabricated and would
 block the one host most likely to need to re-cut a bundle.
 
 Convention and the reason no floci pin is committed yet: `vendor/images/README.md`.
+
+## Floci Cloud Emulator — the rest of the surface (flx-docs-01)
+
+`docs/features/phase-flx-floci-emulator.md` is the feature doc; ADRs D398–D401
+in `docs/reference/adrs.md` carry the decisions; and
+`docs/spikes/twx-spk-01-localstack-go-no-go.md` carries a **dated addendum**
+recording that its LocalStack NO-GO is superseded **on the licensing question
+only** — every other finding in it, including the two standing guards below,
+stands unchanged.
+
+The seam (`flx-seam-01/02`), the run-time images (`flx-airgap-02`), the registry
+posture (`flx-airgap-03`), the image vendor (`flx-airgap-01`) and the IaC gate
+(`flx-ci-01`) are documented in their own sections above. This one covers the
+`flx` surfaces that had no commands entry.
+
+### Turn it on — two deliberate acts (flx-compose-01, flx-compose-02)
+
+```bash
+icdev enable floci                          # writes FLOCI_ENABLED=true to .env
+icdev status                                # floci among the active toggles
+docker compose --profile floci up -d        # the pinned floci/floci:2.0.1 profile
+curl -s http://127.0.0.1:4566/_localstack/health
+icdev disable floci
+```
+
+`floci` is declared in `args/component_registry.yaml` as a **`core_extension`,
+not a `canvas`** — it has no page, no blueprint and no IQE collections, so a
+canvas entry would put it under the 8-point page-completeness gate for a surface
+that does not exist (precedent: `sag`). Its `env_flag` is **`FLOCI_ENABLED`**,
+not the loader's `ICDEV_<KEY>_ENABLED` default: an entry omitting that field
+would have `icdev enable floci` write a variable `tools/cloud/emulator.py` never
+reads, and `icdev status` would then report floci enabled on a deployment whose
+emulator is off — one fact, two derivations, disagreeing.
+
+It is **not** in the 24-service default set and `/start` does not launch it.
+Starting it is two acts on purpose: the profile mounts the **host Docker
+socket**, which is **root-equivalence on the host**, recorded with its
+mitigations and revisit conditions as Gap 65 in
+`docs/security/sandbox-coverage.md`. `LOCALSTACK_ENABLED` is deliberately NOT an
+`extra_env_flag` — it is a deprecated READ-fallback the seam still honours, and
+listing it would make the CLI author a deprecated name into `.env`.
+
+### The governed door — DataBridge (flx-bridge-01, flx-bridge-02)
+
+```bash
+python -m tools.databridge.seed_connections --dry-run --json   # validate, write nothing
+python -m tools.databridge.seed_connections --seed --json      # db_connections <- args/databridge_connections.yaml
+python -m tools.databridge.seed_connections --verify --json
+python -c "from icdev.tools.databridge import broker; print(broker.list_available('twin_observatory_analyst'))"
+```
+
+```python
+from tools.databridge import broker
+out = broker.fetch("twin_observatory_analyst", "floci", "s3_buckets")
+out.connector_status   # ok | disabled | unsupported_without_docker | error
+```
+
+Two files, on purpose: `args/databridge_connections.yaml` is the **endpoint**
+(`floci-emulator-local`, egress allowlist, classification LABEL `UNCLASSIFIED`,
+IL2) and `args/databridge_agent_access.yaml` is the **authorization** (connector
++ all seven declared tables, scoped to `twin_observatory_analyst`).
+
+`auth_method` is **`none`**, and that is the MEASURED answer rather than a
+convenience: `emulator.credentials()` is hard-wired to the dummy pair and
+deliberately does not read the ambient AWS environment, so there is no
+credential to reference. `auth_secret_ref: env:FLOCI_ACCESS_KEY_ID` would be
+three defects at once — the seeder REFUSES a ref under `none`; under any other
+`auth_method` the broker injects it as `api_key`, which this connector never
+reads; and `resolve_secret()` raises on an unset variable, so the shipped grant
+would refuse EVERY call on a deployment that had not exported it.
+
+The seven logical tables are `health`, `services`, `s3_buckets`,
+`dynamodb_tables`, `lambda_functions`, `sqs_queues`, `ecr_repositories`. Each
+declares `docker_backed`, and **a container-backed table on a socket-less host
+returns `unsupported_without_docker`, never `[]`** — an unanswerable question is
+not an empty answer, which is the `rmf-disc-02` defect exactly. The old
+`localstack` registry key is **GONE, not aliased**: the registry answers `None`
+for it, which is a loud failure, where two live names for one connector are two
+things to keep in step and a caller left on the old one never learns it is
+stale.
+
+### The twin — a library, no CLI (flx-twin-01)
+
+```python
+from tools.twin_core.registry import TwinRegistry
+
+twin = TwinRegistry.get("floci")
+snap = twin.take_snapshot("local", label="pre-apply")   # 7 BROKERED reads
+env  = twin.simulate_delta("local", {"services": ["lambda", "s3"]})
+twin.latest_status("local")   # newest PERSISTED verdict; probes nothing
+```
+
+Every read goes through `tools/databridge/broker.py::fetch` as
+`twin_observatory_analyst` — importing `FlociConnector` and calling `read()`
+would return the SAME rows with NO authorization check and NO audit row, the
+ungoverned side channel `cef-fnd-03` exists to close. Four verdicts, and
+**`unknown` is never `pass`**; `resource_count` is `None` — never 0 — when
+nothing was measured. Every snapshot carries provenance `emulated`. Table
+`floci_twin_snapshots`, migration `20260905070028`. Full detail in the CLAUDE.md
+`flx-twin-01` block and `tools/manifest/twin-core.md`.
+
+### Studio executors and the sim topologies (flx-studio-01/02, flx-sim-01)
+
+```bash
+python -c "from tools.studio.executors import _base; print(_base.detect_mode({}))"
+python -m tools.studio.executors.gns3_sim --canvas pdc --dry-run --json   # forces dry_run; starts NOTHING
+python -m pytest tests/cloud/test_workflow_template_modes.py -q
+```
+
+`detect_mode()` answers `floci | sam | aws | dry_run`, and that vocabulary is
+**data** in `args/workflow_templates/shared_iac_executors.yaml` and
+`ddc_workflow.yaml` (key `executor_modes`) rather than prose — `yaml.safe_load`
+discards comments, so the old block was structurally unreachable by any checker.
+`FLOCI_PROVIDER_OVERRIDE` and `emulator_docker_endpoint` replace the
+LocalStack-named pair; `tests/cloud/test_studio_provider_override.py` holds the
+provider block frozen so a rename can never smuggle a behaviour change — the
+failure mode there is GREEN, since a dropped `endpoints{}` entry or a flipped
+`skip_*` still parses and terraform simply talks to somewhere else.
+
+`gns3_sim.run_sim` used to start a canvas's declared containers **only** when
+`mode == "dry_run"` — the one mode meant to touch nothing — and in none of
+`dual`/`gns3_only`/`cloud_only`. Both halves are now right, and `--dry-run` is
+read BEFORE the reachability probes: a caller that wants to touch nothing must
+not have its answer decided by whether something happened to be listening.
+
+### ONE pre-apply gate (flx-ci-02)
+
+```bash
+python tools/infra_canvas/preapply_gate.py --gate plan.json
+```
+
+There were TWO. `pre_apply_gate.py` (74 lines, `check_plan`) had **zero runtime
+callers**, returned the IDENTICAL verdict for a compliant and a violating plan
+over the `flx-ci-01` fixtures, and was structurally incapable of passing any
+real incremental plan — its rules are estate-completeness questions ("is there a
+KMS service in this design?") asked of a plan **delta**. Deleted, not merged:
+folding estate rules into a delta gate would import the very defect that made
+them useless. Nothing was lost — the 13-rule rulebook
+(`infra_engine.assess_infra_design`) is consumed live by
+`tools/infra_canvas/blueprint.py` over the FULL design graph, which is the
+question those rules actually answer.
+
+### The two standing guards, carried forward UNCHANGED from twx-spk-01
+
+1. **NEVER source a performance, cost or capacity claim from emulator timings.**
+   An emulator reproduces the AWS **API contract**, not AWS's **performance
+   characteristics**. Twin cost/latency estimates stay sourced from the
+   catalog/estimate engines and stay labelled `estimate=True`.
+2. **The IAM policy sandbox stays NO-GO.** The PDP/PEP ABAC engine in
+   `tools/security/` already models IAM decisions offline and deterministically;
+   a partial emulation would be a second opinion with no rule for choosing
+   between them. The licence was never the objection here.
