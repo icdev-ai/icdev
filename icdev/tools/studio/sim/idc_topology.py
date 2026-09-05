@@ -20,7 +20,9 @@ import os
 from pathlib import Path
 
 from tools.studio.sim.base_topology import (
-    BaseTopologyBuilder, DockerServiceSpec, LinkSpec, NodeSpec, ProbeSpec, TopologySpec,
+    CANVAS_EMULATOR_HOST_PORTS, EMULATOR_CONTAINER_PORT, EMULATOR_IMAGE,
+    BaseTopologyBuilder, DockerServiceSpec, LinkSpec, NodeSpec, ProbeSpec,
+    TopologySpec, emulator_health_url,
 )
 
 # LocalGCP — comprehensive GCP emulator (14 services, MIT license, no telemetry)
@@ -56,11 +58,11 @@ _LOCALGCP_SERVICE = DockerServiceSpec(
 
 _CSP_DOCKER_SERVICES: dict[str, list[DockerServiceSpec]] = {
     "aws": [DockerServiceSpec(
-        name="icdev-localstack-idc",
-        image="localstack/localstack:3.8",
-        ports={4566: 4566},
+        name="icdev-floci-idc",
+        image=EMULATOR_IMAGE,
+        ports={CANVAS_EMULATOR_HOST_PORTS["idc-aws"]: EMULATOR_CONTAINER_PORT},
         env={"DEFAULT_REGION": "us-east-1"},
-        healthcheck_url="http://localhost:4566/_localstack/health",
+        healthcheck_url=emulator_health_url(CANVAS_EMULATOR_HOST_PORTS["idc-aws"]),
     )],
     "azure": [DockerServiceSpec(
         name="icdev-azurite-idc",
@@ -89,11 +91,14 @@ _CSP_DOCKER_SERVICES: dict[str, list[DockerServiceSpec]] = {
         healthcheck_url="http://localhost:9000/minio/health/live",
     )],
     "oci": [DockerServiceSpec(
-        name="icdev-localstack-oci",
-        image="localstack/localstack:3.8",
-        ports={4572: 4566},
+        # The AWS-shaped emulator standing in for OCI's S3-compatible surface,
+        # which is what this container has always been. `floci-oci` proper
+        # (port 4599) is flx-oci-01's, and is deliberately NOT claimed here.
+        name="icdev-floci-idc-oci",
+        image=EMULATOR_IMAGE,
+        ports={CANVAS_EMULATOR_HOST_PORTS["idc-oci"]: EMULATOR_CONTAINER_PORT},
         env={"DEFAULT_REGION": "us-ashburn-1"},
-        healthcheck_url="http://localhost:4572/_localstack/health",
+        healthcheck_url=emulator_health_url(CANVAS_EMULATOR_HOST_PORTS["idc-oci"]),
     )],
 }
 
@@ -146,7 +151,7 @@ class IDCTopologyBuilder(BaseTopologyBuilder):
             probes=[
                 ProbeSpec(name="topology_deployed", type="topology_deployed"),
                 ProbeSpec(name="link_count", type="link_count", expected_value=len(links)),
-                ProbeSpec(name="localstack_apply", type="localstack_apply"),
+                ProbeSpec(name="emulator_apply", type="emulator_apply"),
             ],
             docker_services=docker_services,
             metadata={"csp": csp},

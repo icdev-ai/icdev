@@ -126,7 +126,7 @@ class IntegrationFeatureFlags:
     # ------------------------------------------------------------------
     #
     # These four keep their `localstack_*` names because callers import them by
-    # name (localstack_connector, infra_canvas adapters, dockerfile_generator),
+    # name (floci_connector, infra_canvas adapters, dockerfile_generator),
     # and they keep the FeatureStatus shape. What changed is that they no
     # longer ANSWER the question -- tools/cloud/emulator.py is the one switch
     # (flx-seam-01). A second reader of LOCALSTACK_ENABLED here is how this
@@ -157,6 +157,12 @@ class IntegrationFeatureFlags:
                 "(LOCALSTACK_ENABLED is honoured as a deprecated alias), and "
                 f"point FLOCI_ENDPOINT at a running emulator "
                 f"(default {emulator.DEFAULT_ENDPOINT}). "
+                # docker-compose.yml declares this profile as of flx-compose-01.
+                # Naming a profile that does not exist is what the previous
+                # wording did ("--profile localstack"), so this line is only
+                # correct while that service is declared -- pinned by
+                # tests/cloud/test_emulator_seam.py.
+                "Start one with `docker compose --profile floci up -d`. "
                 "Safe to leave disabled on air-gap environments."
             ),
         )

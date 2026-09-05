@@ -85,3 +85,58 @@ presets:
     network_constraints:
       airgap: false
     reviewed_at: "2026-07-01"
+
+  # GCP Assured Workloads (flx-gcp-01). NOTE `region_scope: assured_workloads`,
+  # which is NOT a cosmetic label: every GCP entry in
+  # context/cloud/csp_service_registry.json carries `govcloud_available: false`
+  # and `assured_workloads: true`, so a `government` scope would mark all 8
+  # unavailable and a `commercial` one would drop the government question. The
+  # scope is read by target_presets._available_in_target.
+  #
+  # us-central1 matches the floci-gcp emulator's default region, so a delta
+  # rehearsed locally is scored against the same region name it was rehearsed
+  # under. It is a COMMERCIAL region that Assured Workloads can cover — GCP has
+  # no separate GovCloud-style partition, which is the structural difference
+  # from the AWS and Azure presets above.
+  gcp_assured_workloads:
+    display_name: "GCP Assured Workloads (FedRAMP High)"
+    csp: gcp
+    region: us-central1
+    region_scope: assured_workloads
+    classification: CUI
+    compliance_framework: fedramp_high
+    network_constraints:
+      airgap: false
+    reviewed_at: "2026-09-05"
+
+  # OCI US Government Cloud (flx-oci-01). NOTE what is NOT here: no new
+  # `region_scope`. Unlike the GCP preset above, which needed
+  # `assured_workloads` because every GCP catalog entry carries
+  # `govcloud_available: false`, OCI has REAL dedicated government regions and
+  # the catalog already says so — 6 of the 7 OCI entries in
+  # context/cloud/csp_service_registry.json carry `govcloud_available: true`
+  # with explicit `regions.government` lists. So the existing `government`
+  # scope reads correctly and target_presets.py needed no change at all.
+  #
+  # The one entry that is NOT govcloud-available is `oci_genai` — which is
+  # exactly the service ICDEV's only two endpoint-honouring OCI call sites
+  # target (tools/llm/oci_genai_provider.py, tools/llm/embedding_provider.py).
+  # A delta scored against this preset will mark it unavailable, correctly.
+  #
+  # THE REGION DELIBERATELY DOES NOT MATCH THE EMULATOR. floci-oci defaults to
+  # us-ashburn-1, a COMMERCIAL region, and this preset scores against
+  # us-langley-1. That is the point of a target preset rather than a bug: you
+  # rehearse a delta locally and score it against where it would actually
+  # deploy. The GCP preset could use its emulator's own region only because
+  # GCP's government story is an overlay on commercial regions; OCI's is a
+  # separate partition, so the two names cannot be the same.
+  oci_gov_il5:
+    display_name: "OCI US Government Cloud (IL5)"
+    csp: oci
+    region: us-langley-1
+    region_scope: government
+    classification: CUI
+    compliance_framework: fedramp_high
+    network_constraints:
+      airgap: false
+    reviewed_at: "2026-09-05"

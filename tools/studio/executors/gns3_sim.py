@@ -1,15 +1,32 @@
-"""GNS3 + LocalStack Simulation Executor — Canvas-agnostic Shared Step.
+"""GNS3 + cloud-emulator Simulation Executor — Canvas-agnostic Shared Step.
 
 Dual-layer simulation:
   Network layer  → GNS3 (virtual topology: nodes, links, routing)
-  Services layer → LocalStack / Azurite / GCP emulator / Minio (cloud APIs)
+  Services layer → floci / Azurite / GCP emulator / Minio (cloud APIs)
   Docker layer   → Canvas-specific containers (DB, monitoring, CI tools)
 
-Modes (auto-detected):
+Modes (auto-detected, or forced to dry_run with --dry-run):
   dual            — GNS3 + cloud emulator both reachable
   gns3_only       — GNS3 reachable, no cloud emulator
   cloud_only      — cloud emulator reachable, no GNS3
-  dry_run         — neither reachable → validate topology spec only (safe, no cost)
+  dry_run         — validate the topology spec only. STARTS NOTHING.
+
+DRY_RUN STARTS NOTHING, AND THAT USED TO BE INVERTED (flx-sim-01)
+-----------------------------------------------------------------
+The container-start gate read ``mode == "dry_run"``, so canvas containers were
+`docker run`-ed in the ONE mode whose entire purpose is to touch nothing, and
+in none of the three modes that are supposed to run something. The reading that
+made it look deliberate is a bootstrap one -- "nothing is reachable, so start
+the declared containers and re-detect" -- and it fails on its own terms: a
+canvas emulator publishes its own host port (see
+``sim.base_topology.CANVAS_EMULATOR_HOST_PORTS``), not the one
+``emulator.endpoint()`` names, so ``dual`` and ``cloud_only`` runs -- exactly
+the runs that need it -- never started the canvas's own container either.
+
+So the gate is now the executing modes, and dry_run is inert. A caller that
+wanted the old bootstrap wants an emulator brought up out of band; a caller
+that wants to touch nothing has ``--dry-run``, which FORCES the mode rather
+than inferring it from an outage.
 
 Canvas topology builders live in tools/studio/sim/<canvas>_topology.py.
 Each builder reads design artifacts and emits a TopologySpec.
@@ -213,7 +230,7 @@ def _deploy_topology(adapter, spec, findings: list[dict]) -> dict:
 
 # ── Probe runner ───────────────────────────────────────────────────────────
 
-def _run_probes(spec, topo_result: dict, localstack_result: dict,
+def _run_probes(spec, topo_result: dict, emulator_result: dict,
                 findings: list[dict]) -> list[dict]:
     results: list[dict] = []
     for probe in spec.probes:
@@ -234,9 +251,9 @@ def _run_probes(spec, topo_result: dict, localstack_result: dict,
                               "check": f"probe_{probe.name}",
                               "message": f"Links: {actual}/{expected}"})
 
-        elif probe.type == "localstack_apply":
-            ok = localstack_result.get("gate") in ("PASS", "WARN")
-            detail = f"LocalStack apply: {localstack_result.get('gate', 'SKIPPED')}"
+        elif probe.type == "emulator_apply":
+            ok = emulator_result.get("gate") in ("PASS", "WARN")
+            detail = f"Cloud emulator apply: {emulator_result.get('gate', 'SKIPPED')}"
             results.append({"name": probe.name, "type": probe.type, "pass": ok, "detail": detail})
             findings.append({"severity": "pass" if ok else "warn",
                               "check": f"probe_{probe.name}", "message": detail})
@@ -248,18 +265,18 @@ def _run_probes(spec, topo_result: dict, localstack_result: dict,
     return results
 
 
-# ── LocalStack apply (cloud services layer) ───────────────────────────────
+# ── Cloud emulator apply (cloud services layer) ───────────────────────────
 
-def _run_localstack_apply(run_id: str, canvas: str, findings: list[dict]) -> dict:
+def _run_emulator_apply(run_id: str, canvas: str, findings: list[dict]) -> dict:
     try:
         from tools.studio.executors.terraform_apply import run_apply
         result = run_apply(run_id, "gns3-sim", canvas)
-        findings.append({"severity": "info", "check": "localstack_layer",
+        findings.append({"severity": "info", "check": "emulator_layer",
                           "message": f"Cloud services layer: {result['gate']} "
                                      f"({result.get('resources_created', 0)} resources)"})
         return result
     except Exception as exc:
-        findings.append({"severity": "warn", "check": "localstack_layer",
+        findings.append({"severity": "warn", "check": "emulator_layer",
                           "message": f"Cloud services layer skipped: {exc}"})
         return {"gate": "SKIP"}
 
@@ -267,7 +284,7 @@ def _run_localstack_apply(run_id: str, canvas: str, findings: list[dict]) -> dic
 # ── Training artifact writer ───────────────────────────────────────────────
 
 def _save_training_artifact(canvas: str, spec, topo_result: dict,
-                             probe_results: list[dict], ls_result: dict,
+                             probe_results: list[dict], emu_result: dict,
                              uid: str, gate: str, out_dir: Path,
                              traffic_result: dict | None = None) -> str:
     training_dir = out_dir / "training" / uid
@@ -286,7 +303,10 @@ def _save_training_artifact(canvas: str, spec, topo_result: dict,
     (training_dir / "probe_results.json").write_text(
         json.dumps(probe_results, indent=2), encoding="utf-8", newline="")
 
-    output_section: dict = {"probes": probe_results, "localstack": ls_result}
+    # `emulator`, not `localstack`: this key is a SERIALISATION CONTRACT that
+    # sim/training_exporter.py reads back, so it reads BOTH -- the old key for
+    # pairs already on disk, this one for everything written from now on.
+    output_section: dict = {"probes": probe_results, "emulator": emu_result}
     if traffic_result:
         traffic_phase = traffic_result.get("phases", {}).get("traffic", {})
         output_section["traffic"] = {
@@ -338,7 +358,8 @@ def _run_canvas_traffic(canvas: str, gns3_url: str, project_name: str,
 
 # ── Main run function ──────────────────────────────────────────────────────
 
-def run_sim(run_id: str, project_id: str, canvas: str = "") -> dict:
+def run_sim(run_id: str, project_id: str, canvas: str = "",
+            dry_run: bool = False) -> dict:
     canvas = resolve_canvas(run_id, canvas)
     out_dir = artifacts_dir(canvas)
     env = load_dotenv()
@@ -354,47 +375,71 @@ def run_sim(run_id: str, project_id: str, canvas: str = "") -> dict:
 
     # Detect simulation mode
     gns3_url = env.get("GNS3_URL", "http://localhost:3080")
-    ls_endpoint = emulator.endpoint(env)
-    gns3_ok = _gns3_reachable(gns3_url)
-    ls_ok = _cloud_emulator_reachable(ls_endpoint, "/_localstack/health")
+    emu_endpoint = emulator.endpoint(env)
 
-    if gns3_ok and ls_ok:
-        mode = "dual"
-    elif gns3_ok:
-        mode = "gns3_only"
-    elif ls_ok:
-        mode = "cloud_only"
-    else:
+    # --dry-run FORCES the inert mode and is asked BEFORE the probes: a caller
+    # that wants to touch nothing must not have its answer decided by whether
+    # something happened to be listening.
+    if dry_run:
+        gns3_ok = False
+        emu_ok = False
         mode = "dry_run"
+    else:
+        gns3_ok = _gns3_reachable(gns3_url)
+        emu_ok = _cloud_emulator_reachable(emu_endpoint, emulator.HEALTH_PATH)
+        if gns3_ok and emu_ok:
+            mode = "dual"
+        elif gns3_ok:
+            mode = "gns3_only"
+        elif emu_ok:
+            mode = "cloud_only"
+        else:
+            mode = "dry_run"
 
     findings.append({"severity": "info", "check": "sim_mode",
                       "message": f"Simulation mode: {mode.upper()} — "
                                  f"GNS3={'✓' if gns3_ok else '✗'} "
-                                 f"LocalStack={'✓' if ls_ok else '✗'}"})
+                                 f"emulator={'✓' if emu_ok else '✗'}"
+                                 + (" (forced by --dry-run)" if dry_run else "")})
 
-    # Start Docker services (canvas-specific containers)
-    docker_ok = _docker_available()
+    # Start Docker services (canvas-specific containers).
+    #
+    # THE EXECUTING MODES ONLY. `dry_run` validates the spec and starts
+    # nothing -- see the module docstring for the inversion this replaces.
     docker_started: list[str] = []
-    if docker_ok and spec.docker_services and mode == "dry_run":
-        findings.append({"severity": "info", "check": "docker_services",
-                          "message": f"Starting {len(spec.docker_services)} canvas container(s)…"})
-        for svc in spec.docker_services:
-            if _start_docker_service(svc, findings):
-                docker_started.append(svc.name)
-        # Re-check after containers start
-        if not gns3_ok:
-            gns3_ok = _gns3_reachable(gns3_url)
-        if not ls_ok:
-            ls_ok = _cloud_emulator_reachable(ls_endpoint, "/_localstack/health")
-        if gns3_ok and ls_ok:
-            mode = "dual"
-        elif gns3_ok:
-            mode = "gns3_only"
-        elif ls_ok:
-            mode = "cloud_only"
-        if mode != "dry_run":
-            findings.append({"severity": "info", "check": "sim_mode_upgrade",
-                              "message": f"Mode upgraded to {mode.upper()} after container start"})
+    docker_ok = False
+    if mode == "dry_run":
+        if spec.docker_services:
+            findings.append({
+                "severity": "info", "check": "docker_services",
+                "message": (f"DRY RUN — {len(spec.docker_services)} canvas "
+                            f"container(s) declared, none started"),
+            })
+    else:
+        docker_ok = _docker_available()
+        if docker_ok and spec.docker_services:
+            findings.append({"severity": "info", "check": "docker_services",
+                              "message": f"Starting {len(spec.docker_services)} canvas container(s)…"})
+            for svc in spec.docker_services:
+                if _start_docker_service(svc, findings):
+                    docker_started.append(svc.name)
+            # A canvas container can complete the pair the mode was missing --
+            # a gns3_only run whose canvas emulator has now come up is dual.
+            if not gns3_ok:
+                gns3_ok = _gns3_reachable(gns3_url)
+            if not emu_ok:
+                emu_ok = _cloud_emulator_reachable(emu_endpoint, emulator.HEALTH_PATH)
+            upgraded = "dual" if (gns3_ok and emu_ok) else mode
+            if upgraded != mode:
+                mode = upgraded
+                findings.append({"severity": "info", "check": "sim_mode_upgrade",
+                                  "message": f"Mode upgraded to {mode.upper()} after container start"})
+        elif spec.docker_services and not docker_ok:
+            findings.append({
+                "severity": "warn", "check": "docker_services",
+                "message": (f"Docker unavailable — {len(spec.docker_services)} canvas "
+                            f"container(s) declared, none started"),
+            })
 
     # GNS3 topology deployment
     topo_result: dict = {}
@@ -416,19 +461,19 @@ def run_sim(run_id: str, project_id: str, canvas: str = "") -> dict:
         topo_result = {"nodes_created": len(spec.nodes), "links_created": len(spec.links),
                        "project_id": "", "dry_run": True}
 
-    # Cloud services layer (LocalStack / other emulators)
-    ls_result: dict = {"gate": "SKIP"}
-    if ls_ok and mode in ("dual", "cloud_only"):
-        ls_result = _run_localstack_apply(run_id, canvas, findings)
+    # Cloud services layer (floci / other emulators)
+    emu_result: dict = {"gate": "SKIP"}
+    if emu_ok and mode in ("dual", "cloud_only"):
+        emu_result = _run_emulator_apply(run_id, canvas, findings)
         # Cloud services layer failure → WARN only; GNS3 topology success is the primary gate
-        if ls_result.get("gate") == "FAIL" and gate == "PASS":
+        if emu_result.get("gate") == "FAIL" and gate == "PASS":
             gate = "WARN"
-    elif not ls_ok:
+    elif not emu_ok:
         findings.append({"severity": "info", "check": "cloud_layer",
                           "message": "Cloud emulator not available — services layer skipped"})
 
     # Run probes
-    probe_results = _run_probes(spec, topo_result, ls_result, findings)
+    probe_results = _run_probes(spec, topo_result, emu_result, findings)
 
     # Canvas traffic engine (ZTP + traffic matrix) — runs after topology is live
     traffic_result: dict = {}
@@ -465,7 +510,7 @@ def run_sim(run_id: str, project_id: str, canvas: str = "") -> dict:
 
     # Save training artifact (includes traffic flows when available)
     training_pair_path = _save_training_artifact(
-        canvas, spec, topo_result, probe_results, ls_result, uid, gate, out_dir,
+        canvas, spec, topo_result, probe_results, emu_result, uid, gate, out_dir,
         traffic_result=traffic_result or None)
 
     # Auto-export training pair to finetune dataset (non-blocking)
@@ -574,9 +619,17 @@ def main():
     parser.add_argument("--run-id", default="")
     parser.add_argument("--canvas", default="", help="Canvas slug (auto-detected if omitted)")
     parser.add_argument("--json", action="store_true")
+    # sim_hub.run_canvas_sim(dry_run=True) has always appended this flag, and
+    # argparse exited 2 on it -- into a Popen with stdout and stderr at
+    # DEVNULL, which returned {"status": "started"} for a process that was
+    # already dead. Declared here so the hub's contract is honoured rather
+    # than merely surviving.
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Force dry_run: validate the spec, start nothing")
     args = parser.parse_args()
     try:
-        result = run_sim(args.run_id, args.project_id, args.canvas)
+        result = run_sim(args.run_id, args.project_id, args.canvas,
+                         dry_run=args.dry_run)
         gate = result["gate"]
         # Summarise probe results for the DAG detail panel
         probe_summary = [

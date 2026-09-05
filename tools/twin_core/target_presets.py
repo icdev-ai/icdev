@@ -147,6 +147,17 @@ def _available_in_target(meta: dict, preset: dict) -> bool:
     # government scope requires govcloud_available.
     if scope == "government" and not meta.get("govcloud_available", False):
         return False
+    # GCP states its government posture as `assured_workloads`, a THIRD flag
+    # this function did not read (flx-gcp-01). Every one of the 8 GCP entries in
+    # the catalog carries `govcloud_available: false` and
+    # `assured_workloads: true`, so scoring a GCP preset as `government` marks
+    # EVERY GCP service unavailable, and scoring it `commercial` silently drops
+    # the government question entirely. Both are wrong answers rather than
+    # missing ones, which is why the scope is named rather than reused.
+    #
+    # ADDITIVE: no shipped preset uses this scope, so no existing verdict moves.
+    if scope == "assured_workloads" and not meta.get("assured_workloads", False):
+        return False
     regions = (meta.get("regions", {}) or {}).get(scope, []) or []
     # If the catalog lists explicit regions for this scope, require membership;
     # otherwise fall back to the scope-level availability flag above.

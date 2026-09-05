@@ -1,20 +1,27 @@
 # CUI // SP-CTI
-"""ICDEV™ Infrastructure Canvas — LocalStack AWS Emulation Adapter.
+"""ICDEV™ Infrastructure Canvas — floci AWS Emulation Adapter.
 
-All HTTP egress routes through DataBridge LocalStackConnector so that secret
+All HTTP egress routes through the DataBridge emulator connector so that secret
 resolution, audit logging, and health probing use the standard DataBridge
 pipeline (ADR D360+: all external comms via DataBridge).
 
-Feature flag: LOCALSTACK_ENABLED in .env (default: false, air-gap safe).
-When disabled, all public methods return a typed disabled response — no network
-calls are made and no exceptions raised. IDC canvas features that depend on
-LocalStack (pre-apply validation, local deploy) degrade gracefully.
+THE SWITCH IS ``tools/cloud/emulator.py`` (flx-seam-01) and this module does not
+own a second copy of it. ``FLOCI_ENABLED``, default false, air-gap safe, with
+``LOCALSTACK_ENABLED`` still honoured as a deprecated alias. When disabled every
+public method returns a typed disabled response — no network calls are made and
+no exceptions raised — so IDC canvas features that depend on the emulator
+(pre-apply validation, local deploy) degrade gracefully.
+
+``IntegrationFeatureFlags.localstack*`` keeps its old NAME by flx-seam-01's
+decision (callers import it by name) while DELEGATING to that seam; this adapter
+reads the seam directly for endpoint/region/credentials so there is one answer
+and no second reader of the environment.
 
 Usage::
 
-    from tools.infra_canvas.adapters.localstack_adapter import LocalStackAdapter
+    from tools.infra_canvas.adapters.floci_adapter import FlociAdapter
 
-    adapter = LocalStackAdapter.from_env()
+    adapter = FlociAdapter.from_env()
     print(adapter.health())
 
     if adapter.is_enabled():
@@ -29,14 +36,40 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from tools.cloud import emulator
 from tools.databridge.feature_flags import IntegrationFeatureFlags
 
 DEFAULT_TIMEOUT = 15.0
 
+#: AWS services this adapter names an explicit ``AWS_ENDPOINT_URL_<SERVICE>``
+#: override for. The GLOBAL ``AWS_ENDPOINT_URL`` already routes every service at
+#: the emulator; these are the belt-and-braces entries the Terraform aws
+#: provider reads per service, kept as a declared tuple so the emitted set is
+#: readable rather than twelve near-identical lines.
+_ENDPOINT_OVERRIDE_SERVICES = (
+    "S3",
+    "DYNAMODB",
+    "LAMBDA",
+    "SQS",
+    "SNS",
+    "API_GATEWAY",
+    "CLOUDWATCH",
+    "SSM",
+    "SECRETS_MANAGER",
+    "ECR",
+    "STS",
+    "IAM",
+)
+
 
 def _build_connector(endpoint: str, region: str, access_key: str, secret_key: str, timeout: float):
-    """Return a configured LocalStackConnector without triggering health checks."""
-    from tools.databridge.connectors.localstack_connector import LocalStackConnector  # noqa: PLC0415
+    """Return a configured emulator connector without triggering health checks.
+
+    The connector is ``FlociConnector`` as of flx-bridge-01; the ``LocalStack``
+    name is gone from the registry, so a caller left asking for it gets ``None``
+    rather than a stale instance.
+    """
+    from tools.databridge.connectors.floci_connector import FlociConnector  # noqa: PLC0415
 
     cfg = {
         "endpoint": endpoint,
@@ -45,7 +78,7 @@ def _build_connector(endpoint: str, region: str, access_key: str, secret_key: st
         "secret_key": secret_key,
         "timeout": timeout,
     }
-    c = LocalStackConnector()
+    c = FlociConnector()
     c._config = cfg
     c._endpoint = endpoint
     c._base_url = endpoint
@@ -57,11 +90,12 @@ def _build_connector(endpoint: str, region: str, access_key: str, secret_key: st
     return c
 
 
-class LocalStackAdapter:
-    """LocalStack AWS emulation adapter for the Infrastructure Canvas.
+class FlociAdapter:
+    """floci AWS emulation adapter for the Infrastructure Canvas.
 
-    Thin wrapper over LocalStackConnector. Checks LOCALSTACK_ENABLED at init
-    time — all public methods return a disabled dict when the flag is off.
+    Thin wrapper over the DataBridge emulator connector. Reads the ONE switch
+    (``tools/cloud/emulator.py``) at init time — all public methods return a
+    disabled dict when it is off.
     """
 
     def __init__(
@@ -72,10 +106,12 @@ class LocalStackAdapter:
         secret_key: str = "",
         timeout: float = DEFAULT_TIMEOUT,
     ) -> None:
+        # The FeatureStatus SHAPE is DataBridge's (it carries the disabled
+        # response every method returns); the ANSWER inside it is the seam's.
         self._flag = IntegrationFeatureFlags.localstack()
-        endpoint = endpoint or IntegrationFeatureFlags.localstack_endpoint()
-        region = region or IntegrationFeatureFlags.localstack_region()
-        ak, sk = IntegrationFeatureFlags.localstack_credentials()
+        endpoint = endpoint or emulator.endpoint()
+        region = region or emulator.region()
+        ak, sk = emulator.credentials()
         access_key = access_key or ak
         secret_key = secret_key or sk
 
@@ -89,11 +125,11 @@ class LocalStackAdapter:
         )
 
     @classmethod
-    def from_env(cls) -> "LocalStackAdapter":
+    def from_env(cls) -> "FlociAdapter":
         """Construct adapter entirely from environment variables."""
-        endpoint = IntegrationFeatureFlags.localstack_endpoint()
-        region = IntegrationFeatureFlags.localstack_region()
-        ak, sk = IntegrationFeatureFlags.localstack_credentials()
+        endpoint = emulator.endpoint()
+        region = emulator.region()
+        ak, sk = emulator.credentials()
         timeout = IntegrationFeatureFlags.localstack_timeout()
         return cls(endpoint=endpoint, region=region, access_key=ak, secret_key=sk, timeout=timeout)
 
@@ -108,49 +144,48 @@ class LocalStackAdapter:
         return self._flag.as_disabled_response()
 
     def get_endpoint(self) -> str:
-        """Return the LocalStack endpoint URL (for env-var injection into Terraform)."""
+        """Return the emulator endpoint URL (for env-var injection into Terraform)."""
         return self._endpoint
 
     def get_env_vars(self) -> Dict[str, str]:
-        """Return the AWS env vars needed to point boto3/awscli at LocalStack.
+        """Return the AWS env vars needed to point boto3/awscli at the emulator.
+
+        Endpoint and region are the SEAM's (``tools/cloud/emulator.py``) unless
+        this instance was constructed with an explicit override.
+
+        The credentials are the seam's dummy pair and never the ambient AWS one:
+        these values are handed to a Terraform provider block talking to
+        localhost, and a developer with GovCloud keys exported in the same shell
+        is the normal case, not the exotic one.
 
         Inject these into subprocess calls or Terraform workspace environments::
 
             env = {**os.environ, **adapter.get_env_vars()}
             subprocess.run(["terraform", "apply"], env=env)
         """
-        return {
+        env: Dict[str, str] = {
             "AWS_ENDPOINT_URL": self._endpoint,
             "AWS_DEFAULT_REGION": self._region,
             "AWS_ACCESS_KEY_ID": self._connector._access_key if self._connector else "test",
             "AWS_SECRET_ACCESS_KEY": self._connector._secret_key if self._connector else "test",
-            # Service-specific endpoint overrides (Terraform aws provider)
-            "AWS_ENDPOINT_URL_S3": f"{self._endpoint}",
-            "AWS_ENDPOINT_URL_DYNAMODB": f"{self._endpoint}",
-            "AWS_ENDPOINT_URL_LAMBDA": f"{self._endpoint}",
-            "AWS_ENDPOINT_URL_SQS": f"{self._endpoint}",
-            "AWS_ENDPOINT_URL_SNS": f"{self._endpoint}",
-            "AWS_ENDPOINT_URL_API_GATEWAY": f"{self._endpoint}",
-            "AWS_ENDPOINT_URL_CLOUDWATCH": f"{self._endpoint}",
-            "AWS_ENDPOINT_URL_SSM": f"{self._endpoint}",
-            "AWS_ENDPOINT_URL_SECRETS_MANAGER": f"{self._endpoint}",
-            "AWS_ENDPOINT_URL_ECR": f"{self._endpoint}",
-            "AWS_ENDPOINT_URL_STS": f"{self._endpoint}",
-            "AWS_ENDPOINT_URL_IAM": f"{self._endpoint}",
         }
+        # Service-specific endpoint overrides (Terraform aws provider)
+        for service in _ENDPOINT_OVERRIDE_SERVICES:
+            env[f"AWS_ENDPOINT_URL_{service}"] = self._endpoint
+        return env
 
     # ------------------------------------------------------------------ #
     # Health
     # ------------------------------------------------------------------ #
 
     def health(self) -> Dict[str, Any]:
-        """Check LocalStack reachability and list running services."""
+        """Check emulator reachability and list running services."""
         if not self._flag.enabled:
             return self._disabled()
         return self._connector.health_check()
 
     def list_services(self) -> List[Dict[str, str]]:
-        """Return list of {service, status} dicts for all LocalStack services."""
+        """Return list of {service, status} dicts for all emulator services."""
         if not self._flag.enabled:
             return []
         from tools.databridge.connector import ConnectorRequest  # noqa: PLC0415
@@ -163,13 +198,13 @@ class LocalStackAdapter:
     # ------------------------------------------------------------------ #
 
     def list_buckets(self) -> List[Dict[str, Any]]:
-        """List S3 buckets in LocalStack."""
+        """List S3 buckets in the emulator."""
         if not self._flag.enabled:
             return []
         return self._boto3_read("s3_buckets")
 
     def create_bucket(self, name: str) -> Dict[str, Any]:
-        """Create an S3 bucket in LocalStack."""
+        """Create an S3 bucket in the emulator."""
         if not self._flag.enabled:
             return self._disabled()
         kwargs: Dict[str, Any] = {"Bucket": name}
@@ -194,7 +229,7 @@ class LocalStackAdapter:
     # ------------------------------------------------------------------ #
 
     def list_tables(self) -> List[str]:
-        """List DynamoDB table names in LocalStack."""
+        """List DynamoDB table names in the emulator."""
         if not self._flag.enabled:
             return []
         rows = self._boto3_read("dynamodb_tables")
@@ -209,7 +244,7 @@ class LocalStackAdapter:
         sort_key_type: str = "S",
         billing_mode: str = "PAY_PER_REQUEST",
     ) -> Dict[str, Any]:
-        """Create a DynamoDB table in LocalStack."""
+        """Create a DynamoDB table in the emulator."""
         if not self._flag.enabled:
             return self._disabled()
         attr_defs = [{"AttributeName": partition_key, "AttributeType": partition_key_type}]
@@ -229,7 +264,7 @@ class LocalStackAdapter:
     # ------------------------------------------------------------------ #
 
     def list_functions(self) -> List[Dict[str, Any]]:
-        """List Lambda functions in LocalStack."""
+        """List Lambda functions in the emulator."""
         if not self._flag.enabled:
             return []
         return self._boto3_read("lambda_functions")
@@ -237,7 +272,7 @@ class LocalStackAdapter:
     def invoke_lambda(
         self, function_name: str, payload: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Invoke a Lambda function in LocalStack and return the parsed response."""
+        """Invoke a Lambda function in the emulator and return the parsed response."""
         if not self._flag.enabled:
             return self._disabled()
         import json as _json
@@ -264,14 +299,14 @@ class LocalStackAdapter:
     # ------------------------------------------------------------------ #
 
     def list_queues(self) -> List[str]:
-        """List SQS queue URLs in LocalStack."""
+        """List SQS queue URLs in the emulator."""
         if not self._flag.enabled:
             return []
         rows = self._boto3_read("sqs_queues")
         return [r if isinstance(r, str) else r.get("QueueUrl", "") for r in rows]
 
     def create_queue(self, name: str, fifo: bool = False) -> Dict[str, Any]:
-        """Create an SQS queue in LocalStack."""
+        """Create an SQS queue in the emulator."""
         if not self._flag.enabled:
             return self._disabled()
         attrs: Dict[str, str] = {}
@@ -288,13 +323,13 @@ class LocalStackAdapter:
     # ------------------------------------------------------------------ #
 
     def list_repositories(self) -> List[Dict[str, Any]]:
-        """List ECR repositories in LocalStack."""
+        """List ECR repositories in the emulator."""
         if not self._flag.enabled:
             return []
         return self._boto3_read("ecr_repositories")
 
     def create_repository(self, name: str) -> Dict[str, Any]:
-        """Create an ECR repository in LocalStack."""
+        """Create an ECR repository in the emulator."""
         if not self._flag.enabled:
             return self._disabled()
         return self._boto3_write("ecr", "create_repository", {"repositoryName": name})
@@ -310,9 +345,9 @@ class LocalStackAdapter:
         auto_approve: bool = True,
         extra_vars: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
-        """Run terraform apply in plan_dir pointed at LocalStack.
+        """Run terraform apply in plan_dir pointed at the emulator.
 
-        Injects AWS endpoint env vars so all provider calls go to LocalStack.
+        Injects AWS endpoint env vars so all provider calls go to the emulator.
         Tags resources with namespace for later cleanup via destroy_namespace().
 
         Returns::

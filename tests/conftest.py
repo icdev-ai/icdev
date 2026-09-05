@@ -3699,6 +3699,30 @@ CREATE TABLE IF NOT EXISTS odc_twin_snapshots (
     payload_json    TEXT NOT NULL DEFAULT '{}',
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
+-- floci AWS-emulator twin (flx-twin-01, migration 20260905070028). `provenance`
+-- is CHECKed against twin_core.schema.SNAPSHOT_PROVENANCES in the migration; the
+-- literal here is the SQLite mirror of that derivation, pinned by
+-- tests/test_floci_twin_adapter.py so the two cannot drift.
+-- resource_count is NULLABLE on purpose: an unmeasured snapshot counted nothing,
+-- and 0 would assert the emulated estate is empty.
+CREATE TABLE IF NOT EXISTS floci_twin_snapshots (
+    id              TEXT    NOT NULL,
+    target_id       TEXT    NOT NULL,
+    label           TEXT    NOT NULL DEFAULT '',
+    provenance      TEXT    NOT NULL DEFAULT 'unknown'
+                    CHECK (provenance IN ('observed', 'emulated', 'synthetic', 'unknown')),
+    target_csp      TEXT,
+    region          TEXT,
+    verdict         TEXT    NOT NULL DEFAULT 'unknown',
+    verdict_basis   TEXT    NOT NULL DEFAULT 'unmeasured',
+    resource_count  INTEGER,
+    tables_ok       INTEGER,
+    tables_declared INTEGER,
+    payload_json    TEXT    NOT NULL DEFAULT '{}',
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (id)
+);
+CREATE INDEX IF NOT EXISTS idx_floci_twin_snap_target ON floci_twin_snapshots(target_id);
 -- QDC + AADC digital twins (twx-cov-01). Snapshots use PDC dedup/retention
 -- (NOT append-only); simulations persist the pass/warn/fail verdict.
 CREATE TABLE IF NOT EXISTS qdc_twin_snapshots (
