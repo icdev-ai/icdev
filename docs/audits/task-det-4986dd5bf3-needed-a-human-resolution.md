@@ -128,8 +128,9 @@ is, over **all 24 `recovery` findings ever recorded**:
 | subjects now `done` | 19 |
 | subjects still `pr_opened` | 5 |
 | **subjects abandoned or stuck** | **0** |
-| merge recorded *after* the escalation | 13 |
-| …of which the **watcher merged itself** (`auto-merge ok`) | **9** |
+| merge recorded *after* the escalation | 14 |
+| …of which the **watcher merged itself** (reason begins `auto-merge ok`) | **10** |
+| …merged elsewhere (reason `PR already merged`) | 4 |
 | detector cards filed | 24 |
 | `-r2` recurrence cards (the pre-#2057 window artifact) | 3 |
 
@@ -137,6 +138,15 @@ Eight of the 24 are the `rmf-ui-*` epic alone — rmf-ui-03, 07, 08, 10, 11, 12,
 13, 16 — every one `done`, with post-escalation gaps of 56m to 663m. One
 finding (`task-det-f3abb63607`) has another *recovery card* as its subject:
 task-det-cd1d099fff's own resolution PR escalated and generated a new card.
+
+> **Correction.** The first draft of this record said 13 and 9. Re-derived
+> exactly, the numbers are **14** and **10**: one subject (`flx-airgap-01`) was
+> missed in the hand count, and `rmf-ui-08`'s merge reason is
+> `auto-merge ok; ignored non-required failing check(s): E2E ...` — still the
+> watcher merging itself, but an exact-string match dropped it. The distinction
+> now reported is `startswith("auto-merge ok")` (the watcher) versus
+> `PR already merged` (some other door), because collapsing the two is the same
+> conflation this record objects to elsewhere.
 
 ### The cost, measured
 
