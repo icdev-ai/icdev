@@ -289,6 +289,8 @@ def land(
     dry_run: bool = False,
     sleeper=None,
     confirm_attempts: int = CONFIRM_ATTEMPTS,
+    protected_ok: bool = False,
+    override_reason: str = "",
 ) -> dict:
     """Preflight, merge, then CONFIRM the merge landed.
 
@@ -298,6 +300,14 @@ def land(
     write ``done`` on the strength of the request alone.
 
     ``dry_run`` runs the preflight and stops — it never reports a merge.
+
+    ``protected_ok`` (mfx-mrg-04) carries a HUMAN's decision to land a PR that
+    touches one of ``pr_watcher``'s ``protected_paths`` — the guard that stops
+    the merge ladder auto-merging a change to itself. It overrides EXACTLY that
+    one rung, inside ``_auto_merge``; every check above is untouched and still
+    runs, so a red, conflicting, unapproved or draft-refused PR is refused here
+    before the flag is ever consulted. It is threaded, never defaulted on, and
+    ``override_reason`` must be non-empty or ``_auto_merge`` refuses.
     """
     get_conn = _resolve_conn(get_conn)
     w = watcher if watcher is not None else _build_watcher(get_conn)
@@ -341,7 +351,8 @@ def land(
             )
         verdict["checks"].append(_ck("draft_promoted", True))
 
-    if not w._auto_merge(pr_url):
+    if not w._auto_merge(pr_url, protected_ok=protected_ok,
+                         override_reason=override_reason, task_id=task_id):
         verdict["checks"].append(_ck("merge_requested", False, "gh pr merge failed"))
         return _refusal(
             task_id,

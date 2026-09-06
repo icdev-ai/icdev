@@ -1,0 +1,7 @@
+{
+  "description": "protected_merge_override_audit_event_type",
+  "date": "2026-09-06",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

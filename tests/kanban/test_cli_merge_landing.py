@@ -64,9 +64,12 @@ class _FakeWatcher:
     def _default_branch(self):
         return self._branch
 
-    def _auto_merge(self, pr_url, state=None):
+    def _auto_merge(self, pr_url, state=None, **_kw):
         # `state` is kpr-watch-04: the shared chokepoint takes the PR record
-        # so it can refuse a hold label for both callers.
+        # so it can refuse a hold label for both callers. `**_kw` is
+        # mfx-mrg-04: land.py also threads the protected-path override
+        # (`protected_ok` / `override_reason` / `task_id`), which defaults off
+        # and is asserted on its own in tests/kanban/test_protected_merge_override.py.
         self.merge_calls.append(pr_url)
         return self._merge_ok
 

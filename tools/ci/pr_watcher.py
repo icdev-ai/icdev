@@ -2066,12 +2066,122 @@ class PRWatcher:
         ))
         return True
 
-    def _auto_merge(self, pr_url: str, state: Optional[dict] = None) -> bool:
+    #: audit_trail event_type for a human-authorised protected-path merge
+    #: (mfx-mrg-04). Admitted to `audit_logger.VALID_EVENT_TYPES` and to the
+    #: `audit_trail.event_type` CHECK by migration 20260906120818.
+    PROTECTED_OVERRIDE_EVENT = "kanban.protected_merge_override"
+
+    def _audit_protected_override(
+        self, phase: str, pr_url: str, hits: List[str], reason: str,
+        task_id: str = "", detail: str = "",
+    ) -> bool:
+        """Record one phase of a protected-path override. True when it landed.
+
+        It never raises, and WHAT THAT COSTS IS THE CALLER'S DECISION, not a
+        parameter here. `_auto_merge` treats a False on the `intent` row as
+        fail-closed and REFUSES the merge — an unaudited override of a
+        self-protection control is indistinguishable from the defect that
+        control guards against, so no row means no merge.
+        `_confirm_protected_override` ignores it, because by then the forge has
+        already answered and there is nothing left to refuse.
+
+        `log_event(raise_on_error=True)` is passed either way: the row must not
+        be silently dropped on a chain failure. On a PostgreSQL database that
+        has not run migration 20260906120818 the CHECK refuses the event type
+        and EVERY override is refused. That is the correct reading, not an
+        obstacle: run the migration.
+        """
+        details = {
+            "pr_url": pr_url,
+            # THE PATHS THE PR ACTUALLY HIT, re-derived from the open-PR
+            # listing at the moment of the decision — never the configured
+            # list, which would record what COULD have been protected rather
+            # than what was.
+            "protected_paths_hit": list(hits),
+            # VERBATIM. A reason paraphrased by the recorder is not the
+            # operator's reason.
+            "reason": reason,
+            "task_id": task_id or None,
+            "door": "tools/kanban/cli.py --set-status <id> done --merge "
+                    "--protected-ok --reason",
+        }
+        if detail:
+            details["detail"] = detail
+        try:
+            from tools.audit.audit_logger import log_event
+
+            log_event(
+                self.PROTECTED_OVERRIDE_EVENT, "pr_watcher",
+                f"protected_merge_override.{phase}", details=details,
+                raise_on_error=True,
+            )
+            return True
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "pr_watcher: could not audit the protected-path override "
+                "(%s) for %s: %s", phase, pr_url, exc)
+            return False
+
+    def _auto_merge(
+        self, pr_url: str, state: Optional[dict] = None, *,
+        protected_ok: bool = False, override_reason: str = "",
+        task_id: str = "",
+    ) -> bool:
+        """Merge one PR. `protected_ok` is a HUMAN's override of ONE rung.
+
+        `protected_ok` defaults False and is threaded ONLY from
+        `tools/kanban/cli.py --set-status <id> done --merge --protected-ok
+        --reason '<why>'` through `tools/kanban/land.py`. Neither the poll loop
+        nor the unlinked sweep passes it, and
+        `tests/kanban/test_protected_merge_override.py` reads THIS FILE'S AST to
+        keep it that way — a behavioural test would still pass for a future edit
+        that threads the flag through the cycle, which is the one change that
+        would turn this door back into the hazard kpr-watch-05 closed.
+
+        It overrides EXACTLY the `_refuse_protected` rung below. Every other
+        gate — land.py's thirteen checks, the hold label, `auto_merge_enabled`,
+        and the post-merge MERGED confirmation — is untouched.
+        """
         # LAST LINE, not the only one. Both merge paths call this, so the guard
         # here cannot be routed around by a future caller — but the linked path
         # also checks BEFORE it un-drafts, because un-drafting a PR that was
         # never going to merge burns the one brake a human still has.
-        if self._refuse_protected(pr_url):
+        override: Optional[dict] = None
+        if protected_ok:
+            # prove -> audit -> apply -> confirm (autonomy-act-03's ordering).
+            # PROVE: re-derive the hits from the listing NOW, so the audit names
+            # what this PR touches rather than what the operator believed.
+            hits = self._protected_hits(pr_url)
+            if hits:
+                reason = (override_reason or "").strip()
+                if not reason:
+                    # Refuse with a usage error, never a default string — a
+                    # reason nobody wrote is not a reason.
+                    logger.warning(
+                        "pr_watcher: REFUSING to merge %s — --protected-ok "
+                        "requires a written reason; path(s) %s",
+                        pr_url, ", ".join(hits))
+                    return False
+                override = {"pr_url": pr_url, "hits": hits, "reason": reason,
+                            "task_id": task_id}
+                # AUDIT, before anything is merged. dry_run writes nothing, for
+                # the same reason `_audit` does not — and merges nothing either,
+                # so there is no override to record.
+                if not self.dry_run and not self._audit_protected_override(
+                        "intent", pr_url, hits, reason, task_id):
+                    logger.warning(
+                        "pr_watcher: REFUSING to merge %s — the protected-path "
+                        "override could not be audited (unaudited_refused). "
+                        "Run `python tools/db/migrate.py --up`.", pr_url)
+                    return False
+                logger.warning(
+                    "pr_watcher: protected-path guard OVERRIDDEN for %s by a "
+                    "human — path(s) %s — reason: %s",
+                    pr_url, ", ".join(hits), reason)
+            # `hits` empty: the flag overrode nothing, because this PR touches
+            # no protected path. Nothing to audit and nothing to say — it is an
+            # ordinary merge.
+        elif self._refuse_protected(pr_url):
             return False
         # HOLD LABEL (kpr-watch-04), the same belt-and-braces shape. `state` is
         # optional because each caller has already asked the same question by
@@ -2117,6 +2227,7 @@ class PRWatcher:
                 ["gh", "pr", "merge", pr_url, MERGE_METHOD_FLAG],
             )
             last_err = ""
+            merged = False
             for i, cmd in enumerate(attempts):
                 proc = self._auto_merge_runner(
                     cmd, capture_output=True, text=True,
@@ -2127,17 +2238,45 @@ class PRWatcher:
                         logger.info(
                             "pr_watcher: merged %s without --auto "
                             "(auto-merge is not enabled on this repository)", pr_url)
-                    return True
+                    merged = True
+                    break
                 last_err = (getattr(proc, "stderr", "") or "").strip()[:200]
-            # Previously this returned False with NO log line, so a forge that
-            # refused every merge looked identical to a board with nothing to
-            # merge. That is how 11 PRs sat "awaiting merge" while the watcher
-            # decided "merge" on each pass and was refused.
-            logger.warning("pr_watcher: gh refused to merge %s: %s", pr_url, last_err)
-            return False
+            if not merged:
+                # Previously this returned False with NO log line, so a forge that
+                # refused every merge looked identical to a board with nothing to
+                # merge. That is how 11 PRs sat "awaiting merge" while the watcher
+                # decided "merge" on each pass and was refused.
+                logger.warning(
+                    "pr_watcher: gh refused to merge %s: %s", pr_url, last_err)
+            self._confirm_protected_override(override, merged, last_err)
+            return merged
         except Exception as exc:
             logger.warning("pr_watcher: auto-merge failed: %s", exc)
+            self._confirm_protected_override(override, False, str(exc)[:200])
             return False
+
+    def _confirm_protected_override(
+        self, override: Optional[dict], merged: bool, detail: str = "",
+    ) -> None:
+        """CONFIRM: record what the forge actually did with an overridden merge.
+
+        Best-effort, and never able to refuse anything — the merge has already
+        happened or already failed by the time this runs, so a raise here would
+        only lose the record of it. The fail-closed leg is the `intent` row.
+        `land()` performs the outer confirmation (it re-reads the PR until it
+        observes MERGED); this records the forge's immediate answer, which is
+        what `_auto_merge` itself knows.
+        """
+        if not override or self.dry_run:
+            return
+        self._audit_protected_override(
+            "merged" if merged else "not_merged", override["pr_url"],
+            override["hits"], override["reason"], override.get("task_id", ""),
+            # Only on the failing leg: on a merge that succeeded on the SECOND
+            # attempt `last_err` holds the first attempt's message, and
+            # recording it beside `merged` would read as a merge that failed.
+            detail="" if merged else detail,
+        )
 
     def reclaim_worktree(self, task_id: str) -> dict:
         """Remove a task's worktree once its PR is merged.
