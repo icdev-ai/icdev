@@ -8551,3 +8551,25 @@ question those rules actually answer.
    `tools/security/` already models IAM decisions offline and deterministically;
    a partial emulation would be a second opinion with no rule for choosing
    between them. The licence was never the objection here.
+
+### Worktree husk sweep — a .git-less, unregistered `.tmp/worktrees/<id>` on a clock of hours (mfx-own-04)
+
+```bash
+python -m tools.kanban.worktree_husks --survey              # every .git-less directory under the live roots, classified
+python -m tools.kanban.worktree_husks --survey --json
+python -m tools.kanban.worktree_husks --plan                # what a sweep would act on; acts on nothing
+python -m tools.kanban.worktree_husks --apply <task-id> --dry-run   # prove, audit nothing, act on nothing
+python -m tools.kanban.worktree_husks --apply <task-id>    # prove -> audit -> ONE rmtree -> confirm
+```
+
+A husk is a DIRECT child of `.tmp/worktrees` with no `.git` file or directory
+and no entry in a SUCCESSFUL `git worktree list`. A live worktree always carries
+`.git`, so the class cannot hold one; the questions the 7-day path asks of a
+registered worktree (uncommitted? unpushed?) cannot be asked of it, which is why
+it is safe and why it is NEVER widened to a `.git` carrier. Every guard is kept:
+the task must not be `in_progress`, must HAVE a board row, and the NEWEST mtime
+in the whole tree must be older than `husk_age_hours` (args/worktree_husk_sweep.yaml,
+default 6; `KANBAN_WORKTREE_HUSK_AGE_HOURS` overrides). Unreadable is `proven: None`
+and refuses. Bounded per run, oldest first, deferred by name. Consumed by
+`_sweep_old_worktrees`. Kill switch `KANBAN_WORKTREE_HUSK_SWEEP=0`.
+Survey: docs/audits/mfx-own-04-worktree-husk-survey.md

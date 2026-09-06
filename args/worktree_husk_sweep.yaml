@@ -1,0 +1,40 @@
+# [TEMPLATE: CUI // SP-CTI]
+# Worktree HUSK sweep (mfx-own-04) -- tools/kanban/worktree_husks.py
+#
+# A husk is a directory that sits where a task's worktree lives
+# (.tmp/worktrees/<task-id>), carries NO .git marker at all, and is NOT in
+# `git worktree list`. A live worktree ALWAYS has that marker -- `git worktree
+# add` writes it before anything else -- so a husk cannot be a live agent's
+# checkout, and the 7-day KANBAN_WORKTREE_STALE_AGE_DAYS clock (tuned for a
+# directory that MIGHT still be one) buys it nothing. It is swept on THIS
+# clock instead.
+#
+# MEASURED 2026-09-06 on the live roots (docs/audits/mfx-own-04-worktree-husk-survey.md):
+#   26 husks under .tmp/worktrees, ~7.0 GB, ages 1.17 - 13.55 days; 25 `done`,
+#   1 `validating` (task-det-e9a2e3ea16, the card's case), 0 `in_progress`.
+#   2 more .git-less directories (`data`, `tools`) carry NO board row and are
+#   REFUSED -- they are not worktrees of anything, and one is still being
+#   written to.
+#
+# The clock is a bound on the only two in-flight states that briefly look
+# like a husk: the seconds between `mkdir` and the `.git` write inside
+# `git worktree add`, and a partial `rmtree` still running (minutes on a
+# 500 MB tree). Hours cover both by orders of magnitude; the youngest husk
+# measured was 28 hours old. Override with KANBAN_WORKTREE_HUSK_AGE_HOURS.
+husk_age_hours: 6
+
+# Acts per sweep run, OLDEST FIRST; the rest are `deferred` BY NAME, never
+# silent. Each act walks the whole tree for its newest mtime (13-52 s on a
+# 20k-file husk, measured), so the bound is what keeps a scheduler cycle from
+# spending minutes here.
+max_removals_per_run: 3
+
+# The age walk REFUSES (`age_unmeasurable`) rather than guessing when a tree
+# is larger than this or takes longer than this. A partial walk yields a LOWER
+# bound on the newest mtime, i.e. an OVER-estimate of the age -- the one
+# direction that errs toward deleting -- so it is never used.
+max_walk_entries: 250000
+walk_budget_seconds: 120
+
+# Kill switch: KANBAN_WORKTREE_HUSK_SWEEP=0 stands the act down (the survey
+# and --plan still run). Never a shell neutraliser.

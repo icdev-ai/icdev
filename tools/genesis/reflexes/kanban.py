@@ -2185,6 +2185,30 @@ def _sweep_old_worktrees(max_age_days: int = _WORKTREE_STALE_AGE_DAYS) -> list[s
         except Exception as exc:
             logger.warning("Sweep: could not remove %s: %s", sub, exc)
 
+    # HUSKS (mfx-own-04): a directory under WORKTREE_BASE with NO .git marker
+    # and no registration is a SEPARATE class on a SHORTER clock. It was never
+    # a candidate above (`_sweep_candidates` returns only `.git` carriers) and
+    # `_worktree_is_disposable` refuses "entries but no .git" by design, so the
+    # 7-day rule could never reach it -- while the empty-checkout requeue proof
+    # refuses `worktree_unregistered` on the same directory. Between them a
+    # `validating` card sat invisible for days (task-det-e9a2e3ea16). The class
+    # keeps the in_progress guard, asks the board for a row, walks the whole
+    # tree for its newest mtime, audits the intent BEFORE rmtree, and is
+    # bounded per run. It is NEVER widened to a directory carrying `.git`.
+    try:
+        from tools.kanban.worktree_husks import sweep_husks  # noqa: PLC0415
+
+        husks = sweep_husks(base=WORKTREE_BASE, repo_root_path=_canonical_repo_root())
+        for act in husks.get("applied", []):
+            removed.append(act.get("task_id") or Path(act["path"]).name)
+        if husks.get("state") == "unmeasurable":
+            logger.info("Sweep: husk class unmeasurable (%s)", husks.get("error"))
+        elif husks.get("deferred") or husks.get("unconfirmed"):
+            logger.info("Sweep: husks deferred=%s unconfirmed=%s",
+                        husks.get("deferred"), [a["task_id"] for a in husks.get("unconfirmed", [])])
+    except Exception as exc:  # noqa: BLE001 -- the husk class must never stop the sweep
+        logger.warning("Sweep: husk sweep failed: %s", exc)
+
     # Drop registry entries whose directory is already gone. Without this, `git worktree
     # list` keeps reporting worktrees that do not exist.
     try:
