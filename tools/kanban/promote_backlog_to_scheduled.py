@@ -36,6 +36,12 @@ def _utcnow_iso() -> str:
 
 from tools.kanban.gates import is_manual_gate as _is_manual_gate  # noqa: F401
 
+#: An E2E spec's throwaway board row is not work. It is deleted again in the
+#: spec's afterAll, but the scheduler promoted one ~2 SECONDS after it was
+#: created (2026-09-06) and dispatched an agent against it. Same shape as a
+#: manual gate: recognise it here, before it can become `scheduled`.
+from tools.kanban.fixtures import is_test_fixture as _is_test_fixture  # noqa: F401
+
 #: The gating rule itself lives in ``tools.kanban.deps`` so the dispatcher, the
 #: done-guards and every report ask ONE question (kpr-fix-02). This module used
 #: to AND the scalar ``depends_on_task_id`` with the junction table, which let
@@ -88,6 +94,10 @@ def promote(
             # A manual gate has NO dependencies, so _deps_satisfied() happily calls it
             # "ready" — promoting it out of the very state that makes it a gate. Skip.
             if _is_manual_gate(t["id"], t.get("title")):
+                continue
+            # An E2E fixture is deleted by the spec that made it; promoting it
+            # spends a worker session on a row that will not exist (fixtures.py).
+            if _is_test_fixture(t["id"], t.get("title")):
                 continue
             if _deps_satisfied(t["id"], conn):
                 eligible.append(t)

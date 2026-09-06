@@ -3,11 +3,11 @@
 
 [mcp.servers.icdev-unified]
 command = "python"
-args = ["C:/AI/ICDev/tools/mcp/mcp_debug_wrapper.py"]
+args = ["C:/AI/ICDev/tools/mcp/unified_server.py"]
 [mcp.servers.icdev-unified.env]
   ICDEV_DB_PATH = "C:/AI/ICDev/data/icdev.db"
   ICDEV_PROJECT_ROOT = "C:/AI/ICDev"
 
 [mcp.servers.playwright]
-command = "cmd"
-args = ["/c", "npx", "-y", "@playwright/mcp@latest"]
+command = "node"
+args = ["${PLAYWRIGHT_MCP_CLI:-C:/Users/schuo/AppData/Roaming/npm/node_modules/@playwright/mcp/cli.js}", "--browser", "${PLAYWRIGHT_MCP_BROWSER:-chromium}"]

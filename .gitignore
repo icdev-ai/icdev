@@ -319,3 +319,11 @@ memory/logs/
 # rmf-inert-02: compliance artifacts the ato_evidence_cycle reflex produces on a
 # 24h cadence. Dated evidence records cited by cato_evidence rows, not source.
 data/compliance/
+
+# WAL sidecars of the TRACKED fixture databases under apps/*/data/ and data/rag/ (they are
+# .db files git carries; the -shm/-wal journals beside them are runtime state, never content).
+# Measured 2026-09-06: four such journals sat untracked while the rules above covered only data/*.
+apps/*/data/*.db-shm
+apps/*/data/*.db-wal
+data/rag/*.db-shm
+data/rag/*.db-wal
