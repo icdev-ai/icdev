@@ -926,7 +926,6 @@ tests/test_gcpl_pm_02_cpmp_risk_register.py
 tests/test_gdx_dead_02_registration_schema.py
 tests/test_gdx_gameday_append_only.py
 tests/test_genai_attributes.py
-tests/test_generated_artifacts_untracked.py
 tests/test_genesis_a2a_fanout.py
 tests/test_genesis_convergence_anomaly.py
 tests/test_genesis_convergence_gate.py

@@ -1,0 +1,2 @@
+# task-wt-20f94d17 -- playwright-report/ and backups/ are generated output and stay untracked.
+tests/test_generated_artifacts_untracked.py
