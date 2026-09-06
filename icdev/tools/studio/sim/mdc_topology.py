@@ -13,7 +13,9 @@ from pathlib import Path
 from typing import Optional
 
 from tools.studio.sim.base_topology import (
-    BaseTopologyBuilder, DockerServiceSpec, LinkSpec, NodeSpec, ProbeSpec, TopologySpec,
+    CANVAS_EMULATOR_HOST_PORTS, EMULATOR_CONTAINER_PORT, EMULATOR_IMAGE,
+    BaseTopologyBuilder, DockerServiceSpec, LinkSpec, NodeSpec, ProbeSpec,
+    TopologySpec, emulator_health_url,
 )
 
 
@@ -141,26 +143,28 @@ class MDCTopologyBuilder(BaseTopologyBuilder):
             probes=[
                 ProbeSpec(name="topology_deployed", type="topology_deployed"),
                 ProbeSpec(name="link_count",        type="link_count", expected_value=len(links)),
-                ProbeSpec(name="localstack_apply",  type="localstack_apply"),
-                ProbeSpec(name="source_localstack", type="tcp_connect",
-                          target_node="dms-engine", port=4568),
-                ProbeSpec(name="target_localstack", type="tcp_connect",
-                          target_node="dms-engine", port=4569),
+                ProbeSpec(name="emulator_apply",  type="emulator_apply"),
+                ProbeSpec(name="source_emulator", type="tcp_connect",
+                          target_node="dms-engine",
+                          port=CANVAS_EMULATOR_HOST_PORTS["mdc-src"]),
+                ProbeSpec(name="target_emulator", type="tcp_connect",
+                          target_node="dms-engine",
+                          port=CANVAS_EMULATOR_HOST_PORTS["mdc-tgt"]),
             ],
             docker_services=[
                 DockerServiceSpec(
-                    name="icdev-localstack-mdc-src",
-                    image="localstack/localstack:3.8",
-                    ports={4568: 4566},
+                    name="icdev-floci-mdc-src",
+                    image=EMULATOR_IMAGE,
+                    ports={CANVAS_EMULATOR_HOST_PORTS["mdc-src"]: EMULATOR_CONTAINER_PORT},
                     env={"DEFAULT_REGION": source_region if "aws" in source_region else "us-east-1"},
-                    healthcheck_url="http://localhost:4568/_localstack/health",
+                    healthcheck_url=emulator_health_url(CANVAS_EMULATOR_HOST_PORTS["mdc-src"]),
                 ),
                 DockerServiceSpec(
-                    name="icdev-localstack-mdc-tgt",
-                    image="localstack/localstack:3.8",
-                    ports={4569: 4566},
+                    name="icdev-floci-mdc-tgt",
+                    image=EMULATOR_IMAGE,
+                    ports={CANVAS_EMULATOR_HOST_PORTS["mdc-tgt"]: EMULATOR_CONTAINER_PORT},
                     env={"DEFAULT_REGION": target_region if target_region != "on-prem" else "us-east-1"},
-                    healthcheck_url="http://localhost:4569/_localstack/health",
+                    healthcheck_url=emulator_health_url(CANVAS_EMULATOR_HOST_PORTS["mdc-tgt"]),
                 ),
             ],
             metadata={

@@ -103,7 +103,24 @@ def ctx(tmp_path, monkeypatch):
     # The task never started, so it has no heartbeat to consult. Patched rather
     # than read, because lease_liveness opens the AMBIENT database.
     monkeypatch.setattr(lease_liveness, "task_is_heartbeating", lambda _tid: False)
-    return {"cli": cli_mod, "db": db_path}
+    # --claim hands its lease to a detached KEEPER process (mfx-own-02). No test
+    # here may spawn one: the claim store is scratch and the keeper is faked.
+    import tools.kanban.interactive_claim as ic
+
+    monkeypatch.setattr(ic, "CLAIM_DIR", tmp_path / "claims")
+    monkeypatch.setattr(ic, "spawn_keeper", _fake_keeper)
+    return {"cli": cli_mod, "db": db_path, "ic": ic}
+
+
+def _fake_keeper(task_id, sid, intent, ttl):
+    """Stand in for the spawned keeper: report holding, under THIS live pid."""
+    import os
+
+    import tools.kanban.interactive_claim as ic
+
+    ic.write_state(task_id, {"task_id": task_id, "session_id": sid, "pid": os.getpid(),
+                             "intent": intent, "expires_at": "2099-01-01T00:00:00+00:00"})
+    return os.getpid()
 
 
 def _seed_claim(**overrides):
@@ -208,15 +225,21 @@ def test_set_status_and_release_climb_the_same_ladder():
         assert "reap_if_litter(" not in src, f"{door.__name__} grew its own ladder"
 
 
-# ── --claim says what its lease is actually worth (2026-09-02) ──────────────
+# ── --claim says what its lease is actually worth (2026-09-02, mfx-own-02) ──
 class TestClaimSaysWhatTheLeaseIsWorth:
     """``--claim`` used to end with "runner will skip this task until you
-    --release it". From a shell that is false: the lease records THIS process's
-    pid, which exits on the next line, and every reader treats a dead-pid lease
-    as litter within seconds. kpr-stale-03 was claimed by hand with its PR in
-    flight and reset to backlog by startup recovery 34 minutes later. The
-    promise now depends on whether the lease's session id is a REGISTERED,
-    heartbeating session, and the CLI says which case it is.
+    --release it". From a shell that was false: the lease recorded THIS
+    process's pid, which exits on the next line, and every reader treats a
+    dead-pid lease as litter within seconds. kpr-stale-03 was claimed by hand
+    with its PR in flight and reset to backlog by startup recovery 34 minutes
+    later. The 2026-09-02 fix made the CLI SAY which case it was; the advice it
+    gave -- export ICDEV_SESSION_ID -- was not one a shell could act on, and on
+    2026-09-03 an operator holding rmf-ui-13 by hand was overtaken anyway.
+
+    Now (mfx-own-02) the claim is handed to a KEEPER that registers its own
+    ``cli-claim-<id>-*`` session and heartbeats it. The CLI still reads the
+    verdict BACK from the lease and the registry rather than trusting the
+    keeper's report, and says which case it is.
     """
 
     @staticmethod
@@ -227,16 +250,31 @@ class TestClaimSaysWhatTheLeaseIsWorth:
         raw.commit()
         raw.close()
 
-    def test_an_unlinked_claim_is_reported_as_litter_in_waiting(self, ctx, monkeypatch, capsys):
+    def test_the_lease_is_bound_to_a_keeper_session_not_the_shell(self, ctx, monkeypatch, capsys):
         self._widen(ctx["db"])
-        monkeypatch.setattr(lease_liveness, "session_is_live", lambda sid: False)
+        monkeypatch.setattr(lease_liveness, "session_is_live", lambda sid: True)
         assert ctx["cli"].cmd_claim(TASK, json_out=False) == 0
-        assert _status(ctx["db"]) == "in_progress", "the claim itself still stands"
+        assert _status(ctx["db"]) == "in_progress"
+        holder = leases.holder(RESOURCE)
+        assert ctx["ic"].claim_session_for(TASK, holder["holder_session"]), holder
         out = capsys.readouterr().out
         assert "runner will skip this task until you --release it" not in out, (
             "the old promise is back, and it is false from a one-shot process"
         )
-        assert "litter" in out and "ICDEV_SESSION_ID" in out
+        assert "ICDEV_SESSION_ID" not in out, (
+            "exporting an id never registered it; that advice must not come back")
+
+    def test_an_unlinked_claim_is_reported_as_litter_in_waiting(self, ctx, monkeypatch, capsys):
+        """The keeper died before it could report -- the lease is bound to an id
+        nobody heartbeats, and the CLI must say so rather than promise."""
+        self._widen(ctx["db"])
+        monkeypatch.setattr(lease_liveness, "session_is_live", lambda sid: False)
+        monkeypatch.setattr(ctx["ic"], "spawn_keeper", lambda *_a: _dead_pid())
+        assert ctx["cli"].cmd_claim(TASK, json_out=False) == 0
+        assert _status(ctx["db"]) == "in_progress", "the claim itself still stands"
+        out = capsys.readouterr().out
+        assert "litter" in out and "keeper" in out
+        assert "honour this claim" not in out
 
     def test_a_session_linked_claim_is_reported_as_held(self, ctx, monkeypatch, capsys):
         self._widen(ctx["db"])
@@ -244,6 +282,7 @@ class TestClaimSaysWhatTheLeaseIsWorth:
         assert ctx["cli"].cmd_claim(TASK, json_out=False) == 0
         out = capsys.readouterr().out
         assert "honour this claim" in out and "heartbeats" in out
+        assert "keeper pid" in out and "--release" in out
 
     def test_json_output_carries_the_link_verdict(self, ctx, monkeypatch, capsys):
         self._widen(ctx["db"])
@@ -255,3 +294,4 @@ class TestClaimSaysWhatTheLeaseIsWorth:
         assert body["claimed"] is True
         assert body["session_linked"] is False
         assert body["holder_session"] == seen[0], "the verdict was asked about the lease's own session"
+        assert body["keeper"] == "running" and body["expires_at"]

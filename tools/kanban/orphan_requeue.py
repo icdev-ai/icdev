@@ -41,9 +41,9 @@ THE ACT IS prove -> requeue -> confirm, and every step is bounded.
            Never a raw UPDATE (which leaves ``last_failure_reason`` set and
            makes ``failure_triage`` read a clean requeue as a fresh failure) and
            never ``--set-status`` (which cannot write from a pipeline-owned
-           state). Actor ``kanban_stranded_reflex``; the guard's own parking
-           reason is quoted on the transition row, so the requeue is
-           attributable to the park it answers.
+           state). The transition row names the reflex that ACTUALLY acted
+           (``actor``, default :data:`ACTOR`) and quotes the guard's own parking
+           reason, so the requeue is attributable to the park it answers.
   cap      ``max_requeues_per_run`` (default 10) from the reflex's config
            block. The remainder is reported as ``deferred`` BY NAME, never
            dropped — the next daily run takes them, oldest park first.
@@ -101,19 +101,33 @@ NONE 4. Not one automated exit.
            unregistered directory under the repo describes the ENCLOSING
            checkout, so a dirty reading there is not even about the directory.
            Lease as above. ``None`` anywhere refuses.
-  audit    ONE ``worktree_cleaned`` row (actor ``kanban_stranded_reflex``,
-           action ``orphan_requeue.empty_checkout.intent``) BEFORE acting,
+  audit    ONE ``worktree_cleaned`` row (actor = the acting reflex, action
+           ``orphan_requeue.empty_checkout.intent``) BEFORE acting,
            raise_on_error=True. No row, no act: ``unaudited_refused``.
   apply    ``git worktree remove <path>`` (git's own, never rmtree, never
            ``--force``), then ``git branch -D`` on each LOCAL ref -- an origin
            branch is NEVER deleted here. Each step is confirmed by re-reading
            the world; ``applied_unconfirmed`` is never ``applied``.
-  requeue  through ``requeue_task`` with actor ``kanban_stranded_reflex``,
+  requeue  through ``requeue_task`` with the acting reflex as actor,
            under the SAME ``max_requeues_per_run`` cap as the orphan act (what
            it already requeued this run counts) and the same twice-parked-in-24h
            card rule.
 
-A library. Consumed by ``tools/genesis/reflexes/kanban_stranded_reflex.py``.
+THE CONSUMER MOVED (mfx-own-03). Both acts were reachable ONLY as downstream
+consumers of ``kanban_stranded_reflex``, whose audit walks every terminal task.
+MEASURED 2026-09-05: 3,892 ``done`` rows against the 2 ``validating`` rows these
+acts care about; that reflex's recorded durations run to 1200.2s against its own
+1200s watchdog; 242 recorded runs carry ``orphan_requeue`` ZERO times (5 of them
+since the acts landed); and three consecutive timeouts opened its breaker, after
+which ``tools/daemon/base.py`` skips it entirely. Of 73 lifetime guard parks the
+first exit was a HUMAN 63 times and that reflex ZERO times. So
+:func:`board_findings` derives the candidate set from ONE indexed board query
+and ``tools/genesis/reflexes/kanban_requeue_reflex.py`` runs both acts on a
+30-minute cadence with its own breaker. Neither proof was loosened, no budget
+was raised, and ``kanban_stranded_reflex`` is untouched -- it still calls both
+acts after its audit, which is now belt to the new consumer's braces.
+
+A library. Consumed by ``kanban_requeue_reflex`` and ``kanban_stranded_reflex``.
 ``python -m tools.kanban.orphan_requeue --plan [--json]`` re-derives BOTH proofs
 for every ``validating`` row and acts on nothing.
 """
@@ -153,7 +167,11 @@ GUARD_ACTORS = frozenset({
     "dispatch-admission",
 })
 
-#: Written as ``actor`` on the requeue transition, so the row says who did it.
+#: DEFAULT ``actor`` for the requeue transition. The row must say who ACTUALLY
+#: did it: both acts take an ``actor`` argument, and ``kanban_requeue_reflex``
+#: (mfx-own-03) passes its own name. Leaving every row stamped with the reflex
+#: that no longer runs the act would point a reader at a breaker-open reflex and
+#: an impossible row -- misattribution one layer inside a card about ownership.
 ACTOR = "kanban_stranded_reflex"
 
 #: Where a requeued orphan goes. ``scheduled`` rather than ``backlog``: the row
@@ -382,6 +400,7 @@ def act_on_orphans(
     lease_state: Callable[[str], Optional[str]] = _lease_state,
     requeue: Optional[Callable[..., Dict[str, Any]]] = None,
     file_card: Callable[[Dict[str, Any]], Optional[str]] = _file_card,
+    actor: str = ACTOR,
     now: Optional[datetime] = None,
 ) -> Dict[str, Any]:
     """Turn the audit's ``orphan_validating`` list into bounded, proven acts.
@@ -407,6 +426,14 @@ def act_on_orphans(
     except (TypeError, ValueError):
         cap = DEFAULT_MAX_REQUEUES_PER_RUN
     cap = max(cap, 0)
+
+    # An UNMEASURABLE candidate set is not an empty one (mfx-own-03): a board
+    # nobody could read must never be reported as a board with nothing to do.
+    if (findings or {}).get("state") == "unmeasurable":
+        return {"state": "unmeasurable", "candidates": None, "requeued": [],
+                "carded": [], "deferred": [], "refused": [], "cards": [],
+                "max_requeues_per_run": cap, "requeue_status": REQUEUE_STATUS,
+                "error": str((findings or {}).get("error") or "candidates unmeasurable")}
 
     ids = [f.get("id") for f in (findings or {}).get("orphan_validating", []) or []]
     ids = [i for i in ids if i]
@@ -485,7 +512,7 @@ def act_on_orphans(
             f"worktree, no live lease — requeued by kanban_stranded_reflex (kpr-stale-05)"
         )
         try:
-            res = requeue(tid, status=REQUEUE_STATUS, reason=reason, actor=ACTOR,
+            res = requeue(tid, status=REQUEUE_STATUS, reason=reason, actor=actor,
                           get_conn=get_conn)
         except Exception as exc:  # noqa: BLE001
             logger.warning("orphan_requeue: requeue of %s raised (%s)", tid, exc)
@@ -741,11 +768,16 @@ def prove_empty_checkout(
 # ── the act: audit -> remove -> delete -> confirm -> requeue ──────────────
 
 
-def _audit_event(phase: str, details: Dict[str, Any]) -> Any:
-    """ONE audit row per phase, fail-closed. Returns the entry id."""
+def _audit_event(phase: str, details: Dict[str, Any], actor: str = ACTOR) -> Any:
+    """ONE audit row per phase, fail-closed. Returns the entry id.
+
+    ``actor`` names the reflex that is ACTUALLY acting (mfx-own-03), not the
+    module: an assessor reading audit_trail must be able to go and look at that
+    reflex's state, and ``kanban_stranded_reflex`` no longer runs this act.
+    """
     from tools.audit.audit_logger import log_event
 
-    return log_event(AUDIT_EVENT_TYPE, ACTOR, f"{AUDIT_ACTION_PREFIX}.{phase}",
+    return log_event(AUDIT_EVENT_TYPE, actor, f"{AUDIT_ACTION_PREFIX}.{phase}",
                      details=details, raise_on_error=True)
 
 
@@ -880,9 +912,10 @@ def act_on_empty_checkouts(
     lease_state: Callable[[str], Optional[str]] = _lease_state,
     requeue: Optional[Callable[..., Dict[str, Any]]] = None,
     file_card: Callable[[Dict[str, Any]], Optional[str]] = _file_card,
-    audit: Callable[[str, Dict[str, Any]], Any] = _audit_event,
+    audit: Optional[Callable[[str, Dict[str, Any]], Any]] = None,
     remove_worktree: Callable[[Path, GitContext], Tuple[Optional[int], str]] = _remove_worktree,
     delete_branch: Callable[[str, GitContext], Tuple[Optional[int], str]] = _delete_local_branch,
+    actor: str = ACTOR,
     now: Optional[datetime] = None,
 ) -> Dict[str, Any]:
     """Turn the audit's ``validating_with_branch`` list into bounded, proven,
@@ -913,6 +946,12 @@ def act_on_empty_checkouts(
     cap = max(cap, 0)
     already = max(int(already_requeued or 0), 0)
 
+    # As above: unmeasurable candidates are not zero candidates (mfx-own-03).
+    if (findings or {}).get("state") == "unmeasurable":
+        return _unmeasurable_empty(
+            cap, already,
+            str((findings or {}).get("error") or "candidates unmeasurable"))
+
     ids = [f.get("id") for f in (findings or {}).get("validating_with_branch", []) or []]
     ids = [i for i in ids if i]
     out: Dict[str, Any] = {
@@ -925,6 +964,10 @@ def act_on_empty_checkouts(
     if not ids:
         return out
 
+    if audit is None:
+        # Bind the CALLER's actor onto the default writer, so the intent row and
+        # the transition row name the same reflex.
+        audit = lambda phase, details: _audit_event(phase, details, actor=actor)  # noqa: E731
     if ctx is None:
         ctx = GitContext(repo_root=BASE_DIR,
                          default_branch=(findings or {}).get("default_branch") or "main")
@@ -996,7 +1039,7 @@ def act_on_empty_checkouts(
         park = p["park"] or {}
         reason = _requeue_reason(park, res)
         try:
-            r = requeue(tid, status=REQUEUE_STATUS, reason=reason, actor=ACTOR,
+            r = requeue(tid, status=REQUEUE_STATUS, reason=reason, actor=actor,
                         get_conn=get_conn)
         except Exception as exc:  # noqa: BLE001
             logger.warning("orphan_requeue: requeue of %s raised (%s)", tid, exc)
@@ -1022,9 +1065,41 @@ def act_on_empty_checkouts(
 # ── --plan: re-derive both proofs, act on nothing ─────────────────────────
 
 
-def plan(get_conn: Optional[Callable[[], Any]] = None,
-         ctx: Optional[GitContext] = None) -> Dict[str, Any]:
-    """Every ``validating`` row through BOTH proofs. Writes nothing."""
+def board_findings(get_conn: Optional[Callable[[], Any]] = None,
+                   default_branch: str = "main") -> Dict[str, Any]:
+    """The acts' candidate set, derived from the BOARD and from nothing else
+    (mfx-own-03).
+
+    Both acts were reachable only as consumers of ``stranded_audit``, which
+    walks EVERY terminal task -- 3,892 ``done`` rows on the live board against
+    the 2 ``validating`` rows these acts care about -- comparing divergent
+    branches by patch-id. Measured 2026-09-05: median recorded reflex run
+    300.0s, max 1200.2s against a 1200s watchdog; 242 recorded runs carry
+    ``orphan_requeue`` ZERO times; three consecutive timeouts then opened the
+    circuit breaker, after which the daemon SKIPS the reflex entirely. The act
+    was built, registered and unreachable -- this repo's signature defect one
+    layer in.
+
+    Nothing about the act needs the audit. Its candidates are ONE indexed query.
+    Both keys carry the SAME rows on purpose: ``orphan_validating`` and
+    ``validating_with_branch`` are the audit's partition of one population by
+    "does a branch exist", and each act RE-DERIVES that itself
+    (:func:`prove` refuses ``branch_exists``; :func:`prove_empty_checkout`
+    requires a branch that is provably empty). Partitioning here would be a
+    second opinion on a question the proofs already own.
+
+    UNMEASURABLE, never a clean empty list: an unreadable board returns
+    ``state: "unmeasurable"`` with both lists ``None``, so a caller cannot read
+    "could not look" as "nothing to do".
+    """
+    out: Dict[str, Any] = {
+        "state": "measured",
+        "source": "board",
+        "default_branch": default_branch,
+        "orphan_validating": None,
+        "validating_with_branch": None,
+        "error": None,
+    }
     if get_conn is None:
         from tools.db.storage import get_connection as get_conn  # noqa: F811
     try:
@@ -1039,10 +1114,25 @@ def plan(get_conn: Optional[Callable[[], Any]] = None,
             except Exception:  # noqa: BLE001
                 pass
     except Exception as exc:  # noqa: BLE001
-        return {"state": "unmeasurable", "error": str(exc), "rows": []}
+        logger.warning("orphan_requeue: board unreadable — candidates unmeasurable (%s)", exc)
+        out["state"] = "unmeasurable"
+        out["error"] = str(exc)
+        return out
+    out["orphan_validating"] = rows
+    out["validating_with_branch"] = list(rows)
+    return out
+
+
+def plan(get_conn: Optional[Callable[[], Any]] = None,
+         ctx: Optional[GitContext] = None) -> Dict[str, Any]:
+    """Every ``validating`` row through BOTH proofs. Writes nothing."""
+    if get_conn is None:
+        from tools.db.storage import get_connection as get_conn  # noqa: F811
     ctx = ctx or GitContext(repo_root=BASE_DIR)
-    findings = {"default_branch": ctx.default_branch,
-                "orphan_validating": rows, "validating_with_branch": rows}
+    findings = board_findings(get_conn=get_conn, default_branch=ctx.default_branch)
+    if findings["state"] == "unmeasurable":
+        return {"state": "unmeasurable", "error": findings["error"], "rows": []}
+    rows = findings["orphan_validating"]
     orphan = act_on_orphans(findings, {}, get_conn=get_conn,
                             requeue=lambda *a, **k: {"requeued": False, "error": "dry_run"},
                             file_card=lambda spec: None)

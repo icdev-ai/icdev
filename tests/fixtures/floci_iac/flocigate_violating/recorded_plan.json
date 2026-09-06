@@ -1,0 +1,65 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.9.8",
+  "_recorded_for": "flx-ci-01. A REAL `terraform show -json` capture, recorded from a live run of tools/ci/floci_iac_gate.py against floci/floci:2.0.1 on 2026-09-05 (terraform 1.9.8, hashicorp/aws 5.x). It is here so tests/ci/test_floci_iac_gate.py can prove the two fixtures land on OPPOSITE sides of tools/infra_canvas/preapply_gate.py with no Docker and no network. The LIVE job re-derives the plan from the .tf every run and is the independent check on this file; drift between the two is what .github/workflows/floci-iac-gate.yml exists to find.",
+  "resource_changes": [
+    {
+      "address": "aws_s3_bucket.untagged",
+      "mode": "managed",
+      "type": "aws_s3_bucket",
+      "name": "untagged",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "bucket": "icdev-flocigate-violating",
+          "force_destroy": false,
+          "tags": null,
+          "timeouts": null
+        },
+        "after_unknown": {
+          "acceleration_status": true,
+          "acl": true,
+          "arn": true,
+          "bucket_domain_name": true,
+          "bucket_prefix": true,
+          "bucket_regional_domain_name": true,
+          "cors_rule": true,
+          "grant": true,
+          "hosted_zone_id": true,
+          "id": true,
+          "lifecycle_rule": true,
+          "logging": true,
+          "object_lock_configuration": true,
+          "object_lock_enabled": true,
+          "policy": true,
+          "region": true,
+          "replication_configuration": true,
+          "request_payer": true,
+          "server_side_encryption_configuration": true,
+          "tags_all": true,
+          "versioning": true,
+          "website": true,
+          "website_domain": true,
+          "website_endpoint": true
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "cors_rule": [],
+          "grant": [],
+          "lifecycle_rule": [],
+          "logging": [],
+          "object_lock_configuration": [],
+          "replication_configuration": [],
+          "server_side_encryption_configuration": [],
+          "tags_all": {},
+          "versioning": [],
+          "website": []
+        }
+      }
+    }
+  ]
+}

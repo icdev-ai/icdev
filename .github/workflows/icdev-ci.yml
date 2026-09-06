@@ -7,6 +7,33 @@ on:
   pull_request:
     branches: [master, main]
 
+# ONE RUN PER REF, and a newer push cancels the older run (mfx-ci-02).
+# MEASURED 2026-09-03 23:30-00:30 UTC: eight ICDEV CI runs queued behind one in
+# progress (the account's job cap makes a ~19-job run effectively serial), and
+# two of them were for commits a newer push on the same branch had ALREADY
+# superseded. An operator cancelled the dead runs by hand to move a green PR
+# forward ~35 minutes. This file declared no `concurrency:` at all.
+#   * `github.ref`, so a `pull_request` run (refs/pull/N/merge) and a `push`
+#     run (refs/heads/<branch>) for the same commit sit in DIFFERENT groups and
+#     never cancel each other -- they report different checks.
+#   * Prefixed with the workflow name, so another workflow that later adopts a
+#     concurrency group cannot land in this one and cancel a CI run.
+#   * main INCLUDED: a superseded main run is dead too. The consumers that read
+#     main runs were checked -- shard-timings.yml asks for `--status success`
+#     (a cancelled run is never read as a measurement, and it is not a failure
+#     either: crx-test-06's five outcomes keep `cancelled` apart), and
+#     e2e_flake_survey counts `cancelled` separately. merge_readiness and the
+#     done door read the PR's status rollup, which GitHub scopes to the HEAD
+#     sha, so the cancelled run on the OLD sha is never seen by the new one.
+#   * The `test` / `e2e` aggregators keep `if: always()` and so still run on a
+#     cancelled run, reporting `!= success` against the dead sha. That is the
+#     correct reading: a cancelled run is not green.
+# Workflow-level ONLY. A job-level `concurrency:` would carve that job out of
+# this group; tests/ci/test_ci_concurrency.py refuses one.
+concurrency:
+  group: icdev-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   # Absolute checkout root keeps Python imports stable even if a step changes
   # cwd. The relative "." broke coherence/RLS checks on runners where the
@@ -38,6 +65,32 @@ jobs:
       - name: Ruff lint
         working-directory: ${{ github.workspace }}
         run: python -m ruff check tools/ tests/ --select E,F,W --ignore E402,E501,E701,E702,E721,E722,E731,E741,F404
+      # Every Playwright spec must PARSE, and it must fail in the REQUIRED set
+      # (mfx-ci-01). The #2052 squash left tests/e2e/key_pages_smoke.spec.ts
+      # unparseable; Playwright loads every spec before running one, so ALL FOUR
+      # E2E shards on main failed at collection with 0 tests executed -- for
+      # hours, because `E2E (Playwright)` is not a required check and nothing
+      # parses .ts at commit time. `--list` loads and transforms every spec with
+      # no browser and no dashboard (`webServer` and globalSetup are skipped for
+      # --list; ICDEV_NO_SERVER makes that explicit), ~2.15s median over five
+      # warm runs (1.94-2.61s) measured 2026-09-04. It is a PARSE gate only: `forbidOnly` is not applied
+      # to `--list` (probed: a `test.only` lists clean under CI=1), so a stray
+      # `.only` is still the E2E job's to refuse.
+      # SURVEYED over the last 200 first-parent commits on main:
+      # 22 touched tests/e2e, 2 fail `--list` -- #2052 and the #2051 merge that
+      # landed on top of it, the same broken file -- and 0 routine refusals.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - name: Install Node dependencies (Playwright runner only; no browsers)
+        run: npm ci
+      - name: Playwright specs parse (`--list`, no browser, no server)
+        working-directory: ${{ github.workspace }}
+        env:
+          ICDEV_E2E_ENV_DIAG: "0"
+          ICDEV_NO_SERVER: "1"
+        run: npx playwright test --list
 
   # ── Tier 1: Unit Tests (pure Python — no LLM) ───────────────────────────
   # ── Tier 1: the gates that run ONCE, not once per shard ──────────────────
@@ -96,6 +149,46 @@ jobs:
       - name: Swallowed-INSERT gate
         working-directory: ${{ github.workspace }}
         run: python tools/dev/check_swallowed_inserts.py
+      # mfx-sib-02. The Compliance dropdown's active-path list and the
+      # `- Pages:` line in .claude/commands/start.md are both DERIVED, and both
+      # checks run HERE rather than in `lint` for the SAME reason the
+      # swallowed-INSERT gate above does: `lint` installs only ruff, and both
+      # halves import `icdev.core.paths` through `tools/__init__.py`. Measured
+      # on run 33946644203 -- the nav half in `lint` died on
+      # `ModuleNotFoundError: No module named 'icdev.core.paths'`, i.e. it
+      # failed for the wrong reason. icdev-core is a GIT dependency, not a PyPI
+      # one, so installing it into a 30-second linting job would buy fast
+      # feedback with a network clone and another failure surface. The fast
+      # local feedback comes from .githooks/pre-commit instead, which runs the
+      # nav half in milliseconds and only when the commit stages one of the
+      # four files that can change the answer.
+      #
+      # The cheap half runs FIRST so a hand-edited nav block reds the job
+      # without paying for an app import.
+      #
+      # Exit codes are load-bearing: 0 clean, 1 a hand edit has drifted from the
+      # derivation, 2 the check could not be produced. Do NOT add `|| true` --
+      # a 2 must stay red, because a generator whose config or markers vanished
+      # reporting "no drift" is exactly the failure this gate exists to close.
+      - name: Derived nav paths (Compliance dropdown)
+        working-directory: ${{ github.workspace }}
+        run: python tools/dashboard/nav_paths.py --check --nav-only
+      # The expensive half: the Pages line is derived from the app's url_map,
+      # which means creating the app (~16s measured).
+      #
+      # The probe runs in a SUBPROCESS WITH A SCRUBBED ENVIRONMENT: which
+      # blueprints register depends on .env toggles, and the same checkout
+      # measured 4568 rules under one operator's ambient environment and 2370
+      # under a bare one (2026-09-04). Every component in
+      # args/component_registry.yaml is forced ON, so a runner with no .env and
+      # a workstation with a full one derive the same list.
+      #
+      # `--pages-only` -- the nav half already ran in the step above, and
+      # running it twice for one answer is what sharding the gates was meant to
+      # stop.
+      - name: Derived start.md Pages line (url_map)
+        working-directory: ${{ github.workspace }}
+        run: python tools/dashboard/nav_paths.py --check --pages-only
       # idp-score-01-d4. A SMOKE gate, not a quality bar: it proves the sweep
       # walks all ~68 components in args/component_registry.yaml and produces a
       # verdict for each without raising. --dry-run writes nothing, so this
@@ -1096,33 +1189,42 @@ jobs:
           trap _abort SIGTERM SIGINT
           npx playwright test --shard=${{ matrix.shard }}/${{ strategy.job-total }}
       - name: Run DWO V&V specs (dwo-vv-03-d5)
-        # The three DWO V&V specs live in tests/e2e/ and are collected by the
-        # sweep above, but each self-skips unless its own env var is set. They are
-        # held out of that sweep deliberately: dwo_restart_durability spawns a
-        # dashboard on a free port, kills it, and starts it again, which does not
-        # belong in an invocation that ~800 other tests share. Giving them their
-        # own `npx playwright test` call is the wiring dwo-vv-03-d5 asks for — CI
-        # exercises all three, and the shared sweep is untouched.
+        # These DWO V&V specs live in tests/e2e/ and are collected by the sweep
+        # above, but self-skip unless their own env var is set. They are held out
+        # of that sweep deliberately, and the reason is PROCESS OWNERSHIP:
+        # dwo_restart_durability spawns a dashboard on a free port, kills it, and
+        # starts it again, which does not belong in an invocation that ~800 other
+        # tests share; dwo_trigger_linkage owns a gateway probe of its own. Giving
+        # them their own `npx playwright test` call is the wiring dwo-vv-03-d5
+        # asks for — CI exercises them, and the shared sweep is untouched.
         #
-        # This runs BEFORE "Stop dashboard server" on purpose: dwo_mcp_step_execution
-        # and dwo_trigger_linkage drive the job's dashboard through baseURL.
-        # ICDEV_NO_SERVER=1 is inherited from the job env, so Playwright starts no
-        # second server of its own.
+        # dwo_mcp_step_execution IS DELIBERATELY NO LONGER LISTED HERE. Its guard
+        # was about the BACKEND, not process ownership, and that premise expired
+        # when e2p-back-03 unpinned sqlite; the guard is gone and the sweep now
+        # runs the spec like any other. Listing it here too would run it twice per
+        # job and five times per CI run. The evidence for dropping the guard is
+        # the record THIS STEP produced — it passed here, on PostgreSQL, on all
+        # four shards, while the sweep beside it skipped the same file. Do not
+        # re-add it; the full measurement is in the spec's describe block.
+        #
+        # This runs BEFORE "Stop dashboard server" on purpose: dwo_trigger_linkage
+        # drives the job's dashboard through baseURL. ICDEV_NO_SERVER=1 is
+        # inherited from the job env, so Playwright starts no second server of its
+        # own.
         #
         # ICDEV_PW_RUN_TAG gives this invocation its own report + artifact paths.
         # Without it Playwright would clear outputDir and overwrite the
         # results.json the sweep just wrote, and the uploaded artifact would
         # describe only this handful of specs.
         #
-        # Expected today: dwo_mcp_step_execution and dwo_restart_durability PASS;
-        # dwo_trigger_linkage SKIPS at its probe until dwo-evt-04 registers
-        # /api/studio/event-sources and /api/studio/triggers. A skip is a pass to
-        # `playwright test`, so this step goes green now and starts exercising the
-        # trigger path for real the moment that surface merges — no edit here.
+        # Expected today: dwo_restart_durability PASSES; dwo_trigger_linkage SKIPS
+        # at its probe until dwo-evt-04 registers /api/studio/event-sources and
+        # /api/studio/triggers. A skip is a pass to `playwright test`, so this step
+        # goes green now and starts exercising the trigger path for real the moment
+        # that surface merges — no edit here.
         env:
           ICDEV_E2E_DWO_RESTART: "1"
           ICDEV_E2E_DWO_TRIGGER: "1"
-          ICDEV_E2E_DWO_MCP: "1"
           ICDEV_PW_RUN_TAG: dwo
         run: |
           _abort() {
@@ -1134,7 +1236,6 @@ jobs:
           trap _abort SIGTERM SIGINT
           npx playwright test \
             tests/e2e/dwo_restart_durability.spec.ts \
-            tests/e2e/dwo_mcp_step_execution.spec.ts \
             tests/e2e/dwo_trigger_linkage.spec.ts
       - name: Stop dashboard server
         if: always()

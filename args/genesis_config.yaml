@@ -662,6 +662,42 @@ reflexes:
       threshold: 0
       operator: gte
 
+  # mfx-own-03: the act ABOVE, given a consumer the audit above cannot starve.
+  # MEASURED 2026-09-05 on the live board: `kanban_stranded_reflex` walks 3,892
+  # `done` rows to reach the 2 `validating` rows these acts care about; its
+  # recorded durations run to 1200.2s against its own 1200s watchdog; 242
+  # recorded runs carry `orphan_requeue` ZERO times, five of them since the act
+  # landed; and three consecutive timeouts opened its breaker on 2026-09-04,
+  # after which tools/daemon/base.py skips it entirely. Of 73 lifetime guard
+  # parks the first exit was a human 63 times and that reflex zero times.
+  # This one runs the SAME two proofs from tools/kanban/orphan_requeue.py over
+  # candidates read straight off the board -- one indexed query -- so a park is
+  # answered in minutes and an audit that legitimately times out trips only its
+  # OWN breaker. Do NOT re-couple them, and do NOT respond to a park by raising
+  # the guard's 30s worktree timeout: the guard's own comment forbids hiding
+  # the cause, and a longer timeout only widens the window.
+  kanban_requeue_reflex:
+    enabled: true
+    risk_tier: green
+    schedule: "every 30m"
+    interval_seconds: 1800
+    # Seconds of work, not minutes: one `SELECT ... WHERE status='validating'`
+    # plus a handful of git probes per candidate. The default budget is ample;
+    # it is stated so a future candidate burst cannot silently run past it.
+    timeout_seconds: 300
+    # Shared by BOTH acts, exactly as in the block above: what the orphan act
+    # requeues this cycle counts against the empty-checkout act. The remainder
+    # is reported as `deferred` BY NAME and taken next cycle, oldest park first.
+    # A row parked twice by the same guard within 24h is CARDED, never requeued
+    # a third time -- a recurring park is the cause, and the card carries the
+    # guard's own refusal text verbatim.
+    max_requeues_per_run: 10
+    description: "Requeue a proven guard-parked `validating` row (no branch/worktree/live lease, or a provably empty checkout) through requeue_task -- candidates read from the board, never from the whole-board stranded audit"
+    success_metric:
+      name: parked_rows_requeued
+      threshold: 0
+      operator: gte
+
   detector_findings_reflex:
     enabled: true
     risk_tier: green
@@ -805,6 +841,34 @@ reflexes:
       name: tasks_activated
       threshold: 0
       operator: gte
+    # mfx-sib-01 — refuse to dispatch a card while a SIBLING in its own epic is
+    # in_progress/pr_opened and the two cards' DECLARED artifact paths overlap
+    # on a NON-ADDITIVE file. The merge door has serialized siblings since
+    # hold_on_sibling_conflict; dispatch did not, so ten rmf-ui-* cards were
+    # built concurrently on 2026-09-03/04 and every one but the first landed
+    # CONFLICTING — four pr_watcher.rebase_failed rows and five burned LLM
+    # resumes per card, then a human unioned the hunks by hand, ten times.
+    #
+    # A hold is a WAIT, not a park: the card stays `scheduled`, yields its
+    # selection slot, and is re-evaluated next cycle.
+    #
+    # SURVEYED BEFORE ARMING — 30 days to 2026-09-04, 1,977 scheduler dispatches
+    # (python -m tools.kanban.sibling_overlap --survey):
+    #
+    #     with an in-flight same-epic sibling      451    23.07%
+    #     HELD (declared paths overlap)             21     1.06%
+    #     ... of the holds, later conflicted        18    85.71%
+    #     rmf-ui cards held                         10    all ten
+    #
+    # 1.06% is below the 1.63% CLAUDE.md calls refusing routine work, and under
+    # the 2% this card set. The cost is three named holds — cef-bck-01,
+    # rmf-ui-14, rmf-ui-15 (0.15% of dispatches) — delayed a cycle for a
+    # collision that would not have happened.
+    #
+    # Stand it down with KANBAN_SERIALIZE_SIBLINGS=0, never a shell neutraliser.
+    # Re-survey before changing this; do NOT widen the additive-path list to
+    # quieten a hold — that list is shared with the merge door.
+    serialize_overlapping_siblings: true
 
   remediation_lens:
     enabled: true
@@ -1288,6 +1352,33 @@ reflexes:
     topology_id: null        # topology discovered devices are attributed to
     timeout: 1.0             # per-host seconds
     hop_limit: 0             # neighbour-crawl depth; 0 = no crawl
+    dry_run: false
+
+  ato_evidence_cycle:
+    timeout_seconds: 900     # a static STIG sweep of a large source tree
+    enabled: true
+    risk_tier: green         # read-only static analysis of the deployment's own source
+    schedule: "every 24h"
+    interval_seconds: 86400  # matches CADENCE_HOURS = 24 in the reflex module
+    cooldown_minutes: 120
+    success_metric:
+      name: artifacts_produced
+      threshold: 0        # >= 0 -- a cycle that correctly REFUSED every producer
+                          # (no project registered, no directory, no open
+                          # findings to derive a POA&M from) produced 0 artifacts
+                          # and is a healthy cycle, not a failure. It reports
+                          # `unmeasured`, which is what says so.
+      operator: gte
+    description: "The CALLER the ATO evidence stack never had (rmf-inert-02): runs stig_checker over each registered project's real source, derives a POA&M from the OPEN findings, and files both as cATO evidence -- so an rmf_workflow_stages row is a consequence of an artifact. Every producer is gated on a probe of its own input substrate and a producer with no input is REFUSED with the substrate named, never run. ssp_generator and oscal_generator are deliberately deferred while project_controls is empty. Reports `unmeasured` when nothing was produced -- never a clean run it did not make."
+    projects: []             # project ids. EMPTY = every registered project.
+    stig_id: webapp          # STIG template id
+    max_projects_per_cycle: 5
+    collect_evidence: true   # file produced artifacts as cato_evidence
+    # NOT the producers' default of <directory_path>/compliance/, which for this
+    # deployment's own project is tools/compliance/ -- inside the TRACKED source
+    # tree, which the auto-commit hook sweeps. Relative paths resolve against
+    # the repo root; an absolute path is honoured as given.
+    artifact_dir: data/compliance
     dry_run: false
 
   ndc_topology_drift:
@@ -1916,6 +2007,35 @@ reflexes:
       name: leases_reaped
       threshold: 0
       operator: gte          # informational - 0 is a clean sweep OR unmeasurable; `status` says which
+
+  ci_runner_health:
+    enabled: true
+    risk_tier: green
+    schedule: every 15m
+    interval_seconds: 900
+    timeout_seconds: 600     # a confirm waits up to 90s per act, two acts per run
+    a2a_eligible: false
+    dry_run: false
+    # Acts one cycle may PERFORM. Further proven candidates are reported
+    # `deferred`, never dropped. The fleet declaration (repos, compose dirs,
+    # container/runner/project names, NO token) is args/ci_runners.yaml.
+    max_reregistrations_per_run: 2
+    description: >-
+      CI runner health (mfx-boot-02). A self-hosted runner whose registration
+      token expired crash-loops in Restarting (1) while the forge lists it
+      offline and every job in that repo QUEUES with no red anywhere -
+      measured 2026-09-03 and twice before, recovered by hand each time. Each
+      run intersects the forge's offline set with docker's Restarting set; a
+      container in BOTH whose log carries a registration-failure signature is
+      re-registered through one docker compose up -d with a token minted at
+      that moment and handed over in the environment only. A container in only
+      one set is reported, never touched. Audited before acting, bounded,
+      cooled per container, and unmeasurable - never ok - when gh or docker
+      cannot answer.
+    success_metric:
+      name: runners_reregistered
+      threshold: 0
+      operator: gte          # informational - 0 is a healthy fleet OR unmeasurable; `status` says which
 
 # ── Reflex Health & Alerting (crx-gen-02) ────────────────────────────────────
 # Turns critical-reflex failures into operator alerts on the /monitoring page

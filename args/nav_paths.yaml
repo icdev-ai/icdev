@@ -1,0 +1,114 @@
+# CUI // SP-CTI
+# nav_paths — the two shared nav surfaces that nothing used to generate.
+#
+# Consumed by tools/dashboard/nav_paths.py (and its icdev/ mirror).
+#
+# WHAT THIS FILE IS NOT: it is not the list. The lists in base.html and
+# start.md are DERIVED — from the dropdown's own menu links, from the 301
+# redirects app.py declares, and from the app's url_map. This file declares
+# only WHERE to look and the residue the derivation provably cannot see.
+
+# ── The active-path list on a nav dropdown trigger ───────────────────────────
+#
+# `request.path in [...]` answers one question: am I on a page THIS menu links
+# to? So the list is derived from the menu's own <a href> values, plus every
+# legacy path that 301-redirects to one of them — which is exactly the pair of
+# tokens a route-migration card used to append by hand
+# (`/boundary/control-inheritance` and `/control-inheritance`).
+#
+# The `startswith(...)` clauses stay hand-written in the {% if %}, OUTSIDE the
+# generated block. A prefix is a policy decision ("everything under the
+# Security canvas counts as Compliance"); an enumeration is a fact about the
+# menu. Only the fact is generated.
+nav:
+  # Files carrying a generated block. Both copies are written identically —
+  # the icdev/ mirror is not optional (CLAUDE.md: 8-point page gate, item 2).
+  targets:
+    - tools/dashboard/templates/base.html
+    - icdev/tools/dashboard/templates/base.html
+
+  # Where the 301 aliases are declared. Restricted, deliberately, to the
+  # dashboard factory: every legacy→canvas redirect in this tree lives there,
+  # and a wider walk would sweep in dynamic-target redirects
+  # (tools/aiify/blueprint.py, tools/simulation/blueprint.py) whose destination
+  # is not a literal and so cannot be resolved statically.
+  redirect_sources:
+    - tools/dashboard/app.py
+
+  dropdowns:
+    compliance:
+      # The trigger's rendered label. Used to locate the <li class="nav-dropdown">
+      # whose <ul class="nav-dropdown-menu"> supplies the menu links.
+      anchor: "Compliance"
+      # The Jinja variable the {% if %} reads.
+      variable: compliance_active_paths
+
+      # Legacy tokens that are NEITHER a menu link NOR a 301 alias of one.
+      #
+      # These were in the hand-written list and the derivation cannot see them,
+      # because the Compliance menu does not link to them and nothing
+      # redirects to them. They are carried here so this change alters NO
+      # highlight behaviour — and carried WITH A REASON, in a file a reviewer
+      # reads, rather than lost inside a template attribute.
+      #
+      # Deleting one is a deliberate product decision, not a merge accident.
+      extra_paths:
+        - path: /analytics
+          reason: >-
+            Platform Analytics. Also enumerated by the More dropdown, so both
+            triggers highlight today. Kept to preserve behaviour; whoever
+            decides Analytics belongs to one menu should delete it here.
+        - path: /iac
+          reason: >-
+            Infrastructure as Code. Highlighted Compliance before this card
+            though the menu has never linked to it. Kept to preserve behaviour.
+        - path: /migration
+          reason: >-
+            Legacy modernization. Same shape as /iac — highlighted, never
+            linked. Kept to preserve behaviour.
+        - path: /migration-cost
+          reason: >-
+            Migration cost model. Same shape as /iac. Kept to preserve
+            behaviour.
+
+# ── The `- Pages:` line in .claude/commands/start.md ─────────────────────────
+#
+# Derived from the app's url_map, read in a SCRUBBED SUBPROCESS. It has to be
+# scrubbed: which blueprints register depends on .env toggles, and the same
+# checkout measured 4568 rules under one operator's ambient environment and
+# 2370 under a bare one (2026-09-04). A `--check` that inherited the ambient
+# environment would pass or fail according to whose shell ran it.
+#
+# Every component in args/component_registry.yaml is forced ON for the probe,
+# so the documented list is the SUPERSET of pages the platform can serve
+# rather than a snapshot of one machine's toggles.
+pages:
+  target: .claude/commands/start.md
+
+  # Environment variables passed through to the probe. Platform location only —
+  # none of these selects a blueprint. APPDATA/USERPROFILE are load-bearing on
+  # Windows: icdev-core installs into the per-user site-packages directory and
+  # the probe cannot import icdev.core.paths without them.
+  passthrough_env:
+    - PATH
+    - SYSTEMROOT
+    - COMSPEC
+    - APPDATA
+    - LOCALAPPDATA
+    - USERPROFILE
+    - HOME
+    - TEMP
+    - TMP
+    - LANG
+    - LC_ALL
+
+  # Applied on top of the passthrough set.
+  probe_env:
+    PYTHONIOENCODING: "utf-8"
+    ICDEV_STORAGE_BACKEND: sqlite
+    # A page is a GET rule a human can open. `/api/` rules are the machine
+    # surface and are documented by the OpenAPI builder, not by this bullet.
+  exclude_rule_substrings:
+    - /api/
+  exclude_endpoints:
+    - static

@@ -14,7 +14,9 @@ from pathlib import Path
 from typing import Optional
 
 from tools.studio.sim.base_topology import (
-    BaseTopologyBuilder, DockerServiceSpec, LinkSpec, NodeSpec, ProbeSpec, TopologySpec,
+    CANVAS_EMULATOR_HOST_PORTS, EMULATOR_CONTAINER_PORT, EMULATOR_IMAGE,
+    BaseTopologyBuilder, DockerServiceSpec, LinkSpec, NodeSpec, ProbeSpec,
+    TopologySpec, emulator_health_url,
 )
 
 
@@ -150,17 +152,18 @@ class OHCTopologyBuilder(BaseTopologyBuilder):
             probes=[
                 ProbeSpec(name="topology_deployed", type="topology_deployed"),
                 ProbeSpec(name="link_count",        type="link_count", expected_value=len(links)),
-                ProbeSpec(name="localstack_apply",  type="localstack_apply"),
+                ProbeSpec(name="emulator_apply",  type="emulator_apply"),
                 ProbeSpec(name="ops_fabric_ready",  type="tcp_connect",
-                          target_node="ops-fabric", port=4571),
+                          target_node="ops-fabric",
+                          port=CANVAS_EMULATOR_HOST_PORTS["ohc"]),
             ],
             docker_services=[
                 DockerServiceSpec(
-                    name="icdev-localstack-ohc",
-                    image="localstack/localstack:3.8",
-                    ports={4571: 4566},
+                    name="icdev-floci-ohc",
+                    image=EMULATOR_IMAGE,
+                    ports={CANVAS_EMULATOR_HOST_PORTS["ohc"]: EMULATOR_CONTAINER_PORT},
                     env={"DEFAULT_REGION": "us-east-1"},
-                    healthcheck_url="http://localhost:4571/_localstack/health",
+                    healthcheck_url=emulator_health_url(CANVAS_EMULATOR_HOST_PORTS["ohc"]),
                 ),
             ],
             metadata={

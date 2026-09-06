@@ -545,3 +545,30 @@ exemptions:
       weakened to match broken code, so this is not the pattern for the next
       one. GATED by the same change
       (args/ci_test_files/core.d/task-det-b7acdb6a2f.txt).
+  - pattern: "tests/cloud/test_floci_container_docker.py"
+    reason: >-
+      A LIVE CHARACTERIZATION OF AN EXTERNAL ARTIFACT, and the merge base has
+      the same one, so a red-first proof cannot be produced by construction.
+      This file's subject is not code this PR changes: it starts the pinned
+      floci/floci container and asserts the seam's ALREADY-SHIPPED constants are
+      RIGHT -- that emulator.IMAGE's tag actually resolves and runs, that
+      HEALTH_PATH (/_localstack/health, the drop-in-compat alias) is a route
+      floci really serves, that us-gov-west-1 is accepted where the
+      testcontainers module defaults to us-east-1, that a governed broker.fetch
+      returns the emulator's own rows, and that a twin resource_count counts
+      something real. Those constants landed in flx-seam-01/flx-bridge-02/
+      flx-twin-01 and are unchanged here, and the emulator is the same image at
+      both trees, so the file passes at the merge base for the same reason it
+      passes here -- it is measuring the world, not a diff. Its value is
+      FORWARD-looking and cannot be back-dated: it goes red the day a pinned tag
+      stops resolving, a health route is renamed, the region is rejected, or the
+      governed read stops returning rows -- none of which any stubbed test in
+      the tree can see, which is the whole reason the file exists.
+      NOT A PRECEDENT FOR A TEST-ONLY REPAIR. The discriminating proof for what
+      this PR actually CHANGES is tests/cloud/test_floci_docker_split_is_lawful.py
+      in the same change (9 failed at the merge base, 44 pass here), which is
+      what pins the exclusion, the declared dependency, the CI job, the refusal
+      of a skipped run, and the standing guard that the gated half stays
+      Docker-free. Scoped to this ONE file, which is deliberately EXCLUDED from
+      the merge gate in args/test_gating_gate.yaml and runs only in the
+      docker-suite job of .github/workflows/floci-iac-gate.yml.

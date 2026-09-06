@@ -164,6 +164,14 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # that cost was knowable, and the avoided calls cannot be re-derived
         # because they already did not happen. A correction is a new row.
         "llm_cache_savings_ledger",
+        # rmf-vis-01, migration 20260902223458. One row per (fabric,
+        # measurement) of what the discovery stack could SEE at a moment.
+        # An RMF/cATO package's coverage history IS this series, and it is not
+        # re-derivable -- re-running the measurement tomorrow answers a
+        # different question. An UPDATE here would rewrite what visibility was
+        # on the day an assessor asked, which is the one moment it mattered.
+        # A correction is a new snapshot.
+        "asset_visibility_snapshots",
         # === CHILD-INHERITABLE (copied to child apps via step_09c) ===
         # Core audit
         "audit_trail",

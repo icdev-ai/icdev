@@ -80,12 +80,117 @@ def _extract_hosts(text: str) -> set[str]:
     return {m.group(1).lower() for m in _HOST_RE.finditer(text)}
 
 
+def _emulator_runtime_image_violations(
+    target: Any,
+    rule: dict,
+    *,
+    severity: str,
+    source_canvas: str | None,
+    runtime_image_probe: Any = None,
+    registry_config: Any = None,
+) -> list[dict]:
+    """Blockers for emulator base images that would be PULLED at run time (flx-airgap-02).
+
+    THE DEFECT NO STRING MATCHER CAN SEE. Every other rule here is
+    deny-by-match over text the target CONTAINS. floci's container-backed
+    services (Lambda, RDS, ElastiCache, OpenSearch, MSK, ECS/EC2/EKS) do not
+    carry their runtimes inside the floci image — each starts a separate
+    container from a base image floci resolves at RUN TIME, on first use, from
+    the public internet. A config declaring a Lambda contains no image
+    reference at all, so there is no string to deny. This derives the required
+    set from the declared services instead and asks whether the local cache
+    already holds it.
+
+    THE FOUR OUTCOMES ARE KEPT APART, because they need different repairs:
+
+      ``blocked``        a required image is PROVEN absent (or present at a
+                         different digest). A run-time pull WILL be attempted.
+                         Emitted at the config's ``severity``
+                         (``deployment_blocker`` -> ``blocker``). THE FINDING.
+      ``indeterminate``  a container-backed service is declared whose variant
+                         could not be resolved — a Lambda naming no runtime, an
+                         RDS naming no engine. We cannot say which image it
+                         needs, and guessing fabricates either a blocker or a
+                         clean bill. Emitted at ``unmeasured_severity``.
+      ``unmeasured``     the daemon could not be asked at all. PROVES NOTHING,
+                         so it must not block every CI runner and reviewer
+                         laptop — that is how a gate earns a ``|| true``.
+                         Emitted at ``unmeasured_severity``, never dropped.
+      ``satisfied``      every required image is already cached. NO violation,
+                         which is the negative direction the tests assert.
+
+    ``runtime_image_probe`` is injectable so a caller (and a test) can state a
+    cache rather than depend on whatever this host happens to hold.
+    """
+    rid = rule.get("id", "airgap-emulator-runtime-images")
+    category = rule.get("category", "security")
+    recommendation = rule.get(
+        "recommendation",
+        "Pre-populate the local image cache before disconnecting the host.",
+    )
+    unmeasured_severity = rule.get("unmeasured_severity", "medium")
+
+    try:
+        from tools.cloud import runtime_images
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("runtime-image declaration unavailable (%s) — reporting unmeasured", exc)
+        return [canonical_violation(
+            unmeasured_severity, category, recommendation,
+            title=f"Emulator runtime images could not be evaluated ({rid})",
+            rule_id=f"{rid}-unmeasured", source_canvas=source_canvas, method="airgap-rule",
+            detail=f"runtime_images module unavailable: {exc}",
+        )]
+
+    report = runtime_images.evaluate(
+        target, prober=runtime_image_probe, registry_config=registry_config
+    )
+    state = report.get("state")
+
+    if state == runtime_images.STATE_SATISFIED:
+        return []
+
+    if state == runtime_images.STATE_BLOCKED:
+        out = []
+        for row in list(report.get("missing", [])) + list(report.get("mismatched", [])):
+            out.append(canonical_violation(
+                severity, category, recommendation,
+                title=(
+                    f"Emulator base image '{row['ref']}' is not cached locally and "
+                    f"would be PULLED at run time, violating {rid}"
+                ),
+                rule_id=rid, source_canvas=source_canvas, method="airgap-rule",
+                detail=f"{row['ref']} ({row['state']}: {row.get('basis')})",
+            ))
+        return out
+
+    if state == runtime_images.STATE_INDETERMINATE:
+        return [canonical_violation(
+            unmeasured_severity, category, recommendation,
+            title=(
+                f"Cannot determine which base image these declare "
+                f"({', '.join(report.get('variant_undetermined', []))}) — {rid}"
+            ),
+            rule_id=f"{rid}-unmeasured", source_canvas=source_canvas, method="airgap-rule",
+            detail=report.get("reason"),
+        )]
+
+    # unmeasured — never a clean bill of health, and never a blocker either.
+    return [canonical_violation(
+        unmeasured_severity, category, recommendation,
+        title=f"Local image cache could not be read — {rid} is UNMEASURED, not clean",
+        rule_id=f"{rid}-unmeasured", source_canvas=source_canvas, method="airgap-rule",
+        detail=report.get("reason"),
+    )]
+
+
 def evaluate_airgap(
     target: Any,
     *,
     source_canvas: str | None = None,
     config: dict | None = None,
     active: bool | None = None,
+    runtime_image_probe: Any = None,
+    registry_config: Any = None,
 ) -> list[dict]:
     """Return canonical air-gap violations for ``target`` (a graph or IaC plan).
 
@@ -98,6 +203,17 @@ def evaluate_airgap(
             environment-agnostic — a twin can validate an air-gap TARGET even
             from a connected build host; use :func:`is_airgap_environment` to
             gate on the actual runtime).
+        runtime_image_probe: injectable per-image cache prober for the
+            ``emulator_runtime_images`` rule (flx-airgap-02). ``None`` asks the
+            local docker daemon. Every OTHER rule here is a pure string match
+            over ``target`` and is unaffected by it.
+        registry_config: injectable registry declaration for the same rule
+            (flx-airgap-03). ``None`` reads ``args/floci_registry.yaml``. An
+            uncached image served by an INTERNAL mirror pulls internally and is
+            not an air-gap violation; one with no mirror, or a mirror this
+            system's own allowlist does not call internal, still is. Same rule,
+            same meaning of "run-time pull" — see
+            :func:`tools.cloud.floci_registry.pull_origin`.
 
     Every violation carries ``severity='deployment_blocker'`` (→ ``blocker``) and
     ``method='airgap-rule'``.
@@ -120,6 +236,22 @@ def evaluate_airgap(
         rid = rule.get("id", "airgap-rule")
         category = rule.get("category", "security")
         recommendation = rule.get("recommendation", "Remove the public dependency for air-gapped deployment.")
+
+        # 0. Derive-then-check: an emulator dependency that is ABSENT from the
+        #    config. See _emulator_runtime_image_violations for why no string
+        #    matcher can see it. This rule contributes no host/marker matching.
+        if rule.get("emulator_runtime_images"):
+            violations.extend(
+                _emulator_runtime_image_violations(
+                    target,
+                    rule,
+                    severity=severity,
+                    source_canvas=source_canvas,
+                    runtime_image_probe=runtime_image_probe,
+                    registry_config=registry_config,
+                )
+            )
+            continue
 
         # 1. Host-suffix denials (registries, package indexes, external APIs).
         for host in sorted(hosts_seen):

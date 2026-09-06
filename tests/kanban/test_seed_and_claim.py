@@ -137,3 +137,28 @@ def test_the_claim_ttl_is_bounded():
     """A claim that never expires turns a crashed session into a permanently
     stranded task — a worse failure than the duplicate build it prevents."""
     assert 0 < tf.SEED_CLAIM_TTL_SECONDS <= 24 * 60 * 60
+
+
+# ── the claim is made to HOLD from a non-service process (mfx-own-02) ─────
+def test_a_seed_from_a_non_service_process_hands_its_claim_to_a_keeper(monkeypatch):
+    """The lease this helper takes records THIS process's pid and an
+    unregistered session id, so once the seeder exits every reader read it as
+    litter -- 17 of the 20 litter leases claim-verif-a6a1517970 flagged were
+    exactly this call. A registered service already heartbeats its own session;
+    anything else hands the lease to ``interactive_claim.keep``."""
+    import tools.coordination.service_identity as service_identity
+    import tools.kanban.interactive_claim as ic
+
+    kept = []
+    monkeypatch.setattr(ic, "keep", lambda tid, **kw: kept.append(tid) or
+                        {"keeper": "running", "reason": None})
+    monkeypatch.setattr(leases, "acquire", lambda res, **k: object())
+    monkeypatch.setattr(service_identity, "_OWNED", set())
+    assert tf.claim_seeded_tasks(["a-01"])["claimed"] == ["a-01"]
+    assert kept == ["a-01"]
+    assert "_keep_seeded_claim(" in inspect.getsource(tf.claim_seeded_tasks)
+
+    kept.clear()
+    monkeypatch.setattr(service_identity, "_OWNED", {"kanban-scheduler"})
+    tf.claim_seeded_tasks(["a-02"])
+    assert kept == [], "a service's registered session holds on its own"

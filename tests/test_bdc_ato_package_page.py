@@ -31,6 +31,9 @@ from pathlib import Path
 
 import pytest
 
+# tests/conftest.py puts the repo root on sys.path before collection.
+from tools.dashboard import nav_paths
+
 REPO = Path(__file__).resolve().parents[1]
 
 NEW_PATH = "/boundary/ato-package"
@@ -217,7 +220,20 @@ def test_nav_links_the_governed_home_in_both_base_html_copies(base_html):
         "",
     )
     assert trigger, f"{base_html}: Compliance dropdown trigger not found"
-    assert f"'{NEW_PATH}'" in trigger, f"{base_html}: {NEW_PATH} missing from the Compliance active-path list"
+    # The active-path list is DERIVED (mfx-sib-02): a generated `{% set %}`
+    # block ABOVE the trigger, not a literal inside the <a> tag. Assert the
+    # trigger still READS that list, then read the block itself. Asserting on
+    # the trigger LINE would pin the hand-appended shape back into place --
+    # which is the collision surface this card exists to remove.
+    assert "compliance_active_paths" in trigger, (
+        f"{base_html}: the Compliance trigger no longer reads the derived active-path list"
+    )
+    block = nav_paths.read_block(base_html, nav_paths.NAV_MARKER)
+    assert block, f"{base_html}: generated '{nav_paths.NAV_MARKER}' block not found"
+    assert f"'{NEW_PATH}'" in block, (
+        f"{base_html}: {NEW_PATH} missing from the Compliance active-path list -- "
+        f"add the menu link and the 301, then run `{nav_paths.REGEN_HINT}`"
+    )
 
 
 def test_both_base_html_copies_agree():

@@ -118,6 +118,13 @@ REFLEX_NAMES = [
     "dep_health_reflex",            # pip check + pip-audit → files [DEP-HEALTH] kanban tasks
     "dead_code_reflex",             # orphan files + dead functions + import cycles → [DEAD-CODE] tasks
     "kanban_stranded_reflex",       # done/validating tasks vs origin/main → [STRANDED] suggested cards
+    # mfx-own-03: the OWNER of a `validating` park, SEPARATED from the audit
+    # above. That audit walks 3,892 done rows (median 300s, max 1200.2s against
+    # its 1200s watchdog) and had never once carried the requeue act in 242
+    # recorded runs; three timeouts then opened its breaker and the daemon
+    # skipped it entirely. This one reads the 2-row `validating` population
+    # directly and runs the same two proofs, every 30 minutes.
+    "kanban_requeue_reflex",
     "detector_findings_reflex",     # autonomy-act-02: status_churn + born_red_survey + recovery_summary → evidence cards, deduped on the finding
     "critical_task_watchdog_reflex",  # polls for critical kanban tasks → watchdog_alerts + sidecar JSON
     "api_contract_reflex",            # OpenAPI spec vs live responses → [API-CONTRACT] kanban tasks
@@ -150,6 +157,11 @@ REFLEX_NAMES = [
     # this list and args/genesis_config.yaml -- the daemon dispatches from
     # HERE, and a reflex present in only the config has never run (xbm-wake-02).
     "asset_discovery",
+    # rmf-inert-02: the CALLER for the ATO evidence stack (24h). Eight tables an
+    # ATO package is assembled from held zero rows while every generator and the
+    # rmf-cyc-01 stage recorder sat on main, invoked by nobody. Registered in
+    # BOTH this list and args/genesis_config.yaml, for the reason above.
+    "ato_evidence_cycle",
     "dic_integration",     # dsyn-reflex-02: DIC Canvas Synergy — 15-min cadence
     "dic_review_cadence",  # dsyn-suggest-02: nightly collection review overdue check
     "dic_digest",          # dic-syn-gn: weekly digest of new docs + freshness alerts
@@ -231,6 +243,15 @@ REFLEX_NAMES = [
     # ran it; 20 leaked leases were cleared by hand on 2026-09-02 and 92 more
     # sat on done tasks. No reaping rule of its own -- the act proves and refuses.
     "lease_litter_reflex",
+    # mfx-boot-02: a self-hosted CI runner whose registration token expired
+    # crash-loops in `Restarting (1)` while the forge lists it offline and every
+    # job QUEUES with no red anywhere -- measured 2026-09-03 and twice before,
+    # recovered by hand each time. Reads the forge's offline set x docker's
+    # Restarting set; a container in BOTH, whose log carries a registration-
+    # failure signature, is re-registered through ONE `docker compose up -d`
+    # with a token minted at that moment (env only, never persisted). A
+    # container in only one set is reported and never touched.
+    "ci_runner_health",
 ]
 
 # Backward-compat aliases for module-level access used by other code

@@ -51,6 +51,7 @@ from typing import Any, Dict, FrozenSet, List, Optional, Tuple
 import yaml
 
 from tools.ci import error_classifier as ec
+from tools.ci import pr_superseded as sup
 from tools.ci.merge_readiness import (
     BEHIND_MAIN,
     DEFAULT_MAX_BEHIND_COMMITS,
@@ -121,6 +122,16 @@ _PR_URL_RE = re.compile(
 CONFLICT_REAL = "real"
 CONFLICT_UNION_ONLY = "union_only"
 CONFLICT_PHANTOM = "phantom"
+
+#: Task statuses nothing here may move. `reconcile_stranded_tasks` keeps its
+#: own tuple for its own scan; this is the one the superseded path reads.
+_TERMINAL_TASK_STATUSES = ("done", "cancelled", "decomposed", "superseded")
+
+#: A PR whose work is ALREADY on the default branch through a MERGED sibling
+#: (mfx-mrg-02). Its own classification, never folded into `merge_conflict` or
+#: `done`: the first sends it to a rebase it does not need and the second to a
+#: merge that can only revert. The remedy is to CLOSE it.
+SUPERSEDED = "superseded"
 
 
 @dataclass
@@ -586,7 +597,7 @@ _NO_AUTOMERGE_LABELS = NO_AUTOMERGE_LABELS
 #: the same thing on both paths, and that starts with fetching it.
 _GH_JSON_FIELDS = (
     "state,statusCheckRollup,reviews,mergeable,mergeStateStatus,isDraft,labels,"
-    "headRefName,headRefOid,baseRefName,updatedAt,createdAt,number,url"
+    "headRefName,headRefOid,baseRefName,updatedAt,createdAt,number,url,commits"
 )
 
 
@@ -867,6 +878,7 @@ class PRWatcher:
         rebase_fn=None,
         behind_probe=None,
         gh_runner=None,
+        gh_close_runner=None,
         dry_run: bool = False,
     ):
         self.config = config or load_config()
@@ -878,6 +890,10 @@ class PRWatcher:
         self._fetch_logs = fetch_logs or fetch_ci_logs
         self._auto_merge_runner = auto_merge_runner or subprocess.run
         self._pr_list_runner = pr_list_runner or subprocess.run
+        # mfx-mrg-02: CLOSING a superseded PR is a different act from merging
+        # one, and a test asserting "this never merges" must be able to tell the
+        # two apart. Separate seam, never the merge runner.
+        self._gh_close_runner = gh_close_runner or subprocess.run
         self._rebase_fn = rebase_fn
         # kpr-stale-02: (base, head sha) -> commits behind, or None for
         # UNMEASURED. Injectable so tests never touch a live forge.
@@ -899,6 +915,11 @@ class PRWatcher:
         # re-checked once, and if it still fails the PR stays held until a human
         # or a dispatch changes something.
         self._reverify_attempts: Dict[str, int] = {}
+        # kpr-watch-12: head sha -> True once the forge has confirmed a
+        # workflow run for it. POSITIVE ANSWERS ONLY (see
+        # `_run_exists_for_head`); a negative one becomes positive in
+        # seconds and must be re-asked every poll.
+        self._head_run_cache: Dict[str, bool] = {}
 
     # ── helpers ─────────────────────────────────────────────────────
 
@@ -1034,6 +1055,36 @@ class PRWatcher:
         files = entry.get("files") if entry else None
         return protected_hits(files, paths) or []
 
+    def _protected_hits_seen(
+        self, pr_url: str, index: Optional[Dict[str, dict]],
+    ) -> Optional[List[str]]:
+        """Protected paths this PR touches, read from a listing ALREADY IN HAND.
+
+        THE OPPOSITE DEFAULT FROM `_protected_hits`, and the asymmetry is the
+        whole point of having two (mfx-mrg-03). That one answers "may this PR be
+        merged" and is FAIL-CLOSED: a PR whose file list is unavailable reads as
+        protected, because a merge gate that opens when it cannot see is not a
+        gate. This one answers "should the watcher stop spending resumes on this
+        PR" — stopping is not merging, and stopping on an unreadable listing
+        would hold work the ladder would legitimately have repaired. So `None`
+        means UNMEASURED and the caller leaves the PR on exactly the path it took
+        before; `[]` means measured and clean. The fail-closed refusal at the
+        merge rung is untouched.
+
+        Reads ONLY the open-PR index `poll_once` already fetched for the sibling
+        map — no second `gh pr list`, on a door the measured outage behind this
+        card was refusing. A PR absent from that listing (an external repo, a
+        failed call, `sibling_conflict_check` off) is unmeasured, not clean.
+        """
+        paths = self._protected_paths()
+        if not paths:
+            return []
+        entry = (index or {}).get(pr_url)
+        files = entry.get("files") if entry else None
+        if files is None:
+            return None
+        return protected_hits(files, paths) or []
+
     def _protected_already_held(self, pr_url: str) -> bool:
         """Has this PR's hold already been recorded?
 
@@ -1142,6 +1193,170 @@ class PRWatcher:
         except Exception as exc:  # noqa: BLE001 — advisory check, never fatal
             logger.debug("pr_watcher: landed-check batch failed: %s", exc)
             return {}
+
+    # ── superseded PRs (mfx-mrg-02) ─────────────────────────────────
+
+    def _merged_pr_index(self, repo: str | None = None) -> Optional[List[dict]]:
+        """Recently MERGED PRs with their commit lists. ``None`` = UNREADABLE.
+
+        One `gh pr list` per poll, in the same once-per-cycle shape as
+        `_open_pr_index` and `_landed_map` above — a per-PR call would put a
+        commits-connection query on every task, every 30 seconds.
+
+        ``None`` is deliberately not ``[]``: an unreadable listing means the
+        question was not asked, and `decide_superseded` refuses to answer rather
+        than reporting "no sibling found". This module CLOSES pull requests.
+        """
+        if not self.config.get("superseded_check", True):
+            return None
+        try:
+            return sup.fetch_merged_prs(
+                runner=self._pr_list_runner,
+                limit=int(self.config.get(
+                    "superseded_merged_limit", sup.DEFAULT_MERGED_LIMIT)),
+                repo=repo,
+            )
+        except Exception as exc:  # noqa: BLE001 — advisory, never fatal
+            logger.debug("pr_watcher: merged-PR listing failed: %s", exc)
+            return None
+
+    def _superseded_verdict(
+        self, state: dict, merged_index: Optional[List[dict]],
+    ) -> "sup.SupersedeVerdict":
+        """Is this PR a duplicate of a MERGED sibling?
+
+        The revert leg costs two local git calls, so it only runs when the
+        commit-containment leg has already declined AND the leg is switched on.
+        MEASURED 2026-09-05 on this board it contributes nothing the first leg
+        does not already find (3 fires, all a strict subset of the 8), which is
+        why it ships OFF: a leg that has never found anything must not be the
+        thing that closes somebody's PR.
+        """
+        pr = {
+            "number": state.get("number"),
+            "url": state.get("url") or "",
+            "title": state.get("title") or "",
+            "body": state.get("body") or "",
+            "headRefName": state.get("headRefName") or "",
+            "headRefOid": state.get("headRefOid") or "",
+            "commits": state.get("commits") or [],
+        }
+        verdict = sup.decide_superseded(pr, merged_index)
+        if verdict.superseded or not verdict.checked:
+            return verdict
+        if not self.config.get("superseded_revert_leg", False):
+            return verdict
+        base = (state.get("baseRefName") or "").strip() or self._default_branch()
+        evidence = sup.revert_evidence(pr["headRefName"], base)
+        return sup.decide_superseded(pr, merged_index, revert=evidence)
+
+    def _close_superseded(
+        self, pr_url: str, task_id: str, verdict: "sup.SupersedeVerdict",
+    ) -> Dict[str, Any]:
+        """Comment the evidence, then close. Never merge, never un-draft.
+
+        A close with no derivation on it is indistinguishable from a bot losing
+        somebody's work, so the comment goes on FIRST and carries the sibling,
+        the shared sha, the two-dot stat and the command that re-derives all
+        three. `gh pr close --comment` does both in one call, so there is no
+        window in which the PR is closed with nothing said.
+        """
+        if self.dry_run:
+            return {"closed": False, "reason": "dry run"}
+        try:
+            proc = self._gh_close_runner(
+                ["gh", "pr", "close", pr_url, "--comment",
+                 sup.comment_body(verdict)],
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=60,
+            )
+        except Exception as exc:  # noqa: BLE001 — a failed close is reported
+            logger.warning("pr_watcher: closing %s failed: %s", pr_url, exc)
+            return {"closed": False, "reason": "gh pr close errored: %s" % exc}
+        if getattr(proc, "returncode", 1) != 0:
+            return {"closed": False,
+                    "reason": (getattr(proc, "stderr", "") or "")[:200]}
+        logger.info(
+            "pr_watcher: closed %s — superseded by #%s (%s); task %s",
+            pr_url, verdict.sibling_number, verdict.basis, task_id)
+        return {"closed": True, "reason": ""}
+
+    def _handle_superseded(
+        self, task: dict, pr_url: str, verdict: "sup.SupersedeVerdict",
+        get_conn, landed_map: Dict[str, dict], *, resume_cycle: int = 0,
+    ) -> Optional[WatcherAction]:
+        """Close a superseded PR, then complete the task IF its work landed.
+
+        Returns the WatcherAction the caller reports and audits, or ``None`` to
+        fall through to the normal ladder — which is what a REPORT-only
+        deployment and a failed close both do, because a PR that is still open
+        must keep being polled by everything that was polling it before.
+
+        THE TASK IS THE SECOND HALF, and skipping it would trade one defect for
+        another: closing the PR without completing a delivered task leaves the
+        card to age out and be RE-DISPATCHED, which builds the work a third
+        time. `landed_check` answers it, and it is the ONLY thing that may —
+        the sibling containing our commits proves the PR is redundant, and it
+        does NOT prove the task's own deliverable reached main (#2053 named
+        kpr-stale-06 in its subject while carrying kpr-stale-05's commits). An
+        unchecked or negative report completes NOTHING.
+        """
+        detail = "superseded by #%s (%s, %s): %s" % (
+            verdict.sibling_number, verdict.family, verdict.basis,
+            verdict.reason)
+        logger.warning("pr_watcher: %s is %s", pr_url, detail)
+
+        if not self.config.get("superseded_close", True) or self.dry_run:
+            self._audit(WatcherAction(
+                task_id=task["id"], pr_url=pr_url,
+                classification=SUPERSEDED, action="superseded_warn",
+                reason=(detail + ("; dry run" if self.dry_run else
+                                  "; superseded_close=false"))[:500],
+                resume_cycle=resume_cycle,
+            ))
+            return None
+
+        outcome = self._close_superseded(pr_url, task["id"], verdict)
+        if not outcome.get("closed"):
+            # A close that did not happen must not be reported as one, and the
+            # PR keeps its old path — silently swallowing this would leave the
+            # duplicate jamming the queue with an audit row claiming otherwise.
+            self._audit(WatcherAction(
+                task_id=task["id"], pr_url=pr_url,
+                classification=SUPERSEDED, action="superseded_close_failed",
+                reason=(detail + "; close failed: "
+                        + str(outcome.get("reason", "")))[:500],
+                resume_cycle=resume_cycle,
+            ))
+            return None
+
+        # An alert about a PR nobody can act on is spent with it.
+        self._resolve_hitl_alert(task["id"])
+
+        landed = landed_map.get(task["id"]) or {}
+        completed = ""
+        if (task.get("status") not in _TERMINAL_TASK_STATUSES
+                and landed.get("checked") and landed.get("landed")):
+            if _set_task_status(
+                get_conn, task["id"], "done",
+                reason=("work landed on the default branch; PR %s superseded "
+                        "by #%s" % (pr_url, verdict.sibling_number)),
+            ):
+                completed = "; task completed (landed: %s)" % landed.get(
+                    "confidence")
+        elif task.get("status") not in _TERMINAL_TASK_STATUSES:
+            # NAMED, never silent. The PR is redundant and the task is not
+            # provably delivered — those are two different facts and the second
+            # one is the one a human has to decide about.
+            completed = "; task NOT completed (landed-check: %s)" % (
+                "unchecked" if not landed.get("checked") else "not on main")
+
+        return WatcherAction(
+            task_id=task["id"], pr_url=pr_url,
+            classification=SUPERSEDED, action="close_superseded",
+            reason=(detail + completed)[:500],
+            resume_cycle=resume_cycle,
+        )
 
     def _sibling_conflicts(self, candidate_url: str, file_map: Dict[str, set]) -> Dict[str, set]:
         """Return {other_pr_url: shared_integrity_files} for OPEN PRs that touch a
@@ -1323,6 +1538,112 @@ class PRWatcher:
         return self._count_audit_actions(
             task_id, ("pr_watcher.ci_retrigger",), pr_url=pr_url)
 
+    def _head_pushed_at(self, state: dict) -> Tuple[Optional[datetime], str]:
+        """When the CURRENT head sha arrived, and which source said so.
+
+        Returns ``(stamp, basis)`` — ``basis`` is ``head_commit`` for the head
+        commit's own ``committedDate``, ``pr_created`` for the fallback, and
+        ``unmeasured`` when neither can be read.
+
+        A COMMIT DATE IS A PROXY FOR A PUSH TIME, and a deliberate one: the forge
+        exposes no push timestamp on a PR, and ``commits`` is already in
+        `_GH_JSON_FIELDS`, so this costs no extra call. It is a LOWER bound (the
+        push is at or after the commit), so the age it yields is an UPPER bound
+        — it OVERSTATES how long the sha has been sitting there, which biases the
+        caller toward escalating. That is the conservative direction for a
+        predicate whose True triggers a close/reopen.
+
+        A rebase rewrites the committer date, so a force-pushed head is dated by
+        the rebase rather than by the original authorship — measured on #2088,
+        ``00bb0b9d5`` committed 04:55:38 and its run created 04:55:47.
+
+        MATCHED ON ``oid``, NEVER "the last one". An unmatched head means the
+        commits list is stale or truncated, and anchoring the grace to a sha that
+        is not the head is worse than the fallback, which is the shipped
+        behaviour.
+        """
+        head = (state.get("headRefOid") or "").strip()
+        if head:
+            for commit in state.get("commits") or []:
+                if not isinstance(commit, dict):
+                    continue
+                if (commit.get("oid") or "").strip() != head:
+                    continue
+                stamp = _parse_iso(commit.get("committedDate"))
+                if stamp is not None:
+                    return stamp, "head_commit"
+                break
+        stamp = _parse_iso(state.get("createdAt"))
+        return (stamp, "pr_created") if stamp is not None else (None, "unmeasured")
+
+    def _run_exists_for_head(self, state: dict, grace_minutes: int) -> bool:
+        """True when the forge HAS a workflow run for this head sha, still QUEUING.
+
+        AN EMPTY ROLLUP IS NOT A WORKFLOW THAT NEVER FIRED (kpr-watch-12). A run
+        exists for 32-84 seconds before its first check run appears in
+        `statusCheckRollup` — measured on three consecutive runs of PR #2088
+        (>=84s, 65s, 32s) — while this loop polls every `poll_interval_seconds`
+        (30). Inside that gap a healthy queued run is indistinguishable from an
+        absent one from the rollup alone, so the rollup alone cannot answer the
+        question the caller is asking. This asks the one endpoint that can.
+
+        "WITHIN THE GRACE WINDOW" IS LOAD-BEARING. A run created 40 minutes ago
+        that has still produced no check run is STUCK, not queued, and that is
+        precisely the PR the rung exists to hand to a human; withholding there
+        would disable it. Only a run younger than the grace counts as queueing.
+
+        FAIL-OPEN, and the direction is chosen rather than inherited: a missing
+        `gh`, a rate limit, an unparseable body all return False — "unmeasurable"
+        is NOT "a run exists". The alternative silently disables the rung on the
+        deployment where the forge is unwell, which is #1462's failure mode. The
+        cheap anchor in `_ci_never_fired` already absorbs the sub-poll-interval
+        artifact without reaching the forge at all, so this rung is the check and
+        not the belt.
+
+        Asked LAST and only for a PR whose rollup is empty AND whose head sha is
+        already past the grace — the same cost ordering `_stale_verdict` takes
+        for the one condition that can reach the forge.
+        """
+        if not self.config.get("ci_probe_workflow_runs", True):
+            return False
+        head = (state.get("headRefOid") or "").strip()
+        if not head:
+            return False
+        if self._head_run_cache.get(head):
+            # A POSITIVE answer only. A run that exists cannot un-exist, but a
+            # negative one becomes positive within seconds — caching that would
+            # freeze the 32-84s materialisation gap in for the watcher's life.
+            return True
+        runner = self._gh_runner or subprocess.run
+        path = ("repos/{owner}/{repo}/actions/runs?head_sha=%s&per_page=20"
+                % head)
+        try:
+            proc = runner(
+                ["gh", "api", path, "--jq", ".workflow_runs[] | {created_at}"],
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=30,
+            )
+        except Exception:  # noqa: BLE001 — unmeasured, never a crash in the poll
+            logger.debug("pr_watcher: workflow-run probe failed for %s", head[:9])
+            return False
+        if getattr(proc, "returncode", 1) != 0:
+            return False
+        now = datetime.now(timezone.utc)
+        for line in (getattr(proc, "stdout", "") or "").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                created = _parse_iso(json.loads(line).get("created_at"))
+            except (ValueError, TypeError, AttributeError):
+                continue
+            if created is None:
+                continue
+            if (now - created).total_seconds() / 60.0 < grace_minutes:
+                self._head_run_cache[head] = True
+                return True
+        return False
+
     def _ci_never_fired(self, state: dict) -> bool:
         """True when a PR has NO checks at all and is old enough that it should.
 
@@ -1332,25 +1653,39 @@ class PRWatcher:
         running, simply absent — and no code in this loop had an opinion about
         it, so it waited for a person.
 
-        Age is measured from createdAt, not updatedAt: a comment or a label moves
-        updatedAt, so a chatty PR would never look old enough to have missed its
-        run. The grace period exists because a PR opened seconds ago legitimately
-        has an empty rollup while GitHub queues the workflow.
+        THE GRACE IS ANCHORED TO THE HEAD SHA, NOT THE PR (kpr-watch-12). It used
+        to age from `createdAt`, which meant it was spent forever after a PR's
+        first 15 minutes and EVERY subsequent push had ZERO grace — while this
+        docstring said the grace exists "because a PR opened seconds ago
+        legitimately has an empty rollup while GitHub queues the workflow". That
+        is a statement about a PUSH, and it is now anchored to one. Measured on
+        #2088: 28.5 minutes old at its escalation, head sha 1.2 minutes old.
+        Still never `updatedAt`, which a comment or a label moves — a chatty PR
+        would never look old enough to have missed its run.
+
+        TWO RUNGS, CHEAPEST FIRST, and they catch different subsets. Replayed
+        over every recorded firing of this predicate
+        (docs/audits/kpr-watch-12-ci-never-fired-narrowing-survey.md), the head
+        sha anchor withholds 19 of 23 close/reopen re-triggers and the forge
+        probe 14 — the probe cannot see a run that is about to exist, and the
+        anchor cannot tell a queued run from an absent one once the sha is
+        genuinely old. Together they withhold 2 of 30 escalations and 19 of 23
+        re-triggers, and ZERO of the 31 firings on a branch where no workflow run
+        had EVER fired. The rung is narrowed, never removed.
+
+        An unmeasurable age still returns False — cannot age it, so do not act
+        on it. The recovery this gates closes a real PR.
         """
         if state.get("statusCheckRollup"):
             return False
-        created = (state.get("createdAt") or "").strip()
-        if not created:
+        stamp, _basis = self._head_pushed_at(state)
+        if stamp is None:
             return False  # cannot age it, so do not act on it
-        try:
-            stamp = datetime.fromisoformat(created.replace("Z", "+00:00"))
-        except ValueError:
-            return False
-        if stamp.tzinfo is None:
-            stamp = stamp.replace(tzinfo=timezone.utc)
         grace = int(self.config.get("ci_missing_grace_minutes", 15))
         age_min = (datetime.now(timezone.utc) - stamp).total_seconds() / 60.0
-        return age_min >= grace
+        if age_min < grace:
+            return False
+        return not self._run_exists_for_head(state, grace)
 
     def _retrigger_ci(self, task_id: str, pr_url: str) -> Dict[str, Any]:
         """Close and reopen the PR so `pull_request` workflows fire again.
@@ -2628,6 +2963,18 @@ class PRWatcher:
             if self.config.get("landed_check_on_poll", True)
             else {}
         )
+        # MERGED-sibling map (mfx-mrg-02). The one question none of the guards
+        # above asks: has this PR's work ALREADY landed under a different
+        # NUMBER? `landed_map` greps commit subjects for the TASK ID, so a
+        # sibling that absorbed another task's branch (#2053 absorbing
+        # kpr-stale-05) is invisible to it; `_behind_by` measures distance from
+        # main, and a duplicate at the SAME head sha as a merged PR is 0 behind.
+        # `None` means the listing could not be read — never `[]`.
+        merged_index = (
+            self._merged_pr_index()
+            if self.config.get("superseded_check", True)
+            else None
+        )
 
         for task in tasks:
             report.tasks_checked += 1
@@ -2674,6 +3021,96 @@ class PRWatcher:
             # watcher went on to merge. Re-emitting the same key every cycle is
             # harmless: fire_event only promotes wakes that are still pending.
             self._emit_wake_events(pr_url, classification, state)
+
+            # SUPERSEDED (mfx-mrg-02). BEFORE every other branch below, because
+            # every one of them is the wrong thing to do to a duplicate: the
+            # conflict path spends a rebase and then five LLM resumes on a
+            # branch with nothing left to contribute, and the DONE path
+            # un-drafts it and merges a revert. Four cases in two days —
+            # #2015/#2014 (42s apart), #1985/#1983 (82s), #2056/#2053,
+            # #2049/#2053 — and each held `no_sibling_conflict` against every
+            # open PR touching the same files until a human closed it.
+            #
+            # It never merges and never un-drafts. Closing removes nothing from
+            # main, the branch is untouched, and the comment says how to reopen.
+            #
+            # FAIL-OPEN: `checked: False` (no gh, a refused listing, a PR with
+            # no head sha) leaves the PR on exactly the path it took before.
+            if merged_index is not None:
+                verdict = self._superseded_verdict(state, merged_index)
+                if verdict.checked and verdict.superseded:
+                    action = self._handle_superseded(
+                        task, pr_url, verdict, get_conn, landed_map,
+                        resume_cycle=self._resume_cycle(
+                            task["id"], pr_url=pr_url),
+                    )
+                    if action is not None:
+                        report.actions.append(action)
+                        self._audit(action)
+                        continue
+
+            # PROTECTED PATH, ASKED BEFORE THE CONFLICT ARM (mfx-mrg-03).
+            #
+            # THE REFUSAL WAS ON THE ARM A CONFLICTING PR NEVER ENTERS. Until
+            # now `_refuse_protected` was called in ONE place on this path —
+            # inside the MERGEABLE arm, immediately before the un-draft and
+            # `_auto_merge` — while `_maybe_rebase` and the resume ladder live
+            # in the `MERGE_CONFLICT` arm. Not "later in one ladder": a
+            # DIFFERENT BRANCH of it. A PR that is conflicting from the moment
+            # it opens can therefore never reach the rung that would refuse it,
+            # and the rung only ever fires once the PR is mergeable — precisely
+            # when it is no longer needed to prevent wasted work.
+            #
+            # MEASURED on #2064 (mfx-mrg-01), which changed `tools/ci/
+            # pr_watcher.py`, the FIRST entry in `protected_paths`: 63
+            # `rebase_failed`, 5 `resume` and an `escalate`, and 0 of its 165
+            # `pr_watcher.*` audit rows mention `protected`. Every one of those
+            # acts was spent on a PR this watcher was structurally forbidden
+            # from merging, and nothing in the ledger, the panel or the
+            # escalation said so.
+            #
+            # A protected PR needs a human either way. Making it burn five LLM
+            # resumes and then escalate on a spent resume cap first does not
+            # change that; it hides the reason and spends the budget that is the
+            # board's signal for "automation is out of options".
+            #
+            # WHAT THE REFUSAL SUPPRESSES, AND WHAT IT DELIBERATELY DOES NOT.
+            # It suppresses the RESUME ladder and the escalation. It does NOT
+            # suppress the bounded automatic REBASE, and that narrowing is the
+            # survey's finding rather than a preference. Replaying all 210
+            # recorded conflict-ladder episodes through the shipped predicate
+            # (`tools/ci/protected_conflict_survey.py`), the divert catches 32
+            # (15.24%) and would, taken as far as `_maybe_rebase`, have taken a
+            # SUCCESSFUL rebase away from 11 of them — 8 of those needed nothing
+            # else at all before the PR merged (rb=1, rbf=0, res=0, esc=0:
+            # #1724, #1734, #1751, #1789, #1821, #1682, #1686, #1695). That is
+            # 3.81% of the population, above the 1.63% CLAUDE.md already calls
+            # refusing routine work, and "a control that stops work it was never
+            # meant to stop gets switched off". Kept, therefore, and bounded by
+            # the UNCHANGED `max_rebase_attempts_per_task`.
+            # The refusal is still ASKED and AUDITED here, before any
+            # `_maybe_rebase` call, so the ledger states the real reason from the
+            # first poll instead of a later spent-resume-cap escalation that was
+            # never the reason. Full method and numbers:
+            # docs/audits/mfx-mrg-03-protected-conflict-divert-survey.md.
+            #
+            # FAIL-OPEN, deliberately, and the opposite default from the merge
+            # refusal: `_protected_hits_seen` returns None when the listing
+            # cannot answer, and an unmeasured PR takes the unchanged ladder.
+            # This refusal prevents WASTED WORK; the fail-closed one that
+            # prevents an unreviewed MERGE is `_refuse_protected`, still called
+            # in the mergeable arm below and again inside `_auto_merge`.
+            protected_conflict = (
+                self._protected_hits_seen(pr_url, sibling_index)
+                if classification == KanbanState.MERGE_CONFLICT
+                else None
+            )
+            if protected_conflict:
+                # BEFORE the conflict arm, and before `_maybe_rebase`. Writes
+                # `protected_path_hold` exactly once per PR (it dedupes on the
+                # audit trail) and says so at debug every cycle after.
+                self._refuse_protected(pr_url, task["id"])
+
             # WHICH KIND of conflict (kpr-watch-07). Computed once per task per
             # poll and reused by the rebase and resume paths below — a second
             # call would re-run two merges against a live forge every 30s.
@@ -2927,6 +3364,63 @@ class PRWatcher:
                         self._audit(action)
                         continue
 
+                    # PROTECTED PATH — RESTORED TO AHEAD OF THE UN-DRAFT
+                    # (mfx-mrg-03). kpr-watch-05 put this refusal "AHEAD OF THE
+                    # UN-DRAFT" for a stated reason: un-drafting is visible, hard
+                    # to walk back, and burns the one brake a human still has.
+                    # The un-draft below was later moved UP to fix a different
+                    # bug (a green PR held behind a sibling never got taken out
+                    # of draft), which silently overtook the guard — the refusal
+                    # sat ~200 lines further down, and every protected PR that
+                    # reached this arm was un-drafted before anything asked
+                    # whether it could ever be merged.
+                    #
+                    # It is also ahead of the BEHIND-MAIN rung, which calls
+                    # `_maybe_rebase` and pushes. Costs nothing measured: of the
+                    # 13 successful rebases the survey found on protected PRs,
+                    # ALL 13 carry `classification=merge_conflict` and none came
+                    # from this rung — so unlike the conflict arm, there is no
+                    # repaired branch here to preserve.
+                    #
+                    # Deliberately AFTER the enforced done-gate and its
+                    # `_maybe_reverify` — a protected PR is landed by a human
+                    # through `cli.py --set-status <id> done --merge`, and that
+                    # door runs the SAME done-gate, so the verification has to
+                    # keep refreshing while the PR waits.
+                    #
+                    # FAIL-CLOSED here, unlike the refusal above: this is the
+                    # merge decision. `_auto_merge` refuses again as the last
+                    # line, so the chokepoint survives a future caller.
+                    #
+                    # The listing ALREADY IN HAND is asked first, and only for
+                    # its one unambiguous answer. Moving this rung up past the
+                    # sibling / landed / behind-main holds means PRs that used
+                    # to `continue` before reaching it now reach it, and
+                    # `_refuse_protected` costs a `gh pr list` per poll — the
+                    # GraphQL door the outage behind this card was refusing. A
+                    # PR PRESENT in the index is measured (the index is keyed by
+                    # url, so a present entry can only be this PR's), so a
+                    # measured-clean answer needs no second call. Anything else —
+                    # absent, unreadable, or a hit that must be audited — goes to
+                    # the fail-closed path exactly as before.
+                    seen = self._protected_hits_seen(pr_url, sibling_index)
+                    protected = ([] if seen == []
+                                 else self._refuse_protected(pr_url, task["id"]))
+                    if protected:
+                        action = WatcherAction(
+                            task_id=task["id"], pr_url=pr_url,
+                            classification="done", action="wait",
+                            reason=(
+                                "held: touches protected path(s): "
+                                + ", ".join(protected)
+                                + " — a human must review and merge this by hand."
+                            )[:500],
+                            resume_cycle=cycle,
+                        )
+                        report.actions.append(action)
+                        self._audit(action)
+                        continue
+
                     # UN-DRAFT FIRST, before any hold can `continue` past this.
                     #
                     # Auto-merge must work regardless of who opened the PR — a
@@ -3144,14 +3638,13 @@ class PRWatcher:
                     # branch a blocked merge takes.
                     # Belt-and-braces: normally the un-draft above already ran,
                     # but a PR can be converted back to a draft between polls.
-                    # AHEAD OF THE UN-DRAFT (kpr-watch-05). `_auto_merge`
-                    # refuses a protected PR too, but by then `_mark_ready` has
-                    # already cleared the draft — and the comment above says why
-                    # that must not happen for a PR that was not about to merge:
-                    # un-drafting is visible and hard to walk back, and the draft
-                    # is exactly the brake the per-episode manual gates relied on.
-                    if approved_ok and self._refuse_protected(pr_url, task["id"]):
-                        approved_ok = False
+                    #
+                    # The protected-path refusal that used to sit HERE moved up
+                    # to ahead of the un-draft (mfx-mrg-03) — where kpr-watch-05
+                    # said it belonged and where it now actually is. It `continue`s
+                    # rather than clearing `approved_ok`, so this arm can no
+                    # longer be reached by a protected PR at all; `_auto_merge`
+                    # still refuses one as its own last line.
                     if approved_ok and state.get("isDraft"):
                         approved_ok = self._mark_ready(
                             pr_url, task["id"], self._connection(), state=state)
@@ -3318,6 +3811,46 @@ class PRWatcher:
                         resume_cycle=cycle,
                         base_sha=verdict.get("base_sha", ""),
                     ))
+                    continue
+
+                # THE HOLD (mfx-mrg-03) — see the note above `conflict_kind`.
+                #
+                # The rebase rung above has had its bounded attempt, because the
+                # survey measured that rung repairing 11 of the 32 episodes this
+                # refusal catches. EVERYTHING BELOW THIS LINE is the resume
+                # ladder and the escalation, and none of it can produce a merge
+                # this watcher is allowed to perform: `_refuse_protected` refuses
+                # in the mergeable arm and `_auto_merge` refuses again as its
+                # last line, so a resumed agent's best possible outcome is a PR
+                # that still waits for a human. Five LLM resumes, a HITL alert
+                # and an escalation announcing a spent resume cap are then
+                # all spent describing something else.
+                #
+                # The `wait` row is written EVERY poll, like every other hold on
+                # this path, because `merge_stall` attributes a stall from a 24h
+                # window of `reason` text (args/merge_stall.yaml, pattern
+                # "protected path"): a hold recorded only once ages out of that
+                # window and the PR reads as an unexplained `alarm`. The
+                # `protected_path_hold` row above keeps its own once-per-PR
+                # dedupe (kpr-watch-05).
+                if protected_conflict:
+                    action = WatcherAction(
+                        task_id=task["id"], pr_url=pr_url,
+                        classification=classification.value,
+                        action="wait",
+                        reason=(
+                            "held: touches protected path(s): "
+                            + ", ".join(protected_conflict)
+                            + " — no resume and no escalation, because this "
+                              "watcher may not merge the result whatever an "
+                              "agent does to the branch. A human must review "
+                              "and merge it by hand."
+                        )[:500],
+                        resume_cycle=cycle,
+                        base_sha=verdict.get("base_sha", ""),
+                    )
+                    report.actions.append(action)
+                    self._audit(action)
                     continue
 
             # Resume classes: CI_FAILED / MERGE_CONFLICT / CHANGES_REQUESTED

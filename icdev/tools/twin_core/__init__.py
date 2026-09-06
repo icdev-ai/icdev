@@ -31,7 +31,10 @@ from tools.twin_core.registry import (
 )
 from tools.twin_core.schema import (
     CATEGORIES,
+    DEFAULT_SNAPSHOT_PROVENANCE,
+    PROVENANCE_EMULATED,
     SEVERITIES,
+    SNAPSHOT_PROVENANCES,
     TARGET_CSPS,
     UNKNOWN_VERDICT,
     VERDICTS,
@@ -69,6 +72,9 @@ __all__ = [
     "SEVERITIES",
     "CATEGORIES",
     "TARGET_CSPS",
+    "SNAPSHOT_PROVENANCES",
+    "DEFAULT_SNAPSHOT_PROVENANCE",
+    "PROVENANCE_EMULATED",
     "normalize_verdict",
     "normalize_severity",
     "normalize_csp",

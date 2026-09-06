@@ -80,6 +80,28 @@ exclusions:
       ImportError but not AttributeError.
     review: tsg-gen-02
 
+  - pattern: "tests/cloud/test_floci_container_docker.py"
+    reason: >-
+      Needs a reachable Docker daemon and `pip install testcontainers-floci` to
+      start a real floci/floci container. The default runners get the other half
+      of the floci suite -- 389 gated tests across fifteen files -- which asserts
+      every floci claim's SHAPE against a stub and needs no Docker at all
+      (measured 2026-09-05 with the socket PROVEN absent: 389 passed). This file
+      asserts what a stub structurally cannot: that the pinned tag actually
+      starts, that HEALTH_PATH is a route floci really serves, that
+      us-gov-west-1 is accepted, that a governed broker.fetch returns the
+      emulator's own rows, and that a twin resource_count counts something real.
+      Gating it would put an emulator start-up in front of every merge on a
+      near-serial runner pool -- which is how a gate earns itself a bypass, the
+      same reasoning that keeps `floci IaC Gate (opt-in)` out of the four
+      required checks. It runs THERE, in the docker-suite job of
+      .github/workflows/floci-iac-gate.yml, on dispatch / the `floci-gate` label
+      / the weekly sweep. Being excluded rather than gated is also what makes
+      its pytest.importorskip lawful: skip_census scopes to gated modules, so
+      this file owes no args/ci_skip_census.txt entry and does not touch
+      skip_max. If it is ever gated, delete the skip first.
+    review: flx-test-01
+
 # --------------------------------------------------------------------------- #
 # BACKLOG — the grandfathered census
 # --------------------------------------------------------------------------- #
@@ -114,7 +136,7 @@ backlog_file: args/ci_test_backlog.txt
 # tools/ci/census_growth.py: this census may lose names and never gain one,
 # whatever the ceiling says. The ceiling stays as a second, independent barrier
 # for a file ALREADY named here that someone un-gates.
-backlog_max: 1678
+backlog_max: 1677
 
 # --------------------------------------------------------------------------- #
 # SKIP CENSUS — a gated test that skips is UNMEASURED, not passing (trust-disc-03)
