@@ -52,6 +52,7 @@ _RE_UPDATE = re.compile(r"^\s*UPDATE\b", re.IGNORECASE)
 _RE_DELETE = re.compile(r"^\s*DELETE\b", re.IGNORECASE)
 _RE_INSERT = re.compile(r"^\s*INSERT\b", re.IGNORECASE)
 _RE_JOIN = re.compile(r"\bJOIN\b", re.IGNORECASE)
+_RE_FROM_KW = re.compile(r"\bFROM\b", re.IGNORECASE)
 
 # Matches the primary table (and optional alias) in a FROM clause.
 # Negative lookahead excludes SQL keywords so "FROM foo JOIN bar" doesn't
@@ -107,6 +108,62 @@ def _depth0_skeleton(sql: str) -> str:
         out.append(ch if depth == 0 else " ")
         i += 1
     return "".join(out)
+
+
+def _blank_literals(sql: str) -> str:
+    """Return ``sql`` with every string literal blanked, at EVERY paren depth.
+
+    Deliberately not ``_depth0_skeleton``: that one also blanks subquery bodies,
+    and the caller below (``_is_tableless_select``) has to see a ``FROM`` no
+    matter how deeply it is nested.
+    """
+    out = []
+    i = 0
+    n = len(sql)
+    while i < n:
+        ch = sql[i]
+        if ch in ("'", '"'):
+            quote = ch
+            i += 1
+            while i < n and sql[i] != quote:
+                if sql[i] == '\\':
+                    i += 1
+                i += 1
+            i += 1  # closing quote
+            out.append(" ")
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _is_tableless_select(sql: str) -> bool:
+    """True for a SELECT that names no relation anywhere, e.g. ``SELECT 1``.
+
+    ``get_connection().execute("SELECT 1")`` is how ``/api/health`` and several
+    other probes ask "is the database up". With a security context attached it
+    became::
+
+        SELECT 1 WHERE (classification IS NULL OR ... )
+
+    and PostgreSQL raised ``UndefinedColumn: column "classification" does not
+    exist`` -- there is no relation for the column to resolve against. The
+    health route's bare ``except Exception`` read that as "the database is
+    down", so the endpoint answered ``degraded`` on every request while the
+    database served rows on the same process. Injection into a statement that
+    reads no row restricts nothing; it only invalidates the statement.
+
+    THE RULE IS NARROWER THAN "no FROM at depth 0", on purpose. Skipping
+    injection for a statement that CAN read rows is a privilege escalation, so
+    the test is "no ``FROM`` keyword anywhere, at any nesting depth". A scalar
+    subquery (``SELECT (SELECT c FROM t LIMIT 1)``) names a table and is left on
+    whatever path it was already taking. UPDATE/DELETE are excluded by the
+    leading-SELECT anchor -- an ``UPDATE t SET ...`` has no FROM clause either
+    and absolutely must still be filtered.
+    """
+    if not _RE_SELECT.match(sql):
+        return False
+    return not _RE_FROM_KW.search(_blank_literals(sql))
 
 
 #: Table-name prefixes that identify a database SYSTEM CATALOG rather than an
@@ -184,58 +241,6 @@ def _is_system_table(sql: str) -> bool:
     if table in _PG_CATALOG_RELATIONS or any(table.startswith(p) for p in _SYSTEM_TABLE_PREFIXES):
         return True
     return table in _manifest_exempt_tables()
-
-
-#: A statement that names NO relation anywhere -- ``SELECT 1``,
-#: ``SELECT current_database()``, ``SELECT now()``. Matching is on the RAW sql,
-#: never the depth-0 skeleton, so a scalar subquery (``SELECT (SELECT x FROM
-#: t)``) still carries a FROM and is still filtered. The check can only exempt
-#: a statement that provably reads no table at all.
-_RE_ANY_RELATION = re.compile(r"\b(FROM|JOIN)\b", re.IGNORECASE)
-
-#: Only a SELECT can be table-less. ``UPDATE t SET ...`` names its relation with
-#: no ``FROM`` at all, so a bare "no FROM and no JOIN" test called it table-less
-#: and dropped the tenant predicate from every UPDATE -- caught by
-#: tests/test_rls_integration.py before this shipped. DELETE and INSERT are
-#: excluded for the same reason and not because of how they happen to be spelled.
-_RE_LEADING_SELECT = re.compile(r"^\s*(?:\(|\s)*SELECT\b", re.IGNORECASE)
-
-
-def _is_tableless(sql: str) -> bool:
-    """True when the statement reads no relation, so there is nothing to filter.
-
-    THE DEFECT THIS FIXES (qa-fail-6a87916931be3793). The dashboard's liveness
-    probe is ``SELECT 1``. Inside a request a security context is attached, and
-    this module rewrote it to
-
-        SELECT 1 WHERE (classification IS NULL OR classification = '...')
-
-    which raises ``UndefinedColumn: column "classification" does not exist`` --
-    there is no FROM clause, so there is no such column to filter on. The route
-    swallows the error and answers ``{"status": "degraded", "db": false}``, so
-    ``/api/health`` has reported the database DOWN on every request. Measured
-    2026-09-05 against the live canonical dashboard on :5050: exactly that,
-    while the database was healthy and every other query on the page worked.
-
-    This is the same reasoning as ``_is_system_table`` one function up, and the
-    same failure mode it names: injecting where nothing can be restricted only
-    produces an invalid statement, which the caller reads as "capability
-    unavailable" rather than "query malformed".
-
-    IT CANNOT WEAKEN ROW SECURITY, and that is why the test is a NEGATIVE one
-    over the raw statement rather than an attempt to identify the table: a
-    SELECT with no ``FROM`` and no ``JOIN`` anywhere in it reads no relation, so
-    there are no rows for a predicate to withhold. Anything this cannot prove
-    table-less -- a write statement, or a ``FROM`` that turns out to sit inside a
-    string literal -- keeps today's behaviour and is still injected.
-
-    THE LEADING-SELECT HALF IS LOAD-BEARING. Without it ``UPDATE t SET x = 1``
-    reads as table-less, because an UPDATE names its relation without a ``FROM``
-    -- and the tenant predicate would be dropped from every UPDATE in the
-    platform. That is a widening of access, not a fixed health probe;
-    tests/test_rls_integration.py caught it.
-    """
-    return bool(_RE_LEADING_SELECT.match(sql)) and not _RE_ANY_RELATION.search(sql)
 
 
 def _primary_alias(sql: str) -> str | None:
@@ -358,10 +363,11 @@ def inject_row_predicate(
     if _is_system_table(sql):
         return sql, (), 0
 
-    # A statement that reads no relation has no rows to withhold; injecting a
-    # predicate can only make it invalid. See _is_tableless -- this is what made
-    # /api/health's `SELECT 1` report the database as down on every request.
-    if _is_tableless(sql):
+    # A SELECT that names no relation reads no row, so there is nothing to
+    # filter and the injected WHERE has no table to resolve against. See
+    # _is_tableless_select for why the rule is "no FROM anywhere" rather than
+    # "no FROM at depth 0".
+    if _is_tableless_select(sql):
         return sql, (), 0
 
     extra_clauses: list[str] = []

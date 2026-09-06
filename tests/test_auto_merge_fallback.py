@@ -3,6 +3,12 @@
 `_auto_merge` ran `gh pr merge --squash --auto`. `--auto` asks GitHub to merge
 when checks pass, and it requires the REPOSITORY to have auto-merge enabled.
 
+Since mfx-mrg-01 the method is `--merge` (a merge commit), never `--squash`:
+a squash leaves the branch AHEAD of main by ancestry and collapses any sibling
+stacked on it. `MERGE_METHOD_FLAG` spells the method once; both attempts here
+must carry it and neither may carry `--squash`. The git semantics of the flag
+are replayed in tests/kanban/test_merge_commit_landing.py.
+
     MEASURED 2026-08-30:  allow_auto_merge == false on BOTH icdev and icdev_ft.
 
 Auto-merge needs branch protection, which this plan does not offer on a private
@@ -23,7 +29,7 @@ import subprocess
 
 import pytest
 
-from tools.ci.pr_watcher import PRWatcher
+from tools.ci.pr_watcher import MERGE_METHOD_FLAG, PRWatcher
 
 PR = "https://github.com/icdev-ai/icdev_ft/pull/322"
 
@@ -56,7 +62,8 @@ def test_it_falls_back_to_a_plain_merge_when_auto_is_refused():
     assert _watcher(r)._auto_merge(PR) is True
     assert len(r.calls) == 2, "it must retry without --auto"
     assert "--auto" in r.calls[0] and "--auto" not in r.calls[1]
-    assert "--squash" in r.calls[1], "the fallback still squashes"
+    assert MERGE_METHOD_FLAG in r.calls[1], "the fallback keeps the merge method"
+    assert "--squash" not in r.calls[1]
 
 
 def test_a_repo_that_allows_auto_merge_still_uses_it():
@@ -64,12 +71,13 @@ def test_a_repo_that_allows_auto_merge_still_uses_it():
     r = Runner(fail_when=())
     assert _watcher(r)._auto_merge(PR) is True
     assert len(r.calls) == 1 and "--auto" in r.calls[0]
+    assert MERGE_METHOD_FLAG in r.calls[0] and "--squash" not in r.calls[0]
 
 
 def test_a_genuinely_unmergeable_pr_still_fails():
     """The fallback must not launder a real refusal into a merge. Both attempts
     fail -> False, and the reason is logged rather than swallowed."""
-    r = Runner(fail_when=("--squash",), stderr="not mergeable: CONFLICTING")
+    r = Runner(fail_when=(MERGE_METHOD_FLAG,), stderr="not mergeable: CONFLICTING")
     assert _watcher(r)._auto_merge(PR) is False
     assert len(r.calls) == 2
 
@@ -89,3 +97,15 @@ def test_the_url_is_always_passed_explicitly(failing):
     _watcher(r)._auto_merge(PR)
     for cmd in r.calls:
         assert PR in cmd
+
+
+def test_the_method_is_a_merge_commit_never_a_squash():
+    """mfx-mrg-01. A squash leaves `origin/main..kanban/<id>` non-empty (51 of
+    the 60 linked branches surveyed on 2026-09-04) and collapses a stacked
+    sibling; a merge commit does neither. Pinned on the constant AND on every
+    argv it produces, so a second call site cannot respell it."""
+    assert MERGE_METHOD_FLAG == "--merge"
+    r = Runner(fail_when=("--auto",))
+    _watcher(r)._auto_merge(PR)
+    for cmd in r.calls:
+        assert "--merge" in cmd and "--squash" not in cmd
