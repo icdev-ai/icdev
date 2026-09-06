@@ -42,13 +42,15 @@ import logging
 import os
 from typing import Any, Callable, Optional
 
+from tools.logging.icdev_logger import get_logger
+
 DEFAULT_MAX_ATTEMPTS = 12
 DEFAULT_GAP_CAP = 32  # cycles between attempts, once the doubling reaches it
 
 MAX_ATTEMPTS_ENV = "ICDEV_REGISTRATION_MAX_ATTEMPTS"
 GAP_CAP_ENV = "ICDEV_REGISTRATION_GAP_CAP"
 
-_logger = logging.getLogger(__name__)
+_logger = get_logger(__name__)
 
 
 def _env_int(name: str, default: int) -> int:
