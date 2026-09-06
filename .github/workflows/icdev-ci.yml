@@ -548,6 +548,27 @@ jobs:
       # count is often how you find out WHY it failed.
       - name: Upload shard JUnit XML
         if: always()
+        # `continue-on-error` because this is EVIDENCE, not a gate, and on
+        # 2026-09-05 it turned a fully green shard into a red REQUIRED check:
+        # job 101355485802 reported `4351 passed, 1 skipped` and then went red
+        # solely on `Failed to CreateArtifact: ... Request timeout` after five
+        # retries — one transient request, since `ci-junit-shard-2` was the only
+        # missing artifact of that run's 20. PR #2123 (a ONE-FILE docs change)
+        # was blocked, pr_watcher classified it `ci_failed`, spent all five LLM
+        # resumes on a branch with no code in it, and escalated. Measured 2 such
+        # jobs in the last 40 failed runs (see
+        # docs/audits/task-det-27a4838a70-needed-a-human-resolution.md).
+        #
+        # Nothing is weakened. The GATE that reads this XML — `Skip census
+        # (runtime)`, next step — reads the LOCAL `.tmp/` path, never the
+        # artifact, and passed 2m09s after this upload gave up. The only
+        # consumer of the artifact is shard-timings.yml, which skips a shard
+        # that is absent and errors only when ZERO survive; those files keep
+        # their previous weights. This governs how FAST the gate runs, never
+        # what it COVERS (crx-test-07). `if-no-files-found: warn` already meant
+        # a MISSING file was non-fatal; the only behaviour that moves here is
+        # the NETWORK failure.
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           # The shard suffix is mandatory, not cosmetic: upload-artifact@v4
