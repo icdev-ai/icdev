@@ -68,6 +68,10 @@ from tools.ci.merge_readiness import (
 )
 from tools.kanban.state_machine import KanbanState
 from tools.kanban import deps as kanban_deps
+# kpr-watch-13: the delivery verdict is re-derived from the FILESYSTEM and
+# shares no code with `queue_message`, whose success only ever meant `write()`
+# did not raise.
+from tools.ci import resume_delivery
 
 
 logger = get_logger(__name__)
@@ -150,6 +154,26 @@ class WatcherAction:
     # row written before kpr-watch-07, which is why "no recorded sha" reads as
     # "another era" rather than as "this one".
     base_sha: str = ""
+    # kpr-watch-13: what happened to the injections BEFORE this one.
+    #
+    # A `resume` row used to say "injected resume context", which is a sentence
+    # about a file write phrased as a sentence about an agent: `_send_resume`
+    # appends one JSONL line to `.tmp/kanban/messages/<task>.jsonl` and returns.
+    # Measured 2026-09-06, 851 such lines were sitting undrained on disk against
+    # 849 lifetime `pr_watcher.resume` rows — so no recorded resume had ever
+    # been read, and the cap that follows was declaring five ATTEMPTS THAT WERE
+    # NEVER MADE.
+    #
+    # `delivery` is `delivered` | `undelivered` | `unmeasured`, re-derived from
+    # the FILESYSTEM by tools/ci/resume_delivery.py — never from
+    # `queue_message`'s return value, which only ever meant `write()` did not
+    # raise. `unmeasured` is a real answer (the first injection for a task has
+    # nothing prior to judge) and is never folded into either other.
+    delivery: str = ""
+    delivery_detail: str = ""
+    # Seconds the FINAL injection was given before this escalation fired. Only
+    # set on `escalate` — see the decision recorded at that branch.
+    final_attempt_grace_seconds: Optional[float] = None
 
 
 @dataclass
@@ -938,6 +962,41 @@ class PRWatcher:
         except Exception as exc:
             logger.warning("pr_watcher: queue_message import failed: %s", exc)
             return False
+
+    def _probe_prior_delivery(
+        self, task_id: str, *, had_prior_injection: bool,
+    ) -> resume_delivery.DeliveryVerdict:
+        """Were this task's EARLIER injections ever read? (kpr-watch-13)
+
+        Read-only and fail-quiet: an unreadable queue is `unmeasured`, which is
+        a real answer and never a clean bill of health. A method purely so a
+        test can observe or replace it, the same way `_send_resume` is.
+        """
+        try:
+            return resume_delivery.probe_prior_delivery(
+                task_id, had_prior_injection=had_prior_injection)
+        except Exception as exc:  # noqa: BLE001 — never break the watch loop
+            logger.debug(
+                "pr_watcher: delivery probe failed for %s: %s", task_id, exc)
+            return resume_delivery.DeliveryVerdict(
+                resume_delivery.UNMEASURED, "probe raised")
+
+    def _summarize_resume_delivery(
+        self, task_id: str, *, injections: int,
+    ) -> Dict[str, Any]:
+        """Delivered / undelivered / unaccounted across a whole resume budget."""
+        try:
+            return resume_delivery.summarize_delivery(
+                task_id, injections=injections)
+        except Exception as exc:  # noqa: BLE001 — never break the watch loop
+            logger.debug(
+                "pr_watcher: delivery summary failed for %s: %s", task_id, exc)
+            return {
+                "injections": injections, "delivered": None,
+                "undelivered": None, "unaccounted": None,
+                "verdict": resume_delivery.UNMEASURED,
+                "detail": "summary raised",
+            }
 
     def _emit_wake_events(
         self, pr_url: str, classification: Any, state: dict,
@@ -3815,22 +3874,62 @@ class PRWatcher:
                         "pr_watcher: %s already escalated (%d/%d) — staying quiet",
                         pr_url, cycle, max_cycles)
                     continue
+                # HOW MANY OF THOSE INJECTIONS WERE ACTUALLY READ (kpr-watch-13).
+                # This is the one place the whole budget is knowable, and the
+                # one place it is quoted to a human as "manual intervention
+                # required after N attempts". Measured on this deployment the
+                # honest answer is NONE: every injection is still sitting in
+                # `.tmp/kanban/messages/<task>.jsonl`, unread.
+                delivery = self._summarize_resume_delivery(
+                    task["id"], injections=cycle)
+
+                # THE FINAL ATTEMPT'S GRACE IS A DECISION, NOT AN ACCIDENT OF
+                # BRANCH ORDER — and it is MEASURED here rather than assumed.
+                #
+                # `resume_cooldown_seconds` spaces injections 1 -> N. It does not
+                # protect the LAST one: this branch fires on the first poll where
+                # `cycle >= max_cycles`, one poll after the final injection.
+                # Replaying all 153 lifetime cap escalations (146 with a
+                # preceding resume row), final resume -> escalate ran
+                # min 32s / p50 41s / p90 60s / max 715s, with 145/146 (99.3%)
+                # inside the 600s the cooldown constant was written to rule out.
+                #
+                # KEPT AS IS, deliberately. Holding the escalation for a full
+                # cooldown would delay every HITL alert by ~10 minutes to rescue
+                # a fifth attempt that, on this deployment, was never delivered
+                # at all — the repair is DELIVERY, not a longer wait for a
+                # message nobody reads, and moving a threshold to quieten a
+                # symptom is what this card explicitly forbids. The cost is
+                # therefore RECORDED on every escalation instead of argued about
+                # once: `final_attempt_grace_seconds` makes it a live series, so
+                # a future card can re-derive it without replaying history.
+                grace = self._seconds_since_last_resume(
+                    task["id"], pr_url=pr_url)
+
                 action = WatcherAction(
                     task_id=task["id"], pr_url=pr_url,
                     classification=classification.value,
                     action="escalate",
                     reason=(
                         f"resume cap reached ({cycle}/{max_cycles}) — "
-                        "manual intervention required"
+                        "manual intervention required; "
+                        + resume_delivery.escalation_note(delivery)
                     ),
                     resume_cycle=cycle,
+                    delivery=str(delivery.get("verdict") or ""),
+                    delivery_detail=str(delivery.get("detail") or ""),
+                    final_attempt_grace_seconds=grace,
                 )
                 # This is the legitimate HITL case: every automatic recovery is
-                # spent. Notify rather than only logging.
+                # spent. Notify rather than only logging. The delivery clause
+                # goes AFTER the `(n/m) after <cause>.` prefix that
+                # tools/kanban/hitl_alert_view.py parses, so the alert gains a
+                # sentence without changing what any reader already extracts.
                 self._hitl_alert(
                     task["id"], pr_url,
                     f"resume cap reached ({cycle}/{max_cycles}) after "
-                    f"{classification.value}.")
+                    f"{classification.value}. "
+                    f"{resume_delivery.escalation_note(delivery)}.")
                 report.actions.append(action)
                 self._audit(action)
                 continue
@@ -3867,6 +3966,13 @@ class PRWatcher:
                 ))
                 continue
 
+            # WHAT HAPPENED TO THE LAST ONE (kpr-watch-13). Probed BEFORE the
+            # append, or the new message inflates its own evidence and every
+            # first injection reports `undelivered` forever — a constant wearing
+            # the name of a measurement.
+            delivery = self._probe_prior_delivery(
+                task["id"], had_prior_injection=cycle > 0)
+
             context = prepare_resume_context(
                 task["id"],
                 classification,
@@ -3879,11 +3985,19 @@ class PRWatcher:
                 task_id=task["id"], pr_url=pr_url,
                 classification=classification.value,
                 action="resume" if queued else "wait",
-                reason="injected resume context"
+                # NEVER "injected resume context" again. This row records that a
+                # line was ENQUEUED, and states separately what became of the
+                # previous ones — the only delivery question answerable now.
+                reason=(
+                    f"resume enqueued; prior injections: {delivery.verdict}"
+                    + (f" ({delivery.detail})" if delivery.detail else "")
+                )
                 if queued
                 else "queue_message failed",
                 resume_cycle=cycle + 1,
                 context_preview=context[:400],
+                delivery=delivery.verdict,
+                delivery_detail=delivery.detail,
             )
             report.actions.append(action)
             self._audit(action)
