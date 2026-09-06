@@ -1041,13 +1041,27 @@ def _run_reflex(name: str, config: Dict[str, Any], trust) -> Tuple[bool, float, 
 def _register_process_identity() -> None:
     """Record which code THIS daemon is running (autonomy-id-01).
 
-    The genesis daemon is the one supervised process that does NOT self-update:
-    ``kanban_scheduler`` and ``pr_watcher`` both call
-    ``code_reload.restart_if_code_changed`` in their poll loops, and this does
-    not — so a merged fix goes live here only on restart, and until this record
+    The genesis daemon was the one supervised process that did NOT self-update
+    — ``kanban_scheduler`` and ``pr_watcher`` both call
+    ``code_reload.restart_if_code_changed`` in their poll loops, and this did
+    not — so a merged fix went live here only on restart, and until this record
     existed nothing could report that it had not. Observed 2026-08-20: three
     fixes merged and the daemon went on executing pre-merge code while the board
     was correct and CI was green.
+
+    That was the SYMPTOM, and wiring the reload into ``DaemonBase.run_forever``
+    did not cure it for the code this daemon mostly runs. THE CAUSE
+    (autonomy-id-06): the reload's baseline was a ``snapshot()`` of
+    ``sys.modules`` taken once at start, every reflex is imported lazily on its
+    first dispatch, and ``changed_files`` compares only paths in BOTH
+    snapshots — so a reflex was never in the watch set for the life of the
+    process. Measured 2026-09-06: 30 modules watched at start, 0 of the 101
+    reflexes in ``REFLEX_NAMES``; #2146's fix to ``reflexes/kanban.py`` re-exec'd
+    the scheduler (which imports that reflex at startup) two minutes after it
+    merged, and this daemon ran the pre-fix reflex until a human applied
+    ``restart_stale_daemon``. ``code_reload.adopt_new_imports`` now brings each
+    lazily imported file into the baseline the first time the watcher sees it,
+    so the next change to it re-execs this process like any other.
 
     Best-effort by construction. A daemon that cannot name its code must still
     start; the record is observability, not authorization.
