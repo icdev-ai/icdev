@@ -123,13 +123,23 @@ def test_quoted_list_line_is_mains_tokens_plus_the_cards_new_one():
     assert notes == ["quoted_list_line@1"]
 
 
-def test_quoted_list_line_on_the_real_compliance_dropdown_line():
-    """The live line: the list sits INSIDE `class="..."`, so under the wrong
-    quote kind the whole attribute is one token each side rewrote. The rule
-    must find the single-quoted list and union THAT."""
-    html = (ROOT / "tools" / "dashboard" / "templates" / "base.html").read_text(encoding="utf-8")
-    line = next(ln for ln in html.splitlines(keepends=True)
-                if "request.path in [" in ln and "Compliance" in ln)
+def test_quoted_list_line_on_the_compliance_dropdown_line_SHAPE():
+    """The line shape this rule exists for: the list sits INSIDE `class="..."`, so under
+    the wrong quote kind the whole attribute is one token each side rewrote. The rule must
+    find the single-quoted list and union THAT.
+
+    THE FIXTURE IS A LITERAL, and it used to be read out of the live base.html. mfx-sib-02
+    landed while this card was in flight and DERIVED that list (tools/dashboard/nav_paths.py),
+    so the hardcoded line it scraped no longer exists and the scrape raised StopIteration --
+    the test failing for a reason that had nothing to do with the rule under test. What is
+    being asserted is the RULE's behaviour on this line SHAPE, so the shape belongs in the
+    test; reading it from a template made the test a hostage of an unrelated card.
+    """
+    line = (
+        '        <a href="/boundary/compliance-hub" class="{% if request.path in '
+        "['/boundary/ato-compliance','/boundary/poam','/boundary/oscal'] "
+        '%}active{% endif %}">Compliance</a>\n'
+    )
     anchor = "'/boundary/poam',"
     assert anchor in line
     main = line.replace(anchor, anchor + "'/boundary/main-card',", 1)
