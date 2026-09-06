@@ -968,6 +968,26 @@ python tools/kanban/cli.py --set-status <id> done --merge --protected-ok --reaso
 # failed check, and an EMPTY rollup), so the blunt override would have taken
 # exactly that safety away. An operator who wants ONE protected PR landed should
 # not have to disarm the guard for all of them.
+# THE SIBLING TIE-BREAK IS HALF THE RULE, AND THIS DOOR WAS RUNNING THE OTHER
+# HALF. `hold_on_sibling_conflict` SERIALISES merges over a shared source file
+# -- merge one, let the rest rebase -- and sharing is SYMMETRIC, so holding
+# every sibling is not serialisation, it is the stall
+# `pr_watcher._wins_sibling_tiebreak` was written to break (its docstring: 14
+# AGOV PRs, the whole board at "awaiting merge", zero active tasks; LOWEST PR
+# NUMBER WINS, which is the oldest PR and is deterministic across processes).
+# `pr_watcher` consults it; `land.py` reused `_sibling_conflicts` and NOT the
+# function that RESOLVES what `_sibling_conflicts` reports, so two
+# implementations of one policy disagreed -- the watcher would merge the
+# lowest-numbered sibling while the door refused that same PR. MEASURED
+# 2026-09-06 on THIS card's own PR #2143: lowest of its set
+# {2143, 2145, 2154, 2156}, first in the queue by the policy's own rule, held by
+# the door alone with every other check green. The door now reads
+# `_open_pr_index` (the same gh call already carries `mergeable`/`draft`), drops
+# siblings `_pr_can_merge` says the forge would refuse, and holds only when the
+# tie-break says this PR LOSES. NOT a widening: at most one PR in a set can be
+# the lowest-numbered, so two PRs sharing a file still cannot merge together --
+# asserted, along with an AST test pinning the door to the WATCHER'S functions
+# so a future edit cannot re-derive "lowest number wins" locally.
 # ALL THIRTEEN CHECKS STILL RUN. The flag overrides EXACTLY ONE rung --
 # `_refuse_protected`, the first statement of `pr_watcher._auto_merge` -- and
 # nothing else. pr_recorded, pr_readable, pr_open, base_is_default, mergeable,
