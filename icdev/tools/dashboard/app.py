@@ -7823,7 +7823,14 @@ def create_app(testing: bool = False) -> Flask:
             from tools.db.storage import get_connection as _gc
             _gc().execute("SELECT 1").fetchone()
             db_ok = True
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 — a probe reports, never raises
+            # LOG IT. This bare handler swallowed an UndefinedColumn raised by
+            # the RLS rewrite of "SELECT 1" (see row_security._is_tableless_select)
+            # and answered `degraded` on every request against a healthy
+            # database, with nothing written anywhere. A probe whose failure is
+            # invisible cannot tell an outage from its own bug.
+            logger.warning("api_health: database probe failed: %s: %s",
+                           type(exc).__name__, exc)
             db_ok = False
         return jsonify({"status": "ok" if db_ok else "degraded", "db": db_ok})
 

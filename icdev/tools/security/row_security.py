@@ -52,6 +52,7 @@ _RE_UPDATE = re.compile(r"^\s*UPDATE\b", re.IGNORECASE)
 _RE_DELETE = re.compile(r"^\s*DELETE\b", re.IGNORECASE)
 _RE_INSERT = re.compile(r"^\s*INSERT\b", re.IGNORECASE)
 _RE_JOIN = re.compile(r"\bJOIN\b", re.IGNORECASE)
+_RE_FROM_KW = re.compile(r"\bFROM\b", re.IGNORECASE)
 
 # Matches the primary table (and optional alias) in a FROM clause.
 # Negative lookahead excludes SQL keywords so "FROM foo JOIN bar" doesn't
@@ -107,6 +108,62 @@ def _depth0_skeleton(sql: str) -> str:
         out.append(ch if depth == 0 else " ")
         i += 1
     return "".join(out)
+
+
+def _blank_literals(sql: str) -> str:
+    """Return ``sql`` with every string literal blanked, at EVERY paren depth.
+
+    Deliberately not ``_depth0_skeleton``: that one also blanks subquery bodies,
+    and the caller below (``_is_tableless_select``) has to see a ``FROM`` no
+    matter how deeply it is nested.
+    """
+    out = []
+    i = 0
+    n = len(sql)
+    while i < n:
+        ch = sql[i]
+        if ch in ("'", '"'):
+            quote = ch
+            i += 1
+            while i < n and sql[i] != quote:
+                if sql[i] == '\\':
+                    i += 1
+                i += 1
+            i += 1  # closing quote
+            out.append(" ")
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _is_tableless_select(sql: str) -> bool:
+    """True for a SELECT that names no relation anywhere, e.g. ``SELECT 1``.
+
+    ``get_connection().execute("SELECT 1")`` is how ``/api/health`` and several
+    other probes ask "is the database up". With a security context attached it
+    became::
+
+        SELECT 1 WHERE (classification IS NULL OR ... )
+
+    and PostgreSQL raised ``UndefinedColumn: column "classification" does not
+    exist`` -- there is no relation for the column to resolve against. The
+    health route's bare ``except Exception`` read that as "the database is
+    down", so the endpoint answered ``degraded`` on every request while the
+    database served rows on the same process. Injection into a statement that
+    reads no row restricts nothing; it only invalidates the statement.
+
+    THE RULE IS NARROWER THAN "no FROM at depth 0", on purpose. Skipping
+    injection for a statement that CAN read rows is a privilege escalation, so
+    the test is "no ``FROM`` keyword anywhere, at any nesting depth". A scalar
+    subquery (``SELECT (SELECT c FROM t LIMIT 1)``) names a table and is left on
+    whatever path it was already taking. UPDATE/DELETE are excluded by the
+    leading-SELECT anchor -- an ``UPDATE t SET ...`` has no FROM clause either
+    and absolutely must still be filtered.
+    """
+    if not _RE_SELECT.match(sql):
+        return False
+    return not _RE_FROM_KW.search(_blank_literals(sql))
 
 
 #: Table-name prefixes that identify a database SYSTEM CATALOG rather than an
@@ -304,6 +361,13 @@ def inject_row_predicate(
     # caller usually reads the resulting error as "capability unavailable"
     # rather than "query malformed". See _SYSTEM_TABLE_PREFIXES.
     if _is_system_table(sql):
+        return sql, (), 0
+
+    # A SELECT that names no relation reads no row, so there is nothing to
+    # filter and the injected WHERE has no table to resolve against. See
+    # _is_tableless_select for why the rule is "no FROM anywhere" rather than
+    # "no FROM at depth 0".
+    if _is_tableless_select(sql):
         return sql, (), 0
 
     extra_clauses: list[str] = []
