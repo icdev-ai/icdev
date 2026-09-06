@@ -458,3 +458,86 @@ def test_a_listening_socket_never_outlives_the_process_that_made_it(tmp_path: Pa
             with contextlib.suppress(OSError, ValueError):
                 os.kill(int(pidfile.read_text(encoding="utf-8").strip()),
                         signal.SIGTERM)
+
+
+# --------------------------------------------------------------------------- #
+# A lazily imported module is INSIDE the watch set from the cycle it arrives
+# (autonomy-id-06)
+# --------------------------------------------------------------------------- #
+# Measured 2026-09-06: #2146 fixed tools/genesis/reflexes/kanban.py and merged at
+# 16:17:04Z. The kanban scheduler, which imports that reflex at startup, pulled
+# and re-exec'd at 16:19:20Z. The genesis daemon imports every reflex lazily on
+# first dispatch, `snapshot()` had been taken once at run_forever start, and
+# `changed_files` only ever compared paths in BOTH snapshots -- so for the life
+# of that process no reflex was watched at all, and at 16:48Z its stale kanban
+# reflex parked a task with the pre-fix shape. A human ran restart_stale_daemon.
+
+
+def _lazy_module(tmp_path: Path, monkeypatch, name: str = "icdev_lazy_reflex"):
+    """A module on disk BEFORE the baseline, imported only AFTER it -- the
+    shape of every genesis reflex."""
+    src = tmp_path / f"{name}.py"
+    src.write_text("VALUE = 1\n", encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.delitem(sys.modules, name, raising=False)
+    return src
+
+
+def _bump_mtime(path: Path) -> None:
+    st = path.stat()
+    os.utime(path, (st.st_atime, st.st_mtime + 10))
+
+
+def test_a_module_imported_AFTER_the_baseline_is_watched_from_then_on(tmp_path, monkeypatch):
+    """The card's own proof: import after snapshot(), touch, assert it is seen."""
+    src = _lazy_module(tmp_path, monkeypatch)
+    baseline = cr.snapshot(root=tmp_path)
+    assert str(src) not in baseline
+
+    __import__("icdev_lazy_reflex")          # the first dispatch of a reflex
+    ex = _Exec()
+    first = cr.restart_if_code_changed(
+        baseline, started_at=0, pull=False, root=tmp_path, execv=ex)
+    assert first == [] and ex.calls == [], (
+        "a first import of a file that was on disk unchanged must never restart")
+    assert str(src) in baseline, "the lazily imported file must join the watch set"
+
+    _bump_mtime(src)                          # the merged fix lands on disk
+    second = cr.restart_if_code_changed(
+        baseline, started_at=0, pull=False, root=tmp_path, execv=ex)
+    assert second == [str(src)]
+    assert len(ex.calls) == 1, "a fix to a lazily imported module must re-exec"
+
+
+def test_adoption_happens_BEFORE_the_pull_so_a_pull_cannot_hide_the_change(tmp_path, monkeypatch):
+    """Order matters. If the baseline adopted a new import AFTER pull_if_safe
+    had rewritten it, the adopted mtime would be the post-pull one and the
+    process would go on running the pre-pull code while the watch set said
+    current. The pull that reveals the fix is the one call that must see it."""
+    src = _lazy_module(tmp_path, monkeypatch, "icdev_lazy_pulled")
+    baseline = cr.snapshot(root=tmp_path)
+    __import__("icdev_lazy_pulled")
+
+    def pull_that_rewrites(root):
+        _bump_mtime(src)
+        return {"pulled": True, "files": 1}
+
+    monkeypatch.setattr(cr, "pull_if_safe", pull_that_rewrites)
+    ex = _Exec()
+    changed = cr.restart_if_code_changed(
+        baseline, started_at=0, pull=True, root=tmp_path, execv=ex)
+    assert changed == [str(src)]
+    assert len(ex.calls) == 1
+
+
+def test_lazy_imports_still_never_cause_a_restart_loop(tmp_path, monkeypatch):
+    """The rule this module was rewritten around stays: a file on disk unchanged,
+    imported for the first time, is not a change -- on this cycle or the next."""
+    _lazy_module(tmp_path, monkeypatch, "icdev_lazy_quiet")
+    baseline = cr.snapshot(root=tmp_path)
+    __import__("icdev_lazy_quiet")
+    ex = _Exec()
+    for _ in range(3):
+        assert cr.restart_if_code_changed(
+            baseline, started_at=0, pull=False, root=tmp_path, execv=ex) == []
+    assert ex.calls == []
