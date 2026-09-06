@@ -665,7 +665,10 @@ def _verify_jinja(rel: str, text: str) -> List[str]:
     except ImportError as exc:  # pragma: no cover - jinja2 is a hard dependency here
         raise UnionRefused(f"{rel}: jinja2 unavailable (unmeasured)") from exc
     try:
-        jinja2.Environment().parse(text, name=rel)
+        # autoescape=True is irrelevant to parsing (nothing is ever rendered
+        # here) but it is what bandit B701 asks for, and satisfying the check
+        # honestly beats a #nosec on a security gate.
+        jinja2.Environment(autoescape=True).parse(text, name=rel)
     except jinja2.TemplateSyntaxError as exc:
         raise UnionRefused(f"{rel}: Jinja does not parse after resolution -- line {exc.lineno}: {exc.message}") from exc
     return ["jinja_parse"]
