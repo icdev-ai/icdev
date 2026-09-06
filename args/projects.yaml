@@ -4,6 +4,517 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: wire
+  name: Wire Project
+  description: Auto-registered project for tasks with prefix 'wire-'. Update name
+    and description to reflect the project purpose.
+  task_prefix: wire-
+  default_open: true
+  briefs: []
+  epics:
+  - key: audit
+    title: AUDIT
+    priority: medium
+  - key: gate
+    title: GATE
+    priority: medium
+  - key: reg
+    title: REG
+    priority: medium
+  - key: req
+    title: REQ
+    priority: medium
+  - key: run
+    title: RUN
+    priority: medium
+- key: task_qa
+  name: Task Qa Project
+  description: Auto-registered project for tasks with prefix 'task-qa-'. Update name
+    and description to reflect the project purpose.
+  task_prefix: task-qa-
+  default_open: true
+  briefs: []
+  epics:
+  - key: sweep
+    title: SWEEP
+    priority: medium
+- key: shx
+  name: Shx Project
+  description: Auto-registered project for tasks with prefix 'shx-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: shx-
+  default_open: true
+  briefs: []
+  epics:
+  - key: auth
+    title: AUTH
+    priority: medium
+  - key: db
+    title: DB
+    priority: medium
+  - key: gate
+    title: GATE
+    priority: medium
+  - key: hyg
+    title: HYG
+    priority: medium
+  - key: llm
+    title: LLM
+    priority: medium
+  - key: safe
+    title: SAFE
+    priority: medium
+  - key: test
+    title: TEST
+    priority: medium
+- key: prem
+  name: Prem Project
+  description: Auto-registered project for tasks with prefix 'prem-'. Update name
+    and description to reflect the project purpose.
+  task_prefix: prem-
+  default_open: true
+  briefs: []
+  epics:
+  - key: bid
+    title: BID
+    priority: medium
+  - key: cpmp
+    title: CPMP
+    priority: medium
+  - key: gate
+    title: GATE
+    priority: medium
+  - key: ideal
+    title: IDEAL
+    priority: medium
+  - key: lcatq
+    title: LCATQ
+    priority: medium
+  - key: msr
+    title: MSR
+    priority: medium
+  - key: p0
+    title: P0
+    priority: medium
+  - key: people
+    title: PEOPLE
+    priority: medium
+  - key: pstaff
+    title: PSTAFF
+    priority: medium
+  - key: recomp
+    title: RECOMP
+    priority: medium
+  - key: ricoas
+    title: RICOAS
+    priority: medium
+  - key: rpt
+    title: RPT
+    priority: medium
+- key: pkg
+  name: Pkg Project
+  description: Auto-registered project for tasks with prefix 'pkg-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: pkg-
+  default_open: true
+  briefs: []
+  epics:
+  - key: docs
+    title: DOCS
+    priority: medium
+  - key: gate
+    title: GATE
+    priority: medium
+  - key: init
+    title: INIT
+    priority: medium
+  - key: reg
+    title: REG
+    priority: medium
+  - key: rel
+    title: REL
+    priority: medium
+  - key: setup
+    title: SETUP
+    priority: medium
+  - key: xcut
+    title: XCUT
+    priority: medium
+- key: pdx
+  name: Pdx Project
+  description: Auto-registered project for tasks with prefix 'pdx-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: pdx-
+  default_open: true
+  briefs: []
+  epics:
+  - key: data
+    title: DATA
+    priority: medium
+  - key: fix
+    title: FIX
+    priority: medium
+  - key: gate
+    title: GATE
+    priority: medium
+  - key: hyg
+    title: HYG
+    priority: medium
+  - key: ops
+    title: OPS
+    priority: medium
+  - key: perf
+    title: PERF
+    priority: medium
+  - key: sec
+    title: SEC
+    priority: medium
+  - key: test
+    title: TEST
+    priority: medium
+  - key: ux
+    title: UX
+    priority: medium
+- key: oxf
+  name: Oxf Project
+  description: Auto-registered project for tasks with prefix 'oxf-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: oxf-
+  default_open: true
+  briefs: []
+  epics:
+  - key: e2e
+    title: E2E
+    priority: medium
+  - key: fix
+    title: FIX
+    priority: medium
+  - key: gate
+    title: GATE
+    priority: medium
+- key: obx
+  name: Obx Project
+  description: Auto-registered project for tasks with prefix 'obx-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: obx-
+  default_open: true
+  briefs: []
+  epics:
+  - key: cov
+    title: COV
+    priority: medium
+  - key: fix
+    title: FIX
+    priority: medium
+  - key: gate
+    title: GATE
+    priority: medium
+  - key: hyg
+    title: HYG
+    priority: medium
+  - key: test
+    title: TEST
+    priority: medium
+  - key: trc
+    title: TRC
+    priority: medium
+- key: obs
+  name: Obs Project
+  description: Auto-registered project for tasks with prefix 'obs-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: obs-
+  default_open: true
+  briefs: []
+  epics:
+  - key: cov
+    title: COV
+    priority: medium
+  - key: done
+    title: DONE
+    priority: medium
+  - key: gate
+    title: GATE
+    priority: medium
+  - key: guard
+    title: GUARD
+    priority: medium
+  - key: metric
+    title: METRIC
+    priority: medium
+  - key: react
+    title: REACT
+    priority: medium
+  - key: tail
+    title: TAIL
+    priority: medium
+  - key: trace
+    title: TRACE
+    priority: medium
+- key: nmce
+  name: Nmce Project
+  description: Auto-registered project for tasks with prefix 'nmce-'. Update name
+    and description to reflect the project purpose.
+  task_prefix: nmce-
+  default_open: true
+  briefs: []
+  epics:
+  - key: purge
+    title: PURGE
+    priority: medium
+- key: mvs
+  name: Mvs Project
+  description: Auto-registered project for tasks with prefix 'mvs-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: mvs-
+  default_open: true
+  briefs: []
+  epics:
+  - key: alloc
+    title: ALLOC
+    priority: medium
+  - key: audit
+    title: AUDIT
+    priority: medium
+  - key: gate
+    title: GATE
+    priority: medium
+  - key: guard
+    title: GUARD
+    priority: medium
+  - key: invisible
+    title: INVISIBLE
+    priority: medium
+- key: mc
+  name: Mc Project
+  description: Auto-registered project for tasks with prefix 'mc-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: mc-
+  default_open: true
+  briefs: []
+  epics:
+  - key: reflex
+    title: REFLEX
+    priority: medium
+- key: kph_repark_fni
+  name: Kph Repark Fni Project
+  description: Auto-registered project for tasks with prefix 'kph-repark-fni-'. Update
+    name and description to reflect the project purpose.
+  task_prefix: kph-repark-fni-
+  default_open: true
+  briefs: []
+  epics:
+  - key: ana
+    title: ANA
+    priority: medium
+- key: e2p
+  name: E2P Project
+  description: Auto-registered project for tasks with prefix 'e2p-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: e2p-
+  default_open: true
+  briefs: []
+  epics:
+  - key: back
+    title: BACK
+    priority: medium
+- key: dvg
+  name: Dvg Project
+  description: Auto-registered project for tasks with prefix 'dvg-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: dvg-
+  default_open: true
+  briefs: []
+  epics:
+  - key: bench
+    title: BENCH
+    priority: medium
+  - key: core
+    title: CORE
+    priority: medium
+  - key: critic
+    title: CRITIC
+    priority: medium
+  - key: frames
+    title: FRAMES
+    priority: medium
+  - key: gate
+    title: GATE
+    priority: medium
+  - key: wire
+    title: WIRE
+    priority: medium
+  - key: xcut
+    title: XCUT
+    priority: medium
+- key: docmod
+  name: Docmod Project
+  description: Auto-registered project for tasks with prefix 'docmod-'. Update name
+    and description to reflect the project purpose.
+  task_prefix: docmod-
+  default_open: true
+  briefs: []
+  epics:
+  - key: bridge
+    title: BRIDGE
+    priority: medium
+  - key: catalog
+    title: CATALOG
+    priority: medium
+  - key: core
+    title: CORE
+    priority: medium
+  - key: hitl
+    title: HITL
+    priority: medium
+  - key: learner
+    title: LEARNER
+    priority: medium
+  - key: ops
+    title: OPS
+    priority: medium
+  - key: packs
+    title: PACKS
+    priority: medium
+  - key: regen
+    title: REGEN
+    priority: medium
+  - key: ux
+    title: UX
+    priority: medium
+- key: cvx
+  name: Cvx Project
+  description: Auto-registered project for tasks with prefix 'cvx-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: cvx-
+  default_open: true
+  briefs: []
+  epics:
+  - key: gate
+    title: GATE
+    priority: medium
+  - key: gen
+    title: GEN
+    priority: medium
+  - key: nav
+    title: NAV
+    priority: medium
+  - key: net
+    title: NET
+    priority: medium
+  - key: spk
+    title: SPK
+    priority: medium
+  - key: sql
+    title: SQL
+    priority: medium
+  - key: tch
+    title: TCH
+    priority: medium
+- key: cnr
+  name: Cnr Project
+  description: Auto-registered project for tasks with prefix 'cnr-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: cnr-
+  default_open: true
+  briefs: []
+  epics:
+  - key: bi
+    title: BI
+    priority: medium
+  - key: cc
+    title: CC
+    priority: medium
+  - key: doc
+    title: DOC
+    priority: medium
+  - key: dsoc
+    title: DSOC
+    priority: medium
+  - key: gate
+    title: GATE
+    priority: medium
+  - key: iop
+    title: IOP
+    priority: medium
+  - key: mc
+    title: MC
+    priority: medium
+  - key: mdc
+    title: MDC
+    priority: medium
+  - key: me
+    title: ME
+    priority: medium
+  - key: mi
+    title: MI
+    priority: medium
+  - key: nav
+    title: NAV
+    priority: medium
+  - key: ops
+    title: OPS
+    priority: medium
+  - key: plat
+    title: PLAT
+    priority: medium
+  - key: qdc
+    title: QDC
+    priority: medium
+  - key: wfc
+    title: WFC
+    priority: medium
+  - key: zig
+    title: ZIG
+    priority: medium
+- key: bdt
+  name: Bdt Project
+  description: Auto-registered project for tasks with prefix 'bdt-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: bdt-
+  default_open: true
+  briefs: []
+  epics:
+  - key: gate
+    title: GATE
+    priority: medium
+  - key: iqe
+    title: IQE
+    priority: medium
+  - key: mon
+    title: MON
+    priority: medium
+  - key: sch
+    title: SCH
+    priority: medium
+- key: bdr
+  name: Bdr Project
+  description: Auto-registered project for tasks with prefix 'bdr-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: bdr-
+  default_open: true
+  briefs: []
+  epics:
+  - key: feat
+    title: FEAT
+    priority: medium
+  - key: gate
+    title: GATE
+    priority: medium
+  - key: hyg
+    title: HYG
+    priority: medium
+  - key: ops
+    title: OPS
+    priority: medium
+  - key: sec
+    title: SEC
+    priority: medium
+  - key: ux
+    title: UX
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
 - key: aca
   name: ACA - FORGE Academy Assessment Integrity and Learner Experience
   description: 'Remediation of the /academy audit run 2026-07-29 against the live
@@ -2110,6 +2621,9 @@ projects:
   - key: sql
     title: SQL
     priority: medium
+  - key: gate
+    title: GATE
+    priority: medium
 - key: cvo
   name: Canvas Orchestration
   description: 'Cross-canvas event bus and unified compliance health: NDC->SDC topology
@@ -2239,6 +2753,9 @@ projects:
     priority: medium
   - key: gap
     title: Oracle Gap Tasks (orphan_db_table, tool_not_in_manifest, route_no_e2e)
+    priority: medium
+  - key: seed
+    title: SEED
     priority: medium
 - key: ndchat
   name: NDC Chat Context Bridge
@@ -5447,61 +5964,57 @@ projects:
     with real data provenance, and that the entire ecosystem enforces data masking.
     Ports DIC's mandatory-citation + abstention model to /rfi and /proposals, makes
     redaction fail-closed with ingestion-time masking and scheduled DB scanning, and
-    wires the confabulation detector into every drafting pipeline. Plan file
-    .claude/plans/we-implement-anti-hallucination-and-clever-canyon.md.
+    wires the confabulation detector into every drafting pipeline. Plan file .claude/plans/we-implement-anti-hallucination-and-clever-canyon.md.
   task_prefix: trust-
   default_open: true
   briefs:
   - 'cite: Universal citation & provenance — extract a shared citation_grounding core
-    from DIC, add mandatory [source:] citations + blocking gate to /proposals and /rfi,
-    attach a PROV lineage object to every generated artifact, materialize
-    rag_provenance_ledger, and cover generated child apps (trust-cite-01..05)'
-  - 'mask: Fail-closed data masking — abort LLM egress when the sanitizer is
-    missing/errors, mask at RAG ingestion and document upload, add a scheduled DB-scan
-    + remediation reflex, populate the GovCon deny-lists, and add core-engine unit
-    tests (trust-mask-01..05)'
+    from DIC, add mandatory [source:] citations + blocking gate to /proposals and
+    /rfi, attach a PROV lineage object to every generated artifact, materialize rag_provenance_ledger,
+    and cover generated child apps (trust-cite-01..05)'
+  - 'mask: Fail-closed data masking — abort LLM egress when the sanitizer is missing/errors,
+    mask at RAG ingestion and document upload, add a scheduled DB-scan + remediation
+    reflex, populate the GovCon deny-lists, and add core-engine unit tests (trust-mask-01..05)'
   - 'halluc: Anti-hallucination consistency — wire confabulation_detector.check_output
     into the RFI/proposals/DIC generation post-pass and decide the CoD default for
     judgment/architecture sections (trust-halluc-01..02)'
   - 'xcut: Cross-cutting — coherence-checker assertions for citation/ingestion/sources
-    coverage plus a CLAUDE.md guardrail and append-only table registration
-    (trust-xcut-01..02)'
+    coverage plus a CLAUDE.md guardrail and append-only table registration (trust-xcut-01..02)'
   - 'spine: TRUST v2 — two-stage gate spine, and adoption of the guards that shipped
-    with ZERO production callers. v1 built the claim tier (decompose_claims →
-    bind_claim_span → verify_claim → claim_gate) and the constitution rule block in
-    args/security_gates.yaml, and nothing ever called either — so the only thing
-    gating a promote was the shallow tier, and a fluent, well-cited, entirely
-    invented sentence passed. Stage 1 is deterministic and LLM-free so it runs
-    air-gapped; stage 2 is semantic and may never unblock stage 1 (trust-spine-01..)'
+    with ZERO production callers. v1 built the claim tier (decompose_claims → bind_claim_span
+    → verify_claim → claim_gate) and the constitution rule block in args/security_gates.yaml,
+    and nothing ever called either — so the only thing gating a promote was the shallow
+    tier, and a fluent, well-cited, entirely invented sentence passed. Stage 1 is
+    deterministic and LLM-free so it runs air-gapped; stage 2 is semantic and may
+    never unblock stage 1 (trust-spine-01..)'
   - 'kg: KG-to-text constrained validation — entity existence, type-schema legality
-    against the kg_ontology type-triple table already materialised from
-    ontology_subclass_closure, and edge existence. kg_unknown is NEVER scored
-    kg_contradicted: an empty graph must not fabricate findings (trust-kg-01..)'
-  - 'struct: Guardrails & structured outlining — one JSON-schema-subset validator to
-    replace three hand-rolled extractors, plus required-section contracts.
-    cortex.extract stops degrading silently on schema non-conformance (trust-struct-01..)'
+    against the kg_ontology type-triple table already materialised from ontology_subclass_closure,
+    and edge existence. kg_unknown is NEVER scored kg_contradicted: an empty graph
+    must not fabricate findings (trust-kg-01..)'
+  - 'struct: Guardrails & structured outlining — one JSON-schema-subset validator
+    to replace three hand-rolled extractors, plus required-section contracts. cortex.extract
+    stops degrading silently on schema non-conformance (trust-struct-01..)'
   - 'self: Self-correction & Self-RAG adoption — a bounded MONOTONE revise-and-recheck
     loop (a round that adds findings is discarded), plus adoption of reflective_rerank
-    and the WRAPPER-UNADOPTED AdaptiveRetriever at the Cortex search seam
-    (trust-self-01..)'
-  - 'hitl: HITL deltas — the delta becomes the reviewable unit. Append-only
-    trust_deltas evidence + mutable approval_items state (the approval_inbox split),
-    a side-by-side delta review panel, and a mandatory force_reason on every override
-    (trust-hitl-01..)'
+    and the WRAPPER-UNADOPTED AdaptiveRetriever at the Cortex search seam (trust-self-01..)'
+  - 'hitl: HITL deltas — the delta becomes the reviewable unit. Append-only trust_deltas
+    evidence + mutable approval_items state (the approval_inbox split), a side-by-side
+    delta review panel, and a mandatory force_reason on every override (trust-hitl-01..)'
   - 'disc: Discrimination evidence (D396/D397) - every guardrail ICDEV has verifies
-    STRUCTURE, none verifies DISCRIMINATION, and a check that cannot fail carries zero
-    bits. Seven checks measured worthless in one session on 2026-08-14, including one
-    written while fixing the others. Makes red-first proof an ARTIFACT rather than an
-    ANVIL instruction, runs changed tests both alone and in-suite, counts a CI skip as
-    unmeasured rather than passing, and probes a substrate for rows before work is
-    designed against it (trust-disc-01..06)'
+    STRUCTURE, none verifies DISCRIMINATION, and a check that cannot fail carries
+    zero bits. Seven checks measured worthless in one session on 2026-08-14, including
+    one written while fixing the others. Makes red-first proof an ARTIFACT rather
+    than an ANVIL instruction, runs changed tests both alone and in-suite, counts
+    a CI skip as unmeasured rather than passing, and probes a substrate for rows before
+    work is designed against it (trust-disc-01..06)'
   - 'anchor: Pluggable anchor transport — GovChain is NOT greenfield; the one missing
     piece is a transport. hfc is in no requirements file so HAS_FABRIC is permanently
-    False, and the fabric.cli_path peer subprocess transport declared in
-    args/blockchain_config.yaml under D-GC-1 was never built (trust-anchor-01..)'
+    False, and the fabric.cli_path peer subprocess transport declared in args/blockchain_config.yaml
+    under D-GC-1 was never built (trust-anchor-01..)'
   epics:
   - key: cite
-    title: Universal Citation & Provenance — mandatory sources on every generated artifact
+    title: Universal Citation & Provenance — mandatory sources on every generated
+      artifact
     priority: high
   - key: mask
     title: Fail-Closed Masking — egress gate, ingestion masking, scheduled DB scan
@@ -5533,6 +6046,9 @@ projects:
   - key: disc
     title: v2 — Discrimination evidence (D396/D397)
     priority: high
+  - key: gate
+    title: GATE
+    priority: medium
 - key: kanban-external-dispatch
   name: Kanban External-Repo Dispatch
   description: 'Make ICDev''s kanban runner able to BUILD INTO external repos (compass,
@@ -5562,11 +6078,13 @@ projects:
     priority: high
 - key: pgrt
   name: PG-Primary Runtime Migration
-  description: 'Migrate SQLite-authored runtime modules to PostgreSQL-primary; SQLite retained only as a guarded fallback. Audit-driven and manual-gated. See docs/migration/pg-primary-runtime-audit.md.'
+  description: Migrate SQLite-authored runtime modules to PostgreSQL-primary; SQLite
+    retained only as a guarded fallback. Audit-driven and manual-gated. See docs/migration/pg-primary-runtime-audit.md.
   task_prefix: pgrt-
   default_open: true
   briefs:
-  - 'gate: manual gate held in_progress — PG migrations are false-positive heavy and need per-file verification (pgrt-gate-00)'
+  - 'gate: manual gate held in_progress — PG migrations are false-positive heavy and
+    need per-file verification (pgrt-gate-00)'
   epics:
   - key: json
     title: PG1 — JSON runtime violations (pgp-tx-03 gate)
@@ -5597,6 +6115,9 @@ projects:
     priority: medium
   - key: sweep
     title: PG4 — PRAGMA / sqlite_master cleanup sweep + linter baseline
+    priority: medium
+  - key: gate
+    title: GATE
     priority: medium
 - key: bom_engine
   name: BOM Evidence Engine (ICDEV core)
@@ -5850,28 +6371,28 @@ projects:
     title: Verification & Gates
     priority: high
 - key: rce
-  name: 'RCE — RAG Context Engineering'
+  name: RCE — RAG Context Engineering
   description: 'Evolve the existing RAG stack instead of swapping backends, per the
     C:\AI\searches\rag_alt.md analysis (July 2026). Adopt: (1) Anthropic-style contextual
     retrieval — LLM-generated 50-100 token context prefix per chunk at ingestion;
-    (2) RAPTOR summary hierarchy above flat chunks; (3) SQLite-fallback vector
-    quantization (float16 + optional binary/Hamming pre-filter) — pure Python, air-gap
-    safe; (4) eval-first — baseline retrieval-quality harness before/after each change.
-    Explicitly SKIPPED: TurboQuant (no pgvector integration), Turbopuffer (cloud-only,
-    breaks air-gap SQLite fallback), Qdrant (deferred — Rust dep vs pure-Python
-    fallback philosophy). Embedding fine-tune is a SPIKE only: the doc''s premise
-    (nomic-embed-text via Ollama) is stale — embeddings go through the provider
-    abstraction (get_embeddings), so a local sentence-transformers fine-tune needs a
-    feasibility go/no-go first. TRUST: contextual prefixes are LLM-generated content
-    entering the index — record provenance and keep raw chunk text alongside.'
+    (2) RAPTOR summary hierarchy above flat chunks; (3) SQLite-fallback vector quantization
+    (float16 + optional binary/Hamming pre-filter) — pure Python, air-gap safe; (4)
+    eval-first — baseline retrieval-quality harness before/after each change. Explicitly
+    SKIPPED: TurboQuant (no pgvector integration), Turbopuffer (cloud-only, breaks
+    air-gap SQLite fallback), Qdrant (deferred — Rust dep vs pure-Python fallback
+    philosophy). Embedding fine-tune is a SPIKE only: the doc''s premise (nomic-embed-text
+    via Ollama) is stale — embeddings go through the provider abstraction (get_embeddings),
+    so a local sentence-transformers fine-tune needs a feasibility go/no-go first.
+    TRUST: contextual prefixes are LLM-generated content entering the index — record
+    provenance and keep raw chunk text alongside.'
   task_prefix: rce-
   default_open: true
   briefs:
   - 'eval: Eval-first — golden query set + baseline metrics via tools/rag/evaluator.py
     and crag_evaluator.py; embedding fine-tune feasibility spike (rce-eval-01..02);
-    close the measurement gap — the ctx/raptor toggles shipped default-OFF and
-    UNMEASURED because the baseline corpus (research-heavy, ~0 NIST chunks) does not
-    match the compliance-targeted golden set (rce-eval-03)'
+    close the measurement gap — the ctx/raptor toggles shipped default-OFF and UNMEASURED
+    because the baseline corpus (research-heavy, ~0 NIST chunks) does not match the
+    compliance-targeted golden set (rce-eval-03)'
   - 'ctx: Contextual retrieval — context-prefix generation in ingestion_manager.py
     via LLMRouter, config toggle in args/rag_config.yaml, re-index CLI, measure vs
     baseline (rce-ctx-01..02)'
@@ -5883,16 +6404,16 @@ projects:
     (rce-quant-01..02)'
   - 'xcut: Docs + manifest shard + coherence registration + record the skip decisions
     (rce-xcut-01)'
-  - 'hyper: Hyper-retrieval spike — n-ary hypergraph RAG (HyperGraphRAG arXiv
-    2503.21322 / Hyper-RAG arXiv 2504.08758, Nature Comms Feb 2026) scoped to the
-    compliance-crosswalk subgraph, where facts are genuinely n-ary (NIST control +
-    impact level + framework + baseline + parameter) and today get shredded into
-    lossy binary kg_edges. PG stays the ONLY system of record — hyperedges reify
-    onto kg_hyperedges + members so tenant_id/classification RLS still applies;
-    hypergraph-db (PyPI, Apache-2.0, py3-none-any, zero deps) is evaluated as an
-    in-memory traversal library only, never as a second store. Go/no-go on measured
-    recall against the rce-eval-03 baseline, not on the papers numbers — magnitude
-    is single-lab and unreplicated. Depends on rce-eval-03 (rce-hyper-01)'
+  - 'hyper: Hyper-retrieval spike — n-ary hypergraph RAG (HyperGraphRAG arXiv 2503.21322
+    / Hyper-RAG arXiv 2504.08758, Nature Comms Feb 2026) scoped to the compliance-crosswalk
+    subgraph, where facts are genuinely n-ary (NIST control + impact level + framework
+    + baseline + parameter) and today get shredded into lossy binary kg_edges. PG
+    stays the ONLY system of record — hyperedges reify onto kg_hyperedges + members
+    so tenant_id/classification RLS still applies; hypergraph-db (PyPI, Apache-2.0,
+    py3-none-any, zero deps) is evaluated as an in-memory traversal library only,
+    never as a second store. Go/no-go on measured recall against the rce-eval-03 baseline,
+    not on the papers numbers — magnitude is single-lab and unreplicated. Depends
+    on rce-eval-03 (rce-hyper-01)'
   epics:
   - key: eval
     title: Eval-First — baseline harness + embedding fine-tune spike
@@ -5912,62 +6433,60 @@ projects:
   - key: hyper
     title: Hyper-Retrieval — n-ary hypergraph spike over the crosswalk subgraph
     priority: medium
+  - key: gate
+    title: GATE
+    priority: medium
 - key: sag
-  name: 'SAG — Standalone Agent (Hermes-Class) Runtime'
+  name: SAG — Standalone Agent (Hermes-Class) Runtime
   description: 'Recompose existing ICDEV primitives into a standalone conversational
     agent (`icdev chat`) per C:\AI\searches\icdev-standalone-agent-transformation-roadmap.md
     and icdev-standalone-agent-findings.md — CORRECTED against the codebase. The docs''
     core insight holds: agent_loop.py (run_agent_loop, canonical icdev/tools/llm/),
-    agent_loop_session.py, chat_manager.py, cortex/, router.py, storage.py are
-    production-ready but no process ties them into an interactive agent. HOWEVER the
-    docs'' #1 CRITICAL claim is FALSE: tools/gateway/ fully exists (Remote Command
-    Gateway Phase 28 — user_binder, event_envelope, command_router, security_chain,
-    response_filter, gateway_agent + 10 adapters incl. telegram/slack/teams/mattermost/
-    skype/github/gitlab); the analyst checked a stale icdev/ mirror path. Real gateway
-    gap is only conversational agent-mode routing + Discord/Email adapters. Other
-    corrections: skills self-creation partially exists (tools/nova/skill_generator.py +
-    reflexion_loop + nova_* MCP tools, gated ICDEV_HARNESS_COLEARN) — wire it, don''t
-    rebuild; safety gates exist headlessly (.claude/hooks/pre_tool_use.py +
-    tools/airgap/hook_compat.run_pre_tool_check) — add approval UX on top; cron
-    foundation exists (tools/daemon/base.py reflex infra + genesis reflex registry) —
-    add thin user-facing wrapper; user memory should integrate Second Brain / ACE SOUL,
-    not a parallel store. Genuinely missing: icdev chat runtime process, auto
-    tool-discovery with OpenAI schemas, filesystem checkpoints /rollback, directory
-    profile isolation, process-isolated subagent delegation. EXTENDED 2026-07-23 to
-    also absorb the earlier iterations of the same analysis
-    (C:\AI\searches\archive\icdev-hermes-agent-gap-analysis.md and
-    icdev-hermes-gap-02-databridge-correction.md) — additional corrections: their
-    proposed hermes_bridge_server.py is unnecessary (tools/mcp/unified_server.py
-    already exposes 600+ tools over stdio MCP to any client incl. Hermes — remaining
-    work is curated toolsets + setup doc + CUI egress review, sag-mcp-01); FTS session
-    search already exists (tools/memory/session_indexer.py, adapt-hermes-02 — wiring
-    only, sag-rt-04); skill hub already exists (Federated FORGE Marketplace with
-    install_manager + 7-gate pipeline — CLI wiring only, sag-skl-02); streaming
-    already exists (LLMRouter.invoke_streaming); DataBridge stays ETL — the
-    conversational gateway is tools/gateway (Phase 28), NOT an evolved DataBridge.'
+    agent_loop_session.py, chat_manager.py, cortex/, router.py, storage.py are production-ready
+    but no process ties them into an interactive agent. HOWEVER the docs'' #1 CRITICAL
+    claim is FALSE: tools/gateway/ fully exists (Remote Command Gateway Phase 28 —
+    user_binder, event_envelope, command_router, security_chain, response_filter,
+    gateway_agent + 10 adapters incl. telegram/slack/teams/mattermost/ skype/github/gitlab);
+    the analyst checked a stale icdev/ mirror path. Real gateway gap is only conversational
+    agent-mode routing + Discord/Email adapters. Other corrections: skills self-creation
+    partially exists (tools/nova/skill_generator.py + reflexion_loop + nova_* MCP
+    tools, gated ICDEV_HARNESS_COLEARN) — wire it, don''t rebuild; safety gates exist
+    headlessly (.claude/hooks/pre_tool_use.py + tools/airgap/hook_compat.run_pre_tool_check)
+    — add approval UX on top; cron foundation exists (tools/daemon/base.py reflex
+    infra + genesis reflex registry) — add thin user-facing wrapper; user memory should
+    integrate Second Brain / ACE SOUL, not a parallel store. Genuinely missing: icdev
+    chat runtime process, auto tool-discovery with OpenAI schemas, filesystem checkpoints
+    /rollback, directory profile isolation, process-isolated subagent delegation.
+    EXTENDED 2026-07-23 to also absorb the earlier iterations of the same analysis
+    (C:\AI\searches\archive\icdev-hermes-agent-gap-analysis.md and icdev-hermes-gap-02-databridge-correction.md)
+    — additional corrections: their proposed hermes_bridge_server.py is unnecessary
+    (tools/mcp/unified_server.py already exposes 600+ tools over stdio MCP to any
+    client incl. Hermes — remaining work is curated toolsets + setup doc + CUI egress
+    review, sag-mcp-01); FTS session search already exists (tools/memory/session_indexer.py,
+    adapt-hermes-02 — wiring only, sag-rt-04); skill hub already exists (Federated
+    FORGE Marketplace with install_manager + 7-gate pipeline — CLI wiring only, sag-skl-02);
+    streaming already exists (LLMRouter.invoke_streaming); DataBridge stays ETL —
+    the conversational gateway is tools/gateway (Phase 28), NOT an evolved DataBridge.'
   task_prefix: sag-
   default_open: true
   briefs:
-  - 'rt: Agent runtime — tools/agent_runtime/ process wrapping run_agent_loop +
-    chat_manager + agent_loop_session; slash commands; icdev chat CLI; session search
-    wiring over existing FTS indexer (sag-rt-01..04)'
+  - 'rt: Agent runtime — tools/agent_runtime/ process wrapping run_agent_loop + chat_manager
+    + agent_loop_session; slash commands; icdev chat CLI; session search wiring over
+    existing FTS indexer (sag-rt-01..04)'
   - 'mcp: External-agent MCP consumption — curated toolsets + Hermes setup doc + CUI
     egress review over the existing unified_server (sag-mcp-01)'
   - 'reg: Tool registry — auto-discovery + OpenAI schema generation over the existing
     MCP registry patterns; toolset bundles; handler dispatch (sag-reg-01..02)'
   - 'gw: Gateway agent-mode — route existing tools/gateway adapters into the agent
-    runtime (conversational sessions per chat), optional Discord/Email adapters
-    (sag-gw-01..02)'
+    runtime (conversational sessions per chat), optional Discord/Email adapters (sag-gw-01..02)'
   - 'skl: Skills lifecycle — wire NOVA skill_generator into runtime + curator with
     HITL promotion; icdev skills install/search CLI over the existing marketplace
     (sag-skl-01..02)'
-  - 'mem: User profile memory — integrate Second Brain/ACE SOUL + memory/ into
-    session start injection (sag-mem-01)'
-  - 'safe: Approval gates over hook_compat + filesystem checkpoints /rollback
-    (sag-safe-01..02)'
+  - 'mem: User profile memory — integrate Second Brain/ACE SOUL + memory/ into session
+    start injection (sag-mem-01)'
+  - 'safe: Approval gates over hook_compat + filesystem checkpoints /rollback (sag-safe-01..02)'
   - 'cron: User-facing cron wrapper over daemon/reflex infra (sag-cron-01)'
-  - 'del: Process-isolated subagent delegation composing ACE/agent_toolkit
-    (sag-del-01)'
+  - 'del: Process-isolated subagent delegation composing ACE/agent_toolkit (sag-del-01)'
   - 'prof: Directory-based profile isolation (sag-prof-01)'
   - 'xcut: Docs, manifest shards, coherence, corrections ADR (sag-xcut-01)'
   epics:
@@ -6004,40 +6523,41 @@ projects:
   - key: xcut
     title: Cross-Cutting — docs, manifest, corrections record
     priority: low
+  - key: gate
+    title: GATE
+    priority: medium
 - key: twx
-  name: 'TWX — Twin Core Unification & Federal Emulation Patterns'
+  name: TWX — Twin Core Unification & Federal Emulation Patterns
   description: 'Unify the per-canvas digital twins into a system-level twin and adopt
     federal cloud-emulation patterns, per C:\AI\searches\icdev-digital-twin-analysis.md
     and icdev-digital-twin-sequoia-shift-research.md (2026-07-19) — CORRECTED against
-    the codebase. STALE claims: (1) the docs'' "P0.2 biggest architectural hole — IDC
-    has no twin" is FALSE: IDC IaC Twin Phase 1-4 is fully shipped
-    (tools/infra_canvas/twin/ + snapshot_writer, terraform/pulumi/aws importers, IQE
-    adapter infra.*, preapply_gate, compliance_gate, 6h reflex, cross_csp migration
-    simulation, dashboard API, 4 tables — see tools/manifest/idc-twin.md); (2)
-    "auto-refresh limited to cATO only" is stale — idc twin reflex + ndc_topology_drift,
-    pdc_pipeline_stale, qdc_gate_breach, sdc_control_expiry, mdc_cutover_countdown,
-    idc_cloud_drift reflexes exist; (3) multi-CSP switching partially exists
-    (cross_csp.py + validate_region/csp_monitor in the cloud-agnostic layer). CONFIRMED
-    real gaps: no tools/twin_core (registry/shared schema), NO twin publishes or
-    subscribes canvas event_bus events (verified zero references), no twin observatory
-    page, and QDC/AADC/AIML/AISG/OHC/CCC/DSOC/PMC have no twin modules. Prior
-    digital-twin (dt-) card delivered the existing twins; TWX is the unification layer
-    on top. Approach: twin_core is ADDITIVE (registry + canonical violation/verdict
-    schema + event bridge + observer) — existing working twins register via thin
-    adapters, NO rewrite of NDC/PDC/BDC/SDC/DDC/ODC twins. Heavy external deps
-    (LocalStack post-2026 licensing, Batfish) are spike-gated, not committed.'
+    the codebase. STALE claims: (1) the docs'' "P0.2 biggest architectural hole —
+    IDC has no twin" is FALSE: IDC IaC Twin Phase 1-4 is fully shipped (tools/infra_canvas/twin/
+    + snapshot_writer, terraform/pulumi/aws importers, IQE adapter infra.*, preapply_gate,
+    compliance_gate, 6h reflex, cross_csp migration simulation, dashboard API, 4 tables
+    — see tools/manifest/idc-twin.md); (2) "auto-refresh limited to cATO only" is
+    stale — idc twin reflex + ndc_topology_drift, pdc_pipeline_stale, qdc_gate_breach,
+    sdc_control_expiry, mdc_cutover_countdown, idc_cloud_drift reflexes exist; (3)
+    multi-CSP switching partially exists (cross_csp.py + validate_region/csp_monitor
+    in the cloud-agnostic layer). CONFIRMED real gaps: no tools/twin_core (registry/shared
+    schema), NO twin publishes or subscribes canvas event_bus events (verified zero
+    references), no twin observatory page, and QDC/AADC/AIML/AISG/OHC/CCC/DSOC/PMC
+    have no twin modules. Prior digital-twin (dt-) card delivered the existing twins;
+    TWX is the unification layer on top. Approach: twin_core is ADDITIVE (registry
+    + canonical violation/verdict schema + event bridge + observer) — existing working
+    twins register via thin adapters, NO rewrite of NDC/PDC/BDC/SDC/DDC/ODC twins.
+    Heavy external deps (LocalStack post-2026 licensing, Batfish) are spike-gated,
+    not committed.'
   task_prefix: twx-
   default_open: true
   briefs:
-  - 'core: Additive twin_core — TwinRegistry + canonical violation/verdict schema +
-    observer API; thin adapters for the 8 existing twins, no rewrites (twx-core-01..02)'
+  - 'core: Additive twin_core — TwinRegistry + canonical violation/verdict schema
+    + observer API; thin adapters for the 8 existing twins, no rewrites (twx-core-01..02)'
   - 'bus: Event-bus wiring — twins publish snapshot/simulation events, cross-canvas
-    subscriptions (pipeline_deployed -> SDC refresh, sdc change -> BDC drift)
-    (twx-bus-01)'
-  - 'obs: Twin Observatory dashboard page with full 8-component page gate + IQE
-    (twx-obs-01)'
-  - 'cov: Coverage gap-fill — minimal twins for QDC/AADC/OHC via registry pattern +
-    audit of remaining canvases and reflex gaps (twx-cov-01..02)'
+    subscriptions (pipeline_deployed -> SDC refresh, sdc change -> BDC drift) (twx-bus-01)'
+  - 'obs: Twin Observatory dashboard page with full 8-component page gate + IQE (twx-obs-01)'
+  - 'cov: Coverage gap-fill — minimal twins for QDC/AADC/OHC via registry pattern
+    + audit of remaining canvases and reflex gaps (twx-cov-01..02)'
   - 'fed: Federal emulation patterns — air-gap validation mode, service/region parity
     over the cloud-agnostic layer, high-side compatibility report + ATO acceleration
     wiring BDC x IDC (twx-fed-01..03)'
@@ -6066,27 +6586,28 @@ projects:
   - key: xcut
     title: Cross-Cutting — docs, ADR, corrections
     priority: low
+  - key: gate
+    title: GATE
+    priority: medium
 - key: dmx
-  name: 'DMX — DocMod/DocDrift Coverage & Feedback-Loop Extension'
+  name: DMX — DocMod/DocDrift Coverage & Feedback-Loop Extension
   description: 'Extend the completed DOCMOD system (32 docmod- tasks done; 6 active
-    packs + rulebook framework + drift bridge + regen orchestrator + 2 Genesis
-    reflexes) per C:\AI\searches\icdev_doc_drift_modernization_analysis.md (2026-07-19).
-    The doc''s verdict matches the codebase: architecture is production-grade,
-    remaining work is domain coverage + tighter feedback loops — NOT redesign.
-    VERIFIED against the tree: Gap #2 (SOP pack) is ALREADY IN FLIGHT uncommitted in
-    the shared checkout (args/docmod/packs/sop_workflows.yaml +
-    rulebook_sop_workflows.yaml + tests/docmod/test_sop_workflows_pack.py +
-    tool_reference KG entity type in constants.py, both namespaces) — land it, don''t
-    rebuild. Confirmed real gaps: no architecture_patterns pack, no
-    effective_date/sunset_date temporal validity, no dic_cross_references, no
-    freshness notifications (but tools/notifications/gateway.py exists to reuse), no
-    link-rot pack, no claim-level tracking. Partial: regen QA (orchestrator docstring
-    references grounding machinery — audit what''s wired); external feeds (nightly
-    eol_products_sync polling exists; CVE tooling exists in showcase/osint_engine +
-    watch_passive_cve — wire, don''t rebuild). Preserve the five invariants the doc
-    names: deterministic-first pack verdicts, append-only dic_versions/dic_edit_history,
-    HITL pending_review gating, tenant_id+classification RLS on all new tables,
-    air-gap rulebook fallbacks.'
+    packs + rulebook framework + drift bridge + regen orchestrator + 2 Genesis reflexes)
+    per C:\AI\searches\icdev_doc_drift_modernization_analysis.md (2026-07-19). The
+    doc''s verdict matches the codebase: architecture is production-grade, remaining
+    work is domain coverage + tighter feedback loops — NOT redesign. VERIFIED against
+    the tree: Gap #2 (SOP pack) is ALREADY IN FLIGHT uncommitted in the shared checkout
+    (args/docmod/packs/sop_workflows.yaml + rulebook_sop_workflows.yaml + tests/docmod/test_sop_workflows_pack.py
+    + tool_reference KG entity type in constants.py, both namespaces) — land it, don''t
+    rebuild. Confirmed real gaps: no architecture_patterns pack, no effective_date/sunset_date
+    temporal validity, no dic_cross_references, no freshness notifications (but tools/notifications/gateway.py
+    exists to reuse), no link-rot pack, no claim-level tracking. Partial: regen QA
+    (orchestrator docstring references grounding machinery — audit what''s wired);
+    external feeds (nightly eol_products_sync polling exists; CVE tooling exists in
+    showcase/osint_engine + watch_passive_cve — wire, don''t rebuild). Preserve the
+    five invariants the doc names: deterministic-first pack verdicts, append-only
+    dic_versions/dic_edit_history, HITL pending_review gating, tenant_id+classification
+    RLS on all new tables, air-gap rulebook fallbacks.'
   task_prefix: dmx-
   default_open: true
   briefs:
@@ -6096,10 +6617,9 @@ projects:
     wiring (NIST RSS, CVE) into docmod evidence (dmx-loop-01..02)'
   - 'ref: Inter-document cross-reference tracking + cascade flagging; URL link-rot
     pack with egress-safe checker (dmx-ref-01..02)'
-  - 'qa: Regeneration quality gate — verifier + citation re-validation before
-    pending_review (dmx-qa-01)'
-  - 'claims: Semantic claim tracking — design spike then phased build
-    (dmx-claims-01..02)'
+  - 'qa: Regeneration quality gate — verifier + citation re-validation before pending_review
+    (dmx-qa-01)'
+  - 'claims: Semantic claim tracking — design spike then phased build (dmx-claims-01..02)'
   - 'live: Living-document mode spike — redline accumulation vs Tech Writer workspace
     (dmx-live-01)'
   - 'xcut: Docs, manifest, ADR, coherence (dmx-xcut-01)'
@@ -6125,33 +6645,36 @@ projects:
   - key: xcut
     title: Cross-Cutting — docs, ADR, coherence
     priority: low
+  - key: gate
+    title: GATE
+    priority: medium
 - key: crx
-  name: 'CRX — Component Review Remediation'
+  name: CRX — Component Review Remediation
   description: 'Distilled remediation card from the 20 Hermes component reviews in
     C:\AI\searches\icdev_component_reviews\ (2026-07-19, 160 recommendations). Heavily
     triaged against the codebase: the LLM-router and KG reviews are almost entirely
     stale (fallback chains, prompt injection guards, prompt_registry_*, token/cost
-    dashboards, kg_temporal_diff, kg_stale_entities, kg_compliance_*, system_graph viz
-    all EXIST); NDC/security/data-canvas reviews largely superseded by the completed
+    dashboards, kg_temporal_diff, kg_stale_entities, kg_compliance_*, system_graph
+    viz all EXIST); NDC/security/data-canvas reviews largely superseded by the completed
     NDC/SHX/DCPR/PENTA/NAV hardening sweeps; RAG review superseded by the RCE card;
-    DIC/DocMod/DocDrift reviews superseded by the DMX card; standalone-agent themes by
-    SAG. What survives is carded here: Genesis reflex hardening (shared-connection
+    DIC/DocMod/DocDrift reviews superseded by the DMX card; standalone-agent themes
+    by SAG. What survives is carded here: Genesis reflex hardening (shared-connection
     isolation is REAL — daemon.py uses one get_connection across reflexes, matching
-    past PG lock-storm incidents), DB observability/retention, notification
-    routing/escalation (extends the existing tools/notification_service/ alert/handler
-    services — the doc understated what exists), kanban SLA/metrics (no
-    due_date/sla fields — verified), performance + a11y testing (verified absent),
-    security UBA + SOAR-lite (compose runbook_execute/incident_create), GovCon past-
-    performance + clause risk, KG blast-radius freshness signal, migration validation/
-    rollback. Every task is audit-first; crx-xcut-01 records the full 160-item
-    disposition matrix so dropped items are documented, not lost.'
+    past PG lock-storm incidents), DB observability/retention, notification routing/escalation
+    (extends the existing tools/notification_service/ alert/handler services — the
+    doc understated what exists), kanban SLA/metrics (no due_date/sla fields — verified),
+    performance + a11y testing (verified absent), security UBA + SOAR-lite (compose
+    runbook_execute/incident_create), GovCon past- performance + clause risk, KG blast-radius
+    freshness signal, migration validation/ rollback. Every task is audit-first; crx-xcut-01
+    records the full 160-item disposition matrix so dropped items are documented,
+    not lost.'
   task_prefix: crx-
   default_open: true
   briefs:
-  - 'gen: Genesis reflex hardening — connection isolation, failure alerting, deps +
-    resource limits (crx-gen-01..03)'
-  - 'db: Storage hardening — PG native RLS spike, slow-query/pool observability,
-    retention framework (crx-db-01..03)'
+  - 'gen: Genesis reflex hardening — connection isolation, failure alerting, deps
+    + resource limits (crx-gen-01..03)'
+  - 'db: Storage hardening — PG native RLS spike, slow-query/pool observability, retention
+    framework (crx-db-01..03)'
   - 'not: Notification routing rules + escalation + per-user preferences over the
     existing notification_service (crx-not-01)'
   - 'kan: Kanban SLA/deadline fields + cycle-time metrics (crx-kan-01)'
@@ -6193,22 +6716,24 @@ projects:
   - key: xcut
     title: Cross-Cutting — Disposition ADR
     priority: low
+  - key: gate
+    title: GATE
+    priority: medium
 - key: opx
-  name: 'OPX — Open Diagnosed Issues Remediation'
+  name: OPX — Open Diagnosed Issues Remediation
   description: 'Land the two diagnosed-but-unfixed issues from C:\AI\searches\open\
     (both verified still present 2026-07-23). (1) tests/kanban/test_auto_close_parent.py
     has no schema fixture — it inserts/deletes rows in the REAL data/icdev.db via
-    get_connection(), so it passes only in populated checkouts (fails in fresh
-    worktrees/CI) and can leave synthetic task-test-* rows on the live board if
-    teardown is skipped; conftest already ships the icdev_db fixture +
-    MINIMAL_ICDEV_SCHEMA (incl. kanban_tasks) — the file just does not use it.
-    (2) SIPA integrity_monitor._rel_path() basename fallback fires for ~99% of
-    findings (paths stored relative, no /<assessment_id>/ marker), making remediation
-    cards ambiguous (bare posture.py among 6+ candidates — already caused a wrong
-    "premise fabricated" triage) and creating a latent signature-collision false-
-    negative; the naive fix re-signatures ~131k baselined findings and would flood
-    the board on the next 6h reflex run, so the path fix MUST land together with a
-    deliberate baseline transition (option 2: silent re-baseline pass). A safe
+    get_connection(), so it passes only in populated checkouts (fails in fresh worktrees/CI)
+    and can leave synthetic task-test-* rows on the live board if teardown is skipped;
+    conftest already ships the icdev_db fixture + MINIMAL_ICDEV_SCHEMA (incl. kanban_tasks)
+    — the file just does not use it. (2) SIPA integrity_monitor._rel_path() basename
+    fallback fires for ~99% of findings (paths stored relative, no /<assessment_id>/
+    marker), making remediation cards ambiguous (bare posture.py among 6+ candidates
+    — already caused a wrong "premise fabricated" triage) and creating a latent signature-collision
+    false- negative; the naive fix re-signatures ~131k baselined findings and would
+    flood the board on the next 6h reflex run, so the path fix MUST land together
+    with a deliberate baseline transition (option 2: silent re-baseline pass). A safe
     standalone card-body improvement (print raw file_path) carries none of that risk
     and ships first.'
   task_prefix: opx-
@@ -6217,8 +6742,7 @@ projects:
   - 'kan: Test isolation — port test_auto_close_parent.py to the icdev_db fixture;
     sweep live board for leftover synthetic rows; audit sibling tests for the same
     ambient-DB pattern (opx-kan-01..02)'
-  - 'sipa: SIPA card clarity + _rel_path fix with gated baseline transition
-    (opx-sipa-01..02)'
+  - 'sipa: SIPA card clarity + _rel_path fix with gated baseline transition (opx-sipa-01..02)'
   epics:
   - key: kan
     title: Kanban Test Ambient-DB Isolation
@@ -6226,6 +6750,9 @@ projects:
   - key: sipa
     title: SIPA _rel_path Fix + Baseline Transition
     priority: high
+  - key: gate
+    title: GATE
+    priority: medium
 - key: agx
   name: 'AGX — Agentic Architecture Extension'
   description: 'Adapt the transferable subset of FareedKhan-dev/all-agentic-architectures
@@ -6712,73 +7239,76 @@ projects:
 - key: tsr
   name: TSR — Test Suite Remediation (by subsystem)
   description: 'Bring tests/ to green, worked one subsystem at a time. Measured 2026-07-30:
-    30,963 tests across 1,838 files; a full run exceeds 75 minutes; ~1,000 failing. CI has
-    never covered this — its Test job is a 12-file allowlist, so the suite has been red for
-    a long time without anyone seeing it. Two causes dominate. (1) Tests that patch
-    get_connection with a bare sqlite3.connect: the repo authors %s for PostgreSQL and only
-    StorageConnection rewrites it to ?, so every statement becomes a syntax error, and where
-    the caller swallows exceptions the test asserts against a no-op it caused itself. 87
-    fixed this way already (PRs #1043/#1047/#1051); tests/_sql_compat.py now exists for it.
-    (2) Fixtures that depend on ambient DB state — green on a populated dev box, red on a
-    clean checkout. Epics are subsystem groups derived from what each test file actually
-    imports, not from its filename: test_dwo_* exercises tools/studio and test_ecr_sso
-    exercises tools/auth, so filename grouping misleads.'
+    30,963 tests across 1,838 files; a full run exceeds 75 minutes; ~1,000 failing.
+    CI has never covered this — its Test job is a 12-file allowlist, so the suite
+    has been red for a long time without anyone seeing it. Two causes dominate. (1)
+    Tests that patch get_connection with a bare sqlite3.connect: the repo authors
+    %s for PostgreSQL and only StorageConnection rewrites it to ?, so every statement
+    becomes a syntax error, and where the caller swallows exceptions the test asserts
+    against a no-op it caused itself. 87 fixed this way already (PRs #1043/#1047/#1051);
+    tests/_sql_compat.py now exists for it. (2) Fixtures that depend on ambient DB
+    state — green on a populated dev box, red on a clean checkout. Epics are subsystem
+    groups derived from what each test file actually imports, not from its filename:
+    test_dwo_* exercises tools/studio and test_ecr_sso exercises tools/auth, so filename
+    grouping misleads.'
   task_prefix: tsr-
   default_open: true
   briefs:
-  - 'Seed the DB before any sweep: an unseeded worktree HANGS in storage.py::execute rather
-    than failing, which is why whole-suite runs never terminate. Run tools/db/init_icdev_db.py,
+  - 'Seed the DB before any sweep: an unseeded worktree HANGS in storage.py::execute
+    rather than failing, which is why whole-suite runs never terminate. Run tools/db/init_icdev_db.py,
     then tools/studio/init_db.py, then migrations/311_studio_event_tables_rls_columns/up.py.
     migrate.py --up cannot substitute — ~25 migrations are PG-only and fail on SQLite.'
-  - 'Never run the whole suite to validate a fix. Select the test files that reference the
-    symbols touched and run those: a 24-file slice takes ~4 minutes against >75 for the full
-    sweep. Per-subsystem slices are the unit of work here.'
-  - 'Triage before fixing. Run the failing file against the populated shared checkout as well
-    as a clean worktree: passing there and failing here means an ambient-state fixture, not a
-    defect. Both are worth fixing, but they are different fixes.'
-  - 'A whole file failing at once is one shared fixture, not N broken features. Read the
-    fixture before the implementation.'
-  - 'Do not delete assertions to make tests pass. Where a test and the code disagree, work
-    out which is right — several so far were tests asserting contracts the code never had,
-    and at least three were real features deleted by a mirror sync.'
+  - 'Never run the whole suite to validate a fix. Select the test files that reference
+    the symbols touched and run those: a 24-file slice takes ~4 minutes against >75
+    for the full sweep. Per-subsystem slices are the unit of work here.'
+  - 'Triage before fixing. Run the failing file against the populated shared checkout
+    as well as a clean worktree: passing there and failing here means an ambient-state
+    fixture, not a defect. Both are worth fixing, but they are different fixes.'
+  - A whole file failing at once is one shared fixture, not N broken features. Read
+    the fixture before the implementation.
+  - Do not delete assertions to make tests pass. Where a test and the code disagree,
+    work out which is right — several so far were tests asserting contracts the code
+    never had, and at least three were real features deleted by a mirror sync.
   epics:
   - key: dash
-    title: "DASH — Dashboard, IQE & presentation"
+    title: DASH — Dashboard, IQE & presentation
     priority: high
   - key: canv
-    title: "CANV — Design canvases"
+    title: CANV — Design canvases
     priority: high
   - key: agent
-    title: "AGENT — ACE, agent runtime & MCP"
+    title: AGENT — ACE, agent runtime & MCP
     priority: medium
   - key: gen
-    title: "GEN — Genesis, Oracle & autonomy"
+    title: GEN — Genesis, Oracle & autonomy
     priority: high
   - key: ai
-    title: "AI — LLM, RAG, Cortex & memory"
+    title: AI — LLM, RAG, Cortex & memory
     priority: high
   - key: comp
-    title: "COMP — Compliance, security & governance"
+    title: COMP — Compliance, security & governance
     priority: critical
   - key: gov
-    title: "GOV — GovCon, proposals & CPMP"
+    title: GOV — GovCon, proposals & CPMP
     priority: medium
   - key: net
-    title: "NET — Network, pipeline & infrastructure"
+    title: NET — Network, pipeline & infrastructure
     priority: medium
   - key: flow
-    title: "FLOW — Studio, workflow & kanban"
+    title: FLOW — Studio, workflow & kanban
     priority: high
   - key: doc
-    title: "DOC — Document intelligence & quality"
+    title: DOC — Document intelligence & quality
     priority: medium
   - key: core
-    title: "CORE — Platform core (DB, SaaS, CLI, packaging)"
+    title: CORE — Platform core (DB, SaaS, CLI, packaging)
     priority: critical
   - key: intel
-    title: "INTEL — Strategos, research & trading"
+    title: INTEL — Strategos, research & trading
     priority: low
-
+  - key: gate
+    title: GATE
+    priority: medium
 - key: gdx
   name: "GDX — GameDay Defect & Drift Remediation"
   task_prefix: gdx-
@@ -6861,40 +7391,59 @@ projects:
     priority: medium
 
 - key: sme
-  name: "SME — Chat-Native SME Co-Worker Spawning"
-  description: "Make chat the front door to ACE. A conversation anywhere in the platform can propose a team of subject-matter-expert co-workers; one click staffs it, generating any missing persona AND its executable role; the team does real work under existing trust/HITL/audit controls; a synthesized answer returns inline with a deep link to /coworker. Premium-gated on ICDEV_LICENSE_TIER, inherited automatically by future canvases and child apps, and consumed by idea_lab and compass. Phase 0 is a blocking prerequisite: 86 of 90 ACE roles were no-ops that reported success, because _normalise_step rewrote every bare step into llm_step.invoke while step_executor refused that tool unless the role granted it, and the resulting error was swallowed as optional."
-  task_prefix: "sme-"
+  name: SME — Chat-Native SME Co-Worker Spawning
+  description: 'Make chat the front door to ACE. A conversation anywhere in the platform
+    can propose a team of subject-matter-expert co-workers; one click staffs it, generating
+    any missing persona AND its executable role; the team does real work under existing
+    trust/HITL/audit controls; a synthesized answer returns inline with a deep link
+    to /coworker. Premium-gated on ICDEV_LICENSE_TIER, inherited automatically by
+    future canvases and child apps, and consumed by idea_lab and compass. Phase 0
+    is a blocking prerequisite: 86 of 90 ACE roles were no-ops that reported success,
+    because _normalise_step rewrote every bare step into llm_step.invoke while step_executor
+    refused that tool unless the role granted it, and the resulting error was swallowed
+    as optional.'
+  task_prefix: sme-
   default_open: true
   briefs:
-    - "fix: intrinsic llm_step exemption, RoleStep normalisation, no-success-on-total-failure, webhook_url passthrough, profile_generator permission/tier sanitisation (sme-fix-01..06)"
-    - "reg: ensure_sme() producing BOTH a SOUL.md persona and an executable role YAML; capability bundles; role_policy validation; SIPA fail-closed (sme-reg-01..05)"
-    - "gap: generate-on-miss in the suggestion builder with cheap-first dedup against the existing 90 roles (sme-gap-01..03)"
-    - "card: suggest-then-confirm action_card, ace_team_suggestions table, shared includes/_chat_panel.html (sme-card-01..05)"
-    - "ctx: wire the dead confirm_agent path in cortex/blueprint.py; route suggestion scoring through Cortex; fix the blank governance tile (sme-ctx-01..04)"
-    - "ret: chat_result_reflex posting the synthesized answer back into the originating chat context (sme-ret-01..03)"
-    - "tier: ICDEV_LICENSE_TIER gate via billing/tier.py, SME_CHAT_MAX_TEAM=5, tiered LLM routing (sme-tier-01..03)"
+  - 'fix: intrinsic llm_step exemption, RoleStep normalisation, no-success-on-total-failure,
+    webhook_url passthrough, profile_generator permission/tier sanitisation (sme-fix-01..06)'
+  - 'reg: ensure_sme() producing BOTH a SOUL.md persona and an executable role YAML;
+    capability bundles; role_policy validation; SIPA fail-closed (sme-reg-01..05)'
+  - 'gap: generate-on-miss in the suggestion builder with cheap-first dedup against
+    the existing 90 roles (sme-gap-01..03)'
+  - 'card: suggest-then-confirm action_card, ace_team_suggestions table, shared includes/_chat_panel.html
+    (sme-card-01..05)'
+  - 'ctx: wire the dead confirm_agent path in cortex/blueprint.py; route suggestion
+    scoring through Cortex; fix the blank governance tile (sme-ctx-01..04)'
+  - 'ret: chat_result_reflex posting the synthesized answer back into the originating
+    chat context (sme-ret-01..03)'
+  - 'tier: ICDEV_LICENSE_TIER gate via billing/tier.py, SME_CHAT_MAX_TEAM=5, tiered
+    LLM routing (sme-tier-01..03)'
   epics:
-    - key: fix
-      title: "FIX — Make ACE co-workers actually produce output"
-      priority: critical
-    - key: reg
-      title: "REG — SME registry: persona + executable role, safely bounded"
-      priority: critical
-    - key: gap
-      title: "GAP — Generate-on-miss with duplicate suppression"
-      priority: high
-    - key: card
-      title: "CARD — Suggest-then-confirm and the shared chat panel"
-      priority: high
-    - key: ctx
-      title: "CTX — Cortex as decision brain; governance tile"
-      priority: high
-    - key: ret
-      title: "RET — Results back into the conversation"
-      priority: high
-    - key: tier
-      title: "TIER — Premium gate, team caps, tiered LLM"
-      priority: medium
+  - key: fix
+    title: FIX — Make ACE co-workers actually produce output
+    priority: critical
+  - key: reg
+    title: 'REG — SME registry: persona + executable role, safely bounded'
+    priority: critical
+  - key: gap
+    title: GAP — Generate-on-miss with duplicate suppression
+    priority: high
+  - key: card
+    title: CARD — Suggest-then-confirm and the shared chat panel
+    priority: high
+  - key: ctx
+    title: CTX — Cortex as decision brain; governance tile
+    priority: high
+  - key: ret
+    title: RET — Results back into the conversation
+    priority: high
+  - key: tier
+    title: TIER — Premium gate, team caps, tiered LLM
+    priority: medium
+  - key: gate
+    title: GATE
+    priority: medium
 - key: swp
   name: SWP - Silent Write Failures and Schema Drift
   description: 'Sweep for writes that cannot succeed and fail invisibly. Found while
@@ -7552,65 +8101,58 @@ projects:
     priority: medium
 - key: sdt
   name: SDT - Slides Deck-Type Vocabulary Repair
-  description: 'Carded out of TSR. tsr-dash-01-d5 found, and its merged report
-    (docs/testing/tsr-dash-01-d5-ambient-fixtures.md section 3) documented, a
-    production defect it deliberately left unfixed because the repair is a
-    schema change outside a test-remediation card: tools/slides/blueprint.py
-    persists deck_type="template_fill" for every template-fill deck, and
-    "template_fill" is not in tools/slides/constants.py::DECK_TYPES, from which
-    CHECK_DECK_TYPE and therefore the slides_decks CHECK constraint derive. The
-    route cannot persist a deck against a correctly-created schema; it only
-    appears to work on a database whose slides_decks predates the constraint,
-    which is why a clean checkout surfaces it and the shared checkout does not.
-    PREMISE CORRECTION verified 2026-08-03 on origin/main: the reported symptom
-    has already changed. All 9 tests in tests/slides/test_blueprint.py
-    TestTemplateFillRoutes now fail with 401, not with the CHECK violation,
-    because the write routes gained require_role(*_SLIDES_WRITE_ROLES) while the
-    client fixture never authenticates - _upload returns None and every
-    downstream assertion dies on a NoneType subscript. The deck_type defect is
-    real but latent behind the auth wall, so it is reachable only after the
-    fixture is fixed. Two independent defects, one test file. SECOND CORRECTION:
-    the d5 report prescribes editing the hardcoded list in
-    tools/slides/db/migrations/002_rich_slides.sql, which cannot work - the
-    slides applier skips any migration whose version is not greater than the
-    stored one, so an already-applied file never re-runs. Existing databases
-    need a NEW migration. DESIGN CONSTRAINT: DECK_TYPES is not only the CHECK
-    vocabulary, it is also passed to the index and new-deck templates as the
-    user-facing deck-type picker (blueprint.py lines 131 and 141). A
-    template-fill deck is produced by uploading a .pptx and filling its shapes,
-    never chosen from a menu, so appending it to DECK_TYPES would fix the
-    constraint by polluting the wizard. The persisted vocabulary and the
-    selectable vocabulary have to become two constants.'
+  description: 'Carded out of TSR. tsr-dash-01-d5 found, and its merged report (docs/testing/tsr-dash-01-d5-ambient-fixtures.md
+    section 3) documented, a production defect it deliberately left unfixed because
+    the repair is a schema change outside a test-remediation card: tools/slides/blueprint.py
+    persists deck_type="template_fill" for every template-fill deck, and "template_fill"
+    is not in tools/slides/constants.py::DECK_TYPES, from which CHECK_DECK_TYPE and
+    therefore the slides_decks CHECK constraint derive. The route cannot persist a
+    deck against a correctly-created schema; it only appears to work on a database
+    whose slides_decks predates the constraint, which is why a clean checkout surfaces
+    it and the shared checkout does not. PREMISE CORRECTION verified 2026-08-03 on
+    origin/main: the reported symptom has already changed. All 9 tests in tests/slides/test_blueprint.py
+    TestTemplateFillRoutes now fail with 401, not with the CHECK violation, because
+    the write routes gained require_role(*_SLIDES_WRITE_ROLES) while the client fixture
+    never authenticates - _upload returns None and every downstream assertion dies
+    on a NoneType subscript. The deck_type defect is real but latent behind the auth
+    wall, so it is reachable only after the fixture is fixed. Two independent defects,
+    one test file. SECOND CORRECTION: the d5 report prescribes editing the hardcoded
+    list in tools/slides/db/migrations/002_rich_slides.sql, which cannot work - the
+    slides applier skips any migration whose version is not greater than the stored
+    one, so an already-applied file never re-runs. Existing databases need a NEW migration.
+    DESIGN CONSTRAINT: DECK_TYPES is not only the CHECK vocabulary, it is also passed
+    to the index and new-deck templates as the user-facing deck-type picker (blueprint.py
+    lines 131 and 141). A template-fill deck is produced by uploading a .pptx and
+    filling its shapes, never chosen from a menu, so appending it to DECK_TYPES would
+    fix the constraint by polluting the wizard. The persisted vocabulary and the selectable
+    vocabulary have to become two constants.'
   task_prefix: sdt-
   default_open: true
   briefs:
-  - 'AUTH: the client fixture in tests/slides/test_blueprint.py predates the
-    require_role gate on the seven slides write routes, so all 9
-    TestTemplateFillRoutes tests 401 before reaching the code they test. Fix the
-    fixture, not the routes - the gate is correct and deliberate (costly LLM
-    spend and destructive upload/edit/delete belong to authoring roles). Follow
-    tests/bi_dashboard/test_routes_auth.py, which mirrors _auth_before_request
-    by populating g.current_user, and keep the unauthenticated cases that assert
-    400 on a bad upload honest rather than blanket-authenticating the whole file
-    (sdt-auth-01)'
-  - 'VOCAB: split the deck-type vocabulary in tools/slides/constants.py -
-    DECK_TYPES stays the selectable set the picker renders, a new
-    SYSTEM_DECK_TYPES carries template_fill, and CHECK_DECK_TYPE derives from
-    the union so a system-generated deck satisfies the constraint without
-    appearing in the wizard. Mirror to icdev/tools/slides/constants.py. Do NOT
-    fix this by changing the test expectation or by having the route persist
-    "custom" - the deck_type is the provenance of how the deck was made and
-    flattening it loses that (sdt-vocab-01)'
-  - 'MIG: a new slides migration for databases that already carry the old CHECK.
-    PostgreSQL takes DROP CONSTRAINT / ADD CONSTRAINT; SQLite cannot alter a
-    CHECK in place and needs the create-copy-drop-rename rebuild. Note the
-    applier splits on semicolons and swallows every statement error, so a
-    half-applied rebuild would be silent - verify the end state rather than the
-    absence of an exception (sdt-mig-01)'
-  - 'VV: a regression test proving both halves - a template_fill deck persists
-    against a freshly initialised schema, AND template_fill is absent from the
-    picker vocabulary the templates receive. The first assertion alone would be
-    satisfied by the naive fix this card exists to avoid (sdt-vv-01)'
+  - 'AUTH: the client fixture in tests/slides/test_blueprint.py predates the require_role
+    gate on the seven slides write routes, so all 9 TestTemplateFillRoutes tests 401
+    before reaching the code they test. Fix the fixture, not the routes - the gate
+    is correct and deliberate (costly LLM spend and destructive upload/edit/delete
+    belong to authoring roles). Follow tests/bi_dashboard/test_routes_auth.py, which
+    mirrors _auth_before_request by populating g.current_user, and keep the unauthenticated
+    cases that assert 400 on a bad upload honest rather than blanket-authenticating
+    the whole file (sdt-auth-01)'
+  - 'VOCAB: split the deck-type vocabulary in tools/slides/constants.py - DECK_TYPES
+    stays the selectable set the picker renders, a new SYSTEM_DECK_TYPES carries template_fill,
+    and CHECK_DECK_TYPE derives from the union so a system-generated deck satisfies
+    the constraint without appearing in the wizard. Mirror to icdev/tools/slides/constants.py.
+    Do NOT fix this by changing the test expectation or by having the route persist
+    "custom" - the deck_type is the provenance of how the deck was made and flattening
+    it loses that (sdt-vocab-01)'
+  - 'MIG: a new slides migration for databases that already carry the old CHECK. PostgreSQL
+    takes DROP CONSTRAINT / ADD CONSTRAINT; SQLite cannot alter a CHECK in place and
+    needs the create-copy-drop-rename rebuild. Note the applier splits on semicolons
+    and swallows every statement error, so a half-applied rebuild would be silent
+    - verify the end state rather than the absence of an exception (sdt-mig-01)'
+  - 'VV: a regression test proving both halves - a template_fill deck persists against
+    a freshly initialised schema, AND template_fill is absent from the picker vocabulary
+    the templates receive. The first assertion alone would be satisfied by the naive
+    fix this card exists to avoid (sdt-vv-01)'
   epics:
   - key: auth
     title: AUTH — Test fixture reaches the gated routes
@@ -7624,6 +8166,9 @@ projects:
   - key: vv
     title: VV — Regression proof
     priority: high
+  - key: gate
+    title: GATE
+    priority: medium
 - key: kax
   name: 'KAX - Kanban Autonomy Hardening'
   description: 'Remove the remaining reasons a human has to touch the board. Scope set from measurement 2026-08-07, not speculation. The first and largest gap is already fixed in PR #1318 (the launcher never started tools/ci/pr_watcher.py, so after its last manual start died on Aug 2 nothing merged CI-green PRs; tasks-reaching-done was 63 on Aug 1 and 121 on Aug 2, then ZERO for Aug 4-6, and it presented as "the dispatcher stopped working" while the dispatcher was idle and correct). What remains are the two failure modes that still require a person. (1) CONFLICT - a PR whose branch has drifted behind main goes DIRTY and no automation rebases it; 2 of 5 open kanban PRs were DIRTY when measured, and xbm-wake-01 sat parked 95.7 hours before escalating "resume cap reached (5/5) - manual intervention required". The escalation itself is correct behaviour; the gap is that nothing attempts the cheap recovery (rebase onto main, push, let CI re-run) before spending a resume, so branches that merge fine after a rebase burn all five attempts and land in a human queue. (2) STALL - nothing watches throughput. The four-day flatline above was found because a human noticed, not because the system said anything, even though an alerts table and a self_monitor reflex already exist. A rule of the shape "no task reached done in N hours while tasks are scheduled" would have fired on day one. Both epics are about making the pipeline notice and repair itself; neither should be built as a new subsystem when the recovery paths and the alerting table already exist - grep first.'
@@ -7678,99 +8223,88 @@ projects:
     title: EXEC - Executor availability must report the truth and degrade in scope
     priority: high
 - key: agov
-  name: 'AGOV - Agent Governance (detection, forensics, unattended approval)'
+  name: AGOV - Agent Governance (detection, forensics, unattended approval)
   description: 'Adapt the four things ICDEV genuinely lacks from perplexityai/numbat
     and andrewyng/openworker, and NOTHING else. Scope was set by measuring the repo
     on 2026-08-08, not by reading the two READMEs. PRIOR ART IS CLOSED AND MUST NOT
     BE REOPENED: openworker''s risk.py (READ/WRITE_LOCAL/EXEC/EXTERNAL) is strictly
-    WEAKER than what ICDEV already ships in args/agent_approval_policy.yaml plus
-    tools/agent_runtime/approval_gate.py, which fails CLOSED on an unenumerated tool
-    (default_tier unknown, unknown in require_approval_tiers) and has the
-    escalation-asymmetry and command_tools carve-out openworker lacks entirely - do
-    not "adopt" it, do not refactor toward it. numbat''s artifact scanning is covered
-    by SIPA (tools/integrity/, 39 modules, 5 tables, static-only contract). numbat''s
-    OTLP receiver is OUT OF SCOPE: args/otel_collector_config.yaml plus
+    WEAKER than what ICDEV already ships in args/agent_approval_policy.yaml plus tools/agent_runtime/approval_gate.py,
+    which fails CLOSED on an unenumerated tool (default_tier unknown, unknown in require_approval_tiers)
+    and has the escalation-asymmetry and command_tools carve-out openworker lacks
+    entirely - do not "adopt" it, do not refactor toward it. numbat''s artifact scanning
+    is covered by SIPA (tools/integrity/, 39 modules, 5 tables, static-only contract).
+    numbat''s OTLP receiver is OUT OF SCOPE: args/otel_collector_config.yaml plus
     tools/observability_canvas/mitre_coverage_twin.py ingest_otel_batch already cover
-    it and an in-repo receiver buys nothing. openworker''s personas, skills,
-    connectors and desktop shell are covered by 90 role YAMLs in args/ace/roles/, 24
-    .agents/skills/icdev-*/SKILL.md, ~44 connectors across tools/databridge and
-    tools/gateway, and the icdev chat terminal REPL. WHAT SURVIVES IS FOUR GAPS.
-    (1) DET - ICDEV writes rich agent activity into hook_events (HMAC-signed,
-    session_id-keyed), agent_executions, ai_telemetry, audit_trail and ace_audit_log,
-    and never reads any of it back for detection. There is no rule engine over the
-    event stream at all; every block is hardcoded Python in a 1250-line
-    .claude/hooks/pre_tool_use.py and the only config-driven rule family is
-    args/file_access_tiers.yaml. The consequence that matters is that ICDEV cannot
-    express a multi-step chain - "read .env, then POST to an external host" is
-    invisible because every check is single-action. Also
-    tools/observability/sigma_generator.py emits Sigma rules and nothing consumes
-    them. (2) CASE - grep for session_replay / reconstruct_session / session_timeline
-    returns ZERO. The forensic raw material exists and is already tamper-evident
-    (hook_events.signature HMACs, hash-chained audit from migration 149) but nothing
-    joins it by session_id and nothing exports it; SWFT (tools/compliance/
+    it and an in-repo receiver buys nothing. openworker''s personas, skills, connectors
+    and desktop shell are covered by 90 role YAMLs in args/ace/roles/, 24 .agents/skills/icdev-*/SKILL.md,
+    ~44 connectors across tools/databridge and tools/gateway, and the icdev chat terminal
+    REPL. WHAT SURVIVES IS FOUR GAPS. (1) DET - ICDEV writes rich agent activity into
+    hook_events (HMAC-signed, session_id-keyed), agent_executions, ai_telemetry, audit_trail
+    and ace_audit_log, and never reads any of it back for detection. There is no rule
+    engine over the event stream at all; every block is hardcoded Python in a 1250-line
+    .claude/hooks/pre_tool_use.py and the only config-driven rule family is args/file_access_tiers.yaml.
+    The consequence that matters is that ICDEV cannot express a multi-step chain -
+    "read .env, then POST to an external host" is invisible because every check is
+    single-action. Also tools/observability/sigma_generator.py emits Sigma rules and
+    nothing consumes them. (2) CASE - grep for session_replay / reconstruct_session
+    / session_timeline returns ZERO. The forensic raw material exists and is already
+    tamper-evident (hook_events.signature HMACs, hash-chained audit from migration
+    149) but nothing joins it by session_id and nothing exports it; SWFT (tools/compliance/
     swft_evidence_bundler.py) and SIPA bundle software supply-chain evidence, not
     agent behaviour. (3) INBOX - tools/agent_runtime/safety.py:78 console_approver
-    DENIES ON EOF and approval_gate.py:403 does the same before falling back to
-    deny_all_approver, so a headless overnight SAG or cron run refuses every
-    irreversible action, and the only way round it today is to inject an
-    auto-approver, which discards the gate entirely. openworker''s insight is that
-    unattended is NOT an autonomy setting: it does not change what the agent may do
-    (the permission mode does), it changes WHERE the ask is delivered - route it to
-    an inbox and suspend the session instead of blocking on a console nobody is
-    watching. ICDEV has every piece and has joined none: four separate approval gates
-    (ace/coworker_thread.py HITLGate, agent_runtime/approval_gate.py,
+    DENIES ON EOF and approval_gate.py:403 does the same before falling back to deny_all_approver,
+    so a headless overnight SAG or cron run refuses every irreversible action, and
+    the only way round it today is to inject an auto-approver, which discards the
+    gate entirely. openworker''s insight is that unattended is NOT an autonomy setting:
+    it does not change what the agent may do (the permission mode does), it changes
+    WHERE the ask is delivered - route it to an inbox and suspend the session instead
+    of blocking on a console nobody is watching. ICDEV has every piece and has joined
+    none: four separate approval gates (ace/coworker_thread.py HITLGate, agent_runtime/approval_gate.py,
     integration/approval_manager.py, workflow_hitl/gate.py) and several unrelated
-    inbox modules (document_intelligence/inbox.py, agent/mailbox.py,
-    agentic_ai_canvas/findings_inbox.py). (4) WAKE - an agent cannot schedule its own
-    resumption; ICDEV has external scheduling only (124 Genesis reflexes,
-    agent_cron_jobs, the kanban scheduler), so nothing can say "wake me when PR #1342
-    goes CI-green". MANUAL-ONLY: this card touches .claude/hooks/pre_tool_use.py and
-    the approval gate, and tools/ci/pr_watcher.py auto-merges any CI-green kanban/*
-    branch, so every task is gated behind agov-gate-00 via depends_on_task_id (the
-    held gate row alone does not hold - the dependency is what
-    promote_backlog_to_scheduled.py actually checks) and every PR opens --draft.'
+    inbox modules (document_intelligence/inbox.py, agent/mailbox.py, agentic_ai_canvas/findings_inbox.py).
+    (4) WAKE - an agent cannot schedule its own resumption; ICDEV has external scheduling
+    only (124 Genesis reflexes, agent_cron_jobs, the kanban scheduler), so nothing
+    can say "wake me when PR #1342 goes CI-green". MANUAL-ONLY: this card touches
+    .claude/hooks/pre_tool_use.py and the approval gate, and tools/ci/pr_watcher.py
+    auto-merges any CI-green kanban/* branch, so every task is gated behind agov-gate-00
+    via depends_on_task_id (the held gate row alone does not hold - the dependency
+    is what promote_backlog_to_scheduled.py actually checks) and every PR opens --draft.'
   task_prefix: agov-
   default_open: true
   briefs:
-  - 'DET: the core. A rule is one YAML file under args/agent_rules/ with
-    id/version/title/severity/tags/enabled/enforce/deny_message and either a
-    single-event expr or a sequence, evaluated against a normalized read-only view
-    over the tables ICDEV already writes. Monitor-only by DEFAULT - enforcement is
-    opt-in per rule in an operator-controlled directory, and detection and
-    enforcement share one expression. Conditions are STRUCTURED YAML MATCHERS in the
-    style already proven by args/agent_approval_policy.yaml and
-    args/file_access_tiers.yaml - decided against CEL and against a restricted-AST
-    evaluator, because no new third-party dependency is acceptable here and a
-    hand-rolled expression evaluator is a security surface ICDEV would have to
-    defend. A second, concrete payoff: agent_approval_policy.yaml:110-116 documents
-    a real fail-open it had to work around, where a git_push carrying
-    {"note": "mkdir logs"} matched the mkdir DOWNGRADE pattern because patterns run
-    against a flattened string; a parsed shell view is the actual fix for that bug
-    class (agov-det-01..07)'
+  - 'DET: the core. A rule is one YAML file under args/agent_rules/ with id/version/title/severity/tags/enabled/enforce/deny_message
+    and either a single-event expr or a sequence, evaluated against a normalized read-only
+    view over the tables ICDEV already writes. Monitor-only by DEFAULT - enforcement
+    is opt-in per rule in an operator-controlled directory, and detection and enforcement
+    share one expression. Conditions are STRUCTURED YAML MATCHERS in the style already
+    proven by args/agent_approval_policy.yaml and args/file_access_tiers.yaml - decided
+    against CEL and against a restricted-AST evaluator, because no new third-party
+    dependency is acceptable here and a hand-rolled expression evaluator is a security
+    surface ICDEV would have to defend. A second, concrete payoff: agent_approval_policy.yaml:110-116
+    documents a real fail-open it had to work around, where a git_push carrying {"note":
+    "mkdir logs"} matched the mkdir DOWNGRADE pattern because patterns run against
+    a flattened string; a parsed shell view is the actual fix for that bug class (agov-det-01..07)'
   - 'CASE: join the existing per-session records into an ordered timeline and export
     a portable, SHA-256-manifested case bundle that can be verified independently.
     Reuse swft_evidence_bundler.py and prov_recorder.export_prov_json rather than
     writing a third bundler. Verification must re-check the hook_events HMACs and
-    the migration-149 hash chain and name WHICH records failed, not return a
-    boolean. CLI-only on purpose: a dashboard page would trigger the 8-component
-    completeness gate (template + icdev/ mirror + route + module + constants +
-    migration + nav + full IQE wiring) and that is a separate card
-    (agov-case-01..04)'
-  - 'INBOX: separate the autonomy ceiling from the delivery channel. The seam is
-    already clean - Approver in approval_gate.py is an injectable callable and every
-    gateway adapter exposes the same send_message(channel_user_id, text, thread_id) -
-    so an inbox approver is a DROP-IN with no gate signature change. Deliver with an
-    embedded [icdev:<item_id>] correlation token so a Slack/Teams/Telegram/email
-    reply resolves the right item; in-app is the store of record and channels are
-    mirrors. The load-bearing test is that an irreversible action is still GATED in
-    unattended mode and merely routed - without it this feature silently becomes an
-    auto-approver (agov-inbox-01..05)'
+    the migration-149 hash chain and name WHICH records failed, not return a boolean.
+    CLI-only on purpose: a dashboard page would trigger the 8-component completeness
+    gate (template + icdev/ mirror + route + module + constants + migration + nav
+    + full IQE wiring) and that is a separate card (agov-case-01..04)'
+  - 'INBOX: separate the autonomy ceiling from the delivery channel. The seam is already
+    clean - Approver in approval_gate.py is an injectable callable and every gateway
+    adapter exposes the same send_message(channel_user_id, text, thread_id) - so an
+    inbox approver is a DROP-IN with no gate signature change. Deliver with an embedded
+    [icdev:<item_id>] correlation token so a Slack/Teams/Telegram/email reply resolves
+    the right item; in-app is the store of record and channels are mirrors. The load-bearing
+    test is that an irreversible action is still GATED in unattended mode and merely
+    routed - without it this feature silently becomes an auto-approver (agov-inbox-01..05)'
   - 'WAKE: a WakeStore (PENDING -> DUE -> FIRED) plus four agent tools - sleep_for,
-    sleep_until, wake_on(job_id), wake_on_event(key). Tick it from the existing
-    genesis/reflexes/agent_cron_reflex.py; do NOT add a daemon. Fire event keys from
-    tools/ci/pr_watcher.py and the kanban pipeline so "wake me when PR #N is green"
-    works, which is the same failure mode that produced a four-day board flatline
-    (agov-wake-01..03)'
+    sleep_until, wake_on(job_id), wake_on_event(key). Tick it from the existing genesis/reflexes/agent_cron_reflex.py;
+    do NOT add a daemon. Fire event keys from tools/ci/pr_watcher.py and the kanban
+    pipeline so "wake me when PR #N is green" works, which is the same failure mode
+    that produced a four-day board flatline (agov-wake-01..03)'
   epics:
   - key: det
     title: DET - Declarative detection rules over the agent event stream
@@ -7783,6 +8317,9 @@ projects:
     priority: medium
   - key: wake
     title: WAKE - Agent-scheduled resumption
+    priority: medium
+  - key: gate
+    title: GATE
     priority: medium
 - key: hgx
   name: HGX - Harness Agent Parity and Graph Runtime
@@ -8980,55 +9517,59 @@ projects:
   name: FTL - FT autonomous loop, unstarve the committee to auto-trade chain
   description: 'The ICDEV[FT] auto-trade loop has never placed a trade, and auto_trade
     is not the defect: it is STARVED. Measured on the live board 2026-08-24 -- ad_signals
-    0 rows, ad_analysis_runs 0 rows, ad_auto_trades 0, ad_auto_trade_decisions 0, and all
-    6 ad_cis_recommendations HOLD at conviction EXACTLY 1 for NVDA/MSFT/GOOG/AMZN alike.
-    A uniform constant across every ticker is a degenerate value, not a market view. The
-    chain: analysts.write_signal() is the ONLY production writer of ad_signals +
-    ad_analysis_runs and is called by TESTS ONLY (repo-wide grep, zero reflex/route/task
-    callers) -> build_market_context returns signal=None run=None -> ctx.is_empty -> all
-    six experts abstain "No signal or analysis run for this ticker" at HOLD/1 ->
-    synthesize gives final_conviction 1 -> auto_trade_eligible (conviction>=6 AND BUY AND
-    tech_fund_aligned) is False -> auto_trade=0 -> _pending_recommendations returns [] ->
-    the 18:00 cycle no-ops. PROVEN in an isolated SQLite DB with the SAME code and no code
-    change: write_signal + a correctly shaped macro dict yields BUY conviction 7,
-    eligible=True, 1 pending candidate, and a FILLED 10,000 USD NVDA paper trade. So the
-    executor, the gates and the order path are healthy; only the producers are missing.
-    Second finding, latent: a wrong-shaped macro dict makes _score_macro raise and the
-    per-scorer handler swallows it into the reasoning string ("scorer error: float object
-    has no attribute get"), degrading silently to HOLD/1 -- an ERROR wearing an
-    ABSTENTION''s clothes, which is the same class of defect as a constant wearing the
-    name of a measurement. Third, macro.py and regime.py already produce exactly the dict
-    run_decision(macro=) wants and are likewise never called; without macro the committee
-    caps around conviction 4-5 and CANNOT reach the >=6 gate, which the runner docstring
-    documents as deliberate caution. NOTE the FT platform IS trading on the separate
-    strategy-ladder path (daily_paper, 14 sessions, 29 fills on fac-cs-0401); it is the
-    committee path that is dead. MANUAL-ONLY: every task is held behind ftl-gate-00 so the
-    autonomous runner never builds it unattended -- this card makes an idle system begin
-    placing (paper) trades, so a human lands each slice. PAPER ONLY; assert_may_trade,
-    check_risk, the kill switch and live_authorization are NEVER touched by this card.'
+    0 rows, ad_analysis_runs 0 rows, ad_auto_trades 0, ad_auto_trade_decisions 0,
+    and all 6 ad_cis_recommendations HOLD at conviction EXACTLY 1 for NVDA/MSFT/GOOG/AMZN
+    alike. A uniform constant across every ticker is a degenerate value, not a market
+    view. The chain: analysts.write_signal() is the ONLY production writer of ad_signals
+    + ad_analysis_runs and is called by TESTS ONLY (repo-wide grep, zero reflex/route/task
+    callers) -> build_market_context returns signal=None run=None -> ctx.is_empty
+    -> all six experts abstain "No signal or analysis run for this ticker" at HOLD/1
+    -> synthesize gives final_conviction 1 -> auto_trade_eligible (conviction>=6 AND
+    BUY AND tech_fund_aligned) is False -> auto_trade=0 -> _pending_recommendations
+    returns [] -> the 18:00 cycle no-ops. PROVEN in an isolated SQLite DB with the
+    SAME code and no code change: write_signal + a correctly shaped macro dict yields
+    BUY conviction 7, eligible=True, 1 pending candidate, and a FILLED 10,000 USD
+    NVDA paper trade. So the executor, the gates and the order path are healthy; only
+    the producers are missing. Second finding, latent: a wrong-shaped macro dict makes
+    _score_macro raise and the per-scorer handler swallows it into the reasoning string
+    ("scorer error: float object has no attribute get"), degrading silently to HOLD/1
+    -- an ERROR wearing an ABSTENTION''s clothes, which is the same class of defect
+    as a constant wearing the name of a measurement. Third, macro.py and regime.py
+    already produce exactly the dict run_decision(macro=) wants and are likewise never
+    called; without macro the committee caps around conviction 4-5 and CANNOT reach
+    the >=6 gate, which the runner docstring documents as deliberate caution. NOTE
+    the FT platform IS trading on the separate strategy-ladder path (daily_paper,
+    14 sessions, 29 fills on fac-cs-0401); it is the committee path that is dead.
+    MANUAL-ONLY: every task is held behind ftl-gate-00 so the autonomous runner never
+    builds it unattended -- this card makes an idle system begin placing (paper) trades,
+    so a human lands each slice. PAPER ONLY; assert_may_trade, check_risk, the kill
+    switch and live_authorization are NEVER touched by this card.'
   task_prefix: ftl-
   default_open: true
   briefs:
-  - 'SCORER: a scorer ERROR must be distinguishable from a genuine abstention. Today both
-    render as HOLD conviction 1 and the exception text is buried in reasoning, so a broken
-    input reads as a cautious committee and silently drags conviction below the auto-trade
-    gate.'
-  - 'MACRO: wire the EXISTING macro.py / regime.py producers into run_decision(macro=) so
-    the macro expert stops abstaining. Absence must keep lowering conviction rather than
-    fabricating a regime -- the fix is to SUPPLY the feed, never to relax the >=6 gate.'
-  - 'SIGNAL: a production caller for analysts.write_signal() over a declared universe, from
-    real price history, so ad_signals and ad_analysis_runs stop being empty.'
-  - 'SCHED: a committee producer reflex that runs run_decision(persist=True) across the
-    universe on a cadence AHEAD of the 18:00 executor, so pending candidates exist when the
-    auto-trade cycle asks for them.'
-  - 'OBS: surface the producer chain on /ops -- signal count, newest analysis run, newest
-    committee verdict, pending candidates -- so an EMPTY substrate is visible instead of
-    reading as a quiet market. An unmeasured count renders as a dash, never 0.'
+  - 'SCORER: a scorer ERROR must be distinguishable from a genuine abstention. Today
+    both render as HOLD conviction 1 and the exception text is buried in reasoning,
+    so a broken input reads as a cautious committee and silently drags conviction
+    below the auto-trade gate.'
+  - 'MACRO: wire the EXISTING macro.py / regime.py producers into run_decision(macro=)
+    so the macro expert stops abstaining. Absence must keep lowering conviction rather
+    than fabricating a regime -- the fix is to SUPPLY the feed, never to relax the
+    >=6 gate.'
+  - 'SIGNAL: a production caller for analysts.write_signal() over a declared universe,
+    from real price history, so ad_signals and ad_analysis_runs stop being empty.'
+  - 'SCHED: a committee producer reflex that runs run_decision(persist=True) across
+    the universe on a cadence AHEAD of the 18:00 executor, so pending candidates exist
+    when the auto-trade cycle asks for them.'
+  - 'OBS: surface the producer chain on /ops -- signal count, newest analysis run,
+    newest committee verdict, pending candidates -- so an EMPTY substrate is visible
+    instead of reading as a quiet market. An unmeasured count renders as a dash, never
+    0.'
   - 'OPTIONS: the executor funds ONE name a day against a ten-name book because max_daily_budget
-    is a flat $10k. Options are the capital-efficiency answer, NOT a way round the cap -- and
-    _spent_today reads ad_auto_trades ONLY, so routing through options today would make the cap
-    stop applying rather than relax. Order is forced: a real chain feed, then delta-notional in
-    the gate, then a MEASURED options cost model, then stock replacement on Q1.'
+    is a flat $10k. Options are the capital-efficiency answer, NOT a way round the
+    cap -- and _spent_today reads ad_auto_trades ONLY, so routing through options
+    today would make the cap stop applying rather than relax. Order is forced: a real
+    chain feed, then delta-notional in the gate, then a MEASURED options cost model,
+    then stock replacement on Q1.'
   epics:
   - key: gate
     title: GATE - manual hold sentinel (this card is built by hand, never dispatched)
@@ -9054,11 +9595,6 @@ projects:
   - key: strat
     title: STRAT - declared strategy set, default, and event/regime-driven selection
     priority: high
-  # --- RETROACTIVE. Every id below already exists in merged commits, and several already
-  # exist as rows on the board -- and NONE was counted, because no epic key matched them.
-  # `<task_prefix><epic_key>-<N>` is the whole contract: a task no epic claims is dropped
-  # from total/done/percent, and when every row is dropped the card vanishes entirely. That
-  # is the defect check_project_card_coverage exists to report, committed here by hand.
   - key: conv
     title: CONV - an abstention must not vote; the conviction scale must be reachable
     priority: high
@@ -9074,11 +9610,6 @@ projects:
   - key: bench
     title: BENCH - one re-runnable harness for signal skill AND stability
     priority: high
-  # --- P2-P4, now applied to MOMENTUM -- the only signal that cleared the stability bar.
-  # The committee was measured over 5.4y and sign-flips between sample halves under every
-  # neutralisation; 12-1 momentum does not. Sizing, costing and hedging a signal that has
-  # not demonstrated a stable edge is how a well-tuned filter on noise gets built, so the
-  # treatment follows the evidence to the baseline that beat it.
   - key: mom
     title: MOM - promote 12-1 momentum from benchmark baseline to a declared signal
     priority: high
@@ -9091,28 +9622,26 @@ projects:
   - key: beta
     title: BETA - measure what the book actually earns; hedged vs unhedged
     priority: medium
-  # --- the standing caveat on EVERY number P2-P4 produced, and a CI defect found on the way
   - key: cap
     title: CAP - capacity - at what size does the measured edge stop existing?
     priority: high
   - key: fix
     title: FIX - a gated test that passes on CI for the wrong reason
     priority: medium
-  # --- the decorrelated partner momentum needs, and the leak guard it requires FIRST
   - key: val
-    title: VAL - point-in-time fundamentals, then a value factor judged on its own merits
+    title: VAL - point-in-time fundamentals, then a value factor judged on its own
+      merits
     priority: high
-  # --- the measured edge is consumed by NOBODY, and the feed cannot see the tape
   - key: feed
     title: FEED - switch to the consolidated tape, so liquidity becomes measurable
     priority: high
   - key: live
-    title: LIVE - wire the blended book to paper, the only source of new evidence left
+    title: LIVE - wire the blended book to paper, the only source of new evidence
+      left
     priority: high
-  # --- 50/200 EMA + multi-timeframe: MEASURE before wiring, because two thirds of it
-  # --- already exists (disciplines.py has the SMA50/200 cross; macro_feed has SPY 200d)
   - key: trend
-    title: TREND - trend filters and multi-timeframe, measured as baselines before any wiring
+    title: TREND - trend filters and multi-timeframe, measured as baselines before
+      any wiring
     priority: high
   - key: rank
     title: RANK - the blend ranking is V-shaped, not monotone (the short leg is dead)
@@ -9121,13 +9650,15 @@ projects:
     title: DELTA - the daily budget must charge delta-notional across BOTH instruments
     priority: high
   - key: chain
-    title: CHAIN - a real options chain feed (data-05); today every /options number is a sample
+    title: CHAIN - a real options chain feed (data-05); today every /options number
+      is a sample
     priority: high
   - key: ocost
     title: OCOST - measure the options cost model, never inherit the equity 45x breakeven
     priority: high
   - key: repl
-    title: REPL - stock replacement, deep ITM calls on Q1 so the book funds ten names not one
+    title: REPL - stock replacement, deep ITM calls on Q1 so the book funds ten names
+      not one
     priority: medium
   - key: budget
     title: BUDGET - daily budget as a fraction of account balance
@@ -9153,63 +9684,49 @@ projects:
   - key: ramp
     title: RAMP - raise the daily delta meter so the book assembles
     priority: medium
-  # --- TTM SQUEEZE: the volatility-COMPRESSION read this platform has never had.
-  # `trend` measured trend variants as rankable signals (every 200-period one sign-flips)
-  # and then as a per-name filter and a market switch (both inside the noise band of 200
-  # random filters). All of that was TREND. None of it says whether the tape is COILED,
-  # which is the one read that can justify standing aside in a sideways market.
-  # TTM Squeeze makes TWO claims and they must be measured APART: compression predicts LOW
-  # forward realised vol, and a fire predicts HIGH. Only the second half is directional, so
-  # scoring a symmetric predictor against a SIGNED forward return returns ~0 by
-  # construction and would read as a null that was never tested. The prior is against a
-  # directional edge; the honest outcome may be an EXPOSURE input and not a DIRECTION one.
   - key: sqz
-    title: SQZ - TTM Squeeze, the volatility-compression read, measured before any wiring
+    title: SQZ - TTM Squeeze, the volatility-compression read, measured before any
+      wiring
     priority: high
-  # --- THE POST-SQZ QUANT PROGRAMME. Grounded in what the platform itself measured:
-  # every DISCRETE regime idea died (trend-01/02, sqz), the survivors are a slow
-  # cross-sectional factor (12-1 momentum, sector-neutral +0.0789 OOS stable) and a
-  # decorrelated partner (value, -0.254 corr, doubles IR to 2.65). The sqz study also
-  # proved forward realised vol is forecastable here (trailing sigma IC -0.44..-0.61,
-  # stable, both clocks) and NOTHING consumes that forecast. These epics exploit the
-  # measured survivors instead of adding a fourth regime detector.
   - key: vt
-    title: VT - vol-target the book; the continuous scaler the dead regime labels never were
+    title: VT - vol-target the book; the continuous scaler the dead regime labels
+      never were
     priority: high
   - key: pead
-    title: PEAD - earnings drift from point-in-time filings, a third decorrelated blend leg
+    title: PEAD - earnings drift from point-in-time filings, a third decorrelated
+      blend leg
     priority: high
-  # --- RETROACTIVE (rem-hyg-02 shape): five ftl-qopt-* rows existed on the board before
-  # this key did, so none was counted and qopt-05 rendered as an orphan on the card.
   - key: qopt
     title: QOPT - the per-name exit overlay measured, then retired by operator decision
     priority: high
-  # --- MARKET-CYCLE ADAPTATION + POST-ENTRY MANAGEMENT (plan approved 2026-08-28).
-  # Exploration verdicts these epics answer to: the exit path is a probable no-op on this
-  # host (quote 403 -> empty price map -> evaluate_exits skips every rule incl. time_stop;
-  # Alpaca fills carry no fill_price -> register_exit_rules never runs; a tripped kill
-  # switch refuses EXIT orders too); regime machinery exists unwired (macro_feed observes,
-  # strategy_routing ceilings consume, nothing connects them, nothing persists a label);
-  # exits are all-or-nothing (qty_pct plumbed, hard-coded 1.0) and the blend rebalance
-  # never sells. Phase order is LAW: exit first (safety), then regime (persist + prove
-  # reachability via exposure.reachability() BEFORE any wire), then pm, then harm.
   - key: exit
-    title: EXIT - make the exit path real; fills resolve, prices answer, stops fire under a tripped switch
+    title: EXIT - make the exit path real; fills resolve, prices answer, stops fire
+      under a tripped switch
     priority: high
   - key: regime
-    title: REGIME - the market cycle observed, persisted, and proven reachable before it steers anything
+    title: REGIME - the market cycle observed, persisted, and proven reachable before
+      it steers anything
     priority: high
   - key: pm
-    title: PM - tiered position management; scale-out, scale-in discipline, regime de-risk
+    title: PM - tiered position management; scale-out, scale-in discipline, regime
+      de-risk
     priority: high
   - key: harm
     title: HARM - one exposure owner; inert modules decided; per-regime attribution
     priority: medium
-
+  - key: aud
+    title: AUD
+    priority: medium
+  - key: dx
+    title: DX
+    priority: medium
+  - key: evid
+    title: EVID
+    priority: medium
 - key: ftp
   name: FTP - ICDEV[FT] production readiness and the easy button
-  description: 'Make the ICDEV[FT] paper platform production-grade and installable by
-    a layman on any OS. Three exploration passes (2026-08-29) found the code disciplined
+  description: 'Make the ICDEV[FT] paper platform production-grade and installable
+    by a layman on any OS. Three exploration passes (2026-08-29) found the code disciplined
     but the operational shell wanting: setup is an 11-step undocumented Windows-only
     sequence with a materially wrong README (extras, no migrate/UI-build/start steps,
     drifted .env.template); the entry-risk gate estimates order value from a constant
@@ -9217,13 +9734,13 @@ projects:
     every new position (invisible to a test suite whose fixtures all sit at exactly
     that constant); the autonomous order path carries no venue idempotency key while
     the adapter and the paper-session path both support one; the supervisor auto-deploys
-    origin/main with no migration step, no post-restart health probe, no rollback and
-    no crash-loop backoff; /health answers 200 with HTML through the SPA catch-all;
+    origin/main with no migration step, no post-restart health probe, no rollback
+    and no crash-loop backoff; /health answers 200 with HTML through the SPA catch-all;
     broker calls have no bounded retry while the knowledge fetchers carry the exact
-    pattern; and three broker adapters still hold private copies of the transport the
-    shared HttpBroker exists to unify. Two epics: prd hardens the money path and the
-    deploy loop; ezb ships a stdlib-only cross-platform setup_ft.py bootstrap (SQLite
-    zero-config default, PG documented upgrade), an icdev_fin.doctor traffic-light
+    pattern; and three broker adapters still hold private copies of the transport
+    the shared HttpBroker exists to unify. Two epics: prd hardens the money path and
+    the deploy loop; ezb ships a stdlib-only cross-platform setup_ft.py bootstrap
+    (SQLite zero-config default, PG documented upgrade), an icdev_fin.doctor traffic-light
     diagnostic, de-Windowsed tooling, honest README/OVERVIEW/GLOSSARY, and a layman
     UI pass. PAPER ONLY: every live gate is untouched or strengthened; live trading
     stays HITL-gated regardless. Deliberately a SEPARATE card from ftl, whose text
@@ -9235,18 +9752,18 @@ projects:
   - 'PRD: the risk gate must measure the order it is checking -- thread the real price
     (and the notional) into check_risk; the fallback constant survives only with a
     named warning, per the evidence-honesty rule.'
-  - 'PRD: an autonomous submit must be idempotent at the venue -- deterministic
-    client_order_id per (cycle, system, symbol, side), intent row persisted BEFORE the
-    broker call, resolver adopts or declares lost by asking the venue.'
+  - 'PRD: an autonomous submit must be idempotent at the venue -- deterministic client_order_id
+    per (cycle, system, symbol, side), intent row persisted BEFORE the broker call,
+    resolver adopts or declares lost by asking the venue.'
   - 'PRD: the deploy loop must migrate, verify and be able to roll back -- pull ->
-    migrate --up -> health-probe the fresh child -> tag last-good or restore the
-    pre-pull sha; crash loops back off instead of spinning.'
+    migrate --up -> health-probe the fresh child -> tag last-good or restore the pre-pull
+    sha; crash loops back off instead of spinning.'
   - 'EZB: git clone, python setup_ft.py, python launch_ft.py --open must be the whole
     story on Windows, macOS and Linux -- stdlib-only bootstrap, SQLite by default,
     idempotent re-runs, doctor at the end.'
-  - 'EZB: a layman must be able to read the system -- OVERVIEW.md and GLOSSARY.md in
-    plain language, a glossary route in the UI, and no rendered value that was never
-    measured.'
+  - 'EZB: a layman must be able to read the system -- OVERVIEW.md and GLOSSARY.md
+    in plain language, a glossary route in the UI, and no rendered value that was
+    never measured.'
   epics:
   - key: prd
     title: PRD - production hardening of the money path and the deploy loop
@@ -9254,6 +9771,9 @@ projects:
   - key: ezb
     title: EZB - the easy button; cross-OS setup, doctor, docs, layman UI
     priority: high
+  - key: gate
+    title: GATE
+    priority: medium
 - key: rt
   name: ICDEV[RT] - Retirement & Insurance Planning Parent
   description: 'The THIRD parent of the ICDEV family, alongside ICDEV[IT] (this
