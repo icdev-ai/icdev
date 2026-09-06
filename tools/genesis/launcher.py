@@ -18,8 +18,9 @@ import subprocess
 import sys
 import time
 import urllib.request
+from typing import Optional
 
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ROOT =os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.chdir(ROOT)
 
 # Load .env so dashboard/daemon get API keys, LLM config, etc.
@@ -106,17 +107,86 @@ def _wait_for_ollama(max_wait: int = 120) -> bool:
     return False
 
 
+#: The supervised children that read the declared database at start-up
+#: (icdev_domain.yaml `db:`). Every one of them either crashes at
+#: assert_identity while PostgreSQL is in recovery (dashboard, the two daemons)
+#: or registers into a dead database and carries on (scheduler, pr_watcher).
+#: The trading dashboard reads ICDEV[FT]'s own database and is not listed.
+DB_BOUND_CHILDREN = (
+    "dashboard", "genesis_daemon", "proposal_genesis", "kanban_scheduler", "pr_watcher",
+)
+
+#: How long the supervisor waits for the database before starting DB-bound
+#: children anyway. MEASURED: on 2026-09-03 (05:02:55 -> ~05:11) and 2026-09-04
+#: (07:20:38 -> ~07:29) PostgreSQL took ~8 minutes after logon to accept a
+#: connection, and the previous 120s bound expired on both boots. 600s covers
+#: both with margin; ICDEV_LAUNCHER_DB_WAIT_SECONDS overrides it. It is a bound,
+#: not a dependency: on expiry the children are started and the log says so.
+DB_WAIT_SECONDS_ENV = "ICDEV_LAUNCHER_DB_WAIT_SECONDS"
+DEFAULT_DB_WAIT_SECONDS = 600
+DB_PROBE_EVERY_SECONDS = 5
+DB_PROGRESS_EVERY_SECONDS = 15
+
+
+def _db_wait_seconds() -> int:
+    raw = (os.environ.get(DB_WAIT_SECONDS_ENV) or "").strip()
+    try:
+        value = int(raw) if raw else DEFAULT_DB_WAIT_SECONDS
+    except ValueError:
+        value = DEFAULT_DB_WAIT_SECONDS
+    return value if value >= 0 else DEFAULT_DB_WAIT_SECONDS
+
+
+def _declared_database() -> dict:
+    """What the declaration (icdev_domain.yaml) and .env say the children will open.
+
+    `backend` is what the children will actually use (storage.get_backend reads
+    the env, defaulting to PostgreSQL); `database` is the name the env carries
+    under the declaration's `name_env` / `dsn_env`, or None when neither names
+    one -- an unnamed database is reported as such, never guessed.
+    """
+    out = {"backend": None, "database": None, "named_by": None, "declared": False}
+    try:
+        from tools.db.storage import get_backend
+        out["backend"] = get_backend()
+    except Exception:  # noqa: BLE001
+        out["backend"] = os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql").lower()
+    try:
+        # The same reader the children's assert_identity uses (pinned core
+        # API, args/core_api.yaml): `database_observed` is the name the env
+        # carries under the declaration's name_env / dsn_env, `database_source`
+        # says which. check_identity REPORTS a mismatch; only assert_ raises.
+        from icdev.core.context import check_identity
+        report = check_identity()
+        out["declared"] = True
+        out["declared_databases"] = list(report.database_declared)
+        out["database"], out["named_by"] = report.database_observed, report.database_source
+    except Exception:  # noqa: BLE001 -- a wheel or scaffold without the core still boots
+        name = (os.environ.get("ICDEV_PG_DATABASE") or "").strip()
+        if name:
+            out["database"], out["named_by"] = name, "ICDEV_PG_DATABASE"
+    return out
+
+
 def _check_postgres(timeout: float = 3.0) -> bool:
-    """Return True if PostgreSQL answers a trivial query.
+    """Return True if the declared PostgreSQL database answers a trivial query.
 
     Uses the same connection path the services themselves use, so a success here
     means they will connect too — unlike pg_isready, which is not on PATH on
     every host and does not exercise auth/database selection.
+
+    A SQLite FALLBACK connection does not count. Without ICDEV_PG_NO_FALLBACK
+    `get_connection()` hands back SQLite when PostgreSQL is down, and a probe
+    that accepted it would report "ready" for a database that is still in
+    recovery -- the children would then start against the wrong store, or crash
+    at assert_identity, exactly what this wait exists to prevent.
     """
     try:
         from tools.db.storage import get_connection
         conn = get_connection()
         try:
+            if getattr(conn, "_backend", None) != "postgresql":
+                return False
             conn.execute("SELECT 1").fetchone()
         finally:
             try:
@@ -128,24 +198,66 @@ def _check_postgres(timeout: float = 3.0) -> bool:
         return False
 
 
-def _wait_for_postgres(max_wait: int = 120) -> bool:
-    """Wait for PostgreSQL before starting services that require it.
+def _wait_for_postgres(max_wait: Optional[int] = None, *, probe=None, sleep=None,
+                       clock=None, log=None) -> dict:
+    """Wait for the declared database before starting the DB-bound children.
 
-    With ICDEV_PG_NO_FALLBACK=true a service that boots while PG is still in
-    recovery dies immediately ("the database system is starting up"). The
-    monitor loop would eventually restart it, but only after a crash-loop that
-    looks like a real outage. Skipped when the backend is not PostgreSQL.
+    Bounded by `max_wait` (default ICDEV_LAUNCHER_DB_WAIT_SECONDS, else 600s),
+    probing every 5s and logging progress every 15s with the database's name.
+    On expiry the children are started ANYWAY and the log says which ones and
+    why -- an unreachable database must never keep the supervisor from ever
+    starting, and each child has its own recovery: the dashboard and daemons
+    are restarted by the monitor loop until PG accepts, and the scheduler and
+    pr_watcher retry their registration with backoff (mfx-boot-01).
+
+    Returns {"ready", "waited", "attempts", "database", "backend", "bound"}
+    rather than a bare bool so a caller (or a test) can see what was measured.
+    Skipped -- `ready: True`, `skipped: True` -- when the backend is not
+    PostgreSQL: SQLite needs no server.
     """
-    if os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower() != "postgresql":
-        return True
-    _log(f"Waiting for PostgreSQL (up to {max_wait}s)...")
-    for _ in range(0, max_wait, 5):
-        if _check_postgres():
-            _log("PostgreSQL is ready")
-            return True
-        time.sleep(5)
-    _log("WARNING: PostgreSQL not reachable — services may crash-loop until it recovers")
-    return False
+    probe = probe or _check_postgres
+    sleep = sleep or time.sleep
+    clock = clock or time.monotonic
+    log = log or _log
+    bound = _db_wait_seconds() if max_wait is None else int(max_wait)
+    decl = _declared_database()
+    label = f"PostgreSQL database '{decl['database']}'" if decl.get("database") \
+        else "PostgreSQL (no database named in .env)"
+    result = {
+        "ready": False, "waited": 0.0, "attempts": 0, "bound": bound,
+        "database": decl.get("database"), "backend": decl.get("backend"),
+        "skipped": False,
+    }
+    if (decl.get("backend") or "") != "postgresql":
+        result.update(ready=True, skipped=True)
+        return result
+
+    log(f"Waiting for {label} to accept a connection (up to {bound}s) before "
+        f"starting DB-bound children: {', '.join(DB_BOUND_CHILDREN)}")
+    started = clock()
+    next_progress = DB_PROGRESS_EVERY_SECONDS
+    while True:
+        result["attempts"] += 1
+        if probe():
+            result["ready"] = True
+            result["waited"] = clock() - started
+            log(f"{label} is ready after {result['waited']:.0f}s "
+                f"({result['attempts']} probe{'s' if result['attempts'] != 1 else ''})")
+            return result
+        waited = clock() - started
+        if waited >= bound:
+            result["waited"] = waited
+            log(f"WARNING: {label} did not accept a connection within {bound}s "
+                f"({result['attempts']} probes) — starting DB-bound children anyway "
+                f"({', '.join(DB_BOUND_CHILDREN)}). The dashboard and daemons will be "
+                f"restarted by the monitor loop until it accepts; the scheduler and "
+                f"pr_watcher retry their registration with backoff.")
+            return result
+        if waited >= next_progress:
+            log(f"Still waiting for {label} ({waited:.0f}s of {bound}s, "
+                f"{result['attempts']} probes)...")
+            next_progress += DB_PROGRESS_EVERY_SECONDS
+        sleep(DB_PROBE_EVERY_SECONDS)
 
 
 def _child_env():
@@ -336,8 +448,11 @@ def main():
     # Wait for Ollama (scanner-tier LLM)
     _wait_for_ollama(max_wait=90)
 
-    # Wait for PostgreSQL — every service below reads it at import time
-    _wait_for_postgres(max_wait=120)
+    # Wait for the declared database BEFORE the first DB-bound child. Bounded
+    # (ICDEV_LAUNCHER_DB_WAIT_SECONDS, default 600s -- measured, see
+    # DEFAULT_DB_WAIT_SECONDS); on expiry the children start anyway and the
+    # log says so. mfx-boot-01.
+    _wait_for_postgres()
 
     # Start Dashboard
     dash_proc, dash_log_f = _start_dashboard()

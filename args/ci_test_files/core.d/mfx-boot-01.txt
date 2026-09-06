@@ -1,0 +1,3 @@
+# mfx-boot-01 - launcher waits for the declared database before DB-bound children; scheduler and pr_watcher retry registration with backoff.
+tests/coordination/test_registration_retry.py
+tests/genesis/test_launcher_db_wait.py
