@@ -175,9 +175,9 @@ the detector, its threshold or its window.
 
 Closing this card inside that window is safe: `fb989f6ad` (#2057,
 `earliest_clear_at`) is on `origin/main`, so a terminal card before the clear time
-is HELD (`held_closed_early`) rather than re-filed as `-r2`. This is the fourth
-instance to rely on that and the fourth to land as an ordinary PR with no `hold`
-label and no `scheduled_at` deferral.
+is HELD (`held_closed_early`) rather than re-filed as `-r2`. Like every instance
+since #2114 this lands as an ordinary PR — no `hold` label, no `scheduled_at`
+deferral.
 
 ## Re-derive
 
