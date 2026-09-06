@@ -19,17 +19,28 @@ Usage:
     python tools/testing/route_smoke.py --all
     python tools/testing/route_smoke.py --routes /kanban,/govcon,/proposals
     python tools/testing/route_smoke.py --changed tools/govcon/blueprint.py
-    python tools/testing/route_smoke.py --all --base http://localhost:5050 --json
+    python tools/testing/route_smoke.py --all --base http://127.0.0.1:5050 --json
 """
 from __future__ import annotations
 
 import argparse
 import json
+import socket
 import sys
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+
+# The dashboard binds 127.0.0.1 (tools/dashboard/app.py), and on this host
+# `localhost` resolves ::1 AHEAD of 127.0.0.1. urllib has no Happy Eyeballs, so
+# every probe spelled `localhost` opens a doomed IPv6 connection, waits ~2.0s
+# for it to fail, and only then falls back to IPv4. Measured 2026-09-05 over the
+# full --all sweep: 88 probes, 255.2s wall, min 2188ms, ZERO probes under 2s —
+# ~176s of the 255s (about 69%) spent failing to connect. curl hides this
+# because curl DOES do Happy Eyeballs, which is why a hand spot-check looks fine.
+DEFAULT_BASE = "http://127.0.0.1:5050"
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -202,9 +213,77 @@ def _json_error(body: str) -> Optional[str]:
     return None
 
 
+_RESOLVED_BASES: Dict[str, str] = {}
+
+
+def resolve_base(base: str, timeout: float = 1.0) -> str:
+    """Rewrite a `localhost` *base* to the address family that actually answers.
+
+    Flipping DEFAULT_BASE fixes every caller that takes the default; it does
+    nothing for one that spells `localhost` explicitly (CI does, and so does
+    anyone copying the usage line). This is the durable half: probe the
+    candidates getaddrinfo returns, in its order, and pin the first that
+    accepts a TCP connection.
+
+    FAIL-SAFE IN EVERY DIRECTION, because guessing wrong here breaks the sweep
+    outright rather than merely slowing it. The base is returned UNCHANGED when
+    the host is not `localhost`, when only one candidate exists (nothing to
+    choose), when the first candidate already wins (no gain), and when nothing
+    answers at all — an IPv6-only server therefore keeps working, and a server
+    that is simply down still reaches the existing `_server_up` skip rather
+    than being rewritten toward a family that is equally dead.
+
+    One connect per distinct base per process, cached — not one per probe.
+    """
+    if not base:
+        return base
+    cached = _RESOLVED_BASES.get(base)
+    if cached is not None:
+        return cached
+
+    resolved = base
+    try:
+        parts = urllib.parse.urlsplit(base)
+        if (parts.hostname or "").lower() == "localhost":
+            port = parts.port or (443 if parts.scheme == "https" else 80)
+            candidates = socket.getaddrinfo(
+                parts.hostname, port, 0, socket.SOCK_STREAM
+            )
+            for index, (family, socktype, proto, _canon, sockaddr) in enumerate(candidates):
+                sock = socket.socket(family, socktype, proto)
+                try:
+                    sock.settimeout(timeout)
+                    sock.connect(sockaddr)
+                except Exception:  # noqa: BLE001 - this family is unreachable; try the next
+                    continue
+                finally:
+                    sock.close()
+                # The first candidate is what urllib would have used anyway.
+                if index == 0:
+                    break
+                host = sockaddr[0]
+                netloc = f"[{host}]:{port}" if family == socket.AF_INET6 else f"{host}:{port}"
+                if parts.username or parts.password:  # preserve credentials verbatim
+                    netloc = parts.netloc.rsplit("@", 1)[0] + "@" + netloc
+                resolved = urllib.parse.urlunsplit(
+                    (parts.scheme, netloc, parts.path, parts.query, parts.fragment)
+                )
+                logger.info(
+                    "resolve_base: %s answers on %s, ahead of %s candidate(s) that did not",
+                    base, host, index,
+                )
+                break
+    except Exception as exc:  # noqa: BLE001 - never let address selection fail a smoke run
+        logger.warning("resolve_base: leaving %s unchanged (%s)", base, exc)
+        resolved = base
+
+    _RESOLVED_BASES[base] = resolved
+    return resolved
+
+
 def _server_up(base: str, timeout: float = 3.0) -> bool:
     try:
-        urllib.request.urlopen(f"{base}/health", timeout=timeout)
+        urllib.request.urlopen(f"{resolve_base(base)}/health", timeout=timeout)
         return True
     except Exception:
         return False
@@ -332,11 +411,12 @@ def _smoke_api_endpoint(
 
 def run_smoke(
     routes: List[str],
-    base: str = "http://localhost:5050",
+    base: str = DEFAULT_BASE,
     timeout: float = 10.0,
     verbose: bool = True,
 ) -> Tuple[bool, List[Dict]]:
     """Run smoke on *routes*. Return (all_passed, results)."""
+    base = resolve_base(base)
     if not _server_up(base):
         if verbose:
             print(f"  [SKIP] Server not running at {base} — route smoke skipped")
@@ -362,7 +442,7 @@ def run_smoke(
 _PERF_DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "route_perf.db"
 
 
-def record_smoke_results(results: List[Dict], base: str = "http://localhost:5050") -> None:
+def record_smoke_results(results: List[Dict], base: str = DEFAULT_BASE) -> None:
     """Persist elapsed_ms + ok status for each smoke result to route_perf.db."""
     import sqlite3 as _sqlite3
     try:
@@ -455,11 +535,12 @@ def detect_perf_regressions(
 
 def run_api_smoke(
     endpoints: Optional[List[Dict]] = None,
-    base: str = "http://localhost:5050",
+    base: str = DEFAULT_BASE,
     timeout: float = 10.0,
     verbose: bool = True,
 ) -> Tuple[bool, List[Dict]]:
     """Smoke critical API endpoints — verifies JSON responses, not just 200."""
+    base = resolve_base(base)
     if not _server_up(base):
         if verbose:
             print(f"  [SKIP] Server not running at {base} — API smoke skipped")
@@ -515,10 +596,13 @@ def main() -> None:
               "budget. An entry here is a statement about the ENVIRONMENT — a "
               "canvas this deployment does not enable — never about a route "
               "being allowed to be broken."))
-    parser.add_argument("--base", default="http://localhost:5050")
+    parser.add_argument("--base", default=DEFAULT_BASE)
     parser.add_argument("--timeout", type=float, default=10.0)
     parser.add_argument("--json", action="store_true", dest="as_json")
     args = parser.parse_args()
+    # Resolve once here too, so the "Smoking N routes against X" line names the
+    # address the probes actually used rather than the one that was typed.
+    args.base = resolve_base(args.base)
 
     all_results: List[Dict] = []
     # Defined here, not inside the nav-route branch: --api-only skips that
