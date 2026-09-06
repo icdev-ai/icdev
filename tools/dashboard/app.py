@@ -7819,13 +7819,40 @@ def create_app(testing: bool = False) -> Flask:
 
     @app.route("/api/health")
     def api_health():
+        # `database` is MEASURED off the live connection, never read back from
+        # ICDEV_PG_DATABASE / ICDEV_DATABASE_URL (qa-fail-6a87916931be3793).
+        # It is what lets a caller — the E2E isolation assert in globalSetup.ts
+        # above all — find out which database this SERVER is on, which is a
+        # different question from which one the caller's own env names. Those
+        # two disagreed silently, and the suite wrote its fixtures into the
+        # canonical board while the operator believed otherwise.
+        #
+        # `database: null` with `database_measured: false` means NOT MEASURED,
+        # which is never the same as confirmed-clean. Do not collapse them.
+        db_ok = False
+        active = {"backend": None, "database": None, "measured": False}
         try:
+            from tools.db.storage import active_database as _ad
             from tools.db.storage import get_connection as _gc
-            _gc().execute("SELECT 1").fetchone()
-            db_ok = True
+            conn = _gc()
+            try:
+                conn.execute("SELECT 1").fetchone()
+                db_ok = True
+                active = _ad(conn)
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
         except Exception:
             db_ok = False
-        return jsonify({"status": "ok" if db_ok else "degraded", "db": db_ok})
+        return jsonify({
+            "status": "ok" if db_ok else "degraded",
+            "db": db_ok,
+            "backend": active["backend"],
+            "database": active["database"],
+            "database_measured": active["measured"],
+        })
 
     @app.route("/api/status")
     def api_status():

@@ -186,6 +186,58 @@ def _is_system_table(sql: str) -> bool:
     return table in _manifest_exempt_tables()
 
 
+#: A statement that names NO relation anywhere -- ``SELECT 1``,
+#: ``SELECT current_database()``, ``SELECT now()``. Matching is on the RAW sql,
+#: never the depth-0 skeleton, so a scalar subquery (``SELECT (SELECT x FROM
+#: t)``) still carries a FROM and is still filtered. The check can only exempt
+#: a statement that provably reads no table at all.
+_RE_ANY_RELATION = re.compile(r"\b(FROM|JOIN)\b", re.IGNORECASE)
+
+#: Only a SELECT can be table-less. ``UPDATE t SET ...`` names its relation with
+#: no ``FROM`` at all, so a bare "no FROM and no JOIN" test called it table-less
+#: and dropped the tenant predicate from every UPDATE -- caught by
+#: tests/test_rls_integration.py before this shipped. DELETE and INSERT are
+#: excluded for the same reason and not because of how they happen to be spelled.
+_RE_LEADING_SELECT = re.compile(r"^\s*(?:\(|\s)*SELECT\b", re.IGNORECASE)
+
+
+def _is_tableless(sql: str) -> bool:
+    """True when the statement reads no relation, so there is nothing to filter.
+
+    THE DEFECT THIS FIXES (qa-fail-6a87916931be3793). The dashboard's liveness
+    probe is ``SELECT 1``. Inside a request a security context is attached, and
+    this module rewrote it to
+
+        SELECT 1 WHERE (classification IS NULL OR classification = '...')
+
+    which raises ``UndefinedColumn: column "classification" does not exist`` --
+    there is no FROM clause, so there is no such column to filter on. The route
+    swallows the error and answers ``{"status": "degraded", "db": false}``, so
+    ``/api/health`` has reported the database DOWN on every request. Measured
+    2026-09-05 against the live canonical dashboard on :5050: exactly that,
+    while the database was healthy and every other query on the page worked.
+
+    This is the same reasoning as ``_is_system_table`` one function up, and the
+    same failure mode it names: injecting where nothing can be restricted only
+    produces an invalid statement, which the caller reads as "capability
+    unavailable" rather than "query malformed".
+
+    IT CANNOT WEAKEN ROW SECURITY, and that is why the test is a NEGATIVE one
+    over the raw statement rather than an attempt to identify the table: a
+    SELECT with no ``FROM`` and no ``JOIN`` anywhere in it reads no relation, so
+    there are no rows for a predicate to withhold. Anything this cannot prove
+    table-less -- a write statement, or a ``FROM`` that turns out to sit inside a
+    string literal -- keeps today's behaviour and is still injected.
+
+    THE LEADING-SELECT HALF IS LOAD-BEARING. Without it ``UPDATE t SET x = 1``
+    reads as table-less, because an UPDATE names its relation without a ``FROM``
+    -- and the tenant predicate would be dropped from every UPDATE in the
+    platform. That is a widening of access, not a fixed health probe;
+    tests/test_rls_integration.py caught it.
+    """
+    return bool(_RE_LEADING_SELECT.match(sql)) and not _RE_ANY_RELATION.search(sql)
+
+
 def _primary_alias(sql: str) -> str | None:
     """Return the alias (or table name) of the primary FROM table, or None.
 
@@ -304,6 +356,12 @@ def inject_row_predicate(
     # caller usually reads the resulting error as "capability unavailable"
     # rather than "query malformed". See _SYSTEM_TABLE_PREFIXES.
     if _is_system_table(sql):
+        return sql, (), 0
+
+    # A statement that reads no relation has no rows to withhold; injecting a
+    # predicate can only make it invalid. See _is_tableless -- this is what made
+    # /api/health's `SELECT 1` report the database as down on every request.
+    if _is_tableless(sql):
         return sql, (), 0
 
     extra_clauses: list[str] = []

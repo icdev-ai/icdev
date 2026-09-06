@@ -1718,6 +1718,80 @@ npx playwright test --list                              # every spec PARSES; no 
 # and NEVER edit args/mirror_drift_baseline.yaml -- the fix is `--fix` and a
 # `git add` of the icdev/ copy.
 
+# The E2E suite writes fixtures — point it at a THROWAWAY database (qa-fail-6a87916931be3793)
+python tools/db/bootstrap_pg.py                                  # once
+ICDEV_PG_DATABASE=icdev_e2e npx playwright test                  # or:
+ICDEV_DATABASE_URL=postgresql://.../icdev_e2e npx playwright test
+python -c "from tools.db.storage import active_database as a; print(a())"   # which db am I on?
+curl -s localhost:5050/api/health    # {backend, database, database_measured} — MEASURED
+# THE DOCUMENTED COMMAND USED TO REDIRECT NOTHING. `.env` sets
+# `ICDEV_DATABASE_URL`, and EVERY connection site in tools/db/storage.py reads
+# the DSN FIRST -- `ICDEV_PG_DATABASE` is consulted only when no DSN is present
+# (tools/db/shadowed_migration_audit.py had already learned this and warns about
+# it; playwright.config.ts had not). Measured 2026-09-05 with exactly the
+# documented variables exported, `current_database()` answered `icdev`. So an
+# operator following the recipe believed they were isolated and ran ~840 tests'
+# worth of fixture writes into the CANONICAL board -- a live mechanism for the
+# E2E residue already seen there (stale session / NMCE cards).
+# ONE RESOLVER, tests/e2e/fixtures/e2e_database.ts, read by BOTH
+# playwright.config.ts (to BUILD webServer.env) and globalSetup.ts (to ASSERT
+# the server obeyed). A second copy of the precedence is how this happened.
+# THE PER-RUN KNOB OUTRANKS THE AMBIENT DSN, the OPPOSITE of the connection
+# precedence and deliberately so: an ordinary shell here already exports
+# `ICDEV_DATABASE_URL` naming `icdev`, so ranking the DSN first lets the ambient
+# config outrank the variable the operator typed to escape it. That shipped for
+# one run and was caught END TO END, not by reading it.
+# `ICDEV_DATABASE_URL` is cleared to an EMPTY STRING for the server, never
+# unset: present-but-falsy means `load_dotenv(override=False)` cannot put
+# `.env`'s DSN back, while `storage.py`'s `if db_url:` is false so the discrete
+# name wins. Verified on Windows end to end. NO database, host or credential is
+# hardcoded, and a run that requested nothing is left exactly as it was.
+# AND IT IS MEASURED, NOT TAKEN ON TRUST. globalSetup asks the SERVER via
+# `current_database()` on /api/health -- re-reading our own env would prove only
+# that we can echo a variable, which is the reasoning that shipped the broken
+# recipe. It is also the ONLY thing that catches `reuseExistingServer`: a
+# dashboard already up on the port means Playwright starts NO server and every
+# variable the run exported is inert.
+#   confirmed      the server is measurably on the requested database
+#   mismatch       it is somewhere else                            -> REFUSES
+#   unmeasured     it could not be confirmed                       -> REFUSES
+#   not_requested  nothing was asked for. NOT a clean bill of health.
+# `unmeasured` REFUSES on purpose: degrading it to a warning restores the exact
+# false belief -- "I asked for isolation and nothing complained". The success
+# verdict is NOT called `isolated`: what is provable is that the server is on
+# the database the run NAMED, and whether that database is disposable is not
+# knowable from here, so a run whose database came from the ambient config is
+# told so by name. Stand it down with ICDEV_E2E_DB_CHECK=0, never a neutraliser.
+# `icdev_e2e` is DECLARED in icdev_domain.yaml, so a routine local run no longer
+# needs ICDEV_IDENTITY_GUARD=0 -- an operator who switches the guard off for
+# this also switches it off for the cross-parent case it exists to catch.
+# A PRE-EXISTING DEFECT FOUND ON THE WAY, and it was not small: /api/health
+# reported `{"status":"degraded","db":false}` on EVERY request, on the canonical
+# dashboard too (measured on :5050). Inside a request a security context is
+# attached and row_security rewrote the liveness probe `SELECT 1` into
+# `SELECT 1 WHERE (classification IS NULL OR ...)`, which raises UndefinedColumn
+# because a FROM-less SELECT has no such column; the route swallowed it. So the
+# platform's health endpoint had been reporting the database DOWN while it was
+# healthy. `_is_tableless` is the sibling of the `_is_system_table` guard
+# already in that module and carries the same reasoning. It is SELECT-ONLY:
+# `UPDATE t SET ...` names its relation with no FROM, so a bare no-FROM rule
+# dropped the tenant predicate from every UPDATE -- a widening of access, caught
+# by tests/test_rls_integration.py before it shipped. A scalar subquery still
+# carries a FROM and is still filtered.
+# NOT FIXED HERE, and it is a REAL defect in `icdev-core` (a separate
+# distribution, not editable from this repo): `icdev.core.context
+# .observed_database` reads `ICDEV_PG_DATABASE` BEFORE `ICDEV_DATABASE_URL`,
+# justified by a docstring claiming that is "the precedence tools/db/storage.py
+# gives" -- it is the INVERSE. Measured: with a DSN naming `icdev_ft` and
+# `ICDEV_PG_DATABASE=icdev`, `check_identity` returns MATCH while every
+# connection opens `icdev_ft`. The identity guard permits the very cross-parent
+# write xit-decl-01 exists to refuse. Re-derive it in one line:
+python -c "from icdev.core.context import check_identity as c; print(c(environ={'ICDEV_DATABASE_URL':'postgresql://u:p@h:5432/icdev_ft','ICDEV_PG_DATABASE':'icdev'}).verdict)"
+# -> match, for a process that will open icdev_ft. The repair belongs in
+# icdev-core (observed_database must read the DSN first, as storage.py does);
+# no card is seeded here because a worker dispatched against this checkout
+# cannot edit that distribution.
+
 # Which open PRs are awaiting merge, and WHY is each one not merging? (kpr-watch-01)
 python -m tools.ci.merge_readiness --json          # every open PR, task-linked or not
 python -m tools.ci.merge_readiness                 # human table
