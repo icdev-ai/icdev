@@ -164,19 +164,118 @@ def _scheduler_source() -> str:
     return Path(spec.origin).read_text(encoding="utf-8")
 
 
+def _retry_source() -> str:
+    import importlib.util
+
+    spec = importlib.util.find_spec("tools.coordination.registration_retry")
+    assert spec is not None and spec.origin, "tools.coordination.registration_retry not importable"
+    return Path(spec.origin).read_text(encoding="utf-8")
+
+
 def test_registration_failure_is_a_warning_not_a_pass():
     """pid 29880 ran five hours unregistered and nothing said so. The except
-    around session_registry.register() used to be a bare `_coord_reg = None`."""
+    around session_registry.register() used to be a bare `_coord_reg = None`.
+
+    mfx-boot-01 moved the attempt out of kanban_scheduler and into
+    RegistrationRetry, so the ONE call site this used to read by text no
+    longer exists. The INVARIANT is unchanged and is asserted here at its new
+    home -- and BEHAVIOURALLY, not by grepping a function's source, which is
+    what made this test break on a refactor that strengthened the thing it
+    guards (a failure is now loud on EVERY attempt, not only the last).
+    """
+    import logging
+
+    from tools.coordination.registration_retry import RegistrationRetry
+
+    log = logging.getLogger("test_registration_failure_is_a_warning_not_a_pass")
+    log.propagate = True
+    records: list[logging.LogRecord] = []
+
+    class _Capture(logging.Handler):
+        def emit(self, record):
+            records.append(record)
+
+    handler = _Capture()
+    log.addHandler(handler)
+    log.setLevel(logging.DEBUG)
+
+    def _always_fails(**_kwargs):
+        raise RuntimeError("database is not accepting connections")
+
+    try:
+        retry = RegistrationRetry(
+            "kanban scheduler", _always_fails, intent="kanban scheduler", log=log,
+        )
+        # Drive it to exhaustion: every attempt fails, so the last one gives up.
+        cycle = 0
+        outcomes = []
+        while not retry.exhausted and cycle < 10_000:
+            if retry.due(cycle):
+                outcomes.append(retry.attempt(cycle))
+            cycle += 1
+    finally:
+        log.removeHandler(handler)
+
+    assert retry.registered is False, "a failing register() must never read as registered"
+    assert retry.exhausted is True, "it must give up out loud, not retry forever in silence"
+    assert outcomes and outcomes[-1] == "exhausted"
+
+    warnings = [r for r in records if r.levelno >= logging.WARNING]
+    assert warnings, "a registration failure was swallowed -- the silent pass is back"
+    # EVERY failed attempt is loud, not only the last.
+    assert len(warnings) == len(outcomes), (
+        f"{len(outcomes)} failed attempts produced {len(warnings)} warnings"
+    )
+    rendered = [r.getMessage() for r in warnings]
+    assert any("registration FAILED" in m for m in rendered), rendered
+    assert any("will not heartbeat in agent_sessions" in m for m in rendered), rendered
+
+
+def test_scheduler_does_not_swallow_a_registration_attempt_error():
+    """The scheduler's own wrapper around the retry must warn, never `pass`.
+
+    The retry logs its own failures; this guards the seam AROUND it in
+    kanban_scheduler._ensure_registered, which is where a bare `except:
+    pass` would put the five-hour silence back.
+    """
     src = _scheduler_source()
-    i = src.index('_coord_reg.register(intent="kanban scheduler')
+    i = src.index("def _ensure_registered(")
     block = src[i:i + 900]
-    assert "except Exception as _reg_exc" in block
-    assert "logger.warning(" in block and "registration FAILED" in block
+    assert ("except Exception:" + chr(10) + "        pass") not in block, "the silent pass is back"
+    assert "logger.warning(" in block, block
+
+
+def test_the_retry_never_reports_registered_without_a_row():
+    """`registered` is set from the register() RESULT, never from "it did not raise".
+
+    read_result() is the one place that reads a truthy/`ok` answer out of
+    whatever session_registry.register returns; a register() that answers
+    "no" must leave the retry unregistered and still retrying.
+    """
+    from tools.coordination.registration_retry import RegistrationRetry
+
+    def _answers_no(**_kwargs):
+        return {"ok": False, "reason": "no row written"}
+
+    retry = RegistrationRetry("kanban scheduler", _answers_no, intent="x")
+    assert retry.attempt(0) == "failed"
+    assert retry.registered is False
+    assert retry.last_reason == "no row written"
 
 
 def test_heartbeat_failure_is_not_swallowed_silently():
+    """The heartbeat try/except must be LOUD on both legs: no heartbeat sent,
+    and a heartbeat that raised.
+
+    Anchored on the handler (`except Exception as _hb_exc:`) rather than on a
+    fixed byte count from the call. mfx-boot-01 added an `elif` arm between
+    the two, which pushed "heartbeat failed" past the old 700-char window --
+    a test that goes red because a guarded region GREW is measuring the
+    offset, not the invariant.
+    """
     src = _scheduler_source()
     i = src.index('_coord_reg.heartbeat(intent=f"kanban scheduler')
-    block = src[i:i + 700]
+    j = src.index("except Exception as _hb_exc:", i)
+    block = src[i:j + 500]
     assert ("except Exception:" + chr(10) + "            pass") not in block, "the silent pass is back"
     assert "running UNREGISTERED" in block and "heartbeat failed" in block

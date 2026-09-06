@@ -454,10 +454,33 @@ def check_message_queue(task_id: str) -> list[dict]:
     # Drain: delete the file so these messages aren't re-delivered next
     # poll. If the rename fails (e.g. the agent is still writing to
     # it), leave the file alone and return what we have.
+    drained = False
     try:
         queue_file.unlink()
+        drained = True
     except OSError:
         pass
+
+    # kpr-watch-13: A DRAIN USED TO LEAVE NO TRACE. Deleting the file made a
+    # queue that was read indistinguishable from one that never existed, so
+    # "did anything ever read a pr_watcher resume?" could only be argued from a
+    # board-wide inequality (851 undrained messages on disk against 849 lifetime
+    # `pr_watcher.resume` rows, measured 2026-09-06) rather than proven per
+    # task. The receipt is what turns the delete into evidence.
+    #
+    # Lazy import, and best-effort: a receipt that cannot be written must never
+    # break the drain a running agent depends on, and a MISSING receipt reads as
+    # `unmeasured` downstream, never as non-delivery.
+    if drained and messages:
+        try:
+            from tools.ci.resume_delivery import record_drain
+
+            record_drain(task_id, messages, reader="check_message_queue")
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "check_message_queue: drain receipt not recorded for %s: %s",
+                task_id, exc,
+            )
 
     return messages
 
