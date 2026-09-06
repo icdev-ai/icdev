@@ -101,6 +101,12 @@ Because a drained file is *deleted*, a drain leaves no trace — but the count o
 disk **exceeds** the count ever recorded, so no recorded resume has been drained.
 fni-api-01's own file holds all five, verbatim, right now.
 
+Both sides of that inequality move on a live board — re-measured ~20 minutes
+later the same evening the disk read **187 files / 850 messages** while the
+watcher kept polling. Quote a reading with its instant, as this repo already
+requires: one figure off a live board is not a measurement. The *inequality* is
+what carries the argument, and every new resume only widens it.
+
 The corroborating signal on this PR: `kanban/fni-api-01` carries exactly two
 commits, `d9b5a1a31` (15:47:15, the original build) and `8fc60b554` (16:48:29,
 the repair). **The head sha did not move once across resumes 1–5.** Five
