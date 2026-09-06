@@ -2008,6 +2008,21 @@ def _branches_for_task(task_id: str, repo_root, refs=None) -> list:
     is gated on its children's branches as well as its own. If that ever proves
     too strict, tighten the trailing group rather than dropping the boundary.
 
+    The id must START a path segment of the ref (mfx-own-05): ``kanban/<id>``
+    or ``kanban/<id>-<suffix>``, never ``kanban/<something>-<id>``. A child
+    extends its parent's id at the BACK; a REPARK card extends it at the
+    FRONT — ``kph-repark-<id>``, then ``kph-repark-kph-repark-<id>`` — and a
+    repark is a SEPARATE card with its own row, branch and PR, not a child of
+    the card it was reparked from. The old boundary ``(^|[/_-])`` admitted
+    both directions, so ``mfx-ci-04`` was gated on a third card's branch
+    (``kanban/kph-repark-kph-repark-mfx-ci-04``, which built PR #2146) and
+    ``kanban_requeue_reflex`` refused it every cycle with
+    ``branch_not_ancestor`` on a branch that was never its own; the same
+    foreign branch stranded ``kph-repark-mfx-ci-04`` too. Surveyed on the
+    live ref listing before narrowing — ``python -m
+    tools.kanban.branch_match_survey`` — and the survey is the only place the
+    old rule still exists.
+
     FAIL-OPEN: returns [] on any git error.
 
     ``refs`` optionally supplies the branch listing (see :func:`all_task_refs`)
@@ -2020,8 +2035,11 @@ def _branches_for_task(task_id: str, repo_root, refs=None) -> list:
     if not refs:
         return []
 
-    # <task_id> at a name boundary: end of ref, or followed by '-'/'_'/'.'/'/'.
-    pat = re.compile(rf"(^|[/_-]){re.escape(task_id)}([/_.-]|$)")
+    # <task_id> STARTS a path segment (start of name or after '/'), and ends at
+    # a name boundary: end of ref, or followed by '-'/'_'/'.'/'/'. The leading
+    # group is deliberately NOT ``[/_-]``: that admits ``<x>-<task_id>``, the
+    # repark shape, which belongs to a different card.
+    pat = re.compile(rf"(^|/){re.escape(task_id)}([/_.-]|$)")
     canonical = f"kanban/{task_id}"
     seen, matches = set(), []
     for ref in refs:
