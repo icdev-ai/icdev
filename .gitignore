@@ -315,3 +315,7 @@ memory/logs/
 
 # Hermes' private plan/scratch directory. Never tracked; tool-local state.
 .hermes/
+
+# rmf-inert-02: compliance artifacts the ato_evidence_cycle reflex produces on a
+# 24h cadence. Dated evidence records cited by cato_evidence rows, not source.
+data/compliance/

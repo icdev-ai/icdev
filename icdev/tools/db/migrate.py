@@ -28,10 +28,36 @@ from tools.db.migration_runner import MigrationRunner  # noqa: E402
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 
+def _db_label(engine: str, db_path) -> str:
+    """Name the database a run ACTUALLY used, never the one it was handed.
+
+    On PostgreSQL ``db_path`` is ignored by ``_get_connection()`` — the
+    connection comes from ``ICDEV_DATABASE_URL`` or the ``ICDEV_PG_*`` vars.
+    Printing the path anyway names a database the run never opened (measured
+    2026-09-05: ``migrate.py --status`` reported a ``data/icdev.db`` that does
+    not exist on disk, above an ``Applied: 432 | Pending: 0`` read from
+    PostgreSQL). An operator applying a migration must be able to see WHERE the
+    irreversible act landed, so the label follows the engine.
+    """
+    import os
+
+    if str(engine).lower() not in ("postgresql", "postgres", "pg"):
+        return str(db_path)
+
+    db_url = os.environ.get("ICDEV_DATABASE_URL")
+    if db_url:
+        # A DSN carries credentials — name the source, never echo the value.
+        return "postgresql (ICDEV_DATABASE_URL)"
+    host = os.environ.get("ICDEV_PG_HOST", "localhost")
+    port = os.environ.get("ICDEV_PG_PORT", "5432")
+    name = os.environ.get("ICDEV_PG_DATABASE", "icdev")
+    return f"postgresql://{host}:{port}/{name}"
+
+
 def _format_status(status: dict) -> str:
     """Format migration status for human-readable output."""
     lines = [
-        f"Database: {status['db_path']}",
+        f"Database: {_db_label(status['engine'], status['db_path'])}",
         f"Engine: {status['engine']}",
         f"Migrations table: {'exists' if status['has_migrations_table'] else 'missing'}",
         f"Current version: {status['current_version'] or 'none'}",
@@ -154,7 +180,7 @@ def main():
                 print(json.dumps(all_conv, indent=2, default=str))
             else:
                 for db_path, conv in all_conv.items():
-                    print(f"[{db_path}] converged in {len(conv['passes'])} pass(es); "
+                    print(f"[{_db_label(_backend, db_path)}] converged in {len(conv['passes'])} pass(es); "
                           f"applied {conv['applied_total']} migration(s)")
                     for p in conv["passes"]:
                         print(f"  pass {p['pass']}: applied={p['applied']} failed={p['failed']}")
@@ -177,10 +203,11 @@ def main():
             print(json.dumps(all_results, indent=2, default=str))
         else:
             for db_path, results in all_results.items():
+                label = _db_label(_backend, db_path)
                 if not results:
-                    print(f"[{db_path}] No pending migrations.")
+                    print(f"[{label}] No pending migrations.")
                     continue
-                print(f"[{db_path}]")
+                print(f"[{label}]")
                 for r in results:
                     status = "OK" if r.get("success") else f"FAILED: {r.get('error')}"
                     ms = r.get("execution_time_ms", "")

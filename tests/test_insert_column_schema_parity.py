@@ -13,8 +13,8 @@ Two things have to stay true from here on, and this module asserts both:
 1. **No new drift, and no regression of a fix.**  :func:`test_no_new_insert_column_drift`
    re-runs the scanner against the live schema and asserts the surviving
    ``column_absent`` findings are *exactly* :data:`ACCEPTED_COLUMN_ABSENT` — the
-   fifteen sites that write to a database other than the icdev instance the
-   scanner reads (category iii), plus the one documented intentional skip.
+   sites that write to a database other than the icdev instance the scanner
+   reads (category iii).
    Adding a column to an INSERT without adding it to the schema fails here, and
    so does reverting any of the fixes.
 
@@ -97,23 +97,33 @@ ACCEPTED_COLUMN_ABSENT: dict[str, str] = {
         "Same playground database; poam_items is created there with finding / "
         "milestone / due_date."
     ),
-    "tools/finetune/doc_extractor.py::rag_ingestion_log": (
-        "_get_db() takes a caller-supplied db_path and returns a sqlite3 "
-        "connection (PRAGMA journal_mode=WAL, INSERT OR IGNORE)."
-    ),
+    # tools/finetune/doc_extractor.py::rag_ingestion_log is NOT listed, and its
+    # removal is the point of mfx-ci-03. It was accepted here as a category (iii)
+    # site on the reasoning that "_get_db() takes a caller-supplied db_path" —
+    # but that argument proves only that a caller MAY name another database, and
+    # the default resolves to this one (DB_PATH = data/icdev.db). It was a real
+    # defect wearing a false positive's excuse: the INSERT named `chunk_count`
+    # where the live column is `chunks_created`, and it did not name
+    # `source_type` at all, which is NOT NULL with no default. Measured on the
+    # live board 2026-09-05, rag_ingestion_log held 2,004 rows and ZERO from this
+    # writer while extract_document returned success:True. Both defects are fixed
+    # and the finding no longer fires; the regression guard is
+    # tests/test_finetune_doc_extractor_ingestion_log.py, which reads the ROW
+    # BACK rather than asserting the call succeeded.
     "tools/kanban/seed_dsyn_kanban.py::canvas_events": (
         "Not executable SQL. The text sits inside a kanban task *description* "
         "telling a future session what to write; the scanner's AST walk cannot "
         "tell prose-in-a-string from a query."
     ),
     # --- category (i), resolved as a documented intentional skip -------------
-    "tools/trading/db.py::ad_macro_indicators": (
-        "One table name, two shapes: tools/trading/db.py CREATEs a run-scoped "
-        "table, the live one is the global FathomDesk reference table. "
-        "save_macro_indicators() now documents the mismatch and skips; the "
-        "per-run values are already persisted in ad_macro_context.context_json, "
-        "so nothing is lost."
-    ),
+    # tools/trading/db.py::ad_macro_indicators is gone with the file: the trading
+    # domain left for the private ICDEV[FT] repo (xit-leak-01), so the site can
+    # no longer report anything. Dropped by mfx-ci-03 rather than kept, because
+    # the expected-minus-actual half of this test asserts a finding that fires —
+    # and this one had stopped. It went unnoticed because the assertion below is
+    # skipped under the SQLite backend tests/conftest.py forces, so this module's
+    # scanner half has not actually run in this suite for as long as that has
+    # been true.
 }
 
 

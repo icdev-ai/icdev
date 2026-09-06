@@ -1354,6 +1354,33 @@ reflexes:
     hop_limit: 0             # neighbour-crawl depth; 0 = no crawl
     dry_run: false
 
+  ato_evidence_cycle:
+    timeout_seconds: 900     # a static STIG sweep of a large source tree
+    enabled: true
+    risk_tier: green         # read-only static analysis of the deployment's own source
+    schedule: "every 24h"
+    interval_seconds: 86400  # matches CADENCE_HOURS = 24 in the reflex module
+    cooldown_minutes: 120
+    success_metric:
+      name: artifacts_produced
+      threshold: 0        # >= 0 -- a cycle that correctly REFUSED every producer
+                          # (no project registered, no directory, no open
+                          # findings to derive a POA&M from) produced 0 artifacts
+                          # and is a healthy cycle, not a failure. It reports
+                          # `unmeasured`, which is what says so.
+      operator: gte
+    description: "The CALLER the ATO evidence stack never had (rmf-inert-02): runs stig_checker over each registered project's real source, derives a POA&M from the OPEN findings, and files both as cATO evidence -- so an rmf_workflow_stages row is a consequence of an artifact. Every producer is gated on a probe of its own input substrate and a producer with no input is REFUSED with the substrate named, never run. ssp_generator and oscal_generator are deliberately deferred while project_controls is empty. Reports `unmeasured` when nothing was produced -- never a clean run it did not make."
+    projects: []             # project ids. EMPTY = every registered project.
+    stig_id: webapp          # STIG template id
+    max_projects_per_cycle: 5
+    collect_evidence: true   # file produced artifacts as cato_evidence
+    # NOT the producers' default of <directory_path>/compliance/, which for this
+    # deployment's own project is tools/compliance/ -- inside the TRACKED source
+    # tree, which the auto-commit hook sweeps. Relative paths resolve against
+    # the repo root; an absolute path is honoured as given.
+    artifact_dir: data/compliance
+    dry_run: false
+
   ndc_topology_drift:
     timeout_seconds: 180     # config generation + diff across all topologies
     enabled: true

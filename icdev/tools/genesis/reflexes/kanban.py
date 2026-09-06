@@ -135,6 +135,62 @@ def _task_base_branch(task_id: str) -> str:
     return _default_branch()
 
 
+def _live_worktree_holding(repo_root, branch_name: str) -> Optional[str]:
+    """Path of an EXISTING worktree that has *branch_name* checked out, else None.
+
+    "Live" means the directory is still on disk. That is the whole distinction
+    this predicate exists to draw, and it is the one the ``update-ref -d``
+    fallback below was missing.
+
+    MEASURED, git 2.55.0.windows.2 (kph-repark-fni-ana-01):
+
+        git branch -D held      rc=1  "cannot delete branch 'held' used by
+                                       worktree at '<path>'"          <- the safety
+        git update-ref -d ...   rc=0                                  <- bypasses it
+
+    ``update-ref`` is plumbing and does not honour a worktree checkout, so the
+    fallback deleted the branch pointer out from under a RUNNING worker, leaving
+    its commits reachable from nothing. ``git worktree add`` then failed anyway
+    (the registration still names the branch) and recreated the name at the base
+    commit -- so the branch appeared intact while pointing somewhere else
+    entirely.
+
+    Returning None on any failure is deliberate and matches the caller: if we
+    cannot read the worktree list we do NOT claim the branch is free.
+    ``_worktree_is_disposable`` refuses on the same principle -- prove it is
+    disposable, and refuse when you cannot tell.
+    """
+    import subprocess as _sp
+
+    try:
+        listed = _sp.run(
+            ["git", "worktree", "list", "--porcelain"],
+            cwd=str(repo_root), capture_output=True, text=True, timeout=10,
+        )
+        if listed.returncode != 0:
+            return None
+    except Exception as exc:  # noqa: BLE001 — never wedge dispatch on a git hiccup
+        logger.debug("worktree list failed for %s: %s", repo_root, exc)
+        return None
+
+    # Porcelain emits a record per worktree: `worktree <path>` then, when a
+    # branch is checked out, `branch refs/heads/<name>`.
+    current: Optional[str] = None
+    for line in (listed.stdout or "").splitlines():
+        if line.startswith("worktree "):
+            current = line[len("worktree "):].strip()
+        elif line.startswith("branch ") and current:
+            ref = line[len("branch "):].strip()
+            if ref == f"refs/heads/{branch_name}":
+                try:
+                    if Path(current).exists():
+                        return current
+                except OSError:
+                    return current  # unreadable is not provably gone
+                return None
+    return None
+
+
 def _worktree_is_disposable(path, listed) -> tuple:
     """May this directory be deleted to make room for a fresh worktree?
 
@@ -1299,13 +1355,66 @@ def _create_worktree(task_id: str) -> Optional[str]:
             _del = _sp.run(["git", "branch", "-D", branch_name], cwd=str(_repo_root),
                     capture_output=True, text=True, timeout=10)
             if _del.returncode != 0:
-                # On Windows a branch checked out in a (now-pruned) worktree may
-                # resist `git branch -D`. Force-delete via the low-level ref path.
-                _sp.run(
-                    ["git", "update-ref", "-d", f"refs/heads/{branch_name}"],
-                    cwd=str(_repo_root), capture_output=True, text=True, timeout=10,
-                )
-                logger.info("Stale branch %s deleted via update-ref fallback", branch_name)
+                # THE BRANCH IS NOT ALWAYS STALE, AND THIS IS WHERE THAT BIT
+                # (kph-repark-fni-ana-01). "Stale" here means only "no worktree
+                # at the path WE would use" — and for an EXTERNAL task the
+                # dispatcher and the worker it launches do not use the same
+                # path. The dispatcher looks in
+                # `<tmp>/icdev-kanban/<repo>/<task>`; the worker follows
+                # CLAUDE.md into `<tmp>/icdev-worktrees/kanban/<task>`. So a
+                # LIVE worker worktree reads as a stale leftover on every retry.
+                #
+                # `git branch -D` refuses that case, correctly and by name.
+                # `update-ref -d` is PLUMBING and does not: measured on git
+                # 2.55.0.windows.2, `branch -D` returns rc=1 "cannot delete
+                # branch 'held' used by worktree at ..." while `update-ref -d`
+                # returns rc=0 and deletes the ref anyway. The worker's commits
+                # are then reachable from nothing, `git worktree add` still
+                # fails (the registration names the branch), and it recreates
+                # the NAME at the base commit — so the branch looks intact while
+                # pointing somewhere else. On 2026-09-04 that ran against a
+                # branch carrying 1,179 lines of unpushed work; it survived only
+                # because the worker was still running and re-committed.
+                #
+                # So the low-level fallback is used ONLY where its comment says
+                # it is for: a registration whose directory is GONE and which
+                # `git worktree prune` did not clear. A live holder is refused.
+                _holder = _live_worktree_holding(_repo_root, branch_name)
+                if _holder is not None:
+                    logger.warning(
+                        "Refusing to delete branch %s: it is checked out in a LIVE "
+                        "worktree at %s. `git branch -D` already refused (%s), and "
+                        "forcing it through update-ref would orphan that worktree's "
+                        "commits. The worktree add below will fail — this is NOT "
+                        "transient, and requeuing will not clear it. Land or remove "
+                        "that worktree first.",
+                        branch_name, _holder,
+                        (_del.stderr or "").strip() or f"rc={_del.returncode}",
+                    )
+                else:
+                    # On Windows a branch checked out in a (now-pruned) worktree
+                    # may resist `git branch -D`. Nothing live holds it, so the
+                    # low-level ref path is safe here — but its RETURN CODE is
+                    # checked, because logging "deleted" unconditionally is what
+                    # made this condition read as transient to the human who
+                    # requeued it at 03:16:51 and watched it repark 11s later.
+                    _upd = _sp.run(
+                        ["git", "update-ref", "-d", f"refs/heads/{branch_name}"],
+                        cwd=str(_repo_root), capture_output=True, text=True, timeout=10,
+                    )
+                    if _upd.returncode == 0:
+                        logger.info(
+                            "Stale branch %s deleted via update-ref fallback", branch_name)
+                    else:
+                        logger.warning(
+                            "Stale branch %s could NOT be deleted (branch -D: %s; "
+                            "update-ref -d: %s). It is still present, so the worktree "
+                            "add below will fail — this is not transient and requeuing "
+                            "will not clear it.",
+                            branch_name,
+                            (_del.stderr or "").strip() or f"rc={_del.returncode}",
+                            (_upd.stderr or "").strip() or f"rc={_upd.returncode}",
+                        )
 
     # Determine the best base commit for the new worktree:
     # prefer origin/main so tasks build on the latest pushed state even when
