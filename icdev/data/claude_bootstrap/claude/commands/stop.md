@@ -29,12 +29,19 @@ PORTAL_PORT: 8443
 3. **Agent workers mid-build are REPORTED and left running.** They are the
    scheduler's grandchildren; killing them discards work (~40 minutes lost on
    2026-08-29). `--include-workers` stops them too — a decision, not a default.
-4. **The external supervisors, each then its child** — ICDEV[FT]
-   (`supervise_ft.py` → `launch_ft.py`, port 5200) and ICDEV[RT]
-   (`supervise_rt.py` → `launch_rt.py`, port 5300). Each supervisor is the
-   innermost of any wrapper chain (Git Bash cannot `exec()`, so the shells
-   above it carry the same command line). `--keep-ft` / `--keep-rt` skip one
-   pair; the table is `EXTERNAL_SUPERVISORS` in the script.
+4. **The external supervisors, each then its child** — ICDEV[RT]
+   (`supervise_rt.py` → `launch_rt.py`, port 5300), and ICDEV[FT] only as a
+   fallback. Each supervisor is the innermost of any wrapper chain (Git Bash
+   cannot `exec()`, so the shells above it carry the same command line).
+   `--keep-ft` / `--keep-rt` skip one pair; the table is `EXTERNAL_SUPERVISORS`
+   in the script. **ICDEV[FT] is stopped by its OWN script first** (step 1a
+   below): this script's stop of the FT pair is `terminate()`, a hard kill that
+   cuts a reflex tick mid-cycle; `C:\AI\icdev_ft\stop_ft.py` (ftl-stop-01)
+   stops the FT supervisor, then asks the server to drain over HTTP (the reflex
+   clock is stopped and joined BEFORE uvicorn exits), and falls back to
+   terminate only after `grace_seconds`, saying so. Measured 2026-09-06: the
+   hard path was the only one that existed, logged by the FT supervisor as
+   `rc 4294967295`.
 5. **Verify, never assume:** every recorded pid re-tested dead; ports 5050,
    5200 and 5300 re-tested for a listener. A survivor is exit 1 with its pid.
 6. The stale `launcher.pid` is removed only after its pid is confirmed dead.
@@ -58,14 +65,36 @@ lock, reused pid) — never a clean answer.
    python tools/genesis/shutdown_dashboard.py --dry-run
    ```
    If it lists a worker under **LEFT RUNNING**, decide now: let it finish (the
-   default) or stop it with `--include-workers` in step 1.
+   default) or stop it with `--include-workers` in step 1b.
 
-1. **Stop the stack.** Add `--pause` when the board should NOT dispatch on the
-   next start (sets Manual Build); add `--keep-ft` / `--keep-rt` to leave
-   ICDEV[FT] / ICDEV[RT] serving:
+1a. **Stop ICDEV[FT] gracefully, with its own script.** It reads the FT
+   pidfiles (`C:\AI\icdev_ft\.tmp\ft_supervisor.pid`, `ft_server.pid`),
+   VERIFIES each pid's command line before touching it (a reused pid is exit 2,
+   nothing touched), stops the supervisor first, then `POST /api/v1/admin/shutdown`
+   with `FIN_API_TOKEN` from the FT `.env`, waits `grace_seconds`, and proves
+   the pids and port 5200 from the process table. Skip this step (and drop
+   `--keep-ft` in 1b) only if you WANT the hard kill:
+   ```powershell
+   python C:\AI\icdev_ft\stop_ft.py --dry-run     # who is running; touches nothing
+   python C:\AI\icdev_ft\stop_ft.py               # exit 0 stopped+verified · 1 survivor/listener · 2 refused, nothing touched
+   ```
+   - exit **1**: `SURVIVORS:` / `port listening after: True` name the pid —
+     confirm its command line, then `Stop-Process -Id <id>` that exact pid.
+   - exit **2**: nothing was touched. `FIN_API_TOKEN` missing or refused →
+     fix it or rerun with `--force` (a deliberate hard kill, reported as
+     `FORCED`); a reused pid → remove the stale pidfile it names.
+   - To RESTART FT onto a merge the supervisor did not deploy itself (it
+     deploys only when origin/main ≠ local HEAD), use
+     `python C:\AI\icdev_ft\stop_ft.py --restart` instead: the server alone
+     drains and the supervisor respawns it on the code on disk.
+
+1b. **Stop the rest of the stack.** Add `--pause` when the board should NOT
+   dispatch on the next start (sets Manual Build); `--keep-ft` because 1a
+   already stopped ICDEV[FT] (or is leaving it serving); add `--keep-rt` to
+   leave ICDEV[RT] serving:
    ```powershell
    $env:PYTHONPATH = "C:\AI\ICDev"
-   python tools/genesis/shutdown_dashboard.py --pause
+   python tools/genesis/shutdown_dashboard.py --pause --keep-ft
    echo "exit: $LASTEXITCODE"
    ```
    - exit **1**: read the `SURVIVORS:` / `LISTENER REMAINS:` lines — each names
@@ -99,10 +128,11 @@ lock, reused pid) — never a clean answer.
      Format-Table LocalPort, OwningProcess -AutoSize
    ```
    An empty table is the answer. A row names the owning pid — verify its
-   command line before stopping it, as in step 1.
+   command line before stopping it, as in step 1b.
 
 4. **Report to the user:** which pids were stopped and in what order, any
-   worker deliberately left running, the FT and RT pairs' outcomes, the build
+   worker deliberately left running, the FT pair's outcome from `stop_ft.py`
+   (graceful, `FORCED`, or refused) and the RT pair's from 1b, the build
    mode (`manual` means nothing dispatches on the next `/start` until
    `python tools/kanban/cli.py --build-mode auto`), and the four empty ports.
 
@@ -118,6 +148,10 @@ lock, reused pid) — never a clean answer.
   deleted under a live supervisor lets `/start` launch a second one.
 - Stop the agent workers to make the shutdown "complete". Their tasks are
   re-dispatched by startup recovery on the next `/start`; their work is not.
+- Stop ICDEV[FT] with this script's hard path (no `--keep-ft`) while
+  `stop_ft.py` exists and `FIN_API_TOKEN` is set — a reflex tick cut mid-cycle
+  is exactly what the graceful path was built to avoid. `--force` on
+  `stop_ft.py` is the sanctioned hard kill: it still verifies the pid first.
 
 ## Restart
 
