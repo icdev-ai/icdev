@@ -175,6 +175,77 @@ undeclared-import census, nav-path derivation, blueprint imports and the route
 smoke, all OK. CI on `5ab798a99` was queued at 17:26Z; its outcome is recorded
 in the section below.
 
+## CI on the repair, and the hold that followed it
+
+`ICDEV CI` run 34048612992 on `5ab798a99`: **success**, 17:26:28Z → 17:54:21Z.
+Every check the 12:36Z head had failed is green on this one — the four E2E
+shards run (the isolation assert now reads a measured database), Test Shard 2
+and Shard 4 pass, Test Gates passes with the red-first proof recorded.
+
+The watcher then did NOT merge it, and its own rows say why. From 17:51Z, once
+per poll, three rows in a fixed order:
+
+| at (UTC) | action | reason |
+|---|---|---|
+| 17:52:32 | `sibling_conflict_warn` | shares `CLAUDE.md` / `icdev/data/claude_bootstrap/CLAUDE.md` with open PR #2145 (a warn, not a hold) |
+| 17:52:33 | `behind_main_hold` | **14 commits behind main (limit 10)** — "it merges CLEANLY and would re-apply its diff over a tree that has moved on" |
+| 17:52:51 | `union_refused` | `_maybe_rebase` → union rung: `files=['icdev/tools/dashboard/app.py', 'icdev/tools/security/row_security.py', 'tools/dashboard/app.py', 'tools/security/row_security.py']` match no `union_resolver.files` entry |
+| 17:52:51 | `wait` | held: 14 commits behind main (limit 10) |
+
+Repeated at 17:53, 17:54, 17:55, 17:56 — five identical cycles. The repair had
+been pushed at 17:26Z and nine first-parent landings reached main while its CI
+ran (through `4f869b771`, #2152, 17:45:28Z), so by the time the run went green
+the head was past kpr-stale-02's `max_behind_commits: 10`. Correct hold: the
+rung exists precisely so a green-but-stale branch is not re-applied over a moved
+tree.
+
+**The automatic repair for that hold cannot work on this branch, structurally.**
+`_maybe_rebase` REBASES, and a rebase replays the branch's ORIGINAL commit
+`4b1978dfa` onto a main that already carries the sibling's `row_security.py` and
+`app.py` — the very conflict the 12:36Z merge commit resolved. A merge commit's
+resolution lives in the merge commit; a rebase discards the merge and meets the
+conflict again, and the union rung refuses the same four files it refused at
+12:31Z (rows 13–16 in the ledger above). Every future landing on main would
+have produced one more `behind_main_hold` + `union_refused` pair, forever.
+
+The repair is the one the watcher cannot make: **merge `origin/main` INTO the
+branch** (`e10feac3f`, 17:56:34Z, parents `5ab798a99` + `4f869b771`, no
+conflicts — the sibling's spelling was already taken at 12:36Z, so nothing in
+the 56 files main had gained touched the branch's resolution). Measured after
+the push: `/compare/main...e10feac3f` → `behind_by: 0, ahead_by: 4`; the diff
+against main is the branch's own 13 files, +1097/−17. The watcher's next poll
+(17:57:39Z) reads `wait: CI still running`, with no hold.
+
+CI on `e10feac3f` (run 34050162492, queued 17:56:54Z): **success**, completed
+18:11:56Z — every required check green (Lint, Test, Security Scan, Helm Lint,
+Test Gates, all four Test shards, all four E2E shards, Test (PostgreSQL),
+Test (Windows), Doc Coherence Gate).
+
+## Merged — by the watcher, through the ordinary door
+
+The watcher polled `wait: CI still running` every ~42s from 17:57:39Z to
+18:10:27Z (20 rows), then:
+
+| at (UTC) | action | reason |
+|---|---|---|
+| 18:11:14 | `sibling_conflict_warn` | shares `CLAUDE.md` with #2145 / #2143 — a warn, not a hold |
+| 18:11:18 | `merge` | **auto-merge ok** |
+| 18:12:14 | `merge` | PR already merged (the next poll, confirming) |
+
+Forge: PR #2137 `MERGED` at 18:11:17Z by `icdev-ai`, merge commit `6eef4df17`.
+Board: `qa-fail-6a87916931be3793` → `done` at 18:12:14Z. No `behind_main_hold`
+and no `union_refused` after the merge-in — the hold cleared exactly as the
+`/compare` measurement predicted, and the branch was never rebased.
+
+**The merge is the watcher's, and the detector is right not to count it.**
+Re-derived at 18:15Z, the derivation now reads `merged: true` and STILL
+`outcome: needed_a_human` — `escalate` outranks a later merge (rem-hyg-16), and
+that is the correct reading: the branch that eventually merged carried a
+hand-authored repair commit and a hand-authored merge-in, and the five resume
+injections that preceded the escalation were never read. A merge that lands
+because a human fixed the branch is not a recovery, whichever account pressed
+the button.
+
 ## What the automation could not have done
 
 - **The resume loop could not fix a conflict that did not yet exist.** Phase 1
@@ -212,10 +283,18 @@ in the section below.
 - [x] Derivation re-run and the subject confirmed still reported at dispatch.
 - [x] Real cause found: a hand-merge dropped the measured health fields; an
       existing pin refused the new declaration.
-- [x] Landed by hand on the subject branch (`5ab798a99`), through the ordinary
-      PR door — the watcher merges #2137 once required checks are green.
+- [x] Landed by hand on the subject branch (`5ab798a99`, green at 17:54Z),
+      through the ordinary PR door.
+- [x] The `behind_main` hold that followed cleared by merging main IN
+      (`e10feac3f`, 0 behind) — a rebase re-meets the resolved conflict and
+      the union rung refuses it, so the watcher could not clear it alone.
 - [x] No lease to release (holder pid dead, TTL spent).
+- [x] PR #2137 merged by the watcher at 18:11:17Z (`6eef4df17`, "auto-merge
+      ok"); the subject task reads `done` on the board at 18:12:14Z.
 - [ ] The derivation stops reporting the subject once the 03:37:42Z row ages
       out (≥ 2026-09-07 03:37:42Z), and `detector_findings` row
-      `4f4ca191bc7c8b30` reads `cleared` at the first `detector_findings_reflex`
-      cycle after that. Nothing here can, or should, make that happen sooner.
+      `4f4ca191bc7c8b30` (status `active`, seen 2x, last seen 13:15:17Z) reads
+      `cleared` at the first `detector_findings_reflex` cycle after that.
+      Nothing here can, or should, make that happen sooner — and this card
+      going terminal before then is HELD by `earliest_clear_at` (#2057), not
+      read as a recurrence.
