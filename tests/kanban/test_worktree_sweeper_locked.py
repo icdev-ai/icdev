@@ -33,6 +33,29 @@ import pytest
 kanban = importlib.import_module("tools.genesis.reflexes.kanban")
 
 
+@pytest.fixture(autouse=True)
+def _confine_the_sweep_to_this_test(tmp_path, monkeypatch):
+    """The sweeper walks TWO roots, and patching one of them is not isolation.
+
+    THE DEFECT THIS FIXTURE EXISTS FOR, observed by running this file: every test here
+    monkeypatches ``kanban.WORKTREE_BASE`` and nothing else, but ``_sweep_roots`` returns
+    WORKTREE_BASE **and** the sanctioned root from ``worktree_paths.worktree_root()`` --
+    the second one added deliberately, because sweeping only the repo-local directory
+    covered about 5% of real worktrees. So this suite reached straight past its fixture
+    into ``%TEMP%/icdev-worktrees`` and DELETED THE DEVELOPER'S OWN WORKTREES, then failed
+    its own count assertion because ``removed`` carried their names too.
+
+    A test that force-removes real work as a side effect is worse than a failing one. The
+    sanctioned root is redirected at a per-test temp directory, so ``_sweep_roots`` still
+    runs its real logic and simply finds nothing outside the fixture.
+    """
+    import tools.git.worktree_paths as wp
+
+    sanctioned = tmp_path / "sanctioned-root"
+    sanctioned.mkdir()
+    monkeypatch.setattr(wp, "worktree_root", lambda *a, **k: sanctioned)
+
+
 @pytest.fixture
 def repo(tmp_path, monkeypatch):
     """A real git repo whose worktrees the sweeper will act on."""
