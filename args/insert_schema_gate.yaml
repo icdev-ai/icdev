@@ -14,32 +14,100 @@
 # Rules:
 #   - A NEW mismatch FAILS the gate. Fix the column list, or add a migration
 #     that adds the column. Do not add new entries here to get a commit through.
-#   - `grandfathered` entries are DOWNGRADED to a warning so the pre-existing
-#     backlog stays visible without blocking unrelated work. They are the
-#     swp-scan-01 work list; delete each one as it is fixed.
 #   - Keys are `<repo-relative path>:<table>:<column>` — deliberately without a
 #     line number, so an edit above the statement does not invalidate the entry.
 #   - Entries that no longer reproduce are reported as stale and should be
-#     deleted from this file.
+#     deleted from this file. That applies to BOTH keyed sections below.
+#
+# THE TWO KEYED SECTIONS MEAN OPPOSITE THINGS AND ARE NEVER MERGED (mfx-ci-03):
+#
+#   grandfathered      DEBT. A real defect somebody must fix, downgraded to a
+#                      warning so a pre-existing backlog does not block
+#                      unrelated work. Delete each one as it is fixed.
+#   foreign_database   NOT A DEFECT. The module writes a database this check
+#                      never read, so the "missing" column exists in the schema
+#                      the statement actually runs against, and the entry
+#                      records the MEASUREMENT proving it. These are excused,
+#                      not warned about — a false positive filed as debt is an
+#                      excuse nobody can act on, and 104 of those had piled up
+#                      behind this file before PR #2112 deleted the stale ones.
 #
 # ignore_tables suppresses a table whose name collides with an unrelated table
-# in this database. Modules that import their connection from outside the
-# tools/ package (e.g. apps.geosigint.models) are skipped automatically and do
-# not need an entry.
+# in this database. It is TABLE-NAME scoped and therefore GLOBAL, so it fits
+# only a name nothing in the tree writes against this database. It cannot
+# express a per-module collision, which is what these collisions actually are:
+# `users` is written both by tools/saas/tenant_manager.py (the SaaS platform
+# database) and by tools/saas/auth/saml_auth.py (this one, via
+# tools.db.storage.get_connection, naming saml_name_id / cac_cn / edipi), so
+# ignoring the name would switch off the half that works. Use foreign_database.
+#
+# Modules that import their connection from outside the tools/ package (e.g.
+# apps.geosigint.models) are skipped automatically and need no entry.
 
 ignore_tables: []
 
 # Baseline captured 2026-08-01 against the canonical PostgreSQL schema
 # (1731 tables): 159 findings across 47 files, 146 distinct file/table/column
-# entries (some statements repeat at more than one line). Tracked by swp-scan-01.
-grandfathered:
-  # tools/finetune/doc_extractor.py
-  "tools/finetune/doc_extractor.py:rag_ingestion_log:chunk_count": "swp-scan-01 backlog — baselined 2026-08-01"
-  # tools/playground/seed_data.py
-  "tools/playground/seed_data.py:poam_items:due_date": "swp-scan-01 backlog — baselined 2026-08-01"
-  "tools/playground/seed_data.py:poam_items:finding": "swp-scan-01 backlog — baselined 2026-08-01"
-  "tools/playground/seed_data.py:poam_items:milestone": "swp-scan-01 backlog — baselined 2026-08-01"
-  "tools/playground/seed_data.py:projects:compliance_score": "swp-scan-01 backlog — baselined 2026-08-01"
-  # tools/saas/tenant_manager.py
-  "tools/saas/tenant_manager.py:tenants:compartments": "swp-scan-01 backlog — baselined 2026-08-01"
-  "tools/saas/tenant_manager.py:users:compartments": "swp-scan-01 backlog — baselined 2026-08-01"
+# entries. PR #2112 deleted the 104 that no longer reproduced; mfx-ci-03
+# triaged the 7 survivors by measurement (2026-09-05, 1836 live tables) and
+# they were three different things, not one backlog:
+#   - 6 write another database entirely       -> foreign_database, below
+#   - 1 was a real defect                     -> FIXED, see the note below
+# The backlog this file was created to track is therefore drained. An empty
+# section is the goal state, not a missing one.
+grandfathered: {}
+
+# tools/finetune/doc_extractor.py:rag_ingestion_log:chunk_count was the one real
+# defect and is FIXED rather than listed. The live column is `chunks_created`;
+# `chunk_count` has never existed on this table. Measured 2026-09-05:
+# rag_ingestion_log holds 2,004 rows, every one source_type='compliance_reference'
+# from rag_compliance_corpus and ZERO from this writer, while extract_document
+# returned success:True throughout — the INSERT raised and the surrounding
+# `except Exception: logger.warning(... non-blocking ...)` downgraded it.
+# A SECOND defect on the same statement was invisible to this gate and is fixed
+# with it: `source_type` is NOT NULL with no default and the INSERT did not name
+# it, so the write still raised after the rename. A gate that checks the columns
+# a statement NAMES cannot see the one it OMITS — which is why the regression
+# guard (tests/test_finetune_doc_extractor_ingestion_log.py) reads the ROW BACK
+# instead of asserting the call returned success.
+
+# Not debt. Each entry names a module whose connection resolves to a database
+# this check never read, with the measurement that proves the column is present
+# there. Do NOT "fix" the module to satisfy this scanner: editing working code
+# to satisfy a mis-scoped gate is how a gate loses its authority.
+foreign_database:
+  # tools/saas/tenant_manager.py writes through tools/saas/platform_db.py ::
+  # get_platform_connection — the SaaS PLATFORM database (PLATFORM_DB_URL when
+  # set, else data/platform.db), never the one this check reads. Every one of
+  # its connections is get_platform_connection(); it never calls get_connection.
+  # MEASURED 2026-09-05 in data/platform.db: tenants has compartments (20 cols,
+  # 2 rows) and users has compartments (10 cols, 2 rows). The same-named tables
+  # in the main PostgreSQL are unrelated — tenants 20 cols and users 13 cols,
+  # both carrying `classification` and neither carrying `compartments`.
+  "tools/saas/tenant_manager.py:tenants:compartments":
+    "platform.db tenants HAS compartments (20 cols, 2 rows, measured 2026-09-05);
+     PG tenants is an unrelated 20-col table with classification instead"
+  "tools/saas/tenant_manager.py:users:compartments":
+    "platform.db users HAS compartments (10 cols, 2 rows, measured 2026-09-05);
+     PG users is an unrelated 13-col table with saml_name_id/cac_cn/edipi"
+  # tools/playground/seed_data.py :: seed_playground_db(db_path) takes an
+  # EXPLICIT db_path from its caller (tools/playground/app.py passes the
+  # playground's own DB_PATH) and CREATEs both tables in the same executescript
+  # immediately above these INSERTs — projects with compliance_score, poam_items
+  # with finding / milestone / due_date. The main PostgreSQL carries unrelated
+  # tables of the same names (projects 47 cols, poam_items 16 cols with
+  # milestone_date rather than milestone), measured 2026-09-05. ignore_tables
+  # would be catastrophic here: `projects` and `poam_items` are heavily written
+  # against THIS database elsewhere.
+  "tools/playground/seed_data.py:projects:compliance_score":
+    "seed_playground_db(db_path) CREATEs projects with compliance_score in the
+     same executescript; PG projects is an unrelated 47-col table"
+  "tools/playground/seed_data.py:poam_items:due_date":
+    "seed_playground_db(db_path) CREATEs poam_items with due_date; PG poam_items
+     is an unrelated 16-col table"
+  "tools/playground/seed_data.py:poam_items:finding":
+    "seed_playground_db(db_path) CREATEs poam_items with finding; PG poam_items
+     records the weakness in weakness_description"
+  "tools/playground/seed_data.py:poam_items:milestone":
+    "seed_playground_db(db_path) CREATEs poam_items with milestone; PG poam_items
+     has milestone_date, a different column"

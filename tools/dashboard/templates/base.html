@@ -337,7 +337,60 @@
 
             <!-- ── Compliance ────────────────────────────────────────────────── -->
             <li class="nav-dropdown">
-                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/compliance','/boundary/compliance-hub','/oscal','/boundary/oscal','/prod-audit','/security/prod-audit','/ai-transparency','/security/ai-transparency','/security/stig-manager','/security/sbd','/ai-accountability','/security/ai-accountability','/sbd','/cato','/boundary/cato-health','/boundary/poam','/boundary/fedramp-20x','/compliance-debt','/boundary/compliance-debt','/ato-package','/boundary/ato-package','/ato-compliance','/boundary/ato-compliance','/fedramp-20x','/control-inheritance','/boundary/control-inheritance','/mosa','/boundary/mosa','/analytics','/poam','/security-scan','/pr-intel','/stig-manager','/sre','/iac','/migration','/migration-cost','/provenance','/traces','/xai'] or request.path.startswith('/security') or request.path.startswith('/security/zig') or request.path.startswith('/zta') or request.path.startswith('/integrity') %}active{% endif %}">Compliance ▾</a>
+                {# BEGIN GENERATED nav-active-paths:compliance | regenerate with `python tools/dashboard/nav_paths.py --write` | DO NOT HAND-EDIT: add your menu link and your 301 redirect, then regenerate (mfx-sib-02) #}
+                {% set compliance_active_paths = [
+                    '/ai-accountability',
+                    '/ai-transparency',
+                    '/analytics',
+                    '/ato-compliance',
+                    '/ato-package',
+                    '/boundary/ato-compliance',
+                    '/boundary/ato-package',
+                    '/boundary/cato-health',
+                    '/boundary/compliance-debt',
+                    '/boundary/compliance-hub',
+                    '/boundary/control-inheritance',
+                    '/boundary/fedramp-20x',
+                    '/boundary/mosa',
+                    '/boundary/oscal',
+                    '/boundary/poam',
+                    '/cato',
+                    '/compliance',
+                    '/compliance-debt',
+                    '/control-inheritance',
+                    '/fedramp-20x',
+                    '/iac',
+                    '/integrity',
+                    '/logs',
+                    '/migration',
+                    '/migration-cost',
+                    '/mosa',
+                    '/oscal',
+                    '/poam',
+                    '/pr-intel',
+                    '/prod-audit',
+                    '/provenance',
+                    '/sbd',
+                    '/security-scan',
+                    '/security/',
+                    '/security/ai-accountability',
+                    '/security/ai-transparency',
+                    '/security/demo',
+                    '/security/prod-audit',
+                    '/security/sbd',
+                    '/security/stig-manager',
+                    '/security/zig/',
+                    '/security/zig/assessment',
+                    '/security/zig/phase',
+                    '/security/zig/roadmap',
+                    '/sre',
+                    '/stig-manager',
+                    '/traces',
+                    '/xai',
+                    '/zta/lac-simulator',
+                ] %}
+                {# END GENERATED nav-active-paths:compliance #}
+                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in compliance_active_paths or request.path.startswith('/security') or request.path.startswith('/security/zig') or request.path.startswith('/zta') or request.path.startswith('/integrity') %}active{% endif %}">Compliance ▾</a>
                 <ul class="nav-dropdown-menu">
                     <li class="nav-section-label">Risk &amp; ATO</li>
                     <li><a href="/boundary/poam">POA&amp;M Findings</a></li>

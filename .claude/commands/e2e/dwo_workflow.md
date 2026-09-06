@@ -155,17 +155,26 @@ process; everything before it is setup.
 
 ## The three DWO V&V specs, and how CI runs them (dwo-vv-03-d5)
 
-The scenarios above are implemented by three specs in `tests/e2e/`. Each is
-opt-in behind its own env var, and `.github/workflows/icdev-ci.yml` runs all
-three in the **"Run DWO V&V specs (dwo-vv-03-d5)"** step of the `e2e` job —
-a separate `npx playwright test` invocation from the main sweep, because
-`dwo_restart_durability` restarts a dashboard and the sweep drives one shared
-long-lived server for ~800 tests.
+The scenarios above are implemented by three specs in `tests/e2e/`. Two are
+still opt-in behind their own env var, and `.github/workflows/icdev-ci.yml`
+runs those two in the **"Run DWO V&V specs (dwo-vv-03-d5)"** step of each
+`e2e-shard` job — a separate `npx playwright test` invocation from the main
+sweep, because `dwo_restart_durability` restarts a dashboard and the sweep
+drives one shared long-lived server for ~800 tests.
 
-| Spec | Opt-in var | Status on `main` (verified at `eabdde92d`, 2026-07-28) |
+The third, `dwo_mcp_step_execution`, **no longer has a guard** and runs in the
+sharded sweep like any other spec. Its opt-in was about the BACKEND, not
+process ownership: it drove the shared `webServer`, which `playwright.config.ts`
+used to pin to sqlite. `e2p-back-03` removed that pin, so the premise expired.
+Measured before removing it — CI had been running this spec on PostgreSQL in
+the step above since `eb0829aef`, passing on all four shards (4.3–4.4s), while
+the sweep beside it skipped the same file. It was dropped from that step in the
+same change, because with no guard, listing it there would run it twice per job.
+
+| Spec | Opt-in var | Status on `main` |
 |---|---|---|
 | `dwo_restart_durability.spec.ts` | `ICDEV_E2E_DWO_RESTART` | **passes** — needed migration 309's RLS columns on the run tables, and the spec pointing its child at PostgreSQL rather than the unmaintained sqlite fallback |
-| `dwo_mcp_step_execution.spec.ts` | `ICDEV_E2E_DWO_MCP` | **passes** — `tools/studio/executors/mcp_executor.py` has merged, and migration 309 cleared the 500 from `GET /api/studio/workflows/runs/<id>` |
+| `dwo_mcp_step_execution.spec.ts` | *(none — runs in the sweep)* | **passes** — `tools/studio/executors/mcp_executor.py` has merged, and migration 309 cleared the 500 from `GET /api/studio/workflows/runs/<id>` |
 | `dwo_trigger_linkage.spec.ts` | `ICDEV_E2E_DWO_TRIGGER` | **skips at its probe** — see below |
 
 Only the trigger spec is still blocked, and only on half of what it once was:
@@ -181,7 +190,7 @@ the moment dwo-evt-04 merges — with no edit to the workflow.
 Run them locally against a dashboard you own:
 
 ```bash
-ICDEV_E2E_DWO_RESTART=1 ICDEV_E2E_DWO_MCP=1 ICDEV_E2E_DWO_TRIGGER=1 \
+ICDEV_E2E_DWO_RESTART=1 ICDEV_E2E_DWO_TRIGGER=1 \
 ICDEV_NO_SERVER=1 ICDEV_STORAGE_BACKEND=postgresql \
   npx playwright test tests/e2e/dwo_restart_durability.spec.ts \
                       tests/e2e/dwo_mcp_step_execution.spec.ts \

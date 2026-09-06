@@ -53,10 +53,11 @@
 //
 // Running it
 // ----------
-//   ICDEV_E2E_DWO_MCP=1 npx playwright test tests/e2e/dwo_mcp_step_execution.spec.ts
+//   npx playwright test tests/e2e/dwo_mcp_step_execution.spec.ts
 //
-// against a dashboard that satisfies both preconditions in the skip guard below.
-// `ICDEV_DASHBOARD_URL` retargets it at a dashboard on another port.
+// It runs unconditionally: the ICDEV_E2E_DWO_MCP opt-in is gone, and why is
+// recorded at the describe block below. `ICDEV_DASHBOARD_URL` retargets it at a
+// dashboard on another port.
 
 import { test, expect, type Page } from '@playwright/test';
 import fs from 'fs';
@@ -170,44 +171,56 @@ async function openRunDetail(page: Page, runId: string): Promise<void> {
 // ── The test ───────────────────────────────────────────────────────────────
 
 test.describe('DWO — a node_type: mcp step dispatches a registry tool', () => {
-  // Opt-in, for two independent reasons that are both product gaps rather than
-  // anything wrong with this spec. Recorded here rather than in a commit message
-  // nobody will re-read:
+  // This spec was opt-in behind ICDEV_E2E_DWO_MCP from the day it was written,
+  // for three reasons in succession. All three have expired and the guard is
+  // gone. Recorded here rather than in a commit message nobody will re-read:
   //
-  //  1. `tools/studio/executors/mcp_executor.py` is not on main. workflow_runner
-  //     names it (MCP_EXECUTOR) and dwo-mcp-03 built everything around it, but
-  //     the file itself is still only on the unmerged kanban/dwo-mcp-01 …
-  //     kanban/dwo-mcp-02-d5-audit chain. Without it the runner's existence
-  //     check fails and the step is recorded `skipped — Tool not found`.
+  //  1. `tools/studio/executors/mcp_executor.py` was not on main, so the
+  //     runner's existence check failed and the step was recorded
+  //     `skipped — Tool not found`. It merged 2026-07-28 with dwo-mcp-01 (#976),
+  //     its authorization layer with dwo-mcp-02 (#978/#979).
   //
-  //  2. GET /api/studio/workflows/runs/<id> answers 500 under a request context:
-  //     studio_workflow_runs and studio_workflow_run_steps have no
-  //     classification / tenant_id columns, but get_connection() attaches the
-  //     global RLS predicate that names them. Migration 305 fixed studio_workflows
-  //     only. The same read succeeds from a plain script, which is why the pytest
-  //     layer is green and the browser is not — the defect is reachable only over
-  //     HTTP. Its sibling dwo-vv-03-d2 is parked on the identical blocker.
+  //  2. GET /api/studio/workflows/runs/<id> answered 500 under a request
+  //     context: studio_workflow_runs and studio_workflow_run_steps had no
+  //     classification / tenant_id columns, while get_connection() attached the
+  //     global RLS predicate that names them. Migration 309 (#989) added them.
+  //     The same read succeeded from a plain script, which is why the pytest
+  //     layer was green and the browser was not.
   //
-  // BOTH OF THOSE ARE NOW FIXED (2026-07-28). The executor merged with
-  // dwo-mcp-01 (#976) and its authorization layer with dwo-mcp-02 (#978/#979);
-  // the run tables got classification/tenant_id in migration 309 (#989).
-  // Verified: this spec passes end to end against a PostgreSQL dashboard.
+  //  3. The narrower reason the guard outlived 1 and 2: this spec drives the
+  //     SHARED webServer and playwright.config.ts pinned that to sqlite, while
+  //     the recorded pass was against PostgreSQL. e2p-back-03 removed the pin
+  //     (playwright.config.ts:155) — the backend now comes from .env, and CI
+  //     sets ICDEV_NO_SERVER=1 with ICDEV_STORAGE_BACKEND=postgresql, so no
+  //     webServer starts there at all.
   //
-  // It stays opt-in for a different, narrower reason. It uses the SHARED
-  // webServer, and playwright.config.ts pins that to sqlite — while PostgreSQL
-  // is the platform's primary backend (CLAUDE.md) and data/icdev.db is an
-  // unmaintained fallback that drifts. The pass above was against PG, so
-  // un-gating this now would put a spec into the sweep on a backend it has not
-  // been shown green on.
+  // MEASURED ON CI BEFORE REMOVING IT, not on one host — a local pass repeated
+  // is not corroboration. CI has in fact been exercising this spec on
+  // PostgreSQL since dwo-vv-03-d5 (eb0829aef) wired it into the "Run DWO V&V
+  // specs" step with ICDEV_E2E_DWO_MCP=1. So the guard's premise had already
+  // expired there, and the spec was passing on the primary backend while the
+  // sharded sweep next to it skipped the same file. Both halves in one job log:
   //
-  // Drop the guard in e2p-back-03, which moves the suite to PostgreSQL. That
-  // task exists precisely because ~800 E2E tests currently never touch the
-  // primary backend.
-  test.skip(
-    !process.env.ICDEV_E2E_DWO_MCP,
-    'opt-in until e2p-back-03 moves the E2E suite to PostgreSQL: proven green on '
-      + 'PG, not yet on the sqlite the shared webServer pins — set ICDEV_E2E_DWO_MCP=1',
-  );
+  //   run 33975929239, E2E Shard 2 of 4 (main @ 28c22c52e)
+  //     sweep, --shard=2/4, 224 tests:  -  75 [chromium] › …:216:7   SKIPPED
+  //     DWO V&V step, 3 tests:          ✓   1 [chromium] › …:216:7   4.4s
+  //
+  //   run 33985195697 (main @ f40935be5), DWO V&V step on all four shards:
+  //     shard 1 ✓ 4.3s   shard 2 ✓ 3.9s   shard 3 ✓ 4.4s   shard 4 ✓ 4.4s
+  //
+  // THE ONE THING THOSE RUNS DO NOT PROVE, and what removing the guard actually
+  // changes: the spec now runs INSIDE the sharded sweep, in a process with ~220
+  // other tests, against a dashboard all of them have been driving for minutes.
+  // Green alone is not green in-suite (rem-tst-06). The sweep already collected
+  // this file and skipped it, so the partition does not move — it stays in
+  // shard 2 — and that shard's sweep run is the in-suite evidence to read.
+  //
+  // It is dropped from the "Run DWO V&V specs" step in the same change: with no
+  // guard, listing it there would run it once in the sweep and again in that
+  // step, in every shard — five executions per CI run. Its two siblings stay
+  // listed, because their guards are about PROCESS OWNERSHIP
+  // (dwo_restart_durability kills and restarts a dashboard) rather than the
+  // backend, and are still valid.
 
   test.beforeAll(() => {
     fs.mkdirSync(SCREENSHOTS, { recursive: true });
