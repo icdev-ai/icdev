@@ -3061,6 +3061,7 @@ def _phase_complete(prefix: str, phase: str) -> tuple[bool, list[str]]:
 
 
 from tools.kanban.gates import is_manual_gate as _is_manual_gate  # noqa: F401
+from tools.kanban.fixtures import is_test_fixture as _is_test_fixture  # noqa: F401
 from tools.kanban.deps import (  # noqa: E402
     dep_clause_sql as _dep_clause_sql,
     junction_dep_ids as _junction_dep_ids,
@@ -3121,9 +3122,15 @@ def _get_due_tasks() -> list:
             "kt.created_at ASC",
             dep_params,
         ).fetchall()
+        # `_is_test_fixture` is the SECOND door. Promotion (the first) already
+        # stops every case reproduced so far, but a card can reach `scheduled`
+        # by a dashboard move or decay-promotion without passing through it,
+        # and an E2E fixture dispatched from there costs the same wasted
+        # worker session. Same belt-and-braces the manual gate gets.
         result = [
             dict(r) for r in scheduled
             if not _is_manual_gate(dict(r).get("id"), dict(r).get("title"))
+            and not _is_test_fixture(dict(r).get("id"), dict(r).get("title"))
         ]
 
         # Phase-exit validation (2026-04-15 V&V Batch 2): for phased task IDs
