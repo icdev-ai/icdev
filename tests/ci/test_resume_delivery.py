@@ -267,12 +267,13 @@ def test_the_probe_runs_before_the_append():
     from tools.ci import pr_watcher as pw
 
     src = inspect.getsource(pw.PRWatcher.poll_once)
-    probe = src.index("_probe_prior_delivery")
-    send = src.index("_send_resume", probe - 4000 if probe > 4000 else 0)
-    assert probe < src.index("_send_resume", probe), (
-        "the delivery probe must run BEFORE the resume is enqueued"
+    # EVERY enqueue must come after the probe, so the first occurrence of each
+    # is the whole test — not `index(..., probe)`, which searches forward from
+    # the probe and is therefore true by construction.
+    assert src.index("_probe_prior_delivery") < src.index("_send_resume"), (
+        "the delivery probe must run BEFORE the resume is enqueued, or the "
+        "new message counts itself as evidence that the last one went unread"
     )
-    assert send is not None
 
 
 def test_the_resume_row_no_longer_claims_delivery():
