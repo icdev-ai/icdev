@@ -1256,6 +1256,72 @@ def _default_base_ref(repo_root: Optional[Path] = None) -> str:
     return branch
 
 
+# The worktree-add budget (kph-repark-kph-repark-mfx-ci-04). NOT to be raised:
+# the fix for an add that exceeds it is a cheaper checkout or a quieter host,
+# never more patience -- see the comment inside _create_worktree.
+WORKTREE_ADD_TIMEOUT_SECONDS = 30
+
+# Parallel checkout for the add. `git -c` is exported to every child git as
+# GIT_CONFIG_PARAMETERS, so the `reset --hard` that actually writes the tree
+# honours it. Measured 2026-09-06 on the live host: 33.1s / 18.7s -> 8.5s.
+WORKTREE_ADD_GIT_CONFIG: Tuple[str, ...] = ("-c", "checkout.workers=0")
+
+
+def _kill_process_tree(proc) -> str:
+    """Kill a Popen'd process AND everything it spawned; say how.
+
+    ``proc.kill()`` alone is the defect this exists for: on Windows it
+    terminates one pid, and a git child that inherited the pipes keeps writing
+    the checkout (and keeps ``communicate()`` blocked) until it is done. The
+    tree is taken with ``taskkill /T`` there and with ``killpg`` on POSIX --
+    which is safe only because the caller started the child in its own session.
+    """
+    import os
+    import signal
+
+    pid = int(proc.pid)
+    try:
+        if os.name == "nt":
+            done = subprocess.run(
+                ["taskkill", "/PID", str(pid), "/T", "/F"],
+                capture_output=True, text=True, timeout=30,
+            )
+            how = f"taskkill /T rc={done.returncode}"
+        else:
+            os.killpg(os.getpgid(pid), signal.SIGKILL)
+            how = "killpg"
+    except Exception as exc:  # noqa: BLE001 -- the parent kill below still runs
+        how = f"tree kill failed: {exc}"
+    try:
+        proc.kill()
+    except Exception:  # noqa: BLE001
+        pass
+    return how
+
+
+def _remove_partial_worktree(worktree_path: Path, branch_name: str, repo_root) -> bool:
+    """Undo a killed ``git worktree add``: directory, registration, branch.
+
+    The add had already registered the worktree and created the branch when
+    it was killed, so leaving any of the three makes the NEXT dispatch judge a
+    leftover instead of starting clean. Returns True only when the directory
+    is provably gone; a Windows handle can outlive its process briefly, so the
+    delete is attempted a few times before giving up and saying so.
+    """
+    import shutil
+
+    for _attempt in range(4):
+        shutil.rmtree(worktree_path, ignore_errors=True)
+        if not worktree_path.exists():
+            break
+        time.sleep(0.5)
+    subprocess.run(["git", "worktree", "prune"], cwd=str(repo_root),
+                   capture_output=True, text=True, timeout=10)
+    subprocess.run(["git", "branch", "-D", branch_name], cwd=str(repo_root),
+                   capture_output=True, text=True, timeout=10)
+    return not worktree_path.exists()
+
+
 def _create_worktree(task_id: str) -> Optional[str]:
     """Create an isolated git worktree for a kanban task.
 
@@ -1434,18 +1500,68 @@ def _create_worktree(task_id: str) -> Optional[str]:
         base = _base_branch
 
     try:
-        # Create a new branch from the chosen base for this task
-        result = _sp.run(
-            ["git", "worktree", "add", "-b", branch_name, str(worktree_path), base],
+        # Create a new branch from the chosen base for this task.
+        #
+        # THE 30s BUDGET WAS A FICTION, and the park it produced was about a
+        # worktree that existed (kph-repark-kph-repark-mfx-ci-04). `git worktree
+        # add` does its checkout in a CHILD process (`git reset --hard`, seen with
+        # GIT_TRACE=1). `subprocess.run(timeout=30)` kills only the PARENT git.exe
+        # at 30s and then blocks in communicate() on the pipe handles that child
+        # inherited -- until the child finishes writing all 21,400 files. Measured
+        # 2026-09-06: branch kanban/kph-repark-mfx-ci-04 created 14:32:54Z, "timed
+        # out after 30 seconds" logged 14:34:49Z, 115s later, over a COMPLETE and
+        # CLEAN 563 MB checkout. The guard then parked the task as "worktree
+        # creation failed" and the orphaned checkout competed with the next add,
+        # which timed out the same way: 12 adds in 2.5 hours.
+        #
+        # Two things change, and NEITHER is a longer budget or a retry:
+        #  * the checkout is PARALLEL (WORKTREE_ADD_GIT_CONFIG). Measured on this
+        #    host, same tree, same minute: 33.1s and 18.7s single-threaded,
+        #    8.5s with checkout.workers=0. The `-c` travels to the child through
+        #    GIT_CONFIG_PARAMETERS, so the reset that does the work is the one
+        #    that parallelises.
+        #  * the budget is REAL: on expiry the whole process tree is killed
+        #    (_kill_process_tree), the partial worktree is removed and its
+        #    branch deleted, so an abandoned add stops consuming I/O and the
+        #    park describes what is actually on disk -- nothing.
+        _add_started = time.monotonic()
+        _proc = _sp.Popen(
+            ["git", *WORKTREE_ADD_GIT_CONFIG, "worktree", "add", "-b",
+             branch_name, str(worktree_path), base],
             cwd=str(_repo_root),
-            capture_output=True,
+            stdout=_sp.PIPE,
+            stderr=_sp.PIPE,
             text=True,
-            timeout=30,
+            # POSIX: the add and its checkout children form their OWN process
+            # group, so killpg on timeout cannot reach the scheduler itself.
+            # Ignored on Windows, where taskkill /T walks the tree by pid.
+            start_new_session=True,
         )
-        if result.returncode != 0:
+        try:
+            _out, _err = _proc.communicate(timeout=WORKTREE_ADD_TIMEOUT_SECONDS)
+        except _sp.TimeoutExpired:
+            _how = _kill_process_tree(_proc)
+            # Now every holder of the pipes is dead, so this returns at once
+            # instead of waiting for a checkout nobody is going to keep.
+            try:
+                _proc.communicate(timeout=10)
+            except Exception:  # noqa: BLE001
+                pass
+            _removed = _remove_partial_worktree(worktree_path, branch_name, _repo_root)
+            logger.warning(
+                "git worktree add for %s exceeded its %ds budget after %.1fs and was "
+                "KILLED with its checkout children (%s); the partial worktree at %s "
+                "was %s. Nothing was left running -- a slow host is the cause, and "
+                "neither a longer budget nor a retry here is the fix.",
+                task_id, WORKTREE_ADD_TIMEOUT_SECONDS,
+                time.monotonic() - _add_started, _how, worktree_path,
+                "removed" if _removed else "NOT fully removed (still on disk)",
+            )
+            return None
+        if _proc.returncode != 0:
             logger.warning(
                 "git worktree add failed for %s (rc=%d): %s",
-                task_id, result.returncode, result.stderr.strip(),
+                task_id, _proc.returncode, (_err or "").strip(),
             )
             # Directory may have been created as an empty shell — prune it so
             # the next dispatch starts clean rather than hitting the orphan path.
@@ -1494,7 +1610,13 @@ def _create_worktree(task_id: str) -> Optional[str]:
             _sp.run(["git", "worktree", "prune"], cwd=str(_repo_root),
                     capture_output=True, text=True, timeout=10)
             return None
-        logger.info("Created worktree for %s at %s", task_id, worktree_path)
+        # The DURATION is logged so the next slow episode is observable before
+        # it becomes a park: a healthy add here is single-digit seconds.
+        logger.info(
+            "Created worktree for %s at %s in %.1fs (budget %ds)",
+            task_id, worktree_path, time.monotonic() - _add_started,
+            WORKTREE_ADD_TIMEOUT_SECONDS,
+        )
         # Guard: scrub any accidentally-tracked pyc/pycache files from the new
         # worktree's index before the agent runs. These are build artifacts that
         # should never be committed; if they slipped into the index on main,
