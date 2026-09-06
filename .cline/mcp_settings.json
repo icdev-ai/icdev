@@ -3,7 +3,7 @@
     "icdev-unified": {
       "command": "python",
       "args": [
-        "C:/AI/ICDev/tools/mcp/mcp_debug_wrapper.py"
+        "C:/AI/ICDev/tools/mcp/unified_server.py"
       ],
       "env": {
         "ICDEV_DB_PATH": "C:/AI/ICDev/data/icdev.db",
@@ -12,12 +12,11 @@
       "disabled": false
     },
     "playwright": {
-      "command": "cmd",
+      "command": "node",
       "args": [
-        "/c",
-        "npx",
-        "-y",
-        "@playwright/mcp@latest"
+        "${PLAYWRIGHT_MCP_CLI:-C:/Users/schuo/AppData/Roaming/npm/node_modules/@playwright/mcp/cli.js}",
+        "--browser",
+        "${PLAYWRIGHT_MCP_BROWSER:-chromium}"
       ],
       "env": {},
       "disabled": false
