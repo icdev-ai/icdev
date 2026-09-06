@@ -47,6 +47,7 @@ import https from 'node:https';
 import os from 'node:os';
 import path from 'node:path';
 import { baseUrlSource as resolveBaseUrlSource, resolveBaseUrl } from './tests/e2e/fixtures/base_url';
+import { requestedDatabase, RequestedDatabase } from './tests/e2e/fixtures/e2e_database';
 
 /** Set once diagnostics have been emitted in this process. */
 const DONE_MARKER = 'ICDEV_E2E_ENV_DIAG_DONE';
@@ -818,6 +819,221 @@ export async function assertBaseUrlReachable(baseUrl: string | undefined): Promi
   throw new Error(unreachableMessage(result, baseUrlSource()));
 }
 
+// ── database isolation — the run must be ON the database it asked for ───────
+//
+// THE DEFECT (qa-fail-6a87916931be3793). `playwright.config.ts` documented a
+// throwaway-database recipe and stated its reason plainly: the suite writes
+// fixtures, and running it against the canonical `icdev` leaves them there.
+// The documented command redirected NOTHING — `.env` supplies
+// `ICDEV_DATABASE_URL` and every connection site in `tools/db/storage.py`
+// reads the DSN before the discrete `ICDEV_PG_DATABASE`. So the operator held
+// a false belief in isolation and ~840 tests' worth of fixture writes went to
+// the canonical board. `webServerDatabaseEnv()` fixes the plumbing; this
+// asserts the plumbing WORKED, which is a different claim and the one that
+// was missing.
+//
+// IT MEASURES THE SERVER, NOT THE ENVIRONMENT. `/api/health` reports
+// `current_database()` off the live connection. Re-reading `ICDEV_PG_DATABASE`
+// back out of our own environment would prove only that we can echo a
+// variable — precisely the reasoning that shipped the broken recipe. It is
+// also the only way to catch the `reuseExistingServer` hole: when a dashboard
+// is already up on the port, Playwright starts no server, `webServer.env` is
+// never applied, and every variable this run exported is inert.
+//
+// FOUR VERDICTS, AND `confirmed` IS NOT A SYNONYM FOR `isolated`:
+//   confirmed      requested, and the server is measurably on that database
+//   mismatch       requested, and the server is somewhere else      -> THROWS
+//   unmeasured     requested, and we could not confirm it           -> THROWS
+//   not_requested  nothing was asked for. NOT a clean bill of health.
+//
+// The success verdict is deliberately NOT called `isolated`. What this can
+// prove is that the server is on the database the run named; whether that
+// database is disposable is not knowable from here, and on this deployment an
+// ordinary shell already exports `ICDEV_DATABASE_URL` naming the CANONICAL
+// board. Printing a green "isolated" over that is the same false comfort the
+// broken recipe gave. So the line always NAMES the database, and a run whose
+// database came from the ambient configuration rather than a per-run knob is
+// told so explicitly.
+//
+// `unmeasured` throws ON PURPOSE when a database was requested. Degrading it
+// to a warning restores the exact false belief this exists to remove: "I asked
+// for isolation and nothing complained". When nothing was requested no claim
+// was made, so it only warns — which keeps a plain local run working, and CI,
+// whose database really is named `icdev` in a disposable container.
+//
+// Stand it down with ICDEV_E2E_DB_CHECK=0 — auditable, unlike a neutraliser.
+
+export type DatabaseIsolationVerdict = 'confirmed' | 'mismatch' | 'unmeasured' | 'not_requested';
+
+export interface DatabaseIsolationResult {
+  verdict: DatabaseIsolationVerdict;
+  requested: string | null;
+  requestedSource: string | null;
+  measured: string | null;
+  backend: string | null;
+  detail: string;
+}
+
+export interface DatabaseProbe {
+  measured: string | null;
+  backend: string | null;
+  error: string | null;
+}
+
+/** Ask the SERVER which database it is on. Never throws — the caller decides. */
+export async function probeServerDatabase(baseUrl: string, timeoutMs = 15000): Promise<DatabaseProbe> {
+  try {
+    const res = await fetch(new URL('/api/health', baseUrl).toString(), {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) {
+      return { measured: null, backend: null, error: `/api/health returned HTTP ${res.status}` };
+    }
+    const body = (await res.json()) as {
+      database?: unknown;
+      backend?: unknown;
+      database_measured?: unknown;
+    };
+    if (body.database_measured !== true || typeof body.database !== 'string' || !body.database) {
+      return {
+        measured: null,
+        backend: typeof body.backend === 'string' ? body.backend : null,
+        // A server that predates this field reports nothing rather than
+        // agreeing — an absent measurement must never read as a matching one.
+        error: '/api/health did not report a measured database',
+      };
+    }
+    return {
+      measured: body.database,
+      backend: typeof body.backend === 'string' ? body.backend : null,
+      error: null,
+    };
+  } catch (err) {
+    return { measured: null, backend: null, error: (err as Error).message };
+  }
+}
+
+/** Compute the verdict without printing or throwing — the testable core. */
+export function classifyDatabaseIsolation(
+  requested: RequestedDatabase,
+  probe: DatabaseProbe,
+): DatabaseIsolationResult {
+  const base = {
+    requested: requested.name,
+    requestedSource: requested.source,
+    measured: probe.measured,
+    backend: probe.backend,
+  };
+  if (!requested.name) {
+    return {
+      ...base,
+      verdict: 'not_requested',
+      detail: probe.measured
+        ? `no database was requested — this run writes its fixtures into '${probe.measured}'`
+        : 'no database was requested, and the server did not report one',
+    };
+  }
+  if (!probe.measured) {
+    return {
+      ...base,
+      verdict: 'unmeasured',
+      detail: probe.error ?? 'the server did not report a measured database',
+    };
+  }
+  if (probe.measured === requested.name) {
+    return { ...base, verdict: 'confirmed', detail: `server is on '${probe.measured}'` };
+  }
+  return {
+    ...base,
+    verdict: 'mismatch',
+    detail: `${requested.source}=${requested.name} but the server is on '${probe.measured}'`,
+  };
+}
+
+function isolationFailure(result: DatabaseIsolationResult): string {
+  const lines = [
+    '',
+    'E2E DATABASE ISOLATION FAILED — refusing to run.',
+    '',
+    `  requested : ${result.requested} (via ${result.requestedSource})`,
+    `  measured  : ${result.measured ?? '<not measured>'}${result.backend ? ` (${result.backend})` : ''}`,
+    `  verdict   : ${result.verdict}`,
+    `  detail    : ${result.detail}`,
+    '',
+  ];
+  if (result.verdict === 'mismatch') {
+    lines.push(
+      'The suite writes fixtures. Running it here would leave them in a database',
+      'you did not ask for. Two things cause this:',
+      '',
+      '  1. A dashboard was ALREADY running on this port, so Playwright started',
+      '     no server and none of this run’s environment reached it. Give the',
+      '     run its own server:  ICDEV_DASHBOARD_PORT=5090',
+      '  2. The database name was outranked. `.env` sets ICDEV_DATABASE_URL and',
+      '     tools/db/storage.py reads the DSN before ICDEV_PG_DATABASE, so pass',
+      '     the DSN instead:  ICDEV_DATABASE_URL=postgresql://.../<db>',
+      '',
+    );
+  } else {
+    lines.push(
+      'A database was requested and the isolation could NOT be confirmed, which',
+      'is not the same as confirming it. Check that the dashboard is reachable',
+      'and that /api/health reports `database_measured`.',
+      '',
+    );
+  }
+  lines.push('Stand this check down deliberately with ICDEV_E2E_DB_CHECK=0.', '');
+  return lines.join('\n');
+}
+
+/**
+ * THROWS when this run asked for a database and the server is not on it.
+ *
+ * Like `assertBaseUrlReachable`, and unlike the diagnostics, this is allowed to
+ * fail the run — a run that silently writes into the canonical board is worse
+ * than a run that does not start.
+ */
+export async function assertDatabaseIsolated(
+  baseUrl: string | undefined,
+): Promise<DatabaseIsolationResult | null> {
+  if (process.env.ICDEV_E2E_DB_CHECK === '0' || process.env.ICDEV_E2E_DB_CHECK === 'off') {
+    console.log('  ! E2E database isolation check DISABLED (ICDEV_E2E_DB_CHECK=0)');
+    return null;
+  }
+  if (!baseUrl) {
+    console.log('  ! E2E baseURL is unset — database isolation not checked');
+    return null;
+  }
+
+  const requested = requestedDatabase();
+  const probe = await probeServerDatabase(baseUrl);
+  const result = classifyDatabaseIsolation(requested, probe);
+
+  if (result.verdict === 'confirmed') {
+    console.log(`  ✓ E2E database confirmed: ${result.detail} (via ${result.requestedSource})`);
+    if (!requested.explicit) {
+      // The database came from the deployment's own configuration, not from a
+      // per-run knob — so nothing about this run is isolated, and the fixtures
+      // land here. Said plainly on every such run, because the alternative is a
+      // tick beside the canonical board's name.
+      console.log(
+        `    ! Nothing requested a throwaway database — the suite writes its fixtures into '${result.measured}'.`,
+      );
+      console.log('      Point this run elsewhere with  ICDEV_PG_DATABASE=icdev_e2e  (see playwright.config.ts).');
+    }
+    return result;
+  }
+  if (result.verdict === 'not_requested') {
+    // Loud, and it NAMES the database, because the common local run is the
+    // canonical board and the operator should see that before 840 tests write
+    // to it. Not a failure: they may have meant it.
+    console.log(`  ! E2E database NOT isolated — ${result.detail}`);
+    console.log('    Request one with  ICDEV_PG_DATABASE=icdev_e2e  (see playwright.config.ts).');
+    return result;
+  }
+  throw new Error(isolationFailure(result));
+}
+
 /** Read the baseURL Playwright actually resolved, not a second copy of it. */
 function baseUrlFromConfig(config?: unknown): string | undefined {
   const projects = (config as { projects?: Array<{ use?: { baseURL?: string } }> } | undefined)?.projects;
@@ -841,6 +1057,11 @@ function baseUrlFromConfig(config?: unknown): string | undefined {
  */
 export default async function globalSetup(config?: unknown): Promise<void> {
   logEnvironmentDiagnostics();
-  await assertBaseUrlReachable(baseUrlFromConfig(config));
+  const baseUrl = baseUrlFromConfig(config);
+  await assertBaseUrlReachable(baseUrl);
+  // Ordered AFTER reachability on purpose: an unreachable dashboard cannot
+  // answer /api/health, and reporting that as 'isolation unmeasured' would
+  // send the reader to the wrong fix for a cause already named above.
+  await assertDatabaseIsolated(baseUrl);
 }
 // CUI // SP-CTI

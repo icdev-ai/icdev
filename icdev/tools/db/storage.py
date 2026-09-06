@@ -1817,6 +1817,58 @@ def is_pg(conn=None) -> bool:
     return get_backend() == "postgresql"
 
 
+def active_database(conn=None) -> dict:
+    """Report the database this process is ACTUALLY connected to — MEASURED.
+
+    Returns ``{"backend", "database", "measured"}``.
+
+    THE POINT IS THAT IT NEVER READS THE ENVIRONMENT BACK. ``ICDEV_PG_DATABASE``
+    is a *request*; the database that gets opened is whatever
+    :func:`get_connection` resolved, and on this deployment those two disagree
+    (qa-fail-6a87916931be3793): ``.env`` sets ``ICDEV_DATABASE_URL``, the DSN
+    outranks the discrete name everywhere in this module, and so an operator who
+    exported ``ICDEV_PG_DATABASE=icdev_e2e`` was answered ``icdev``. A health
+    report that echoed the env var would have agreed with the operator and been
+    wrong — a constant wearing the name of a measurement. So: PostgreSQL is
+    asked ``current_database()`` and SQLite is asked ``PRAGMA database_list``.
+
+    ``database`` is ``None`` — NEVER a guess and never the env var — when it
+    could not be measured, and ``measured`` says which case you are in. An
+    unmeasured database must never read as a confirmed one; that is the whole
+    difference between "this run is isolated" and "nobody checked".
+    """
+    own_conn = conn is None
+    try:
+        if own_conn:
+            conn = get_connection()
+        backend = getattr(conn, "_backend", None) or get_backend()
+        database = None
+        if backend == "postgresql":
+            row = conn.execute("SELECT current_database() AS db").fetchone()
+            if row is not None:
+                database = row["db"] if isinstance(row, dict) else row[0]
+        else:
+            for row in conn.execute("PRAGMA database_list").fetchall():
+                name = row["name"] if isinstance(row, dict) else row[1]
+                if name == "main":
+                    database = row["file"] if isinstance(row, dict) else row[2]
+                    break
+        return {
+            "backend": backend,
+            "database": database or None,
+            "measured": bool(database),
+        }
+    except Exception as exc:  # noqa: BLE001
+        get_logger(__name__).warning("Could not measure the active database (%s)", exc)
+        return {"backend": None, "database": None, "measured": False}
+    finally:
+        if own_conn and conn is not None:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
 def sql_placeholder(conn=None) -> str:
     """Return the correct SQL placeholder for the current backend.
 
