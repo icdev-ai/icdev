@@ -35,8 +35,10 @@ enforced gate would drift from the one the watcher enforces:
 
 * ``pr_watcher._enforced_done_ok``  — the KANBAN_PIPELINE_ENFORCE contract
 * ``pr_watcher.PRWatcher._auto_merge``  — the gh invocation
-* ``pr_watcher.PRWatcher._open_pr_files`` / ``._sibling_conflicts``  — the
-  sibling-file-conflict guard
+* ``pr_watcher.PRWatcher._open_pr_index`` / ``._sibling_conflicts`` /
+  ``_wins_sibling_tiebreak`` / ``_pr_can_merge``  — the sibling-file-conflict
+  guard AND the tie-break that resolves it. Reusing only the first half is
+  how this door and the watcher came to disagree about the same policy.
 * ``pr_watcher.list_pr_tasks`` / ``fetch_pr_state`` / ``repo_default_branch``
 * ``tools.ci.error_classifier``  — CI / review predicates
 
@@ -238,7 +240,11 @@ def preflight(task_id: str, *, get_conn=None, watcher=None) -> dict:
     if not already_merged and w.config.get("hold_on_sibling_conflict", False):
         # the PR's OWN repo, not this checkout's: an ICDEV[FT] task's PR is
         # invisible to a bare `gh pr list` here (kpr-rvfy-07)
-        file_map = w._open_pr_files(prw.repo_of(pr_url))
+        # `_open_pr_index`, not `_open_pr_files`: the index carries `mergeable`
+        # and `draft` alongside the file list, in the SAME gh call, and those are
+        # what let the tie-break below skip a sibling the forge would refuse.
+        pr_index = w._open_pr_index(prw.repo_of(pr_url))
+        file_map = {url: e["files"] for url, e in pr_index.items()}
         if pr_url not in file_map:
             # `_open_pr_files` returns {} on any gh failure, and this PR is open,
             # so its own absence means the listing failed rather than that there
@@ -252,7 +258,28 @@ def preflight(task_id: str, *, get_conn=None, watcher=None) -> dict:
                 pr_url, checks,
             )
         sib = w._sibling_conflicts(pr_url, file_map)
-        if sib:
+        # THE TIE-BREAK IS HALF THE RULE, and this door was only ever running the
+        # other half. `hold_on_sibling_conflict` SERIALISES merges that touch the
+        # same source file — merge one, let the rest rebase — and sharing is
+        # symmetric, so holding every sibling is not serialisation, it is the
+        # stall `_wins_sibling_tiebreak` was written to break (its own docstring:
+        # 14 AGOV PRs, entire board at "awaiting merge", zero active tasks).
+        # `pr_watcher` consults it; this module reused `_sibling_conflicts` and
+        # not the function that RESOLVES what `_sibling_conflicts` reports, so
+        # the two implementations of one policy disagreed: the watcher would
+        # merge the lowest-numbered sibling and the door refused it. Measured
+        # 2026-09-06 on #2143, which is the lowest of its own sibling set and was
+        # held behind #2145/#2154/#2156 by this door alone.
+        #
+        # The invariant is UNCHANGED and this is not a widening: at most one PR
+        # in a sibling set can be the lowest-numbered, so two PRs sharing a file
+        # still cannot merge together. Same function, same `blocked` input, no
+        # second copy of the rule — importing it is the point.
+        blocked = {
+            url for url, entry in pr_index.items()
+            if not prw._pr_can_merge(entry)
+        }
+        if sib and not prw._wins_sibling_tiebreak(pr_url, sib, blocked=blocked):
             detail = "; ".join(
                 f"{u} [{', '.join(sorted(fs))}]" for u, fs in sib.items())
             checks.append(_ck("no_sibling_conflict", False, detail))
@@ -262,7 +289,10 @@ def preflight(task_id: str, *, get_conn=None, watcher=None) -> dict:
                 f"{detail}",
                 pr_url, checks,
             )
-        checks.append(_ck("no_sibling_conflict", True))
+        checks.append(_ck(
+            "no_sibling_conflict", True,
+            (f"shares file(s) with {len(sib)} open PR(s) and wins the "
+             f"lowest-number tie-break") if sib else ""))
 
     return {
         "task_id": task_id,
@@ -289,6 +319,8 @@ def land(
     dry_run: bool = False,
     sleeper=None,
     confirm_attempts: int = CONFIRM_ATTEMPTS,
+    protected_ok: bool = False,
+    override_reason: str = "",
 ) -> dict:
     """Preflight, merge, then CONFIRM the merge landed.
 
@@ -298,6 +330,14 @@ def land(
     write ``done`` on the strength of the request alone.
 
     ``dry_run`` runs the preflight and stops — it never reports a merge.
+
+    ``protected_ok`` (mfx-mrg-04) carries a HUMAN's decision to land a PR that
+    touches one of ``pr_watcher``'s ``protected_paths`` — the guard that stops
+    the merge ladder auto-merging a change to itself. It overrides EXACTLY that
+    one rung, inside ``_auto_merge``; every check above is untouched and still
+    runs, so a red, conflicting, unapproved or draft-refused PR is refused here
+    before the flag is ever consulted. It is threaded, never defaulted on, and
+    ``override_reason`` must be non-empty or ``_auto_merge`` refuses.
     """
     get_conn = _resolve_conn(get_conn)
     w = watcher if watcher is not None else _build_watcher(get_conn)
@@ -341,7 +381,8 @@ def land(
             )
         verdict["checks"].append(_ck("draft_promoted", True))
 
-    if not w._auto_merge(pr_url):
+    if not w._auto_merge(pr_url, protected_ok=protected_ok,
+                         override_reason=override_reason, task_id=task_id):
         verdict["checks"].append(_ck("merge_requested", False, "gh pr merge failed"))
         return _refusal(
             task_id,

@@ -28,6 +28,10 @@ Usage examples:
   # SATISFY the done-gate: land the task's PR, then mark done
   python tools/kanban/cli.py --set-status zig-ext-08 done --merge --dry-run
   python tools/kanban/cli.py --set-status zig-ext-08 done --merge --json
+
+  # ...including a PR that touches a protected path: overrides that ONE rung,
+  # runs all thirteen checks, audits the reason verbatim before merging
+  python tools/kanban/cli.py --set-status mfx-mrg-04 done --merge       --protected-ok --reason 'this card changes _auto_merge itself; reviewed by <name>'
 """
 
 import argparse
@@ -354,6 +358,7 @@ def cmd_set_status(
     merge: bool = False,
     dry_run: bool = False,
     lander=None,
+    protected_ok: bool = False,
 ) -> int:
     if status not in VALID_STATUSES:
         print(
@@ -383,9 +388,19 @@ def cmd_set_status(
             print("ERROR: --merge lands exactly one task's PR — pass a single "
                   "task id", file=sys.stderr)
             return 1
+        if protected_ok and not reason.strip():
+            # THE `--force-done --reason` PRECEDENT, and for the same reason: a
+            # bypass whose justification is a default string records nothing. A
+            # usage error, never a default.
+            print("ERROR: --protected-ok requires --reason '<why>' — it "
+                  "overrides pr_watcher's protected-path guard and the reason "
+                  "is audited verbatim before the merge", file=sys.stderr)
+            return 1
         if lander is None:
             from tools.kanban.land import land as lander  # noqa: PLC0415
-        merge_verdict = lander(task_ids[0], dry_run=dry_run)
+        merge_verdict = lander(task_ids[0], dry_run=dry_run,
+                               protected_ok=protected_ok,
+                               override_reason=reason.strip())
         if dry_run:
             # Nothing was merged, so nothing may be marked done. Exit code
             # reports the preflight verdict so it is scriptable.
@@ -411,6 +426,12 @@ def cmd_set_status(
                     print(f"    [{mark}] {c.get('name')} "
                           f"{_ascii(c.get('detail'))}".rstrip(), file=sys.stderr)
             return 1
+
+    if protected_ok and not merge:
+        print("ERROR: --protected-ok only applies to --set-status <id> done "
+              "--merge — it overrides one rung INSIDE the merge door, and "
+              "there is no other door it means anything at", file=sys.stderr)
+        return 1
 
     # Merge-verify before writing anything: refuse the whole batch rather than
     # marking some tasks done and rejecting others halfway through. Skipped
@@ -474,8 +495,12 @@ def cmd_set_status(
                     # Same audit path as --force-done, opposite meaning: the
                     # gate was satisfied, not overridden.
                     _transition_reason = (
-                        f"MERGED via CLI --merge: {merge_verdict.get('pr_url')} "
-                        f"({merge_verdict.get('reason')})")
+                        f"MERGED via CLI --merge"
+                        f"{' --protected-ok' if protected_ok else ''}: "
+                        f"{merge_verdict.get('pr_url')} "
+                        f"({merge_verdict.get('reason')})"
+                        + (f" [protected-path override: {reason.strip()}]"
+                           if protected_ok else ""))
                 else:
                     _transition_reason = ""
                 _record_manual_transition(
@@ -1252,6 +1277,15 @@ def main():
                              "done-gate) and mark done only once GitHub reports "
                              "it MERGED. One task id; not combinable with "
                              "--force-done. Add --dry-run to preflight only.")
+    parser.add_argument("--protected-ok", dest="protected_ok",
+                        action="store_true",
+                        help="With --merge: land a PR that touches one of "
+                             "pr_watcher's protected_paths (the guard that "
+                             "stops the merge ladder auto-merging a change to "
+                             "itself). Overrides that ONE rung — all thirteen "
+                             "checks still run — and is audited verbatim "
+                             "BEFORE the merge, so it requires --reason. "
+                             "Never set by any autonomous path.")
     parser.add_argument("--show", metavar="TASK_ID", help="Show details of one task")
 
     # --requeue <id ...> — send tasks back for a clean rebuild
@@ -1357,7 +1391,8 @@ def main():
         task_ids = tokens[:-1]
         sys.exit(cmd_set_status(task_ids, status, args.json_out,
                             force_done=args.force_done, reason=args.reason or '',
-                            merge=args.merge, dry_run=args.dry_run))
+                            merge=args.merge, dry_run=args.dry_run,
+                            protected_ok=args.protected_ok))
 
     elif args.requeue:
         sys.exit(cmd_requeue(args.requeue, args.requeue_status, args.json_out,
