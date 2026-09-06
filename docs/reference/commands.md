@@ -8067,6 +8067,15 @@ python -m tools.kanban.union_resolver --worktree <path> --mode merge     # a `gi
 # under the same per-base-era rebase budget; pr_watcher audits union_resolved / union_refused with the rules.
 python tools/kanban/rebase_recovery.py --task <id> --dry-run --json      # the whole rebase, rung included
 ```
+### Branch matcher: a REPARK id is a different card's (mfx-own-05)
+```bash
+# `_branches_for_task` now requires the task id to START a path segment: kanban/<id> or kanban/<id>-<suffix>,
+# never kanban/<something>-<id>. A repark card (kph-repark-<id>) is its own row, branch and PR.
+python -m tools.kanban.branch_match_survey --env-file C:/AI/ICDev/.env                     # legacy vs shipped rule, every drop NAMED
+python -m tools.kanban.branch_match_survey --env-file C:/AI/ICDev/.env --json
+python -m tools.kanban.branch_match_survey --env-file C:/AI/ICDev/.env --include-terminal  # every id, done tasks too
+# UNMEASURABLE (exit 2), never a clean zero, from a worktree with no .env. Report only, no --gate.
+```
 ### Interactive claim keeper (mfx-own-02)
 ```bash
 python tools/kanban/cli.py --claim <task-id> [--intent "what you are doing"] [--ttl 7200]   # hold a task from a plain shell

@@ -34,7 +34,10 @@ def test_it_declaration_exists_and_reproduces_todays_constants():
     assert dom.db.backend == "postgresql"
     assert dom.db.name_env == "ICDEV_PG_DATABASE"
     assert dom.db.dsn_env == "ICDEV_DATABASE_URL"
-    assert dom.db.databases == ("icdev",)
+    # `icdev_e2e` is the throwaway E2E database (qa-fail-6a87916931be3793):
+    # declared so a routine local `npx playwright test` does not have to stand
+    # the identity guard down. The canonical board stays first.
+    assert dom.db.databases == ("icdev", "icdev_e2e")
     assert dom.dashboard_port == 5050
     assert dom.sensitivity.column == "classification"
     assert dom.components == "args/component_registry.yaml"
@@ -47,9 +50,23 @@ def test_builtin_default_matches_the_checked_in_file():
     builtin = core_domain.parse_domain(
         core_domain.BUILTIN_DEFAULT, root=REPO_ROOT, source="builtin_default", path=None
     )
-    for attr in ("key", "env_prefix", "db", "sensitivity", "dashboard_port",
+    for attr in ("key", "env_prefix", "sensitivity", "dashboard_port",
                  "components", "kanban_board", "mcp_servers", "forge_dirs"):
         assert getattr(builtin, attr) == getattr(file_dom, attr), attr
+    # `db` is compared field by field. `databases` is the ONE field the checked-in
+    # file may legitimately extend: this tree declares its throwaway E2E database
+    # (`icdev_e2e`, qa-fail-6a87916931be3793) beside the canonical board, and a
+    # wheel / scaffolded project -- which has no Playwright suite and no fixture
+    # writes to isolate -- has no such database to declare. What must not drift
+    # is everything else, and the canonical name: the file may ADD a disposable
+    # database, never lose or rename the one the builtin names.
+    for field in ("backend", "name_env", "dsn_env", "sqlite_path_env", "migrations"):
+        assert getattr(builtin.db, field) == getattr(file_dom.db, field), f"db.{field}"
+    assert set(builtin.db.databases) <= set(file_dom.db.databases), (
+        f"the checked-in file lost a builtin database: {builtin.db.databases} "
+        f"vs {file_dom.db.databases}"
+    )
+    assert file_dom.db.databases[0] == builtin.db.databases[0], "the canonical board must stay first"
 
 
 def test_declared_paths_exist_in_this_checkout():
