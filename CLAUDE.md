@@ -1032,13 +1032,19 @@ grep -h "Created worktree for" .logs/tools.genesis.reflexes.kanban.ndjson | tail
 # (`_kill_process_tree`, taskkill /T or killpg in its own session) and the
 # partial worktree, registration and branch are removed, so the park describes
 # what is on disk. WORKTREE_ADD_TIMEOUT_SECONDS stays 30 and is pinned by test.
-# NOT fixed here, and named: 21,400 files / 513 MB per worktree, of which
-# playwright-report/ is 209.9 MB (40.9%, 1,426 tracked files added in a bulk
-# chore on 2026-05-25 and in no .gitignore) -- every add writes a test report
-# nobody reads from a worktree. Untracking it is its own card. And the genesis
-# daemon's `kanban` reflex and the standalone scheduler both dispatch, so two
-# 513 MB adds can run at once; the task lease keeps them off the same card, not
-# off the same disk.
+# NOT fixed there, and named: 21,400 files / 513 MB per worktree, of which
+# playwright-report/ was 209.9 MB (40.9%, 1,426 tracked files added in a bulk
+# chore on 2026-05-25 and in no .gitignore) -- every add wrote a test report
+# nobody reads from a worktree. UNTRACKED by task-wt-20f94d17, with backups/
+# (28.3 MB of canvas .db.bak / nc-backup zips nothing reads from git): an add
+# of main measured the same minute, checkout.workers=0, 2026-09-07T19:47Z,
+# went 21,455 files / 513.7 MB -> 19,968 files / 275.2 MB (-238.5 MB); the
+# origin/main add took 73.7s under dispatch load, over the 30s budget, and the
+# untracked tree 10.3s / 18.4s. tests/test_generated_artifacts_untracked.py
+# refuses a tracked file under either. Still open: the genesis daemon's
+# `kanban` reflex and the standalone scheduler both dispatch, so two adds can
+# run at once; the task lease keeps them off the same card, not off the same
+# disk.
 
 # Did that resume REACH anything, or was a line just written? (kpr-watch-13)
 python -m tools.ci.resume_delivery --survey
