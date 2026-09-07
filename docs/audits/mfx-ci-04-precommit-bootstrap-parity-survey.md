@@ -96,6 +96,16 @@ scaffolded path (CLAUDE.md is the most-edited file in the tree), and each of
 those pays the ~0.3 s shell-out measured below; the other three quarters pay
 two `ast` parses inside the interpreter's own noise.
 
+A THIRD LIVE INSTANCE, while this card was in flight. Sibling PR #2159
+(kanban/rmf-rail-02, opened 2026-09-07 20:22Z, one day after the card was
+written) changed CLAUDE.md and not icdev/data/claude_bootstrap/CLAUDE.md, and its
+ICDEV CI run 34159165593 is red on exactly the two tests the incident named:
+`tests/test_bootstrap_hook_payload.py::test_payload_rule_is_green_on_the_tree_as_committed`
+(shard 3) and
+`tests/test_init_goals_and_selective.py::test_packaged_claude_md_is_not_a_stripped_template`
+(shard 4). Its author committed without this hook. With it, the commit is
+refused in ~0.8 s naming `python tools/installer/prebuild_bootstrap.py`.
+
 ## Latency
 
 Whole hook (`python tools/testing/pre_commit_check.py`) against a real staged

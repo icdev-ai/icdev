@@ -2075,8 +2075,10 @@ python tools/testing/pre_commit_check.py                                     # t
 # file calls refusing routine work, and every one of the other 119 in-scope
 # branch commits had regenerated first. Read 2026-09-06 against 4f869b771,
 # before #2137 merged: 48/200 and 114/500 in scope, ZERO fires -- both readings
-# quoted; one figure off a moving ref is not a measurement. Method, every
-# number, and the replay script in full:
+# quoted; one figure off a moving ref is not a measurement. A THIRD instance
+# arrived while this card was in flight: sibling #2159 (rmf-rail-02, 2026-09-07)
+# edited CLAUDE.md, not the payload, and went red on the same two tests.
+# Method, every number, and the replay script in full:
 #   docs/audits/mfx-ci-04-precommit-bootstrap-parity-survey.md
 
 # The E2E suite writes fixtures — point it at a THROWAWAY database (qa-fail-6a87916931be3793)
