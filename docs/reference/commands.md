@@ -8604,3 +8604,11 @@ default 6; `KANBAN_WORKTREE_HUSK_AGE_HOURS` overrides). Unreadable is `proven: N
 and refuses. Bounded per run, oldest first, deferred by name. Consumed by
 `_sweep_old_worktrees`. Kill switch `KANBAN_WORKTREE_HUSK_SWEEP=0`.
 Survey: docs/audits/mfx-own-04-worktree-husk-survey.md
+
+### Canvas Reassessment Reflex — coverage, dry run, starvation (rmf-inert-03)
+```bash
+python -m tools.genesis.reflexes.canvas_reassess --coverage      # covered / uncovered BY NAME against the posture surface; no database
+python -m tools.genesis.reflexes.canvas_reassess --dry-run       # run the sweep against the live canvases and write nothing
+python -m tools.genesis.reflexes.canvas_reassess --starvation    # designs skipped over budget on EVERY recorded run (genesis_audit)
+python tools/genesis/daemon.py --reflex canvas_reassess --json   # one real cycle through the daemon
+```

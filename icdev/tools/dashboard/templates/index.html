@@ -1303,6 +1303,23 @@ window._loadCharts = function() {
                                 if (days >= 1) { ageTxt = days + 'd'; }
                             }
                         }
+                        // WHO wrote the newest row (rmf-inert-03). A scheduled
+                        // re-derivation over the same inputs makes the age
+                        // current without anyone having looked at the estate,
+                        // so a scheduled row is marked and the age of the last
+                        // NON-scheduled row is shown beside it. `null` means
+                        // the table cannot say, and is rendered as nothing --
+                        // never as a review.
+                        var srcMark = '', srcTitle = '';
+                        if (c.last_assessed_source === 'scheduled') {
+                            var revTxt = 'none recorded';
+                            if (c.last_reviewed) {
+                                var rms = Date.now() - Date.parse(String(c.last_reviewed).replace(' ', 'T'));
+                                if (!isNaN(rms)) { revTxt = Math.floor(rms / 86400000) + 'd ago'; }
+                            }
+                            srcMark = ' ⟳';
+                            srcTitle = 'Newest score is a scheduled re-assessment; last canvas review: ' + revTxt;
+                        }
                         parts.push('<text x="' + (xOff + LABEL_W - 5) + '" y="' + (y + BAR_H / 2 + 4) + '" text-anchor="end" font-size="11" fill="#aaa" font-family="inherit">' + c.name + '</text>');
                         parts.push('<rect x="' + (xOff + LABEL_W) + '" y="' + y + '" width="' + plotW + '" height="' + BAR_H + '" fill="rgba(255,255,255,0.04)" rx="3"/>');
                         if (barW > 0) {
@@ -1311,7 +1328,9 @@ window._loadCharts = function() {
                             // old number cannot pass for a current one.
                             var stale = ageTxt && parseInt(ageTxt, 10) >= 30;
                             parts.push('<text x="' + (xOff + LABEL_W + barW + 5) + '" y="' + (y + BAR_H / 2 + 4) + '" font-size="11" fill="' + (stale ? '#8a8a99' : '#ccc') + '" font-family="inherit">' + c.score
-                                + (ageTxt ? '<tspan font-size="9" fill="' + (stale ? '#c9803a' : '#777') + '"> ' + ageTxt + '</tspan>' : '') + '</text>');
+                                + (ageTxt ? '<tspan font-size="9" fill="' + (stale ? '#c9803a' : '#777') + '"> ' + ageTxt + '</tspan>' : '')
+                                + (srcMark ? '<tspan font-size="9" fill="#8a8a99" data-assessed-source="scheduled"><title>' + srcTitle + '</title>' + srcMark + '</tspan>' : '')
+                                + '</text>');
                         } else if (!assessed) {
                             parts.push('<text x="' + (xOff + LABEL_W + 7) + '" y="' + (y + BAR_H / 2 + 4) + '" font-size="10" fill="#c9803a" font-family="inherit">Not assessed</text>');
                         } else {
