@@ -14,12 +14,20 @@
 
 set -e
 
-# Blueprint imports / nav routes / test-gating census.
+# Blueprint imports / nav routes / test-gating census / mirror parity /
+# undeclared-import census / bootstrap parity.
 #
 # The census (tsg-policy-02) fires only when this commit ADDS or RENAMES a test
 # file, and it is the same `gated_test_list.py --check-coverage` the CI `test` job
 # runs — CI stays the backstop, this is the fast path. `--no-verify` skips it, and
 # that is exactly why CI keeps running it.
+#
+# Bootstrap parity (mfx-ci-04) fires only when this commit stages a file
+# `icdev init` scaffolds — CLAUDE.md, the platform instruction files,
+# .claude/commands, .claude/hooks — the list tools/installer/prebuild_bootstrap.py
+# copies, read out of that script. It runs the same `coherence_checker.py --check
+# bootstrap_parity` CI runs, prints `python tools/installer/prebuild_bootstrap.py`
+# and refuses; it never regenerates the payload itself.
 if [ -f tools/testing/pre_commit_check.py ]; then
     python tools/testing/pre_commit_check.py || exit 1
 fi
