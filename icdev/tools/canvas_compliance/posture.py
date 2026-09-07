@@ -26,6 +26,7 @@ exact rules the index route has always used, lifted verbatim into one place.
 from __future__ import annotations
 
 import importlib
+import json
 from typing import Any
 
 from tools.logging.icdev_logger import get_logger
@@ -130,7 +131,115 @@ def _has_rows(cc, table: str) -> bool:
         r = cc.execute(f"SELECT COUNT(*) AS c FROM {table}").fetchone()  # nosec B608
         return int((r["c"] if isinstance(r, dict) else r[0]) or 0) > 0
     except Exception:
+        # On PostgreSQL a failed statement ABORTS the transaction, and every
+        # later read on the connection fails until it is rolled back -- so a
+        # probe of an absent table (the scan corpus, rmf-rail-02) would have
+        # blanked the timestamp read after it. Nothing here writes, so there
+        # is nothing to lose. MEASURED 2026-09-07: last_assessed went null.
+        try:
+            cc.rollback()
+        except Exception:
+            pass
         return False
+
+
+#: The PROBE corpus a Zero Trust posture number has to stand on (rmf-rail-02).
+#: ``zig_maturity_scores`` is a reduction over DECLARED implementation statuses
+#: (zig_capabilities / zig_activities, plus the ZTA bridge); the estate itself
+#: is only ever observed through the device-compliance scanner, which writes
+#: this table. Created lazily by the scanner, so on a deployment where it has
+#: never run the table does not EXIST -- which `_has_rows` reads as False.
+_ZT_SCAN_CORPUS = "zig_device_compliance_scans"
+
+#: Where the Security canvas's assessments record what they FOUND.
+_SECURITY_FINDINGS_LATEST = (
+    "SELECT findings_json FROM sc_assessments a1 "
+    "WHERE ran_at = (SELECT MAX(ran_at) FROM sc_assessments a2 "
+    "WHERE a2.design_id = a1.design_id)"
+)
+_SECURITY_FINDINGS_ALL = "SELECT findings_json FROM sc_assessments"
+
+
+def _security_findings(cc):
+    """How many findings the LATEST assessment per design recorded, or None.
+
+    ``open_findings`` on the Security row used to be ``COUNT(*) FROM
+    sc_assessments`` -- the number of assessment ROWS wearing the name of a
+    findings count -- so the row read "100.0 with 24 open findings" on a board
+    holding 24 assessments (rmf-rail-02). The findings an assessment made are
+    on its own ``findings_json``; counted here in Python, never with
+    SQLite-dialect JSON SQL. None means the column could not be read or
+    parsed, which is NOT zero findings, and the score rule treats it as such.
+    """
+    for query in (_SECURITY_FINDINGS_LATEST, _SECURITY_FINDINGS_ALL):
+        try:
+            rows = cc.execute(query).fetchall()
+        except Exception:
+            continue
+        total = 0
+        for row in rows:
+            raw = row["findings_json"] if isinstance(row, dict) else row[0]
+            try:
+                parsed = json.loads(raw) if isinstance(raw, str) else (raw or [])
+            except (TypeError, ValueError):
+                return None
+            if not isinstance(parsed, list):
+                return None
+            total += len(parsed)
+        return total
+    return None
+
+
+def _security_score(avg_risk, assessed: bool, open_findings):
+    """``(score, score_basis)`` for the Security row.
+
+    ``unmeasured``  no assessment row at all (rem-hyg-09): ``100 - 0`` is a
+                    perfect score for a canvas nobody assessed.
+    ``contested``   the rule yields a PERFECT 100.0 while the assessments it
+                    was reduced from carry open findings -- or the findings
+                    could not be read, which is not "none". MEASURED on the
+                    live board 2026-09-07: 13 latest-per-design assessments,
+                    every one stored with posture_grade F and 501 findings
+                    between them, and the row drew a full green bar. A reader
+                    cannot hold both numbers, so the composite is refused and
+                    the findings count stands (rmf-rail-02).
+    ``measured``    otherwise. A measured 0.0 is a real answer and stays.
+
+    NOT fixed here, and named: ``sc_assessments.risk_score`` carries two
+    semantics -- the STRIDE engine stores ``100 - penalty`` (higher is better,
+    graded A at >= 90) while the pipeline writers store a penalty (higher is
+    worse, F at >= 20) -- so ``100 - avg(risk_score)`` inverts the engine's
+    rows. A grade-F engine row (score 0.0) is exactly what read as 100.0 here.
+    Choosing one semantics for the column is a data-model card, not this one.
+    """
+    if not assessed:
+        return None, "unmeasured"
+    score = round(max(0.0, 100.0 - float(avg_risk or 0)), 1)
+    if score >= 100.0 and (open_findings is None or open_findings > 0):
+        return None, "contested"
+    return score, "measured"
+
+
+def _zero_trust_score(declared, corpus_has_rows: bool):
+    """``(score, score_basis)`` for the Zero Trust row.
+
+    ``declared`` is the maturity number the zig_* tables would produce --
+    a reduction over DECLARED implementation statuses, or None when no zig row
+    of any kind exists. It becomes a posture SCORE only over a device-scan
+    corpus that holds rows. MEASURED on the live board 2026-09-07: the
+    latest-per-pillar slice of zig_maturity_scores is EXACTLY 1.0 for all seven
+    pillars (one run, 2026-06-27 19:44:59 -- seven independent pillars landing
+    on a perfect score at once is a seeded run), while
+    ``zig_device_compliance_scans`` does not exist on the backend and the
+    device posture reads ``not_evaluated``. rmf-zt-01 already states the
+    reading: EXPECT ``unmeasured`` until a probe source is wired. The declared
+    number is carried on the row, labelled, so it is reported and never scored.
+    """
+    if declared is None:
+        return None, "unmeasured:no_maturity_rows"
+    if not corpus_has_rows:
+        return None, "unmeasured:no_device_scan_corpus"
+    return declared, "measured"
 
 
 def _max_ts(cc, table: str, col: str):
@@ -200,7 +309,13 @@ def compute_canvas_posture(conn) -> tuple[list[dict], float]:
 
     Each ``canvas_compliance`` row::
 
-        {"name": str, "score": float, "open_findings": int, "closed_findings": int}
+        {"name": str, "score": float | None, "score_basis": str,
+         "open_findings": int, "closed_findings": int, "last_assessed": str | None}
+
+    ``score`` is None -- never a number -- when nothing was measured, and
+    ``score_basis`` says why (``unmeasured``, ``contested``, ...). The overall
+    is the mean of every MEASURED score, a measured 0.0 included, and is None
+    when nothing was measured (rmf-rail-02).
     """
     canvas_compliance: list[dict] = []
     overall_scores: list[float] = []
@@ -209,6 +324,7 @@ def compute_canvas_posture(conn) -> tuple[list[dict], float]:
         cconn = _open_canvas_connection(canvas_name)
         if not cconn:
             continue
+        basis = None
         try:
             if canvas_name == "Security":
                 try:
@@ -222,15 +338,19 @@ def compute_canvas_posture(conn) -> tuple[list[dict], float]:
                     avg_risk = float(cconn.execute(
                         "SELECT AVG(risk_score) FROM sc_assessments"
                     ).fetchone()[0] or 0)
-                total_threats = int(cconn.execute(
+                assessment_rows = int(cconn.execute(
                     "SELECT COUNT(*) FROM sc_assessments"
                 ).fetchone()[0] or 0)
+                # The findings the latest assessments RECORDED, off their own
+                # findings_json -- never the assessment row count wearing that
+                # name (rmf-rail-02). None means unreadable, not zero.
+                findings = _security_findings(cconn)
                 # NOT ASSESSED, never 100.0 (rem-hyg-09): with no rows the
                 # average risk is 0 and `100 - 0` is a perfect score for a
-                # canvas nobody has assessed. `total_threats` is the row count,
-                # so it already answers "is there evidence".
-                score = round(max(0.0, 100.0 - avg_risk), 1) if total_threats > 0 else None
-                open_f = total_threats
+                # canvas nobody has assessed. And never a perfect score BESIDE
+                # open findings (rmf-rail-02): that composite is `contested`.
+                score, basis = _security_score(avg_risk, assessment_rows > 0, findings)
+                open_f = findings
                 closed_f = 0
             elif canvas_name in ("Network", "Pipeline"):
                 checks_tbl = "nc_compliance_checks" if canvas_name == "Network" else "pc_compliance_checks"
@@ -344,6 +464,10 @@ def compute_canvas_posture(conn) -> tuple[list[dict], float]:
                 {
                     "name": canvas_name,
                     "score": score,
+                    # WHY the score is what it is. `measured` | `unmeasured` |
+                    # `contested` (Security). A None score always has a reason
+                    # beside it, so "not assessed" is never a shrug.
+                    "score_basis": basis or ("measured" if score is not None else "unmeasured"),
                     "open_findings": open_f,
                     "closed_findings": closed_f,
                     # When the newest evidence was written, or None if there is
@@ -352,10 +476,12 @@ def compute_canvas_posture(conn) -> tuple[list[dict], float]:
                     "last_assessed": _last_assessed(cconn, canvas_name),
                 }
             )
-            # `score is None` means NOT ASSESSED and must never be averaged; a
-            # measured 0.0 is likewise excluded, which is the behaviour this
-            # function already had.
-            if score is not None and score > 0:
+            # `score is None` means NOT ASSESSED and must never be averaged. A
+            # MEASURED 0.0 is a real answer and enters the denominator: the
+            # old `score > 0` gate dropped it, so the headline read HIGHER
+            # because a canvas scored zero (rmf-rail-02). Compare against None
+            # explicitly, never for truthiness.
+            if score is not None:
                 overall_scores.append(score)
         except Exception:
             pass  # Graceful if canvas has no data / table missing
@@ -381,6 +507,7 @@ def compute_canvas_posture(conn) -> tuple[list[dict], float]:
             canvas_compliance.append({
                 "name": "GovLift",
                 "score": stig_score,
+                "score_basis": "measured",
                 "open_findings": stig_open,
                 "closed_findings": stig_passed,
                 # These two rows are appended outside the canvas loop, so they
@@ -389,16 +516,24 @@ def compute_canvas_posture(conn) -> tuple[list[dict], float]:
                 # known-absent timestamp (rem-hyg-09).
                 "last_assessed": _max_ts(conn, "govlift_stig_checks", "checked_at"),
             })
-            if stig_score > 0:
-                overall_scores.append(stig_score)
+            # A measured 0.0 (every check open) is a real answer (rmf-rail-02).
+            overall_scores.append(stig_score)
     except Exception:
         pass  # GovLift tables may not be initialized yet
 
-    # ZIG Zero Trust maturity (security_canvas backend — zig_* tables)
+    # ZIG Zero Trust maturity (security_canvas backend — zig_* tables).
+    # The maturity number is a reduction over DECLARED statuses; it is a
+    # posture SCORE only over a device-scan corpus that holds rows
+    # (rmf-rail-02 -- see _zero_trust_score).
     try:
         zconn = _open_canvas_connection("Security")
         if zconn:
             try:
+                declared_rows = (
+                    _has_rows(zconn, "zig_maturity_scores")
+                    or _has_rows(zconn, "zig_capabilities")
+                    or _has_rows(zconn, "zig_activities")
+                )
                 r = zconn.execute(
                     "SELECT AVG(score) FROM zig_maturity_scores m1 "
                     "WHERE assessment_run_at = ("
@@ -425,16 +560,28 @@ def compute_canvas_posture(conn) -> tuple[list[dict], float]:
                     act_total = float(act_r["total"] or 0)
                     act_rate = (float(act_r["comp"] or 0) / act_total) if act_total > 0 else 0.0
                     zig_raw = 0.6 * act_rate + 0.4 * cap_rate
-                zig_score = round(zig_raw * 100, 1)
+                # The DECLARED maturity: None when no zig row of any kind
+                # exists -- the old `float(r[0] or 0)` coerced that to 0.0.
+                declared = round(zig_raw * 100, 1) if declared_rows else None
+                # Read the timestamp BEFORE probing a table that may not exist.
+                zig_last = _max_ts(zconn, "zig_maturity_scores", "assessment_run_at")
+                zig_score, zig_basis = _zero_trust_score(
+                    declared, _has_rows(zconn, _ZT_SCAN_CORPUS))
                 canvas_compliance.append({
                     "name": "Zero Trust",
                     "score": zig_score,
+                    "score_basis": zig_basis,
+                    # Reported, labelled, never scored: what the zig_* tables
+                    # DECLARE, so an operator can still see the seeded 100.0
+                    # beside the reason it is not a posture.
+                    "declared_maturity": declared,
                     "open_findings": 0,
                     "closed_findings": 0,
-                    "last_assessed": _max_ts(
-                        zconn, "zig_maturity_scores", "assessment_run_at"),
+                    "last_assessed": zig_last,
                 })
-                if zig_score > 0:
+                # A MEASURED 0.0 -- rmf-zt-01's fail-closed verdict for an
+                # unverifiable posture -- stays in the denominator (rmf-rail-02).
+                if zig_score is not None:
                     overall_scores.append(zig_score)
             finally:
                 zconn.close()
@@ -464,13 +611,16 @@ def compute_canvas_posture(conn) -> tuple[list[dict], float]:
             canvas_compliance.append({
                 "name": "AI-ify",
                 "score": aiify_score,
+                "score_basis": "measured" if aiify_score is not None else "unmeasured",
                 "open_findings": len(_weak),
                 "closed_findings": 0,
             })
-            if aiify_score > 0:
+            if aiify_score is not None:
                 overall_scores.append(aiify_score)
     except Exception:
         pass  # AI-ify tables may not be initialized yet
 
-    overall_score = round(sum(overall_scores) / len(overall_scores), 1) if overall_scores else 0.0
+    # None, never 0.0, over an empty denominator: a board where nothing was
+    # measured has no overall (rmf-rail-02; the rem-hyg-13 rule).
+    overall_score = round(sum(overall_scores) / len(overall_scores), 1) if overall_scores else None
     return canvas_compliance, overall_score

@@ -162,7 +162,9 @@ def test_an_unassessed_canvas_scores_none_and_is_not_averaged(monkeypatch):
         "for a canvas nobody had ever assessed"
     )
     assert network["last_assessed"] is None
-    assert overall == 0, "a None score must not enter the average"
+    # None, never 0.0, when nothing was measured (rmf-rail-02): an overall of
+    # 0.0 over an empty denominator reads as "assessed, everything failed".
+    assert overall is None, "a None score must not enter the average"
 
 
 def test_every_row_carries_a_last_assessed_key(monkeypatch):

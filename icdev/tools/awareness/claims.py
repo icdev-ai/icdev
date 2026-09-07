@@ -1073,6 +1073,156 @@ def _methods_declared_bucket_for_bucket(reported: Any, derived: Any) -> bool:
     return dict(reported.get("methods") or {}) == dict(derived.get("methods") or {})
 
 
+# ---- 14. posture_zero_trust_has_scan_corpus / posture_security_agrees_with_its_assessments  (rmf-rail-02) -- #
+# THE DEFECT, and it is `posture_score_needs_evidence` at a SECOND SITE. That
+# claim guards the per-canvas loop rem-hyg-09 routed through _score_or_none.
+# TWO blocks in the same function never adopted the discipline and both drew a
+# full green 100 bar, MEASURED 2026-09-07 on the live board:
+#   * Zero Trust 100.0 -- `float(r[0] or 0)` over zig_maturity_scores, whose
+#     latest-per-pillar slice is EXACTLY 1.0 for all seven pillars from one
+#     run on 2026-06-27 (a seeded run, not an estate), while the device-scan
+#     corpus `zig_device_compliance_scans` does not exist on the backend and
+#     the device posture reads `not_evaluated`;
+#   * Security 100.0 beside "24 open findings" -- the 24 was COUNT(*) of
+#     sc_assessments wearing a findings label, `100 - avg(risk_score)` read a
+#     column the STRIDE engine stores with the OPPOSITE semantics (0.0 = grade
+#     F), and the 13 latest assessments carried 501 findings, every one F.
+# Reported: the two rows of compute_canvas_posture, as the widget reads them.
+# Derived, sharing no code with posture.py: for Zero Trust the rmf-zt-01
+# survey's own corpus / live-posture verdict (zt_verdict_survey.read_corpus and
+# live_posture, which never import posture.py); for Security the latest
+# assessment per design's OWN stored posture_grade and findings_json, read
+# straight off sc_assessments.
+def _reported_posture_row(name: str) -> Any:
+    """The row the widget renders for one canvas, or None when there is none."""
+    from tools.canvas_compliance.posture import compute_canvas_posture
+    conn = _conn()
+    try:
+        rows, _overall = compute_canvas_posture(conn)
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+    row = next((r for r in rows if r.get("name") == name), None)
+    if row is None:
+        return None
+    return {
+        "score": row.get("score"),
+        "basis": row.get("score_basis"),
+        "open_findings": row.get("open_findings"),
+    }
+
+
+def _reported_posture_zero_trust() -> Any:
+    return _reported_posture_row("Zero Trust")
+
+
+def _reported_posture_security() -> Any:
+    return _reported_posture_row("Security")
+
+
+def _derived_zt_scan_corpus() -> Any:
+    """Does ZT probe evidence EXIST at all, by the rmf-zt-01 survey's reading.
+
+    `corpus_state` is absent | empty | rows -- never merged, because they send
+    you to different fixes. `unreadable` is None: an unreachable canvas
+    database has measured nothing.
+    """
+    from tools.security_canvas.zt_verdict_survey import live_posture, read_corpus
+    corpus = read_corpus()
+    state = corpus.get("state")
+    if state == "unreadable":
+        return None
+    posture = live_posture()
+    return {
+        "corpus_state": state,
+        "corpus_rows": len(corpus.get("rows") or []),
+        "posture_measured": posture.get("measured"),
+    }
+
+
+def _zt_number_needs_scan_corpus(reported: Any, derived: Any) -> bool:
+    """A Zero Trust NUMBER needs a scan corpus holding rows.
+
+    One-directional: a refused number (None) over a populated corpus is a
+    stale surface, not a fabrication, and is not asserted here.
+    """
+    if reported.get("score") is None:
+        return True
+    return derived.get("corpus_state") == "rows"
+
+
+def _derived_security_assessment_verdicts() -> Any:
+    """What the latest assessment per design SAID about itself.
+
+    `posture_grade` is written by the assessment, never read by the widget;
+    `findings_json` is what it found. Both straight off sc_assessments. None
+    when the table cannot be read, or a findings payload cannot be parsed --
+    a count over half-read evidence is not a count.
+    """
+    try:
+        from tools.security_canvas.db.init_db import get_connection
+        conn = get_connection()
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        try:
+            conn.set_security_context(None)  # rls-bypass: canvas tables lack tenant_id/classification
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            rows = conn.execute(
+                "SELECT posture_grade AS g, findings_json AS f FROM sc_assessments a1 "
+                "WHERE ran_at = (SELECT MAX(ran_at) FROM sc_assessments a2 "
+                "WHERE a2.design_id = a1.design_id)"
+            ).fetchall()
+        except Exception:  # noqa: BLE001
+            return None
+    finally:
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+    grades: Dict[str, int] = {}
+    findings = 0
+    for row in rows:
+        record = dict(row)
+        grade = str(record.get("g") or "").strip().upper() or "?"
+        grades[grade] = grades.get(grade, 0) + 1
+        raw = record.get("f")
+        try:
+            parsed = json.loads(raw) if isinstance(raw, str) else (raw or [])
+        except (TypeError, ValueError):
+            return None
+        if not isinstance(parsed, list):
+            return None
+        findings += len(parsed)
+    return {"assessments": len(rows), "grades": grades, "findings": findings}
+
+
+def _security_number_agrees_with_assessments(reported: Any, derived: Any) -> bool:
+    """A Security NUMBER must not contradict the assessments it was reduced from.
+
+    A number over zero assessment rows is the rem-hyg-09 shape and disagrees.
+    A PERFECT 100.0 beside recorded findings, or beside any latest assessment
+    whose own stored grade is not A, is the rmf-rail-02 shape and disagrees.
+    A refused number (None) always agrees: the surface said nothing.
+    """
+    score = reported.get("score")
+    if score is None:
+        return True
+    if int(derived.get("assessments") or 0) == 0:
+        return False
+    if float(score) >= 100.0:
+        if int(derived.get("findings") or 0) > 0:
+            return False
+        if set(derived.get("grades") or {}) - {"A"}:
+            return False
+    return True
+
+
+
 REGISTRY: List[Claim] = [
     Claim(
         claim_id="posture_score_needs_evidence",
@@ -1308,5 +1458,43 @@ REGISTRY: List[Claim] = [
         incident=Incident(["rmf-ident-01"], "2026-09-02",
                           "classification_method lives on the canonical "
                           "asset_identity row under a CHECK, nullable on purpose"),
+    ),
+    Claim(
+        claim_id="posture_zero_trust_has_scan_corpus",
+        description=(
+            "The Compliance Posture widget may show a Zero Trust NUMBER only "
+            "over a device-compliance scan corpus that holds rows. It showed "
+            "100.0 from a seeded zig_maturity_scores run while the scan table "
+            "did not exist and the device posture read not_evaluated -- "
+            "posture_score_needs_evidence at a second site."
+        ),
+        reported=_reported_posture_zero_trust,
+        derived=_derived_zt_scan_corpus,
+        agree=_zt_number_needs_scan_corpus,
+        tier="propose",
+        tags=["compliance", "rmf", "zero-trust", "rmf-rail-02"],
+        incident=Incident(["rmf-rail-02"], "2026-09-07",
+                          "the Zero Trust row scores None with score_basis "
+                          "unmeasured:no_device_scan_corpus until the scanner "
+                          "has written rows; the declared maturity is carried, "
+                          "labelled, never scored"),
+    ),
+    Claim(
+        claim_id="posture_security_agrees_with_its_assessments",
+        description=(
+            "The Security row may not show a PERFECT score beside the findings "
+            "and grades its own assessments recorded. It showed 100.0 with 24 "
+            "'open findings' (the assessment row count) while the 13 latest "
+            "assessments carried 501 findings and were every one graded F."
+        ),
+        reported=_reported_posture_security,
+        derived=_derived_security_assessment_verdicts,
+        agree=_security_number_agrees_with_assessments,
+        tier="propose",
+        tags=["compliance", "rmf", "security-canvas", "rmf-rail-02"],
+        incident=Incident(["rmf-rail-02"], "2026-09-07",
+                          "open_findings counts the latest assessments' own "
+                          "findings_json and a perfect score beside open "
+                          "findings is refused as score_basis contested"),
     ),
 ]
