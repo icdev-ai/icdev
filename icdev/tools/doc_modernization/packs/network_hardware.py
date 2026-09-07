@@ -34,7 +34,7 @@ import re
 
 from tools.logging.icdev_logger import get_logger
 
-from ..base_pack import CandidateEntity, ChunkRef, DomainPack, Replacement, Verdict
+from ..base_pack import CandidateEntity, ChunkRef, DomainPack, Replacement, Verdict, match_span
 from ..catalog import MergedCatalog
 
 logger = get_logger(__name__)
@@ -102,11 +102,13 @@ class NetworkHardwarePack(DomainPack):
                 if label.lower() in seen:
                     continue
                 seen.add(label.lower())
+                span_start, span_end = match_span(m)
                 start = max(0, m.start() - 60)
                 out.append(CandidateEntity(
                     label=label, entity_type="hardware_model",
                     pack_id=self.pack_id, chunk_ref=chunk_ref, raw_match=label,
                     context=text[start:m.end() + 60].strip(),
+                    span_start=span_start, span_end=span_end,
                 ))
         return out
 

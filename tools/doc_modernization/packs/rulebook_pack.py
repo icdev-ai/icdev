@@ -39,7 +39,7 @@ from pathlib import Path
 from tools.logging.icdev_logger import get_logger
 
 from .. import temporal
-from ..base_pack import CandidateEntity, ChunkRef, DomainPack, Replacement, Verdict
+from ..base_pack import CandidateEntity, ChunkRef, DomainPack, Replacement, Verdict, match_span
 
 logger = get_logger(__name__)
 
@@ -141,6 +141,7 @@ class RulebookPack(DomainPack):
                 if key in seen:
                     continue
                 seen.add(key)
+                span_start, span_end = match_span(m)
                 start = max(0, m.start() - 60)
                 out.append(CandidateEntity(
                     label=label,
@@ -152,6 +153,8 @@ class RulebookPack(DomainPack):
                     # Carries the rule back to evaluate/recommend — the only link
                     # between a match and its evidence.
                     attributes={"rule_id": rule["id"]},
+                    span_start=span_start,
+                    span_end=span_end,
                 ))
         # Additive proactive temporal entities for rules carrying date fields —
         # dateless rulebooks (the common case) add none and behave as before.

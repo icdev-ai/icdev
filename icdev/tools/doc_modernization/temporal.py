@@ -45,7 +45,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 
-from .base_pack import CandidateEntity, Verdict
+from .base_pack import CandidateEntity, Verdict, match_span
 
 # Default proactive warning window if args/docmod/docmod_config.yaml omits one.
 DEFAULT_WINDOW_DAYS = 90
@@ -183,6 +183,7 @@ def temporal_entities(rules, text, chunk_ref, *, pack_id: str, entity_type: str)
             if key in seen:
                 continue
             seen.add(key)
+            span_start, span_end = match_span(m)
             start = max(0, m.start() - 60)
             out.append(CandidateEntity(
                 label=label,
@@ -192,6 +193,8 @@ def temporal_entities(rules, text, chunk_ref, *, pack_id: str, entity_type: str)
                 raw_match=label,
                 context=(text or "")[start:m.end() + 60].strip(),
                 attributes={"rule_id": rule["id"], "kind": TEMPORAL_KIND},
+                span_start=span_start,
+                span_end=span_end,
             ))
     return out
 
