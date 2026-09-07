@@ -253,7 +253,7 @@ def _process_event(event: dict, conn, dry_run: bool) -> dict:
             return result
 
         # For each affected collection, create suggestions for representative sections
-        from tools.document_intelligence.suggestion_store import create_suggestion
+        from tools.document_intelligence.suggestion_store import create_suggestion, whole_section_anchor
         for col in affected:
             collection_id = col["collection_id"]
             rationale = col.get("rationale", "")
@@ -275,6 +275,10 @@ def _process_event(event: dict, conn, dry_run: bool) -> dict:
                         current_content="",
                         rationale=rationale,
                         tenant_id=tenant_id,
+                        # dwr-anchor-03: a collection-level stub has no section
+                        # to point at. Recorded as what it is.
+                        origin_kind="section_draft",
+                        anchor_basis="unanchored",
                     )
                     _emit_notification(sid, collection_id, source_canvas, rationale, conn)
                     result["suggestions_created"] += 1
@@ -283,6 +287,10 @@ def _process_event(event: dict, conn, dry_run: bool) -> dict:
             for section in sections:
                 if not dry_run:
                     suggested = _draft_suggestion(section, change_context, rationale, patch_mode)
+                    # dwr-anchor-03: a canvas-triggered draft replaces the whole
+                    # section, so the anchor is the whole section, exact over
+                    # the content the draft was written against.
+                    section_content = section.get("content") or ""
                     sid = create_suggestion(
                         section_id=section["section_id"],
                         doc_id=section.get("doc_id", ""),
@@ -290,9 +298,11 @@ def _process_event(event: dict, conn, dry_run: bool) -> dict:
                         trigger_event_id=event_id,
                         canvas_source=source_canvas,
                         suggested_content=suggested,
-                        current_content=section.get("content", ""),
+                        current_content=section_content,
                         rationale=rationale,
                         tenant_id=tenant_id,
+                        origin_kind="section_draft",
+                        **whole_section_anchor(section["section_id"], section_content),
                     )
                     _emit_notification(sid, collection_id, source_canvas, rationale, conn)
                     result["suggestions_created"] += 1

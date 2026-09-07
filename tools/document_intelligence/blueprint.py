@@ -4636,8 +4636,11 @@ def api_section_suggest(section_id: str):
     user = _current_user()
     tenant_id, classification = _security_context()
 
-    # Load current section content for context.
+    # Load current section content for context — and as the anchor's content
+    # of record. `section_read` separates "the section is empty" from "the
+    # read failed": only a section actually READ can carry an exact anchor.
     current_content = ""
+    section_read = False
     try:
         conn = _conn()
         cur = conn.execute(
@@ -4646,10 +4649,19 @@ def api_section_suggest(section_id: str):
         )
         row = cur.fetchone()
         if row:
-            current_content = row[0] if isinstance(row, (list, tuple)) else row["content"]
+            current_content = (row[0] if isinstance(row, (list, tuple)) else row["content"]) or ""
+            section_read = True
         conn.close()
     except Exception:
         pass
+
+    # dwr-anchor-03: a crowdsourced proposal replaces the WHOLE section, so its
+    # anchor is the whole section — exact, over the content just read. A
+    # section that could not be read gets no span: the basis is recorded from
+    # what was measured, never assumed.
+    from tools.document_intelligence.suggestion_store import whole_section_anchor
+    anchor = (whole_section_anchor(section_id, current_content) if section_read
+              else {"anchor_section_id": section_id, "anchor_basis": "unanchored"})
 
     suggestion_id = create_suggestion(
         section_id=section_id,
@@ -4660,6 +4672,8 @@ def api_section_suggest(section_id: str):
         rationale=rationale or f"User suggestion from {user}",
         tenant_id=tenant_id,
         classification=classification,
+        origin_kind="crowdsource",
+        **anchor,
     )
 
     return jsonify({

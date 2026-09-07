@@ -240,6 +240,13 @@ def draft_redline(finding_id: str, conn=None) -> RedlineResult:
             ),
             tenant_id=finding.get("tenant_id") or "",
             classification=finding.get("classification") or "CUI",
+            # dwr-anchor-03: the basis is RECORDED, never inferred. This
+            # drafter is handed an entity label, not a span, so what it writes
+            # is honestly unanchored; dwr-anchor-04 hands it the sentence and
+            # the offsets, and only then may it claim `exact`.
+            origin_kind="docmod_redline",
+            anchor_basis="unanchored",
+            anchor_text=old_text or None,
         )
 
         # ── append-only state row: open -> redline_drafted ──────────────────
