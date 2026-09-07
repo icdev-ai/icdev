@@ -13,7 +13,7 @@ from pathlib import Path
 
 from tools.logging.icdev_logger import get_logger
 
-from ..base_pack import CandidateEntity, ChunkRef, DomainPack, Replacement, Verdict
+from ..base_pack import CandidateEntity, ChunkRef, DomainPack, Replacement, Verdict, match_span
 
 logger = get_logger(__name__)
 
@@ -62,6 +62,7 @@ class CryptoProtocolsPack(DomainPack):
                 if key in seen:
                     continue
                 seen.add(key)
+                span_start, span_end = match_span(m)
                 start = max(0, m.start() - 60)
                 out.append(CandidateEntity(
                     label=label,
@@ -71,6 +72,8 @@ class CryptoProtocolsPack(DomainPack):
                     raw_match=label,
                     context=text[start:m.end() + 60].strip(),
                     attributes={"rule_id": rule["id"]},
+                    span_start=span_start,
+                    span_end=span_end,
                 ))
         return out
 

@@ -21,7 +21,7 @@ from pathlib import Path
 from tools.logging.icdev_logger import get_logger
 
 from .. import temporal
-from ..base_pack import CandidateEntity, ChunkRef, DomainPack, Replacement, Verdict
+from ..base_pack import CandidateEntity, ChunkRef, DomainPack, Replacement, Verdict, match_span
 
 logger = get_logger(__name__)
 
@@ -102,12 +102,14 @@ class PolicyRefsPack(DomainPack):
                     continue
                 seen.add(key)
                 rule_spans.append((m.start(), m.end()))
+                span_start, span_end = match_span(m)
                 start = max(0, m.start() - 60)
                 out.append(CandidateEntity(
                     label=label, entity_type="standard", pack_id=self.pack_id,
                     chunk_ref=chunk_ref, raw_match=label,
                     context=text[start:m.end() + 60].strip(),
                     attributes={"rule_id": rule["id"]},
+                    span_start=span_start, span_end=span_end,
                 ))
         # Additive proactive temporal entities for rules carrying date fields —
         # disjoint from the supersession entities above (dateless rules add none).
@@ -128,12 +130,14 @@ class PolicyRefsPack(DomainPack):
             if dkey in seen_dyn:
                 continue
             seen_dyn.add(dkey)
+            span_start, span_end = match_span(m)
             start = max(0, m.start() - 60)
             out.append(CandidateEntity(
                 label=m.group(0).strip(), entity_type="standard", pack_id=self.pack_id,
                 chunk_ref=chunk_ref, raw_match=m.group(0).strip(),
                 context=text[start:m.end() + 60].strip(),
                 attributes={"nist_pub_id": pub_id, "cited_revision": cited},
+                span_start=span_start, span_end=span_end,
             ))
         return out
 

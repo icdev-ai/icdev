@@ -1,0 +1,2 @@
+# dwr-anchor-01 -- packs keep chunk-local span_start/span_end; chunk_text[start:end] == raw_match per pack.
+tests/docmod/test_pack_spans.py
