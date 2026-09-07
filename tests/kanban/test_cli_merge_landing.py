@@ -43,7 +43,7 @@ class _FakeWatcher:
     """Stands in for PRWatcher, exposing only what land.py reuses."""
 
     def __init__(self, state, *, config=None, merge_ok=True, merged_after=True,
-                 file_map=None, default_branch="main"):
+                 file_map=None, default_branch="main", unmergeable=()):
         self.config = {"auto_merge_enabled": True,
                        "auto_merge_require_approval": False}
         self.config.update(config or {})
@@ -51,6 +51,10 @@ class _FakeWatcher:
         self._merge_ok = merge_ok
         self._merged_after = merged_after
         self._file_map = file_map if file_map is not None else {PR: {"a.py"}}
+        # urls the forge would refuse right now (draft / CONFLICTING). The
+        # tie-break drops these, so a candidate is never held behind a queue
+        # position that will never come free.
+        self._unmergeable = set(unmergeable)
         self._branch = default_branch
         self.merge_calls: list = []
 
@@ -64,9 +68,12 @@ class _FakeWatcher:
     def _default_branch(self):
         return self._branch
 
-    def _auto_merge(self, pr_url, state=None):
+    def _auto_merge(self, pr_url, state=None, **_kw):
         # `state` is kpr-watch-04: the shared chokepoint takes the PR record
-        # so it can refuse a hold label for both callers.
+        # so it can refuse a hold label for both callers. `**_kw` is
+        # mfx-mrg-04: land.py also threads the protected-path override
+        # (`protected_ok` / `override_reason` / `task_id`), which defaults off
+        # and is asserted on its own in tests/kanban/test_protected_merge_override.py.
         self.merge_calls.append(pr_url)
         return self._merge_ok
 
@@ -74,6 +81,17 @@ class _FakeWatcher:
         # (kpr-rvfy-07) -- optional on the real watcher, so a double that
         # hard-codes the old arity is the only thing that breaks.
         return self._file_map
+
+    def _open_pr_index(self, repo=None):
+        # What land.py reads since the tie-break was wired in: the SAME gh call
+        # carries `mergeable`/`draft` beside the file list.
+        return {
+            url: {"files": files,
+                  "mergeable": "CONFLICTING" if url in self._unmergeable
+                               else "MERGEABLE",
+                  "draft": False}
+            for url, files in self._file_map.items()
+        }
 
     def _sibling_conflicts(self, url, file_map):
         return prw.PRWatcher._sibling_conflicts(self, url, file_map)
@@ -194,7 +212,10 @@ def test_requires_approval_when_configured(one_pr_task, gate_passes):
 
 
 def test_holds_on_sibling_file_conflict_when_configured(one_pr_task, gate_passes):
-    other = "https://github.com/icdev-ai/ICDev/pull/9999"
+    # LOWER-numbered, so the candidate LOSES the tie-break and is held. The
+    # sibling used to be #9999 and the hold was unconditional; now the number
+    # decides, so the fixture has to say which side of the queue it is on.
+    other = "https://github.com/icdev-ai/ICDev/pull/999"
     verdict, w = _land(
         _state(),
         config={"hold_on_sibling_conflict": True},
@@ -221,6 +242,89 @@ def test_sibling_check_is_skipped_when_not_configured(one_pr_task, gate_passes):
         file_map={PR: {"tools/kanban/cli.py"}, other: {"tools/kanban/cli.py"}})
     assert verdict["merged"] is True
 
+
+# ── the tie-break: half the rule this door was missing (mfx-mrg-04) ─────────
+#
+# `hold_on_sibling_conflict` SERIALISES merges over a shared source file — merge
+# one, let the rest rebase. Sharing is SYMMETRIC, so a door that holds every
+# sibling is not serialising, it is stalling: `_wins_sibling_tiebreak`'s own
+# docstring records 14 AGOV PRs and a board at "awaiting merge" with zero active
+# tasks. `pr_watcher` consults it. This module reused `_sibling_conflicts` and
+# not the function that RESOLVES what it reports, so the watcher would merge the
+# lowest-numbered sibling while the door refused the very same PR.
+# Measured 2026-09-06 on #2143.
+
+
+def test_lowest_numbered_sibling_wins_the_tiebreak_and_merges(
+        one_pr_task, gate_passes):
+    """The candidate is #1234 against #9999 — it is first in the queue."""
+    higher = "https://github.com/icdev-ai/ICDev/pull/9999"
+    verdict, w = _land(
+        _state(),
+        config={"hold_on_sibling_conflict": True},
+        file_map={PR: {"tools/kanban/cli.py"},
+                  higher: {"tools/kanban/cli.py"}})
+    assert verdict["merged"] is True, verdict.get("reason")
+    assert w.merge_calls == [PR]
+    won = [c for c in verdict["checks"] if c["name"] == "no_sibling_conflict"]
+    assert won and won[0]["ok"] is True
+    assert "tie-break" in (won[0].get("detail") or "")
+
+
+def test_a_sibling_the_forge_would_refuse_is_dropped_from_the_tiebreak(
+        one_pr_task, gate_passes):
+    """Waiting behind a CONFLICTING PR is a queue position that never frees.
+
+    The blocker is LOWER-numbered, so without the `blocked` input the candidate
+    loses and waits forever.
+    """
+    blocker = "https://github.com/icdev-ai/ICDev/pull/999"
+    verdict, w = _land(
+        _state(),
+        config={"hold_on_sibling_conflict": True},
+        file_map={PR: {"tools/kanban/cli.py"},
+                  blocker: {"tools/kanban/cli.py"}},
+        unmergeable={blocker})
+    assert verdict["merged"] is True, verdict.get("reason")
+    assert w.merge_calls == [PR]
+
+
+def test_the_tiebreak_is_the_watchers_own_function_not_a_second_copy(
+        one_pr_task, gate_passes):
+    """Two implementations of one policy is the defect being closed here.
+
+    Asserted STRUCTURALLY: land.py must call `prw._wins_sibling_tiebreak`, so a
+    future edit that re-derives "lowest number wins" locally fails even though
+    it would behave identically today.
+    """
+    import ast
+    import pathlib
+    src = (pathlib.Path(land.__file__)).read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    called = {
+        node.func.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
+    assert "_wins_sibling_tiebreak" in called
+    assert "_pr_can_merge" in called
+
+
+def test_only_one_pr_in_a_set_can_win(one_pr_task, gate_passes):
+    """The invariant the guard exists for: never two at once.
+
+    Same file, three PRs, none blocked — the candidate holds whenever anything
+    lower is open, so at most one member of the set can be first.
+    """
+    lower = "https://github.com/icdev-ai/ICDev/pull/2"
+    higher = "https://github.com/icdev-ai/ICDev/pull/9999"
+    verdict, w = _land(
+        _state(),
+        config={"hold_on_sibling_conflict": True},
+        file_map={PR: {"tools/kanban/cli.py"},
+                  lower: {"tools/kanban/cli.py"},
+                  higher: {"tools/kanban/cli.py"}})
+    assert verdict["ok"] is False and w.merge_calls == []
 
 # ── the happy path, and the confirmation that makes it honest ───────────────
 

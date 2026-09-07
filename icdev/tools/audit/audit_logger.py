@@ -447,6 +447,21 @@ VALID_EVENT_TYPES = (
     # precedent rather than one type per adapter. Written by
     # tools/security/stub_gate.py::record_stub_decision.
     "zt.stub_gate",
+    # A HUMAN landing a protected-path PR through the DOOR (mfx-mrg-04).
+    # `pr_watcher` refuses to merge a PR that changes the merge ladder itself,
+    # and the refusal is correct — but until now the ONLY way past it was
+    # ICDEV_GH_PR_MERGE_GUARD=0 plus a raw `gh pr merge`, which stands the guard
+    # down for every kanban PR in that shell and runs none of land.py's thirteen
+    # checks. `--protected-ok --reason` overrides that ONE rung and nothing else;
+    # this is the row that records who did it, which paths the PR actually hit
+    # and why. Written by `pr_watcher.PRWatcher._audit_protected_override` with
+    # `raise_on_error=True` BEFORE the merge — no row, no merge, because an
+    # unaudited override of a self-protection control is indistinguishable from
+    # the defect the control guards against. Actions are namespaced in `action`
+    # (protected_merge_override.intent, .merged, .not_merged) following the
+    # migration_canvas precedent rather than three types.
+    # Constraint rebuilt by migration 20260906120818.
+    "kanban.protected_merge_override",
     # PRE-EXISTING DRIFT, found while rebuilding the CHECK for zt.stub_gate
     # (rmf-zt-01). The DEPLOYED constraint admitted these two and this constant
     # did not — and unlike every other caller here, tools/compliance/
@@ -458,8 +473,16 @@ VALID_EVENT_TYPES = (
     # copy, not the constraint. (Zero rows today only means those modules have
     # not run on this database; converting them onto log_event is a separate
     # card, and adding the names here does not make that unnecessary.)
-    "cato_evidence_collected",
-    "oscal_generated",
+    # BOTH NAMES ARE ALREADY IN THE TUPLE, added above by rmf-cyc-01 in the same
+    # week and for the same reason. Two cards independently reached the same
+    # finding and each appended, so the tuple carried each name TWICE — which
+    # `event_type_check_sql` duplicated into the CHECK's IN list, and which
+    # `tests/test_audit_logger.py::test_event_types_are_unique` has been failing
+    # on ever since (an UNGATED file, so CI never saw it). The literals are
+    # removed here rather than above; the comment stays, because the fact it
+    # records — the DEPLOYED constraint admitted these before the constant did,
+    # and three writers reach them with a RAW INSERT — is still true and is
+    # still the reason the names may not be dropped altogether.
 )
 
 EVENT_TYPE_CONSTRAINT = "audit_trail_event_type_check"

@@ -2542,6 +2542,28 @@ python tools/kanban/cli.py --set-status <task-id> done --merge --json      # Mer
 # every unknown, and it never reads KANBAN_REQUIRE_MERGE_FOR_DONE — that switch disables the
 # local git heuristic, not a landing check. One task id per invocation; not combinable with
 # --force-done. Marking done records the same actor='manual' audit transition --force-done does.
+
+# Kanban — LAND a PROTECTED-PATH PR through the door, with an audited reason (mfx-mrg-04)
+python tools/kanban/cli.py --set-status <task-id> done --merge --protected-ok --reason '<why>'
+python tools/kanban/cli.py --set-status <task-id> done --merge --protected-ok --reason '<why>' --dry-run
+# pr_watcher REFUSES to merge a PR touching `protected_paths` — the guard that stops the merge
+# ladder auto-merging a change to ITSELF (kpr-watch-05). That refusal is correct and stays; the
+# problem was the only available override. Measured 2026-09-05/06 the sole way through was
+# ICDEV_GH_PR_MERGE_GUARD=0 plus a raw `gh pr merge`, which stands the PreToolUse guard down for
+# EVERY kanban PR in that shell and runs NONE of the thirteen checks above — including ci_green,
+# which is stricter than branch protection (it refuses a failed check, a check STILL RUNNING, and
+# an EMPTY rollup). --protected-ok overrides EXACTLY ONE rung, `_refuse_protected` at the top of
+# pr_watcher._auto_merge, and nothing else: every check above still runs, the hold label still
+# refuses, and 'done' is still written only once GitHub reports MERGED.
+# --reason is REQUIRED and non-empty (a usage error, never a default string), and the override is
+# AUDITED BEFORE THE MERGE, fail-closed — event type `kanban.protected_merge_override`, written
+# with raise_on_error=True, naming the paths the PR ACTUALLY hit (re-derived from the open-PR
+# listing at the moment of the decision) and the reason VERBATIM. No row, no merge. Run
+# `python tools/db/migrate.py --up` on a PG board first: an unmigrated CHECK refuses the event
+# type and therefore refuses every override, which is the correct reading rather than an obstacle.
+# `protected_ok` is keyword-only, defaults False and is threaded only from this CLI through
+# tools/kanban/land.py — the poll loop and the unlinked sweep can never set it, pinned by an AST
+# test in tests/kanban/test_protected_merge_override.py.
 # Kanban — is this task id ALREADY on main? task -> main, not task -> PR (trust-disc-05)
 python -m tools.kanban.landed_check --task <task-id> --json
 python -m tools.kanban.landed_check --all --json              # every non-terminal task
