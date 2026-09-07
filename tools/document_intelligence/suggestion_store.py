@@ -10,6 +10,37 @@ Public API:
   get_pending_suggestions(collection_id=None, canvas_source=None) -> list[dict]
   get_suggestion(suggestion_id) -> dict | None
   decide_suggestion(suggestion_id, decision, decided_by, note='') -> bool
+  record_application(suggestion_id, applied_text, applied_by) -> bool
+  resolve_anchor(section_text, anchor_text, anchor_start=, anchor_end=) -> dict
+  whole_section_anchor(section_id, content) -> dict
+
+THE ANCHOR (dwr-anchor-03). A suggestion is an ADDRESSABLE change: it names the
+section it lives in and the verbatim span it replaces, and it says HOW it knows.
+
+  anchor_section_id  the section of record. NOT NULL for anything appliable.
+  anchor_start/end   offsets into that section's content (chunk-local, the
+                     claim_lifecycle convention).
+  anchor_text        the VERBATIM slice. ``content[start:end] == anchor_text``
+                     is the invariant; ``create_suggestion`` checks it against
+                     ``current_content`` at write time and the accept path
+                     re-derives it against the live section (dwr-anchor-05).
+  anchor_basis       RECORDED by the writer, never inferred as ``exact``:
+                       exact       the span came from the match that found it
+                       relocated   recovered post-hoc by ``str.find`` — a guess,
+                                   and only admitted when the text occurs ONCE
+                       unanchored  no span, or an ambiguous one. Never applied.
+                     This mirrors ``doc_modernization.claim_extractor.anchor``,
+                     which REJECTS a non-verbatim candidate instead of guessing.
+  origin_kind        docmod_redline | section_draft | crowdsource | human_edit.
+                     NULL = the writer did not say.
+  applied_text/by    what was ACTUALLY written on edit-then-accept. The AI draft
+                     (``suggested_content``) passed the TRUST gates; a human
+                     rewrite did not, so the two are stored apart and provenance
+                     says which shipped.
+
+CONTRACT FOR AN ANCHORED WRITE: when ``anchor_basis`` is ``exact`` or
+``relocated``, ``current_content`` MUST be the section's content of record —
+that is the text the offsets index — not a fragment of it.
 """
 from __future__ import annotations
 
@@ -20,6 +51,23 @@ from tools.db.storage import get_connection
 
 _VALID_DECISIONS = ("accepted", "rejected")
 _VALID_STATUSES = ("pending", "accepted", "rejected", "superseded")
+
+ANCHOR_BASES = ("exact", "relocated", "unanchored")
+ORIGIN_KINDS = ("docmod_redline", "section_draft", "crowdsource", "human_edit")
+
+# Declaration order of the columns dwr-anchor-03 added. The migration that
+# reaches an EXISTING table (20260907213944) carries the same tuple, pinned by
+# test; `_ensure_tables` below carries them for a table created after it landed.
+ANCHOR_COLUMNS = (
+    ("anchor_section_id", "TEXT"),
+    ("anchor_start", "INTEGER"),
+    ("anchor_end", "INTEGER"),
+    ("anchor_text", "TEXT"),
+    ("anchor_basis", "TEXT"),
+    ("origin_kind", "TEXT"),
+    ("applied_text", "TEXT"),
+    ("applied_by", "TEXT"),
+)
 
 
 # ── Schema ────────────────────────────────────────────────────────────────────
@@ -41,7 +89,15 @@ def _ensure_tables(conn) -> None:
             created_at          TEXT    NOT NULL,
             updated_at          TEXT,
             tenant_id           TEXT,
-            classification      TEXT    NOT NULL DEFAULT 'CUI'
+            classification      TEXT    NOT NULL DEFAULT 'CUI',
+            anchor_section_id   TEXT,
+            anchor_start        INTEGER,
+            anchor_end          INTEGER,
+            anchor_text         TEXT,
+            anchor_basis        TEXT,
+            origin_kind         TEXT,
+            applied_text        TEXT,
+            applied_by          TEXT
         )
         """
     )
@@ -62,6 +118,135 @@ def _ensure_tables(conn) -> None:
     conn.commit()
 
 
+# ── Anchor resolution ─────────────────────────────────────────────────────────
+
+def resolve_anchor(
+    section_text: str,
+    anchor_text: str,
+    *,
+    anchor_start: int | None = None,
+    anchor_end: int | None = None,
+) -> dict:
+    """Decide what basis a span can honestly claim against ``section_text``.
+
+    Returns ``{"anchor_basis", "anchor_start", "anchor_end", "anchor_text",
+    "reason"}``.
+
+      * offsets supplied AND ``section_text[start:end] == anchor_text``
+                                                    -> ``exact``
+      * otherwise, ``anchor_text`` occurs exactly ONCE -> ``relocated`` at the
+        offsets ``str.find`` recovered. Honest about being a guess.
+      * not found, found MORE THAN ONCE, or nothing to search for
+                                                    -> ``unanchored``, offsets None.
+        An ambiguous match is never resolved by picking one; that is the
+        ``claim_extractor.anchor`` rule (reject rather than guess).
+
+    Pure — reads nothing, writes nothing.
+    """
+    section_text = section_text or ""
+    anchor_text = "" if anchor_text is None else anchor_text
+
+    if anchor_start is not None and anchor_end is not None:
+        try:
+            s, e = int(anchor_start), int(anchor_end)
+        except (TypeError, ValueError):
+            s = e = -1
+        if 0 <= s <= e <= len(section_text) and section_text[s:e] == anchor_text:
+            return {"anchor_basis": "exact", "anchor_start": s, "anchor_end": e,
+                    "anchor_text": anchor_text, "reason": "offsets_verified"}
+
+    if not anchor_text or not section_text:
+        return {"anchor_basis": "unanchored", "anchor_start": None,
+                "anchor_end": None, "anchor_text": anchor_text or None,
+                "reason": "nothing_to_search"}
+
+    occurrences = section_text.count(anchor_text)
+    if occurrences == 1:
+        idx = section_text.find(anchor_text)
+        return {"anchor_basis": "relocated", "anchor_start": idx,
+                "anchor_end": idx + len(anchor_text), "anchor_text": anchor_text,
+                "reason": "found_once"}
+    if occurrences == 0:
+        reason = "not_found"
+    else:
+        reason = f"ambiguous:{occurrences}"
+    return {"anchor_basis": "unanchored", "anchor_start": None,
+            "anchor_end": None, "anchor_text": anchor_text, "reason": reason}
+
+
+def whole_section_anchor(section_id: str, content: str) -> dict:
+    """An ``exact`` anchor over a whole section — the shape a full-section
+    replacement (crowdsource proposal, canvas-triggered section draft) writes.
+    ``content`` must be the section's content of record."""
+    content = content or ""
+    return {"anchor_section_id": section_id, "anchor_start": 0,
+            "anchor_end": len(content), "anchor_text": content,
+            "anchor_basis": "exact"}
+
+
+def validate_anchor(
+    *,
+    anchor_basis: str,
+    anchor_section_id: str | None,
+    anchor_start: int | None,
+    anchor_end: int | None,
+    anchor_text: str | None,
+    current_content: str | None,
+) -> None:
+    """Raise ``ValueError`` unless the anchor fields are mutually consistent.
+
+    ``unanchored`` carries NO offsets — a writer holding a span has an anchor
+    and must say which basis it has. ``anchor_text`` may still be recorded on
+    an unanchored row: it is the text the writer was looking for.
+
+    ``exact`` / ``relocated`` need a section, integer offsets with
+    ``0 <= start <= end``, a text whose length is the span's, and — the
+    invariant — ``current_content[start:end] == anchor_text``. ``relocated``
+    additionally needs a non-empty text: ``str.find("")`` is 0 and means nothing.
+    """
+    if anchor_basis not in ANCHOR_BASES:
+        raise ValueError(f"anchor_basis must be one of {ANCHOR_BASES}, got {anchor_basis!r}")
+
+    if anchor_basis == "unanchored":
+        if anchor_start is not None or anchor_end is not None:
+            raise ValueError("an unanchored suggestion carries no offsets; "
+                             "record the basis the span actually has")
+        return
+
+    if not anchor_section_id:
+        raise ValueError(f"a {anchor_basis} anchor needs anchor_section_id")
+    if not isinstance(anchor_start, int) or not isinstance(anchor_end, int) \
+            or isinstance(anchor_start, bool) or isinstance(anchor_end, bool):
+        raise ValueError(f"a {anchor_basis} anchor needs integer anchor_start/anchor_end")
+    if anchor_start < 0 or anchor_end < anchor_start:
+        raise ValueError(f"anchor offsets must satisfy 0 <= start <= end, got {anchor_start}:{anchor_end}")
+    if not isinstance(anchor_text, str):
+        raise ValueError(f"a {anchor_basis} anchor needs anchor_text")
+    if anchor_basis == "relocated" and not anchor_text:
+        raise ValueError("a relocated anchor needs a non-empty anchor_text")
+    if len(anchor_text) != anchor_end - anchor_start:
+        raise ValueError(f"anchor_text length {len(anchor_text)} does not match span "
+                         f"{anchor_start}:{anchor_end}")
+    if current_content is None:
+        raise ValueError(f"a {anchor_basis} anchor needs current_content (the section's "
+                         "content of record) to verify against")
+    if anchor_end > len(current_content) or current_content[anchor_start:anchor_end] != anchor_text:
+        raise ValueError("anchor_text is not the verbatim slice "
+                         f"current_content[{anchor_start}:{anchor_end}]")
+
+
+def _validate_origin_kind(origin_kind: str | None) -> None:
+    if origin_kind is not None and origin_kind not in ORIGIN_KINDS:
+        raise ValueError(f"origin_kind must be one of {ORIGIN_KINDS} or None, got {origin_kind!r}")
+
+
+def _validate_applied(applied_text: str | None, applied_by: str | None) -> None:
+    # Half an application record is a claim with no author, or an author with
+    # no claim. Both halves or neither.
+    if (applied_text is None) != (applied_by is None or applied_by == ""):
+        raise ValueError("applied_text and applied_by are recorded together or not at all")
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def create_suggestion(
@@ -76,8 +261,29 @@ def create_suggestion(
     rationale: str = "",
     tenant_id: str = "",
     classification: str = "CUI",
+    anchor_section_id: str | None = None,
+    anchor_start: int | None = None,
+    anchor_end: int | None = None,
+    anchor_text: str | None = None,
+    anchor_basis: str = "unanchored",
+    origin_kind: str | None = None,
+    applied_text: str | None = None,
+    applied_by: str | None = None,
 ) -> str:
-    """Insert a new pending suggestion and return its suggestion_id."""
+    """Insert a new pending suggestion and return its suggestion_id.
+
+    Raises ``ValueError`` when the anchor fields are inconsistent (see
+    ``validate_anchor``), ``origin_kind`` is not a declared kind, or an
+    application record is half-supplied. Nothing is written on a refusal.
+    """
+    validate_anchor(
+        anchor_basis=anchor_basis, anchor_section_id=anchor_section_id,
+        anchor_start=anchor_start, anchor_end=anchor_end, anchor_text=anchor_text,
+        current_content=current_content,
+    )
+    _validate_origin_kind(origin_kind)
+    _validate_applied(applied_text, applied_by)
+
     suggestion_id = f"sug_{uuid.uuid4().hex[:16]}"
     now = _now()
     with get_connection() as conn:
@@ -88,14 +294,19 @@ def create_suggestion(
                 (suggestion_id, section_id, doc_id, collection_id,
                  trigger_event_id, canvas_source, suggested_content,
                  current_content, rationale, status,
-                 created_at, updated_at, tenant_id, classification)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'pending',%s,%s,%s,%s)
+                 created_at, updated_at, tenant_id, classification,
+                 anchor_section_id, anchor_start, anchor_end, anchor_text,
+                 anchor_basis, origin_kind, applied_text, applied_by)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'pending',%s,%s,%s,%s,
+                    %s,%s,%s,%s,%s,%s,%s,%s)
             """,
             (
                 suggestion_id, section_id, doc_id, collection_id,
                 trigger_event_id, canvas_source, suggested_content,
                 current_content, rationale,
                 now, now, tenant_id, classification,
+                anchor_section_id or None, anchor_start, anchor_end, anchor_text,
+                anchor_basis, origin_kind, applied_text, applied_by or None,
             ),
         )
         conn.commit()
@@ -231,6 +442,39 @@ def decide_suggestion(
         )
         conn.commit()
 
+    return True
+
+
+def record_application(suggestion_id: str, applied_text: str, applied_by: str) -> bool:
+    """Record what was ACTUALLY written to the document for an ACCEPTED suggestion.
+
+    Called by the accept path AFTER the decision row and its audit row stand and
+    the splice has been made — never before, so the ordering invariant
+    (decision -> audit -> apply) is untouched. ``applied_text`` is stored beside
+    ``suggested_content``, never over it: the AI draft passed the TRUST gates
+    and a human rewrite did not, and provenance must say which one shipped.
+
+    Returns False when the row is missing or is not ``accepted``; raises
+    ``ValueError`` on a half-supplied record.
+    """
+    _validate_applied(applied_text, applied_by)
+    if applied_text is None:
+        raise ValueError("record_application needs applied_text and applied_by")
+
+    with get_connection() as conn:
+        _ensure_tables(conn)
+        row = conn.execute(
+            "SELECT status FROM dic_suggestions WHERE suggestion_id = %s",
+            (suggestion_id,),
+        ).fetchone()
+        if row is None or _col(row, "status", 0) != "accepted":
+            return False
+        conn.execute(
+            "UPDATE dic_suggestions SET applied_text=%s, applied_by=%s, updated_at=%s "
+            "WHERE suggestion_id=%s",
+            (applied_text, applied_by, _now(), suggestion_id),
+        )
+        conn.commit()
     return True
 
 
