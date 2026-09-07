@@ -10103,3 +10103,64 @@ projects:
   - {key: az, title: "AZURE SIBLING", priority: low}
   - {key: gcp, title: "GCP SIBLING", priority: low}
   - {key: oci, title: "OCI SIBLING", priority: low}
+- key: dwr
+  name: DWR — Document Workspace & Review
+  description: 'A Word-style two-pane authoring and review surface for AI-assisted
+    content creation, drift detection and update. The document on the left; proposed
+    changes and threaded comments in a right-hand rail anchored to the exact span
+    they touch; accept / reject / edit-and-accept without a page reload. Author-supplied
+    files and comments become first-class LATEST-FACT evidence the drafter must use,
+    ranked top while the disagreeing source is preserved and shown as a conflict rather
+    than deleted. The surface is a renderer over one new idea: an anchored,
+    individually-addressable change object. Measured on the live board 2026-09-07,
+    58 of 58 dic_suggestions carry an EMPTY section_id, so api_suggestion_accept
+    runs UPDATE dic_sections WHERE section_id matches the empty string — zero rows
+    — commits, writes
+    the decision and audit rows, and returns {"status":"accepted"}. Accepting an AI
+    redline is a silent no-op that reports success, and 0 recorded decisions is why
+    nobody has hit it. TRUST is unchanged throughout: deterministic pack verdicts,
+    no LLM deciding currency, citation_guard and placeholder_guard still gate, every
+    citation resolving to a real source id.
+
+    '
+  task_prefix: dwr-
+  default_open: true
+  briefs:
+  - 'anchor: an addressable change — persist the m.start()/m.end() every pack already
+    computes and discards, hand the drafter the REAL chunk slice instead of the bare
+    entity_label, and make api_suggestion_accept verify the anchor, splice the span,
+    and 409 on stale/unanchored instead of reporting success over zero rows —
+    dwr-anchor-01..06'
+  - 'sections: derive dic_sections at ingest so the 39 of 55 documents that have none
+    stop rendering an empty pane, and persist the verified / citation_report the
+    generator already computes and drops on the floor — dwr-sect-01/02'
+  - 'fidelity: stop os.unlink-ing the uploaded original (43 of 55 are already gone),
+    keep pdfplumber word geometry for a positioned-text layer, serve the originals-gone
+    corpus in a LABELLED degraded mode, and record the DIC ingest decision in
+    sandbox-coverage.md — dwr-fid-01..03'
+  - 'workspace: the two-pane page — server-side word-level difflib spans, ins/del at
+    anchors, right-rail change cards, edit-and-accept, no reload, no new CDN asset,
+    full 8-point page gate — dwr-ws-01..03'
+  - 'comments: threaded, anchored, resolvable — dic_section_annotations gains
+    parent_ann_id, anchor offsets, tenant_id and a REAL migration (it is runtime
+    CREATE TABLE IF NOT EXISTS today) — dwr-cmt-01/02'
+  - 'evidence: author uploads and promoted comments as a DECLARED source ranked top,
+    reaching the drafter through the existing governed cortex.resolve seam and the
+    DataBridge broker, with disagreement preserved; comments instruction-only until
+    explicitly promoted to an attributed SME assertion; redraft is a button a human
+    presses, bounded and audited — dwr-ev-01..03'
+  - 'collab: concurrent reviewers over the existing presence/lock/expected_hash
+    substrate plus a document-scoped cursor poll following D103; a second reviewer
+    deciding the same change gets 409, never a lost write — dwr-collab-01'
+  - 'word: native OOXML revisions out (w:ins / w:del / w:comment through the existing
+    gated exporter) and back in, reconciled against the change set — the largest and
+    least certain epic, scheduled last and the deliberate cut line — dwr-word-01/02'
+  epics:
+  - {key: anchor, title: "ANCHORED CHANGE OBJECT — and the silent-no-op accept fixed", priority: critical}
+  - {key: sect, title: "SECTIONS FOR INGESTED DOCUMENTS", priority: critical}
+  - {key: fid, title: "ORIGINAL RETENTION & POSITIONED-TEXT LAYER", priority: high}
+  - {key: ws, title: "THE TWO-PANE WORKSPACE", priority: critical}
+  - {key: cmt, title: "THREADED ANCHORED COMMENTS", priority: high}
+  - {key: ev, title: "AUTHOR CONTENT AS LATEST FACTS", priority: high}
+  - {key: collab, title: "CONCURRENT REVIEWERS", priority: medium}
+  - {key: word, title: "NATIVE WORD REVISIONS, BOTH DIRECTIONS", priority: low}
