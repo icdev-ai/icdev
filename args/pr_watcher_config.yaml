@@ -212,6 +212,17 @@ landed_check_on_poll: true
 #
 # Set superseded_close false to audit without closing. Set superseded_check
 # false to skip the merged listing entirely.
+#
+# ASKED ON BOTH PATHS (mfx-mrg-06). The linked poll asks it of every task it
+# services; the unlinked sweep asks it of every open PR the poll CANNOT see --
+# above all a PR opened after its task went terminal, which is what all
+# fifteen hand-closed duplicates of 2026-09-05/06 were
+# (docs/audits/mfx-mrg-05-superseded-population-survey.md). Same predicate,
+# same close, same `superseded_close` switch; on the sweep a fire is NEVER
+# merged even in report-only mode, and a fire with no task row is HELD and
+# audited once as `superseded_hold`, never closed. Surveyed over the whole
+# open population before arming: 3 PRs, 0 fires
+# (docs/audits/mfx-mrg-06-superseded-sweep-rung.md).
 superseded_check: true
 superseded_close: true
 

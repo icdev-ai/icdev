@@ -6,6 +6,7 @@ import { defineConfig, devices } from '@playwright/test';
 import path from 'path';
 import { logEnvironmentDiagnostics } from './globalSetup';
 import { resolveBaseUrl } from './tests/e2e/fixtures/base_url';
+import { webServerDatabaseEnv } from './tests/e2e/fixtures/e2e_database';
 
 // Root is always the directory that contains this config file — immune to cwd changes.
 const ROOT = __dirname;
@@ -31,6 +32,9 @@ const RUN_TAG = process.env.ICDEV_PW_RUN_TAG ? `-${process.env.ICDEV_PW_RUN_TAG}
 // run its own isolated server:
 //
 //   ICDEV_DASHBOARD_PORT=5090 ICDEV_PG_DATABASE=icdev_e2e npx playwright test
+//
+// That database override is honoured -- see `webServerDatabaseEnv` below.
+// It silently was not before qa-fail-6a87916931be3793.
 //
 // The variable is read by resolveBaseUrl() below; there is deliberately no
 // second binding for it here, so the port and the base URL cannot disagree.
@@ -184,14 +188,36 @@ const config = defineConfig({
       // suite's gap versus CI is real and still unexplained, but it is not the
       // backend, and it is not a reason to keep running on the fallback.
       //
-      // POINT LOCAL RUNS AT A THROWAWAY DATABASE. This env merges with
-      // process.env, so the database is selectable per run, and the suite
-      // writes fixtures — running it against the canonical `icdev` would leave
-      // them there. CI uses a disposable container for exactly this reason:
+      // POINT LOCAL RUNS AT A THROWAWAY DATABASE. The suite writes fixtures --
+      // running it against the canonical `icdev` leaves them there, and that is
+      // a live source of the E2E residue seen on this board. CI uses a
+      // disposable container for exactly this reason. Either form works:
       //
-      //   python tools/db/bootstrap_pg.py          # once, with the vars below
-      //   ICDEV_PG_DATABASE=icdev_e2e ICDEV_PG_DB=icdev_e2e \
-      //     npx playwright test
+      //   python tools/db/bootstrap_pg.py                      # once
+      //   ICDEV_PG_DATABASE=icdev_e2e npx playwright test
+      //   ICDEV_DATABASE_URL=postgresql://.../icdev_e2e npx playwright test
+      //
+      // THE FIRST FORM USED TO REDIRECT NOTHING (qa-fail-6a87916931be3793).
+      // `.env` sets `ICDEV_DATABASE_URL`, and every connection site in
+      // `tools/db/storage.py` reads the DSN FIRST -- the discrete
+      // `ICDEV_PG_DATABASE` is consulted only when no DSN is present. Measured
+      // 2026-09-05 with exactly those variables exported, `current_database()`
+      // answered `icdev`. The operator believed they were isolated and ran
+      // ~840 tests' worth of fixture writes into the canonical board.
+      //
+      // `webServerDatabaseEnv()` is what makes the documented command true: it
+      // clears the DSN (to an EMPTY STRING, which is present-but-falsy, so
+      // `load_dotenv(override=False)` cannot put `.env`'s DSN back) and lets
+      // the discrete name win. It hardcodes NO database, host or credential --
+      // the values are the operator's own -- and it returns {} when nothing was
+      // asked for, so a plain local run is unchanged.
+      //
+      // AND IT IS NO LONGER TAKEN ON TRUST: globalSetup asserts the server is
+      // actually on the requested database, MEASURED via `current_database()`
+      // through /api/health. That also closes the `reuseExistingServer` hole,
+      // where attaching to an already-running canonical dashboard ignored this
+      // env entirely and nothing said so.
+      ...webServerDatabaseEnv(),
       ICDEV_AAC_ENABLED: 'true',
       ICDEV_CUI_BANNER_ENABLED: 'true',
       ICDEV_MISSION_CANVAS_ENABLED: 'true',

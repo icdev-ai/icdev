@@ -55,6 +55,11 @@ inside the repo — not just the daemon's own file. A change to
 as a change to ``pr_watcher.py``, and watching one file would have missed most of
 today's merges. Reading ``sys.modules`` means the watch set is exactly the code
 the process actually loaded, with no list to maintain and no way for it to drift.
+Re-read on every check, not once at start: a module imported lazily on a later
+cycle is adopted into the baseline the first time the watcher sees it
+(``adopt_new_imports``), so a daemon that reaches most of its code only after
+start-up -- the genesis daemon imports every reflex on first dispatch -- still
+watches what it runs.
 
 SAFETY. The re-exec happens only between polls, never mid-work; only after a
 minimum uptime, so a half-written file cannot induce a restart loop; and only
@@ -132,6 +137,19 @@ def changed_files(before: Dict[str, float], after: Dict[str, float]) -> list:
     A file that DISAPPEARED is likewise not reported: an import that vanished
     cannot be the code this process is running, and a file deleted mid-write
     would otherwise trigger a restart that fixes nothing.
+
+    BUT A LAZY IMPORT MUST NOT STAY INVISIBLE EITHER (autonomy-id-06). "Not a
+    change" and "not watched" are different verdicts, and for a year this
+    function delivered the second while claiming the first: a path absent from
+    `before` was skipped here on EVERY cycle, because nothing ever put it into
+    the baseline. The genesis daemon imports each reflex on its first dispatch,
+    so no reflex was ever in its watch set -- measured 2026-09-06, #2146 fixed
+    tools/genesis/reflexes/kanban.py, the scheduler (which imports that reflex
+    at startup) re-exec'd two minutes later, and the daemon ran the pre-fix
+    reflex for the rest of the day until a human restarted it.
+    `adopt_new_imports` is the other half: a path new in `after` is recorded
+    into the baseline at its current mtime, so it is not a change NOW and the
+    NEXT rewrite of it is seen. `restart_if_code_changed` calls it.
     """
     out = []
     for path, mtime in after.items():
@@ -139,6 +157,46 @@ def changed_files(before: Dict[str, float], after: Dict[str, float]) -> list:
         if prior is not None and mtime != prior:
             out.append(path)
     return sorted(out)
+
+
+def adopt_new_imports(baseline: Dict[str, float],
+                      current: Optional[Dict[str, float]] = None,
+                      root: Optional[Path] = None) -> list:
+    """Bring every module imported SINCE the baseline into the watch set.
+
+    Updates `baseline` IN PLACE and returns the adopted paths. A file is
+    adopted at the mtime it has NOW, which makes it "unchanged" on this cycle
+    (the same file that was always on disk, loaded late -- the lazy-import rule
+    `changed_files` keeps) and watched from the next one on.
+
+    The watch set is thereby what the process EXECUTES, not what it happened to
+    have imported by the end of __init__. Nothing here is daemon-specific: a
+    reflex's own lazily reached imports (`tools/kanban/worktree_manager.py`
+    under the kanban reflex, say) are adopted on the same terms as the reflex.
+
+    ORDER IS LOAD-BEARING. Call this BEFORE `pull_if_safe`, never after: a
+    module imported during the cycle holds the PRE-pull code, so if the pull ran
+    first the adopted mtime would be the post-pull one and the change the pull
+    just delivered would be recorded as the baseline -- the exact defect, one
+    cycle narrower. The residual window is named rather than hidden: a pull
+    made by SOMEBODY ELSE on the same checkout (the scheduler shares it with
+    the daemon) between a module's first import and the end of that cycle is
+    adopted at the post-pull mtime, and that one fix is seen only on the file's
+    next change. It is one cycle per module, once per process, against the
+    previous behaviour of never.
+    """
+    current = current if current is not None else snapshot(root)
+    adopted = []
+    for path, mtime in current.items():
+        if path not in baseline:
+            baseline[path] = mtime
+            adopted.append(path)
+    adopted.sort()
+    if adopted:
+        logger.info(
+            "code_reload: now watching %d lazily imported file(s), e.g. %s",
+            len(adopted), ", ".join(Path(p).name for p in adopted[:3]))
+    return adopted
 
 
 #: Never pull more often than this. A fetch is cheap but not free, and a daemon
@@ -316,11 +374,18 @@ def restart_if_code_changed(
 ) -> list:
     """Re-exec this process when its own code has changed on disk.
 
+    `baseline` is UPDATED IN PLACE: every module imported since it was taken
+    joins it at its current mtime (autonomy-id-06), so the watch set tracks what
+    the process executes rather than what it had loaded at start.
+
     Returns the changed files when it declines to restart, so a caller can log
     them. Does not return at all when it re-execs.
     """
     if not enabled:
         return []
+    # Adopt what this cycle imported for the first time BEFORE the pull, so the
+    # adopted mtime is the one the loaded code has -- see adopt_new_imports.
+    adopt_new_imports(baseline, root=root)
     if pull:
         # Fetch before looking at mtimes: a merge on the forge does not touch
         # disk, so without this the watcher can only ever see changes somebody

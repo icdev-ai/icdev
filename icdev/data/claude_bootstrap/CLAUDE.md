@@ -257,6 +257,29 @@ python -c "from tools.coordination.service_identity import is_inherited_identity
 # child's lease reads as the scheduler's; and DaemonBase.run_forever and
 # pr_watcher heartbeat once per loop the same way, unpumped.
 
+# A daemon's reload watch set is what it EXECUTES, not what it had imported at start (autonomy-id-06)
+python -m pytest tests/genesis/test_code_reload.py -q
+grep "lazily imported" .logs/tools.genesis.code_reload.ndjson | tail -3   # a reflex joining the watch set
+python tools/awareness/restore_acts.py --plan --json                        # a daemon still `stale` on a reflex fix = adoption did not happen
+# `DaemonBase.run_forever` took `code_reload.snapshot()` ONCE at start, every
+# genesis reflex is imported lazily on its first dispatch, and `changed_files`
+# compares only paths in BOTH snapshots (by design -- counting a new path as a
+# change was the scheduler's once-a-minute restart loop). Nothing ever ADDED a
+# path to the baseline, so "not a change" was silently "not watched" for the
+# life of the process. MEASURED 2026-09-06: 30 modules in the daemon's start-up
+# watch set, 0 of its 101 reflexes; #2146's fix to reflexes/kanban.py re-exec'd
+# the scheduler (imports that reflex at startup) two minutes after merge while
+# the daemon ran the pre-fix reflex until a human applied restart_stale_daemon.
+# `adopt_new_imports` records a path new in the current snapshot into the
+# baseline AT ITS CURRENT MTIME -- still not a change, so a first import never
+# restarts -- and the next rewrite is seen. 134 files join on dispatch (101
+# reflexes + 33 transitive imports); the old rule reported 0 changes across them.
+# It runs BEFORE `pull_if_safe`, on purpose: adopting after the pull records the
+# post-pull mtime and buries the change the pull delivered. Residual, named: a
+# pull by SOMEBODY ELSE on the shared checkout between a module's first import
+# and the end of that cycle -- one cycle per module, once per process, against
+# never. Survey: docs/audits/autonomy-id-06-lazy-import-watch-set.md
+
 # Is intervention actually FALLING? The AUTONOMY card held to its own standard (autonomy-lrn-02)
 python -m tools.awareness.autonomy_loop                  # human report, 7-day window
 python -m tools.awareness.autonomy_loop --json --window-days 30
@@ -952,6 +975,75 @@ python tools/hooks/fire_rate_survey.py --check gh_pr_merge_bypass --live-git
 #   ICDEV_GH_PR_MERGE_GUARD_OFFLINE=1  skip the forge lookup only; the offline
 #                                      signals still refuse
 
+# A protected-path PR lands through the DOOR, with an audited reason (mfx-mrg-04)
+python tools/kanban/cli.py --set-status <id> done --merge --protected-ok --reason '<why>'
+python tools/kanban/cli.py --set-status <id> done --merge --protected-ok --reason '<why>' --dry-run
+# `pr_watcher` REFUSES to merge a PR touching `protected_paths` -- the guard
+# that stops the merge ladder auto-merging a change to ITSELF. That refusal is
+# CORRECT and stays. THE PROBLEM WAS THE ONLY AVAILABLE OVERRIDE. Measured
+# 2026-09-05/06: three PRs needed a human merge and got one -- mfx-mrg-01
+# (#2064), mfx-boot-01 (#2066), mfx-sib-03 (#2070) -- every one touching
+# tools/ci/pr_watcher.py, and the sole way through was ICDEV_GH_PR_MERGE_GUARD=0
+# plus a raw `gh pr merge`, which stands the guard above down for EVERY kanban PR
+# in that shell and runs NONE of land.py's thirteen checks. In the same session a
+# merge attempt on #2070 was refused by GitHub's own branch policy because 12
+# checks were STILL RUNNING; land.py's `ci_green` refuses that case too (and a
+# failed check, and an EMPTY rollup), so the blunt override would have taken
+# exactly that safety away. An operator who wants ONE protected PR landed should
+# not have to disarm the guard for all of them.
+# THE SIBLING TIE-BREAK IS HALF THE RULE, AND THIS DOOR WAS RUNNING THE OTHER
+# HALF. `hold_on_sibling_conflict` SERIALISES merges over a shared source file
+# -- merge one, let the rest rebase -- and sharing is SYMMETRIC, so holding
+# every sibling is not serialisation, it is the stall
+# `pr_watcher._wins_sibling_tiebreak` was written to break (its docstring: 14
+# AGOV PRs, the whole board at "awaiting merge", zero active tasks; LOWEST PR
+# NUMBER WINS, which is the oldest PR and is deterministic across processes).
+# `pr_watcher` consults it; `land.py` reused `_sibling_conflicts` and NOT the
+# function that RESOLVES what `_sibling_conflicts` reports, so two
+# implementations of one policy disagreed -- the watcher would merge the
+# lowest-numbered sibling while the door refused that same PR. MEASURED
+# 2026-09-06 on THIS card's own PR #2143: lowest of its set
+# {2143, 2145, 2154, 2156}, first in the queue by the policy's own rule, held by
+# the door alone with every other check green. The door now reads
+# `_open_pr_index` (the same gh call already carries `mergeable`/`draft`), drops
+# siblings `_pr_can_merge` says the forge would refuse, and holds only when the
+# tie-break says this PR LOSES. NOT a widening: at most one PR in a set can be
+# the lowest-numbered, so two PRs sharing a file still cannot merge together --
+# asserted, along with an AST test pinning the door to the WATCHER'S functions
+# so a future edit cannot re-derive "lowest number wins" locally.
+# ALL THIRTEEN CHECKS STILL RUN. The flag overrides EXACTLY ONE rung --
+# `_refuse_protected`, the first statement of `pr_watcher._auto_merge` -- and
+# nothing else. pr_recorded, pr_readable, pr_open, base_is_default, mergeable,
+# ci_green, approved, no_changes_requested, no_sibling_conflict, draft_promoted,
+# enforced_done_gate, merge_requested and merge_confirmed are untouched, `done`
+# is still written only after the forge CONFIRMS the merge, and the HOLD LABEL is
+# a different guard that still refuses.
+# A REASON IS REQUIRED, non-empty, the `--force-done --reason` precedent: a usage
+# error, never a default string.
+# AUDITED BEFORE THE MERGE, FAIL-CLOSED (`log_event(raise_on_error=True)`,
+# event type `kanban.protected_merge_override`, migration 20260906120818),
+# naming the paths the PR ACTUALLY hit -- re-derived from the open-PR listing at
+# the moment of the decision, never the configured list -- and the reason
+# VERBATIM. NO ROW, NO MERGE: an unaudited override of a self-protection control
+# is indistinguishable from the defect it guards against. prove -> audit ->
+# apply -> confirm, restore_acts' ordering; the outcome row
+# (`.merged` / `.not_merged`) is written after and is best-effort, because by
+# then there is nothing left to refuse. On a PG board that has not run the
+# migration the CHECK refuses the type and EVERY override is refused -- the
+# correct reading, not an obstacle.
+# THE AUTONOMOUS PATHS CAN NEVER SET IT. `protected_ok` is keyword-only,
+# defaults False, and is threaded ONLY from the CLI through
+# `tools/kanban/land.py`. The poll loop and the unlinked sweep do not pass it,
+# and tests/kanban/test_protected_merge_override.py reads pr_watcher.py's AST
+# (both spellings) to keep it that way -- a behavioural test would still pass for
+# a future edit that threads the flag through the cycle, which is the one change
+# that turns this door back into the hazard kpr-watch-05 closed.
+# Do NOT add ICDEV_GH_PR_MERGE_GUARD=0 to .claude/settings.local.json instead. It
+# was considered and REFUSED: gitignored, so it never reaches the public repo,
+# but it disarms the guard for every kanban PR in every session on the machine --
+# far wider than the one case that needs it, against a surveyed fire rate of
+# 0.1009%, a sixteenth of the 1.63% this file calls refusing routine work.
+
 # A claim from a PLAIN SHELL now HOLDS -- `--claim` hands its lease to a keeper (mfx-own-02)
 python tools/kanban/cli.py --claim <task-id> --intent "repairing its PR by hand" [--ttl 7200]
 python tools/kanban/cli.py --claim <task-id>                    # again: RENEWS the running keeper
@@ -980,6 +1072,40 @@ python -m tools.kanban.interactive_claim --status <task-id>     # keeper pid, ex
 # (`service_identity._OWNED` empty) hands its seed claims to the same keeper.
 # State and log per task: .tmp/coordination/claims/<task>.{json,log}.
 
+# A REPARK id extends a task id at the FRONT -- the matcher no longer binds it (mfx-own-05)
+python -m tools.kanban.branch_match_survey --env-file C:/AI/ICDev/.env       # legacy vs shipped rule, every drop NAMED
+python -m tools.kanban.branch_match_survey --env-file C:/AI/ICDev/.env --include-terminal --json
+# `_branches_for_task` (the done-gate's "does a branch for this task hold
+# unmerged work", stranded_audit, artifact_evidence, both orphan_requeue
+# proofs) matched `(^|[/_-])<id>` -- a child's SUFFIX extension was the only
+# direction its docstring anticipated, and the alternative also admitted a
+# PREFIX extension, which is exactly what a repark card wears
+# (`kph-repark-<id>`, then `kph-repark-kph-repark-<id>`). MEASURED 2026-09-06:
+# `mfx-ci-04` sat in `validating` 12:49 -> ~18:00 refused every cycle with
+# `branch_not_ancestor:kanban/kph-repark-kph-repark-mfx-ci-04` -- a THIRD
+# card's branch, which built PR #2146; `kph-repark-mfx-ci-04` was refused on
+# the same foreign branch. Now the id must START a path segment:
+# `(^|/)<id>([/_.-]|$)`. Fail-open on git error is UNCHANGED.
+# SURVEYED on the live listing (6,286 refs) before narrowing, and the narrowed
+# set is a SUBSET by construction (added: 0 both runs):
+#   11 non-terminal ids   21 -> 13 pairs, 8 dropped, ALL repark, every task
+#                         keeps >= 1 ref (10 -> 10)
+#   3,966 ids (terminal)  4,260 -> 4,229, 31 dropped: 13 repark + 18 OTHER,
+#                         all 18 hand-named `icdev-<id>` / `feature-<id>-...`
+#                         branches of `done` tasks from July/August, named in
+#                         docs/audits/mfx-own-05-branch-matcher-prefix-extension-survey.md
+# That `other` shape (a `-`-joined prefix that is not a repark) is the one
+# thing the narrowing gives up: it is indistinguishable from the repark shape
+# structurally, zero non-terminal tasks carry one today, and the worker
+# convention is `kanban/<id>`. Re-run the survey before widening it back.
+# The old rule lives ONLY in the survey (`legacy_matches`), labelled history;
+# "today" is asked of the shipped predicate, never a copy.
+# NOT built here, and named: the refusal itself was `branch_not_ancestor` --
+# `git cherry` 0 unmerged while `merge-base --is-ancestor` fails, the SQUASH
+# signature. A merged PR is knowable from the forge, but that is a forge
+# round-trip inside a proof that is pure git today; its own card if the
+# matcher fix alone does not clear the population.
+
 # The worktree-add budget is REAL, and the checkout is parallel (kph-repark-kph-repark-mfx-ci-04)
 python -m pytest tests/kanban/test_worktree_add_budget_is_real.py -q
 grep -h "Created worktree for" .logs/tools.genesis.reflexes.kanban.ndjson | tail -5   # each line now carries "in N.Ns (budget 30s)"
@@ -998,13 +1124,67 @@ grep -h "Created worktree for" .logs/tools.genesis.reflexes.kanban.ndjson | tail
 # (`_kill_process_tree`, taskkill /T or killpg in its own session) and the
 # partial worktree, registration and branch are removed, so the park describes
 # what is on disk. WORKTREE_ADD_TIMEOUT_SECONDS stays 30 and is pinned by test.
-# NOT fixed here, and named: 21,400 files / 513 MB per worktree, of which
-# playwright-report/ is 209.9 MB (40.9%, 1,426 tracked files added in a bulk
-# chore on 2026-05-25 and in no .gitignore) -- every add writes a test report
-# nobody reads from a worktree. Untracking it is its own card. And the genesis
-# daemon's `kanban` reflex and the standalone scheduler both dispatch, so two
-# 513 MB adds can run at once; the task lease keeps them off the same card, not
-# off the same disk.
+# NOT fixed there, and named: 21,400 files / 513 MB per worktree, of which
+# playwright-report/ was 209.9 MB (40.9%, 1,426 tracked files added in a bulk
+# chore on 2026-05-25 and in no .gitignore) -- every add wrote a test report
+# nobody reads from a worktree. UNTRACKED by task-wt-20f94d17, with backups/
+# (28.3 MB of canvas .db.bak / nc-backup zips nothing reads from git): an add
+# of main measured the same minute, checkout.workers=0, 2026-09-07T19:47Z,
+# went 21,455 files / 513.7 MB -> 19,968 files / 275.2 MB (-238.5 MB); the
+# origin/main add took 73.7s under dispatch load, over the 30s budget, and the
+# untracked tree 10.3s / 18.4s. tests/test_generated_artifacts_untracked.py
+# refuses a tracked file under either. Still open: the genesis daemon's
+# `kanban` reflex and the standalone scheduler both dispatch, so two adds can
+# run at once; the task lease keeps them off the same card, not off the same
+# disk.
+
+# A worktree HUSK with no .git marker is provably dead -- swept on a clock of HOURS (mfx-own-04)
+python -m tools.kanban.worktree_husks --survey [--json]        # every .git-less dir under the live roots
+python -m tools.kanban.worktree_husks --plan                   # what a sweep would act on; acts on nothing
+python -m tools.kanban.worktree_husks --apply <task-id> --dry-run
+python -m tools.kanban.worktree_husks --apply <task-id>        # prove -> audit -> ONE rmtree -> confirm
+# MEASURED 2026-09-06: task-det-e9a2e3ea16 sat in `validating` behind a 534 MB
+# `.tmp/worktrees/<id>` with NO .git file -- unregistered, so the empty-checkout
+# proof refused it (`worktree_unregistered`, correctly: `git status` inside an
+# unregistered dir describes the ENCLOSING checkout) -- while
+# `kanban_requeue_reflex` reported 60/60 successes. THE GAP IS THE CLOCK, and
+# re-reading the sweeper, also the CANDIDATE SET: `_sweep_candidates` returns
+# only `.git` carriers and `_worktree_is_disposable` refuses "entries but no
+# .git" by design, so the 7-day KANBAN_WORKTREE_STALE_AGE_DAYS rule could never
+# reach a husk at all. A live worktree ALWAYS carries `.git` (`git worktree add`
+# writes it first), so a husk cannot be one; the questions the 7-day path asks
+# (uncommitted? unpushed?) cannot be asked of it -- which is why it is safe and
+# why it is NEVER widened to a directory carrying `.git` (pinned by AST test).
+# THE CLASS, every answer required: a DIRECT child of .tmp/worktrees (the one
+# layout where the name IS the task id; the nested sanctioned root is SURVEYED
+# by name, never acted on); no `.git`; absent from a SUCCESSFUL `git worktree
+# list`; a BOARD ROW (`.tmp/worktrees/data` and `/tools` have none -- residue
+# of a root-computing bug, one still being written to 12h before the survey);
+# not `in_progress`; and the NEWEST mtime in the WHOLE tree older than
+# `husk_age_hours` (args/worktree_husk_sweep.yaml, 6; KANBAN_WORKTREE_HUSK_AGE_HOURS
+# overrides) -- the top-level stamp is not enough on Windows, and a process
+# still writing .logs/*.ndjson deep inside is the one sign of life a husk can
+# show. A walk over budget is `age_unmeasurable` and refuses: a partial walk
+# OVER-estimates the age, the direction that deletes. Unreadable is None; None
+# never acts. prove -> audit (`worktree_cleaned` / `husk_sweep.remove.intent`,
+# raise_on_error=True; NO ROW, NO ACT) -> one rmtree (read-only bits cleared,
+# extended-length paths -- the `<id>/node_modules`-only residue measured is what
+# an `ignore_errors` rmtree leaves) -> confirm. `max_removals_per_run: 3`,
+# OLDEST FIRST, deferred BY NAME (a walk costs 13-52s on a 20k-file husk).
+# SURVEYED BEFORE ARMING: 26 husks, 6.0 GB, 25 `done` + 1 `validating`,
+# 0 `in_progress`; 2 refused (no board row); 14 husk-shaped dirs under the
+# sanctioned root with no task id, reported and left. The card's own husk was
+# then removed THROUGH THE ACT (proven, audit row, 534 MB, confirmed gone) --
+# the operator had rightly declined a manual `rm -rf` the same day.
+# Consumed by `_sweep_old_worktrees`; kill switch KANBAN_WORKTREE_HUSK_SWEEP=0.
+# Survey: docs/audits/mfx-own-04-worktree-husk-survey.md -- which also records
+# that this card's FIRST test run pointed the 7-day sweeper at a temp base
+# with the LIVE sanctioned-root resolver unpatched and `max_age_days=0`, and it
+# removed four clean, pushed worktrees (two of them icdev_ft's, through the
+# orphan branch: the disposability predicate is repo-agnostic and the remover
+# is not). All four were re-created at the same path/branch/commit; the test
+# now pins EVERY seam the sweeper reads. A force-remover under test needs every
+# root it walks pointed at the fixture, not just the one you are testing.
 
 # Did that resume REACH anything, or was a line just written? (kpr-watch-13)
 python -m tools.ci.resume_delivery --survey
@@ -1898,6 +2078,80 @@ python tools/testing/pre_commit_check.py                                     # t
 # quoted; one figure off a moving ref is not a measurement. Method, every
 # number, and the replay script in full:
 #   docs/audits/mfx-ci-04-precommit-bootstrap-parity-survey.md
+
+# The E2E suite writes fixtures — point it at a THROWAWAY database (qa-fail-6a87916931be3793)
+python tools/db/bootstrap_pg.py                                  # once
+ICDEV_PG_DATABASE=icdev_e2e npx playwright test                  # or:
+ICDEV_DATABASE_URL=postgresql://.../icdev_e2e npx playwright test
+python -c "from tools.db.storage import active_database as a; print(a())"   # which db am I on?
+curl -s localhost:5050/api/health    # {backend, database, database_measured} — MEASURED
+# THE DOCUMENTED COMMAND USED TO REDIRECT NOTHING. `.env` sets
+# `ICDEV_DATABASE_URL`, and EVERY connection site in tools/db/storage.py reads
+# the DSN FIRST -- `ICDEV_PG_DATABASE` is consulted only when no DSN is present
+# (tools/db/shadowed_migration_audit.py had already learned this and warns about
+# it; playwright.config.ts had not). Measured 2026-09-05 with exactly the
+# documented variables exported, `current_database()` answered `icdev`. So an
+# operator following the recipe believed they were isolated and ran ~840 tests'
+# worth of fixture writes into the CANONICAL board -- a live mechanism for the
+# E2E residue already seen there (stale session / NMCE cards).
+# ONE RESOLVER, tests/e2e/fixtures/e2e_database.ts, read by BOTH
+# playwright.config.ts (to BUILD webServer.env) and globalSetup.ts (to ASSERT
+# the server obeyed). A second copy of the precedence is how this happened.
+# THE PER-RUN KNOB OUTRANKS THE AMBIENT DSN, the OPPOSITE of the connection
+# precedence and deliberately so: an ordinary shell here already exports
+# `ICDEV_DATABASE_URL` naming `icdev`, so ranking the DSN first lets the ambient
+# config outrank the variable the operator typed to escape it. That shipped for
+# one run and was caught END TO END, not by reading it.
+# `ICDEV_DATABASE_URL` is cleared to an EMPTY STRING for the server, never
+# unset: present-but-falsy means `load_dotenv(override=False)` cannot put
+# `.env`'s DSN back, while `storage.py`'s `if db_url:` is false so the discrete
+# name wins. Verified on Windows end to end. NO database, host or credential is
+# hardcoded, and a run that requested nothing is left exactly as it was.
+# AND IT IS MEASURED, NOT TAKEN ON TRUST. globalSetup asks the SERVER via
+# `current_database()` on /api/health -- re-reading our own env would prove only
+# that we can echo a variable, which is the reasoning that shipped the broken
+# recipe. It is also the ONLY thing that catches `reuseExistingServer`: a
+# dashboard already up on the port means Playwright starts NO server and every
+# variable the run exported is inert.
+#   confirmed      the server is measurably on the requested database
+#   mismatch       it is somewhere else                            -> REFUSES
+#   unmeasured     it could not be confirmed                       -> REFUSES
+#   not_requested  nothing was asked for. NOT a clean bill of health.
+# `unmeasured` REFUSES on purpose: degrading it to a warning restores the exact
+# false belief -- "I asked for isolation and nothing complained". The success
+# verdict is NOT called `isolated`: what is provable is that the server is on
+# the database the run NAMED, and whether that database is disposable is not
+# knowable from here, so a run whose database came from the ambient config is
+# told so by name. Stand it down with ICDEV_E2E_DB_CHECK=0, never a neutraliser.
+# `icdev_e2e` is DECLARED in icdev_domain.yaml, so a routine local run no longer
+# needs ICDEV_IDENTITY_GUARD=0 -- an operator who switches the guard off for
+# this also switches it off for the cross-parent case it exists to catch.
+# A PRE-EXISTING DEFECT FOUND ON THE WAY, and it was not small: /api/health
+# reported `{"status":"degraded","db":false}` on EVERY request, on the canonical
+# dashboard too (measured on :5050). Inside a request a security context is
+# attached and row_security rewrote the liveness probe `SELECT 1` into
+# `SELECT 1 WHERE (classification IS NULL OR ...)`, which raises UndefinedColumn
+# because a FROM-less SELECT has no such column; the route swallowed it. So the
+# platform's health endpoint had been reporting the database DOWN while it was
+# healthy. `_is_tableless` is the sibling of the `_is_system_table` guard
+# already in that module and carries the same reasoning. It is SELECT-ONLY:
+# `UPDATE t SET ...` names its relation with no FROM, so a bare no-FROM rule
+# dropped the tenant predicate from every UPDATE -- a widening of access, caught
+# by tests/test_rls_integration.py before it shipped. A scalar subquery still
+# carries a FROM and is still filtered.
+# NOT FIXED HERE, and it is a REAL defect in `icdev-core` (a separate
+# distribution, not editable from this repo): `icdev.core.context
+# .observed_database` reads `ICDEV_PG_DATABASE` BEFORE `ICDEV_DATABASE_URL`,
+# justified by a docstring claiming that is "the precedence tools/db/storage.py
+# gives" -- it is the INVERSE. Measured: with a DSN naming `icdev_ft` and
+# `ICDEV_PG_DATABASE=icdev`, `check_identity` returns MATCH while every
+# connection opens `icdev_ft`. The identity guard permits the very cross-parent
+# write xit-decl-01 exists to refuse. Re-derive it in one line:
+python -c "from icdev.core.context import check_identity as c; print(c(environ={'ICDEV_DATABASE_URL':'postgresql://u:p@h:5432/icdev_ft','ICDEV_PG_DATABASE':'icdev'}).verdict)"
+# -> match, for a process that will open icdev_ft. The repair belongs in
+# icdev-core (observed_database must read the DSN first, as storage.py does);
+# no card is seeded here because a worker dispatched against this checkout
+# cannot edit that distribution.
 
 # Which open PRs are awaiting merge, and WHY is each one not merging? (kpr-watch-01)
 python -m tools.ci.merge_readiness --json          # every open PR, task-linked or not

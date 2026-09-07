@@ -2008,6 +2008,21 @@ def _branches_for_task(task_id: str, repo_root, refs=None) -> list:
     is gated on its children's branches as well as its own. If that ever proves
     too strict, tighten the trailing group rather than dropping the boundary.
 
+    The id must START a path segment of the ref (mfx-own-05): ``kanban/<id>``
+    or ``kanban/<id>-<suffix>``, never ``kanban/<something>-<id>``. A child
+    extends its parent's id at the BACK; a REPARK card extends it at the
+    FRONT — ``kph-repark-<id>``, then ``kph-repark-kph-repark-<id>`` — and a
+    repark is a SEPARATE card with its own row, branch and PR, not a child of
+    the card it was reparked from. The old boundary ``(^|[/_-])`` admitted
+    both directions, so ``mfx-ci-04`` was gated on a third card's branch
+    (``kanban/kph-repark-kph-repark-mfx-ci-04``, which built PR #2146) and
+    ``kanban_requeue_reflex`` refused it every cycle with
+    ``branch_not_ancestor`` on a branch that was never its own; the same
+    foreign branch stranded ``kph-repark-mfx-ci-04`` too. Surveyed on the
+    live ref listing before narrowing — ``python -m
+    tools.kanban.branch_match_survey`` — and the survey is the only place the
+    old rule still exists.
+
     FAIL-OPEN: returns [] on any git error.
 
     ``refs`` optionally supplies the branch listing (see :func:`all_task_refs`)
@@ -2020,8 +2035,11 @@ def _branches_for_task(task_id: str, repo_root, refs=None) -> list:
     if not refs:
         return []
 
-    # <task_id> at a name boundary: end of ref, or followed by '-'/'_'/'.'/'/'.
-    pat = re.compile(rf"(^|[/_-]){re.escape(task_id)}([/_.-]|$)")
+    # <task_id> STARTS a path segment (start of name or after '/'), and ends at
+    # a name boundary: end of ref, or followed by '-'/'_'/'.'/'/'. The leading
+    # group is deliberately NOT ``[/_-]``: that admits ``<x>-<task_id>``, the
+    # repark shape, which belongs to a different card.
+    pat = re.compile(rf"(^|/){re.escape(task_id)}([/_.-]|$)")
     canonical = f"kanban/{task_id}"
     seen, matches = set(), []
     for ref in refs:
@@ -2306,6 +2324,30 @@ def _sweep_old_worktrees(max_age_days: int = _WORKTREE_STALE_AGE_DAYS) -> list[s
                 removed.append(task_id or sub.name)
         except Exception as exc:
             logger.warning("Sweep: could not remove %s: %s", sub, exc)
+
+    # HUSKS (mfx-own-04): a directory under WORKTREE_BASE with NO .git marker
+    # and no registration is a SEPARATE class on a SHORTER clock. It was never
+    # a candidate above (`_sweep_candidates` returns only `.git` carriers) and
+    # `_worktree_is_disposable` refuses "entries but no .git" by design, so the
+    # 7-day rule could never reach it -- while the empty-checkout requeue proof
+    # refuses `worktree_unregistered` on the same directory. Between them a
+    # `validating` card sat invisible for days (task-det-e9a2e3ea16). The class
+    # keeps the in_progress guard, asks the board for a row, walks the whole
+    # tree for its newest mtime, audits the intent BEFORE rmtree, and is
+    # bounded per run. It is NEVER widened to a directory carrying `.git`.
+    try:
+        from tools.kanban.worktree_husks import sweep_husks  # noqa: PLC0415
+
+        husks = sweep_husks(base=WORKTREE_BASE, repo_root_path=_canonical_repo_root())
+        for act in husks.get("applied", []):
+            removed.append(act.get("task_id") or Path(act["path"]).name)
+        if husks.get("state") == "unmeasurable":
+            logger.info("Sweep: husk class unmeasurable (%s)", husks.get("error"))
+        elif husks.get("deferred") or husks.get("unconfirmed"):
+            logger.info("Sweep: husks deferred=%s unconfirmed=%s",
+                        husks.get("deferred"), [a["task_id"] for a in husks.get("unconfirmed", [])])
+    except Exception as exc:  # noqa: BLE001 -- the husk class must never stop the sweep
+        logger.warning("Sweep: husk sweep failed: %s", exc)
 
     # Drop registry entries whose directory is already gone. Without this, `git worktree
     # list` keeps reporting worktrees that do not exist.

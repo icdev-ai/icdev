@@ -600,6 +600,72 @@ def list_pr_tasks(
     return out
 
 
+_KANBAN_BRANCH_PREFIX = "kanban/"
+
+
+def task_row_for_branch(get_connection, branch: str) -> Optional[dict]:
+    """The task a ``kanban/<id>[-suffix]`` head branch belongs to, ANY status.
+
+    `list_pr_tasks` answers "which tasks should the poll service", and its
+    status filter is right for that question. This answers a different one --
+    "does this PR belong to a task at all" -- for the unlinked sweep, whose
+    whole population is PRs the poll cannot see (mfx-mrg-06). A task's
+    `executor_url` is no use here: on every one of the fifteen measured
+    duplicates it named the MERGED sibling, not the PR being asked about, so
+    the branch name is the only link that survives.
+
+    Same rule as `pr_linker.branch_to_task_id` (longest task id that is a
+    prefix of the remainder at a ``-`` boundary, so ``kanban/gdx-aud-01-d2-r3``
+    binds to ``gdx-aud-01-d2`` over ``gdx-aud-01``) without loading the board:
+    the candidates are the remainder cut at each ``-`` from the right, asked
+    longest first, and the first row found wins. Bounded by the number of
+    segments, and only ever called for a PR the predicate already fired on.
+    ``None`` on any failure -- a lookup that cannot be made is not a task.
+    """
+    branch = (branch or "").strip()
+    if not branch.startswith(_KANBAN_BRANCH_PREFIX):
+        return None
+    remainder = branch[len(_KANBAN_BRANCH_PREFIX):]
+    if not remainder:
+        return None
+    candidates: List[str] = []
+    parts = remainder.split("-")
+    for n in range(len(parts), 0, -1):
+        candidates.append("-".join(parts[:n]))
+    try:
+        conn = get_connection()
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        for cand in candidates:
+            row = conn.execute(
+                "SELECT id, title, description, status, executor_url "
+                "FROM kanban_tasks WHERE id = %s",
+                (cand,),
+            ).fetchone()
+            if row is None:
+                continue
+            data = {
+                "id": row["id"],
+                "title": row["title"],
+                "description": row["description"] or "",
+                "status": row["status"],
+                "executor_url": row["executor_url"] or "",
+            }
+            data["pr_url"] = (_parse_pr_url(data["executor_url"])
+                              or _parse_pr_url(data["description"]) or "")
+            return data
+        return None
+    except Exception as exc:  # noqa: BLE001 -- advisory lookup, never fatal
+        logger.debug("pr_watcher: task lookup for %s failed: %s", branch, exc)
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
 # ────────────────────────────────────────────────────────────────────────────
 # gh CLI wrappers
 # ────────────────────────────────────────────────────────────────────────────
@@ -1448,6 +1514,136 @@ class PRWatcher:
             resume_cycle=resume_cycle,
         )
 
+    # ── the superseded rung of the UNLINKED sweep (mfx-mrg-06) ─────────
+
+    def _sweep_merged_index(self) -> Optional[List[dict]]:
+        """The merged-PR index for the sweep: the poll's, never a second listing.
+
+        `poll_once` fetches it once per cycle and the sweep runs right after
+        the poll in `run_daemon`, so the same page answers both. A sweep with
+        no poll before it (a unit test, a hand-run) lists once itself. ``None``
+        is UNREADABLE and the rung stays unchecked -- never ``[]``.
+        """
+        if not self.config.get("superseded_check", True):
+            return None
+        if hasattr(self, "_poll_merged_index"):
+            return self._poll_merged_index
+        return self._merged_pr_index()
+
+    @staticmethod
+    def _in_a_merged_family(pr: dict, merged_index: List[dict]) -> bool:
+        """Does any MERGED PR share this one's branch, or name it?
+
+        The pre-screen that keeps the rung cheap. `decide_superseded` needs
+        the PR's commit list, and the sweep's listing cannot carry `commits`:
+        it asks for 100 PRs, and MEASURED 2026-09-05 the merged listing was
+        refused by GitHub's GraphQL node budget at `--limit 60` with that
+        field. So the list is fetched per CANDIDATE with one `gh pr view`,
+        and a candidate is a PR some merged sibling is related to by the
+        same FACTS `family_kind` uses (same branch, our branch or number
+        named in its prose) -- which need no commit list at all. A PR outside
+        every family cannot fire and costs nothing.
+        """
+        for sib in merged_index or []:
+            if not (sib or {}).get("mergedAt"):
+                continue
+            if sup.family_kind(pr, sib):
+                return True
+        return False
+
+    def _sweep_superseded(
+        self, pr: dict, url: str, merged_index: Optional[List[dict]],
+        report: "WatcherReport",
+    ) -> bool:
+        """Ask the superseded question of an UNLINKED PR. True = do not merge.
+
+        THE POPULATION THIS EXISTS FOR. `list_pr_tasks` selects the six
+        statuses the poll services, so a PR opened after its task went
+        terminal is invisible to the linked path -- and was invisible to
+        this sweep too, which computed `linked` from the same query and read
+        every such PR as an ordinary unlinked one. MEASURED 2026-09-06
+        (docs/audits/mfx-mrg-05-superseded-population-survey.md): all fifteen
+        duplicates an operator closed by hand had a `done` task 12-67s BEFORE
+        the duplicate opened; the guard was never asked; and five of the same
+        shape had already MERGED as EMPTY commits on main, three of them
+        seconds after `already_landed_warn` said the work was on main.
+
+        THE CLOSE IS GATED ON THE PREDICATE, NEVER ON THE TERMINAL TASK. Five
+        of the twenty-six terminal-born PRs were merged by the pipeline
+        itself, so "its task is done" is only what makes a PR REACHABLE here;
+        `decide_superseded` (24/26 fire, 0 false positives over the whole
+        population) is the only thing that closes. FAIL-OPEN is unchanged:
+        an unreadable index or an unanswerable PR is `checked: False` and the
+        PR takes exactly the path it took before.
+
+        Three outcomes on a fire, and NONE of them merges:
+          * the branch resolves to a task row (any status): the same
+            `_handle_superseded` the linked path uses -- close with the
+            evidence, audit under the task id, complete NOTHING that is
+            terminal or unproven;
+          * report-only (`superseded_close: false`) or a failed close: the
+            merge is still WITHHELD. On the linked path report-only falls
+            through so the resume/rebase machinery keeps running; here the
+            only downstream act is the merge, and merging a superseded PR is
+            the defect itself;
+          * no task row -- a human's PR reopened on a merged branch: HELD,
+            audited ONCE (`superseded_hold`, kpr-watch-10's per-PR dedupe),
+            never closed. The sweep does not close a human's PR.
+        """
+        if merged_index is None or not self._in_a_merged_family(pr, merged_index):
+            return False
+        try:
+            state = self._fetch_state(url)
+        except Exception as exc:  # noqa: BLE001 -- unanswerable, not a finding
+            logger.debug("pr_watcher: sweep could not fetch %s: %s", url, exc)
+            return False
+        verdict = self._superseded_verdict(state, merged_index)
+        if not (verdict.checked and verdict.superseded):
+            return False
+
+        get_conn = self._connection()
+        task = task_row_for_branch(get_conn, state.get("headRefName")
+                                   or pr.get("headRefName") or "")
+        if task is None:
+            if self._count_audit_actions(
+                    "", ("pr_watcher.superseded_hold",), pr_url=url) > 0:
+                logger.debug("pr_watcher: %s still superseded by #%s "
+                             "(already audited)", url, verdict.sibling_number)
+                return True
+            logger.warning(
+                "pr_watcher: %s is superseded by merged #%s (%s) and has no "
+                "task -- refusing to merge it; a human decides whether to "
+                "close it", url, verdict.sibling_number, verdict.basis)
+            self._audit(WatcherAction(
+                task_id="", pr_url=url, classification=SUPERSEDED,
+                action="superseded_hold",
+                reason=("superseded by #%s (%s, %s): %s" % (
+                    verdict.sibling_number, verdict.family, verdict.basis,
+                    verdict.reason))[:500],
+                resume_cycle=0,
+            ))
+            return True
+
+        if not self.config.get("superseded_close", True) and \
+                self._count_audit_actions(
+                    task["id"], ("pr_watcher.superseded_warn",),
+                    pr_url=url) > 0:
+            logger.debug("pr_watcher: %s still superseded (report-only, "
+                         "already audited)", url)
+            return True
+        landed_map: Dict[str, dict] = {}
+        if (task.get("status") not in _TERMINAL_TASK_STATUSES
+                and self.config.get("landed_check_on_poll", True)):
+            landed_map = self._landed_map([task])
+        action = self._handle_superseded(
+            task, url, verdict, get_conn, landed_map,
+            resume_cycle=self._resume_cycle(task["id"], pr_url=url),
+        )
+        if action is not None:
+            report.actions.append(action)
+            self._audit(action)
+        return True
+
     def _sibling_conflicts(self, candidate_url: str, file_map: Dict[str, set]) -> Dict[str, set]:
         """Return {other_pr_url: shared_integrity_files} for OPEN PRs that touch a
         non-additive file the candidate PR also touches.
@@ -2066,12 +2262,122 @@ class PRWatcher:
         ))
         return True
 
-    def _auto_merge(self, pr_url: str, state: Optional[dict] = None) -> bool:
+    #: audit_trail event_type for a human-authorised protected-path merge
+    #: (mfx-mrg-04). Admitted to `audit_logger.VALID_EVENT_TYPES` and to the
+    #: `audit_trail.event_type` CHECK by migration 20260906120818.
+    PROTECTED_OVERRIDE_EVENT = "kanban.protected_merge_override"
+
+    def _audit_protected_override(
+        self, phase: str, pr_url: str, hits: List[str], reason: str,
+        task_id: str = "", detail: str = "",
+    ) -> bool:
+        """Record one phase of a protected-path override. True when it landed.
+
+        It never raises, and WHAT THAT COSTS IS THE CALLER'S DECISION, not a
+        parameter here. `_auto_merge` treats a False on the `intent` row as
+        fail-closed and REFUSES the merge — an unaudited override of a
+        self-protection control is indistinguishable from the defect that
+        control guards against, so no row means no merge.
+        `_confirm_protected_override` ignores it, because by then the forge has
+        already answered and there is nothing left to refuse.
+
+        `log_event(raise_on_error=True)` is passed either way: the row must not
+        be silently dropped on a chain failure. On a PostgreSQL database that
+        has not run migration 20260906120818 the CHECK refuses the event type
+        and EVERY override is refused. That is the correct reading, not an
+        obstacle: run the migration.
+        """
+        details = {
+            "pr_url": pr_url,
+            # THE PATHS THE PR ACTUALLY HIT, re-derived from the open-PR
+            # listing at the moment of the decision — never the configured
+            # list, which would record what COULD have been protected rather
+            # than what was.
+            "protected_paths_hit": list(hits),
+            # VERBATIM. A reason paraphrased by the recorder is not the
+            # operator's reason.
+            "reason": reason,
+            "task_id": task_id or None,
+            "door": "tools/kanban/cli.py --set-status <id> done --merge "
+                    "--protected-ok --reason",
+        }
+        if detail:
+            details["detail"] = detail
+        try:
+            from tools.audit.audit_logger import log_event
+
+            log_event(
+                self.PROTECTED_OVERRIDE_EVENT, "pr_watcher",
+                f"protected_merge_override.{phase}", details=details,
+                raise_on_error=True,
+            )
+            return True
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "pr_watcher: could not audit the protected-path override "
+                "(%s) for %s: %s", phase, pr_url, exc)
+            return False
+
+    def _auto_merge(
+        self, pr_url: str, state: Optional[dict] = None, *,
+        protected_ok: bool = False, override_reason: str = "",
+        task_id: str = "",
+    ) -> bool:
+        """Merge one PR. `protected_ok` is a HUMAN's override of ONE rung.
+
+        `protected_ok` defaults False and is threaded ONLY from
+        `tools/kanban/cli.py --set-status <id> done --merge --protected-ok
+        --reason '<why>'` through `tools/kanban/land.py`. Neither the poll loop
+        nor the unlinked sweep passes it, and
+        `tests/kanban/test_protected_merge_override.py` reads THIS FILE'S AST to
+        keep it that way — a behavioural test would still pass for a future edit
+        that threads the flag through the cycle, which is the one change that
+        would turn this door back into the hazard kpr-watch-05 closed.
+
+        It overrides EXACTLY the `_refuse_protected` rung below. Every other
+        gate — land.py's thirteen checks, the hold label, `auto_merge_enabled`,
+        and the post-merge MERGED confirmation — is untouched.
+        """
         # LAST LINE, not the only one. Both merge paths call this, so the guard
         # here cannot be routed around by a future caller — but the linked path
         # also checks BEFORE it un-drafts, because un-drafting a PR that was
         # never going to merge burns the one brake a human still has.
-        if self._refuse_protected(pr_url):
+        override: Optional[dict] = None
+        if protected_ok:
+            # prove -> audit -> apply -> confirm (autonomy-act-03's ordering).
+            # PROVE: re-derive the hits from the listing NOW, so the audit names
+            # what this PR touches rather than what the operator believed.
+            hits = self._protected_hits(pr_url)
+            if hits:
+                reason = (override_reason or "").strip()
+                if not reason:
+                    # Refuse with a usage error, never a default string — a
+                    # reason nobody wrote is not a reason.
+                    logger.warning(
+                        "pr_watcher: REFUSING to merge %s — --protected-ok "
+                        "requires a written reason; path(s) %s",
+                        pr_url, ", ".join(hits))
+                    return False
+                override = {"pr_url": pr_url, "hits": hits, "reason": reason,
+                            "task_id": task_id}
+                # AUDIT, before anything is merged. dry_run writes nothing, for
+                # the same reason `_audit` does not — and merges nothing either,
+                # so there is no override to record.
+                if not self.dry_run and not self._audit_protected_override(
+                        "intent", pr_url, hits, reason, task_id):
+                    logger.warning(
+                        "pr_watcher: REFUSING to merge %s — the protected-path "
+                        "override could not be audited (unaudited_refused). "
+                        "Run `python tools/db/migrate.py --up`.", pr_url)
+                    return False
+                logger.warning(
+                    "pr_watcher: protected-path guard OVERRIDDEN for %s by a "
+                    "human — path(s) %s — reason: %s",
+                    pr_url, ", ".join(hits), reason)
+            # `hits` empty: the flag overrode nothing, because this PR touches
+            # no protected path. Nothing to audit and nothing to say — it is an
+            # ordinary merge.
+        elif self._refuse_protected(pr_url):
             return False
         # HOLD LABEL (kpr-watch-04), the same belt-and-braces shape. `state` is
         # optional because each caller has already asked the same question by
@@ -2117,6 +2423,7 @@ class PRWatcher:
                 ["gh", "pr", "merge", pr_url, MERGE_METHOD_FLAG],
             )
             last_err = ""
+            merged = False
             for i, cmd in enumerate(attempts):
                 proc = self._auto_merge_runner(
                     cmd, capture_output=True, text=True,
@@ -2127,17 +2434,45 @@ class PRWatcher:
                         logger.info(
                             "pr_watcher: merged %s without --auto "
                             "(auto-merge is not enabled on this repository)", pr_url)
-                    return True
+                    merged = True
+                    break
                 last_err = (getattr(proc, "stderr", "") or "").strip()[:200]
-            # Previously this returned False with NO log line, so a forge that
-            # refused every merge looked identical to a board with nothing to
-            # merge. That is how 11 PRs sat "awaiting merge" while the watcher
-            # decided "merge" on each pass and was refused.
-            logger.warning("pr_watcher: gh refused to merge %s: %s", pr_url, last_err)
-            return False
+            if not merged:
+                # Previously this returned False with NO log line, so a forge that
+                # refused every merge looked identical to a board with nothing to
+                # merge. That is how 11 PRs sat "awaiting merge" while the watcher
+                # decided "merge" on each pass and was refused.
+                logger.warning(
+                    "pr_watcher: gh refused to merge %s: %s", pr_url, last_err)
+            self._confirm_protected_override(override, merged, last_err)
+            return merged
         except Exception as exc:
             logger.warning("pr_watcher: auto-merge failed: %s", exc)
+            self._confirm_protected_override(override, False, str(exc)[:200])
             return False
+
+    def _confirm_protected_override(
+        self, override: Optional[dict], merged: bool, detail: str = "",
+    ) -> None:
+        """CONFIRM: record what the forge actually did with an overridden merge.
+
+        Best-effort, and never able to refuse anything — the merge has already
+        happened or already failed by the time this runs, so a raise here would
+        only lose the record of it. The fail-closed leg is the `intent` row.
+        `land()` performs the outer confirmation (it re-reads the PR until it
+        observes MERGED); this records the forge's immediate answer, which is
+        what `_auto_merge` itself knows.
+        """
+        if not override or self.dry_run:
+            return
+        self._audit_protected_override(
+            "merged" if merged else "not_merged", override["pr_url"],
+            override["hits"], override["reason"], override.get("task_id", ""),
+            # Only on the failing leg: on a merge that succeeded on the SECOND
+            # attempt `last_err` holds the first attempt's message, and
+            # recording it beside `merged` would read as a merge that failed.
+            detail="" if merged else detail,
+        )
 
     def reclaim_worktree(self, task_id: str) -> dict:
         """Remove a task's worktree once its PR is merged.
@@ -3067,6 +3402,11 @@ class PRWatcher:
             if self.config.get("superseded_check", True)
             else None
         )
+        # Kept for the unlinked sweep that follows this poll (mfx-mrg-06): it
+        # asks the same question of the PRs this loop cannot see, and a second
+        # `gh pr list --state merged` per cycle would double the one listing
+        # that is already at the GraphQL node budget.
+        self._poll_merged_index = merged_index
 
         for task in tasks:
             report.tasks_checked += 1
@@ -4245,7 +4585,12 @@ class PRWatcher:
         DELIBERATELY THE NARROW SUBSET. A task-linked PR gets resumes, rebases and
         status transitions because there is a task to carry that state. Here there
         is none, so this does one thing: merge a PR that is already finished and
-        already passing. It never pushes, never closes, never edits a branch.
+        already passing. It never pushes, never edits a branch, and never closes
+        a PR with no task. THE ONE EXCEPTION IS NOT AN UNLINKED PR: a PR whose
+        task has gone TERMINAL is absent from `linked` (list_pr_tasks selects
+        the pollable statuses) and lands here wearing an unlinked PR's shape.
+        `_sweep_superseded` asks it the mfx-mrg-02 question first, and a fire
+        takes the linked path's own close -- see that method for the survey.
 
         THE OPT-OUT IS A LABEL, because a human may open a PR to discuss rather
         than to land. Any of hold/do-not-merge/wip/no-automerge stops it, and a
@@ -4292,8 +4637,21 @@ class PRWatcher:
 
         default_branch = self._default_branch()
         required = self.required_checks()
+        merged_index = self._sweep_merged_index()
         for pr in prs:
             url = (pr.get("url") or "").strip()
+            # SUPERSEDED, BEFORE THE LADDER DECIDES ANYTHING (mfx-mrg-06). A
+            # PR whose task went terminal is not in `linked` and reaches this
+            # sweep as if nobody owned it; the one question the ladder below
+            # cannot ask is whether the work already landed under another
+            # number. Asked of every unlinked PR; only a fire changes the path.
+            if url and url not in linked:
+                try:
+                    if self._sweep_superseded(pr, url, merged_index, report):
+                        continue
+                except Exception as exc:  # noqa: BLE001 -- fail-open, by rule
+                    logger.debug("pr_watcher: superseded rung failed for %s: "
+                                 "%s", url, exc)
             verdict = classify_merge_readiness(
                 pr, default_branch=default_branch, linked_urls=linked,
                 changed_files=self._open_pr_index().get(url, {}).get("files")

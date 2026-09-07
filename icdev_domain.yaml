@@ -38,7 +38,17 @@ db:
   # daemon, migration or board CLI whose process env names another database.
   # Measured 2026-08-21: .env, CI (icdev-ci.yml) and docker-compose all use
   # `icdev`. ICDEV[FT] declares [icdev_ft] and a separate PostgreSQL role.
-  databases: [icdev]
+  #
+  # `icdev_e2e` is THIS parent's throwaway E2E database, and it is declared
+  # here so a routine local `npx playwright test` does not have to stand the
+  # guard down (qa-fail-6a87916931be3793). The suite writes ~840 tests' worth
+  # of fixtures; playwright.config.ts points a local run at it precisely so
+  # they do not land in `icdev`, and a guard that refused the isolated database
+  # while permitting the canonical one taught operators to run
+  # ICDEV_IDENTITY_GUARD=0 -- which switches the guard off for the FT case it
+  # actually exists to catch. It is the same domain, the same parent and the
+  # same schema; only the data is disposable.
+  databases: [icdev, icdev_e2e]
   migrations: [tools/db/migrations]
 
 sensitivity:

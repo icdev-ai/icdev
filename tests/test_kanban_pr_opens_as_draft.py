@@ -224,7 +224,12 @@ class _StubWatcher:
         self.marked.append((pr_url, task_id))
         return self.ready
 
-    def _auto_merge(self, pr_url):
+    def _auto_merge(self, pr_url, state=None, **_kw):
+        # `state` is kpr-watch-04 and `**_kw` is mfx-mrg-04: land.py threads the
+        # protected-path override (`protected_ok` / `override_reason` /
+        # `task_id`) through this seam. It defaults OFF and is asserted on its
+        # own in tests/kanban/test_protected_merge_override.py; this stub only
+        # has to tolerate the keywords, not interpret them.
         self.merged.append(pr_url)
         return True
 

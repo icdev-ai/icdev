@@ -2542,6 +2542,28 @@ python tools/kanban/cli.py --set-status <task-id> done --merge --json      # Mer
 # every unknown, and it never reads KANBAN_REQUIRE_MERGE_FOR_DONE — that switch disables the
 # local git heuristic, not a landing check. One task id per invocation; not combinable with
 # --force-done. Marking done records the same actor='manual' audit transition --force-done does.
+
+# Kanban — LAND a PROTECTED-PATH PR through the door, with an audited reason (mfx-mrg-04)
+python tools/kanban/cli.py --set-status <task-id> done --merge --protected-ok --reason '<why>'
+python tools/kanban/cli.py --set-status <task-id> done --merge --protected-ok --reason '<why>' --dry-run
+# pr_watcher REFUSES to merge a PR touching `protected_paths` — the guard that stops the merge
+# ladder auto-merging a change to ITSELF (kpr-watch-05). That refusal is correct and stays; the
+# problem was the only available override. Measured 2026-09-05/06 the sole way through was
+# ICDEV_GH_PR_MERGE_GUARD=0 plus a raw `gh pr merge`, which stands the PreToolUse guard down for
+# EVERY kanban PR in that shell and runs NONE of the thirteen checks above — including ci_green,
+# which is stricter than branch protection (it refuses a failed check, a check STILL RUNNING, and
+# an EMPTY rollup). --protected-ok overrides EXACTLY ONE rung, `_refuse_protected` at the top of
+# pr_watcher._auto_merge, and nothing else: every check above still runs, the hold label still
+# refuses, and 'done' is still written only once GitHub reports MERGED.
+# --reason is REQUIRED and non-empty (a usage error, never a default string), and the override is
+# AUDITED BEFORE THE MERGE, fail-closed — event type `kanban.protected_merge_override`, written
+# with raise_on_error=True, naming the paths the PR ACTUALLY hit (re-derived from the open-PR
+# listing at the moment of the decision) and the reason VERBATIM. No row, no merge. Run
+# `python tools/db/migrate.py --up` on a PG board first: an unmigrated CHECK refuses the event
+# type and therefore refuses every override, which is the correct reading rather than an obstacle.
+# `protected_ok` is keyword-only, defaults False and is threaded only from this CLI through
+# tools/kanban/land.py — the poll loop and the unlinked sweep can never set it, pinned by an AST
+# test in tests/kanban/test_protected_merge_override.py.
 # Kanban — is this task id ALREADY on main? task -> main, not task -> PR (trust-disc-05)
 python -m tools.kanban.landed_check --task <task-id> --json
 python -m tools.kanban.landed_check --all --json              # every non-terminal task
@@ -8067,6 +8089,15 @@ python -m tools.kanban.union_resolver --worktree <path> --mode merge     # a `gi
 # under the same per-base-era rebase budget; pr_watcher audits union_resolved / union_refused with the rules.
 python tools/kanban/rebase_recovery.py --task <id> --dry-run --json      # the whole rebase, rung included
 ```
+### Branch matcher: a REPARK id is a different card's (mfx-own-05)
+```bash
+# `_branches_for_task` now requires the task id to START a path segment: kanban/<id> or kanban/<id>-<suffix>,
+# never kanban/<something>-<id>. A repark card (kph-repark-<id>) is its own row, branch and PR.
+python -m tools.kanban.branch_match_survey --env-file C:/AI/ICDev/.env                     # legacy vs shipped rule, every drop NAMED
+python -m tools.kanban.branch_match_survey --env-file C:/AI/ICDev/.env --json
+python -m tools.kanban.branch_match_survey --env-file C:/AI/ICDev/.env --include-terminal  # every id, done tasks too
+# UNMEASURABLE (exit 2), never a clean zero, from a worktree with no .env. Report only, no --gate.
+```
 ### Interactive claim keeper (mfx-own-02)
 ```bash
 python tools/kanban/cli.py --claim <task-id> [--intent "what you are doing"] [--ttl 7200]   # hold a task from a plain shell
@@ -8551,3 +8582,25 @@ question those rules actually answer.
    `tools/security/` already models IAM decisions offline and deterministically;
    a partial emulation would be a second opinion with no rule for choosing
    between them. The licence was never the objection here.
+
+### Worktree husk sweep — a .git-less, unregistered `.tmp/worktrees/<id>` on a clock of hours (mfx-own-04)
+
+```bash
+python -m tools.kanban.worktree_husks --survey              # every .git-less directory under the live roots, classified
+python -m tools.kanban.worktree_husks --survey --json
+python -m tools.kanban.worktree_husks --plan                # what a sweep would act on; acts on nothing
+python -m tools.kanban.worktree_husks --apply <task-id> --dry-run   # prove, audit nothing, act on nothing
+python -m tools.kanban.worktree_husks --apply <task-id>    # prove -> audit -> ONE rmtree -> confirm
+```
+
+A husk is a DIRECT child of `.tmp/worktrees` with no `.git` file or directory
+and no entry in a SUCCESSFUL `git worktree list`. A live worktree always carries
+`.git`, so the class cannot hold one; the questions the 7-day path asks of a
+registered worktree (uncommitted? unpushed?) cannot be asked of it, which is why
+it is safe and why it is NEVER widened to a `.git` carrier. Every guard is kept:
+the task must not be `in_progress`, must HAVE a board row, and the NEWEST mtime
+in the whole tree must be older than `husk_age_hours` (args/worktree_husk_sweep.yaml,
+default 6; `KANBAN_WORKTREE_HUSK_AGE_HOURS` overrides). Unreadable is `proven: None`
+and refuses. Bounded per run, oldest first, deferred by name. Consumed by
+`_sweep_old_worktrees`. Kill switch `KANBAN_WORKTREE_HUSK_SWEEP=0`.
+Survey: docs/audits/mfx-own-04-worktree-husk-survey.md
