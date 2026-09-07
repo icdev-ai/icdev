@@ -224,7 +224,8 @@ _SCHEMA = [
         created_at      TEXT NOT NULL,
         created_by      TEXT,
         tenant_id       TEXT,
-        classification  TEXT
+        classification  TEXT,
+        section_basis   TEXT
     )
     """,
     """
@@ -295,6 +296,12 @@ _ALTER_MIGRATIONS = [
     # Migration 230 — tech writer workspace
     ("dic_documents", "template_type", "TEXT"),
     ("dic_documents", "writeguard_mode", "TEXT DEFAULT 'default'"),
+    # dwr-sect-01 — how this version's sections were derived. NULL means NOT
+    # RECORDED (every row written before sections were derived at all), and must
+    # stay distinguishable from a measured 'whole_document'. Migration
+    # 20260907215506 is what reaches a live PostgreSQL board; this line covers a
+    # SQLite database that predates it.
+    ("dic_versions", "section_basis", "TEXT"),
 ]
 
 
@@ -1519,6 +1526,45 @@ def _ai_extract_correspondence(text: str) -> dict | None:
 
 
 # --------------------------------------------------------------------------- #
+# Section derivation (dwr-sect-01)
+# --------------------------------------------------------------------------- #
+
+#: Upper bound on derived sections per document. A glossary or a numbered
+#: requirements export where nearly every line parses as a clause heading would
+#: otherwise write thousands of one-line rows per ingest. Beyond this the
+#: outline degrades to a single whole-document section — it never TRUNCATES,
+#: because a truncated outline drops document text, and dropping text to stay
+#: under a limit is the one failure this must not have.
+MAX_DERIVED_SECTIONS = int(os.environ.get("ICDEV_DIC_MAX_SECTIONS", "400") or 400)
+
+
+def _derive_outline(text: str, title: str = ""):
+    """Sections for a version, or an honest empty outline.
+
+    Never raises. Section derivation is a convenience over an ingest that has
+    already extracted, chunked and embedded the document; a document that lands
+    with no sections is degraded, while one that fails to land at all because
+    the heading parser tripped over an unusual file is lost work. On failure the
+    basis is BASIS_EMPTY — "no sections were derived" — which is exactly what
+    happened, rather than a fabricated whole-document section asserting that we
+    looked and found no structure.
+    """
+    from tools.document_intelligence.section_deriver import (
+        BASIS_EMPTY,
+        DerivedOutline,
+        outline_for_document,
+    )
+
+    try:
+        return outline_for_document(
+            text or "", title=title or "", max_sections=MAX_DERIVED_SECTIONS
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("dic.ingest: section derivation failed: %s", exc)
+        return DerivedOutline(sections=[], basis=BASIS_EMPTY, heading_count=0)
+
+
+# --------------------------------------------------------------------------- #
 # Orchestrator
 # --------------------------------------------------------------------------- #
 
@@ -1867,18 +1913,60 @@ def ingest_file(
             ),
         )
 
+        # Derive the version's sections from the document's own headings
+        # (dwr-sect-01). Sections are the EDITING and ANCHORING unit —
+        # dic_chunk_links stays the RETRIEVAL unit and neither is derived from
+        # the other. Without this an ingested document renders an empty Sections
+        # list and an anchored change has no coordinate space to land in; on the
+        # live board 2026-09-07 only 16 of 55 documents had a single section row.
+        outline = _derive_outline(text, extraction.title or ai_title or p.stem)
+
         cur.execute(
             """
             INSERT OR REPLACE INTO dic_versions
                 (version_id, doc_id, version_no, origin, status,
-                 content_sha256, created_at, created_by, tenant_id, classification)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 content_sha256, created_at, created_by, tenant_id, classification,
+                 section_basis)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 version_id, doc_id, 1, "human_authored", "approved",
                 content_hash, now, created_by, tid, cls,
+                outline.basis,
             ),
         )
+
+        # Refresh sections for this version. Re-ingesting the same file must not
+        # leave the previous derivation's rows behind beside the new ones —
+        # duplicated headings would render as a document that says everything
+        # twice, and every stale anchor would still resolve.
+        cur.execute("DELETE FROM dic_sections WHERE version_id = %s", (version_id,))
+        for i, sec in enumerate(outline.sections):
+            cur.execute(
+                """
+                INSERT OR REPLACE INTO dic_sections
+                    (section_id, version_id, doc_id, heading, content,
+                     citations_json, status, origin, created_at, created_by,
+                     tenant_id, classification)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    f"{version_id}_sec_{i}", version_id, doc_id,
+                    sec.heading, sec.content,
+                    # An ingested section quotes the source document; it makes no
+                    # claim of its own, so it has no citations. '[]' is the
+                    # measured empty list, not a missing value.
+                    "[]",
+                    # An ingested document was written by a human and is already
+                    # the document of record. Labelling it 'ai_generated' /
+                    # 'draft' — the column defaults — would put real source prose
+                    # into the AI-content population that citation_gate and the
+                    # export gates are scoped to, and mark an approved document
+                    # as awaiting review.
+                    "approved", "human_authored",
+                    now, created_by, tid, cls,
+                ),
+            )
 
         # Refresh chunk links for this version.
         cur.execute("DELETE FROM dic_chunk_links WHERE version_id = %s", (version_id,))
