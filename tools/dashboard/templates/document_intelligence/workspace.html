@@ -34,6 +34,30 @@
   </div>
 </div>
 
+{# ── Who else is here, and is this page still hearing from the server?
+   (dwr-collab-01) ───────────────────────────────────────────────────────────
+   Two facts, side by side and never merged, because they fail independently
+   and a reviewer needs both before deciding a change somebody else may be
+   deciding right now:
+
+     WHO   read from `dic_presence_sessions` via presence_registry. "Only you"
+           is a MEASURED verdict; a registry that could not be read says so.
+     LIVE  whether the change-state poll is landing. A page whose poll has been
+           failing for two minutes looks EXACTLY like a quiet document, so the
+           dot going amber/red is the only thing that tells those apart.
+
+   Rendered empty and filled by the poll — nothing here is server-rendered,
+   because a presence list drawn at render time is stale by the time it is
+   read, which is the defect this whole card is about. #}
+<div id="dws-live" class="dws-live">
+  <span class="dws-live__dot dws-live__dot--pending" id="dws-live-dot" role="status"
+        aria-label="Change feed: connecting" title="Change feed: connecting"></span>
+  <span class="dws-live__state" id="dws-live-state">Connecting to the change feed…</span>
+  <span class="dws-live__sep">·</span>
+  <span class="dws-live__who" id="dws-live-who">Checking who else is in this document…</span>
+  <span class="dws-live__avatars" id="dws-live-avatars"></span>
+</div>
+
 {# ── Document-level findings ────────────────────────────────────────────────
    These anchor to no single proposal. Rendering only span-anchored findings
    would draw a blocked draft as clean — the delta_review precedent, restated
@@ -325,6 +349,25 @@
 .dws-edit { width:100%; box-sizing:border-box; margin-top:6px; padding:6px; border-radius:4px;
   border:1px solid #1a3560; background:#0a1422; color:#cfe3f7; font-size:11px;
   font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+/* dwr-collab-01 — the live strip. */
+.dws-live { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px;
+  padding:6px 10px; background:#0d1b2e; border:1px solid #16283f; border-radius:5px;
+  font-size:11px; color:#8aa8c8; }
+.dws-live__dot { width:9px; height:9px; border-radius:50%; flex:0 0 auto; }
+.dws-live__dot--live { background:#5ac08a; }
+.dws-live__dot--pending { background:#5a7aa0; }
+.dws-live__dot--degraded { background:#f0c674; }
+.dws-live__dot--down { background:#e05a5a; }
+.dws-live__sep { color:#2a4560; }
+.dws-live__state--degraded, .dws-live__state--down { color:#e0c090; }
+.dws-live__avatars { display:flex; gap:3px; }
+.dws-live__av { width:20px; height:20px; border-radius:50%; display:flex; align-items:center;
+  justify-content:center; font-size:9px; font-weight:700; color:#0a1422; }
+.dws-live__who--unmeasured { color:#e0c090; }
+/* A change another session decided, announced in the rail. */
+.dws-elsewhere { margin-top:6px; padding:5px 8px; border-radius:4px; font-size:10px;
+  line-height:1.5; background:#101f33; border:1px solid #24507f; color:#9bc4ef; }
 </style>
 
 <script>
@@ -602,7 +645,13 @@ document.addEventListener('DOMContentLoaded', function () {
     var cls = 'dws-card ' + (c.appliable ? 'dws-card--appliable' : 'dws-card--unanchored')
       + (settled ? (c.status === 'superseded' ? ' is-superseded' : ' is-settled') : '')
       + (selected === sid ? ' is-selected' : '');
-    return '<div class="' + cls + '" data-suggestion-id="' + esc(sid) + '">'
+    // dwr-collab-01 — the STATUS, machine-readable. `is-settled` says a card
+    // has left the pending queue and not which way it went, so nothing on the
+    // page could distinguish "Bob accepted this" from "Bob rejected it" without
+    // reading prose. A reviewer reads the badge; a test, and an assistive
+    // reader walking the rail, need the value.
+    return '<div class="' + cls + '" data-suggestion-id="' + esc(sid) + '"'
+      + ' data-status="' + esc(c.status || 'pending') + '">'
       + '<div class="dws-card__head"><span class="dws-card__title">'
       + esc(c.entity_label || c.canvas_source || 'Proposal') + '</span>'
       + '<code style="color:#5a7aa0;font-size:9px;">' + esc(String(sid).slice(0, 14)) + '</code></div>'
@@ -863,6 +912,34 @@ document.addEventListener('DOMContentLoaded', function () {
       replaceCard(sid);
       return;
     }
+    // dwr-collab-01 — SOMEBODY ELSE GOT THERE FIRST. This is the refusal the
+    // whole card exists for, and it is the one the poll cannot prevent: two
+    // reviewers can always click inside one poll interval, so the guarantee
+    // comes from the conditional UPDATE at the door and not from this feed.
+    // The card is settled from the CURRENT state the door returned — the
+    // reviewer's own attempt is discarded, which is the point: nothing this
+    // page tried was written.
+    if (j.error === 'already_decided') {
+      var cur = j.current || {};
+      if (cur.status) c.status = cur.status;
+      elsewhere[sid] = {status: cur.status, by: cur.decided_by, at: cur.decided_at};
+      doorRefusals[sid] = '<div class="dws-elsewhere"><b>Somebody else decided this first.</b> '
+        + esc(j.message || '')
+        + ' <span style="color:#7fa8d8;">Your ' + esc(j.attempted || 'decision')
+        + ' was refused before anything was written, so no decision was lost — this one was '
+        + 'never recorded. The change now stands as <code>' + esc(cur.status || 'decided')
+        + '</code>.</span>'
+        + (cur.note ? '<div style="margin-top:5px;">Their note: <i>' + esc(cur.note) + '</i></div>' : '')
+        + '</div>';
+      say(sid, false, 'Refused: already decided' + (cur.decided_by ? ' by ' + cur.decided_by : '')
+        + ' — nothing was written.');
+      replaceCard(sid);
+      var sec409 = j.section_id || c.anchor_section_id || c.section_id || '';
+      renderSection(sectionEl(sec409));
+      // The document may hold THEIR text now. Re-read it rather than leaving
+      // this reviewer looking at the passage their decision was about.
+      return reanchorView(null);
+    }
     var head = {
       anchor_stale: 'The document moved under you.',
       unanchored: 'This proposal has no span to apply.',
@@ -983,10 +1060,24 @@ document.addEventListener('DOMContentLoaded', function () {
           if (!c.status || c.status === 'pending') {
             // It left the queue and NOT through this page. Say so rather than
             // silently deleting a card somebody may be mid-decision on.
-            c.status = 'decided_elsewhere';
-            doorRefusals[c.suggestion_id] = '<div class="dws-refusal">This proposal left the '
-              + 'pending queue while this page was open — decided in another session, or '
-              + 'superseded. Nothing here decided it.</div>';
+            //
+            // dwr-collab-01 — AND NAME THE PERSON WHERE ONE IS RECORDED. The
+            // poll carries the newest decision row for a settled change, which
+            // the change set does not; "decided in another session" leaves the
+            // reviewer nobody to go and talk to. `elsewhere` is only ever a
+            // LABEL: the STATUS still comes from the assembler, so a poll that
+            // has not run yet degrades to exactly the message below.
+            var e = elsewhere[c.suggestion_id];
+            c.status = (e && e.status) || 'decided_elsewhere';
+            doorRefusals[c.suggestion_id] = (e && e.by)
+              ? ('<div class="dws-elsewhere"><b>' + esc(e.by) + '</b> ' + esc(e.status || 'decided')
+                 + ' this change' + (e.at ? ' at ' + esc(e.at) : '')
+                 + ', in another session. Nothing here decided it, and this page did not '
+                 + 'lose a decision — it never made one.</div>')
+              : ('<div class="dws-elsewhere">This proposal left the pending queue while this '
+                 + 'page was open' + (e && e.status ? ' (now <code>' + esc(e.status) + '</code>)' : '')
+                 + ' — decided in another session, or superseded by a mechanism. No decider is '
+                 + 'recorded for it, and none is guessed at. Nothing here decided it.</div>');
           }
           return true;
         });
@@ -1096,6 +1187,205 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
+  // ══ dwr-collab-01 ═════════════════════════════════════════════════════════
+  //
+  // TWO REVIEWERS, ONE DOCUMENT. Everything above applies a decision in place
+  // for THE REVIEWER WHO CLICKED. A second reviewer with this page open keeps a
+  // rail drawn at page-load: a change somebody else accepted ten minutes ago
+  // still offers Accept, and the document beside it still shows the text that
+  // change replaced.
+  //
+  // The transport is a POLL, following D103 — proxy/firewall friendly for DoD
+  // networks and workable under Flask's synchronous WSGI, which an SSE stream
+  // holds a worker open for. The CLIENT PATTERN is live.js's (cursor, 3 s,
+  // exponential backoff, a status dot); its ENDPOINT is deliberately not —
+  // /api/events/poll is bound to hook_events, a platform-wide tool-call feed
+  // with no notion of a document.
+  //
+  // THE POLL NEVER DECIDES ANYTHING AND NEVER DERIVES A CARD'S STATE. It says
+  // "something moved", and then the ONE assembler (GET /api/change-set, via
+  // `reconcile`) is asked what the state now is. The delta's own fields are
+  // used for exactly one thing: NAMING who decided a change, which the change
+  // set does not carry. Deriving a card from the poll would be a second
+  // assembler, and the two would part company on the first disagreement.
+  //
+  // AND IT IS NOT THE GUARD. Two reviewers can always click inside one poll
+  // interval; the poll only shortens the window. What CLOSES it is the
+  // conditional UPDATE in suggestion_store.decide_outcome — a decision writes
+  // only while the row is still `pending` — and the 409 that refusal produces
+  // is rendered by `refuseDecision` below, naming who holds the decision.
+  var POLL_CURSOR = {{ poll_cursor | tojson }};
+  var POLL_MS = 3000, POLL_MAX_MS = 30000;
+  var _pollTimer = null, _pollWait = POLL_MS, _pollFails = 0, _polling = false;
+  // What another session did to a change, keyed by suggestion_id. Held here so
+  // `reconcile` can NAME the decider instead of saying "decided elsewhere".
+  var elsewhere = {};
+  var liveDot = document.getElementById('dws-live-dot');
+  var liveState = document.getElementById('dws-live-state');
+  var liveWho = document.getElementById('dws-live-who');
+  var liveAvatars = document.getElementById('dws-live-avatars');
+
+  // A BROKEN POLL AND A QUIET DOCUMENT LOOK IDENTICAL ON SCREEN. This is the
+  // only thing that tells them apart, so `degraded`/`down` say in words that
+  // what is on screen may be stale — never a silent dot.
+  function setLive(kind, text) {
+    if (!liveDot) return;
+    liveDot.className = 'dws-live__dot dws-live__dot--' + kind;
+    liveDot.setAttribute('aria-label', 'Change feed: ' + kind);
+    liveDot.title = 'Change feed: ' + kind;
+    liveState.className = 'dws-live__state dws-live__state--' + kind;
+    liveState.textContent = text;
+  }
+
+  function avatarColor(uid) {
+    var palette = ['#7ab3f0', '#a78bfa', '#f0a3c8', '#f0b878', '#5ac08a', '#f0c674', '#66d0d8'];
+    var h = 0, i;
+    for (i = 0; i < String(uid).length; i++) h = (h * 31 + String(uid).charCodeAt(i)) | 0;
+    return palette[Math.abs(h) % palette.length];
+  }
+  function initials(uid) {
+    var s = String(uid || '?').replace(/[^A-Za-z0-9]/g, '');
+    return (s.slice(0, 2) || '?').toUpperCase();
+  }
+
+  // "Only you" is a MEASURED verdict and `unmeasured` is a read that failed.
+  // Drawing the second as the first tells a reviewer nobody else can be
+  // deciding the change in front of them, which is the one thing this strip
+  // exists to stop.
+  function renderPresence(p) {
+    if (!liveWho) return;
+    p = p || {};
+    liveAvatars.innerHTML = '';
+    if (p.state === 'unmeasured') {
+      liveWho.className = 'dws-live__who dws-live__who--unmeasured';
+      liveWho.textContent = 'Who else is here could not be read ('
+        + (p.reason || 'unknown') + ') — this is not "only you".';
+      return;
+    }
+    liveWho.className = 'dws-live__who';
+    if (p.state === 'alone' || !(p.others || []).length) {
+      liveWho.textContent = 'Only you are in this document.';
+      return;
+    }
+    var names = (p.others || []).map(function (o) { return o.user_id; });
+    liveWho.textContent = names.length + ' other reviewer'
+      + (names.length === 1 ? '' : 's') + ' here: ' + names.join(', ');
+    (p.others || []).slice(0, 8).forEach(function (o) {
+      var el = document.createElement('span');
+      el.className = 'dws-live__av';
+      el.style.background = avatarColor(o.user_id);
+      el.textContent = initials(o.user_id);
+      el.title = o.user_id + (o.last_seen ? ' — last seen ' + o.last_seen : '');
+      liveAvatars.appendChild(el);
+    });
+  }
+
+  // A delta is ANNOUNCED before the rail is re-read, so the reviewer sees WHY
+  // a card is about to change under them rather than watching it change.
+  function announce(deltas) {
+    var settled = deltas.filter(function (d) { return d.settled; });
+    settled.forEach(function (d) {
+      var dec = d.decision || {};
+      elsewhere[d.suggestion_id] = {
+        status: d.status,
+        by: dec.decided_by || null,
+        at: dec.decided_at || d.updated_at || null
+      };
+    });
+    return settled.length;
+  }
+
+  function poll() {
+    if (_polling) return;
+    _polling = true;
+    var url = '/document-intelligence/api/workspace/poll?doc_id='
+      + encodeURIComponent(DOC_ID) + '&cursor=' + encodeURIComponent(POLL_CURSOR || '');
+    fetch(url, {headers: {'Accept': 'application/json'}})
+      .then(function (r) { return r.json().then(function (j) { return {ok: r.ok, json: j}; }); })
+      .then(function (res) {
+        var p = res.json || {};
+        renderPresence(p.presence);
+        // THE CURSOR IS TAKEN FROM THE SERVER, ALWAYS — including on an
+        // `unmeasured` poll, where the server echoes it back UNCHANGED so the
+        // window it could not read is asked again rather than skipped.
+        if (p.cursor) POLL_CURSOR = p.cursor;
+        if (!res.ok || p.state === 'unmeasured') {
+          _pollFails++;
+          setLive(_pollFails > 2 ? 'down' : 'degraded',
+            'The change feed could not be read (' + (p.reason || ('HTTP ' + (p.status || '?')))
+            + '). What is on screen may be stale — this is not a quiet document.');
+          _pollWait = Math.min(_pollWait * 2, POLL_MAX_MS);
+          return;
+        }
+        _pollFails = 0; _pollWait = POLL_MS;
+        var deltas = p.changes || [];
+        var moved = p.sections || [];
+        if (p.state === 'changes' && (deltas.length || moved.length)) {
+          var n = announce(deltas);
+          setLive('live', (n ? n + ' change(s) decided in another session. ' : '')
+            + (moved.length ? moved.length + ' section(s) edited. ' : '')
+            + 'Re-reading…');
+          // The SECTION re-read reconciles the rail itself, so the two are
+          // never both fetched: one act, one assembler.
+          if (moved.length) { reanchorView(null); } else { reconcile(null); }
+        } else {
+          setLive('live', p.state === 'baseline'
+            ? 'Live. Watching for changes from other reviewers.'
+            : 'Live — no changes from other reviewers since '
+              + (POLL_CURSOR || '').slice(11, 19) + 'Z.');
+        }
+      })
+      .catch(function (e) {
+        _pollFails++;
+        setLive(_pollFails > 2 ? 'down' : 'degraded',
+          'The change feed is unreachable (' + e + '). What is on screen may be stale.');
+        _pollWait = Math.min(_pollWait * 2, POLL_MAX_MS);
+      })
+      .then(function () {
+        _polling = false;
+        clearTimeout(_pollTimer);
+        _pollTimer = setTimeout(poll, _pollWait);
+      });
+  }
+
+  // ── Presence: join, beat, leave ────────────────────────────────────────────
+  // The EXISTING presence routes (dic_presence_sessions), never a new one. The
+  // poll READS presence and deliberately does not write it: a poll that
+  // heartbeat would make a reviewer's visibility to others depend on a feed
+  // whose failure mode is a 30 s backoff, and would stop being a safely
+  // retryable read.
+  var _presenceKey = null;
+  var PRESENCE_BEAT_MS = 20000;   // presence_registry._HEARTBEAT_INTERVAL
+  function presenceJoin() {
+    return fetch('/document-intelligence/api/documents/' + encodeURIComponent(DOC_ID) + '/presence/join',
+      {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'})
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        _presenceKey = j.session_key || null;
+        if (_presenceKey) setInterval(presenceBeat, PRESENCE_BEAT_MS);
+      })
+      // A presence failure must never break the change feed: the poll answers
+      // "what moved", which is the half a reviewer cannot do without.
+      .catch(function () { _presenceKey = null; });
+  }
+  function presenceBeat() {
+    if (!_presenceKey) return;
+    fetch('/document-intelligence/api/documents/' + encodeURIComponent(DOC_ID) + '/presence/heartbeat',
+      {method: 'POST', headers: {'Content-Type': 'application/json'},
+       body: JSON.stringify({session_key: _presenceKey})}).catch(function () {});
+  }
+  window.addEventListener('pagehide', function () {
+    if (!_presenceKey) return;
+    // keepalive, because the request must outlive the page. A row left behind
+    // expires on the registry's own TTL, so the worst case is a ghost for 45 s
+    // and never a permanent one.
+    try {
+      fetch('/document-intelligence/api/documents/' + encodeURIComponent(DOC_ID) + '/presence/leave',
+        {method: 'DELETE', headers: {'Content-Type': 'application/json'},
+         body: JSON.stringify({session_key: _presenceKey}), keepalive: true});
+    } catch (e) { /* the TTL is the backstop */ }
+  });
+
   function load() {
     stateEl.textContent = 'Loading the change set…';
     stateEl.className = 'dws-note';
@@ -1116,6 +1406,12 @@ document.addEventListener('DOMContentLoaded', function () {
   var refresh = document.getElementById('dws-reload');
   if (refresh) refresh.addEventListener('click', function () { reanchorView(null); });
   load();
+  // dwr-collab-01 — the change feed and the presence beat. Started AFTER the
+  // rail's own first fetch so the page draws before it starts polling, and both
+  // are independent of it: a change set that failed to load still gets a live
+  // dot saying so.
+  presenceJoin();
+  poll();
 });
 </script>
 {% endblock %}

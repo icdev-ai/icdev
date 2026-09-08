@@ -528,6 +528,72 @@ def decide_suggestion(
 
     Returns True on success, False if the suggestion doesn't exist or
     was already decided.  Raises ValueError for an invalid decision value.
+
+    The bool contract is unchanged and is what every existing caller reads.
+    A caller that needs to tell "somebody else decided it" from "the write
+    failed" -- a 409 from a 500 -- calls :func:`decide_outcome` instead.
+    """
+    return decide_outcome(
+        suggestion_id, decision, decided_by,
+        note=note, tenant_id=tenant_id, classification=classification,
+    )["recorded"]
+
+
+#: What :func:`decide_outcome` refused, and why. Each sends a caller somewhere
+#: different: ``already_decided`` is a 409 a reviewer must read, ``not_found``
+#: is a 404, ``write_failed`` is a 500.
+DECIDE_RECORDED = "recorded"
+DECIDE_ALREADY = "already_decided"
+DECIDE_NOT_FOUND = "not_found"
+DECIDE_WRITE_FAILED = "write_failed"
+
+
+def decide_outcome(
+    suggestion_id: str,
+    decision: str,
+    decided_by: str,
+    *,
+    note: str = "",
+    tenant_id: str = "",
+    classification: str = "CUI",
+) -> dict:
+    """Decide a suggestion and say WHAT HAPPENED, not merely whether it worked.
+
+    dwr-collab-01 -- THE UPDATE IS CONDITIONAL, AND THAT IS THE LOST WRITE.
+
+    This function used to SELECT the status, compare it to ``pending`` in
+    Python, and then run an UNCONDITIONAL ``UPDATE ... WHERE suggestion_id=%s``.
+    Between those two statements the row is not held: under PostgreSQL's default
+    READ COMMITTED the SELECT sees the state as of ITS OWN start, so two
+    reviewers deciding the same change can both read ``pending``, both pass the
+    guard, and both write. The second UPDATE overwrites the first, TWO rows land
+    on the append-only decision chain, and both reviewers are told 200. One
+    human's decision is gone, and the surface that records who decided what
+    disagrees with the row it decided about -- on the only writer of
+    ``dic_sections.content`` for a proposal.
+
+    The guard is now IN THE WRITE: ``UPDATE ... WHERE suggestion_id=%s AND
+    status='pending'``. One statement, so the engine's own row lock serialises
+    the two reviewers, and the loser matches zero rows and writes NOTHING -- no
+    status, no decision row. That is a property of the statement rather than of
+    the interval between two of them, so it holds on PostgreSQL and on SQLite
+    without an isolation level, an advisory lock or a retry.
+
+    The SELECT is KEPT and is no longer load-bearing: it exists to tell
+    ``not_found`` (404) from ``already_decided`` (409), and the loser re-reads it
+    AFTER the refusal so the caller can be handed the state that actually
+    stands -- who decided, when, and to what. "Already decided" names nobody;
+    a reviewer whose decision was refused needs a person to go and argue with.
+
+    Returns::
+
+        {"recorded": bool, "outcome": <DECIDE_*>, "current": {...} | None}
+
+    ``current`` is the suggestion's live row on a refusal, with ``decision``
+    holding the newest ``dic_suggestion_decisions`` row for it, or ``None`` when
+    there is none -- a ``superseded`` status is written by a mechanism, not a
+    human, and inventing a decider for it would be worse than saying nobody is
+    recorded.
     """
     if decision not in _VALID_DECISIONS:
         raise ValueError(f"decision must be one of {_VALID_DECISIONS}, got '{decision}'")
@@ -544,16 +610,23 @@ def decide_suggestion(
         ).fetchone()
 
         if row is None:
-            return False
+            return {"recorded": False, "outcome": DECIDE_NOT_FOUND, "current": None}
 
-        current_status = _col(row, "status", 0)
-        if current_status != "pending":
-            return False
-
-        conn.execute(
-            "UPDATE dic_suggestions SET status=%s, updated_at=%s WHERE suggestion_id=%s",
+        # THE GATE. Not the SELECT above -- that read is already stale by the
+        # time this statement runs, and pretending otherwise is the race.
+        cur = conn.execute(
+            "UPDATE dic_suggestions SET status=%s, updated_at=%s "
+            "WHERE suggestion_id=%s AND status='pending'",
             (decision, now, suggestion_id),
         )
+        if (cur.rowcount or 0) < 1:
+            # Somebody else got there first, or the row was never pending.
+            # Nothing was written: no status, and no decision row, so the
+            # append-only chain cannot carry a decision that did not stand.
+            conn.rollback()
+            return {"recorded": False, "outcome": DECIDE_ALREADY,
+                    "current": _current_state(conn, suggestion_id)}
+
         conn.execute(
             """
             INSERT INTO dic_suggestion_decisions
@@ -568,7 +641,44 @@ def decide_suggestion(
         )
         conn.commit()
 
-    return True
+    return {"recorded": True, "outcome": DECIDE_RECORDED, "current": None}
+
+
+def _current_state(conn, suggestion_id: str) -> dict:
+    """The state that STANDS for *suggestion_id*, for a refusal message.
+
+    Best-effort: a refusal whose explanation could not be read is still a
+    refusal, and it must not become an exception on the losing reviewer's
+    request. ``decision`` is ``None`` when nothing is recorded -- never filled
+    in from the status, which would name a decider for a mechanism.
+    """
+    state: dict = {"suggestion_id": suggestion_id, "status": None, "decision": None}
+    try:
+        row = conn.execute(
+            "SELECT status, updated_at, applied_by FROM dic_suggestions "
+            "WHERE suggestion_id = %s",
+            (suggestion_id,),
+        ).fetchone()
+        if row is not None:
+            state["status"] = _col(row, "status", 0)
+            state["updated_at"] = _col(row, "updated_at", 1)
+            state["applied_by"] = _col(row, "applied_by", 2)
+        drow = conn.execute(
+            "SELECT decision, decided_by, decided_at, note "
+            "FROM dic_suggestion_decisions WHERE suggestion_id = %s "
+            "ORDER BY decided_at DESC",
+            (suggestion_id,),
+        ).fetchone()
+        if drow is not None:
+            state["decision"] = {
+                "decision": _col(drow, "decision", 0),
+                "decided_by": _col(drow, "decided_by", 1),
+                "decided_at": _col(drow, "decided_at", 2),
+                "note": _col(drow, "note", 3),
+            }
+    except Exception as exc:  # noqa: BLE001
+        state["read_error"] = str(exc)
+    return state
 
 
 def record_application(suggestion_id: str, applied_text: str, applied_by: str) -> bool:
@@ -652,12 +762,21 @@ def supersede_suggestion(
         ).fetchone()
         if row is None or _col(row, "status", 0) != "pending":
             return False
-        conn.execute(
+        # dwr-collab-01 -- CONDITIONAL, for the reason ``decide_outcome`` states
+        # at length: the SELECT above is stale by the time this runs. Two
+        # retirements racing here is not two identical writes -- an anchor-stale
+        # supersede carries NO successor and a redraft's carries one, so the
+        # loser's ``successor_suggestion_id`` is silently dropped and the chain
+        # a reader follows from a retired change dead-ends.
+        cur = conn.execute(
             """UPDATE dic_suggestions
                   SET status=%s, successor_suggestion_id=%s, updated_at=%s
-                WHERE suggestion_id=%s""",
+                WHERE suggestion_id=%s AND status='pending'""",
             ("superseded", successor or None, now, suggestion_id),
         )
+        if (cur.rowcount or 0) < 1:
+            conn.rollback()
+            return False
         conn.execute(
             """
             INSERT INTO dic_suggestion_decisions

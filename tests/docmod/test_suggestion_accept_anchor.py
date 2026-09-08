@@ -321,7 +321,17 @@ def test_a_superseded_suggestion_cannot_be_accepted_afterwards(client, db):
     _set_section(section_id, SECTION)
     resp = client.post(f"{P}/api/suggestions/{sid}/accept", json={})
     assert resp.status_code == 409
-    assert resp.get_json()["error"] == "suggestion already decided"
+    body = resp.get_json()
+    # dwr-collab-01 renamed this refusal to the machine-readable
+    # ``already_decided`` -- ONE key for both doors and for both ways of
+    # reaching it -- and made it carry the state that STANDS. The behaviour
+    # pinned here is unchanged (409, nothing written); the payload is stricter.
+    assert body["error"] == "already_decided"
+    assert body["decision_recorded"] is False and body["applied"] is False
+    assert body["attempted"] == "accept"
+    assert body["current"]["status"] == "superseded"
+    # No human decided a supersede, and none is invented for it.
+    assert body["current"]["decided_by"] in (None, "system:anchor_verify")
     assert _section_content(section_id)["content"] == SECTION
 
 
@@ -385,7 +395,9 @@ def test_decision_failure_still_lands_nothing(client, db, monkeypatch):
 
     def _boom(*a, **k):
         raise RuntimeError("decision log unavailable")
-    monkeypatch.setattr(store, "decide_suggestion", _boom)
+    # dwr-collab-01: the door calls ``decide_outcome``. Patching the old name
+    # intercepted nothing and this guard passed without ever firing.
+    monkeypatch.setattr(store, "decide_outcome", _boom)
 
     resp = client.post(f"{P}/api/suggestions/{sid}/accept", json={})
     body = resp.get_json()

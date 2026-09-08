@@ -157,7 +157,6 @@ tests/docmod/test_pack_generator.py
 tests/docmod/test_pg_fixes_and_flow.py
 tests/docmod/test_reverse_bridge.py
 tests/docmod/test_sop_workflows_pack.py
-tests/docmod/test_standards_catalog.py
 tests/docmod/test_temporal_validity.py
 tests/document_intelligence/test_chunk_repair.py
 tests/document_intelligence/test_freshness_notifier.py
