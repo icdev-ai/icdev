@@ -105,13 +105,11 @@
   </div>
 </div>
 
-<!-- Sections + WriteGuard Sidebar (techwriter two-column layout) -->
-{% if doc.template_type %}
+<!-- Sections + right rail (dwr-cmt-02: the rail is on EVERY document, not just
+     the techwriter two-column layout — a reviewer reads comments and change
+     cards on every document, and WriteGuard is the thing that is conditional) -->
 <div style="display:flex;gap:18px;margin-bottom:24px;align-items:flex-start;">
-<div style="flex:1 1 65%;min-width:0;">
-{% else %}
-<div style="margin-bottom:24px;">
-{% endif %}
+<div style="flex:1 1 62%;min-width:0;">
   <h3 style="margin:0 0 12px;color:#9bb8d8;font-size:14px;">Sections
     {% if doc.template_type %}<span style="margin-left:8px;font-size:10px;background:#1a1a3a;color:#a78bfa;padding:2px 8px;border-radius:8px;">{{ doc.template_type | replace('_', ' ') }}</span>{% endif %}
   </h3>
@@ -302,7 +300,8 @@
         </div>
         <textarea id="ann-comment-{{ s.section_id }}" placeholder="Add a comment…" rows="2"
           style="width:100%;background:#0b1726;border:1px solid #1a3560;color:#b8d0e8;padding:8px;border-radius:4px;font-size:12px;box-sizing:border-box;resize:vertical;"></textarea>
-        <div style="display:flex;justify-content:flex-end;margin-top:6px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">
+          <span class="ann-attribution" style="color:#5a7aa0;font-size:10px;"></span>
           <button onclick="saveAnnotation('{{ s.section_id }}')"
             style="background:#2a1a6e;color:#a78bfa;padding:5px 14px;border:1px solid #3a2a8e;border-radius:4px;cursor:pointer;font-size:12px;">
             + Add Comment
@@ -317,10 +316,12 @@
   <p style="color:#5a7aa0;font-size:12px;">No sections yet. Generate a draft or instantiate a template.</p>
   {% endfor %}
 </div><!-- /sections -->
-{% if doc.template_type %}
 </div><!-- /sections flex column -->
+<div style="flex:0 0 340px;width:340px;display:flex;flex-direction:column;gap:14px;position:sticky;top:80px;align-self:flex-start;max-height:calc(100vh - 100px);overflow-y:auto;">
+{% include "document_intelligence/_review_rail.html" %}
+{% if doc.template_type %}
 <!-- WriteGuard Sidebar -->
-<aside id="wg-sidebar" style="flex:0 0 280px;width:280px;background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:14px;position:sticky;top:80px;align-self:flex-start;max-height:calc(100vh - 120px);overflow-y:auto;">
+<aside id="wg-sidebar" style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:14px;">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
     <span style="color:#9bb8d8;font-size:12px;font-weight:600;">✍️ WriteGuard</span>
     <div style="display:flex;align-items:center;gap:6px;">
@@ -330,8 +331,9 @@
   </div>
   <div class="wg-sb-body" style="font-size:11px;color:#b8d0e8;"></div>
 </aside>
-</div><!-- /flex row -->
 {% endif %}
+</div><!-- /right rail column -->
+</div><!-- /flex row -->
 
 <!-- Excalidraw iframe dialog (techwriter only, requires EXCALIDRAW_HOST) -->
 {% if doc.template_type and config.EXCALIDRAW_HOST %}
@@ -754,7 +756,11 @@ function assignSection(sectionId, userId) {
 }
 
 // ── Section Annotations ──────────────────────────────────────────────────────
-var _ANN_CURRENT_USER = '{{ (current_user.display_name or current_user.email or current_user.username) if current_user else "reviewer" }}';
+// dwr-cmt-02: DISPLAY ONLY. The stored author is the AUTHENTICATED account id
+// and it is decided by the server — see the three POSTs below, which no longer
+// send an `author` at all. This string is never written anywhere.
+var _ANN_CURRENT_USER_DISPLAY = {{ (current_user_display or current_user or 'reviewer') | tojson }};
+var _ANN_AUTHENTICATED = {{ (authenticated | default(false)) | tojson }};
 
 var _CAT_COLORS = {
   question:    '#1d4ed8', improvement: '#0f766e', compliance: '#7c3aed',
@@ -843,11 +849,11 @@ function _annCard(sid, a, isReply) {
     'opacity:' + (resolved ? '0.65' : '1') + ';">' +
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;flex-wrap:wrap;">' +
       '<span style="background:' + bg + ';color:#fff;font-size:9px;padding:2px 7px;border-radius:8px;text-transform:uppercase;">' + escH(cat) + '</span>' +
-      '<span style="color:#7ab3f0;font-size:10px;"><strong>' + escH(a.author || 'reviewer') + '</strong> &middot; ' + escH((a.created_at || '').slice(0,10)) + '</span>' +
+      '<span style="color:#7ab3f0;font-size:10px;"><strong>' + escH(a.author_display || a.author || 'reviewer') + '</strong> &middot; ' + escH((a.created_at || '').slice(0,10)) + '</span>' +
       (isReply ? '' :
         '<span style="background:' + badge.bg + ';color:' + badge.fg + ';border:1px solid ' + badge.br +
         ';font-size:9px;padding:1px 6px;border-radius:8px;">' + badge.label + '</span>') +
-      (resolved ? '<span style="margin-left:auto;color:#4ade80;font-size:10px;">Resolved by ' + escH(a.resolved_by || '') + '</span>' : '') +
+      (resolved ? '<span style="margin-left:auto;color:#4ade80;font-size:10px;">Resolved by ' + escH(a.resolved_by_display || a.resolved_by || '') + '</span>' : '') +
     '</div>';
 
   if (a.selected_text) {
@@ -928,7 +934,7 @@ function saveAnnotation(sid) {
   fetch('/document-intelligence/api/sections/' + sid + '/annotations', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({category: cat, anchor_text: sel, comment: comm, author: _ANN_CURRENT_USER})
+    body: JSON.stringify({category: cat, anchor_text: sel, comment: comm})
   }).then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.error) { alert('Error: ' + data.error); return; }
@@ -953,7 +959,7 @@ function sendReply(annId, sid) {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({category: 'question', comment: text,
-                          parent_ann_id: annId, author: _ANN_CURRENT_USER})
+                          parent_ann_id: annId})
   }).then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.error) { alert('Error: ' + data.error); return; }
@@ -966,7 +972,7 @@ function resolveThread(annId, sid) {
   fetch('/document-intelligence/api/annotations/' + annId, {
     method: 'PUT',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({status: 'resolved', resolved_by: _ANN_CURRENT_USER,
+    body: JSON.stringify({status: 'resolved',
                           resolution_note: note})
   }).then(function(r) { return r.json(); })
     .then(function(data) {
@@ -989,6 +995,458 @@ function deleteAnnotation(annId, sid) {
   fetch('/document-intelligence/api/annotations/' + annId, {method: 'DELETE'})
     .then(function() { loadAnnotations(sid); });
 }
+
+// ── dwr-cmt-02: the review rail ──────────────────────────────────────────────
+// ONE column carrying BOTH kinds — what the AI proposes and what a colleague
+// asked — ordered by where in the section each one points.
+//
+// POSITION COMES FROM THE SERVER AND IS NEVER INVENTED HERE. An item whose
+// `position` is null is drawn in the labelled "no position" group; it is never
+// sorted to the top, because sorting an unanchored proposal to offset 0 draws
+// it as a remark about the first sentence. Measured on the live board
+// 2026-09-08, that is 58 of 58 suggestions.
+//
+// The rail has NO door of its own: every act below POSTs to the route that
+// already owns it, then reloads both this rail and the inline panel, so the
+// two surfaces cannot drift apart.
+
+var _RAIL = null;
+var _RAIL_OPEN_ONLY = false;
+
+// The rail EXTENDS dwr-cmt-01's reason vocabulary rather than starting a
+// second one — one anchor verdict, worded one way, wherever it is shown.
+_ANCHOR_WHY.offsets_verified     = 'the span still reads exactly as it was written against';
+_ANCHOR_WHY.anchor_stale         = 'the section changed under it — those offsets no longer hold the text it named';
+_ANCHOR_WHY.no_offsets           = 'it claims an appliable span but records no offsets; accept would refuse it';
+_ANCHOR_WHY.no_section_of_record = 'it names no section, so there is nothing to check a span against';
+
+function _railKind(item) {
+  return item.kind === 'change'
+    ? {icon: '⚡', label: 'AI proposes', fg: '#f59e0b', bg: '#2a1a0a', br: '#5a3a1a'}
+    : {icon: '💬', label: 'asked',  fg: '#a78bfa', bg: '#1a1a3a', br: '#3a2a6e'};
+}
+
+function _railStatusPill(item) {
+  var s = item.status || '';
+  var map = {
+    open:       {fg: '#7ab3f0', bg: '#1a2e52'},
+    resolved:   {fg: '#4ade80', bg: '#052e16'},
+    pending:    {fg: '#f59e0b', bg: '#2a1a0a'},
+    accepted:   {fg: '#4ade80', bg: '#052e16'},
+    rejected:   {fg: '#f87171', bg: '#2e0505'},
+    superseded: {fg: '#fbbf24', bg: '#2e1a05'}
+  };
+  var c = map[s];
+  if (!c) return '';
+  return '<span style="background:' + c.bg + ';color:' + c.fg + ';font-size:9px;padding:1px 6px;border-radius:8px;">' + escH(s) + '</span>';
+}
+
+function _railIsOpen(item) {
+  return item.kind === 'change' ? item.status === 'pending' : item.status !== 'resolved';
+}
+
+function _railItemCard(item) {
+  var k = _railKind(item);
+  var st = (item.anchor && item.anchor.state) || 'unverifiable';
+  var badge = _ANCHOR_BADGE[st] || _ANCHOR_BADGE.unverifiable;
+  var cand = item.anchor && item.anchor.relocation_candidate;
+  var html = '<div id="rail-item-' + escH(item.id) + '" class="rail-item" style="background:#050d1f;border:1px solid ' + k.br +
+    ';border-left:3px solid ' + k.fg + ';border-radius:5px;padding:9px 10px;margin-bottom:7px;cursor:pointer;"' +
+    ' onclick="railFocus(\'' + escH(item.id) + '\')">';
+
+  html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px;">' +
+    '<span style="color:' + k.fg + ';font-size:10px;">' + k.icon + ' ' + k.label + '</span>' +
+    '<span style="color:#7ab3f0;font-size:10px;">' + escH(item.author_display || item.author || '—') + '</span>' +
+    (item.position !== null && item.position !== undefined
+      ? '<span title="the offset its verified span starts at" style="color:#5a7aa0;font-size:9px;">@' + item.position + '</span>'
+      : '') +
+    _railStatusPill(item) +
+    '<span style="margin-left:auto;background:' + badge.bg + ';color:' + badge.fg + ';border:1px solid ' + badge.br +
+      ';font-size:9px;padding:1px 6px;border-radius:8px;">' + badge.label + '</span>' +
+    '</div>';
+
+  if (item.anchor_text) {
+    html += '<p style="color:#5a7aa0;font-size:10px;font-style:italic;margin:0 0 4px;' +
+      (st === 'orphaned' ? 'text-decoration:line-through;' : '') + '">&ldquo;' +
+      escH(item.anchor_text.slice(0, 110)) + '&rdquo;</p>';
+  }
+  if (item.kind === 'change') {
+    if (item.body) html += '<p style="color:#c8d8e8;font-size:11px;margin:0 0 5px;">' + escH(item.body) + '</p>';
+    if (item.suggested_content) {
+      html += '<p style="color:#7fd8a0;font-size:11px;margin:0 0 5px;background:#08170f;border-radius:3px;padding:5px 7px;">' +
+        escH(item.suggested_content.slice(0, 240)) + (item.suggested_content.length > 240 ? '…' : '') + '</p>';
+    }
+  } else {
+    html += '<p style="color:#c8d8e8;font-size:11px;margin:0 0 5px;">' + escH(item.body || '') + '</p>';
+  }
+
+  // The item reports its own anchor. Nothing is silently re-pointed, and a
+  // relocation candidate is advice for a human.
+  if (st === 'orphaned' || st === 'unverifiable') {
+    html += '<p style="color:' + badge.fg + ';font-size:10px;margin:0 0 5px;">&#9888; ' + escH(_anchorWhy(item)) +
+      (cand ? '. It now reads at ' + cand.anchor_start + '&ndash;' + cand.anchor_end +
+              ' &mdash; nothing has been re-pointed.' : '.') + '</p>';
+  }
+  if (item.thread_broken) {
+    html += '<p style="color:#fbbf24;font-size:10px;margin:0 0 5px;">&#9888; the comment this replied to is gone.</p>';
+  }
+
+  (item.replies || []).forEach(function(r) {
+    html += '<div style="margin-left:12px;border-left:2px solid #1a3560;padding:4px 0 4px 8px;">' +
+      '<span style="color:#7ab3f0;font-size:10px;">' + escH(r.author_display || r.author || '—') + '</span>' +
+      '<p style="color:#a8c8e0;font-size:11px;margin:2px 0 0;">' + escH(r.comment || '') + '</p></div>';
+  });
+
+  html += '<div onclick="event.stopPropagation();" style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;">';
+  if (item.kind === 'comment') {
+    if (item.status !== 'resolved') {
+      html += '<button onclick="railToggleReply(\'' + escH(item.id) + '\')" style="background:#0b1726;color:#7ab3f0;border:1px solid #1a3560;border-radius:3px;padding:3px 9px;font-size:10px;cursor:pointer;">Reply</button>' +
+        '<button onclick="railResolve(\'' + escH(item.id) + '\',\'' + escH(item.section_id) + '\')" style="background:#052e16;color:#4ade80;border:1px solid #1a5a30;border-radius:3px;padding:3px 9px;font-size:10px;cursor:pointer;">Resolve</button>';
+    } else {
+      html += '<button onclick="railReopen(\'' + escH(item.id) + '\',\'' + escH(item.section_id) + '\')" style="background:#0b1726;color:#7ab3f0;border:1px solid #1a3560;border-radius:3px;padding:3px 9px;font-size:10px;cursor:pointer;">Reopen</button>';
+    }
+  } else if (item.status === 'pending') {
+    html += '<button onclick="railDecide(\'' + escH(item.id) + '\',\'accepted\')" style="background:#052e16;color:#4ade80;border:1px solid #1a5a30;border-radius:3px;padding:3px 9px;font-size:10px;cursor:pointer;">&#10003; Accept</button>' +
+      '<button onclick="railDecide(\'' + escH(item.id) + '\',\'rejected\')" style="background:#2e0505;color:#f87171;border:1px solid #5a1a1a;border-radius:3px;padding:3px 9px;font-size:10px;cursor:pointer;">&#10005; Reject</button>';
+  }
+  html += '</div>';
+
+  if (item.kind === 'comment' && item.status !== 'resolved') {
+    html += '<div id="rail-reply-' + escH(item.id) + '" onclick="event.stopPropagation();" style="display:none;margin-top:6px;">' +
+      '<textarea id="rail-reply-text-' + escH(item.id) + '" rows="2" placeholder="Reply…" style="width:100%;background:#0b1726;border:1px solid #1a3560;color:#b8d0e8;padding:6px;border-radius:4px;font-size:11px;box-sizing:border-box;"></textarea>' +
+      '<div style="display:flex;justify-content:flex-end;margin-top:4px;">' +
+        '<button onclick="railSendReply(\'' + escH(item.id) + '\',\'' + escH(item.section_id) + '\')" style="background:#2a1a6e;color:#a78bfa;border:1px solid #3a2a8e;border-radius:4px;padding:3px 11px;font-size:10px;cursor:pointer;">Reply</button>' +
+      '</div></div>';
+  }
+  html += '<div id="rail-note-' + escH(item.id) + '" style="color:#fbbf24;font-size:10px;margin-top:5px;"></div>';
+  return html + '</div>';
+}
+
+function _railVisible(items) {
+  return _RAIL_OPEN_ONLY ? items.filter(_railIsOpen) : items;
+}
+
+function _railGroup(title, note, items) {
+  if (!items.length) return '';
+  return '<p style="color:#5a7aa0;font-size:9px;margin:6px 0 4px;text-transform:uppercase;letter-spacing:.5px;">' +
+    escH(title) + (note ? ' <span style="text-transform:none;letter-spacing:0;font-style:italic;">&mdash; ' + escH(note) + '</span>' : '') +
+    '</p>' + items.map(_railItemCard).join('');
+}
+
+function renderReviewRail(rail) {
+  _RAIL = rail;
+  var body = document.getElementById('rail-body');
+  var counts = document.getElementById('rail-counts');
+  var viewerEl = document.getElementById('rail-viewer');
+  if (!body) return;
+
+  var v = rail.viewer || {};
+  if (viewerEl) {
+    viewerEl.innerHTML = v.authenticated
+      ? 'Commenting as <strong style="color:#a78bfa;">' + escH(v.display_name || v.user_id) + '</strong>'
+      : '<span style="color:#fbbf24;">Not signed in — comments are attributed to the anonymous local user.</span>';
+  }
+
+  // `unmeasurable` is NEVER drawn as an empty rail: an empty rail that cannot
+  // tell "nobody has said anything" from "nothing could be read" is a clean
+  // bill of health for a document nobody reviewed.
+  if (rail.state === 'unmeasurable') {
+    counts.innerHTML = '';
+    body.innerHTML = '<p style="color:#fbbf24;font-size:11px;">&#9888; This rail could not be built (' +
+      escH(rail.reason || 'unknown') + '). That is <strong>not</strong> a clean bill of health &mdash; ' +
+      'nothing here says whether this document has comments or proposals.</p>';
+    return;
+  }
+
+  var c = rail.counts || {};
+  var bits = [];
+  bits.push('<strong style="color:#a78bfa;">' + (c.comments || 0) + '</strong> comment thread(s), ' +
+            '<strong style="color:#f59e0b;">' + (c.changes || 0) + '</strong> proposal(s)');
+  // Two numbers, never merged: a positioned item is beside its sentence, an
+  // unpositioned one is only somewhere in the section.
+  bits.push((c.positioned || 0) + ' placed beside their text &middot; ' + (c.unpositioned || 0) + ' with no position');
+  if (c.orphaned)     bits.push('<span style="color:#f87171;">' + c.orphaned + ' orphaned</span>');
+  if (c.unverifiable) bits.push('<span style="color:#fbbf24;">' + c.unverifiable + ' not checked</span>');
+  counts.innerHTML = bits.join('<br>');
+
+  if (rail.state === 'empty') {
+    body.innerHTML = '<p style="color:#5a7aa0;font-size:11px;">Nobody has commented on this document and nothing has been proposed for it. ' +
+      'That is a <em>measured</em> zero — the sections were read.</p>' + _railComposer();
+    return;
+  }
+
+  var html = _railComposer();
+  (rail.sections || []).forEach(function(sec) {
+    var placed = _railVisible(sec.positioned || []);
+    var loose  = _railVisible(sec.unpositioned || []);
+    if (!placed.length && !loose.length) return;
+    html += '<div style="margin-bottom:12px;">' +
+      '<div style="color:#9bb8d8;font-size:11px;font-weight:600;border-bottom:1px solid #1a3560;padding-bottom:3px;margin-bottom:6px;cursor:pointer;"' +
+      ' onclick="railScrollToSection(\'' + escH(sec.section_id) + '\')">' + escH(sec.heading || sec.section_id) + '</div>' +
+      _railGroup('beside the text', 'in the order they appear in the section', placed) +
+      _railGroup('no position', 'they name this section, but no span in it holds — never drawn against a sentence', loose) +
+      '</div>';
+  });
+
+  var unplaced = _railVisible(rail.unplaced || []);
+  if (unplaced.length) {
+    html += '<div style="margin-bottom:12px;border:1px dashed #5a3a1a;border-radius:6px;padding:8px;">' +
+      '<div style="color:#f59e0b;font-size:11px;font-weight:600;margin-bottom:4px;">Not placed &middot; ' + unplaced.length + '</div>' +
+      '<p style="color:#7a8cb0;font-size:10px;margin:0 0 6px;">These name <strong>no section</strong> of this version, so they cannot be shown beside any sentence. ' +
+      'They are listed whole rather than attached to a section they do not name.</p>' +
+      unplaced.map(_railItemCard).join('') + '</div>';
+  }
+  body.innerHTML = html;
+}
+
+function _railComposer() {
+  return '<div style="background:#050d1f;border:1px solid #2a1a5e;border-radius:6px;padding:9px;margin-bottom:10px;">' +
+    '<div style="color:#7a8cb0;font-size:10px;margin-bottom:5px;">Select text in a section, then comment on it.</div>' +
+    '<textarea id="rail-new-comment" rows="2" placeholder="Comment on the selected text…" style="width:100%;background:#0b1726;border:1px solid #1a3560;color:#b8d0e8;padding:6px;border-radius:4px;font-size:11px;box-sizing:border-box;"></textarea>' +
+    '<div style="display:flex;gap:6px;align-items:center;margin-top:5px;">' +
+      '<select id="rail-new-cat" style="background:#0b1726;border:1px solid #1a3560;color:#b8d0e8;padding:4px 6px;border-radius:4px;font-size:10px;">' +
+        '<option value="question">Question</option><option value="improvement">Improvement</option>' +
+        '<option value="compliance">Compliance</option><option value="risk">Risk</option>' +
+        '<option value="editorial">Editorial</option></select>' +
+      '<button id="rail-add-comment" onclick="railComment()" style="background:#2a1a6e;color:#a78bfa;border:1px solid #3a2a8e;border-radius:4px;padding:4px 11px;font-size:10px;cursor:pointer;">+ Comment on selection</button>' +
+    '</div>' +
+    '<div id="rail-new-status" style="color:#fbbf24;font-size:10px;margin-top:5px;"></div></div>';
+}
+
+// ── Acts. Every one goes through the route that already owns it. ─────────────
+
+function _railRefresh(sid) {
+  loadReviewRail();
+  if (sid && document.getElementById('ann-list-' + sid)) loadAnnotations(sid);
+}
+
+function railToggleReply(id) {
+  var el = document.getElementById('rail-reply-' + id);
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+function railSendReply(id, sid) {
+  var box = document.getElementById('rail-reply-text-' + id);
+  var text = (box && box.value || '').trim();
+  if (!text) { _railNote(id, 'Please enter a reply.'); return; }
+  // No `author` is sent: the server attributes the row to the AUTHENTICATED
+  // account. A client-supplied name is the free-text attribution this card
+  // removes.
+  fetch('/document-intelligence/api/sections/' + sid + '/annotations', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({category: 'question', comment: text, parent_ann_id: id})
+  }).then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.error) { _railNote(id, d.error); return; }
+      _railRefresh(sid);
+    });
+}
+
+function railResolve(id, sid) {
+  fetch('/document-intelligence/api/annotations/' + id, {
+    method: 'PUT', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({status: 'resolved'})
+  }).then(function(r) { return r.json(); })
+    .then(function(d) { if (d.error) { _railNote(id, d.error); return; } _railRefresh(sid); });
+}
+
+function railReopen(id, sid) {
+  fetch('/document-intelligence/api/annotations/' + id, {
+    method: 'PUT', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({status: 'open'})
+  }).then(function(r) { return r.json(); })
+    .then(function(d) { if (d.error) { _railNote(id, d.error); return; } _railRefresh(sid); });
+}
+
+function railDecide(id, decision) {
+  // The SAME accept/reject doors the suggestions panel uses — they re-verify
+  // the anchor against the live section and refuse a drifted one.
+  fetch('/document-intelligence/api/suggestions/' + id + '/' + (decision === 'accepted' ? 'accept' : 'reject'), {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})
+  }).then(function(r) { return r.json().then(function(d) { return {ok: r.ok, d: d}; }); })
+    .then(function(res) {
+      if (!res.ok) { _railNote(id, res.d.message || res.d.error || 'refused'); return; }
+      // An ACCEPT splices the section's content of record, so the rendered
+      // section on this page is now stale — and a stale rendering makes every
+      // other span on it look orphaned when it is not. Reload, exactly as the
+      // suggestions panel does. A REJECT changes no content, so it does not.
+      if (decision === 'accepted') { window.location.reload(); return; }
+      loadReviewRail();
+      if (typeof loadSuggestionCounts === 'function') loadSuggestionCounts();
+    });
+}
+
+function _railNote(id, msg) {
+  var el = document.getElementById('rail-note-' + id);
+  if (el) el.textContent = msg; else alert(msg);
+}
+
+function railComment() {
+  var status = document.getElementById('rail-new-status');
+  var text = (document.getElementById('rail-new-comment').value || '').trim();
+  if (!text) { status.textContent = 'Enter a comment first.'; return; }
+  var picked = _railSelection();
+  if (!picked.section_id) {
+    status.textContent = 'Select some text inside a section first — the rail anchors a comment to what you selected.';
+    return;
+  }
+  // The SELECTED TEXT is sent, never a DOM offset: the section is rendered
+  // through markdown, so an offset here indexes the rendered HTML and not the
+  // content of record. The server resolves it to an honest basis.
+  fetch('/document-intelligence/api/sections/' + picked.section_id + '/annotations', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({category: document.getElementById('rail-new-cat').value,
+                          comment: text, anchor_text: picked.text})
+  }).then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.error) { status.textContent = d.error; return; }
+      status.textContent = (d.anchor && d.anchor.state === 'unanchored')
+        ? 'Saved as a section-level comment — no single span could be claimed for that selection.'
+        : '';
+      _railRefresh(picked.section_id);
+    });
+}
+
+function _railSelection() {
+  var sel = window.getSelection();
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return {};
+  var node = sel.anchorNode;
+  var el = node && (node.nodeType === 1 ? node : node.parentElement);
+  while (el && !(el.id && el.id.indexOf('content-') === 0)) el = el.parentElement;
+  if (!el) return {};
+  return {section_id: el.id.slice('content-'.length), text: sel.toString().trim()};
+}
+
+// ── Highlighting a span in the RENDERED section ──────────────────────────────
+
+function _clearRailHighlight() {
+  Array.prototype.slice.call(document.querySelectorAll('mark.rail-hit')).forEach(function(m) {
+    var p = m.parentNode;
+    while (m.firstChild) p.insertBefore(m.firstChild, m);
+    p.removeChild(m);
+    p.normalize();
+  });
+}
+
+// EXACTLY ONCE OR NOTHING — the same rule `resolve_anchor` applies server-side.
+// The anchor verifies against the section's SOURCE content; this DOM holds
+// RENDERED markdown, so a verified span can legitimately be absent here or
+// present more than once. Both are reported; neither is guessed at.
+function _highlightInRendered(host, needle) {
+  _clearRailHighlight();
+  if (!host) return {ok: false, reason: 'the section is not on this page'};
+  if (!needle) return {ok: false, reason: 'this one records no span, so there is nothing to highlight'};
+
+  var walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT, null, false);
+  var nodes = [], text = '', n;
+  while ((n = walker.nextNode())) { nodes.push({node: n, at: text.length}); text += n.nodeValue; }
+
+  var first = text.indexOf(needle);
+  if (first < 0) {
+    return {ok: false, reason: 'that text is not in the RENDERED section — it verifies against the source, ' +
+                               'and markdown rendering can change it. Nothing was highlighted.'};
+  }
+  if (text.indexOf(needle, first + 1) >= 0) {
+    return {ok: false, reason: 'that text appears more than once in the rendered section, so no single span ' +
+                               'can be claimed. Nothing was highlighted.'};
+  }
+
+  var end = first + needle.length, startNode, startOff, endNode, endOff;
+  for (var i = 0; i < nodes.length; i++) {
+    var s = nodes[i].at, e = s + nodes[i].node.nodeValue.length;
+    if (startNode === undefined && first >= s && first < e) { startNode = nodes[i].node; startOff = first - s; }
+    if (endNode === undefined && end > s && end <= e) { endNode = nodes[i].node; endOff = end - s; }
+  }
+  if (!startNode || !endNode) return {ok: false, reason: 'the span could not be located in the rendered text'};
+
+  var range = document.createRange();
+  range.setStart(startNode, startOff);
+  range.setEnd(endNode, endOff);
+  try {
+    var mark = document.createElement('mark');
+    mark.className = 'rail-hit';
+    mark.style.cssText = 'background:#3a2a6e;color:#fff;border-radius:2px;padding:0 1px;';
+    range.surroundContents(mark);
+    mark.scrollIntoView({behavior: 'smooth', block: 'center'});
+    return {ok: true};
+  } catch (err) {
+    // The span crosses element boundaries and cannot be wrapped without
+    // rewriting the rendered markup. Select it instead: visible, and it
+    // mutates nothing.
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    (startNode.parentElement || host).scrollIntoView({behavior: 'smooth', block: 'center'});
+    return {ok: true};
+  }
+}
+
+function railScrollToSection(sid) {
+  var sec = document.getElementById('sec-' + sid);
+  if (sec) sec.scrollIntoView({behavior: 'smooth', block: 'center'});
+}
+
+function _railFind(id) {
+  if (!_RAIL) return null;
+  var pools = (_RAIL.sections || []).map(function(s) {
+    return (s.positioned || []).concat(s.unpositioned || []);
+  });
+  pools.push(_RAIL.unplaced || []);
+  for (var i = 0; i < pools.length; i++) {
+    for (var j = 0; j < pools[i].length; j++) if (pools[i][j].id === id) return pools[i][j];
+  }
+  return null;
+}
+
+function railFocus(id) {
+  var item = _railFind(id);
+  if (!item) return;
+  var note = document.getElementById('rail-note-' + id);
+  if (note) note.textContent = '';
+  if (!item.section_id) {
+    if (note) note.textContent = 'This one names no section, so there is nothing on the page to point at.';
+    return;
+  }
+  railScrollToSection(item.section_id);
+  var res = _highlightInRendered(document.getElementById('content-' + item.section_id), item.anchor_text);
+  if (!res.ok && note) note.textContent = res.reason;
+}
+
+function railToggleOpenOnly() {
+  _RAIL_OPEN_ONLY = !_RAIL_OPEN_ONLY;
+  var btn = document.getElementById('rail-filter-open');
+  if (btn) {
+    btn.style.background = _RAIL_OPEN_ONLY ? '#2a1a6e' : '#140a24';
+    btn.textContent = _RAIL_OPEN_ONLY ? 'open only ✓' : 'open only';
+  }
+  if (_RAIL) renderReviewRail(_RAIL);
+}
+
+function loadReviewRail() {
+  var el = document.getElementById('review-rail');
+  if (!el) return;
+  fetch('/document-intelligence/api/documents/' + encodeURIComponent(el.dataset.docId) + '/review-rail')
+    .then(function(r) { return r.json(); })
+    .then(renderReviewRail)
+    .catch(function(e) {
+      // A rail that could not be fetched is UNMEASURABLE, and says so.
+      renderReviewRail({state: 'unmeasurable', reason: 'fetch failed: ' + e,
+                        counts: {}, sections: [], unplaced: []});
+    });
+}
+
+document.addEventListener('DOMContentLoaded', loadReviewRail);
+
+// The inline composer names who it will attribute to, for the same reason the
+// rail does: a comment box that never says whose name goes on the row is what
+// invites the free-text habit this card removes.
+document.addEventListener('DOMContentLoaded', function() {
+  var text = _ANN_AUTHENTICATED
+    ? 'Commenting as ' + _ANN_CURRENT_USER_DISPLAY
+    : 'Not signed in — attributed to the anonymous local user';
+  Array.prototype.slice.call(document.querySelectorAll('.ann-attribution'))
+    .forEach(function(el) { el.textContent = text; });
+});
 
 // ── Edit History ─────────────────────────────────────────────────────────────
 
