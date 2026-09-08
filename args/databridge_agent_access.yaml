@@ -397,3 +397,76 @@ connectors:
 #     tables: [incident]
 #     agents: [security_analyst, incident_responder]
 #     classification_ceiling: CUI
+
+  # ═════════════════════════════════════════════════════════════════════════
+  # THE OPERATOR'S OWN CONTENT — TEMPLATES, DELIBERATELY COMMENTED OUT
+  # (dic-bridge-01)
+  #
+  # SharePoint, Confluence, Jira and an operator-owned SQL database all reached
+  # DataBridge with this card. NONE of them ships as a grant, and that is the
+  # rule at the top of this file applied rather than an oversight: every one
+  # carries a credential, so every one is a per-deployment decision.
+  # tests/test_databridge_first_grant.py fails the build on any shipped grant
+  # whose connection descriptor carries an auth_secret_ref, so uncommenting a
+  # block below without also reviewing it is not something that can happen
+  # quietly.
+  #
+  # These are the shapes an operator should START from, not shapes they should
+  # accept. Two things need a real decision in each:
+  #
+  #   `tables`  — an allowlist, not a hint. `pages` and `page` mean "any page
+  #               this credential can see". If that is broader than intended,
+  #               narrow the CREDENTIAL (a service account scoped to one space
+  #               or one project), because this list cannot express "only the
+  #               Ops space" for a Confluence connector.
+  #
+  #   `agents`  — an empty list grants EVERY agent, including runtime-generated
+  #               SMEs. Name the roles.
+  #
+  # The classification ceilings below are CUI because that is what an internal
+  # wiki and an internal tracker typically hold. If the site holds MNPI, export-
+  # controlled material or PII, the ceiling is not the fix — the grant is wrong.
+  #
+  # - name: confluence
+  #   description: >-
+  #     The operator's Confluence site — the current text of internal policy and
+  #     procedure pages. Read-only. Use it to check whether a document's claim
+  #     matches the operative page before proposing a change.
+  #   connection_id: confluence-operator
+  #   tables: [spaces, pages, page, search]
+  #   agents: [doc_reviewer, docgen_analyst]
+  #   classification_ceiling: CUI
+  #
+  # - name: jira
+  #   description: >-
+  #     The operator's Jira site — issues, comments and the field-level
+  #     changelog. Read-only. The changelog is the citable part: "this moved
+  #     from X to Y on this date, by this person".
+  #   connection_id: jira-operator
+  #   tables: [projects, issues, issue, comments, changelog]
+  #   agents: [doc_reviewer, docgen_analyst]
+  #   classification_ceiling: CUI
+  #
+  # - name: sharepoint
+  #   description: >-
+  #     The operator's SharePoint tenant — sites, document libraries and the
+  #     TEXT of readable files. Read-only. A .docx or .pdf comes back as
+  #     `needs_extractor`, not as text; route those through document
+  #     intelligence's ingest path instead.
+  #   connection_id: sharepoint-operator
+  #   tables: [sites, site, drives, items, file_content, search]
+  #   agents: [doc_reviewer, docgen_analyst]
+  #   classification_ceiling: CUI
+  #
+  # - name: local_database
+  #   description: >-
+  #     An operator-owned SQL database — a policy register, a terminology table,
+  #     an asset inventory. Read-only over tables the operator declared on the
+  #     connection; there is no arbitrary-SQL surface.
+  #   connection_id: local-content-database
+  #   # These MUST match tables declared on the connection record. A name here
+  #   # that the connection does not declare grants nothing, which is the safe
+  #   # direction but is also a silently useless grant — keep the two in step.
+  #   tables: [policy_register]
+  #   agents: [doc_reviewer, docgen_analyst]
+  #   classification_ceiling: CUI
