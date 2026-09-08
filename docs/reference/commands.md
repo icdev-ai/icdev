@@ -6423,6 +6423,18 @@ version) assertion**.
 - **`confidence` is a declared prior, not a measurement.**
 - `as_of` (the source's clock) is kept apart from `observed_at` (ours), so stale
   evidence stays distinguishable from fresh evidence.
+- **An author's upload is the fifth source, ranked top (dwr-ev-01).** A DIC
+  upload may carry an `author_assertions` JSON field (multipart, on
+  `POST /document-intelligence/api/ingest`); each entry is written to
+  `dic_author_assertions` in the document's own transaction and into the store
+  under source `dic_author_assertions` (kind `author_supplied`, `precedence: 0`).
+  `precedence` is applied FIRST in `resolution.order`; sources declaring none
+  tie on the default and rank exactly as before. The catalog it contradicts is
+  kept under `others` with `conflict: true`. A library — import it:
+
+  ```python
+  from tools.document_intelligence.author_evidence import parse_assertions, record_assertions
+  ```
 - Refreshed on the nightly `doc_modernization_sweep` reflex; read by the docmod
   network-hardware pack only when the catalog and the hardware feed are both
   silent. Declared in `args/capability_consumption.yaml` `substrates:`.

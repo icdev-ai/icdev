@@ -452,11 +452,12 @@ def _structured_claims(hit) -> list[EntityClaim]:
         authoritative=bool(meta.get("authoritative")),
         confidence=_confidence(meta.get("confidence")),
         as_of=str(meta.get("as_of") or "")[:10],
+        rank=0,  # the store's winner
         extraction="structured",
         snippet=str(getattr(hit, "content", "") or "")[:_SNIPPET_CHARS],
     )]
 
-    for other in meta.get("others") or []:
+    for position, other in enumerate(meta.get("others") or [], start=1):
         if not isinstance(other, dict) or not other.get("verdict"):
             continue
         claims.append(EntityClaim(
@@ -480,10 +481,21 @@ def _structured_claims(hit) -> list[EntityClaim]:
             authoritative=bool(other.get("authoritative")),
             confidence=_confidence(other.get("confidence")),
             as_of=str(other.get("as_of") or "")[:10],
+            # The store's own rank when it carried one (dwr-ev-01); the
+            # position in its `others` list otherwise — which is the same
+            # order, so an older carrier still reads correctly.
+            rank=_rank(other.get("rank"), position),
             extraction="structured",
             snippet=f"{other.get('source')}={other.get('verdict')}",
         ))
     return claims
+
+
+def _rank(value, fallback: int) -> int:
+    try:
+        return int(value) if value is not None else int(fallback)
+    except (TypeError, ValueError):
+        return int(fallback)
 
 
 def _text_claims_for_hit(hit, entities: dict) -> list[EntityClaim]:

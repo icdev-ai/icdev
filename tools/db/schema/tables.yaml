@@ -459,6 +459,7 @@ tables:
   dic_acoic_impacts: it
   dic_acoic_regen_queue: it
   dic_artifacts: it
+  dic_author_assertions: it
   dic_chat_memory: it
   dic_chunk_links: it
   dic_claims: it

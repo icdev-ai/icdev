@@ -1,0 +1,7 @@
+# dwr-ev-01 -- author uploads as a declared currency source, ranked top with
+# disagreement preserved: the store's precedence key, the ingest write, the
+# docmod lane's carried rank, and the brokered read.
+tests/currency/test_author_precedence.py
+tests/test_dic_author_assertions_ingest.py
+tests/docmod/test_author_evidence_lane.py
+tests/databridge/test_author_evidence_grant.py

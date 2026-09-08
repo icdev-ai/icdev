@@ -290,3 +290,30 @@ connections:
         - 127.0.0.1
         - "::1"
       egress_denylist: []
+
+  # Author-supplied currency statements (dwr-ev-01) — the LOCAL DIC table
+  # dic_author_assertions, read by tools/databridge/connectors/
+  # icdev_author_evidence_connector.py.
+  #
+  # NO ENDPOINT, NO CREDENTIAL, NO SOCKET: the connector reads the platform's
+  # own database through the ordinary RLS-scoped connection, the icdev_demand
+  # shape. The loopback-only egress_allowlist below is declared because that is
+  # the vocabulary the shipped-grant tests derive "off-box" from
+  # (tests/databridge/test_floci_grant.py::_loopback_only_connection_ids) and
+  # an EMPTY allowlist there reads as "unrestricted"; nothing this connector
+  # does can leave the box whatever the list says.
+  - id: dic-author-evidence-local
+    name: DIC Author Evidence (local database)
+    connector_name: icdev_author_evidence
+    connector_type: database
+    auth_method: none
+    sync_direction: read
+    status: configured
+    classification: CUI
+    impact_level: IL4
+    config:
+      egress_allowlist:
+        - localhost
+        - 127.0.0.1
+        - "::1"
+      egress_denylist: []
