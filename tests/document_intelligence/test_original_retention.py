@@ -466,3 +466,111 @@ def test_original_verdict_never_reads_a_missing_column_as_absent():
     row = types.SimpleNamespace(filepath=None)
     assert originals.original_verdict(row)["status"] == "no_source"
     assert originals.original_verdict({"filepath": ""})["status"] == "no_source"
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# The uploaded name, not the temp file's (2026-09-08)
+#
+# `ingest_file` only ever sees the temp path, so it titles the document after
+# it. The restore below it used COALESCE(NULLIF(title,''), stem), which only
+# writes when the title is EMPTY -- and by then it is the temp stem, which is
+# not empty. Measured on the live board: documents titled `tmpqsnpbru9`.
+# ══════════════════════════════════════════════════════════════════════════
+def _ingest_stub_titling(monkeypatch, title_from):
+    """A stub that titles the row the way the REAL ingester does.
+
+    `title_from` takes the temp path and returns the title to write, so a test
+    can reproduce the temp-stem accident or a genuinely extracted title.
+    """
+    from tools.document_intelligence import ingest_orchestrator as io
+
+    seen: dict = {}
+
+    def fake_ingest_file(path, collection_id, *, tenant_id=None, classification=None,
+                         created_by=None, progress_cb=None, **_):
+        doc_id = f"doc-{uuid.uuid4().hex[:8]}"
+        conn = _raw()
+        conn.execute(
+            "INSERT OR REPLACE INTO dic_documents (doc_id, collection_id, source_id, "
+            "filename, filepath, content_type, provider, title, byte_size, "
+            "content_sha256, page_count, created_at, tenant_id, classification) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (doc_id, collection_id, "src", Path(path).name, str(path),
+             "application/pdf", "pypdf", title_from(path), os.path.getsize(path),
+             "x", 1, "2026-09-07T00:00:00+00:00", tenant_id or "default",
+             classification or "CUI"),
+        )
+        conn.commit()
+        conn.close()
+        seen["doc_id"] = doc_id
+        seen["tmp_stem"] = Path(path).stem
+        return io.IngestOutcome(
+            doc_id=doc_id, version_id=f"{doc_id}_v1", collection_id=collection_id,
+            source_id="src", provider="pypdf", chunks=0, chunks_embedded=0,
+            kg_entities=0, kg_relationships=0, tenant_id=tenant_id or "default",
+            classification=classification or "CUI",
+        )
+
+    monkeypatch.setattr(io, "ingest_file", fake_ingest_file)
+    return seen
+
+
+def _title_of(doc_id):
+    conn = _raw()
+    row = conn.execute("SELECT title, filename FROM dic_documents WHERE doc_id = ?",
+                       (doc_id,)).fetchone()
+    conn.close()
+    return (row[0], row[1])
+
+
+def test_a_temp_stem_title_is_replaced_by_the_uploaded_name(client, monkeypatch):
+    seen = _ingest_stub_titling(monkeypatch, lambda path: Path(path).stem)
+
+    r = client.post(
+        "/document-intelligence/api/ingest",
+        data={"file": (__import__("io").BytesIO(PDF_BYTES), "peering-policy-update.pdf"),
+              "collection_id": "default"},
+        content_type="multipart/form-data",
+    )
+    assert r.status_code == 202, r.get_json()
+    assert _wait_result(client, r.get_json()["job_id"])["status"] == "done"
+
+    title, filename = _title_of(seen["doc_id"])
+    assert title == "peering-policy-update", f"still the temp stem: {title!r}"
+    assert not title.startswith("tmp")
+    assert title != seen["tmp_stem"]
+    assert filename == "peering-policy-update.pdf"
+
+
+def test_a_real_extracted_title_is_kept(client, monkeypatch):
+    """Only the accident is overwritten. A title the extractor genuinely derived
+    -- PDF metadata, a leading heading -- is the better answer and survives."""
+    seen = _ingest_stub_titling(monkeypatch, lambda _p: "Peering Policy, Q3 Revision")
+
+    r = client.post(
+        "/document-intelligence/api/ingest",
+        data={"file": (__import__("io").BytesIO(PDF_BYTES), "upload-2.pdf"),
+              "collection_id": "default"},
+        content_type="multipart/form-data",
+    )
+    assert r.status_code == 202
+    assert _wait_result(client, r.get_json()["job_id"])["status"] == "done"
+
+    title, filename = _title_of(seen["doc_id"])
+    assert title == "Peering Policy, Q3 Revision"
+    assert filename == "upload-2.pdf", "the filename is still restored either way"
+
+
+def test_an_empty_title_is_filled_from_the_upload(client, monkeypatch):
+    seen = _ingest_stub_titling(monkeypatch, lambda _p: "")
+
+    r = client.post(
+        "/document-intelligence/api/ingest",
+        data={"file": (__import__("io").BytesIO(PDF_BYTES), "no-title-here.pdf"),
+              "collection_id": "default"},
+        content_type="multipart/form-data",
+    )
+    assert r.status_code == 202
+    assert _wait_result(client, r.get_json()["job_id"])["status"] == "done"
+    assert _title_of(seen["doc_id"])[0] == "no-title-here"
+
