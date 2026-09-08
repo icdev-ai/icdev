@@ -5,6 +5,10 @@
 confidence_threshold: 0.7        # findings below this never promote to kanban
 recency_half_life_days: 180      # de-facto learner deployment recency weighting
 max_redlines_per_sweep: 10       # cap AI redline drafts per reflex sweep
+max_redrafts_per_run: 10         # dwr-anchor-06: cap re-drafts of suggestions that
+                                 # were written against an entity label instead of a
+                                 # passage. Each costs one LLM call; deferred items are
+                                 # NAMED on the report, never silently truncated.
 scan_cadence_hours: 24
 sunset_warning_window_days: 90   # rulebook temporal validity: WARN when a cited
                                  # standard's sunset_date is within this many days
