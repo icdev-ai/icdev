@@ -1,0 +1,8 @@
+# IQE-DIC-025: Proposals carrying an appliable anchor
+# The complement of IQE-DIC-024. An empty result here is a MEASUREMENT — it
+# means nothing on the board can be applied — and is not the same as the
+# collection failing to read.
+
+foreach s in dic.suggestions
+where s.appliable == true
+select s.suggestion_id, s.doc_id, s.anchor_section_id, s.status

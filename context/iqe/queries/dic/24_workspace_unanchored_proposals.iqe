@@ -1,0 +1,8 @@
+# IQE-DIC-024: Proposals that name no verified span — previewable, NOT appliable
+# anchor_basis is "" for a row the drafter wrote against an entity label rather
+# than a span. The accept door refuses these with a 409, so the workspace shows
+# the diff and withholds Accept. Measured 2026-09-08: 58 of 58 rows.
+
+foreach s in dic.suggestions
+where s.appliable == false
+select s.suggestion_id, s.doc_id, s.anchor_basis, s.status
