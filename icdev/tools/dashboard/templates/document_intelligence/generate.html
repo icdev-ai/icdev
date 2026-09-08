@@ -136,11 +136,18 @@ function renderDraft(data) {
   var sections = data.sections || [];
   var collection = document.getElementById('gen-collection').value.trim() || 'default';
   var html = sections.map(function(s) {
+    // dwr-sect-02: `verified` is TRI-STATE and comes from the section's own
+    // column. null means the verifier did not RUN on this section (no evidence
+    // to check against, or it raised); false means it ran and a cited claim did
+    // not hold. They are different findings and get different badges — a null
+    // must never render as the red one, or as the green one.
     var badge = s.abstained
       ? '<span style="background:#3a1a00;color:#fbbf24;font-size:10px;padding:1px 6px;border-radius:3px;margin-left:8px;">⚠ Abstained</span>'
-      : s.verified
+      : s.verified === true
         ? '<span style="background:#052e16;color:#4ade80;font-size:10px;padding:1px 6px;border-radius:3px;margin-left:8px;">✓ Verified</span>'
-        : '<span style="background:#1e293b;color:#94a3b8;font-size:10px;padding:1px 6px;border-radius:3px;margin-left:8px;">Unverified</span>';
+        : s.verified === false
+          ? '<span style="background:#3b0a0a;color:#fca5a5;font-size:10px;padding:1px 6px;border-radius:3px;margin-left:8px;">✗ Unverified</span>'
+          : '<span style="background:#1e293b;color:#94a3b8;font-size:10px;padding:1px 6px;border-radius:3px;margin-left:8px;" title="The claim verifier did not run on this section">Not checked</span>';
     var regenBtn = s.abstained ? '' :
       '<button onclick="regenerateSection(\'' + escJs(s.heading || '') + '\', \'' + escJs(collection) + '\')" ' +
       'style="margin-top:8px;background:#1a2e52;color:#7ab3f0;padding:5px 12px;border:1px solid #1e3a6e;border-radius:4px;cursor:pointer;font-size:11px;">' +
@@ -190,8 +197,10 @@ function regenerateSection(heading, collectionId) {
               return {
                 heading: s.heading,
                 content: s.content,
-                verified: s.status === 'approved',
-                abstained: s.status === 'abstained',
+                // The COLUMNS, never a re-derivation from status: `approved`
+                // is a human publishing decision, not a verifier verdict.
+                verified: (s.verified === true || s.verified === false) ? s.verified : null,
+                abstained: s.abstained === true || s.status === 'abstained',
                 citation_count: (s.citations || []).length
               };
             })});

@@ -183,19 +183,62 @@ def _open_findings(conn, doc_id: str) -> dict[str, dict]:
     return {k: v for k, v in latest.items() if v.get("state") == "open"}
 
 
+def finding_anchor(entity, text: str | None) -> tuple[int | None, int | None, str | None]:
+    """The ``(anchor_start, anchor_end, anchor_text)`` a finding row persists (dwr-anchor-02).
+
+    The anchor is the CHUNK-LOCAL span dwr-anchor-01 made every pack keep
+    (``chunk_text[span_start:span_end] == raw_match``), and ``anchor_text`` is
+    the slice of the text the scan actually ran over at those offsets — not a
+    copy of the pack's ``raw_match``. Persisting the slice is what lets the
+    Word-style review workspace re-derive the anchor later and know whether the
+    document moved underneath it: the offsets say where, the text says what was
+    there.
+
+    Refused, and persisted as three NULLs, whenever the span cannot be trusted:
+    no span (evidence_currency's anchor entities carry ``None`` on purpose), a
+    span outside the text, an inverted or empty span, or a slice that does not
+    equal ``raw_match`` — a pack that claims offsets its own match does not sit
+    at has not anchored anything, and writing its numbers down would put a
+    highlight on the wrong words. NULL is "not anchored"; it is never ``0``,
+    which would claim the chunk starts with the match.
+    """
+    start = getattr(entity, "span_start", None)
+    end = getattr(entity, "span_end", None)
+    raw = getattr(entity, "raw_match", "") or ""
+    if start is None or end is None or text is None:
+        return None, None, None
+    try:
+        start, end = int(start), int(end)
+    except (TypeError, ValueError):
+        return None, None, None
+    if start < 0 or end <= start or end > len(text):
+        logger.warning("docmod: %s span (%s, %s) outside chunk of %d chars; anchor dropped",
+                       getattr(entity, "pack_id", "?"), start, end, len(text))
+        return None, None, None
+    sliced = text[start:end]
+    if raw and sliced != raw:
+        logger.warning("docmod: %s span (%s, %s) slices %r, not raw_match %r; anchor dropped",
+                       getattr(entity, "pack_id", "?"), start, end, sliced, raw)
+        return None, None, None
+    return start, end, sliced
+
+
 def _insert_finding(conn, run_id: str, doc_id: str, version_id: str, entity, verdict,
                     replacement, key: str, tenant_id: str | None,
                     classification: str | None, state: str = "open",
-                    supersedes_id: str | None = None) -> str:
+                    supersedes_id: str | None = None, text: str | None = None) -> str:
     fid = f"fnd-{uuid.uuid4().hex[:12]}"
+    anchor_start, anchor_end, anchor_text = finding_anchor(entity, text)
     conn.execute(
         """INSERT INTO docmod_findings
            (finding_id, run_id, doc_id, version_id, chunk_link_id, section_heading,
             page, pack_id, entity_label, entity_type, finding_type, currency_verdict,
             severity, rationale, evidence_json, recommended_replacement,
             replacement_evidence_json, confidence, state, supersedes_id,
-            dedupe_key, created_at, tenant_id, classification)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            dedupe_key, created_at, tenant_id, classification,
+            anchor_start, anchor_end, anchor_text)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                   %s,%s,%s)""",
         (
             fid, run_id, doc_id, version_id,
             entity.chunk_ref.chunk_link_id, entity.chunk_ref.section,
@@ -206,6 +249,7 @@ def _insert_finding(conn, run_id: str, doc_id: str, version_id: str, entity, ver
             json.dumps(replacement.evidence, default=str) if replacement else None,
             verdict.confidence, state, supersedes_id, key, _now(),
             tenant_id, classification,
+            anchor_start, anchor_end, anchor_text,
         ),
     )
     return fid
@@ -371,7 +415,8 @@ def scan_document(doc_id: str, conn=None, packs: dict[str, DomainPack] | None = 
                             logger.warning("docmod: %s.recommend failed: %s", pack.pack_id, exc)
                             _ev_rollback()
                         _insert_finding(conn, run_id, doc_id, version_id, entity, verdict,
-                                        replacement, key, tenant_id, classification)
+                                        replacement, key, tenant_id, classification,
+                                        text=text)
                         findings_new += 1
         finally:
             try:

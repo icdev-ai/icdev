@@ -3368,7 +3368,10 @@ CREATE TABLE IF NOT EXISTS docmod_findings (
     supersedes_id   TEXT REFERENCES docmod_findings(finding_id),
     tenant_id       TEXT,
     classification  TEXT DEFAULT 'CUI',
-    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    anchor_start    INTEGER,
+    anchor_end      INTEGER,
+    anchor_text     TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_docmod_findings_doc    ON docmod_findings(doc_id, state);
 CREATE INDEX IF NOT EXISTS idx_docmod_findings_dedupe ON docmod_findings(dedupe_key);

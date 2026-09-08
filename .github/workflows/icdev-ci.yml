@@ -335,6 +335,30 @@ jobs:
       - name: Undeclared-import census
         working-directory: ${{ github.workspace }}
         run: python tools/ci/undeclared_import_census.py --check
+      # tsg-iso-04 -- a test fixture that DECLARES a table with
+      # `CREATE TABLE IF NOT EXISTS` and then writes a column only that
+      # declaration guarantees. If any other module in the same pytest process
+      # created the table first with a narrower shape, the declaration NO-OPS
+      # and the INSERT raises. PR #2167 failed shard 2 exactly that way
+      # (`table dic_documents has no column named status`) while passing
+      # locally, ALONE, in its own directory and in file order.
+      #
+      # It is not stable debt: crx-test-07 bin-packs shards by measured
+      # duration, so the precondition appears and disappears with edits that
+      # have nothing to do with the test -- which is the shape a human
+      # diagnoses as flake and re-runs.
+      #
+      # NOT a ban on `CREATE TABLE IF NOT EXISTS` -- that is the correct way to
+      # set a table up. The finding is the conjunction of declaring AND writing
+      # a column only that declaration guarantees; a file using
+      # tests/_schema_compat.ensure_table is not a finding. The 273 sites that
+      # existed at adoption are grandfathered by name in
+      # args/fixture_shape_census.txt; `fixture_shape_max` may only go DOWN.
+      #
+      # Do NOT add `|| true`. The failure names the file, the table and the fix.
+      - name: Fixture-shape census
+        working-directory: ${{ github.workspace }}
+        run: python tools/ci/fixture_shape_census.py --check
       # rem-hyg-13 -- a hardcoded PERFECT SCORE returned when the denominator is
       # empty. Nothing was scanned, nothing was assessed, and the page draws a
       # full green bar at 100%. Strictly worse than a missing number: a missing
