@@ -338,6 +338,17 @@ def _ensure_schema(conn) -> None:
     # dic_author_assertions (dwr-ev-01) — the ONE copy of its DDL lives with
     # its writer; migration 20260908003920 executes the same tuple.
     _ensure_author_table(conn)
+    # dic_page_words / dic_doc_runs / dic_document_geometry (dwr-fid-02), same
+    # rule: the DDL lives with its writer and migration 20260908091858 executes
+    # that same tuple. Best-effort — a database that cannot create them ingests
+    # exactly as it did before and every document reports geometry `failed`.
+    try:
+        from tools.document_intelligence.page_geometry import DDL as _GEOMETRY_DDL
+
+        for stmt in _GEOMETRY_DDL:
+            cur.execute(stmt)
+    except Exception:
+        pass
     # Best-effort add missing columns for backward compatibility.
     for table, col, dtype in _ALTER_MIGRATIONS:
         try:
@@ -402,6 +413,12 @@ class IngestOutcome:
     #: (dwr-ev-01) — a count, so a caller can tell "the author declared
     #: nothing" from "the author declared three things and they landed".
     author_assertions: int = 0
+    #: Word geometry (dwr-fid-02) — ``page_geometry.GeometryResult.to_dict()``.
+    #: Always present and ALWAYS carries a ``status``, because an empty word
+    #: list is seven different things (a scanned page, an unsupported format,
+    #: the switch off, a missing library, a hit bound…) and a bare count of 0
+    #: says which one it is not.
+    geometry: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -421,6 +438,7 @@ class IngestOutcome:
             "metadata": self.metadata,
             "errors": self.errors,
             "author_assertions": self.author_assertions,
+            "geometry": self.geometry,
         }
 
 
@@ -2078,6 +2096,43 @@ def ingest_file(
             )
         conn.commit()
 
+        # Word geometry (dwr-fid-02, best-effort). Word boxes for a PDF via
+        # pdfplumber, paragraph/run structure for a DOCX via python-docx — the
+        # coordinate space a positioned-text view of the page needs, which
+        # extract_text() cannot produce and which cannot be recovered later
+        # from the extracted string.
+        #
+        # IT RUNS HERE, WHILE THE FILE IS STILL ON DISK. For an upload `p` is a
+        # temp file the route deletes in its `finally`; dwr-fid-01 retains the
+        # original so a BACKFILL can re-read it, but an ingest that skipped
+        # geometry and left it to a later sweep would have nothing to re-read
+        # on any deployment with retention switched off.
+        #
+        # Aligned against `text` AS STORED — the string the sections and chunks
+        # were derived from, post-OCR-cleanup — and the row records that text's
+        # own sha256, so a consumer can prove the offsets still apply to what
+        # it holds rather than assuming it.
+        #
+        # capture_and_persist never raises: a geometry failure that took the
+        # ingest down would trade a capability nobody had yesterday for a
+        # document nobody has today. `geometry_result` always carries a status.
+        _emit("geometry", "Recording word geometry…", 76)
+        geometry_result = {}
+        try:
+            from tools.document_intelligence import page_geometry as _page_geometry
+
+            geometry_result = _page_geometry.capture_and_persist(
+                conn, doc_id, p,
+                content_type=extraction.content_type,
+                document_text=text,
+                tenant_id=tid, classification=cls,
+            )
+            conn.commit()
+        except Exception as e:  # pragma: no cover - defensive; the module itself catches
+            geometry_result = {"status": "failed", "reason": str(e), "persisted": False}
+        if geometry_result.get("persisted") is False and geometry_result.get("persist_error"):
+            errors.append(f"word geometry not persisted: {geometry_result['persist_error']}")
+
         # Inter-document cross-reference extraction (dmx-ref-01, best-effort).
         # Deterministic regex over the extracted text — records "see Section N of
         # <Doc>" style references into dic_cross_references for later resolution
@@ -2158,6 +2213,7 @@ def ingest_file(
             metadata=ai_metadata,
             errors=errors,
             author_assertions=author_recorded,
+            geometry=geometry_result,
         )
     finally:
         if own_conn:

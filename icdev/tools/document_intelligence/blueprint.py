@@ -6521,3 +6521,115 @@ def api_chunk_repair(collection_id):
 
     status = 200 if result.ok else 422
     return jsonify(result.to_dict()), status
+
+
+# ── API: Page geometry (dwr-fid-02) ─────────────────────────────────────────
+# READ ONLY, by construction: GET with no POST sibling. Geometry is captured at
+# INGEST, while the uploaded file is still on disk; a route that could trigger
+# a capture would put a multi-second pdfplumber pass on a page render, and for
+# an upload there is no longer a file to re-read anyway.
+
+
+@dic_bp.route("/api/documents/<doc_id>/geometry", methods=["GET"])
+def api_document_geometry(doc_id: str):
+    """The document's geometry record: which fidelity story, and what it cost.
+
+    404 with ``status: not_captured`` when there is no row — which is NOT the
+    same answer as a document with no words on its pages, and the caller is
+    told so in those words. Every other case has a row, and the row's ``status``
+    says which of the seven reasons an empty word list has.
+    """
+    from tools.document_intelligence import page_geometry
+
+    conn = _conn()
+    try:
+        row = page_geometry.geometry_row(conn, doc_id)
+    finally:
+        conn.close()
+
+    if row is None:
+        return (
+            jsonify(
+                {
+                    "doc_id": doc_id,
+                    "status": "not_captured",
+                    "renderable": False,
+                    "detail": (
+                        "no geometry has been recorded for this document. That is "
+                        "not a statement that its pages are empty — nothing has "
+                        "looked. Documents ingested before dwr-fid-02, and those "
+                        "whose source file is gone, read this way; "
+                        "`python -m tools.document_intelligence.page_geometry "
+                        "--backfill` covers the ones whose source is still readable."
+                    ),
+                    "limits": page_geometry.limits(),
+                }
+            ),
+            404,
+        )
+    row["limits"] = page_geometry.limits()
+    return jsonify(row)
+
+
+@dic_bp.route("/api/documents/<doc_id>/pages/<int:page>/words", methods=["GET"])
+def api_document_page_words(doc_id: str, page: int):
+    """One page's word boxes, in the PDF's own stream order.
+
+    Boxes are PDF points with ``top`` from the page top. The page's own
+    ``width``/``height`` ride along, because they differ page to page (measured
+    on this board: 612x792 and 595.3x841.9) and a renderer that scales by a
+    document-wide guess puts every word in the wrong place.
+    """
+    from tools.document_intelligence import page_geometry
+
+    conn = _conn()
+    try:
+        row = page_geometry.geometry_row(conn, doc_id)
+        words = page_geometry.page_words(conn, doc_id, page)
+    finally:
+        conn.close()
+
+    dims = None
+    if row:
+        dims = next((p for p in row.get("pages") or [] if p.get("page") == page), None)
+
+    return jsonify(
+        {
+            "doc_id": doc_id,
+            "page": page,
+            "words": words,
+            "count": len(words),
+            # The page's size, or None. NEVER a default page size: a renderer
+            # handed 612x792 for a page that is actually A4 draws every word
+            # slightly out of place and nothing looks broken enough to notice.
+            "width": (dims or {}).get("width"),
+            "height": (dims or {}).get("height"),
+            # Why the list may be empty, when it is empty for a reason.
+            "geometry_status": (row or {}).get("status", "not_captured"),
+            "renderable": bool((row or {}).get("renderable")),
+        }
+    )
+
+
+@dic_bp.route("/api/documents/<doc_id>/runs", methods=["GET"])
+def api_document_runs(doc_id: str):
+    """A DOCX's paragraph/run structure — order and styling, never boxes."""
+    from tools.document_intelligence import page_geometry
+
+    limit = min(int(request.args.get("limit", 2000)), 5000)
+    conn = _conn()
+    try:
+        row = page_geometry.geometry_row(conn, doc_id)
+        runs = page_geometry.doc_runs(conn, doc_id, limit=limit)
+    finally:
+        conn.close()
+
+    return jsonify(
+        {
+            "doc_id": doc_id,
+            "runs": runs,
+            "count": len(runs),
+            "geometry_status": (row or {}).get("status", "not_captured"),
+            "kind": (row or {}).get("kind"),
+        }
+    )
