@@ -103,6 +103,76 @@ icdev status                                  # first line names the domain, its
 # project with no declaration gets the builtin ICDEV[IT] default
 # (`source: builtin_default`); ICDEV_REQUIRE_DOMAIN=1 refuses to run undeclared.
 
+# A reflex that is GREEN while it can reach 3 of 11 subjects (rmf-inert-03)
+python -m tools.genesis.reflexes.canvas_reassess --coverage        # covered / uncovered BY NAME; touches no database
+python -m tools.genesis.reflexes.canvas_reassess --dry-run         # the sweep against the live canvases; WRITES NOTHING
+python -m tools.genesis.reflexes.canvas_reassess --starvation      # designs skipped over budget on EVERY recorded run
+python tools/genesis/daemon.py --reflex canvas_reassess --json     # one real cycle, through the daemon
+# MEASURED 2026-09-07. `genesis_reflex_state` for canvas_reassess: 17 runs, 17
+# successes, 0 failures, last_metric_value 25.0 -- perfect health -- while the
+# Compliance Posture widget carried SIX canvases 51-89 days stale. BOTH NUMBERS
+# WERE RIGHT: the reflex-level liveness (reflex-level-liveness-does-not-prove-
+# act-level-liveness) was green while the ACT reached three of the widget's
+# eleven canvases. `_INSERTS` covered observability/boundary/infra; Security was
+# excluded by a code comment no reader of the widget could see; Network,
+# Pipeline, Data, Agentic AI, AI/ML, QDC and Migration were not in the registry
+# at all, so NOTHING could ever refresh them. The live ages matched exactly.
+# THREE DEFECTS, and the order they were fixed in is the order the card demanded:
+#  1. THE REFLEX REPORTS ITS OWN COVERAGE, against the SURFACE's list
+#     (`posture.surface_rows()`, never a copy): `coverage.covered` and
+#     `coverage.uncovered` BY NAME, each uncovered row carrying the reason it is
+#     not written (`canvas_reassess.UNCOVERED`). A widget row with NO decision is
+#     `undecided`, an ERROR, and a failed run -- the silence the card refuses.
+#     This shipped first and stands on its own.
+#  2. THE REPORT WAS NEVER PERSISTED. `daemon.run_reflex_impl` records
+#     `result["details"]` and nothing else, and this reflex never set that key, so
+#     all 17 runs recorded `{}` -- `skipped_over_budget`, `by_canvas`, `errors`,
+#     every field the module "reported", went nowhere. It now rides under
+#     `details` (the claim_verifier_reflex idiom). `--starvation` reads it back
+#     and is UNMEASURABLE over the pre-fix rows, never "nothing starved".
+#  3. THE BUDGET WAS SATURATED BY ORDER, NOT SIZE. Infra had grown 84 -> 154
+#     designs and 8 had NEVER been assessed after 17 saturated runs: each daily
+#     cohort of 25 re-stales together a week later and, under `ORDER BY d.id` per
+#     canvas, reaches the budget ahead of a never-assessed design whose id sorts
+#     after it. The budget is now spent OLDEST-FIRST ACROSS canvases
+#     (`(newest IS NULL) DESC, newest ASC` -- identical on PG and SQLite, where a
+#     bare ASC disagrees about NULLs). `DEFAULT_MAX_PER_RUN` stays 25 and is
+#     pinned by test. Live dry run after the change: all 8 never-assessed Infra
+#     designs and all 6 Data designs inside the budget; 3 eight-day re-stalers
+#     deferred BY NAME to the next run.
+# WRITABLE, PER CANVAS, AND WHY NOT -- every verdict is in `UNCOVERED`:
+#   Data        ADDED. Six columns, the same the canvas's own route writes; the
+#               engine spells its score `risk_score`. 6 designs, all from 2026-06-09.
+#   Security    stays out: scored from risk_score/posture_grade over a wider column
+#               set, design-id engine. Excluded since rem-hyg-11, now VISIBLE.
+#   Network /   no design/assessment pair: one row per CHECK, no writer column, and
+#   Pipeline    the posture SUMs passed/failed over EVERY row -- a scheduled row
+#               joins the denominator forever instead of replacing a stale one.
+#   Agentic AI  aadc_assessments has NO assessment_type column: a scheduled row is
+#               indistinguishable from a review. The event-driven aadc_compliance
+#               reflex already writes it.
+#   AI/ML       no assessment_type either (framework_id says WHAT, not who), and
+#               run_assessment persists its own untagged row.
+#   QDC         the newest row also carries uqs_score, derived by the ROUTE from
+#               qdc_gate_results and rendered off the newest row; a scheduled row
+#               would show UQS 0.0. 153 designs, 148 never assessed -- named, not
+#               fabricated.
+#   Migration   scored from assessment_type='validation' rows ONLY, so a
+#               scheduled row moves the AGE of a score it cannot move -- manufactured
+#               freshness by construction. 0 designs.
+#   GovLift / Zero Trust / AI-ify   not canvases; no design/engine pair to re-run.
+# DO NOT MANUFACTURE FRESHNESS. A scheduled re-derivation over the same inputs is a
+# newer timestamp on the same evidence, so the SURFACE now says who wrote the newest
+# row: `last_assessed_source` (scheduled | canvas | None) and `last_reviewed` (the
+# newest NON-scheduled row) beside `last_assessed`, from ONE spelling of the type
+# (`posture.SCHEDULED_ASSESSMENT_TYPE`, which the reflex imports). None is never
+# filled in from `last_assessed` -- a table with no writer column would then report
+# every refresh as a review. The widget marks a scheduled row and titles it with the
+# last review's age. FOUND ON THE WAY: `_ASSESSED_AT` named `created_at` for
+# nc_/pc_compliance_checks, columns those tables have never had (DDL and the live
+# catalogue agree), so Network and Pipeline rendered a score with NO age -- which on
+# this widget reads as fresh. Now `ran_at`.
+
 # Capability consumption — is a DECLARED capability actually being used? (#exa-live-01)
 python tools/awareness/capability_consumption.py --json                  # all classes, 30d window
 python tools/awareness/capability_consumption.py --window-days 7         # configurable window
@@ -1044,6 +1114,45 @@ python tools/kanban/cli.py --set-status <id> done --merge --protected-ok --reaso
 # far wider than the one case that needs it, against a surveyed fire rate of
 # 0.1009%, a sixteenth of the 1.63% this file calls refusing routine work.
 
+# The Actions auto-merge workflow is a FOURTH door, and it now honours protected_paths (mfx-mrg-07)
+python tools/ci/protected_paths.py --config-file args/pr_watcher_config.yaml --files tools/ci/pr_watcher.py docs/x.md   # 1: protected
+python tools/ci/protected_paths.py --config-file args/pr_watcher_config.yaml --files docs/x.md                            # 0: clean
+python tools/ci/protected_paths.py --config-file args/pr_watcher_config.yaml --files docs/x.md --expected-count 3         # 2: truncated listing
+gh run list --workflow "PR Auto-Merge (Kanban)" --limit 5     # the door; a skipped PR names its hits in the log
+# `.github/workflows/pr-watcher.yml` squash-merges any green non-draft kanban/*
+# PR as github-actions[bot], on a cron and on check_suite completion, and ran
+# NONE of land.py's thirteen checks -- not `_refuse_protected`. MEASURED
+# 2026-09-07 over the last 84 merged PRs: 10 touched a protected path, EIGHT
+# merged unattended through this workflow, 7 of those 8 editing
+# tools/ci/pr_watcher.py itself. mfx-mrg-04's own PR (#2143) -- the audited
+# `--protected-ok` door, built on the premise that such a PR needs a human --
+# was merged by it at 05:02; `kanban.protected_merge_override` had ZERO rows.
+# ONE LIST, ONE RULE. `protected_hits` now lives in tools/ci/protected_paths.py,
+# stdlib-only, and merge_readiness RE-EXPORTS it (identity pinned by test), so
+# the local watcher's two doors and the workflow run the same function. The
+# workflow checks out THAT ONE FILE from the DEFAULT branch (never a PR head),
+# fetches `protected_paths` from args/pr_watcher_config.yaml on the PR's BASE
+# branch (`gh api contents/...?ref=<baseRefName>` -- a PR that deletes its own
+# path from the list cannot authorise itself), reads the PR's files from the
+# PAGINATED REST listing checked against the forge's `changedFiles` (gh's
+# GraphQL `files` stops at 100), and SKIPS a protected PR with the hits named,
+# leaving it to the audited door. No path literal from the list appears in the
+# workflow; the test asserts that against the live list.
+# UNDECIDABLE IS A SKIP -- unreadable config, unreadable base, truncated
+# listing -- the same precedent as an empty required-check answer, and the cost
+# is stated: this cron is what kept the board moving while the local watcher
+# was blind to a tripped GraphQL limit (2026-09-06), so a persistent config-read
+# failure stalls every kanban merge on that base until a human reads the log.
+# The alternative reinstates the hole.
+# `.github/workflows/pr-watcher.yml` and `tools/ci/protected_paths.py` are ON
+# THE LIST: a workflow with `contents: write` that merges unattended belongs
+# there on the merge ladder's own reasoning, and this card's PR is the first
+# real use of `--protected-ok`. NOT changed, and named: the workflow merges
+# `--squash` while land.py and the watcher merge `--merge` (the
+# `branch_not_ancestor` shape of mfx-own-05 -- its own survey), and it still
+# runs none of the other ten rungs. Survey:
+# docs/audits/mfx-mrg-07-actions-auto-merge-door-survey.md
+
 # A claim from a PLAIN SHELL now HOLDS -- `--claim` hands its lease to a keeper (mfx-own-02)
 python tools/kanban/cli.py --claim <task-id> --intent "repairing its PR by hand" [--ttl 7200]
 python tools/kanban/cli.py --claim <task-id>                    # again: RENEWS the running keeper
@@ -1124,13 +1233,19 @@ grep -h "Created worktree for" .logs/tools.genesis.reflexes.kanban.ndjson | tail
 # (`_kill_process_tree`, taskkill /T or killpg in its own session) and the
 # partial worktree, registration and branch are removed, so the park describes
 # what is on disk. WORKTREE_ADD_TIMEOUT_SECONDS stays 30 and is pinned by test.
-# NOT fixed here, and named: 21,400 files / 513 MB per worktree, of which
-# playwright-report/ is 209.9 MB (40.9%, 1,426 tracked files added in a bulk
-# chore on 2026-05-25 and in no .gitignore) -- every add writes a test report
-# nobody reads from a worktree. Untracking it is its own card. And the genesis
-# daemon's `kanban` reflex and the standalone scheduler both dispatch, so two
-# 513 MB adds can run at once; the task lease keeps them off the same card, not
-# off the same disk.
+# NOT fixed there, and named: 21,400 files / 513 MB per worktree, of which
+# playwright-report/ was 209.9 MB (40.9%, 1,426 tracked files added in a bulk
+# chore on 2026-05-25 and in no .gitignore) -- every add wrote a test report
+# nobody reads from a worktree. UNTRACKED by task-wt-20f94d17, with backups/
+# (28.3 MB of canvas .db.bak / nc-backup zips nothing reads from git): an add
+# of main measured the same minute, checkout.workers=0, 2026-09-07T19:47Z,
+# went 21,455 files / 513.7 MB -> 19,968 files / 275.2 MB (-238.5 MB); the
+# origin/main add took 73.7s under dispatch load, over the 30s budget, and the
+# untracked tree 10.3s / 18.4s. tests/test_generated_artifacts_untracked.py
+# refuses a tracked file under either. Still open: the genesis daemon's
+# `kanban` reflex and the standalone scheduler both dispatch, so two adds can
+# run at once; the task lease keeps them off the same card, not off the same
+# disk.
 
 # A worktree HUSK with no .git marker is provably dead -- swept on a clock of HOURS (mfx-own-04)
 python -m tools.kanban.worktree_husks --survey [--json]        # every .git-less dir under the live roots
@@ -2017,6 +2132,63 @@ npx playwright test --list                              # every spec PARSES; no 
 # Do NOT raise a budget, a timeout or a census ceiling to get a commit through,
 # and NEVER edit args/mirror_drift_baseline.yaml -- the fix is `--fix` and a
 # `git add` of the icdev/ copy.
+
+# Editing CLAUDE.md without regenerating the packaged bootstrap is refused at COMMIT (mfx-ci-04)
+python tools/installer/prebuild_bootstrap.py                                 # the ONE repair; then `git add icdev/data/claude_bootstrap`
+python tools/workflow/coherence_checker.py --check bootstrap_parity --json   # what the hook and CI both run
+python tools/testing/pre_commit_check.py                                     # the hook by hand, against what is staged
+# `icdev init` copies icdev/data/claude_bootstrap/CLAUDE.md, NOT this file. PR
+# #2137 added 74 lines here, never regenerated the payload, and was red for
+# HOURS on test_payload_rule_is_green_on_the_tree_as_committed with ZERO payload
+# defects -- check_bootstrap_parity had found one stale packaged file (#960
+# again). The fix was the one command above. THE COST WAS THE FEEDBACK DELAY: a
+# red shard, a log dug out, a push, another full run -- and
+# `.githooks/pre-commit` mentioned the bootstrap ZERO times.
+# THE HOOK FIRES ONLY WHEN THE COMMIT STAGES A FILE THE BOOTSTRAP SCAFFOLDS: the
+# `SOURCES` literal of prebuild_bootstrap.py plus the `AI_PLATFORM_FILES` it
+# extends from, READ OUT OF THE SCRIPTS WITH `ast` -- never a second copy (a
+# test pins the derived list to the script's runtime SOURCES) and never an
+# import (the tools/ shim costs ~137 ms on EVERY commit for a list that is a
+# literal; the ast read is inside the noise of a bare interpreter start). In
+# scope it runs the SAME `coherence_checker.py --check bootstrap_parity` CI
+# runs and prints that check's own message plus the command. IT REGENERATES
+# NOTHING -- a hook that fixes what it checks gates nothing, the same reason the
+# test-gating hook does not widen its own allowlist -- and a test asserts it
+# never spawns or imports the script. `--no-verify` skips it; CI stays the
+# backstop. A fast path, not a second gate.
+# A SECOND GUARD READS THE INDEX, which the coherence check structurally cannot:
+# `git add CLAUDE.md` after a regeneration stages the repo file and not the
+# packaged copy, so the tree on disk is in parity and the COMMIT is not. Two
+# `git rev-parse :<path>` calls per staged must_match target; the refusal names
+# the `git add`. A packaged copy the index never held is the check's own `warn`.
+# MEASURED 2026-09-06 on this host, five runs each, whole hook (pre_commit_check.py):
+#   docs-only commit, no scaffolded file staged   377 ms -> 386 ms  (357-390 / 369-405: inside each other's range; two ast parses)
+#   CLAUDE.md + packaged copy staged, in parity   489 ms -> 821 ms  (+332: the coherence shell-out ~190 + two `git rev-parse`)
+#   CLAUDE.md staged, packaged copy NOT staged    424 ms -> 745 ms  REFUSED, naming `git add CLAUDE.md icdev/data/claude_bootstrap/CLAUDE.md`
+# RE-MEASURED 2026-09-07 with a scheduler cycle and two genesis daemons working
+# on the host: 425 => 435 / 549 => 888 / 473 => 806 (REFUSED). Every absolute is
+# ~50-70 ms higher on BOTH sides and the deltas are the same (+10, +339, +333):
+# quote the delta, the absolute is the host's. So the common commit still pays
+# 0 and a CLAUDE.md commit pays ~0.3 s, against the hours PR #2137 waited for a
+# full CI run to say the same thing.
+# SURVEYED BEFORE ARMING, replayed through the SHIPPED predicate against each
+# commit's OWN prebuild_bootstrap.py, parity re-derived from git blob ids:
+#   first-parent 200 on origin/main @ d9a8e75a3   54 in scope (27.0%)   0 broken   0 FIRES
+#   no-merges 500 on the same ref                 120 in scope (24.0%)  1 broken   1 FIRE (0.20%), caused
+#   PR #2137's own branch, first-parent 12         6 in scope (50.0%)   1 broken   1 FIRE (8.33%), caused
+# The one fire in both is 4b1978dfa -- THE INCIDENT: CLAUDE.md changed, the
+# payload not regenerated, parent in parity. Its repair (0acc4f7b9, by hand,
+# after the red CI run) is why main's first-parent walk carries 0 broken trees:
+# the defect lives only in the branch population, the one a pre-commit hook
+# sees and a survey over merges cannot. 0.20% is an eighth of the 1.63% this
+# file calls refusing routine work, and every one of the other 119 in-scope
+# branch commits had regenerated first. Read 2026-09-06 against 4f869b771,
+# before #2137 merged: 48/200 and 114/500 in scope, ZERO fires -- both readings
+# quoted; one figure off a moving ref is not a measurement. A THIRD instance
+# arrived while this card was in flight: sibling #2159 (rmf-rail-02, 2026-09-07)
+# edited CLAUDE.md, not the payload, and went red on the same two tests.
+# Method, every number, and the replay script in full:
+#   docs/audits/mfx-ci-04-precommit-bootstrap-parity-survey.md
 
 # The E2E suite writes fixtures — point it at a THROWAWAY database (qa-fail-6a87916931be3793)
 python tools/db/bootstrap_pg.py                                  # once

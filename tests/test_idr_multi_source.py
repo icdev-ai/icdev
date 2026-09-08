@@ -319,14 +319,20 @@ class TestCoTActivation:
         def patched_build(*a, **kw):
             return rich_evidence
 
-        with patch.object(dg, "_build_evidence_pool", patched_build):
-            with patch.object(dg, "_cot_generate", fake_cot):
-                with patch.object(dg, "_llm_generate") as mock_llm:
-                    mock_llm.return_value = '{"title":"T","sections":[{"heading":"H","summary":"S"}]}'
-                    with patch("tools.document_intelligence.search_engine.DICSearchEngine") as MockEng:
-                        MockEng.return_value.search.return_value = []
-                        with patch("tools.db.storage.get_connection"):
-                            dg.generate_document("q", collection_id=None)
+        # CoT is OPT-IN (ICDEV_DIC_COT_ENABLED, default off -- it leaks
+        # reasoner/critic scaffolding on many models). This test asserts the
+        # activation RULE (evidence > threshold), so it opts in explicitly
+        # rather than depending on whatever the ambient shell exported; without
+        # this line it was red on main from the day the default flipped.
+        with patch.dict(os.environ, {"ICDEV_DIC_COT_ENABLED": "true"}):
+            with patch.object(dg, "_build_evidence_pool", patched_build):
+                with patch.object(dg, "_cot_generate", fake_cot):
+                    with patch.object(dg, "_llm_generate") as mock_llm:
+                        mock_llm.return_value = '{"title":"T","sections":[{"heading":"H","summary":"S"}]}'
+                        with patch("tools.document_intelligence.search_engine.DICSearchEngine") as MockEng:
+                            MockEng.return_value.search.return_value = []
+                            with patch("tools.db.storage.get_connection"):
+                                dg.generate_document("q", collection_id=None)
 
         assert len(cot_calls) > 0, "CoT should be called when evidence > 500 chars"
 

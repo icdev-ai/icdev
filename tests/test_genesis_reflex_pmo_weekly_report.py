@@ -417,3 +417,158 @@ def test_a_first_sentence_longer_than_the_budget_falls_back_to_a_word_boundary()
 
     assert body.endswith(reflex.TRUNCATION_MARKER)
     assert "wor" + reflex.TRUNCATION_MARKER not in body
+
+
+# ---------------------------------------------------------------------------
+# "Worst CPI Contracts" ranked three identical numbers (pmo-rpt-66bd6c51f5)
+#
+# `contracts_with_cpi.sort(key=cpi)` is STABLE, so contracts whose CPI is equal
+# kept the portfolio query's own order — `ORDER BY c.updated_at DESC`
+# (portfolio_manager.get_portfolio_summary). With no dispersion in the feed the
+# three rows under a performance header were the three most recently TOUCHED
+# contracts, and nothing on the page said so.
+#
+# MEASURED across two consecutive live briefs, data/reports/:
+#   2026-08-31  Untitled Contract [8143e17a] / bypass probe [0f28acca] / probe [e8d124a9]
+#   2026-09-07  probe [e8d124a9] / GCPL Seed Contract [bff20029] / Untitled Contract [3220e9d1]
+# Every CPI in both is 0.9689 and every SPI 0.9333 — byte-identical figures, two
+# of the three names changed. A reader tracking "the worst contracts" week over
+# week was reading row churn.
+#
+# The module had ALREADY reached this conclusion in prose: the data-quality
+# advisory says the CPI "ranks nothing" (`no_cpi_variance`, asserted above),
+# while the table below it went on ranking. One document, both claims.
+#
+# Two ways the "worst" header is unearned, and they are different findings:
+#   all_shown_equal     the rows carry one CPI — there is no order among them
+#   cutoff_inside_tie   an UNSHOWN contract ties the last shown one, so it is
+#                       equally worst and the SET is arbitrary too
+# ---------------------------------------------------------------------------
+
+
+def _cpi_rows(*pairs):
+    """Contract rows as the portfolio query hands them over."""
+    return [
+        {"id": cid, "contract_number": "", "title": title, "cpi": cpi, "spi": 0.9333}
+        for cid, title, cpi in pairs
+    ]
+
+
+def test_a_constant_cpi_feed_is_not_rendered_as_a_worst_contract_ranking():
+    """The live defect: six identical CPIs, three named as the worst."""
+    contracts = _cpi_rows(
+        ("a", "Untitled Contract", 0.9689),
+        ("b", "bypass probe", 0.9689),
+        ("c", "probe", 0.9689),
+        ("d", "GCPL Seed Contract", 0.9689),
+    )
+    # Deliberately the snapshot shape the UNFIXED reflex produced — no verdict
+    # key. The renderer must not need one to refuse a ranking it has no evidence
+    # for, so this discriminates on the rendered document and not on a new symbol.
+    snapshot = {
+        "contracts": contracts,
+        "worst_cpi_contracts": contracts[:3],
+        "cpi_sample_size": 4,
+        "cpi_distinct_values": 1,
+        "health": {"green": 0, "yellow": 4, "red": 0},
+    }
+
+    html = reflex._render_html_report(snapshot, "narrative", "2026-09-07")
+
+    # The claim that must not survive a feed with no dispersion.
+    assert "Worst CPI Contracts" not in html
+    # ...and its absence must be STATED, not left blank: a week whose EVM feed
+    # does not discriminate is not a week with no EVM data.
+    assert "same CPI" in html
+    assert "not a ranking" in html
+
+
+def test_the_worst_cpi_selection_does_not_move_when_only_row_order_moves():
+    """Re-derives the two live briefs: same data, different `updated_at` order."""
+    week_one = _cpi_rows(
+        ("8143e17a", "Untitled Contract", 0.9689),
+        ("0f28acca", "bypass probe", 0.9689),
+        ("e8d124a9", "probe", 0.9689),
+        ("bff20029", "GCPL Seed Contract", 0.9689),
+        ("3220e9d1", "Untitled Contract", 0.9689),
+    )
+    # The SAME contracts, re-ordered exactly as a week of `updated_at` churn
+    # re-orders them. No figure differs.
+    week_two = [week_one[2], week_one[3], week_one[4], week_one[0], week_one[1]]
+
+    one = reflex._worst_cpi_selection(week_one)
+    two = reflex._worst_cpi_selection(week_two)
+
+    assert [c["id"] for c in one["rows"]] == [c["id"] for c in two["rows"]]
+    # Neither may claim to be a ranking.
+    assert one["ranked"] is False and two["ranked"] is False
+    assert one["reason"] == reflex.RANK_ALL_SHOWN_EQUAL
+
+
+def test_a_cutoff_falling_inside_a_tie_is_not_a_ranking_either():
+    """The 3rd and 4th worst tie: the 4th is equally worst and was cut."""
+    selection = reflex._worst_cpi_selection(
+        _cpi_rows(
+            ("a", "Alpha", 0.70),
+            ("b", "Bravo", 0.80),
+            ("c", "Charlie", 0.90),
+            ("d", "Delta", 0.90),
+        )
+    )
+
+    assert selection["ranked"] is False
+    assert selection["reason"] == reflex.RANK_CUTOFF_INSIDE_TIE
+    # The rows shown are still the worst-valued ones, and still deterministic.
+    assert [c["id"] for c in selection["rows"]] == ["a", "b", "c"]
+
+
+def test_a_portfolio_with_real_dispersion_is_still_ranked_and_still_says_worst():
+    """Negative control — the fix must not mute a table that does rank."""
+    contracts = _cpi_rows(
+        ("a", "Alpha", 0.70),
+        ("b", "Bravo", 0.85),
+        ("c", "Charlie", 0.95),
+        ("d", "Delta", 1.05),
+    )
+    selection = reflex._worst_cpi_selection(contracts)
+
+    assert selection["ranked"] is True
+    assert selection["reason"] is None
+    assert [c["id"] for c in selection["rows"]] == ["a", "b", "c"]
+
+    # Legacy snapshot shape again, so the control fails for the same reasons the
+    # finding would — a table that DOES rank must keep its header either way.
+    html = reflex._render_html_report(
+        {
+            "contracts": contracts,
+            "worst_cpi_contracts": contracts[:3],
+            "cpi_sample_size": 4,
+            "cpi_distinct_values": 4,
+            "health": {"green": 2, "yellow": 1, "red": 1},
+        },
+        "narrative",
+        "2026-09-07",
+    )
+    assert "Worst CPI Contracts" in html
+    assert "not a ranking" not in html
+
+
+def test_the_snapshot_publishes_the_ranking_verdict_beside_the_rows(no_side_channels):
+    """A consumer must not have to re-derive whether the rows rank."""
+    with patch(
+        "tools.govcon.portfolio_manager.get_portfolio_summary",
+        return_value=_summary(
+            contracts=_cpi_rows(
+                ("a", "probe", 0.9689),
+                ("b", "probe", 0.9689),
+                ("c", "probe", 0.9689),
+                ("d", "probe", 0.9689),
+            )
+        ),
+    ):
+        snap = reflex._gather_portfolio_snapshot()
+
+    assert snap["worst_cpi_ranking"]["ranked"] is False
+    assert snap["worst_cpi_ranking"]["reason"] == reflex.RANK_ALL_SHOWN_EQUAL
+    # The rows themselves are unchanged in kind — still the worst-valued ones.
+    assert snap["worst_cpi_contracts"] == snap["worst_cpi_ranking"]["rows"]

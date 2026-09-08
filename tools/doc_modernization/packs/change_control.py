@@ -37,6 +37,7 @@ from tools.doc_modernization.base_pack import (
     ChunkRef,
     DomainPack,
     Verdict,
+    match_span,
 )
 from tools.logging.icdev_logger import get_logger
 
@@ -149,6 +150,7 @@ class ChangeControlPack(DomainPack):
                 if not label or key in seen:
                     continue
                 seen.add(key)
+                span_start, span_end = match_span(m)
                 start = max(0, m.start() - _CONTEXT_WINDOW)
                 found.append(CandidateEntity(
                     label=label,
@@ -157,6 +159,8 @@ class ChangeControlPack(DomainPack):
                     chunk_ref=chunk_ref,
                     raw_match=label,
                     context=(text or "")[start:m.end() + _CONTEXT_WINDOW],
+                    span_start=span_start,
+                    span_end=span_end,
                 ))
         return found
 

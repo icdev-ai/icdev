@@ -20,11 +20,46 @@ jobs:
     # Only run on the main repo (not forks)
     if: github.repository == 'icdev-ai/icdev'
     steps:
+      # THIS WORKFLOW IS A MERGE DOOR AND IT HONOURS protected_paths (mfx-mrg-07).
+      # It squash-merges any green non-draft kanban/* PR as github-actions[bot]
+      # and runs NONE of land.py's thirteen checks. MEASURED 2026-09-07 over the
+      # last 84 merged PRs: ten touched a path in `protected_paths`
+      # (args/pr_watcher_config.yaml), EIGHT merged unattended through this
+      # job, and seven of those eight edited tools/ci/pr_watcher.py -- the first
+      # entry in that list and the reason it exists. mfx-mrg-04 built the
+      # audited `--protected-ok` door on the premise that such a PR needs a
+      # human; its own PR (#2143) was merged here at 05:02 on a routine sweep,
+      # and the door had never been used.
+      #
+      # The rule this job runs is tools/ci/protected_paths.py, checked out from
+      # the DEFAULT branch -- never a PR head, so a PR cannot edit the rule that
+      # judges it. The LIST is fetched per PR from the PR's BASE branch (below)
+      # for the same reason: a PR that deletes its own path from the list must
+      # not thereby authorise its own merge. Nothing here respells a path from
+      # that list; the module is stdlib-only so it runs with nothing installed.
+      - name: Check out the protected-path rule from the default branch (never a PR head)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: |
+            tools/ci/protected_paths.py
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
       - name: Auto-merge kanban PRs with all checks passing
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: icdev-ai/icdev
+          PROTECTED_PATHS_CONFIG: args/pr_watcher_config.yaml
         run: |
           echo "Scanning for qualifying kanban PRs..."
+          # PyYAML is preferred for reading the config; the probe carries a strict
+          # block-sequence reader for a runner without it, so a failed install is
+          # a note and not a stall.
+          python3 -c 'import yaml' 2>/dev/null \
+            || python3 -m pip install --quiet pyyaml 2>/dev/null \
+            || echo "PyYAML unavailable; tools/ci/protected_paths.py falls back to its strict reader"
+          scratch=$(mktemp -d)
           # Qualifying: kanban/* branch, REQUIRED checks passed, not a draft.
           #
           # REQUIRED, and read as a column (task-det-295a9bb95e). This used to
@@ -40,7 +75,7 @@ jobs:
           # to mis-split. An EMPTY answer (gh failed, no protection, nothing
           # required) is refused, never read as green.
           gh pr list \
-            --repo icdev-ai/icdev \
+            --repo "$REPO" \
             --state open \
             --json number,headRefName,isDraft,title \
             --limit 100 \
@@ -48,7 +83,7 @@ jobs:
           | while IFS=$'\t' read -r pr_num branch title; do
               echo "Checking PR #$pr_num ($branch)..."
               # Required-check buckets: pass | fail | pending | skipping | cancel
-              status=$(gh pr checks "$pr_num" --repo icdev-ai/icdev --required --json bucket --jq '.[].bucket' 2>/dev/null | sort -u)
+              status=$(gh pr checks "$pr_num" --repo "$REPO" --required --json bucket --jq '.[].bucket' 2>/dev/null | sort -u)
               if [ -z "$status" ]; then
                 echo "  PR #$pr_num: required checks could not be read, skipping"
                 continue
@@ -57,14 +92,55 @@ jobs:
                 echo "  PR #$pr_num: required checks not green ($(echo "$status" | tr '\n' ' ')), skipping"
                 continue
               fi
-              mergeable=$(gh pr view "$pr_num" --repo icdev-ai/icdev --json mergeable --jq '.mergeable' 2>/dev/null)
+              meta=$(gh pr view "$pr_num" --repo "$REPO" --json mergeable,baseRefName,changedFiles 2>/dev/null) || meta=""
+              mergeable=$(jq -r '.mergeable // empty' <<<"$meta")
               if [ "$mergeable" != "MERGEABLE" ]; then
                 echo "  PR #$pr_num: not mergeable ($mergeable), skipping"
                 continue
               fi
+              # PROTECTED PATHS (mfx-mrg-07). The list is read from the PR's BASE
+              # branch, once per distinct base; the PR's files come from the
+              # paginated REST listing (gh's GraphQL `files` stops at 100) and are
+              # checked against the forge's own count, so a truncated listing
+              # refuses. Exit 0 = clean, 1 = protected, 2 = UNDECIDABLE.
+              #
+              # UNDECIDABLE IS A SKIP, THE SAME WAY AN EMPTY REQUIRED-CHECK ANSWER
+              # IS. The cost is stated rather than hidden: this job is the door
+              # that kept the board moving while the local watcher was blind to a
+              # tripped GraphQL limit (2026-09-06), so a persistent config-read
+              # failure stalls every kanban merge until a human reads this log.
+              # The alternative -- an unreadable list reading as "nothing
+              # protected" -- reinstates the exact hole this step closes.
+              base=$(jq -r '.baseRefName // empty' <<<"$meta")
+              changed=$(jq -r '.changedFiles // empty' <<<"$meta")
+              if [ -z "$base" ] || [ -z "$changed" ]; then
+                echo "  PR #$pr_num: base branch / changed-file count could not be read -- skipping (fail-closed: cannot check protected_paths)"
+                continue
+              fi
+              cfg="$scratch/config-$(printf '%s' "$base" | tr -c 'A-Za-z0-9._-' '_').yaml"
+              if [ ! -s "$cfg" ]; then
+                gh api "repos/$REPO/contents/$PROTECTED_PATHS_CONFIG?ref=$base" \
+                  -H "Accept: application/vnd.github.raw+json" > "$cfg" 2>/dev/null || : > "$cfg"
+              fi
+              if [ ! -s "$cfg" ]; then
+                echo "  PR #$pr_num: $PROTECTED_PATHS_CONFIG could not be read from base '$base' -- skipping (fail-closed; every PR on this base stalls until it can be read)"
+                continue
+              fi
+              files="$scratch/pr-$pr_num.files"
+              gh api "repos/$REPO/pulls/$pr_num/files?per_page=100" --paginate --jq '.[].filename' > "$files" 2>/dev/null || : > "$files"
+              verdict=$(python3 tools/ci/protected_paths.py --config-file "$cfg" --files-from "$files" --expected-count "$changed") && rc=0 || rc=$?
+              case "$rc" in
+                0) echo "  PR #$pr_num: $verdict" ;;
+                1) echo "  PR #$pr_num: PROTECTED -- left to the audited door (kanban/cli.py --set-status <id> done --merge --protected-ok --reason '<why>'), not merged here:"
+                   echo "$verdict" | sed 's/^/      /'
+                   continue ;;
+                *) echo "  PR #$pr_num: protected_paths UNDECIDABLE -- skipping (fail-closed):"
+                   echo "$verdict" | sed 's/^/      /'
+                   continue ;;
+              esac
               echo "  PR #$pr_num ($branch): all green — auto-merging (squash)"
               gh pr merge "$pr_num" \
-                --repo icdev-ai/icdev \
+                --repo "$REPO" \
                 --squash \
                 --delete-branch \
                 --body "Auto-merged by pr-watcher: CI green, branch=$branch" \

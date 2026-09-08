@@ -38,6 +38,17 @@ async function goToStep(page: any, step: number) {
 }
 
 async function answerAllYes(page: any) {
+  // The questions are rendered by loadConfigMapQuestions() AFTER an API round
+  // trip that goToStep()'s fixed 500ms wait does not cover. Measured 2026-09-07
+  // (task-e2e-53d944ff): the GET landed, this helper ran first, every
+  // `count()` below read 0 and skipped silently, and the Save click was then
+  // refused with "Answer all 4 question(s) before generating proposals" --
+  // failing the run on `Total: 5`. Wait for the list to be populated (a
+  // question, or the explicit "no questions" placeholder) before answering.
+  await page
+    .locator('#cfgmap-questions-list button[id^="q-"], #cfgmap-questions-list > div')
+    .first()
+    .waitFor({ state: 'visible', timeout: 10000 });
   const keys = [
     'preserve_hostname',
     'convert_vendor_syntax',

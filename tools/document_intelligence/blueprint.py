@@ -229,6 +229,40 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# dwr-sect-02 -- the SELECT list a section reader asks for, and the decoding
+# of what comes back. ONE spelling, so the review page and the sections API
+# cannot disagree about what `verified` means.
+SECTION_VERIFICATION_SELECT = "verified, citation_report, abstained, confidence"
+
+
+def _attach_section_verification(rows: list[dict]) -> list[dict]:
+    """Decode a section row's own verification columns, in place.
+
+    ``verified`` comes back ``True`` / ``False`` / ``None`` -- the verifier's
+    verdict, or None when the check did not RUN (a row written before migration
+    20260908003513, a human-authored section, a section with nothing to verify
+    against). A reader MUST keep None apart from False: "not checked" and
+    "checked and failed" are different findings. ``citation_report`` is the
+    generator's report decoded from JSON, or None when the row carries none.
+    """
+    for r in rows:
+        v = r.get("verified")
+        r["verified"] = None if v is None else bool(v)
+        a = r.get("abstained")
+        r["abstained"] = None if a is None else bool(a)
+        raw = r.get("citation_report")
+        if raw is None or raw == "":
+            r["citation_report"] = None
+        elif isinstance(raw, (dict, list)):
+            pass
+        else:
+            try:
+                r["citation_report"] = json.loads(raw)
+            except Exception:
+                r["citation_report"] = None
+    return rows
+
+
 def _hid(*parts: str) -> str:
     return hashlib.sha256("|".join(parts).encode()).hexdigest()[:24]
 
@@ -420,8 +454,9 @@ def doc_detail(doc_id: str):
         if active_version_id:
             sections = _safe_rows(
                 conn,
-                "SELECT section_id, heading, content, citations_json, status, origin, assigned_to "
-                "FROM dic_sections WHERE version_id = %s ORDER BY section_id",
+                "SELECT section_id, heading, content, citations_json, status, origin, assigned_to, "
+                + SECTION_VERIFICATION_SELECT
+                + " FROM dic_sections WHERE version_id = %s ORDER BY section_id",
                 (active_version_id,),
             )
             for s in sections:
@@ -429,6 +464,7 @@ def doc_detail(doc_id: str):
                     s["citations"] = json.loads(s.get("citations_json") or "[]")
                 except Exception:
                     s["citations"] = []
+            _attach_section_verification(sections)
         # Team members for assignment dropdown
         collection_id = doc.get("collection_id") or "default"
         team = _safe_rows(
@@ -3767,8 +3803,9 @@ def api_version_sections(version_id):
     try:
         rows = _safe_rows(
             conn,
-            "SELECT section_id, heading, content, citations_json, status, origin "
-            "FROM dic_sections WHERE version_id = %s ORDER BY section_id",
+            "SELECT section_id, heading, content, citations_json, status, origin, "
+            + SECTION_VERIFICATION_SELECT
+            + " FROM dic_sections WHERE version_id = %s ORDER BY section_id",
             (version_id,),
         )
         for r in rows:
@@ -3776,6 +3813,10 @@ def api_version_sections(version_id):
                 r["citations"] = json.loads(r.get("citations_json") or "[]")
             except Exception:
                 r["citations"] = []
+        # dwr-sect-02: `verified` is the COLUMN, tri-state. The page used to
+        # re-derive it from `status == 'approved'`, which is a human decision
+        # about publishing, not a verifier's verdict about the prose.
+        _attach_section_verification(rows)
         return jsonify({"sections": rows})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
@@ -4636,8 +4677,11 @@ def api_section_suggest(section_id: str):
     user = _current_user()
     tenant_id, classification = _security_context()
 
-    # Load current section content for context.
+    # Load current section content for context — and as the anchor's content
+    # of record. `section_read` separates "the section is empty" from "the
+    # read failed": only a section actually READ can carry an exact anchor.
     current_content = ""
+    section_read = False
     try:
         conn = _conn()
         cur = conn.execute(
@@ -4646,10 +4690,19 @@ def api_section_suggest(section_id: str):
         )
         row = cur.fetchone()
         if row:
-            current_content = row[0] if isinstance(row, (list, tuple)) else row["content"]
+            current_content = (row[0] if isinstance(row, (list, tuple)) else row["content"]) or ""
+            section_read = True
         conn.close()
     except Exception:
         pass
+
+    # dwr-anchor-03: a crowdsourced proposal replaces the WHOLE section, so its
+    # anchor is the whole section — exact, over the content just read. A
+    # section that could not be read gets no span: the basis is recorded from
+    # what was measured, never assumed.
+    from tools.document_intelligence.suggestion_store import whole_section_anchor
+    anchor = (whole_section_anchor(section_id, current_content) if section_read
+              else {"anchor_section_id": section_id, "anchor_basis": "unanchored"})
 
     suggestion_id = create_suggestion(
         section_id=section_id,
@@ -4660,6 +4713,8 @@ def api_section_suggest(section_id: str):
         rationale=rationale or f"User suggestion from {user}",
         tenant_id=tenant_id,
         classification=classification,
+        origin_kind="crowdsource",
+        **anchor,
     )
 
     return jsonify({

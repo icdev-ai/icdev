@@ -41,6 +41,28 @@ class CandidateEntity:
     raw_match: str = ""              # the literal text matched
     context: str = ""                # surrounding text for reviewer display
     attributes: dict = field(default_factory=dict)  # e.g. {"vendor": "Cisco", "version": "2012"}
+    # CHUNK-LOCAL offsets of ``raw_match`` inside the text extract() was handed
+    # (the convention claim_lifecycle.verify_claim_anchors already reads):
+    # ``chunk_text[span_start:span_end] == raw_match``. None when the entity is
+    # not anchored to a text span (evidence_currency's anchor entities) — never
+    # 0, which would claim the chunk starts with the match.
+    span_start: int | None = None
+    span_end: int | None = None
+
+
+def match_span(m) -> tuple[int, int]:
+    """Chunk-local ``(start, end)`` of the STRIPPED ``m.group(0)``.
+
+    Every pack sets ``raw_match = m.group(0).strip()``; a pattern that admits
+    leading or trailing whitespace would then make ``m.start()``/``m.end()``
+    bound a string that is not ``raw_match``. Trimming the span by the same
+    whitespace keeps ``text[start:end] == raw_match`` an invariant a test can
+    assert, on the text the match came from.
+    """
+    group = m.group(0) or ""
+    lead = len(group) - len(group.lstrip())
+    start = m.start() + lead
+    return start, start + len(group.strip())
 
 
 @dataclass

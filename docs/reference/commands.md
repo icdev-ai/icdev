@@ -8604,3 +8604,30 @@ default 6; `KANBAN_WORKTREE_HUSK_AGE_HOURS` overrides). Unreadable is `proven: N
 and refuses. Bounded per run, oldest first, deferred by name. Consumed by
 `_sweep_old_worktrees`. Kill switch `KANBAN_WORKTREE_HUSK_SWEEP=0`.
 Survey: docs/audits/mfx-own-04-worktree-husk-survey.md
+
+### Canvas Reassessment Reflex — coverage, dry run, starvation (rmf-inert-03)
+```bash
+python -m tools.genesis.reflexes.canvas_reassess --coverage      # covered / uncovered BY NAME against the posture surface; no database
+python -m tools.genesis.reflexes.canvas_reassess --dry-run       # run the sweep against the live canvases and write nothing
+python -m tools.genesis.reflexes.canvas_reassess --starvation    # designs skipped over budget on EVERY recorded run (genesis_audit)
+python tools/genesis/daemon.py --reflex canvas_reassess --json   # one real cycle through the daemon
+```
+
+## Protected paths — the one rule, and the Actions auto-merge door (mfx-mrg-07)
+
+```bash
+python tools/ci/protected_paths.py --config-file args/pr_watcher_config.yaml --files tools/ci/pr_watcher.py docs/x.md   # exit 1: protected, hits printed
+python tools/ci/protected_paths.py --config-file args/pr_watcher_config.yaml --files docs/x.md                            # exit 0: clean
+python tools/ci/protected_paths.py --config-file args/pr_watcher_config.yaml --files-from changed.txt --expected-count 12 # exit 2 if the listing is shorter than the forge's count
+gh run list --workflow "PR Auto-Merge (Kanban)" --limit 5     # the cron door; a skipped protected PR names its hits in the log
+```
+
+`tools/ci/protected_paths.py` holds `protected_hits` (exact-or-directory-prefix,
+fail-closed on an unreadable file list); `tools/ci/merge_readiness.py` re-exports
+it, so the local watcher's two merge doors and `.github/workflows/pr-watcher.yml`
+run ONE implementation against ONE list. The module is stdlib-only because the
+workflow checks out exactly that file from the default branch and runs it on a
+bare runner, reading `protected_paths` from the PR's BASE branch and never its
+head. Exit 0 clean, 1 protected, 2 undecidable (fail-closed: the workflow skips).
+Measured 2026-09-07: 8 of the last 10 protected-path merges went through that
+workflow unattended. Survey: docs/audits/mfx-mrg-07-actions-auto-merge-door-survey.md

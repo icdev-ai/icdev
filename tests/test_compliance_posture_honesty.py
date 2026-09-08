@@ -244,3 +244,117 @@ def test_too_little_data_is_unmeasured_never_flat(scores):
     direction, delta = _trend(scores)
     assert direction == "unmeasured"
     assert delta is None
+
+
+# --------------------------------------------------------------------------- #
+# A scheduled refresh is not a review, and the surface must say which it has
+# (rmf-inert-03)
+# --------------------------------------------------------------------------- #
+from tools.canvas_compliance.posture import (  # noqa: E402
+    NON_CANVAS_ROWS,
+    SCHEDULED_ASSESSMENT_TYPE,
+    _ASSESSED_AT,
+    _CANVAS_MODULES,
+    _last_assessed_detail,
+    surface_rows,
+)
+
+
+class _TypedConn:
+    """Answers the three questions _last_assessed_detail asks, in order."""
+
+    def __init__(self, newest, newest_type, newest_reviewed):
+        self._answers = [newest, newest_type, newest_reviewed]
+        self.executed = []
+
+    def execute(self, sql, params=()):
+        self.executed.append(sql)
+        if " AS t " in sql:                      # which writer wrote the newest row
+            return _Cur({"t": self._answers[1]})
+        if "!=" in sql:                          # newest NON-scheduled row
+            return _Cur({"m": self._answers[2]})
+        return _Cur({"m": self._answers[0]})    # newest row of any kind
+
+    def rollback(self):
+        return None
+
+
+def test_surface_rows_is_the_canvas_map_plus_the_non_canvas_rows():
+    rows = surface_rows()
+    assert rows[:len(_CANVAS_MODULES)] == list(_CANVAS_MODULES)
+    assert rows[len(_CANVAS_MODULES):] == list(NON_CANVAS_ROWS)
+    assert {"GovLift", "Zero Trust"} <= set(rows)
+
+
+def test_a_scheduled_newest_row_is_reported_as_scheduled_with_the_last_review_beside_it():
+    cc = _TypedConn("2026-09-07T20:24:33+00:00", SCHEDULED_ASSESSMENT_TYPE, "2026-06-09T22:56:48Z")
+    d = _last_assessed_detail(cc, "Data")
+    assert d["last_assessed"] == "2026-09-07T20:24:33+00:00"
+    assert d["last_assessed_source"] == "scheduled"
+    assert d["last_reviewed"] == "2026-06-09T22:56:48Z", (
+        "the newest NON-scheduled row is what tells an 89-day-old estate from a fresh one")
+
+
+def test_a_canvas_written_row_is_reported_as_canvas():
+    cc = _TypedConn("2026-07-18T01:40:41+00:00", "auto_stride", "2026-07-18T01:40:41+00:00")
+    d = _last_assessed_detail(cc, "Security")
+    assert d["last_assessed_source"] == "canvas"
+    assert d["last_reviewed"] == d["last_assessed"]
+
+
+def test_a_table_with_no_writer_column_cannot_say_and_says_so():
+    """aadc_assessments has no assessment_type. None, never 'canvas' — filling
+    it in from last_assessed would report every scheduled refresh as a review."""
+    cc = _TypedConn("2026-06-24T19:25:59+00:00", "anything", "anything")
+    d = _last_assessed_detail(cc, "Agentic AI")
+    assert d["last_assessed"] == "2026-06-24T19:25:59+00:00"
+    assert d["last_assessed_source"] is None
+    assert d["last_reviewed"] is None
+    assert len(cc.executed) == 1, "no type query may run against a table with no type column"
+
+
+def test_no_evidence_reports_none_on_all_three():
+    d = _last_assessed_detail(_TypedConn(None, None, None), "Infra")
+    assert d == {"last_assessed": None, "last_assessed_source": None, "last_reviewed": None}
+
+
+def test_network_and_pipeline_age_reads_the_column_their_tables_have():
+    """Both checks tables carry `ran_at` and have never carried `created_at`
+    (DDL and the live PG catalogue agree, 2026-09-07). The old spelling raised,
+    was swallowed, and both canvases rendered a score with NO age — which on
+    this widget reads as fresh."""
+    assert _ASSESSED_AT["Network"] == ("nc_compliance_checks", "ran_at")
+    assert _ASSESSED_AT["Pipeline"] == ("pc_compliance_checks", "ran_at")
+
+
+def test_every_row_carries_the_source_and_review_keys(monkeypatch):
+    """The widget branches on `last_assessed_source`; a MISSING key renders
+    differently from a known-None one."""
+    from tools.canvas_compliance import posture as mod
+
+    class _EmptyConn:
+        def execute(self, sql, params=()):
+            return _Cur({"c": 0, "m": None, "p": None, "f": None, "cnt": 0})
+        def close(self):
+            return None
+        def rollback(self):
+            return None
+
+    monkeypatch.setattr(mod, "_open_canvas_connection", lambda _n: _EmptyConn())
+    rows, _overall = mod.compute_canvas_posture(_EmptyConn())
+    assert rows, "the empty-table path still emits a row per canvas"
+    for r in rows:
+        assert "last_assessed_source" in r, r
+        assert "last_reviewed" in r, r
+
+
+def test_the_widget_renders_the_source_not_only_the_age():
+    """A scheduled row must be marked on screen and carry the last review's age;
+    otherwise the surface has the field and the reader still cannot tell. Both
+    template copies, because the wheel serves the icdev/ one."""
+    for rel in ("tools/dashboard/templates/index.html",
+                "icdev/tools/dashboard/templates/index.html"):
+        html = (ROOT / rel).read_text(encoding="utf-8")
+        assert "last_assessed_source" in html, rel
+        assert "last_reviewed" in html, rel
+        assert 'data-assessed-source="scheduled"' in html, rel

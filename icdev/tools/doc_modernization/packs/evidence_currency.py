@@ -69,6 +69,9 @@ class EvidenceCurrencyPack(DomainPack):
         citation, not the prose. When the scanner had no chunk links and fell back
         to dic_sections, chunk_link_id is None and the document is unverifiable.
         """
+        # No span, on purpose: the entity is the citation, not a run of text, so
+        # there is no ``raw_match`` to locate. span_start/span_end stay None --
+        # never (0, 0), which would anchor a redline to an empty slice.
         if not chunk_ref.chunk_link_id:
             return [CandidateEntity(
                 label=NO_ANCHOR_LABEL,
@@ -77,6 +80,8 @@ class EvidenceCurrencyPack(DomainPack):
                 chunk_ref=chunk_ref,
                 raw_match="",
                 context="",
+                span_start=None,
+                span_end=None,
             )]
         return [CandidateEntity(
             label=chunk_ref.chunk_link_id,
@@ -85,6 +90,8 @@ class EvidenceCurrencyPack(DomainPack):
             chunk_ref=chunk_ref,
             raw_match="",
             context=(text or "")[:160],
+            span_start=None,
+            span_end=None,
         )]
 
     def evaluate(self, entity: CandidateEntity, conn) -> Verdict:
