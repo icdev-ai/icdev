@@ -69,6 +69,19 @@ ANCHOR_COLUMNS = (
     ("applied_by", "TEXT"),
 )
 
+# Declaration order of the columns dwr-ev-03 added, same discipline as
+# ANCHOR_COLUMNS above: migration 20260908... carries this tuple, pinned by
+# test, and `_ensure_tables` carries them for a table created after it landed.
+#
+#   superseded_by      the suggestion_id that REPLACED this one. A status of
+#                      `superseded` with no successor is a dead end, and a
+#                      retired change would read the same as a lost one.
+#   superseded_reason  free text -- today "redraft requested by <actor>".
+SUPERSEDE_COLUMNS = (
+    ("superseded_by", "TEXT"),
+    ("superseded_reason", "TEXT"),
+)
+
 
 # ── Schema ────────────────────────────────────────────────────────────────────
 
@@ -97,7 +110,9 @@ def _ensure_tables(conn) -> None:
             anchor_basis        TEXT,
             origin_kind         TEXT,
             applied_text        TEXT,
-            applied_by          TEXT
+            applied_by          TEXT,
+            superseded_by       TEXT,
+            superseded_reason   TEXT
         )
         """
     )
@@ -473,6 +488,56 @@ def record_application(suggestion_id: str, applied_text: str, applied_by: str) -
             "UPDATE dic_suggestions SET applied_text=%s, applied_by=%s, updated_at=%s "
             "WHERE suggestion_id=%s",
             (applied_text, applied_by, _now(), suggestion_id),
+        )
+        conn.commit()
+    return True
+
+
+def supersede_suggestion(suggestion_id: str, superseded_by: str,
+                         superseded_reason: str = "") -> bool:
+    """Retire a PENDING suggestion because a newer one replaces it (dwr-ev-03).
+
+    Returns True when the row moved to ``superseded``; False when there is no
+    such row, or when it is no longer ``pending`` -- an ACCEPTED suggestion has
+    already been written into the document and a REJECTED one already carries a
+    human's decision, and overwriting either would rewrite a recorded outcome.
+    Both are the caller's to report, never to force.
+
+    This is NOT ``decide_suggestion``. A supersede is not a disposition: it
+    writes no ``dic_suggestion_decisions`` row, because nobody decided anything
+    about this change -- they asked for a different one. Conflating the two
+    would put a decision on the board that no human ever made, and
+    ``dic_suggestion_decisions`` is the table cef-ui-03 reads to answer "was
+    this ever reviewed?".
+
+    ``superseded_by`` is REQUIRED and must not be the row itself. A status of
+    ``superseded`` with no successor is a dead end a reader cannot follow, and
+    it is exactly the shape that makes a retired suggestion indistinguishable
+    from a lost one.
+    """
+    successor = (superseded_by or "").strip()
+    if not successor:
+        raise ValueError("superseded_by is required -- a supersede must name its successor")
+    if successor == suggestion_id:
+        raise ValueError("a suggestion cannot supersede itself")
+
+    now = _now()
+    with get_connection() as conn:
+        _ensure_tables(conn)
+        row = conn.execute(
+            "SELECT status FROM dic_suggestions WHERE suggestion_id = %s",
+            (suggestion_id,),
+        ).fetchone()
+        if row is None:
+            return False
+        if _col(row, "status", 0) != "pending":
+            return False
+        conn.execute(
+            """UPDATE dic_suggestions
+                  SET status='superseded', superseded_by=%s,
+                      superseded_reason=%s, updated_at=%s
+                WHERE suggestion_id=%s""",
+            (successor, superseded_reason or "", now, suggestion_id),
         )
         conn.commit()
     return True

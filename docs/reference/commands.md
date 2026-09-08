@@ -6438,6 +6438,32 @@ version) assertion**.
 - Refreshed on the nightly `doc_modernization_sweep` reflex; read by the docmod
   network-hardware pack only when the catalog and the hardware feed are both
   silent. Declared in `args/capability_consumption.yaml` `substrates:`.
+- **Redraft with my comments — a button a human presses (dwr-ev-03).** A
+  per-change action that re-runs the UNCHANGED TRUST gate chain with the
+  change's comment thread as editing INSTRUCTIONS and the governed author/SME
+  currency evidence in the bundle, and SUPERSEDES the change it replaces.
+  Commenting records evidence and fires nothing; the redraft is explicit,
+  because a governed resolution costs 10-12s against five backends. A library —
+  import it:
+
+  ```python
+  from tools.document_intelligence.redraft import redraft_change, run_stats
+  result = redraft_change("sug_abc123", actor="alice")
+  ```
+
+  Route `POST /document-intelligence/api/suggestions/<id>/redraft` (editor
+  role), surfaced as a button in the existing ⚡ suggestions panel on
+  `/document-intelligence/documents/<doc_id>`. Instructions reach the model in
+  the prompt and NEVER `allowed_ids`, so a comment citing a made-up source
+  hard-blocks at TRUST gate 1; `extra_evidence` is the separate parameter that
+  is citable and comes only from `doc_modernization.evidence.resolve_evidence`.
+  `evidence_basis` keeps `not_consulted` (the seam was never asked —
+  `cortex.enabled` is off by default, so this is what this deployment reports)
+  apart from `capped`, `blocked`, `no_evidence` and `resolved`. Every bound is
+  reported by name (`max_resolves_per_run`, one run = one press) and every
+  refusal is a key in `redraft.REFUSALS` returned with 409, never a 200 over a
+  no-op. Config `args/dic_redraft_config.yaml`; audit `dic.redraft` with the
+  `.intent` leg fail-closed (migration 20260908071433).
 
 ## Twin Core — Cross-Canvas Digital-Twin Unification (TWX)
 

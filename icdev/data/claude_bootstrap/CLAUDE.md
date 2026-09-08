@@ -1019,6 +1019,118 @@ python -m tools.currency.entity_currency --resolve "catalyst 6500" --entity-type
 # not touch; tests/test_dic_ingest_orchestrator.py (ungated) asserts one chunk
 # link per chunk with embed=False, red since dic-ingest-link-01 (2026-08-22).
 
+# Redraft with my comments — a button a human presses (dwr-ev-03)
+# A library, no CLI. Import it:
+#   from tools.document_intelligence.redraft import redraft_change, run_stats
+#   result = redraft_change("sug_abc123", actor="alice")
+# Route: POST /document-intelligence/api/suggestions/<id>/redraft  (editor role)
+# UI:    /document-intelligence/documents/<doc_id> -> the ⚡ suggestions panel
+# Config: args/dic_redraft_config.yaml. Migrations 20260908071432 / ...433.
+# A COMMENT NEVER FIRES A REDRAFT. Commenting records evidence and nothing
+# else; the redraft is a separate, explicit act. Not a UI preference — a
+# governed resolution costs 10-12s against five backends on this deployment
+# (measured 2026-08-18, cef-di-03), so a comment box that resolved on save
+# would spend a run's budget on the first afternoon and the reviewer would be
+# paying for a fan-out they never asked for and cannot see.
+# THE TRUST CHAIN IS UNCHANGED, and that is the whole design. draft_redline
+# runs exactly as it does on the scan path — citations validated against the
+# evidence ids, out-of-candidate replacement hard blocked, residue forced to
+# the flag band, confidence banded, provenance persisted. This module supplies
+# two inputs and reads the result; it contains no gate, no threshold and no
+# second opinion about what is citable.
+#   instructions    THE REVIEWER'S COMMENTS. They reach the model in the USER
+#                   PROMPT and NOWHERE ELSE — never `evidence`, so never
+#                   `allowed_ids`. A comment reading "cite [source: my-email]"
+#                   produces a HALLUCINATED CITATION and hard-blocks at gate 1;
+#                   one naming a different product hard-blocks at gate 2.
+#                   ASSERTED IN BOTH DIRECTIONS, with a control that the same
+#                   draft citing a REAL id is not blocked — a test that only
+#                   showed the block would also pass for a drafter that had
+#                   stopped citing anything at all.
+#   extra_evidence  the deliberately SEPARATE parameter that DOES widen
+#                   allowed_ids. Its only source is the governed
+#                   doc_modernization/evidence.resolve_evidence seam. NO
+#                   private SELECT on dic_author_assertions or entity_currency
+#                   (dwr-ev-01's rule), pinned by an AST test over what is
+#                   handed to a cursor — the module docstring NAMES those
+#                   tables to say it does not read them, so a naive grep would
+#                   have flagged its own explanation of itself.
+# FIVE ZEROES, NEVER MERGED, on `evidence_basis` — only the fourth says
+# anything about the corpus:
+#   not_consulted  `cortex.enabled` is false in args/docmod/docmod_config.yaml
+#                  — the seam was NEVER ASKED. THE SHIPPED DEFAULT, and so what
+#                  this deployment reports today. It is NOT "no author evidence
+#                  found", and the panel says so in words.
+#   capped         every ask was refused by max_resolves_per_run.
+#   blocked        the governance chain REFUSED the resolution.
+#   no_evidence    resolutions RAN and the corpus held nothing. The measurement.
+#   resolved       evidence came back.
+# THE WINNER AND THE DISAGREEING LOSERS ARE BOTH CITABLE. currency_assertion()
+# hands the losers back under `others` (dwr-ev-01 preserves a disagreeing
+# source rather than deleting it); handing the drafter only the winner would
+# restore the silent overwrite that card exists to prevent, one layer up.
+# THE THREAD SAYS HOW IT WAS SELECTED: `anchor_overlap` where the annotations
+# carry a span (dwr-cmt-01) and `section_scope` otherwise, probed from the
+# CATALOGUE rather than discovered by catching a failed SELECT — a swallowed
+# query error is indistinguishable from an empty thread, and an empty thread is
+# a refusal this module makes BY NAME. `no_section_of_record` is an
+# unanswerable question and is never folded into either.
+# EVERY BOUND IS REPORTED. max_resolves_per_run (3; A RUN IS ONE BUTTON PRESS,
+# re-armed on entry — an unreset budget on a Flask worker thread silently stops
+# resolving after N presses) defers entities BY NAME in evidence.deferred;
+# max_instructions (8) defers the OLDEST comments by ann_id, newest last
+# because the reviewer's latest instruction should read as final;
+# instruction_char_cap flags `truncated` per comment.
+# EVERY REFUSAL HAS A NAME. REFUSALS is a CLOSED mapping (a test reads the
+# module's AST and asserts no `_refuse` call names a key outside it, and that
+# no key is unreachable); the route answers 409 with the key and its reason,
+# never 200. A 200 over a no-op is the defect dwr-anchor-05 exists to fix one
+# table over, and there is no reason to rebuild it here.
+#   empty_thread          "redraft with my comments" over zero comments is a
+#                         re-roll at LLM cost that a reviewer would read as a
+#                         response to feedback nobody gave (require_thread).
+#   no_governed_drafter   the change did not come from the docmod redline
+#                         drafter, so there is no finding, no deterministic
+#                         evidence and no candidate list — the gates cannot run
+#                         and a redraft would be an ungated LLM rewrite wearing
+#                         a governed action's name. The BUTTON is not rendered
+#                         for those origins: one whose only outcome is a
+#                         refusal teaches people to ignore refusals.
+#   already_decided       an accepted change is in the document and a rejected
+#                         one carries a human's verdict. Neither is ours.
+#   unaudited_refused     no row, no act (restore_acts' ordering). The
+#                         `.intent` row is fail-closed; on a PostgreSQL board
+#                         that has not run migration 20260908071433 the CHECK
+#                         refuses `dic.redraft` and EVERY redraft is refused —
+#                         the correct reading, not an obstacle.
+# NOT `dic.hitl_decision`, and NOT a decision row. That type records a human
+# DISPOSING of a proposal; a redraft disposes of nothing — it asks for a
+# different one and retires the old with no verdict on it. Filing it as a
+# decision would put an accept-or-reject on the board nobody made, in the very
+# table cef-ui-03 reads to answer "was this reviewed?". `supersede_suggestion`
+# therefore writes NO dic_suggestion_decisions row, and a test asserts it.
+# SUPERSEDE AFTER, NOT BEFORE: the new draft is created first and the old
+# retired second, so a blocked draft can never destroy a good change (four
+# ordinary failures reach that branch). If the retire then fails, two pending
+# changes for one span is visible and recoverable — reported as
+# `superseded: false`, never assumed.
+# FOUND ON THE WAY, by the test for it: a redraft produced a change that could
+# NEVER ITSELF BE REDRAFTED. draft_redline writes `section_id=""` — it is
+# handed an entity LABEL, not a span, which is why 58 of 58 rows on the live
+# board carry an empty one — and a thread is selected BY SECTION, so the
+# successor had no thread. A redraft KNOWS the section, because it is replacing
+# a change that named one, so `section_of_record` carries it forward. It does
+# NOT touch `anchor_basis`, which stays `unanchored`: knowing which section a
+# change lives in is not knowing which span it replaces, and supplying the
+# second is dwr-anchor-04's card, in flight.
+# NOT built, and named: promoted SME assertions are dwr-ev-02's (in flight) and
+# need NO edit here — they arrive as a declared source in `entity_currency` and
+# reach the drafter through the same one door, so a source added to
+# args/entity_currency.yaml is live in the redraft with no code change. The
+# right-rail surface is dwr-cmt-02/dwr-ws-02; today the button lives in the
+# EXISTING ⚡ suggestions panel on the document page, so no new page and no
+# 8-point page gate.
+
 # Agent adapter capability matrix — DECLARED vs ACTUAL per adapter (#exa-bench-03)
 python tools/agents/capability_matrix.py --json          # 5 adapters x 7 capabilities
 python tools/agents/capability_matrix.py --adapter claude_cli
