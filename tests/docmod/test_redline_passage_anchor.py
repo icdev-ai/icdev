@@ -74,9 +74,22 @@ def _reset_db():
                    content TEXT, status TEXT, origin TEXT, created_at TEXT)""",
             """CREATE TABLE IF NOT EXISTS rag_chunks (
                    id TEXT PRIMARY KEY, content TEXT)""",
+            # MIRROR THE MIGRATED SCHEMA, EVERY NOT NULL OF IT. This fixture
+            # has now been patched three times -- doc_id, then chunk_index --
+            # because it declared ONE of the real table's five NOT NULL columns
+            # and `CREATE TABLE IF NOT EXISTS` let the weaker definition win on
+            # any host where the real table is absent. Each patch fixed the
+            # column that happened to bite and left the next one loaded. The
+            # canonical DDL is ingest_orchestrator.py; a fixture that is
+            # STRICTER THAN OR EQUAL TO the migration is the only shape where a
+            # local pass implies a CI pass.
             """CREATE TABLE IF NOT EXISTS dic_chunk_links (
-                   link_id TEXT PRIMARY KEY, doc_id TEXT NOT NULL, version_id TEXT,
-                   rag_chunk_id TEXT, page INTEGER, section TEXT)""",
+                   link_id TEXT PRIMARY KEY, doc_id TEXT NOT NULL,
+                   version_id TEXT NOT NULL, rag_chunk_id TEXT NOT NULL,
+                   collection_id TEXT, chunk_index INTEGER NOT NULL,
+                   page INTEGER, section TEXT, chunk_hash TEXT,
+                   created_at TEXT NOT NULL, tenant_id TEXT,
+                   classification TEXT)""",
             """CREATE TABLE IF NOT EXISTS docmod_findings (
                    finding_id TEXT PRIMARY KEY, run_id TEXT, doc_id TEXT,
                    version_id TEXT, chunk_link_id TEXT, section_heading TEXT,
@@ -132,11 +145,14 @@ def _chunk(link_id="lnk-1", version_id="ver-1", content=None, section="Transport
         conn.execute("INSERT INTO rag_chunks (id, content) VALUES (%s,%s)",
                      (f"rc-{link_id}", content))
         conn.execute(
-            # doc_id is NOT NULL in the migrated table; the fixture's own DDL
-            # below omits it, so leaving it out passed locally and failed in CI.
+            # Every NOT NULL column of the migrated table, supplied. The DDL
+            # above now declares all five, so an omission fails HERE rather
+            # than only on a host where the real table already exists.
             "INSERT INTO dic_chunk_links (link_id, doc_id, version_id, rag_chunk_id, "
-            "page, section) VALUES (%s,%s,%s,%s,1,%s)",
-            (link_id, "doc-1", version_id, f"rc-{link_id}", section),
+            "chunk_index, page, section, created_at) "
+            "VALUES (%s,%s,%s,%s,%s,1,%s,%s)",
+            (link_id, "doc-1", version_id, f"rc-{link_id}", 0, section,
+             "2026-09-08T00:00:00+00:00"),
         )
         conn.commit()
     return link_id
