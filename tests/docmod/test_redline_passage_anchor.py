@@ -81,7 +81,13 @@ def _reset_db():
                    finding_id TEXT PRIMARY KEY, run_id TEXT, doc_id TEXT,
                    version_id TEXT, chunk_link_id TEXT, section_heading TEXT,
                    page INTEGER, pack_id TEXT, entity_label TEXT,
-                   entity_type TEXT, finding_type TEXT, currency_verdict TEXT,
+                   entity_type TEXT, finding_type TEXT,
+                   -- MIRROR THE MIGRATED SCHEMA. Without this CHECK the fixture's
+                   -- `CREATE TABLE IF NOT EXISTS` silently wins on any host where the
+                   -- real table is absent, so an invalid verdict passes locally and
+                   -- fails only in CI -- which is exactly how 'superseded' got here.
+                   currency_verdict TEXT CHECK (currency_verdict IN
+                       ('current','deprecated','eol','retired','divergent','unknown')),
                    severity TEXT, rationale TEXT, evidence_json TEXT,
                    recommended_replacement TEXT, replacement_evidence_json TEXT,
                    confidence REAL, state TEXT, supersedes_id TEXT,
@@ -143,7 +149,7 @@ def _finding(finding_id="fnd-1", *, chunk_link_id=None, text_for_span=SECTION_TE
                 replacement_evidence_json, confidence, state, dedupe_key, created_at,
                 tenant_id, classification, anchor_start, anchor_end, anchor_text)
                VALUES (%s,'run-1','doc-1',%s,%s,%s,1,'crypto_protocols',%s,'protocol',
-                       'superseded','superseded','high','TLS 1.1 is superseded.',
+                       'superseded','retired','high','TLS 1.1 is superseded.',
                        %s,%s,'[]',0.9,%s,%s,'t','','CUI',%s,%s,%s)""",
             (finding_id, version_id, chunk_link_id, heading, entity,
              json.dumps(EVIDENCE), replacement, state, f"dk-{finding_id}",
