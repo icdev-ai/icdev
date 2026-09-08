@@ -834,6 +834,71 @@ function _annHeader(counts) {
   return '<p style="color:#5a7aa0;font-size:10px;margin:0 0 8px;">' + bits.join(' &middot; ') + '</p>';
 }
 
+// dwr-ev-02 -- an ATTRIBUTED SME ASSERTION renders in its own frame, in its
+// own colour, under its own heading. A promoted comment is citable evidence and
+// an unpromoted one is an instruction, and the two must not be told apart by
+// squinting at a small badge: the amber frame, the "ATTRIBUTED HUMAN SOURCE"
+// header and the standing sentence saying it is not a document are all here so
+// a reader who mistakes one for the other has to work at it.
+function _renderSmeAssertion(a) {
+  var s = a.sme_assertion;
+  var basis = s.as_of_basis === 'sme_stated'
+    ? 'stated by the SME'
+    : 'defaulted from the comment timestamp';
+  return '<div style="border:1px solid #b45309;background:#1b1206;border-radius:5px;padding:8px 10px;margin:6px 0 2px;">' +
+    '<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;flex-wrap:wrap;">' +
+      '<span style="background:#b45309;color:#fff;font-size:9px;padding:2px 7px;border-radius:8px;letter-spacing:.5px;">ATTRIBUTED HUMAN SOURCE</span>' +
+      '<span style="color:#e0b070;font-size:10px;">cited as <code>sme_assertion</code>, never as a document</span>' +
+    '</div>' +
+    '<div style="color:#f0d0a0;font-size:12px;margin-bottom:4px;">' +
+      '<strong>' + escH(s.entity_label || '') + '</strong>' +
+      (s.entity_version ? ' ' + escH(s.entity_version) : '') +
+      ' <span style="color:#a08050;">(' + escH(s.entity_type || '') + ')</span> &rarr; ' +
+      '<strong>' + escH(s.status || '') + '</strong>' +
+    '</div>' +
+    '<div style="color:#c0a070;font-size:10px;line-height:1.5;">' +
+      'Asserted by <strong>' + escH(s.asserted_by || '') + '</strong>' +
+      ', as of ' + escH((s.as_of || '').slice(0,10)) +
+      ' <span style="color:#8a7050;">(' + basis + ')</span><br>' +
+      'Promoted to evidence by <strong>' + escH(s.promoted_by || '') + '</strong>' +
+      ' on ' + escH((s.promoted_at || '').slice(0,10)) +
+      '<br><span style="color:#8a7050;">This is one named person\'s statement about this estate. ' +
+      'It is not a document, and the comment text above is a quotation, not a parsed claim.</span>' +
+    '</div>' +
+  '</div>';
+}
+
+// ONE comment, deliberately. There is no "promote all" and no heuristic: the
+// promoting human types the claim, because nothing anywhere parses the comment
+// prose into one (TRUST rule 2).
+function promoteAnnotation(annId, sid) {
+  var label = prompt('Mark as SME assertion.\n\nThis comment becomes a CITABLE attributed human source.\n\nWhich entity does it assert about? (e.g. "TLS 1.1")');
+  if (!label) return;
+  var type = prompt('Entity type? (e.g. hardware_model, software_release, crypto_protocol)');
+  if (!type) return;
+  var status = prompt('What does the SME assert about it?\n\nOne of: current, fielded, in_use, deprecated, end_of_support, retired, decommissioned, unknown');
+  if (!status) return;
+  var asOf = prompt('As of what date does the SME assert this? (YYYY-MM-DD)\n\nLeave blank to use the comment\'s own timestamp.') || '';
+  fetch('/document-intelligence/api/annotations/' + annId + '/promote', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      promoted_by: _ANN_CURRENT_USER,
+      claim: {entity_label: label, entity_type: type, status: status, as_of: asOf}
+    })
+  }).then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
+    .then(function(res) {
+      if (!res.ok) { alert('Not promoted: ' + (res.data.error || 'unknown error')); return; }
+      var others = res.data.contradicts || [];
+      if (others.length) {
+        // Reported, never resolved away: both statements stand.
+        alert(others.length + ' other promoted SME assertion(s) about this entity state something different. ' +
+              'Both are kept; the store ranks them by the human clock.');
+      }
+      loadAnnotations(sid);
+    });
+}
+
 function _annCard(sid, a, isReply) {
   var cat = a.category || 'editorial';
   var bg  = _CAT_COLORS[cat] || '#374151';
@@ -842,8 +907,12 @@ function _annCard(sid, a, isReply) {
   var resolved = a.status === 'resolved';
   var cand = a.anchor && a.anchor.relocation_candidate;
 
+  // dwr-ev-02: PROMOTED outranks every other frame colour here. An anchor state
+  // is about where the comment points; being citable evidence is about what it
+  // now IS, and that is the more consequential fact for a reader.
+  var promoted = !!a.sme_assertion;
   var html = '<div style="background:#080f1f;border:1px solid ' +
-    (resolved ? '#1a3a1a' : (st === 'orphaned' ? '#5a1a1a' : '#2a1a5e')) +
+    (promoted ? '#b45309' : (resolved ? '#1a3a1a' : (st === 'orphaned' ? '#5a1a1a' : '#2a1a5e'))) +
     ';border-radius:6px;padding:10px 12px;margin-bottom:8px;' +
     (isReply ? 'margin-left:22px;border-left:2px solid #2a1a5e;' : '') +
     'opacity:' + (resolved ? '0.65' : '1') + ';">' +
@@ -862,6 +931,12 @@ function _annCard(sid, a, isReply) {
       escH(a.selected_text.slice(0,120)) + '&rdquo;</p>';
   }
   html += '<p style="color:#c8d8e8;font-size:12px;margin:0 0 6px;">' + escH(a.comment) + '</p>';
+  // dwr-ev-02: every comment says which of the two things it is. An unpromoted
+  // one is not silently ordinary -- it states that it is cited by nothing, so a
+  // reader is never left to assume a comment carries weight it does not.
+  html += promoted
+    ? _renderSmeAssertion(a)
+    : '<p style="color:#5a7aa0;font-size:10px;margin:0 0 6px;">Instruction only &mdash; this comment is not evidence and is cited by nothing.</p>';
 
   if (!isReply && (st === 'orphaned' || st === 'unverifiable')) {
     // The comment reports itself. Its stored offsets are NOT rewritten, and a
@@ -883,6 +958,8 @@ function _annCard(sid, a, isReply) {
         '<button onclick="resolveThread(\'' + a.ann_id + '\',\'' + sid + '\')" style="background:#052e16;color:#4ade80;border:1px solid #1a5a30;border-radius:3px;padding:3px 10px;font-size:10px;cursor:pointer;">Resolve thread</button>';
     }
     html += '<button onclick="deleteAnnotation(\'' + a.ann_id + '\',\'' + sid + '\')" style="background:#2e0505;color:#f87171;border:1px solid #5a1a1a;border-radius:3px;padding:3px 10px;font-size:10px;cursor:pointer;">Delete</button>' +
+      (promoted ? '' :
+        '<button onclick="promoteAnnotation(\'' + a.ann_id + '\',\'' + sid + '\')" style="background:#2b1c05;color:#e0b070;border:1px solid #b45309;border-radius:3px;padding:3px 10px;font-size:10px;cursor:pointer;">Mark as SME assertion</button>') +
       '</div>';
   } else if (!isReply) {
     html += '<div style="display:flex;gap:6px;">' +
