@@ -19,44 +19,7 @@ from flask import Flask
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-# ── SQLite shim ───────────────────────────────────────────────────────────────
-
-class _ShimConn:
-    def __init__(self, db: sqlite3.Connection):
-        self._db = db
-        self._db.row_factory = sqlite3.Row
-        self.rowcount = 0
-
-    def execute(self, sql, params=()):
-        cur = self._db.execute(sql.replace("%s", "?"), params)
-        self.rowcount = cur.rowcount
-        return _ShimCur(cur)
-
-    def commit(self):
-        self._db.commit()
-
-    def close(self):
-        pass
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_):
-        self.commit()
-
-
-class _ShimCur:
-    def __init__(self, cur):
-        self._cur = cur
-        self.rowcount = cur.rowcount
-        self.description = cur.description
-
-    def fetchone(self):
-        return self._cur.fetchone()
-
-    def fetchall(self):
-        return self._cur.fetchall()
-
+from tests import _sql_compat  # noqa: E402
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS dic_sections (
@@ -101,7 +64,15 @@ CREATE TABLE IF NOT EXISTS dic_suggestions (
     created_at        TEXT NOT NULL,
     updated_at        TEXT,
     tenant_id         TEXT,
-    classification    TEXT NOT NULL DEFAULT 'CUI'
+    classification    TEXT NOT NULL DEFAULT 'CUI',
+    anchor_section_id TEXT,
+    anchor_start      INTEGER,
+    anchor_end        INTEGER,
+    anchor_text       TEXT,
+    anchor_basis      TEXT,
+    origin_kind       TEXT,
+    applied_text      TEXT,
+    applied_by        TEXT
 );
 CREATE TABLE IF NOT EXISTS dic_suggestion_decisions (
     decision_id   TEXT PRIMARY KEY,
@@ -178,10 +149,17 @@ def db(tmp_path):
     return path
 
 
-def _make_shim(db_path: str) -> _ShimConn:
+def _make_shim(db_path: str) -> _sql_compat.TranslatingConnection:
+    """A placeholder-translating connection over the per-test SQLite file.
+
+    dwr-anchor-05 replaced a hand-rolled ``%s`` -> ``?`` shim with the shared
+    ``tests._sql_compat`` wrapper (the one ``coherence_checker
+    --check test_db_isolation`` recognises); ``unclosable`` keeps the old
+    no-op ``close()``, and ``__exit__`` commits as before.
+    """
     raw = sqlite3.connect(db_path)
     raw.row_factory = sqlite3.Row
-    return _ShimConn(raw)
+    return _sql_compat.translating(raw, unclosable=True)
 
 
 def _audit_actions(db_path: str) -> list[str]:
@@ -261,22 +239,30 @@ def _seed_suggestion(db_path: str, **kwargs) -> str:
     sid = f"sug_{uuid.uuid4().hex[:12]}"
     now = datetime.now(timezone.utc).isoformat()
     conn = sqlite3.connect(db_path)
+    # dwr-anchor-05: the accept door verifies the anchor against the live
+    # section and refuses an unanchored row, so the seed carries what a real
+    # writer records — an exact anchor over the whole section it replaces.
+    section_id = kwargs.get("section_id", _SEC_ID)
+    current = kwargs.get("current_content", "original content here")
     conn.execute(
         """INSERT INTO dic_suggestions
            (suggestion_id, section_id, doc_id, collection_id, canvas_source,
-            suggested_content, current_content, rationale, status, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            suggested_content, current_content, rationale, status, created_at, updated_at,
+            anchor_section_id, anchor_start, anchor_end, anchor_text, anchor_basis, origin_kind)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             sid,
-            kwargs.get("section_id", _SEC_ID),
+            section_id,
             kwargs.get("doc_id", _DOC_ID),
             kwargs.get("collection_id", _COL_ID),
             kwargs.get("canvas_source", "ndc"),
             kwargs.get("suggested_content", "AI suggested text"),
-            kwargs.get("current_content", "original content here"),
+            current,
             kwargs.get("rationale", "Network topology changed"),
             kwargs.get("status", "pending"),
             now, now,
+            section_id, 0, len(current), current,
+            kwargs.get("anchor_basis", "exact"), kwargs.get("origin_kind", "section_draft"),
         ),
     )
     conn.commit()
