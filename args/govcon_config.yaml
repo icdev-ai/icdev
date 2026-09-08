@@ -9,6 +9,17 @@ sam_gov:
   api_url: https://api.sam.gov/opportunities/v2/search
   api_key_env: SAM_GOV_API_KEY
   poll_interval_hours: 6
+  # Wall-clock ceiling for a scan run INSIDE AN HTTP REQUEST (the /api/govcon/sam/scan
+  # and /api/govcon/pipeline/run routes).  The scan issues one sequential GET per
+  # (NAICS x notice type) pair -- 8 x 4 = 32 below -- so an unbounded run holds a Flask
+  # worker thread for minutes and dies at whatever proxy sits in front of it.  Measured
+  # 2026-09-08 on a host whose key SAM.gov rejects with 401 (the FAST failure): 16.8s
+  # for the loop; a run that reaches the per-request timeout instead is far longer.
+  # The CLI and the reflex path pass no budget and stay unbounded, on purpose.
+  request_budget_seconds: 20
+  # Below this much remaining budget a pair is not started at all, rather than spending
+  # quota on a request that cannot finish.
+  min_attempt_seconds: 1.0
   rate_limit:
     requests_per_second: 10
     daily_limit: 10000
