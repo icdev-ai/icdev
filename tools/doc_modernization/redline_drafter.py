@@ -19,6 +19,17 @@ Gating chain (approved plan, TRUST section — every step mandatory):
 6. accepted drafts land as dic_suggestions rows (existing accept/edit/reject
    UI) + an append-only docmod_findings state row 'redline_drafted'
 
+dwr-anchor-04 — the drafter sees the SENTENCE, and refuses to write a proposal
+that could never be applied. The finding carries a chunk-local span
+(dwr-anchor-02); ``resolve_passage`` widens it to the sentence around it and
+locates that passage in the section's content of record. What the model is
+shown, what ``current_content`` records, and what ``anchor_text`` pins are then
+one and the same string. An entity that resolves to no single section, or that
+occurs twice in one, stays ``unanchored`` and is REPORTED on the finding rather
+than persisted: a pending suggestion whose ``section_id`` is empty updates zero
+rows on accept and reports success, which is the defect dwr-anchor-03 measured
+on 58 of 58 live rows.
+
 REVIEWER INSTRUCTIONS ARE PROSE, NEVER EVIDENCE (dwr-ev-03). ``draft_redline``
 takes an optional ``instructions`` list -- the comment thread a human wrote on
 the change -- and it reaches the model in the USER PROMPT and NOWHERE ELSE. It
@@ -51,6 +62,7 @@ from tools.quality.citation_grounding import (
     parse_citations,
     validate_citations,
 )
+from tools.document_intelligence.suggestion_store import resolve_anchor
 
 logger = get_logger(__name__)
 
@@ -67,7 +79,7 @@ def _connect():
 @dataclass
 class RedlineResult:
     finding_id: str
-    status: str                      # 'drafted' | 'abstained' | 'blocked' | 'error'
+    status: str   # 'drafted' | 'unanchored' | 'abstained' | 'blocked' | 'error'
     suggestion_id: str | None = None
     confidence: float = 0.0
     band: str = ""                   # include | flag | abstain
@@ -75,6 +87,10 @@ class RedlineResult:
     draft: str = ""
     citations: list[str] = field(default_factory=list)
     provenance_id: str = ""
+    # dwr-anchor-04 — reported whether or not anything was written.
+    anchor_basis: str = "unanchored"
+    section_id: str | None = None
+    passage: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -89,11 +105,201 @@ def _strip_reasoning(text: str) -> str:
         return re.sub(r"(?is)<(think|reasoning)>.*?</\1>", "", text).strip()
 
 
+# ── dwr-anchor-04: the passage, and where it goes ─────────────────────────────
+
+_SENTENCE_END = re.compile(r"""[.!?]["'\u2019\u201d)\]]*(?=\s|$)""")
+
+
+@dataclass
+class PassageAnchor:
+    """The real text a redline replaces, and the basis it may honestly claim.
+
+    ``passage`` is a slice of the document, never the entity label. The offsets
+    index into the SECTION's content (``section_content[anchor_start:anchor_end]
+    == passage``), which is the convention ``dic_suggestions.anchor_start``
+    records and the accept path re-derives.
+    """
+
+    passage: str = ""
+    section_id: str | None = None
+    section_content: str | None = None
+    anchor_basis: str = "unanchored"
+    anchor_start: int | None = None
+    anchor_end: int | None = None
+    reason: str = ""
+
+    @property
+    def anchored(self) -> bool:
+        return self.anchor_basis in ("exact", "relocated")
+
+
+def widen_to_passage(text: str, start: int, end: int) -> tuple[int, int]:
+    """Widen a match span to the sentence around it, or the paragraph when the
+    paragraph carries no sentence boundary (a heading, a table cell, a bullet).
+
+    The result ALWAYS contains ``[start, end)`` — the boundaries are taken from
+    before ``start`` and after ``end``, so the entity the finding is about can
+    never be sliced in half. A sentence terminator must be followed by
+    whitespace or the end of the text, so ``TLS 1.1`` and ``800-53 Rev 4`` are
+    not boundaries; ``Rev 4. The`` is, and correctly.
+
+    Pure: reads nothing, and returns offsets into the SAME string it was given.
+    """
+    if not text:
+        return 0, 0
+    start = max(0, min(int(start), len(text)))
+    end = max(start, min(int(end), len(text)))
+
+    para_start = text.rfind("\n\n", 0, start)
+    para_start = 0 if para_start < 0 else para_start + 2
+    para_end = text.find("\n\n", end)
+    para_end = len(text) if para_end < 0 else para_end
+
+    para = text[para_start:para_end]
+    local_start, local_end = start - para_start, end - para_start
+
+    lo, hi = 0, len(para)
+    for m in _SENTENCE_END.finditer(para):
+        boundary = m.end()
+        if boundary <= local_start:
+            lo = boundary            # the last sentence to END before the match
+        elif boundary >= local_end:
+            hi = boundary            # the first to end AT or after it
+            break
+
+    a_start, a_end = para_start + lo, para_start + hi
+    # Trim surrounding whitespace WITHOUT ever crossing the match itself.
+    while a_start < start and text[a_start].isspace():
+        a_start += 1
+    while a_end > end and text[a_end - 1].isspace():
+        a_end -= 1
+    return a_start, a_end
+
+
+def _chunk_text(conn, finding: dict) -> str | None:
+    """The text the finding's chunk-local offsets index into.
+
+    Mirrors ``scanner._doc_chunks``: the rag chunk behind ``chunk_link_id``.
+    A finding with NO chunk link came from the section-fallback scan, so its
+    offsets index into the section content and ``resolve_passage`` supplies
+    that; this reads only the chunk-link half. None is UNREADABLE, never empty.
+    """
+    link_id = finding.get("chunk_link_id")
+    if link_id:
+        try:
+            row = conn.execute(
+                "SELECT rc.content FROM dic_chunk_links dcl "
+                "JOIN rag_chunks rc ON dcl.rag_chunk_id = rc.id "
+                "WHERE dcl.link_id = %s",
+                (link_id,),
+            ).fetchone()
+        except Exception as exc:
+            logger.warning("docmod redline: chunk-link read failed for %s: %s", link_id, exc)
+            try:
+                conn.rollback()   # PG: a failed statement poisons the transaction
+            except Exception:
+                pass
+            return None
+        return (dict(row).get("content") or None) if row else None
+    return None
+
+
+def _resolve_section(conn, finding: dict) -> tuple[str | None, str | None]:
+    """``(section_id, content)`` for the finding's section, or ``(None, None)``.
+
+    Resolved by HEADING within the finding's version, and only when the heading
+    names exactly ONE section: two sections sharing a heading is the same
+    ambiguity ``resolve_anchor`` refuses to guess at, one level up. A heading
+    the scan carried from a rag chunk (``dic_chunk_links.section``) need not be
+    a ``dic_sections`` heading at all, and then nothing resolves.
+    """
+    heading = finding.get("section_heading")
+    version_id = finding.get("version_id")
+    if not heading or not version_id:
+        return None, None
+    try:
+        rows = conn.execute(
+            "SELECT section_id, content FROM dic_sections "
+            "WHERE version_id = %s AND heading = %s",
+            (version_id, heading),
+        ).fetchall()
+    except Exception as exc:
+        logger.warning("docmod redline: section read failed for %s/%s: %s",
+                       version_id, heading, exc)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return None, None
+    if len(rows) != 1:
+        return None, None
+    d = dict(rows[0])
+    return d.get("section_id") or None, d.get("content")
+
+
+def resolve_passage(conn, finding: dict) -> PassageAnchor:
+    """The sentence a redline rewrites, and where it sits in its section.
+
+    dwr-anchor-02 persists a CHUNK-LOCAL span on the finding; a suggestion is
+    applied against a SECTION. So the span is widened to the sentence around it
+    inside the chunk, and that passage is then located in the section content:
+    when the chunk IS the section the offsets verify and the basis is ``exact``;
+    otherwise the passage found ONCE is ``relocated``. Found nowhere, or found
+    twice, is ``unanchored`` — never a guess between two places.
+    """
+    start, end = finding.get("anchor_start"), finding.get("anchor_end")
+    if start is None or end is None:
+        return PassageAnchor(reason="finding carries no span (pre-anchor scan, "
+                                    "or a pack that anchors nothing)")
+
+    section_id, section_content = _resolve_section(conn, finding)
+    # A finding with no chunk link came from the section-fallback scan: its
+    # offsets index into the section content itself.
+    text = _chunk_text(conn, finding) if finding.get("chunk_link_id") else section_content
+    if not text:
+        return PassageAnchor(
+            section_id=section_id, section_content=section_content,
+            reason=("the chunk the span indexes into could not be read"
+                    if finding.get("chunk_link_id")
+                    else "no single dic_sections row carries this heading"))
+    try:
+        start, end = int(start), int(end)
+    except (TypeError, ValueError):
+        return PassageAnchor(reason="finding span is not a pair of integers")
+    if start < 0 or end <= start or end > len(text):
+        return PassageAnchor(reason=f"span {start}:{end} is outside a chunk of {len(text)} chars")
+
+    recorded = finding.get("anchor_text")
+    if recorded is not None and text[start:end] != recorded:
+        return PassageAnchor(
+            reason="the chunk moved under the span: "
+                   f"{text[start:end]!r} is no longer {recorded!r}")
+
+    p_start, p_end = widen_to_passage(text, start, end)
+    passage = text[p_start:p_end]
+
+    if not section_id or section_content is None:
+        return PassageAnchor(passage=passage,
+                             reason="no single dic_sections row carries this heading")
+
+    resolved = resolve_anchor(section_content, passage,
+                              anchor_start=p_start, anchor_end=p_end)
+    return PassageAnchor(
+        passage=passage, section_id=section_id, section_content=section_content,
+        anchor_basis=resolved["anchor_basis"], anchor_start=resolved["anchor_start"],
+        anchor_end=resolved["anchor_end"], reason=resolved["reason"],
+    )
+
+
 def _build_prompt(finding: dict, evidence: list[dict], candidates: list[str],
                   old_text: str, instructions: list[str] | None = None) -> tuple[str, str]:
+    """``old_text`` is the PASSAGE being rewritten (dwr-anchor-04). The stale
+    entity is still named separately as the item to replace — the model has to
+    rewrite the sentence it is shown, not echo a token back at us."""
     system = (
         "You are a technical editor updating stale enterprise documentation. "
-        "Rewrite ONLY the outdated passage you are given. Rules (mandatory): "
+        "Rewrite ONLY the outdated passage you are given, preserving every "
+        "statement in it that is still correct. Rules (mandatory): "
         "(1) State facts ONLY from the EVIDENCE list; cite each fact inline as "
         "[source: <id>] using the exact ids given. "
         "(2) If a replacement technology is needed, use ONLY an item from "
@@ -119,6 +325,7 @@ def _build_prompt(finding: dict, evidence: list[dict], candidates: list[str],
     user = (
         f"OUTDATED PASSAGE (from section '{finding.get('section_heading') or ''}'):\n"
         f"{old_text or finding.get('entity_label', '')}\n\n"
+        f"OUT-OF-DATE ITEM IN THAT PASSAGE:\n{finding.get('entity_label', '')}\n\n"
         f"WHY IT IS OUTDATED:\n{finding.get('rationale', '')}\n\n"
         f"EVIDENCE:\n{ev_lines}\n\n"
         f"CANDIDATE REPLACEMENTS:\n"
@@ -155,15 +362,32 @@ def _invoke_llm(system: str, user: str) -> str | None:
         return None
 
 
-def _candidate_mentioned_ok(draft: str, candidates: list[str], stale_label: str) -> bool:
-    """Reject drafts that name a replacement product/version outside the
-    candidate list. Heuristic: any candidate mention is fine; the stale label
-    may appear (being replaced); other model-number-like tokens that appear in
-    neither are a block."""
+def _candidate_mentioned_ok(draft: str, candidates: list[str], stale_label: str,
+                            source_text: str = "") -> bool:
+    """Reject drafts that INVENT a replacement product/version.
+
+    The rule has always been "nothing in the output that was not in the input
+    or the candidate list": any candidate mention is fine, the stale label may
+    appear (it is the thing being replaced), and other model-number-like tokens
+    are a block.
+
+    dwr-anchor-04 widened the INPUT from a bare entity label to the passage the
+    model is actually shown, so ``source_text`` widens the allowed set by
+    exactly the same step and the rule itself does not move. A token verbatim
+    in the passage was handed to the model BY US: a faithful rewrite of
+    "Catalyst 6500 switches terminate TLS 1.1 tunnels" has to keep the switch.
+    Nothing the model could invent is admitted — a product absent from the
+    passage, the candidates and the label is still a hard block, and swapping a
+    product that WAS in the passage for a different one is still a hard block,
+    because the substitute is in none of the three.
+    """
     allowed = {c.lower() for c in candidates} | {stale_label.lower()}
+    source_lower = (source_text or "").lower()
     for token in re.findall(r"\b[A-Z][A-Za-z]*(?:[ -]?\d{2,5}[A-Za-z0-9.+-]*)\b", draft):
         t = token.lower().strip()
         if any(t in a or a in t for a in allowed):
+            continue
+        if t and t in source_lower:      # verbatim in the passage we handed it
             continue
         # citations / dates / rule ids are not product tokens
         if re.fullmatch(r"(19|20)\d{2}", token.split()[-1] if " " in token else token):
@@ -243,7 +467,23 @@ def draft_redline(finding_id: str, conn=None, *,
                                  reason="no deterministic evidence — flag-only finding")
 
         candidates = [finding["recommended_replacement"]] if finding.get("recommended_replacement") else []
-        old_text = finding.get("entity_label", "")
+        entity_label = finding.get("entity_label", "")
+
+        # ── dwr-anchor-04: WHERE does this change go? ───────────────────────
+        # Asked BEFORE the LLM call, on purpose. A draft that cannot be
+        # anchored is refused below, so drafting one first would spend a token
+        # per sweep, forever, on prose no surface stores or renders. The
+        # finding stays `open` and nothing here has to be undone: re-ingesting
+        # the document with chunk links, or a heading that resolves to one
+        # section, makes the same finding anchorable on the next sweep.
+        anchor = resolve_passage(conn, finding)
+        if not anchor.anchored:
+            return RedlineResult(
+                finding_id, "unanchored", passage=anchor.passage,
+                anchor_basis=anchor.anchor_basis, section_id=anchor.section_id,
+                reason=f"cannot anchor the redline: {anchor.reason}",
+            )
+        old_text = anchor.passage
 
         system, user = _build_prompt(finding, evidence, candidates, old_text,
                                      instructions=instructions)
@@ -269,7 +509,13 @@ def draft_redline(finding_id: str, conn=None, *,
                                  reason="draft carries no [source: ...] citations")
 
         # ── TRUST gate 2: replacements only from the candidate list ────────
-        if not _candidate_mentioned_ok(draft, candidates, old_text):
+        # The stale label and the passage go in SEPARATELY, never merged:
+        # `stale_label` is matched with a substring rule (`a in t`), so folding
+        # the passage into it would admit near-misses of every product the
+        # passage mentions. `source_text` is a verbatim membership test, which
+        # admits only what is actually in the document.
+        if not _candidate_mentioned_ok(draft, candidates, entity_label,
+                                       source_text=old_text):
             return RedlineResult(
                 finding_id, "blocked", draft=draft, citations=cited,
                 reason="draft names a replacement outside the candidate list",
@@ -302,13 +548,18 @@ def draft_redline(finding_id: str, conn=None, *,
         from tools.document_intelligence.suggestion_store import create_suggestion
         suggestion_id = create_suggestion(
             doc_id=finding["doc_id"],
-            # Empty unless a caller KNOWS the section (a redraft does; the scan
-            # path does not and must not guess). The UI still resolves a
-            # section-level anchor via the heading when this is empty.
-            section_id=section_of_record or "",
+            # dwr-anchor-04 RESOLVES the section from the passage it anchored;
+            # dwr-ev-03's redraft path passes one in. Prefer the resolved anchor,
+            # fall back to the caller's, and stay empty when neither knows -- the
+            # scan path must not guess, and the UI still resolves a section-level
+            # anchor via the heading when this is empty.
+            section_id=anchor.section_id or section_of_record or "",
             collection_id="",
             canvas_source="doc_modernization",
             suggested_content=draft,
+            # dwr-anchor-04: the PASSAGE, not the entity label. This is the
+            # before-text of THIS change, so a reviewer finally has an honest
+            # before/after; the anchor below says where in the section it sits.
             current_content=old_text,
             rationale=(
                 f"{rationale_prefix}[docmod:{finding_id}] {finding.get('rationale','')} "
@@ -316,13 +567,20 @@ def draft_redline(finding_id: str, conn=None, *,
             ),
             tenant_id=finding.get("tenant_id") or "",
             classification=finding.get("classification") or "CUI",
-            # dwr-anchor-03: the basis is RECORDED, never inferred. This
-            # drafter is handed an entity label, not a span, so what it writes
-            # is honestly unanchored; dwr-anchor-04 hands it the sentence and
-            # the offsets, and only then may it claim `exact`.
+            # dwr-anchor-03/04: the basis is RECORDED, never inferred — it is
+            # whatever `resolve_anchor` could prove against the live section,
+            # and this call is only ever reached when that is `exact` or
+            # `relocated`. `anchor_content` is the SECTION, the string the
+            # offsets index into; `current_content` above is the passage, and
+            # verifying the span against that would prove only that a string
+            # contains itself.
             origin_kind="docmod_redline",
-            anchor_basis="unanchored",
-            anchor_text=old_text or None,
+            anchor_section_id=anchor.section_id,
+            anchor_start=anchor.anchor_start,
+            anchor_end=anchor.anchor_end,
+            anchor_text=anchor.passage,
+            anchor_basis=anchor.anchor_basis,
+            anchor_content=anchor.section_content,
         )
 
         # ── append-only state row: open -> redline_drafted ──────────────────
@@ -332,9 +590,10 @@ def draft_redline(finding_id: str, conn=None, *,
                 page, pack_id, entity_label, entity_type, finding_type, currency_verdict,
                 severity, rationale, evidence_json, recommended_replacement,
                 replacement_evidence_json, confidence, state, supersedes_id,
-                redline_suggestion_id, dedupe_key, created_at, tenant_id, classification)
+                redline_suggestion_id, dedupe_key, created_at, tenant_id, classification,
+                anchor_start, anchor_end, anchor_text)
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-                       'redline_drafted',%s,%s,%s,%s,%s,%s)""",
+                       'redline_drafted',%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (
                 f"fnd-{uuid.uuid4().hex[:12]}", finding["run_id"], finding["doc_id"],
                 finding["version_id"], finding.get("chunk_link_id"),
@@ -346,6 +605,13 @@ def draft_redline(finding_id: str, conn=None, *,
                 finding.get("replacement_evidence_json"), confidence,
                 finding["finding_id"], suggestion_id, finding.get("dedupe_key"),
                 _now(), finding.get("tenant_id"), finding.get("classification"),
+                # THE SPAN TRAVELS WITH THE SUCCESSOR (dwr-anchor-04 x dwr-ev-03).
+                # The superseding finding describes the SAME passage, and without
+                # the span it carries no anchor -- so `resolve_passage` refuses it
+                # and a redraft could never itself be redrafted, which is exactly
+                # what TestRedraftEndToEnd::test_a_redraft_can_be_redrafted found.
+                finding.get("anchor_start"), finding.get("anchor_end"),
+                finding.get("anchor_text"),
             ),
         )
         conn.commit()
@@ -353,6 +619,8 @@ def draft_redline(finding_id: str, conn=None, *,
             finding_id, "drafted", suggestion_id=suggestion_id, confidence=confidence,
             band=band, draft=draft, citations=cited,
             provenance_id=getattr(provenance, "artifact_id", f"redline-{finding_id}"),
+            anchor_basis=anchor.anchor_basis, section_id=anchor.section_id,
+            passage=anchor.passage,
         )
     finally:
         if own:

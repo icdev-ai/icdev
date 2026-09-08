@@ -312,6 +312,14 @@ def validate_anchor(
     ``0 <= start <= end``, a text whose length is the span's, and — the
     invariant — ``current_content[start:end] == anchor_text``. ``relocated``
     additionally needs a non-empty text: ``str.find("")`` is 0 and means nothing.
+
+    ``current_content`` here is THE STRING THE OFFSETS INDEX INTO — the
+    section's content of record. For a whole-section proposal that is also the
+    row's ``current_content`` column, which is why the two were one parameter
+    until dwr-anchor-04. A PASSAGE-level change records the passage as its
+    before-text and the section content here, and the caller keeps them apart
+    (``create_suggestion(anchor_content=...)``): verifying the span against the
+    passage would prove only that a string contains itself.
     """
     if anchor_basis not in ANCHOR_BASES:
         raise ValueError(f"anchor_basis must be one of {ANCHOR_BASES}, got {anchor_basis!r}")
@@ -375,11 +383,20 @@ def create_suggestion(
     anchor_end: int | None = None,
     anchor_text: str | None = None,
     anchor_basis: str = "unanchored",
+    anchor_content: str | None = None,
     origin_kind: str | None = None,
     applied_text: str | None = None,
     applied_by: str | None = None,
 ) -> str:
     """Insert a new pending suggestion and return its suggestion_id.
+
+    ``anchor_content`` is the section's content of record — the string
+    ``anchor_start``/``anchor_end`` index into — and defaults to
+    ``current_content``. Pass it only when the two differ: a passage-level
+    change (``docmod_redline``) stores the PASSAGE it replaces in
+    ``current_content``, so the exact-slice invariant has to be checked against
+    the section, not against the before-text. It is used for validation ONLY
+    and is never persisted; the row already names its section.
 
     Raises ``ValueError`` when the anchor fields are inconsistent (see
     ``validate_anchor``), ``origin_kind`` is not a declared kind, or an
@@ -388,7 +405,7 @@ def create_suggestion(
     validate_anchor(
         anchor_basis=anchor_basis, anchor_section_id=anchor_section_id,
         anchor_start=anchor_start, anchor_end=anchor_end, anchor_text=anchor_text,
-        current_content=current_content,
+        current_content=current_content if anchor_content is None else anchor_content,
     )
     _validate_origin_kind(origin_kind)
     _validate_applied(applied_text, applied_by)

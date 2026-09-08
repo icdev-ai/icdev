@@ -74,13 +74,26 @@ def _conn():
     return get_connection()
 
 
+
+# dwr-anchor-04: a redline is only drafted for a finding whose span can be
+# anchored in a section, so a seeded finding needs the prose it points at.
+SECTION_TEXT = (
+    "Security Profile\n\n"
+    "All services shall use TLS 1.1 for transport encryption between sites."
+)
+
+
 def _seed_finding(**overrides) -> str:
     finding_id = f"fnd-{uuid.uuid4().hex[:12]}"
+    # A version per finding: two sections sharing a heading under one version is
+    # the ambiguity resolve_passage refuses to guess at, so seeding a second
+    # finding must not make the first one unanchorable.
+    version_id = overrides.get("version_id", f"v-{finding_id}")
     row = {
         "finding_id": finding_id,
         "run_id": "run-t",
         "doc_id": overrides.get("doc_id", f"doc-{uuid.uuid4().hex[:8]}"),
-        "version_id": "v1",
+        "version_id": version_id,
         "pack_id": "crypto_protocols",
         "entity_label": "TLS 1.1",
         "entity_type": "protocol",
@@ -95,21 +108,34 @@ def _seed_finding(**overrides) -> str:
         "confidence": 1.0,
         "state": "open",
         "dedupe_key": f"dk-{uuid.uuid4().hex[:8]}",
-        "section_heading": "Security",
+        "section_heading": "Security Profile",
     }
     row.update(overrides)
+    span_start = SECTION_TEXT.index(row["entity_label"]) if row["entity_label"] in SECTION_TEXT else None
+    span_end = span_start + len(row["entity_label"]) if span_start is not None else None
     conn = _conn()
+    conn.execute(
+        """INSERT INTO dic_sections
+           (section_id, version_id, doc_id, heading, content, status, origin, created_at)
+           VALUES (%s,%s,%s,%s,%s,'approved','human','2026-07-10T00:00:00')""",
+        (f"sec-{finding_id}", row["version_id"], row["doc_id"],
+         row["section_heading"], SECTION_TEXT),
+    )
     conn.execute(
         """INSERT INTO docmod_findings
            (finding_id, run_id, doc_id, version_id, pack_id, entity_label, entity_type,
             finding_type, currency_verdict, severity, rationale, evidence_json,
-            recommended_replacement, confidence, state, dedupe_key, section_heading, created_at)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'2026-07-10T00:00:00')""",
+            recommended_replacement, confidence, state, dedupe_key, section_heading,
+            anchor_start, anchor_end, anchor_text, created_at)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                   '2026-07-10T00:00:00')""",
         (row["finding_id"], row["run_id"], row["doc_id"], row["version_id"],
          row["pack_id"], row["entity_label"], row["entity_type"], row["finding_type"],
          row["currency_verdict"], row["severity"], row["rationale"], row["evidence_json"],
          row["recommended_replacement"], row["confidence"], row["state"],
-         row["dedupe_key"], row["section_heading"]),
+         row["dedupe_key"], row["section_heading"],
+         span_start, span_end,
+         SECTION_TEXT[span_start:span_end] if span_start is not None else None),
     )
     conn.commit()
     conn.close()

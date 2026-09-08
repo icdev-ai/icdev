@@ -335,18 +335,32 @@ def test_hallucinated_citation_still_hard_blocks_before_any_proposal_exists(db, 
 
     doc_id = f"doc-{uuid.uuid4().hex[:8]}"
     finding_id = f"fnd-{uuid.uuid4().hex[:12]}"
+    version_id = f"v-{finding_id}"
+    # dwr-anchor-04: the finding is fully ANCHORABLE, so the only thing that can
+    # stop this draft is the citation gate. A finding with no span would be
+    # refused earlier and the test would pass for the wrong reason.
+    section_text = "Security\n\nAll services shall use TLS 1.1 for transport."
+    span = section_text.index("TLS 1.1")
     conn = _conn()
+    conn.execute(
+        """INSERT INTO dic_sections
+           (section_id, version_id, doc_id, heading, content, status, origin, created_at)
+           VALUES (%s,%s,%s,'Security',%s,'approved','human','2026-08-18T00:00:00')""",
+        (f"sec-{finding_id}", version_id, doc_id, section_text),
+    )
     conn.execute(
         """INSERT INTO docmod_findings
            (finding_id, run_id, doc_id, version_id, pack_id, entity_label, entity_type,
             finding_type, currency_verdict, severity, rationale, evidence_json,
-            recommended_replacement, confidence, state, dedupe_key, section_heading, created_at)
-           VALUES (%s,'run-hitl',%s,'v1','crypto_protocols','TLS 1.1','protocol',
+            recommended_replacement, confidence, state, dedupe_key, section_heading,
+            anchor_start, anchor_end, anchor_text, created_at)
+           VALUES (%s,'run-hitl',%s,%s,'crypto_protocols','TLS 1.1','protocol',
                    'deprecated_tech','deprecated','high','TLS 1.1 is deprecated.',%s,
-                   'TLS 1.2 or higher',1.0,'open',%s,'Security','2026-08-18T00:00:00')""",
-        (finding_id, doc_id,
+                   'TLS 1.2 or higher',1.0,'open',%s,'Security',%s,%s,'TLS 1.1',
+                   '2026-08-18T00:00:00')""",
+        (finding_id, doc_id, version_id,
          json.dumps([{"source": "rule:crypto-tls-02", "detail": "RFC 8996", "date": ""}]),
-         f"dk-{uuid.uuid4().hex[:8]}"),
+         f"dk-{uuid.uuid4().hex[:8]}", span, span + len("TLS 1.1")),
     )
     conn.commit()
     conn.close()

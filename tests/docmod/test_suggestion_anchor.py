@@ -435,20 +435,25 @@ def _keyword_literal(call: ast.Call, name: str):
     return None
 
 
-def test_redline_drafter_records_an_unanchored_basis_it_does_not_have():
-    """tools.doc_modernization.redline_drafter is handed an entity LABEL, not a
-    span, so the one basis it may honestly record today is `unanchored`. A
-    future edit that writes `exact` there without wiring the offsets
-    (dwr-anchor-04) is the inference this card forbids."""
+def test_redline_drafter_records_a_basis_it_computed_never_a_literal():
+    """dwr-anchor-03 pinned this call to a LITERAL `unanchored`, because the
+    drafter was handed an entity LABEL and not a span. dwr-anchor-04 wired the
+    span, so the claim inverts and the pin inverts with it: the basis must now
+    be whatever `resolve_passage` could PROVE against the live section, and the
+    one thing still forbidden is a HARD-CODED basis — `exact` written as a
+    literal is the inference both cards refuse. The offsets travel with it: a
+    basis with no span is a claim with no evidence."""
     path = ROOT / "tools" / "doc_modernization" / "redline_drafter.py"
     calls = [c for p, c in _create_suggestion_call_sites() if p == path]
     assert len(calls) == 1, f"expected ONE create_suggestion call in redline_drafter, found {len(calls)}"
     call = calls[0]
     assert _keyword_literal(call, "origin_kind") == "docmod_redline"
-    assert _keyword_literal(call, "anchor_basis") == "unanchored"
+    assert _keyword_literal(call, "anchor_basis") is None, \
+        "anchor_basis must be COMPUTED, never a literal"
     kws = {kw.arg for kw in call.keywords}
-    assert "anchor_start" not in kws and "anchor_end" not in kws, \
-        "a span in the drafter's write means it now HAS an anchor — record its real basis"
+    for required in ("anchor_section_id", "anchor_start", "anchor_end",
+                     "anchor_text", "anchor_basis", "anchor_content"):
+        assert required in kws, f"the drafter's write is missing {required}"
 
 
 @pytest.mark.parametrize("relpath, expected_origin", [
