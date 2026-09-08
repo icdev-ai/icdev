@@ -380,9 +380,29 @@ def test_the_original_verdict_is_imported_never_re_derived():
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef) and node.name in {"original_verdict", "_original_verdict"}:
             raise AssertionError("reading_pane re-implements the retention verdict")
-    # and it never re-derives the columns from a literal of its own
-    assert "original_path" not in src.replace("original_path / original_sha256", ""), \
-        "reading_pane names a retention column itself instead of asking originals"
+    # and it never reads a retention column itself. Asserted against the strings
+    # actually handed to a QUERY, not against the file's prose: the docstring
+    # NAMES those columns to explain the unmeasurable case, and a test that
+    # failed on a reworded sentence is one people learn to weaken.
+    def _query_strings(t):
+        for n in ast.walk(t):
+            if not isinstance(n, ast.Call):
+                continue
+            name = n.func.attr if isinstance(n.func, ast.Attribute) else getattr(n.func, "id", "")
+            if name not in {"execute", "_rows", "executemany"}:
+                continue
+            for a in n.args:
+                if isinstance(a, ast.Constant) and isinstance(a.value, str):
+                    yield a.value
+                elif isinstance(a, ast.JoinedStr):
+                    yield "".join(
+                        v.value for v in a.values
+                        if isinstance(v, ast.Constant) and isinstance(v.value, str)
+                    )
+
+    for sql in _query_strings(tree):
+        assert "original_" not in sql.lower(), \
+            f"reading_pane queries a retention column itself instead of asking originals: {sql!r}"
 
 
 def test_every_basis_is_declared():
