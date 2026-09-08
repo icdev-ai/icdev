@@ -252,6 +252,11 @@ def load_config(path: Optional[pathlib.Path] = None) -> dict:
             "ci_log_max_chars": DEFAULT_CI_LOG_MAX,
             "refuse_merge_when_behind": True,
             "max_behind_commits": DEFAULT_MAX_BEHIND_COMMITS,
+            # Escalate as soon as an injection is PROVEN unread rather than
+            # spending the rest of the budget writing to a queue with no
+            # consumer. False restores the pre-2026-09-08 behaviour of using
+            # every attempt first.
+            "escalate_on_undelivered": True,
         }
     with open(p, "r", encoding="utf-8") as fh:
         return yaml.safe_load(fh) or {}
@@ -2984,7 +2989,8 @@ class PRWatcher:
                 pass
 
     def _hitl_recovered(self, state: dict, cycle: int, max_cycles: int,
-                        landed: Optional[dict] = None) -> bool:
+                        landed: Optional[dict] = None,
+                        task_id: str = "") -> bool:
         """True when the PREMISE of a HITL alert is false — not merely that the
         forge is happy.
 
@@ -3001,11 +3007,17 @@ class PRWatcher:
         written to prevent.
 
         The raise sites are the resume cap (`cycle >= max_cycles`), CI that
-        never fired, a task whose work is ALREADY on the default branch, and
+        never fired, a task whose work is ALREADY on the default branch,
         (kpr-stale-02) a branch too far BEHIND the default branch to merge
-        safely whose automatic rebase was declined — so all four are negated
-        here. Anything that adds a fifth must negate it here too, or the alert
-        flaps again.
+        safely whose automatic rebase was declined, and a resume injection
+        PROVEN unread — so all five are negated here. Anything that adds a
+        sixth must negate it here too, or the alert flaps again.
+
+        The undelivered premise is negated by asking the queue again: the alert
+        says "nothing is draining this task's messages", so it clears the moment
+        something does. UNDELIVERED is the only verdict that HOLDS it — an
+        unreadable queue (`unmeasured`) must not pin an alert open, for the same
+        reason it must not raise one.
 
         The staleness check is asked LAST, and that ordering is a cost decision
         as much as a correctness one: it is the only condition here that can
@@ -3027,6 +3039,12 @@ class PRWatcher:
             return False
         if self._ci_never_fired(state):
             return False
+        # The undelivered raise site. Read BEFORE the staleness check below,
+        # which is the only condition here that can reach the forge.
+        if task_id:
+            verdict = self._probe_prior_delivery(task_id, had_prior_injection=True)
+            if verdict.verdict == resume_delivery.UNDELIVERED:
+                return False
         # Same flap shape as the already-landed case above, for the same
         # reason: a stale branch is green AND MERGEABLE by construction — that
         # is exactly what makes it dangerous — so every condition above says
@@ -3649,7 +3667,8 @@ class PRWatcher:
             # The resolve is deduped on `source` and is a no-op when nothing is
             # firing, so calling it on every healthy pass costs nothing.
             if self._hitl_recovered(state, cycle, max_cycles,
-                                    landed=landed_map.get(task["id"])):
+                                    landed=landed_map.get(task["id"]),
+                                    task_id=task["id"]):
                 self._resolve_hitl_alert(task["id"])
 
             # A CLOSED PR cannot be rebased, resumed or merged, so an alert
@@ -4400,6 +4419,64 @@ class PRWatcher:
             # the name of a measurement.
             delivery = self._probe_prior_delivery(
                 task["id"], had_prior_injection=cycle > 0)
+
+            # NOBODY IS READING THIS TASK'S QUEUE — STOP SPENDING THE BUDGET ON IT.
+            #
+            # The verdict above has been MEASURED since kpr-watch-13 and then
+            # ignored: the next three statements enqueue another line whatever it
+            # says. So a task whose queue has no consumer burns all five attempts
+            # ~10 minutes apart, writing five messages nobody reads, and only then
+            # tells a human — who is given "attempted 5 times" as the reason, which
+            # points at the branch instead of at the delivery.
+            #
+            # Measured 2026-09-08: `dwr-anchor-05`, `dwr-ev-01` and `rmf-rail-02`
+            # each escalated exactly this way, five unread lines apiece still in
+            # `.tmp/kanban/messages/<task>.jsonl`, while the board sat at ZERO
+            # tasks in progress. The escalation comment below already says it —
+            # "the repair is DELIVERY, not a longer wait for a message nobody
+            # reads" — and this is that sentence made operative.
+            #
+            # TWO GUARDS KEEP THIS HONEST:
+            #   * `cycle > 0` — one genuine attempt is always made. A pending line
+            #     from an earlier era is evidence about that era, not a reason to
+            #     refuse this task its first try.
+            #   * UNDELIVERED ONLY, never UNMEASURED. `undelivered` is PROOF (the
+            #     line is still in the file); `unmeasured` is an unreadable queue,
+            #     and refusing to try on the strength of a failed probe would be a
+            #     measurement failure escalating itself.
+            if (cycle > 0
+                    and delivery.verdict == resume_delivery.UNDELIVERED
+                    and bool(self.config.get("escalate_on_undelivered", True))):
+                already = self._count_audit_actions(
+                    task["id"], ("pr_watcher.escalate",), pr_url=pr_url)
+                if already:
+                    continue
+                reason = (
+                    f"resume undelivered after {cycle} attempt(s) — "
+                    f"{delivery.detail}. Nothing is consuming this task's queue, "
+                    "so further injections cannot be read; escalating now rather "
+                    f"than spending the remaining {max(0, max_cycles - cycle)} "
+                    "attempt(s) on it. The repair is DELIVERY, not the branch."
+                )
+                action = WatcherAction(
+                    task_id=task["id"], pr_url=pr_url,
+                    classification=classification.value,
+                    action="escalate",
+                    reason=reason,
+                    resume_cycle=cycle,
+                    delivery=delivery.verdict,
+                    delivery_detail=delivery.detail,
+                )
+                # Same HITL prefix the cap escalation uses, so
+                # tools/kanban/hitl_alert_view.py keeps parsing it, with the
+                # cause named as delivery instead of as attempts.
+                self._hitl_alert(
+                    task["id"], pr_url,
+                    f"resume undelivered ({cycle}/{max_cycles}) after "
+                    f"{classification.value}. {delivery.detail}.")
+                report.actions.append(action)
+                self._audit(action)
+                continue
 
             context = prepare_resume_context(
                 task["id"],

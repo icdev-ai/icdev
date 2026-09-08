@@ -65,6 +65,12 @@ SUPERSEDED_DECISION = "superseded"
 APPLIABLE_BASES = ("exact", "relocated")
 
 ANCHOR_BASES = ("exact", "relocated", "unanchored")
+
+#: Every ``reason`` ``verify_anchor`` can return when it refuses. Declared here
+#: so a reader that has to TRANSLATE those reasons (dwr-cmt-02's review rail
+#: maps them onto the comment vocabulary) can be pinned against this tuple
+#: rather than against a hand-copied list that silently goes out of date.
+VERIFY_REASONS = ("section_missing", "unanchored", "no_offsets", "anchor_stale")
 ORIGIN_KINDS = ("docmod_redline", "section_draft", "crowdsource", "human_edit")
 
 # Declaration order of the columns dwr-anchor-03 added. The migration that
@@ -215,6 +221,25 @@ def whole_section_anchor(section_id: str, content: str) -> dict:
     return {"anchor_section_id": section_id, "anchor_start": 0,
             "anchor_end": len(content), "anchor_text": content,
             "anchor_basis": "exact"}
+
+
+def section_of_record(suggestion: dict) -> str:
+    """Which section a suggestion is ABOUT — ONE statement of the rule.
+
+    The anchor's section outranks the legacy ``section_id`` column when both
+    are set; the legacy column is what a pre-anchor row carries. The accept
+    door and dwr-cmt-02's review rail both ask HERE, because a second copy is
+    how a rail renders a proposal beside one section while accept splices it
+    into another.
+
+    Returns ``""`` for a suggestion that names NO section. That is a real state
+    on this deployment, not an edge case: measured 2026-09-08, all 58 rows in
+    ``dic_suggestions`` carry a real ``doc_id``, ``section_id = ''`` and
+    ``anchor_section_id`` NULL. An empty string must never be resolved to
+    "the first section" by a caller — it means the proposal cannot be placed.
+    """
+    return (suggestion.get("anchor_section_id")
+            or suggestion.get("section_id") or "")
 
 
 def verify_anchor(suggestion: dict, section_content: str | None) -> dict:

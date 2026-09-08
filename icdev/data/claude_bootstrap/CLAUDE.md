@@ -568,6 +568,62 @@ python tools/db/migrate.py --up            # 20260908003311: original_path / ori
 # NOT retained here, and named: CLI/batch ingests (the operator's own file
 # persists at filepath); nothing prunes; the 29 are gone for good.
 
+# A suggestion drafted against a TOKEN is retired, never back-filled (dwr-anchor-06)
+python -m tools.document_intelligence.suggestion_redraft --census        # by status x anchor_basis
+python -m tools.document_intelligence.suggestion_redraft --plan [--json] # probe every target; ACTS ON NOTHING
+python -m tools.document_intelligence.suggestion_redraft --apply --limit 5   # THE ONLY FLAG THAT WRITES
+# `draft_redline` built its prompt from `finding["entity_label"]` -- a bare token
+# like `TLS 1.1` -- and stored `section_id=""` with `anchor_basis="unanchored"`.
+# MEASURED 2026-09-08 on the live PG board: 58 pending dic_suggestions, 58 with an
+# empty section_id, 58 with a NULL basis, all canvas_source=doc_modernization.
+# THEY CANNOT BE REPAIRED IN PLACE. The prose was written without the model ever
+# seeing the surrounding sentence, so back-filling an anchor pins text to a span
+# it was never fitted to -- a plausible-looking edit nobody wrote. Each is
+# SUPERSEDED (`supersede_suggestion`, dwr-anchor-05, reused -- this module never
+# UPDATEs dic_suggestions itself, pinned by AST) and its finding re-drafted
+# through the UNCHANGED TRUST gate chain.
+# IT PROVES BEFORE IT ACTS, and nothing is superseded for a draft that
+# structurally cannot happen -- trading 58 misleading proposals for 58 absent
+# ones is not progress. FIVE preconditions, each asked of primary data and each
+# sending a reader to a DIFFERENT repair:
+#   drafter_does_not_anchor  the installed redline_drafter has no
+#                            `resolve_passage` (it predates dwr-anchor-04) and
+#                            would mint another unanchored row. Refused for the
+#                            WHOLE run, never per item.
+#   origin_unresolved        two independent routes to the finding --
+#                            docmod_findings.redline_suggestion_id ->
+#                            supersedes_id (structured, asked first) and the
+#                            `[docmod:<id>]` rationale prefix. A DISAGREEMENT is
+#                            unresolved, never a pick between two.
+#   origin_not_open          draft_redline only drafts an `open` finding, and the
+#                            ORIGIN row is open while its redline_drafted
+#                            SUCCESSOR is not -- which row is returned is
+#                            load-bearing.
+#   finding_has_no_span      THE FIX IS A RE-SCAN. dwr-anchor-01/02 made the
+#                            packs record a span; a finding written before that
+#                            has none and no re-draft can invent it.
+#   doc_has_no_sections      THE FIX IS section_deriver (dwr-sect-01).
+# MEASURED, AND THE MEASUREMENT IS THE OUTCOME: on this board today the tool
+# reports 58 REFUSALS AND ZERO TOKENS SPENT. All 58 resolve through the
+# structured route and all 58 origins are open -- and 127 of 127 docmod_findings
+# carry a NULL span, while the document holding 47 of the 58
+# (dic_doc_28e2ee4d984f3f35) carries ZERO dic_sections rows. Re-probed with
+# anchors=True, i.e. as if dwr-anchor-04 were installed, all 58 still refuse on
+# `finding_has_no_span`. That is not a clean bill of health. DO NOT relax a
+# precondition to make the sweep do something -- each one is what stops it
+# minting 58 fresh copies of the defect it exists to retire.
+# CONFIRM IS A RE-READ, never the drafter's claim: the new row must carry an
+# APPLIABLE basis AND a section, and a row failing that is `redrafted_unanchored`
+# -- reported loudly, never counted as a success. THE LOOP IS CLOSED BY
+# CONSTRUCTION and not by a visited-set: an anchored row is not a target, and
+# `validate_anchor` refuses to write an exact/relocated basis with no section, so
+# a written row is anchored or was never written.
+# Bounded by `max_redrafts_per_run` (args/docmod/docmod_config.yaml, 10) with
+# deferred items NAMED. Every outcome counted -- redrafted | abstained | blocked |
+# error | supersede_refused | redrafted_unanchored -- because successes alone
+# cannot say whether the sweep worked. Exit 2 = the survey could not be produced.
+# Survey: docs/audits/dwr-anchor-06-unanchored-suggestion-survey.md
+
 # DocMod asks ONE governed seam instead of hand-querying tables (#cef-di-01)
 # A library, no CLI. Import it:
 #   from tools.doc_modernization.evidence import (
@@ -1049,6 +1105,95 @@ python -m tools.currency.entity_currency --resolve "catalyst 6500" --entity-type
 # not touch; tests/test_dic_ingest_orchestrator.py (ungated) asserts one chunk
 # link per chunk with embed=False, red since dic-ingest-link-01 (2026-08-22).
 
+# A COMMENT is an instruction until a human promotes it; then it is CITED, and marked (dwr-ev-02)
+# A library, no CLI. Import it:
+#   from tools.document_intelligence.sme_evidence import promote_comment, promotions_for
+#   promote_comment(conn, ann_id="ann-...", promoted_by="lead.reviewer",
+#                   claim={"entity_label": "TLS 1.1", "entity_type": "crypto_protocol",
+#                          "status": "retired", "as_of": "2026-07-01"})
+python -m tools.currency.entity_currency --resolve "tls 1.1" --entity-type crypto_protocol
+# Promote: POST /document-intelligence/api/annotations/<ann_id>/promote
+#          {"promoted_by": "...", "claim": {...}}      404 unknown / 409 already / 400 bad claim
+# Read:    GET  /document-intelligence/api/annotations/<ann_id>/promote
+# UI:      /document-intelligence/doc/<doc_id> -> a section's comments panel
+#          ("Mark as SME assertion"), and the citation on /document-intelligence/docdrift
+#
+# AN UNPROMOTED COMMENT IS NOT RANKED LOW, IT IS ABSENT. "We moved to TLS 1.3
+# last quarter" in a review comment is an INSTRUCTION, and a reviewer's chat
+# message is not a source -- letting unverifiable prose ground a compliance claim
+# is the hallucination the TRUST chain exists to stop. So the mechanism is not a
+# weight: `dic_section_annotations` is declared as a currency source NOWHERE and
+# is read by NO evidence seam (asserted over seven of them by an AST test), so
+# there is no path by which an unpromoted comment could be cited, and no flag on
+# the comment that could go stale. The state IS the absence of a row in
+# `dic_sme_assertions`.
+# THE PROSE IS NEVER PARSED, AND THAT IS THE WHOLE TRUST ARGUMENT. A promotion
+# carries a TYPED claim the PROMOTING HUMAN supplies -- entity, type, status --
+# validated by `author_evidence.normalize_assertion`, the SAME one validator an
+# author's upload goes through, so a status word cannot mean one thing on an
+# upload and another on a promotion. The comment text is stored VERBATIM as the
+# quotation and NOTHING reads a word of it: an assertion extracted from prose is
+# a `text_pattern` claim and can never reach a pack (TRUST rule 2, dwr-ev-01's
+# rule unchanged). An AST test refuses a regex over `comment` in promote_comment
+# and any model call in the module. So what the comment contributes is not the
+# claim -- it is WHO said it, WHEN, and against WHICH span of WHICH document,
+# which is exactly what makes the evidence ATTRIBUTED.
+# PER-COMMENT AND DELIBERATE. One `ann_id` in the URL, one in the writer; no bulk
+# endpoint (asserted absent by name), no promotion on any heuristic, and a second
+# promotion of the same comment is a 409 rather than a silent rewrite of what a
+# human already decided. AUDITED AS A DECISION, BEFORE THE WRITE, FAIL-CLOSED:
+# `_record_hitl_decision("dic_annotation", ..., "promoted_to_sme_assertion", ...)`
+# -- the cef-ui-03 door, `dic.hitl_decision`, raise_on_error=True -- so an
+# unauditable promotion never happens, and the row names BOTH the person whose
+# word it now is and the person who decided it was evidence.
+# TWO CLOCKS. `as_of` is the SME's; an SME who states no date gets the COMMENT's
+# own timestamp with `as_of_basis: comment_time`, never today's, because a
+# promotion made months later must not restamp their statement. `promoted_at` is
+# ours. `asserted_by` is COPIED off the comment -- an attribution the promoter
+# can type in is not an attribution.
+# RANKED BESIDE THE AUTHOR, NOT ABOVE. `dic_sme_assertions` is the SIXTH declared
+# source in args/entity_currency.yaml (migration 20260908071149), kind
+# `sme_attributed`, `precedence: 0` and confidence 0.9 -- IDENTICAL to
+# dic_author_assertions, so the two tie on precedence AND on the prior and the
+# LATER human clock decides, with the earlier preserved under `others` with
+# conflict:true. Above them would let a 2020 remark beat a 2026 signed upload;
+# below would let a stale upload beat this morning's correction. Neither is a
+# rule about evidence; recency between equals is, and the store already had it.
+# RENDERED DISTINCTLY, STRUCTURALLY, IN BOTH HALVES OF BOTH SURFACES. The citation
+# carries `source_type: sme_assertion` -- its own badge, not the
+# `currency_assertion` a machine feed produces and not a document type -- derived
+# from the store's `source_kind` (`_HUMAN_SOURCE_TYPES`), never from a source
+# NAME, so a seventh human source is a YAML entry and one line. Every other kind
+# is untouched, asserted. The content sentence itself names the person ("Asserted
+# by <who> ... This is an attributed human statement, not a document"), because
+# the reader of a drafted paragraph sees the snippet and not the badge. DocDrift
+# frames it amber under an ATTRIBUTED HUMAN SOURCE chip and the comments panel
+# renders a promoted comment in its own amber block with both clocks and both
+# people, an unpromoted one under "Instruction only -- cited by nothing".
+# THE VIEW CAN NOW READ ITS OWN CARRIED FIELDS. `provenance` gains `fields` --
+# the winner's declared `extra_columns`, decoded. args/entity_currency.yaml has
+# always said they are "carried verbatim into provenance_json ... so it is
+# preserved rather than lost", and until now nothing could read them BACK; a
+# carrier that only ever writes is not preservation, and an attributed citation
+# that cannot name the human is not attributed.
+# TWO SMEs DISAGREEING ARE TWO ROWS -- the unique key is the COMMENT, so nothing
+# overwrites anything -- and `promote_comment` REPORTS the contradiction it is
+# creating under `contradicts` rather than landing it silently. RESIDUAL, NAMED:
+# the STORE still keeps one row per (source, entity) and so carries the newest
+# human clock; making two statements from ONE source two STORE rows is a change
+# to the store's identity key, not this card.
+# NOT REVERSIBLE THROUGH THIS SEAM, and why: `entity_currency.backfill` is
+# upsert-only and the store has no delete path, so deleting the assertion row
+# would leave the derived currency row standing -- a revocation that looks like
+# it worked and did not, which is worse than none. Rather than invent a second
+# writer of currency rows inside a DIC module, correction works the way human
+# evidence works: a LATER attributed statement supersedes an earlier one and the
+# earlier stays readable. A real revoke needs a store deletion path and is its
+# own card.
+# NOT BUILT, and named: no DataBridge connector for this table (dwr-ev-01's
+# `icdev_author_evidence` serves author uploads; a second brokered rung changes
+# the `search_external` fan-out, which already cost one follow-up test fix), and
+# no extraction of assertions from prose, ever.
 # Redraft with my comments — a button a human presses (dwr-ev-03)
 # A library, no CLI. Import it:
 #   from tools.document_intelligence.redraft import redraft_change, run_stats
