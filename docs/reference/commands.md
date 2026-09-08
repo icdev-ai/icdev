@@ -6438,6 +6438,28 @@ version) assertion**.
 - Refreshed on the nightly `doc_modernization_sweep` reflex; read by the docmod
   network-hardware pack only when the catalog and the hardware feed are both
   silent. Declared in `args/capability_consumption.yaml` `substrates:`.
+- **A promoted review comment is the sixth source, beside the author (dwr-ev-02).**
+  A comment is an INSTRUCTION by default and is cited by nothing:
+  `dic_section_annotations` is declared as a source nowhere and read by no
+  evidence seam, so an unpromoted comment is ABSENT from the chain rather than
+  weakly weighted. One deliberate act promotes ONE comment --
+  `POST /document-intelligence/api/annotations/<ann_id>/promote` with
+  `{"promoted_by": ..., "claim": {...}}`, audited fail-closed as a
+  `dic.hitl_decision` BEFORE the write, 409 on a second promotion, no bulk door.
+  The CLAIM is typed by the promoting human and the comment prose is never
+  parsed; `asserted_by` and `as_of` come from the COMMENT (`as_of_basis:
+  sme_stated | comment_time`) and `promoted_by`/`promoted_at` are ours. Written
+  to `dic_sme_assertions` and into the store under source `dic_sme_assertions`
+  (kind `sme_attributed`, `precedence: 0` and confidence 0.9 -- identical to the
+  author source, so the two tie and the later human clock decides). Its citation
+  carries `source_type: sme_assertion`, derived from the source KIND, so a
+  person's statement never wears a machine feed's badge. A library -- import it:
+
+  ```python
+  from tools.document_intelligence.sme_evidence import promote_comment, promotions_for
+  ```
+- The resolved view's `provenance` carries a `fields` map (the winner's declared
+  `extra_columns`, decoded), which is how an attributed citation names the human.
 
 ## Twin Core — Cross-Canvas Digital-Twin Unification (TWX)
 

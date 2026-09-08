@@ -21,7 +21,8 @@
 # HOW A SOURCE IS DECLARED
 #
 #   id            provider id, written verbatim to entity_currency.source
-#   kind          external_feed | curated | inventory | derived | author_supplied
+#   kind          external_feed | curated | inventory | derived |
+#                 author_supplied | sme_attributed
 #   precedence    OPTIONAL integer, lower wins, applied FIRST in `resolution`
 #                 (dwr-ev-01). A source that declares none gets
 #                 DEFAULT_PRECEDENCE (100) and ties with every other such
@@ -213,12 +214,80 @@ sources:
         unknown: unknown
       default: unknown
 
+  - id: dic_sme_assertions
+    kind: sme_attributed
+    enabled: true
+    # RANKED BESIDE THE AUTHOR, NOT ABOVE THEM (dwr-ev-02). A review comment is
+    # an INSTRUCTION until a human explicitly promotes it, and a promoted one is
+    # an attributed statement by a named person about THIS estate — the same
+    # class of fact as an author's upload declaration, so the same precedence.
+    # The pair therefore ties on precedence AND on the declared prior below, and
+    # `as_of` decides: the LATER human clock wins and the earlier is preserved
+    # under `others` with conflict:true. Ranking an SME comment above an upload
+    # would let a 2020 remark beat a 2026 signed statement; ranking it below
+    # would let a stale upload beat this morning's correction. Recency between
+    # equals is the only rule about evidence here, and the store already has it.
+    precedence: 0
+    table: dic_sme_assertions
+    entity_type_column: entity_type
+    # The same DECLARED PRIOR as the author source, for the same reason and with
+    # the same caveat: nothing in this repo has calibrated it. Equal on purpose —
+    # a different number here would be a precedence rule wearing a confidence.
+    confidence: 0.9
+    # Several promoted comments may name one entity (two SMEs, or one correcting
+    # themselves). Every one stays in dic_sme_assertions; the store keeps ONE per
+    # identity for this source: the newest SME clock, then the newest promotion.
+    order_by: [as_of, promoted_at]
+    note: >-
+      Review comments a human explicitly promoted to attributed SME assertions
+      (tools/document_intelligence/sme_evidence.py). The CLAIM is typed by the
+      promoter — nothing parses the comment prose — while `asserted_by` and
+      `as_of` come from the COMMENT, so every row names the person who said it
+      and when. `as_of_basis` says whether the SME stated the date or the
+      comment's own timestamp was defaulted in. An UNPROMOTED comment has no row
+      here and so appears in no citation at all.
+    columns:
+      provenance_id: assertion_id
+      namespace: namespace
+      entity_key: entity_key
+      entity_label: entity_label
+      entity_version: entity_version
+      eol_date: eol_date
+      eos_date: eos_date
+      superseded_by: superseded_by
+      as_of: as_of
+    # The attribution rides into provenance_json so a citation can name the
+    # human without a second lookup, and `comment` carries the statement
+    # VERBATIM — a quotation, never something to parse.
+    extra_columns:
+      [ann_id, doc_id, section_id, asserted_by, promoted_by, promoted_at,
+       as_of_basis, status, comment, category]
+    verdict:
+      strategy: value_map
+      column: status
+      # author_evidence.AUTHOR_STATUSES on the left — the SAME vocabulary the
+      # promoter's claim is validated against, because one status word must not
+      # mean different things on an upload and on a promotion. A word missing
+      # here is `unknown`, never `current`.
+      map:
+        current: current
+        fielded: current
+        in_use: current
+        deprecated: deprecated
+        end_of_support: end_of_support
+        retired: end_of_life
+        decommissioned: end_of_life
+        unknown: unknown
+      default: unknown
+
 # Read-time resolution policy, consumed by entity_currency.resolve(). Applied in
 # order; the first discriminating key wins.
 #
-# `precedence` is FIRST (dwr-ev-01) and only one source declares it, so for
-# every other pair of sources it is a tie and `authoritative` decides as it
-# always has. `authoritative` is deliberately not expressible as a confidence
+# `precedence` is FIRST (dwr-ev-01). TWO sources declare it and both declare 0
+# (dwr-ev-02: an author's upload declaration and a promoted SME comment are the
+# same class of fact), so they tie with each other and fall through to the keys
+# below; for every other pair it is a tie at DEFAULT_PRECEDENCE and
+# `authoritative` decides as it always has. `authoritative` is deliberately not expressible as a confidence
 # number: a curated 'approved' must beat an external feed even when the feed is
 # newer and more confident, and a tie-break that can be overturned by bumping a
 # prior is not authority. Disagreement is never squashed at write time — every

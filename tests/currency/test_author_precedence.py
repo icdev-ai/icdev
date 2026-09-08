@@ -80,20 +80,36 @@ def test_author_source_is_declared_in_the_idiom_of_the_other_sources():
     assert set(AUTHOR_STATUSES) <= mapped, set(AUTHOR_STATUSES) - mapped
 
 
-def test_only_the_author_source_declares_a_precedence():
+def test_only_the_human_sources_declare_a_precedence():
     """The whole point of a DEFAULT: the four sources shipped before this card
-    tie on it and fall through to `authoritative` exactly as before."""
+    tie on it and fall through to `authoritative` exactly as before.
+
+    dwr-ev-02 added a SECOND declaring source -- a promoted SME comment -- and
+    it declares the SAME value, because two humans stating facts about this
+    estate are the same class of evidence and recency decides between them. The
+    set of declaring sources is enumerated here rather than counted: a third
+    source quietly declaring a precedence is exactly the change that must be
+    read by a person, and a count would let it through.
+    """
     from tools.currency.entity_currency import DEFAULT_PRECEDENCE, _precedence, declared_sources
     from tools.document_intelligence.author_evidence import SOURCE_ID
+    from tools.document_intelligence.sme_evidence import SOURCE_ID as SME_SOURCE_ID
 
+    human = {SOURCE_ID, SME_SOURCE_ID}
     by_id = {s["id"]: s for s in declared_sources(enabled_only=False)}
+    declared = set()
     for sid, spec in by_id.items():
         got = _precedence(by_id, {"source": sid})
-        if sid == SOURCE_ID:
+        if sid in human:
             assert got < DEFAULT_PRECEDENCE
+            declared.add(sid)
         else:
             assert "precedence" not in spec
             assert got == DEFAULT_PRECEDENCE
+    assert declared == human
+    # BESIDE, not above: neither human source outranks the other structurally.
+    assert (_precedence(by_id, {"source": SOURCE_ID})
+            == _precedence(by_id, {"source": SME_SOURCE_ID}))
 
 
 # ---------------------------------------------------------------------------
