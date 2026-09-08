@@ -87,6 +87,26 @@ ANCHOR_COLUMNS = (
     ("applied_by", "TEXT"),
 )
 
+# Declaration order of the column dwr-ev-03 added, same discipline as
+# ANCHOR_COLUMNS above: migration 20260908071432 carries this tuple, pinned by
+# test, and `_ensure_tables` carries it for a table created after it landed.
+#
+#   successor_suggestion_id  the suggestion that REPLACED this one, when there
+#                            is one (a redraft produces a successor; an anchor
+#                            verification does not, so it is NULLABLE and NULL
+#                            means NOT RECORDED). `superseded` with no
+#                            successor is a dead end a reader cannot follow,
+#                            which makes a retired change read exactly like a
+#                            lost one.
+#
+# Deliberately NOT named `superseded_by`: `supersede_suggestion` already takes a
+# `superseded_by` naming the MECHANISM that retired the row (it lands in
+# `dic_suggestion_decisions.decided_by`). Two different things under one name is
+# how a reader comes to believe an id is an actor.
+SUPERSEDE_COLUMNS = (
+    ("successor_suggestion_id", "TEXT"),
+)
+
 
 # ── Schema ────────────────────────────────────────────────────────────────────
 
@@ -115,7 +135,8 @@ def _ensure_tables(conn) -> None:
             anchor_basis        TEXT,
             origin_kind         TEXT,
             applied_text        TEXT,
-            applied_by          TEXT
+            applied_by          TEXT,
+            successor_suggestion_id TEXT
         )
         """
     )
@@ -588,6 +609,7 @@ def supersede_suggestion(
     reason: str,
     *,
     superseded_by: str = "system:anchor_verify",
+    successor_suggestion_id: str = "",
     note: str = "",
     tenant_id: str = "",
     classification: str = "CUI",
@@ -602,11 +624,24 @@ def supersede_suggestion(
     ``decision = 'superseded'``; ``decided_by`` names the mechanism, never a
     human, so the row can never be read as a person's verdict.
 
+    ``successor_suggestion_id`` (dwr-ev-03) names the suggestion that REPLACED
+    this one, when there is one. A redraft produces a successor and an anchor
+    verification does not, which is why it is optional and why it is a COLUMN
+    rather than more prose in ``note``: a reader following the chain needs an
+    id, and ``superseded`` with no successor is a dead end that makes a retired
+    change read exactly like a lost one. It never becomes a human verdict --
+    ``decision`` stays ``superseded`` and ``decided_by`` still names the
+    mechanism (``redraft:<actor>`` carries WHO ASKED for a different proposal,
+    which is not a verdict on this one).
+
     Returns False when the row is missing or no longer pending -- a concurrent
     human decision wins and is not overwritten.
     """
     if not reason:
         raise ValueError("supersede_suggestion needs a reason")
+    successor = (successor_suggestion_id or "").strip()
+    if successor == suggestion_id:
+        raise ValueError("a suggestion cannot supersede itself")
     now = _now()
     decision_id = f"dec_{uuid.uuid4().hex[:16]}"
     with get_connection() as conn:
@@ -618,8 +653,10 @@ def supersede_suggestion(
         if row is None or _col(row, "status", 0) != "pending":
             return False
         conn.execute(
-            "UPDATE dic_suggestions SET status=%s, updated_at=%s WHERE suggestion_id=%s",
-            ("superseded", now, suggestion_id),
+            """UPDATE dic_suggestions
+                  SET status=%s, successor_suggestion_id=%s, updated_at=%s
+                WHERE suggestion_id=%s""",
+            ("superseded", successor or None, now, suggestion_id),
         )
         conn.execute(
             """
