@@ -258,7 +258,7 @@ def test_every_raise_site_is_negated_by_the_recovery_check():
     pass, forever."""
     import inspect
     poll = inspect.getsource(pr_watcher.PRWatcher.poll_once)
-    assert poll.count("self._hitl_alert(") == 4, (
+    assert poll.count("self._hitl_alert(") == 5, (
         "a new raise site must also be negated in _hitl_recovered")
     rec = inspect.getsource(pr_watcher.PRWatcher._hitl_recovered)
     assert "max_cycles" in rec and "_ci_never_fired" in rec
@@ -274,5 +274,13 @@ def test_every_raise_site_is_negated_by_the_recovery_check():
     assert "_stale_verdict" in rec, (
         "the behind-main raise site is not negated in _hitl_recovered — it "
         "will resolve and re-raise on every pass")
+    # Fifth raise site (2026-09-08): a resume injection PROVEN unread. Its
+    # premise is "nothing is draining this task's queue", so recovery has to ask
+    # the queue again rather than infer it from the PR's state -- which is why
+    # _hitl_recovered takes the task_id at all.
+    assert "UNDELIVERED" in rec, (
+        "the undelivered raise site is not negated in _hitl_recovered — it "
+        "will resolve and re-raise on every pass")
+    assert "task_id" in rec
     # the DONE path must still clear it
     assert poll.count("_resolve_hitl_alert") >= 2
