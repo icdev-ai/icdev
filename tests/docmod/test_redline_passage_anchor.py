@@ -75,8 +75,8 @@ def _reset_db():
             """CREATE TABLE IF NOT EXISTS rag_chunks (
                    id TEXT PRIMARY KEY, content TEXT)""",
             """CREATE TABLE IF NOT EXISTS dic_chunk_links (
-                   link_id TEXT PRIMARY KEY, version_id TEXT, rag_chunk_id TEXT,
-                   page INTEGER, section TEXT)""",
+                   link_id TEXT PRIMARY KEY, doc_id TEXT NOT NULL, version_id TEXT,
+                   rag_chunk_id TEXT, page INTEGER, section TEXT)""",
             """CREATE TABLE IF NOT EXISTS docmod_findings (
                    finding_id TEXT PRIMARY KEY, run_id TEXT, doc_id TEXT,
                    version_id TEXT, chunk_link_id TEXT, section_heading TEXT,
@@ -132,9 +132,11 @@ def _chunk(link_id="lnk-1", version_id="ver-1", content=None, section="Transport
         conn.execute("INSERT INTO rag_chunks (id, content) VALUES (%s,%s)",
                      (f"rc-{link_id}", content))
         conn.execute(
-            "INSERT INTO dic_chunk_links (link_id, version_id, rag_chunk_id, page, section) "
-            "VALUES (%s,%s,%s,1,%s)",
-            (link_id, version_id, f"rc-{link_id}", section),
+            # doc_id is NOT NULL in the migrated table; the fixture's own DDL
+            # below omits it, so leaving it out passed locally and failed in CI.
+            "INSERT INTO dic_chunk_links (link_id, doc_id, version_id, rag_chunk_id, "
+            "page, section) VALUES (%s,%s,%s,%s,1,%s)",
+            (link_id, "doc-1", version_id, f"rc-{link_id}", section),
         )
         conn.commit()
     return link_id
