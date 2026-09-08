@@ -967,3 +967,104 @@ class TestMainPersistsTheRun(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------------------
+# The persisted run report — the artifact `report_path` points a human at
+# ---------------------------------------------------------------------------
+
+class TestPersistedRunReportCarriesTheVerdict(unittest.TestCase):
+    """`write_run_report` ran BEFORE `derive_status` and before `report_path`
+    was assigned, so the file every reader is sent to could never carry either.
+
+    MEASURED on this board: `.tmp/ace/qa/qa-1788898202-results.json` records
+    840 tests, 831 passed, 1 failed -- and `status: "running"` with
+    `report_path: ""`, twenty minutes after that sweep finished. The DB row for
+    the same run says `failed`. A report that reads `running` for every sweep
+    ever taken cannot distinguish a run still going from one that finished red.
+    """
+
+    def _module(self):
+        import importlib
+        return importlib.import_module("icdev.tools.testing.qa_agent_runner")
+
+    def test_report_is_written_with_the_final_status(self):
+        mod = self._module()
+        specs = ["tests/e2e/s0.spec.ts"]
+        seen = {}
+
+        def _capture(res):
+            seen["status"] = res.status
+            return Path("unused-report.json")
+
+        with (
+            patch.object(mod, "resolve_spec_files", return_value=specs),
+            patch.object(
+                mod.subprocess, "run",
+                side_effect=subprocess.TimeoutExpired(cmd="npx", timeout=1),
+            ),
+            patch.object(mod, "write_run_report", _capture),
+        ):
+            result = run_e2e_suite(deadline_seconds=600, batch_size=1)
+
+        assert result.status == STATUS_INCOMPLETE
+        assert seen["status"] == STATUS_INCOMPLETE, (
+            f"the report was written while status was {seen['status']!r} -- "
+            "a persisted verdict of 'running' is never the run's verdict"
+        )
+
+    def test_written_report_names_its_own_path(self):
+        import tempfile
+        mod = self._module()
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(mod, "PROJECT_ROOT", Path(tmp)):
+                result = QARunResult(run_id="qa-selfref")
+                result.status = STATUS_PASSED
+                out = mod.write_run_report(result)
+                data = json.loads(Path(out).read_text(encoding="utf-8"))
+
+        assert data["status"] == STATUS_PASSED
+        assert data["report_path"] == str(out), (
+            "the persisted report does not name itself, so a reader holding "
+            "only the file cannot say which run artifact they have"
+        )
+
+
+# ---------------------------------------------------------------------------
+# get_run_status — a row that is ALREADY a mapping
+# ---------------------------------------------------------------------------
+
+class TestGetRunStatusReadsAMappingRow(unittest.TestCase):
+    """psycopg2's RealDictRow IS a mapping and has no `.cursor`, so the
+    description walk found no keys and every PostgreSQL lookup fell into the
+    degraded `{"id": ..., "raw": str(row)}` branch.
+
+    The CLI then printed `status=None total=None` for a run whose row says
+    `failed / 840 / 831 / 1` -- the fields were in hand and stringified away.
+    """
+
+    def _module(self):
+        import importlib
+        return importlib.import_module("icdev.tools.testing.qa_agent_runner")
+
+    def test_mapping_row_is_returned_as_its_fields(self):
+        mod = self._module()
+        row = {
+            "id": "qa-1788898202",
+            "status": "failed",
+            "total_tests": 840,
+            "passed": 831,
+            "failed": 1,
+        }
+        conn = MagicMock()
+        conn.execute.return_value.fetchone.return_value = row
+
+        with patch.object(mod, "get_canvas_connection", conn, create=True):
+            with patch("tools.db.storage.get_canvas_connection", return_value=conn):
+                out = mod.get_run_status("qa-1788898202")
+
+        assert out is not None
+        assert "raw" not in out, f"row stringified instead of read: {out}"
+        assert out["status"] == "failed"
+        assert out["total_tests"] == 840
+        assert out["passed"] == 831

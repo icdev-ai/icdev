@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import glob
 import hashlib
+from collections.abc import Mapping
 import json
 import logging
 import os
@@ -481,8 +482,11 @@ def run_e2e_suite(
             "were parsed into failures (%d unnamed)",
             run_id, result.failed, len(result.failures), result.failures_unparsed,
         )
-    result.report_path = str(write_run_report(result))
+    # Derive the verdict BEFORE persisting it. The two lines used to run the
+    # other way round, so the file `report_path` sends a reader to carried the
+    # `running` the result was constructed with -- for every sweep ever taken.
     result.status = derive_status(result)
+    write_run_report(result)
 
     logger.info(
         "qa_agent_runner: run_id=%s status=%s total=%d passed=%d failed=%d "
@@ -506,9 +510,16 @@ def write_run_report(result: QARunResult) -> Path:
     """Persist the aggregated run to .tmp/ace/qa/<run_id>-results.json."""
     out = PROJECT_ROOT / ".tmp" / "ace" / "qa" / f"{result.run_id}-results.json"
     out.parent.mkdir(parents=True, exist_ok=True)
+    # Stamped BEFORE serialising, so the artifact names itself: a reader holding
+    # only the file can say which run it is. This function is the ONE owner of
+    # the field -- the caller used to assign it from the return value, i.e.
+    # after the bytes were already written with `report_path: ""`.
+    result.report_path = str(out)
     try:
         out.write_text(json.dumps(result.to_dict(), indent=2), encoding="utf-8")
     except OSError as exc:
+        # A path that was never written must not be advertised as the report.
+        result.report_path = ""
         logger.error("qa_agent_runner: cannot write run report %s: %s", out, exc)
     return out
 
@@ -753,8 +764,21 @@ def get_run_status(run_id: str) -> Optional[Dict[str, Any]]:
             ).fetchone()
         if row is None:
             return None
+        # A psycopg2 RealDictRow IS a mapping and carries no `.cursor`, so the
+        # description walk found no keys and EVERY PostgreSQL lookup fell into
+        # the degraded `raw` branch below -- the CLI printed `status=None
+        # total=None` for a row that says `failed / 840 / 831 / 1`. The fields
+        # were in hand and were stringified away. sqlite3.Row exposes `keys()`
+        # and the same mapping protocol, so both drivers are read the same way.
+        if isinstance(row, Mapping) or hasattr(row, "keys"):
+            return dict(row)
         keys = [d[0] for d in (row.cursor.description if hasattr(row, "cursor") else [])]
         if not keys:
+            # Never silently: a row nothing could read is reported as such.
+            logger.warning(
+                "qa_agent_runner: get_run_status could not name the columns of a "
+                "%s row for %s", type(row).__name__, run_id,
+            )
             return {"id": run_id, "raw": str(row)}
         return dict(zip(keys, row))
     except Exception as exc:
