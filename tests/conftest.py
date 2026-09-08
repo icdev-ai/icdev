@@ -3445,6 +3445,29 @@ CREATE TABLE IF NOT EXISTS entity_currency (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_entity_currency_identity
     ON entity_currency (source, entity_type, namespace, entity_key, entity_version);
+CREATE TABLE IF NOT EXISTS dic_author_assertions (
+    assertion_id    TEXT PRIMARY KEY,
+    doc_id          TEXT NOT NULL,
+    version_id      TEXT,
+    entity_type     TEXT NOT NULL,
+    namespace       TEXT NOT NULL DEFAULT '',
+    entity_key      TEXT NOT NULL,
+    entity_label    TEXT NOT NULL,
+    entity_version  TEXT NOT NULL DEFAULT '',
+    status          TEXT NOT NULL,
+    superseded_by   TEXT,
+    eol_date        TEXT,
+    eos_date        TEXT,
+    as_of           TEXT NOT NULL,
+    as_of_basis     TEXT NOT NULL,
+    asserted_by     TEXT,
+    note            TEXT,
+    created_at      TEXT NOT NULL,
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    classification  TEXT NOT NULL DEFAULT 'CUI'
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dic_author_assertions_identity
+    ON dic_author_assertions (doc_id, entity_type, namespace, entity_key, entity_version);
 CREATE TABLE IF NOT EXISTS docmod_doc_scan_state (
     doc_id             TEXT PRIMARY KEY,
     last_version_id    TEXT,

@@ -21,7 +21,18 @@
 # HOW A SOURCE IS DECLARED
 #
 #   id            provider id, written verbatim to entity_currency.source
-#   kind          external_feed | curated | inventory | derived
+#   kind          external_feed | curated | inventory | derived | author_supplied
+#   precedence    OPTIONAL integer, lower wins, applied FIRST in `resolution`
+#                 (dwr-ev-01). A source that declares none gets
+#                 DEFAULT_PRECEDENCE (100) and ties with every other such
+#                 source, so the four sources shipped before that key rank
+#                 exactly as they did. An EVIDENCE ORDERING in the idiom of
+#                 args/docmod/inventory_feeds.yaml, not a confidence: it cannot
+#                 be overturned by bumping a prior, and it is not
+#                 `authoritative`, which stays the curated catalog's word.
+#   order_by      OPTIONAL column list. A table holding several rows per
+#                 identity (an author's later statement beside an earlier one)
+#                 declares which row the upsert keeps: the LAST read wins.
 #   table         the table to read
 #   entity_type   literal type for every row, OR entity_type_column to take it
 #                 from the row itself (data-driven — preferred when the source
@@ -140,10 +151,74 @@ sources:
         retired: end_of_life
       default: unknown
 
+  - id: dic_author_assertions
+    kind: author_supplied
+    enabled: true
+    # RANKED TOP (dwr-ev-01). An author who uploads a document into the DIC
+    # corpus states, with it, what the document asserts about an entity's
+    # currency ("still fielded here as of 2026-08-01"). That is the LATEST FACT
+    # about THIS estate, and it outranks every feed and the curated catalog —
+    # which are facts about a VENDOR's support, not about what is deployed.
+    # `precedence`, not `authoritative`: the catalog keeps its word, and the
+    # ordering is declared as evidence precedence (inventory_feeds.yaml's
+    # idiom) rather than as a confidence a bumped prior could overturn.
+    #
+    # DISAGREEMENT IS PRESERVED, and this entry cannot change that: it writes
+    # its own rows under its own source id, and resolve() reports every other
+    # source beside the winner under `others` with conflict:true. NIST EOL
+    # saying retired and an author saying fielded is a VISIBLE conflict for a
+    # reviewer, never a deleted catalog row.
+    precedence: 0
+    table: dic_author_assertions
+    entity_type_column: entity_type
+    # A DECLARED PRIOR like every other confidence here — the highest of the
+    # non-curated ones because the assertion is attributed and dated by a
+    # human, and nothing in this repo has calibrated it either.
+    confidence: 0.9
+    # Several statements about one entity may sit in the table (a corrected
+    # upload beside the original). The store keeps ONE per identity for this
+    # source: the newest AUTHOR clock, then the newest write.
+    order_by: [as_of, created_at]
+    note: >-
+      Author-supplied statements recorded at DIC ingest
+      (tools/document_intelligence/author_evidence.py). `as_of` is the
+      AUTHOR's clock; `as_of_basis` says whether the author stated it or the
+      upload time was defaulted in. Rows carry the document they came with, so
+      every assertion is refutable at its origin.
+    columns:
+      provenance_id: assertion_id
+      namespace: namespace
+      entity_key: entity_key
+      entity_label: entity_label
+      entity_version: entity_version
+      eol_date: eol_date
+      eos_date: eos_date
+      superseded_by: superseded_by
+      as_of: as_of
+    extra_columns: [doc_id, version_id, asserted_by, as_of_basis, status, note]
+    verdict:
+      strategy: value_map
+      column: status
+      # The author's vocabulary (author_evidence.AUTHOR_STATUSES, validated at
+      # the upload) on the left, this store's on the right. A word missing
+      # here is `unknown` — never `current`.
+      map:
+        current: current
+        fielded: current
+        in_use: current
+        deprecated: deprecated
+        end_of_support: end_of_support
+        retired: end_of_life
+        decommissioned: end_of_life
+        unknown: unknown
+      default: unknown
+
 # Read-time resolution policy, consumed by entity_currency.resolve(). Applied in
 # order; the first discriminating key wins.
 #
-# `authoritative` is FIRST and is deliberately not expressible as a confidence
+# `precedence` is FIRST (dwr-ev-01) and only one source declares it, so for
+# every other pair of sources it is a tie and `authoritative` decides as it
+# always has. `authoritative` is deliberately not expressible as a confidence
 # number: a curated 'approved' must beat an external feed even when the feed is
 # newer and more confident, and a tie-break that can be overturned by bumping a
 # prior is not authority. Disagreement is never squashed at write time — every
@@ -151,6 +226,7 @@ sources:
 # winner so a caller can see the conflict rather than inherit it silently.
 resolution:
   order:
-    - authoritative   # curated sources first, unconditionally
+    - precedence      # a declared evidence precedence, lower first
+    - authoritative   # curated sources next, unconditionally
     - confidence      # then the declared prior, descending
     - as_of           # then the source's own clock, most recent first

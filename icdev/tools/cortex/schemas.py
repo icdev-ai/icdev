@@ -387,6 +387,12 @@ class EntityClaim:
     authoritative: bool = False  # the source is declared authoritative
     confidence: float = 0.0  # a DECLARED PRIOR, never a measurement
     as_of: str = ""  # the SOURCE's clock, not ours
+    # The store's OWN ranking of this claim among the sources it holds for the
+    # entity (dwr-ev-01): 0 is entity_currency.resolve()'s winner, 1.. are its
+    # `others` in policy order. Carried, never re-derived — a reader that sorts
+    # claims by its own idea of authority is a second copy of the precedence
+    # rule, and two copies disagree the day one source declares a precedence.
+    rank: int = 0
     extraction: str = "structured"  # one of CLAIM_EXTRACTIONS
     snippet: str = ""
 

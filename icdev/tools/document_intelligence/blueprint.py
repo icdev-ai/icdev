@@ -1407,6 +1407,17 @@ def api_ingest():
     tenant_id, _ = _security_context()
     filename = file.filename or "upload"
 
+    # Author-supplied currency statements (dwr-ev-01): a JSON list in the
+    # `author_assertions` form field, validated HERE so a malformed one is a
+    # 400 the author sees rather than an assertion silently dropped inside the
+    # ingest thread. Empty means the author declared nothing.
+    try:
+        from tools.document_intelligence.author_evidence import parse_assertions
+
+        author_assertions = parse_assertions(request.form.get("author_assertions"))
+    except ValueError as exc:
+        return jsonify({"error": f"author_assertions rejected: {exc}"}), 400
+
     # Save file to temp immediately (before thread starts).
     suffix = Path(filename).suffix.lower()
     try:
@@ -1461,6 +1472,7 @@ def api_ingest():
                 tmp_path, collection_id,
                 tenant_id=tenant_id, classification=classification,
                 created_by="dashboard_upload", progress_cb=_cb,
+                author_assertions=author_assertions,
             )
             q.put({
                 "stage": "done",
@@ -1468,6 +1480,7 @@ def api_ingest():
                 "chunks": outcome.chunks,
                 "chunks_embedded": outcome.chunks_embedded,
                 "kg_entities": outcome.kg_entities,
+                "author_assertions": outcome.author_assertions,
                 "errors": outcome.errors,
                 "pct": 100,
             })

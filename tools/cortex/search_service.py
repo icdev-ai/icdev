@@ -649,10 +649,30 @@ def _defacto_learner():
 # read-time resolution ("a tie-break that a bumped prior can overturn is not
 # authority") applied to the ranking a caller actually reads.
 _CURRENCY_BANDS = {
-    "curated": (0.75, 1.00),   # an authoritative source (the curated catalog)
+    # A source that DECLARES a precedence in args/entity_currency.yaml
+    # (dwr-ev-01: author-supplied content, precedence 0). The band reads the
+    # store's own `precedence` field off the resolved view; it does not decide
+    # who wins — the store did — it only keeps the score consistent with that.
+    "declared": (0.85, 1.00),
+    "curated": (0.75, 0.85),   # an authoritative source (the curated catalog)
     "feed": (0.45, 0.75),      # an external EOL feed
     "learner": (0.10, 0.45),   # de-facto / learned corroboration
 }
+
+
+def _currency_band(view: dict) -> str:
+    """The band a resolved view scores in, read off the store's own policy
+    fields. ``precedence`` is the store's DEFAULT_PRECEDENCE for every source
+    that declares none, so the first test is "did the winner's source declare
+    one" — never a source name."""
+    default = getattr(_currency_store(), "DEFAULT_PRECEDENCE", None)
+    precedence = view.get("precedence")
+    try:
+        if default is not None and precedence is not None and int(precedence) < int(default):
+            return "declared"
+    except (TypeError, ValueError):
+        pass
+    return "curated" if view.get("authoritative") else "feed"
 
 
 def _band_score(band: str, quality: float) -> float:
@@ -689,7 +709,7 @@ def _currency_content(view: dict) -> str:
 def _currency_assertion_result(view: dict, ctx: CortexContext) -> CortexSearchResult:
     """One resolved entity-currency assertion -> CortexSearchResult."""
     authoritative = bool(view.get("authoritative"))
-    band = "curated" if authoritative else "feed"
+    band = _currency_band(view)
     match = float(view.get("match") or 0.0)
     confidence = _clamp(view.get("confidence"))
     content = _currency_content(view)
@@ -731,19 +751,31 @@ def _currency_assertion_result(view: dict, ctx: CortexContext) -> CortexSearchRe
             "eol_date": view.get("eol_date"),
             "eos_date": view.get("eos_date"),
             "source": view.get("source"),
+            "source_kind": view.get("source_kind"),
             "authoritative": authoritative,
+            "precedence": view.get("precedence"),
             "as_of": view.get("as_of"),
             # Disagreement travels with the answer (see entity_currency.resolve).
             "conflict": bool(view.get("conflict")),
             "sources_consulted": list(view.get("sources_consulted") or []),
+            # Each loser in the store's OWN order, with its rank and the two
+            # policy facts about its source, so a downstream reader preserves
+            # the store's verdict instead of re-deriving it (dwr-ev-01).
             "others": [
                 {
                     "source": o.get("source"),
+                    "source_kind": o.get("source_kind"),
                     "verdict": o.get("verdict"),
+                    "superseded_by": o.get("superseded_by"),
+                    "eol_date": o.get("eol_date"),
+                    "eos_date": o.get("eos_date"),
                     "confidence": o.get("confidence"),
+                    "authoritative": bool(o.get("authoritative")),
+                    "precedence": o.get("precedence"),
                     "as_of": o.get("as_of"),
+                    "rank": o.get("rank", position),
                 }
-                for o in (view.get("others") or [])
+                for position, o in enumerate(view.get("others") or [], start=1)
             ],
             "scan_truncated": bool(view.get("scan_truncated")),
             "tenant_id": ctx.tenant_id,
