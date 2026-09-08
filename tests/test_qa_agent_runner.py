@@ -31,6 +31,7 @@ from icdev.tools.testing.qa_agent_runner import (
     _tally,
     batch_specs,
     build_playwright_cmd,
+    count_screenshot_attachments,
     derive_status,
     discover_coverage_gaps,
     file_failure_tasks,
@@ -489,6 +490,125 @@ class TestTally(unittest.TestCase):
         _tally({"stats": {"expected": 60, "unexpected": 7, "skipped": 0}}, result)
         assert result.failed == 19
         assert derive_status(result) == STATUS_FAILED
+
+
+# ---------------------------------------------------------------------------
+# count_screenshot_attachments — the count that could not move
+# ---------------------------------------------------------------------------
+
+class TestCountScreenshotAttachments(unittest.TestCase):
+    """`screenshot_count` was `len(glob(<run dir>/*.png))` over a directory
+    nothing writes to: `PLAYWRIGHT_SCREENSHOT_DIR` had ONE occurrence in the
+    tree, the write. 16 of the 17 rows in `ace_qa_runs` read 0, including the
+    sweeps that failed 39 and 31 tests."""
+
+    def test_counts_image_attachment_on_a_flat_report(self):
+        report = json.loads(_PLAYWRIGHT_JSON_FAIL)
+        assert count_screenshot_attachments(report) == 1
+
+    def test_counts_at_any_depth(self):
+        """Every spec under tests/e2e/ sits inside a `test.describe`, so a
+        top-level walk finds zero specs in every real report."""
+        report = json.loads(_PLAYWRIGHT_JSON_NESTED_FAIL)
+        assert count_screenshot_attachments(report) == 1
+
+    def test_counts_passed_results_too(self):
+        """playwright.config.ts sets `screenshot: 'on'`, which captures one per
+        test. Restricting the walk to failures would under-report by design."""
+        report = {
+            "suites": [{
+                "title": "file.spec.ts",
+                "suites": [{
+                    "title": "describe",
+                    "specs": [{
+                        "title": "green test",
+                        "tests": [{"results": [{
+                            "status": "passed",
+                            "attachments": [
+                                {"contentType": "image/png", "path": "/x/a.png"}
+                            ],
+                        }]}],
+                    }],
+                }],
+            }]
+        }
+        assert count_screenshot_attachments(report) == 1
+
+    def test_counts_every_retry_attempt(self):
+        """Each attempt captured its own file; only the LAST result decides the
+        verdict, which is a different question from what was captured."""
+        report = {
+            "suites": [{
+                "title": "describe",
+                "specs": [{
+                    "title": "flaky",
+                    "tests": [{"results": [
+                        {"status": "failed",
+                         "attachments": [{"contentType": "image/png", "path": "/x/1.png"}]},
+                        {"status": "passed",
+                         "attachments": [{"contentType": "image/png", "path": "/x/2.png"}]},
+                    ]}],
+                }],
+            }]
+        }
+        assert count_screenshot_attachments(report) == 2
+
+    def test_non_image_and_pathless_attachments_are_not_counted(self):
+        """A trace/video is not a screenshot, and an attachment with no `path`
+        names no file."""
+        report = {
+            "suites": [{
+                "title": "describe",
+                "specs": [{
+                    "title": "t",
+                    "tests": [{"results": [{
+                        "status": "failed",
+                        "attachments": [
+                            {"contentType": "video/webm", "path": "/x/v.webm"},
+                            {"contentType": "application/zip", "path": "/x/t.zip"},
+                            {"contentType": "image/png"},
+                            {"contentType": "image/png", "path": "/x/ok.png"},
+                        ],
+                    }]}],
+                }],
+            }]
+        }
+        assert count_screenshot_attachments(report) == 1
+
+    def test_report_with_no_screenshots_counts_zero(self):
+        assert count_screenshot_attachments(json.loads(_PLAYWRIGHT_JSON_PASS)) == 0
+
+    def test_empty_report_counts_zero(self):
+        assert count_screenshot_attachments({}) == 0
+
+    def test_no_dead_screenshot_dir_env_var_remains(self):
+        """The variable was EXPORTED and read by nothing. Re-exporting it would
+        recreate the appearance of a screenshot pipeline that does not exist.
+
+        Asserted over the AST as a bare string CONSTANT, not over the source
+        text: the prose above explains the defect and names the variable, and a
+        substring check cannot tell an explanation from a re-export.
+        """
+        import ast
+        import importlib
+        module = importlib.import_module("icdev.tools.testing.qa_agent_runner")
+        tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
+        literals = [
+            n for n in ast.walk(tree)
+            if isinstance(n, ast.Constant) and n.value == "PLAYWRIGHT_SCREENSHOT_DIR"
+        ]
+        assert not literals, "PLAYWRIGHT_SCREENSHOT_DIR is exported again and nothing reads it"
+
+
+class TestRunE2ESuiteCountsScreenshots(unittest.TestCase):
+    def test_screenshot_count_accumulates_across_batches(self):
+        """The count is a sum over the reports the run COULD read. A batch that
+        produced no report contributes nothing and is named in
+        `spec_files_no_report` instead."""
+        result = QARunResult()
+        for raw in (_PLAYWRIGHT_JSON_FAIL, _PLAYWRIGHT_JSON_NESTED_FAIL):
+            result.screenshot_count += count_screenshot_attachments(json.loads(raw))
+        assert result.screenshot_count == 2
 
 
 # ---------------------------------------------------------------------------

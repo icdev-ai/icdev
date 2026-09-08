@@ -187,7 +187,7 @@ test.describe('{display_name} QA Smoke', () => {{
     await expect(page.locator('body')).not.toContainText('Traceback');
     await expect(page.locator('body')).not.toContainText('Internal Server Error');
     await page.screenshot({{
-      path: 'playwright/screenshots/qa-agent/{canvas_key}_smoke.png',
+      path: '{_QA_SCREENSHOT_DIR}/{canvas_key}_smoke.png',
       fullPage: true,
     }});
   }});
@@ -229,10 +229,48 @@ def _make_run_id() -> str:
     return f"qa-{int(time.time())}"
 
 
-def _ensure_screenshot_dir(run_id: str) -> Path:
-    d = PROJECT_ROOT / _QA_SCREENSHOT_DIR / run_id
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+def count_screenshot_attachments(report: dict) -> int:
+    """Count the screenshots a batch report ACTUALLY recorded.
+
+    `screenshot_count` used to be `len(glob(<run dir>/*.png))` over a directory
+    NOTHING writes to. The run exported `PLAYWRIGHT_SCREENSHOT_DIR` naming it,
+    and that variable had exactly ONE occurrence in the whole tree -- the write.
+    No spec, config, fixture or workflow has ever read it. Playwright is
+    configured `screenshot: 'on'` and writes into `outputDir`, recording each
+    file's path on the per-result `attachments` -- which this module ALREADY
+    reads for `TestFailure.screenshot_path`, so the evidence was in hand and the
+    count looked somewhere else for it.
+
+    So the field could not move: 16 of the 17 rows in `ace_qa_runs` read 0,
+    INCLUDING the sweeps that failed 39 and 31 tests, and the one non-zero row
+    (88) came from a hand-driven run that never called `run_e2e_suite`. A number
+    that reports the same value for a clean sweep and a 39-failure sweep is a
+    constant wearing the name of a measurement.
+
+    Counted at ANY depth, because every spec under tests/e2e/ sits inside a
+    `test.describe` and a top-level walk finds zero specs in every real report
+    (the same shape `_walk_suites` was fixed for). Counted over EVERY result,
+    passed included -- `screenshot: 'on'` captures one per test, so restricting
+    the walk to failures would under-report by construction -- and over every
+    retry attempt, each of which captured its own file.
+
+    This counts what the reports THIS RUN COULD READ. Batches that produced no
+    report contribute nothing and are named separately in
+    `QARunResult.spec_files_no_report`; the two must not be read as one.
+    """
+    total = 0
+    stack: List[dict] = list(report.get("suites") or [])
+    while stack:
+        suite = stack.pop()
+        for spec in suite.get("specs") or []:
+            for t in spec.get("tests") or []:
+                for res in t.get("results") or []:
+                    for att in res.get("attachments") or []:
+                        ctype = (att.get("contentType") or "").lower()
+                        if ctype.startswith("image/") and att.get("path"):
+                            total += 1
+        stack.extend(suite.get("suites") or [])
+    return total
 
 
 def resolve_spec_files(canvas_filter: Optional[str] = None) -> List[str]:
@@ -309,7 +347,6 @@ def run_e2e_suite(
     import time
 
     run_id = _make_run_id()
-    screenshot_dir = _ensure_screenshot_dir(run_id)
 
     result = QARunResult(
         run_id=run_id,
@@ -330,7 +367,6 @@ def run_e2e_suite(
     root_str = str(PROJECT_ROOT)
     existing_pp = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = root_str if not existing_pp else root_str + os.pathsep + existing_pp
-    env["PLAYWRIGHT_SCREENSHOT_DIR"] = str(screenshot_dir)
 
     npx = _npx_cmd()
     batches = batch_specs(rel_specs, batch_size)
@@ -415,6 +451,7 @@ def run_e2e_suite(
 
         result.failures.extend(parse_playwright_json(raw_json))
         _tally(report, result)
+        result.screenshot_count += count_screenshot_attachments(report)
         result.spec_files_run.extend(batch)
         stats = report.get("stats") or {}
         batch_record = {
@@ -433,7 +470,6 @@ def run_e2e_suite(
             batch_record["errors"] = errors[:5]
         result.batches.append(batch_record)
 
-    result.screenshot_count = len(list(screenshot_dir.glob("*.png")))
     # `failed` was tallied from Playwright's `stats.unexpected`; `failures` is
     # what the parser could NAME. If the two disagree the gap is reported, never
     # resolved in favour of the parser -- a parser blind spot must not turn a

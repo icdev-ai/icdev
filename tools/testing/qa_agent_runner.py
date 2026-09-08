@@ -22,6 +22,7 @@ from icdev.tools.testing.qa_agent_runner import (  # noqa: F401
     QARunResult,
     batch_specs,
     build_playwright_cmd,
+    count_screenshot_attachments,
     derive_status,
     discover_coverage_gaps,
     generate_spec_stub,
