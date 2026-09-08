@@ -1,0 +1,7 @@
+{
+  "description": "dic_section_annotations gains parent_ann_id / anchor offsets / tenant_id, and a real migration (dwr-cmt-01)",
+  "date": "2026-09-08",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}
