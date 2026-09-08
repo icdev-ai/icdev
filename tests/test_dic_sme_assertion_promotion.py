@@ -536,6 +536,34 @@ class TestPromotionRoute:
         assert by_id["ann-r5"]["citable"] is False
         assert by_id["ann-r5"]["sme_assertion"] is None
 
+    def test_the_panel_still_renders_when_the_promotion_store_is_unreachable(
+            self, conn, client, monkeypatch):
+        """The read side degrades; it never takes the comments down with it.
+
+        An unreadable promotion store can only make a promoted comment render as
+        an instruction -- it UNDER-claims, which is the safe direction -- so the
+        panel keeps working and every comment reads `citable: false`. The WRITE
+        side is fail-closed and asserted separately.
+        """
+        import tools.document_intelligence.blueprint as bp_mod
+
+        self._audited(monkeypatch)
+        _comment(conn, "ann-r7", "We retired TLS 1.1 estate-wide.", "nia.okoro",
+                 "2026-08-14T09:00:00+00:00")
+        client.post("/document-intelligence/api/annotations/ann-r7/promote",
+                    json={"promoted_by": "lead", "claim": TLS_CLAIM})
+
+        def _unreachable():
+            raise RuntimeError("database unreachable")
+
+        # The CONNECTION fails, not just the query -- the harder of the two, and
+        # the one that would otherwise 500 the whole panel.
+        monkeypatch.setattr(bp_mod, "_conn", _unreachable)
+        resp = client.get("/document-intelligence/api/sections/sec-1/annotations")
+        assert resp.status_code == 200
+        rows = resp.get_json()["annotations"]
+        assert rows and all(r["citable"] is False for r in rows)
+
     def test_the_read_route_separates_not_promoted_from_could_not_tell(
             self, conn, client, monkeypatch):
         self._audited(monkeypatch)

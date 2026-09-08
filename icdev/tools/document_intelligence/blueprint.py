@@ -3449,11 +3449,23 @@ def _attach_sme_promotions(flat: list, threads: list) -> None:
     for t in threads:
         nodes.append(t)
         nodes.extend(t.get("replies") or [])
-    conn = _conn()
+    # The connection is acquired defensively too, not just the query: a panel
+    # that 500s because the promotion table could not be REACHED would take the
+    # comments down with it, and every comment reading `citable: false` is the
+    # honest degradation -- it under-claims and never over-claims.
+    promotions: dict = {}
+    conn = None
     try:
+        conn = _conn()
         promotions = _sme_promotions_for(conn, [n.get("ann_id") for n in nodes])
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("dic: sme promotion attach failed: %s", exc)
     finally:
-        conn.close()
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
     for n in nodes:
         n["sme_assertion"] = promotions.get(str(n.get("ann_id")))
         n["citable"] = n["sme_assertion"] is not None
