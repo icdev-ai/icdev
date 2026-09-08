@@ -134,6 +134,7 @@ _PAGES = [
     {"name": "Handoff", "icon": "🤝", "href": "/document-intelligence/handoff", "desc": "Knowledge handoff — capture retiring SME knowledge into a living collection.", "ready": True, "task": "dic-handoff-01"},
     {"name": "Notebook", "icon": "📓", "href": "/document-intelligence/notebook", "desc": "NotebookLM-style view — sources, chat, and AI outputs (study guide, FAQ, timeline, audio) in one screen.", "ready": True, "task": "dic-notebook-01"},
     {"name": "Tech Writer", "icon": "✍️", "href": "/document-intelligence/techwriter", "desc": "Author arch docs, SOPs, runbooks, and standard guides with inline WriteGuard and AI research.", "ready": True, "task": "dic-techwriter-01"},
+    {"name": "Workspace", "icon": "🪟", "href": "/document-intelligence/workspace", "desc": "The document beside its proposals — word-level diff, rationale, citations, currency verdict, and the four decisions.", "ready": True, "task": "dwr-ws-02"},
 ]
 
 # Workflow grouping for the canvas index. 14 undifferentiated sibling tiles give
@@ -152,7 +153,7 @@ _PAGE_GROUPS: list[tuple[str, str, list[str]]] = [
      ["Tech Writer", "AI-Assist", "Templates"]),
     ("4 · Govern & review",
      "Approve AI output, track staleness, keep compliance in sync.",
-     ["HITL Review", "Freshness", "DocDrift"]),
+     ["Workspace", "HITL Review", "Freshness", "DocDrift"]),
 ]
 
 
@@ -673,6 +674,69 @@ def doc_detail(doc_id: str):
         user_role=user_role,
         role_badge=_role_badge,
         role_levels=_ROLE_LEVEL,
+    )
+
+
+@dic_bp.route("/workspace")
+def workspace_picker():
+    """Which documents have proposals waiting — the way into the workspace.
+
+    The workspace itself is per-document, so it cannot BE a nav link. This is:
+    the documents carrying pending ``dic_suggestions``, worst first. A store
+    that could not be read reports ``unmeasured`` and says so, rather than
+    rendering an empty list that reads as "nothing to review".
+    """
+    from tools.document_intelligence.workspace import workspace_candidates
+    candidates = workspace_candidates()
+    return render_template(
+        "document_intelligence/workspace_picker.html",
+        candidates=candidates,
+        current_user=_current_user(),
+    )
+
+
+@dic_bp.route("/workspace/<doc_id>")
+def workspace(doc_id: str):
+    """The two-pane workspace: the document, and one card per proposal (dwr-ws-02).
+
+    LEFT is the document — ``positioned`` (sections rendered verbatim, so an
+    anchor's offsets mean what they say and a mark is exact), ``reflow`` (the
+    same sections through markdown; a reading view that cannot carry a mark),
+    or the degraded ``chunks`` view for a document with no sections at all.
+    Which one is MEASURED by ``workspace.document_body``, never chosen.
+
+    RIGHT is the change rail, fetched from ``GET /api/change-set?doc_id=`` —
+    dwr-ws-01's endpoint, which had no consumer until this page. One assembler,
+    so the rail cannot describe a change set the API does not.
+
+    Every act on the page POSTs to a door that already existed. This route has
+    no POST sibling: it renders, and decides nothing.
+    """
+    from tools.document_intelligence.workspace import workspace_context
+
+    conn = _conn()
+    try:
+        doc = _safe_rows(
+            conn, "SELECT * FROM dic_documents WHERE doc_id = %s LIMIT 1", (doc_id,))
+        doc = doc[0] if doc else {}
+    finally:
+        conn.close()
+
+    collection_id = doc.get("collection_id") or "default"
+    current_user = _current_user()
+    ctx = workspace_context(doc_id)
+    return render_template(
+        "document_intelligence/workspace.html",
+        doc=doc,
+        doc_id=doc_id,
+        body=ctx["body"],
+        document_findings=ctx["document_findings"],
+        any_document_findings=ctx["any_document_findings"],
+        any_unmeasured_gate=ctx["any_unmeasured_gate"],
+        collection_id=collection_id,
+        current_user=current_user,
+        current_user_display=_display_name(current_user),
+        user_role=_user_role(collection_id, current_user),
     )
 
 

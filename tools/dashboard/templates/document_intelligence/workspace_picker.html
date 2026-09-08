@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Workspace — Document Intelligence — ICDEV™{% endblock %}
+{% block content %}
+{# dwr-ws-02 — the way IN to the per-document workspace.
+
+   The workspace is per-document, so it cannot itself be a nav link. This lists
+   the documents that actually have something waiting: pending dic_suggestions,
+   worst first. `unmeasured` is rendered as its own state and NEVER as an empty
+   list — a picker that cannot tell "nothing to review" from "we could not
+   look" is the reassurance this card series exists to refuse. #}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+  <div>
+    <h2 style="margin:0;color:#eaeaea;font-size:20px;">🪟 Workspace — the document beside its proposals</h2>
+    <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;">
+      Pick a document to review. Each row is a document with AI proposals still awaiting a human decision.
+    </p>
+  </div>
+  <div style="display:flex;gap:8px;">
+    <a href="/document-intelligence/docdrift" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">DocDrift →</a>
+    <a href="/document-intelligence/" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">← Back to DIC</a>
+  </div>
+</div>
+
+<div style="background:#0d1b2e;border:1px solid #1a3560;border-left:3px solid #7ab3f0;border-radius:8px;padding:14px 16px;margin-bottom:18px;">
+  <div style="color:#9bb8d8;font-size:13px;font-weight:600;margin-bottom:6px;">What this page is for</div>
+  <p style="color:#7a8cb0;font-size:12px;margin:0;line-height:1.55;">
+    A proposal is drafted by a docmod scan or a redline drafter and lands in <code style="color:#9bb8d8;">dic_suggestions</code>
+    as <strong>pending</strong>. The workspace puts the document on the left and one card per proposal on the right —
+    word-level diff, the rationale, the inline citations, the currency verdict, the evidence health — so a reviewer
+    can accept, reject, edit-and-accept, or ask a question against the same text.
+    Nothing on this page decides anything.
+  </p>
+</div>
+
+{% if candidates.state == "unmeasured" %}
+<div style="background:#2a1a1a;border:1px solid #6a3030;border-radius:8px;padding:14px 16px;color:#e0a0a0;font-size:13px;">
+  <strong>Unmeasured — the suggestion store could not be read.</strong>
+  <p style="margin:6px 0 0;color:#c89090;font-size:12px;line-height:1.5;">
+    This is <em>not</em> a clean bill of health: it says nothing about whether proposals are waiting.
+    Open a workspace directly at <code>/document-intelligence/workspace/&lt;doc_id&gt;</code> if you know the document.
+  </p>
+</div>
+{% elif candidates.state == "none" %}
+<div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:14px 16px;color:#9bb8d8;font-size:13px;">
+  <strong>Measured: no document has a pending proposal.</strong>
+  <p style="margin:6px 0 0;color:#7a8cb0;font-size:12px;line-height:1.5;">
+    The store was read and every proposal on it has already been decided. A workspace can still be opened on any
+    document by URL — it will render the document with an empty rail and say so.
+  </p>
+</div>
+{% else %}
+<div style="color:#7a8cb0;font-size:12px;margin-bottom:8px;">
+  {{ candidates.count }} document{{ '' if candidates.count == 1 else 's' }} with pending proposals.
+</div>
+<table style="width:100%;border-collapse:collapse;font-size:13px;">
+  <thead>
+    <tr style="text-align:left;color:#7a8cb0;font-size:11px;border-bottom:1px solid #1a3560;">
+      <th style="padding:8px 6px;">Document</th>
+      <th style="padding:8px 6px;">Doc ID</th>
+      <th style="padding:8px 6px;">Pending</th>
+      <th style="padding:8px 6px;">Newest proposal</th>
+      <th style="padding:8px 6px;"></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for d in candidates.documents %}
+    <tr style="border-bottom:1px solid #12233a;">
+      {# A document id that resolves to no catalogue row renders AS THE ID.
+         Nothing here invents a title for a document nobody can find. #}
+      <td style="padding:8px 6px;color:#cfe3f7;">
+        {% if d.title %}{{ d.title }}{% else %}<em style="color:#7a8cb0;">untitled — no catalogue row</em>{% endif %}
+      </td>
+      <td style="padding:8px 6px;"><code style="color:#8aa8c8;font-size:11px;">{{ d.doc_id }}</code></td>
+      <td style="padding:8px 6px;color:#f0c674;font-weight:600;">{{ d.pending }}</td>
+      <td style="padding:8px 6px;color:#7a8cb0;font-size:11px;">{{ d.newest or '—' }}</td>
+      <td style="padding:8px 6px;">
+        <a href="/document-intelligence/workspace/{{ d.doc_id }}"
+           style="background:#0f3460;color:#7ab3f0;padding:5px 12px;border-radius:5px;text-decoration:none;font-size:12px;">Open workspace →</a>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% set iqe_canvas = "dic" %}
+{% set iqe_api_route = "/document-intelligence/api/iqe-query" %}
+{% set iqe_title = "IQE Query — Workspace" %}
+{% set iqe_examples = [
+  {"label": "Pending proposals", "query": "foreach s in dic.suggestions where s.status == \"pending\" select s.suggestion_id, s.doc_id, s.canvas_source, s.created_at"},
+  {"label": "Unanchored proposals", "query": "foreach s in dic.suggestions where s.anchor_basis == \"\" select s.suggestion_id, s.doc_id, s.status"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}

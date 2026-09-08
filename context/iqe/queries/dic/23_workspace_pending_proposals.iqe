@@ -1,0 +1,6 @@
+# IQE-DIC-023: Proposals still awaiting a human decision, worst document first
+# Backs the workspace picker at /document-intelligence/workspace.
+
+foreach s in dic.suggestions
+where s.status == "pending"
+select s.suggestion_id, s.doc_id, s.canvas_source, s.created_at

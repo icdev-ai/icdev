@@ -279,3 +279,35 @@ def modernization_findings_adapter(conn: Any) -> list[dict]:
 
 
 register_collection("dic.modernization_findings", modernization_findings_adapter)
+
+
+def suggestions_adapter(conn: Any) -> list[dict]:
+    """AI redline proposals — what the dwr-ws-02 workspace reviews.
+
+    ``anchor_basis`` is the load-bearing column: only ``exact`` and
+    ``relocated`` can be applied, and a NULL is normalised to ``""`` rather than
+    dropped so a query CAN ask for the unanchored population. Measured on the
+    live PG board 2026-09-08 that population is 58 of 58 — a collection that
+    silently omitted them would report an empty board for one that is entirely
+    full of proposals nobody can apply.
+    """
+    c = _conn(conn)
+    try:
+        cur = c.execute(
+            "SELECT suggestion_id, doc_id, section_id, collection_id, canvas_source, "
+            "status, anchor_basis, anchor_section_id, origin_kind, created_at "
+            "FROM dic_suggestions ORDER BY created_at DESC LIMIT 500"
+        )
+        cols = [d[0] for d in cur.description]
+        rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+        for r in rows:
+            r["anchor_basis"] = r.get("anchor_basis") or ""
+            r["appliable"] = r["anchor_basis"] in ("exact", "relocated")
+        return rows
+    except Exception:
+        return []
+    finally:
+        c.close()
+
+
+register_collection("dic.suggestions", suggestions_adapter)

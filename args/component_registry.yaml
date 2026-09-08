@@ -913,6 +913,10 @@ components:
     - label: Templates
       href: /document-intelligence/templates
     # 4 · Govern & review
+    # dwr-ws-02: the two-pane workspace is per-document, so the nav link is the
+    # PICKER — the documents that actually have proposals waiting.
+    - label: 🪟 Workspace
+      href: /document-intelligence/workspace
     - label: HITL Review
       href: /document-intelligence/review
     - label: Freshness
@@ -926,6 +930,7 @@ components:
     - dic.regen_queue
     - dic.ssp_fragments
     - dic.techwriter_docs
+    - dic.suggestions
   completeness:
     template: tools/dashboard/templates/document_intelligence/index.html
     blueprint: true
