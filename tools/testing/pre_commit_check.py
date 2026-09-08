@@ -524,6 +524,83 @@ def _run_undeclared_import_census(root: Path = BASE_DIR) -> bool:
     return False
 
 
+# --------------------------------------------------------------------------- #
+# Fixture-shape census on the staged test files (tsg-iso-04)
+# --------------------------------------------------------------------------- #
+# PR #2167 failed CI shard 2 with `table dic_documents has no column named
+# status` while passing locally, alone, in its own directory, and in file order:
+# a fixture's `CREATE TABLE IF NOT EXISTS` silently kept the narrower shape an
+# earlier module in the same pytest process had already created. Whether it
+# fails depends on which files share a process, and crx-test-07 re-bin-packs
+# shards whenever test files are added -- so it is not stable debt and a human
+# reads it as flake. `--staged` is one subprocess and an AST parse of the staged
+# test files only.
+def _print_safe(text: str) -> None:
+    """print() that survives a console whose encoding cannot carry the text."""
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        enc = getattr(sys.stdout, "encoding", None) or "ascii"
+        print(text.encode(enc, "replace").decode(enc, "replace"))
+
+
+FIXTURE_SHAPE_TOOL = Path("tools") / "ci" / "fixture_shape_census.py"
+
+
+def _run_fixture_shape_census(root: Path = BASE_DIR) -> bool:
+    """Refuse a commit that stages a NEW fixture relying on an unguaranteed shape.
+
+    Blocks on an UNREGISTERED site only. The census over its ceiling is tree
+    state the author did not cause, so it is reported and left to CI -- the same
+    rule the undeclared-import census follows. Returns True (allow) whenever the
+    census cannot run: CI is the backstop, and a hook that wedges a commit gets
+    `--no-verify`d.
+    """
+    tool = BASE_DIR / FIXTURE_SHAPE_TOOL
+    if not tool.is_file():
+        return True
+    try:
+        result = subprocess.run(
+            [sys.executable, str(tool), "--staged", "--check", "--json", "--root", str(root)],
+            capture_output=True, text=True, cwd=str(root), timeout=120,
+            encoding="utf-8", errors="replace",
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(f"[pre-commit] Fixture-shape census: SKIPPED -- could not run ({exc})")
+        return True
+    if result.returncode == 0:
+        print("[pre-commit] Fixture-shape census: OK")
+        return True
+    import json  # noqa: PLC0415
+    try:
+        report = json.loads(result.stdout)
+        unregistered = list(report.get("unregistered") or [])
+        over_ceiling = bool(report.get("over_ceiling"))
+    except (ValueError, TypeError, AttributeError):
+        unregistered, over_ceiling = [{"file": "?", "table": "?"}], False
+
+    if not unregistered and over_ceiling:
+        print(
+            "[pre-commit] NOTE: args/fixture_shape_census.txt is over its ceiling "
+            "independently of this commit -- CI is red on it; fixture_shape_max may "
+            "only go DOWN."
+        )
+        return True
+
+    print("[pre-commit] BLOCKED: this commit adds a fixture that writes a column only its "
+          "own CREATE TABLE IF NOT EXISTS guarantees:")
+    for site in unregistered[:20]:
+        print(f"  {site.get('file')}  table {site.get('table')!r}")
+    print("  Fix: from tests._schema_compat import ensure_table; ensure_table(conn, DDL)")
+    if result.stderr and result.stderr.strip():
+        # A cp1252 console cannot encode what `errors="replace"` may have put in
+        # this text, and a hook that DIES PRINTING a diagnostic reports nothing
+        # useful at all -- the operator sees a charmap traceback instead of the
+        # fixture they staged.
+        _print_safe(result.stderr.strip())
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Derived nav surfaces (mfx-sib-02)
 # ---------------------------------------------------------------------------
@@ -1012,6 +1089,13 @@ def main() -> int:
         f.endswith(".py") and (f.startswith("tools/") or f.startswith("icdev/tools/"))
         for f in staged
     ) and not _run_undeclared_import_census():
+        failed = True
+
+    # Fixture-shape census -- only when a .py under tests/ is staged. The tool's
+    # own --staged mode scans those files and no others.
+    if any(
+        f.endswith(".py") and f.startswith("tests/") for f in staged
+    ) and not _run_fixture_shape_census():
         failed = True
 
     # Derived nav surfaces -- only when this commit stages one of the four
