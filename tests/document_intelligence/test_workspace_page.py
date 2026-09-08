@@ -298,12 +298,23 @@ def test_candidates_none_is_measured(monkeypatch):
 def test_the_workspace_routes_exist_and_have_no_post_sibling():
     """Every act on this page goes through a door that already existed. A POST
     on this route would be a second, unaudited decision surface."""
-    import os
-    os.environ.setdefault("ICDEV_DIC_ENABLED", "true")
-    from tools.dashboard.app import app
+    # REGISTER THE BLUEPRINT ON A FRESH APP rather than reading the global one.
+    #
+    # The global `tools.dashboard.app` builds itself once at import, gated on
+    # ICDEV_DIC_ENABLED. `os.environ.setdefault` cannot override a value another
+    # test already set, and an app imported earlier in the same shard is already
+    # built -- so this passed when the file ran alone and failed in Test Shard 4
+    # with an EMPTY rule map. The blueprint carries the routes either way, and
+    # asking it directly is what this test is actually about.
+    from flask import Flask
+
+    from tools.document_intelligence.blueprint import dic_bp
+
+    probe = Flask(__name__)
+    probe.register_blueprint(dic_bp)
 
     rules = {}
-    for rule in app.url_map.iter_rules():
+    for rule in probe.url_map.iter_rules():
         if str(rule.rule).startswith("/document-intelligence/workspace"):
             rules[str(rule.rule)] = set(rule.methods)
     assert "/document-intelligence/workspace" in rules
