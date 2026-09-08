@@ -34,6 +34,15 @@ from tools.document_intelligence import redraft as rd
 from tools.document_intelligence import suggestion_store as store
 
 _ENTITY = "Widget 9000"
+#: dwr-anchor-04 made `draft_redline` refuse to draft a finding it cannot ANCHOR,
+#: so the fixture below has to seed a section the passage can be located in --
+#: otherwise every test in this file gets `unanchored` before reaching the gate
+#: it is about. The sentence is what `widen_to_passage` returns around the span.
+_SECTION_HEADING = "Hardware Inventory"
+_SECTION_VERSION = "ver-redraft-1"
+_SECTION_TEXT = ("The rack is documented below. "
+                 "Widget 9000 is installed in cabinet 3. "
+                 "Replacement parts ship quarterly.")
 _REPLACEMENT = "Widget 9100"
 _EVIDENCE = [{"source": "vendor-eol-feed", "detail": f"{_ENTITY} reaches end of life",
               "date": "2026-01-01"}]
@@ -85,17 +94,39 @@ def _seed_change(*, origin_kind: str = "docmod_redline", section_id: str = "sec-
         return sug_id, finding_id
     conn = get_connection()
     try:
+        # THE SECTION THE PASSAGE LIVES IN (dwr-anchor-04). Resolved by heading
+        # within the version, so both must be on the finding below.
+        # IF NOT EXISTS so the MIGRATED table wins wherever it exists (CI); the
+        # columns written below are real ones either way.
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS dic_sections (
+                   section_id TEXT PRIMARY KEY, doc_id TEXT, version_id TEXT,
+                   heading TEXT, content TEXT, classification TEXT)"""
+        )
+        # Several tests seed more than one change against the SAME section, so
+        # this is idempotent -- the section is a backdrop, not the subject.
+        if not conn.execute("SELECT 1 FROM dic_sections WHERE section_id = %s",
+                            (section_id,)).fetchone():
+            conn.execute(
+                "INSERT INTO dic_sections (section_id, doc_id, version_id, heading, "
+                "content, classification) VALUES (%s,'doc-1',%s,%s,%s,'CUI')",
+                (section_id, _SECTION_VERSION, _SECTION_HEADING, _SECTION_TEXT),
+            )
+        start = _SECTION_TEXT.index(_ENTITY)
         conn.execute(
             """INSERT INTO docmod_findings
-               (finding_id, run_id, doc_id, pack_id, entity_label, entity_type,
+               (finding_id, run_id, doc_id, version_id, section_heading, pack_id,
+                entity_label, entity_type,
                 finding_type, currency_verdict, severity, rationale, evidence_json,
                 recommended_replacement, replacement_evidence_json, confidence,
-                state, redline_suggestion_id, dedupe_key, classification)
-               VALUES (%s,'run-1','doc-1','network_hardware',%s,'hardware_model',
+                state, redline_suggestion_id, dedupe_key, classification,
+                anchor_start, anchor_end, anchor_text)
+               VALUES (%s,'run-1','doc-1',%s,%s,'network_hardware',%s,'hardware_model',
                        'stale_entity','eol','high','it is end of life',%s,%s,'[]',
-                       0.8,'redline_drafted',%s,%s,'CUI')""",
-            (finding_id, _ENTITY, json.dumps(_EVIDENCE), _REPLACEMENT, sug_id,
-             f"dk-{finding_id}"),
+                       0.8,'redline_drafted',%s,%s,'CUI',%s,%s,%s)""",
+            (finding_id, _SECTION_VERSION, _SECTION_HEADING, _ENTITY,
+             json.dumps(_EVIDENCE), _REPLACEMENT, sug_id,
+             f"dk-{finding_id}", start, start + len(_ENTITY), _ENTITY),
         )
         conn.commit()
     finally:

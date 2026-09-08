@@ -590,9 +590,10 @@ def draft_redline(finding_id: str, conn=None, *,
                 page, pack_id, entity_label, entity_type, finding_type, currency_verdict,
                 severity, rationale, evidence_json, recommended_replacement,
                 replacement_evidence_json, confidence, state, supersedes_id,
-                redline_suggestion_id, dedupe_key, created_at, tenant_id, classification)
+                redline_suggestion_id, dedupe_key, created_at, tenant_id, classification,
+                anchor_start, anchor_end, anchor_text)
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-                       'redline_drafted',%s,%s,%s,%s,%s,%s)""",
+                       'redline_drafted',%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (
                 f"fnd-{uuid.uuid4().hex[:12]}", finding["run_id"], finding["doc_id"],
                 finding["version_id"], finding.get("chunk_link_id"),
@@ -604,6 +605,13 @@ def draft_redline(finding_id: str, conn=None, *,
                 finding.get("replacement_evidence_json"), confidence,
                 finding["finding_id"], suggestion_id, finding.get("dedupe_key"),
                 _now(), finding.get("tenant_id"), finding.get("classification"),
+                # THE SPAN TRAVELS WITH THE SUCCESSOR (dwr-anchor-04 x dwr-ev-03).
+                # The superseding finding describes the SAME passage, and without
+                # the span it carries no anchor -- so `resolve_passage` refuses it
+                # and a redraft could never itself be redrafted, which is exactly
+                # what TestRedraftEndToEnd::test_a_redraft_can_be_redrafted found.
+                finding.get("anchor_start"), finding.get("anchor_end"),
+                finding.get("anchor_text"),
             ),
         )
         conn.commit()
