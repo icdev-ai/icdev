@@ -616,6 +616,32 @@ def test_a_delivered_injection_still_spends_the_next_attempt():
     assert len(queue_log) == 1
 
 
+def test_an_already_escalated_hold_still_reports_itself_every_poll():
+    """A hold that goes SILENT is how the watcher came to look dead.
+
+    Measured 2026-09-08: five PRs produced zero audit rows for 40 minutes while
+    the poll ran every 52s and the heartbeat kept saying `ok`. `merge_stall` also
+    attributes a stall from a 24h window of `reason` text, so a hold recorded
+    only once ages out of that window and the PR reads as an unexplained alarm.
+    """
+    from tools.ci import resume_delivery
+
+    queue_log = []
+    w = _ci_failed_watcher(queue_log)
+    w._resume_cycle = lambda task_id, pr_url=None: 2       # noqa: SLF001
+    w._probe_prior_delivery = (                            # noqa: SLF001
+        lambda task_id, **kw: _verdict(resume_delivery.UNDELIVERED))
+    # already escalated once
+    w._count_audit_actions = lambda *a, **k: 1             # noqa: SLF001
+    report = w.poll_once()
+
+    assert len(report.actions) == 1, "a poll that decides to do nothing must say so"
+    assert report.actions[0].action == "wait"
+    assert "undelivered hold" in report.actions[0].reason
+    assert "already escalated" in report.actions[0].reason
+    assert queue_log == [], "still no message into an unread queue"
+
+
 def test_the_switch_restores_the_pre_2026_09_08_behaviour():
     from tools.ci import resume_delivery
 
