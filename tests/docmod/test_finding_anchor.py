@@ -64,12 +64,18 @@ _DOCMOD_DDL_KEYS = (
 
 @pytest.fixture()
 def db():
+    from tests._schema_compat import ensure_table
     from tests.conftest import MINIMAL_ICDEV_SCHEMA
     from tools.db.storage import get_connection
 
     conn = get_connection()
+    # ensure_table, NOT a bare execute: `CREATE TABLE IF NOT EXISTS` keeps
+    # whatever shape a table already has, so if an earlier module in this
+    # process created dic_documents without `status` the declaration below is a
+    # no-op and _seed_doc's INSERT raises. That is exactly how this file failed
+    # in CI shard 2 while passing locally (see tests/_schema_compat.py).
     for ddl in _DDL:
-        conn.execute(ddl)
+        ensure_table(conn, ddl)
     for stmt in MINIMAL_ICDEV_SCHEMA.split(";"):
         if any(k in stmt for k in _DOCMOD_DDL_KEYS) and "CREATE TABLE" in stmt:
             conn.execute(stmt)
