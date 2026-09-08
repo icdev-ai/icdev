@@ -226,6 +226,84 @@ def _manifest_exempt_tables() -> frozenset:
         return frozenset()
 
 
+#: Statements that address NO ROWS AT ALL — transaction control, session
+#: control, and the DDL verbs.
+#:
+#: MEASURED, on the live PostgreSQL board 2026-09-08. ``tools/audit/chain.py``
+#: opens its column probe with ``SAVEPOINT icdev_audit_chain_probe`` so that a
+#: probe failure cannot poison the caller's transaction. Inside a Flask request
+#: a security context is attached, and the injector — whose final branch reads
+#: "SELECT (and anything else)" — turned that into::
+#:
+#:     SAVEPOINT icdev_audit_chain_probe WHERE (classification IS NULL OR ...)
+#:
+#: a syntax error, which ABORTS the transaction. Every statement after it then
+#: raises ``InFailedSqlTransaction``, so the chain probe reported "no chain
+#: columns" on a database that has them, and the ``INSERT INTO audit_trail``
+#: that followed could not run either. The containment written to make a probe
+#: failure harmless was itself the statement that got corrupted.
+#:
+#: The consequence is the one this class of defect always has: an audit write
+#: inside an authenticated request FAILED, and ``log_event``'s default
+#: best-effort path swallowed it. On the fail-closed paths (cef-ui-03's
+#: ``_record_hitl_decision``) it surfaced instead as a 500 — which is how it was
+#: finally found, on the DIC accept door, five months after the injector
+#: acquired its "anything else" branch.
+#:
+#: This is the THIRD instance of one defect: ``SELECT 1`` on ``/api/health``
+#: (qa-fail-6a87916931be3793) and ``SELECT 1 FROM pg_extension`` in
+#: ``PgVectorStore._has_pgvector`` are the other two, and each was closed with a
+#: predicate of its own — ``_is_tableless_select``, ``_is_system_table``. This
+#: is the sibling for the shape neither can see: a statement that names no
+#: relation because it OPERATES ON THE TRANSACTION, not on data.
+#:
+#: DDL is here for the reason the INSERT/PRAGMA/CREATE guard below already
+#: states in words — "these have no WHERE clause and injecting anything would
+#: corrupt the statement structure" — and then checks only CREATE. ALTER, DROP
+#: and TRUNCATE are the same statement class and were falling through to the
+#: same corruption; only SAVEPOINT was observed live, and the rest are the class
+#: closed by the same rule rather than three separate patches later.
+#:
+#: NOTHING HERE CAN READ A ROW, which is what makes skipping injection safe:
+#: skipping a statement that CAN read rows is a privilege escalation, and that
+#: is why the set is an explicit list of leading keywords rather than anything
+#: inferred. ``SELECT``, ``UPDATE``, ``DELETE`` and ``INSERT`` are deliberately
+#: absent. ``EXPLAIN`` is absent too — it wraps a real query, and that query
+#: must still be filtered.
+_NO_ROW_SCOPE_VERBS = frozenset({
+    # Transaction control
+    "BEGIN", "START", "COMMIT", "END", "ROLLBACK", "SAVEPOINT", "RELEASE",
+    "ABORT", "PREPARE", "CHECKPOINT",
+    # Session / connection control
+    "SET", "RESET", "DISCARD", "LISTEN", "UNLISTEN", "NOTIFY", "DEALLOCATE",
+    # Locking and maintenance
+    "LOCK", "UNLOCK", "VACUUM", "ANALYZE", "REINDEX", "CLUSTER",
+    # DDL — the guard below says "INSERT, DDL, PRAGMA: never modify" and then
+    # only checks CREATE.
+    "CREATE", "ALTER", "DROP", "TRUNCATE", "COMMENT", "GRANT", "REVOKE",
+    "PRAGMA", "ATTACH", "DETACH", "VALUES",
+})
+
+
+def _has_no_row_scope(sql: str) -> bool:
+    """True for a statement that addresses no rows, so has nothing to filter.
+
+    See :data:`_NO_ROW_SCOPE_VERBS` for the measured defect this closes and for
+    why the set is an explicit whitelist of leading keywords.
+
+    ``PREPARE TRANSACTION`` and ``PREPARE <name> AS SELECT ...`` share a verb.
+    Both are still correct to skip: a prepared statement is filtered when it is
+    EXECUTEd against a connection that carries a context, and injecting into the
+    PREPARE body would bake one request's tenant into a statement other requests
+    reuse — a worse outcome than skipping.
+    """
+    stripped = sql.lstrip().lstrip("(").lstrip()
+    if not stripped:
+        return False
+    head = stripped.split(None, 1)[0].upper().rstrip(";")
+    return head in _NO_ROW_SCOPE_VERBS
+
+
 def _is_system_table(sql: str) -> bool:
     """True when the outer query's primary FROM target is a system catalog, or a
     table the ownership manifest explicitly exempts from row security.
@@ -362,6 +440,15 @@ def inject_row_predicate(
     # rather than "query malformed". See _SYSTEM_TABLE_PREFIXES.
     if _is_system_table(sql):
         return sql, (), 0
+
+    # A statement that operates on the TRANSACTION or the SESSION rather than
+    # on data has no row scope, and a WHERE clause bolted onto it is not merely
+    # useless -- it is a syntax error that aborts the transaction. See
+    # _NO_ROW_SCOPE_VERBS: this is what silently broke every audit write made
+    # inside an authenticated request on PostgreSQL.
+    if _has_no_row_scope(sql):
+        return sql, (), 0
+
 
     # A SELECT that names no relation reads no row, so there is nothing to
     # filter and the injected WHERE has no table to resolve against. See

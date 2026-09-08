@@ -136,7 +136,7 @@
             <code>{{ s.section_id }}</code>
             {% if s.origin %}· {{ s.origin }}{% endif %}
             {% if s.status %}· {{ s.status }}{% endif %}
-            · {{ (s.content or '')|length }} chars
+            · <span data-role="chars">{{ (s.content or '')|length }} chars</span>
           </span>
         </div>
         <div class="dws-sec__text" data-role="text">{{ s.content or '' }}</div>
@@ -190,8 +190,14 @@
   <aside class="dws-pane dws-pane--rail" id="dws-rail-pane">
     <div class="dws-pane__head">
       <span class="dws-pane__title">✍️ Proposals</span>
-      <button type="button" id="dws-reload" class="dws-btn dws-btn--ghost" title="Reload the change set">↻</button>
+      <button type="button" id="dws-reload" class="dws-btn dws-btn--ghost" title="Re-read the document and the change set">↻</button>
     </div>
+    {# dwr-ws-03 — "N of M changes resolved". Two rates, never one: `resolved`
+       is off-the-queue and `reviewed` is what a HUMAN decided, and a change
+       superseded when its anchor went stale is the first and not the second.
+       Both are `null` — rendered as "not measured", never as 0% or 100% — over
+       an empty denominator or an unreadable status. #}
+    <div id="dws-progress" class="dws-progress">Progress not yet read.</div>
     <div id="dws-rail-state" class="dws-note">Loading the change set…</div>
     <div id="dws-rail-counts" class="dws-counts"></div>
     <div id="dws-rail"></div>
@@ -267,8 +273,28 @@
 .dws-gate__list { margin:2px 0 0; padding-left:16px; color:#c09090; font-size:10px; line-height:1.6; }
 .dws-gate__list code { color:#e08a8a; }
 
+/* Progress — dwr-ws-03. `is-unmeasured` is its own look so "nobody looked" can
+   never be read as a low score. */
+.dws-progress { margin:10px 12px 6px; padding:8px 10px; border-radius:5px; font-size:11px;
+  line-height:1.6; color:#9bb8d8; background:#0d1b2e; border:1px solid #1a3560;
+  border-left:3px solid #5ac08a; }
+.dws-progress.is-unmeasured { border-left-color:#7a8cb0; color:#8aa8c8; }
+.dws-progress.is-none { border-left-color:#2a3a5a; color:#7a8cb0; }
+.dws-progress b { color:#cfe3f7; }
+.dws-progress__note { display:block; margin-top:3px; color:#7a8cb0; font-size:10px; }
+.dws-progress__bar { height:4px; margin-top:6px; border-radius:2px; background:#12233a; overflow:hidden; }
+.dws-progress__fill { height:100%; background:#5ac08a; }
+
 /* Change cards */
 .dws-counts { margin:0 12px 8px; color:#7a8cb0; font-size:10px; line-height:1.6; }
+/* A card the reviewer has settled in THIS session stays on screen — the rail is
+   the record of the sitting, not just the queue. */
+.dws-card.is-settled { opacity:0.72; border-left-color:#5ac08a; }
+.dws-card.is-superseded { opacity:0.72; border-left-color:#f0c674; }
+.dws-refusal b { color:#f0c674; }
+.dws-refusal pre { margin:4px 0 0; padding:5px 7px; background:#0a1422; border:1px solid #12233a;
+  border-radius:3px; color:#c8b088; font-size:10px; line-height:1.5; white-space:pre-wrap;
+  word-break:break-word; max-height:120px; overflow:auto; }
 .dws-card { margin:0 12px 10px; padding:10px; background:#0d1b2e; border:1px solid #12233a;
   border-radius:6px; border-left:3px solid #2a3a5a; }
 .dws-card--appliable { border-left-color:#5ac08a; }
@@ -320,6 +346,10 @@ document.addEventListener('DOMContentLoaded', function () {
   var docBody = document.getElementById('dws-doc-body');
   var changes = [];
   var selected = null;
+  // dwr-ws-03 — what this session has learned about each card, held OUTSIDE the
+  // DOM so redrawing one card cannot discard the answer a reviewer just read.
+  var outcomes = {};       // suggestion_id -> the outcome message, as html
+  var doorRefusals = {};   // suggestion_id -> the door's own refusal, as html
 
   function esc(v) { return (window.escHtml ? window.escHtml(v) : String(v == null ? '' : v)); }
 
@@ -353,6 +383,13 @@ document.addEventListener('DOMContentLoaded', function () {
   // moved, and drawing it would show a reviewer the wrong sentence.
   function anchorsFor(sectionId) {
     return changes.filter(function (c) {
+      // dwr-ws-03 — A DECIDED CHANGE IS NEVER MARKED. Its offsets were measured
+      // against the section as it read BEFORE the splice, so after an accept
+      // they address text that has moved; and there is nothing left to apply,
+      // so a mark would invite a decision that cannot be made. Caught on the
+      // live run of this card: the accepted section rendered the new text with
+      // the old span still highlighted.
+      if (c.status && c.status !== 'pending') return false;
       return c.anchor_section_id === sectionId
         && c.appliable && c.anchor_verified === true
         && typeof c.anchor_start === 'number' && typeof c.anchor_end === 'number'
@@ -360,44 +397,69 @@ document.addEventListener('DOMContentLoaded', function () {
     }).sort(function (a, b) { return a.anchor_start - b.anchor_start; });
   }
 
-  function renderDocument() {
-    if (!docBody || BASIS !== 'positioned') return;
-    var secs = docBody.querySelectorAll('.dws-sec');
-    for (var i = 0; i < secs.length; i++) {
-      var sec = secs[i];
-      var textEl = sec.querySelector('[data-role="text"]');
-      if (!textEl) continue;
-      var raw = sec.dataset.content || '';
-      if (mode === 'reflow') {
-        textEl.classList.add('is-reflow');
-        // safeMarkdown fails CLOSED to escaped plain text when marked or
-        // DOMPurify is missing — never unsanitized markup.
-        textEl.innerHTML = window.safeMarkdown ? window.safeMarkdown(raw) : esc(raw);
-        continue;
-      }
-      textEl.classList.remove('is-reflow');
-      var marks = anchorsFor(sec.dataset.sectionId);
-      var html = '';
-      var cursor = 0;
-      for (var j = 0; j < marks.length; j++) {
-        var m = marks[j];
-        // An overlapping anchor is SKIPPED, not merged: two proposals editing
-        // one span cannot both be drawn, and nesting them would show a reader a
-        // replacement neither proposal makes.
-        if (m.anchor_start < cursor) continue;
-        html += esc(raw.slice(cursor, m.anchor_start));
-        html += '<span class="dws-anchor' + (selected === m.suggestion_id ? ' is-selected' : '')
-             + '" data-suggestion-id="' + esc(m.suggestion_id) + '">'
-             + esc(raw.slice(m.anchor_start, m.anchor_end)) + '</span>';
-        cursor = m.anchor_end;
-      }
-      html += esc(raw.slice(cursor));
-      textEl.innerHTML = html;
+  // ONE SECTION, redrawn. dwr-ws-03 — this is the smallest unit that can be
+  // redrawn TRUTHFULLY: an accept splices the section's content, which moves
+  // every character offset after the splice point, so every mark in that
+  // section must be recomputed. Redrawing less would leave marks pointing at
+  // text that has shifted; redrawing the whole document would throw away the
+  // other sections' DOM for a change that did not touch them.
+  function renderSection(sec) {
+    if (!sec) return;
+    var textEl = sec.querySelector('[data-role="text"]');
+    if (!textEl) return;
+    var raw = sec.dataset.content || '';
+    if (mode === 'reflow') {
+      textEl.classList.add('is-reflow');
+      // safeMarkdown fails CLOSED to escaped plain text when marked or
+      // DOMPurify is missing — never unsanitized markup.
+      textEl.innerHTML = window.safeMarkdown ? window.safeMarkdown(raw) : esc(raw);
+      return;
     }
-    // Click-to-select: a mark selects its card.
-    docBody.querySelectorAll('.dws-anchor').forEach(function (el) {
+    textEl.classList.remove('is-reflow');
+    var marks = anchorsFor(sec.dataset.sectionId);
+    var html = '';
+    var cursor = 0;
+    for (var j = 0; j < marks.length; j++) {
+      var m = marks[j];
+      // An overlapping anchor is SKIPPED, not merged: two proposals editing
+      // one span cannot both be drawn, and nesting them would show a reader a
+      // replacement neither proposal makes.
+      if (m.anchor_start < cursor) continue;
+      html += esc(raw.slice(cursor, m.anchor_start));
+      html += '<span class="dws-anchor' + (selected === m.suggestion_id ? ' is-selected' : '')
+           + '" data-suggestion-id="' + esc(m.suggestion_id) + '">'
+           + esc(raw.slice(m.anchor_start, m.anchor_end)) + '</span>';
+      cursor = m.anchor_end;
+    }
+    html += esc(raw.slice(cursor));
+    textEl.innerHTML = html;
+    // Click-to-select: a mark selects its card. Wired per section, so a
+    // redrawn section rewires only its own marks.
+    textEl.querySelectorAll('.dws-anchor').forEach(function (el) {
       el.addEventListener('click', function () { select(el.dataset.suggestionId, 'document'); });
     });
+  }
+
+  function sectionEl(sectionId) {
+    if (!docBody || !sectionId) return null;
+    return docBody.querySelector('.dws-sec[data-section-id="' + cssEsc(sectionId) + '"]');
+  }
+
+  // The section's own record of what it holds, kept beside the text so the
+  // meta line cannot drift from the content after an in-place splice.
+  function setSectionContent(sectionId, content) {
+    var sec = sectionEl(sectionId);
+    if (!sec || typeof content !== 'string') return null;
+    sec.dataset.content = content;
+    var chars = sec.querySelector('[data-role="chars"]');
+    if (chars) chars.textContent = content.length + ' chars';
+    renderSection(sec);
+    return sec;
+  }
+
+  function renderDocument() {
+    if (!docBody || BASIS !== 'positioned') return;
+    docBody.querySelectorAll('.dws-sec').forEach(renderSection);
   }
 
   function select(sid, from) {
@@ -532,8 +594,15 @@ document.addEventListener('DOMContentLoaded', function () {
       + (sectionId ? '' : ' disabled title="A comment is written against a section, and this proposal names none."')
       + '>Comment</button>';
 
-    return '<div class="dws-card ' + (c.appliable ? 'dws-card--appliable' : 'dws-card--unanchored')
-      + '" data-suggestion-id="' + esc(sid) + '">'
+    // dwr-ws-03 — a card is rendered from `changes[]` PLUS what this session
+    // already learned about it: the outcome message and the door's own refusal.
+    // Both are held outside the DOM (`outcomes`, `doorRefusals`) so re-rendering
+    // ONE card cannot silently discard the answer the reviewer just read.
+    var settled = (c.status && c.status !== 'pending');
+    var cls = 'dws-card ' + (c.appliable ? 'dws-card--appliable' : 'dws-card--unanchored')
+      + (settled ? (c.status === 'superseded' ? ' is-superseded' : ' is-settled') : '')
+      + (selected === sid ? ' is-selected' : '');
+    return '<div class="' + cls + '" data-suggestion-id="' + esc(sid) + '">'
       + '<div class="dws-card__head"><span class="dws-card__title">'
       + esc(c.entity_label || c.canvas_source || 'Proposal') + '</span>'
       + '<code style="color:#5a7aa0;font-size:9px;">' + esc(String(sid).slice(0, 14)) + '</code></div>'
@@ -541,10 +610,58 @@ document.addEventListener('DOMContentLoaded', function () {
       + diffHtml(c)
       + fields
       + (why ? '<div class="dws-refusal">' + esc(why) + '</div>' : '')
+      + (doorRefusals[sid] || '')
       + '<div class="dws-actions">' + acts + '</div>'
       + '<div class="dws-edit-wrap" data-sid="' + esc(sid) + '" style="display:none;"></div>'
-      + '<div class="dws-result" data-sid="' + esc(sid) + '"></div>'
+      + '<div class="dws-result" data-sid="' + esc(sid) + '">' + (outcomes[sid] || '') + '</div>'
       + '</div>';
+  }
+
+  // ── "N of M changes resolved" ──────────────────────────────────────────────
+  // FOUR readings, and only the last two are about this document's review:
+  //   unmeasured  a status could not be read. NOT a clean board, and NOT 0%.
+  //   no_changes  nobody has ever proposed a change here. Not 0% reviewed
+  //               (nothing is outstanding) and not 100% (nothing was reviewed).
+  //   0.0%        MEASURED: proposals exist and none has been decided.
+  //   n%          measured progress.
+  // `resolved` and `reviewed` are never merged: a change SUPERSEDED when its
+  // anchor went stale left the queue without anybody deciding it.
+  function renderProgress(p) {
+    var el = document.getElementById('dws-progress');
+    if (!el) return;
+    if (!p || p.state === 'unmeasured') {
+      el.className = 'dws-progress is-unmeasured';
+      var bad = (p && p.unreadable_statuses && p.unreadable_statuses.length)
+        ? ' (unreadable: ' + esc(p.unreadable_statuses.join(', ')) + ')' : '';
+      el.innerHTML = '<b>Progress not measured.</b>' + bad
+        + '<span class="dws-progress__note">The suggestion store could not be read for every '
+        + 'status. A partial read is a smaller total and so a HIGHER percentage, which is why '
+        + 'no number is shown. This is not a clean board.</span>';
+      return;
+    }
+    if (p.state === 'no_changes' || !p.total) {
+      el.className = 'dws-progress is-none';
+      el.innerHTML = '<b>No change has ever been proposed for this document.</b>'
+        + '<span class="dws-progress__note">Measured over every status. There is nothing to '
+        + 'resolve — which is neither 0% nor 100% reviewed, so no rate is shown.</span>';
+      return;
+    }
+    var pct = (p.resolved_pct === null || p.resolved_pct === undefined) ? null : p.resolved_pct;
+    el.className = 'dws-progress';
+    el.innerHTML = '<b>' + esc(p.resolved) + ' of ' + esc(p.total) + ' changes resolved</b>'
+      + (pct === null ? ' — rate not measured' : ' (' + esc(pct.toFixed(1)) + '%)')
+      + '<span class="dws-progress__note">'
+      + esc(p.reviewed) + ' decided by a reviewer ('
+      + esc(p.accepted) + ' accepted, ' + esc(p.rejected) + ' rejected)'
+      + (p.superseded
+          ? ' · ' + esc(p.superseded) + ' superseded — retired by the accept door when the '
+            + 'anchor went stale, which is a mechanism and not a reviewer, so those are '
+            + 'resolved and NOT reviewed'
+          : '')
+      + ' · ' + esc(p.pending) + ' still waiting.</span>'
+      + (pct === null ? ''
+          : '<div class="dws-progress__bar"><div class="dws-progress__fill" style="width:'
+            + esc(pct) + '%;"></div></div>');
   }
 
   // The unplaced count is this page's own document-level finding. It is `null`
@@ -594,29 +711,54 @@ document.addEventListener('DOMContentLoaded', function () {
          + esc(c.unanchored) + ' unanchored · ' + esc(c.diffable) + ' with a word-level diff'
          + (payload.truncated ? ' · <b style="color:#e0c090;">truncated at ' + esc(payload.limit) + '</b>' : ''));
     railEl.innerHTML = changes.map(card).join('') || '';
-    wire();
+    changes.forEach(function (c) { wireCard(cardEl(c.suggestion_id)); });
+    renderProgress(payload.progress);
     renderUnplaced(payload);
     renderDocument();
   }
 
-  function wire() {
-    railEl.querySelectorAll('.dws-card').forEach(function (el) {
-      el.addEventListener('click', function (ev) {
-        if (ev.target.closest('button, textarea, input')) return;
-        select(el.dataset.suggestionId, 'rail');
-      });
+  function cardEl(sid) {
+    return railEl.querySelector('.dws-card[data-suggestion-id="' + cssEsc(sid) + '"]');
+  }
+
+  function wireCard(el) {
+    if (!el) return;
+    el.addEventListener('click', function (ev) {
+      if (ev.target.closest('button, textarea, input')) return;
+      select(el.dataset.suggestionId, 'rail');
     });
-    railEl.querySelectorAll('button[data-act]').forEach(function (btn) {
+    el.querySelectorAll('button[data-act]').forEach(function (btn) {
       btn.addEventListener('click', function () { act(btn.dataset.act, btn.dataset.sid); });
     });
+    el.querySelectorAll('button[data-reanchor]').forEach(function (btn) {
+      btn.addEventListener('click', function () { reanchorView(btn.dataset.reanchor); });
+    });
+  }
+
+  // ONE card, redrawn from the local change. Every other card's DOM — its open
+  // editor, its typed text, its result message, the reviewer's scroll position
+  // — is untouched, which is the entire point of the card.
+  function replaceCard(sid) {
+    var c = changes.filter(function (x) { return x.suggestion_id === sid; })[0];
+    var el = cardEl(sid);
+    if (!c || !el) return;
+    var holder = document.createElement('div');
+    holder.innerHTML = card(c);
+    var next = holder.firstChild;
+    el.parentNode.replaceChild(next, el);
+    wireCard(next);
   }
 
   function resultEl(sid) {
     return railEl.querySelector('.dws-result[data-sid="' + cssEsc(sid) + '"]');
   }
+  // The outcome is held OUTSIDE the DOM as well as in it, so redrawing the card
+  // does not discard the answer the reviewer just read.
   function say(sid, ok, msg) {
+    outcomes[sid] = '<div class="dws-status dws-status--' + (ok ? 'ok' : 'err') + '">'
+      + esc(msg) + '</div>';
     var el = resultEl(sid);
-    if (el) el.innerHTML = '<div class="dws-status dws-status--' + (ok ? 'ok' : 'err') + '">' + esc(msg) + '</div>';
+    if (el) el.innerHTML = outcomes[sid];
   }
 
   // Every act POSTs to a door that already existed. The response is REPORTED as
@@ -642,10 +784,257 @@ document.addEventListener('DOMContentLoaded', function () {
     var url = '/document-intelligence/api/suggestions/' + encodeURIComponent(sid)
             + (kind === 'accept' ? '/accept' : '/reject');
     say(sid, true, (kind === 'accept' ? 'Accepting' : 'Rejecting') + '…');
-    post(url, {}).then(function (res) {
-      if (res.ok) { say(sid, true, res.json.status || 'done'); return load(); }
-      say(sid, false, (res.json.message || res.json.error || ('HTTP ' + res.status)));
-    }).catch(function (e) { say(sid, false, 'Request failed: ' + e); });
+    post(url, {}).then(function (res) { applyDecision(sid, kind, res); })
+      .catch(function (e) { say(sid, false, 'Request failed: ' + e); });
+  }
+
+  // ── The decision, applied in place (dwr-ws-03) ─────────────────────────────
+  //
+  // dwr-ws-02 ended every act in `load()`: a full change-set refetch that reset
+  // the state banner and rebuilt `railEl.innerHTML` wholesale, throwing away the
+  // scroll position, the selection, any open editor and every other card's
+  // result message. Better than `window.location.reload()`, and still not a
+  // decision applied in place.
+  //
+  // What moves, and NOTHING else:
+  //   the card       redrawn from its own updated row.
+  //   ONE section    only when the door reports it WROTE one, and only from the
+  //                  `section_content` that door RE-READ after the write. The
+  //                  page does not predict the splice: `content[:start] +
+  //                  replacement + content[end:]` here would be a second copy
+  //                  of a computation the server already performed and
+  //                  confirmed, and the two part company the moment anything
+  //                  else touches the section.
+  //   the counts     re-read from the same assembler.
+  // A reconcile then re-asks whether the REMAINING proposals in that section
+  // still anchor — because a splice moves every offset after it, and only
+  // `verify_anchor` on the server may answer that. It is differential: a card
+  // whose rendering did not change is not touched.
+  function applyDecision(sid, kind, res) {
+    var c = changes.filter(function (x) { return x.suggestion_id === sid; })[0];
+    if (!c) return;
+    if (!res.ok) return refuseDecision(c, res);
+
+    doorRefusals[sid] = '';
+    c.status = res.json.status || (kind === 'accept' ? 'accepted' : 'rejected');
+    var section = res.json.section_id || c.anchor_section_id || c.section_id || '';
+    var wroteSection = (res.json.applied === true) && res.json.section_id
+      && typeof res.json.section_content === 'string';
+    if (wroteSection) {
+      var sec = setSectionContent(res.json.section_id, res.json.section_content);
+      say(sid, true, c.status + ' — the section was spliced and re-read; '
+        + (sec ? 'the passage above is updated.'
+               : 'that section is not on this view, so nothing here changed.'));
+    } else if (res.json.applied === false) {
+      // A decision recorded whose apply then failed. Both facts, never one.
+      say(sid, false, (res.json.message || 'decided, but NOT applied to the document.'));
+    } else {
+      say(sid, true, c.status);
+    }
+    replaceCard(sid);
+    // THE SECTION IS REDRAWN EVEN WHEN NOTHING WAS WRITTEN. A REJECT changes no
+    // content and so leaves `section_content` absent — but the change is decided
+    // now, and `anchorsFor` no longer marks it, so its highlight must come off.
+    // Caught on the live run of this card: a rejected proposal's mark stayed
+    // drawn, inviting a decision that had already been made.
+    if (!wroteSection) renderSection(sectionEl(section));
+    reconcile(section);
+  }
+
+  // A 409 IS A REFUSAL, NOT AN ERROR. `anchor_stale` in particular means the
+  // document moved under the reviewer between the draft and this click — the
+  // proposal was NOT applied, and the accept door has SUPERSEDED it
+  // (dwr-anchor-05). That is a fact about the document, and it is said in those
+  // words with both sides of the anchor shown.
+  //
+  // NOTHING HERE OFFERS TO RE-ANCHOR THE PROPOSAL, because no door can:
+  // a superseded change is no longer pending, so `redraft` refuses it
+  // `already_decided`, and there is no relocate endpoint on this tree. Offering
+  // one would be a button that cannot work. What IS offered is a re-read of the
+  // DOCUMENT — re-anchoring the VIEW, so the reviewer stops reading text the
+  // section no longer holds and the other proposals are re-verified against it.
+  function refuseDecision(c, res) {
+    var sid = c.suggestion_id;
+    var j = res.json || {};
+    var a = j.anchor || {};
+    if (j.suggestion_status) c.status = j.suggestion_status;
+    if (res.status !== 409) {
+      say(sid, false, (j.message || j.error || ('HTTP ' + res.status)));
+      replaceCard(sid);
+      return;
+    }
+    var head = {
+      anchor_stale: 'The document moved under you.',
+      unanchored: 'This proposal has no span to apply.',
+      section_not_found: 'The section this proposal names no longer exists.'
+    }[j.error] || 'The door refused this decision.';
+    var html = '<div class="dws-refusal"><b>' + esc(head) + '</b> '
+      + esc(j.message || '') ;
+    if (j.error === 'anchor_stale') {
+      html += ' <span style="color:#c8b088;">Nothing was written. The proposal is now <code>'
+        + esc(j.suggestion_status || 'superseded')
+        + '</code> and cannot be re-anchored in place: its text was drafted against the span '
+        + 'below as it read then, and pinning it to whatever sits there now would apply an edit '
+        + 'nobody wrote. The repair is a fresh draft against the current passage.</span>';
+      if (typeof a.expected_text === 'string') {
+        html += '<div style="margin-top:5px;">It expected'
+          + (a.start != null ? ' at [' + esc(a.start) + ':' + esc(a.end) + ']' : '')
+          + ':</div><pre>' + esc(a.expected_text) + '</pre>';
+      }
+      if (typeof a.found_text === 'string') {
+        html += '<div style="margin-top:5px;">The section holds:</div><pre>'
+          + esc(a.found_text) + '</pre>';
+      }
+      html += '<div class="dws-actions"><button type="button" class="dws-btn dws-btn--ghost" '
+        + 'data-reanchor="' + esc(sid) + '">Re-read the document</button></div>';
+    }
+    html += '</div>';
+    doorRefusals[sid] = html;
+    say(sid, false, 'Refused: ' + (j.error || 'HTTP ' + res.status) + ' — nothing was written.');
+    replaceCard(sid);
+    // A stale proposal has been SUPERSEDED by the door, so it is no longer a
+    // pending change and must stop being marked — the span it points at is
+    // exactly the one that moved.
+    var section = j.section_id || c.anchor_section_id || c.section_id || '';
+    renderSection(sectionEl(section));
+    // A REFUSAL CAN STILL MOVE THE COUNTS, and the counts must follow. A stale
+    // accept supersedes the proposal — it has left the pending queue without a
+    // human deciding it — so `resolved` rises while `reviewed` does not. Caught
+    // on the live run of this card: the refusal rendered correctly beside
+    // "0 of 3 changes resolved" for a board that now had one resolved.
+    reconcile(section);
+  }
+
+  // Re-anchor the VIEW. Re-reads the left pane through the SAME
+  // `workspace.document_body` the page was rendered from, so the re-read cannot
+  // describe a different document from the first render, then reconciles the
+  // rail against it. A read that fails is reported as unmeasured — it must never
+  // leave the reviewer looking at stale text believing it is current.
+  function reanchorView(sid) {
+    if (sid) say(sid, true, 'Re-reading the document…');
+    return fetch('/document-intelligence/api/workspace/body?doc_id=' + encodeURIComponent(DOC_ID))
+      .then(function (r) { return r.json().then(function (j) { return {ok: r.ok, json: j}; }); })
+      .then(function (res) {
+        if (!res.ok || !res.json || res.json.basis === 'unmeasured') {
+          if (sid) say(sid, false, 'The document could not be re-read ('
+            + esc((res.json && (res.json.reason || res.json.error)) || 'unknown')
+            + '). What is on screen may be stale — this is not a clean read.');
+          return;
+        }
+        var seen = 0, missing = 0;
+        (res.json.sections || []).forEach(function (s) {
+          if (setSectionContent(s.section_id, s.content || '')) seen++; else missing++;
+        });
+        if (sid) {
+          say(sid, true, 'Document re-read: ' + seen + ' section(s) refreshed'
+            + (missing ? ', ' + missing + ' not on this view (reload to see them)' : '') + '.');
+        }
+        return reconcile(null);
+      })
+      .catch(function (e) {
+        if (sid) say(sid, false, 'The document could not be re-read (' + e + ').');
+      });
+  }
+
+  // Ask the ONE assembler again, and touch only what actually changed. A card
+  // is redrawn when its rendered payload differs; a section is redrawn when its
+  // mark set differs. A card that has LEFT the pending queue is kept and marked
+  // settled rather than removed — the rail is the record of this sitting, and a
+  // decision that vanishes the moment it is made is the context loss this card
+  // exists to fix.
+  function renderKey(c) {
+    return JSON.stringify([c.status, c.appliable, c.anchor_verified, c.anchor_verify_reason,
+                           c.anchor_basis, c.anchor_section_id, c.anchor_start, c.anchor_end,
+                           c.before, c.after, c.currency_verdict, c.evidence_health]);
+  }
+  function anchorKey(c) {
+    return [c.suggestion_id, c.appliable, c.anchor_verified, c.anchor_start, c.anchor_end].join('|');
+  }
+  function sectionAnchorKey(sectionId) {
+    return anchorsFor(sectionId).map(anchorKey).join(';');
+  }
+
+  function reconcile(touchedSection) {
+    return fetch('/document-intelligence/api/change-set?doc_id=' + encodeURIComponent(DOC_ID))
+      .then(function (r) { return r.json(); })
+      .then(function (payload) {
+        if (!payload || payload.state === 'unmeasured') {
+          stateEl.textContent = 'Unmeasured — the change set could not be re-read. The cards '
+            + 'below are what was last measured, not a fresh reading.';
+          stateEl.className = 'dws-note dws-note--error';
+          renderProgress(payload && payload.progress);
+          return;
+        }
+        var before = {};
+        changes.forEach(function (c) { before[c.suggestion_id] = renderKey(c); });
+        var sectionsBefore = {};
+        docBody && docBody.querySelectorAll('.dws-sec').forEach(function (sec) {
+          sectionsBefore[sec.dataset.sectionId] = sectionAnchorKey(sec.dataset.sectionId);
+        });
+
+        var incoming = payload.changes || [];
+        var live = {};
+        incoming.forEach(function (c) { live[c.suggestion_id] = true; });
+        // A locally-settled card is KEPT: it is no longer pending, so the
+        // pending change set correctly omits it, and dropping it here would
+        // erase what the reviewer just did.
+        var kept = changes.filter(function (c) {
+          if (live[c.suggestion_id]) return false;
+          if (!c.status || c.status === 'pending') {
+            // It left the queue and NOT through this page. Say so rather than
+            // silently deleting a card somebody may be mid-decision on.
+            c.status = 'decided_elsewhere';
+            doorRefusals[c.suggestion_id] = '<div class="dws-refusal">This proposal left the '
+              + 'pending queue while this page was open — decided in another session, or '
+              + 'superseded. Nothing here decided it.</div>';
+          }
+          return true;
+        });
+        changes = incoming.concat(kept);
+
+        // Cards: redraw only what changed, and never over a typed-in editor.
+        changes.forEach(function (c) {
+          var sid = c.suggestion_id;
+          var el = cardEl(sid);
+          if (!el) {
+            railEl.insertAdjacentHTML('beforeend', card(c));
+            wireCard(cardEl(sid));
+            return;
+          }
+          if (before[sid] === renderKey(c)) return;
+          var ta = el.querySelector('.dws-edit-wrap textarea');
+          if (ta && ta.value) {
+            say(sid, false, 'This proposal changed underneath you. Your text is kept — '
+              + 'submit it or clear the editor, and the card will redraw.');
+            return;
+          }
+          replaceCard(sid);
+        });
+
+        // Sections: redraw only where the marks moved. The one just spliced is
+        // always included — its content changed, so every offset after the
+        // splice did too.
+        docBody && docBody.querySelectorAll('.dws-sec').forEach(function (sec) {
+          var id = sec.dataset.sectionId;
+          if (id === touchedSection || sectionsBefore[id] !== sectionAnchorKey(id)) {
+            renderSection(sec);
+          }
+        });
+
+        var c = payload.counts || {};
+        countsEl.innerHTML = (c.total == null)
+          ? 'Counts unmeasured.'
+          : (esc(c.total) + ' proposal(s) · ' + esc(c.appliable) + ' appliable · '
+             + esc(c.unanchored) + ' unanchored · ' + esc(c.diffable) + ' with a word-level diff'
+             + (payload.truncated ? ' · <b style="color:#e0c090;">truncated at ' + esc(payload.limit) + '</b>' : ''));
+        renderProgress(payload.progress);
+        renderUnplaced(payload);
+      })
+      .catch(function (e) {
+        stateEl.textContent = 'Unmeasured — the change set could not be re-read (' + e
+          + '). The cards below are what was last measured.';
+        stateEl.className = 'dws-note dws-note--error';
+      });
   }
 
   // Edit & Accept — the human's text travels as `applied_text`, which the accept
@@ -664,10 +1053,18 @@ document.addEventListener('DOMContentLoaded', function () {
     ta.value = c.after || '';
     wrap.querySelector('button[data-go]').addEventListener('click', function () {
       say(c.suggestion_id, true, 'Accepting your text…');
+      // The editor is cleared BEFORE the card is redrawn: the text has been
+      // sent, and `reconcile` deliberately refuses to redraw a card holding
+      // typed text, which would otherwise pin this card open for ever.
+      var typed = ta.value;
       post('/document-intelligence/api/suggestions/' + encodeURIComponent(c.suggestion_id) + '/accept',
-           {applied_text: ta.value}).then(function (res) {
-        if (res.ok) { say(c.suggestion_id, true, 'accepted (your text)'); return load(); }
-        say(c.suggestion_id, false, (res.json.message || res.json.error || ('HTTP ' + res.status)));
+           {applied_text: typed}).then(function (res) {
+        wrap.style.display = 'none'; wrap.innerHTML = '';
+        applyDecision(c.suggestion_id, 'accept', res);
+        if (res.ok) {
+          say(c.suggestion_id, true, 'accepted — YOUR text was written, recorded as '
+            + (res.json.applied_text_source || 'human_edit') + ' beside the AI draft.');
+        }
       }).catch(function (e) { say(c.suggestion_id, false, 'Request failed: ' + e); });
     });
   }
@@ -713,8 +1110,11 @@ document.addEventListener('DOMContentLoaded', function () {
       });
   }
 
-  var reload = document.getElementById('dws-reload');
-  if (reload) reload.addEventListener('click', load);
+  // ↻ re-reads the DOCUMENT and then the change set — a manual re-anchor of the
+  // view, and the same act the stale-anchor refusal offers. It is not a page
+  // reload and nothing on this page is one.
+  var refresh = document.getElementById('dws-reload');
+  if (refresh) refresh.addEventListener('click', function () { reanchorView(null); });
   load();
 });
 </script>
