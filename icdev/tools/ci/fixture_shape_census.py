@@ -12,10 +12,17 @@ while the same file passed locally, ALONE, in its own directory, and in file
 order. The mechanism::
 
     an earlier module in the process leaves dic_documents WITHOUT `status`
-    -> the fixture's CREATE TABLE IF NOT EXISTS dic_documents (... status ...)
-       silently NO-OPS, because IF NOT EXISTS means "if a table by this name
-       exists, keep whatever shape it has"
-    -> INSERT INTO dic_documents (... status ...) raises
+    -> the fixture's `CREATE TABLE IF NOT EXISTS` for dic_documents, which
+       declares a `status` column, silently NO-OPS -- IF NOT EXISTS means "if a
+       table by this name exists, keep whatever shape it has"
+    -> the fixture's `INSERT INTO` dic_documents, naming `status`, raises
+
+(That prose is deliberately not written as literal SQL. `schema_ownership.py`
+scans source TEXT for a declaration, and a docstring spelling one out makes this
+module a phantom DECLARER of dic_documents -- which flipped the table's computed
+owner and turned `Test Gates` red on this card's own first CI run. Its own
+comment records 49 earlier phantoms from exactly this. A census against prose
+being read as SQL had no business committing it.)
 
 CLAUDE.md already states this rule for PRODUCTION code — "``CREATE TABLE IF NOT
 EXISTS`` never alters an existing table, so a table created by an older
