@@ -116,6 +116,12 @@ MAX_RETRIES = 3
 MAX_DESCRIPTION_LENGTH = 10000
 SAM_GOV_API_DEFAULT = "https://api.sam.gov/opportunities/v2/search"
 
+# Below this much remaining budget a new (naics, notice_type) pair is not STARTED at
+# all: a request issued with a fraction of a second left cannot complete, so making it
+# spends quota to produce a guaranteed timeout.  Overridable per deployment via
+# ``sam_gov.min_attempt_seconds`` in args/govcon_config.yaml.
+MIN_ATTEMPT_SECONDS = 1.0
+
 
 # =========================================================================
 # DATABASE HELPERS
@@ -227,25 +233,40 @@ def _safe_get(url, headers=None, params=None, timeout=DEFAULT_TIMEOUT, track_quo
 # =========================================================================
 # SAM.GOV API SCANNER
 # =========================================================================
-def scan_sam_gov(config=None, naics_filter=None, notice_type_filter=None, db_path=None):
+def scan_sam_gov(config=None, naics_filter=None, notice_type_filter=None, db_path=None, budget_seconds=None):
     """Scan SAM.gov Opportunities API for new opportunities.
+
+    The scan issues one HTTP GET per (NAICS x notice type) pair, SEQUENTIALLY.  With the
+    shipped config that is 8 x 4 = 32 requests at ``DEFAULT_TIMEOUT`` each, so an
+    unbounded scan can run for a quarter of an hour or more -- measured past 30 minutes
+    (see tests/test_reflex_registration.py).  That is acceptable for a CLI or a reflex
+    and NOT acceptable inside an HTTP request, where it holds a worker thread until some
+    proxy in front of it gives up.  ``budget_seconds`` is what makes it acceptable
+    there, and the bound is REPORTED rather than silently truncating the result.
 
     Args:
         config: Full govcon config dict (loaded from govcon_config.yaml).
         naics_filter: Optional single NAICS code to filter by.
         notice_type_filter: Optional single notice type to filter by.
         db_path: Optional database path override.
+        budget_seconds: Optional wall-clock ceiling for the whole scan.  ``None`` (the
+            default) is unbounded, which is the CLI and reflex behaviour.  When set, the
+            remaining budget also clamps each request's timeout and each backoff sleep --
+            a deadline that gates only the loop while a single request may still block
+            for ``DEFAULT_TIMEOUT`` is a budget in name only.
 
     Returns:
-        Dict with keys: opportunities (list), new_count, updated_count,
-        skipped_count, errors (list), scan_duration_seconds.
+        Dict with keys: opportunities (list), new_count, updated_count, skipped_count,
+        errors (list), scan_duration_seconds, and the completeness report --
+        complete (bool), budget_seconds, budget_exhausted (bool), pairs_scanned,
+        pairs_total, skipped_over_budget (the unscanned pairs, BY NAME).
     """
     config = config or _load_config()
     sam_config = config.get("sam_gov", {})
     api_url = sam_config.get("api_url", SAM_GOV_API_DEFAULT)
     api_key = os.environ.get(sam_config.get("api_key_env", "SAM_GOV_API_KEY"), "")
     if not api_key:
-        return {"error": "SAM_GOV_API_KEY not set in environment", "opportunities": []}
+        return {"error": "SAM_GOV_API_KEY not set in environment", "opportunities": [], "complete": False}
 
     rate_config = sam_config.get("rate_limit", {})
     delay = rate_config.get("delay_between_requests", 1.0)  # 1s default (was 0.15)
@@ -291,112 +312,148 @@ def scan_sam_gov(config=None, naics_filter=None, notice_type_filter=None, db_pat
     try:
         conn = _get_db(db_path)
     except FileNotFoundError as e:
-        return {"error": str(e), "opportunities": []}
+        return {"error": str(e), "opportunities": [], "complete": False}
 
-    for naics in naics_codes or [""]:
-        for ntype in notice_types or [""]:
-            params = {
-                "api_key": api_key,
-                "postedFrom": posted_from,
-                "postedTo": posted_to,
-                "limit": min(max_per_poll, 1000),
-                "offset": 0,
-            }
-            if naics:
-                params["ncode"] = naics
-            if ntype:
-                params["ptype"] = ntype
+    # ---- wall-clock budget -------------------------------------------------
+    # `deadline` is None for an unbounded scan, in which case every helper below is a
+    # no-op and the pre-budget behaviour is preserved exactly.
+    deadline = None if budget_seconds is None else start_time + budget_seconds
+    min_attempt = sam_config.get("min_attempt_seconds", MIN_ATTEMPT_SECONDS)
 
-            data, err = _safe_get(api_url, params=params)
-            if err:
-                errors.append({"naics": naics, "notice_type": ntype, "error": err})
-                if "rate_limit" in str(err):
-                    # Exponential backoff on rate limit: wait 5s, then 10s, etc.
-                    backoff = min(
-                        60, delay * (2 ** len([e for e in errors if "rate_limit" in str(e.get("error", ""))]))
-                    )
-                    time.sleep(backoff)
-                else:
-                    time.sleep(delay)
+    def _remaining():
+        """Seconds of budget left, or None when unbounded."""
+        return None if deadline is None else deadline - time.time()
+
+    def _sleep_within_budget(seconds):
+        """Sleep, never past the deadline.
+
+        An unclamped ``min(60, ...)`` backoff inside a 20s budget would blow through it
+        while doing nothing -- the budget has to bind the waiting as well as the working.
+        """
+        remaining = _remaining()
+        if remaining is not None:
+            seconds = min(seconds, remaining)
+        if seconds > 0:
+            time.sleep(seconds)
+
+    pairs = [(n, t) for n in (naics_codes or [""]) for t in (notice_types or [""])]
+    pairs_total = len(pairs)
+    pairs_scanned = 0
+    skipped_over_budget = []
+    budget_exhausted = False
+
+    for pair_index, (naics, ntype) in enumerate(pairs):
+        remaining = _remaining()
+        if remaining is not None and remaining < min_attempt:
+            # Stop rather than issue a request there is no time left to complete.  The
+            # pairs we never reached are NAMED: a short opportunity list is otherwise
+            # indistinguishable from a corpus that genuinely holds nothing.
+            budget_exhausted = True
+            skipped_over_budget = [{"naics": n, "notice_type": t} for n, t in pairs[pair_index:]]
+            break
+
+        params = {
+            "api_key": api_key,
+            "postedFrom": posted_from,
+            "postedTo": posted_to,
+            "limit": min(max_per_poll, 1000),
+            "offset": 0,
+        }
+        if naics:
+            params["ncode"] = naics
+        if ntype:
+            params["ptype"] = ntype
+
+        request_timeout = DEFAULT_TIMEOUT if remaining is None else min(DEFAULT_TIMEOUT, remaining)
+        data, err = _safe_get(api_url, params=params, timeout=request_timeout)
+        pairs_scanned += 1
+        if err:
+            errors.append({"naics": naics, "notice_type": ntype, "error": err})
+            if "rate_limit" in str(err):
+                # Exponential backoff on rate limit: wait 5s, then 10s, etc.
+                backoff = min(60, delay * (2 ** len([e for e in errors if "rate_limit" in str(e.get("error", ""))])))
+                _sleep_within_budget(backoff)
+            else:
+                _sleep_within_budget(delay)
+            continue
+
+        opportunities = []
+        if isinstance(data, dict):
+            opportunities = data.get("opportunitiesData", [])
+            if not opportunities:
+                opportunities = data.get("opportunities", [])
+
+        for opp in opportunities:
+            normalized = _normalize_opportunity(opp, max_desc)
+            if not normalized:
                 continue
 
-            opportunities = []
-            if isinstance(data, dict):
-                opportunities = data.get("opportunitiesData", [])
-                if not opportunities:
-                    opportunities = data.get("opportunities", [])
+            # Dedup by content_hash
+            existing = conn.execute(
+                "SELECT id, content_hash FROM sam_gov_opportunities WHERE id = %s", (normalized["id"],)
+            ).fetchone()
 
-            for opp in opportunities:
-                normalized = _normalize_opportunity(opp, max_desc)
-                if not normalized:
-                    continue
-
-                # Dedup by content_hash
-                existing = conn.execute(
-                    "SELECT id, content_hash FROM sam_gov_opportunities WHERE id = %s", (normalized["id"],)
-                ).fetchone()
-
-                if existing:
-                    if existing["content_hash"] != normalized["content_hash"]:
-                        # Updated opportunity
-                        conn.execute(
-                            "UPDATE sam_gov_opportunities SET title=%s, description=%s, "
-                            "response_deadline=%s, content_hash=%s, last_synced=%s, "
-                            "metadata=%s, active=%s WHERE id=%s",
-                            (
-                                normalized["title"],
-                                normalized["description"],
-                                normalized["response_deadline"],
-                                normalized["content_hash"],
-                                _now(),
-                                normalized["metadata"],
-                                "true",
-                                normalized["id"],
-                            ),
-                        )
-                        updated_count += 1
-                    else:
-                        skipped_count += 1
-                else:
-                    # New opportunity
+            if existing:
+                if existing["content_hash"] != normalized["content_hash"]:
+                    # Updated opportunity
                     conn.execute(
-                        "INSERT INTO sam_gov_opportunities "
-                        "(id, solicitation_number, title, agency, agency_hierarchy, "
-                        "naics_code, classification_code, notice_type, posted_date, "
-                        "response_deadline, description, point_of_contact, set_aside_type, "
-                        "place_of_performance, attachment_urls, active, content_hash, "
-                        "metadata, first_seen, last_synced, classification) "
-                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                        "UPDATE sam_gov_opportunities SET title=%s, description=%s, "
+                        "response_deadline=%s, content_hash=%s, last_synced=%s, "
+                        "metadata=%s, active=%s WHERE id=%s",
                         (
-                            normalized["id"],
-                            normalized["solicitation_number"],
                             normalized["title"],
-                            normalized["agency"],
-                            normalized["agency_hierarchy"],
-                            normalized["naics_code"],
-                            normalized["classification_code"],
-                            normalized["notice_type"],
-                            normalized["posted_date"],
-                            normalized["response_deadline"],
                             normalized["description"],
-                            normalized["point_of_contact"],
-                            normalized["set_aside_type"],
-                            normalized["place_of_performance"],
-                            json.dumps(normalized.get("attachment_urls", [])),
-                            "true",
+                            normalized["response_deadline"],
                             normalized["content_hash"],
+                            _now(),
                             normalized["metadata"],
-                            _now(),
-                            _now(),
-                            "CUI",
+                            "true",
+                            normalized["id"],
                         ),
                     )
-                    new_count += 1
+                    updated_count += 1
+                else:
+                    skipped_count += 1
+            else:
+                # New opportunity
+                conn.execute(
+                    "INSERT INTO sam_gov_opportunities "
+                    "(id, solicitation_number, title, agency, agency_hierarchy, "
+                    "naics_code, classification_code, notice_type, posted_date, "
+                    "response_deadline, description, point_of_contact, set_aside_type, "
+                    "place_of_performance, attachment_urls, active, content_hash, "
+                    "metadata, first_seen, last_synced, classification) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    (
+                        normalized["id"],
+                        normalized["solicitation_number"],
+                        normalized["title"],
+                        normalized["agency"],
+                        normalized["agency_hierarchy"],
+                        normalized["naics_code"],
+                        normalized["classification_code"],
+                        normalized["notice_type"],
+                        normalized["posted_date"],
+                        normalized["response_deadline"],
+                        normalized["description"],
+                        normalized["point_of_contact"],
+                        normalized["set_aside_type"],
+                        normalized["place_of_performance"],
+                        json.dumps(normalized.get("attachment_urls", [])),
+                        "true",
+                        normalized["content_hash"],
+                        normalized["metadata"],
+                        _now(),
+                        _now(),
+                        "CUI",
+                    ),
+                )
+                new_count += 1
 
-                all_opportunities.append(normalized)
+            all_opportunities.append(normalized)
 
-            conn.commit()
-            time.sleep(delay)
+        conn.commit()
+        _sleep_within_budget(delay)
 
     conn.close()
     duration = round(time.time() - start_time, 2)
@@ -405,7 +462,15 @@ def scan_sam_gov(config=None, naics_filter=None, notice_type_filter=None, db_pat
         "govcon.scan",
         "govcon-scanner",
         f"Scanned SAM.gov: {new_count} new, {updated_count} updated",
-        details={"new": new_count, "updated": updated_count, "skipped": skipped_count, "errors": len(errors)},
+        details={
+            "new": new_count,
+            "updated": updated_count,
+            "skipped": skipped_count,
+            "errors": len(errors),
+            "pairs_scanned": pairs_scanned,
+            "pairs_total": pairs_total,
+            "budget_exhausted": budget_exhausted,
+        },
     )
 
     return {
@@ -416,6 +481,15 @@ def scan_sam_gov(config=None, naics_filter=None, notice_type_filter=None, db_pat
         "total_fetched": len(all_opportunities),
         "errors": errors,
         "scan_duration_seconds": duration,
+        # --- what this scan actually covered.  A truncated scan must never read as a
+        # clean one: without these a short opportunity list is indistinguishable from a
+        # complete scan of a corpus that holds nothing.
+        "complete": not budget_exhausted,
+        "budget_seconds": budget_seconds,
+        "budget_exhausted": budget_exhausted,
+        "pairs_scanned": pairs_scanned,
+        "pairs_total": pairs_total,
+        "skipped_over_budget": skipped_over_budget,
     }
 
 

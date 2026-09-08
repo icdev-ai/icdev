@@ -130,6 +130,24 @@ def _audit(conn, action, details="", actor="govcon_api"):
 # =====================================================================
 
 
+def _sam_request_budget_seconds():
+    """Wall-clock ceiling for a scan run inside an HTTP request.
+
+    The scanner issues one SEQUENTIAL GET per (NAICS x notice type) pair -- 32 with the
+    shipped config, at ``DEFAULT_TIMEOUT`` each -- so an unbounded synchronous scan holds
+    a worker thread for minutes and dies at any proxy timeout in front of it.  The CLI
+    and the ``govcon_scan`` reflex deliberately pass no budget and stay unbounded; only
+    the request path is capped.  Read from args/govcon_config.yaml so a deployment can
+    tune it without a code change.
+    """
+    try:
+        from tools.govcon.sam_scanner import _load_config
+
+        return _load_config().get("sam_gov", {}).get("request_budget_seconds", 20)
+    except Exception:  # noqa: BLE001 - an unreadable config must still yield a bound
+        return 20
+
+
 @govcon_api.route("/sam/scan", methods=["POST"])
 @require_role(*GOVCON_WRITE_ROLES)
 def scan_sam_gov():
@@ -137,6 +155,10 @@ def scan_sam_gov():
 
     Scans SAM.gov for opportunities matching configured NAICS codes.
     Auto-creates proposal_opportunities for each new find.
+
+    Bounded by a wall clock: the response reports ``complete`` and names any
+    ``skipped_over_budget`` pairs, so a truncated scan is never mistaken for a
+    complete one that found nothing.
     """
     try:
         from tools.govcon.sam_scanner import scan_sam_gov as _scan_sam
@@ -144,6 +166,7 @@ def scan_sam_gov():
         data = request.get_json(silent=True) or {}
         result = _scan_sam(
             naics_filter=data.get("naics"),
+            budget_seconds=_sam_request_budget_seconds(),
         )
         return jsonify(result)
     except Exception as e:
@@ -990,7 +1013,8 @@ def run_pipeline():
             try:
                 from tools.govcon.sam_scanner import scan_sam_gov as _scan_sam
 
-                results["stages"]["discover"] = _scan_sam()
+                # Same unbounded-synchronous-scan defect as /sam/scan, at a second site.
+                results["stages"]["discover"] = _scan_sam(budget_seconds=_sam_request_budget_seconds())
             except Exception as e:
                 results["stages"]["discover"] = {"status": "error", "error": str(e)}
 
