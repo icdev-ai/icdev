@@ -39,7 +39,9 @@ _SCHEMA_KEYS = ("docmod_eol_products", "docmod_catalog_entries",
                 # dwr-ev-01: the fifth declared source. Present but empty here,
                 # so the backfill REPORTS it (rows: 0) rather than erroring on
                 # a table the config names and the fixture lacks.
-                "dic_author_assertions")
+                "dic_author_assertions",
+                # dwr-ev-02: the sixth declared source, same reasoning.
+                "dic_sme_assertions")
 
 # Deliberately not real products: the store must not care what an entity IS.
 _SOFTWARE = "acme-widget-runtime"
@@ -139,6 +141,7 @@ def test_backfill_reads_every_declared_source_and_is_idempotent(db):
         "docmod_catalog_entries": 1,
         # A declared source that wrote NOTHING is reported, never omitted.
         "dic_author_assertions": 0,
+        "dic_sme_assertions": 0,
     }
 
     # Re-running the same sources UPDATES; it must not grow the store.

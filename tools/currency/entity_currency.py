@@ -607,6 +607,22 @@ def _policy() -> tuple:
     return spec_by_id, order
 
 
+def _provenance_fields(row: dict) -> dict:
+    """A store row's carried source columns, decoded. Never raises: an
+    unreadable or absent ``provenance_json`` is an EMPTY mapping, because a
+    resolution must not fail over signal it merely carries."""
+    raw = row.get("provenance_json")
+    if isinstance(raw, dict):
+        return raw
+    if not raw:
+        return {}
+    try:
+        loaded = json.loads(raw)
+    except (TypeError, ValueError):
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
 def _resolution_view(rows: list[dict], spec_by_id: dict, order: list[str]) -> dict:
     """One entity's assertions ranked under the policy, with the losers attached.
 
@@ -651,6 +667,15 @@ def _resolution_view(rows: list[dict], spec_by_id: dict, order: list[str]) -> di
             "table": winner.get("provenance_table"),
             "id": winner.get("provenance_id"),
             "record_id": winner.get("record_id"),
+            # The winner's declared `extra_columns`, decoded (dwr-ev-02). This
+            # file has always said they are "carried verbatim into
+            # provenance_json ... so it is preserved rather than lost", and
+            # until now nothing could read them BACK — a carrier that only ever
+            # writes is not preservation. Needed by any source whose row means
+            # nothing without a field this store has no column for: an SME
+            # assertion's `asserted_by` is the attribution, and an attributed
+            # citation that cannot name the person is not attributed.
+            "fields": _provenance_fields(winner),
         },
         # True when the sources do not agree. Reported, never resolved away.
         "conflict": len(verdicts) > 1,

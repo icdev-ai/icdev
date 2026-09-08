@@ -3433,6 +3433,32 @@ def _ann_counts(threads: list, flat: list) -> dict:
     }
 
 
+def _attach_sme_promotions(flat: list, threads: list) -> None:
+    """Mark each comment `citable` iff a human promoted it (dwr-ev-02).
+
+    Read from `dic_sme_assertions` on every request rather than carried as a
+    column on the comment: the promotion is the row's existence, so there is no
+    flag that could go stale and no second place the answer is written down.
+
+    Best-effort on this READ side only -- a comments panel must still render on
+    a database the migration has not reached, and an unreadable table can only
+    make a promoted comment render as an instruction, which under-claims. The
+    WRITE side is fail-closed.
+    """
+    nodes = list(flat)
+    for t in threads:
+        nodes.append(t)
+        nodes.extend(t.get("replies") or [])
+    conn = _conn()
+    try:
+        promotions = _sme_promotions_for(conn, [n.get("ann_id") for n in nodes])
+    finally:
+        conn.close()
+    for n in nodes:
+        n["sme_assertion"] = promotions.get(str(n.get("ann_id")))
+        n["citable"] = n["sme_assertion"] is not None
+
+
 @dic_bp.route("/api/sections/<section_id>/annotations", methods=["GET"])
 def api_section_annotations_list(section_id: str):
     from tools.document_intelligence import annotation_store as anns
@@ -3445,6 +3471,14 @@ def api_section_annotations_list(section_id: str):
         flat = anns.list_annotations(section_id, tenant_id=tenant_id)
         threads = anns.list_threads(section_id, tenant_id=tenant_id,
                                     status=status_filter, category=category_filter)
+        # dwr-ev-02: whether each comment has been PROMOTED to an attributed SME
+        # assertion, read from dic_sme_assertions and never from a flag on the
+        # comment. A comment absent from that table is an INSTRUCTION -- the
+        # default, and the state in which it can be cited by nothing at all.
+        # Attached to the flat rows AND to every thread node, because the two
+        # shapes come from one read and a reader must not find a comment marked
+        # citable in one and not the other.
+        _attach_sme_promotions(flat, threads)
     except Exception as exc:
         logger.warning("dic: annotation list failed for %s: %s", section_id, exc)
         return jsonify({"error": str(exc)}), 500
@@ -3533,6 +3567,140 @@ def api_section_annotations_create(section_id: str):
     finally:
         conn.close()
     return jsonify(created), 201
+
+
+# -- Promote ONE comment to an attributed SME assertion (dwr-ev-02) -----------
+
+def _sme_promotions_for(conn, ann_ids) -> dict:
+    """Map each ``ann_id`` to its assertion row, or ``{}`` if unreachable.
+
+    Best-effort on the READ side only: a comments panel must still render on a
+    database the migration has not reached. The WRITE side below is fail-closed,
+    which is the asymmetry that matters -- an unreadable table can only make a
+    promoted comment render as an instruction (it under-claims, which is safe),
+    while a failed write must never leave an unaudited assertion behind.
+    """
+    try:
+        from tools.document_intelligence.sme_evidence import promotions_for
+
+        return promotions_for(conn, ann_ids)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("dic: sme promotion lookup failed: %s", exc)
+        return {}
+
+
+@dic_bp.route("/api/annotations/<ann_id>/promote", methods=["POST"])
+def api_annotation_promote(ann_id: str):
+    """Promote ONE comment to an attributed SME assertion (dwr-ev-02).
+
+    A comment is an INSTRUCTION by default and is cited by nothing. This is the
+    one door out of that state, and it is deliberately narrow:
+
+    * ONE comment. There is no bulk endpoint and no heuristic anywhere -- the
+      route takes a single ``ann_id`` from the URL and the writer takes a single
+      ``ann_id`` keyword.
+    * The CLAIM is TYPED and supplied by the promoting human. Nothing parses the
+      comment prose (TRUST rule 2 -- a ``text_pattern`` claim can never reach a
+      pack), so a promotion states what the comment ASSERTS in the store's own
+      closed vocabulary and the prose travels as the quotation.
+    * AUDITED AS A DECISION, BEFORE THE WRITE, FAIL-CLOSED.
+      ``_record_hitl_decision`` raises on an audit failure and is called before
+      ``promote_comment`` runs, so an unauditable promotion never happens.
+      Promoting a remark into the evidence chain is exactly the human
+      authorisation cef-ui-03 made unforgeable at the other DIC doors.
+    """
+    from tools.document_intelligence.sme_evidence import (
+        AlreadyPromoted,
+        CommentNotFound,
+        SMEPromotionError,
+        promote_comment,
+        read_comment,
+    )
+
+    data = request.get_json(silent=True) or {}
+    claim = data.get("claim") if isinstance(data.get("claim"), dict) else data
+    reviewer = (data.get("promoted_by") or data.get("reviewer") or "").strip() or _current_user()
+    tenant_id, classification = _security_context()
+
+    conn = _conn()
+    try:
+        # No `_ensure` here: dwr-cmt-01 moved the comment table's schema into
+        # annotation_store and gave it a migration, and a runtime CREATE TABLE
+        # is what made a migrated deployment indistinguishable from one that
+        # never ran it. sme_evidence.promote_comment ensures ITS OWN table.
+        # Read the comment BEFORE the audit row, so a 404 is a 404 rather than
+        # an audit row about a comment that does not exist.
+        comment = read_comment(conn, ann_id)
+        if comment is None:
+            return jsonify({"error": f"no comment {ann_id}"}), 404
+
+        _record_hitl_decision(
+            "dic_annotation", ann_id, "promoted_to_sme_assertion", reviewer,
+            {
+                "doc_id": comment.get("doc_id"),
+                "section_id": comment.get("section_id"),
+                # WHO SAID IT, beside who decided it was evidence. The row
+                # answers both "was this reviewed" and "whose word is it now".
+                "asserted_by": comment.get("author"),
+                "claim": claim,
+                # A promotion adds a citable source; it applies nothing to a
+                # document. Deterministic at the moment of authorisation.
+                "applied": False,
+            },
+        )
+
+        result = promote_comment(
+            conn, ann_id=ann_id, claim=claim, promoted_by=reviewer,
+            tenant_id=tenant_id or "default", classification=classification or "CUI",
+        )
+        conn.commit()
+        return jsonify({
+            "promoted": True,
+            "ann_id": ann_id,
+            "sme_assertion": result["assertion"],
+            # Two SMEs disagreeing is REPORTED, never silently landed: both
+            # statements stand, and the store ranks them by the human clock.
+            "contradicts": result["contradicts"],
+            "store": result["store"],
+        }), 201
+    except AlreadyPromoted as exc:
+        conn.rollback()
+        return jsonify({"error": str(exc)}), 409
+    except CommentNotFound as exc:
+        conn.rollback()
+        return jsonify({"error": str(exc)}), 404
+    except SMEPromotionError as exc:
+        conn.rollback()
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        conn.rollback()
+        logger.warning("dic: promote %s failed: %s", ann_id, exc)
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
+@dic_bp.route("/api/annotations/<ann_id>/promote", methods=["GET"])
+def api_annotation_promotion(ann_id: str):
+    """The assertion a comment was promoted to, or ``null``.
+
+    ``promoted: false`` here is a MEASURED answer over a readable table, and
+    ``measured: false`` is the separate case where the store could not be read
+    at all -- "nobody promoted this" and "I could not tell" justify opposite
+    readings of the same panel and are never merged.
+    """
+    conn = _conn()
+    try:
+        from tools.document_intelligence.sme_evidence import promotions_for
+
+        row = promotions_for(conn, [ann_id]).get(str(ann_id))
+        return jsonify({"ann_id": ann_id, "promoted": row is not None,
+                        "sme_assertion": row, "measured": True})
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"ann_id": ann_id, "promoted": None, "sme_assertion": None,
+                        "measured": False, "error": str(exc)}), 200
+    finally:
+        conn.close()
 
 
 @dic_bp.route("/api/annotations/<ann_id>", methods=["PUT"])
