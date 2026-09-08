@@ -1830,12 +1830,25 @@ def api_ingest():
                 }
             # Preserve the uploaded filename — ingest_file only sees the temp
             # path, which otherwise lands as e.g. 'tmp9x41vmaz.txt'.
+            #
+            # THE TITLE HAS TO BE REPLACED, NOT FILLED IN. `COALESCE(NULLIF(title,''), …)`
+            # only writes when the title is empty, and by this point `ingest_file` has
+            # already set it to the TEMP STEM — which is not empty, so the intended repair
+            # never applied and the documents landed titled `tmpqsnpbru9`. Measured on the
+            # live board 2026-09-08: several such rows, alongside properly titled ones from
+            # other paths.
+            #
+            # A title the extractor genuinely derived (PDF metadata, a leading heading) is
+            # still KEPT: only an empty title or the temp stem itself is overwritten, so
+            # this repairs the accident without overriding a real answer.
             try:
                 c = _conn()
                 c.execute(
                     "UPDATE dic_documents SET filename = %s, "
-                    "title = COALESCE(NULLIF(title, ''), %s) WHERE doc_id = %s",
-                    (filename, Path(filename).stem, outcome.doc_id),
+                    "title = CASE WHEN COALESCE(title, '') IN ('', %s) THEN %s "
+                    "             ELSE title END "
+                    "WHERE doc_id = %s",
+                    (filename, Path(tmp_path).stem, Path(filename).stem, outcome.doc_id),
                 )
                 c.commit()
                 c.close()
