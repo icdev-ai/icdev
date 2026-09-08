@@ -5340,9 +5340,19 @@ def _decided_refusal(suggestion_id: str, current: dict | None,
     standing = current.get("status") or decision.get("decision")
     who = decision.get("decided_by")
     when = decision.get("decided_at") or current.get("updated_at")
-    if standing == "superseded" and not who:
+    # A SUPERSEDE IS NEVER PHRASED AS A PERSON'S DECISION, whether or not the
+    # chain names an actor. `supersede_suggestion` writes the MECHANISM into
+    # `decided_by` (`system:anchor_verify`, `redraft:<actor>`) precisely so a
+    # retirement "can never be read as somebody's accept-or-reject"
+    # (dwr-ev-03), and rendering it through the "<who> already <status> this
+    # change" template would undo that one sentence later: the reader is told a
+    # name in the grammatical position a decider occupies. What a reviewer
+    # needs here is the CAUSE -- the document moved -- with the mechanism
+    # named as a mechanism.
+    if standing == "superseded":
         message = ("This change was superseded before your decision landed -- the "
-                   "document moved under it. Your %s was NOT recorded." % attempted)
+                   "document moved under it%s. Your %s was NOT recorded." % (
+                       (" (retired by %s)" % who) if who else "", attempted))
     elif who:
         message = ("%s already %s this change%s. Your %s was NOT recorded and the "
                    "document was not changed by it." % (

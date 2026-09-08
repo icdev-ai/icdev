@@ -343,6 +343,26 @@ def test_no_decider_is_invented_for_a_mechanism(client, db):
     assert "superseded" in body["message"]
 
 
+def test_a_mechanism_is_named_as_a_mechanism_and_not_as_a_decider(client, db):
+    """``supersede_suggestion`` writes the MECHANISM into ``decided_by``
+    (``system:anchor_verify``) exactly so a retirement can never read as
+    somebody's accept-or-reject (dwr-ev-03). Rendering it through the
+    "<who> already <status> this change" template would undo that one sentence
+    later -- the reader is handed a name in the grammatical position a decider
+    occupies."""
+    sid = _proposal()
+    assert store.supersede_suggestion(sid, "anchor_stale") is True   # default actor
+
+    resp = client.post(f"{P}/api/suggestions/{sid}/accept", json={"reviewer": "bob"})
+    assert resp.status_code == 409
+    msg = resp.get_json()["message"]
+    assert "superseded" in msg and "the document moved under it" in msg
+    assert "system:anchor_verify already" not in msg
+    # The mechanism is still DISCLOSED -- withholding it would be the opposite
+    # error, hiding what retired the change.
+    assert "system:anchor_verify" in msg
+
+
 # ══ 3. THE CURSOR ════════════════════════════════════════════════════════════
 
 def test_baseline_is_not_no_changes(db):
