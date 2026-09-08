@@ -15,12 +15,18 @@ Called by .githooks/pre-commit. Blocks the commit if:
      fails on 20 minutes later, run here in ~0.1s over the staged files only)
   6. A staged .py under tools/ imports an UNDECLARED third-party package inside
      a swallowing handler (mfx-ci-01 -- the tsg-iso-03 census, --staged)
+  7. A staged file that `icdev init` scaffolds (CLAUDE.md, the platform
+     instruction files, .claude/commands, .claude/hooks ... -- the list
+     prebuild_bootstrap.py copies, read out of that script) leaves the packaged
+     bootstrap stale (mfx-ci-04 -- what check_bootstrap_parity fails on in CI
+     hours later, run here in ~0.2s and only when such a file is staged)
 
 Exit 0 = all checks pass (commit proceeds).
 Exit 1 = a check failed (commit blocked with error message).
 """
 from __future__ import annotations
 
+import ast
 import importlib.util
 import os
 import subprocess
@@ -578,6 +584,256 @@ def _run_nav_paths_check(staged: list[str], root: Path = BASE_DIR) -> bool:
     return False
 
 
+# --------------------------------------------------------------------------- #
+# Bootstrap parity on the staged scaffolded files (mfx-ci-04)
+# --------------------------------------------------------------------------- #
+# `icdev init` does not copy this repo's CLAUDE.md. It copies
+# icdev/data/claude_bootstrap/CLAUDE.md, which tools/installer/prebuild_bootstrap.py
+# regenerates from the repo root. PR #2137 added 74 lines to CLAUDE.md, never
+# regenerated the payload, and was red for HOURS on
+# test_payload_rule_is_green_on_the_tree_as_committed -- with ZERO payload
+# defects, because check_bootstrap_parity had found one stale packaged file. The
+# fix was one documented command. The cost was the feedback delay: a red shard, a
+# log dug out, a push, another full run. `.githooks/pre-commit` mentioned the
+# bootstrap zero times.
+#
+# SCOPE IS READ OUT OF THE SCRIPT, never a second copy. The trigger is "this
+# commit stages a path prebuild_bootstrap.py copies": its `SOURCES` literal plus
+# the `AI_PLATFORM_FILES` literal it extends SOURCES from, both read with `ast`
+# (~0 ms measured; importing the script costs ~137 ms through the tools/ shim,
+# on EVERY commit, for a list that is a literal). A test pins the ast-derived
+# list to the script's runtime SOURCES, so the two cannot drift.
+#
+# THE CHECK IS THE ONE CI RUNS: `coherence_checker.py --check bootstrap_parity`,
+# the same predicate, read by the same tool, so the message an author reads here
+# is the message CI prints. ~190 ms measured, paid ONLY when a scaffolded file is
+# staged; the common commit pays the two ast parses and nothing else.
+#
+# IT REGENERATES NOTHING. A hook that fixes what it checks gates nothing -- the
+# same reason the test-gating hook does not widen its own allowlist. It prints
+# the regeneration command and refuses; a test asserts the hook never spawns
+# prebuild_bootstrap.py. `--no-verify` skips it, which is the point of a fast
+# path rather than a second gate: CI stays the backstop.
+#
+# SURVEYED BEFORE ARMING: docs/audits/mfx-ci-04-precommit-bootstrap-parity-survey.md
+PREBUILD_BOOTSTRAP_TOOL = Path("tools") / "installer" / "prebuild_bootstrap.py"
+AI_PLATFORMS_MODULE = Path("tools") / "dx" / "ai_platforms.py"
+COHERENCE_TOOL = Path("tools") / "workflow" / "coherence_checker.py"
+BOOTSTRAP_PARITY_DECLARATION = Path("args") / "bootstrap_parity.yaml"
+#: The ONE sanctioned repair, printed verbatim. Never run from here.
+PREBUILD_COMMAND = "python tools/installer/prebuild_bootstrap.py"
+
+
+def _literal_in_source(source: str | None, name: str):
+    """The module-level literal bound to ``name`` in ``source``, read with ``ast``.
+
+    Plain and annotated assignments both count (`SOURCES: list[...] = [...]`).
+    ``None`` when the source is absent or unparseable, the name is not bound at
+    module level, or its value is not a literal -- every one of which makes the
+    scope unresolvable, and an unresolvable scope allows the commit rather than
+    guessing.
+    """
+    if source is None:
+        return None
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return None
+    for node in tree.body:
+        targets: list[str] = []
+        if isinstance(node, ast.Assign):
+            targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            targets = [node.target.id]
+        if name not in targets or getattr(node, "value", None) is None:
+            continue
+        try:
+            return ast.literal_eval(node.value)
+        except (ValueError, SyntaxError, TypeError):
+            return None
+    return None
+
+
+def _read_repo_file(root: Path, rel: Path) -> str | None:
+    try:
+        return (root / rel).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def _scaffolded_sources(root: Path = BASE_DIR, read=None) -> list[str]:
+    """Repo paths prebuild_bootstrap.py copies into the wheel's bootstrap payload.
+
+    The script's own `SOURCES` literal (first field, the repo-root path) plus
+    the `AI_PLATFORM_FILES` literal from tools/dx/ai_platforms.py that the
+    script extends SOURCES from at import time. Read, never respelled: a
+    hand-kept list here would be exactly the stale second copy this whole gate
+    exists to catch, one file over.
+
+    ``read(rel_path) -> str | None`` defaults to the working tree under ``root``;
+    the fire-rate survey passes a `git show <commit>:<path>` reader so history is
+    replayed through THIS function against each commit's own declaration.
+
+    Each half degrades independently to nothing: a declaration that cannot be
+    read narrows the scope rather than blocking a commit on a guess.
+    """
+    if read is None:
+        def read(rel: Path) -> str | None:
+            return _read_repo_file(root, rel)
+    out: list[str] = []
+    sources = _literal_in_source(read(PREBUILD_BOOTSTRAP_TOOL), "SOURCES")
+    for entry in sources if isinstance(sources, list) else []:
+        if isinstance(entry, (list, tuple)) and entry and isinstance(entry[0], str):
+            out.append(entry[0])
+    platforms = _literal_in_source(read(AI_PLATFORMS_MODULE), "AI_PLATFORM_FILES")
+    for entry in platforms if isinstance(platforms, (list, tuple)) else []:
+        if isinstance(entry, (list, tuple)) and len(entry) >= 2 and isinstance(entry[1], str):
+            out.append(entry[1])
+    return out
+
+
+def _bootstrap_scope(name_status: list[tuple[str, str]], sources: list[str]) -> list[str]:
+    """Staged ADD/MODIFY/RENAME paths that are, or sit under, a scaffolded source.
+
+    A deletion has nothing to regenerate a packaged copy FROM, and the CI check
+    reports a missing pair as `warn`, never `fail`, so it is out of scope here
+    too. Returns [] for the common commit, which then pays nothing further.
+    """
+    roots = [s.strip("/") for s in sources if s and s.strip("/")]
+    out: list[str] = []
+    for status, path in name_status:
+        if not status or status[0] not in ("A", "M", "R"):
+            continue
+        if any(path == r or path.startswith(r + "/") for r in roots):
+            out.append(path)
+    return out
+
+
+def _bootstrap_must_match(root: Path = BASE_DIR) -> list[tuple[str, str]]:
+    """`(repo path, packaged path)` for every pair args/bootstrap_parity.yaml declares.
+
+    The same declaration check_bootstrap_parity reads; an unreadable one yields
+    [] and the index guard below then has nothing to say.
+    """
+    path = root / BOOTSTRAP_PARITY_DECLARATION
+    if not path.is_file():
+        return []
+    try:
+        import yaml  # noqa: PLC0415 -- pyyaml is declared; only on the in-scope path
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return []
+    out: list[tuple[str, str]] = []
+    for pair in (data.get("must_match") or []) if isinstance(data, dict) else []:
+        if isinstance(pair, dict) and pair.get("target") and pair.get("source"):
+            out.append((str(pair["target"]), "icdev/" + str(pair["source"]).lstrip("/")))
+    return out
+
+
+def _index_blob(root: Path, path: str) -> str | None:
+    """The blob id of ``path`` as STAGED, or None when the index has no such entry."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "-q", "--verify", f":{path}"],
+            capture_output=True, text=True, cwd=str(root), timeout=30,
+            encoding="utf-8", errors="replace",
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
+def _bootstrap_unstaged_twins(staged: list[str], root: Path = BASE_DIR) -> list[tuple[str, str]]:
+    """Declared pairs whose target is staged while the two INDEX blobs differ.
+
+    The coherence check reads the WORKING TREE, and the working tree is what CI
+    sees only if everything in it is staged. `git add CLAUDE.md` after a
+    regeneration stages the repo file and not the packaged copy: the tree on
+    disk is in parity, the commit is not, and CI is red on it (the memory of
+    `git add <paths>` omitting a modified file is exactly this shape). Two
+    `git rev-parse :<path>` calls per staged target; a packaged copy the index
+    does not hold at all is the check's own `warn`, never a refusal here.
+    """
+    out: list[tuple[str, str]] = []
+    for target, packaged in _bootstrap_must_match(root):
+        if target not in staged:
+            continue
+        mine = _index_blob(root, target)
+        theirs = _index_blob(root, packaged)
+        if mine and theirs and mine != theirs:
+            out.append((target, packaged))
+    return out
+
+
+def _run_bootstrap_parity(files: list[str], root: Path = BASE_DIR) -> bool:
+    """Refuse a commit that stages a scaffolded file and leaves the payload stale.
+
+    Shells out to the SAME check CI runs (`coherence_checker.py --check
+    bootstrap_parity`), so the report here and the failure there cannot describe
+    two different comparisons. Prints the regeneration command; NEVER runs it.
+    Returns True (allow) whenever the check cannot run -- CI is the backstop and
+    will not be so forgiving.
+    """
+    tool = BASE_DIR / COHERENCE_TOOL
+    if not tool.is_file() or not files:
+        return True
+    print(f"[pre-commit] Bootstrap parity ({len(files)} staged file(s) `icdev init` scaffolds)...")
+    try:
+        result = subprocess.run(
+            [sys.executable, str(tool), "--check", "bootstrap_parity", "--json"],
+            capture_output=True, text=True, cwd=str(root), timeout=120,
+            encoding="utf-8", errors="replace",
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(f"[pre-commit] Bootstrap parity: SKIPPED -- could not run ({exc})")
+        return True
+    import json  # noqa: PLC0415
+    try:
+        report = json.loads(result.stdout)
+        check = next(
+            c for c in (report.get("checks") or []) if c.get("check_id") == "bootstrap_parity"
+        )
+    except (ValueError, TypeError, AttributeError, StopIteration):
+        print("[pre-commit] Bootstrap parity: SKIPPED -- unreadable report")
+        if result.stderr and result.stderr.strip():
+            print(result.stderr.strip())
+        return True
+
+    if check.get("status") == "fail":
+        print("[pre-commit] BLOCKED: this commit stages a file `icdev init` scaffolds, and the "
+              "packaged bootstrap copy is stale:")
+        for line in list(check.get("extra") or []) + list(check.get("missing") or []):
+            print(f"  {line}")
+        if check.get("message"):
+            print(f"  {check['message']}")
+        print(
+            "[pre-commit] Regenerate the packaged bootstrap, stage it, and retry:\n"
+            f"    {PREBUILD_COMMAND}\n"
+            "    git add icdev/data/claude_bootstrap\n"
+            "  This hook regenerates nothing itself -- a hook that fixes what it checks "
+            "gates nothing. Never hand-copy one file: the other packaged files drift too."
+        )
+        return False
+
+    unstaged = _bootstrap_unstaged_twins(files, root)
+    if unstaged:
+        print("[pre-commit] BLOCKED: the packaged bootstrap copy is regenerated on disk but "
+              "the COMMIT would still carry the stale one:")
+        for target, packaged in unstaged:
+            print(f"  {target} (staged)  !=  {packaged} (as staged)")
+        print(
+            "[pre-commit] Stage both sides and retry:\n"
+            f"    git add {' '.join(sorted({p for pair in unstaged for p in pair}))}\n"
+            f"  (if the packaged copy is not regenerated yet: {PREBUILD_COMMAND})"
+        )
+        return False
+
+    print("[pre-commit] Bootstrap parity: OK")
+    return True
+
+
 def _run_blueprint_import_check() -> bool:
     """Run the coherence blueprint_imports check."""
     print("[pre-commit] Checking blueprint imports...")
@@ -762,6 +1018,13 @@ def main() -> int:
     # files that can change the derivation. A commit touching none of them
     # pays nothing.
     if _nav_paths_in_scope(staged) and not _run_nav_paths_check(staged):
+        failed = True
+
+    # Bootstrap parity -- only when this commit stages a file `icdev init`
+    # scaffolds (the list prebuild_bootstrap.py copies, read out of that script).
+    # A commit staging none of them pays two ast parses and nothing else.
+    bootstrap_files = _bootstrap_scope(name_status, _scaffolded_sources())
+    if bootstrap_files and not _run_bootstrap_parity(bootstrap_files):
         failed = True
 
     # Always run blueprint import check when Python files change

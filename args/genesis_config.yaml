@@ -1404,7 +1404,7 @@ reflexes:
     schedule: "every 24h"
     interval_seconds: 86400
     cooldown_minutes: 240
-    description: "Canvas reassessment (rem-hyg-11): re-run each canvas's own assessment engine for designs whose newest assessment is missing or older than stale_after_days, and persist the score the engine ACTUALLY returned. Fixes the cause of the Compliance Posture card being 33-71 days stale - an assessment was only ever written by a human clicking assess in the canvas UI. Covers observability/boundary/infra; Security is out of scope (wider schema, design-id engine)."
+    description: "Canvas reassessment (rem-hyg-11): re-run each canvas's own assessment engine for designs whose newest assessment is missing or older than stale_after_days, and persist the score the engine ACTUALLY returned. Fixes the cause of the Compliance Posture card being 33-71 days stale - an assessment was only ever written by a human clicking assess in the canvas UI. Covers observability/boundary/infra/data (rmf-inert-03 added Data) and REPORTS its coverage BY NAME against the posture surface: every widget row it does not write is named in canvas_reassess.UNCOVERED with the reason (Security: wider schema + design-id engine; Network/Pipeline: per-check rows summed over every row; Agentic AI / AI-ML: no assessment_type column; QDC: uqs_score derived outside the engine; Migration: scored from validation rows only; GovLift / Zero Trust / AI-ify: not canvases). A surface row with no decision fails the run. Budget is spent OLDEST-FIRST across canvases (never ORDER BY id per canvas) and the report rides under details, which is the only key the daemon persists."
     dry_run: false
     success_metric:
       name: reassessed

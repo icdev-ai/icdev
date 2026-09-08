@@ -1,0 +1,2 @@
+# mfx-mrg-07 — the Actions auto-merge workflow honours protected_paths through the one shared rule
+tests/ci/test_pr_watcher_workflow_protected_paths.py
