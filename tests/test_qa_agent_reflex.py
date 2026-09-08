@@ -109,9 +109,26 @@ class TestRunReflex(unittest.TestCase):
             c = MagicMock()
             sql_lower = sql.lower()
             if "full e2e suite sweep" in sql_lower:
-                if "status in" in sql_lower and "backlog" in sql_lower:
+                # `_pending_sweep_exists` asks for an OPEN sweep, and it asks
+                # by EXCLUSION: `status NOT IN (done, decomposed, failed)`.
+                # This mock still discriminated on `"status in"` AND
+                # `"backlog"` -- the shape of an older `status IN (backlog,
+                # ...)` query -- and NEITHER survives the rewrite: `"status
+                # in"` is not a substring of `"status not in"`, and no terminal
+                # status is spelled `backlog`. So the branch was dead, every
+                # call fell through to None, `_pending_sweep_exists` could
+                # never return True, and `test_sweep_task_skipped_when_pending`
+                # was structurally unable to pass. The file is ungated, so
+                # nothing reported it.
+                #
+                # Discriminated on `not in` alone: that is what separates this
+                # query from `_last_sweep_completed_at`, which asks the same
+                # title with `status = 'done'`. Matching the terminal statuses
+                # by name would re-couple the mock to a list the reflex owns.
+                if "not in" in sql_lower:
                     c.fetchone.return_value = {"id": "x"} if sweep_pending else None
                 else:
+                    # `_last_sweep_completed_at` — no prior completed sweep.
                     c.fetchone.return_value = None
             elif "qa-gap" in str(params).lower() or (params and "%" in str(params[0])):
                 c.fetchone.return_value = {"id": "x"} if gap_pending else None
