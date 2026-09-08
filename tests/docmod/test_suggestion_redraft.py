@@ -61,11 +61,30 @@ FINDING_COLUMNS = (
     "entity_label TEXT", "entity_type TEXT", "finding_type TEXT",
     "currency_verdict TEXT", "severity TEXT", "rationale TEXT", "evidence_json TEXT",
     "recommended_replacement TEXT", "replacement_evidence_json TEXT",
-    "confidence REAL", "state TEXT", "supersedes_id TEXT",
+    "confidence REAL", "state TEXT", "supersedes_id TEXT", "prediction_id TEXT",
     "redline_suggestion_id TEXT", "dedupe_key TEXT", "created_at TEXT",
     "tenant_id TEXT", "classification TEXT", "anchor_start INTEGER",
     "anchor_end INTEGER", "anchor_text TEXT",
 )
+
+# THE CANONICAL SHAPE, and it is a SUPERSET on purpose. This file needs five of
+# these columns and declares all eighteen, because a `dic_sections` missing
+# `status` exists NOWHERE ELSE in the tree -- so if a shard ever leaks this
+# module's table to a neighbour (the docmod conftest isolates per module, but
+# greedy shard packing reshuffles ~110 files around this one on a single
+# addition), a narrow table would be the one shape nothing downstream can
+# INSERT into. Declaring the superset costs nothing and removes the hazard
+# whether or not the leak is real. Kept in step with the DDL in
+# test_regen_quality_gate.py and document_intelligence/db/init_db.py.
+DIC_SECTIONS_DDL = """
+CREATE TABLE dic_sections (
+    section_id TEXT PRIMARY KEY, version_id TEXT NOT NULL, doc_id TEXT NOT NULL,
+    heading TEXT NOT NULL, content TEXT, citations_json TEXT,
+    status TEXT DEFAULT 'draft', origin TEXT DEFAULT 'ai_generated',
+    assigned_to TEXT, reviewed_by TEXT, reviewed_at TEXT, created_at TEXT,
+    created_by TEXT, tenant_id TEXT, classification TEXT, verified INTEGER,
+    citation_report TEXT, abstained INTEGER, confidence REAL)
+"""
 
 
 @pytest.fixture(autouse=True)
@@ -74,17 +93,16 @@ def _schema():
 
     ``docmod_findings`` and ``dic_sections`` are created by other modules with
     other shapes; ``CREATE TABLE IF NOT EXISTS`` would silently keep whichever
-    ran first. Dropping first is what makes the fixture a guarantee.
+    ran first, and this file's assertions depend on the columns it reads. So it
+    drops and re-creates -- and re-creates the CANONICAL shape, never a minimal
+    one (see ``DIC_SECTIONS_DDL``).
     """
     with _conn() as conn:
         store._ensure_tables(conn)
         for table in ("docmod_findings", "dic_sections"):
             conn.execute(f"DROP TABLE IF EXISTS {table}")
         conn.execute(f"CREATE TABLE docmod_findings ({', '.join(FINDING_COLUMNS)})")
-        conn.execute(
-            "CREATE TABLE dic_sections (section_id TEXT PRIMARY KEY, version_id TEXT, "
-            "doc_id TEXT, heading TEXT, content TEXT)"
-        )
+        conn.execute(DIC_SECTIONS_DDL)
         conn.execute("DELETE FROM dic_suggestions")
         conn.execute("DELETE FROM dic_suggestion_decisions")
         conn.commit()
