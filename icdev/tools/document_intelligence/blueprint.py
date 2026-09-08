@@ -728,6 +728,31 @@ def workspace_picker():
     )
 
 
+@dic_bp.route("/api/workspace/body", methods=["GET"])
+def api_workspace_body():
+    """The left pane's content, as JSON (dwr-ws-03).
+
+    THE SAME ``workspace.document_body`` the page render calls -- never a second
+    read written for the client -- so a re-read cannot describe a different
+    document from the one first rendered, and ``basis``/``reason`` mean here
+    exactly what they mean in the template.
+
+    WHY IT EXISTS. When the accept door refuses with ``anchor_stale`` the
+    document has MOVED under the reviewer, and the page is showing text that is
+    no longer in the section. It cannot repair the proposal -- that one is
+    superseded, and there is no re-anchor door -- but it can stop lying about
+    the document, which is what this answers.
+
+    GET, no POST sibling: it reads, and decides nothing.
+    """
+    from tools.document_intelligence.workspace import document_body
+
+    doc_id = request.args.get("doc_id") or ""
+    if not doc_id:
+        return jsonify({"error": "doc_id is required"}), 400
+    return jsonify(document_body(doc_id))
+
+
 @dic_bp.route("/workspace/<doc_id>")
 def workspace(doc_id: str):
     """The two-pane workspace: the document, and one card per proposal (dwr-ws-02).
@@ -5494,6 +5519,17 @@ def api_suggestion_accept(suggestion_id: str):
         "applied_by": applied_by,
         "application_recorded": application_recorded,
         "new_hash": compute_hash(new_content),
+        # dwr-ws-03 — WHAT WAS WRITTEN, so a page can re-render the affected
+        # span without reloading and without predicting it. This is
+        # `after_content`, the CONFIRMED re-read of the row, and deliberately
+        # not `new_content`, the value this route computed BEFORE the write:
+        # they are equal here only because the check above proved it, and
+        # returning the predicted one would hand a caller a splice nobody
+        # verified. A client recomputing `content[:start] + replacement +
+        # content[end:]` for itself would be the same computation trusted
+        # twice, and the two would part company the moment anything else
+        # touched the section.
+        "section_content": after_content,
     })
 
 
@@ -5616,17 +5652,34 @@ def api_section_suggest(section_id: str):
     # Load current section content for context — and as the anchor's content
     # of record. `section_read` separates "the section is empty" from "the
     # read failed": only a section actually READ can carry an exact anchor.
+    #
+    # dwr-ws-03 — THE SECTION'S ``doc_id`` IS READ HERE TOO, and it is not
+    # cosmetic. This route wrote ``doc_id`` EMPTY on every crowdsourced
+    # proposal, and every per-document surface filters on that column —
+    # ``build_change_set`` drops a row whose ``doc_id`` is not the document's,
+    # so a crowdsourced suggestion could never appear in the workspace rail of
+    # the document it was made on. Measured 2026-09-08: 0 crowdsourced rows on
+    # the live board, so nothing has been lost yet; the fixture written for
+    # this card's E2E was the first thing to take that path, and its three
+    # proposals rendered as an empty rail beside the sections they addressed.
+    # Derived from the section, never taken from the request: the document a
+    # section belongs to is not the caller's to assert.
     current_content = ""
+    section_doc_id = ""
     section_read = False
     try:
         conn = _conn()
         cur = conn.execute(
-            "SELECT content FROM dic_sections WHERE section_id = %s LIMIT 1",
+            "SELECT content, doc_id FROM dic_sections WHERE section_id = %s LIMIT 1",
             (section_id,),
         )
         row = cur.fetchone()
         if row:
-            current_content = (row[0] if isinstance(row, (list, tuple)) else row["content"]) or ""
+            if isinstance(row, (list, tuple)):
+                current_content, section_doc_id = (row[0] or ""), (row[1] or "")
+            else:
+                current_content = row["content"] or ""
+                section_doc_id = row["doc_id"] or ""
             section_read = True
         conn.close()
     except Exception:
@@ -5642,6 +5695,7 @@ def api_section_suggest(section_id: str):
 
     suggestion_id = create_suggestion(
         section_id=section_id,
+        doc_id=section_doc_id,
         collection_id=cid,
         canvas_source="crowdsource",
         suggested_content=proposed_content,
@@ -5656,6 +5710,7 @@ def api_section_suggest(section_id: str):
     return jsonify({
         "suggestion_id": suggestion_id,
         "section_id": section_id,
+        "doc_id": section_doc_id or None,
         "canvas_source": "crowdsource",
         "status": "pending",
     }), 201

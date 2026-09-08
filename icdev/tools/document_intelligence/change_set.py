@@ -246,6 +246,125 @@ def _float_or_none(value) -> float | None:
         return None
 
 
+# ── How much of this document has been decided (dwr-ws-03) ────────────────────
+#
+# Every status a proposal can be in. ``suggestion_store._VALID_STATUSES`` is the
+# store's own list and is imported rather than respelled: a sixth status added
+# there must not silently fall out of this denominator.
+#
+# TWO NUMBERS, NEVER ONE, and the difference is the whole reason this is not a
+# single "done" count:
+#
+#   resolved  the change has LEFT THE QUEUE -- accepted, rejected or superseded.
+#             What a reviewer wants to know is how much is still in front of
+#             them, and a superseded change is not.
+#   reviewed  a HUMAN decided it -- accepted or rejected, and nothing else. A
+#             SUPERSEDED change was retired by the accept door when its anchor
+#             went stale (dwr-anchor-05); ``decided_by`` on that row names the
+#             MECHANISM, never a person. Folding it into `reviewed` would report
+#             a document as reviewed that nobody looked at, which is
+#             dwr-ev-03's rule -- a retirement must never read as somebody's
+#             accept-or-reject -- one surface up.
+#
+# NEITHER RATE IS EVER FABRICATED. ``None`` over an empty denominator ("no
+# proposal was ever made" is not 100% reviewed and not 0% reviewed) and ``None``
+# whenever ANY status could not be read, because a partial read is a smaller
+# total, and a smaller total is a HIGHER percentage -- the direction that
+# flatters. args/perfect_score_gate.yaml is ratcheted to 0.
+
+#: Off the queue. A proposal in one of these needs no decision from anybody.
+DECIDED_STATUSES = ("accepted", "rejected", "superseded")
+#: A HUMAN's decision, and only that. ``superseded`` is deliberately absent.
+REVIEWED_STATUSES = ("accepted", "rejected")
+
+PROGRESS_UNMEASURED = "unmeasured"
+PROGRESS_NONE = "no_changes"
+PROGRESS_CHANGES = "changes"
+
+
+def _pct(part: int, whole: int) -> float | None:
+    """``part`` of ``whole`` as a percentage, or ``None`` over no denominator.
+
+    FLOORS to one decimal place. 1999 of 2000 is 99.95%, which ``round`` turns
+    into 100.0 -- a display reading a perfect score for an imperfect one. 100.0
+    is reserved for a rate that IS 100, and 0.0 for one that IS 0.
+    """
+    if not whole:
+        return None
+    if part >= whole:
+        return 100.0
+    if part <= 0:
+        return 0.0
+    import math
+    return max(0.1, math.floor(part / whole * 1000) / 10.0)
+
+
+def decision_progress(
+    *,
+    doc_id: str | None = None,
+    collection_id: str | None = None,
+    canvas_source: str | None = None,
+) -> dict:
+    """"N of M changes resolved" for one document, over EVERY status.
+
+    ``build_change_set`` filters to one status (``pending`` by default), so it
+    holds the numerator and never the denominator: a page counting from it can
+    only ever say how many are left, not how far through the reviewer is.
+
+    Reads. Writes nothing, decides nothing.
+    """
+    from tools.logging.icdev_logger import get_logger
+    from tools.document_intelligence.suggestion_store import _VALID_STATUSES
+
+    logger = get_logger(__name__)
+    by_status: dict[str, int] = {}
+    unreadable: list[str] = []
+    for status in _VALID_STATUSES:
+        try:
+            from tools.document_intelligence.suggestion_store import (
+                get_pending_suggestions,
+            )
+            rows = get_pending_suggestions(collection_id=collection_id,
+                                           canvas_source=canvas_source, status=status)
+        except Exception as exc:  # noqa: BLE001 — an unreadable status is not zero of them
+            logger.warning("change_set.decision_progress: %s unreadable: %s", status, exc)
+            unreadable.append(status)
+            continue
+        if doc_id:
+            rows = [r for r in rows if (r.get("doc_id") or "") == doc_id]
+        by_status[status] = len(rows)
+
+    if unreadable:
+        return {
+            "state": PROGRESS_UNMEASURED,
+            "doc_id": doc_id,
+            "total": None, "resolved": None, "reviewed": None, "pending": None,
+            "accepted": None, "rejected": None, "superseded": None,
+            "resolved_pct": None, "reviewed_pct": None,
+            "unreadable_statuses": unreadable,
+            "by_status": by_status,
+        }
+
+    total = sum(by_status.values())
+    resolved = sum(by_status.get(s, 0) for s in DECIDED_STATUSES)
+    reviewed = sum(by_status.get(s, 0) for s in REVIEWED_STATUSES)
+    return {
+        "state": PROGRESS_CHANGES if total else PROGRESS_NONE,
+        "doc_id": doc_id,
+        "total": total,
+        "resolved": resolved,
+        "reviewed": reviewed,
+        "pending": by_status.get("pending", 0),
+        "accepted": by_status.get("accepted", 0),
+        "rejected": by_status.get("rejected", 0),
+        "superseded": by_status.get("superseded", 0),
+        "resolved_pct": _pct(resolved, total),
+        "reviewed_pct": _pct(reviewed, total),
+        "unreadable_statuses": [],
+        "by_status": by_status,
+    }
+
+
 # ── The run ───────────────────────────────────────────────────────────────────
 
 def run_state(read_ok: bool, changes: list[dict]) -> str:
@@ -329,6 +448,12 @@ def build_change_set(
             "diffable": diffable if read_ok else None,
             "not_diffable": (len(changes) - diffable) if read_ok else None,
         },
+        # dwr-ws-03 — "N of M changes resolved", over EVERY status. The counts
+        # above are the PENDING filter's; this is the denominator, and it rides
+        # on the same payload so the rail cannot describe a progress the API
+        # does not.
+        "progress": decision_progress(doc_id=doc_id, collection_id=collection_id,
+                                      canvas_source=canvas_source),
         "truncated": truncated,
         "limit": limit,
     }
