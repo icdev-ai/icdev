@@ -187,11 +187,25 @@ function loadCollectionDocs(colId) {
           var chunkBadge = d.chunk_count > 0
             ? '<span style="background:#0a1a2e;color:#7ab3f0;padding:1px 5px;border-radius:2px;font-size:10px;margin-left:4px;">' + d.chunk_count + ' chunks</span>'
             : '<span style="background:#2e1a05;color:#fbbf24;padding:1px 5px;border-radius:2px;font-size:10px;margin-left:4px;">0 chunks</span>';
+          // dwr-fid-01: is the uploaded ORIGINAL still readable? `retained` is
+          // the content-addressed copy; `source_on_disk` a CLI ingest whose file
+          // still exists; `absent` the finding (the upload was deleted after
+          // ingest and nothing kept it); `no_source` a document generated in
+          // the canvas, which never had an upload. Never one bucket.
+          var os = d.original_status || '';
+          var origBadge = '';
+          if (os === 'absent' || os === 'retained_missing' || os === 'retained_mismatch') {
+            origBadge = '<span title="No original on disk: page geometry and fidelity cannot be recovered" style="background:#3a0a0a;color:#f87171;padding:1px 5px;border-radius:2px;font-size:10px;margin-left:4px;">original ' + os.replace('_', ' ') + '</span>';
+          } else if (os === 'retained') {
+            origBadge = '<span title="Original retained, content-addressed" style="background:#0a2e1a;color:#4ade80;padding:1px 5px;border-radius:2px;font-size:10px;margin-left:4px;">original kept</span>';
+          } else if (os === 'source_on_disk') {
+            origBadge = '<span title="Source file still on disk; not retained by the canvas" style="background:#1e293b;color:#94a3b8;padding:1px 5px;border-radius:2px;font-size:10px;margin-left:4px;">source on disk</span>';
+          }
           return '<a href="/document-intelligence/doc/' + d.doc_id + '" style="text-decoration:none;">' +
             '<div style="background:#0b1726;border:1px solid #1a3560;border-radius:5px;padding:8px 10px;">' +
             '<div style="display:flex;justify-content:space-between;align-items:center;">' +
             '<span style="color:#eaeaea;font-size:12px;font-weight:600;">' + (d.title || d.filename || 'Untitled') + '</span>' +
-            chunkBadge +
+            '<span>' + chunkBadge + origBadge + '</span>' +
             '</div>' +
             '<div style="color:#7a8cb0;font-size:10px;margin-top:3px;">' + (d.provider || '—') + ' · v' + (d.version_count || 1) + ' · <span style="color:' + statusColor + ';">' + (d.latest_status || '—') + '</span></div>' +
             '</div>' +

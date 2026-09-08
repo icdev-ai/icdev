@@ -6239,6 +6239,18 @@ ICDEV_ACE_ENABLED=true        # .env — master toggle for ACE canvas + co-worke
 # Mode info (air-gap vs online, available capabilities)
 # GET /document-intelligence/api/mode
 
+# Retained ORIGINALS -- which uploads still have their file? (dwr-fid-01)
+python -m tools.document_intelligence.originals --survey            # verdict per document, counted
+python -m tools.document_intelligence.originals --survey --json --verify   # re-hash every retained file
+python -m tools.document_intelligence.originals --root              # retention root + files/bytes on disk
+# /api/ingest used to delete its temp upload while dic_documents.filepath still
+# pointed at it (44 of 55 documents with no original, 2026-09-07). Uploads are
+# now kept content-addressed under ICDEV_DIC_ORIGINALS_DIR (default
+# data/document_intelligence/originals, git-ignored); ICDEV_DIC_RETAIN_ORIGINALS=0
+# switches it off and the ingest result SAYS so. Verdicts: retained |
+# retained_missing | retained_mismatch | source_on_disk | absent | no_source.
+# Existing databases: python tools/db/migrate.py --up   (20260908003311)
+
 # Python — generate outputs directly
 python -c "from tools.document_intelligence.output_generators import generate_study_guide; import json; print(json.dumps(generate_study_guide('my-collection', 'default'), indent=2))"
 python -c "from tools.document_intelligence.output_generators import generate_faq; import json; print(json.dumps(generate_faq('my-collection', 'default', n=10), indent=2))"

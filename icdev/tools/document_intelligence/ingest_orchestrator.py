@@ -208,7 +208,17 @@ _SCHEMA = [
         page_count      INTEGER DEFAULT 1,
         created_at      TEXT NOT NULL,
         tenant_id       TEXT,
-        classification  TEXT
+        classification  TEXT,
+        -- dwr-fid-01: the uploaded ORIGINAL, retained content-addressed under
+        -- originals.originals_dir() BEFORE the upload's temp file is deleted.
+        -- `filepath` is where ingest READ the bytes (a temp path for an
+        -- upload, gone within seconds); `original_path` is where they are
+        -- KEPT. NULL means nothing was retained -- generated in-canvas, an
+        -- upload before this landed, or retention switched off. Existing
+        -- databases gain the columns via migration 20260908003311.
+        original_path        TEXT,
+        original_sha256      TEXT,
+        original_retained_at TEXT
     )
     """,
     """
