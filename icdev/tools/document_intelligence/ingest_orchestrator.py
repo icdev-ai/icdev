@@ -277,7 +277,11 @@ _SCHEMA = [
         created_at      TEXT NOT NULL,
         created_by      TEXT,
         tenant_id       TEXT,
-        classification  TEXT
+        classification  TEXT,
+        verified        INTEGER,
+        citation_report TEXT,
+        abstained       INTEGER,
+        confidence      REAL
     )
     """,
 
@@ -302,6 +306,14 @@ _ALTER_MIGRATIONS = [
     # 20260907215506 is what reaches a live PostgreSQL board; this line covers a
     # SQLite database that predates it.
     ("dic_versions", "section_basis", "TEXT"),
+    # dwr-sect-02 — the verification doc_generator computes for every section it
+    # writes. NULL `verified` means the check did not RUN; it is never a 0.
+    # Migration 20260908003513 reaches a live PostgreSQL board; these lines
+    # cover a SQLite database that predates it.
+    ("dic_sections", "verified", "INTEGER"),
+    ("dic_sections", "citation_report", "TEXT"),
+    ("dic_sections", "abstained", "INTEGER"),
+    ("dic_sections", "confidence", "REAL"),
 ]
 
 
