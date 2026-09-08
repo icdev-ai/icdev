@@ -243,3 +243,25 @@ def test_the_retained_original_lands_at_a_content_address_not_a_client_path(tmp_
     assert root.resolve() in dest.parents, f"retained original escaped the store: {dest}"
     assert kept.sha256 in dest.name
     assert "passwd" not in dest.name
+
+
+def test_the_decision_does_not_rest_on_an_unmeasured_auth_premise():
+    """Gap 3 and Gap 25 both carry "supplied by authenticated operators" as part
+    of their rationale, and neither re-derived it. Probed 2026-09-08 against the
+    live dashboard with no cookie and no key, `/document-intelligence/collections`
+    and `/api/kanban/tasks` both answered 200: `ICDEV_DASHBOARD_DEV_AUTOLOGIN=true`
+    is set, which `tools/dashboard/auth.py` itself calls "a full auth bypass by
+    design". So the premise is a property of a DEPLOYMENT, not of this ingress,
+    and Gap 69 must say so rather than inherit it.
+
+    A CSRF refusal is NOT the same control and the entry must not conflate them.
+    """
+    body = DOC.read_text(encoding="utf-8", errors="replace")
+    gap = body[body.index("### Gap 69"):]
+    assert "ICDEV_DASHBOARD_DEV_AUTOLOGIN" in gap, \
+        "Gap 69 does not record the measured auth-bypass caveat"
+    assert "CSRF_FAILED" in gap, "Gap 69 does not record what IS measured at the route"
+    assert "does not make the caller an authenticated operator" in gap, \
+        "Gap 69 does not keep CSRF and authentication apart"
+    # and it never asserts the premise it just refuted
+    assert "come from authenticated operators" not in gap
