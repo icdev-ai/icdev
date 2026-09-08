@@ -1620,6 +1620,28 @@ def _derive_outline(text: str, title: str = ""):
 # Orchestrator
 # --------------------------------------------------------------------------- #
 
+def client_basename(name: str | None) -> str:
+    """The bare filename a CLIENT sent, stripped of any path it carried.
+
+    `pathlib.Path(name).name` splits only on the HOST's separator, so a client
+    on Windows posting a backslash-separated path to a POSIX server gets the
+    whole string back as the "name". BOTH separators are stripped here, along
+    with a leading drive letter and any bare `.` or `..`, because this value is
+    written to a database column that a UI renders and an export may turn back
+    into a path.
+
+    Returns "" for anything that reduces to nothing, so a caller keeps its own
+    fallback rather than storing an empty name.
+    """
+    if not name:
+        return ""
+    candidate = str(name).replace("\\", "/").rsplit("/", 1)[-1]
+    if len(candidate) > 1 and candidate[1:2] == ":":
+        candidate = candidate[2:]          # a drive letter, not a path segment
+    candidate = candidate.strip().strip(".")
+    return "" if candidate in ("", ".", "..") else candidate
+
+
 def ingest_file(
     path: str,
     collection_id: str,
@@ -1641,6 +1663,7 @@ def ingest_file(
     workflow_custom_fields: list[dict] | None = None,
     chunk_template: str | None = None,
     author_assertions: list[dict] | None = None,
+    original_filename: str | None = None,
     conn=None,
     progress_cb=None,
 ) -> IngestOutcome:
@@ -1705,12 +1728,32 @@ def ingest_file(
             confidence gated. Surfaced as a HITL proposal under
             ``IngestOutcome.metadata["correspondence"]``; never silently
             persisted. Failures degrade silently to no correspondence fields.
+        original_filename: THE NAME THE CONTENT ARRIVED UNDER, when `path`
+            is a temporary file the caller spooled it to. Every upload path
+            in this repo writes the request body to a NamedTemporaryFile
+            and hands the temp path here, so without this the document is
+            stored — and TITLED — `tmpqsnpbru9`. Measured on the live board
+            2026-09-08: 21 of the documents in `dic_documents` carried a
+            temp stem as their title, and 20 of them carried it as their
+            filename too, so their original names are unrecoverable.
+            The value is a NAME, never a path: `client_basename` strips any
+            separator, drive letter or `..` it carries before it is stored.
+            An extracted title (PDF metadata, a leading heading) still
+            WINS over it — that is the better answer and this only replaces
+            the accident.
         conn: optional DB connection (else an RLS-aware one is opened).
         progress_cb: optional callable(stage: str, detail: str, pct: int) for progress events.
     """
     p = Path(path)
     if not p.exists() or not p.is_file():
         raise FileNotFoundError(f"not a file: {path}")
+
+    # What this document is CALLED, as distinct from where its bytes happen to
+    # sit right now. When the caller spooled an upload to a temp file, `p.name`
+    # is `tmpqsnpbru9.pdf` and is an implementation detail of the caller that
+    # must not reach the database.
+    display_name = client_basename(original_filename) or p.name
+    display_stem = Path(display_name).stem or display_name
 
     tid, cls = _resolve_context(tenant_id, classification)
     errors: list[str] = []
@@ -1723,9 +1766,26 @@ def ingest_file(
                 pass
 
     # 1) Extract.
-    _emit("extracting", f"Reading {p.name}…", 5)
+    _emit("extracting", f"Reading {display_name}…", 5)
     extraction = _select_extractor(p)
     text = extraction.text or ""
+
+    # AN EXTRACTOR THAT FOUND NO TITLE ECHOES THE FILE'S OWN STEM.
+    # `_select_extractor` does this in three separate places, and the built-in
+    # extractors do it too, so `extraction.title` is only sometimes a title the
+    # document actually carries -- the rest of the time it is the filename
+    # arriving by a second route. When that file is a TEMPORARY one, letting it
+    # win the fallback chain below is how a document ends up titled
+    # `tmpqsnpbru9` even though the caller told us its real name.
+    #
+    # The discriminator is exact rather than a heuristic: equal to `p.stem` means
+    # the extractor echoed the path it was handed. The guard on `display_name`
+    # keeps this inert for every caller that did NOT supply a name -- there is no
+    # better answer available then, and silently changing those callers' titles
+    # would be a migration nobody asked for.
+    extracted_title = extraction.title
+    if extracted_title and display_name != p.name and extracted_title == p.stem:
+        extracted_title = ""
 
     # Surface extraction warnings as outcome errors so the UI can display them.
     if extraction.warnings:
@@ -1750,7 +1810,7 @@ def ingest_file(
     ai_title, ai_summary = "", ""
     if summarize and text.strip():
         _emit("summarizing", "Generating title and abstract…", 8)
-        ai = _ai_document_summary(text, p.name, extraction.page_count)
+        ai = _ai_document_summary(text, display_name, extraction.page_count)
         if ai:
             ai_title, ai_summary = ai.get("title", ""), ai.get("summary", "")
 
@@ -1760,7 +1820,7 @@ def ingest_file(
     ai_metadata: dict = {}
     if extract_metadata and text.strip():
         _emit("metadata", "Extracting document metadata…", 9)
-        md = _ai_metadata_extraction(text, p.name)
+        md = _ai_metadata_extraction(text, display_name)
         if md:
             ai_metadata = md
 
@@ -1783,7 +1843,7 @@ def ingest_file(
     if classify_taxonomy and text.strip():
         _emit("classifying", "Classifying into taxonomy…", 9)
         cls_result = _ai_classify_into_taxonomy(
-            text, classify_taxonomy, multi_label=classify_multi_label, filename=p.name
+            text, classify_taxonomy, multi_label=classify_multi_label, filename=display_name
         )
         if cls_result:
             ai_metadata = {**ai_metadata, "classification": cls_result}
@@ -1807,9 +1867,9 @@ def ingest_file(
                 provider=extraction.provider,
                 content_type=extraction.content_type,
                 page_count=extraction.page_count,
-                title=extraction.title or ai_title or p.stem,
+                title=extracted_title or ai_title or display_stem,
             ),
-            p.name,
+            display_name,
         )
         if anomaly:
             ai_metadata = {**ai_metadata, "metadata_anomaly": anomaly}
@@ -1902,7 +1962,7 @@ def ingest_file(
             source_id=source_id,
             source_table="dic_documents",
             metadata={
-                "filename": p.name,
+                "filename": display_name,
                 "collection_id": collection_id,
                 # Record which template was used (and why) on every chunk, so the
                 # choice is auditable without touching the dic_documents insert.
@@ -1969,9 +2029,9 @@ def ingest_file(
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
-                doc_id, collection_id, source_id, p.name, str(p),
+                doc_id, collection_id, source_id, display_name, str(p),
                 extraction.content_type, extraction.provider,
-                extraction.title or ai_title or p.stem, p.stat().st_size, content_hash,
+                extracted_title or ai_title or display_stem, p.stat().st_size, content_hash,
                 extraction.page_count, now, tid, cls,
             ),
         )
@@ -1982,7 +2042,7 @@ def ingest_file(
         # the other. Without this an ingested document renders an empty Sections
         # list and an anchored change has no coordinate space to land in; on the
         # live board 2026-09-07 only 16 of 55 documents had a single section row.
-        outline = _derive_outline(text, extraction.title or ai_title or p.stem)
+        outline = _derive_outline(text, extracted_title or ai_title or display_stem)
 
         cur.execute(
             """
@@ -2153,7 +2213,7 @@ def ingest_file(
         # Near-duplicate title detection (best-effort): compare this document's
         # title against existing titles in the same collection.
         if detect_near_duplicates:
-            title_for_dup = extraction.title or ai_title or p.stem
+            title_for_dup = extracted_title or ai_title or display_stem
             near = _detect_near_duplicate_titles(doc_id, title_for_dup, collection_id, conn)
             if near:
                 ai_metadata = {**ai_metadata, "near_duplicates": near}
@@ -2455,9 +2515,16 @@ def _detect_mime_from_header(path: Path) -> str | None:
         return "application/octet-stream"
 
 
-def detect_consumer_file_anomaly(path) -> dict | None:
-    """Flag empty/corrupt files, oversized filenames, and MIME/extension mismatches."""
+def detect_consumer_file_anomaly(path, display_name: str = "") -> dict | None:
+    """Flag empty/corrupt files, oversized filenames, and MIME/extension mismatches.
+
+    `display_name` is the name the content ARRIVED under. The length check below
+    is a property of the name a user chose, never of the temporary file the
+    upload was spooled to -- a temp name is always short, so without this the
+    `filename_too_long` signal could not fire on the one input that produces it.
+    """
     p = Path(path)
+    name = display_name or p.name
     signals: list[str] = []
     file_bytes = 0
     try:
@@ -2468,9 +2535,9 @@ def detect_consumer_file_anomaly(path) -> dict | None:
         if file_bytes < _CONSUMER_MIN_FILE_BYTES:
             signals.append(f"empty_or_corrupt: file is only {file_bytes} bytes")
 
-    if len(p.name) > _CONSUMER_MAX_FILENAME_LEN:
+    if len(name) > _CONSUMER_MAX_FILENAME_LEN:
         signals.append(
-            f"filename_too_long: {len(p.name)} chars exceeds {_CONSUMER_MAX_FILENAME_LEN}"
+            f"filename_too_long: {len(name)} chars exceeds {_CONSUMER_MAX_FILENAME_LEN}"
         )
 
     ext = p.suffix.lower()
@@ -2487,7 +2554,7 @@ def detect_consumer_file_anomaly(path) -> dict | None:
             "source": "consumer_pre_validation",
             "signals": signals,
             "file_bytes": file_bytes,
-            "filename": p.name,
+            "filename": name,
         }
     return None
 
