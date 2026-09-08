@@ -28,6 +28,7 @@ Routes:
 
   GET  /document-intelligence/api/suggestions                    list suggestions (dsyn-adapt-04)
   GET  /document-intelligence/api/suggestions/<id>               suggestion detail
+  GET  /document-intelligence/api/change-set                     word-level change set (dwr-ws-01)
   POST /document-intelligence/api/suggestions/<id>/accept        accept: apply content + history
   POST /document-intelligence/api/suggestions/<id>/reject        reject: mark decided + note
 
@@ -5028,6 +5029,45 @@ def api_suggestions_list():
         status=status,
     )
     return jsonify({"suggestions": suggestions, "count": len(suggestions)})
+
+
+@dic_bp.route("/api/change-set", methods=["GET"])
+def api_change_set():
+    """The change set: one WORD-LEVEL diff per proposal (dwr-ws-01).
+
+    Query params: ``doc_id``, ``collection_id``, ``canvas_source``,
+    ``status`` (default ``pending``), ``limit`` (default 200), and
+    ``verify_anchors=0`` to skip the live section re-read.
+
+    Each change carries ``spans`` -- ``[{"tag": "equal"|"insert"|"delete",
+    "text": ...}]`` over the anchor's before/after -- alongside the rationale,
+    the inline citations, the currency verdict, the evidence health, the anchor
+    basis and the confidence band, EACH naming the row it was read from. The
+    diff is computed with ``difflib`` on the server: no diff library is
+    vendored, and the air-gap posture forbids fetching one.
+
+    READ ONLY. It renders proposals; it never applies, decides or supersedes
+    one -- the accept route is still the only door, and this route has no POST
+    sibling.
+    """
+    from tools.document_intelligence.change_set import build_change_set
+
+    try:
+        limit = int(request.args.get("limit", 200))
+    except (TypeError, ValueError):
+        return jsonify({"error": "limit must be an integer"}), 400
+    if limit < 0:
+        return jsonify({"error": "limit must be >= 0"}), 400
+
+    result = build_change_set(
+        doc_id=request.args.get("doc_id") or None,
+        collection_id=request.args.get("collection_id") or None,
+        canvas_source=request.args.get("canvas_source") or None,
+        status=request.args.get("status", "pending"),
+        limit=limit,
+        verify_anchors=request.args.get("verify_anchors", "1") not in ("0", "false", "no"),
+    )
+    return jsonify(result)
 
 
 @dic_bp.route("/api/suggestions/<suggestion_id>", methods=["GET"])
