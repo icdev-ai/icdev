@@ -98,6 +98,18 @@ def _reset_db():
             conn.execute(ddl)
         for table in ("dic_sections", "rag_chunks", "dic_chunk_links", "docmod_findings"):
             conn.execute(f"DELETE FROM {table}")
+        # THE PARENT ROW THE FK NEEDS. `docmod_findings.run_id` REFERENCES
+        # docmod_scan_runs(run_id) in the real schema, and the fixture's own
+        # `CREATE TABLE IF NOT EXISTS` above carries no FK -- so inserting a
+        # finding for 'run-1' passed wherever the permissive table won and failed
+        # with `FOREIGN KEY constraint failed` wherever the migrated one did.
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS docmod_scan_runs (
+                   run_id TEXT PRIMARY KEY, scope_type TEXT, scope_id TEXT)"""
+        )
+        if not conn.execute("SELECT 1 FROM docmod_scan_runs WHERE run_id = 'run-1'").fetchone():
+            conn.execute("INSERT INTO docmod_scan_runs (run_id, scope_type) "
+                         "VALUES ('run-1','all')")
         conn.commit()
 
 
