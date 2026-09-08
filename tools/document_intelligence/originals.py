@@ -160,7 +160,10 @@ def retain_original(src: str | os.PathLike, filename: str = "", *, root: pathlib
     """
     src_path = pathlib.Path(src)
     root = root or originals_dir()
-    suffix = pathlib.Path(filename or src_path.name).suffix.lower()
+    # HOST-INDEPENDENT (dwr-fid-03) -- see ingest_guard.safe_suffix.
+    from tools.document_intelligence.ingest_guard import safe_suffix
+
+    suffix = safe_suffix(filename or src_path.name)
     root.mkdir(parents=True, exist_ok=True)
 
     h = hashlib.sha256()

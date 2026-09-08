@@ -60,7 +60,7 @@ NOT ENFORCED HERE, and named rather than implied:
 from __future__ import annotations
 
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Optional
 
 from tools.analyzers.sandbox import strict_sandbox_enabled
@@ -84,6 +84,35 @@ STRICT_ALLOWED_CLASSES: frozenset[str] = frozenset({CLASS_TEXT})
 _MARKITDOWN_ONLY: frozenset[str] = frozenset({
     ".zip", ".msg", ".eml", ".epub", ".xls", ".mp3", ".wav", ".m4a", ".webp",
 })
+
+
+
+def safe_suffix(filename: str | None) -> str:
+    r"""The client filename's extension, with NO path semantics from either host.
+
+    `Path(name).suffix` is HOST-DEPENDENT and that is a security property here,
+    not a style question. `pathlib.Path` only treats a separator as a boundary if
+    the host uses it, so:
+
+        PurePosixPath(r"x.\..\y").suffix    == ".\y"    (backslash survives on Linux)
+        PureWindowsPath("a.pdf/../evil").suffix == ""     (Windows splits on both)
+
+    Each platform therefore lets the OTHER platform's separator through, and this
+    value is handed straight to `tempfile.NamedTemporaryFile(suffix=...)` and to
+    the retained original's name. Measured 2026-09-08: the sandbox-posture test
+    asserted the Windows behaviour and passed locally while failing on the Linux
+    runner, which is where this actually runs.
+
+    So the last component is taken under BOTH conventions, and the result must
+    then look like an extension -- a dot and a short alphanumeric run. Anything
+    else yields "", because a suffix nobody can vouch for is not worth carrying
+    into a filename.
+    """
+    import re as _re
+
+    name = _re.split(r"[\/]", str(filename or ""))[-1]
+    suffix = PurePosixPath(name).suffix.lower()
+    return suffix if _re.fullmatch(r"\.[a-z0-9]{1,12}", suffix or "") else ""
 
 
 def _registry() -> dict[str, Any]:

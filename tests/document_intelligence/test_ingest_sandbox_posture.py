@@ -220,13 +220,17 @@ def test_the_extraction_path_has_no_exec_eval_or_shell():
     ],
 )
 def test_a_client_filename_cannot_put_a_path_component_on_disk(name):
-    """The only part of the client's filename that reaches the filesystem is
-    ``Path(filename).suffix`` — as the temp file's suffix and as the retained
-    original's. ``Path`` treats every separator as a boundary, so a suffix can
-    never carry one."""
-    from pathlib import Path as _P
+    r"""The only part of the client's filename that reaches the filesystem is its
+    SUFFIX — as the temp file's suffix and as the retained original's.
 
-    suffix = _P(name).suffix.lower()
+    This asserts the PRODUCTION helper, not ``pathlib``. ``Path(name).suffix`` is
+    host-dependent: each platform only splits on its own separator, so on Linux a
+    backslash survives (``PurePosixPath(r"x.\..\y").suffix == ".\y"``). Asserting
+    pathlib's behaviour passed on Windows and failed on the runner, which is the
+    host that actually serves uploads."""
+    from tools.document_intelligence.ingest_guard import safe_suffix
+
+    suffix = safe_suffix(name)
     assert "/" not in suffix and "\\" not in suffix
     assert ".." not in suffix
 

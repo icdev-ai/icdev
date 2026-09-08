@@ -1637,7 +1637,7 @@ def api_ingest():
     # ICDEV_STRICT_SANDBOX is unset by default, so this allows every upload it
     # allowed before.
     try:
-        from tools.document_intelligence.ingest_guard import evaluate_upload
+        from tools.document_intelligence.ingest_guard import evaluate_upload, safe_suffix
 
         _guard = evaluate_upload(filename, content_length=request.content_length)
     except Exception as exc:  # noqa: BLE001 — a guard that cannot run must not wedge ingest; CI is the backstop
@@ -1647,7 +1647,12 @@ def api_ingest():
         return jsonify({"error": _guard.get("reason", "refused"), "guard": _guard}), 415
 
     # Save file to temp immediately (before thread starts).
-    suffix = Path(filename).suffix.lower()
+    # HOST-INDEPENDENT (dwr-fid-03): `Path(...).suffix` lets the other platform's
+    # separator through -- on Linux a backslash survives into the name handed to
+    # NamedTemporaryFile. `safe_suffix` splits on both and whitelists the shape.
+    from tools.document_intelligence.ingest_guard import safe_suffix
+
+    suffix = safe_suffix(filename)
     try:
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
         file.save(tmp)
