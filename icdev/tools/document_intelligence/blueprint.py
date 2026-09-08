@@ -267,13 +267,76 @@ def _hid(*parts: str) -> str:
     return hashlib.sha256("|".join(parts).encode()).hexdigest()[:24]
 
 
-def _security_context() -> tuple[str, str]:
+#: The anonymous local-dev sentinel. It is what ``_current_user`` returns when
+#: NOBODY is authenticated, and ``_user_role`` grants it admin so a
+#: single-user dashboard with no accounts seeded is usable. It must never be
+#: what an AUTHENTICATED account reads as — which is exactly what it was.
+ANONYMOUS_USER = "current_user"
+
+
+def _identity_enabled() -> bool:
+    """dwr-cmt-02's kill switch. ``ICDEV_DIC_IDENTITY=0`` restores the previous
+    behaviour exactly — every caller reads as the anonymous sentinel — for a
+    deployment that needs the old posture back while its ``dic_team_access``
+    grants are seeded. Auditable, and never a shell neutraliser."""
+    return os.environ.get("ICDEV_DIC_IDENTITY", "1").strip().lower() not in (
+        "0", "false", "no", "off")
+
+
+def _context_dict() -> dict:
+    """``g.security_context`` as a plain dict, WHICHEVER SHAPE IT IS IN.
+
+    MEASURED 2026-09-08: ``auth._attach_security_context`` stores a
+    ``SecurityContext`` DATACLASS (``tools/security/security_context.py``),
+    which has no ``.get``; the Cortex service-key branch of
+    ``_auth_before_request`` stores a plain dict. Every reader in this module
+    called ``.get`` inside a bare ``except``, so for a signed-in dashboard user
+    the ``AttributeError`` was swallowed and the canvas fell back to the
+    anonymous sentinel — ``_current_user()`` returned ``'current_user'`` and
+    ``_security_context()`` returned ``('default','CUI')`` for a real account
+    (probed with ``SecurityContext(user_id='u-alice', role='viewer',
+    tenant_id='acme')``). Two consequences, and the second is the serious one:
+    every comment, decision and audit row this canvas wrote was attributed to a
+    literal string, and ``_user_role`` grants that string ADMIN, so all 13
+    accounts on this board held admin on every collection regardless of role.
+    """
     try:
-        from flask import g
-        ctx = getattr(g, "security_context", None) or {}
-        return ctx.get("tenant_id", "default"), ctx.get("classification", "CUI")
+        from flask import g, has_request_context
+        if not has_request_context():
+            return {}
+        ctx = getattr(g, "security_context", None)
     except Exception:
+        return {}
+    if ctx is None:
+        return {}
+    if isinstance(ctx, dict):
+        return ctx
+    to_dict = getattr(ctx, "to_dict", None)
+    if callable(to_dict):
+        try:
+            return to_dict() or {}
+        except Exception:
+            return {}
+    return {}
+
+
+def _security_context() -> tuple[str, str]:
+    """``(tenant_id, classification)`` for a write on this canvas.
+
+    ``classification`` stays ``CUI`` unless the context names one: a
+    ``SecurityContext``'s ``classification`` is derived from the SUBJECT'S
+    ``clearance_level``, and writing a subject's clearance into a row's
+    classification column would relabel the resource. Inert on this deployment
+    either way — all 13 accounts carry ``clearance_level='CUI'`` and
+    ``tenant_id`` NULL (measured 2026-09-08), so this pair reads
+    ``('default','CUI')`` before and after. The identity below is the
+    correction; this is the same read done without swallowing the answer.
+    """
+    if not _identity_enabled():
         return "default", "CUI"
+    ctx = _context_dict()
+    return (ctx.get("tenant_id") or "default",
+            ctx.get("classification") or "CUI")
 
 
 # Role hierarchy for collaboration workflow.
@@ -281,17 +344,97 @@ _ROLE_LEVEL = {"viewer": 0, "editor": 1, "reviewer": 2, "admin": 3}
 
 
 def _current_user() -> str:
-    """Return the best-effort current user id."""
+    """The AUTHENTICATED account's id, or the anonymous sentinel.
+
+    ``g.current_user`` is read as the fallback and ``session["user_id"]``
+    deliberately is NOT: ``auth._auth_before_request`` has already resolved
+    that cookie to a row AND checked ``status == 'active'``, clearing the
+    session when it is not, so reading the raw cookie here would honour a
+    session auth has just rejected.
+    """
+    if not _identity_enabled():
+        return ANONYMOUS_USER
+    ctx = _context_dict()
+    user = ctx.get("user_id") or ctx.get("username")
+    if user:
+        return str(user)
     try:
         from flask import g, has_request_context
         if has_request_context():
-            ctx = getattr(g, "security_context", None) or {}
-            user = ctx.get("user_id") or ctx.get("username")
-            if user:
-                return user
+            cur = getattr(g, "current_user", None)
+            if isinstance(cur, dict):
+                uid = cur.get("id") or cur.get("user_id")
+                if uid:
+                    return str(uid)
     except Exception:
         pass
-    return "current_user"
+    return ANONYMOUS_USER
+
+
+def _platform_role() -> str:
+    """``dashboard_users.role`` for the authenticated account, or ``""``."""
+    try:
+        from flask import g, has_request_context
+        if not has_request_context():
+            return ""
+        cur = getattr(g, "current_user", None)
+        if isinstance(cur, dict):
+            return str(cur.get("role") or "")
+    except Exception:
+        pass
+    return _context_dict().get("role") or ""
+
+
+def _display_name(user_id: str) -> str:
+    """A human-readable name for ``user_id``, or THE ID ITSELF.
+
+    THE VIEWER IS ANSWERED FROM MEMORY, and it has to be. ``dashboard_users``
+    carries no ``classification`` column, so the row-security predicate
+    ``get_connection`` injects inside a request rewrites every read of it into
+    a statement referencing a column that does not exist — measured
+    2026-09-08, ``get_user_by_id('u-alice')`` under a request context raises
+    ``no such column: classification``. The platform's own reads work only
+    because ``auth._auth_before_request`` resolves the session BEFORE
+    ``_attach_security_context`` runs. So the viewer's name is taken from
+    ``g.current_user``, the dict auth already resolved, and no query is made.
+
+    ANOTHER author's name is looked up, and inside a request that lookup will
+    fail on any deployment where row security is active — the id is then
+    rendered as it is stored. That is stated rather than hidden: an author this
+    canvas cannot place renders AS THE ID, and dressing an unresolvable id up
+    as a person would be the fabrication. Making it resolve is an
+    ``rls_exempt`` entry in ``args/schema_ownership_rules.yaml``, which is a
+    schema-ownership decision and not this card's to take.
+    """
+    if not user_id or user_id == ANONYMOUS_USER:
+        return user_id or ""
+    try:
+        from flask import g, has_request_context
+        if has_request_context():
+            cur = getattr(g, "current_user", None)
+            if isinstance(cur, dict) and str(cur.get("id") or "") == user_id:
+                return str(cur.get("display_name") or cur.get("email") or user_id)
+    except Exception:
+        pass
+    try:
+        from tools.dashboard.auth import get_user_by_id
+        row = get_user_by_id(user_id)
+    except Exception:
+        return user_id
+    if not row:
+        return user_id
+    row = dict(row)
+    return row.get("display_name") or row.get("email") or user_id
+
+
+#: ``dashboard_users.role`` -> this canvas's ladder, for an authenticated
+#: account that holds no explicit ``dic_team_access`` grant. A DECLARATION,
+#: because the two vocabularies are different: the platform's other roles are
+#: proposal-domain (bd, capture_mgr, contract_mgr, pm) and say nothing about
+#: who may edit a document. Anything not named here is `viewer` — a platform
+#: account is not a document grant, and inferring one is how an accidental
+#: admin ships. An explicit `dic_team_access` row always outranks this.
+_PLATFORM_ROLE_TO_DIC = {"admin": "admin", "reviewer": "reviewer"}
 
 
 def _user_role(collection_id: str, user_id: str) -> str:
@@ -314,9 +457,22 @@ def _user_role(collection_id: str, user_id: str) -> str:
     finally:
         conn.close()
     # Anonymous local-dev sentinel → full access so every DIC feature is usable
-    # without requiring a team_access row to be seeded first.
-    if user_id in ("current_user", "", None):
+    # without requiring a team_access row to be seeded first. This is the case
+    # the fallback was written for, and it is UNCHANGED: nobody is signed in.
+    if user_id in (ANONYMOUS_USER, "", None):
         return "admin"
+    # A SIGNED-IN account with no explicit grant. Before dwr-cmt-02 this branch
+    # was unreachable — the identity read failed and handed back the sentinel
+    # above, so every authenticated user held admin. Falling straight through to
+    # `viewer` now would be the opposite defect and just as unmeasured: measured
+    # 2026-09-08, `dic_team_access` holds 11 rows naming demo strings
+    # ('alice', 'writer1') on ONE collection, and `dashboard_users.id` is a
+    # UUID, so NOT ONE of the 13 real accounts can match a grant row. The
+    # platform role is the only grant they actually hold.
+    if user_id == _current_user():
+        mapped = _PLATFORM_ROLE_TO_DIC.get(_platform_role())
+        if mapped:
+            return mapped
     return "viewer"
 
 
@@ -430,6 +586,29 @@ def search():
 
 # ── Document Detail Page ──────────────────────────────────────────────────────
 
+#: The version statuses a reviewer is still working on. The FIRST of these in
+#: `versions` (which the caller reads newest-first) is the active one.
+_OPEN_VERSION_STATUSES = ("pending_review", "needs_revision", "draft")
+
+
+def _active_version_id(versions: list) -> str:
+    """Which version a reader of this document is looking at — ONE statement.
+
+    `doc_detail` renders the sections of THIS version and dwr-cmt-02's review
+    rail places its comments and change cards against them, so a second copy of
+    the rule is how the rail comes to describe a version the page is not
+    showing. `versions` must be ordered newest-first, as every caller here
+    reads it (`ORDER BY version_no DESC`).
+    """
+    for v in versions or []:
+        if (v.get("status") if isinstance(v, dict) else v["status"]) in _OPEN_VERSION_STATUSES:
+            return (v.get("version_id") if isinstance(v, dict) else v["version_id"]) or ""
+    if versions:
+        v = versions[0]
+        return (v.get("version_id") if isinstance(v, dict) else v["version_id"]) or ""
+    return ""
+
+
 @dic_bp.route("/doc/<doc_id>")
 def doc_detail(doc_id: str):
     conn = _conn()
@@ -443,13 +622,7 @@ def doc_detail(doc_id: str):
             (doc_id,),
         )
         # Load sections for the latest pending or latest version
-        active_version_id = ""
-        for v in versions:
-            if v["status"] in ("pending_review", "needs_revision", "draft"):
-                active_version_id = v["version_id"]
-                break
-        if not active_version_id and versions:
-            active_version_id = versions[0]["version_id"]
+        active_version_id = _active_version_id(versions)
         sections = []
         if active_version_id:
             sections = _safe_rows(
@@ -494,6 +667,8 @@ def doc_detail(doc_id: str):
         active_version_id=active_version_id,
         team=team,
         current_user=current_user,
+        current_user_display=_display_name(current_user),
+        authenticated=current_user != ANONYMOUS_USER,
         user_role=user_role,
         role_badge=_role_badge,
         role_levels=_ROLE_LEVEL,
@@ -3452,12 +3627,29 @@ def api_section_annotations_list(section_id: str):
         keep = {t["ann_id"] for t in threads}
         keep |= {r["ann_id"] for t in threads for r in t.get("replies", [])}
         flat = [a for a in flat if a["ann_id"] in keep]
+    # Display names are resolved HERE as well as on the review rail, through the
+    # one `_display_name`, so the inline panel and the rail cannot show two
+    # different names for one author. `author` (the stored id) is untouched.
+    cache: dict = {}
+    for row in flat + threads + [r for t in threads for r in t.get("replies", [])]:
+        author = row.get("author") or ""
+        if author not in cache:
+            cache[author] = _display_name(author)
+        row["author_display"] = cache[author]
+        resolver = row.get("resolved_by") or ""
+        if resolver:
+            if resolver not in cache:
+                cache[resolver] = _display_name(resolver)
+            row["resolved_by_display"] = cache[resolver]
     return jsonify({
         "section_id": section_id,
         "annotations": flat,
         "threads": threads,
         "counts": _ann_counts(threads, flat),
         "categories": sorted(anns.CATEGORIES),
+        "viewer": {"user_id": _current_user(),
+                   "display_name": _display_name(_current_user()),
+                   "authenticated": _current_user() != ANONYMOUS_USER},
     })
 
 
@@ -3576,6 +3768,61 @@ def api_annotation_update(ann_id: str):
         return jsonify({"error": str(exc)}), 500
     finally:
         conn.close()
+
+
+# ── API: the review rail (dwr-cmt-02) ─────────────────────────────────────────
+
+@dic_bp.route("/api/documents/<doc_id>/review-rail", methods=["GET"])
+def api_document_review_rail(doc_id: str):
+    """One ordered stream of comment threads and change cards for a document.
+
+    READ ONLY, and there is no POST sibling: this route renders what the
+    annotation store and the suggestion store already hold, and every act a
+    reviewer takes from the rail goes through the doors that already own it —
+    the annotation routes above, and ``/api/suggestions/<id>/accept|reject``.
+
+    The version is resolved HERE, through the same ``_active_version_id`` the
+    page uses, so the rail can never place items against a version the reader
+    is not looking at.
+    """
+    from tools.document_intelligence import review_rail
+    tenant_id, _ = _security_context()
+    conn = _conn()
+    try:
+        versions = _safe_rows(
+            conn,
+            "SELECT version_id, version_no, status FROM dic_versions "
+            "WHERE doc_id = %s ORDER BY version_no DESC",
+            (doc_id,),
+        )
+        version_id = request.args.get("version_id") or _active_version_id(versions)
+        rail = review_rail.build_rail(doc_id, version_id=version_id,
+                                      tenant_id=tenant_id, conn=conn)
+    except Exception as exc:
+        logger.warning("dic: review rail failed for %s: %s", doc_id, exc)
+        # A rail that could not be built is UNMEASURABLE and says so with a
+        # 200 — the page renders the reason. An empty 500 body would render as
+        # an empty rail, which is the one thing this surface must never do.
+        return jsonify(review_rail._unmeasurable(doc_id, None, f"error:{exc}"))
+    finally:
+        conn.close()
+
+    # Author ids are resolved to names for DISPLAY only; the stored `author` is
+    # the account id and is returned untouched beside it.
+    cache: dict = {}
+    for item in ([i for s in rail["sections"]
+                  for i in s["positioned"] + s["unpositioned"]] + rail["unplaced"]):
+        for row in [item] + list(item.get("replies") or []):
+            author = row.get("author") or ""
+            if author not in cache:
+                cache[author] = _display_name(author) if item["kind"] == "comment" else author
+            row["author_display"] = cache[author]
+    rail["viewer"] = {
+        "user_id": _current_user(),
+        "display_name": _display_name(_current_user()),
+        "authenticated": _current_user() != ANONYMOUS_USER,
+    }
+    return jsonify(rail)
 
 
 @dic_bp.route("/api/annotations/<ann_id>", methods=["DELETE"])
@@ -4710,15 +4957,18 @@ def api_suggestion_accept(suggestion_id: str):
     """
     from tools.document_intelligence.suggestion_store import (
         get_suggestion, decide_suggestion, verify_anchor, supersede_suggestion,
+        section_of_record,
         record_application,
     )
     s = get_suggestion(suggestion_id)
     if s is None:
         return jsonify({"error": "suggestion not found"}), 404
 
-    # The anchor's section of record outranks the legacy column when both are
-    # set; the legacy column is what a pre-anchor row has.
-    section_id = s.get("anchor_section_id") or s.get("section_id") or ""
+    # ONE statement of "which section is this proposal about" — the anchor's
+    # section outranks the legacy column, and dwr-cmt-02's review rail asks the
+    # same function, so the rail cannot draw a proposal beside one section while
+    # this door splices it into another.
+    section_id = section_of_record(s)
 
     cid = s.get("collection_id") or _collection_id_from_section(section_id) or "default"
     if not _require_role(cid, "editor"):

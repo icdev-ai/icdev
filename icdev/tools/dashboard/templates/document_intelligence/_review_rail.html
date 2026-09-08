@@ -1,0 +1,28 @@
+{# dwr-cmt-02 — the review rail.
+
+   One column holding BOTH what the AI proposes and what a colleague asked,
+   ordered by where in the section each one points, so a reviewer reads them
+   against the same sentence.
+
+   Everything on this rail is rendered from GET /api/documents/<id>/review-rail.
+   The rail itself has NO door of its own: replying, resolving, accepting and
+   rejecting all POST to the routes that already own those acts. #}
+<section id="review-rail" data-doc-id="{{ doc.doc_id }}"
+  style="background:#0b1726;border:1px solid #2a1a5e;border-radius:8px;padding:14px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+    <span style="color:#a78bfa;font-size:13px;font-weight:600;">🧵 Review Rail</span>
+    <div style="display:flex;gap:6px;align-items:center;">
+      <button id="rail-filter-open" onclick="railToggleOpenOnly()" title="Show only open comments and pending proposals"
+        style="background:#140a24;color:#a78bfa;border:1px solid #3a2a6e;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:10px;">open only</button>
+      <button onclick="loadReviewRail()" title="Reload"
+        style="background:none;border:1px solid #2a1a5e;color:#5a7aa0;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:11px;">↻</button>
+    </div>
+  </div>
+
+  {# Who is commenting. An id that resolves to no account renders AS THE ID —
+     nothing here invents a person. #}
+  <div id="rail-viewer" style="color:#5a7aa0;font-size:10px;margin-bottom:8px;"></div>
+
+  <div id="rail-counts" style="font-size:10px;color:#7a8cb0;margin-bottom:10px;line-height:1.6;"></div>
+  <div id="rail-body" style="font-size:11px;color:#b8d0e8;"></div>
+</section>
