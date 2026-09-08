@@ -317,3 +317,143 @@ connections:
         - 127.0.0.1
         - "::1"
       egress_denylist: []
+
+  # ═════════════════════════════════════════════════════════════════════════
+  # THE OPERATOR'S OWN CONTENT (dic-bridge-01)
+  #
+  # Four records, all `status: disabled`, all TEMPLATES. They exist so an
+  # operator edits a reviewed shape rather than inventing one, and so the
+  # connectors below have a documented configuration surface. Nothing here is
+  # reachable until a human fills in the site and sets the environment
+  # variable the ref names, and NONE of the four is granted to an agent in
+  # databridge_agent_access.yaml -- every one carries a credential, and that
+  # file's rule (enforced by tests/test_databridge_first_grant.py) is that a
+  # credentialed system is a per-deployment decision, never a shipped grant.
+  #
+  # Why these four and not more: they are where the CURRENT version of a
+  # document actually lives. A modernization run that wants to say "this
+  # paragraph is stale" needs the operative text to compare against, and until
+  # now DataBridge could reach 37 vendor APIs and not one of the places an
+  # organisation keeps its own policies.
+  # ═════════════════════════════════════════════════════════════════════════
+
+  # SharePoint Online, through Microsoft Graph, APP-ONLY.
+  #
+  # `auth_method: oauth2` because this is a client-credentials grant against an
+  # Entra ID app registration -- not a user's delegated token. The application
+  # permissions it needs are Sites.Read.All and Files.Read.All, and READ is the
+  # whole of it: the connector constructs no write anywhere.
+  #
+  # The egress allowlist names BOTH hosts on purpose. login.microsoftonline.com
+  # is where the token comes from and graph.microsoft.com is where the content
+  # comes from; a list holding only the second would refuse the token fetch,
+  # which is exactly the failure a reviewer should be able to see coming from
+  # reading this block. A sovereign-cloud tenant replaces both.
+  - id: sharepoint-operator
+    name: SharePoint Online (operator tenant)
+    connector_name: sharepoint
+    connector_type: saas_api
+    auth_method: oauth2
+    auth_secret_ref: env:SHAREPOINT_CLIENT_SECRET
+    sync_direction: read
+    status: disabled
+    classification: CUI
+    impact_level: IL4
+    config:
+      base_url: https://graph.microsoft.com/v1.0
+      # tenant_id and client_id are NOT secrets and NOT references: they are
+      # directory identifiers that appear in every request URL. Fill them in.
+      tenant_id: ""
+      client_id: ""
+      egress_allowlist:
+        - login.microsoftonline.com
+        - graph.microsoft.com
+      egress_denylist: []
+
+  # Confluence Cloud. HTTP Basic over an account email plus an API token, which
+  # is what Atlassian issues -- `auth_method: pat` is the closest member of the
+  # vocabulary and is what the Atlassian docs call it.
+  #
+  # base_url is EMPTY and must stay empty in the committed file: an Atlassian
+  # site is operator-specific, and a default here would be a guess that either
+  # refuses at connect or, worse, resolves to somebody else's tenant.
+  - id: confluence-operator
+    name: Confluence Cloud (operator site)
+    connector_name: confluence
+    connector_type: saas_api
+    auth_method: pat
+    auth_secret_ref: env:CONFLUENCE_API_TOKEN
+    sync_direction: read
+    status: disabled
+    classification: CUI
+    impact_level: IL4
+    config:
+      base_url: ""          # https://<site>.atlassian.net
+      email: ""             # the account the token belongs to
+      egress_allowlist: []  # add <site>.atlassian.net when the site is set
+      egress_denylist: []
+
+  # Jira Cloud. The same credential pair as Confluence and usually the same
+  # site, but a SEPARATE record: the two products carry different scopes, and
+  # sharing one connection record would mean revoking Jira access to revoke
+  # Confluence access.
+  - id: jira-operator
+    name: Jira Cloud (operator site)
+    connector_name: jira
+    connector_type: saas_api
+    auth_method: pat
+    auth_secret_ref: env:JIRA_API_TOKEN
+    sync_direction: read
+    status: disabled
+    classification: CUI
+    impact_level: IL4
+    config:
+      base_url: ""          # https://<site>.atlassian.net
+      email: ""             # the account the token belongs to
+      egress_allowlist: []  # add <site>.atlassian.net when the site is set
+      egress_denylist: []
+
+  # An operator-owned SQL database: the SharePoint of organisations that never
+  # bought SharePoint.
+  #
+  # `tables:` IS THE ACCESS CONTROL. It is empty here, and empty means the
+  # connector exposes NOTHING and refuses to connect -- not "expose the
+  # database". There is no arbitrary-SQL surface to widen; the connector emits
+  # one statement shape over declared tables with bound parameters, and adding
+  # a query surface is a different security decision, not a config change.
+  #
+  # `auth_method: connection_string` and the DSN is a REFERENCE, because a DSN
+  # carries the password. The connector refuses a literal one even when passed
+  # programmatically, so the YAML rule and the code rule are the same rule.
+  #
+  # Loopback-only egress is declared in the vocabulary the shipped-grant tests
+  # read, the icdev_demand shape: nothing this connector does opens a socket
+  # off-box, and an EMPTY list there reads as "unrestricted".
+  - id: local-content-database
+    name: Operator content database (read-only)
+    connector_name: local_database
+    connector_type: database
+    auth_method: connection_string
+    auth_secret_ref: env:LOCAL_CONTENT_DB_DSN
+    sync_direction: read
+    status: disabled
+    classification: CUI
+    impact_level: IL4
+    config:
+      driver: postgresql        # postgresql | sqlite
+      # database_path: ./data/policy.db     # sqlite only, instead of the DSN
+      #
+      # Declare each table the operator intends an agent to be able to read,
+      # and the columns within it. A table with no `columns` exposes every
+      # column it has, which is rarely what was meant.
+      #
+      # tables:
+      #   - name: policy_register
+      #     columns: [policy_id, title, body, effective_date, owner]
+      #     order_by: effective_date
+      tables: []
+      egress_allowlist:
+        - localhost
+        - 127.0.0.1
+        - "::1"
+      egress_denylist: []
