@@ -1,0 +1,5 @@
+# dwr-fid-03 — degraded reading pane + DIC ingest sandbox posture (Gap 69).
+# Own fragment rather than an append to core.txt: two PRs writing two
+# differently-named files cannot collide (tsg-policy-03).
+tests/document_intelligence/test_reading_pane_degraded.py
+tests/document_intelligence/test_ingest_sandbox_posture.py

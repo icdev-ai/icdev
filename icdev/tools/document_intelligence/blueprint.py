@@ -640,6 +640,38 @@ def doc_detail(doc_id: str):
                 except Exception:
                     s["citations"] = []
             _attach_section_verification(sections)
+
+        # dwr-fid-03: what this page can ACTUALLY render, and why not more.
+        # `sections` above is the FULL render; when it is empty the pane
+        # reassembles the text from rag_chunks and STATES its own limits —
+        # naming which of the original and the sections is missing, and never
+        # letting "the chunks are gone" read the same as "never chunked".
+        # The read is its own (never `_safe_rows`, which turns a broken query
+        # into an empty list) so a failure reports `unmeasurable`.
+        try:
+            from tools.document_intelligence.reading_pane import build_pane
+
+            reading_pane = build_pane(conn, doc_id, doc_row=doc or None).to_dict()
+        except Exception as exc:  # noqa: BLE001 — a pane that cannot be built must not 500 the page
+            logger.warning("dic: reading pane unavailable for %s: %s", doc_id, exc)
+            reading_pane = {
+                "doc_id": doc_id, "basis": "unmeasurable", "degraded": True,
+                "renders_text": False, "chunks": [], "chunk_count": 0,
+                "chunks_truncated": 0, "section_count": len(sections),
+                "links_total": 0, "links_resolved": 0, "text_source": None,
+                "original": {}, "errors": [str(exc)],
+                "limits": [{
+                    "code": "unmeasurable",
+                    "label": "This page could not measure what it can render",
+                    "detail": (
+                        "The reading pane failed to build, so the absence of text "
+                        "below is a statement about this page and not about the "
+                        "document. This is not a clean bill of health."
+                    ),
+                    "severity": "finding",
+                }],
+            }
+
         # Team members for assignment dropdown
         collection_id = doc.get("collection_id") or "default"
         team = _safe_rows(
@@ -666,6 +698,7 @@ def doc_detail(doc_id: str):
         doc=doc,
         versions=versions,
         sections=sections,
+        reading_pane=reading_pane,
         active_version_id=active_version_id,
         team=team,
         current_user=current_user,
@@ -1658,8 +1691,32 @@ def api_ingest():
     except ValueError as exc:
         return jsonify({"error": f"author_assertions rejected: {exc}"}), 400
 
+    # dwr-fid-03 / sandbox-coverage Gap 69: this route has NO extension
+    # allowlist and NO per-route size cap, and hands the upload to a stack of
+    # native parsers and OCR. Its declared posture is `sandboxed-on-demand`,
+    # and this is the half of that posture that can be made true today: on a
+    # strict (IL5 / air-gap) host a format that reaches a native parser is
+    # REFUSED, because DIC extraction is not routed through SandboxExecutor and
+    # a flag that claims isolation it does not provide is worse than none.
+    # ICDEV_STRICT_SANDBOX is unset by default, so this allows every upload it
+    # allowed before.
+    try:
+        from tools.document_intelligence.ingest_guard import evaluate_upload, safe_suffix
+
+        _guard = evaluate_upload(filename, content_length=request.content_length)
+    except Exception as exc:  # noqa: BLE001 — a guard that cannot run must not wedge ingest; CI is the backstop
+        logger.warning("dic: ingest guard unavailable: %s", exc)
+        _guard = {"allowed": True, "reason": f"guard_unavailable: {exc}", "posture": "unmeasured"}
+    if not _guard.get("allowed"):
+        return jsonify({"error": _guard.get("reason", "refused"), "guard": _guard}), 415
+
     # Save file to temp immediately (before thread starts).
-    suffix = Path(filename).suffix.lower()
+    # HOST-INDEPENDENT (dwr-fid-03): `Path(...).suffix` lets the other platform's
+    # separator through -- on Linux a backslash survives into the name handed to
+    # NamedTemporaryFile. `safe_suffix` splits on both and whitelists the shape.
+    from tools.document_intelligence.ingest_guard import safe_suffix
+
+    suffix = safe_suffix(filename)
     try:
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
         file.save(tmp)

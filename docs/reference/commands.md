@@ -6251,6 +6251,29 @@ python -m tools.document_intelligence.originals --root              # retention 
 # retained_missing | retained_mismatch | source_on_disk | absent | no_source.
 # Existing databases: python tools/db/migrate.py --up   (20260908003311)
 
+# Which documents render DEGRADED, and why? (dwr-fid-03)
+python -m tools.document_intelligence.reading_pane --survey            # every document's render basis, counted
+python -m tools.document_intelligence.reading_pane --survey --json
+python -m tools.document_intelligence.reading_pane --doc <doc_id>      # one pane + its stated limits
+python -m tools.document_intelligence.reading_pane --doc <doc_id> --json
+# FIVE bases, none folded into another: sections (the FULL render owns it) |
+# chunks (text reassembled from rag_chunks -- the degraded reading pane) |
+# chunks_missing (chunk links exist and EVERY one dangles: it WAS chunked and
+# the chunks are gone) | no_text (never chunked) | unmeasurable (a read failed
+# -- NOT a clean bill of health). Live board 2026-09-08: 55 documents ->
+# 16 / 19 / 9 / 11 / 0. `text_source` records which derivation answered
+# (chunk_links | rag_source_id), so a stale link table is visible rather than
+# silently fallen back from.
+
+# Is this upload allowed to be extracted on THIS host? (dwr-fid-03, sandbox Gap 69)
+python -c "from tools.document_intelligence.ingest_guard import evaluate_upload as f; print(f('report.pdf', strict=True))"
+python -c "from tools.document_intelligence.ingest_guard import parser_class as f; print(f('.zip'), f('.txt'), f('.foo'))"
+python tools/workflow/coherence_checker.py --check sandbox_coverage --json
+# POST /document-intelligence/api/ingest has NO extension allowlist and NO
+# per-route size cap. Posture: sandboxed-on-demand. Under ICDEV_STRICT_SANDBOX=1
+# a format that reaches a native parser is REFUSED (415) rather than parsed
+# unisolated -- a refusal, not isolation, and reported as one. Unset by default,
+# so nothing is refused today.
 # WORD GEOMETRY -- where on the page did each word sit? (dwr-fid-02)
 python -m tools.document_intelligence.page_geometry --survey            # per-status counts, board-wide
 python -m tools.document_intelligence.page_geometry --survey --json
