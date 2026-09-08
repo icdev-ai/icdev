@@ -1813,6 +1813,11 @@ def api_ingest():
                 tenant_id=tenant_id, classification=classification,
                 created_by="dashboard_upload", progress_cb=_cb,
                 author_assertions=author_assertions,
+                # The name the file ARRIVED under. Without it ingest_file has
+                # only the temp path and titles the document `tmpqsnpbru9`.
+                # The UPDATE below still runs: on the dedup path ingest_file
+                # returns an EXISTING doc_id it did not write this time.
+                original_filename=filename,
             )
             # Record the retained original on the document row. ingest_file
             # writes the row (INSERT OR REPLACE), so this must run AFTER it.
@@ -5933,6 +5938,10 @@ def api_ingest_url():
             tmp_path, collection_id,
             tenant_id=tenant_id, classification=classification,
             created_by="dic_url_ingest",
+            # This route already RETURNS extraction.title to the caller while
+            # storing the temp stem, so the page arrived titled `tmpx62r0_ho`
+            # and the response said otherwise.
+            original_filename=f"{extraction.title or url}.txt",
         )
         os.unlink(tmp_path)
         return jsonify({
@@ -5984,6 +5993,7 @@ def api_ingest_youtube():
             tmp_path, collection_id,
             tenant_id=tenant_id, classification=classification,
             created_by="dic_youtube_ingest",
+            original_filename=f"{extraction.title or url}.txt",
         )
         os.unlink(tmp_path)
         return jsonify({

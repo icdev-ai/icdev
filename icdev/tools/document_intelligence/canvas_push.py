@@ -63,6 +63,12 @@ def push_artifact(
             tenant_id=tenant_id,
             classification=classification,
             created_by=f"canvas_{canvas_name}",
+            # `title` is a PARAMETER of this function and was already returned
+            # in the result dict as though it had been used. It had not: the
+            # document was stored and titled after the temp file, so a caller
+            # reading the return value believed a title that was not in the
+            # database.
+            original_filename=f"{title}.txt",
         )
         return {
             "doc_id": outcome.doc_id,
