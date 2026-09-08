@@ -296,7 +296,9 @@
             <option value="risk">Risk</option>
             <option value="editorial">Editorial</option>
           </select>
-          <input id="ann-text-sel-{{ s.section_id }}" placeholder="Selected text (optional)" style="background:#0b1726;border:1px solid #1a3560;color:#b8d0e8;padding:5px 8px;border-radius:4px;font-size:11px;flex:1;" />
+          <input id="ann-text-sel-{{ s.section_id }}" placeholder="Anchor text — leave blank for a section-level comment" style="background:#0b1726;border:1px solid #1a3560;color:#b8d0e8;padding:5px 8px;border-radius:4px;font-size:11px;flex:1;" />
+          <button onclick="useSelection('{{ s.section_id }}')" title="Anchor this comment to the text you selected in the section above"
+            style="background:#0b1726;color:#7ab3f0;border:1px solid #1a3560;border-radius:4px;padding:5px 10px;font-size:11px;cursor:pointer;flex:0 0 auto;">Use selection</button>
         </div>
         <textarea id="ann-comment-{{ s.section_id }}" placeholder="Add a comment…" rows="2"
           style="width:100%;background:#0b1726;border:1px solid #1a3560;color:#b8d0e8;padding:8px;border-radius:4px;font-size:12px;box-sizing:border-box;resize:vertical;"></textarea>
@@ -775,53 +777,158 @@ function toggleAnnPanel(sid) {
   }
 }
 
+// dwr-cmt-01. The anchor state is a READ-TIME verdict the server re-derives on
+// every load, so a comment whose span no longer matches says so HERE rather
+// than pointing at whatever now sits at those offsets. Four states, and
+// `unverifiable` is never drawn as if the anchor held.
+var _ANCHOR_BADGE = {
+  verified:     {label: 'anchored',     fg: '#4ade80', bg: '#052e16', br: '#1a5a30'},
+  orphaned:     {label: 'ORPHANED',     fg: '#f87171', bg: '#2e0505', br: '#5a1a1a'},
+  unanchored:   {label: 'section-level',fg: '#94a3b8', bg: '#111827', br: '#2a3a4a'},
+  unverifiable: {label: 'not checked',  fg: '#fbbf24', bg: '#2e1a05', br: '#5a3a1a'}
+};
+
+var _ANCHOR_WHY = {
+  not_found:          'the text this comment was written against is no longer in the section',
+  found_once:         'the text moved. It is still in the section, once, at a different place',
+  no_selection:       'no text was selected',
+  section_unreadable: 'the section could not be read, so the anchor could not be checked. This is not a clean bill of health',
+  no_anchor_recorded: 'written before comments carried anchors',
+  section_level_comment: 'a remark about the whole section'
+};
+
+function _anchorWhy(a) {
+  var r = (a.anchor && a.anchor.reason) || '';
+  if (_ANCHOR_WHY[r]) return _ANCHOR_WHY[r];
+  if (r.indexOf('ambiguous:') === 0) {
+    return 'the text appears ' + r.split(':')[1] + ' times, so no single span can be claimed';
+  }
+  return r;
+}
+
 function loadAnnotations(sid) {
   fetch('/document-intelligence/api/sections/' + sid + '/annotations')
     .then(function(r) { return r.json(); })
     .then(function(data) {
-      var list = data.annotations || [];
+      var counts = data.counts || {};
       var countEl = document.getElementById('ann-count-' + sid);
-      if (countEl) countEl.textContent = list.length;
-      renderAnnotations(sid, list);
+      if (countEl) countEl.textContent = (counts.threads != null ? counts.threads : 0);
+      renderAnnotations(sid, data.threads || [], counts);
     });
 }
 
-function renderAnnotations(sid, list) {
+function _annHeader(counts) {
+  var bits = [];
+  if (counts.open)         bits.push(counts.open + ' open');
+  if (counts.resolved)     bits.push(counts.resolved + ' resolved');
+  // Counted APART: a comment nobody could check is not a comment that holds.
+  if (counts.orphaned)     bits.push('<span style="color:#f87171;">' + counts.orphaned + ' orphaned</span>');
+  if (counts.unverifiable) bits.push('<span style="color:#fbbf24;">' + counts.unverifiable + ' not checked</span>');
+  if (!bits.length) return '';
+  return '<p style="color:#5a7aa0;font-size:10px;margin:0 0 8px;">' + bits.join(' &middot; ') + '</p>';
+}
+
+function _annCard(sid, a, isReply) {
+  var cat = a.category || 'editorial';
+  var bg  = _CAT_COLORS[cat] || '#374151';
+  var st  = (a.anchor && a.anchor.state) || 'unanchored';
+  var badge = _ANCHOR_BADGE[st] || _ANCHOR_BADGE.unanchored;
+  var resolved = a.status === 'resolved';
+  var cand = a.anchor && a.anchor.relocation_candidate;
+
+  var html = '<div style="background:#080f1f;border:1px solid ' +
+    (resolved ? '#1a3a1a' : (st === 'orphaned' ? '#5a1a1a' : '#2a1a5e')) +
+    ';border-radius:6px;padding:10px 12px;margin-bottom:8px;' +
+    (isReply ? 'margin-left:22px;border-left:2px solid #2a1a5e;' : '') +
+    'opacity:' + (resolved ? '0.65' : '1') + ';">' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;flex-wrap:wrap;">' +
+      '<span style="background:' + bg + ';color:#fff;font-size:9px;padding:2px 7px;border-radius:8px;text-transform:uppercase;">' + escH(cat) + '</span>' +
+      '<span style="color:#7ab3f0;font-size:10px;"><strong>' + escH(a.author || 'reviewer') + '</strong> &middot; ' + escH((a.created_at || '').slice(0,10)) + '</span>' +
+      (isReply ? '' :
+        '<span style="background:' + badge.bg + ';color:' + badge.fg + ';border:1px solid ' + badge.br +
+        ';font-size:9px;padding:1px 6px;border-radius:8px;">' + badge.label + '</span>') +
+      (resolved ? '<span style="margin-left:auto;color:#4ade80;font-size:10px;">Resolved by ' + escH(a.resolved_by || '') + '</span>' : '') +
+    '</div>';
+
+  if (a.selected_text) {
+    html += '<p style="color:#5a7aa0;font-size:10px;font-style:italic;margin:0 0 4px;' +
+      (st === 'orphaned' ? 'text-decoration:line-through;' : '') + '">&ldquo;' +
+      escH(a.selected_text.slice(0,120)) + '&rdquo;</p>';
+  }
+  html += '<p style="color:#c8d8e8;font-size:12px;margin:0 0 6px;">' + escH(a.comment) + '</p>';
+
+  if (!isReply && (st === 'orphaned' || st === 'unverifiable')) {
+    // The comment reports itself. Its stored offsets are NOT rewritten, and a
+    // relocation candidate is advice for a human, never an applied move.
+    html += '<p style="color:' + badge.fg + ';font-size:10px;margin:0 0 6px;">&#9888; ' +
+      escH(_anchorWhy(a)) +
+      (cand ? '. It now reads at ' + cand.anchor_start + '&ndash;' + cand.anchor_end +
+              ' &mdash; nothing has been re-pointed; re-anchor by hand if that is the right span.' : '.') +
+      '</p>';
+  }
+  if (a.thread_broken) {
+    html += '<p style="color:#fbbf24;font-size:10px;margin:0 0 6px;">&#9888; the comment this replied to is gone.</p>';
+  }
+
+  if (!resolved) {
+    html += '<div style="display:flex;gap:6px;">';
+    if (!isReply) {
+      html += '<button onclick="toggleReplyBox(\'' + a.ann_id + '\')" style="background:#0b1726;color:#7ab3f0;border:1px solid #1a3560;border-radius:3px;padding:3px 10px;font-size:10px;cursor:pointer;">Reply</button>' +
+        '<button onclick="resolveThread(\'' + a.ann_id + '\',\'' + sid + '\')" style="background:#052e16;color:#4ade80;border:1px solid #1a5a30;border-radius:3px;padding:3px 10px;font-size:10px;cursor:pointer;">Resolve thread</button>';
+    }
+    html += '<button onclick="deleteAnnotation(\'' + a.ann_id + '\',\'' + sid + '\')" style="background:#2e0505;color:#f87171;border:1px solid #5a1a1a;border-radius:3px;padding:3px 10px;font-size:10px;cursor:pointer;">Delete</button>' +
+      '</div>';
+  } else if (!isReply) {
+    html += '<div style="display:flex;gap:6px;">' +
+      '<button onclick="reopenThread(\'' + a.ann_id + '\',\'' + sid + '\')" style="background:#0b1726;color:#7ab3f0;border:1px solid #1a3560;border-radius:3px;padding:3px 10px;font-size:10px;cursor:pointer;">Reopen</button>' +
+      '</div>';
+  }
+  return html + '</div>';
+}
+
+function renderAnnotations(sid, threads, counts) {
   var el = document.getElementById('ann-list-' + sid);
   if (!el) return;
-  if (!list.length) { el.innerHTML = '<p style="color:#5a7aa0;font-size:11px;">No comments yet.</p>'; return; }
-  el.innerHTML = list.map(function(a) {
-    var cat = a.category || 'editorial';
-    var bg  = _CAT_COLORS[cat] || '#374151';
-    var resolved = a.status === 'resolved';
-    return '<div style="background:#080f1f;border:1px solid ' + (resolved ? '#1a3a1a' : '#2a1a5e') + ';border-radius:6px;padding:10px 12px;margin-bottom:8px;opacity:' + (resolved ? '0.65' : '1') + ';">' +
-      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">' +
-        '<span style="background:' + bg + ';color:#fff;font-size:9px;padding:2px 7px;border-radius:8px;text-transform:uppercase;">' + escH(cat) + '</span>' +
-        '<span style="color:#7ab3f0;font-size:10px;"><strong>' + escH(a.author || 'reviewer') + '</strong> &middot; ' + escH((a.created_at || '').slice(0,10)) + '</span>' +
-        (resolved ? '<span style="margin-left:auto;color:#4ade80;font-size:10px;">Resolved by ' + escH(a.resolved_by || '') + '</span>' : '') +
-      '</div>' +
-      (a.selected_text ? '<p style="color:#5a7aa0;font-size:10px;font-style:italic;margin:0 0 4px;">&ldquo;' + escH(a.selected_text.slice(0,120)) + '&rdquo;</p>' : '') +
-      '<p style="color:#c8d8e8;font-size:12px;margin:0 0 6px;">' + escH(a.comment) + '</p>' +
-      (!resolved
-        ? '<div style="display:flex;gap:6px;">' +
-            '<button onclick="resolveAnnotation(\'' + a.ann_id + '\',\'' + sid + '\')" style="background:#052e16;color:#4ade80;border:1px solid #1a5a30;border-radius:3px;padding:3px 10px;font-size:10px;cursor:pointer;">Resolve</button>' +
-            '<button onclick="deleteAnnotation(\'' + a.ann_id + '\',\'' + sid + '\')" style="background:#2e0505;color:#f87171;border:1px solid #5a1a1a;border-radius:3px;padding:3px 10px;font-size:10px;cursor:pointer;">Delete</button>' +
-          '</div>'
-        : '') +
-    '</div>';
+  if (!threads.length) { el.innerHTML = '<p style="color:#5a7aa0;font-size:11px;">No comments yet.</p>'; return; }
+  el.innerHTML = _annHeader(counts || {}) + threads.map(function(t) {
+    var replies = (t.replies || []).map(function(r) { return _annCard(sid, r, true); }).join('');
+    var box = '<div id="reply-box-' + t.ann_id + '" style="display:none;margin-left:22px;margin-bottom:8px;">' +
+      '<textarea id="reply-text-' + t.ann_id + '" rows="2" placeholder="Reply…" style="width:100%;background:#0b1726;border:1px solid #1a3560;color:#b8d0e8;padding:6px;border-radius:4px;font-size:11px;box-sizing:border-box;"></textarea>' +
+      '<div style="display:flex;justify-content:flex-end;margin-top:4px;">' +
+        '<button onclick="sendReply(\'' + t.ann_id + '\',\'' + sid + '\')" style="background:#2a1a6e;color:#a78bfa;border:1px solid #3a2a8e;border-radius:4px;padding:4px 12px;font-size:11px;cursor:pointer;">Reply</button>' +
+      '</div></div>';
+    return _annCard(sid, t, false) + replies + box;
   }).join('');
+}
+
+function _annSelectionIn(sid) {
+  // The selection over the RENDERED section. The server resolves it against
+  // the stored content and records the basis it honestly gets — the page never
+  // computes an offset, because a DOM offset indexes the markdown output.
+  var host = document.getElementById('content-' + sid);
+  var sel = window.getSelection ? window.getSelection() : null;
+  if (!host || !sel || sel.isCollapsed || !sel.rangeCount) return '';
+  var node = sel.getRangeAt(0).commonAncestorContainer;
+  if (node.nodeType === 3) node = node.parentNode;
+  return host.contains(node) ? String(sel).trim() : '';
+}
+
+function useSelection(sid) {
+  var text = _annSelectionIn(sid);
+  if (!text) { alert('Select some text inside the section first.'); return; }
+  document.getElementById('ann-text-sel-' + sid).value = text;
 }
 
 function saveAnnotation(sid) {
   var cat  = document.getElementById('ann-cat-' + sid).value;
-  var sel  = document.getElementById('ann-text-sel-' + sid).value.trim();
+  var sel  = document.getElementById('ann-text-sel-' + sid).value.trim() || _annSelectionIn(sid);
   var comm = document.getElementById('ann-comment-' + sid).value.trim();
   if (!cat)  { alert('Please select a category.'); return; }
   if (!comm) { alert('Please enter a comment.'); return; }
   fetch('/document-intelligence/api/sections/' + sid + '/annotations', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({category: cat, selected_text: sel, comment: comm, author: _ANN_CURRENT_USER})
+    body: JSON.stringify({category: cat, anchor_text: sel, comment: comm, author: _ANN_CURRENT_USER})
   }).then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.error) { alert('Error: ' + data.error); return; }
@@ -832,11 +939,47 @@ function saveAnnotation(sid) {
     });
 }
 
-function resolveAnnotation(annId, sid) {
+function toggleReplyBox(annId) {
+  var box = document.getElementById('reply-box-' + annId);
+  if (!box) return;
+  box.style.display = (box.style.display === 'none') ? 'block' : 'none';
+  if (box.style.display === 'block') document.getElementById('reply-text-' + annId).focus();
+}
+
+function sendReply(annId, sid) {
+  var text = document.getElementById('reply-text-' + annId).value.trim();
+  if (!text) { alert('Please enter a reply.'); return; }
+  fetch('/document-intelligence/api/sections/' + sid + '/annotations', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({category: 'question', comment: text,
+                          parent_ann_id: annId, author: _ANN_CURRENT_USER})
+  }).then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) { alert('Error: ' + data.error); return; }
+      loadAnnotations(sid);
+    });
+}
+
+function resolveThread(annId, sid) {
+  var note = prompt('Resolution note (optional):') || '';
   fetch('/document-intelligence/api/annotations/' + annId, {
     method: 'PUT',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({status: 'resolved', resolved_by: _ANN_CURRENT_USER})
+    body: JSON.stringify({status: 'resolved', resolved_by: _ANN_CURRENT_USER,
+                          resolution_note: note})
+  }).then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) { alert('Error: ' + data.error); return; }
+      loadAnnotations(sid);
+    });
+}
+
+function reopenThread(annId, sid) {
+  fetch('/document-intelligence/api/annotations/' + annId, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({status: 'open'})
   }).then(function(r) { return r.json(); })
     .then(function() { loadAnnotations(sid); });
 }
@@ -1003,7 +1146,15 @@ document.addEventListener('DOMContentLoaded', function() {
       .then(function(r) { return r.json(); })
       .then(function(d) {
         var el = document.getElementById('ann-count-' + sid);
-        if (el) el.textContent = (d.annotations || []).length;
+        // THREADS, not rows: a badge counting replies reads as more open
+        // review than there is.
+        if (el) el.textContent = ((d.counts || {}).threads) || 0;
+        var orph = ((d.counts || {}).orphaned) || 0;
+        if (el && orph) {
+          el.textContent += ' ⚠' + orph;
+          el.style.background = '#5a1a1a';
+          el.title = orph + ' comment(s) whose anchor no longer matches the section';
+        }
       });
     // Lock status
     fetch('/document-intelligence/api/sections/' + sid + '/lock')

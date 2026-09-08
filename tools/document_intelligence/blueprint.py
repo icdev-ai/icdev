@@ -3401,123 +3401,178 @@ def api_section_lock_renew(section_id: str):
 
 
 # ── Section Annotations (threaded comments anchored to text / sections) ──────
+#
+# dwr-cmt-01. The store owns the schema, the anchor rule and the thread rules
+# (tools/document_intelligence/annotation_store.py). These routes carry the
+# HTTP contract and nothing else: the table DDL used to live here as a runtime
+# CREATE TABLE IF NOT EXISTS, which is what made a migrated deployment
+# indistinguishable from an unmigrated one.
 
-_ANN_CATEGORIES = {"question", "improvement", "compliance", "strength", "weakness", "risk", "editorial"}
+def _ann_error(exc) -> tuple:
+    """A refused write is a 400 the caller can act on, never a 500."""
+    return jsonify({"error": str(exc)}), 400
 
 
-def _ensure_dic_annotations(conn) -> None:
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS dic_section_annotations (
-            ann_id TEXT PRIMARY KEY,
-            section_id TEXT NOT NULL,
-            doc_id TEXT NOT NULL,
-            selected_text TEXT NOT NULL DEFAULT '',
-            category TEXT NOT NULL,
-            comment TEXT NOT NULL,
-            author TEXT NOT NULL DEFAULT 'reviewer',
-            status TEXT NOT NULL DEFAULT 'open',
-            resolution_note TEXT,
-            resolved_by TEXT,
-            resolved_at TEXT,
-            classification TEXT DEFAULT 'CUI',
-            created_at TEXT NOT NULL,
-            updated_at TEXT
-        )
-    """)
-    conn.commit()
+def _ann_counts(threads: list, flat: list) -> dict:
+    """What the badge and the panel header report.
+
+    ``orphaned`` and ``unverifiable`` are counted APART: a comment nobody could
+    check is not a comment whose anchor still holds, and merging them would let
+    an unreadable section read as a clean bill of health.
+    """
+    states = [t["anchor"]["state"] for t in threads]
+    return {
+        "threads": len(threads),
+        "comments": len(flat),
+        "open": sum(1 for t in threads if t.get("status") != "resolved"),
+        "resolved": sum(1 for t in threads if t.get("status") == "resolved"),
+        "anchored": sum(1 for s in states if s == "verified"),
+        "orphaned": sum(1 for s in states if s == "orphaned"),
+        "unanchored": sum(1 for s in states if s == "unanchored"),
+        "unverifiable": sum(1 for s in states if s == "unverifiable"),
+    }
 
 
 @dic_bp.route("/api/sections/<section_id>/annotations", methods=["GET"])
 def api_section_annotations_list(section_id: str):
-    conn = _conn()
+    from tools.document_intelligence import annotation_store as anns
+    tenant_id, _ = _security_context()
+    status_filter = request.args.get("status")
+    category_filter = request.args.get("category")
     try:
-        _ensure_dic_annotations(conn)
-        status_filter = request.args.get("status")
-        category_filter = request.args.get("category")
-        sql = "SELECT * FROM dic_section_annotations WHERE section_id = %s"
-        params: list = [section_id]
-        if status_filter:
-            sql += " AND status = %s"
-            params.append(status_filter)
-        if category_filter:
-            sql += " AND category = %s"
-            params.append(category_filter)
-        sql += " ORDER BY created_at ASC"
-        rows = _safe_rows(conn, sql, params)
-        return jsonify({"annotations": [dict(r) for r in rows]})
+        # `annotations` is the flat, back-compatible shape; `threads` is what a
+        # reviewer reads. Both come from ONE read, so they cannot disagree.
+        flat = anns.list_annotations(section_id, tenant_id=tenant_id)
+        threads = anns.list_threads(section_id, tenant_id=tenant_id,
+                                    status=status_filter, category=category_filter)
     except Exception as exc:
+        logger.warning("dic: annotation list failed for %s: %s", section_id, exc)
         return jsonify({"error": str(exc)}), 500
-    finally:
-        conn.close()
+    if status_filter or category_filter:
+        keep = {t["ann_id"] for t in threads}
+        keep |= {r["ann_id"] for t in threads for r in t.get("replies", [])}
+        flat = [a for a in flat if a["ann_id"] in keep]
+    return jsonify({
+        "section_id": section_id,
+        "annotations": flat,
+        "threads": threads,
+        "counts": _ann_counts(threads, flat),
+        "categories": sorted(anns.CATEGORIES),
+    })
 
 
 @dic_bp.route("/api/sections/<section_id>/annotations", methods=["POST"])
 def api_section_annotations_create(section_id: str):
+    """Create a thread root, or a reply when ``parent_ann_id`` is supplied.
+
+    An anchored comment supplies ``anchor_text``, with or without
+    ``anchor_start``/``anchor_end``, and the span is resolved against the
+    section's live content before anything is written. A comment with no span
+    is ``unanchored`` — a section-level remark, and not a defect.
+
+    THE PAGE SENDS TEXT, NOT OFFSETS, on purpose: ``doc_detail`` renders a
+    section through markdown, so a browser selection's offsets index the
+    RENDERED HTML and not the content of record. ``anchor_from_selection`` is
+    the one place that turns a selection into an honest basis — a text found
+    once is ``relocated`` (a ``str.find`` guess, recorded as one), and an
+    ambiguous or absent selection stays ``unanchored`` rather than being
+    resolved by picking an occurrence.
+    """
+    from tools.document_intelligence import annotation_store as anns
     data = request.get_json(silent=True) or {}
-    category = (data.get("category") or "").strip()
-    comment = (data.get("comment") or "").strip()
-    if category not in _ANN_CATEGORIES:
-        return jsonify({"error": f"category must be one of {sorted(_ANN_CATEGORIES)}"}), 400
-    if not comment:
-        return jsonify({"error": "comment is required"}), 400
+    tenant_id, classification = _security_context()
+
+    start, end = data.get("anchor_start"), data.get("anchor_end")
+    text = data.get("anchor_text")
+    basis = (data.get("anchor_basis") or "").strip()
+    section_content = None
+
     conn = _conn()
     try:
-        _ensure_dic_annotations(conn)
-        doc_row = conn.execute(
-            "SELECT doc_id FROM dic_sections WHERE section_id = %s LIMIT 1", (section_id,)
-        ).fetchone()
-        doc_id = doc_row[0] if doc_row else ""
-        ann_id = f"ann_{uuid.uuid4().hex[:16]}"
-        now = _now()
-        author = data.get("author") or _current_user()
-        conn.execute(
-            """INSERT INTO dic_section_annotations
-               (ann_id, section_id, doc_id, selected_text, category, comment,
-                author, status, classification, created_at, updated_at)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-            (ann_id, section_id, doc_id,
-             (data.get("selected_text") or "").strip(),
-             category, comment, author, "open", "CUI", now, now),
+        if not data.get("parent_ann_id") and (text or "").strip() and not basis:
+            resolved = anns.anchor_from_selection(
+                section_id, text, anchor_start=start, anchor_end=end, conn=conn)
+            basis = resolved["anchor_basis"]
+            start, end = resolved["anchor_start"], resolved["anchor_end"]
+            text = resolved["anchor_text"]
+            section_content = resolved["section_content"]
+        basis = basis or "unanchored"
+        if basis == "unanchored":
+            start = end = None
+        doc_id = data.get("doc_id") or ""
+        if not doc_id:
+            row = conn.execute(
+                "SELECT doc_id FROM dic_sections WHERE section_id = %s LIMIT 1",
+                (section_id,),
+            ).fetchone()
+            doc_id = (dict(row).get("doc_id") if row else "") or ""
+        created = anns.create_annotation(
+            section_id=section_id,
+            doc_id=doc_id,
+            category=(data.get("category") or "").strip(),
+            comment=data.get("comment") or "",
+            author=data.get("author") or _current_user(),
+            # An unanchored selection still shows WHAT was highlighted, even
+            # though no span could be verified for it.
+            selected_text=(data.get("selected_text") or text or "").strip(),
+            parent_ann_id=(data.get("parent_ann_id") or None),
+            anchor_start=start,
+            anchor_end=end,
+            anchor_text=text,
+            anchor_basis=basis,
+            section_content=section_content,
+            tenant_id=tenant_id,
+            classification=classification,
+            conn=conn,
         )
-        conn.commit()
-        row = dict(conn.execute(
-            "SELECT * FROM dic_section_annotations WHERE ann_id = %s", (ann_id,)
-        ).fetchone())
-        return jsonify(row), 201
+    except anns.AnnotationError as exc:
+        return _ann_error(exc)
     except Exception as exc:
+        logger.warning("dic: annotation create failed for %s: %s", section_id, exc)
         return jsonify({"error": str(exc)}), 500
     finally:
         conn.close()
+    return jsonify(created), 201
 
 
 @dic_bp.route("/api/annotations/<ann_id>", methods=["PUT"])
 def api_annotation_update(ann_id: str):
+    """Edit a comment, or move its THREAD between open and resolved.
+
+    ``status`` is a thread act and is refused on a reply: a reply has no
+    lifecycle of its own, so two rows can never disagree about whether the
+    thread is settled.
+    """
+    from tools.document_intelligence import annotation_store as anns
     data = request.get_json(silent=True) or {}
-    allowed = {"comment", "category", "status", "resolution_note", "resolved_by"}
-    updates = {k: v for k, v in data.items() if k in allowed}
-    if not updates:
-        return jsonify({"error": "no valid fields"}), 400
-    now = _now()
-    updates["updated_at"] = now
-    if updates.get("status") == "resolved":
-        updates["resolved_by"] = data.get("resolved_by") or data.get("author") or _current_user()
-        updates["resolved_at"] = now
+    status = (data.get("status") or "").strip()
     conn = _conn()
     try:
-        _ensure_dic_annotations(conn)
-        set_clause = ", ".join(f"{k} = %s" for k in updates)
-        conn.execute(
-            f"UPDATE dic_section_annotations SET {set_clause} WHERE ann_id = %s",
-            [*updates.values(), ann_id],
-        )
-        conn.commit()
-        row = conn.execute(
-            "SELECT * FROM dic_section_annotations WHERE ann_id = %s", (ann_id,)
-        ).fetchone()
-        if not row:
-            return jsonify({"error": "not found"}), 404
-        return jsonify(dict(row))
+        row = None
+        if status == "resolved":
+            row = anns.resolve_thread(
+                ann_id,
+                resolved_by=(data.get("resolved_by") or data.get("author")
+                             or _current_user()),
+                note=(data.get("resolution_note") or ""),
+                conn=conn,
+            )
+        elif status == "open":
+            row = anns.reopen_thread(ann_id, conn=conn)
+        elif status:
+            return jsonify({"error": f"status must be one of {sorted(anns.STATUSES)}"}), 400
+
+        edits = {k: data[k] for k in ("comment", "category") if k in data}
+        if edits:
+            row = anns.update_annotation(ann_id, conn=conn, **edits)
+        if row is None:
+            return jsonify({"error": "no valid fields"}), 400
+        return jsonify(row)
+    except anns.AnnotationError as exc:
+        text = str(exc)
+        return (jsonify({"error": text}), 404) if "does not exist" in text else _ann_error(exc)
     except Exception as exc:
+        logger.warning("dic: annotation update failed for %s: %s", ann_id, exc)
         return jsonify({"error": str(exc)}), 500
     finally:
         conn.close()
@@ -3525,13 +3580,16 @@ def api_annotation_update(ann_id: str):
 
 @dic_bp.route("/api/annotations/<ann_id>", methods=["DELETE"])
 def api_annotation_delete(ann_id: str):
+    """Delete a comment. Deleting a thread root takes its replies with it, and
+    says how many — a silent cascade is a count nobody can check."""
+    from tools.document_intelligence import annotation_store as anns
     conn = _conn()
     try:
-        _ensure_dic_annotations(conn)
-        conn.execute("DELETE FROM dic_section_annotations WHERE ann_id = %s", (ann_id,))
-        conn.commit()
-        return jsonify({"deleted": ann_id})
+        return jsonify(anns.delete_thread(ann_id, conn=conn))
+    except anns.AnnotationError as exc:
+        return jsonify({"error": str(exc)}), 404
     except Exception as exc:
+        logger.warning("dic: annotation delete failed for %s: %s", ann_id, exc)
         return jsonify({"error": str(exc)}), 500
     finally:
         conn.close()
