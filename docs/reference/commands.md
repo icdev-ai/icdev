@@ -6251,6 +6251,26 @@ python -m tools.document_intelligence.originals --root              # retention 
 # retained_missing | retained_mismatch | source_on_disk | absent | no_source.
 # Existing databases: python tools/db/migrate.py --up   (20260908003311)
 
+# Retire the suggestions drafted against a TOKEN instead of a passage (dwr-anchor-06)
+python -m tools.document_intelligence.suggestion_redraft --census        # by status x anchor_basis
+python -m tools.document_intelligence.suggestion_redraft --plan          # probe every target; ACTS ON NOTHING
+python -m tools.document_intelligence.suggestion_redraft --plan --json
+python -m tools.document_intelligence.suggestion_redraft --apply --limit 5   # THE ONLY FLAG THAT WRITES
+# `draft_redline` prompted with `finding["entity_label"]` and stored
+# `section_id=""` / `anchor_basis="unanchored"` — 58 such rows on the live board
+# 2026-09-08, none of them appliable. They are SUPERSEDED (through
+# suggestion_store.supersede_suggestion, dwr-anchor-05) and re-drafted through
+# the UNCHANGED TRUST gate chain; back-filling an anchor is refused, because the
+# prose was never fitted to the span it would be pinned to.
+# It PROVES before it acts. Five refusals, each naming a different repair:
+# drafter_does_not_anchor (merge dwr-anchor-04) | origin_unresolved |
+# origin_not_open | finding_has_no_span (RE-SCAN) | doc_has_no_sections
+# (section_deriver). Confirm is a RE-READ of the stored row, never the drafter's
+# claim; a replacement that is itself unanchored is `redrafted_unanchored`.
+# Bounded by max_redrafts_per_run (args/docmod/docmod_config.yaml, 10); deferred
+# items are NAMED. Exit 2 = the survey could not be produced.
+# Survey: docs/audits/dwr-anchor-06-unanchored-suggestion-survey.md
+
 # Python — generate outputs directly
 python -c "from tools.document_intelligence.output_generators import generate_study_guide; import json; print(json.dumps(generate_study_guide('my-collection', 'default'), indent=2))"
 python -c "from tools.document_intelligence.output_generators import generate_faq; import json; print(json.dumps(generate_faq('my-collection', 'default', n=10), indent=2))"
