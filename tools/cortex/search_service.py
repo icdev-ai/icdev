@@ -660,6 +660,51 @@ _CURRENCY_BANDS = {
 }
 
 
+#: A citation's ``source_type`` by the DECLARED source kind (dwr-ev-02). A
+#: HUMAN's attributed statement must never carry the same badge as a machine
+#: feed's row: a promoted review comment is one named person's word, and a
+#: reader who has to infer that from a table name will not. Read off the store's
+#: own ``source_kind``, so a sixth source declaring a human kind is a YAML entry
+#: and one line here — never a source-name test. Every kind absent from this map
+#: keeps ``currency_assertion``, so nothing that shipped before it moves.
+_HUMAN_SOURCE_TYPES = {"sme_attributed": "sme_assertion"}
+
+#: The default, and what every non-human source still produces.
+_ASSERTION_SOURCE_TYPE = "currency_assertion"
+
+
+def _assertion_source_type(view: dict) -> str:
+    return _HUMAN_SOURCE_TYPES.get(
+        str(view.get("source_kind") or ""), _ASSERTION_SOURCE_TYPE
+    )
+
+
+def _attribution_clause(view: dict) -> str:
+    """Who said it, when, and where it was said — for a HUMAN source only.
+
+    An attributed statement whose sentence does not name the person is not
+    attributed. Read from ``provenance`` (the declared ``extra_columns``), and
+    empty for every source that carries no such fields, so a feed's sentence is
+    unchanged.
+    """
+    if _assertion_source_type(view) == _ASSERTION_SOURCE_TYPE:
+        return ""
+    prov = (view.get("provenance") or {}).get("fields") or {}
+    who = str(prov.get("asserted_by") or "").strip()
+    if not who:
+        return ""
+    text = f" Asserted by {who}"
+    doc = str(prov.get("doc_id") or "").strip()
+    if doc:
+        text += f" in a review comment on document {doc}"
+    promoter = str(prov.get("promoted_by") or "").strip()
+    if promoter:
+        text += f", promoted to evidence by {promoter}"
+    # Said in words, on every such sentence: the reader of a drafted paragraph
+    # sees the snippet and not the badge.
+    return text + ". This is an attributed human statement, not a document."
+
+
 def _currency_band(view: dict) -> str:
     """The band a resolved view scores in, read off the store's own policy
     fields. ``precedence`` is the store's DEFAULT_PRECEDENCE for every source
@@ -703,7 +748,7 @@ def _currency_content(view: dict) -> str:
             f"{o.get('source')}={o.get('verdict')}" for o in (view.get("others") or [])
         )
         text += f" Sources disagree — also reported: {disagree}."
-    return text
+    return text + _attribution_clause(view)
 
 
 def _currency_assertion_result(view: dict, ctx: CortexContext) -> CortexSearchResult:
@@ -724,7 +769,9 @@ def _currency_assertion_result(view: dict, ctx: CortexContext) -> CortexSearchRe
         strategy="assertion",
         citation=Citation(
             source_id=str(provenance.get("record_id") or ""),
-            source_type="currency_assertion",
+            # dwr-ev-02: a human's attributed statement gets its OWN type, so a
+            # surface can render it apart from a feed and from a document.
+            source_type=_assertion_source_type(view),
             # The row the verdict actually came from, not the store that
             # aggregates it — a citation that names the aggregator sends a
             # reader to a copy rather than to the evidence.

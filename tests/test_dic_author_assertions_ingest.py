@@ -109,7 +109,17 @@ def test_upload_with_assertions_resolves_author_first_and_keeps_the_catalog(samp
     assert view["provenance"] == {
         "table": "dic_author_assertions", "id": a["assertion_id"],
         "record_id": view["provenance"]["record_id"],
+        # dwr-ev-02: the winner's declared `extra_columns`, decoded. This file
+        # has always said they are carried "so it is preserved rather than
+        # lost", and until that card nothing could read them BACK. Asserted
+        # WHOLE (not just for the presence of the key) so a future change that
+        # drops a carried field is caught here.
+        "fields": view["provenance"]["fields"],
     }
+    # ... and the fields are the author's own, not an empty placeholder.
+    assert view["provenance"]["fields"]["asserted_by"] == "network-lead"
+    assert view["provenance"]["fields"]["as_of_basis"] == "author_stated"
+    assert view["provenance"]["fields"]["doc_id"] == a["doc_id"]
 
 
 def test_an_upload_declaring_nothing_writes_nothing(sample_doc):
