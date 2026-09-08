@@ -1,0 +1,7 @@
+{
+  "description": "dic_author_assertions \u2014 author-supplied content as a declared currency source (dwr-ev-01)",
+  "date": "2026-09-08",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

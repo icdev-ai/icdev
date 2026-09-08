@@ -511,3 +511,123 @@ def test_cli_dry_run_json(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert '"actions"' in out
     assert '"tasks_checked": 0' in out
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# A queue with no consumer (2026-09-08)
+#
+# `_probe_prior_delivery` has measured the fate of previous injections since
+# kpr-watch-13, and the resume path ignored it: it enqueued another line
+# whatever the verdict said. Three tasks escalated exactly that way on this
+# deployment -- five unread messages apiece -- while the board sat at zero
+# tasks in progress.
+# ══════════════════════════════════════════════════════════════════════════
+def _ci_failed_watcher(queue_log, config=None):
+    tasks = [_FakeRow(
+        id="task-unread", title="T", description="",
+        status="in_progress",
+        executor_url="https://github.com/o/r/pull/7",
+    )]
+    pr_states = {
+        "https://github.com/o/r/pull/7": {
+            "state": "OPEN",
+            "mergeable": "MERGEABLE",
+            "statusCheckRollup": [{"conclusion": "FAILURE", "name": "tests"}],
+            "number": 7, "headRefName": "fix/x",
+        }
+    }
+    w = _build_watcher(
+        tasks, pr_states, queue_log,
+        config=config or {"max_resume_cycles_per_task": 5},
+        logs_by_url={"https://github.com/o/r/pull/7": "FAILED tests/test_y.py"},
+    )
+    w.dry_run = False
+    return w
+
+
+def _verdict(kind, detail="4 pr_watcher message(s) still unread in the queue"):
+    from tools.ci import resume_delivery
+    return resume_delivery.DeliveryVerdict(kind, detail)
+
+
+def test_a_proven_unread_injection_escalates_instead_of_writing_another():
+    """The whole point: a sixth line into a queue nobody drains cannot be read."""
+    from tools.ci import resume_delivery
+
+    queue_log = []
+    w = _ci_failed_watcher(queue_log)
+    w._resume_cycle = lambda task_id, pr_url=None: 2       # noqa: SLF001
+    w._probe_prior_delivery = (                            # noqa: SLF001
+        lambda task_id, **kw: _verdict(resume_delivery.UNDELIVERED))
+    report = w.poll_once()
+
+    assert report.actions[0].action == "escalate"
+    assert "undelivered after 2 attempt(s)" in report.actions[0].reason
+    assert "still unread in the queue" in report.actions[0].reason
+    assert "repair is DELIVERY" in report.actions[0].reason
+    assert queue_log == [], "no further message is written to an unread queue"
+
+
+def test_the_first_attempt_is_always_made_even_with_a_stale_pending_line():
+    """A line left by an earlier era is evidence about THAT era. This task has
+    not been tried yet and must get its attempt."""
+    from tools.ci import resume_delivery
+
+    queue_log = []
+    w = _ci_failed_watcher(queue_log)
+    w._resume_cycle = lambda task_id, pr_url=None: 0       # noqa: SLF001
+    w._probe_prior_delivery = (                            # noqa: SLF001
+        lambda task_id, **kw: _verdict(resume_delivery.UNDELIVERED))
+    report = w.poll_once()
+
+    assert report.actions[0].action == "resume"
+    assert len(queue_log) == 1
+
+
+def test_an_unreadable_queue_is_never_treated_as_an_unread_one():
+    """`unmeasured` is a failed probe, not proof. Refusing to try on the
+    strength of it would be a measurement failure escalating itself."""
+    from tools.ci import resume_delivery
+
+    queue_log = []
+    w = _ci_failed_watcher(queue_log)
+    w._resume_cycle = lambda task_id, pr_url=None: 2       # noqa: SLF001
+    w._probe_prior_delivery = (                            # noqa: SLF001
+        lambda task_id, **kw: _verdict(resume_delivery.UNMEASURED, "queue unreadable"))
+    report = w.poll_once()
+
+    assert report.actions[0].action == "resume"
+    assert len(queue_log) == 1
+
+
+def test_a_delivered_injection_still_spends_the_next_attempt():
+    """An agent that READ the message and failed to fix it is exactly what the
+    remaining budget is for."""
+    from tools.ci import resume_delivery
+
+    queue_log = []
+    w = _ci_failed_watcher(queue_log)
+    w._resume_cycle = lambda task_id, pr_url=None: 2       # noqa: SLF001
+    w._probe_prior_delivery = (                            # noqa: SLF001
+        lambda task_id, **kw: _verdict(resume_delivery.DELIVERED, "drained"))
+    report = w.poll_once()
+
+    assert report.actions[0].action == "resume"
+    assert len(queue_log) == 1
+
+
+def test_the_switch_restores_the_pre_2026_09_08_behaviour():
+    from tools.ci import resume_delivery
+
+    queue_log = []
+    w = _ci_failed_watcher(
+        queue_log,
+        config={"max_resume_cycles_per_task": 5, "escalate_on_undelivered": False},
+    )
+    w._resume_cycle = lambda task_id, pr_url=None: 2       # noqa: SLF001
+    w._probe_prior_delivery = (                            # noqa: SLF001
+        lambda task_id, **kw: _verdict(resume_delivery.UNDELIVERED))
+    report = w.poll_once()
+
+    assert report.actions[0].action == "resume"
+    assert len(queue_log) == 1

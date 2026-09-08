@@ -35,11 +35,12 @@ This is the whole point of the module, and it is not a hypothetical concern:
 both upstream sources hand back something that *looks* like a measured failure
 when they mean "nothing measured this".
 
-  * :func:`compute_canvas_posture` builds each canvas score with
-    ``float(row[0] or 0)``, so a canvas whose assessment table is empty scores
-    a confident ``0.0``. The function itself already declines to fold those
-    into its own average (``if score > 0``); this module applies the same
-    reading and treats *score 0 with zero findings* as no evidence at all.
+  * :func:`compute_canvas_posture` used to build each canvas score with
+    ``float(row[0] or 0)``, so a canvas whose assessment table was empty scored
+    a confident ``0.0``. It now returns ``score: None`` with a ``score_basis``
+    for anything unmeasured and averages every MEASURED score, a real 0.0
+    included (rem-hyg-09, rmf-rail-02); this module keeps treating *score 0
+    with zero findings* as no evidence at all for the legacy shape.
   * :func:`validate_canvas_completeness` returns ``passed=False`` with a single
     ``registered`` item both when a key is unknown and when the component is
     not a canvas. Scoring that as 0% would grade every child app and feature as

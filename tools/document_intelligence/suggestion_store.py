@@ -13,6 +13,8 @@ Public API:
   record_application(suggestion_id, applied_text, applied_by) -> bool
   resolve_anchor(section_text, anchor_text, anchor_start=, anchor_end=) -> dict
   whole_section_anchor(section_id, content) -> dict
+  verify_anchor(suggestion, section_content) -> dict      (dwr-anchor-05, pure)
+  supersede_suggestion(suggestion_id, reason, ...) -> bool (dwr-anchor-05)
 
 THE ANCHOR (dwr-anchor-03). A suggestion is an ADDRESSABLE change: it names the
 section it lives in and the verbatim span it replaces, and it says HOW it knows.
@@ -52,7 +54,23 @@ from tools.db.storage import get_connection
 _VALID_DECISIONS = ("accepted", "rejected")
 _VALID_STATUSES = ("pending", "accepted", "rejected", "superseded")
 
+#: dwr-anchor-05. A suggestion whose anchor no longer resolves against the live
+#: section is SUPERSEDED, the ``claim_lifecycle.verify_claim_anchors`` verdict.
+#: It is not a human decision -- ``decide_suggestion`` refuses it -- but it is
+#: recorded on the same append-only ``dic_suggestion_decisions`` chain so a
+#: reader can tell "nobody decided" from "the anchor drifted before anyone could".
+SUPERSEDED_DECISION = "superseded"
+
+#: The bases the accept path may apply. ``unanchored`` is never in this tuple.
+APPLIABLE_BASES = ("exact", "relocated")
+
 ANCHOR_BASES = ("exact", "relocated", "unanchored")
+
+#: Every ``reason`` ``verify_anchor`` can return when it refuses. Declared here
+#: so a reader that has to TRANSLATE those reasons (dwr-cmt-02's review rail
+#: maps them onto the comment vocabulary) can be pinned against this tuple
+#: rather than against a hand-copied list that silently goes out of date.
+VERIFY_REASONS = ("section_missing", "unanchored", "no_offsets", "anchor_stale")
 ORIGIN_KINDS = ("docmod_redline", "section_draft", "crowdsource", "human_edit")
 
 # Declaration order of the columns dwr-anchor-03 added. The migration that
@@ -182,6 +200,76 @@ def whole_section_anchor(section_id: str, content: str) -> dict:
     return {"anchor_section_id": section_id, "anchor_start": 0,
             "anchor_end": len(content), "anchor_text": content,
             "anchor_basis": "exact"}
+
+
+def section_of_record(suggestion: dict) -> str:
+    """Which section a suggestion is ABOUT — ONE statement of the rule.
+
+    The anchor's section outranks the legacy ``section_id`` column when both
+    are set; the legacy column is what a pre-anchor row carries. The accept
+    door and dwr-cmt-02's review rail both ask HERE, because a second copy is
+    how a rail renders a proposal beside one section while accept splices it
+    into another.
+
+    Returns ``""`` for a suggestion that names NO section. That is a real state
+    on this deployment, not an edge case: measured 2026-09-08, all 58 rows in
+    ``dic_suggestions`` carry a real ``doc_id``, ``section_id = ''`` and
+    ``anchor_section_id`` NULL. An empty string must never be resolved to
+    "the first section" by a caller — it means the proposal cannot be placed.
+    """
+    return (suggestion.get("anchor_section_id")
+            or suggestion.get("section_id") or "")
+
+
+def verify_anchor(suggestion: dict, section_content: str | None) -> dict:
+    """Re-derive, at ACCEPT time, whether a suggestion's anchor still holds
+    against the section as it is NOW (dwr-anchor-05).
+
+    This is the ``claim_lifecycle.verify_claim_anchors`` discipline applied to
+    a suggestion: the anchor is valid iff
+    ``section_content[anchor_start:anchor_end] == anchor_text``. What was
+    verified when the row was WRITTEN says nothing about the section today --
+    a human edit, a regenerated draft or an earlier accepted suggestion can
+    all have moved the text -- so the accept path asks again and trusts only
+    this answer.
+
+    Returns ``{"ok", "reason", "anchor_basis", "anchor_start", "anchor_end",
+    "anchor_text", "found_text"}``. ``reason`` when ``ok`` is False:
+
+      section_missing  ``section_content`` is None -- no row to splice into
+      unanchored       basis is not in ``APPLIABLE_BASES`` (never applied)
+      no_offsets       an appliable basis with no integer offsets -- a row the
+                       store's own validation would have refused; treated as
+                       stale rather than guessed at
+      anchor_stale     the offsets no longer index ``anchor_text``; ``found_text``
+                       is what the slice holds now, for the reader
+
+    Pure -- reads nothing, writes nothing.
+    """
+    basis = suggestion.get("anchor_basis")
+    start = suggestion.get("anchor_start")
+    end = suggestion.get("anchor_end")
+    text = suggestion.get("anchor_text")
+    out = {"ok": False, "reason": None, "anchor_basis": basis,
+           "anchor_start": start, "anchor_end": end, "anchor_text": text,
+           "found_text": None}
+    if section_content is None:
+        out["reason"] = "section_missing"
+        return out
+    if basis not in APPLIABLE_BASES:
+        out["reason"] = "unanchored"
+        return out
+    if not isinstance(start, int) or not isinstance(end, int)             or isinstance(start, bool) or isinstance(end, bool) or not isinstance(text, str):
+        out["reason"] = "no_offsets"
+        return out
+    if 0 <= start <= end <= len(section_content) and section_content[start:end] == text:
+        out["ok"] = True
+        out["found_text"] = text
+        return out
+    out["reason"] = "anchor_stale"
+    if 0 <= start <= end:
+        out["found_text"] = section_content[start:end]
+    return out
 
 
 def validate_anchor(
@@ -490,6 +578,60 @@ def record_application(suggestion_id: str, applied_text: str, applied_by: str) -
             "UPDATE dic_suggestions SET applied_text=%s, applied_by=%s, updated_at=%s "
             "WHERE suggestion_id=%s",
             (applied_text, applied_by, _now(), suggestion_id),
+        )
+        conn.commit()
+    return True
+
+
+def supersede_suggestion(
+    suggestion_id: str,
+    reason: str,
+    *,
+    superseded_by: str = "system:anchor_verify",
+    note: str = "",
+    tenant_id: str = "",
+    classification: str = "CUI",
+) -> bool:
+    """Move a PENDING suggestion to ``superseded`` and record why (dwr-anchor-05).
+
+    The accept path calls this when the anchor no longer resolves against the
+    live section -- the document moved on underneath the proposal, so what the
+    reviewer would be accepting is no longer what the drafter proposed. The
+    document is NOT touched. The reason (``anchor_stale`` and what the slice
+    holds now) rides on an append-only ``dic_suggestion_decisions`` row with
+    ``decision = 'superseded'``; ``decided_by`` names the mechanism, never a
+    human, so the row can never be read as a person's verdict.
+
+    Returns False when the row is missing or no longer pending -- a concurrent
+    human decision wins and is not overwritten.
+    """
+    if not reason:
+        raise ValueError("supersede_suggestion needs a reason")
+    now = _now()
+    decision_id = f"dec_{uuid.uuid4().hex[:16]}"
+    with get_connection() as conn:
+        _ensure_tables(conn)
+        row = conn.execute(
+            "SELECT status FROM dic_suggestions WHERE suggestion_id = %s",
+            (suggestion_id,),
+        ).fetchone()
+        if row is None or _col(row, "status", 0) != "pending":
+            return False
+        conn.execute(
+            "UPDATE dic_suggestions SET status=%s, updated_at=%s WHERE suggestion_id=%s",
+            ("superseded", now, suggestion_id),
+        )
+        conn.execute(
+            """
+            INSERT INTO dic_suggestion_decisions
+                (decision_id, suggestion_id, decision, decided_by,
+                 decided_at, note, tenant_id, classification)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+            """,
+            (
+                decision_id, suggestion_id, SUPERSEDED_DECISION, superseded_by,
+                now, f"{reason}: {note}" if note else reason, tenant_id, classification,
+            ),
         )
         conn.commit()
     return True

@@ -69,6 +69,19 @@ VERDICTS = frozenset({
 #: Recognised ``verdict.strategy`` values in the YAML.
 STRATEGIES = frozenset({"dates", "value_map"})
 
+#: ``precedence`` a source gets when its declaration names none (dwr-ev-01).
+#: Lower wins. Every source shipped before that card declares none, so they all
+#: tie here and fall through to ``authoritative`` exactly as before — the key
+#: exists so ONE declared source (author-supplied content) can rank above the
+#: curated catalog without becoming "authoritative", a word the YAML reserves
+#: for the curated catalog's standing. An explicit precedence is an evidence
+#: ordering, the idiom args/docmod/inventory_feeds.yaml already uses, not a
+#: confidence a bumped prior could overturn.
+DEFAULT_PRECEDENCE = 100
+
+#: Recognised ``resolution.order`` keys — the ONE place each is applied.
+RESOLUTION_KEYS = frozenset({"precedence", "authoritative", "confidence", "as_of"})
+
 #: Platform-wide columns carried through from a source row when it has them.
 #: Not domain vocabulary — these two are the RLS columns every ICDEV table uses.
 _PASSTHROUGH_COLUMNS = ("tenant_id", "classification")
@@ -342,9 +355,18 @@ def _read_source(spec: dict, conn) -> list[dict]:
     if not table or not _IDENT_RE.match(str(table)):
         raise ConfigError(f"source '{spec.get('id')}': bad or missing `table`")
     columns = _select_columns(spec)
+    # A source that can hold MORE THAN ONE row per identity (an author's later
+    # statement beside an earlier one) declares the order it wants read, because
+    # the upsert keeps the LAST row written and an unordered SELECT makes that
+    # whichever the planner chose. Identifiers only, validated like the rest.
+    order_by = [str(c) for c in (spec.get("order_by") or []) if c]
+    bad = [c for c in order_by if not _IDENT_RE.match(c)]
+    if bad:
+        raise ConfigError(f"source '{spec.get('id')}': bad order_by column(s) {bad}")
+    order_sql = f" ORDER BY {', '.join(order_by)}" if order_by else ""
     try:
         rows = conn.execute(
-            f"SELECT {', '.join(columns)} FROM {table}"  # nosec B608 - identifiers validated above
+            f"SELECT {', '.join(columns)} FROM {table}{order_sql}"  # nosec B608 - identifiers validated above
         ).fetchall()
     except Exception as exc:
         logger.debug("entity_currency: narrow select on %s failed (%s); widening", table, exc)
@@ -352,7 +374,7 @@ def _read_source(spec: dict, conn) -> list[dict]:
             conn.rollback()  # PG: a failed statement poisons the transaction
         except Exception:
             pass
-        rows = conn.execute(f"SELECT * FROM {table}").fetchall()  # nosec B608 - validated
+        rows = conn.execute(f"SELECT * FROM {table}{order_sql}").fetchall()  # nosec B608 - validated
     return [dict(r) for r in rows]
 
 
@@ -468,8 +490,27 @@ def backfill(conn=None, sources: Optional[Iterable[str]] = None) -> dict:
 
 # ── read ──────────────────────────────────────────────────────────────────────
 
+def _spec_for(spec_by_id: dict, row: dict) -> dict:
+    return spec_by_id.get(str(row.get("source")), {}) or {}
+
+
 def _is_authoritative(spec_by_id: dict, row: dict) -> bool:
-    return bool((spec_by_id.get(str(row.get("source")), {}) or {}).get("authoritative"))
+    return bool(_spec_for(spec_by_id, row).get("authoritative"))
+
+
+def _precedence(spec_by_id: dict, row: dict) -> int:
+    """The source's declared precedence, lower first; DEFAULT_PRECEDENCE when
+    the declaration names none. A non-integer declaration is a config error at
+    read time rather than a silent tie — the same posture as a bad column."""
+    raw = _spec_for(spec_by_id, row).get("precedence")
+    if raw in (None, ""):
+        return DEFAULT_PRECEDENCE
+    try:
+        return int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(
+            f"source '{row.get('source')}': precedence {raw!r} is not an integer"
+        ) from exc
 
 
 def _sort_by_policy(rows: list[dict], spec_by_id: dict, order: list[str]) -> list[dict]:
@@ -481,7 +522,9 @@ def _sort_by_policy(rows: list[dict], spec_by_id: dict, order: list[str]) -> lis
     """
     ranked = list(rows)
     for key in reversed(list(order)):
-        if key == "authoritative":
+        if key == "precedence":
+            ranked.sort(key=lambda r: _precedence(spec_by_id, r))
+        elif key == "authoritative":
             ranked.sort(key=lambda r: 0 if _is_authoritative(spec_by_id, r) else 1)
         elif key == "confidence":
             ranked.sort(key=lambda r: float(r.get("confidence") or 0.0), reverse=True)
@@ -559,9 +602,25 @@ def _policy() -> tuple:
     """
     spec_by_id = {str(s["id"]): s for s in declared_sources(enabled_only=False)}
     order = (load_config().get("resolution") or {}).get("order") or [
-        "authoritative", "confidence", "as_of"
+        "precedence", "authoritative", "confidence", "as_of"
     ]
     return spec_by_id, order
+
+
+def _provenance_fields(row: dict) -> dict:
+    """A store row's carried source columns, decoded. Never raises: an
+    unreadable or absent ``provenance_json`` is an EMPTY mapping, because a
+    resolution must not fail over signal it merely carries."""
+    raw = row.get("provenance_json")
+    if isinstance(raw, dict):
+        return raw
+    if not raw:
+        return {}
+    try:
+        loaded = json.loads(raw)
+    except (TypeError, ValueError):
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
 
 
 def _resolution_view(rows: list[dict], spec_by_id: dict, order: list[str]) -> dict:
@@ -573,7 +632,19 @@ def _resolution_view(rows: list[dict], spec_by_id: dict, order: list[str]) -> di
     """
     ranked = _sort_by_policy(rows, spec_by_id, order)
     winner = ranked[0]
-    others = ranked[1:]
+    # Every loser carries its RANK under the policy and the two policy facts
+    # about its source, so a carrier downstream (the Cortex currency rung, the
+    # docmod evidence lane) can preserve this order instead of re-deriving it —
+    # a second copy of the precedence rule is how two surfaces come to disagree
+    # about which source won.
+    others = []
+    for i, r in enumerate(ranked[1:], start=1):
+        o = dict(r)
+        o["rank"] = i
+        o["authoritative"] = _is_authoritative(spec_by_id, r)
+        o["precedence"] = _precedence(spec_by_id, r)
+        o["source_kind"] = r.get("source_kind")
+        others.append(o)
     verdicts = {str(r.get("verdict")) for r in rows}
     return {
         "entity_key": winner.get("entity_key"),
@@ -585,7 +656,9 @@ def _resolution_view(rows: list[dict], spec_by_id: dict, order: list[str]) -> di
         "verdict": winner.get("verdict"),
         "superseded_by": winner.get("superseded_by"),
         "source": winner.get("source"),
+        "source_kind": winner.get("source_kind"),
         "authoritative": _is_authoritative(spec_by_id, winner),
+        "precedence": _precedence(spec_by_id, winner),
         "as_of": winner.get("as_of"),
         "confidence": winner.get("confidence"),
         "eol_date": winner.get("eol_date"),
@@ -594,6 +667,15 @@ def _resolution_view(rows: list[dict], spec_by_id: dict, order: list[str]) -> di
             "table": winner.get("provenance_table"),
             "id": winner.get("provenance_id"),
             "record_id": winner.get("record_id"),
+            # The winner's declared `extra_columns`, decoded (dwr-ev-02). This
+            # file has always said they are "carried verbatim into
+            # provenance_json ... so it is preserved rather than lost", and
+            # until now nothing could read them BACK — a carrier that only ever
+            # writes is not preservation. Needed by any source whose row means
+            # nothing without a field this store has no column for: an SME
+            # assertion's `asserted_by` is the attribution, and an attributed
+            # citation that cannot name the person is not attributed.
+            "fields": _provenance_fields(winner),
         },
         # True when the sources do not agree. Reported, never resolved away.
         "conflict": len(verdicts) > 1,

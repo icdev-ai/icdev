@@ -538,6 +538,92 @@ python tools/cache_savings/by_provider.py --provider anthropic --json
 # Claims are provider-keyed, NEVER model-keyed: args/cache_effectiveness.yaml
 # UI: /cache-savings -> "Prefix Cache by Provider"   API: /api/cache-savings/by-provider
 
+# The UPLOADED original is KEPT, content-addressed, before its temp file goes (dwr-fid-01)
+python -m tools.document_intelligence.originals --survey [--json] [--verify]   # verdict per document, counted
+python -m tools.document_intelligence.originals --root                         # retention root, files, bytes
+python tools/db/migrate.py --up            # 20260908003311: original_path / original_sha256 / original_retained_at
+# /api/ingest saved the upload to a NamedTemporaryFile and os.unlink()'d it in
+# the ingest thread's `finally` while dic_documents.filepath kept pointing at
+# it. MEASURED 2026-09-07 on the live board: 55 documents, 29 with a filepath
+# that no longer exists (all under %TEMP%), 15 with none (generated in-canvas),
+# 11 readable. Now retain_original() copies the bytes to
+# <root>/<sha256[:2]>/<sha256><suffix> (hash while copying, atomic os.replace,
+# dedup by content) BEFORE ingest_file runs, and the temp deletion is KEPT.
+# RETENTION IS A STORAGE DECISION: ICDEV_DIC_ORIGINALS_DIR is the root (default
+# data/document_intelligence/originals, git-ignored beside the rmf-wp-02
+# artifacts dir which was NOT ignored before), ICDEV_DIC_RETAIN_ORIGINALS=0
+# switches it off, and off is REPORTED on the ingest result (`original.reason:
+# disabled_by_env`), never silent. Growth is one file per DISTINCT upload and
+# nothing prunes it; the survey reports files/bytes on disk.
+# SIX VERDICTS, and `absent` is never one bucket: retained | retained_missing |
+# retained_mismatch (--verify re-hashes) | source_on_disk (a CLI ingest whose
+# file persists) | absent (THE FINDING) | no_source (generated in-canvas, there
+# was never an upload -- 15 of the 55, and filing them as findings buries the
+# 29 real ones). The collection listing carries `original_status`; the SELECT
+# names the new columns only when the CATALOGUE says the live table has them,
+# so an un-migrated board still lists (a SELECT naming a missing column,
+# swallowed by _safe_rows, is an EMPTY list -- the "silently broken" the card
+# names) and the survey says `original_columns_present: false` rather than 55
+# `absent`. Unmeasurable, never clean, over no documents.
+# NOT retained here, and named: CLI/batch ingests (the operator's own file
+# persists at filepath); nothing prunes; the 29 are gone for good.
+
+# A suggestion drafted against a TOKEN is retired, never back-filled (dwr-anchor-06)
+python -m tools.document_intelligence.suggestion_redraft --census        # by status x anchor_basis
+python -m tools.document_intelligence.suggestion_redraft --plan [--json] # probe every target; ACTS ON NOTHING
+python -m tools.document_intelligence.suggestion_redraft --apply --limit 5   # THE ONLY FLAG THAT WRITES
+# `draft_redline` built its prompt from `finding["entity_label"]` -- a bare token
+# like `TLS 1.1` -- and stored `section_id=""` with `anchor_basis="unanchored"`.
+# MEASURED 2026-09-08 on the live PG board: 58 pending dic_suggestions, 58 with an
+# empty section_id, 58 with a NULL basis, all canvas_source=doc_modernization.
+# THEY CANNOT BE REPAIRED IN PLACE. The prose was written without the model ever
+# seeing the surrounding sentence, so back-filling an anchor pins text to a span
+# it was never fitted to -- a plausible-looking edit nobody wrote. Each is
+# SUPERSEDED (`supersede_suggestion`, dwr-anchor-05, reused -- this module never
+# UPDATEs dic_suggestions itself, pinned by AST) and its finding re-drafted
+# through the UNCHANGED TRUST gate chain.
+# IT PROVES BEFORE IT ACTS, and nothing is superseded for a draft that
+# structurally cannot happen -- trading 58 misleading proposals for 58 absent
+# ones is not progress. FIVE preconditions, each asked of primary data and each
+# sending a reader to a DIFFERENT repair:
+#   drafter_does_not_anchor  the installed redline_drafter has no
+#                            `resolve_passage` (it predates dwr-anchor-04) and
+#                            would mint another unanchored row. Refused for the
+#                            WHOLE run, never per item.
+#   origin_unresolved        two independent routes to the finding --
+#                            docmod_findings.redline_suggestion_id ->
+#                            supersedes_id (structured, asked first) and the
+#                            `[docmod:<id>]` rationale prefix. A DISAGREEMENT is
+#                            unresolved, never a pick between two.
+#   origin_not_open          draft_redline only drafts an `open` finding, and the
+#                            ORIGIN row is open while its redline_drafted
+#                            SUCCESSOR is not -- which row is returned is
+#                            load-bearing.
+#   finding_has_no_span      THE FIX IS A RE-SCAN. dwr-anchor-01/02 made the
+#                            packs record a span; a finding written before that
+#                            has none and no re-draft can invent it.
+#   doc_has_no_sections      THE FIX IS section_deriver (dwr-sect-01).
+# MEASURED, AND THE MEASUREMENT IS THE OUTCOME: on this board today the tool
+# reports 58 REFUSALS AND ZERO TOKENS SPENT. All 58 resolve through the
+# structured route and all 58 origins are open -- and 127 of 127 docmod_findings
+# carry a NULL span, while the document holding 47 of the 58
+# (dic_doc_28e2ee4d984f3f35) carries ZERO dic_sections rows. Re-probed with
+# anchors=True, i.e. as if dwr-anchor-04 were installed, all 58 still refuse on
+# `finding_has_no_span`. That is not a clean bill of health. DO NOT relax a
+# precondition to make the sweep do something -- each one is what stops it
+# minting 58 fresh copies of the defect it exists to retire.
+# CONFIRM IS A RE-READ, never the drafter's claim: the new row must carry an
+# APPLIABLE basis AND a section, and a row failing that is `redrafted_unanchored`
+# -- reported loudly, never counted as a success. THE LOOP IS CLOSED BY
+# CONSTRUCTION and not by a visited-set: an anchored row is not a target, and
+# `validate_anchor` refuses to write an exact/relocated basis with no section, so
+# a written row is anchored or was never written.
+# Bounded by `max_redrafts_per_run` (args/docmod/docmod_config.yaml, 10) with
+# deferred items NAMED. Every outcome counted -- redrafted | abstained | blocked |
+# error | supersede_refused | redrafted_unanchored -- because successes alone
+# cannot say whether the sweep worked. Exit 2 = the survey could not be produced.
+# Survey: docs/audits/dwr-anchor-06-unanchored-suggestion-survey.md
+
 # DocMod asks ONE governed seam instead of hand-querying tables (#cef-di-01)
 # A library, no CLI. Import it:
 #   from tools.doc_modernization.evidence import (
@@ -967,6 +1053,147 @@ python -m tools.currency.entity_currency --resolve "<entity>" --entity-type hard
 # held 0 rows. Each learned row records source_feed + evidence_kind and share_pct
 # is a share WITHIN one feed — an observed estate beats a drawing of one, and no
 # quantity of drawings adds up to an observation.
+
+# An AUTHOR's upload is a declared source, ranked top, and the catalog it contradicts survives (dwr-ev-01)
+# A library, no CLI. Import it:
+#   from tools.document_intelligence.author_evidence import parse_assertions, record_assertions
+#   assertions = parse_assertions('[{"entity": "Catalyst 6500", "type": "hardware_model",'
+#                                 ' "vendor": "cisco", "status": "fielded", "as_of": "2026-08-01"}]')
+#   ingest_file(path, "estate", author_assertions=assertions)      # same transaction as the document
+python -m tools.currency.entity_currency --resolve "catalyst 6500" --entity-type hardware_model
+# Upload: POST /document-intelligence/api/ingest with a multipart `author_assertions`
+# JSON field (400 on a malformed entry, refused WHOLE — half an author's
+# declaration recorded silently is worse than none and a reason).
+# THE CHANGE IS EVIDENCE PRECEDENCE, NOT A UI. `dic_author_assertions` (migration
+# 20260908003920, one row per document x entity x version) is the FIFTH source
+# in args/entity_currency.yaml, kind `author_supplied`, declared exactly the way
+# the endoflife.date feed and the curated catalog are, plus ONE new optional
+# key: `precedence: 0`, applied FIRST in `resolution.order`. Every source shipped
+# before it declares none, ties on DEFAULT_PRECEDENCE (100) and falls through to
+# `authoritative` exactly as before -- asserted: the catalog still beats a newer,
+# more confident feed. `precedence` is an EVIDENCE ORDERING (inventory_feeds.yaml's
+# idiom), not a confidence a bumped prior could overturn and not `authoritative`,
+# which stays the curated catalog's word. An author's statement is the latest
+# fact about THIS ESTATE; NIST EOL is a fact about a VENDOR's support.
+# ONE RESOLVER, AND THREE CARRIERS THAT NOW OBEY IT. `entity_currency.resolve()`
+# ranks, keeps every loser under `others` (each with its `rank`, `authoritative`,
+# `precedence`, `source_kind`) and reports `conflict: true`. The Cortex `currency`
+# rung carries that rank on every structured claim (`EntityClaim.rank`) and the
+# docmod lane `_currency_lane` sorts by it -- it USED to re-sort by
+# authority-then-confidence, a second copy of the rule that would have handed the
+# pack the catalog's verdict while the store handed the author's. `author_evidence`
+# itself contains no ranking and no model, pinned by AST; the author's status
+# word maps onto VERDICTS through the YAML `value_map`, a lookup.
+# TWO CLOCKS: `as_of` is the AUTHOR's (`as_of_basis: author_stated`), or the
+# upload time labelled `upload_time` so a defaulted clock is never read as a
+# stated one; `created_at`/`observed_at` are ours. Several statements about one
+# entity keep every row in dic_author_assertions and the store keeps the NEWEST
+# author clock (`order_by: [as_of, created_at]`). Two AUTHORS disagreeing is NOT
+# two store rows today -- that is dwr-ev-02's attributed SME assertion, named.
+# REACHES THE DRAFTER THROUGH THE EXISTING SEAMS ONLY: cortex.resolve ->
+# tools/doc_modernization/evidence.py (the ranked answer, `currency_assertion()`
+# now returns `others`), and the brokered rung -- `icdev_author_evidence`, a
+# credential-free local-DB DataBridge connector (table `author_assertions`,
+# roles docgen_analyst + cortex_analyst, descriptor `dic-author-evidence-local`)
+# serving the statements AS MADE (`ranked: false`) with one access-log row per
+# read. Never a private SELECT on the seam, pinned by AST. Shipped ceiling
+# UNCLASSIFIED like every grant; raising it is a deployment decision.
+# NOT built, and named: no extraction of assertions from prose (a `text_pattern`
+# claim can never reach a pack -- TRUST rule 2); the MCP `dic_ingest` handler
+# (tools/mcp/gap_handlers.py) still calls an `IngestOrchestrator` class that
+# does not exist in ingest_orchestrator.py, a pre-existing break this card did
+# not touch; tests/test_dic_ingest_orchestrator.py (ungated) asserts one chunk
+# link per chunk with embed=False, red since dic-ingest-link-01 (2026-08-22).
+
+# A COMMENT is an instruction until a human promotes it; then it is CITED, and marked (dwr-ev-02)
+# A library, no CLI. Import it:
+#   from tools.document_intelligence.sme_evidence import promote_comment, promotions_for
+#   promote_comment(conn, ann_id="ann-...", promoted_by="lead.reviewer",
+#                   claim={"entity_label": "TLS 1.1", "entity_type": "crypto_protocol",
+#                          "status": "retired", "as_of": "2026-07-01"})
+python -m tools.currency.entity_currency --resolve "tls 1.1" --entity-type crypto_protocol
+# Promote: POST /document-intelligence/api/annotations/<ann_id>/promote
+#          {"promoted_by": "...", "claim": {...}}      404 unknown / 409 already / 400 bad claim
+# Read:    GET  /document-intelligence/api/annotations/<ann_id>/promote
+# UI:      /document-intelligence/doc/<doc_id> -> a section's comments panel
+#          ("Mark as SME assertion"), and the citation on /document-intelligence/docdrift
+#
+# AN UNPROMOTED COMMENT IS NOT RANKED LOW, IT IS ABSENT. "We moved to TLS 1.3
+# last quarter" in a review comment is an INSTRUCTION, and a reviewer's chat
+# message is not a source -- letting unverifiable prose ground a compliance claim
+# is the hallucination the TRUST chain exists to stop. So the mechanism is not a
+# weight: `dic_section_annotations` is declared as a currency source NOWHERE and
+# is read by NO evidence seam (asserted over seven of them by an AST test), so
+# there is no path by which an unpromoted comment could be cited, and no flag on
+# the comment that could go stale. The state IS the absence of a row in
+# `dic_sme_assertions`.
+# THE PROSE IS NEVER PARSED, AND THAT IS THE WHOLE TRUST ARGUMENT. A promotion
+# carries a TYPED claim the PROMOTING HUMAN supplies -- entity, type, status --
+# validated by `author_evidence.normalize_assertion`, the SAME one validator an
+# author's upload goes through, so a status word cannot mean one thing on an
+# upload and another on a promotion. The comment text is stored VERBATIM as the
+# quotation and NOTHING reads a word of it: an assertion extracted from prose is
+# a `text_pattern` claim and can never reach a pack (TRUST rule 2, dwr-ev-01's
+# rule unchanged). An AST test refuses a regex over `comment` in promote_comment
+# and any model call in the module. So what the comment contributes is not the
+# claim -- it is WHO said it, WHEN, and against WHICH span of WHICH document,
+# which is exactly what makes the evidence ATTRIBUTED.
+# PER-COMMENT AND DELIBERATE. One `ann_id` in the URL, one in the writer; no bulk
+# endpoint (asserted absent by name), no promotion on any heuristic, and a second
+# promotion of the same comment is a 409 rather than a silent rewrite of what a
+# human already decided. AUDITED AS A DECISION, BEFORE THE WRITE, FAIL-CLOSED:
+# `_record_hitl_decision("dic_annotation", ..., "promoted_to_sme_assertion", ...)`
+# -- the cef-ui-03 door, `dic.hitl_decision`, raise_on_error=True -- so an
+# unauditable promotion never happens, and the row names BOTH the person whose
+# word it now is and the person who decided it was evidence.
+# TWO CLOCKS. `as_of` is the SME's; an SME who states no date gets the COMMENT's
+# own timestamp with `as_of_basis: comment_time`, never today's, because a
+# promotion made months later must not restamp their statement. `promoted_at` is
+# ours. `asserted_by` is COPIED off the comment -- an attribution the promoter
+# can type in is not an attribution.
+# RANKED BESIDE THE AUTHOR, NOT ABOVE. `dic_sme_assertions` is the SIXTH declared
+# source in args/entity_currency.yaml (migration 20260908071149), kind
+# `sme_attributed`, `precedence: 0` and confidence 0.9 -- IDENTICAL to
+# dic_author_assertions, so the two tie on precedence AND on the prior and the
+# LATER human clock decides, with the earlier preserved under `others` with
+# conflict:true. Above them would let a 2020 remark beat a 2026 signed upload;
+# below would let a stale upload beat this morning's correction. Neither is a
+# rule about evidence; recency between equals is, and the store already had it.
+# RENDERED DISTINCTLY, STRUCTURALLY, IN BOTH HALVES OF BOTH SURFACES. The citation
+# carries `source_type: sme_assertion` -- its own badge, not the
+# `currency_assertion` a machine feed produces and not a document type -- derived
+# from the store's `source_kind` (`_HUMAN_SOURCE_TYPES`), never from a source
+# NAME, so a seventh human source is a YAML entry and one line. Every other kind
+# is untouched, asserted. The content sentence itself names the person ("Asserted
+# by <who> ... This is an attributed human statement, not a document"), because
+# the reader of a drafted paragraph sees the snippet and not the badge. DocDrift
+# frames it amber under an ATTRIBUTED HUMAN SOURCE chip and the comments panel
+# renders a promoted comment in its own amber block with both clocks and both
+# people, an unpromoted one under "Instruction only -- cited by nothing".
+# THE VIEW CAN NOW READ ITS OWN CARRIED FIELDS. `provenance` gains `fields` --
+# the winner's declared `extra_columns`, decoded. args/entity_currency.yaml has
+# always said they are "carried verbatim into provenance_json ... so it is
+# preserved rather than lost", and until now nothing could read them BACK; a
+# carrier that only ever writes is not preservation, and an attributed citation
+# that cannot name the human is not attributed.
+# TWO SMEs DISAGREEING ARE TWO ROWS -- the unique key is the COMMENT, so nothing
+# overwrites anything -- and `promote_comment` REPORTS the contradiction it is
+# creating under `contradicts` rather than landing it silently. RESIDUAL, NAMED:
+# the STORE still keeps one row per (source, entity) and so carries the newest
+# human clock; making two statements from ONE source two STORE rows is a change
+# to the store's identity key, not this card.
+# NOT REVERSIBLE THROUGH THIS SEAM, and why: `entity_currency.backfill` is
+# upsert-only and the store has no delete path, so deleting the assertion row
+# would leave the derived currency row standing -- a revocation that looks like
+# it worked and did not, which is worse than none. Rather than invent a second
+# writer of currency rows inside a DIC module, correction works the way human
+# evidence works: a LATER attributed statement supersedes an earlier one and the
+# earlier stays readable. A real revoke needs a store deletion path and is its
+# own card.
+# NOT BUILT, and named: no DataBridge connector for this table (dwr-ev-01's
+# `icdev_author_evidence` serves author uploads; a second brokered rung changes
+# the `search_external` fan-out, which already cost one follow-up test fix), and
+# no extraction of assertions from prose, ever.
 
 # Agent adapter capability matrix — DECLARED vs ACTUAL per adapter (#exa-bench-03)
 python tools/agents/capability_matrix.py --json          # 5 adapters x 7 capabilities
@@ -2675,6 +2902,61 @@ python tools/awareness/capability_consumption.py --probe-diff origin/main   # wh
 # designs against them is TOLD they are empty (--probe-diff names all four).
 # The fix for the empties is a WRITER, and it is not this card: nothing on this
 # deployment has assigned a control to a project or collected cATO evidence.
+
+# The Compliance Posture widget's TWO remaining perfect scores, refused (rmf-rail-02)
+python -m pytest tests/test_compliance_posture_rail_02.py -q
+python tools/awareness/claim_verifier.py --claim posture_zero_trust_has_scan_corpus
+python tools/awareness/claim_verifier.py --claim posture_security_agrees_with_its_assessments
+SC_STORAGE_BACKEND=sqlite python -m tools.security_canvas.zt_verdict_survey     # the INDEPENDENT side of the ZT claim
+# rem-hyg-09 routed the per-canvas scores through `_score_or_none`; two blocks
+# in the same function never adopted it and both drew a full green 100 bar.
+# MEASURED 2026-09-07 on the live board, from compute_canvas_posture itself:
+#   Zero Trust 100.0  the latest-per-pillar slice of zig_maturity_scores is
+#                     EXACTLY 1.0 for all seven pillars, one run on 2026-06-27
+#                     (three runs 14 minutes apart: all 0.0, then 0.73-0.87, then
+#                     all 1.0 -- a seeded run, not an estate), while
+#                     zig_device_compliance_scans DOES NOT EXIST on the backend
+#                     and the device posture reads not_evaluated. Now `score`
+#                     None, `score_basis: unmeasured:no_device_scan_corpus`,
+#                     `declared_maturity: 100.0` carried, labelled, never
+#                     scored. The maturity number is a reduction over DECLARED
+#                     statuses (zig_capabilities / zig_activities); it becomes a
+#                     posture SCORE only over a scan corpus that holds rows.
+#   Security 100.0    beside "24 open findings" -- the 24 was COUNT(*) of
+#                     sc_assessments wearing a findings label. The 13 latest
+#                     assessments carried 501 findings on their own
+#                     findings_json and every one was stored posture_grade F.
+#                     `open_findings` now counts those findings (in Python,
+#                     never SQLite-dialect JSON SQL); a PERFECT 100.0 beside
+#                     open findings -- or findings that could not be read,
+#                     which is not "none" -- is `score_basis: contested` and
+#                     the score is None. A measured 80.0 with 0 findings, and
+#                     an honest 100.0 with 0 findings, still score.
+#   overall           `if zig_score > 0` dropped a MEASURED 0.0 from the
+#                     denominator, so the headline read HIGHER because Zero
+#                     Trust scored zero. Every fold is `is not None` now
+#                     (pinned by an AST test), and the overall is None, never
+#                     0.0, when nothing was measured. Live: 79.0 -> 73.8.
+# Every row carries `score_basis` (measured | unmeasured | contested | ...), so
+# a None score always has its reason beside it; the widget already renders a
+# null as "Not assessed" with an empty bar. `_has_rows` now ROLLS BACK after a
+# failed probe: on PostgreSQL a probe of an absent table aborts the transaction
+# and blanked the Zero Trust `last_assessed` on the first live run.
+# NOT fixed here, and named: sc_assessments.risk_score carries TWO semantics --
+# the STRIDE engine stores `100 - penalty` (0.0 = grade F) while the pipeline
+# writers store a penalty (F at >= 20) -- so `100 - avg(risk_score)` inverts the
+# engine's rows; a grade-F engine row at 30.0 reads 70.0. Choosing one meaning
+# for the column is a data-model card. And the DEVICE scanner is still unwired
+# (rmf-zt-01): the honest Zero Trust bar is empty until it writes rows.
+# TWO STANDING CLAIMS (autonomy-lrn-01), both `agrees` on the live board today.
+# `posture_score_needs_evidence` guards the loop rem-hyg-09 fixed and did not
+# catch either block -- the "same defect at a second site" case. Reported: the
+# two rows as the widget reads them. Derived, sharing no code with posture.py:
+# zt_verdict_survey.read_corpus / live_posture (rmf-zt-01's own verdict) for
+# Zero Trust; the latest assessments' OWN posture_grade + findings_json for
+# Security. A refused number always agrees; a number needs its evidence.
+# DO NOT delete or rewrite the 2026-06-27 zig rows (they are the evidence) and
+# DO NOT re-run a fleet scan to refresh the number -- unprobed IS the posture.
 
 # A DIC version leaves the canvas through ONE gated door, and CoT/CoD prose is redacted (rmf-wp-02)
 # A library, no CLI. Import it:

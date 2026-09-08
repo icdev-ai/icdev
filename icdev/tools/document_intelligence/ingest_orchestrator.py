@@ -48,6 +48,10 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from tools.db.storage import get_connection
+from tools.document_intelligence.author_evidence import (
+    ensure_table as _ensure_author_table,
+    record_assertions as _record_author_assertions,
+)
 from tools.document_intelligence.collection_registry import ensure_collection
 from tools.logging.icdev_logger import get_logger
 from tools.rag.chunker import chunk_content
@@ -208,7 +212,17 @@ _SCHEMA = [
         page_count      INTEGER DEFAULT 1,
         created_at      TEXT NOT NULL,
         tenant_id       TEXT,
-        classification  TEXT
+        classification  TEXT,
+        -- dwr-fid-01: the uploaded ORIGINAL, retained content-addressed under
+        -- originals.originals_dir() BEFORE the upload's temp file is deleted.
+        -- `filepath` is where ingest READ the bytes (a temp path for an
+        -- upload, gone within seconds); `original_path` is where they are
+        -- KEPT. NULL means nothing was retained -- generated in-canvas, an
+        -- upload before this landed, or retention switched off. Existing
+        -- databases gain the columns via migration 20260908003311.
+        original_path        TEXT,
+        original_sha256      TEXT,
+        original_retained_at TEXT
     )
     """,
     """
@@ -277,7 +291,11 @@ _SCHEMA = [
         created_at      TEXT NOT NULL,
         created_by      TEXT,
         tenant_id       TEXT,
-        classification  TEXT
+        classification  TEXT,
+        verified        INTEGER,
+        citation_report TEXT,
+        abstained       INTEGER,
+        confidence      REAL
     )
     """,
 
@@ -302,6 +320,14 @@ _ALTER_MIGRATIONS = [
     # 20260907215506 is what reaches a live PostgreSQL board; this line covers a
     # SQLite database that predates it.
     ("dic_versions", "section_basis", "TEXT"),
+    # dwr-sect-02 — the verification doc_generator computes for every section it
+    # writes. NULL `verified` means the check did not RUN; it is never a 0.
+    # Migration 20260908003513 reaches a live PostgreSQL board; these lines
+    # cover a SQLite database that predates it.
+    ("dic_sections", "verified", "INTEGER"),
+    ("dic_sections", "citation_report", "TEXT"),
+    ("dic_sections", "abstained", "INTEGER"),
+    ("dic_sections", "confidence", "REAL"),
 ]
 
 
@@ -309,6 +335,9 @@ def _ensure_schema(conn) -> None:
     cur = conn.cursor()
     for ddl in _SCHEMA:
         cur.execute(ddl)
+    # dic_author_assertions (dwr-ev-01) — the ONE copy of its DDL lives with
+    # its writer; migration 20260908003920 executes the same tuple.
+    _ensure_author_table(conn)
     # Best-effort add missing columns for backward compatibility.
     for table, col, dtype in _ALTER_MIGRATIONS:
         try:
@@ -369,6 +398,10 @@ class IngestOutcome:
     ocr_cleaned: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
+    #: Author-supplied currency statements recorded WITH this upload
+    #: (dwr-ev-01) — a count, so a caller can tell "the author declared
+    #: nothing" from "the author declared three things and they landed".
+    author_assertions: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -387,6 +420,7 @@ class IngestOutcome:
             "ocr_cleaned": self.ocr_cleaned,
             "metadata": self.metadata,
             "errors": self.errors,
+            "author_assertions": self.author_assertions,
         }
 
 
@@ -1588,6 +1622,7 @@ def ingest_file(
     detect_anomalies: bool = True,
     workflow_custom_fields: list[dict] | None = None,
     chunk_template: str | None = None,
+    author_assertions: list[dict] | None = None,
     conn=None,
     progress_cb=None,
 ) -> IngestOutcome:
@@ -1598,6 +1633,16 @@ def ingest_file(
         collection_id: target RAG/DIC collection.
         tenant_id/classification: security stamp; default from security context.
         created_by: user id recorded on the initial version row.
+        author_assertions: what the AUTHOR states this document asserts about
+            the currency of entities it names (dwr-ev-01) — a list of
+            mappings in ``author_evidence.normalize_assertion``'s shape,
+            already validated by the caller. Written to
+            ``dic_author_assertions`` in the same transaction as the document
+            and pushed into the ``entity_currency`` store under the declared
+            source ``dic_author_assertions``, where ``resolve()`` ranks it
+            top and keeps every disagreeing source under ``others``. A
+            malformed entry RAISES: an upload whose declared facts were
+            silently dropped would report success over nothing.
         embed: when True, embed + upsert chunks into the vector store.
         bridge_kg: when True, extract entities/relationships into the KG.
         summarize: when True, best-effort LLM title/abstract enrichment grounded
@@ -1968,6 +2013,32 @@ def ingest_file(
                 ),
             )
 
+        # Author-supplied currency statements (dwr-ev-01), same transaction as
+        # the document and its version so the three land together. The store
+        # refresh runs the SAME backfill mapping the nightly sweep runs over
+        # every declared source; a refresh that failed is REPORTED on the
+        # outcome, never swallowed — the sweep will re-derive it, but the
+        # caller must not read "recorded" as "resolvable" until it has.
+        author_recorded = 0
+        if author_assertions:
+            authored = _record_author_assertions(
+                conn,
+                doc_id=doc_id,
+                version_id=version_id,
+                assertions=author_assertions,
+                tenant_id=tid,
+                classification=cls,
+                asserted_by=created_by,
+                uploaded_at=now,
+            )
+            author_recorded = int(authored.get("recorded") or 0)
+            store = authored.get("store") or {}
+            for sid, err in (store.get("errors") or {}).items():
+                errors.append(
+                    f"author assertions recorded ({author_recorded}) but the "
+                    f"entity_currency refresh for {sid} failed: {err}"
+                )
+
         # Refresh chunk links for this version.
         cur.execute("DELETE FROM dic_chunk_links WHERE version_id = %s", (version_id,))
         for i, chunk in enumerate(chunks):
@@ -2086,6 +2157,7 @@ def ingest_file(
             ocr_cleaned=ocr_cleaned,
             metadata=ai_metadata,
             errors=errors,
+            author_assertions=author_recorded,
         )
     finally:
         if own_conn:

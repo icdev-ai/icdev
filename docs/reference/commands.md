@@ -6239,6 +6239,38 @@ ICDEV_ACE_ENABLED=true        # .env — master toggle for ACE canvas + co-worke
 # Mode info (air-gap vs online, available capabilities)
 # GET /document-intelligence/api/mode
 
+# Retained ORIGINALS -- which uploads still have their file? (dwr-fid-01)
+python -m tools.document_intelligence.originals --survey            # verdict per document, counted
+python -m tools.document_intelligence.originals --survey --json --verify   # re-hash every retained file
+python -m tools.document_intelligence.originals --root              # retention root + files/bytes on disk
+# /api/ingest used to delete its temp upload while dic_documents.filepath still
+# pointed at it (44 of 55 documents with no original, 2026-09-07). Uploads are
+# now kept content-addressed under ICDEV_DIC_ORIGINALS_DIR (default
+# data/document_intelligence/originals, git-ignored); ICDEV_DIC_RETAIN_ORIGINALS=0
+# switches it off and the ingest result SAYS so. Verdicts: retained |
+# retained_missing | retained_mismatch | source_on_disk | absent | no_source.
+# Existing databases: python tools/db/migrate.py --up   (20260908003311)
+
+# Retire the suggestions drafted against a TOKEN instead of a passage (dwr-anchor-06)
+python -m tools.document_intelligence.suggestion_redraft --census        # by status x anchor_basis
+python -m tools.document_intelligence.suggestion_redraft --plan          # probe every target; ACTS ON NOTHING
+python -m tools.document_intelligence.suggestion_redraft --plan --json
+python -m tools.document_intelligence.suggestion_redraft --apply --limit 5   # THE ONLY FLAG THAT WRITES
+# `draft_redline` prompted with `finding["entity_label"]` and stored
+# `section_id=""` / `anchor_basis="unanchored"` — 58 such rows on the live board
+# 2026-09-08, none of them appliable. They are SUPERSEDED (through
+# suggestion_store.supersede_suggestion, dwr-anchor-05) and re-drafted through
+# the UNCHANGED TRUST gate chain; back-filling an anchor is refused, because the
+# prose was never fitted to the span it would be pinned to.
+# It PROVES before it acts. Five refusals, each naming a different repair:
+# drafter_does_not_anchor (merge dwr-anchor-04) | origin_unresolved |
+# origin_not_open | finding_has_no_span (RE-SCAN) | doc_has_no_sections
+# (section_deriver). Confirm is a RE-READ of the stored row, never the drafter's
+# claim; a replacement that is itself unanchored is `redrafted_unanchored`.
+# Bounded by max_redrafts_per_run (args/docmod/docmod_config.yaml, 10); deferred
+# items are NAMED. Exit 2 = the survey could not be produced.
+# Survey: docs/audits/dwr-anchor-06-unanchored-suggestion-survey.md
+
 # Python — generate outputs directly
 python -c "from tools.document_intelligence.output_generators import generate_study_guide; import json; print(json.dumps(generate_study_guide('my-collection', 'default'), indent=2))"
 python -c "from tools.document_intelligence.output_generators import generate_faq; import json; print(json.dumps(generate_faq('my-collection', 'default', n=10), indent=2))"
@@ -6423,9 +6455,43 @@ version) assertion**.
 - **`confidence` is a declared prior, not a measurement.**
 - `as_of` (the source's clock) is kept apart from `observed_at` (ours), so stale
   evidence stays distinguishable from fresh evidence.
+- **An author's upload is the fifth source, ranked top (dwr-ev-01).** A DIC
+  upload may carry an `author_assertions` JSON field (multipart, on
+  `POST /document-intelligence/api/ingest`); each entry is written to
+  `dic_author_assertions` in the document's own transaction and into the store
+  under source `dic_author_assertions` (kind `author_supplied`, `precedence: 0`).
+  `precedence` is applied FIRST in `resolution.order`; sources declaring none
+  tie on the default and rank exactly as before. The catalog it contradicts is
+  kept under `others` with `conflict: true`. A library — import it:
+
+  ```python
+  from tools.document_intelligence.author_evidence import parse_assertions, record_assertions
+  ```
 - Refreshed on the nightly `doc_modernization_sweep` reflex; read by the docmod
   network-hardware pack only when the catalog and the hardware feed are both
   silent. Declared in `args/capability_consumption.yaml` `substrates:`.
+- **A promoted review comment is the sixth source, beside the author (dwr-ev-02).**
+  A comment is an INSTRUCTION by default and is cited by nothing:
+  `dic_section_annotations` is declared as a source nowhere and read by no
+  evidence seam, so an unpromoted comment is ABSENT from the chain rather than
+  weakly weighted. One deliberate act promotes ONE comment --
+  `POST /document-intelligence/api/annotations/<ann_id>/promote` with
+  `{"promoted_by": ..., "claim": {...}}`, audited fail-closed as a
+  `dic.hitl_decision` BEFORE the write, 409 on a second promotion, no bulk door.
+  The CLAIM is typed by the promoting human and the comment prose is never
+  parsed; `asserted_by` and `as_of` come from the COMMENT (`as_of_basis:
+  sme_stated | comment_time`) and `promoted_by`/`promoted_at` are ours. Written
+  to `dic_sme_assertions` and into the store under source `dic_sme_assertions`
+  (kind `sme_attributed`, `precedence: 0` and confidence 0.9 -- identical to the
+  author source, so the two tie and the later human clock decides). Its citation
+  carries `source_type: sme_assertion`, derived from the source KIND, so a
+  person's statement never wears a machine feed's badge. A library -- import it:
+
+  ```python
+  from tools.document_intelligence.sme_evidence import promote_comment, promotions_for
+  ```
+- The resolved view's `provenance` carries a `fields` map (the winner's declared
+  `extra_columns`, decoded), which is how an attributed citation names the human.
 
 ## Twin Core — Cross-Canvas Digital-Twin Unification (TWX)
 

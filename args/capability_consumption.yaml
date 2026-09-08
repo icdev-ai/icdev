@@ -221,6 +221,28 @@ substrates:
       board at declaration time. Listed because the failure mode is silent: every
       caller degrades to "no answer", which is indistinguishable from "nothing to
       report".
+  - ref: dic_author_assertions
+    note: >-
+      Author-supplied currency statements recorded at DIC ingest (dwr-ev-01,
+      migration 20260908003920) and declared as the `dic_author_assertions`
+      source in args/entity_currency.yaml, ranked TOP by `precedence`. Listed
+      the day it was created, before it can hold anything: a row here only
+      exists when an upload carried the `author_assertions` field, so a
+      deployment whose authors never state a fact keeps it empty and every
+      resolve() answers from the feeds and the catalog exactly as before.
+      Empty is therefore "no author has asserted anything", never a fault —
+      but a reader designing a drafter against author evidence must be told.
+  - ref: dic_sme_assertions
+    note: >-
+      Review comments a human explicitly PROMOTED to attributed SME assertions
+      (dwr-ev-02, migration 20260908071149), declared as the
+      `dic_sme_assertions` source in args/entity_currency.yaml beside the author
+      source. Listed the day it was created, before it can hold anything: a row
+      exists only where a named human pressed "mark as SME assertion" on one
+      comment, so empty means "nobody has promoted a comment" and NEVER "the
+      comments hold nothing worth citing". That distinction is the card: an
+      unpromoted comment is an instruction and is cited by nothing, which is a
+      designed absence and not a gap to fill.
   - ref: cortex_audit
     note: >-
       The append-only governed-call ledger (one row per Cortex verb invocation,

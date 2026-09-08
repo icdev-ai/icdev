@@ -421,13 +421,21 @@
               {% if r.citations %}
               <div style="display:flex;flex-direction:column;gap:6px;">
                 {% for c in r.citations %}
-                <div class="dd-citation" style="background:#0b1726;border:1px solid #1a3560;border-radius:5px;padding:7px 10px;">
+                {# dwr-ev-02 — an ATTRIBUTED HUMAN SOURCE is framed and coloured
+                   apart from a document citation. A promoted review comment is one
+                   named person's word about this estate; a corpus chunk is a
+                   document. They are different KINDS of evidence, so they must not
+                   arrive as two blue chips distinguishable only by a type string. #}
+                <div class="dd-citation" style="background:{{ '#1b1206' if c.source_type == 'sme_assertion' else '#0b1726' }};border:1px solid {{ '#b45309' if c.source_type == 'sme_assertion' else '#1a3560' }};border-radius:5px;padding:7px 10px;">
                   <div style="font-size:11px;">
-                    <code style="color:#9bd0ff;">{{ c.source_id }}</code>
+                    <code style="color:{{ '#e0b070' if c.source_type == 'sme_assertion' else '#9bd0ff' }};">{{ c.source_id }}</code>
                     {% if c.source_table %}<span style="color:#5a7aa0;">· {{ c.source_table }}</span>{% endif %}
                     {% if c.source_type == 'pack_evidence' %}
                       <span title="The domain pack's OWN rationale coming back through the fan-out. It justifies the verdict; it is not an independent source corroborating it."
                             style="font-size:9px;color:#c0a8f0;border:1px solid #4c3c86;border-radius:9px;padding:1px 6px;margin-left:5px;">derived — the pack's own rule</span>
+                    {% elif c.source_type == 'sme_assertion' %}
+                      <span title="A review comment a human explicitly promoted to an attributed SME assertion. One named person's statement about this estate — not a document, and not a machine feed. The comment prose is a quotation; the claim was typed by the promoter."
+                            style="font-size:9px;color:#f0d0a0;background:#b45309;border-radius:9px;padding:1px 6px;margin-left:5px;letter-spacing:.4px;">ATTRIBUTED HUMAN SOURCE</span>
                     {% else %}
                       <span style="font-size:9px;color:#6a8ab0;border:1px solid #1f4d7a;border-radius:9px;padding:1px 6px;margin-left:5px;">{{ c.source_type }}</span>
                     {% endif %}
@@ -860,11 +868,18 @@
     if ((r.citations || []).length) {
       html += '<div style="display:flex;flex-direction:column;gap:6px;">';
       r.citations.forEach(function (c) {
-        html += '<div class="dd-citation" style="background:#0b1726;border:1px solid #1a3560;border-radius:5px;padding:7px 10px;">' +
-          '<div style="font-size:11px;"><code style="color:#9bd0ff;">' + esc(c.source_id) + '</code>' +
+        // dwr-ev-02 — the JS twin of the Jinja block above. A promoted review
+        // comment is an ATTRIBUTED HUMAN SOURCE and is framed apart from a
+        // document citation, in both halves, or the two renderers disagree
+        // about what a reader is looking at.
+        var _sme = c.source_type === 'sme_assertion';
+        html += '<div class="dd-citation" style="background:' + (_sme ? '#1b1206' : '#0b1726') + ';border:1px solid ' + (_sme ? '#b45309' : '#1a3560') + ';border-radius:5px;padding:7px 10px;">' +
+          '<div style="font-size:11px;"><code style="color:' + (_sme ? '#e0b070' : '#9bd0ff') + ';">' + esc(c.source_id) + '</code>' +
           (c.source_table ? ' <span style="color:#5a7aa0;">· ' + esc(c.source_table) + '</span>' : '') +
           (c.source_type === 'pack_evidence'
             ? ' <span title="The domain pack\'s OWN rationale coming back through the fan-out." style="font-size:9px;color:#c0a8f0;border:1px solid #4c3c86;border-radius:9px;padding:1px 6px;margin-left:5px;">derived — the pack’s own rule</span>'
+            : _sme
+            ? ' <span title="A review comment a human explicitly promoted to an attributed SME assertion. One named person\'s statement about this estate — not a document, and not a machine feed." style="font-size:9px;color:#f0d0a0;background:#b45309;border-radius:9px;padding:1px 6px;margin-left:5px;letter-spacing:.4px;">ATTRIBUTED HUMAN SOURCE</span>'
             : ' <span style="font-size:9px;color:#6a8ab0;border:1px solid #1f4d7a;border-radius:9px;padding:1px 6px;margin-left:5px;">' + esc(c.source_type) + '</span>') +
           '</div>' +
           (c.snippet ? '<div style="font-size:11px;color:#a8c8e0;margin-top:4px;line-height:1.5;">' + esc(c.snippet) + '</div>' : '') +

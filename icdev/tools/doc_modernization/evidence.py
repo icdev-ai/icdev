@@ -237,12 +237,18 @@ def _currency_lane(resolution) -> list:
         if claim.get("backend") and claim["backend"] != CURRENCY_BACKEND:
             continue
         out.append(claim)
-    # Authoritative first, then declared confidence, then source name so the
-    # order is total and a rescan picks the same winner every time. This is the
-    # store's own policy (args/entity_currency.yaml: authority ahead of
-    # confidence), applied to the claims Cortex handed back.
+    # THE STORE'S RANK FIRST (dwr-ev-01). entity_currency.resolve() already
+    # ranked these sources under the declared policy and Cortex carried that
+    # rank on every structured claim (0 = the winner, 1.. = `others` in policy
+    # order). Re-sorting here by authority-then-confidence was a SECOND COPY of
+    # the precedence rule, and it disagreed with the store the moment a source
+    # declared a precedence: the store handed the pack the author's assertion
+    # first and this lane handed it the curated catalog's. Ties on rank (claims
+    # from two different resolved entities) keep the old key so the order stays
+    # total and a rescan picks the same claim every time.
     out.sort(
         key=lambda c: (
+            -_rank_of(c),
             bool(c.get("authoritative")),
             float(c.get("confidence") or 0.0),
             str(c.get("source") or ""),
@@ -250,6 +256,14 @@ def _currency_lane(resolution) -> list:
         reverse=True,
     )
     return out
+
+
+def _rank_of(claim: dict) -> int:
+    """The store's rank carried on a claim; 0 (a winner) when absent."""
+    try:
+        return int(claim.get("rank") or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _graph_lane(resolution) -> list:
@@ -438,6 +452,20 @@ def currency_assertion(bundle) -> "dict | None":
         # disagreement entity_currency reports as `conflict`. Preserved rather
         # than resolved away, same as the store does.
         "conflict": len({str(c.get("source") or "") for c in bundle.currency}) > 1,
+        # The losing sources, in the store's order — what a reviewer adjudicates
+        # (dwr-ev-01). Same shape as `entity_currency.resolve()['others']`
+        # minus the row columns Cortex does not carry.
+        "others": [
+            {
+                "source": c.get("source") or "",
+                "verdict": c.get("raw_status") or c.get("status") or "",
+                "confidence": c.get("confidence") or 0.0,
+                "as_of": c.get("as_of") or "",
+                "authoritative": bool(c.get("authoritative")),
+                "rank": _rank_of(c),
+            }
+            for c in bundle.currency[1:]
+        ],
     }
 
 

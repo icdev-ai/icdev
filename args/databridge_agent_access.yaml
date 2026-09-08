@@ -340,6 +340,45 @@ connectors:
     agents:
       - twin_observatory_analyst
     classification_ceiling: UNCLASSIFIED
+
+  # -------------------------------------------------------------------------
+  # Author-supplied currency statements (dwr-ev-01) — THE LOCAL DIC TABLE.
+  #
+  # What an author declared at upload about the currency of the entities their
+  # document names (dic_author_assertions). A LOCAL-DATABASE connector in the
+  # icdev_demand shape: no endpoint, no credential, no socket. It is granted
+  # here for the same reason the floci grant above exists — the reader that
+  # wants these rows must come THROUGH the broker (authorization, ceiling,
+  # read-only, one access-log row per outcome) rather than through a private
+  # SELECT that skips all of it. Leaving it out would not keep the table
+  # unreachable; it would push its readers onto the ungoverned path.
+  #
+  # This is NOT how the drafter learns what an author asserted. The drafter
+  # asks cortex.resolve, whose `currency` rung reads the entity_currency store
+  # where the author's row is RANKED against the feeds and the catalog under
+  # args/entity_currency.yaml's one policy, disagreement preserved. This
+  # connector serves the statements AS MADE; the store serves them ranked.
+  - name: icdev_author_evidence
+    description: >-
+      Author-supplied currency statements recorded at DIC ingest
+      (dic_author_assertions): which entity, the author's status word, the
+      AUTHOR's as_of clock and its basis, who asserted it and the document it
+      came with. Read-only, local database, no credentials. One source's
+      statements, unranked — the ranked answer with its disagreements is
+      cortex.resolve / entity_currency.resolve.
+    connection_id: dic-author-evidence-local
+    tables:
+      - author_assertions
+    # Scoped to the two MACHINE readers: the drafter's role and the role Cortex
+    # presents to the broker for its `external` rung (args/cortex_config.yaml
+    # search.external.agent_id). A human reviewer adjudicates on the RESOLVED
+    # view, where the author's row sits beside the sources it contradicts, and
+    # has no business reading one side of that alone. An empty list grants
+    # EVERY agent including runtime-generated SMEs.
+    agents:
+      - docgen_analyst
+      - cortex_analyst
+    classification_ceiling: UNCLASSIFIED
 # ---------------------------------------------------------------------------
 # Further examples, left commented. These reach CUSTOMER systems and each needs
 # its own operator review, its own db_connections row and its own secret

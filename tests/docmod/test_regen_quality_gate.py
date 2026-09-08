@@ -43,7 +43,8 @@ _DDL = [
         citations_json TEXT, status TEXT DEFAULT 'draft',
         origin TEXT DEFAULT 'ai_generated', assigned_to TEXT, reviewed_by TEXT,
         reviewed_at TEXT, created_at TEXT, created_by TEXT, tenant_id TEXT,
-        classification TEXT)""",
+        classification TEXT, verified INTEGER, citation_report TEXT,
+        abstained INTEGER, confidence REAL)""",
     """CREATE TABLE IF NOT EXISTS dic_review_notes (
         note_id TEXT PRIMARY KEY, item_id TEXT, item_type TEXT, note_text TEXT,
         reviewer_id TEXT, created_at TEXT)""",
@@ -115,6 +116,16 @@ def _dic_doc_cols():
 
 _DIC_DOC_COLS = _dic_doc_cols()
 
+# dwr-sect-02: the generator now writes a section's own verification. On a warm
+# database whose dic_sections predates migration 20260908003513 the DDL above is
+# a no-op, so ADD them idempotently the way _DIC_DOC_COLS does for dic_documents.
+_DIC_SECTION_COLS = [
+    ("verified", "INTEGER"),
+    ("citation_report", "TEXT"),
+    ("abstained", "INTEGER"),
+    ("confidence", "REAL"),
+]
+
 
 @pytest.fixture()
 def db():
@@ -124,15 +135,16 @@ def db():
     for ddl in _DDL:
         conn.execute(ddl)
     conn.commit()
-    for col, typ in _DIC_DOC_COLS:
-        try:
-            conn.execute(f"ALTER TABLE dic_documents ADD COLUMN {col} {typ}")
-            conn.commit()
-        except Exception:
+    for table, cols in (("dic_documents", _DIC_DOC_COLS), ("dic_sections", _DIC_SECTION_COLS)):
+        for col, typ in cols:
             try:
-                conn.rollback()
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
+                conn.commit()
             except Exception:
-                pass
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
     conn.close()
     yield
 

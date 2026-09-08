@@ -28,6 +28,7 @@ Routes:
 
   GET  /document-intelligence/api/suggestions                    list suggestions (dsyn-adapt-04)
   GET  /document-intelligence/api/suggestions/<id>               suggestion detail
+  GET  /document-intelligence/api/change-set                     word-level change set (dwr-ws-01)
   POST /document-intelligence/api/suggestions/<id>/accept        accept: apply content + history
   POST /document-intelligence/api/suggestions/<id>/reject        reject: mark decided + note
 
@@ -229,17 +230,114 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# dwr-sect-02 -- the SELECT list a section reader asks for, and the decoding
+# of what comes back. ONE spelling, so the review page and the sections API
+# cannot disagree about what `verified` means.
+SECTION_VERIFICATION_SELECT = "verified, citation_report, abstained, confidence"
+
+
+def _attach_section_verification(rows: list[dict]) -> list[dict]:
+    """Decode a section row's own verification columns, in place.
+
+    ``verified`` comes back ``True`` / ``False`` / ``None`` -- the verifier's
+    verdict, or None when the check did not RUN (a row written before migration
+    20260908003513, a human-authored section, a section with nothing to verify
+    against). A reader MUST keep None apart from False: "not checked" and
+    "checked and failed" are different findings. ``citation_report`` is the
+    generator's report decoded from JSON, or None when the row carries none.
+    """
+    for r in rows:
+        v = r.get("verified")
+        r["verified"] = None if v is None else bool(v)
+        a = r.get("abstained")
+        r["abstained"] = None if a is None else bool(a)
+        raw = r.get("citation_report")
+        if raw is None or raw == "":
+            r["citation_report"] = None
+        elif isinstance(raw, (dict, list)):
+            pass
+        else:
+            try:
+                r["citation_report"] = json.loads(raw)
+            except Exception:
+                r["citation_report"] = None
+    return rows
+
+
 def _hid(*parts: str) -> str:
     return hashlib.sha256("|".join(parts).encode()).hexdigest()[:24]
 
 
-def _security_context() -> tuple[str, str]:
+#: The anonymous local-dev sentinel. It is what ``_current_user`` returns when
+#: NOBODY is authenticated, and ``_user_role`` grants it admin so a
+#: single-user dashboard with no accounts seeded is usable. It must never be
+#: what an AUTHENTICATED account reads as — which is exactly what it was.
+ANONYMOUS_USER = "current_user"
+
+
+def _identity_enabled() -> bool:
+    """dwr-cmt-02's kill switch. ``ICDEV_DIC_IDENTITY=0`` restores the previous
+    behaviour exactly — every caller reads as the anonymous sentinel — for a
+    deployment that needs the old posture back while its ``dic_team_access``
+    grants are seeded. Auditable, and never a shell neutraliser."""
+    return os.environ.get("ICDEV_DIC_IDENTITY", "1").strip().lower() not in (
+        "0", "false", "no", "off")
+
+
+def _context_dict() -> dict:
+    """``g.security_context`` as a plain dict, WHICHEVER SHAPE IT IS IN.
+
+    MEASURED 2026-09-08: ``auth._attach_security_context`` stores a
+    ``SecurityContext`` DATACLASS (``tools/security/security_context.py``),
+    which has no ``.get``; the Cortex service-key branch of
+    ``_auth_before_request`` stores a plain dict. Every reader in this module
+    called ``.get`` inside a bare ``except``, so for a signed-in dashboard user
+    the ``AttributeError`` was swallowed and the canvas fell back to the
+    anonymous sentinel — ``_current_user()`` returned ``'current_user'`` and
+    ``_security_context()`` returned ``('default','CUI')`` for a real account
+    (probed with ``SecurityContext(user_id='u-alice', role='viewer',
+    tenant_id='acme')``). Two consequences, and the second is the serious one:
+    every comment, decision and audit row this canvas wrote was attributed to a
+    literal string, and ``_user_role`` grants that string ADMIN, so all 13
+    accounts on this board held admin on every collection regardless of role.
+    """
     try:
-        from flask import g
-        ctx = getattr(g, "security_context", None) or {}
-        return ctx.get("tenant_id", "default"), ctx.get("classification", "CUI")
+        from flask import g, has_request_context
+        if not has_request_context():
+            return {}
+        ctx = getattr(g, "security_context", None)
     except Exception:
+        return {}
+    if ctx is None:
+        return {}
+    if isinstance(ctx, dict):
+        return ctx
+    to_dict = getattr(ctx, "to_dict", None)
+    if callable(to_dict):
+        try:
+            return to_dict() or {}
+        except Exception:
+            return {}
+    return {}
+
+
+def _security_context() -> tuple[str, str]:
+    """``(tenant_id, classification)`` for a write on this canvas.
+
+    ``classification`` stays ``CUI`` unless the context names one: a
+    ``SecurityContext``'s ``classification`` is derived from the SUBJECT'S
+    ``clearance_level``, and writing a subject's clearance into a row's
+    classification column would relabel the resource. Inert on this deployment
+    either way — all 13 accounts carry ``clearance_level='CUI'`` and
+    ``tenant_id`` NULL (measured 2026-09-08), so this pair reads
+    ``('default','CUI')`` before and after. The identity below is the
+    correction; this is the same read done without swallowing the answer.
+    """
+    if not _identity_enabled():
         return "default", "CUI"
+    ctx = _context_dict()
+    return (ctx.get("tenant_id") or "default",
+            ctx.get("classification") or "CUI")
 
 
 # Role hierarchy for collaboration workflow.
@@ -247,17 +345,97 @@ _ROLE_LEVEL = {"viewer": 0, "editor": 1, "reviewer": 2, "admin": 3}
 
 
 def _current_user() -> str:
-    """Return the best-effort current user id."""
+    """The AUTHENTICATED account's id, or the anonymous sentinel.
+
+    ``g.current_user`` is read as the fallback and ``session["user_id"]``
+    deliberately is NOT: ``auth._auth_before_request`` has already resolved
+    that cookie to a row AND checked ``status == 'active'``, clearing the
+    session when it is not, so reading the raw cookie here would honour a
+    session auth has just rejected.
+    """
+    if not _identity_enabled():
+        return ANONYMOUS_USER
+    ctx = _context_dict()
+    user = ctx.get("user_id") or ctx.get("username")
+    if user:
+        return str(user)
     try:
         from flask import g, has_request_context
         if has_request_context():
-            ctx = getattr(g, "security_context", None) or {}
-            user = ctx.get("user_id") or ctx.get("username")
-            if user:
-                return user
+            cur = getattr(g, "current_user", None)
+            if isinstance(cur, dict):
+                uid = cur.get("id") or cur.get("user_id")
+                if uid:
+                    return str(uid)
     except Exception:
         pass
-    return "current_user"
+    return ANONYMOUS_USER
+
+
+def _platform_role() -> str:
+    """``dashboard_users.role`` for the authenticated account, or ``""``."""
+    try:
+        from flask import g, has_request_context
+        if not has_request_context():
+            return ""
+        cur = getattr(g, "current_user", None)
+        if isinstance(cur, dict):
+            return str(cur.get("role") or "")
+    except Exception:
+        pass
+    return _context_dict().get("role") or ""
+
+
+def _display_name(user_id: str) -> str:
+    """A human-readable name for ``user_id``, or THE ID ITSELF.
+
+    THE VIEWER IS ANSWERED FROM MEMORY, and it has to be. ``dashboard_users``
+    carries no ``classification`` column, so the row-security predicate
+    ``get_connection`` injects inside a request rewrites every read of it into
+    a statement referencing a column that does not exist — measured
+    2026-09-08, ``get_user_by_id('u-alice')`` under a request context raises
+    ``no such column: classification``. The platform's own reads work only
+    because ``auth._auth_before_request`` resolves the session BEFORE
+    ``_attach_security_context`` runs. So the viewer's name is taken from
+    ``g.current_user``, the dict auth already resolved, and no query is made.
+
+    ANOTHER author's name is looked up, and inside a request that lookup will
+    fail on any deployment where row security is active — the id is then
+    rendered as it is stored. That is stated rather than hidden: an author this
+    canvas cannot place renders AS THE ID, and dressing an unresolvable id up
+    as a person would be the fabrication. Making it resolve is an
+    ``rls_exempt`` entry in ``args/schema_ownership_rules.yaml``, which is a
+    schema-ownership decision and not this card's to take.
+    """
+    if not user_id or user_id == ANONYMOUS_USER:
+        return user_id or ""
+    try:
+        from flask import g, has_request_context
+        if has_request_context():
+            cur = getattr(g, "current_user", None)
+            if isinstance(cur, dict) and str(cur.get("id") or "") == user_id:
+                return str(cur.get("display_name") or cur.get("email") or user_id)
+    except Exception:
+        pass
+    try:
+        from tools.dashboard.auth import get_user_by_id
+        row = get_user_by_id(user_id)
+    except Exception:
+        return user_id
+    if not row:
+        return user_id
+    row = dict(row)
+    return row.get("display_name") or row.get("email") or user_id
+
+
+#: ``dashboard_users.role`` -> this canvas's ladder, for an authenticated
+#: account that holds no explicit ``dic_team_access`` grant. A DECLARATION,
+#: because the two vocabularies are different: the platform's other roles are
+#: proposal-domain (bd, capture_mgr, contract_mgr, pm) and say nothing about
+#: who may edit a document. Anything not named here is `viewer` — a platform
+#: account is not a document grant, and inferring one is how an accidental
+#: admin ships. An explicit `dic_team_access` row always outranks this.
+_PLATFORM_ROLE_TO_DIC = {"admin": "admin", "reviewer": "reviewer"}
 
 
 def _user_role(collection_id: str, user_id: str) -> str:
@@ -280,9 +458,22 @@ def _user_role(collection_id: str, user_id: str) -> str:
     finally:
         conn.close()
     # Anonymous local-dev sentinel → full access so every DIC feature is usable
-    # without requiring a team_access row to be seeded first.
-    if user_id in ("current_user", "", None):
+    # without requiring a team_access row to be seeded first. This is the case
+    # the fallback was written for, and it is UNCHANGED: nobody is signed in.
+    if user_id in (ANONYMOUS_USER, "", None):
         return "admin"
+    # A SIGNED-IN account with no explicit grant. Before dwr-cmt-02 this branch
+    # was unreachable — the identity read failed and handed back the sentinel
+    # above, so every authenticated user held admin. Falling straight through to
+    # `viewer` now would be the opposite defect and just as unmeasured: measured
+    # 2026-09-08, `dic_team_access` holds 11 rows naming demo strings
+    # ('alice', 'writer1') on ONE collection, and `dashboard_users.id` is a
+    # UUID, so NOT ONE of the 13 real accounts can match a grant row. The
+    # platform role is the only grant they actually hold.
+    if user_id == _current_user():
+        mapped = _PLATFORM_ROLE_TO_DIC.get(_platform_role())
+        if mapped:
+            return mapped
     return "viewer"
 
 
@@ -396,6 +587,29 @@ def search():
 
 # ── Document Detail Page ──────────────────────────────────────────────────────
 
+#: The version statuses a reviewer is still working on. The FIRST of these in
+#: `versions` (which the caller reads newest-first) is the active one.
+_OPEN_VERSION_STATUSES = ("pending_review", "needs_revision", "draft")
+
+
+def _active_version_id(versions: list) -> str:
+    """Which version a reader of this document is looking at — ONE statement.
+
+    `doc_detail` renders the sections of THIS version and dwr-cmt-02's review
+    rail places its comments and change cards against them, so a second copy of
+    the rule is how the rail comes to describe a version the page is not
+    showing. `versions` must be ordered newest-first, as every caller here
+    reads it (`ORDER BY version_no DESC`).
+    """
+    for v in versions or []:
+        if (v.get("status") if isinstance(v, dict) else v["status"]) in _OPEN_VERSION_STATUSES:
+            return (v.get("version_id") if isinstance(v, dict) else v["version_id"]) or ""
+    if versions:
+        v = versions[0]
+        return (v.get("version_id") if isinstance(v, dict) else v["version_id"]) or ""
+    return ""
+
+
 @dic_bp.route("/doc/<doc_id>")
 def doc_detail(doc_id: str):
     conn = _conn()
@@ -409,19 +623,14 @@ def doc_detail(doc_id: str):
             (doc_id,),
         )
         # Load sections for the latest pending or latest version
-        active_version_id = ""
-        for v in versions:
-            if v["status"] in ("pending_review", "needs_revision", "draft"):
-                active_version_id = v["version_id"]
-                break
-        if not active_version_id and versions:
-            active_version_id = versions[0]["version_id"]
+        active_version_id = _active_version_id(versions)
         sections = []
         if active_version_id:
             sections = _safe_rows(
                 conn,
-                "SELECT section_id, heading, content, citations_json, status, origin, assigned_to "
-                "FROM dic_sections WHERE version_id = %s ORDER BY section_id",
+                "SELECT section_id, heading, content, citations_json, status, origin, assigned_to, "
+                + SECTION_VERIFICATION_SELECT
+                + " FROM dic_sections WHERE version_id = %s ORDER BY section_id",
                 (active_version_id,),
             )
             for s in sections:
@@ -429,6 +638,7 @@ def doc_detail(doc_id: str):
                     s["citations"] = json.loads(s.get("citations_json") or "[]")
                 except Exception:
                     s["citations"] = []
+            _attach_section_verification(sections)
         # Team members for assignment dropdown
         collection_id = doc.get("collection_id") or "default"
         team = _safe_rows(
@@ -458,6 +668,8 @@ def doc_detail(doc_id: str):
         active_version_id=active_version_id,
         team=team,
         current_user=current_user,
+        current_user_display=_display_name(current_user),
+        authenticated=current_user != ANONYMOUS_USER,
         user_role=user_role,
         role_badge=_role_badge,
         role_levels=_ROLE_LEVEL,
@@ -1371,6 +1583,17 @@ def api_ingest():
     tenant_id, _ = _security_context()
     filename = file.filename or "upload"
 
+    # Author-supplied currency statements (dwr-ev-01): a JSON list in the
+    # `author_assertions` form field, validated HERE so a malformed one is a
+    # 400 the author sees rather than an assertion silently dropped inside the
+    # ingest thread. Empty means the author declared nothing.
+    try:
+        from tools.document_intelligence.author_evidence import parse_assertions
+
+        author_assertions = parse_assertions(request.form.get("author_assertions"))
+    except ValueError as exc:
+        return jsonify({"error": f"author_assertions rejected: {exc}"}), 400
+
     # Save file to temp immediately (before thread starts).
     suffix = Path(filename).suffix.lower()
     try:
@@ -1402,6 +1625,24 @@ def api_ingest():
 
     def _run():
         outcome = None
+        # dwr-fid-01: the ORIGINAL is retained content-addressed BEFORE the
+        # temp file is deleted in `finally` below. The deletion stays; the copy
+        # is what stops dic_documents.filepath pointing at a file that no
+        # longer exists (43 of 55 documents on the live board, 2026-09-07).
+        # A retention failure never blocks the ingest, and is never silent: it
+        # is reported on the done event, the job row and the result cache.
+        original: dict = {"retained": False, "reason": "not_attempted"}
+        retained = None
+        try:
+            from tools.document_intelligence import originals as _originals
+            if not _originals.retention_enabled():
+                original = {"retained": False, "reason": "disabled_by_env"}
+            else:
+                retained = _originals.retain_original(tmp_path, filename)
+                original = {"retained": True, "reason": "ok", **retained.to_dict()}
+        except Exception as exc:  # noqa: BLE001 — reported below, never swallowed into a clean result
+            logger.warning("dic: original not retained for %s: %s", filename, exc)
+            original = {"retained": False, "reason": f"retain_failed: {exc}"}
         try:
             def _cb(stage: str, detail: str, pct: int, extra: dict | None = None) -> None:
                 event = {"stage": stage, "detail": detail, "pct": pct}
@@ -1425,14 +1666,36 @@ def api_ingest():
                 tmp_path, collection_id,
                 tenant_id=tenant_id, classification=classification,
                 created_by="dashboard_upload", progress_cb=_cb,
+                author_assertions=author_assertions,
             )
+            # Record the retained original on the document row. ingest_file
+            # writes the row (INSERT OR REPLACE), so this must run AFTER it.
+            if retained is not None:
+                try:
+                    c = _conn()
+                    try:
+                        original.update(_originals.record_original(c, outcome.doc_id, retained))
+                    finally:
+                        c.close()
+                except Exception as exc:  # noqa: BLE001 — the file is retained; the row could not say so
+                    logger.warning("dic: original retained but not recorded for %s: %s", outcome.doc_id, exc)
+                    original.update({"recorded": False, "reason": f"record_failed: {exc}"})
+            if not original.get("retained"):
+                outcome.errors.append(f"original not retained: {original.get('reason')}")
+            elif not original.get("recorded"):
+                outcome.errors.append(
+                    f"original retained at {original.get('path')} but not recorded on the "
+                    f"document row: {original.get('reason')}"
+                )
             q.put({
                 "stage": "done",
                 "doc_id": outcome.doc_id,
                 "chunks": outcome.chunks,
                 "chunks_embedded": outcome.chunks_embedded,
                 "kg_entities": outcome.kg_entities,
+                "author_assertions": outcome.author_assertions,
                 "errors": outcome.errors,
+                "original": original,
                 "pct": 100,
             })
             # Cache result in-memory (survives DB INSERT failures on PG).
@@ -1442,6 +1705,7 @@ def api_ingest():
                     "doc_id": outcome.doc_id,
                     "chunks": outcome.chunks,
                     "errors": outcome.errors,
+                    "original": original,
                 }
             # Preserve the uploaded filename — ingest_file only sees the temp
             # path, which otherwise lands as e.g. 'tmp9x41vmaz.txt'.
@@ -2737,13 +3001,21 @@ def api_collection_documents(collection_id):
     tenant_id, _ = _security_context()
     conn = _conn()
     try:
+        # dwr-fid-01: the retention columns are named only when the LIVE table
+        # carries them (probed from the catalogue, never guessed), so a board
+        # that has not run migration 20260908003311 still lists its documents
+        # -- with every one honestly reported `absent` / `source_on_disk`
+        # rather than an empty list from a SELECT that named a missing column.
+        from tools.document_intelligence import originals as _originals
+        extra_cols, columns_present = _originals.select_columns(conn)
         rows = _safe_rows(
             conn,
             "SELECT doc_id, collection_id, filename, title, content_type, provider, "
-            "page_count, content_sha256, created_at, classification "
+            f"page_count, content_sha256, created_at, classification{extra_cols} "
             "FROM dic_documents WHERE collection_id = %s AND tenant_id = %s ORDER BY created_at DESC",
             (collection_id, tenant_id),
         )
+        _originals.annotate_rows(rows, columns_present=columns_present)
         # Augment with latest version status and chunk count
         for r in rows:
             try:
@@ -3305,137 +3577,447 @@ def api_section_lock_renew(section_id: str):
 
 
 # ── Section Annotations (threaded comments anchored to text / sections) ──────
+#
+# dwr-cmt-01. The store owns the schema, the anchor rule and the thread rules
+# (tools/document_intelligence/annotation_store.py). These routes carry the
+# HTTP contract and nothing else: the table DDL used to live here as a runtime
+# CREATE TABLE IF NOT EXISTS, which is what made a migrated deployment
+# indistinguishable from an unmigrated one.
 
-_ANN_CATEGORIES = {"question", "improvement", "compliance", "strength", "weakness", "risk", "editorial"}
+def _ann_error(exc) -> tuple:
+    """A refused write is a 400 the caller can act on, never a 500."""
+    return jsonify({"error": str(exc)}), 400
 
 
-def _ensure_dic_annotations(conn) -> None:
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS dic_section_annotations (
-            ann_id TEXT PRIMARY KEY,
-            section_id TEXT NOT NULL,
-            doc_id TEXT NOT NULL,
-            selected_text TEXT NOT NULL DEFAULT '',
-            category TEXT NOT NULL,
-            comment TEXT NOT NULL,
-            author TEXT NOT NULL DEFAULT 'reviewer',
-            status TEXT NOT NULL DEFAULT 'open',
-            resolution_note TEXT,
-            resolved_by TEXT,
-            resolved_at TEXT,
-            classification TEXT DEFAULT 'CUI',
-            created_at TEXT NOT NULL,
-            updated_at TEXT
-        )
-    """)
-    conn.commit()
+def _ann_counts(threads: list, flat: list) -> dict:
+    """What the badge and the panel header report.
+
+    ``orphaned`` and ``unverifiable`` are counted APART: a comment nobody could
+    check is not a comment whose anchor still holds, and merging them would let
+    an unreadable section read as a clean bill of health.
+    """
+    states = [t["anchor"]["state"] for t in threads]
+    return {
+        "threads": len(threads),
+        "comments": len(flat),
+        "open": sum(1 for t in threads if t.get("status") != "resolved"),
+        "resolved": sum(1 for t in threads if t.get("status") == "resolved"),
+        "anchored": sum(1 for s in states if s == "verified"),
+        "orphaned": sum(1 for s in states if s == "orphaned"),
+        "unanchored": sum(1 for s in states if s == "unanchored"),
+        "unverifiable": sum(1 for s in states if s == "unverifiable"),
+    }
+
+
+def _attach_sme_promotions(flat: list, threads: list) -> None:
+    """Mark each comment `citable` iff a human promoted it (dwr-ev-02).
+
+    Read from `dic_sme_assertions` on every request rather than carried as a
+    column on the comment: the promotion is the row's existence, so there is no
+    flag that could go stale and no second place the answer is written down.
+
+    Best-effort on this READ side only -- a comments panel must still render on
+    a database the migration has not reached, and an unreadable table can only
+    make a promoted comment render as an instruction, which under-claims. The
+    WRITE side is fail-closed.
+    """
+    nodes = list(flat)
+    for t in threads:
+        nodes.append(t)
+        nodes.extend(t.get("replies") or [])
+    # The connection is acquired defensively too, not just the query: a panel
+    # that 500s because the promotion table could not be REACHED would take the
+    # comments down with it, and every comment reading `citable: false` is the
+    # honest degradation -- it under-claims and never over-claims.
+    promotions: dict = {}
+    conn = None
+    try:
+        conn = _conn()
+        promotions = _sme_promotions_for(conn, [n.get("ann_id") for n in nodes])
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("dic: sme promotion attach failed: %s", exc)
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+    for n in nodes:
+        n["sme_assertion"] = promotions.get(str(n.get("ann_id")))
+        n["citable"] = n["sme_assertion"] is not None
 
 
 @dic_bp.route("/api/sections/<section_id>/annotations", methods=["GET"])
 def api_section_annotations_list(section_id: str):
+    from tools.document_intelligence import annotation_store as anns
+    tenant_id, _ = _security_context()
+    status_filter = request.args.get("status")
+    category_filter = request.args.get("category")
+    try:
+        # `annotations` is the flat, back-compatible shape; `threads` is what a
+        # reviewer reads. Both come from ONE read, so they cannot disagree.
+        flat = anns.list_annotations(section_id, tenant_id=tenant_id)
+        threads = anns.list_threads(section_id, tenant_id=tenant_id,
+                                    status=status_filter, category=category_filter)
+        # dwr-ev-02: whether each comment has been PROMOTED to an attributed SME
+        # assertion, read from dic_sme_assertions and never from a flag on the
+        # comment. A comment absent from that table is an INSTRUCTION -- the
+        # default, and the state in which it can be cited by nothing at all.
+        # Attached to the flat rows AND to every thread node, because the two
+        # shapes come from one read and a reader must not find a comment marked
+        # citable in one and not the other.
+        _attach_sme_promotions(flat, threads)
+    except Exception as exc:
+        logger.warning("dic: annotation list failed for %s: %s", section_id, exc)
+        return jsonify({"error": str(exc)}), 500
+    if status_filter or category_filter:
+        keep = {t["ann_id"] for t in threads}
+        keep |= {r["ann_id"] for t in threads for r in t.get("replies", [])}
+        flat = [a for a in flat if a["ann_id"] in keep]
+    # Display names are resolved HERE as well as on the review rail, through the
+    # one `_display_name`, so the inline panel and the rail cannot show two
+    # different names for one author. `author` (the stored id) is untouched.
+    cache: dict = {}
+    for row in flat + threads + [r for t in threads for r in t.get("replies", [])]:
+        author = row.get("author") or ""
+        if author not in cache:
+            cache[author] = _display_name(author)
+        row["author_display"] = cache[author]
+        resolver = row.get("resolved_by") or ""
+        if resolver:
+            if resolver not in cache:
+                cache[resolver] = _display_name(resolver)
+            row["resolved_by_display"] = cache[resolver]
+    return jsonify({
+        "section_id": section_id,
+        "annotations": flat,
+        "threads": threads,
+        "counts": _ann_counts(threads, flat),
+        "categories": sorted(anns.CATEGORIES),
+        "viewer": {"user_id": _current_user(),
+                   "display_name": _display_name(_current_user()),
+                   "authenticated": _current_user() != ANONYMOUS_USER},
+    })
+
+
+@dic_bp.route("/api/sections/<section_id>/annotations", methods=["POST"])
+def api_section_annotations_create(section_id: str):
+    """Create a thread root, or a reply when ``parent_ann_id`` is supplied.
+
+    An anchored comment supplies ``anchor_text``, with or without
+    ``anchor_start``/``anchor_end``, and the span is resolved against the
+    section's live content before anything is written. A comment with no span
+    is ``unanchored`` — a section-level remark, and not a defect.
+
+    THE PAGE SENDS TEXT, NOT OFFSETS, on purpose: ``doc_detail`` renders a
+    section through markdown, so a browser selection's offsets index the
+    RENDERED HTML and not the content of record. ``anchor_from_selection`` is
+    the one place that turns a selection into an honest basis — a text found
+    once is ``relocated`` (a ``str.find`` guess, recorded as one), and an
+    ambiguous or absent selection stays ``unanchored`` rather than being
+    resolved by picking an occurrence.
+    """
+    from tools.document_intelligence import annotation_store as anns
+    data = request.get_json(silent=True) or {}
+    tenant_id, classification = _security_context()
+
+    start, end = data.get("anchor_start"), data.get("anchor_end")
+    text = data.get("anchor_text")
+    basis = (data.get("anchor_basis") or "").strip()
+    section_content = None
+
     conn = _conn()
     try:
-        _ensure_dic_annotations(conn)
-        status_filter = request.args.get("status")
-        category_filter = request.args.get("category")
-        sql = "SELECT * FROM dic_section_annotations WHERE section_id = %s"
-        params: list = [section_id]
-        if status_filter:
-            sql += " AND status = %s"
-            params.append(status_filter)
-        if category_filter:
-            sql += " AND category = %s"
-            params.append(category_filter)
-        sql += " ORDER BY created_at ASC"
-        rows = _safe_rows(conn, sql, params)
-        return jsonify({"annotations": [dict(r) for r in rows]})
+        if not data.get("parent_ann_id") and (text or "").strip() and not basis:
+            resolved = anns.anchor_from_selection(
+                section_id, text, anchor_start=start, anchor_end=end, conn=conn)
+            basis = resolved["anchor_basis"]
+            start, end = resolved["anchor_start"], resolved["anchor_end"]
+            text = resolved["anchor_text"]
+            section_content = resolved["section_content"]
+        basis = basis or "unanchored"
+        if basis == "unanchored":
+            start = end = None
+        doc_id = data.get("doc_id") or ""
+        if not doc_id:
+            row = conn.execute(
+                "SELECT doc_id FROM dic_sections WHERE section_id = %s LIMIT 1",
+                (section_id,),
+            ).fetchone()
+            doc_id = (dict(row).get("doc_id") if row else "") or ""
+        created = anns.create_annotation(
+            section_id=section_id,
+            doc_id=doc_id,
+            category=(data.get("category") or "").strip(),
+            comment=data.get("comment") or "",
+            author=data.get("author") or _current_user(),
+            # An unanchored selection still shows WHAT was highlighted, even
+            # though no span could be verified for it.
+            selected_text=(data.get("selected_text") or text or "").strip(),
+            parent_ann_id=(data.get("parent_ann_id") or None),
+            anchor_start=start,
+            anchor_end=end,
+            anchor_text=text,
+            anchor_basis=basis,
+            section_content=section_content,
+            tenant_id=tenant_id,
+            classification=classification,
+            conn=conn,
+        )
+    except anns.AnnotationError as exc:
+        return _ann_error(exc)
     except Exception as exc:
+        logger.warning("dic: annotation create failed for %s: %s", section_id, exc)
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+    return jsonify(created), 201
+
+
+# -- Promote ONE comment to an attributed SME assertion (dwr-ev-02) -----------
+
+def _sme_promotions_for(conn, ann_ids) -> dict:
+    """Map each ``ann_id`` to its assertion row, or ``{}`` if unreachable.
+
+    Best-effort on the READ side only: a comments panel must still render on a
+    database the migration has not reached. The WRITE side below is fail-closed,
+    which is the asymmetry that matters -- an unreadable table can only make a
+    promoted comment render as an instruction (it under-claims, which is safe),
+    while a failed write must never leave an unaudited assertion behind.
+    """
+    try:
+        from tools.document_intelligence.sme_evidence import promotions_for
+
+        return promotions_for(conn, ann_ids)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("dic: sme promotion lookup failed: %s", exc)
+        return {}
+
+
+@dic_bp.route("/api/annotations/<ann_id>/promote", methods=["POST"])
+def api_annotation_promote(ann_id: str):
+    """Promote ONE comment to an attributed SME assertion (dwr-ev-02).
+
+    A comment is an INSTRUCTION by default and is cited by nothing. This is the
+    one door out of that state, and it is deliberately narrow:
+
+    * ONE comment. There is no bulk endpoint and no heuristic anywhere -- the
+      route takes a single ``ann_id`` from the URL and the writer takes a single
+      ``ann_id`` keyword.
+    * The CLAIM is TYPED and supplied by the promoting human. Nothing parses the
+      comment prose (TRUST rule 2 -- a ``text_pattern`` claim can never reach a
+      pack), so a promotion states what the comment ASSERTS in the store's own
+      closed vocabulary and the prose travels as the quotation.
+    * AUDITED AS A DECISION, BEFORE THE WRITE, FAIL-CLOSED.
+      ``_record_hitl_decision`` raises on an audit failure and is called before
+      ``promote_comment`` runs, so an unauditable promotion never happens.
+      Promoting a remark into the evidence chain is exactly the human
+      authorisation cef-ui-03 made unforgeable at the other DIC doors.
+    """
+    from tools.document_intelligence.sme_evidence import (
+        AlreadyPromoted,
+        CommentNotFound,
+        SMEPromotionError,
+        promote_comment,
+        read_comment,
+    )
+
+    data = request.get_json(silent=True) or {}
+    claim = data.get("claim") if isinstance(data.get("claim"), dict) else data
+    reviewer = (data.get("promoted_by") or data.get("reviewer") or "").strip() or _current_user()
+    tenant_id, classification = _security_context()
+
+    conn = _conn()
+    try:
+        # No `_ensure` here: dwr-cmt-01 moved the comment table's schema into
+        # annotation_store and gave it a migration, and a runtime CREATE TABLE
+        # is what made a migrated deployment indistinguishable from one that
+        # never ran it. sme_evidence.promote_comment ensures ITS OWN table.
+        # Read the comment BEFORE the audit row, so a 404 is a 404 rather than
+        # an audit row about a comment that does not exist.
+        comment = read_comment(conn, ann_id)
+        if comment is None:
+            return jsonify({"error": f"no comment {ann_id}"}), 404
+
+        _record_hitl_decision(
+            "dic_annotation", ann_id, "promoted_to_sme_assertion", reviewer,
+            {
+                "doc_id": comment.get("doc_id"),
+                "section_id": comment.get("section_id"),
+                # WHO SAID IT, beside who decided it was evidence. The row
+                # answers both "was this reviewed" and "whose word is it now".
+                "asserted_by": comment.get("author"),
+                "claim": claim,
+                # A promotion adds a citable source; it applies nothing to a
+                # document. Deterministic at the moment of authorisation.
+                "applied": False,
+            },
+        )
+
+        result = promote_comment(
+            conn, ann_id=ann_id, claim=claim, promoted_by=reviewer,
+            tenant_id=tenant_id or "default", classification=classification or "CUI",
+        )
+        conn.commit()
+        return jsonify({
+            "promoted": True,
+            "ann_id": ann_id,
+            "sme_assertion": result["assertion"],
+            # Two SMEs disagreeing is REPORTED, never silently landed: both
+            # statements stand, and the store ranks them by the human clock.
+            "contradicts": result["contradicts"],
+            "store": result["store"],
+        }), 201
+    except AlreadyPromoted as exc:
+        conn.rollback()
+        return jsonify({"error": str(exc)}), 409
+    except CommentNotFound as exc:
+        conn.rollback()
+        return jsonify({"error": str(exc)}), 404
+    except SMEPromotionError as exc:
+        conn.rollback()
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        conn.rollback()
+        logger.warning("dic: promote %s failed: %s", ann_id, exc)
         return jsonify({"error": str(exc)}), 500
     finally:
         conn.close()
 
 
-@dic_bp.route("/api/sections/<section_id>/annotations", methods=["POST"])
-def api_section_annotations_create(section_id: str):
-    data = request.get_json(silent=True) or {}
-    category = (data.get("category") or "").strip()
-    comment = (data.get("comment") or "").strip()
-    if category not in _ANN_CATEGORIES:
-        return jsonify({"error": f"category must be one of {sorted(_ANN_CATEGORIES)}"}), 400
-    if not comment:
-        return jsonify({"error": "comment is required"}), 400
+@dic_bp.route("/api/annotations/<ann_id>/promote", methods=["GET"])
+def api_annotation_promotion(ann_id: str):
+    """The assertion a comment was promoted to, or ``null``.
+
+    ``promoted: false`` here is a MEASURED answer over a readable table, and
+    ``measured: false`` is the separate case where the store could not be read
+    at all -- "nobody promoted this" and "I could not tell" justify opposite
+    readings of the same panel and are never merged.
+    """
     conn = _conn()
     try:
-        _ensure_dic_annotations(conn)
-        doc_row = conn.execute(
-            "SELECT doc_id FROM dic_sections WHERE section_id = %s LIMIT 1", (section_id,)
-        ).fetchone()
-        doc_id = doc_row[0] if doc_row else ""
-        ann_id = f"ann_{uuid.uuid4().hex[:16]}"
-        now = _now()
-        author = data.get("author") or _current_user()
-        conn.execute(
-            """INSERT INTO dic_section_annotations
-               (ann_id, section_id, doc_id, selected_text, category, comment,
-                author, status, classification, created_at, updated_at)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-            (ann_id, section_id, doc_id,
-             (data.get("selected_text") or "").strip(),
-             category, comment, author, "open", "CUI", now, now),
-        )
-        conn.commit()
-        row = dict(conn.execute(
-            "SELECT * FROM dic_section_annotations WHERE ann_id = %s", (ann_id,)
-        ).fetchone())
-        return jsonify(row), 201
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        from tools.document_intelligence.sme_evidence import promotions_for
+
+        row = promotions_for(conn, [ann_id]).get(str(ann_id))
+        return jsonify({"ann_id": ann_id, "promoted": row is not None,
+                        "sme_assertion": row, "measured": True})
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"ann_id": ann_id, "promoted": None, "sme_assertion": None,
+                        "measured": False, "error": str(exc)}), 200
     finally:
         conn.close()
 
 
 @dic_bp.route("/api/annotations/<ann_id>", methods=["PUT"])
 def api_annotation_update(ann_id: str):
+    """Edit a comment, or move its THREAD between open and resolved.
+
+    ``status`` is a thread act and is refused on a reply: a reply has no
+    lifecycle of its own, so two rows can never disagree about whether the
+    thread is settled.
+    """
+    from tools.document_intelligence import annotation_store as anns
     data = request.get_json(silent=True) or {}
-    allowed = {"comment", "category", "status", "resolution_note", "resolved_by"}
-    updates = {k: v for k, v in data.items() if k in allowed}
-    if not updates:
-        return jsonify({"error": "no valid fields"}), 400
-    now = _now()
-    updates["updated_at"] = now
-    if updates.get("status") == "resolved":
-        updates["resolved_by"] = data.get("resolved_by") or data.get("author") or _current_user()
-        updates["resolved_at"] = now
+    status = (data.get("status") or "").strip()
     conn = _conn()
     try:
-        _ensure_dic_annotations(conn)
-        set_clause = ", ".join(f"{k} = %s" for k in updates)
-        conn.execute(
-            f"UPDATE dic_section_annotations SET {set_clause} WHERE ann_id = %s",
-            [*updates.values(), ann_id],
-        )
-        conn.commit()
-        row = conn.execute(
-            "SELECT * FROM dic_section_annotations WHERE ann_id = %s", (ann_id,)
-        ).fetchone()
-        if not row:
-            return jsonify({"error": "not found"}), 404
-        return jsonify(dict(row))
+        row = None
+        if status == "resolved":
+            row = anns.resolve_thread(
+                ann_id,
+                resolved_by=(data.get("resolved_by") or data.get("author")
+                             or _current_user()),
+                note=(data.get("resolution_note") or ""),
+                conn=conn,
+            )
+        elif status == "open":
+            row = anns.reopen_thread(ann_id, conn=conn)
+        elif status:
+            return jsonify({"error": f"status must be one of {sorted(anns.STATUSES)}"}), 400
+
+        edits = {k: data[k] for k in ("comment", "category") if k in data}
+        if edits:
+            row = anns.update_annotation(ann_id, conn=conn, **edits)
+        if row is None:
+            return jsonify({"error": "no valid fields"}), 400
+        return jsonify(row)
+    except anns.AnnotationError as exc:
+        text = str(exc)
+        return (jsonify({"error": text}), 404) if "does not exist" in text else _ann_error(exc)
     except Exception as exc:
+        logger.warning("dic: annotation update failed for %s: %s", ann_id, exc)
         return jsonify({"error": str(exc)}), 500
     finally:
         conn.close()
 
 
-@dic_bp.route("/api/annotations/<ann_id>", methods=["DELETE"])
-def api_annotation_delete(ann_id: str):
+# ── API: the review rail (dwr-cmt-02) ─────────────────────────────────────────
+
+@dic_bp.route("/api/documents/<doc_id>/review-rail", methods=["GET"])
+def api_document_review_rail(doc_id: str):
+    """One ordered stream of comment threads and change cards for a document.
+
+    READ ONLY, and there is no POST sibling: this route renders what the
+    annotation store and the suggestion store already hold, and every act a
+    reviewer takes from the rail goes through the doors that already own it —
+    the annotation routes above, and ``/api/suggestions/<id>/accept|reject``.
+
+    The version is resolved HERE, through the same ``_active_version_id`` the
+    page uses, so the rail can never place items against a version the reader
+    is not looking at.
+    """
+    from tools.document_intelligence import review_rail
+    tenant_id, _ = _security_context()
     conn = _conn()
     try:
-        _ensure_dic_annotations(conn)
-        conn.execute("DELETE FROM dic_section_annotations WHERE ann_id = %s", (ann_id,))
-        conn.commit()
-        return jsonify({"deleted": ann_id})
+        versions = _safe_rows(
+            conn,
+            "SELECT version_id, version_no, status FROM dic_versions "
+            "WHERE doc_id = %s ORDER BY version_no DESC",
+            (doc_id,),
+        )
+        version_id = request.args.get("version_id") or _active_version_id(versions)
+        rail = review_rail.build_rail(doc_id, version_id=version_id,
+                                      tenant_id=tenant_id, conn=conn)
     except Exception as exc:
+        logger.warning("dic: review rail failed for %s: %s", doc_id, exc)
+        # A rail that could not be built is UNMEASURABLE and says so with a
+        # 200 — the page renders the reason. An empty 500 body would render as
+        # an empty rail, which is the one thing this surface must never do.
+        return jsonify(review_rail._unmeasurable(doc_id, None, f"error:{exc}"))
+    finally:
+        conn.close()
+
+    # Author ids are resolved to names for DISPLAY only; the stored `author` is
+    # the account id and is returned untouched beside it.
+    cache: dict = {}
+    for item in ([i for s in rail["sections"]
+                  for i in s["positioned"] + s["unpositioned"]] + rail["unplaced"]):
+        for row in [item] + list(item.get("replies") or []):
+            author = row.get("author") or ""
+            if author not in cache:
+                cache[author] = _display_name(author) if item["kind"] == "comment" else author
+            row["author_display"] = cache[author]
+    rail["viewer"] = {
+        "user_id": _current_user(),
+        "display_name": _display_name(_current_user()),
+        "authenticated": _current_user() != ANONYMOUS_USER,
+    }
+    return jsonify(rail)
+
+
+@dic_bp.route("/api/annotations/<ann_id>", methods=["DELETE"])
+def api_annotation_delete(ann_id: str):
+    """Delete a comment. Deleting a thread root takes its replies with it, and
+    says how many — a silent cascade is a count nobody can check."""
+    from tools.document_intelligence import annotation_store as anns
+    conn = _conn()
+    try:
+        return jsonify(anns.delete_thread(ann_id, conn=conn))
+    except anns.AnnotationError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except Exception as exc:
+        logger.warning("dic: annotation delete failed for %s: %s", ann_id, exc)
         return jsonify({"error": str(exc)}), 500
     finally:
         conn.close()
@@ -3767,8 +4349,9 @@ def api_version_sections(version_id):
     try:
         rows = _safe_rows(
             conn,
-            "SELECT section_id, heading, content, citations_json, status, origin "
-            "FROM dic_sections WHERE version_id = %s ORDER BY section_id",
+            "SELECT section_id, heading, content, citations_json, status, origin, "
+            + SECTION_VERIFICATION_SELECT
+            + " FROM dic_sections WHERE version_id = %s ORDER BY section_id",
             (version_id,),
         )
         for r in rows:
@@ -3776,6 +4359,10 @@ def api_version_sections(version_id):
                 r["citations"] = json.loads(r.get("citations_json") or "[]")
             except Exception:
                 r["citations"] = []
+        # dwr-sect-02: `verified` is the COLUMN, tri-state. The page used to
+        # re-derive it from `status == 'approved'`, which is a human decision
+        # about publishing, not a verifier's verdict about the prose.
+        _attach_section_verification(rows)
         return jsonify({"sections": rows})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
@@ -4444,6 +5031,45 @@ def api_suggestions_list():
     return jsonify({"suggestions": suggestions, "count": len(suggestions)})
 
 
+@dic_bp.route("/api/change-set", methods=["GET"])
+def api_change_set():
+    """The change set: one WORD-LEVEL diff per proposal (dwr-ws-01).
+
+    Query params: ``doc_id``, ``collection_id``, ``canvas_source``,
+    ``status`` (default ``pending``), ``limit`` (default 200), and
+    ``verify_anchors=0`` to skip the live section re-read.
+
+    Each change carries ``spans`` -- ``[{"tag": "equal"|"insert"|"delete",
+    "text": ...}]`` over the anchor's before/after -- alongside the rationale,
+    the inline citations, the currency verdict, the evidence health, the anchor
+    basis and the confidence band, EACH naming the row it was read from. The
+    diff is computed with ``difflib`` on the server: no diff library is
+    vendored, and the air-gap posture forbids fetching one.
+
+    READ ONLY. It renders proposals; it never applies, decides or supersedes
+    one -- the accept route is still the only door, and this route has no POST
+    sibling.
+    """
+    from tools.document_intelligence.change_set import build_change_set
+
+    try:
+        limit = int(request.args.get("limit", 200))
+    except (TypeError, ValueError):
+        return jsonify({"error": "limit must be an integer"}), 400
+    if limit < 0:
+        return jsonify({"error": "limit must be >= 0"}), 400
+
+    result = build_change_set(
+        doc_id=request.args.get("doc_id") or None,
+        collection_id=request.args.get("collection_id") or None,
+        canvas_source=request.args.get("canvas_source") or None,
+        status=request.args.get("status", "pending"),
+        limit=limit,
+        verify_anchors=request.args.get("verify_anchors", "1") not in ("0", "false", "no"),
+    )
+    return jsonify(result)
+
+
 @dic_bp.route("/api/suggestions/<suggestion_id>", methods=["GET"])
 def api_suggestion_detail(suggestion_id: str):
     """Return full detail for a single suggestion."""
@@ -4454,29 +5080,168 @@ def api_suggestion_detail(suggestion_id: str):
     return jsonify(s)
 
 
+def _read_section_content(conn, section_id: str) -> str | None:
+    """The live content of ONE section, or None when no such row exists.
+
+    None and "" are different answers: an empty section can carry an exact
+    insertion-point anchor (0:0); a missing section can carry nothing.
+    """
+    if not section_id:
+        return None
+    row = conn.execute(
+        "SELECT content FROM dic_sections WHERE section_id = %s LIMIT 1", (section_id,)
+    ).fetchone()
+    if row is None:
+        return None
+    return (row[0] if isinstance(row, (list, tuple)) else row["content"]) or ""
+
+
+def _anchor_refusal(suggestion_id: str, section_id: str, verify: dict,
+                    *, suggestion_status: str = "pending") -> tuple:
+    """The 409 an accept returns when the proposal CANNOT be applied (dwr-anchor-05).
+
+    One shape for every refusal so a caller can read ``error`` and
+    ``applied: False`` without knowing which rung refused. ``error`` is one of
+    ``section_not_found`` / ``unanchored`` / ``anchor_stale``; never
+    ``{"status": "accepted"}``.
+    """
+    reason = verify.get("reason")
+    error = {"section_missing": "section_not_found",
+             "unanchored": "unanchored",
+             "no_offsets": "anchor_stale",
+             "anchor_stale": "anchor_stale"}.get(reason, "anchor_stale")
+    messages = {
+        "section_not_found": ("The suggestion names no section that exists, so there "
+                              "is nothing to apply it to. It was NOT applied."),
+        "unanchored": ("The suggestion carries no verified span in its section "
+                       "(anchor_basis is not exact/relocated), so it cannot be "
+                       "applied without guessing where. It was NOT applied."),
+        "anchor_stale": ("The section has changed since this suggestion was drafted: "
+                         "the anchored span no longer holds the text the proposal "
+                         "replaces. The suggestion is superseded and was NOT applied."),
+    }
+    return jsonify({
+        "error": error,
+        "message": messages[error],
+        "suggestion_id": suggestion_id,
+        "section_id": section_id or None,
+        "suggestion_status": suggestion_status,
+        "anchor": {
+            "basis": verify.get("anchor_basis"),
+            "start": verify.get("anchor_start"),
+            "end": verify.get("anchor_end"),
+            "expected_text": verify.get("anchor_text"),
+            "found_text": verify.get("found_text"),
+            "reason": reason,
+        },
+        "decision_recorded": False,
+        "applied": False,
+    }), 409
+
+
 @dic_bp.route("/api/suggestions/<suggestion_id>/accept", methods=["POST"])
 def api_suggestion_accept(suggestion_id: str):
-    """Accept a suggestion: apply suggested_content to the section + record history."""
+    """Accept a suggestion: verify its anchor against the LIVE section, splice
+    the anchored span, and record the decision, the audit row and the history.
+
+    Body (all optional): ``note``, ``reviewer``, ``applied_text``,
+    ``applied_by``. ``applied_text`` is edit-then-accept: the text the human
+    actually wants written, recorded BESIDE the AI draft (``suggested_content``
+    is never overwritten) with ``applied_by`` naming who rewrote it.
+
+    dwr-anchor-05 -- THE ANCHOR IS VERIFIED FIRST, AND THE SPAN IS SPLICED.
+    Measured on the live PG board 2026-09-07: 58 of 58 dic_suggestions carried
+    an empty section_id, and this route ran ``UPDATE dic_sections ... WHERE
+    section_id = ''`` -- ZERO rows -- committed, wrote the decision row and the
+    HITL audit row, and returned ``{"status": "accepted"}``. Accepting an AI
+    redline was a silent no-op that reported success, on the only writer of
+    ``dic_sections.content``.
+
+    Now, BEFORE any row is written:
+      * the target section must EXIST (``section_not_found`` -> 409);
+      * the suggestion must carry an appliable basis -- ``exact`` or
+        ``relocated``; ``unanchored`` is refused, never guessed at
+        (``unanchored`` -> 409);
+      * ``content[anchor_start:anchor_end] == anchor_text`` is RE-DERIVED
+        against the section as it is now -- the ``verify_claim_anchors``
+        discipline. Drift means the document moved on under the proposal:
+        the suggestion is SUPERSEDED (append-only decision row, mechanism
+        named, never a human), the document is untouched (``anchor_stale``
+        -> 409).
+    Only then is the decision recorded, audited, and the span SPLICED --
+    ``content[:start] + replacement + content[end:]`` -- never a whole-section
+    overwrite, which would have replaced a section body with one passage even
+    once the anchors worked. The write is CONFIRMED by re-reading the row: a
+    refusal is a 409 with ``applied: False``, and no path returns
+    ``{"status": "accepted"}`` over zero rows.
+    """
     from tools.document_intelligence.suggestion_store import (
-        get_suggestion, decide_suggestion,
+        get_suggestion, decide_suggestion, verify_anchor, supersede_suggestion,
+        section_of_record,
+        record_application,
     )
     s = get_suggestion(suggestion_id)
     if s is None:
         return jsonify({"error": "suggestion not found"}), 404
 
-    cid = s.get("collection_id") or _collection_id_from_section(s.get("section_id", "")) or "default"
+    # ONE statement of "which section is this proposal about" — the anchor's
+    # section outranks the legacy column, and dwr-cmt-02's review rail asks the
+    # same function, so the rail cannot draw a proposal beside one section while
+    # this door splices it into another.
+    section_id = section_of_record(s)
+
+    cid = s.get("collection_id") or _collection_id_from_section(section_id) or "default"
     if not _require_role(cid, "editor"):
         return _forbid("editor")
 
     if s.get("status") != "pending":
         return jsonify({"error": "suggestion already decided", "status": s["status"]}), 409
 
-    section_id = s.get("section_id", "")
-    suggested_content = s.get("suggested_content", "")
+    suggested_content = s.get("suggested_content") or ""
     data = request.get_json(silent=True) or {}
     note = data.get("note", "")
     user = data.get("reviewer") or _current_user()
     tenant_id, classification = _security_context()
+
+    applied_text = data.get("applied_text")
+    if applied_text is not None and not isinstance(applied_text, str):
+        return jsonify({"error": "applied_text must be a string", "applied": False}), 400
+    applied_by = (data.get("applied_by") or user) if applied_text is not None else user
+    replacement = applied_text if applied_text is not None else suggested_content
+    applied_text_source = "human_edit" if applied_text is not None else "ai_draft"
+
+    # ── dwr-anchor-05: prove the proposal CAN be applied, before anything is
+    # written. A refusal here leaves the suggestion pending (or superseded, on
+    # drift) with no decision row and no audit row: nothing was decided.
+    conn = _conn()
+    try:
+        live_content = _read_section_content(conn, section_id)
+    except Exception as exc:
+        logger.warning("dic suggestion accept: section read failed for %s: %s",
+                       suggestion_id, exc)
+        live_content = None
+    finally:
+        conn.close()
+    verify = verify_anchor(s, live_content)
+    if not verify["ok"]:
+        status_after = "pending"
+        if verify["reason"] in ("anchor_stale", "no_offsets"):
+            try:
+                found = verify.get("found_text")
+                superseded = supersede_suggestion(
+                    suggestion_id, "anchor_stale",
+                    note=(f"section {section_id} [{verify.get('anchor_start')}:"
+                          f"{verify.get('anchor_end')}] now holds {found!r}, "
+                          f"expected {verify.get('anchor_text')!r}"),
+                    tenant_id=tenant_id, classification=classification,
+                )
+                if superseded:
+                    status_after = "superseded"
+            except Exception as exc:
+                logger.warning("dic suggestion accept: supersede failed for %s: %s",
+                               suggestion_id, exc)
+        return _anchor_refusal(suggestion_id, section_id, verify,
+                               suggestion_status=status_after)
 
     # cef-ui-03 — THE DECISION IS RECORDED BEFORE THE DOCUMENT IS TOUCHED.
     #
@@ -4514,7 +5279,13 @@ def api_suggestion_accept(suggestion_id: str):
             "dic_suggestion", suggestion_id, "accepted", user,
             {"suggestion_id": suggestion_id, "section_id": section_id,
              "doc_id": s.get("doc_id"), "canvas_source": s.get("canvas_source"),
-             "applied": True},
+             "applied": True,
+             # dwr-anchor-05: the span this decision authorises, and whether
+             # the AI draft or a human rewrite is what will be written.
+             "anchor": {"basis": verify["anchor_basis"], "start": verify["anchor_start"],
+                        "end": verify["anchor_end"]},
+             "applied_text_source": applied_text_source,
+             "applied_by": applied_by},
         )
     except Exception as exc:
         logger.warning("dic suggestion accept: audit write failed for %s: %s",
@@ -4528,35 +5299,65 @@ def api_suggestion_accept(suggestion_id: str):
             "applied": False,
         }), 500
 
-    # Apply content to the section (reuse section update logic)
+    # ── Apply: SPLICE the anchored span. The anchor is verified AGAIN on the
+    # connection that writes -- the pre-flight read proved the proposal was
+    # appliable a moment ago, not that nothing moved since -- and the write is
+    # confirmed by re-reading the row. From here on the decision and its audit
+    # row stand, so a failure is reported with both facts, never as "nothing
+    # happened".
+    def _decided_not_applied(error: str, message: str, http: int = 500):
+        return jsonify({"error": error, "message": message,
+                        "suggestion_id": suggestion_id, "section_id": section_id,
+                        "decision_recorded": True, "applied": False}), http
+
     conn = _conn()
     try:
-        before_row = conn.execute(
-            "SELECT content FROM dic_sections WHERE section_id = %s LIMIT 1", (section_id,)
-        ).fetchone()
-        before_content = (dict(before_row).get("content") or "") if before_row else ""
-
+        before_content = _read_section_content(conn, section_id)
+        recheck = verify_anchor(s, before_content)
+        if not recheck["ok"]:
+            return _decided_not_applied(
+                "anchor_stale_after_decision",
+                ("The section changed between the anchor check and the write "
+                 f"({recheck['reason']}); the decision is recorded but the "
+                 "proposal was NOT applied."), 409)
+        a_start, a_end = recheck["anchor_start"], recheck["anchor_end"]
+        new_content = before_content[:a_start] + replacement + before_content[a_end:]
+        origin = "ai_assisted" if applied_text_source == "human_edit" else "ai_generated"
         conn.execute(
-            "UPDATE dic_sections SET content = %s, status = %s, origin = %s, created_at = %s WHERE section_id = %s",
-            (suggested_content, "draft", "ai_generated", _now(), section_id),
+            "UPDATE dic_sections SET content = %s, status = %s, origin = %s, created_at = %s "
+            "WHERE section_id = %s",
+            (new_content, "draft", origin, _now(), section_id),
         )
         conn.commit()
+        after_content = _read_section_content(conn, section_id)
+        if after_content != new_content:
+            return _decided_not_applied(
+                "apply_unconfirmed",
+                "The section did not read back the spliced content after the write; "
+                "the decision is recorded but the application is NOT confirmed.")
     except Exception as exc:
         # The decision and its audit row already stand — say so, rather than
         # returning a bare error a reviewer would read as "nothing happened".
-        return jsonify({"error": str(exc), "suggestion_id": suggestion_id,
-                        "decision_recorded": True, "applied": False}), 500
+        return _decided_not_applied(str(exc), "The write failed after the decision was recorded.")
     finally:
         conn.close()
+
+    # dwr-anchor-05: record what was ACTUALLY written, beside the AI draft.
+    try:
+        application_recorded = bool(record_application(suggestion_id, replacement, applied_by))
+    except Exception as exc:
+        logger.warning("dic suggestion accept: application record failed for %s: %s",
+                       suggestion_id, exc)
+        application_recorded = False
 
     # Record edit history (best-effort)
     try:
         from tools.document_intelligence.history_recorder import record_edit
         record_edit(
             section_id=section_id,
-            editor=user,
+            editor=applied_by,
             content_before=before_content,
-            content_after=suggested_content,
+            content_after=new_content,
         )
     except Exception:
         pass
@@ -4566,7 +5367,12 @@ def api_suggestion_accept(suggestion_id: str):
         "status": "accepted",
         "suggestion_id": suggestion_id,
         "section_id": section_id,
-        "new_hash": compute_hash(suggested_content),
+        "applied": True,
+        "anchor": {"basis": recheck["anchor_basis"], "start": a_start, "end": a_end},
+        "applied_text_source": applied_text_source,
+        "applied_by": applied_by,
+        "application_recorded": application_recorded,
+        "new_hash": compute_hash(new_content),
     })
 
 

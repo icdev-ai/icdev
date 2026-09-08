@@ -90,6 +90,7 @@ import os
 import sys
 import threading
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -331,8 +332,21 @@ def make_inbox_approver(
             request.classification, request.tool_input, actor=actor
         )
 
+        # THE ID IS MINTED HERE so the wake Event can exist before the ROW does.
+        #
+        # Registering right after `enqueue` returned (the first cut at this) still left a
+        # window, and CI kept finding it: `enqueue` COMMITS the row partway through, so a
+        # resolver polling the table sees it and can call `wake()` while enqueue is still
+        # on its way back to us. The window was narrower, not closed.
+        #
+        # `enqueue` takes an optional `item_id` and otherwise mints exactly this shape, so
+        # generating it one statement earlier costs nothing and makes the ordering total:
+        # Event first, then the row, then anything that can see the row.
+        item_id = f"ai-{uuid.uuid4().hex[:16]}"
+        _get_wake_event(item_id)
         try:
             item = enqueue(
+                item_id=item_id,
                 tool_name=request.tool_name,
                 tier=request.classification.tier,
                 title=title,
@@ -348,8 +362,28 @@ def make_inbox_approver(
         except (ApprovalInboxUnavailable, ValueError) as exc:
             # An ask that could not be queued is an ask nobody will ever see.
             # Fail closed, exactly as deny_all_approver does.
+            _discard_wake_event(item_id)   # nothing will ever wait on it
             logger.error("inbox_approver: could not queue %s: %s", request.tool_name, exc)
             return _deny(f"approval inbox unavailable ({exc}); failing closed", actor)
+
+        # THE WAKE EVENT IS REGISTERED BEFORE ANYTHING CAN ACT ON THE ROW.
+        #
+        # `enqueue` above PUBLISHES the item: from that statement on, a resolver -- in this
+        # interpreter or another -- can read it, resolve it, and call `wake()`. But the
+        # Event that `wake()` looks up was created inside `wait_for_resolution`, three
+        # statements and one `deliver()` call later. Anything that resolved in that window
+        # found no waiter and got `False` back.
+        #
+        # For an out-of-process resolver that costs only the optimisation: the poll below
+        # still catches it, late. For an IN-PROCESS resolver it silently loses the wake it
+        # was promised, and the caller waits a full `poll_seconds` for an answer that was
+        # already on disk. It is the same lost-wakeup shape the `ev.clear()` comment in
+        # `wait_for_resolution` warns about, one layer out -- there the window is between
+        # the read and the wait, here it is between the publish and the registration.
+        #
+        # The Event was registered above, BEFORE the row existed. `_get_wake_event` is
+        # idempotent, so `wait_for_resolution` below finds THAT Event rather than making a
+        # second one, and its own `finally` still discards it.
 
         logger.info(
             "inbox_approver: %s queued as %s (inbox=%s, timeout=%.0fs) — waiting",

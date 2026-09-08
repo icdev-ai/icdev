@@ -341,6 +341,34 @@ class TestOutOfProcessResolution:
         assert wake(row["item_id"]) is True
         assert runner.join_ok(timeout=GRACE / 2).approved is True
 
+    def test_a_resolver_acting_the_instant_the_row_appears_can_still_wake_it(self, inbox_db):
+        """THE ORDERING INVARIANT, and it is deterministic where the test above is a race.
+
+        `deliver` is invoked AFTER `enqueue` has published the row and BEFORE the wait
+        begins -- precisely the window in which a resolver first becomes able to act on it.
+        Until the wake Event was registered ahead of that window, `wake()` here returned
+        False every single time: an in-process resolver silently lost the wake it was
+        promised and the caller sat out a whole `poll_seconds` for an answer already on
+        disk. The sibling test above catches the same defect only when the scheduler
+        happens to cooperate, which is why it escalated PRs it had no quarrel with.
+        """
+        woke: list[bool] = []
+
+        def deliver(item):
+            resolve(item.item_id, approved=True, resolved_by="alice")
+            woke.append(wake(item.item_id))
+
+        approve = make_inbox_approver(
+            timeout_seconds=GRACE, poll_seconds=GRACE, deliver=deliver
+        )
+        runner = _Runner(approve, _request())
+        runner.start()
+        assert runner.join_ok(timeout=GRACE / 2).approved is True
+        assert woke == [True], (
+            "the row was readable by a resolver before it was wakeable -- the "
+            "lost-wakeup window between publish and registration"
+        )
+
     def test_waking_an_unknown_item_is_a_no_op(self, inbox_db):
         assert wake("ai-nobody-is-waiting") is False
 

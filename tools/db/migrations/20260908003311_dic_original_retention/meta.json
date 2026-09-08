@@ -1,0 +1,7 @@
+{
+  "description": "dic_documents keeps the uploaded original: original_path / original_sha256 / original_retained_at (dwr-fid-01)",
+  "date": "2026-09-08",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

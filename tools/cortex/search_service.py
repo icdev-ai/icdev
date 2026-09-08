@@ -649,10 +649,75 @@ def _defacto_learner():
 # read-time resolution ("a tie-break that a bumped prior can overturn is not
 # authority") applied to the ranking a caller actually reads.
 _CURRENCY_BANDS = {
-    "curated": (0.75, 1.00),   # an authoritative source (the curated catalog)
+    # A source that DECLARES a precedence in args/entity_currency.yaml
+    # (dwr-ev-01: author-supplied content, precedence 0). The band reads the
+    # store's own `precedence` field off the resolved view; it does not decide
+    # who wins — the store did — it only keeps the score consistent with that.
+    "declared": (0.85, 1.00),
+    "curated": (0.75, 0.85),   # an authoritative source (the curated catalog)
     "feed": (0.45, 0.75),      # an external EOL feed
     "learner": (0.10, 0.45),   # de-facto / learned corroboration
 }
+
+
+#: A citation's ``source_type`` by the DECLARED source kind (dwr-ev-02). A
+#: HUMAN's attributed statement must never carry the same badge as a machine
+#: feed's row: a promoted review comment is one named person's word, and a
+#: reader who has to infer that from a table name will not. Read off the store's
+#: own ``source_kind``, so a sixth source declaring a human kind is a YAML entry
+#: and one line here — never a source-name test. Every kind absent from this map
+#: keeps ``currency_assertion``, so nothing that shipped before it moves.
+_HUMAN_SOURCE_TYPES = {"sme_attributed": "sme_assertion"}
+
+#: The default, and what every non-human source still produces.
+_ASSERTION_SOURCE_TYPE = "currency_assertion"
+
+
+def _assertion_source_type(view: dict) -> str:
+    return _HUMAN_SOURCE_TYPES.get(
+        str(view.get("source_kind") or ""), _ASSERTION_SOURCE_TYPE
+    )
+
+
+def _attribution_clause(view: dict) -> str:
+    """Who said it, when, and where it was said — for a HUMAN source only.
+
+    An attributed statement whose sentence does not name the person is not
+    attributed. Read from ``provenance`` (the declared ``extra_columns``), and
+    empty for every source that carries no such fields, so a feed's sentence is
+    unchanged.
+    """
+    if _assertion_source_type(view) == _ASSERTION_SOURCE_TYPE:
+        return ""
+    prov = (view.get("provenance") or {}).get("fields") or {}
+    who = str(prov.get("asserted_by") or "").strip()
+    if not who:
+        return ""
+    text = f" Asserted by {who}"
+    doc = str(prov.get("doc_id") or "").strip()
+    if doc:
+        text += f" in a review comment on document {doc}"
+    promoter = str(prov.get("promoted_by") or "").strip()
+    if promoter:
+        text += f", promoted to evidence by {promoter}"
+    # Said in words, on every such sentence: the reader of a drafted paragraph
+    # sees the snippet and not the badge.
+    return text + ". This is an attributed human statement, not a document."
+
+
+def _currency_band(view: dict) -> str:
+    """The band a resolved view scores in, read off the store's own policy
+    fields. ``precedence`` is the store's DEFAULT_PRECEDENCE for every source
+    that declares none, so the first test is "did the winner's source declare
+    one" — never a source name."""
+    default = getattr(_currency_store(), "DEFAULT_PRECEDENCE", None)
+    precedence = view.get("precedence")
+    try:
+        if default is not None and precedence is not None and int(precedence) < int(default):
+            return "declared"
+    except (TypeError, ValueError):
+        pass
+    return "curated" if view.get("authoritative") else "feed"
 
 
 def _band_score(band: str, quality: float) -> float:
@@ -683,13 +748,13 @@ def _currency_content(view: dict) -> str:
             f"{o.get('source')}={o.get('verdict')}" for o in (view.get("others") or [])
         )
         text += f" Sources disagree — also reported: {disagree}."
-    return text
+    return text + _attribution_clause(view)
 
 
 def _currency_assertion_result(view: dict, ctx: CortexContext) -> CortexSearchResult:
     """One resolved entity-currency assertion -> CortexSearchResult."""
     authoritative = bool(view.get("authoritative"))
-    band = "curated" if authoritative else "feed"
+    band = _currency_band(view)
     match = float(view.get("match") or 0.0)
     confidence = _clamp(view.get("confidence"))
     content = _currency_content(view)
@@ -704,7 +769,9 @@ def _currency_assertion_result(view: dict, ctx: CortexContext) -> CortexSearchRe
         strategy="assertion",
         citation=Citation(
             source_id=str(provenance.get("record_id") or ""),
-            source_type="currency_assertion",
+            # dwr-ev-02: a human's attributed statement gets its OWN type, so a
+            # surface can render it apart from a feed and from a document.
+            source_type=_assertion_source_type(view),
             # The row the verdict actually came from, not the store that
             # aggregates it — a citation that names the aggregator sends a
             # reader to a copy rather than to the evidence.
@@ -731,19 +798,31 @@ def _currency_assertion_result(view: dict, ctx: CortexContext) -> CortexSearchRe
             "eol_date": view.get("eol_date"),
             "eos_date": view.get("eos_date"),
             "source": view.get("source"),
+            "source_kind": view.get("source_kind"),
             "authoritative": authoritative,
+            "precedence": view.get("precedence"),
             "as_of": view.get("as_of"),
             # Disagreement travels with the answer (see entity_currency.resolve).
             "conflict": bool(view.get("conflict")),
             "sources_consulted": list(view.get("sources_consulted") or []),
+            # Each loser in the store's OWN order, with its rank and the two
+            # policy facts about its source, so a downstream reader preserves
+            # the store's verdict instead of re-deriving it (dwr-ev-01).
             "others": [
                 {
                     "source": o.get("source"),
+                    "source_kind": o.get("source_kind"),
                     "verdict": o.get("verdict"),
+                    "superseded_by": o.get("superseded_by"),
+                    "eol_date": o.get("eol_date"),
+                    "eos_date": o.get("eos_date"),
                     "confidence": o.get("confidence"),
+                    "authoritative": bool(o.get("authoritative")),
+                    "precedence": o.get("precedence"),
                     "as_of": o.get("as_of"),
+                    "rank": o.get("rank", position),
                 }
-                for o in (view.get("others") or [])
+                for position, o in enumerate(view.get("others") or [], start=1)
             ],
             "scan_truncated": bool(view.get("scan_truncated")),
             "tenant_id": ctx.tenant_id,

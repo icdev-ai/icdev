@@ -45,6 +45,10 @@ FEED_URL = (
 )
 GRANTED_ROLE = "cortex_analyst"
 READ_SCOPE = "databridge:rss:read"
+#: dwr-ev-01 made author uploads a SECOND declared backend of `search_external`, so a
+#: reaching search now touches two connectors and audits both. The tests below name the
+#: connector they are about instead of assuming the only row is theirs.
+AUTHOR_SCOPE = "databridge:icdev_author_evidence:read"
 
 
 # ---------------------------------------------------------------------------
@@ -579,7 +583,14 @@ def _entry(title, summary, entry_id):
                      tags=[])
 
 
-def test_a_reaching_search_writes_one_allowed_audit_row(seeded_db, monkeypatch):
+def _row_for(rows, connector):
+    """The audit row for one connector. Fails loudly rather than silently picking [0]."""
+    hits = [r for r in rows if r[1] == connector]
+    assert len(hits) == 1, f"expected exactly one {connector} row, got {rows}"
+    return hits[0]
+
+
+def test_a_reaching_search_audits_every_backend_it_touched(seeded_db, monkeypatch):
     _fake_feed(monkeypatch, [
         _entry("NIST SP 800-53 Rev. 5", "Catalog revision notice", "fr-1"),
         _entry("FIPS 140-3", "Validation program", "fr-2"),
@@ -588,7 +599,8 @@ def test_a_reaching_search_writes_one_allowed_audit_row(seeded_db, monkeypatch):
     results = search_service.search_external(
         "NIST catalog revision",
         top_k=5,
-        ctx=CortexContext(classification="UNCLASSIFIED", scopes=[READ_SCOPE]),
+        ctx=CortexContext(classification="UNCLASSIFIED",
+                          scopes=[READ_SCOPE, AUTHOR_SCOPE]),
     )
 
     assert list(results.errors) == [], results.errors
@@ -596,8 +608,9 @@ def test_a_reaching_search_writes_one_allowed_audit_row(seeded_db, monkeypatch):
     assert all(r.citation.source_id for r in results)
 
     rows = _audit_rows(seeded_db)
-    assert len(rows) == 1
-    agent_id, connector, table, decision, _reason, returned = rows[0]
+    # TWO backends are reached now (rss + author evidence) and each writes its own row.
+    assert {r[1] for r in rows} == {"rss", "icdev_author_evidence"}
+    agent_id, connector, table, decision, _reason, returned = _row_for(rows, "rss")
     assert (agent_id, connector, decision) == (GRANTED_ROLE, "rss", "allowed")
     assert table == FEED_URL
     assert returned == 2
@@ -654,17 +667,20 @@ def test_an_over_ceiling_classification_denies_and_the_denial_is_audited(
     """The grant's ceiling is UNCLASSIFIED; a SECRET context may not egress."""
     _fake_feed(monkeypatch, [_entry("NIST SP 800-53 Rev. 5", "…", "fr-1")])
 
+    # BOTH backend scopes are presented, so the CEILING is what denies -- otherwise the
+    # second backend fails on a missing grant and the test stops being about the ceiling.
     results = search_service.search_external(
-        "nist", ctx=CortexContext(classification="SECRET", scopes=[READ_SCOPE]))
+        "nist", ctx=CortexContext(classification="SECRET",
+                                  scopes=[READ_SCOPE, AUTHOR_SCOPE]))
 
     assert list(results) == []
-    assert _stages(results) == ["denied"]
-    assert "exceeds ceiling" in results.errors[0]["message"]
+    assert set(_stages(results)) == {"denied"}
+    assert all("exceeds ceiling" in e["message"] for e in results.errors)
 
     rows = _audit_rows(seeded_db)
-    assert len(rows) == 1
-    assert rows[0][3] == "denied"
-    assert "exceeds ceiling" in rows[0][4]
+    # The ceiling denies EVERY backend, not just the first one declared.
+    assert rows and all(r[3] == "denied" for r in rows)
+    assert all("exceeds ceiling" in r[4] for r in rows)
 
 
 def test_a_missing_scope_writes_a_denied_row_through_the_real_broker(
@@ -677,10 +693,9 @@ def test_a_missing_scope_writes_a_denied_row_through_the_real_broker(
         "nist", ctx=CortexContext(classification="UNCLASSIFIED",
                                   scopes=["cortex:search"]))
 
-    assert _stages(results) == ["scope"]
+    assert set(_stages(results)) == {"scope"}
     rows = _audit_rows(seeded_db)
-    assert len(rows) == 1
-    agent_id, connector, table, decision, reason, returned = rows[0]
+    agent_id, connector, table, decision, reason, returned = _row_for(rows, "rss")
     assert (agent_id, connector, table, decision) == (
         GRANTED_ROLE, "rss", FEED_URL, "denied")
     assert READ_SCOPE in reason
