@@ -5419,6 +5419,56 @@ def api_suggestion_reject(suggestion_id: str):
     return jsonify({"status": "rejected", "suggestion_id": suggestion_id})
 
 
+@dic_bp.route("/api/suggestions/<suggestion_id>/redraft", methods=["POST"])
+def api_suggestion_redraft(suggestion_id: str):
+    """dwr-ev-03 — "Redraft with my comments". A button a human presses.
+
+    Re-runs the UNCHANGED TRUST gate chain for this change with its comment
+    thread as editing instructions and the governed author/SME currency
+    evidence in the bundle, and SUPERSEDES the change it replaces.
+
+    Editor role, matching accept/reject: a redraft retires a pending change and
+    spends an LLM call, which is a write, not a read.
+
+    THIS ROUTE NEVER RETURNS A BARE SUCCESS FOR A REDRAFT THAT DID NOT HAPPEN.
+    Every refusal comes back 409 with its ``refusal`` key from
+    ``redraft.REFUSALS`` and the text beside it — a 200 over a no-op is the
+    defect dwr-anchor-05 exists to fix on the accept path, and there is no
+    reason to rebuild it here.
+    """
+    from tools.document_intelligence.redraft import redraft_change
+
+    s = None
+    try:
+        from tools.document_intelligence.suggestion_store import get_suggestion
+        s = get_suggestion(suggestion_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("dic: redraft could not read suggestion %s: %s", suggestion_id, exc)
+    if s is None:
+        return jsonify({"error": "suggestion not found"}), 404
+
+    cid = s.get("collection_id") or _collection_id_from_section(s.get("section_id", "")) or "default"
+    if not _require_role(cid, "editor"):
+        return _forbid("editor")
+
+    data = request.get_json(silent=True) or {}
+    actor = data.get("actor") or _current_user()
+    tenant_id, classification = _security_context()
+
+    try:
+        result = redraft_change(
+            suggestion_id, actor,
+            tenant_id=tenant_id or "", classification=classification or "CUI",
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("dic: redraft of %s raised: %s", suggestion_id, exc)
+        return jsonify({"error": str(exc), "status": "error",
+                        "suggestion_id": suggestion_id}), 500
+
+    payload = result.to_dict()
+    return jsonify(payload), (200 if result.status == "redrafted" else 409)
+
+
 @dic_bp.route("/api/sections/<section_id>/suggest", methods=["POST"])
 def api_section_suggest(section_id: str):
     """dsyn-suggest-01: Any viewer-or-above user can submit a crowdsourced edit suggestion.
