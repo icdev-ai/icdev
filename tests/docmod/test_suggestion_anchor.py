@@ -38,6 +38,31 @@ def _load_migration():
     return mod
 
 
+def _later_migrations_for_dic_suggestions():
+    """Every migration AFTER this one that declares columns for the table.
+
+    Discovered from the migrations directory rather than listed here, so a
+    column added by a later card is picked up without editing this file.
+    """
+    out = []
+    for d in sorted(MIGRATION_DIR.parent.iterdir()):
+        if not d.is_dir() or d.name <= MIGRATION_DIR.name:
+            continue
+        up = d / "up.py"
+        if not up.exists():
+            continue
+        spec = importlib.util.spec_from_file_location(f"mig_{d.name}", up)
+        mod = importlib.util.module_from_spec(spec)
+        try:
+            spec.loader.exec_module(mod)
+        except Exception:  # noqa: BLE001 -- a migration that will not import is
+            # another test's finding, not this one's.
+            continue
+        if getattr(mod, "TABLE", "") == "dic_suggestions" and hasattr(mod, "NEW_COLUMNS"):
+            out.append(mod)
+    return out
+
+
 def _row_count() -> int:
     from tools.db.storage import get_connection
     with get_connection() as conn:
@@ -348,12 +373,21 @@ class TestMigration:
         assert after == before
 
     def test_store_ddl_and_migration_ddl_agree(self):
-        """A fresh table from either path has the same columns."""
+        """A fresh table from either path has the same columns.
+
+        "Either path" is the store's ``_ensure_tables`` against the MIGRATION
+        CHAIN, not against this one migration: a later migration that adds a
+        column adds it to the store's DDL too, and comparing the store to a
+        single earlier snapshot would fail on every future column with nothing
+        actually out of step (dwr-ev-03 added `superseded_by`).
+        """
         from tests._sql_compat import translating
         mig = _load_migration()
         a = sqlite3.connect(":memory:")
         a.execute(mig.CREATE_FULL)
         from_mig = {r[1] for r in a.execute("PRAGMA table_info(dic_suggestions)")}
+        for later in _later_migrations_for_dic_suggestions():
+            from_mig |= {n for n, _ in later.NEW_COLUMNS}
 
         b = sqlite3.connect(":memory:")
         store._ensure_tables(translating(b, unclosable=True))
