@@ -68,6 +68,212 @@
   </div>
 </div>
 
+<!-- dwr-fid-02: page layer — the document's own word geometry, positioned.
+     Renders what pdfplumber measured (PDF) or python-docx read (DOCX). The two
+     are never merged: a PDF gets boxes, a DOCX gets run structure, and the
+     panel says which one this document got. A document with no geometry shows
+     the REASON, never an empty frame — "nothing has looked at this" and "the
+     pages are blank" are different facts and only one of them is a finding. -->
+<div id="page-layer-panel" style="margin-bottom:18px;">
+  <div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:14px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap;">
+      <h3 style="margin:0;color:#7ab3f0;font-size:13px;">
+        📐 Page Layer <span id="pl-kind" style="font-weight:400;color:#7a8cb0;font-size:11px;"></span>
+      </h3>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span id="pl-pager" style="display:none;align-items:center;gap:6px;">
+          <button type="button" onclick="plStep(-1)" style="background:#0b1726;border:1px solid #1a3560;color:#b8d0e8;border-radius:3px;padding:1px 8px;cursor:pointer;font-size:12px;">◀</button>
+          <span id="pl-page-label" style="color:#7a8cb0;font-size:11px;min-width:86px;text-align:center;"></span>
+          <button type="button" onclick="plStep(1)" style="background:#0b1726;border:1px solid #1a3560;color:#b8d0e8;border-radius:3px;padding:1px 8px;cursor:pointer;font-size:12px;">▶</button>
+        </span>
+        <button type="button" id="pl-toggle" onclick="plToggle()"
+                style="background:#0b1726;border:1px solid #1a3560;color:#5a7aa0;border-radius:3px;padding:1px 8px;cursor:pointer;font-size:11px;">show</button>
+      </div>
+    </div>
+    <div id="pl-status" style="color:#5a7aa0;font-size:11px;font-style:italic;">Loading page geometry…</div>
+    <div id="pl-body" style="display:none;">
+      <!-- The page. Sized from the PAGE's own width/height, never a default:
+           pages differ within one PDF (612x792 and 595.3x841.9 on this board). -->
+      <div id="pl-stage" style="position:relative;background:#ffffff;color:#111;margin:0 auto;overflow:hidden;border:1px solid #1a3560;border-radius:3px;"></div>
+      <div id="pl-runs" style="display:none;font-size:12px;color:#b8d0e8;max-height:420px;overflow-y:auto;background:#050d1f;border:1px solid #1a3560;border-radius:4px;padding:10px;"></div>
+      <div id="pl-foot" style="margin-top:8px;color:#5a7aa0;font-size:10px;line-height:1.6;"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const PL_DOC_ID = {{ (doc.doc_id or '') | tojson }};
+let plGeom = null, plPage = 1, plOpen = false;
+
+function plEsc(s) {
+  const d = document.createElement('div'); d.textContent = s == null ? '' : String(s);
+  return d.innerHTML;
+}
+
+async function plLoadGeometry() {
+  const status = document.getElementById('pl-status');
+  if (!PL_DOC_ID) { status.textContent = 'No document id.'; return; }
+  let res, data;
+  try {
+    res = await fetch(`/document-intelligence/api/documents/${encodeURIComponent(PL_DOC_ID)}/geometry`);
+    data = await res.json();
+  } catch (e) {
+    status.textContent = 'Could not reach the geometry API: ' + e;
+    return;
+  }
+  plGeom = data;
+  const kindLabel = data.kind === 'pdf_word_box' ? 'PDF · word boxes'
+                  : data.kind === 'docx_run' ? 'DOCX · run structure' : '';
+  document.getElementById('pl-kind').textContent = kindLabel;
+
+  if (!data.renderable) {
+    // Every non-renderable status says a DIFFERENT thing, so the panel prints
+    // the status and its reason rather than one shrug for all of them.
+    const why = {
+      not_captured: 'Nobody has captured geometry for this document. This is not a statement that its pages are empty.',
+      no_text_layer: 'The file opened and yielded no words at all — a scanned page with no text layer. This one IS a measured statement about the document.',
+      unsupported_format: 'This format has no geometry story. PDFs get word boxes; DOCX files get run structure.',
+      disabled_by_env: 'Geometry capture is switched off on this deployment (ICDEV_DIC_WORD_GEOMETRY=0).',
+      library_unavailable: 'The extraction library is not installed here.',
+      source_unreadable: 'The source file could not be read when capture ran.',
+      failed: 'The extraction library raised.'
+    }[data.status] || 'No word geometry is available.';
+    status.innerHTML = `<span style="color:#c9a227;">${plEsc(data.status)}</span> — ${plEsc(why)}`
+      + (data.reason ? `<div style="margin-top:4px;color:#5a7aa0;">${plEsc(data.reason)}</div>` : '');
+    document.getElementById('pl-toggle').style.display = 'none';
+    return;
+  }
+
+  const pages = data.pages || [];
+  const unit = data.kind === 'docx_run' ? 'run' : 'word';
+  let line = `${data.unit_count} ${unit}${data.unit_count === 1 ? '' : 's'}`;
+  if (data.kind === 'pdf_word_box') line += ` across ${pages.length} page${pages.length === 1 ? '' : 's'}`;
+  if (data.truncated) {
+    line += ` — <span style="color:#c9a227;">bounded</span>: ${plEsc(data.truncated_reason || '')}`;
+  }
+  status.innerHTML = line;
+  if (pages.length) { plPage = pages[0].page; document.getElementById('pl-pager').style.display = 'flex'; }
+  plRenderFoot();
+}
+
+function plRenderFoot() {
+  const d = plGeom; if (!d) return;
+  // align_rate_pct is null -- never 0 and never 100 -- when nothing was aligned
+  // against, so the two cases are worded differently rather than both showing
+  // a number. `basis` is what the offsets INDEX and is not the same fact.
+  let align;
+  if (d.align_rate_pct === null || d.align_rate_pct === undefined) {
+    align = 'character offsets: not measured';
+  } else {
+    align = `character offsets: ${d.words_aligned} of ${d.words_total} placed in the document text (${d.align_rate_pct}%)`;
+  }
+  const basis = {
+    document_text: 'offsets index the document’s own stored text',
+    text_changed: 'offsets withheld — the re-extracted text is not the text this document recorded. The boxes are still correct.',
+    unaligned: 'offsets could not be placed in the document text',
+    not_attempted: 'no text was supplied to align against'
+  }[d.char_basis] || d.char_basis;
+  document.getElementById('pl-foot').innerHTML =
+    plEsc(align) + '<br>' + plEsc(basis)
+    + `<br>bounds in force: ${d.limits ? plEsc(`${d.limits.max_pages} pages / ${d.limits.max_words} words`) : '—'}`
+    + ` · captured in ${d.duration_ms == null ? '—' : d.duration_ms + 'ms'}`;
+}
+
+function plToggle() {
+  plOpen = !plOpen;
+  document.getElementById('pl-body').style.display = plOpen ? 'block' : 'none';
+  document.getElementById('pl-toggle').textContent = plOpen ? 'hide' : 'show';
+  if (plOpen) plRender();
+}
+
+function plStep(delta) {
+  const pages = (plGeom && plGeom.pages) || [];
+  const idx = pages.findIndex(p => p.page === plPage);
+  const next = pages[Math.max(0, Math.min(pages.length - 1, idx + delta))];
+  if (next && next.page !== plPage) { plPage = next.page; plRender(); }
+}
+
+async function plRender() {
+  if (!plGeom) return;
+  if (plGeom.kind === 'docx_run') return plRenderRuns();
+
+  const stage = document.getElementById('pl-stage');
+  const pages = plGeom.pages || [];
+  const dim = pages.find(p => p.page === plPage);
+  document.getElementById('pl-page-label').textContent =
+    `page ${plPage} of ${plGeom.pages_total ?? pages.length}`;
+  if (!dim) { stage.innerHTML = ''; return; }
+
+  let data;
+  try {
+    const res = await fetch(`/document-intelligence/api/documents/${encodeURIComponent(PL_DOC_ID)}/pages/${plPage}/words`);
+    data = await res.json();
+  } catch (e) { stage.innerHTML = ''; return; }
+
+  // Scale the PAGE's own points to the container width. Points, not pixels:
+  // the boxes are in PDF units and `top` is already measured from the page
+  // top, which is also CSS's origin, so nothing is converted.
+  const avail = Math.min(stage.parentElement.clientWidth || 720, 820);
+  const scale = avail / dim.width;
+  stage.style.width = Math.round(dim.width * scale) + 'px';
+  stage.style.height = Math.round(dim.height * scale) + 'px';
+
+  const frag = document.createDocumentFragment();
+  for (const w of (data.words || [])) {
+    const span = document.createElement('span');
+    span.textContent = w.text;
+    span.title = w.char_start == null
+      ? 'not placed in the document text'
+      : `chars ${w.char_start}–${w.char_end}`;
+    const h = (w.bottom - w.top) * scale;
+    span.style.cssText =
+      'position:absolute;white-space:pre;transform-origin:left top;'
+      + `left:${(w.x0 * scale).toFixed(2)}px;top:${(w.top * scale).toFixed(2)}px;`
+      + `font-size:${(h * 0.82).toFixed(2)}px;line-height:${h.toFixed(2)}px;`
+      + 'font-family:Georgia,\'Times New Roman\',serif;color:#111;';
+    span.dataset.plW = ((w.x1 - w.x0) * scale).toFixed(2);
+    frag.appendChild(span);
+  }
+  stage.innerHTML = '';
+  stage.appendChild(frag);
+
+  // Second pass: squeeze each word to the width its box actually had. Without
+  // this the layer reads as the right words in roughly the right places; with
+  // it, line endings and column edges land where the source has them.
+  for (const span of stage.children) {
+    const target = parseFloat(span.dataset.plW);
+    const actual = span.getBoundingClientRect().width;
+    if (target > 0 && actual > 0) {
+      span.style.transform = `scaleX(${(target / actual).toFixed(4)})`;
+    }
+  }
+}
+
+async function plRenderRuns() {
+  const box = document.getElementById('pl-runs');
+  document.getElementById('pl-stage').style.display = 'none';
+  box.style.display = 'block';
+  let data;
+  try {
+    const res = await fetch(`/document-intelligence/api/documents/${encodeURIComponent(PL_DOC_ID)}/runs`);
+    data = await res.json();
+  } catch (e) { box.textContent = 'Could not load runs.'; return; }
+  // Structure and styling, NOT a page: python-docx cannot know where a run
+  // lands, so this deliberately does not draw a page outline.
+  box.innerHTML = '<div style="color:#5a7aa0;font-size:10px;margin-bottom:8px;">'
+    + 'A DOCX has no pages until something renders it. This is paragraph and run '
+    + 'structure with styles — order and emphasis, never boxes.</div>'
+    + (data.runs || []).map(r =>
+        `<div style="padding:2px 0;"><span style="color:#5a7aa0;font-size:10px;">`
+        + `¶${r.para_index}.${r.run_index} ${plEsc(r.style || '')}</span> `
+        + `<span style="${r.bold ? 'font-weight:700;' : ''}${r.italic ? 'font-style:italic;' : ''}">`
+        + `${plEsc(r.text)}</span></div>`
+      ).join('');
+}
+
+document.addEventListener('DOMContentLoaded', plLoadGeometry);
+</script>
+
 <!-- docmod-hitl-05: Modernization findings panel -->
 <div id="mod-findings-panel" style="display:none;margin-bottom:18px;">
   <div style="background:#140a24;border:1px solid #4a2a6e;border-radius:8px;padding:14px;">

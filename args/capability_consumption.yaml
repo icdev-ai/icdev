@@ -167,6 +167,27 @@ substrate_probe:
 # schema dump — the value of the probe is that every entry is a claim somebody
 # made, and a claim can be wrong in a way a table count cannot.
 substrates:
+  - ref: dic_page_words
+    note: >-
+      dwr-fid-02. One row per PDF word, with its box. A positioned-text view of
+      a document renders from this and NOTHING else, so an empty table is a
+      blank left pane -- and it is empty for a document ingested before the
+      card, one whose source file is gone, or one nobody backfilled. Check
+      dic_document_geometry.status before reading a zero here as "the pages are
+      blank": that column exists precisely because an empty word list is seven
+      different things.
+  - ref: dic_document_geometry
+    note: >-
+      dwr-fid-02. ONE row per document saying which fidelity story it got and
+      why it got nothing. THIS table being empty is the honest signal that
+      geometry has never run on this deployment; dic_page_words being empty
+      while this has rows is a statement about the documents.
+  - ref: dic_doc_runs
+    note: >-
+      dwr-fid-02. DOCX paragraph/run structure. Expected to be empty on a board
+      with no DOCX uploads -- this deployment's 55 documents include none
+      (2026-09-08), so an empty read here is `no DOCX has been ingested`, not a
+      broken writer.
   - ref: kg_ontology
     note: >-
       Declared (subject_type, predicate, object_type) legality — the SHACL-lite

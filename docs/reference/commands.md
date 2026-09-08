@@ -6251,6 +6251,53 @@ python -m tools.document_intelligence.originals --root              # retention 
 # retained_missing | retained_mismatch | source_on_disk | absent | no_source.
 # Existing databases: python tools/db/migrate.py --up   (20260908003311)
 
+# WORD GEOMETRY -- where on the page did each word sit? (dwr-fid-02)
+python -m tools.document_intelligence.page_geometry --survey            # per-status counts, board-wide
+python -m tools.document_intelligence.page_geometry --survey --json
+python -m tools.document_intelligence.page_geometry --doc <doc_id>      # one document's record
+python -m tools.document_intelligence.page_geometry --doc <doc_id> --page 1   # that page's word boxes
+python -m tools.document_intelligence.page_geometry --backfill --limit 5      # documents ingested before this
+python -m tools.document_intelligence.page_geometry --limits            # the bounds in force
+python tools/db/migrate.py --up                                          # 20260908091858
+# UI: /document-intelligence/doc/<doc_id> -> "Page Layer"
+# API: GET /api/documents/<id>/geometry | /pages/<n>/words | /runs  (GET only, no POST sibling)
+# extractors._extract_pdf_text ends every pass in extract_text() -- a string and
+# a page COUNT -- so nothing recorded WHERE a word sat and a positioned-text
+# view had no coordinate space. Captured at INGEST, while the upload's temp file
+# is still on disk.
+# TWO STORIES, NEVER MERGED, because a DOCX has no pages until something renders
+# it: dic_page_words (PDF, one box per word) and dic_doc_runs (DOCX, paragraph/
+# run order and styles, and NO page column -- a NULL page there would read as a
+# box we failed to measure rather than one that cannot exist).
+# pdfplumber, NEVER pymupdf: requirements.txt:218-220 refuses to declare it
+# (AGPL/commercial) and it IS installed on this host, so a pymupdf version would
+# look perfect locally and produce nothing on a clean install. Pinned by AST test.
+# use_text_flow=True, MEASURED not reasoned -- constitution.pdf is two-column and
+# the default visual sort interleaves the columns while every text extractor
+# reads the stream column by column: 14.5% -> 100.0% of words placed, identical
+# word count and identical boxes. Better on two live PDFs, identical on the
+# third, worse on none.
+# char_start/char_end index the DOCUMENT'S OWN stored text or are NULL -- never
+# 0, which would point every unplaceable word at the first character. basis:
+# document_text | text_changed (a backfill re-extracted something whose sha256
+# is not the recorded content_sha256 -- offsets withheld, BOXES kept) |
+# unaligned | not_attempted. The rate is None, never 0.0, when alignment never
+# RAN, and 3346/3347 reads 99.9 rather than rounding up to a perfect score.
+# AN EMPTY WORD LIST IS SEVEN DIFFERENT THINGS and only one is about the
+# document: extracted | truncated | no_text_layer (MEASURED zero -- a scanned
+# page) | unsupported_format | disabled_by_env | library_unavailable |
+# source_unreadable | failed. A document with no geometry still gets a ROW, so
+# "nothing looked" never reads as "the pages are blank".
+# COST IS REAL AND BOUNDED: measured 2026-09-08, ~0.05s and 100-500 rows PER
+# PAGE (constitution 19p/9,178 words/1.27s; ArtOfWar 130p/22,808/6.24s).
+# ICDEV_DIC_GEOMETRY_MAX_PAGES (50) / _MAX_WORDS (50,000) / _MAX_RUNS (20,000);
+# ICDEV_DIC_WORD_GEOMETRY=0 switches it off and the result SAYS disabled_by_env.
+# A hit bound is `truncated` with pages_extracted/pages_total on the row.
+# Backfill reach is dwr-fid-01's: measured 2026-09-08, 4 of 13 PDFs still had a
+# readable source (the other 9 are deleted temp files), and all four read
+# `text_changed` because they were ingested 2026-06-17 before the `+tables`
+# append existed -- the guard refusing to claim offsets it cannot prove.
+
 # Python — generate outputs directly
 python -c "from tools.document_intelligence.output_generators import generate_study_guide; import json; print(json.dumps(generate_study_guide('my-collection', 'default'), indent=2))"
 python -c "from tools.document_intelligence.output_generators import generate_faq; import json; print(json.dumps(generate_faq('my-collection', 'default', n=10), indent=2))"

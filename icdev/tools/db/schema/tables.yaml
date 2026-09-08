@@ -467,8 +467,10 @@ tables:
   dic_community_summaries: it
   dic_cross_references: it
   dic_doc_freshness: it
+  dic_doc_runs: it
   dic_doc_views: it
   dic_docdrift_resolutions: it
+  dic_document_geometry: it
   dic_documents: it
   dic_drift_events: it
   dic_edit_history: it
@@ -482,6 +484,7 @@ tables:
   dic_handoff_items: it
   dic_handoff_sessions: it
   dic_ingest_jobs: it
+  dic_page_words: it
   dic_presence_sessions: it
   dic_processed_canvas_events: it
   dic_review_notes: it
