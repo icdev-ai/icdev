@@ -38,6 +38,10 @@ GENERATED_DIRS = (
     "data/alerts",
     "playwright-report",
     "backups",
+    # dwr-fid-01: retained DIC uploads and rmf-wp-02 export artifacts -- CUI
+    # documents, content-addressed, that must never reach this PUBLIC repo.
+    "data/document_intelligence/originals",
+    "data/document_intelligence/artifacts",
 )
 
 

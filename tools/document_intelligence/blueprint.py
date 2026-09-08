@@ -1449,6 +1449,24 @@ def api_ingest():
 
     def _run():
         outcome = None
+        # dwr-fid-01: the ORIGINAL is retained content-addressed BEFORE the
+        # temp file is deleted in `finally` below. The deletion stays; the copy
+        # is what stops dic_documents.filepath pointing at a file that no
+        # longer exists (43 of 55 documents on the live board, 2026-09-07).
+        # A retention failure never blocks the ingest, and is never silent: it
+        # is reported on the done event, the job row and the result cache.
+        original: dict = {"retained": False, "reason": "not_attempted"}
+        retained = None
+        try:
+            from tools.document_intelligence import originals as _originals
+            if not _originals.retention_enabled():
+                original = {"retained": False, "reason": "disabled_by_env"}
+            else:
+                retained = _originals.retain_original(tmp_path, filename)
+                original = {"retained": True, "reason": "ok", **retained.to_dict()}
+        except Exception as exc:  # noqa: BLE001 — reported below, never swallowed into a clean result
+            logger.warning("dic: original not retained for %s: %s", filename, exc)
+            original = {"retained": False, "reason": f"retain_failed: {exc}"}
         try:
             def _cb(stage: str, detail: str, pct: int, extra: dict | None = None) -> None:
                 event = {"stage": stage, "detail": detail, "pct": pct}
@@ -1474,6 +1492,25 @@ def api_ingest():
                 created_by="dashboard_upload", progress_cb=_cb,
                 author_assertions=author_assertions,
             )
+            # Record the retained original on the document row. ingest_file
+            # writes the row (INSERT OR REPLACE), so this must run AFTER it.
+            if retained is not None:
+                try:
+                    c = _conn()
+                    try:
+                        original.update(_originals.record_original(c, outcome.doc_id, retained))
+                    finally:
+                        c.close()
+                except Exception as exc:  # noqa: BLE001 — the file is retained; the row could not say so
+                    logger.warning("dic: original retained but not recorded for %s: %s", outcome.doc_id, exc)
+                    original.update({"recorded": False, "reason": f"record_failed: {exc}"})
+            if not original.get("retained"):
+                outcome.errors.append(f"original not retained: {original.get('reason')}")
+            elif not original.get("recorded"):
+                outcome.errors.append(
+                    f"original retained at {original.get('path')} but not recorded on the "
+                    f"document row: {original.get('reason')}"
+                )
             q.put({
                 "stage": "done",
                 "doc_id": outcome.doc_id,
@@ -1482,6 +1519,7 @@ def api_ingest():
                 "kg_entities": outcome.kg_entities,
                 "author_assertions": outcome.author_assertions,
                 "errors": outcome.errors,
+                "original": original,
                 "pct": 100,
             })
             # Cache result in-memory (survives DB INSERT failures on PG).
@@ -1491,6 +1529,7 @@ def api_ingest():
                     "doc_id": outcome.doc_id,
                     "chunks": outcome.chunks,
                     "errors": outcome.errors,
+                    "original": original,
                 }
             # Preserve the uploaded filename — ingest_file only sees the temp
             # path, which otherwise lands as e.g. 'tmp9x41vmaz.txt'.
@@ -2786,13 +2825,21 @@ def api_collection_documents(collection_id):
     tenant_id, _ = _security_context()
     conn = _conn()
     try:
+        # dwr-fid-01: the retention columns are named only when the LIVE table
+        # carries them (probed from the catalogue, never guessed), so a board
+        # that has not run migration 20260908003311 still lists its documents
+        # -- with every one honestly reported `absent` / `source_on_disk`
+        # rather than an empty list from a SELECT that named a missing column.
+        from tools.document_intelligence import originals as _originals
+        extra_cols, columns_present = _originals.select_columns(conn)
         rows = _safe_rows(
             conn,
             "SELECT doc_id, collection_id, filename, title, content_type, provider, "
-            "page_count, content_sha256, created_at, classification "
+            f"page_count, content_sha256, created_at, classification{extra_cols} "
             "FROM dic_documents WHERE collection_id = %s AND tenant_id = %s ORDER BY created_at DESC",
             (collection_id, tenant_id),
         )
+        _originals.annotate_rows(rows, columns_present=columns_present)
         # Augment with latest version status and chunk count
         for r in rows:
             try:
