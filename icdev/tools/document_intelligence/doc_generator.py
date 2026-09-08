@@ -273,6 +273,7 @@ def _citation_report(
     evidence_path: str,
     evidence_detail: dict,
     currency: dict,
+    verification: dict | None = None,
 ) -> dict:
     """Validate this section's citation tags against the sources it was shown.
 
@@ -298,6 +299,12 @@ def _citation_report(
         "evidence_detail": evidence_detail,
         "source_count": len(search_results),
         "currency": currency,
+        # dwr-sect-02: whether the claim VERIFIER ran on this section, and if it
+        # was invoked and died, why. This is what lets a persisted row say WHY
+        # its `verified` column is NULL -- "no verifier importable", "nothing to
+        # verify against" and "the verifier raised" are three different repairs
+        # and none of them is "verified: false".
+        "verification": dict(verification or {"ran": False, "error": None}),
     }
     allowed = {
         str(getattr(r, "chunk_id", "")) for r in search_results
@@ -319,11 +326,42 @@ def _citation_report(
     return report
 
 
+#: dwr-sect-02 -- the dic_sections columns that carry a section's own
+#: verification, in declaration order. Migration 20260908003513 adds them to a
+#: live table and ingest_orchestrator's DDL creates them on a fresh one; the
+#: migration's NEW_COLUMNS is pinned to this tuple by test.
+VERIFICATION_COLUMNS = ("verified", "citation_report", "abstained", "confidence")
+
+
+def _verification_values(
+    verified: bool | None, citation_report: dict, abstained: bool, confidence: float | None,
+) -> tuple:
+    """The values written under VERIFICATION_COLUMNS, in that order.
+
+    ``verified`` is NULL -- never 0 -- when the verifier did not RUN. "Not
+    verified" and "verified false" are different findings and the workspace
+    renders them differently. ``confidence`` is NULL exactly when ``verified``
+    is: the in-memory 1.0 the confidence gate starts from is a threshold
+    default, not a measurement, and persisting it for a section nobody scored
+    is the rem-hyg-13 perfect score wearing a column name. ``abstained`` is a
+    decision this pipeline always makes, so it is always 0/1.
+    """
+    return (
+        None if verified is None else int(bool(verified)),
+        json.dumps(citation_report or {}),
+        int(bool(abstained)),
+        None if (verified is None or confidence is None) else round(float(confidence), 3),
+    )
+
+
 @dataclass
 class GeneratedSection:
     heading: str = ""
     content: str = ""
-    verified: bool = False
+    #: True / False is the VERIFIER'S verdict. None means the check did not run
+    #: (no verifier, no evidence to verify against, or it raised before a
+    #: verdict) and is persisted as NULL, never as 0 (dwr-sect-02).
+    verified: bool | None = None
     abstained: bool = False
     citations: list[dict] = field(default_factory=list)
     confidence: float = 1.0
@@ -1092,7 +1130,12 @@ def generate_document(
 
         # 6. Verify and confidence-gate
         confidence = 1.0
-        verified = False
+        # None until the verifier RETURNS a verdict (dwr-sect-02). A section the
+        # verifier never saw -- no verifier importable, no evidence to verify
+        # against -- must not persist as "verified: false".
+        verified: bool | None = None
+        verify_ran = False
+        verify_error: str | None = None
         abstained = False
         low_confidence = False
         hitl_note = ""
@@ -1101,23 +1144,30 @@ def generate_document(
         if _has_verifier and sec_results:
             try:
                 vr = verify(raw_text, [r.content for r in sec_results])
+                verify_ran = True
                 confidence = _compute_section_confidence(vr)
 
                 if vr.abstained:
                     abstained = True
                     confidence = 0.0
                     raw_text = "(Abstained — insufficient evidence to support this section.)"
+                    # The verifier RAN and its verdict was "cannot support
+                    # this": a real False, not a check that never happened.
+                    verified = False
                 else:
                     raw_text = vr.verified_text or raw_text
                     # `verified` must reflect the verdict, not merely the fact
                     # that verify() returned without raising.
-                    verified = vr.verified
+                    verified = bool(vr.verified)
             except Exception as exc:
-                # A verifier failure is not a pass. Leave verified False and
-                # drop confidence to 0 so the HITL bands below can act on it.
+                # A verifier failure is not a pass -- but it is not a verdict
+                # either. Confidence drops to 0 so the HITL bands below act on
+                # it; `verified` stays None (no verdict was produced) and the
+                # error is RECORDED on the citation_report so the row says why.
                 logger.warning("doc_generator: verifier error: %s", exc)
                 confidence = 0.0
-                verified = False
+                verified = None
+                verify_error = str(exc)
 
         # TRUST: scrub AFTER the verifier (which may reintroduce reasoning by
         # replacing raw_text with its verified_text) so the final stored/published
@@ -1138,8 +1188,11 @@ def generate_document(
                 # A section that reintroduces a deprecated entity is never
                 # `verified`, whatever the verifier said — the verifier asked a
                 # different question (is this claim supported by the retrieved
-                # evidence) and a stale source answers it yes.
-                verified = False
+                # evidence) and a stale source answers it yes. A section the
+                # verifier never saw stays None: the currency finding is its
+                # own record (`citation_report.currency`), not a verdict.
+                if verified is not None:
+                    verified = False
                 low_confidence = True
                 if heading not in flagged_headings:
                     flagged_headings.append(heading)
@@ -1273,6 +1326,7 @@ def generate_document(
             confabulation=confab,
             citation_report=_citation_report(
                 raw_text, sec_results, sec_path, sec_detail, currency_report,
+                verification={"ran": verify_ran, "error": verify_error},
             ),
         ))
 
@@ -1340,14 +1394,22 @@ def generate_document(
             )
             for idx, sec in enumerate(generated_sections, start=1):
                 section_id = f"sec-{uuid.uuid4().hex[:12]}"
+                # dwr-sect-02: the row carries its OWN verification. A review
+                # surface reads these columns; it never re-derives a badge
+                # from `status`, and it never reads a payload that ceased to
+                # exist when the request ended.
                 conn.execute(
                     "INSERT OR REPLACE INTO dic_sections "
                     "(section_id, version_id, doc_id, heading, content, citations_json, status, origin, "
-                    "created_at, created_by, tenant_id, classification) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    "created_at, created_by, tenant_id, classification, "
+                    "verified, citation_report, abstained, confidence) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (section_id, version_id, doc_id, sec.heading, sec.content,
                      json.dumps(sec.citations), persist_status, "ai_generated",
-                     _now_utc(), created_by, tenant_id, classification),
+                     _now_utc(), created_by, tenant_id, classification)
+                    + _verification_values(
+                        sec.verified, sec.citation_report, sec.abstained, sec.confidence,
+                    ),
                 )
             conn.commit()
         finally:
@@ -1513,15 +1575,26 @@ def regenerate_section(
 
     verified_text = raw_text
     abstained = False
+    # dwr-sect-02: the same tri-state generate_document keeps. None until the
+    # verifier RETURNS; a verifier that raised produced no verdict.
+    verified: bool | None = None
+    verify_ran = False
+    verify_error: str | None = None
+    confidence: float | None = None
     try:
         vr = _verify(raw_text, [r.content for r in search_results])
+        verify_ran = True
+        confidence = _compute_section_confidence(vr)
         if vr.abstained:
             abstained = True
+            verified = False
             verified_text = "(Abstained — insufficient evidence to support this section.)"
         else:
             verified_text = vr.verified_text or raw_text
+            verified = bool(vr.verified)
     except Exception as exc:
         logger.warning("doc_generator: per-section verify error: %s", exc)
+        verify_error = str(exc)
 
     # cef-di-05: deterministic currency guard on the FINAL prose. Same reason as
     # in generate_document — the verifier asks whether a claim is supported by
@@ -1535,6 +1608,11 @@ def regenerate_section(
                 verified_text, tenant_id=tenant_id, classification=classification,
             )
         )
+        if currency_tripped and verified is not None:
+            # A section naming a deprecated entity is never `verified`, whatever
+            # the verifier said (generate_document's rule); a verdict that was
+            # never produced stays None.
+            verified = False
         if currency_tripped and currency_report.get("action") == "abstain":
             # Same defect as generate_document's band, same fix: the flag alone
             # left the deprecated sentence in `verified_text`, and every
@@ -1551,23 +1629,38 @@ def regenerate_section(
 
     citations = [r.citation.to_dict() for r in search_results[:5]] + currency_citations
 
+    # cef-di-05 — which chain retrieved this, whether its citation tags
+    # validated, and what the currency screen found. `screened: false` means
+    # the guard did not RUN; it is not the same as "ran and found nothing",
+    # and the two must never be read as one. Built ONCE, here, so the row and
+    # the response carry the SAME report (dwr-sect-02).
+    citation_report = _citation_report(
+        verified_text, search_results, _evidence_path, _evidence_detail, currency_report,
+        verification={"ran": verify_ran, "error": verify_error},
+    )
+    verification_values = _verification_values(verified, citation_report, abstained, confidence)
+
     conn = get_connection()
     try:
         cur = conn.cursor()
         cur.execute(
             "UPDATE dic_sections SET content = %s, citations_json = %s, status = %s, origin = %s, "
-            "created_at = %s, created_by = %s WHERE version_id = %s AND heading = %s",
+            "created_at = %s, created_by = %s, "
+            "verified = %s, citation_report = %s, abstained = %s, confidence = %s "
+            "WHERE version_id = %s AND heading = %s",
             (verified_text, json.dumps(citations), "pending_review", "ai_generated",
-             _now_utc(), created_by, version_id, heading),
+             _now_utc(), created_by) + verification_values + (version_id, heading),
         )
         if cur.rowcount == 0:
             section_id = f"sec-{uuid.uuid4().hex[:12]}"
             cur.execute(
                 "INSERT INTO dic_sections (section_id, version_id, doc_id, heading, content, "
-                "citations_json, status, origin, created_at, created_by, tenant_id, classification) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                "citations_json, status, origin, created_at, created_by, tenant_id, classification, "
+                "verified, citation_report, abstained, confidence) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (section_id, version_id, doc_id, heading, verified_text, json.dumps(citations),
-                 "pending_review", "ai_generated", _now_utc(), created_by, tenant_id, classification),
+                 "pending_review", "ai_generated", _now_utc(), created_by, tenant_id, classification)
+                + verification_values,
             )
         cur.execute(
             "SELECT heading, content FROM dic_sections WHERE version_id = %s ORDER BY section_id",
@@ -1600,12 +1693,8 @@ def regenerate_section(
         "citation_count": len(citations),
         "status": "pending_review",
         "abstained": abstained,
-        # cef-di-05 — which chain retrieved this, whether its citation tags
-        # validated, and what the currency screen found. `screened: false` means
-        # the guard did not RUN; it is not the same as "ran and found nothing",
-        # and the two must never be read as one.
-        "citation_report": _citation_report(
-            verified_text, search_results, _evidence_path, _evidence_detail, currency_report,
-        ),
+        "verified": verified,
+        "confidence": confidence if verified is not None else None,
+        "citation_report": citation_report,
         "currency_flagged": currency_tripped,
     }

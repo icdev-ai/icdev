@@ -48,6 +48,18 @@ PLACEHOLDER_TITLE_TOKENS = (
     "placeholder",
 )
 
+# How many contracts the "worst CPI" table names.
+WORST_CPI_LIMIT = 3
+
+# Why a worst-CPI selection is NOT a ranking. Kept apart because they are
+# different findings about the feed, even though neither may render as an order:
+#   all_shown_equal     every row shown reports one CPI — there is no order
+#                       among them to present
+#   cutoff_inside_tie   an UNSHOWN contract ties the last shown one, so it is
+#                       equally worst and the SET shown is arbitrary too
+RANK_ALL_SHOWN_EQUAL = "all_shown_equal"
+RANK_CUTOFF_INSIDE_TIE = "cutoff_inside_tie"
+
 # Share of placeholder-titled contracts at or above which the portfolio as a
 # whole is called synthetic rather than merely containing a stray fixture.
 PLACEHOLDER_SHARE_THRESHOLD = 0.5
@@ -113,6 +125,67 @@ def _contract_label(contract: Dict[str, Any]) -> str:
     title = (contract.get("title") or "").strip() or "Untitled"
     cid = str(contract.get("id") or contract.get("contract_id") or "").strip()
     return f"{title} [{cid[:8]}]" if cid else title
+
+
+def _worst_cpi_selection(
+    contracts_with_cpi: Any, limit: int = WORST_CPI_LIMIT
+) -> Dict[str, Any]:
+    """The lowest-CPI rows, and whether they are a RANKING at all.
+
+    THE DEFECT THIS EXISTS FOR. The selection was `sort(key=cpi)[:3]`, and
+    `list.sort` is STABLE — so contracts whose CPI is equal kept the order the
+    portfolio query handed over, which is `ORDER BY c.updated_at DESC`
+    (portfolio_manager.get_portfolio_summary). On a feed with no dispersion the
+    three rows under a performance header were the three most recently TOUCHED
+    contracts, and nothing on the page said so.
+
+    MEASURED across two consecutive live briefs in data/reports/. Every CPI in
+    both is 0.9689 and every SPI 0.9333 — byte-identical figures — and two of
+    the three names changed:
+        2026-08-31  Untitled Contract [8143e17a], bypass probe [0f28acca],
+                    probe [e8d124a9]
+        2026-09-07  probe [e8d124a9], GCPL Seed Contract [bff20029],
+                    Untitled Contract [3220e9d1]
+    A reader tracking the worst contracts week over week was reading row churn.
+    The module had ALREADY reached this conclusion in prose — the data-quality
+    advisory says the CPI "ranks nothing" — while the table below went on
+    ranking. One document, both claims.
+
+    Ordering is `(cpi, label)`, so the rows are a function of the DATA and never
+    of `updated_at`. `ranked` is False whenever the "worst" header is unearned;
+    the reason says which way, because the two send a reader to different fixes.
+    """
+    rows = sorted(
+        (
+            c
+            for c in (contracts_with_cpi or [])
+            if isinstance(c.get("cpi"), (int, float))
+        ),
+        key=lambda c: (float(c["cpi"]), _contract_label(c)),
+    )
+    shown = rows[:limit]
+    if not shown:
+        return {"rows": [], "ranked": False, "reason": None, "tied_beyond_cutoff": 0}
+
+    values = [float(c["cpi"]) for c in shown]
+    cutoff = values[-1]
+    tied_beyond = sum(1 for c in rows[limit:] if float(c["cpi"]) == cutoff)
+
+    if len(set(values)) == 1 and (tied_beyond or len(shown) > 1):
+        reason = RANK_ALL_SHOWN_EQUAL
+    elif tied_beyond:
+        reason = RANK_CUTOFF_INSIDE_TIE
+    else:
+        # A single contract really is the worst one, and distinct values with a
+        # clean cutoff really do rank. Neither is muted.
+        reason = None
+
+    return {
+        "rows": shown,
+        "ranked": reason is None,
+        "reason": reason,
+        "tied_beyond_cutoff": tied_beyond,
+    }
 
 
 def _is_placeholder_title(title: Any) -> bool:
@@ -296,8 +369,11 @@ def _gather_portfolio_snapshot() -> Dict[str, Any]:
             c for c in contracts_raw
             if c.get("cpi") is not None and isinstance(c["cpi"], (int, float))
         ]
-        contracts_with_cpi.sort(key=lambda c: float(c.get("cpi", 1.0)))
-        snapshot["worst_cpi_contracts"] = contracts_with_cpi[:3]
+        # Ordered by (cpi, label), never by the query's `updated_at`, and
+        # published WITH the verdict on whether those rows rank at all.
+        selection = _worst_cpi_selection(contracts_with_cpi)
+        snapshot["worst_cpi_contracts"] = selection["rows"]
+        snapshot["worst_cpi_ranking"] = selection
         cpi_vals = [float(c["cpi"]) for c in contracts_with_cpi if c.get("cpi")]
         snapshot["avg_portfolio_cpi"] = round(sum(cpi_vals) / len(cpi_vals), 3) if cpi_vals else None
         # Published beside the average so a constant restated per contract cannot
@@ -489,6 +565,13 @@ def _render_html_report(snapshot: Dict[str, Any], narrative: str, report_date: s
         colors = {"green": "#28a745", "yellow": "#ffc107", "red": "#dc3545"}
         return colors.get(color, "#888")
 
+    # A header is a CLAIM. An older writer's snapshot carries rows and no
+    # verdict, so derive what the ROWS alone can prove — that they share one
+    # CPI — rather than defaulting to "ranked": the renderer must not assert an
+    # order it has no evidence for.
+    worst_ranking = snapshot.get("worst_cpi_ranking") or _worst_cpi_selection(
+        worst, limit=len(worst) or WORST_CPI_LIMIT
+    )
     worst_rows = "".join(
         f"<tr><td>{_contract_label(c)}</td><td>{(c.get('title') or '—')[:40]}</td>"
         f"<td style='color:#dc3545;font-weight:700;'>{c.get('cpi','—')}</td>"
@@ -547,6 +630,33 @@ def _render_html_report(snapshot: Dict[str, Any], narrative: str, report_date: s
         if distinct is not None else "Avg Portfolio CPI"
     )
 
+    # The table's own header and caveat. "Worst" is a superlative and is spent
+    # only on a selection that earned it; an unranked one still RENDERS — a week
+    # whose EVM feed does not discriminate is not a week with no EVM data, and
+    # dropping the section would make the two read alike.
+    worst_header = "Worst CPI Contracts"
+    worst_note = ""
+    if worst_rows and not worst_ranking.get("ranked"):
+        worst_header = "Lowest Recorded CPI"
+        shown_cpi = worst_ranking["rows"][0].get("cpi")
+        if worst_ranking.get("reason") == RANK_CUTOFF_INSIDE_TIE:
+            detail = (
+                f"{worst_ranking.get('tied_beyond_cutoff', 0)} further contract(s) tie the "
+                f"lowest CPI shown ({worst_ranking['rows'][-1].get('cpi')}), so the cut "
+                "between shown and unshown is arbitrary and this is not a ranking."
+            )
+        else:
+            detail = (
+                f"Every contract below reports the same CPI ({shown_cpi}), so there is no "
+                "order among them and this is not a ranking — these rows are a sample, "
+                "not the worst performers. Repair the EVM feed before acting on the order."
+            )
+        worst_note = (
+            "<div class='dq' style=\"border-left:4px solid #fd7e14;\">"
+            "<strong style='color:#fd7e14;'>Not a ranking</strong>"
+            "<div style='margin-top:6px;'>" + detail + "</div></div>"
+        )
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"><title>PMO Weekly Report — {report_date}</title>
@@ -585,7 +695,7 @@ td{{padding:7px 12px;border-bottom:1px solid #eee;font-size:12px;}}
   <div class="stat"><div class="stat-val" style="color:#dc3545;">{snapshot.get("critical_options",0)}</div><div class="stat-lbl">Critical Option Windows</div></div>
 </div>
 
-{f'<h2>Worst CPI Contracts</h2><table><thead><tr><th>Contract #</th><th>Title</th><th>CPI</th><th>SPI</th></tr></thead><tbody>{worst_rows}</tbody></table>' if worst_rows else ''}
+{f'<h2>{worst_header}</h2>{worst_note}<table><thead><tr><th>Contract #</th><th>Title</th><th>CPI</th><th>SPI</th></tr></thead><tbody>{worst_rows}</tbody></table>' if worst_rows else ''}
 {f'<h2>Upcoming Deliverables</h2><table><thead><tr><th>CDRL #</th><th>Title</th><th>Due Date</th><th>Status</th></tr></thead><tbody>{upcoming_rows}</tbody></table>' if upcoming_rows else ''}
 {f'<h2>Option Period Countdown</h2><table><thead><tr><th>Contract</th><th>Option</th><th>Exercise Deadline</th><th>Time Remaining</th></tr></thead><tbody>{option_rows}</tbody></table>' if option_rows else ''}
 {f'<h2>Critical Issues</h2><table><thead><tr><th>Contract</th><th>Severity</th><th>Issue</th></tr></thead><tbody>{issue_rows}</tbody></table>' if issue_rows else ''}

@@ -50,6 +50,29 @@ _CANVAS_MODULES = {
     "Migration": "tools.migration_canvas.db.init_db",
 }
 
+#: Rows the Compliance Posture widget renders that are NOT canvases -- they are
+#: appended below the canvas loop from other tables (GovLift STIG checks, ZIG
+#: maturity, the AI-ify posture). Listed here so a coverage report can name
+#: them as surface rows with no design/engine pair to re-run, rather than
+#: silently leaving them off the roster (rmf-inert-03).
+NON_CANVAS_ROWS = ("GovLift", "Zero Trust", "AI-ify")
+
+#: ``assessment_type`` written by the scheduled canvas_reassess reflex. Spelled
+#: ONCE, here, because both sides need it: the reflex WRITES it and this surface
+#: READS it to tell a scheduled refresh from a review somebody actually did.
+SCHEDULED_ASSESSMENT_TYPE = "scheduled_reassess"
+
+
+def surface_rows() -> list[str]:
+    """Every row name the posture widget can render, in render order.
+
+    The canvases come from ``_CANVAS_MODULES`` (the loop below) and the rest
+    from ``NON_CANVAS_ROWS``. This is THE list a refresher measures its
+    coverage against -- a copy elsewhere would drift the moment a canvas is
+    added here (rmf-inert-03).
+    """
+    return list(_CANVAS_MODULES) + list(NON_CANVAS_ROWS)
+
 
 def _open_canvas_connection(canvas_name: str) -> Any | None:
     """Open a backend-aware canvas connection with RLS disabled."""
@@ -106,8 +129,13 @@ def _latest_per_design_avg(cc, table: str, score_col: str = "score") -> float:
 #: ``last_assessed: None``, which the surface renders as "unknown", not "fresh".
 _ASSESSED_AT = {
     "Security":      ("sc_assessments", "ran_at"),
-    "Network":       ("nc_compliance_checks", "created_at"),
-    "Pipeline":      ("pc_compliance_checks", "created_at"),
+    # `ran_at`, not `created_at`: neither checks table has ever carried a
+    # created_at column (DDL and the live PG catalogue agree, measured
+    # 2026-09-07), so the old spelling raised, `_max_ts` swallowed it, and
+    # Network/Pipeline rendered a score with NO age at all -- which on this
+    # widget reads as fresh (rmf-inert-03).
+    "Network":       ("nc_compliance_checks", "ran_at"),
+    "Pipeline":      ("pc_compliance_checks", "ran_at"),
     "Infra":         ("idc_assessments", "created_at"),
     "Data":          ("dd_assessments", "created_at"),
     "Boundary":      ("bd_assessments", "created_at"),
@@ -156,6 +184,72 @@ def _last_assessed(cc, canvas_name: str):
     if not spec:
         return None
     return _max_ts(cc, *spec)
+
+
+#: Which assessment tables carry a column that says WHO wrote the row. A canvas
+#: absent here cannot tell a scheduled refresh from a review, and reports that
+#: as ``None`` -- never as either answer. nc/pc_compliance_checks carry a
+#: `check_type` (what was checked, not who), aadc_assessments nothing, and
+#: aiml_assessments a `framework_id`; none of those is a writer label.
+_ASSESSMENT_TYPE_COL = {
+    "Security":      "assessment_type",
+    "Infra":         "assessment_type",
+    "Data":          "assessment_type",
+    "Boundary":      "assessment_type",
+    "Observability": "assessment_type",
+    "QDC":           "assessment_type",
+    "Migration":     "assessment_type",
+}
+
+
+def _last_assessed_detail(cc, canvas_name: str) -> dict:
+    """``last_assessed`` plus WHO wrote it and when a non-scheduled row last did.
+
+    Three keys, and the last two exist because widening the scheduled refresher
+    (rmf-inert-03) makes ``last_assessed`` CURRENT for a canvas whose estate
+    nobody has looked at since June: a scheduled re-derivation over the same
+    inputs is a newer timestamp on the same evidence. So:
+
+      last_assessed         newest evidence of ANY kind (unchanged meaning)
+      last_assessed_source  ``scheduled`` if the newest row was written by the
+                            canvas_reassess reflex, ``canvas`` if by anything
+                            else (a click in the canvas UI, its own
+                            auto-assess), None when the table cannot say
+      last_reviewed         newest row NOT written by the scheduled reflex;
+                            None when there is none or the table cannot say
+
+    ``None`` is never filled in from ``last_assessed``: a table with no writer
+    column would then report every scheduled refresh as a review.
+    """
+    out = {"last_assessed": _last_assessed(cc, canvas_name),
+           "last_assessed_source": None, "last_reviewed": None}
+    spec = _ASSESSED_AT.get(canvas_name)
+    type_col = _ASSESSMENT_TYPE_COL.get(canvas_name)
+    if not spec or not type_col or out["last_assessed"] is None:
+        return out
+    table, tcol = spec
+    try:
+        r = cc.execute(
+            f"SELECT {type_col} AS t FROM {table} "                    # nosec B608
+            f"WHERE {tcol} = (SELECT MAX({tcol}) FROM {table}) LIMIT 1"  # nosec B608
+        ).fetchone()
+        newest_type = (r["t"] if isinstance(r, dict) else r[0]) if r else None
+        if newest_type is not None:
+            out["last_assessed_source"] = (
+                "scheduled" if str(newest_type) == SCHEDULED_ASSESSMENT_TYPE else "canvas")
+        r2 = cc.execute(
+            f"SELECT MAX({tcol}) AS m FROM {table} "                   # nosec B608
+            f"WHERE {type_col} IS NULL OR {type_col} != %s",           # nosec B608
+            (SCHEDULED_ASSESSMENT_TYPE,),
+        ).fetchone()
+        value = (r2["m"] if isinstance(r2, dict) else r2[0]) if r2 else None
+        out["last_reviewed"] = str(value) if value else None
+    except Exception:
+        try:
+            cc.rollback()
+        except Exception:
+            pass
+    return out
 
 
 def daily_trend(scores) -> tuple[str, Any]:
@@ -348,8 +442,10 @@ def compute_canvas_posture(conn) -> tuple[list[dict], float]:
                     "closed_findings": closed_f,
                     # When the newest evidence was written, or None if there is
                     # none. Rendered as an age so a two-month-old score cannot
-                    # look like one taken this morning (rem-hyg-09).
-                    "last_assessed": _last_assessed(cconn, canvas_name),
+                    # look like one taken this morning (rem-hyg-09) -- and who
+                    # wrote it, so a scheduled refresh cannot pass for a review
+                    # (rmf-inert-03).
+                    **_last_assessed_detail(cconn, canvas_name),
                 }
             )
             # `score is None` means NOT ASSESSED and must never be averaged; a
@@ -388,6 +484,10 @@ def compute_canvas_posture(conn) -> tuple[list[dict], float]:
                 # without one — and a MISSING key renders differently from a
                 # known-absent timestamp (rem-hyg-09).
                 "last_assessed": _max_ts(conn, "govlift_stig_checks", "checked_at"),
+                # No scheduled writer exists for these rows, and the table has
+                # no writer column, so the source is unknown -- never "canvas".
+                "last_assessed_source": None,
+                "last_reviewed": None,
             })
             if stig_score > 0:
                 overall_scores.append(stig_score)
@@ -433,6 +533,8 @@ def compute_canvas_posture(conn) -> tuple[list[dict], float]:
                     "closed_findings": 0,
                     "last_assessed": _max_ts(
                         zconn, "zig_maturity_scores", "assessment_run_at"),
+                    "last_assessed_source": None,
+                    "last_reviewed": None,
                 })
                 if zig_score > 0:
                     overall_scores.append(zig_score)
