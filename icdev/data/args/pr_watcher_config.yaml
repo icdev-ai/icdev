@@ -427,12 +427,23 @@ merge_unlinked_prs: true
 # everything beneath it. If the changed-file set cannot be determined at all,
 # the PR is treated as protected — a merge gate that opens when it cannot see is
 # not a gate.
+#
+# THE ACTIONS AUTO-MERGE WORKFLOW IS ON THE LIST TOO (mfx-mrg-07). It carries
+# `contents: write` and merges PRs unattended, so it belongs here on the same
+# reasoning the merge ladder does -- and until mfx-mrg-07 it was a FOURTH door
+# that honoured none of this: measured 2026-09-07, eight of the last ten
+# protected-path merges went through it as github-actions[bot]. The rule it
+# now runs is tools/ci/protected_paths.py, the ONE implementation the ladder
+# re-exports, checked out from the default branch; a PR that could edit that
+# rule and merge itself on the next sweep is the same hazard one file over.
 protected_paths:
   - tools/ci/pr_watcher.py
   - args/pr_watcher_config.yaml
   - .claude/hooks/pre_tool_use.py
   - tools/kanban/task_factory.py
   - tools/kanban/gates.py
+  - .github/workflows/pr-watcher.yml
+  - tools/ci/protected_paths.py
 
 # ── union_resolver (mfx-sib-03) ──────────────────────────────────────────────
 # A REAL conflict on a sibling-append file has ONE correct resolution: the

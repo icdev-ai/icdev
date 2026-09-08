@@ -23,7 +23,10 @@ def _make_raw_conn():
             collection_id TEXT, trigger_event_id TEXT, canvas_source TEXT DEFAULT 'unknown',
             suggested_content TEXT DEFAULT '', current_content TEXT, rationale TEXT,
             status TEXT DEFAULT 'pending', created_at TEXT NOT NULL,
-            updated_at TEXT, tenant_id TEXT, classification TEXT DEFAULT 'CUI'
+            updated_at TEXT, tenant_id TEXT, classification TEXT DEFAULT 'CUI',
+            anchor_section_id TEXT, anchor_start INTEGER, anchor_end INTEGER,
+            anchor_text TEXT, anchor_basis TEXT, origin_kind TEXT,
+            applied_text TEXT, applied_by TEXT
         )""",
         """CREATE TABLE dic_suggestion_decisions (
             decision_id TEXT PRIMARY KEY, suggestion_id TEXT NOT NULL,
