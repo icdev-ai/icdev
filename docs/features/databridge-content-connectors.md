@@ -105,13 +105,16 @@ DSN even when passed programmatically, so the YAML rule and the code rule are
 the same rule.
 
 Each connector has a CLI for checking the configuration before granting
-anything:
+anything. They are invoked as MODULES: running a file under `tools/` directly
+puts that file's own directory on `sys.path[0]` and never the repository root,
+which is why the other connectors here carry a path bootstrap. These four do
+not need one, so they do not have one.
 
 ```powershell
-python tools/databridge/connectors/confluence_connector.py --health
-python tools/databridge/connectors/jira_connector.py --read issues --jql "project = ENG"
-python tools/databridge/connectors/sharepoint_connector.py --read sites --search policy
-python tools/databridge/connectors/local_database_connector.py --sqlite ./data/policy.db --table policy_register --health
+python -m tools.databridge.connectors.confluence_connector --health
+python -m tools.databridge.connectors.jira_connector --read issues --jql "project = ENG"
+python -m tools.databridge.connectors.sharepoint_connector --read sites --search policy
+python -m tools.databridge.connectors.local_database_connector --sqlite ./data/policy.db --table policy_register --health
 ```
 
 ## What this card does NOT do

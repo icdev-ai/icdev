@@ -18,9 +18,9 @@ Tables:
     fields     — GET /rest/api/3/field
 
 Usage:
-    python tools/databridge/connectors/jira_connector.py --health
-    python tools/databridge/connectors/jira_connector.py --read issues --jql "project = ENG"
-    python tools/databridge/connectors/jira_connector.py --read comments --key ENG-1 --json
+    python -m tools.databridge.connectors.jira_connector --health
+    python -m tools.databridge.connectors.jira_connector --read issues --jql "project = ENG"
+    python -m tools.databridge.connectors.jira_connector --read comments --key ENG-1 --json
 
 Config (a connection record in args/databridge_connections.yaml):
     base_url         https://<site>.atlassian.net
@@ -31,30 +31,20 @@ Config (a connection record in args/databridge_connections.yaml):
 from __future__ import annotations
 
 import json
-import sys
 import time
 from typing import Any, Dict, List
 from urllib.parse import quote
 
-from icdev.core.paths import repo_root
-
-# The ONE resolver. A module that walks `parent.parent.parent.parent` from its
-# own location carries a hard-coded claim about where it sits, and the claim
-# breaks silently the moment the file moves (tools/ci/self_root_census.py).
-BASE_DIR = repo_root(__file__)
-if str(BASE_DIR) not in sys.path:
-    sys.path.insert(0, str(BASE_DIR))
-
-from tools.databridge.connector import (  # noqa: E402
+from tools.databridge.connector import (
     ConnectorCapabilities,
     ConnectorRequest,
     ConnectorResponse,
     SchemaDefinition,
     SchemaField,
 )
-from tools.databridge.connectors.atlassian_base import AtlassianBaseConnector  # noqa: E402
-from tools.databridge.registry import register_connector  # noqa: E402
-from tools.logging.icdev_logger import get_logger  # noqa: E402
+from tools.databridge.connectors.atlassian_base import AtlassianBaseConnector
+from tools.databridge.registry import register_connector
+from tools.logging.icdev_logger import get_logger
 
 logger = get_logger("databridge.jira")
 

@@ -18,9 +18,9 @@ Tables:
     attachments  — GET /wiki/api/v2/attachments
 
 Usage:
-    python tools/databridge/connectors/confluence_connector.py --health
-    python tools/databridge/connectors/confluence_connector.py --read spaces --json
-    python tools/databridge/connectors/confluence_connector.py --read page --id 12345
+    python -m tools.databridge.connectors.confluence_connector --health
+    python -m tools.databridge.connectors.confluence_connector --read spaces --json
+    python -m tools.databridge.connectors.confluence_connector --read page --id 12345
 
 Config (a connection record in args/databridge_connections.yaml):
     base_url         https://<site>.atlassian.net
@@ -33,30 +33,20 @@ from __future__ import annotations
 import html
 import json
 import re
-import sys
 import time
 from typing import Any, Dict, List
 from urllib.parse import quote
 
-from icdev.core.paths import repo_root
-
-# The ONE resolver. A module that walks `parent.parent.parent.parent` from its
-# own location carries a hard-coded claim about where it sits, and the claim
-# breaks silently the moment the file moves (tools/ci/self_root_census.py).
-BASE_DIR = repo_root(__file__)
-if str(BASE_DIR) not in sys.path:
-    sys.path.insert(0, str(BASE_DIR))
-
-from tools.databridge.connector import (  # noqa: E402
+from tools.databridge.connector import (
     ConnectorCapabilities,
     ConnectorRequest,
     ConnectorResponse,
     SchemaDefinition,
     SchemaField,
 )
-from tools.databridge.connectors.atlassian_base import AtlassianBaseConnector  # noqa: E402
-from tools.databridge.registry import register_connector  # noqa: E402
-from tools.logging.icdev_logger import get_logger  # noqa: E402
+from tools.databridge.connectors.atlassian_base import AtlassianBaseConnector
+from tools.databridge.registry import register_connector
+from tools.logging.icdev_logger import get_logger
 
 logger = get_logger("databridge.confluence")
 

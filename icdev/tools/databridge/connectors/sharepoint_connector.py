@@ -28,9 +28,9 @@ Tables:
     lists         — GET /sites/{site_id}/lists  (filters: site_id=)
 
 Usage:
-    python tools/databridge/connectors/sharepoint_connector.py --health
-    python tools/databridge/connectors/sharepoint_connector.py --read sites --search policy
-    python tools/databridge/connectors/sharepoint_connector.py --read file_content \
+    python -m tools.databridge.connectors.sharepoint_connector --health
+    python -m tools.databridge.connectors.sharepoint_connector --read sites --search policy
+    python -m tools.databridge.connectors.sharepoint_connector --read file_content \
         --drive <drive id> --item <item id>
 
 Config (a connection record in args/databridge_connections.yaml):
@@ -43,35 +43,25 @@ Config (a connection record in args/databridge_connections.yaml):
 from __future__ import annotations
 
 import json
-import sys
 import time
 from typing import Any, Dict, List
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
-from icdev.core.paths import repo_root
-
-# The ONE resolver. A module that walks `parent.parent.parent.parent` from its
-# own location carries a hard-coded claim about where it sits, and the claim
-# breaks silently the moment the file moves (tools/ci/self_root_census.py).
-BASE_DIR = repo_root(__file__)
-if str(BASE_DIR) not in sys.path:
-    sys.path.insert(0, str(BASE_DIR))
-
-from tools.databridge.connector import (  # noqa: E402
+from tools.databridge.connector import (
     ConnectorCapabilities,
     ConnectorRequest,
     ConnectorResponse,
     SchemaDefinition,
     SchemaField,
 )
-from tools.databridge.connectors.saas_base import (  # noqa: E402
+from tools.databridge.connectors.saas_base import (
     REQUEST_TIMEOUT,
     USER_AGENT,
     SaaSBaseConnector,
 )
-from tools.databridge.registry import register_connector  # noqa: E402
-from tools.logging.icdev_logger import get_logger  # noqa: E402
+from tools.databridge.registry import register_connector
+from tools.logging.icdev_logger import get_logger
 
 logger = get_logger("databridge.sharepoint")
 

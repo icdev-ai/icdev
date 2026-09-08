@@ -52,7 +52,7 @@ Config (a connection record in args/databridge_connections.yaml):
         order_by: effective_date
 
 Usage:
-    python tools/databridge/connectors/local_database_connector.py \
+    python -m tools.databridge.connectors.local_database_connector \
         --sqlite ./data/policy.db --table policy_register --health
 """
 
@@ -60,21 +60,11 @@ from __future__ import annotations
 
 import json
 import re
-import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from icdev.core.paths import repo_root
-
-# The ONE resolver. A module that walks `parent.parent.parent.parent` from its
-# own location carries a hard-coded claim about where it sits, and the claim
-# breaks silently the moment the file moves (tools/ci/self_root_census.py).
-BASE_DIR = repo_root(__file__)
-if str(BASE_DIR) not in sys.path:
-    sys.path.insert(0, str(BASE_DIR))
-
-from tools.databridge.connector import (  # noqa: E402
+from tools.databridge.connector import (
     ConnectorCapabilities,
     ConnectorRequest,
     ConnectorResponse,
@@ -83,8 +73,8 @@ from tools.databridge.connector import (  # noqa: E402
     SchemaDefinition,
     SchemaField,
 )
-from tools.databridge.registry import register_connector  # noqa: E402
-from tools.logging.icdev_logger import get_logger  # noqa: E402
+from tools.databridge.registry import register_connector
+from tools.logging.icdev_logger import get_logger
 
 logger = get_logger("databridge.local_database")
 
@@ -239,7 +229,13 @@ class LocalDatabaseConnector(DataConnector):
                 raise ValueError("sqlite needs database_path")
             path = Path(str(raw)).expanduser()
             if not path.is_absolute():
-                path = (BASE_DIR / path).resolve()
+                # Relative to the WORKING DIRECTORY, not to this repository.
+                # The path is an operator's, typed into their own connection
+                # record about their own database; resolving it against the
+                # checkout would mean `./data/policy.db` pointed somewhere they
+                # did not name and, on a packaged install, somewhere that does
+                # not exist.
+                path = path.resolve()
             if not path.exists():
                 raise FileNotFoundError(f"no database file at {path}")
             # URI mode: the ONLY way sqlite3 opens a file read-only. A writable
