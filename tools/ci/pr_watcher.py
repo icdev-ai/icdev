@@ -2989,7 +2989,8 @@ class PRWatcher:
                 pass
 
     def _hitl_recovered(self, state: dict, cycle: int, max_cycles: int,
-                        landed: Optional[dict] = None) -> bool:
+                        landed: Optional[dict] = None,
+                        task_id: str = "") -> bool:
         """True when the PREMISE of a HITL alert is false — not merely that the
         forge is happy.
 
@@ -3006,11 +3007,17 @@ class PRWatcher:
         written to prevent.
 
         The raise sites are the resume cap (`cycle >= max_cycles`), CI that
-        never fired, a task whose work is ALREADY on the default branch, and
+        never fired, a task whose work is ALREADY on the default branch,
         (kpr-stale-02) a branch too far BEHIND the default branch to merge
-        safely whose automatic rebase was declined — so all four are negated
-        here. Anything that adds a fifth must negate it here too, or the alert
-        flaps again.
+        safely whose automatic rebase was declined, and a resume injection
+        PROVEN unread — so all five are negated here. Anything that adds a
+        sixth must negate it here too, or the alert flaps again.
+
+        The undelivered premise is negated by asking the queue again: the alert
+        says "nothing is draining this task's messages", so it clears the moment
+        something does. UNDELIVERED is the only verdict that HOLDS it — an
+        unreadable queue (`unmeasured`) must not pin an alert open, for the same
+        reason it must not raise one.
 
         The staleness check is asked LAST, and that ordering is a cost decision
         as much as a correctness one: it is the only condition here that can
@@ -3032,6 +3039,12 @@ class PRWatcher:
             return False
         if self._ci_never_fired(state):
             return False
+        # The undelivered raise site. Read BEFORE the staleness check below,
+        # which is the only condition here that can reach the forge.
+        if task_id:
+            verdict = self._probe_prior_delivery(task_id, had_prior_injection=True)
+            if verdict.verdict == resume_delivery.UNDELIVERED:
+                return False
         # Same flap shape as the already-landed case above, for the same
         # reason: a stale branch is green AND MERGEABLE by construction — that
         # is exactly what makes it dangerous — so every condition above says
@@ -3654,7 +3667,8 @@ class PRWatcher:
             # The resolve is deduped on `source` and is a no-op when nothing is
             # firing, so calling it on every healthy pass costs nothing.
             if self._hitl_recovered(state, cycle, max_cycles,
-                                    landed=landed_map.get(task["id"])):
+                                    landed=landed_map.get(task["id"]),
+                                    task_id=task["id"]):
                 self._resolve_hitl_alert(task["id"])
 
             # A CLOSED PR cannot be rebased, resumed or merged, so an alert
