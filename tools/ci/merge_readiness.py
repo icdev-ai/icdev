@@ -62,6 +62,11 @@ import sys
 from typing import Any, Dict, FrozenSet, Iterable, List, NamedTuple, Optional
 
 from tools.ci import error_classifier as ec
+# The protected-path rule lives in tools/ci/protected_paths.py (mfx-mrg-07): an
+# import-free module the Actions auto-merge workflow can run from a one-file
+# sparse checkout on a bare runner. This name is a RE-EXPORT, never a copy --
+# tests/ci/test_pr_watcher_workflow_protected_paths.py pins the identity.
+from tools.ci.protected_paths import protected_hits  # noqa: F401
 
 #: Repo root, resolved from THIS FILE and never from ``os.getcwd()`` — this
 #: module is run from worktrees, from CI checkouts and as ``python -m``.
@@ -151,43 +156,6 @@ class MergeReadiness(NamedTuple):
 # ────────────────────────────────────────────────────────────────────────────
 # The decision table
 # ────────────────────────────────────────────────────────────────────────────
-
-
-def protected_hits(
-    changed_files: Optional[Iterable[str]], protected_paths: Iterable[str]
-) -> Optional[List[str]]:
-    """Which protected paths this PR touches, or None when nothing is protected.
-
-    An entry matches a path EXACTLY or as a directory prefix: ``e`` matches ``p``
-    when ``p == e`` or ``p.startswith(e + "/")``. Both halves are load-bearing.
-    A bare prefix test would make the entry ``tools/ci/pr_watcher.py`` also catch
-    ``tools/ci/pr_watcher_helpers.py``, and a control that stops work it was
-    never meant to stop gets switched off.
-
-    FAIL-CLOSED, and this is the OPPOSITE default from the sibling-conflict map
-    a few lines away in the watcher, so the asymmetry needs saying. That map
-    answers "might these two PRs collide?" — degrading it to a warning costs a
-    retry. This answers "may this PR edit the merger itself?" — degrading it to
-    a warning costs the control entirely, because the case where the file list
-    is unavailable is not distinguishable from the case where it is unavailable
-    BECAUSE the PR is unusual. So a ``changed_files`` of None, with any path
-    protected, is treated as a hit. A merge gate that opens when it cannot see
-    is not a gate.
-
-    Returns ``None`` (not an empty list) when no path is configured, so a caller
-    can tell "protection is off" from "protection is on and this PR is clean".
-    """
-    entries = [str(e).strip().replace("\\", "/").strip("/")
-               for e in (protected_paths or ()) if str(e or "").strip()]
-    if not entries:
-        return None
-    if changed_files is None:
-        return sorted(entries)          # fail closed — see above
-    paths = [str(f).strip().replace("\\", "/").lstrip("/")
-             for f in changed_files if str(f or "").strip()]
-    hits = {e for e in entries
-            for f in paths if f == e or f.startswith(e + "/")}
-    return sorted(hits)
 
 
 def hold_labels(pr: Dict[str, Any]) -> List[str]:
