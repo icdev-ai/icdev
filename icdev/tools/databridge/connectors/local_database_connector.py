@@ -65,7 +65,12 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
+from icdev.core.paths import repo_root
+
+# The ONE resolver. A module that walks `parent.parent.parent.parent` from its
+# own location carries a hard-coded claim about where it sits, and the claim
+# breaks silently the moment the file moves (tools/ci/self_root_census.py).
+BASE_DIR = repo_root(__file__)
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
