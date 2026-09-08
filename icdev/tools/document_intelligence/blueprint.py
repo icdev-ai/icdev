@@ -5476,6 +5476,56 @@ def api_suggestion_reject(suggestion_id: str):
     return jsonify({"status": "rejected", "suggestion_id": suggestion_id})
 
 
+@dic_bp.route("/api/suggestions/<suggestion_id>/redraft", methods=["POST"])
+def api_suggestion_redraft(suggestion_id: str):
+    """dwr-ev-03 — "Redraft with my comments". A button a human presses.
+
+    Re-runs the UNCHANGED TRUST gate chain for this change with its comment
+    thread as editing instructions and the governed author/SME currency
+    evidence in the bundle, and SUPERSEDES the change it replaces.
+
+    Editor role, matching accept/reject: a redraft retires a pending change and
+    spends an LLM call, which is a write, not a read.
+
+    THIS ROUTE NEVER RETURNS A BARE SUCCESS FOR A REDRAFT THAT DID NOT HAPPEN.
+    Every refusal comes back 409 with its ``refusal`` key from
+    ``redraft.REFUSALS`` and the text beside it — a 200 over a no-op is the
+    defect dwr-anchor-05 exists to fix on the accept path, and there is no
+    reason to rebuild it here.
+    """
+    from tools.document_intelligence.redraft import redraft_change
+
+    s = None
+    try:
+        from tools.document_intelligence.suggestion_store import get_suggestion
+        s = get_suggestion(suggestion_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("dic: redraft could not read suggestion %s: %s", suggestion_id, exc)
+    if s is None:
+        return jsonify({"error": "suggestion not found"}), 404
+
+    cid = s.get("collection_id") or _collection_id_from_section(s.get("section_id", "")) or "default"
+    if not _require_role(cid, "editor"):
+        return _forbid("editor")
+
+    data = request.get_json(silent=True) or {}
+    actor = data.get("actor") or _current_user()
+    tenant_id, classification = _security_context()
+
+    try:
+        result = redraft_change(
+            suggestion_id, actor,
+            tenant_id=tenant_id or "", classification=classification or "CUI",
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("dic: redraft of %s raised: %s", suggestion_id, exc)
+        return jsonify({"error": str(exc), "status": "error",
+                        "suggestion_id": suggestion_id}), 500
+
+    payload = result.to_dict()
+    return jsonify(payload), (200 if result.status == "redrafted" else 409)
+
+
 @dic_bp.route("/api/sections/<section_id>/suggest", methods=["POST"])
 def api_section_suggest(section_id: str):
     """dsyn-suggest-01: Any viewer-or-above user can submit a crowdsourced edit suggestion.
@@ -6528,3 +6578,115 @@ def api_chunk_repair(collection_id):
 
     status = 200 if result.ok else 422
     return jsonify(result.to_dict()), status
+
+
+# ── API: Page geometry (dwr-fid-02) ─────────────────────────────────────────
+# READ ONLY, by construction: GET with no POST sibling. Geometry is captured at
+# INGEST, while the uploaded file is still on disk; a route that could trigger
+# a capture would put a multi-second pdfplumber pass on a page render, and for
+# an upload there is no longer a file to re-read anyway.
+
+
+@dic_bp.route("/api/documents/<doc_id>/geometry", methods=["GET"])
+def api_document_geometry(doc_id: str):
+    """The document's geometry record: which fidelity story, and what it cost.
+
+    404 with ``status: not_captured`` when there is no row — which is NOT the
+    same answer as a document with no words on its pages, and the caller is
+    told so in those words. Every other case has a row, and the row's ``status``
+    says which of the seven reasons an empty word list has.
+    """
+    from tools.document_intelligence import page_geometry
+
+    conn = _conn()
+    try:
+        row = page_geometry.geometry_row(conn, doc_id)
+    finally:
+        conn.close()
+
+    if row is None:
+        return (
+            jsonify(
+                {
+                    "doc_id": doc_id,
+                    "status": "not_captured",
+                    "renderable": False,
+                    "detail": (
+                        "no geometry has been recorded for this document. That is "
+                        "not a statement that its pages are empty — nothing has "
+                        "looked. Documents ingested before dwr-fid-02, and those "
+                        "whose source file is gone, read this way; "
+                        "`python -m tools.document_intelligence.page_geometry "
+                        "--backfill` covers the ones whose source is still readable."
+                    ),
+                    "limits": page_geometry.limits(),
+                }
+            ),
+            404,
+        )
+    row["limits"] = page_geometry.limits()
+    return jsonify(row)
+
+
+@dic_bp.route("/api/documents/<doc_id>/pages/<int:page>/words", methods=["GET"])
+def api_document_page_words(doc_id: str, page: int):
+    """One page's word boxes, in the PDF's own stream order.
+
+    Boxes are PDF points with ``top`` from the page top. The page's own
+    ``width``/``height`` ride along, because they differ page to page (measured
+    on this board: 612x792 and 595.3x841.9) and a renderer that scales by a
+    document-wide guess puts every word in the wrong place.
+    """
+    from tools.document_intelligence import page_geometry
+
+    conn = _conn()
+    try:
+        row = page_geometry.geometry_row(conn, doc_id)
+        words = page_geometry.page_words(conn, doc_id, page)
+    finally:
+        conn.close()
+
+    dims = None
+    if row:
+        dims = next((p for p in row.get("pages") or [] if p.get("page") == page), None)
+
+    return jsonify(
+        {
+            "doc_id": doc_id,
+            "page": page,
+            "words": words,
+            "count": len(words),
+            # The page's size, or None. NEVER a default page size: a renderer
+            # handed 612x792 for a page that is actually A4 draws every word
+            # slightly out of place and nothing looks broken enough to notice.
+            "width": (dims or {}).get("width"),
+            "height": (dims or {}).get("height"),
+            # Why the list may be empty, when it is empty for a reason.
+            "geometry_status": (row or {}).get("status", "not_captured"),
+            "renderable": bool((row or {}).get("renderable")),
+        }
+    )
+
+
+@dic_bp.route("/api/documents/<doc_id>/runs", methods=["GET"])
+def api_document_runs(doc_id: str):
+    """A DOCX's paragraph/run structure — order and styling, never boxes."""
+    from tools.document_intelligence import page_geometry
+
+    limit = min(int(request.args.get("limit", 2000)), 5000)
+    conn = _conn()
+    try:
+        row = page_geometry.geometry_row(conn, doc_id)
+        runs = page_geometry.doc_runs(conn, doc_id, limit=limit)
+    finally:
+        conn.close()
+
+    return jsonify(
+        {
+            "doc_id": doc_id,
+            "runs": runs,
+            "count": len(runs),
+            "geometry_status": (row or {}).get("status", "not_captured"),
+            "kind": (row or {}).get("kind"),
+        }
+    )

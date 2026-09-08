@@ -623,6 +623,118 @@ python -m tools.document_intelligence.suggestion_redraft --apply --limit 5   # T
 # error | supersede_refused | redrafted_unanchored -- because successes alone
 # cannot say whether the sweep worked. Exit 2 = the survey could not be produced.
 # Survey: docs/audits/dwr-anchor-06-unanchored-suggestion-survey.md
+# Where on the page did each word SIT? The layer a left pane renders from (dwr-fid-02)
+python -m tools.document_intelligence.page_geometry --survey [--json]
+python -m tools.document_intelligence.page_geometry --doc <doc_id> [--page 1]
+python -m tools.document_intelligence.page_geometry --backfill --limit 5
+python -m tools.document_intelligence.page_geometry --limits
+python tools/db/migrate.py --up            # 20260908091858: dic_page_words / dic_doc_runs / dic_document_geometry
+# UI: /document-intelligence/doc/<doc_id> -> "Page Layer"
+# API: GET /api/documents/<id>/geometry | /pages/<n>/words | /runs -- GET with
+# no POST sibling. Geometry is captured at INGEST, while the upload's temp file
+# is still on disk; a route that could TRIGGER a capture would put a
+# multi-second pdfplumber pass on a page render and, for an upload, would have
+# no file left to read.
+# `extractors._extract_pdf_text` ends every one of its four passes in
+# `extract_text()` -- a string and a page COUNT -- so nothing recorded WHERE a
+# word sat and a positioned-text view had no coordinate space to render into.
+# TWO FIDELITY STORIES, TWO TABLES, NEVER MERGED. `dic_page_words` is PDF only:
+# one row per word with its box in PDF POINTS, `top` measured from the page top
+# (pdfplumber's convention, and CSS's, so a renderer converts nothing).
+# `dic_doc_runs` is DOCX only -- paragraph/run order, style name and bold/italic
+# from python-docx -- and has NO `page` column, because OOXML has no pages until
+# something renders it and a NULL page on a table called `page_words` reads as a
+# box we failed to measure rather than one that CANNOT EXIST. Page DIMENSIONS
+# are per PAGE, not per document (measured on this board: 612x792 AND
+# 595.3x841.9), and live on the geometry row's `pages_json`; a renderer scaling
+# by a document-wide guess puts every word slightly out of place and nothing
+# looks broken enough to notice.
+# pdfplumber, NEVER PyMuPDF. requirements.txt:218-220 refuses to declare
+# pymupdf/fitz (dual-licensed AGPL-3.0 / Artifex-commercial) and it IS installed
+# on this host -- so a pymupdf implementation would have looked perfect locally
+# and produced NOTHING on a clean install or an air-gapped one. Only an AST test
+# can see that difference, so an AST test is what pins it.
+# `use_text_flow=True` IS THE CARD'S ONE REAL DECISION, and it was MEASURED, not
+# reasoned. Words placed in the document's own stored text, every readable PDF
+# on the live board 2026-09-08:
+#   constitution.pdf 19p  flow=False 1,334/9,178  14.5%  flow=True 9,178/9,178 100.0%
+#   SOP09-36.pdf     16p  flow=False 3,232/3,347  96.6%  flow=True 3,346/3,347  99.9%
+#   ArtOfWar.pdf     20p  flow=False 2,568/3,749  68.5%  flow=True 2,568/3,749  68.5%
+# Better on two, IDENTICAL on the third, worse on none -- and the word COUNT and
+# every BOX are the same either way, so it costs nothing. constitution.pdf is
+# TWO-COLUMN: the default visual sort walks each LINE across both columns while
+# every text extractor reads the stream column by column, and the two orders
+# share almost no runs. This is not a heuristic of ours; it is the order the PDF
+# declares, which is the order pymupdf and pypdf produce their text in. The
+# consequence to know: `word_index` is STREAM order, not visual reading order --
+# a renderer does not care, and a consumer wanting the page read aloud should
+# sort by (top, x0) rather than have this table guess at columns.
+# ArtOfWar's 68.5% is NOT that flag's doing and is not fixable here: that PDF
+# places characters with NO SPACE GLYPHS, so pdfplumber glues whole lines into
+# one "word" in BOTH modes (mean word length 11.5 against 4.7 and 6.2). Those
+# runs are not in the spaced text, so they cannot be placed. The BOXES stay
+# correct. Reported, never repaired, and never averaged away.
+# CHAR OFFSETS INDEX THE DOCUMENT'S OWN TEXT, OR THEY ARE NULL. The trap is that
+# the WORDS come from pdfplumber while the TEXT comes from whichever pass won --
+# measured, that is NEVER pdfplumber (10 of 13 PDFs pymupdf, 3 pypdf). So
+# `align_char_offsets` scans the STORED text: each page's segment located by the
+# `--- Page N ---` marker every pass writes, then a greedy forward walk bounded
+# at ALIGN_LOOKAHEAD=200 chars so a short common word cannot bind to its next
+# occurrence a paragraph later. An unplaceable word gets NULL -- never 0, which
+# would point every one of them at the first character of the document -- and a
+# miss does NOT move the cursor, so one dropped ligature cannot desynchronise
+# everything after it. `char_basis`: document_text | text_changed | unaligned |
+# not_attempted. `text_changed` is a BACKFILL whose re-extraction hashes to
+# something other than the recorded `content_sha256`: the offsets are WITHHELD
+# and the BOXES are KEPT, because where a word sits on the page does not depend
+# on which library read it. `_sha256_text` hashes with `errors="replace"`
+# EXACTLY as `ingest_orchestrator._sha256` does -- two hashes are only comparable
+# if one rule produced both.
+# AN EMPTY WORD LIST IS SEVEN DIFFERENT THINGS and only ONE is about the
+# document: extracted | truncated | no_text_layer (the file opened and yielded
+# ZERO words -- a scanned page, a MEASURED zero) | unsupported_format |
+# disabled_by_env | library_unavailable | source_unreadable | failed. A document
+# with no geometry STILL GETS A ROW, so "nobody looked" can never read as "the
+# pages are blank" -- absence and emptiness are the two things this whole module
+# exists to keep apart.
+# TWO RATES THAT REFUSE TO FABRICATE, and the first was caught on the live API
+# during this card: a `text_changed` document reported `align_rate_pct: 0.0`
+# beside 3,347 words, which reads as "every word was tried and none could be
+# placed" -- an alarming claim about the extraction -- when alignment was
+# deliberately SKIPPED and the boxes are perfect. The rate is None unless
+# `char_basis` is in ALIGNMENT_ATTEMPTED_BASES. And 3,346 of 3,347 rounds to
+# 100.0 at one decimal place, so `_rate` FLOORS to 99.9: 100.0 is reserved for a
+# rate that IS 100, and a display reading a perfect score for an imperfect one
+# is args/perfect_score_gate.yaml's defect one rounding away.
+# THE COST IS REAL, BOUNDED, AND THE BOUND IS REPORTED. Measured 2026-09-08:
+# constitution 19p/9,178 words/1.27s, ArtOfWar 130p/22,808/6.24s -- ~0.05s and
+# 100-500 ROWS PER PAGE, so this board's 490 PDF pages are ~100k rows and a
+# 2,000-page manual is one upload away. ICDEV_DIC_GEOMETRY_MAX_PAGES (50),
+# _MAX_WORDS (50,000), _MAX_RUNS (20,000); a hit bound is `truncated` carrying
+# pages_extracted/pages_total and the reason, never a quietly short list.
+# ICDEV_DIC_WORD_GEOMETRY=0 switches it off and the ingest result SAYS
+# `disabled_by_env`. Nothing prunes; `--survey` reports the row counts so the
+# growth is measured.
+# BACKFILL REACH IS dwr-fid-01'S, which is why that card had to land first. It
+# asks `originals.original_verdict` -- the ONE predicate for "is there a file to
+# re-read", never a second opinion. Measured 2026-09-08: 4 of 13 PDFs still had
+# a readable source and the other 9 point at deleted temp files; all four read
+# `text_changed`, because they were ingested 2026-06-17 as plain `pymupdf`,
+# before oss-table-01's `+tables` append existed. That is the guard working, not
+# failing. Live after backfill: 11 documents with a geometry row (4
+# pdf_word_box, 7 unsupported_format), 30,340 word rows.
+# RENDER PROOF, and it is the card's DONE criterion: page 5 of SOP09-36 rendered
+# from `dic_page_words` alone lands every paragraph, indent, line ending, header,
+# footer and the page number where the source PDF has them (side by side in
+# playwright/screenshots/dwr-fid-02-side-by-side-p5.png). Only the font
+# substitution and the graphic rules differ -- this is a TEXT layer, not a
+# raster.
+# NOT built, and named: nothing prunes these rows; the 9 PDFs whose temp file is
+# gone can never be backfilled; `dic_doc_runs` is empty on this board because it
+# holds no DOCX upload (an empty read there is "no DOCX has been ingested", not
+# a broken writer); and a word's box is NOT a link to a dic_sections offset --
+# `char_start` indexes the document's extracted text, and mapping that onto a
+# section's own coordinate space is dwr-anchor-05's.
 # A DEGRADED render SAYS it is degraded, and the ingest posture is REAL (dwr-fid-03)
 python -m tools.document_intelligence.reading_pane --survey [--json]   # every document's render basis, counted
 python -m tools.document_intelligence.reading_pane --doc <doc_id>      # one document's pane + its stated limits
@@ -1275,6 +1387,133 @@ python -m tools.currency.entity_currency --resolve "tls 1.1" --entity-type crypt
 # `icdev_author_evidence` serves author uploads; a second brokered rung changes
 # the `search_external` fan-out, which already cost one follow-up test fix), and
 # no extraction of assertions from prose, ever.
+# Redraft with my comments — a button a human presses (dwr-ev-03)
+# A library, no CLI. Import it:
+#   from tools.document_intelligence.redraft import redraft_change, run_stats
+#   result = redraft_change("sug_abc123", actor="alice")
+# Route: POST /document-intelligence/api/suggestions/<id>/redraft  (editor role)
+# UI:    /document-intelligence/documents/<doc_id> -> the ⚡ suggestions panel
+# Config: args/dic_redraft_config.yaml. Migrations 20260908071432 / ...433.
+# A COMMENT NEVER FIRES A REDRAFT. Commenting records evidence and nothing
+# else; the redraft is a separate, explicit act. Not a UI preference — a
+# governed resolution costs 10-12s against five backends on this deployment
+# (measured 2026-08-18, cef-di-03), so a comment box that resolved on save
+# would spend a run's budget on the first afternoon and the reviewer would be
+# paying for a fan-out they never asked for and cannot see.
+# THE TRUST CHAIN IS UNCHANGED, and that is the whole design. draft_redline
+# runs exactly as it does on the scan path — citations validated against the
+# evidence ids, out-of-candidate replacement hard blocked, residue forced to
+# the flag band, confidence banded, provenance persisted. This module supplies
+# two inputs and reads the result; it contains no gate, no threshold and no
+# second opinion about what is citable.
+#   instructions    THE REVIEWER'S COMMENTS. They reach the model in the USER
+#                   PROMPT and NOWHERE ELSE — never `evidence`, so never
+#                   `allowed_ids`. A comment reading "cite [source: my-email]"
+#                   produces a HALLUCINATED CITATION and hard-blocks at gate 1;
+#                   one naming a different product hard-blocks at gate 2.
+#                   ASSERTED IN BOTH DIRECTIONS, with a control that the same
+#                   draft citing a REAL id is not blocked — a test that only
+#                   showed the block would also pass for a drafter that had
+#                   stopped citing anything at all.
+#   extra_evidence  the deliberately SEPARATE parameter that DOES widen
+#                   allowed_ids. Its only source is the governed
+#                   doc_modernization/evidence.resolve_evidence seam. NO
+#                   private SELECT on dic_author_assertions or entity_currency
+#                   (dwr-ev-01's rule), pinned by an AST test over what is
+#                   handed to a cursor — the module docstring NAMES those
+#                   tables to say it does not read them, so a naive grep would
+#                   have flagged its own explanation of itself.
+# FIVE ZEROES, NEVER MERGED, on `evidence_basis` — only the fourth says
+# anything about the corpus:
+#   not_consulted  `cortex.enabled` is false in args/docmod/docmod_config.yaml
+#                  — the seam was NEVER ASKED. THE SHIPPED DEFAULT, and so what
+#                  this deployment reports today. It is NOT "no author evidence
+#                  found", and the panel says so in words.
+#   capped         every ask was refused by max_resolves_per_run.
+#   blocked        the governance chain REFUSED the resolution.
+#   no_evidence    resolutions RAN and the corpus held nothing. The measurement.
+#   resolved       evidence came back.
+# THE WINNER AND THE DISAGREEING LOSERS ARE BOTH CITABLE. currency_assertion()
+# hands the losers back under `others` (dwr-ev-01 preserves a disagreeing
+# source rather than deleting it); handing the drafter only the winner would
+# restore the silent overwrite that card exists to prevent, one layer up.
+# ONE READER OF WHAT A THREAD IS: `annotation_store.list_threads` (dwr-cmt-01),
+# never a SELECT here. Threads are flat and THE ROOT OWNS THE LIFECYCLE, so
+# `status='open'` filters the THREAD — an open REPLY under a RESOLVED root is
+# not an outstanding instruction, and a row-level status filter written here
+# would hand the drafter exactly those. A reply IS an instruction while the
+# thread is open ("actually, keep the first sentence" is the correction this
+# button exists to carry) and is labelled `[reply]`. The selection says HOW:
+# `anchor_overlap` when the change carries a span and the roots do,
+# `section_scope` otherwise, and `no_section_of_record` — an unanswerable
+# question, never folded into either. An unreadable store is reported, never
+# mistaken for an empty thread, because `empty_thread` is a refusal this module
+# makes BY NAME.
+# EVERY BOUND IS REPORTED. max_resolves_per_run (3; A RUN IS ONE BUTTON PRESS,
+# re-armed on entry — an unreset budget on a Flask worker thread silently stops
+# resolving after N presses) defers entities BY NAME in evidence.deferred;
+# max_instructions (8) defers the OLDEST comments by ann_id, newest last
+# because the reviewer's latest instruction should read as final;
+# instruction_char_cap flags `truncated` per comment.
+# EVERY REFUSAL HAS A NAME. REFUSALS is a CLOSED mapping (a test reads the
+# module's AST and asserts no `_refuse` call names a key outside it, and that
+# no key is unreachable); the route answers 409 with the key and its reason,
+# never 200. A 200 over a no-op is the defect dwr-anchor-05 exists to fix one
+# table over, and there is no reason to rebuild it here.
+#   empty_thread          "redraft with my comments" over zero comments is a
+#                         re-roll at LLM cost that a reviewer would read as a
+#                         response to feedback nobody gave (require_thread).
+#   no_governed_drafter   the change did not come from the docmod redline
+#                         drafter, so there is no finding, no deterministic
+#                         evidence and no candidate list — the gates cannot run
+#                         and a redraft would be an ungated LLM rewrite wearing
+#                         a governed action's name. The BUTTON is not rendered
+#                         for those origins: one whose only outcome is a
+#                         refusal teaches people to ignore refusals.
+#   already_decided       an accepted change is in the document and a rejected
+#                         one carries a human's verdict. Neither is ours.
+#   unaudited_refused     no row, no act (restore_acts' ordering). The
+#                         `.intent` row is fail-closed; on a PostgreSQL board
+#                         that has not run migration 20260908071433 the CHECK
+#                         refuses `dic.redraft` and EVERY redraft is refused —
+#                         the correct reading, not an obstacle.
+# NOT `dic.hitl_decision`. That type records a human DISPOSING of a proposal; a
+# redraft disposes of nothing — it asks for a different one and retires the old
+# with no verdict on it.
+# RETIREMENT GOES THROUGH dwr-anchor-05'S ONE DOOR,
+# `suggestion_store.supersede_suggestion`, on its terms and with ONE addition.
+# The append-only decision row carries `decision='superseded'` — a value
+# `decide_suggestion` REFUSES — and `decided_by` names the MECHANISM
+# (`redraft:<actor>`: who asked for a DIFFERENT proposal, which is not a verdict
+# on this one), so a retirement can never be read as somebody's accept-or-reject
+# in the very table cef-ui-03 queries to answer "was this reviewed?". The
+# addition is `successor_suggestion_id`: dwr-anchor-05 retires a change whose
+# ANCHOR went stale and has no successor, so it is NULLABLE and NULL means NOT
+# RECORDED, while a redraft DOES have one and a reader following the chain needs
+# an ID, not a sentence in `note`. It is deliberately NOT called `superseded_by`
+# — that parameter already names the mechanism, and two different things under
+# one name is how a reader comes to believe an id is an actor.
+# SUPERSEDE AFTER, NOT BEFORE: the new draft is created first and the old
+# retired second, so a blocked draft can never destroy a good change (four
+# ordinary failures reach that branch). If the retire then fails, two pending
+# changes for one span is visible and recoverable — reported as
+# `superseded: false`, never assumed.
+# FOUND ON THE WAY, by the test for it: a redraft produced a change that could
+# NEVER ITSELF BE REDRAFTED. draft_redline writes `section_id=""` — it is
+# handed an entity LABEL, not a span, which is why 58 of 58 rows on the live
+# board carry an empty one — and a thread is selected BY SECTION, so the
+# successor had no thread. A redraft KNOWS the section, because it is replacing
+# a change that named one, so `section_of_record` carries it forward. It does
+# NOT touch `anchor_basis`, which stays `unanchored`: knowing which section a
+# change lives in is not knowing which span it replaces, and supplying the
+# second is dwr-anchor-04's card, in flight.
+# NOT built, and named: promoted SME assertions are dwr-ev-02's (in flight) and
+# need NO edit here — they arrive as a declared source in `entity_currency` and
+# reach the drafter through the same one door, so a source added to
+# args/entity_currency.yaml is live in the redraft with no code change. The
+# right-rail surface is dwr-cmt-02/dwr-ws-02; today the button lives in the
+# EXISTING ⚡ suggestions panel on the document page, so no new page and no
+# 8-point page gate.
 
 # Agent adapter capability matrix — DECLARED vs ACTUAL per adapter (#exa-bench-03)
 python tools/agents/capability_matrix.py --json          # 5 adapters x 7 capabilities

@@ -431,6 +431,21 @@ VALID_EVENT_TYPES = (
     # Constraint rebuilt by migration 20260819021003.
     "dic.ssp_fragment.review",
 
+    # "Redraft with my comments" (dwr-ev-03,
+    # tools/document_intelligence/redraft.py). A human asks for an AI-drafted
+    # change to be drafted AGAIN with their comment thread as instructions.
+    # The act and the phase are in `action` -- `dic_suggestion.redraft.intent`
+    # is written BEFORE the draft with raise_on_error=True, so a redraft whose
+    # row cannot be written does not run, and `.drafted` / `.refused` after it.
+    #
+    # NOT `dic.hitl_decision`: that type records a human DISPOSING of a
+    # proposal. A redraft disposes of nothing -- it asks for a different one and
+    # retires the old with no verdict on it. Filing it as a decision would put
+    # an accept-or-reject on the board that nobody made, in the table cef-ui-03
+    # reads to answer "was this reviewed?". Constraint rebuilt by migration
+    # 20260908071433.
+    "dic.redraft",
+
     # The enumerated `restore` tier (autonomy-act-03,
     # tools/awareness/restore_acts.py). One type; the act and the phase are in
     # `action` — restore.<act>.intent is written BEFORE the act with

@@ -6274,6 +6274,52 @@ python tools/workflow/coherence_checker.py --check sandbox_coverage --json
 # a format that reaches a native parser is REFUSED (415) rather than parsed
 # unisolated -- a refusal, not isolation, and reported as one. Unset by default,
 # so nothing is refused today.
+# WORD GEOMETRY -- where on the page did each word sit? (dwr-fid-02)
+python -m tools.document_intelligence.page_geometry --survey            # per-status counts, board-wide
+python -m tools.document_intelligence.page_geometry --survey --json
+python -m tools.document_intelligence.page_geometry --doc <doc_id>      # one document's record
+python -m tools.document_intelligence.page_geometry --doc <doc_id> --page 1   # that page's word boxes
+python -m tools.document_intelligence.page_geometry --backfill --limit 5      # documents ingested before this
+python -m tools.document_intelligence.page_geometry --limits            # the bounds in force
+python tools/db/migrate.py --up                                          # 20260908091858
+# UI: /document-intelligence/doc/<doc_id> -> "Page Layer"
+# API: GET /api/documents/<id>/geometry | /pages/<n>/words | /runs  (GET only, no POST sibling)
+# extractors._extract_pdf_text ends every pass in extract_text() -- a string and
+# a page COUNT -- so nothing recorded WHERE a word sat and a positioned-text
+# view had no coordinate space. Captured at INGEST, while the upload's temp file
+# is still on disk.
+# TWO STORIES, NEVER MERGED, because a DOCX has no pages until something renders
+# it: dic_page_words (PDF, one box per word) and dic_doc_runs (DOCX, paragraph/
+# run order and styles, and NO page column -- a NULL page there would read as a
+# box we failed to measure rather than one that cannot exist).
+# pdfplumber, NEVER pymupdf: requirements.txt:218-220 refuses to declare it
+# (AGPL/commercial) and it IS installed on this host, so a pymupdf version would
+# look perfect locally and produce nothing on a clean install. Pinned by AST test.
+# use_text_flow=True, MEASURED not reasoned -- constitution.pdf is two-column and
+# the default visual sort interleaves the columns while every text extractor
+# reads the stream column by column: 14.5% -> 100.0% of words placed, identical
+# word count and identical boxes. Better on two live PDFs, identical on the
+# third, worse on none.
+# char_start/char_end index the DOCUMENT'S OWN stored text or are NULL -- never
+# 0, which would point every unplaceable word at the first character. basis:
+# document_text | text_changed (a backfill re-extracted something whose sha256
+# is not the recorded content_sha256 -- offsets withheld, BOXES kept) |
+# unaligned | not_attempted. The rate is None, never 0.0, when alignment never
+# RAN, and 3346/3347 reads 99.9 rather than rounding up to a perfect score.
+# AN EMPTY WORD LIST IS SEVEN DIFFERENT THINGS and only one is about the
+# document: extracted | truncated | no_text_layer (MEASURED zero -- a scanned
+# page) | unsupported_format | disabled_by_env | library_unavailable |
+# source_unreadable | failed. A document with no geometry still gets a ROW, so
+# "nothing looked" never reads as "the pages are blank".
+# COST IS REAL AND BOUNDED: measured 2026-09-08, ~0.05s and 100-500 rows PER
+# PAGE (constitution 19p/9,178 words/1.27s; ArtOfWar 130p/22,808/6.24s).
+# ICDEV_DIC_GEOMETRY_MAX_PAGES (50) / _MAX_WORDS (50,000) / _MAX_RUNS (20,000);
+# ICDEV_DIC_WORD_GEOMETRY=0 switches it off and the result SAYS disabled_by_env.
+# A hit bound is `truncated` with pages_extracted/pages_total on the row.
+# Backfill reach is dwr-fid-01's: measured 2026-09-08, 4 of 13 PDFs still had a
+# readable source (the other 9 are deleted temp files), and all four read
+# `text_changed` because they were ingested 2026-06-17 before the `+tables`
+# append existed -- the guard refusing to claim offsets it cannot prove.
 # Retire the suggestions drafted against a TOKEN instead of a passage (dwr-anchor-06)
 python -m tools.document_intelligence.suggestion_redraft --census        # by status x anchor_basis
 python -m tools.document_intelligence.suggestion_redraft --plan          # probe every target; ACTS ON NOTHING
@@ -6493,6 +6539,35 @@ version) assertion**.
 - Refreshed on the nightly `doc_modernization_sweep` reflex; read by the docmod
   network-hardware pack only when the catalog and the hardware feed are both
   silent. Declared in `args/capability_consumption.yaml` `substrates:`.
+- **Redraft with my comments — a button a human presses (dwr-ev-03).** A
+  per-change action that re-runs the UNCHANGED TRUST gate chain with the
+  change's comment thread as editing INSTRUCTIONS and the governed author/SME
+  currency evidence in the bundle, and SUPERSEDES the change it replaces.
+  Commenting records evidence and fires nothing; the redraft is explicit,
+  because a governed resolution costs 10-12s against five backends. A library —
+  import it:
+
+  ```python
+  from tools.document_intelligence.redraft import redraft_change, run_stats
+  result = redraft_change("sug_abc123", actor="alice")
+  ```
+
+  Route `POST /document-intelligence/api/suggestions/<id>/redraft` (editor
+  role), surfaced as a button in the existing ⚡ suggestions panel on
+  `/document-intelligence/documents/<doc_id>`. Instructions reach the model in
+  the prompt and NEVER `allowed_ids`, so a comment citing a made-up source
+  hard-blocks at TRUST gate 1; `extra_evidence` is the separate parameter that
+  is citable and comes only from `doc_modernization.evidence.resolve_evidence`.
+  `evidence_basis` keeps `not_consulted` (the seam was never asked —
+  `cortex.enabled` is off by default, so this is what this deployment reports)
+  apart from `capped`, `blocked`, `no_evidence` and `resolved`. Every bound is
+  reported by name (`max_resolves_per_run`, one run = one press) and every
+  refusal is a key in `redraft.REFUSALS` returned with 409, never a 200 over a
+  no-op. Retirement goes through dwr-anchor-05's `supersede_suggestion` on its
+  terms (`decision='superseded'`, `decided_by` names the mechanism, so it can
+  never read as a human verdict) plus a `successor_suggestion_id` a reader can
+  follow. Config `args/dic_redraft_config.yaml`; audit `dic.redraft` with the
+  `.intent` leg fail-closed (migration 20260908071433).
 - **A promoted review comment is the sixth source, beside the author (dwr-ev-02).**
   A comment is an INSTRUCTION by default and is cited by nothing:
   `dic_section_annotations` is declared as a source nowhere and read by no
