@@ -128,17 +128,25 @@ def _seed_proposal(state: str = "redline_drafted") -> tuple[str, str, str, str]:
 
     Returns (finding_id, suggestion_id, doc_id, section_id).
     """
-    from tools.document_intelligence.suggestion_store import create_suggestion
+    from tools.document_intelligence.suggestion_store import (
+        create_suggestion, whole_section_anchor,
+    )
 
     doc_id = f"doc-{uuid.uuid4().hex[:8]}"
-    section_id = _seed_section(doc_id)
+    content = "All services shall use TLS 1.1."
+    section_id = _seed_section(doc_id, content)
+    # dwr-anchor-05: the apply door verifies the anchor against the live section
+    # and refuses an unanchored proposal, so the fixture carries the anchor a
+    # real writer records — exact, over the whole section it replaces.
     suggestion_id = create_suggestion(
         doc_id=doc_id, section_id=section_id, collection_id="col-hitl",
         canvas_source="doc_modernization",
         suggested_content="All services shall use TLS 1.2 or higher "
                           "[source: rule:crypto-tls-02].",
-        current_content="All services shall use TLS 1.1.",
+        current_content=content,
         rationale="[docmod] TLS 1.1 is deprecated (RFC 8996).",
+        origin_kind="docmod_redline",
+        **whole_section_anchor(section_id, content),
     )
     finding_id = f"fnd-{uuid.uuid4().hex[:12]}"
     conn = _conn()

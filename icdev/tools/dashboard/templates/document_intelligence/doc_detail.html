@@ -536,7 +536,14 @@ function decideSuggestion(suggestionId, decision) {
   fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({decided_by:'user'})})
     .then(function(r) { return r.json(); })
     .then(function(d) {
-      if (d.error) { alert('Error: ' + d.error); return; }
+      if (d.error) {
+        // dwr-anchor-05: a refusal names its reason (section_not_found /
+        // unanchored / anchor_stale) and the proposal was NOT applied. A stale
+        // one is superseded and has left the pending queue, so refresh it.
+        alert('Not applied (' + d.error + ')' + (d.message ? ': ' + d.message : ''));
+        loadSuggestionsForDoc();
+        return;
+      }
       loadSuggestionsForDoc();
       if (decision === 'accepted') window.location.reload();
     }).catch(function(e) { alert('Decision failed: ' + e.message); });

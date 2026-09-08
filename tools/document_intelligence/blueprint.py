@@ -4508,29 +4508,165 @@ def api_suggestion_detail(suggestion_id: str):
     return jsonify(s)
 
 
+def _read_section_content(conn, section_id: str) -> str | None:
+    """The live content of ONE section, or None when no such row exists.
+
+    None and "" are different answers: an empty section can carry an exact
+    insertion-point anchor (0:0); a missing section can carry nothing.
+    """
+    if not section_id:
+        return None
+    row = conn.execute(
+        "SELECT content FROM dic_sections WHERE section_id = %s LIMIT 1", (section_id,)
+    ).fetchone()
+    if row is None:
+        return None
+    return (row[0] if isinstance(row, (list, tuple)) else row["content"]) or ""
+
+
+def _anchor_refusal(suggestion_id: str, section_id: str, verify: dict,
+                    *, suggestion_status: str = "pending") -> tuple:
+    """The 409 an accept returns when the proposal CANNOT be applied (dwr-anchor-05).
+
+    One shape for every refusal so a caller can read ``error`` and
+    ``applied: False`` without knowing which rung refused. ``error`` is one of
+    ``section_not_found`` / ``unanchored`` / ``anchor_stale``; never
+    ``{"status": "accepted"}``.
+    """
+    reason = verify.get("reason")
+    error = {"section_missing": "section_not_found",
+             "unanchored": "unanchored",
+             "no_offsets": "anchor_stale",
+             "anchor_stale": "anchor_stale"}.get(reason, "anchor_stale")
+    messages = {
+        "section_not_found": ("The suggestion names no section that exists, so there "
+                              "is nothing to apply it to. It was NOT applied."),
+        "unanchored": ("The suggestion carries no verified span in its section "
+                       "(anchor_basis is not exact/relocated), so it cannot be "
+                       "applied without guessing where. It was NOT applied."),
+        "anchor_stale": ("The section has changed since this suggestion was drafted: "
+                         "the anchored span no longer holds the text the proposal "
+                         "replaces. The suggestion is superseded and was NOT applied."),
+    }
+    return jsonify({
+        "error": error,
+        "message": messages[error],
+        "suggestion_id": suggestion_id,
+        "section_id": section_id or None,
+        "suggestion_status": suggestion_status,
+        "anchor": {
+            "basis": verify.get("anchor_basis"),
+            "start": verify.get("anchor_start"),
+            "end": verify.get("anchor_end"),
+            "expected_text": verify.get("anchor_text"),
+            "found_text": verify.get("found_text"),
+            "reason": reason,
+        },
+        "decision_recorded": False,
+        "applied": False,
+    }), 409
+
+
 @dic_bp.route("/api/suggestions/<suggestion_id>/accept", methods=["POST"])
 def api_suggestion_accept(suggestion_id: str):
-    """Accept a suggestion: apply suggested_content to the section + record history."""
+    """Accept a suggestion: verify its anchor against the LIVE section, splice
+    the anchored span, and record the decision, the audit row and the history.
+
+    Body (all optional): ``note``, ``reviewer``, ``applied_text``,
+    ``applied_by``. ``applied_text`` is edit-then-accept: the text the human
+    actually wants written, recorded BESIDE the AI draft (``suggested_content``
+    is never overwritten) with ``applied_by`` naming who rewrote it.
+
+    dwr-anchor-05 -- THE ANCHOR IS VERIFIED FIRST, AND THE SPAN IS SPLICED.
+    Measured on the live PG board 2026-09-07: 58 of 58 dic_suggestions carried
+    an empty section_id, and this route ran ``UPDATE dic_sections ... WHERE
+    section_id = ''`` -- ZERO rows -- committed, wrote the decision row and the
+    HITL audit row, and returned ``{"status": "accepted"}``. Accepting an AI
+    redline was a silent no-op that reported success, on the only writer of
+    ``dic_sections.content``.
+
+    Now, BEFORE any row is written:
+      * the target section must EXIST (``section_not_found`` -> 409);
+      * the suggestion must carry an appliable basis -- ``exact`` or
+        ``relocated``; ``unanchored`` is refused, never guessed at
+        (``unanchored`` -> 409);
+      * ``content[anchor_start:anchor_end] == anchor_text`` is RE-DERIVED
+        against the section as it is now -- the ``verify_claim_anchors``
+        discipline. Drift means the document moved on under the proposal:
+        the suggestion is SUPERSEDED (append-only decision row, mechanism
+        named, never a human), the document is untouched (``anchor_stale``
+        -> 409).
+    Only then is the decision recorded, audited, and the span SPLICED --
+    ``content[:start] + replacement + content[end:]`` -- never a whole-section
+    overwrite, which would have replaced a section body with one passage even
+    once the anchors worked. The write is CONFIRMED by re-reading the row: a
+    refusal is a 409 with ``applied: False``, and no path returns
+    ``{"status": "accepted"}`` over zero rows.
+    """
     from tools.document_intelligence.suggestion_store import (
-        get_suggestion, decide_suggestion,
+        get_suggestion, decide_suggestion, verify_anchor, supersede_suggestion,
+        record_application,
     )
     s = get_suggestion(suggestion_id)
     if s is None:
         return jsonify({"error": "suggestion not found"}), 404
 
-    cid = s.get("collection_id") or _collection_id_from_section(s.get("section_id", "")) or "default"
+    # The anchor's section of record outranks the legacy column when both are
+    # set; the legacy column is what a pre-anchor row has.
+    section_id = s.get("anchor_section_id") or s.get("section_id") or ""
+
+    cid = s.get("collection_id") or _collection_id_from_section(section_id) or "default"
     if not _require_role(cid, "editor"):
         return _forbid("editor")
 
     if s.get("status") != "pending":
         return jsonify({"error": "suggestion already decided", "status": s["status"]}), 409
 
-    section_id = s.get("section_id", "")
-    suggested_content = s.get("suggested_content", "")
+    suggested_content = s.get("suggested_content") or ""
     data = request.get_json(silent=True) or {}
     note = data.get("note", "")
     user = data.get("reviewer") or _current_user()
     tenant_id, classification = _security_context()
+
+    applied_text = data.get("applied_text")
+    if applied_text is not None and not isinstance(applied_text, str):
+        return jsonify({"error": "applied_text must be a string", "applied": False}), 400
+    applied_by = (data.get("applied_by") or user) if applied_text is not None else user
+    replacement = applied_text if applied_text is not None else suggested_content
+    applied_text_source = "human_edit" if applied_text is not None else "ai_draft"
+
+    # ── dwr-anchor-05: prove the proposal CAN be applied, before anything is
+    # written. A refusal here leaves the suggestion pending (or superseded, on
+    # drift) with no decision row and no audit row: nothing was decided.
+    conn = _conn()
+    try:
+        live_content = _read_section_content(conn, section_id)
+    except Exception as exc:
+        logger.warning("dic suggestion accept: section read failed for %s: %s",
+                       suggestion_id, exc)
+        live_content = None
+    finally:
+        conn.close()
+    verify = verify_anchor(s, live_content)
+    if not verify["ok"]:
+        status_after = "pending"
+        if verify["reason"] in ("anchor_stale", "no_offsets"):
+            try:
+                found = verify.get("found_text")
+                superseded = supersede_suggestion(
+                    suggestion_id, "anchor_stale",
+                    note=(f"section {section_id} [{verify.get('anchor_start')}:"
+                          f"{verify.get('anchor_end')}] now holds {found!r}, "
+                          f"expected {verify.get('anchor_text')!r}"),
+                    tenant_id=tenant_id, classification=classification,
+                )
+                if superseded:
+                    status_after = "superseded"
+            except Exception as exc:
+                logger.warning("dic suggestion accept: supersede failed for %s: %s",
+                               suggestion_id, exc)
+        return _anchor_refusal(suggestion_id, section_id, verify,
+                               suggestion_status=status_after)
 
     # cef-ui-03 — THE DECISION IS RECORDED BEFORE THE DOCUMENT IS TOUCHED.
     #
@@ -4568,7 +4704,13 @@ def api_suggestion_accept(suggestion_id: str):
             "dic_suggestion", suggestion_id, "accepted", user,
             {"suggestion_id": suggestion_id, "section_id": section_id,
              "doc_id": s.get("doc_id"), "canvas_source": s.get("canvas_source"),
-             "applied": True},
+             "applied": True,
+             # dwr-anchor-05: the span this decision authorises, and whether
+             # the AI draft or a human rewrite is what will be written.
+             "anchor": {"basis": verify["anchor_basis"], "start": verify["anchor_start"],
+                        "end": verify["anchor_end"]},
+             "applied_text_source": applied_text_source,
+             "applied_by": applied_by},
         )
     except Exception as exc:
         logger.warning("dic suggestion accept: audit write failed for %s: %s",
@@ -4582,35 +4724,65 @@ def api_suggestion_accept(suggestion_id: str):
             "applied": False,
         }), 500
 
-    # Apply content to the section (reuse section update logic)
+    # ── Apply: SPLICE the anchored span. The anchor is verified AGAIN on the
+    # connection that writes -- the pre-flight read proved the proposal was
+    # appliable a moment ago, not that nothing moved since -- and the write is
+    # confirmed by re-reading the row. From here on the decision and its audit
+    # row stand, so a failure is reported with both facts, never as "nothing
+    # happened".
+    def _decided_not_applied(error: str, message: str, http: int = 500):
+        return jsonify({"error": error, "message": message,
+                        "suggestion_id": suggestion_id, "section_id": section_id,
+                        "decision_recorded": True, "applied": False}), http
+
     conn = _conn()
     try:
-        before_row = conn.execute(
-            "SELECT content FROM dic_sections WHERE section_id = %s LIMIT 1", (section_id,)
-        ).fetchone()
-        before_content = (dict(before_row).get("content") or "") if before_row else ""
-
+        before_content = _read_section_content(conn, section_id)
+        recheck = verify_anchor(s, before_content)
+        if not recheck["ok"]:
+            return _decided_not_applied(
+                "anchor_stale_after_decision",
+                ("The section changed between the anchor check and the write "
+                 f"({recheck['reason']}); the decision is recorded but the "
+                 "proposal was NOT applied."), 409)
+        a_start, a_end = recheck["anchor_start"], recheck["anchor_end"]
+        new_content = before_content[:a_start] + replacement + before_content[a_end:]
+        origin = "ai_assisted" if applied_text_source == "human_edit" else "ai_generated"
         conn.execute(
-            "UPDATE dic_sections SET content = %s, status = %s, origin = %s, created_at = %s WHERE section_id = %s",
-            (suggested_content, "draft", "ai_generated", _now(), section_id),
+            "UPDATE dic_sections SET content = %s, status = %s, origin = %s, created_at = %s "
+            "WHERE section_id = %s",
+            (new_content, "draft", origin, _now(), section_id),
         )
         conn.commit()
+        after_content = _read_section_content(conn, section_id)
+        if after_content != new_content:
+            return _decided_not_applied(
+                "apply_unconfirmed",
+                "The section did not read back the spliced content after the write; "
+                "the decision is recorded but the application is NOT confirmed.")
     except Exception as exc:
         # The decision and its audit row already stand — say so, rather than
         # returning a bare error a reviewer would read as "nothing happened".
-        return jsonify({"error": str(exc), "suggestion_id": suggestion_id,
-                        "decision_recorded": True, "applied": False}), 500
+        return _decided_not_applied(str(exc), "The write failed after the decision was recorded.")
     finally:
         conn.close()
+
+    # dwr-anchor-05: record what was ACTUALLY written, beside the AI draft.
+    try:
+        application_recorded = bool(record_application(suggestion_id, replacement, applied_by))
+    except Exception as exc:
+        logger.warning("dic suggestion accept: application record failed for %s: %s",
+                       suggestion_id, exc)
+        application_recorded = False
 
     # Record edit history (best-effort)
     try:
         from tools.document_intelligence.history_recorder import record_edit
         record_edit(
             section_id=section_id,
-            editor=user,
+            editor=applied_by,
             content_before=before_content,
-            content_after=suggested_content,
+            content_after=new_content,
         )
     except Exception:
         pass
@@ -4620,7 +4792,12 @@ def api_suggestion_accept(suggestion_id: str):
         "status": "accepted",
         "suggestion_id": suggestion_id,
         "section_id": section_id,
-        "new_hash": compute_hash(suggested_content),
+        "applied": True,
+        "anchor": {"basis": recheck["anchor_basis"], "start": a_start, "end": a_end},
+        "applied_text_source": applied_text_source,
+        "applied_by": applied_by,
+        "application_recorded": application_recorded,
+        "new_hash": compute_hash(new_content),
     })
 
 
