@@ -4450,6 +4450,33 @@ class PRWatcher:
                 already = self._count_audit_actions(
                     task["id"], ("pr_watcher.escalate",), pr_url=pr_url)
                 if already:
+                    # ESCALATE ONCE, BUT NEVER GO SILENT.
+                    #
+                    # The first cut of this hold `continue`d here, and that was
+                    # wrong twice over. A task that had ever escalated AND still
+                    # had an unread line produced NO action row on any poll, so
+                    # the watcher heartbeat kept saying "ok" while the board sat
+                    # unexplained -- measured 2026-09-08, five PRs with zero
+                    # audit rows for 40 minutes while the poll ran every 52s.
+                    #
+                    # And it breaks the rule the protected-path hold states forty
+                    # lines below: `merge_stall` attributes a stall from a 24h
+                    # window of `reason` text, so a hold recorded only once ages
+                    # out of that window and the PR reads as an unexplained alarm.
+                    # Every hold on this path re-records itself every poll.
+                    report.actions.append(WatcherAction(
+                        task_id=task["id"], pr_url=pr_url,
+                        classification=classification.value,
+                        action="wait",
+                        reason=(
+                            f"undelivered hold: {delivery.detail}; already "
+                            "escalated, so no further resume is spent. Waiting "
+                            "for something to drain this task's queue."
+                        )[:500],
+                        resume_cycle=cycle,
+                        delivery=delivery.verdict,
+                        delivery_detail=delivery.detail,
+                    ))
                     continue
                 reason = (
                     f"resume undelivered after {cycle} attempt(s) — "
