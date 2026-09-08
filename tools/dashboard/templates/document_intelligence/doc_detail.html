@@ -115,6 +115,12 @@
   <h3 style="margin:0 0 12px;color:#9bb8d8;font-size:14px;">Sections
     {% if doc.template_type %}<span style="margin-left:8px;font-size:10px;background:#1a1a3a;color:#a78bfa;padding:2px 8px;border-radius:8px;">{{ doc.template_type | replace('_', ' ') }}</span>{% endif %}
   </h3>
+  {# dwr-fid-03: a document with an outline can still have lost its upload.
+     Stating that only on the degraded page would hide it on exactly the
+     documents that look complete. The degraded pane includes this band itself. #}
+  {% if reading_pane and reading_pane.basis == 'sections' %}
+  {% include "document_intelligence/_reading_limits.html" %}
+  {% endif %}
   {% for s in sections %}
   <div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:16px;margin-bottom:14px;" id="sec-{{ s.section_id }}" data-heading="{{ s.heading }}">
     <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px;">
@@ -314,7 +320,7 @@
     </div>
   </div>
   {% else %}
-  <p style="color:#5a7aa0;font-size:12px;">No sections yet. Generate a draft or instantiate a template.</p>
+  {% include "document_intelligence/_reading_pane.html" %}
   {% endfor %}
 </div><!-- /sections -->
 {% if doc.template_type %}

@@ -1,0 +1,39 @@
+{# dwr-fid-03 — the pane states its own limits.
+
+   One band, one row per stated limitation, each naming the fix. Rendered
+   wherever a document is shown, INCLUDING the full sections render: a document
+   whose upload was deleted has lost its fidelity whether or not it has an
+   outline, and saying so only on the degraded page would hide it on exactly
+   the documents that look complete.
+
+   Nothing here is a fixed sentence. `reading_pane.limits` is derived per
+   document by tools/document_intelligence/reading_pane.py; an empty list means
+   the page measured and found nothing to declare — and it renders nothing,
+   because a standing "no known limitations" banner is a claim, not an absence. #}
+{% if reading_pane and reading_pane.limits %}
+<div class="dic-reading-limits" data-basis="{{ reading_pane.basis }}"
+     style="background:#0b1726;border:1px solid #2a3f66;border-left:3px solid #fbbf24;border-radius:6px;padding:12px 14px;margin-bottom:14px;">
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+    <strong style="color:#fbbf24;font-size:12px;">
+      {% if reading_pane.basis == 'sections' %}What this document is missing{% else %}This is a degraded view — here is what it is missing{% endif %}
+    </strong>
+    <span style="font-size:10px;color:#5a7aa0;background:#0f1e33;padding:2px 7px;border-radius:8px;">render basis: {{ reading_pane.basis }}</span>
+    {% if reading_pane.text_source %}
+    <span style="font-size:10px;color:#5a7aa0;background:#0f1e33;padding:2px 7px;border-radius:8px;">text from: {{ reading_pane.text_source }}</span>
+    {% endif %}
+  </div>
+  {% for lim in reading_pane.limits %}
+  <div class="dic-reading-limit" data-code="{{ lim.code }}" data-severity="{{ lim.severity }}"
+       style="display:flex;gap:9px;align-items:flex-start;padding:6px 0;{% if not loop.last %}border-bottom:1px solid #14243c;{% endif %}">
+    <span style="flex:0 0 auto;font-size:10px;padding:2px 7px;border-radius:3px;line-height:1.5;
+      {% if lim.severity == 'finding' %}background:#2e0505;color:#f87171;{% elif lim.severity == 'warn' %}background:#2e1a05;color:#fbbf24;{% else %}background:#1e293b;color:#94a3b8;{% endif %}">
+      {{ lim.severity }}
+    </span>
+    <span style="min-width:0;">
+      <span style="color:#eaeaea;font-size:12px;">{{ lim.label }}</span>
+      <span style="display:block;color:#7a8cb0;font-size:11px;line-height:1.6;margin-top:2px;">{{ lim.detail }}</span>
+    </span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
