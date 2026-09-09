@@ -131,12 +131,14 @@ CREATE INDEX IF NOT EXISTS idx_dic_community_summaries_community ON dic_communit
 CREATE INDEX IF NOT EXISTS idx_dic_community_summaries_tenant ON dic_community_summaries(tenant_id);
 
 CREATE TABLE IF NOT EXISTS dic_presence_sessions (
-    session_id          TEXT        PRIMARY KEY,
+    session_key         TEXT        PRIMARY KEY,
     doc_id              TEXT        NOT NULL,
     user_id             TEXT        NOT NULL,
-    active_section_id   TEXT,
+    joined_at           TEXT        NOT NULL,
     last_seen           TEXT        NOT NULL,
-    tenant_id           TEXT        DEFAULT 'default',
+    expires_at          TEXT        NOT NULL,
+    active_section_id   TEXT,
+    tenant_id           TEXT,
     classification      TEXT        DEFAULT 'CUI'
 );
 CREATE INDEX IF NOT EXISTS idx_dic_presence_sessions_doc ON dic_presence_sessions(doc_id);
@@ -310,13 +312,15 @@ CREATE INDEX IF NOT EXISTS idx_dic_community_summaries_community ON dic_communit
 CREATE INDEX IF NOT EXISTS idx_dic_community_summaries_tenant ON dic_community_summaries(tenant_id);
 
 CREATE TABLE IF NOT EXISTS dic_presence_sessions (
-    session_id          TEXT    PRIMARY KEY,
-    doc_id              TEXT    NOT NULL,
-    user_id             TEXT    NOT NULL,
+    session_key         TEXT        PRIMARY KEY,
+    doc_id              TEXT        NOT NULL,
+    user_id             TEXT        NOT NULL,
+    joined_at           TEXT        NOT NULL,
+    last_seen           TEXT        NOT NULL,
+    expires_at          TEXT        NOT NULL,
     active_section_id   TEXT,
-    last_seen           TEXT    NOT NULL,
-    tenant_id           TEXT    DEFAULT 'default',
-    classification      TEXT    DEFAULT 'CUI'
+    tenant_id           TEXT,
+    classification      TEXT        DEFAULT 'CUI'
 );
 CREATE INDEX IF NOT EXISTS idx_dic_presence_sessions_doc ON dic_presence_sessions(doc_id);
 CREATE INDEX IF NOT EXISTS idx_dic_presence_sessions_last_seen ON dic_presence_sessions(last_seen);
