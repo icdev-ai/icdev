@@ -80,3 +80,13 @@ tests/test_exa_policy_05_saas_mcp_authz.py
 # psycopg2 because it needs DDL plus EXPLAIN on its own schema and must see the
 # RLS predicate as literal SQL it controls, that predicate being the subject.
 tests/pg_tier/test_cortex_rls_index_plan.py
+
+# dic-bridge-01. The local_database connector's POSTGRES path. Its 66 sibling
+# tests all run SQLite, so four behaviours had NO coverage: the RealDictCursor
+# row shape, the `%s` placeholder (SQLite's `?` binds nothing on psycopg2),
+# schema-qualified table names (SQLite has no schemas), and
+# `set_session(readonly=True)` -- the Postgres mirror of the `mode=ro` the
+# SQLite suite does prove. Listed here rather than relying on the ambient
+# backend because the connector opens its OWN connection from a DSN reference;
+# the file skips clean without ICDEV_PYTEST_PG and a live server.
+tests/pg_tier/test_local_database_connector_pg.py
