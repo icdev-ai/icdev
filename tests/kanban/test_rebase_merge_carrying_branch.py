@@ -278,7 +278,7 @@ def test_an_additive_conflict_is_resolved_and_the_merge_continued(repo):
     _git(["commit", "-m", "seed the manifest shard"], work)
     _git(["push", "origin", "main"], work)
 
-    shas = _superseded_branch(work)
+    _superseded_branch(work)
     # The branch appends its row ON TOP of the supersede, so the head stays a
     # merge commit's descendant and the merge path is still chosen.
     manifest.write_text(manifest.read_text(encoding="utf-8")
