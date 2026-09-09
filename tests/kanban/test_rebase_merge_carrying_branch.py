@@ -262,3 +262,47 @@ def test_the_merge_path_is_reachable_only_through_the_predicate():
     called = {n.func.id for n in ast.walk(fn)
               if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
     assert "branch_carries_merge" in called
+
+
+def test_an_additive_conflict_is_resolved_and_the_merge_continued(repo):
+    """`verb["cont"]` on the merge path -- `git merge --continue` -- is a real
+    branch and needs a real conflict to reach it. The additive auto-resolver and
+    the union rung run on BOTH paths, and this proves the merge path can be
+    resolved and completed rather than only aborted.
+    """
+    work = repo["work"]
+    manifest = work / "tools" / "manifest" / "kanban.md"
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    manifest.write_text("| tool | path | note |\n|---|---|---|\n", encoding="utf-8")
+    _git(["add", "-A"], work)
+    _git(["commit", "-m", "seed the manifest shard"], work)
+    _git(["push", "origin", "main"], work)
+
+    shas = _superseded_branch(work)
+    # The branch appends its row ON TOP of the supersede, so the head stays a
+    # merge commit's descendant and the merge path is still chosen.
+    manifest.write_text(manifest.read_text(encoding="utf-8")
+                        + "| branch tool | tools/b.py | the branch's row |\n",
+                        encoding="utf-8")
+    _git(["commit", "-am", "the branch appends a manifest row"], work)
+    _git(["push", "origin", BRANCH], work)
+
+    _git(["checkout", "main"], work)
+    manifest.write_text(manifest.read_text(encoding="utf-8").replace(
+        "| branch tool | tools/b.py | the branch's row |\n", "")
+        + "| main tool | tools/m.py | main's row |\n", encoding="utf-8")
+    _git(["commit", "-am", "main appends a manifest row"], work)
+    _git(["push", "origin", "main"], work)
+
+    verdict = rebase_recovery.rebase_and_push(
+        TASK, BRANCH, base="main", repo_root=str(work), union_rules=False)
+
+    assert verdict["strategy"] == "merge", verdict
+    assert verdict["pushed"] is True, verdict
+    _git(["fetch", "origin"], work)
+    head = _git(["rev-parse", "origin/" + BRANCH], work).stdout.strip()
+    landed = _git(["show", head + ":tools/manifest/kanban.md"], work).stdout
+    assert "the branch's row" in landed and "main's row" in landed, landed
+    assert "<<<<<<<" not in landed
+    # And the supersede still holds.
+    assert _git(["show", head + ":shared.txt"], work).stdout.strip() == "KEPT"
