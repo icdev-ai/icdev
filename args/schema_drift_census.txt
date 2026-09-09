@@ -1,0 +1,608 @@
+# CUI // SP-CTI
+# Schema-drift census — CREATE-TABLE sites that disagree with the schema of
+# record (tools/db/schema/pg_consolidated.sql).
+#
+# Written by tools/ci/schema_drift_census.py. Each line is a SITE identity
+# (path:line::table), not a count: a bare count can be held constant while the
+# set churns, which is exactly the regression this census prevents.
+#
+# THIS FILE ONLY SHRINKS. `--check` fails on any offender not named here, so a
+# NEW drift is a red build. Deleting a line is what fixing one looks like;
+# adding a line is a deliberate act that belongs in its own PR with a reason.
+#
+# What an entry means: that CREATE TABLE would produce a table the schema of
+# record's own writers cannot use — it omits a NOT NULL column with no default,
+# or declares a different primary key. `CREATE TABLE IF NOT EXISTS` never
+# ALTERS an existing table, so whichever definition runs first wins and the
+# loser's columns never exist. That is green on a machine whose table predates
+# the drift and red on a fresh database.
+#
+# To fix one: copy the canonical definition from pg_consolidated.sql, supply
+# every required column at the insert sites, then run `--write`.
+#
+# 584 site(s) at adoption.
+
+tests/_schema_compat.py::dic_documents  # omits NOT NULL collection_id, created_at
+tests/agent_runtime/test_skills_lifecycle.py::agent_improvement_artifacts  # omits NOT NULL artifact_id, improvement_text
+tests/compliance/test_ato_packager.py::cato_evidence  # omits NOT NULL control_id, evidence_source
+tests/compliance/test_ato_packager.py::poam_items  # omits NOT NULL source, weakness_description, weakness_id
+tests/compliance/test_ato_packager.py::sbom_records  # omits NOT NULL file_path, version
+tests/compliance/test_ato_packager.py::ssp_documents  # omits NOT NULL content
+tests/compliance/test_ato_packager.py::stig_findings  # omits NOT NULL rule_id, stig_id, title
+tests/compliance/test_compliance_surface_liveness.py::projects  # omits NOT NULL type
+tests/conftest.py::api_keys  # omits NOT NULL user_id
+tests/conftest.py::data_edges  # omits NOT NULL source_id, target_id
+tests/conftest.py::data_nodes  # omits NOT NULL node_id
+tests/conftest.py::dm_product_subscriptions  # omits NOT NULL subscriber
+tests/conftest.py::idr_uploads  # omits NOT NULL collection_id, created_at, upload_id
+tests/conftest.py::proposal_opportunities  # omits NOT NULL due_date, proposal_type
+tests/cortex/test_provenance_gate.py::source_citation_registry  # omits NOT NULL citation_type, id, source_hash, source_record_id
+tests/cortex/test_resolve_trust_loop.py::source_citation_registry  # omits NOT NULL citation_type, id, source_hash, source_record_id
+tests/db/test_export_ft_data.py::ad_positions  # omits NOT NULL avg_cost, portfolio_id, qty, ticker
+tests/db/test_export_ft_data.py::kanban_tasks  # omits NOT NULL title
+tests/db/test_export_ft_data.py::kg_nodes  # omits NOT NULL entity_type, graph_id, label
+tests/db/test_export_ft_data.py::kg_nodes#1  # omits NOT NULL entity_type, graph_id, label
+tests/db/test_export_ft_data.py::trading_daemon_audit  # omits NOT NULL created_at, event_type
+tests/db/test_mvs_audit_03_p1_gaps.py::dic_documents  # omits NOT NULL collection_id, created_at
+tests/db/test_regen_pg_snapshot.py::dd_field_mappings  # omits NOT NULL source_field, target_field
+tests/db/test_regen_pg_snapshot.py::fedramp_controls  # omits NOT NULL control_id, package_id
+tests/db/test_regen_pg_snapshot.py::rag_queries  # omits NOT NULL query_text
+tests/db/test_schema_ownership.py::ad_positions  # omits NOT NULL avg_cost, portfolio_id, qty, ticker
+tests/db/test_schema_ownership.py::kanban_tasks  # omits NOT NULL title
+tests/docmod/test_claim_lifecycle.py::dic_documents  # omits NOT NULL collection_id
+tests/docmod/test_collab_poll.py::dic_team_access  # omits NOT NULL access_id
+tests/docmod/test_hitl_decision_wiring.py::dic_team_access  # omits NOT NULL access_id
+tests/docmod/test_mcp_tools.py::dic_documents  # omits NOT NULL collection_id
+tests/docmod/test_mcp_tools.py::dic_versions  # omits NOT NULL doc_id
+tests/docmod/test_modernization_ui.py::audit_trail  # omits NOT NULL event_type, id
+tests/docmod/test_modernization_ui.py::dic_documents  # omits NOT NULL collection_id
+tests/docmod/test_pg_fixes_and_flow.py::rag_chunks  # omits NOT NULL source_type
+tests/docmod/test_redline_passage_anchor.py::rag_chunks  # omits NOT NULL content_hash, source_type
+tests/docmod/test_suggestion_accept_anchor.py::dic_team_access  # omits NOT NULL access_id
+tests/document_intelligence/test_original_retention.py::dic_chunk_links  # omits NOT NULL chunk_index, created_at, rag_chunk_id
+tests/document_intelligence/test_reading_pane_degraded.py::dic_chunk_links  # omits NOT NULL created_at
+tests/document_intelligence/test_reading_pane_degraded.py::dic_chunk_links#1  # omits NOT NULL created_at, version_id
+tests/document_intelligence/test_reading_pane_degraded.py::dic_documents#1  # omits NOT NULL collection_id, created_at
+tests/document_intelligence/test_reading_pane_degraded.py::dic_documents#2  # omits NOT NULL collection_id, created_at
+tests/document_intelligence/test_reading_pane_degraded.py::dic_sections  # omits NOT NULL created_at
+tests/document_intelligence/test_reading_pane_degraded.py::dic_sections#1  # omits NOT NULL created_at, heading, version_id
+tests/document_intelligence/test_reading_pane_degraded.py::dic_sections#2  # omits NOT NULL created_at, heading, version_id
+tests/document_intelligence/test_reading_pane_degraded.py::rag_chunks  # omits NOT NULL content_hash
+tests/document_intelligence/test_reading_pane_degraded.py::rag_chunks#1  # omits NOT NULL content_hash
+tests/fabric/test_posture_rollup.py::cato_evidence  # omits NOT NULL control_id, evidence_source
+tests/fabric/test_posture_rollup.py::projects  # omits NOT NULL directory_path, type
+tests/fabric/test_posture_rollup.py::projects#1  # omits NOT NULL directory_path, type
+tests/foundry/test_blueprint.py::kanban_tasks  # omits NOT NULL title
+tests/govcon/test_rmf_rfp_one_matrix.py::proposal_sections  # omits NOT NULL volume_id
+tests/govcon/test_rmf_rfp_one_matrix.py::proposal_volumes  # omits NOT NULL volume_number
+tests/kanban/test_cross_agency_transfer_logger.py::cross_agency_transfers  # omits NOT NULL id, source_agency
+tests/kanban/test_dep_supersede_consumers.py::oracle_predictions  # omits NOT NULL created_at, id, lens_id, lens_name
+tests/kanban/test_des_audit_logger.py::des_execution_events  # omits NOT NULL id
+tests/kanban/test_worktree_husk_sweep.py::kanban_tasks  # omits NOT NULL title
+tests/provenance/test_asset_token_provenance_gate.py::source_citation_registry  # omits NOT NULL citation_type, id, source_hash, source_record_id
+tests/test_aca_catalog_honesty.py::fa_mission_steps  # omits NOT NULL step_num, title
+tests/test_aca_catalog_honesty.py::fa_missions  # omits NOT NULL title
+tests/test_aca_catalog_self_correcting.py::fa_mission_steps  # omits NOT NULL step_num, title
+tests/test_aca_catalog_self_correcting.py::fa_mission_steps#1  # omits NOT NULL step_num, title
+tests/test_aca_catalog_self_correcting.py::fa_mission_steps#2  # omits NOT NULL step_num, title
+tests/test_aca_grading_integrity.py::fa_user_achievements  # omits NOT NULL achievement_id
+tests/test_aca_grading_integrity.py::fa_user_skills  # omits NOT NULL skill_id
+tests/test_aca_hint_accounting.py::fa_users  # omits NOT NULL display_name
+tests/test_aca_rank_display.py::fa_users  # omits NOT NULL display_name
+tests/test_aca_rank_recompute.py::fa_users  # omits NOT NULL display_name
+tests/test_aca_rank_xp_split.py::fa_users  # omits NOT NULL display_name
+tests/test_aca_xp_ledger.py::fa_daily_logins  # omits NOT NULL login_date
+tests/test_aca_xp_ledger.py::fa_mission_steps  # omits NOT NULL mission_id, step_num, title
+tests/test_aca_xp_ledger.py::fa_users  # omits NOT NULL display_name
+tests/test_aca_xp_ledger.py::fa_users#1  # omits NOT NULL display_name, username
+tests/test_academy_assessment_model.py::fa_certificates  # omits NOT NULL cert_label, cert_tier, token
+tests/test_academy_assessment_model.py::fa_users  # omits NOT NULL display_name
+tests/test_ace_chat_trigger.py::chat_contexts  # omits NOT NULL user_id
+tests/test_agent_execution_audit_events.py::audit_trail  # omits NOT NULL action, id
+tests/test_agent_surface_dispatch.py::runtime_invocations  # omits NOT NULL id, started_at
+tests/test_agent_trust_scorer.py::agent_vetoes  # omits NOT NULL authority_agent_id, reason, topic
+tests/test_agov_events.py::ai_telemetry  # omits NOT NULL prompt_hash
+tests/test_ahx_harness_truth.py::kanban_tasks  # omits NOT NULL title
+tests/test_ai_accountability_audit.py::ai_caio_registry  # omits NOT NULL official_name
+tests/test_ai_accountability_audit.py::ai_oversight_plans  # omits NOT NULL plan_data
+tests/test_ai_bom_generator.py::ai_bom  # omits NOT NULL model_id
+tests/test_ai_governance_chat_extension.py::ai_caio_registry  # omits NOT NULL official_name
+tests/test_ai_governance_chat_extension.py::ai_caio_registry#1  # omits NOT NULL official_name
+tests/test_ai_governance_chat_extension.py::ai_oversight_plans  # omits NOT NULL plan_data
+tests/test_ai_governance_chat_extension.py::ai_oversight_plans#1  # omits NOT NULL plan_data
+tests/test_ai_governance_intake.py::ai_caio_registry  # omits NOT NULL official_name
+tests/test_ai_governance_intake.py::ai_oversight_plans  # omits NOT NULL plan_data
+tests/test_ai_governance_intake.py::ai_use_case_inventory  # omits NOT NULL name
+tests/test_ai_governance_intake.py::intake_sessions  # omits NOT NULL customer_name
+tests/test_ai_transparency.py::ai_bom  # omits NOT NULL model_id
+tests/test_ai_transparency.py::ai_telemetry  # omits NOT NULL provider
+tests/test_ai_transparency.py::projects  # omits NOT NULL directory_path, type
+tests/test_append_only_audit_nlp.py::aac_audit_log  # omits NOT NULL event_type
+tests/test_assessor_accountability_fixes.py::agent_vetoes  # omits NOT NULL authority_agent_id, topic, veto_type, vetoed_agent_id
+tests/test_assessor_accountability_fixes.py::ai_bom  # omits NOT NULL model_id, provider
+tests/test_assessor_accountability_fixes.py::ai_caio_registry  # omits NOT NULL official_name
+tests/test_assessor_accountability_fixes.py::ai_oversight_plans  # omits NOT NULL plan_data
+tests/test_assessor_accountability_fixes.py::ai_telemetry  # omits NOT NULL provider
+tests/test_assessor_accountability_fixes.py::prompt_injection_log  # omits NOT NULL source, text_hash
+tests/test_assessor_accountability_fixes.py::shap_attributions  # omits NOT NULL shapley_value, tool_name
+tests/test_assessor_accountability_fixes.py::xai_assessments  # omits NOT NULL assessment_date
+tests/test_atlas_assessor.py::agent_token_usage  # omits NOT NULL agent_id, model_id
+tests/test_atlas_assessor.py::dashboard_api_keys  # omits NOT NULL key_prefix
+tests/test_atlas_assessor.py::marketplace_scan_results  # omits NOT NULL asset_id, gate_name, version_id
+tests/test_atlas_assessor.py::remote_command_allowlist  # omits NOT NULL channel, command_pattern
+tests/test_ato_evidence_cycle.py::projects  # omits NOT NULL type
+tests/test_audit_chain_writer.py::source_citation_registry  # omits NOT NULL citation_type, source_hash
+tests/test_audit_tail_cli.py::audit_trail  # omits NOT NULL event_type
+tests/test_audit_tail_cli.py::audit_trail#1  # omits NOT NULL event_type
+tests/test_audit_tail_cli.py::audit_trail#2  # omits NOT NULL event_type
+tests/test_audit_tail_cli.py::hook_events  # omits NOT NULL hook_type
+tests/test_audit_tail_cli.py::runtime_invocations  # omits NOT NULL id, started_at
+tests/test_awareness_component_indexer.py::nc_projects  # omits NOT NULL name
+tests/test_awareness_component_indexer.py::topologies  # omits NOT NULL name
+tests/test_awareness_gap_detector.py::research_signals  # omits NOT NULL content_hash, discovered_at, session_id, source, source_type, title
+tests/test_bayesian_teacher.py::ft_dataset_examples  # omits NOT NULL content_hash
+tests/test_bdc_impact_panel.py::projects  # omits NOT NULL directory_path, type
+tests/test_bdc_oscal_exporter.py::cmmc_assessments  # omits NOT NULL id
+tests/test_bdc_oscal_exporter.py::fedramp_assessments  # omits NOT NULL id
+tests/test_bdc_oscal_exporter.py::project_controls  # omits NOT NULL id
+tests/test_bdc_oscal_exporter.py::sbom_records  # omits NOT NULL file_path, id
+tests/test_bdc_oscal_exporter.py::stig_findings  # omits NOT NULL id
+tests/test_bdc_twin_honesty.py::project_controls  # omits NOT NULL control_id, id
+tests/test_bdr_supply_chain_crosslink.py::bd_isa_tracker  # omits NOT NULL id
+tests/test_bdr_vv_suite.py::cmmc_assessments  # omits NOT NULL id
+tests/test_bdr_vv_suite.py::compliance_snapshots  # omits NOT NULL status
+tests/test_bdr_vv_suite.py::fedramp_assessments  # omits NOT NULL id
+tests/test_bdr_vv_suite.py::project_controls  # omits NOT NULL id
+tests/test_bdr_vv_suite.py::project_controls#1  # omits NOT NULL id
+tests/test_bdr_vv_suite.py::projects#1  # omits NOT NULL directory_path, type
+tests/test_bdr_vv_suite.py::sbom_records  # omits NOT NULL file_path, id
+tests/test_bdr_vv_suite.py::stig_findings  # omits NOT NULL id
+tests/test_bdt_twin_evidence.py::projects  # omits NOT NULL directory_path, type
+tests/test_bdt_twin_evidence.py::projects#1  # omits NOT NULL directory_path, type
+tests/test_behavioral_red_team.py::atlas_red_team_results  # omits NOT NULL technique_id, test_name
+tests/test_canvas_cards_pg.py::data_nodes  # omits NOT NULL node_id
+tests/test_capability_consumption.py::agent_approval_log  # omits NOT NULL actor
+tests/test_capability_consumption.py::agent_improvement_artifacts  # omits NOT NULL improvement_text, task_type
+tests/test_capability_consumption.py::audit_trail  # omits NOT NULL action
+tests/test_capability_consumption.py::audit_trail#1  # omits NOT NULL action, event_type
+tests/test_capability_consumption.py::genesis_reflex_state  # omits NOT NULL updated_at
+tests/test_capability_consumption.py::prompt_versions  # omits NOT NULL created_at, template_hash, template_text
+tests/test_capability_consumption.py::studio_mcp_dispatch_audit  # omits NOT NULL classification, params_sha256, reason
+tests/test_capability_consumption_approval_tiers.py::agent_approval_log#1  # omits NOT NULL tier
+tests/test_cato_twin.py::projects  # omits NOT NULL directory_path, type
+tests/test_ccir_trigger.py::sg_pir_requirements  # omits NOT NULL created_at, updated_at
+tests/test_chat_intake_hitl.py::intake_requirements  # omits NOT NULL raw_text
+tests/test_children_route.py::child_app_registry  # omits NOT NULL capabilities, child_name, child_path
+tests/test_children_route.py::child_capabilities  # omits NOT NULL capability_name
+tests/test_citation_promote_gate.py::proposal_sections  # omits NOT NULL opportunity_id, section_number, title, volume_id
+tests/test_claude_dir_validator.py::audit_trail  # omits NOT NULL action, actor, event_type
+tests/test_claude_dir_validator.py::projects  # omits NOT NULL directory_path, type
+tests/test_claude_dir_validator.py::projects#1  # omits NOT NULL directory_path, name, type
+tests/test_cnr_docgen.py::idr_uploads  # omits NOT NULL collection_id, created_at, upload_id
+tests/test_coherence_checker.py::users  # omits NOT NULL tenant_id
+tests/test_coherence_checker.py::workflow_loops  # omits NOT NULL created_at, phase_name
+tests/test_coherence_checker.py::workflow_loops#1  # omits NOT NULL created_at, phase_name
+tests/test_coherence_checker.py::workflow_loops#2  # omits NOT NULL created_at
+tests/test_coherence_substrate_liveness.py::audit_trail  # omits NOT NULL action, actor
+tests/test_coherence_substrate_liveness.py::kg_edges  # omits NOT NULL graph_id, relationship, source_id, target_id
+tests/test_coherence_substrate_liveness.py::kg_ontology  # omits NOT NULL graph_id, id, object_type
+tests/test_component_scorer.py::projects  # omits NOT NULL type
+tests/test_constitution_manager.py::projects  # omits NOT NULL directory_path, type
+tests/test_coworker_stats_api.py::ace_audit_log  # omits NOT NULL action
+tests/test_coworker_stats_api.py::ace_audit_log#1  # omits NOT NULL action
+tests/test_cpmp_overdue_deliverable_state.py::cpmp_contract_mods  # omits NOT NULL mod_number, type
+tests/test_cpmp_overdue_deliverable_state.py::cpmp_contracts  # omits NOT NULL agency, contract_type
+tests/test_cpmp_overdue_deliverable_state.py::cpmp_cpars_assessments  # omits NOT NULL period_start
+tests/test_cpmp_overdue_deliverable_state.py::cpmp_deliverables  # omits NOT NULL deliverable_type
+tests/test_cpmp_overdue_deliverable_state.py::cpmp_subcontractors  # omits NOT NULL company_name
+tests/test_crm_heat.py::pg_crm_accounts  # omits NOT NULL created_at, updated_at
+tests/test_cross_register.py::innovation_signals  # omits NOT NULL discovered_at
+tests/test_crx_insider_risk.py::audit_trail  # omits NOT NULL actor, id
+tests/test_crx_insider_risk.py::hook_events  # omits NOT NULL id
+tests/test_crx_insider_risk.py::usage_events  # omits NOT NULL id, occurred_at
+tests/test_crx_kg_blast_radius.py::kg_graphs  # omits NOT NULL name
+tests/test_dashboard_introspection_sweep.py::digital_thread_links  # omits NOT NULL link_type, project_id, source_id, source_type, target_id, target_type
+tests/test_dashboard_introspection_sweep.py::prov_entities  # omits NOT NULL entity_type
+tests/test_dashboard_kanban.py::a2a_tasks  # omits NOT NULL skill_id
+tests/test_dashboard_kanban.py::a2a_tasks#1  # omits NOT NULL skill_id
+tests/test_dashboard_kanban.py::agents  # omits NOT NULL url
+tests/test_dashboard_kanban.py::agents#1  # omits NOT NULL url
+tests/test_dashboard_kanban.py::deployments  # omits NOT NULL environment, version
+tests/test_dashboard_kanban.py::deployments#1  # omits NOT NULL environment, version
+tests/test_dashboard_kanban.py::poam_items  # omits NOT NULL source, weakness_description, weakness_id
+tests/test_dashboard_kanban.py::poam_items#1  # omits NOT NULL source, weakness_description, weakness_id
+tests/test_dashboard_kanban.py::stig_findings  # omits NOT NULL finding_id, rule_id, stig_id, title
+tests/test_dashboard_kanban.py::stig_findings#1  # omits NOT NULL finding_id, rule_id, stig_id, title
+tests/test_dcpr_twin.py::data_nodes  # omits NOT NULL node_id
+tests/test_dev_profiles_api_list_route.py::dev_profiles  # omits NOT NULL profile_yaml
+tests/test_dic_analytics_kg_linkage.py::dic_documents  # omits NOT NULL created_at
+tests/test_dic_analytics_kg_linkage.py::rag_chunks  # omits NOT NULL content_hash, source_type
+tests/test_dic_analytics_provenance.py::dic_documents  # omits NOT NULL created_at
+tests/test_dic_analytics_provenance.py::rag_chunks  # omits NOT NULL content_hash, source_type
+tests/test_dic_chat_memory_schema.py::dic_chat_memory  # omits NOT NULL turn_id
+tests/test_dic_collection_registry.py::dic_documents  # omits NOT NULL created_at
+tests/test_dic_document_model_anomaly_detection.py::dic_documents  # omits NOT NULL created_at
+tests/test_dic_document_routing_anomaly_detection.py::dic_documents  # omits NOT NULL created_at
+tests/test_dic_field_validation_anomaly_detection.py::dic_documents  # omits NOT NULL created_at
+tests/test_dic_ingest_anomaly_detection.py::dic_chunk_links  # omits NOT NULL created_at, link_id
+tests/test_dic_ingest_anomaly_detection.py::dic_documents  # omits NOT NULL created_at
+tests/test_dic_publish_gate.py::dic_ssp_fragments  # omits NOT NULL control_id, created_at
+tests/test_dic_techwriter.py::dic_documents  # omits NOT NULL created_at
+tests/test_dic_view_anomaly_detection.py::dic_documents  # omits NOT NULL created_at
+tests/test_docgen.py::idr_uploads  # omits NOT NULL collection_id, created_at, upload_id
+tests/test_domain_coverage.py::domain_coverage  # omits NOT NULL domain_category, pattern_id
+tests/test_dsyn_consistency.py::kg_graphs  # omits NOT NULL name
+tests/test_dsyn_dic_integration_reflex.py::dic_documents  # omits NOT NULL created_at
+tests/test_dsyn_dic_integration_reflex.py::dic_sections  # omits NOT NULL version_id
+tests/test_dsyn_suggestion_api.py::dic_documents  # omits NOT NULL created_at
+tests/test_dsyn_vv_smoke.py::dic_sections  # omits NOT NULL doc_id
+tests/test_dwo_bus_subscriber.py::audit_trail  # omits NOT NULL id
+tests/test_dwr_redraft.py::dic_sections  # omits NOT NULL created_at
+tests/test_ecr_api.py::api_keys  # omits NOT NULL user_id
+tests/test_ecr_api.py::api_keys#1  # omits NOT NULL user_id
+tests/test_ecr_api.py::api_keys#2  # omits NOT NULL user_id
+tests/test_ecr_api.py::audit_trail  # omits NOT NULL actor, event_type
+tests/test_ecr_bill.py::usage_events  # omits NOT NULL occurred_at
+tests/test_ecr_dres.py::rls_audit  # omits NOT NULL table_name
+tests/test_embedding_feasibility.py::rag_chunks  # omits NOT NULL content, content_hash
+tests/test_eu_ai_act_classifier.py::ai_caio_registry  # omits NOT NULL official_name
+tests/test_eu_ai_act_classifier.py::ai_incident_log  # omits NOT NULL description, incident_type
+tests/test_eu_ai_act_classifier.py::ai_oversight_plans  # omits NOT NULL plan_data
+tests/test_eu_ai_act_classifier.py::ai_telemetry  # omits NOT NULL model_id, prompt_hash, provider
+tests/test_eu_ai_act_classifier.py::audit_trail  # omits NOT NULL actor
+tests/test_eu_ai_act_classifier.py::cato_evidence  # omits NOT NULL control_id, evidence_source, evidence_type
+tests/test_eu_ai_act_classifier.py::eu_ai_act_assessments  # omits NOT NULL requirement_id
+tests/test_eu_ai_act_classifier.py::gao_ai_assessments  # omits NOT NULL assessment_date
+tests/test_eu_ai_act_classifier.py::model_cards  # omits NOT NULL card_data
+tests/test_eu_ai_act_classifier.py::omb_m25_21_assessments  # omits NOT NULL assessment_date
+tests/test_eu_ai_act_classifier.py::production_audits  # omits NOT NULL failed, overall_pass, passed, skipped, total_checks, warned
+tests/test_eu_ai_act_classifier.py::projects  # omits NOT NULL directory_path, type
+tests/test_eu_ai_act_classifier.py::system_cards  # omits NOT NULL card_data
+tests/test_events_route.py::hook_events  # omits NOT NULL session_id
+tests/test_evidence_collector.py::audit_trail  # omits NOT NULL actor
+tests/test_evidence_collector.py::fedramp_assessments  # omits NOT NULL baseline
+tests/test_evidence_collector.py::sbom_records  # omits NOT NULL file_path, version
+tests/test_evolutionary_intelligence.py::child_app_registry  # omits NOT NULL capabilities, child_path
+tests/test_evolutionary_intelligence.py::prompt_injection_log  # omits NOT NULL text_hash
+tests/test_extension_dispatch_governance.py::runtime_invocations  # omits NOT NULL id, started_at
+tests/test_fedramp_ksi_generator.py::ai_telemetry  # omits NOT NULL model_id, prompt_hash, provider
+tests/test_fedramp_ksi_generator.py::audit_trail  # omits NOT NULL action, actor
+tests/test_fedramp_ksi_generator.py::hook_events  # omits NOT NULL session_id
+tests/test_fedramp_ksi_generator.py::owasp_asi_assessments  # omits NOT NULL requirement_id
+tests/test_fedramp_ksi_generator.py::production_audits  # omits NOT NULL failed, overall_pass, passed, skipped, total_checks, warned
+tests/test_fedramp_ksi_generator.py::projects  # omits NOT NULL directory_path, type
+tests/test_fedramp_ksi_generator.py::prompt_injection_log  # omits NOT NULL source, text_hash
+tests/test_fga_academy_defects.py::fa_users  # omits NOT NULL display_name, username
+tests/test_fga_academy_defects.py::fa_users#1  # omits NOT NULL username
+tests/test_finetune_dataset.py::audit_trail  # omits NOT NULL action
+tests/test_finetune_training_engine.py::rag_chunks  # omits NOT NULL id
+tests/test_finetune_training_engine.py::rag_ingestion_log  # omits NOT NULL source_type
+tests/test_foundry_harvester.py::creative_pain_points  # omits NOT NULL category, first_seen, keyword_fingerprint, last_seen
+tests/test_foundry_harvester.py::innovation_signals  # omits NOT NULL content_hash, discovered_at, source_type
+tests/test_foundry_harvester.py::oracle_predictions  # omits NOT NULL created_at, lens_id, lens_name
+tests/test_foundry_harvester.py::research_challenges  # omits NOT NULL category, first_seen, keyword_fingerprint, last_seen, session_id
+tests/test_foundry_mcp.py::kanban_tasks  # omits NOT NULL title
+tests/test_gao_ai_assessor.py::agents  # omits NOT NULL url
+tests/test_gao_ai_assessor.py::ai_bom  # omits NOT NULL model_id
+tests/test_gao_ai_assessor.py::ai_telemetry  # omits NOT NULL provider
+tests/test_gao_ai_assessor.py::projects  # omits NOT NULL directory_path, type
+tests/test_gao_ai_assessor.py::prompt_injection_log  # omits NOT NULL text_hash
+tests/test_gateway_route.py::remote_command_log  # omits NOT NULL binding_id, channel, raw_command
+tests/test_gateway_route.py::remote_user_bindings  # omits NOT NULL channel_user_id
+tests/test_gcpl_ctr_02_cpmp_obligation_periods.py::cpmp_clins  # omits NOT NULL clin_type
+tests/test_gcpl_ctr_02_cpmp_obligation_periods.py::cpmp_cpars_assessments  # omits NOT NULL period_start
+tests/test_gcpl_ctr_02_cpmp_obligation_periods.py::cpmp_deliverables  # omits NOT NULL deliverable_type, title
+tests/test_gcpl_pm_02_cpmp_risk_register.py::cpmp_contracts  # omits NOT NULL agency, contract_type
+tests/test_gcpl_pm_02_cpmp_risk_register.py::cpmp_negative_events  # omits NOT NULL description, severity
+tests/test_genesis_reflex_cpmp_monitor.py::cpmp_contracts  # omits NOT NULL agency, contract_type
+tests/test_genesis_reflex_cpmp_monitor_subcon_pass.py::cpmp_contracts  # omits NOT NULL agency, contract_type
+tests/test_gepa_decision_recording.py::agent_improvement_artifacts  # omits NOT NULL artifact_id, improvement_text, task_type
+tests/test_govcon_capabilities.py::icdev_capability_map  # omits NOT NULL capability_name, mapped_at
+tests/test_govcon_capabilities.py::icdev_capability_map#1  # omits NOT NULL capability_name, mapped_at
+tests/test_govcon_capabilities.py::icdev_capability_map#2  # omits NOT NULL capability_name, mapped_at
+tests/test_govcon_capabilities.py::rfp_requirement_patterns  # omits NOT NULL description, first_seen, last_seen
+tests/test_govcon_capabilities.py::rfp_requirement_patterns#1  # omits NOT NULL first_seen, last_seen
+tests/test_govcon_capabilities.py::rfp_shall_statements  # omits NOT NULL content_hash, extracted_at
+tests/test_govcon_capabilities.py::rfp_shall_statements#1  # omits NOT NULL content_hash, extracted_at
+tests/test_govcon_overdue_deliverable_marking.py::cpmp_deliverables  # omits NOT NULL deliverable_type
+tests/test_heartbeat_daemon.py::agents  # omits NOT NULL id, url
+tests/test_heartbeat_daemon.py::cato_evidence  # omits NOT NULL evidence_source, project_id
+tests/test_heartbeat_daemon.py::cve_triage  # omits NOT NULL package_name, project_id
+tests/test_heartbeat_daemon.py::failure_log  # omits NOT NULL error_message, error_type, source
+tests/test_heartbeat_daemon.py::intake_sessions  # omits NOT NULL id
+tests/test_heartbeat_daemon.py::isa_agreements  # omits NOT NULL agreement_type, partner_system, project_id
+tests/test_heartbeat_daemon.py::memory_entries  # omits NOT NULL content
+tests/test_idr_conflict_gate.py::kanban_tasks  # omits NOT NULL title
+tests/test_init_icdev_db.py::schema_migrations  # omits NOT NULL checksum, name
+tests/test_init_icdev_db.py::schema_migrations#1  # omits NOT NULL checksum, name
+tests/test_innovation.py::knowledge_patterns  # omits NOT NULL pattern_signature
+tests/test_insert_column_schema_parity.py::dic_documents  # omits NOT NULL collection_id, created_at, doc_id
+tests/test_insert_column_schema_parity.py::sg_intsums  # omits NOT NULL created_at, period_end, period_start
+tests/test_insert_column_schema_parity.py::simulation_results  # omits NOT NULL dimension, metric_name, scenario_id
+tests/test_insert_column_schema_parity.py::ttx_api_log  # omits NOT NULL call_id, log_id, session_id, team_id, tool_slug
+tests/test_insert_column_schema_parity.py::usage_events  # omits NOT NULL occurred_at
+tests/test_intake_api.py::a2a_tasks  # omits NOT NULL skill_id
+tests/test_intake_api.py::agents  # omits NOT NULL url
+tests/test_intake_api.py::deployments  # omits NOT NULL environment, version
+tests/test_intake_api.py::failure_log  # omits NOT NULL error_message, error_type, source
+tests/test_intake_api.py::hook_events  # omits NOT NULL hook_type, session_id
+tests/test_intake_api.py::knowledge_patterns  # omits NOT NULL pattern_signature, pattern_type
+tests/test_intake_api.py::poam_items  # omits NOT NULL source, weakness_description, weakness_id
+tests/test_intake_api.py::sbom_records  # omits NOT NULL file_path, version
+tests/test_intake_api.py::self_healing_events  # omits NOT NULL trigger_data, trigger_source
+tests/test_intake_api.py::ssp_documents  # omits NOT NULL content, system_name, version
+tests/test_intake_api.py::stig_findings  # omits NOT NULL finding_id, rule_id, stig_id, title
+tests/test_iqe_adapter_govcon_requirements.py::rfp_requirement_patterns  # omits NOT NULL keyword_fingerprint
+tests/test_iqe_network_adapters.py::nc_cables  # omits NOT NULL cable_id
+tests/test_iqe_network_adapters.py::nc_circuits  # omits NOT NULL circuit_id
+tests/test_iqe_network_adapters.py::nc_compliance_findings  # omits NOT NULL regime, title
+tests/test_iqe_network_adapters.py::nc_cross_connects  # omits NOT NULL xconn_id
+tests/test_iqe_network_adapters.py::nc_groups  # omits NOT NULL label
+tests/test_iqe_network_adapters.py::nc_ipam_blocks  # omits NOT NULL network
+tests/test_iqe_network_adapters.py::nc_versions  # omits NOT NULL graph_json, version_num
+tests/test_ironbank_generator.py::projects  # omits NOT NULL directory_path, type
+tests/test_jise_api.py::poam_items  # omits NOT NULL source, weakness_description, weakness_id
+tests/test_jise_api.py::projects  # omits NOT NULL directory_path, type
+tests/test_kanban_cascade_rollback.py::kanban_status_transitions  # omits NOT NULL recorded_at
+tests/test_kanban_depends_on.py::oracle_predictions  # omits NOT NULL created_at, lens_id
+tests/test_kanban_init_db_index_ordering.py::kanban_tasks  # omits NOT NULL id
+tests/test_kanban_pev.py::kanban_verifications  # omits NOT NULL verified_at
+tests/test_kanban_recurrence_guards.py::kanban_tasks  # omits NOT NULL title
+tests/test_kanban_silent_cleanup.py::kanban_status_transitions  # omits NOT NULL recorded_at
+tests/test_kanban_transition_reason.py::kanban_status_transitions  # omits NOT NULL id
+tests/test_kanban_transition_reason.py::kanban_status_transitions#1  # omits NOT NULL id
+tests/test_kanban_transition_reason.py::kanban_status_transitions#2  # omits NOT NULL id
+tests/test_kanban_transition_reason.py::kanban_status_transitions#3  # omits NOT NULL id
+tests/test_kanban_transition_reason.py::kanban_status_transitions#4  # omits NOT NULL id
+tests/test_knowledge_graph.py::kg_retrieval_log  # omits NOT NULL graph_id, query
+tests/test_mcp_oauth.py::api_keys  # omits NOT NULL key_prefix, name
+tests/test_mcp_oauth.py::users  # omits NOT NULL tenant_id
+tests/test_memory_consolidation.py::memory_entries  # omits NOT NULL id
+tests/test_metric_snapshots_writers.py::projects  # omits NOT NULL directory_path, type
+tests/test_migration_canvas_reflex_promotion.py::mc_net_protocol_plans  # omits NOT NULL protocol
+tests/test_migration_dossier_advisor.py::research_challenges  # omits NOT NULL first_seen, keyword_fingerprint, last_seen
+tests/test_migration_runner.py::users  # omits NOT NULL email, tenant_id
+tests/test_model_card_generator.py::ai_bom  # omits NOT NULL model_id
+tests/test_model_card_generator.py::ai_telemetry  # omits NOT NULL provider
+tests/test_model_card_generator.py::projects  # omits NOT NULL directory_path, type
+tests/test_narrative_generator.py::compliance_controls  # omits NOT NULL family
+tests/test_nav_bld_02_aisg_views.py::aisg_roi_events  # omits NOT NULL action_type
+tests/test_nav_bld_02_aisg_views.py::aisg_track_progress  # omits NOT NULL user_email
+tests/test_nav_bld_02_aisg_views.py::ato_system_registry  # omits NOT NULL system_name
+tests/test_nav_bld_02_aisg_views.py::control_narratives  # omits NOT NULL project_id
+tests/test_nav_bld_02_aisg_views.py::kanban_executions  # omits NOT NULL started_at, task_id
+tests/test_nav_bld_02_aisg_views.py::poam_items  # omits NOT NULL project_id, source
+tests/test_nav_comp_05_sre.py::audit_trail  # omits NOT NULL actor
+tests/test_nav_comp_05_sre.py::ci_pipeline_runs  # omits NOT NULL platform, run_id, session_key, workflow
+tests/test_nav_comp_05_sre.py::sre_incidents  # omits NOT NULL created_at, service_name, severity, title
+tests/test_nav_comp_06_attribution_scoring.py::cato_evidence  # omits NOT NULL control_id, evidence_source, evidence_type
+tests/test_nav_comp_06_attribution_scoring.py::omb_m25_21_assessments  # omits NOT NULL assessment_date, requirement_id
+tests/test_nav_strat_04_iw_no_sqlite_fallback.py::sg_ghost_signals  # omits NOT NULL signal_type
+tests/test_nav_strat_04_iw_no_sqlite_fallback.py::sg_information_scores  # omits NOT NULL scenario_id
+tests/test_nav_strat_04_iw_no_sqlite_fallback.py::sg_infrastructure_signals  # omits NOT NULL run_id, signal_type
+tests/test_nav_strat_04_iw_no_sqlite_fallback.py::sg_iw_indicators  # omits NOT NULL coa_id, coa_name, created_at, name, updated_at
+tests/test_nav_strat_04_iw_no_sqlite_fallback.py::sg_military_signal_scores  # omits NOT NULL scored_at, zone_id
+tests/test_ndc_backend_helpers.py::ni_device_configs  # omits NOT NULL config_text, id
+tests/test_ndc_failclosed_gates.py::nc_compliance_findings  # omits NOT NULL id, regime, rule_id, title
+tests/test_ndc_graph_cache.py::topologies  # omits NOT NULL id
+tests/test_ndc_migration_phases.py::ni_device_configs#1  # omits NOT NULL config_hash, config_text, config_type
+tests/test_ndc_pptx_export.py::topologies  # omits NOT NULL id
+tests/test_ndc_stencil_importer.py::nc_stencil_libraries  # omits NOT NULL id
+tests/test_ndc_stencil_importer.py::nc_stencil_shapes  # omits NOT NULL id
+tests/test_network_doc_lifecycle.py::dic_doc_freshness  # omits NOT NULL updated_at
+tests/test_nist_ai_600_1_assessor.py::ai_bom  # omits NOT NULL model_id
+tests/test_nist_ai_600_1_assessor.py::atlas_red_team_results  # omits NOT NULL test_name
+tests/test_nist_ai_600_1_assessor.py::confabulation_checks  # omits NOT NULL result
+tests/test_nist_ai_600_1_assessor.py::projects  # omits NOT NULL directory_path, type
+tests/test_nist_ai_600_1_assessor.py::prompt_injection_log  # omits NOT NULL text_hash
+tests/test_odc_bus_subscriber.py::audit_trail  # omits NOT NULL id
+tests/test_odc_ndc_check.py::odc_sdc_verifications#1  # omits NOT NULL verified_at
+tests/test_omb_m25_21_assessor.py::agent_vetoes  # omits NOT NULL authority_agent_id, topic, vetoed_agent_id
+tests/test_omb_m25_21_assessor.py::ai_telemetry  # omits NOT NULL provider
+tests/test_omb_m25_21_assessor.py::ai_use_case_inventory  # omits NOT NULL name
+tests/test_omb_m25_21_assessor.py::projects  # omits NOT NULL directory_path, type
+tests/test_omb_m26_04_assessor.py::model_cards  # omits NOT NULL card_data
+tests/test_omb_m26_04_assessor.py::projects  # omits NOT NULL directory_path, type
+tests/test_omb_m26_04_assessor.py::system_cards  # omits NOT NULL card_data
+tests/test_oscal_assessment_plan.py::project_controls  # omits NOT NULL id
+tests/test_owasp_agentic_assessor.py::projects  # omits NOT NULL directory_path, type
+tests/test_owasp_asi_assessor.py::agent_trust_scores  # omits NOT NULL factor_json, trigger_event
+tests/test_owasp_asi_assessor.py::ai_bom  # omits NOT NULL model_id, provider
+tests/test_owasp_asi_assessor.py::ai_telemetry  # omits NOT NULL model_id, prompt_hash, provider
+tests/test_owasp_asi_assessor.py::atlas_red_team_results  # omits NOT NULL test_name
+tests/test_owasp_asi_assessor.py::audit_trail  # omits NOT NULL action, actor
+tests/test_owasp_asi_assessor.py::owasp_asi_assessments  # omits NOT NULL requirement_id
+tests/test_owasp_asi_assessor.py::projects  # omits NOT NULL directory_path, type
+tests/test_owasp_asi_assessor.py::prompt_injection_log  # omits NOT NULL source, text_hash
+tests/test_owasp_asi_assessor.py::tool_chain_events  # omits NOT NULL session_id, tool_sequence_json
+tests/test_pgrt_evidence_chain_pg.py::pc_audit#1  # omits NOT NULL id
+tests/test_pkg_db_provisioning.py::rag_chunks  # omits NOT NULL content, content_hash, source_type
+tests/test_pkg_db_provisioning.py::rag_chunks#1  # omits NOT NULL content, content_hash, source_type
+tests/test_placeholder_promote_gate.py::proposal_sections  # omits NOT NULL opportunity_id, section_number, title, volume_id
+tests/test_pma_e2e_vv.py::cpmp_contracts  # omits NOT NULL contract_type
+tests/test_pma_igap_api.py::cpmp_contracts  # omits NOT NULL contract_type
+tests/test_prop_ctr_02_d4_portfolio_detail.py::cpmp_clins  # omits NOT NULL clin_type
+tests/test_prop_ctr_02_d4_portfolio_detail.py::cpmp_deliverables  # omits NOT NULL deliverable_type, title
+tests/test_prop_ctr_02_d4_portfolio_detail.py::cpmp_subcontractors  # omits NOT NULL company_name
+tests/test_prop_ctr_02_d4_portfolio_detail.py::cpmp_wbs  # omits NOT NULL title, wbs_number
+tests/test_proposal_genesis.py::cpmp_contracts  # omits NOT NULL contract_type
+tests/test_proposal_genesis.py::icdev_capability_map  # omits NOT NULL capability_id, capability_name, mapped_at, pattern_id
+tests/test_proposal_genesis.py::proposal_opportunities  # omits NOT NULL due_date, proposal_type, solicitation_number
+tests/test_proposal_genesis.py::rfp_requirement_patterns  # omits NOT NULL description, domain_category, first_seen, keyword_fingerprint, last_seen, pattern_name, representative_text
+tests/test_proposal_genesis.py::rfp_shall_statements  # omits NOT NULL content_hash, extracted_at
+tests/test_proposal_genesis.py::sam_gov_opportunities  # omits NOT NULL content_hash, first_seen, last_synced, notice_type
+tests/test_proposal_genesis_winloss_mac.py::sam_gov_opportunities  # omits NOT NULL content_hash, first_seen, last_synced, notice_type
+tests/test_proposals_detail_action_bar.py::proposal_compliance_matrix  # omits NOT NULL section_ref
+tests/test_proposals_detail_action_bar.py::proposal_question_responses  # omits NOT NULL opportunity_id
+tests/test_proposals_detail_action_bar.py::proposal_questions  # omits NOT NULL category
+tests/test_proposals_detail_action_bar.py::proposal_review_findings  # omits NOT NULL finding_type
+tests/test_proposals_detail_action_bar.py::proposal_reviewer_assignments  # omits NOT NULL assigned_by, reviewer
+tests/test_proposals_detail_action_bar.py::proposal_section_drafts  # omits NOT NULL draft_content
+tests/test_proposals_detail_ai_drafts_tab.py::proposal_amendments  # omits NOT NULL title
+tests/test_proposals_detail_ai_drafts_tab.py::proposal_question_responses  # omits NOT NULL opportunity_id, response_text
+tests/test_proposals_detail_ai_drafts_tab.py::proposal_questions  # omits NOT NULL category, question_text
+tests/test_proposals_ptw_blackhat_api.py::govcon_awards  # omits NOT NULL content_hash, discovered_at, title
+tests/test_proposals_ptw_blackhat_api.py::proposal_opportunities  # omits NOT NULL agency, due_date, proposal_type, solicitation_number
+tests/test_provision_db.py::rag_chunks  # omits NOT NULL content, content_hash, source_type
+tests/test_pwin_model.py::proposal_opportunities  # omits NOT NULL agency, due_date, proposal_type, solicitation_number
+tests/test_rag_ft_pipeline.py::rag_chunks  # omits NOT NULL content_hash, source_type
+tests/test_rag_kg_graph_per_project.py::rag_chunks  # omits NOT NULL content_hash, source_type
+tests/test_refinement_cycle.py::source_citation_registry  # omits NOT NULL citation_type, source_hash
+tests/test_reflex_finding_scope.py::cpmp_contracts  # omits NOT NULL agency, contract_type
+tests/test_rest_api.py::audit_platform  # omits NOT NULL event_type
+tests/test_rest_api_agents.py::a2a_tasks  # omits NOT NULL skill_id
+tests/test_rest_api_agents.py::agent_vetoes  # omits NOT NULL authority_agent_id, vetoed_agent_id
+tests/test_rest_api_expansion.py::audit_platform  # omits NOT NULL event_type
+tests/test_review_board.py::heartbeat_checks  # omits NOT NULL last_run, next_run
+tests/test_review_board.py::production_audits  # omits NOT NULL failed, overall_pass, passed, skipped, total_checks, warned
+tests/test_rls_integration.py::projects  # omits NOT NULL directory_path, type
+tests/test_rls_integration.py::projects#1  # omits NOT NULL directory_path, type
+tests/test_rls_integration.py::projects#2  # omits NOT NULL directory_path, type
+tests/test_rmf_cycle_time.py::rmf_workflow_stages#1  # omits NOT NULL stage
+tests/test_rmf_honesty_rails.py::cato_evidence  # omits NOT NULL evidence_source
+tests/test_rmf_honesty_rails.py::poam_items  # omits NOT NULL source, weakness_description, weakness_id
+tests/test_rmf_honesty_rails.py::projects  # omits NOT NULL directory_path
+tests/test_rmf_honesty_rails.py::sbom_records  # omits NOT NULL file_path, version
+tests/test_rmf_honesty_rails.py::stig_findings  # omits NOT NULL rule_id, stig_id, title
+tests/test_rted_conflict_detector.py::dic_sections  # omits NOT NULL created_at, doc_id, heading, version_id
+tests/test_rted_vv_smoke.py::dic_sections  # omits NOT NULL heading
+tests/test_runtime_invocations_panel.py::runtime_invocations  # omits NOT NULL id
+tests/test_sag_observability.py::runtime_invocations#1  # omits NOT NULL id
+tests/test_sandbox_scorer.py::audit_trail  # omits NOT NULL action, actor
+tests/test_sbom_component_identifiers.py::projects  # omits NOT NULL type
+tests/test_sbom_dependency_graph.py::sbom_components  # omits NOT NULL component_name
+tests/test_sbom_dependency_graph.py::sbom_records  # omits NOT NULL file_path, project_id, version
+tests/test_security_integration.py::dashboard_users  # omits NOT NULL display_name
+tests/test_seed_canvas_artifacts.py::sc_templates  # omits NOT NULL id
+tests/test_seed_canvas_artifacts.py::sc_templates#1  # omits NOT NULL id
+tests/test_session_context_builder.py::cato_evidence  # omits NOT NULL evidence_source
+tests/test_session_context_builder.py::dev_profiles  # omits NOT NULL profile_yaml
+tests/test_session_context_builder.py::poam_items  # omits NOT NULL source, weakness_description, weakness_id
+tests/test_session_context_builder.py::ssp_documents  # omits NOT NULL content
+tests/test_session_context_builder.py::stig_findings  # omits NOT NULL finding_id, rule_id, stig_id, title
+tests/test_slsa_attestation.py::cve_triage  # omits NOT NULL package_name
+tests/test_slsa_attestation.py::devsecops_pipeline_audit  # omits NOT NULL tool
+tests/test_slsa_attestation.py::devsecops_profiles  # omits NOT NULL id
+tests/test_slsa_attestation.py::production_audits  # omits NOT NULL failed, overall_pass, passed, skipped, warned
+tests/test_statement_extractor.py::audit_trail  # omits NOT NULL action
+tests/test_statement_extractor.py::rag_chunks  # omits NOT NULL content_hash, source_type
+tests/test_substrate_probe.py::audit_trail  # omits NOT NULL action, actor
+tests/test_substrate_probe.py::kg_edges  # omits NOT NULL graph_id, relationship, source_id, target_id
+tests/test_substrate_probe.py::kg_nodes  # omits NOT NULL entity_type, graph_id
+tests/test_substrate_probe.py::kg_ontology  # omits NOT NULL graph_id, id
+tests/test_tfw_narrator.py::nc_traffic_flows  # omits NOT NULL application_type, destination_zone, source_zone
+tests/test_tfw_narrator.py::topologies  # omits NOT NULL name
+tests/test_tfw_personas.py::nc_traffic_flows  # omits NOT NULL application_type, destination_zone, source_zone
+tests/test_tfw_personas.py::topologies  # omits NOT NULL name
+tests/test_traffic_flow_walkthrough.py::nc_traffic_flows  # omits NOT NULL application_type, destination_zone, source_zone
+tests/test_traffic_flow_walkthrough.py::topologies  # omits NOT NULL name
+tests/test_triad_integration.py::kg_retrieval_log  # omits NOT NULL graph_id, query
+tests/test_triad_integration.py::rag_chunks  # omits NOT NULL content_hash, source_type
+tests/test_value_scorer_and_bulk_move.py::oracle_predictions  # omits NOT NULL created_at, lens_id
+tests/test_wargame_orbat.py::sg_wargames  # omits NOT NULL name
+tests/test_wargame_turn_engine.py::sg_wargames  # omits NOT NULL name
+tests/test_xai_assessor.py::agent_trust_scores  # omits NOT NULL factor_json, trigger_event
+tests/test_xai_assessor.py::ai_telemetry  # omits NOT NULL provider
+tests/test_xai_assessor.py::projects  # omits NOT NULL directory_path, type
+tests/test_zig_sql_placeholders.py::sc_assessments  # omits NOT NULL assessment_type
+tests/test_zig_sql_placeholders.py::sc_threats  # omits NOT NULL threat_category, title
+tests/test_zta_unmeasured_evidence.py::projects  # omits NOT NULL directory_path, type
+tests/test_zta_unmeasured_evidence.py::projects#1  # omits NOT NULL directory_path, type
+tests/test_zta_unmeasured_evidence.py::zig_activities  # omits NOT NULL phase, title
+tests/test_zta_unmeasured_evidence.py::zig_capabilities  # omits NOT NULL maturity_level, phase, title
+tools/ace/db/init_db.py::ace_sessions  # omits NOT NULL resume_token
+tools/aiify/db/init_db.py::aiify_schema_migrations  # omits NOT NULL version
+tools/appforge/reflexes/build.py::kg_edges  # omits NOT NULL graph_id, id, relationship
+tools/awareness/gap_detector.py::research_signals  # omits NOT NULL content_hash, discovered_at, session_id, source, source_type, title
+tools/bom/db/init_db.py::bom_lines  # omits NOT NULL line_hash
+tools/builder/db_init_generator.py::a2a_tasks  # omits NOT NULL skill_id
+tools/builder/db_init_generator.py::agents  # omits NOT NULL url
+tools/builder/db_init_generator.py::alerts  # omits NOT NULL source, title
+tools/builder/db_init_generator.py::code_reviews  # omits NOT NULL branch
+tools/builder/db_init_generator.py::deployments  # omits NOT NULL version
+tools/builder/db_init_generator.py::ft_active_models  # omits NOT NULL ollama_model_name
+tools/builder/db_init_generator.py::ft_dataset_examples  # omits NOT NULL content_hash, expected_output, user_input
+tools/builder/db_init_generator.py::ft_hyperparam_results  # omits NOT NULL search_id
+tools/builder/db_init_generator.py::ft_model_versions  # omits NOT NULL base_model
+tools/builder/db_init_generator.py::genesis_audit  # omits NOT NULL event_type
+tools/builder/db_init_generator.py::genesis_gkp  # omits NOT NULL artifact_type, genesis_reflex, payload, sha256
+tools/builder/db_init_generator.py::genesis_reflex_state  # omits NOT NULL reflex_name
+tools/builder/db_init_generator.py::metric_snapshots  # omits NOT NULL metric_name
+tools/builder/db_init_generator.py::poam_items  # omits NOT NULL source
+tools/builder/db_init_generator.py::projects  # omits NOT NULL directory_path
+tools/builder/db_init_generator.py::self_healing_events  # omits NOT NULL trigger_data, trigger_source
+tools/builder/db_init_generator.py::simulation_scenarios  # omits NOT NULL base_state
+tools/builder/db_init_generator.py::stig_findings  # omits NOT NULL finding_id
+tools/compliance/emass/emass_sync.py::emass_sync_log  # omits NOT NULL status, sync_direction
+tools/compliance/emass/emass_sync.py::emass_systems  # omits NOT NULL id
+tools/data_canvas/db/init_db.py::data_edges  # omits NOT NULL source_id, target_id
+tools/data_canvas/db/init_db.py::data_nodes  # omits NOT NULL node_id
+tools/data_canvas/db/init_db.py::dm_product_subscriptions  # omits NOT NULL subscriber
+tools/db/init_icdev_db.py::wg_style_guide_locks  # omits NOT NULL guide_id
+tools/db/migrations/005_phase_37_ai_security/up.py::ai_bom  # omits NOT NULL model_id
+tools/db/migrations/006_phase_36_evolution/up.py::capability_evaluations  # omits NOT NULL dimensions_json, outcome
+tools/db/migrations/006_phase_36_evolution/up.py::genome_versions  # omits NOT NULL content_hash, created_by, genome_data
+tools/db/migrations/006_phase_36_evolution/up.py::propagation_log  # omits NOT NULL capability_id
+tools/db/migrations/006_phase_36_evolution/up.py::staging_environments  # omits NOT NULL capability_id
+tools/db/migrations/011_oracle_remediation_proposals/up.py::oracle_convergence_events  # omits NOT NULL lens_ids_json
+tools/db/migrations/073_sg_cve_feed/up.py::sg_cve_feed  # omits NOT NULL created_at, title, updated_at
+tools/db/migrations/118_strategos_core_tables/up.py::sg_coa_decisions  # omits NOT NULL decision_type, title
+tools/db/migrations/118_strategos_core_tables/up.py::sg_economic_signals  # omits NOT NULL signal_type
+tools/db/migrations/118_strategos_core_tables/up.py::sg_entities  # omits NOT NULL name
+tools/db/migrations/118_strategos_core_tables/up.py::sg_theaters  # omits NOT NULL code
+tools/db/migrations/163_domain_coverage/up.py::domain_coverage  # omits NOT NULL domain_category, pattern_id
+tools/db/migrations/163_domain_coverage/up.py::domain_coverage#1  # omits NOT NULL domain_category, pattern_id
+tools/db/migrations/163_groups_canvas_access.sql::canvas_access_grants  # omits NOT NULL canvas_name
+tools/db/migrations/191_dic_chat_memory.sql::dic_chat_memory  # omits NOT NULL turn_id
+tools/db/migrations/191_dic_chat_memory.sql::dic_chat_memory#1  # omits NOT NULL turn_id
+tools/db/migrations/20260817010533_entity_currency/up.sql::entity_currency  # omits NOT NULL entity_key, entity_type
+tools/db/migrations/20260819011454_pr_merge_eligibility_events/up.sql::pr_merge_eligibility_events  # omits NOT NULL id, state
+tools/db/migrations/206_domain_coverage.sql::domain_coverage  # omits NOT NULL domain_category, pattern_id
+tools/db/migrations/206_domain_coverage.sql::domain_coverage#1  # omits NOT NULL domain_category, pattern_id
+tools/db/migrations/211_idr_tables.sql::idr_uploads  # omits NOT NULL collection_id, created_at, upload_id
+tools/db/migrations/213_billing/up.py::usage_events  # omits NOT NULL occurred_at
+tools/db/migrations/215_api_keys/up.py::api_keys  # omits NOT NULL user_id
+tools/db/migrations/215_api_keys/up.py::api_keys#1  # omits NOT NULL user_id
+tools/db/migrations/257_doc_modernization.sql::docmod_catalog_entries  # omits NOT NULL category
+tools/db/migrations/257_doc_modernization.sql::docmod_findings  # omits NOT NULL finding_type
+tools/db/migrations/258_doc_modernization.sql::docmod_catalog_audit  # omits NOT NULL event_type, id
+tools/db/migrations/273_data_canvas_core.sql::dm_product_subscriptions  # omits NOT NULL subscriber
+tools/db/migrations/277_idr_pg_schema_converge.sql::idr_uploads  # omits NOT NULL collection_id, created_at, upload_id
+tools/db/migrations/317_fa_certificate_evidence.sql::fa_certificate_evidence  # omits NOT NULL evidence_type
+tools/db/migrations/322_bom_evidence_engine.sql::bom_lines  # omits NOT NULL line_hash
+tools/db/migrations/324_fa_assessment_model.sql::fa_assessment_items  # omits NOT NULL item_key
+tools/db/seeds/seed_sdc_demo.py::sdc_compliance_timeline  # omits NOT NULL id
+tools/db/seeds/seed_sdc_demo.py::sdc_roi_metrics  # omits NOT NULL id
+tools/genesis/reflexes/strategos/red_cell.py::sg_coa_options  # omits NOT NULL coa_name, updated_at
+tools/kanban/seed_security_framework.py::security_policies  # omits NOT NULL policy_type
+tools/network/db/init_db.py::nc_alert_rules  # omits NOT NULL threshold
+tools/network/db/init_db.py::nc_ato_packages  # omits NOT NULL system_name
+tools/network/db/init_db.py::nc_backups  # omits NOT NULL file_path
+tools/network/db/init_db.py::nc_compliance_findings  # omits NOT NULL title
+tools/network/db/init_db.py::nc_favorites  # omits NOT NULL entity_id
+tools/network/db/init_db.py::nc_groups  # omits NOT NULL label
+tools/network/db/init_db.py::nc_notifications  # omits NOT NULL title
+tools/network/db/init_db.py::nc_phase_infoboxes  # omits NOT NULL box_id
+tools/network/db/init_db.py::nc_poam_items  # omits NOT NULL weakness_name
+tools/network/db/init_db.py::nc_remediation_actions  # omits NOT NULL device_name
+tools/network/db/init_db.py::nc_standards_checks  # omits NOT NULL check_item
+tools/network/db/init_db.py::nc_tags  # omits NOT NULL entity_id
+tools/network/db/init_db.py::nc_traffic_flows  # omits NOT NULL application_type, destination_zone, source_zone
+tools/network/traffic_flow.py::nc_traffic_flows  # omits NOT NULL application_type, destination_zone, source_zone
+tools/observability_canvas/blueprint.py::canvas_kg_edges  # omits NOT NULL id, source_id
+tools/observability_canvas/blueprint.py::canvas_kg_nodes  # omits NOT NULL id, node_id
+tools/playground/seed_data.py::poam_items  # omits NOT NULL source, weakness_description, weakness_id
+tools/playground/seed_data.py::projects  # omits NOT NULL directory_path, type
+tools/playground/seed_data.py::stig_findings  # omits NOT NULL finding_id, stig_id
+tools/registry/absorption_engine.py::propagation_log  # omits NOT NULL capability_id
+tools/registry/cross_pollinator.py::child_app_registry  # omits NOT NULL capabilities, child_path
+tools/registry/cross_pollinator.py::propagation_log  # omits NOT NULL capability_id
+tools/saas/db/pg_schema.py::cato_evidence  # omits NOT NULL evidence_source
+tools/saas/db/pg_schema.py::digital_thread_links  # omits NOT NULL source_id, target_id
+tools/saas/db/pg_schema.py::doors_requirements  # omits NOT NULL title
+tools/saas/db/pg_schema.py::knowledge_patterns  # omits NOT NULL pattern_signature
+tools/security/atlas_red_team.py::atlas_red_team_results  # omits NOT NULL technique_id, test_name
+tools/threat_analysis/osint_normalizer.py::sg_osint_normalized  # omits NOT NULL id, timestamp
+tools/threat_analysis/osint_normalizer.py::sg_osint_normalized#1  # omits NOT NULL id, timestamp
+tools/zta/db/init_db.py::zta_twin_phases  # omits NOT NULL name, phase_id
+tools/zta/db/init_db.py::zta_twin_phases#1  # omits NOT NULL name, phase_id

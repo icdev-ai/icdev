@@ -189,6 +189,19 @@ CENSUSES = (
         surveyed_commits=35,
     ),
     Census(
+        path="args/schema_drift_census.txt",
+        unit="CREATE-TABLE site that disagrees with the schema of record",
+        reader=_names_from_plain_list,
+        remedy=(
+            "copy the canonical definition from tools/db/schema/pg_consolidated.sql "
+            "into that CREATE TABLE, supply every required column at its INSERT "
+            "sites, then run `python tools/ci/schema_drift_census.py --write` to "
+            "drop the line. Patching only the column CI named leaves the next one "
+            "loaded -- that is how this defect was repaired four times in two days"
+        ),
+        surveyed_commits=None,
+    ),
+    Census(
         path="args/ci_skip_census.txt",
         unit="skip site in a gated test file",
         reader=_names_from_skip_census,
