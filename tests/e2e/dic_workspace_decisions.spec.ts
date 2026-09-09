@@ -50,6 +50,7 @@ import { spawnSync } from 'child_process';
 import path from 'path';
 
 import { test, expect } from './fixtures/auth';
+import { webServerDatabaseEnv } from './fixtures/e2e_database';
 import type { Page } from '@playwright/test';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -67,11 +68,35 @@ interface Seeded {
   current: string[];
 }
 
+// A PYTHON FIXTURE SUBPROCESS MUST LAND ON THE DATABASE THE SERVER IS ON.
+//
+// `webServerDatabaseEnv()` redirects the dashboard Playwright starts
+// (playwright.config.ts). It does NOT reach a subprocess a spec spawns, and
+// `{ ...process.env }` carries the operator's ambient `ICDEV_DATABASE_URL`
+// through unchanged -- which every connection site in `tools/db/storage.py`
+// reads BEFORE the discrete `ICDEV_PG_DATABASE`. So the documented isolation
+// recipe
+//
+//   ICDEV_PG_DATABASE=icdev_e2e npx playwright test
+//
+// put the SERVER on `icdev_e2e` and this fixture on the canonical `icdev`:
+// the seed committed to one database and the rail read the other, so
+// `#dws-rail .dws-card` resolved to 0 elements with nothing wrong with the
+// product. MEASURED 2026-09-09 with exactly that env --
+// `get_connection()` -> `icdev` while `/api/health` -> `icdev_e2e`.
+// That is qa-fail-6a87916931be3793's defect surviving one layer over, and it
+// also means an "isolated" run was still writing fixtures into the canonical
+// board.
+//
+// Applying the SAME function the server env is built from is what keeps the
+// two from disagreeing -- a second spelling of the precedence here is how they
+// came to disagree in the first place. It returns `{}` when no database was
+// requested, so a plain local run is unchanged.
 function runFixture(args: string[]): string {
   const res = spawnSync(PYTHON, [FIXTURE, ...args], {
     cwd: ROOT,
     encoding: 'utf-8',
-    env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+    env: { ...process.env, ...webServerDatabaseEnv(), PYTHONIOENCODING: 'utf-8' },
   });
   if (res.status !== 0) {
     throw new Error(

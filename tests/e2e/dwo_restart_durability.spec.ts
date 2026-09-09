@@ -38,6 +38,8 @@ import { spawn, spawnSync, type ChildProcess } from 'child_process';
 import fs from 'fs';
 import net from 'net';
 import path from 'path';
+
+import { webServerDatabaseEnv } from './fixtures/e2e_database';
 // Declared by tools/dashboard/static/js/workflow-studio.js as a top-level
 // `const` in a classic script: a global lexical binding, not a window property.
 declare const StudioWF: unknown;
@@ -76,6 +78,17 @@ const SHUTDOWN_TIMEOUT_MS = 30_000;
 // awaiting_approval, which is what this spec is here to observe.
 const DASHBOARD_ENV: Record<string, string> = {
   ICDEV_STORAGE_BACKEND: process.env.ICDEV_STORAGE_BACKEND || 'postgresql',
+  // AND THE DATABASE THE RUN ASKED FOR, not the ambient DSN. The child
+  // inherits `process.env`, and every connection site in `tools/db/storage.py`
+  // reads `ICDEV_DATABASE_URL` BEFORE the discrete `ICDEV_PG_DATABASE` -- so
+  // under the documented isolation recipe (`ICDEV_PG_DATABASE=icdev_e2e npx
+  // playwright test`) this spec would start a SECOND dashboard on the
+  // canonical `icdev` and write its runs, gates and workflows there, while the
+  // suite believed it was isolated. Same function the config builds the
+  // primary server's env from (playwright.config.ts) rather than a second
+  // spelling of the precedence; it returns `{}` when no database was
+  // requested, so an ordinary local run is unchanged.
+  ...webServerDatabaseEnv(),
   ICDEV_AUTH_BYPASS: 'true',
   ICDEV_DASHBOARD_DEV_AUTOLOGIN: 'true',
   ICDEV_CUI_BANNER_ENABLED: 'true',
