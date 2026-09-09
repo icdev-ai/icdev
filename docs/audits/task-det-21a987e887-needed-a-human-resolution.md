@@ -290,7 +290,20 @@ indefinitely — the same "waits forever with no red anywhere" shape that
 Repaired by hand: the stale run cancelled first (so it could not repeat the
 inversion), then an empty commit `cda00a86f` to re-fire on the current head.
 `gh run rerun` was deliberately NOT used — in a `cancel-in-progress` group it
-cancels the run it is rerunning. Not carded here; it needs its own survey of how
+cancels the run it is rerunning.
+
+**That warning was subsequently MEASURED, not merely reasoned.** Later the same
+morning an operator, unaware of this record, ran
+`gh api -X POST .../actions/runs/34321300424/rerun` against the superseded run
+to clear its one `cancelled` check. The rollup on the PR head went from
+`{failure: 2, in_progress: 1, success: 2}` to **fifteen `cancelled` checks** in
+one step — `Test Gates`, `Test (PostgreSQL)`, `Test (Windows)`, all four test
+shards, all four E2E shards, `Docker Build`, `Security Scan`,
+`Doc Coherence Gate` and `Two-Tier LLM Build` — i.e. the rerun of the OLD sha
+joined the group and destroyed the current sha's run exactly as described. The
+recovery was the same one this section already prescribes: a fresh commit on the
+head. Two independent arrivals at the same conclusion, one by reasoning and one
+by tripping it. Not carded here; it needs its own survey of how
 often a queued run outlives a force-push, which is a property of the job cap and
 not of this branch.
 
@@ -335,12 +348,39 @@ end, and writing one would have been inventing a holder to then remove.
 `Test Gates` (the block this card was filed for) and `Test Shard 2 of 4` (the
 `main` defect the first green `Test Gates` uncovered).
 
-**The watcher merged it, not a human.** There is a `pr_watcher.merge` row at
-07:50:07.313855Z. So the shape of this instance is not "the escalation asked for
-a human and a human merged it" — it is *the escalation asked for a human, a
-human removed two blockers the automation structurally could not
-(a gate exemption and a schema collision), and the automation then completed the
-merge on its own*. Both halves were necessary; neither is the whole story.
+**Who merged it is NOT established, and two actors raced for it.** This
+record first said "the watcher merged it, not a human" on the strength of the
+`pr_watcher.merge` row at 07:50:07.313855Z reading `auto-merge ok`. That row
+does not support the claim on its own, and the claim is withdrawn here rather
+than left standing:
+
+| evidence | says |
+|---|---|
+| `pr_watcher.merge` @ 07:50:07.313855Z | `auto-merge ok` — no merge sha, no API status recorded |
+| GitHub `merged_at` | 2026-09-09T07:50:08Z |
+| GitHub `merged_by` | `icdev-ai` — the SHARED token; watcher and operator are indistinguishable through it |
+| an operator's own `PUT /pulls/2195/merge`, same second | returned `{"merged": true, "message": "Pull Request successfully merged"}` |
+
+GitHub returns that payload only to the caller that performs the merge; a second
+call against an already-merged PR is a 405. So the two records cannot both be
+the merge, the audit row carries nothing to break the tie, and the honest answer
+is that **it is not known which call landed** — one of them got a 405 nobody
+wrote down.
+
+The shape of the instance is unchanged and does not depend on the tie: *the
+escalation asked for a human, the two blockers the automation structurally could
+not clear (a gate exemption and a schema collision) were cleared by hand, and
+the merge followed immediately from whichever caller got there first.* Both
+halves were necessary; neither is the whole story.
+
+**The race itself is the finding worth keeping.** An operator working a claimed
+task and `pr_watcher` both held a live merge intent on one PR at the same second,
+through one shared identity, with no interlock between them and no field in
+`pr_watcher.merge` that would let a later reader tell them apart. That is a
+coordination gap, not a defect in either actor: `--claim` makes the RUNNER skip a
+task, and the watcher is a separate loop that it does not gate. Recording the
+merge's API status and resulting sha on the audit row would at least make the
+question answerable after the fact. Not carded here.
 
 And the platform's own disposition rule moved with it, which is the cleanest
 possible confirmation that the work was real:
