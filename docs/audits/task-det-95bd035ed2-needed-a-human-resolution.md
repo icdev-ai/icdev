@@ -35,6 +35,25 @@ Neither `rebase_failed` (3 rows, 20:33–20:36Z) nor `union_refused` extends the
 clear-by — both `claims._recovery_rows` and `detector_findings.recovery_rows`
 fetch only `pr_watcher.{rebase,resume,escalate,merge}`.
 
+### The platform's own rule agrees, and the card was still right to be filed
+
+`python -m tools.kanban.detector_findings --records` re-derives the disposition
+from primary data every run, and today it reads:
+
+```
+record  dwr-anchor-04  active  a pr_watcher.merge at 2026-09-08T23:11:58.776431+00:00
+                               landed AFTER the escalation at 2026-09-08T03:02:44.482894+00:00,
+                               and the subject is `done`: nothing is left to land
+```
+
+So by autonomy-act-04's conjunction — merge newer than escalation AND subject
+closed — this is a **record, not a dispatchable card**. That is not a defect in
+the seeding rule: the card was filed at `first_seen_at` **08:21:20Z**, fifteen
+hours *before* that merge, when the branch was genuinely red and the conflict
+unresolved. The rule was correct then and the disposition is correct now; only
+the world moved in between. It is the dispatch at 02:03:58Z on 09-09 — 2h52m
+after the subject merged — that had nothing left to act on.
+
 ## The escalation was CORRECT — a real test failure, in the branch's own new test
 
 This is **not** one of the moot instances. `Test Shard 2 of 4` failed on the
