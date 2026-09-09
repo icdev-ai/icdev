@@ -1,0 +1,2 @@
+# kpr-watch-16 -- the merge-readiness gatherer falls back to REST when GraphQL is rate-limited.
+tests/ci/test_merge_readiness_rest_fallback.py
