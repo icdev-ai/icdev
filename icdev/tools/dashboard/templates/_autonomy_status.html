@@ -166,10 +166,16 @@
     // hand. The count makes a retry loop read as a loop.
     var n = r.attempts || 1;
     var tries = (n > 1) ? (' ×' + n) : '';
+    // RED MEANS "WAITING FOR YOU", not "was hard once". `needed_a_human` is a
+    // permanent fact about the attempt and stays as the label; the COLOUR
+    // follows `needs_attention`, so a task the human already came back to
+    // reads as resolved instead of shouting at every later visitor.
     var oc = r.outcome === 'recovered'
       ? { txt: 'recovered', col: '#28a745' }
       : (r.outcome === 'needed_a_human'
-          ? { txt: 'needed a human', col: '#dc3545' }
+          ? (r.needs_attention
+              ? { txt: 'needs a human', col: '#dc3545' }
+              : { txt: 'needed a human (resolved)', col: '#8a8f98' })
           : { txt: 'still trying', col: '#f59e0b' });
     return ''
       + '<div class="auto-branch-row">'
@@ -253,14 +259,27 @@
       // "auto-recovered". Measured 2026-08-20: it read 14 where the honest
       // answer was 3 recovered of 6 tasks attempted.
       if (recovery.length) {
-        var _rec = 0, _human = 0, _open = 0;
+        // SPLIT THE ESCALATIONS BY WHETHER THEY ARE STILL OPEN. A bare
+        // "6 needed a human" is six calls to action, and on 2026-09-09 all six
+        // subjects were `done` -- the humans had already been. `needs_attention`
+        // is derived in recovery_summary.py so this line cannot disagree with
+        // the rows beneath it about what "closed" means.
+        var _rec = 0, _human = 0, _humanOpen = 0, _open = 0;
         recovery.forEach(function (r) {
           if (r.outcome === 'recovered') { _rec++; }
-          else if (r.outcome === 'needed_a_human') { _human++; }
+          else if (r.outcome === 'needed_a_human') {
+            _human++;
+            if (r.needs_attention) { _humanOpen++; }
+          }
           else { _open++; }
         });
         var _bit = _rec + ' of ' + recovery.length + ' auto-recovered (24h)';
-        if (_human) { _bit += ' · ' + _human + ' needed a human'; }
+        if (_humanOpen) {
+          _bit += ' · ' + _humanOpen + ' NEED a human';
+          if (_human > _humanOpen) { _bit += ' (+' + (_human - _humanOpen) + ' resolved)'; }
+        } else if (_human) {
+          _bit += ' · ' + _human + ' needed a human, all resolved';
+        }
         if (_open) { _bit += ' · ' + _open + ' still trying'; }
         bits.push(_bit);
       }

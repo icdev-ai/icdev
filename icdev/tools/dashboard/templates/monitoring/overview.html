@@ -101,49 +101,82 @@ flowchart TD
                 <th>WATCHCON</th>
                 <th>Severity</th>
                 <th>Title</th>
+                {# The cause, the budget and the PR were only ever in the alert's
+                   `description`, which this table never rendered. They are the
+                   facts that decide which remediation can work, so on 2026-08-10
+                   they were read out of the database while 12 alerts were
+                   cleared by hand. #}
+                <th>Cause</th>
+                <th>Budget</th>
+                <th>PR</th>
+                <th>Seen</th>
                 <th>Source</th>
-                <th>Project</th>
-                <th>Auto-Healed</th>
                 <th>Created</th>
                 <th>Action</th>
             </tr>
         </thead>
         <tbody>
             {% for alert in firing_alerts %}
-            <tr>
+            <tr {% if alert.is_stale %}class="alert-stale"{% endif %}>
                 <td><span class="badge badge-info">W{{ alert.watchcon_tier or 4 }}</span></td>
                 <td><span class="badge badge-{{ alert.severity }}">{{ alert.severity }}</span></td>
-                <td>{{ alert.title }}</td>
-                <td>{{ alert.source }}</td>
                 <td>
-                    {% if alert.project_id %}
-                    <a href="/projects/{{ alert.project_id }}">{{ alert.project_id[:12] }}</a>
+                    {{ alert.title }}
+                    {% if alert.is_stale %}
+                    {# The sweep in pr_watcher clears these; this is the window
+                       between the task finishing and the next poll — and the
+                       backstop for any case the sweep does not reach. #}
+                    <span class="badge badge-muted" title="The task is {{ alert.task_status or 'gone' }} — this alert describes work that is over">stale</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if alert.hitl %}
+                    <span class="badge badge-{{ 'high' if alert.hitl.cause == 'merge_conflict' else 'medium' }}">{{ alert.hitl.cause_label }}</span>
                     {% else %}
                     <span class="text-muted">&mdash;</span>
                     {% endif %}
                 </td>
+                <td class="text-muted">{{ alert.hitl.cycle_display if alert.hitl and alert.hitl.cycle_display else '—' }}</td>
                 <td>
-                    {% if alert.auto_healed %}
-                    <span class="text-green">Yes</span>
+                    {% if alert.hitl and alert.hitl.pr_url %}
+                    <a href="{{ alert.hitl.pr_url }}" target="_blank" rel="noopener">#{{ alert.hitl.pr_number or 'PR' }}</a>
                     {% else %}
-                    <span class="text-muted">No</span>
+                    <span class="text-muted">&mdash;</span>
                     {% endif %}
                 </td>
+                <td class="text-muted">
+                    {# Re-fire churn. The #1513 flap wrote 27 rows for one task in
+                       a day and this page could not show it. #}
+                    {% if alert.refire_count and alert.refire_count > 1 %}
+                    <span title="First seen {{ alert.first_seen }}">re-fired {{ alert.refire_count }}&times;</span>
+                    {% else %}
+                    once
+                    {% endif %}
+                </td>
+                <td>{{ alert.source }}</td>
                 <td class="text-muted">{{ alert.created_at }}</td>
                 <td>
                     {# Only a pr_watcher HITL alert names a task these verbs can
                        act on. Every other alert source gets no buttons rather
                        than buttons that would fail — an control that does
-                       nothing teaches people to distrust the ones that work. #}
+                       nothing teaches people to distrust the ones that work.
+                       Same reasoning, applied to the CAUSE: rebase_and_push
+                       refuses a real conflict, so offering Rebase there is a
+                       control that cannot work either. #}
                     {% if alert.source and alert.source.startswith('pr_watcher:hitl:') %}
                     <div class="hitl-actions" data-alert-id="{{ alert.id }}">
+                      {% if alert.rebase_refusal %}
+                      <button class="btn btn-sm" data-act="rebase" disabled
+                              title="{{ alert.rebase_refusal }}">Rebase</button>
+                      {% else %}
                       <button class="btn btn-sm" data-act="rebase"
                               title="Rebase onto main and let CI re-run — keeps this PR">Rebase</button>
+                      {% endif %}
                       <button class="btn btn-sm" data-act="requeue"
                               title="Clean rebuild from current main — abandons the stuck attempt">Requeue</button>
                       <button class="btn btn-sm btn-muted" data-act="dismiss"
                               title="Clear without acting">Dismiss</button>
-                      <span class="hitl-result text-muted"></span>
+                      <span class="hitl-result text-muted">{% if alert.rebase_refusal %}{{ alert.rebase_refusal }}{% endif %}</span>
                     </div>
                     {% else %}
                     <span class="text-muted">&mdash;</span>
