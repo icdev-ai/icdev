@@ -177,6 +177,17 @@ SET_VALUED_FINGERPRINT_DETECTORS = frozenset({DETECTOR_MIGRATION_DRIFT})
 DISPOSITION_CARD = "card"      # somebody has to act
 DISPOSITION_RECORD = "record"  # a true statement about the past; nothing to act on
 
+#: The two rows ``merge_after_escalation`` ORDERS -- a DISTINCT named constant,
+#: and the written reason it differs from ``recovery_summary.AUDIT_ACTIONS``
+#: (autonomy-act-05). The recovery row set answers "was this task attempted, and
+#: how many times"; this one answers "which of these two rows is newer". An
+#: ATTEMPT row is neither an escalation nor a merge, so it has no place in that
+#: ordering, and widening this set to match would put rows into a comparison
+#: that cannot use them. That is a deliberate difference with a reason, not the
+#: silent drift this card fixed -- two UNNAMED literals disagreeing was the
+#: defect, a named constant saying why is the answer.
+OUTCOME_ACTIONS = ("pr_watcher.escalate", "pr_watcher.merge")
+
 #: A card in one of these is no longer anybody's work item, so a finding that
 #: comes back while its card sits here has RECURRED and earns a fresh card.
 TERMINAL_CARD_STATUSES = frozenset({"done", "failed"})
@@ -664,16 +675,29 @@ def run_born_red(conn, cfg: Mapping[str, Any]) -> dict:
 
 
 def recovery_rows(conn, window_hours: int) -> List[dict]:
-    """The pr_watcher audit rows the recovery panel and claim_verifier read."""
+    """The pr_watcher audit rows the recovery panel and claim_verifier read.
+
+    THE ROW SET IS ``recovery_summary.AUDIT_ACTIONS`` AND NOTHING ELSE
+    (autonomy-act-05). This function used to carry a hand-written FOUR-value
+    literal while the panel read the exported constant, so the panel and the
+    detector answered the same question over different rows: measured on the
+    live board 2026-09-09 the panel saw 103 rows over 10 tasks and this reader
+    saw 66 over 9, at the same instant. A reader cannot see an attempt kind it
+    does not FETCH -- ``summarize_recovery`` drops a task with zero attempts, so
+    ``sbx-fld-01`` (177 ``escalate`` rows, 2 ``rebase_failed`` attempts) drew no
+    finding here at all while the panel showed it.
+    """
+    from tools.dashboard.recovery_summary import AUDIT_ACTIONS
+
     pg = str(getattr(conn, "_backend", "")).startswith("postgres")
     details = "details::text" if pg else "details"
     cut = (_now() - timedelta(hours=window_hours)).isoformat()
+    placeholders = ",".join(["%s"] * len(AUDIT_ACTIONS))
     return [dict(r) for r in conn.execute(
         f"SELECT action, {details} AS d, created_at FROM audit_trail "  # nosec B608
-        "WHERE action IN ('pr_watcher.rebase','pr_watcher.resume',"
-        "'pr_watcher.escalate','pr_watcher.merge') AND created_at >= %s "
+        f"WHERE action IN ({placeholders}) AND created_at >= %s "
         "ORDER BY created_at",
-        (cut,),
+        (*AUDIT_ACTIONS, cut),
     ).fetchall()]
 
 
@@ -685,15 +709,22 @@ def watcher_outcome_rows(conn, *, window_hours: Optional[int] = None) -> List[di
     recent window and would otherwise report UNMEASURABLE. ``consume`` does NOT
     call this: it orders against the rows ``recovery_rows`` already fetched, so
     the disposition and the verdict are derived from the same evidence.
+
+    IT READS ``OUTCOME_ACTIONS`` AND NOT ``AUDIT_ACTIONS`` (autonomy-act-05).
+    That is a DELIBERATE difference with a written reason, not the drift this
+    card fixed: ``merge_after_escalation`` asks which of TWO rows is newer, and
+    an ATTEMPT row is neither an escalation nor a merge, so widening this set
+    would put rows into an ordering that has no place for them.
     """
     pg = str(getattr(conn, "_backend", "")).startswith("postgres")
     details = "details::text" if pg else "details"
+    placeholders = ",".join(["%s"] * len(OUTCOME_ACTIONS))
     sql = (f"SELECT action, {details} AS d, created_at FROM audit_trail "  # nosec B608
-           "WHERE action IN ('pr_watcher.escalate','pr_watcher.merge')")
-    params: tuple = ()
+           f"WHERE action IN ({placeholders})")
+    params: tuple = tuple(OUTCOME_ACTIONS)
     if window_hours is not None:
         sql += " AND created_at >= %s"
-        params = ((_now() - timedelta(hours=int(window_hours))).isoformat(),)
+        params = (*params, (_now() - timedelta(hours=int(window_hours))).isoformat())
     return [dict(r) for r in conn.execute(sql + " ORDER BY created_at", params).fetchall()]
 
 
