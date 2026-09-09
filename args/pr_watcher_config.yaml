@@ -528,3 +528,20 @@ union_resolver:
     # Feature docs carrying a per-card coverage table.
     - path: docs/features/*.md
       rules: [table_rows, keep_both_blocks, adjacent_edits]
+    # THE SINGLE LARGEST REFUSAL CAUSE (kpr-watch-14): 35 of the 63 lifetime
+    # `undeclared:` union refusals named CLAUDE.md, 55.6%. Every card appends
+    # its own block, so main and the card insert at the same point -- the
+    # `keep_both_blocks` shape exactly. SURVEYED before arming, over all 11
+    # merges in this file's history where git ITSELF conflicted: the union
+    # loses NOTHING in 11 of 11, reproduces the human resolution byte for byte
+    # in 7, and differs from the other 4 only by one or two BLANK LINES at a
+    # block seam. Re-derive with tools/kanban/claude_md_union_survey.py.
+    - path: CLAUDE.md
+      rules: [keep_both_blocks, adjacent_edits]
+    # NOT unioned -- DERIVED. mfx-ci-04 requires this payload to be regenerated
+    # whenever CLAUDE.md changes, and `prebuild_bootstrap.SOURCES` regenerates
+    # it with a bare `shutil.copy2`, so copying the resolved CLAUDE.md IS the
+    # regeneration. It carried a conflict in all 35 of those refusals, so
+    # declaring CLAUDE.md alone would have resolved none of them.
+    - path: icdev/data/claude_bootstrap/CLAUDE.md
+      derived_from: CLAUDE.md
