@@ -203,6 +203,44 @@ a test that is red on `main` back to red — the census discipline
 (`born_red_survey`, rem-hyg-14) says repair it, and the repair is correct and
 verified in both directions above.
 
+## A THIRD thing, found by watching the repair land: `cancel-in-progress` inverts under a job cap
+
+The exemption did not get a clean run on the first try, and the reason is a
+defect in mfx-ci-02's concurrency declaration that only appears when the
+account's job cap makes runs queue.
+
+| run | head | created | started | ended |
+|---|---|---|---|---|
+| `34321300424` | `4508ba0ff` — **superseded** | 06:55:24Z | **07:11:25Z** | cancelled by hand |
+| `34322543640` | `5fa976aba` — **current** | 07:10:41Z | 07:10:4xZ | **cancelled 07:16:28Z** |
+
+The older run sat queued for **16 minutes** behind the job cap and *started*
+after the newer one had already begun — `Lint` and `Helm Lint` had passed. Both
+share the group `icdev-ci-${{ github.ref }}` with `cancel-in-progress: true`,
+and **GitHub orders that group by START, not by creation**, so the
+superseded-sha run joined late and cancelled the current-sha run. The stale
+`updated_at` (07:16:28Z) is the newer run's cancellation instant to the second.
+
+The consequence is worth stating in general terms, because it is not specific to
+this PR: **a force-push while a run is queued inverts the ordering — the older
+sha wins, the head's run is destroyed, and the branch is left with a rollup of
+`cancelled` that no merge door accepts.** `pr_watcher`'s own `behind_main`
+rebase is a force-push, so the watcher can trigger this against itself, which is
+exactly what happened here.
+
+**The watcher cannot self-heal it.** `_retrigger_ci` (close/reopen) fires only
+behind `_ci_never_fired`, i.e. an EMPTY rollup. A rollup full of `cancelled` is
+not empty, so the cheap repair is never reached and the PR waits in `pr_opened`
+indefinitely — the same "waits forever with no red anywhere" shape that
+`_ci_never_fired` was written to close, one state over.
+
+Repaired by hand: the stale run cancelled first (so it could not repeat the
+inversion), then an empty commit `cda00a86f` to re-fire on the current head.
+`gh run rerun` was deliberately NOT used — in a `cancel-in-progress` group it
+cancels the run it is rerunning. Not carded here; it needs its own survey of how
+often a queued run outlives a force-push, which is a property of the job cap and
+not of this branch.
+
 ## Two things found on the way, neither this card's to fix, both named
 
 **1. The watcher has been blind to every PR since 00:39Z — a GitHub API rate
