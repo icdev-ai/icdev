@@ -62,6 +62,42 @@ New this run:
   the duration — the watchdog restarts at >300s stale, so it has to be kept
   fresh, not merely created once.
 
+## A caveat on the port, measured after the fact
+
+**Port 5091 was probed free at 16:31 and a peer session bound it at 16:42:08 —
+mid-run.** From that point two processes were bound to one port
+(`tools/dashboard/app.py`, Playwright-managed, and a peer's
+`C:\AI\ICDev\.tmp\_qa_trip_5091.py`, pid 32392), which Windows permits and
+which makes *which* server answers a given request undetermined. This is the
+known hazard, and probing the port free beforehand does not close it — nothing
+here held the port.
+
+What that does and does not cost:
+
+* **It does not put the canonical board at risk.** `globalSetup`'s assert
+  measured the answering server at `icdev_e2e` via `current_database()`, and the
+  peer's process still answers `icdev_e2e` today. Both were on the throwaway.
+* **It does not weaken the root-cause measurement.** `get_connection()` ->
+  `icdev` against `/api/health` -> `icdev_e2e` is a fact about this process's
+  environment and does not depend on which server answered.
+* **It does not weaken the fix proof**, which is a database-alignment fact:
+  seed and rail on the same database, three cards render, three tests pass. Both
+  candidate servers run the same tree (this worktree is at `main` with no source
+  change) and the same database.
+* **It does mean the run did not own its server exclusively**, so "824 passed"
+  is a measurement of the platform on `icdev_e2e` rather than of one process
+  this run controlled end to end. Stated rather than smoothed over.
+
+The re-verification run used `ICDEV_NO_SERVER=1` against 5091; by then the
+Playwright-managed server had exited and the peer's was the only listener. It
+was on `icdev_e2e` and served this run's own seeded fixture back through
+`/api/change-set`, which is what makes it usable evidence — but it was not our
+process, and it was **not killed**: a peer's server is not this session's to
+stop.
+
+Next run: require exactly ONE listener and identify it by command line before
+trusting the port, rather than only probing it free.
+
 ## The two failures were ONE defect, and it is in the harness
 
 | # | Spec | Failure |
