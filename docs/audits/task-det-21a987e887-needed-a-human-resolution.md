@@ -33,7 +33,8 @@ in the same batch, which both read `record` and had nothing left to land:
 
 So this is not instance 4/5/6/8/11's "nobody fixed it and the watcher merged it
 anyway". #2195 was open, red and going nowhere for **seven hours** when the card
-dispatched, and it would still be open now.
+dispatched. It merged at 07:50:08Z once the two real blockers were removed by
+hand — see **Outcome** at the end, where the disposition flips to `record`.
 
 ## The timeline
 
@@ -325,6 +326,42 @@ it honestly rather than claiming a removal it had not confirmed. Left alone.
 running (the live daemon is 17924). Nothing was holding the task, so no claim
 had to be released; `--release` was not run because there is no live keeper to
 end, and writing one would have been inventing a holder to then remove.
+
+## Outcome — the subject LANDED, and the disposition flipped under it
+
+**#2195 merged at 2026-09-09T07:50:08Z** (`052311da9`), and
+`kanban_tasks.dwr-collab-01` reads `done` at 07:50:46Z. Final rollup on
+`29e83c55a`: **19 pass, 2 skipping, 0 failures** — including
+`Test Gates` (the block this card was filed for) and `Test Shard 2 of 4` (the
+`main` defect the first green `Test Gates` uncovered).
+
+**The watcher merged it, not a human.** There is a `pr_watcher.merge` row at
+07:50:07.313855Z. So the shape of this instance is not "the escalation asked for
+a human and a human merged it" — it is *the escalation asked for a human, a
+human removed two blockers the automation structurally could not
+(a gate exemption and a schema collision), and the automation then completed the
+merge on its own*. Both halves were necessary; neither is the whole story.
+
+And the platform's own disposition rule moved with it, which is the cleanest
+possible confirmation that the work was real:
+
+```
+at dispatch   card    dwr-collab-01  the escalation is the newer of the two rows
+after         record  dwr-collab-01  a pr_watcher.merge at 2026-09-09T07:50:07Z landed
+                                     AFTER the escalation at 2026-09-08T23:56:57Z,
+                                     and the subject is `done`: nothing is left to land
+```
+
+This card was filed as a `card` — the first of the 29 to be — did the work, and
+ended as a `record`. Instances 4/5/6/8/11 were `record` at dispatch and had
+nothing to do.
+
+**The finding is still `active`, and that is correct.** `escalate` outranks the
+later merge by design (rem-hyg-16), so `21a987e887c69c8f` clears at the first
+`detector_findings_reflex` cycle after **2026-09-10 07:10:38Z** — 24h past the
+newest counted attempt, which is now the 07:10:38Z rebase and no longer moves,
+because the branch has merged and nothing will rebase it again. Nothing in this
+card touched the detector, its window or its threshold to bring that forward.
 
 ## Instance count
 
