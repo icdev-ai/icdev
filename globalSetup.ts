@@ -39,7 +39,7 @@
  * This is diagnostics only: every probe is wrapped, nothing here can fail a run.
  */
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import dns from 'node:dns';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -48,6 +48,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { baseUrlSource as resolveBaseUrlSource, resolveBaseUrl } from './tests/e2e/fixtures/base_url';
 import { requestedDatabase, RequestedDatabase } from './tests/e2e/fixtures/e2e_database';
+import { PYTHON, icdevSubprocessEnv } from './tests/e2e/fixtures/subprocess_env';
 
 /** Set once diagnostics have been emitted in this process. */
 const DONE_MARKER = 'ICDEV_E2E_ENV_DIAG_DONE';
@@ -840,11 +841,42 @@ export async function assertBaseUrlReachable(baseUrl: string | undefined): Promi
 // is already up on the port, Playwright starts no server, `webServer.env` is
 // never applied, and every variable this run exported is inert.
 //
-// FOUR VERDICTS, AND `confirmed` IS NOT A SYNONYM FOR `isolated`:
-//   confirmed      requested, and the server is measurably on that database
-//   mismatch       requested, and the server is somewhere else      -> THROWS
+// AND IT MEASURES EVERY WRITER, NOT JUST THE SERVER (qa-fail-679a43311f34d5c9).
+// The server was the only writer this checked, and it is not the only writer.
+// Three specs spawn their OWN ICDEV Python process — the DIC workspace seed
+// fixture, the second dashboard `dwo_restart_durability` starts, the gateway
+// `dwo_trigger_linkage` starts — and a bare `{ ...process.env }` inherit carried
+// the operator's ambient `ICDEV_DATABASE_URL` through, which `tools/db/storage.py`
+// reads BEFORE the discrete `ICDEV_PG_DATABASE`. So this printed
+//
+//     ✓ E2E database confirmed: server is on 'icdev_e2e'
+//
+// while fixture rows were being committed to the canonical `icdev`. The tick was
+// TRUE, about a process that was not the one doing the writing. An isolation
+// check that covers one writer and reports `confirmed` is the shape of the
+// defect it exists to close, so `confirmed` now requires EVERY writer.
+//
+// The second writer is measured by SPAWNING ONE, with `icdevSubprocessEnv()` —
+// the same function every spec's subprocess env is built from, never a
+// hand-built copy. A hand-built environment would measure a path no spec takes,
+// which is the same error as re-reading our own variable back. ~420 ms, once per
+// run, measured on this host (5 runs, 409-447 ms) against a 17.5-minute suite.
+//
+// Stand the second probe down ALONE with ICDEV_E2E_DB_CHECK_SUBPROCESS=0 — an
+// operator on a host where no interpreter can run should not have to disarm the
+// server check too, which is the only thing that catches `reuseExistingServer`.
+//
+// FOUR VERDICTS, PER WRITER, AND `confirmed` IS NOT A SYNONYM FOR `isolated`:
+//   confirmed      requested, and this writer is measurably on that database
+//   mismatch       requested, and this writer is somewhere else     -> THROWS
 //   unmeasured     requested, and we could not confirm it           -> THROWS
 //   not_requested  nothing was asked for. NOT a clean bill of health.
+//
+// The RUN's verdict is the WORST of its writers (mismatch > unmeasured >
+// confirmed), so one writer's tick can never speak for another's. Every writer's
+// own verdict is carried and printed beside it rather than collapsed into the
+// headline — a reader has to be able to see WHICH writer went somewhere else,
+// because a server mismatch and a subprocess mismatch have different repairs.
 //
 // The success verdict is deliberately NOT called `isolated`. What this can
 // prove is that the server is on the database the run named; whether that
@@ -913,6 +945,121 @@ export async function probeServerDatabase(baseUrl: string, timeoutMs = 15000): P
   }
 }
 
+/**
+ * Ask a SPEC'S OWN SUBPROCESS which database it reaches. Never throws.
+ *
+ * It spawns `tests/e2e/fixtures/database_probe.py` with `icdevSubprocessEnv()` —
+ * THE SAME function every spec builds its subprocess environment from. That
+ * identity is the whole measurement: a probe run with a hand-built environment
+ * would describe a path no spec takes, which is exactly the "echo the variable
+ * back" reasoning that shipped the broken recipe one layer up.
+ *
+ * The probe is READ-ONLY (one connection, one `current_database()`), and its own
+ * failures are reported as `error` rather than as an absent database, because "no
+ * interpreter / import failed" and "the database could not be measured" send a
+ * reader to different fixes.
+ */
+export function probeSubprocessDatabase(root: string, timeoutMs = 60000): DatabaseProbe {
+  const script = path.join(root, 'tests', 'e2e', 'fixtures', 'database_probe.py');
+  let res;
+  try {
+    res = spawnSync(PYTHON, [script], {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: timeoutMs,
+      env: icdevSubprocessEnv({ PYTHONIOENCODING: 'utf-8' }),
+    });
+  } catch (err) {
+    return { measured: null, backend: null, error: `could not spawn ${PYTHON}: ${(err as Error).message}` };
+  }
+  if (res.error) {
+    return { measured: null, backend: null, error: `could not spawn ${PYTHON}: ${res.error.message}` };
+  }
+  if (res.status !== 0) {
+    const why = (res.stderr || res.stdout || '').trim().split(/\r?\n/).pop() || `exit ${res.status}`;
+    return { measured: null, backend: null, error: `database_probe.py produced no verdict: ${why}` };
+  }
+  // One JSON line; anything a library logged first is skipped, not parsed.
+  const line = (res.stdout || '').trim().split(/\r?\n/).filter(Boolean).pop() || '';
+  let body: { measured?: unknown; backend?: unknown; database?: unknown; error?: unknown };
+  try {
+    body = JSON.parse(line);
+  } catch {
+    return { measured: null, backend: null, error: `database_probe.py printed no parsable verdict: ${line.slice(0, 200)}` };
+  }
+  const backend = typeof body.backend === 'string' ? body.backend : null;
+  if (body.measured !== true || typeof body.database !== 'string' || !body.database) {
+    return {
+      measured: null,
+      backend,
+      // An absent measurement must never read as a matching one.
+      error: typeof body.error === 'string' && body.error
+        ? body.error
+        : 'the subprocess did not report a measured database',
+    };
+  }
+  return { measured: body.database, backend, error: null };
+}
+
+/**
+ * Which writer a verdict is about. A run has several and they are NEVER merged:
+ * the server is redirected by `webServer.env`, a spec's subprocess by
+ * `icdevSubprocessEnv()`, and those are two different mechanisms that can fail
+ * independently — which is precisely what happened.
+ */
+export type IsolationWriter = 'server' | 'subprocess';
+
+export interface WriterIsolation extends DatabaseIsolationResult {
+  writer: IsolationWriter;
+  /** What this writer is, in words, for a message a reader can act on. */
+  what: string;
+}
+
+export interface RunIsolationResult {
+  /** The WORST verdict across writers — one tick can never speak for another. */
+  verdict: DatabaseIsolationVerdict;
+  requested: string | null;
+  requestedSource: string | null;
+  explicit: boolean;
+  writers: WriterIsolation[];
+}
+
+/** mismatch beats unmeasured beats confirmed. `not_requested` is run-wide. */
+const VERDICT_SEVERITY: Record<DatabaseIsolationVerdict, number> = {
+  confirmed: 0,
+  not_requested: 1,
+  unmeasured: 2,
+  mismatch: 3,
+};
+
+/**
+ * Fold per-writer verdicts into the run's. The severity order is what makes
+ * `confirmed` mean EVERY writer: a single non-confirmed writer carries the run.
+ *
+ * An EMPTY writer list is `unmeasured`, never `confirmed` — a run that measured
+ * nobody has not confirmed anybody, and returning `confirmed` for `[]` is the
+ * two-empty-sides defect the claim verifier exists for, in four lines.
+ */
+export function combineIsolation(
+  requested: RequestedDatabase,
+  writers: WriterIsolation[],
+): RunIsolationResult {
+  const base = {
+    requested: requested.name,
+    requestedSource: requested.source,
+    explicit: requested.explicit,
+    writers,
+  };
+  if (!writers.length) {
+    return { ...base, verdict: requested.name ? 'unmeasured' : 'not_requested' };
+  }
+  let worst = writers[0];
+  for (const w of writers) {
+    if (VERDICT_SEVERITY[w.verdict] > VERDICT_SEVERITY[worst.verdict]) worst = w;
+  }
+  return { ...base, verdict: worst.verdict };
+}
+
 /** Compute the verdict without printing or throwing — the testable core. */
 export function classifyDatabaseIsolation(
   requested: RequestedDatabase,
@@ -941,53 +1088,132 @@ export function classifyDatabaseIsolation(
     };
   }
   if (probe.measured === requested.name) {
-    return { ...base, verdict: 'confirmed', detail: `server is on '${probe.measured}'` };
+    // WRITER-NEUTRAL wording: this function now answers for the server AND for a
+    // spec's own subprocess, and a subprocess line reading "server is on ..." is
+    // a message that names the wrong process. The caller prefixes the writer.
+    return { ...base, verdict: 'confirmed', detail: `measured on '${probe.measured}'` };
   }
   return {
     ...base,
     verdict: 'mismatch',
-    detail: `${requested.source}=${requested.name} but the server is on '${probe.measured}'`,
+    detail: `${requested.source}=${requested.name} but this writer is on '${probe.measured}'`,
   };
 }
 
-function isolationFailure(result: DatabaseIsolationResult): string {
+function isolationFailure(run: RunIsolationResult): string {
   const lines = [
     '',
     'E2E DATABASE ISOLATION FAILED — refusing to run.',
     '',
-    `  requested : ${result.requested} (via ${result.requestedSource})`,
-    `  measured  : ${result.measured ?? '<not measured>'}${result.backend ? ` (${result.backend})` : ''}`,
-    `  verdict   : ${result.verdict}`,
-    `  detail    : ${result.detail}`,
+    `  requested : ${run.requested} (via ${run.requestedSource})`,
+    `  verdict   : ${run.verdict}`,
     '',
+    '  writers:',
   ];
-  if (result.verdict === 'mismatch') {
+  // EVERY writer is listed, including the ones that passed. A failure report
+  // naming only the offender cannot tell a reader whether the others were
+  // checked at all — which is the absence this whole card is about.
+  for (const w of run.writers) {
+    lines.push(
+      `    ${w.writer.padEnd(10)} ${w.verdict.padEnd(13)} ${w.measured ?? '<not measured>'}` +
+        `${w.backend ? ` (${w.backend})` : ''}`,
+      `               ${w.what}`,
+      `               ${w.detail}`,
+    );
+  }
+  lines.push('');
+
+  const offenders = run.writers.filter((w) => w.verdict === run.verdict);
+  const serverHit = offenders.some((w) => w.writer === 'server');
+  const subprocessHit = offenders.some((w) => w.writer === 'subprocess');
+
+  if (run.verdict === 'mismatch') {
     lines.push(
       'The suite writes fixtures. Running it here would leave them in a database',
-      'you did not ask for. Two things cause this:',
-      '',
-      '  1. A dashboard was ALREADY running on this port, so Playwright started',
-      '     no server and none of this run’s environment reached it. Give the',
-      '     run its own server:  ICDEV_DASHBOARD_PORT=5090',
-      '  2. The database name was outranked. `.env` sets ICDEV_DATABASE_URL and',
-      '     tools/db/storage.py reads the DSN before ICDEV_PG_DATABASE, so pass',
-      '     the DSN instead:  ICDEV_DATABASE_URL=postgresql://.../<db>',
+      'you did not ask for.',
       '',
     );
+    if (serverHit) {
+      lines.push(
+        '  THE SERVER is on the wrong database. Two things cause this:',
+        '',
+        '    1. A dashboard was ALREADY running on this port, so Playwright started',
+        '       no server and none of this run’s environment reached it. Give the',
+        '       run its own server:  ICDEV_DASHBOARD_PORT=5090',
+        '    2. The database name was outranked. `.env` sets ICDEV_DATABASE_URL and',
+        '       tools/db/storage.py reads the DSN before ICDEV_PG_DATABASE, so pass',
+        '       the DSN instead:  ICDEV_DATABASE_URL=postgresql://.../<db>',
+        '',
+      );
+    }
+    if (subprocessHit) {
+      lines.push(
+        '  A SPEC’S OWN SUBPROCESS is on the wrong database — the writer the server',
+        '  probe cannot see (qa-fail-679a43311f34d5c9). A spawn site is inheriting',
+        '  the ambient ICDEV_DATABASE_URL instead of building its environment from',
+        '  tests/e2e/fixtures/subprocess_env.ts. Find the site with',
+        '',
+        '    python -m pytest tests/test_e2e_subprocess_isolation.py -q',
+        '',
+        '  and re-derive this probe by hand with',
+        '',
+        '    python tests/e2e/fixtures/database_probe.py',
+        '',
+      );
+    }
   } else {
     lines.push(
       'A database was requested and the isolation could NOT be confirmed, which',
-      'is not the same as confirming it. Check that the dashboard is reachable',
-      'and that /api/health reports `database_measured`.',
+      'is not the same as confirming it.',
       '',
     );
+    if (serverHit) {
+      lines.push(
+        '  Check that the dashboard is reachable and that /api/health reports',
+        '  `database_measured`.',
+        '',
+      );
+    }
+    if (subprocessHit) {
+      lines.push(
+        '  The subprocess probe could not answer. Re-derive it by hand:',
+        '',
+        '    python tests/e2e/fixtures/database_probe.py',
+        '',
+        '  If no interpreter can run on this host, stand THAT probe down alone with',
+        '  ICDEV_E2E_DB_CHECK_SUBPROCESS=0 — which leaves the server check, and its',
+        '  reuseExistingServer cover, armed.',
+        '',
+      );
+    }
   }
-  lines.push('Stand this check down deliberately with ICDEV_E2E_DB_CHECK=0.', '');
+  lines.push('Stand the whole check down deliberately with ICDEV_E2E_DB_CHECK=0.', '');
   return lines.join('\n');
 }
 
+/** What each writer IS, so a verdict names something an operator can go and look at. */
+const WRITER_DESCRIPTIONS: Record<IsolationWriter, string> = {
+  server: 'the dashboard under test, measured via /api/health (current_database())',
+  subprocess: "a spec's own ICDEV python process, measured by spawning one",
+};
+
+function writerIsolation(
+  writer: IsolationWriter,
+  requested: RequestedDatabase,
+  probe: DatabaseProbe,
+): WriterIsolation {
+  return {
+    writer,
+    what: WRITER_DESCRIPTIONS[writer],
+    // ONE reduction for both writers: "requested vs measured" is the identical
+    // question, so it is answered by the function already under test rather than
+    // by a second copy that could come to disagree with it.
+    ...classifyDatabaseIsolation(requested, probe),
+  };
+}
+
 /**
- * THROWS when this run asked for a database and the server is not on it.
+ * THROWS when this run asked for a database and ANY writer is not on it.
  *
  * Like `assertBaseUrlReachable`, and unlike the diagnostics, this is allowed to
  * fail the run — a run that silently writes into the canonical board is worse
@@ -995,7 +1221,8 @@ function isolationFailure(result: DatabaseIsolationResult): string {
  */
 export async function assertDatabaseIsolated(
   baseUrl: string | undefined,
-): Promise<DatabaseIsolationResult | null> {
+  root: string = __dirname,
+): Promise<RunIsolationResult | null> {
   if (process.env.ICDEV_E2E_DB_CHECK === '0' || process.env.ICDEV_E2E_DB_CHECK === 'off') {
     console.log('  ! E2E database isolation check DISABLED (ICDEV_E2E_DB_CHECK=0)');
     return null;
@@ -1006,32 +1233,58 @@ export async function assertDatabaseIsolated(
   }
 
   const requested = requestedDatabase();
-  const probe = await probeServerDatabase(baseUrl);
-  const result = classifyDatabaseIsolation(requested, probe);
+  const writers: WriterIsolation[] = [
+    writerIsolation('server', requested, await probeServerDatabase(baseUrl)),
+  ];
 
-  if (result.verdict === 'confirmed') {
-    console.log(`  ✓ E2E database confirmed: ${result.detail} (via ${result.requestedSource})`);
+  const subprocessCheck = !(
+    process.env.ICDEV_E2E_DB_CHECK_SUBPROCESS === '0' ||
+    process.env.ICDEV_E2E_DB_CHECK_SUBPROCESS === 'off'
+  );
+  // The second writer is probed ONLY when a database was requested: with nothing
+  // requested, `icdevSubprocessEnv()` is the ambient environment unchanged, no
+  // claim of isolation is being made, and spending ~420 ms to confirm the absence
+  // of a claim is cost for nothing. When it is skipped the run SAYS so below,
+  // rather than leaving a reader to assume it was covered.
+  if (requested.name && subprocessCheck) {
+    writers.push(writerIsolation('subprocess', requested, probeSubprocessDatabase(root)));
+  }
+
+  const run = combineIsolation(requested, writers);
+
+  if (run.verdict === 'confirmed') {
+    for (const w of run.writers) {
+      console.log(`  ✓ E2E database confirmed (${w.writer}): ${w.detail} (via ${run.requestedSource})`);
+    }
+    if (requested.name && !subprocessCheck) {
+      // An unmeasured writer must never be silent, or this is back to a tick that
+      // covers one writer and reads as covering the run.
+      console.log(
+        "    ! The subprocess writer was NOT measured (ICDEV_E2E_DB_CHECK_SUBPROCESS=0)" +
+          " — a spec's own python process could still be writing elsewhere.",
+      );
+    }
     if (!requested.explicit) {
       // The database came from the deployment's own configuration, not from a
       // per-run knob — so nothing about this run is isolated, and the fixtures
       // land here. Said plainly on every such run, because the alternative is a
       // tick beside the canonical board's name.
       console.log(
-        `    ! Nothing requested a throwaway database — the suite writes its fixtures into '${result.measured}'.`,
+        `    ! Nothing requested a throwaway database — the suite writes its fixtures into '${run.writers[0].measured}'.`,
       );
       console.log('      Point this run elsewhere with  ICDEV_PG_DATABASE=icdev_e2e  (see playwright.config.ts).');
     }
-    return result;
+    return run;
   }
-  if (result.verdict === 'not_requested') {
+  if (run.verdict === 'not_requested') {
     // Loud, and it NAMES the database, because the common local run is the
     // canonical board and the operator should see that before 840 tests write
     // to it. Not a failure: they may have meant it.
-    console.log(`  ! E2E database NOT isolated — ${result.detail}`);
+    console.log(`  ! E2E database NOT isolated — ${run.writers[0].detail}`);
     console.log('    Request one with  ICDEV_PG_DATABASE=icdev_e2e  (see playwright.config.ts).');
-    return result;
+    return run;
   }
-  throw new Error(isolationFailure(result));
+  throw new Error(isolationFailure(run));
 }
 
 /** Read the baseURL Playwright actually resolved, not a second copy of it. */

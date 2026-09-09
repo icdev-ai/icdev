@@ -39,7 +39,7 @@ import fs from 'fs';
 import net from 'net';
 import path from 'path';
 
-import { webServerDatabaseEnv } from './fixtures/e2e_database';
+import { PYTHON, icdevSubprocessEnv } from './fixtures/subprocess_env';
 // Declared by tools/dashboard/static/js/workflow-studio.js as a top-level
 // `const` in a classic script: a global lexical binding, not a window property.
 declare const StudioWF: unknown;
@@ -51,7 +51,6 @@ const SCREENSHOT_BEFORE = path.join(SCREENSHOTS, 'dwo-restart-before.png');
 const SCREENSHOT_AFTER = path.join(SCREENSHOTS, 'dwo-restart-after.png');
 const SCREENSHOT_COMPLETE = path.join(SCREENSHOTS, 'dwo-restart-complete.png');
 
-const PYTHON = process.env.ICDEV_PYTHON || 'python';
 
 // Boot (imports + blueprint registration + DB init) is slow on a cold cache,
 // and this spec pays it twice.
@@ -78,17 +77,6 @@ const SHUTDOWN_TIMEOUT_MS = 30_000;
 // awaiting_approval, which is what this spec is here to observe.
 const DASHBOARD_ENV: Record<string, string> = {
   ICDEV_STORAGE_BACKEND: process.env.ICDEV_STORAGE_BACKEND || 'postgresql',
-  // AND THE DATABASE THE RUN ASKED FOR, not the ambient DSN. The child
-  // inherits `process.env`, and every connection site in `tools/db/storage.py`
-  // reads `ICDEV_DATABASE_URL` BEFORE the discrete `ICDEV_PG_DATABASE` -- so
-  // under the documented isolation recipe (`ICDEV_PG_DATABASE=icdev_e2e npx
-  // playwright test`) this spec would start a SECOND dashboard on the
-  // canonical `icdev` and write its runs, gates and workflows there, while the
-  // suite believed it was isolated. Same function the config builds the
-  // primary server's env from (playwright.config.ts) rather than a second
-  // spelling of the precedence; it returns `{}` when no database was
-  // requested, so an ordinary local run is unchanged.
-  ...webServerDatabaseEnv(),
   ICDEV_AUTH_BYPASS: 'true',
   ICDEV_DASHBOARD_DEV_AUTOLOGIN: 'true',
   ICDEV_CUI_BANNER_ENABLED: 'true',
@@ -176,7 +164,13 @@ async function startDashboard(port: number): Promise<Dashboard> {
   const log: string[] = [];
   const proc = spawn(PYTHON, [path.join(ROOT, 'tools', 'dashboard', 'app.py'), '--port', String(port)], {
     cwd: ROOT,
-    env: { ...process.env, ...DASHBOARD_ENV, ICDEV_DASHBOARD_PORT: String(port) },
+    // AND THE DATABASE THE RUN ASKED FOR, not the ambient DSN: this spec starts
+    // a SECOND DASHBOARD, which writes its workflows, runs and gates in its own
+    // process. Under the documented isolation recipe a bare `{ ...process.env }`
+    // inherit put that child on the CANONICAL board while the suite believed it
+    // was isolated. `icdevSubprocessEnv` applies the redirect LAST, so none of
+    // the keys above can outrank it (qa-fail-679a43311f34d5c9).
+    env: icdevSubprocessEnv({ ...DASHBOARD_ENV, ICDEV_DASHBOARD_PORT: String(port) }),
     stdio: ['ignore', 'pipe', 'pipe'],
     // POSIX: own process group so the whole tree can be signalled at once.
     // Windows has no process groups here — taskkill /T covers it in stop().
