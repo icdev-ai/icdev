@@ -56,6 +56,19 @@ RULES (declare them per path; `other_side_when_empty` is universal):
                      table where main migrated row A and the card migrated the
                      row beneath it. An insertion at the seam stays a conflict.
 
+A GENERATED COPY IS NOT UNIONED, IT IS DERIVED (kpr-watch-14). `derived_from`
+declares that a file is a VERBATIM COPY of another and takes NO rules and no
+three-way merge: after the source resolves, its bytes are written to the copy
+and the copy is re-read to confirm. `CLAUDE.md` and
+`icdev/data/claude_bootstrap/CLAUDE.md` are that pair -- mfx-ci-04 refuses a
+commit that changes one without regenerating the other, and
+`prebuild_bootstrap.SOURCES` maps them through a bare `shutil.copy2`, so the
+copy IS the regeneration for this entry. Unioning the two independently would
+resolve both plausibly and leave them out of parity, which is a red
+`bootstrap_parity` on a branch nobody edited that way. Running
+`prebuild_bootstrap.py` itself was REJECTED: it copies nine other trees, so a
+rebase would write files the card never touched.
+
 The rung runs INSIDE `rebase_recovery.rebase_and_push`, after the doc resolver
 declines and before the abort, so it sits under the same per-base-era rebase
 budget `pr_watcher._maybe_rebase` already enforces; the watcher writes
@@ -218,6 +231,20 @@ def match_declaration(path: str, declarations: Sequence[Dict[str, Any]]) -> Opti
         if _glob_to_regex(canonical_path(str(pat))).match(canon):
             return decl
     return None
+
+
+def derived_source(decl: Dict[str, Any]) -> Optional[str]:
+    """The canonical path this declaration says the file is COPIED FROM, or None.
+
+    `derived_from` is not a rule and takes no three-way merge: it declares that
+    the file is a VERBATIM COPY of another, so the only correct resolution is
+    the source's resolved bytes. Unioning the copy independently would resolve
+    it *plausibly* and leave it out of parity with its source -- two files that
+    must be byte-identical, merged by two separate applications of a rule that
+    is only approximately order-stable.
+    """
+    src = decl.get("derived_from")
+    return canonical_path(str(src)) if src else None
 
 
 def _declared_rules(decl: Dict[str, Any], rel: str) -> List[str]:
@@ -716,6 +743,88 @@ def _diff_check(cwd: str, files: List[str], runner) -> None:
         raise UnionRefused(f"git diff --check refused the resolution: {out[-600:]}")
 
 
+def _plan_derivation(rel: str, source: str, plans: Sequence[Tuple[str, Dict[str, Any], str, List[str]]],
+                     unmerged: Sequence[str], cwd: str) -> str:
+    """The resolved text of `source`, for a file declared `derived_from` it.
+
+    TWO ways the source can be readable and only those two, because each is a
+    statement that the bytes are already correct:
+
+      * it is one of THIS run's resolved plans -- the union produced it, and
+        the copy takes exactly what the source will be written with;
+      * it is not unmerged at all -- git merged it cleanly by itself, so what
+        is on disk in the scratch worktree IS the merge result.
+
+    A source that is unmerged and NOT planned refuses: it is a conflicted file
+    this run did not resolve, so its on-disk text is a conflict-marked stub and
+    copying it would write markers into the derived file. `_verify_markers`
+    would then catch it, but refusing here names the real cause.
+    """
+    for prel, _decl, text, _notes in plans:
+        if canonical_path(prel) == source:
+            return text
+    still_conflicted = [f for f in unmerged if canonical_path(f) == source]
+    if still_conflicted:
+        raise UnionRefused(
+            f"{rel}: derived_from {source} is itself unmerged and was not resolved "
+            f"(as {still_conflicted[0]}) -- nothing correct to copy")
+    on_disk = pathlib.Path(cwd) / source
+    if not on_disk.is_file():
+        raise UnionRefused(f"{rel}: derived_from {source} is not a file in the worktree")
+    try:
+        return on_disk.read_text(encoding="utf-8", newline="")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise UnionRefused(f"{rel}: derived_from {source} is unreadable -- {exc}") from exc
+
+
+def _orphan_derivation_targets(decls: Sequence[Dict[str, Any]], resolved_sources: Sequence[str],
+                               planned: Sequence[str]) -> List[Tuple[str, str]]:
+    """Declared copies of a source THIS run resolved that are not in the conflict set.
+
+    Reachable only from a branch that was ALREADY out of parity -- two sides
+    that each regenerated the copy would both have changed it, so it would be
+    unmerged too. The resolver does not repair that: writing a file no side
+    conflicted on would put a change into the replayed commit that neither the
+    card nor main ever made, which is the same objection that rules out running
+    `prebuild_bootstrap` here. It refuses instead, naming the pre-existing
+    break, because a CLAUDE.md resolved beside a stale copy is a resolution
+    that is knowably wrong.
+    """
+    resolved = {canonical_path(s) for s in resolved_sources}
+    planned_canon = {canonical_path(p) for p in planned}
+    out: List[Tuple[str, str]] = []
+    for decl in decls or ():
+        if not isinstance(decl, dict):
+            continue
+        src = derived_source(decl)
+        pat = str(decl.get("path") or "")
+        if not src or not pat or src not in resolved:
+            continue
+        if canonical_path(pat) in planned_canon:
+            continue
+        out.append((pat, src))
+    return out
+
+
+def _verify_derivation(rel: str, source: str, cwd: str) -> None:
+    """Confirm by RE-READING both files, never by trusting the write.
+
+    The whole point of a derivation is that the two files are byte-identical;
+    asserting that against the string we just wrote would prove only that
+    `write()` was called with it.
+    """
+    a = pathlib.Path(cwd) / rel
+    b = pathlib.Path(cwd) / source
+    try:
+        got, want = a.read_bytes(), b.read_bytes()
+    except OSError as exc:
+        raise UnionRefused(f"{rel}: cannot re-read the derivation -- {exc}") from exc
+    if got != want:
+        raise UnionRefused(
+            f"{rel}: derived copy is not byte-identical to {source} "
+            f"({len(got)} vs {len(want)} bytes)")
+
+
 def _expand_tests(decl: Dict[str, Any], rel: str, cwd: str) -> List[str]:
     """Declared pytest targets for this file, expanded against the scratch tree.
 
@@ -780,15 +889,32 @@ def resolve_index_conflicts(cwd: str, rules_cfg: Optional[Dict[str, Any]] = None
         return UnionOutcome("not_applicable", reason="no unmerged files")
 
     plans: List[Tuple[str, Dict[str, Any], str, List[str]]] = []
+    derivations: List[Tuple[str, str]] = []
     try:
+        deferred: List[Tuple[str, Dict[str, Any], str]] = []
         for rel in files:
             decl = match_declaration(rel, decls)
             if decl is None:
                 raise UnionRefused(f"undeclared: {rel} matches no union_resolver.files entry")
+            source = derived_source(decl)
+            if source:
+                pat = str(decl.get("path") or "")
+                if any(ch in pat for ch in "*?["):
+                    raise UnionRefused(
+                        f"{rel}: a derived_from declaration must name ONE literal path, "
+                        f"not the pattern {pat!r} -- a copy has exactly one source")
+                # Planned LAST, so its source's own resolution is already in
+                # `plans` whichever order git listed the unmerged files in.
+                deferred.append((rel, decl, source))
+                continue
             rules = _declared_rules(decl, rel)
             base, main, card = _read_stages(cwd, rel, runner, mode)
             merged, notes = merge_three_way(base, main, card, rules)
             plans.append((rel, decl, "".join(merged), notes))
+        for rel, decl, source in deferred:
+            text = _plan_derivation(rel, source, plans, files, cwd)
+            plans.append((rel, decl, text, [f"derived_from:{source}"]))
+            derivations.append((rel, source))
     except UnionRefused as exc:
         logger.info("union_resolver: refused -- %s", exc)
         return UnionOutcome("refused", files=files, reason=str(exc))
@@ -816,6 +942,19 @@ def resolve_index_conflicts(cwd: str, rules_cfg: Optional[Dict[str, Any]] = None
                 raise UnionRefused(f"{rel}: git add failed: {(getattr(add, 'stderr', '') or '')[:200]}")
         for rel, _d, text, _n in plans:
             verifiers.extend(f"{rel}:{v}" for v in verify_file(rel, text, cwd, verify_runner))
+        for rel, source in derivations:
+            _verify_derivation(rel, source, cwd)
+            verifiers.append(f"{rel}:derivation_parity")
+        planned_paths = [rel for rel, _d, _t, _n in plans]
+        for target, source in _orphan_derivation_targets(decls, planned_paths, planned_paths):
+            try:
+                _verify_derivation(target, source, cwd)
+            except UnionRefused as exc:
+                raise UnionRefused(
+                    f"{target} is a declared copy of {source}, which this rebase resolved, "
+                    f"but it is NOT in the conflict set and is already out of parity "
+                    f"-- regenerate it on the branch first ({exc})") from exc
+            verifiers.append(f"{target}:derivation_parity")
         _diff_check(cwd, files, runner)
         verifiers.append("diff_check")
     except UnionRefused as exc:
@@ -848,7 +987,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(json.dumps(payload, indent=2) if args.json else
               "\n".join(f"{k:24} {v}" for k, v in RULE_DESCRIPTIONS.items())
               + "\n\ndeclared:\n" + "\n".join(
-                  f"  {d.get('path')}: {d.get('rules')}" for d in payload["declared_files"]))
+                  f"  {d.get('path')}: " + (f"derived_from {d['derived_from']}"
+                                            if d.get("derived_from") else str(d.get("rules")))
+                  for d in payload["declared_files"]))
         return 0
     if not args.worktree:
         ap.error("--worktree is required unless --list-rules")

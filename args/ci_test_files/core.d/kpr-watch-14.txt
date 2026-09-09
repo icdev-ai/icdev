@@ -1,0 +1,2 @@
+# kpr-watch-14 -- CLAUDE.md declared for the union rung, its generated copy DERIVED.
+tests/kanban/test_union_derived_from.py
