@@ -217,6 +217,22 @@ const config = defineConfig({
       // through /api/health. That also closes the `reuseExistingServer` hole,
       // where attaching to an already-running canonical dashboard ignored this
       // env entirely and nothing said so.
+      //
+      // THIS ENV REACHES THE SERVER AND NOTHING ELSE (qa-fail-679a43311f34d5c9).
+      // `webServer.env` is applied to the dashboard PLAYWRIGHT STARTS. A spec
+      // that spawns its OWN ICDEV python process -- the DIC workspace seed
+      // fixture, the second dashboard `dwo_restart_durability` starts, the
+      // gateway `dwo_trigger_linkage` starts -- inherited the ambient
+      // `ICDEV_DATABASE_URL` instead, so the documented recipe above put the
+      // SERVER on `icdev_e2e` and those writers on the canonical `icdev`: the
+      // spec failed reading a database it had not seeded, and its fixture rows
+      // landed on the board while this run printed a tick. Every such spawn now
+      // builds its environment from tests/e2e/fixtures/subprocess_env.ts, which
+      // wraps the SAME function used here; the census in
+      // tests/test_e2e_subprocess_isolation.py refuses a new one that does not,
+      // and globalSetup MEASURES that writer by spawning a probe rather than
+      // inferring it from this one. `confirmed` now requires every writer --
+      // a check that covers one and reports clean is the defect, not the fix.
       ...webServerDatabaseEnv(),
       ICDEV_AAC_ENABLED: 'true',
       ICDEV_CUI_BANNER_ENABLED: 'true',

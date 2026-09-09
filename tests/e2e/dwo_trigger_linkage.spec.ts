@@ -71,11 +71,11 @@ import fs from 'fs';
 import net from 'net';
 import path from 'path';
 
+import { PYTHON, icdevSubprocessEnv } from './fixtures/subprocess_env';
+
 const ROOT = path.resolve(__dirname, '../..');
 const SCREENSHOTS = path.resolve(ROOT, 'playwright/screenshots');
 const SCREENSHOT_LINK = path.join(SCREENSHOTS, 'dwo-trigger-link.png');
-
-const PYTHON = process.env.ICDEV_PYTHON || 'python';
 
 const BOOT_TIMEOUT_MS = 120_000;
 const SHUTDOWN_TIMEOUT_MS = 30_000;
@@ -166,10 +166,22 @@ async function isUp(base: string): Promise<boolean> {
 async function startGateway(port: number, secret: string): Promise<Gateway> {
   const base = `http://127.0.0.1:${port}`;
   const log: string[] = [];
+  // AND THE DATABASE THE RUN ASKED FOR, not the ambient DSN
+  // (qa-fail-679a43311f34d5c9). This gateway writes to the platform database
+  // IN ITS OWN PROCESS, not over HTTP: `dispatch_envelope` looks the event
+  // source and trigger up and calls `workflow_runner.start_run` directly. With
+  // a bare `{ ...process.env }` inherit every connection site in
+  // `tools/db/storage.py` reads the ambient `ICDEV_DATABASE_URL` BEFORE the
+  // discrete `ICDEV_PG_DATABASE`, so under the documented isolation recipe
+  // (`ICDEV_PG_DATABASE=icdev_e2e npx playwright test`) this child went to the
+  // CANONICAL board: it could not see the trigger the spec had just created on
+  // the isolated one, and it wrote its own run rows where nothing asked it to.
+  // `icdevSubprocessEnv` is the one function every ICDEV subprocess in this
+  // suite builds its environment from, and it returns the ambient environment
+  // unchanged when no database was requested.
   const proc = spawn(PYTHON, [path.join(ROOT, 'tools', 'gateway', 'gateway_agent.py')], {
     cwd: ROOT,
-    env: {
-      ...process.env,
+    env: icdevSubprocessEnv({
       // `gateway_agent.main()` reads PORT, falling back to the config's 8458.
       PORT: String(port),
       // Gate 1's shared secret. Generated per run, so a stale gateway from an
@@ -179,7 +191,7 @@ async function startGateway(port: number, secret: string): Promise<Gateway> {
       // the reply attempt happens after dispatch has already fired and cannot
       // affect the linkage under test.
       TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || 'e2e-not-a-real-token',
-    },
+    }),
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: process.platform !== 'win32',
   });
