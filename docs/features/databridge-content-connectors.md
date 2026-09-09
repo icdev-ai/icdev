@@ -133,3 +133,20 @@ tested is not "does the API call work" but the decisions each connector makes on
 its own: what it refuses, and where it says `None` instead of a value it does not
 have. Two controls were mutation-checked — removing `mode=ro` and replacing the
 unexposed-filter refusal with a silent skip each turn a test red.
+
+**Those 66 all run SQLite.** `tests/pg_tier/test_local_database_connector_pg.py`
+covers the Postgres branch against a live server (18 tests, in the PG tier
+allowlist; skips clean without `ICDEV_PYTEST_PG=1`). Four behaviours had no
+coverage at all before it, and none of them is reachable from SQLite:
+
+| Behaviour | Why SQLite could not prove it |
+|---|---|
+| `RealDictCursor` rows | dicts take a different branch of `_row_to_dict` than `sqlite3.Row` |
+| the `%s` placeholder | `_placeholder()` branches on the driver, and a `?` binds nothing on psycopg2 |
+| schema-qualified names | SQLite has no schemas, so `valid_identifier(qualified=True)` was unreachable |
+| `set_session(readonly=True)` | the Postgres mirror of `mode=ro`, and the only thing making read-only the server's rule rather than this module's promise |
+
+Mutation-checked too: dropping `set_session(readonly=True)` reds the write test,
+and emitting `?` on Postgres reds four. There is also a test that an unqualified
+table name does **not** quietly resolve through `search_path` — a read that
+succeeds that way is reading something the operator did not declare.

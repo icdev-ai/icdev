@@ -102,6 +102,28 @@ exclusions:
       skip_max. If it is ever gated, delete the skip first.
     review: flx-test-01
 
+  - pattern: "tests/pg_tier/test_local_database_connector_pg.py"
+    reason: >-
+      Needs a LIVE PostgreSQL. It covers the `local_database` connector's
+      postgres branch, which its 66 SQLite siblings in
+      tests/databridge/test_content_connectors.py structurally cannot reach:
+      the RealDictCursor row shape takes a different branch of _row_to_dict
+      than sqlite3.Row, `_placeholder()` emits `%s` where a `?` binds nothing
+      on psycopg2, SQLite has no schemas so the qualified-identifier path is
+      unreachable, and `set_session(readonly=True)` is the postgres mirror of
+      the `mode=ro` the SQLite suite does prove -- without a server that line
+      could be deleted and every other test would still pass (verified by
+      mutation: it reds one test, and emitting `?` reds four). It runs THERE,
+      in the Test (PostgreSQL) job, via tests/pg_tier_allowlist.txt. Excluded
+      rather than gated because gating it would put a module-level skipif into
+      a CI-gated file, and skip_census is closed: a skipped test satisfies the
+      coverage claim while asserting nothing, so the honest record is "this
+      file is not gated in core, and here is the job that does run it" rather
+      than a census entry and a raised skip_max. Being excluded is also what
+      makes its importorskip lawful -- skip_census scopes to gated modules. If
+      it is ever gated, delete the skips first.
+    review: dic-bridge-01
+
 # --------------------------------------------------------------------------- #
 # BACKLOG — the grandfathered census
 # --------------------------------------------------------------------------- #
