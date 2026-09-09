@@ -1,0 +1,12 @@
+# schema-drift-01 — the gate for "one table, one shape".
+#
+# Gated because its failure mode is silence. If the body extraction breaks the
+# census reports ZERO offenders across 12,000+ CREATE TABLE sites and reads as
+# a clean tree -- which is exactly what the first draft of the tool did, and
+# the reason several of these tests are about the parser rather than the rule.
+# If `required` drifts to include defaulted columns the gate cries wolf on
+# every honest fixture and gets switched off within a week.
+#
+# No database and no network: every case is a DDL string parsed in memory,
+# plus two tests that hold the COMMITTED census to the tree.
+tests/ci/test_schema_drift_census.py

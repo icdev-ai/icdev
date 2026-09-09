@@ -264,6 +264,21 @@ jobs:
       # Needs the merge base, so it depends on `fetch-depth: 0` above. Exit 2 is
       # "could not compare" and stays red: a gate that could not run is not a
       # gate that found nothing. Do NOT add `|| true`.
+      # ONE TABLE, ONE SHAPE (schema-drift census). `CREATE TABLE IF NOT EXISTS`
+      # never ALTERS an existing table, so two definitions of one table means
+      # whichever runs first wins and the loser's columns never exist. That is
+      # green on a workstation whose table predates the drift and red on a
+      # fresh database -- four such defects were repaired by hand in two days
+      # before this gate existed, each one patching only the column CI happened
+      # to name while the next was already loaded behind it.
+      #
+      # Exit codes are load-bearing: 0 clean, 1 NEW drift, 2 the schema of
+      # record is missing. Do NOT `|| true` a 2 -- a census whose anchor
+      # vanished reporting zero offenders is the silent failure it exists to
+      # close.
+      - name: Schema drift census
+        working-directory: ${{ github.workspace }}
+        run: python tools/ci/schema_drift_census.py --check
       - name: Closed-census growth
         working-directory: ${{ github.workspace }}
         run: python tools/ci/census_growth.py --check
