@@ -121,6 +121,30 @@ run:
 # while the set churns, which is exactly how a gap regrows behind a green gate
 # (see args/ci_test_backlog.txt, which is enumerated for the same reason).
 exemptions:
+  - pattern: "tests/pg_tier/test_local_database_connector_pg.py"
+    reason: >-
+      THE GATE CANNOT SEE THIS FILE, AND THERE IS NO DEFECT AT THE MERGE BASE
+      FOR IT TO DISCRIMINATE AGAINST. It is a module-level `skipif` on
+      ICDEV_PYTEST_PG, which the gate does not set, so both runs are "18
+      skipped" -- the gate is comparing two skips and correctly reports that it
+      learned nothing. Under the tier it is not a fix either: the
+      `local_database` connector's postgres branch was CORRECT and UNTESTED,
+      its 66 siblings in tests/databridge/test_content_connectors.py all being
+      SQLite, so nothing here goes red on main by construction.
+      THE EQUIVALENT PROOF WAS DONE BY MUTATION AND IS RECORDED, because
+      "covers behaviour that already works" must not become a way to ship a
+      test that asserts nothing. Against a live PostgreSQL: removing
+      `set_session(readonly=True)` from local_database_connector.py turns
+      test_the_postgres_session_itself_refuses_a_write RED (1 failed, 17
+      passed), and making `_placeholder()` emit SQLite's `?` turns four RED
+      (4 failed, 14 passed) -- including the one asserting that an injection in
+      a filter VALUE matches zero rows rather than both. Each of the four
+      behaviours this file covers is unreachable from SQLite (RealDictCursor
+      row shape, the `%s` placeholder, schema-qualified names, and the
+      read-only session), which is why they had no coverage to begin with.
+      Scoped to this one file. It runs in Test (PostgreSQL) via
+      tests/pg_tier_allowlist.txt, and is excluded from CI gating for the
+      reason written in args/test_gating_gate.yaml.
   - pattern: "tests/llm/test_role_invoke_redaction.py"
     reason: >-
       A CONSUMER SWEEP OVER A SEAM ANOTHER PR CLOSED FIRST, so nothing here can
