@@ -136,6 +136,41 @@ RUN_ERROR = "error"
 FINDING_ACTIVE = "active"
 FINDING_CLEARED = "cleared"
 
+#: Every fingerprint in this module is built by joining parts with this.
+FINGERPRINT_SEP = "|"
+
+#: Detectors whose fingerprint is a SET OF INDEPENDENTLY RESOLVABLE MEMBERS,
+#: and NOT merely a string that happens to contain a separator (autonomy-dep-05).
+#:
+#: A finding's identity is its fingerprint, and ``_clear_missing`` clears every
+#: active finding the current run did not report. For a SET-valued fingerprint
+#: those two rules compose into a FALSE CLEAR: when the set changes because a
+#: NEW member arrived -- not because any old member was resolved -- the
+#: finding_id changes, the old row is not in ``still_active``, and it is written
+#: ``cleared`` while everything it names is still true. MEASURED on the live
+#: board over the whole recorded ``migration_drift`` population (6 clears,
+#: 2026-09-03..09): TWO of the six cleared a finding whose migration was applied
+#: 2h59m and 1h11m LATER. ``cleared`` is what a detector card's acceptance
+#: criterion reads, so a card was verifiable complete before the work happened.
+#:
+#: A member here must be resolvable ON ITS OWN, because the survival rule is
+#: membership: the finding is still true while ANY member is still reported.
+#: ``migration_drift`` qualifies -- a pending migration version is applied
+#: individually and answers for itself.
+#:
+#: DELIBERATELY NOT DECLARED, and each for its own reason:
+#:   status_churn   ``<cycle>|contested`` -- a cycle and a flag, not two members.
+#:   born_red       a CONSTANT fingerprint; there is no set.
+#:   recovery       a CONSTANT fingerprint; there is no set.
+#:   deployment_freshness  ``<reason>|<conflicts...>`` IS the same shape and is
+#:                  NAMED, NOT SURVEYED (autonomy-dep-05's card says so in
+#:                  terms). Its first member is a REASON, not a conflicting
+#:                  file, so membership would have to be defined over the tail
+#:                  only -- a real design decision, and asserting it without
+#:                  measuring the population would be the very defect this
+#:                  constant exists to fix. Declare it when it has a survey.
+SET_VALUED_FINGERPRINT_DETECTORS = frozenset({DETECTOR_MIGRATION_DRIFT})
+
 #: What ``consume`` does with a finding it has just projected (autonomy-act-04).
 #: A finding is ALWAYS recorded; this decides only whether anybody is asked to
 #: do something about it.
@@ -230,6 +265,50 @@ def finding_ident(detector: str, subject: str, fingerprint: str) -> str:
     """Stable id for (detector, subject, fingerprint)."""
     raw = f"{detector}|{subject}|{fingerprint}".encode("utf-8")
     return hashlib.sha256(raw).hexdigest()[:16]
+
+
+def fingerprint_members(fingerprint: str) -> frozenset:
+    """The members of a SET-valued fingerprint, as it was stored.
+
+    Pure string work on the fingerprint COLUMN — deliberately not a re-parse of
+    the evidence blob, which is refreshed by every upsert and so describes the
+    latest observation rather than the one this finding is.
+    """
+    return frozenset(p for p in str(fingerprint or "").split(FINGERPRINT_SEP) if p)
+
+
+def reported_members(detector: str, findings: Sequence[Mapping[str, Any]]) -> frozenset:
+    """Every member the current run reported, for a set-valued detector.
+
+    Read from THIS RUN'S OWN findings — the same output ``_upsert_finding``
+    writes and ``still_active`` is built from — so the survival question is
+    answered from the detector's own report and never from a second derivation
+    of it. Empty for a detector whose fingerprint is not a set, which is what
+    makes ``survives_clearing`` a no-op there.
+    """
+    if detector not in SET_VALUED_FINGERPRINT_DETECTORS:
+        return frozenset()
+    out: set = set()
+    for f in findings:
+        out |= fingerprint_members(f.get("fingerprint"))
+    return frozenset(out)
+
+
+def survives_clearing(detector: str, fingerprint: str, reported: frozenset) -> frozenset:
+    """The members of ``fingerprint`` the current run STILL reports.
+
+    Non-empty means the finding's OWN condition has not gone away and it must
+    NOT be written ``cleared`` — it merely stopped being the newest way to
+    spell the condition. Empty means every member it names is gone, which is
+    the honest clear and is left exactly as it was.
+
+    A member set that has SHRUNK is not special-cased: a finding naming two
+    migrations of which one has been applied still names one that has not, and
+    "some of what this says is still true" is not a clear.
+    """
+    if detector not in SET_VALUED_FINGERPRINT_DETECTORS:
+        return frozenset()
+    return fingerprint_members(fingerprint) & reported
 
 
 def opaque_token(hexdigest: str, length: int = 10) -> str:
@@ -904,20 +983,61 @@ def _upsert_finding(conn, f: Finding, now_iso: str) -> None:
     )
 
 
-def _clear_missing(conn, detector: str, still_active: Sequence[str], now_iso: str) -> int:
-    """A MEASURABLE run no longer reports these: clear them. Returns the count."""
+def _clear_missing(conn, detector: str, still_active: Sequence[str], now_iso: str,
+                   reported: frozenset = frozenset()) -> Dict[str, Any]:
+    """A MEASURABLE run no longer reports these findings — clear them.
+
+    ``cleared`` still means what it has always meant, and is still written on
+    the first measurable run that stops reporting a finding. What changed
+    (autonomy-dep-05) is that for a SET-VALUED fingerprint, "the run stopped
+    reporting THIS finding_id" is not the same question as "the run stopped
+    reporting what this finding SAYS" — a set that GROWS gets a new
+    finding_id while every member of the old one is still reported. Such a
+    finding is HELD ACTIVE and the members still reported are named; it is
+    cleared on the run where NONE of them is.
+
+    It is held ACTIVE rather than moved to a new terminal status on purpose: a
+    seeded card's acceptance criterion reads ``status=cleared`` verbatim, so a
+    third status would make every already-filed card unclosable — and the card
+    that asked for this fix says in terms that an unclearable finding is worse
+    than a false clear.
+
+    Returns ``{"cleared": n, "held": [...]}``; ``held`` names each finding kept
+    and the members that kept it, because a suppression nobody can see is a
+    suppression nobody can audit.
+    """
     rows = conn.execute(
-        f"SELECT finding_id FROM {FINDINGS_TABLE} WHERE detector = %s AND status = %s",  # nosec B608
+        f"SELECT finding_id, fingerprint FROM {FINDINGS_TABLE} "  # nosec B608
+        "WHERE detector = %s AND status = %s",
         (detector, FINDING_ACTIVE),
     ).fetchall()
     keep = set(still_active)
-    cleared = [str(dict(r)["finding_id"]) for r in rows if str(dict(r)["finding_id"]) not in keep]
+    cleared: List[str] = []
+    held: List[Dict[str, Any]] = []
+    for row in rows:
+        r = dict(row)
+        fid = str(r["finding_id"])
+        if fid in keep:
+            continue
+        survivors = survives_clearing(detector, r.get("fingerprint"), reported)
+        if survivors:
+            held.append({"detector": detector, "finding_id": fid,
+                         "fingerprint": str(r.get("fingerprint") or ""),
+                         "still_reported": sorted(survivors)})
+            continue
+        cleared.append(fid)
     for fid in cleared:
         conn.execute(
             f"UPDATE {FINDINGS_TABLE} SET status = %s, cleared_at = %s WHERE finding_id = %s",  # nosec B608
             (FINDING_CLEARED, now_iso, fid),
         )
-    return len(cleared)
+    if held:
+        logger.warning(
+            "detector_findings: %s — %d superseded finding(s) HELD ACTIVE; the run no "
+            "longer reports their finding_id but still reports what they name: %s",
+            detector, len(held),
+            "; ".join(f"{h['finding_id']} ({', '.join(h['still_reported'])})" for h in held))
+    return {"cleared": len(cleared), "held": held}
 
 
 def _record_run(conn, detector: str, state: str, reason: str, findings: Optional[int],
@@ -989,6 +1109,16 @@ def _disposition(conn, f: Mapping[str, Any]) -> Dict[str, Any]:
 def render_description(f: Finding, *, seen_count: int, first_seen_at: Optional[str],
                        revision: int) -> str:
     evidence = json.dumps(f["evidence"], indent=2, default=str, sort_keys=True)
+    # A card's own account of when it clears must be TRUE of the detector that
+    # filed it (autonomy-dep-05). For a set-valued fingerprint the plain rule is
+    # wrong in the direction that matters: the finding_id changes whenever the
+    # set changes, and the card's acceptance criterion reads `cleared`.
+    lifecycle = (
+        f" This finding's fingerprint is a SET (`{f['fingerprint']}`): a member "
+        "arriving or leaving makes a NEW finding_id, so this row is cleared only "
+        "on a measurable run that reports NONE of the members it names -- never "
+        "merely because the set it belongs to changed shape."
+        if f["detector"] in SET_VALUED_FINGERPRINT_DETECTORS else "")
     recurrence = ""
     if revision > 1:
         recurrence = (
@@ -1001,7 +1131,8 @@ def render_description(f: Finding, *, seen_count: int, first_seen_at: Optional[s
         f"**Finding:** `{f['finding_id']}` — subject `{f['subject']}`, seen "
         f"{seen_count}x since {first_seen_at or 'this run'}. One projection row in "
         f"`{FINDINGS_TABLE}`; the reflex bumps `seen_count` on every cycle that still "
-        "reports it and marks it `cleared` on the first MEASURABLE cycle that does not.\n"
+        "reports it and marks it `cleared` on the first MEASURABLE cycle that does not."
+        f"{lifecycle}\n"
         f"{recurrence}\n"
         "**Derivation — re-derive it yourself before acting:**\n"
         "```\n"
@@ -1087,6 +1218,13 @@ def consume(config: Optional[Mapping[str, Any]] = None, *, conn=None, seed: bool
         "findings_held_closed_early": 0,
         "findings_record_only": 0,
         "findings_cleared": 0,
+        # Findings the run no longer reports BY finding_id but whose set-valued
+        # fingerprint it still reports member-for-member (autonomy-dep-05). Held
+        # ACTIVE, never cleared, and SURFACED here — a superseded-but-still-true
+        # finding that vanished silently is how a card came to be verifiable
+        # complete 71 minutes before its migration was applied.
+        "findings_held_still_true": 0,
+        "held_still_true": [],
         # Every finding filed as a RECORD instead of a card, with the two audit
         # stamps that decided it. The finding is projected either way; this is
         # where it is SURFACED, because a suppression nobody can see is a
@@ -1131,7 +1269,7 @@ def consume(config: Optional[Mapping[str, Any]] = None, *, conn=None, seed: bool
                 # None, never 0, when the run could not measure.
                 "findings": len(findings) if state in (RUN_FINDINGS, RUN_CLEAN) else None,
                 "new": 0, "recurring": 0, "held_closed_early": 0,
-                "record_only": 0, "cleared": 0,
+                "record_only": 0, "cleared": 0, "held_still_true": 0,
                 "summary": res.get("summary") or {},
                 "elapsed_seconds": round(time.monotonic() - t0, 1),
             }
@@ -1190,9 +1328,14 @@ def consume(config: Optional[Mapping[str, Any]] = None, *, conn=None, seed: bool
                             "first_seen_at": _iso(prior.get("first_seen_at")) if prior else now_iso,
                         })
                 if seed:
-                    entry["cleared"] = _clear_missing(
-                        conn, name, [f["finding_id"] for f in findings], now_iso)
+                    outcome = _clear_missing(
+                        conn, name, [f["finding_id"] for f in findings], now_iso,
+                        reported_members(name, findings))
+                    entry["cleared"] = outcome["cleared"]
+                    entry["held_still_true"] = len(outcome["held"])
                     report["findings_cleared"] += entry["cleared"]
+                    report["findings_held_still_true"] += entry["held_still_true"]
+                    report["held_still_true"].extend(outcome["held"])
             report["findings_new"] += entry["new"]
             report["findings_recurring"] += entry["recurring"]
             report["findings_held_closed_early"] += entry["held_closed_early"]
@@ -1411,13 +1554,18 @@ def render(report: dict) -> str:
         lines.append(
             f"  {name:<14} {d['state']:<12} findings={'?' if n is None else n:<4} "
             f"new={d['new']} recurring={d['recurring']} record={d.get('record_only', 0)} "
-            f"cleared={d['cleared']} "
+            f"cleared={d['cleared']} held={d.get('held_still_true', 0)} "
             f"({d['elapsed_seconds']}s)" + (f"  — {d['reason']}" if d.get("reason") else ""))
     lines.append(
         f"  seen={report.get('findings_seen')} new={report.get('findings_new')} "
         f"recurring={report.get('findings_recurring')} "
         f"record_only={report.get('findings_record_only')} "
-        f"cleared={report.get('findings_cleared')}")
+        f"cleared={report.get('findings_cleared')} "
+        f"held_still_true={report.get('findings_held_still_true')}")
+    for h in report.get("held_still_true") or []:
+        lines.append(
+            f"  HELD {h['finding_id']} ({h['detector']}) — superseded, NOT cleared: "
+            f"still reported {', '.join(h['still_reported'])}")
     for rec in report.get("records") or []:
         lines.append(f"  RECORD {rec['subject']} — {rec['reason']}")
     planned = report.get("cards_planned") or []

@@ -1,0 +1,3 @@
+# autonomy-dep-05 -- a set-valued finding clears when its condition goes, not
+# when its set changes. The two measured false clears, replayed.
+tests/kanban/test_detector_set_valued_clearing.py
