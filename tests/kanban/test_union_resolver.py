@@ -378,7 +378,10 @@ def test_rung_order_is_doc_resolver_then_union_then_abort():
     body = src[src.index("def rebase_and_push("):]
     doc = body.index("_auto_resolve_conflicts(tmp, runner)")
     union = body.index("_union_resolve(tmp, union_rules, runner)")
-    abort = body.index('"rebase", "--abort"', union)
+    # kpr-watch-15 made the abort verb strategy-dependent (`rebase --abort` vs
+    # `merge --abort`), so the ORDER is asserted against the shared call rather
+    # than one strategy's literal. The rung order itself is unchanged.
+    abort = body.index('_git(verb["abort"]', union)
     assert doc < union < abort
 
 

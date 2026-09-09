@@ -19,6 +19,16 @@ LLM resumes on that is expensive and ends in a permanent human queue.
 So: on DIRTY, rebase in an ISOLATED scratch worktree, and push only when the
 rebase is clean.
 
+WHICH INTEGRATION (kpr-watch-15). A default `git rebase` does NOT preserve
+merges, so a branch whose head is a ``merge -s ours`` supersede is FLATTENED and
+the commit that supersede deliberately discarded is REPLAYED alongside its own
+replacement. When ``branch_carries_merge`` measures a merge commit on the
+branch, the base is MERGED IN instead — the repair a human performs, which
+integrates 10 of the 62 recorded merge-carrying failures against 0 for the plain
+rebase. Everything below is unchanged on both paths, and a LINEAR branch can
+never take the merge path, so it can never gain a merge commit from this module.
+See docs/audits/kpr-watch-15-merge-carrying-branch-rebase-survey.md.
+
 Safety, in order — each of these exists because a force-push is not undoable
 from the board's side:
 
@@ -144,6 +154,55 @@ def branch_is_task_owned(branch: str, task_id: str) -> Tuple[bool, str]:
     return False, f"branch '{branch}' does not belong to task '{task_id}'"
 
 
+def branch_carries_merge(
+    repo_root: str,
+    base_ref: str,
+    head_ref: str,
+    runner: Optional[Callable] = None,
+) -> Optional[List[str]]:
+    """The merge commits ``head_ref`` carries that ``base_ref`` does not (kpr-watch-15).
+
+    ``[]`` means MEASURED linear. ``None`` means git could not answer, and the
+    two are never merged: an unreadable history must fall through to the
+    unchanged rebase rather than be read as "linear", which is the direction
+    that force-pushes a flattened branch.
+    """
+    log = _git(
+        ["log", "--merges", "--format=%H", f"{base_ref}..{head_ref}"],
+        cwd=repo_root, runner=runner,
+    )
+    if getattr(log, "returncode", 1) != 0:
+        return None
+    return [line for line in _out(log).split() if line]
+
+
+#: The git verbs each integration strategy uses. `rebase` is unchanged and is
+#: what every LINEAR branch still takes; `merge` exists because a default
+#: `git rebase` does NOT preserve merges, so a branch whose head is a
+#: `merge -s ours` supersede is FLATTENED and the commit that supersede
+#: deliberately discarded is REPLAYED alongside its own replacement.
+_STRATEGIES: Dict[str, Dict[str, Any]] = {
+    "rebase": {
+        "start": lambda base, branch: ["rebase", f"origin/{base}"],
+        "cont": ["-c", "core.editor=true", "rebase", "--continue"],
+        "abort": ["rebase", "--abort"],
+        "noun": "rebase onto origin/%s",
+        "done": "rebased onto origin/%s and force-pushed",
+    },
+    "merge": {
+        # An explicit message: on a DETACHED head git would otherwise write
+        # "into HEAD", which names nothing a reader of the branch can use.
+        "start": lambda base, branch: [
+            "merge", "--no-edit", "-m",
+            f"Merge origin/{base} into {branch}", f"origin/{base}"],
+        "cont": ["-c", "core.editor=true", "merge", "--continue"],
+        "abort": ["merge", "--abort"],
+        "noun": "merge of origin/%s into the branch",
+        "done": "merged origin/%s into the branch and pushed",
+    },
+}
+
+
 def _identity_args(repo_root: str, runner: Optional[Callable]) -> List[str]:
     """`git -c` overrides supplying a committer identity, or [] if one exists.
 
@@ -188,6 +247,16 @@ def _verdict(**kw: Any) -> Dict[str, Any]:
         # The union rung's verdict (mfx-sib-03): None when it never ran, else
         # {outcome, files, rules_used, verifiers, tests, reason}.
         "union": None,
+        # How the base was integrated (kpr-watch-15): "rebase" | "merge", or
+        # None when the attempt was refused before the branch could be read.
+        "strategy": None,
+        # The merge commits the branch carried, which is WHY `strategy` is
+        # `merge`. [] is measured-linear and None is unmeasurable.
+        "carried_merges": None,
+        # True when the branch ALREADY contained the base and there was nothing
+        # to integrate -- never folded into `pushed`, which would claim an act
+        # that did not happen.
+        "already_current": False,
     }
     base.update(kw)
     return base
@@ -341,6 +410,27 @@ def rebase_and_push(
         )
     old_sha = _out(head)
 
+    # WHICH INTEGRATION (kpr-watch-15). A default `git rebase` does not preserve
+    # merges, so a branch whose head is a `merge -s ours` supersede -- the
+    # documented recipe for "keep the rebased tree, discard the pre-rebase
+    # commit" -- is FLATTENED and the discarded commit is replayed alongside its
+    # own replacement. `dwr-ev-03` (PR #2179) offered TWO commits where the
+    # branch intended one and drew ten `rebase_failed` rows for it.
+    #
+    # MEASURED over all 649 lifetime `pr_watcher.rebase_failed` rows, each
+    # replayed against the branch head and base it actually had at that instant
+    # (`tools/ci/rebase_merge_survey.py`): 62 carried a merge, 475 were linear,
+    # 112 unmeasurable. Over those 62 -- where a plain rebase reproduces 62 of
+    # 62 failures -- merging the base IN integrates 10 and diagnoses 5 more as a
+    # branch that already contains its base, against 3 and 5 for
+    # `--rebase-merges`. Over the 111 measurable `pr_watcher.rebase` SUCCESSES,
+    # ZERO were on a merge-carrying branch, so this refuses no rebase that has
+    # ever worked, and the 475 linear rows are untouched by construction.
+    carried = branch_carries_merge(root, f"origin/{base}",
+                                   f"refs/remotes/origin/{branch}", runner)
+    strategy = "merge" if carried else "rebase"
+    verb = _STRATEGIES[strategy]
+
     tmp = tempfile.mkdtemp(prefix=f"icdev-rebase-{task_id}-")
     # mkdtemp created the directory; `git worktree add` insists on making it.
     shutil.rmtree(tmp, ignore_errors=True)
@@ -355,17 +445,19 @@ def rebase_and_push(
 
     try:
         ident = _identity_args(tmp, runner)
-        reb = _git([*ident, "rebase", f"origin/{base}"], cwd=tmp, runner=runner)
+        noun = verb["noun"] % base
+        common = {"strategy": strategy, "carried_merges": carried}
+        reb = _git([*ident, *verb["start"](base, branch)], cwd=tmp, runner=runner)
         union_summary: Optional[Dict[str, Any]] = None
         stops = 0
         while getattr(reb, "returncode", 1) != 0:
             stops += 1
             if stops > MAX_CONFLICT_STOPS:
-                _git(["rebase", "--abort"], cwd=tmp, runner=runner)
+                _git(verb["abort"], cwd=tmp, runner=runner)
                 return _verdict(
                     attempted=True, conflict=True, branch=branch, base=base,
-                    old_sha=old_sha, union=union_summary,
-                    reason=(f"rebase onto origin/{base} stopped on conflicts more "
+                    old_sha=old_sha, union=union_summary, **common,
+                    reason=(f"{noun} stopped on conflicts more "
                             f"than {MAX_CONFLICT_STOPS} times; giving up"),
                 )
             # Before giving up: some conflicts are not disagreements. Two
@@ -401,31 +493,32 @@ def rebase_and_push(
                     why = detail[-1][:200] if detail else "no detail"
                     if outcome is not None and outcome.get("reason"):
                         why += "; union rung: " + str(outcome["reason"])[:300]
-                    _git(["rebase", "--abort"], cwd=tmp, runner=runner)
+                    _git(verb["abort"], cwd=tmp, runner=runner)
                     return _verdict(
                         attempted=True, conflict=True, branch=branch, base=base,
-                        old_sha=old_sha, union=union_summary,
-                        reason="rebase onto origin/%s hit conflicts: %s" % (base, why),
+                        old_sha=old_sha, union=union_summary, **common,
+                        reason="%s hit conflicts: %s" % (noun, why),
                     )
                 how = "union-resolved %s" % ", ".join(
                     outcome.get("rules_used") or outcome.get("files") or [])
-            cont = _git(
-                [*ident, "-c", "core.editor=true", "rebase", "--continue"],
-                cwd=tmp, runner=runner)
+            cont = _git([*ident, *verb["cont"]], cwd=tmp, runner=runner)
             if getattr(cont, "returncode", 1) == 0:
-                logger.info("rebase_recovery: %s on %s; rebase continued", how, branch)
+                logger.info("rebase_recovery: %s on %s; %s continued",
+                            how, branch, strategy)
                 reb = cont
                 continue
             if _unmerged_files(tmp, runner):
                 # The NEXT replayed commit stopped on a conflict of its own.
                 # Round again: each stop is resolved and verified on its own.
+                # A merge has exactly one stop, so this only ever loops for a
+                # rebase -- it is left shared rather than special-cased.
                 reb = cont
                 continue
-            _git(["rebase", "--abort"], cwd=tmp, runner=runner)
+            _git(verb["abort"], cwd=tmp, runner=runner)
             return _verdict(
                 attempted=True, conflict=True, branch=branch, base=base,
-                old_sha=old_sha, union=union_summary,
-                reason=(how + " but `rebase --continue` still failed: "
+                old_sha=old_sha, union=union_summary, **common,
+                reason=(how + f" but `git {strategy} --continue` still failed: "
                         + (_err(cont) or "")[:160]),
             )
 
@@ -441,10 +534,27 @@ def rebase_and_push(
             # Report it and let the caller escalate — a human should close it.
             return _verdict(
                 attempted=True, branch=branch, base=base, old_sha=old_sha,
-                new_sha=new_sha, commits_ahead=0, union=union_summary,
+                new_sha=new_sha, commits_ahead=0, union=union_summary, **common,
                 reason=(
-                    f"rebase left no commits ahead of origin/{base} — the branch's "
+                    f"{noun} left no commits ahead of origin/{base} — the branch's "
                     "work is already on the base; not pushing an empty branch"
+                ),
+            )
+
+        if strategy == "merge" and new_sha == old_sha:
+            # "Already up to date": the branch ALREADY contains the base and
+            # there is nothing to integrate. 5 of the 62 measured rows are this
+            # -- the forge reporting CONFLICTING over a branch git merges clean,
+            # the `phantom` class the watcher already refunds. Pushing the same
+            # sha and reporting `pushed` would claim an integration that did not
+            # happen, so it is reported as what it is.
+            return _verdict(
+                attempted=True, branch=branch, base=base, old_sha=old_sha,
+                new_sha=new_sha, commits_ahead=ahead, union=union_summary,
+                already_current=True, **common,
+                reason=(
+                    f"branch already contains origin/{base} — nothing to "
+                    "integrate; the conflict the forge reports is not in the tree"
                 ),
             )
 
@@ -471,16 +581,16 @@ def rebase_and_push(
                 return _verdict(
                     attempted=True, conflict=True, branch=branch, base=base,
                     old_sha=old_sha, new_sha=new_sha, commits_ahead=ahead,
-                    union=union_summary,
-                    reason=("union-resolved rebase failed its declared tests; "
-                            "not pushing: " + detail[:300]),
+                    union=union_summary, **common,
+                    reason=("union-resolved %s failed its declared tests; "
+                            "not pushing: " % noun + detail[:300]),
                 )
 
         if dry_run:
             return _verdict(
                 attempted=True, branch=branch, base=base, old_sha=old_sha,
-                new_sha=new_sha, commits_ahead=ahead, union=union_summary,
-                reason=f"dry-run: rebase clean ({ahead} commit(s)), push skipped",
+                new_sha=new_sha, commits_ahead=ahead, union=union_summary, **common,
+                reason=f"dry-run: {noun} clean ({ahead} commit(s)), push skipped",
             )
 
         push = _git(
@@ -496,25 +606,27 @@ def rebase_and_push(
         if getattr(push, "returncode", 1) != 0:
             return _verdict(
                 attempted=True, branch=branch, base=base, old_sha=old_sha,
-                new_sha=new_sha, commits_ahead=ahead, union=union_summary,
+                new_sha=new_sha, commits_ahead=ahead, union=union_summary, **common,
                 reason=(
                     "force-with-lease push rejected (branch moved under us?): "
                     f"{_err(push)[:200]}"
                 ),
             )
         logger.info(
-            "rebase_recovery: %s rebased onto origin/%s and pushed (%s -> %s)",
-            branch, base, old_sha[:8], new_sha[:8],
+            "rebase_recovery: %s %s (%s -> %s)",
+            branch, verb["done"] % base, old_sha[:8], new_sha[:8],
         )
         return _verdict(
             attempted=True, pushed=True, branch=branch, base=base,
-            old_sha=old_sha, new_sha=new_sha, commits_ahead=ahead, union=union_summary,
-            reason=f"rebased onto origin/{base} and force-pushed ({ahead} commit(s))",
+            old_sha=old_sha, new_sha=new_sha, commits_ahead=ahead,
+            union=union_summary, **common,
+            reason=(verb["done"] % base) + f" ({ahead} commit(s))",
         )
     except Exception as exc:  # noqa: BLE001 — a recovery attempt must never stall the watcher
         return _verdict(
             attempted=True, branch=branch, base=base, old_sha=old_sha,
-            reason=f"rebase errored: {exc}",
+            strategy=strategy, carried_merges=carried,
+            reason=f"{strategy} errored: {exc}",
         )
     finally:
         _cleanup(root, tmp, runner)
