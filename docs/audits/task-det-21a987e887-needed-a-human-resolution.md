@@ -3,8 +3,9 @@
 
 - **Task:** task-det-21a987e887 (filed by `detector_findings_reflex`, detector
   `recovery` / rem-hyg-16, finding `21a987e887c69c8f`)
-- **Subject:** dwr-collab-01 — icdev#2195, 1 `pr_watcher.resume` + 2
-  `pr_watcher.rebase`, escalated after the FIRST resume
+- **Subject:** dwr-collab-01 — icdev#2195, 1 `pr_watcher.resume` + 3
+  `pr_watcher.rebase` (the third landed 23 minutes after this card dispatched),
+  escalated after the FIRST resume
 - **Date measured:** 2026-09-09 06:47–07:2x UTC, against the live PG board,
   `origin/main` and the `icdev-ai/icdev` forge
 
@@ -52,10 +53,30 @@ dispatched, and it would still be open now.
 | 09-09 00:39–06:43 | 335 × `pr_watcher.wait` — *GraphQL API rate limit already exceeded* (see below) |
 | 09-09 06:27:12/16 | `husk_sweep` removes `.tmp/worktrees/dwr-collab-01` (323.6 MB, 24,449 entries), `remove.unconfirmed` |
 | 09-09 06:47:10 | **card dispatched** |
+| 09-09 07:10:38 | `pr_watcher.rebase` → head `5fa976aba` — *"rebased a stale branch onto main"*, 3 commits, **while this card was being worked** |
 
-**Clear-by** = newest counted attempt + `window_hours=24` = **2026-09-10
-02:44:16Z**, so the card dispatched **19h57m BEFORE** its own clear-by — the
-widest margin of any instance recorded so far, and on the wrong side of it.
+**Clear-by** = newest counted attempt + `window_hours=24`. At dispatch that was
+**2026-09-10 02:44:16Z**, already 19h57m out — the widest margin of any instance
+recorded so far, and on the wrong side of it.
+
+**But the clear-by is a MOVING TARGET, and this card watched it move.** At
+07:10:38Z — 23 minutes after dispatch — the watcher rebased #2195 again (it was
+26 commits behind `main`, over `max_behind_commits: 10`), which is a fourth
+counted attempt and pushed the clear-by out to **2026-09-10 07:10:38Z**:
+
+```
+attempts 3, at 2026-09-09 02:44:16   ->   attempts 4, at 2026-09-09 07:10:38
+```
+
+That is not a defect in the detector, but it is a property of this finding class
+worth stating plainly: **`behind_main` rebases are counted attempts, so a stale
+open PR renews its own recovery finding every time the watcher touches it.** The
+finding cannot age out until 24h after the branch stops being rebased, which in
+practice means 24h after it MERGES. A reader who computes a clear-by from
+today's rows and then closes the card against that date is computing against a
+number the watcher can move at any time. Take the clear-by as a floor, never a
+date.
+
 Landing this record as an ordinary PR is nonetheless safe on #2057's ground:
 `fb989f6ad` (`earliest_clear_at`) is confirmed an ancestor of `origin/main`, so
 a terminal card inside the window is HELD (`held_closed_early`), not re-filed as
@@ -153,6 +174,10 @@ exemption entry, scoped to that ONE file, in the idiom of the
 test-only repair is not mechanically distinguishable from a test weakened to
 match broken code, so this is not the pattern for the next one.* Nothing else
 changed — no threshold, no `mode:`, no production code.
+
+The watcher's 07:10:38Z `behind_main` rebase replayed it as **`5fa976aba`**; the
+exemption survived intact (`git show origin/kanban/dwr-collab-01:args/red_first_gate.yaml`
+still carries the entry) and the branch is now 0 behind `main`.
 
 Gate before → after, same tree, `--base origin/main`:
 
