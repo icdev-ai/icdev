@@ -203,7 +203,59 @@ a test that is red on `main` back to red — the census discipline
 (`born_red_survey`, rem-hyg-14) says repair it, and the repair is correct and
 verified in both directions above.
 
-## A THIRD thing, found by watching the repair land: `cancel-in-progress` inverts under a job cap
+## The exemption is CONFIRMED, and it uncovered a second, unrelated blocker
+
+Run `34323252209` on head `cda00a86f` is the proof the exemption worked:
+**`Test Gates` PASSED**, where it had failed on every run since 02:44Z. The
+red-first block is closed.
+
+That run then failed on something else entirely — `Test Shard 2 of 4`:
+
+```
+tests/docmod/test_collab_poll.py::test_alone_is_measured_and_excludes_me
+sqlite3.OperationalError: no such column: expires_at
+```
+
+and the test **passes ALONE**. It is an in-suite order dependency over a table
+with **two incompatible definitions, both pre-existing on `main`**:
+
+| source | PK | `joined_at` | `expires_at` |
+|---|---|---|---|
+| `document_intelligence/db/init_db.py` — **twice in one file, in BOTH trees** | `session_id` | ✗ | **✗** |
+| `presence_registry._ensure_table` | `session_key` | ✓ | ✓ |
+| `db/schema/pg_consolidated.sql` (PG schema of record) | `session_key` | ✓ | ✓ |
+| this branch's own test fixture | `session_key` | ✓ | ✓ |
+
+`CREATE TABLE IF NOT EXISTS` **never alters an existing table** — the rule
+CLAUDE.md already states — so whichever runs first wins and the loser's columns
+simply never exist. Reproduced directly rather than inferred: run `init_db`'s
+DDL then the registry's against one SQLite file, and the live columns are
+`init_db`'s, after which the registry's OWN
+`DELETE ... WHERE expires_at < ?` raises the exact CI error.
+
+**This is not a test-only defect.** On any SQLite deployment where `init_db`
+runs before the registry, presence is broken at runtime with that error.
+`_ensure_active_section_col` — a targeted `ALTER` for exactly one column — is
+evidence the collision had already been met once and patched only where it was
+tripped over; a PK rename cannot be patched that way at all.
+
+`init_db.py` is the side that is wrong: the PG schema of record, the module that
+owns the table (`test_presence_is_read_through_the_registry_not_a_private_select`
+asserts that ownership) and the fixture all agree on the other shape. Both
+occurrences in both trees now match it (`29e83c55a`, mirror parity green, 887
+`tests/docmod` tests pass).
+
+**NOT fixed, and named:** an EXISTING SQLite database already carrying the old
+shape stays broken — the difference includes the PRIMARY KEY, which SQLite
+cannot `ALTER`, so repairing one needs a table rebuild, not a column backfill.
+This change makes every NEW database correct. The definition is also still
+duplicated twice inside `init_db.py`; the two copies are now identical and
+deduplicating them is a wider edit than this branch should carry.
+
+That the branch's own new test is what exposed a latent `main` defect is the
+test working, not the branch failing.
+
+## And an infrastructure blocker on top: `cancel-in-progress` inverts under a job cap
 
 The exemption did not get a clean run on the first try, and the reason is a
 defect in mfx-ci-02's concurrency declaration that only appears when the
@@ -241,7 +293,7 @@ cancels the run it is rerunning. Not carded here; it needs its own survey of how
 often a queued run outlives a force-push, which is a property of the job cap and
 not of this branch.
 
-## Two things found on the way, neither this card's to fix, both named
+## Two further things found on the way, neither this card's to fix, both named
 
 **1. The watcher has been blind to every PR since 00:39Z — a GitHub API rate
 limit, not a per-PR condition.** 335 `pr_watcher.wait` rows between
