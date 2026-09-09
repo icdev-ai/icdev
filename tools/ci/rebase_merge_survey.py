@@ -274,6 +274,16 @@ def replay(records: List[Dict[str, Any]]) -> Dict[str, Any]:
         "distinct_pairs": len(pairs),
         "control_faithful": per_arm["plain"].get("conflict", 0) == len(targets),
         "by_arm": {a: dict(c) for a, c in per_arm.items()},
+        # PER ROW, because "what would each lever have done" is a question
+        # about each recorded failure and a per-task count cannot answer it.
+        "rows_detail": [
+            {"task_id": r["task_id"], "at": r["at"], "pr_url": r["pr_url"],
+             "head_at": r["head_at"], "base_used": r["base_used"],
+             "base_reconstructed": r.get("base_reconstructed", False),
+             "arms": {a: r["replay"][a]["outcome"] for a in ARMS},
+             "conflicted_files": r["replay"]["merge"].get("conflicted_files", [])}
+            for r in targets
+        ],
         "by_task": {
             task: {a: dict(collections.Counter(
                 r["replay"][a]["outcome"] for r in targets if r["task_id"] == task))
