@@ -32,7 +32,6 @@ if str(ROOT) not in sys.path:
 import pytest  # noqa: E402
 
 from tools.dashboard.recovery_summary import (  # noqa: E402
-    CLOSED_STATUSES,
     NEEDED_A_HUMAN,
     RECOVERED,
     UNRESOLVED,
