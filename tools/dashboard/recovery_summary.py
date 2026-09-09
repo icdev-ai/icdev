@@ -47,17 +47,42 @@ from typing import Any, Dict, Iterable, List, Optional
 #: to re-fire the workflows, which IS a recovery attempt) were never counted.
 #: rmf-disc-01 was rebased twice and read as one attempt; rmf-inert-01's CI
 #: re-fire read as none.
-_ATTEMPT_KINDS = ("resume", "rebase", "rebase_failed", "ci_retrigger")
+ATTEMPT_KINDS = ("resume", "rebase", "rebase_failed", "ci_retrigger")
 #: The watcher withdrew an attempt it had already recorded (nothing to send, or
 #: the rebase never ran). Its own accounting says the attempt did not happen;
 #: the summary must agree, or a refunded resume reads as a retry loop.
-_REFUND_KINDS = ("resume_refund", "rebase_refund")
-#: The audit_trail ``action`` values the panel's query must fetch -- exported so
-#: the SQL in app.py and the classifier here cannot drift apart again. They did:
-#: the query fetched four action names and the classifier knew two of them.
+REFUND_KINDS = ("resume_refund", "rebase_refund")
+#: THE ONE STATEMENT OF "WHICH pr_watcher ACTIONS ARE RECOVERY EVIDENCE".
+#:
+#: Every reader that answers "did pr_watcher recover this PR" fetches THESE rows
+#: and no others: the Home panel (``tools/dashboard/app.py``), the detector that
+#: FILES and CLEARS cards (``tools/kanban/detector_findings.py::recovery_rows``)
+#: and the standing claim that verifies the panel
+#: (``tools/awareness/claims.py::_recovery_rows``). A fourth reader that
+#: hard-codes an action literal instead fails
+#: ``tests/kanban/test_recovery_action_vocabulary.py``.
+#:
+#: IT WAS EXPORTED FOR THIS AND ONLY ONE READER TOOK IT (autonomy-act-05). The
+#: comment here used to say "so the SQL in app.py and the classifier here cannot
+#: drift apart again" -- and while the panel adopted it, the detector and the
+#: claim each kept a hand-written FOUR-value literal
+#: (``rebase``/``resume``/``escalate``/``merge``), so rmf-disc-01's widening
+#: reached the surface a human READS and never reached the two readers that ACT.
+#: Measured on the live board 2026-09-09 (see
+#: docs/audits/autonomy-act-05-recovery-row-set-survey.md), replaying 156
+#: instants over 56,906 rows: the narrow set filed NO finding at all for 19
+#: subjects -- ``sbx-fld-01`` carried 177 ``escalate`` rows and 2
+#: ``rebase_failed`` attempts, and a reader that does not FETCH an attempt kind
+#: sees zero attempts and drops the task. It removed none, understated 90 card
+#: titles, overstated 12 (the refunds it never subtracted), and cut
+#: ``earliest_clear_at`` short on 57 subjects by up to 19.7h.
 AUDIT_ACTIONS = tuple(
-    f"pr_watcher.{k}" for k in (*_ATTEMPT_KINDS, *_REFUND_KINDS, "escalate", "merge")
+    f"pr_watcher.{k}" for k in (*ATTEMPT_KINDS, *REFUND_KINDS, "escalate", "merge")
 )
+#: Backwards-compatible private aliases. The public names above are what a new
+#: reader must import; these keep any in-flight branch working.
+_ATTEMPT_KINDS = ATTEMPT_KINDS
+_REFUND_KINDS = REFUND_KINDS
 #: A task in one of these states is CLOSED. Mirrors ``_closed_statuses`` in
 #: tools/dashboard/app.py::_compute_project_progress EXACTLY (a structural test
 #: reads both) -- two hand-maintained copies of "what counts as closed" is the

@@ -151,8 +151,25 @@ def _derived_recoveries() -> int:
     A task is recovered only if the watcher attempted it, it merged, and it was
     never escalated — escalation being the watcher's own "manual intervention
     required". A merge after an escalation is a HUMAN's merge.
+
+    THE REDUCTION IS ITS OWN AND THE VOCABULARY IS NOT (autonomy-act-05). What
+    must not be shared with ``summarize_recovery`` is the COLLAPSE — the
+    per-task fold and the rule that ``escalate`` outranks a later ``merge`` —
+    and that is re-implemented below, from the rows, with no call into it. What
+    must be shared is WHICH ACTION IS AN ATTEMPT: that is a fact about
+    ``pr_watcher``'s writer, not a reduction, and a derivation that classifies a
+    DIFFERENT population is not an independent check of the same claim, it is a
+    different claim. This side hard-coded ``("resume", "rebase")`` and so read
+    zero attempts for a task the watcher had only ``rebase_failed``.
+
+    Refunds are netted for the same reason ``summarize_recovery`` nets them: the
+    watcher's own accounting says a refunded attempt did not happen, so a task
+    whose every attempt was withdrawn was never attempted.
     """
-    attempted, escalated, merged = set(), set(), set()
+    from tools.dashboard.recovery_summary import ATTEMPT_KINDS, REFUND_KINDS
+
+    attempts: Dict[str, int] = {}
+    escalated, merged = set(), set()
     for row in _recovery_rows():
         record = dict(row)
         kind = str(record.get("action") or "").split(".")[-1]
@@ -163,26 +180,39 @@ def _derived_recoveries() -> int:
         task_id = payload.get("task_id")
         if not task_id:
             continue
-        if kind in ("resume", "rebase"):
-            attempted.add(task_id)
+        if kind in ATTEMPT_KINDS:
+            attempts[task_id] = attempts.get(task_id, 0) + 1
+        elif kind in REFUND_KINDS:
+            attempts[task_id] = max(0, attempts.get(task_id, 0) - 1)
         elif kind == "escalate":
             escalated.add(task_id)
         elif kind == "merge":
             merged.add(task_id)
+    attempted = {t for t, n in attempts.items() if n > 0}
     return len(attempted & merged - escalated)
 
 
 def _recovery_rows() -> List[Dict[str, Any]]:
+    """The rows the PANEL reads — ``recovery_summary.AUDIT_ACTIONS``, not a copy.
+
+    This claim's REPORTED side is "what the panel would headline", so it must
+    fetch what the panel fetches. It hard-coded a FOUR-value literal instead
+    (autonomy-act-05), which meant the claim verified a computation nothing
+    renders: measured 2026-09-09, the panel read 103 rows over 10 tasks and this
+    reader 66 over 9, at the same instant.
+    """
+    from tools.dashboard.recovery_summary import AUDIT_ACTIONS
+
     conn = _conn()
     try:
         pg = str(getattr(conn, "_backend", "")).startswith("postgres")
         details = "details::text" if pg else "details"
         cut = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+        placeholders = ",".join(["%s"] * len(AUDIT_ACTIONS))
         return [dict(r) for r in conn.execute(
             f"SELECT action, {details} AS d, created_at FROM audit_trail "  # nosec B608
-            "WHERE action IN ('pr_watcher.rebase','pr_watcher.resume',"
-            "'pr_watcher.escalate','pr_watcher.merge') AND created_at >= %s",
-            (cut,),
+            f"WHERE action IN ({placeholders}) AND created_at >= %s",
+            (*AUDIT_ACTIONS, cut),
         ).fetchall()]
     finally:
         try:
