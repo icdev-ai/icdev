@@ -4712,7 +4712,8 @@ def api_artifact_download(artifact_id: str):
         Path(file_path).resolve(),
         mimetype=mime or "application/octet-stream",
         as_attachment=True,
-        download_name=f"{row.get('version_id', 'document')}.{row.get('format', 'bin')}",
+        download_name=(f"{row.get('version_id', 'document')}."
+                       f"{exporter.format_extension(row.get('format') or 'bin')}"),
     )
 
 

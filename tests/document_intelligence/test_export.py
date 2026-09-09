@@ -383,21 +383,54 @@ def test_unknown_version_is_404_and_bad_format_is_400(client, writeguard):
     assert client.get("/document-intelligence/api/versions/nope/export/docx").status_code == 404
     resp = client.get("/document-intelligence/api/versions/nope/export/exe")
     assert resp.status_code == 400
-    assert resp.get_json()["formats"] == ["md", "html", "docx", "pdf"]
+    # Derived, never respelled: a format added to the constant must not
+    # need this literal edited, or the two go out of step silently.
+    from tools.document_intelligence.exporter import EXPORT_FORMATS
+    assert resp.get_json()["formats"] == list(EXPORT_FORMATS)
 
 
 def test_unknown_artifact_download_is_404(client):
     assert client.get("/document-intelligence/api/artifacts/art_nope/download").status_code == 404
 
 
-def test_migration_format_check_is_rendered_from_export_formats():
+def test_the_original_migration_named_the_formats_of_its_day():
+    """20260903194350 rendered its inline CHECK from EXPORT_FORMATS AS IT WAS.
+
+    It is not re-rendered when a format is added -- a migration that has run
+    cannot run again -- so the assertion is that it named a PREFIX of the
+    constant. Formats are only ever appended; a REORDER or a REMOVAL would
+    change what an already-deployed constraint means, and this catches it.
+    The live constraint is asserted by the test below.
+    """
     from tools.document_intelligence.exporter import EXPORT_FORMATS
 
     sql = MIGRATION.read_text(encoding="utf-8")
     m = re.search(r"format\s+TEXT\s+NOT NULL\s+CHECK\s*\(format IN \(([^)]*)\)\)", sql)
     assert m, "the migration must constrain `format`"
     declared = tuple(v.strip().strip("'") for v in m.group(1).split(","))
-    assert declared == EXPORT_FORMATS
+    assert declared == EXPORT_FORMATS[:len(declared)]
+
+
+def test_the_live_format_check_is_derived_from_export_formats():
+    """dwr-word-01. The CHECK a database ends up with is GENERATED from the
+    constant by 20260909004511, so adding a format can never leave the
+    database refusing an export every gate passed."""
+    import importlib.util
+
+    from tools.document_intelligence.exporter import EXPORT_FORMATS
+
+    up_py = (MIGRATION.parent.parent
+             / "20260909004511_dic_artifacts_format_check_from_constant" / "up.py")
+    assert up_py.is_file(), "the format-CHECK migration must exist"
+    spec = importlib.util.spec_from_file_location("_fmt_check_mig", up_py)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    clause = mod.format_check_sql()
+    m = re.search(r"format IN \(([^)]*)\)", clause)
+    assert m, clause
+    named = tuple(v.strip().strip("'") for v in m.group(1).split(","))
+    assert named == EXPORT_FORMATS
 
 
 def test_migration_and_runtime_ddl_declare_the_same_columns():

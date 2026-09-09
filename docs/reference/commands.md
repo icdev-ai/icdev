@@ -6361,6 +6361,63 @@ python -c "from tools.innovation.innovation_manager import stage_discover; print
 
 # Weekly DIC digest reflex (manual trigger)
 python -c "from tools.genesis.reflexes.dic_digest import run; print(run({}, None))"
+
+# Export a .docx whose tracked changes are REAL Word revisions (dwr-word-01)
+python -c "from tools.document_intelligence.exporter import export_version as f; print(f('<version_id>', 'docx_tracked')['gate']['render'])"
+python -m tools.document_intelligence.docx_word_probe <file.docx>          # open it in WORD and count
+python -m tools.document_intelligence.docx_word_probe <file.docx> --json
+python tools/db/migrate.py --up                                            # 20260909004511
+# Route: GET /document-intelligence/api/versions/<id>/export/docx_tracked
+# python-docx 1.2.0 exposes NO revision API, so w:ins / w:del / w:comment are
+# direct OOXML over its XML tree plus two package parts it does not know about
+# (comments.xml, commentsExtended.xml). The format goes through the EXISTING
+# gated export_version, so placeholder -> citation -> WriteGuard still runs in
+# order, still fails closed, and still records one dic_artifacts row.
+# WHAT WORD CALLS A REVISION IS AN *UNDECIDED* PROPOSAL, and that is the whole
+# mapping. Only a `pending` suggestion becomes a w:ins/w:del. An `accepted` one
+# is ALREADY spliced into dic_sections.content by record_application, so
+# re-proposing it would offer a Word reviewer a Reject button over a decision
+# already on the append-only dic_suggestion_decisions chain -- and rejecting it
+# in Word would silently revert an accepted change with nothing written back.
+# It is reported in the appendix as PROVENANCE instead. Both halves of
+# "accepted-and-pending" travel; they do not travel IDENTICALLY, because they
+# do not mean the same thing to Word.
+# POSITIONS ARE review_rail's AND ARE NEVER RE-DERIVED. Only a verified anchor
+# is placed. An item with no position is NOT drawn at offset 0 and is NOT
+# dropped: it goes to a labelled appendix carrying its reason
+# (no_verified_anchor | not_pending | anchor_spans_paragraphs | anchor_overlap |
+# anchor_text_mismatch | diff_not_round_trip | unplaced). On the live board
+# 2026-09-08 that is 58 of 58 suggestions -- an exporter that placed them would
+# have put 58 fabricated revisions into a Word document on day one.
+# Revisions are WORD-level via word_diff.diff_words: FIPS 140-2 -> FIPS 140-3
+# deletes `2` and inserts `3`, not the clause. A diff that fails its round trip
+# is deferred, never rendered lossily.
+# This format does NOT re-render markdown, on purpose: an anchor offset indexes
+# dic_sections.content, and markdown_to_docx reflows `## Heading` and moves
+# every character after it. Offset fidelity and reflow cannot both be had, and
+# a revision on the wrong clause is worse than a literal `##`.
+# tracked_changes / comments are None -- NEVER 0 -- for an `unmeasurable` rail.
+# VERIFY BY OPENING IT IN WORD, never by asserting the XML is well-formed. The
+# probe reports verified | refused | unmeasurable and prints Revisions.Count,
+# Comments.Count and which comments are REPLIES (Comment.Ancestor, the only
+# proof commentsExtended linked). MEASURED 2026-09-08 on a gated export: 2
+# revisions (delete `2`, insert `3`, author "docmod redline") and 2 comments,
+# 1 of them a real threaded reply.
+# THE FIRST BUILD OF THIS MODULE WAS WELL-FORMED AND WORD REFUSED IT OUTRIGHT
+# ("The file appears to be corrupted") because commentsExtended declared w15 as
+# .../office/2012/wordml instead of .../office/word/2012/wordml. No XML test in
+# this repo would ever have found that. Document.Repaired is not exposed by
+# Word 16.0, so `repaired` is None with repaired_basis
+# not_exposed_by_object_model -- "cannot tell", never "was not repaired"; the
+# silent-repair signature is a `verified` probe reporting ZERO against a build
+# that placed revisions, so read the two reports together.
+# pywin32 is deliberately NOT in requirements.txt (Windows-only against an
+# OS-agnostic platform); its absence is logged and reports unmeasurable.
+# Migration 20260909004511 rebuilds dic_artifacts.format's CHECK from
+# EXPORT_FORMATS. Without it a SQLite database that ran 20260903194350 refuses
+# every tracked export on the INSERT -- an artifact on disk the record does not
+# know about. The extension is `docx`, never the format name: `document
+# .docx_tracked` is a file Word will not open.
 ```
 
 ---
