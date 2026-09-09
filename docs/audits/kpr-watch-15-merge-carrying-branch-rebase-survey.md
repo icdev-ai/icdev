@@ -129,28 +129,32 @@ recorded failures.** Without that the comparison would be worthless.
 credits the rebase arms with 5 clears no arm performed. Those 5 rows are a
 branch that ALREADY contained its base: the forge's `phantom`, not a clear.
 
-Per task:
+Per task. `already_current` is the SAME rows for both arms, by construction —
+it is a property of the head/base pair, not of the arm:
 
-| task | rows | A integrated | C integrated | C already_current |
+| task | rows | A integrated | C integrated | already_current (both) |
 |---|---|---|---|---|
 | `rmf-ui-11` | 11 | 0 | 0 | 0 |
-| `mfx-sib-03` | 11 | 5 | **9** | 2 |
+| `mfx-sib-03` | 11 | 3 | **9** | 2 |
 | `dwr-ev-03` | 10 | 0 | **1** | 0 |
 | `rmf-ui-03` | 8 | 0 | 0 | 0 |
 | `rmf-ui-10` | 4 | 0 | 0 | 0 |
-| `exa-bench-05` | 3 | 1 | 0 | 1 |
 | `dwr-anchor-04` | 3 | 0 | 0 | 0 |
-| `hcx-live-02` | 2 | 0 | 0 | 0 |
-| `rmf-ui-07` | 2 | 0 | 0 | 0 |
-| `rmf-ui-06` | 2 | 0 | 0 | 0 |
-| `rmf-ui-09` | 2 | 0 | 0 | 0 |
+| `exa-bench-05` | 3 | 0 | 0 | 1 |
 | `dwr-fid-03` | 2 | 0 | 0 | 0 |
-| `cpmp-ec9ee676bf` | 1 | 1 | 0 | 1 |
-| `dwr-ev-01` | 1 | 1 | 0 | 1 |
+| `hcx-live-02` | 2 | 0 | 0 | 0 |
+| `rmf-ui-06` | 2 | 0 | 0 | 0 |
+| `rmf-ui-07` | 2 | 0 | 0 | 0 |
+| `rmf-ui-09` | 2 | 0 | 0 | 0 |
+| `cpmp-ec9ee676bf` | 1 | 0 | 0 | 1 |
+| `dwr-ev-01` | 1 | 0 | 0 | 1 |
+| **total** | **62** | **3** | **10** | **5** |
 
-(A's 3 and 5 are the same rows as C's 0 and 5 for those three single-row tasks:
-`--rebase-merges` reports an already-contained base as an integration, C as a
-no-op. The arm-neutral column is the one to read.)
+`mfx-sib-03` alone accounts for 9 of C's 10, and `dwr-ev-03` — the case the card
+was written from — for the tenth. `--replay --json` carries `rows_detail`, one
+entry per row with its stamp, PR, head, base and every arm's outcome, because
+"what would each lever have done" is a question about each recorded failure and
+a per-task count cannot answer it.
 
 ### The cost side — the 193 recorded rebase SUCCESSES
 
