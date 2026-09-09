@@ -46,8 +46,12 @@ renderer), ``docx`` (``tools.govcon.rfi_docx_exporter.markdown_to_docx``, the
 exporter rmf-docx-01 proved works -- with the classification LABEL as the
 header/footer marking, never a hard-coded FOUO string), ``pdf`` (only when
 fpdf2 is present; ``pdf_export`` otherwise writes HTML under a .pdf name,
-cnr-doc-04). A format whose library is absent reports ``unavailable`` and
-writes nothing.
+cnr-doc-04), ``docx_tracked`` (dwr-word-01 -- the same prose with the version's
+PENDING redlines as real Word ``w:ins``/``w:del`` revisions and its review
+comments as native threaded comments; see
+``tools.document_intelligence.docx_revisions`` for why an ACCEPTED change is
+reported rather than re-proposed). A format whose library is absent reports
+``unavailable`` and writes nothing.
 
 Library only, no CLI. The route is
 ``GET /document-intelligence/api/versions/<id>/export/<fmt>``.
@@ -70,7 +74,23 @@ logger = get_logger(__name__)
 
 #: Every format the route accepts. The migration's CHECK constraint and the
 #: template's buttons are asserted against THIS tuple, never restated.
-EXPORT_FORMATS: tuple[str, ...] = ("md", "html", "docx", "pdf")
+EXPORT_FORMATS: tuple[str, ...] = ("md", "html", "docx", "pdf", "docx_tracked")
+
+#: The FILE EXTENSION each format is written and served under. A format name is
+#: not always an extension: ``docx_tracked`` is a .docx, and writing
+#: ``document.docx_tracked`` produces a file Word will not open and a browser
+#: will not associate -- an artifact that passed every gate and is unusable.
+#: Declared once here and read by BOTH the renderer and the download route, so
+#: the name on disk and the name a reviewer receives cannot disagree.
+FORMAT_EXTENSIONS: dict[str, str] = {
+    "md": "md", "html": "html", "docx": "docx", "pdf": "pdf",
+    "docx_tracked": "docx",
+}
+
+
+def format_extension(fmt: str) -> str:
+    """The extension for ``fmt``; the format name itself when undeclared."""
+    return FORMAT_EXTENSIONS.get(fmt, fmt)
 
 #: Gate names. The first two are PUBLISH_GATES vocabulary (recorded to
 #: idr_publish_audit on override); ``writeguard`` is a QUALITY gate, recorded on
@@ -396,6 +416,15 @@ def format_available(fmt: str) -> tuple[bool, str]:
         except Exception as exc:  # noqa: BLE001
             return False, f"docx exporter unavailable: {exc}"
         return (True, "") if DOCX_AVAILABLE else (False, "python-docx not installed")
+    if fmt == "docx_tracked":
+        # dwr-word-01. Same library as `docx`, asked through the module that
+        # actually writes the revisions -- so an availability answer can never
+        # come from a different import than the render will use.
+        try:
+            from tools.document_intelligence.docx_revisions import DOCX_AVAILABLE
+        except Exception as exc:  # noqa: BLE001
+            return False, f"tracked-docx exporter unavailable: {exc}"
+        return (True, "") if DOCX_AVAILABLE else (False, "python-docx not installed")
     if fmt == "pdf":
         if importlib.util.find_spec("fpdf") is None:
             # cnr-doc-04: pdf_export writes HTML under a .pdf name without fpdf2.
@@ -405,13 +434,21 @@ def format_available(fmt: str) -> tuple[bool, str]:
 
 
 def render(fmt: str, doc_text: str, title: str, classification: str,
-           out_dir: pathlib.Path) -> pathlib.Path:
-    """Write ``document.<fmt>`` into ``out_dir`` and return its path."""
+           out_dir: pathlib.Path, bundle: dict[str, Any] | None = None,
+           render_report: dict[str, Any] | None = None) -> pathlib.Path:
+    """Write ``document.<fmt>`` into ``out_dir`` and return its path.
+
+    ``bundle`` is required by ``docx_tracked`` ONLY: that format places
+    revisions at anchor offsets into ``dic_sections.content``, which the
+    assembled ``doc_text`` no longer carries. ``render_report``, when given, is
+    updated in place with the tracked build's own report so the caller can
+    record what was placed and what was deferred.
+    """
     available, reason = format_available(fmt)
     if not available:
         raise ExportUnavailable(reason)
     out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"document.{fmt}"
+    path = out_dir / f"document.{format_extension(fmt)}"
 
     if fmt == "md":
         marked = f"{classification}\n\n{doc_text}\n\n{classification}\n"
@@ -472,6 +509,24 @@ def render(fmt: str, doc_text: str, title: str, classification: str,
         # default is a hard-coded FOUO string, which would mark a CUI document
         # as something it is not.
         markdown_to_docx(doc_text, str(path), classification=classification)
+        return path
+
+    if fmt == "docx_tracked":
+        from tools.document_intelligence.docx_revisions import build_tracked_docx
+        from tools.document_intelligence.review_rail import build_rail
+
+        if bundle is None:
+            raise ExportUnavailable(
+                "docx_tracked needs the version bundle (anchor offsets index "
+                "the section content, not the assembled markdown)")
+        version = bundle.get("version") or {}
+        rail = build_rail(version.get("doc_id") or "",
+                          version_id=version.get("version_id"),
+                          tenant_id=version.get("tenant_id"))
+        report = build_tracked_docx(bundle, rail, path, title=title,
+                                    classification=classification)
+        if render_report is not None:
+            render_report.update(report)
         return path
 
     if fmt == "pdf":
@@ -621,7 +676,14 @@ def export_version(
         on_overrides(report["overrides"])
 
     out_dir = artifact_dir() / version_id / uuid.uuid4().hex[:8]
-    path = render(fmt, doc_text, title, marking, out_dir)
+    render_report: dict[str, Any] = {}
+    path = render(fmt, doc_text, title, marking, out_dir, bundle=bundle,
+                  render_report=render_report)
+    if render_report:
+        # What was placed and what was deferred rides on the RECORDED gate
+        # report, so the dic_artifacts row says which revisions the file
+        # carries rather than leaving a reader to open it and count.
+        report = {**report, "render": render_report}
     version = bundle["version"]
     artifact = record_artifact(
         version_id=version_id,
