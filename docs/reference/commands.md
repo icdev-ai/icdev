@@ -6418,6 +6418,99 @@ python tools/db/migrate.py --up                                            # 202
 # every tracked export on the INSERT -- an artifact on disk the record does not
 # know about. The extension is `docx`, never the format name: `document
 # .docx_tracked` is a file Word will not open.
+
+# Read a reviewer's Word revisions back in, and RECONCILE them (dwr-word-02)
+python -m tools.document_intelligence.docx_review_import --file review.docx --version <version_id>
+python -m tools.document_intelligence.docx_review_import --file review.docx --version <version_id> --json
+python -m tools.document_intelligence.docx_review_import --file review.docx --parse-only
+# The return leg of dwr-word-01. Library + CLI, no route: an operator who
+# receives a marked-up copy by email has a FILE, and the canvas's own idiom for
+# that is `python -m` (originals, page_geometry, suggestion_redraft).
+# THE HARD PART IS NOT PARSING, IT IS RECONCILIATION, BECAUSE BOTH SIDES MOVE.
+# While the reviewer was reading, a docmod sweep could draft a redline over the
+# same sentence, a human could accept one, supersede_suggestion could retire
+# one whose anchor drifted, and a section could be regenerated. So a revision
+# that arrives back is not a proposal about the document -- it is a proposal
+# about a document that may no longer exist.
+# THREE VERDICTS AND NO FOURTH:
+#   matched      located to exactly ONE span of exactly one section, and
+#                nothing on the ICDEV side contests it. `origin` says WHICH
+#                thing it is -- own_proposal (one of our own exported redlines,
+#                back undecided) or reviewer_edit (their own new writing).
+#                Both are matched; they are not the same and are never merged.
+#   conflicting  it located AND the ICDEV side also changed that span. BOTH
+#                sides carried whole, never auto-merged, never won by one side.
+#                base_paragraph_changed | competing_proposal |
+#                decided_since_export.
+#   unmatched    it could not be located. REPORTED BY NAME with its reason,
+#                never dropped -- a dropped revision is a reviewer's edit that
+#                silently ceased to exist. paragraph_not_found |
+#                paragraph_ambiguous | empty_paragraph_text | anchor_ambiguous |
+#                insertion_point_unlocatable | paragraph_mark_revision |
+#                heading_not_anchorable | comment_range_spans_paragraphs |
+#                comment_range_unlocatable | comment_body_absent.
+# NOTHING HERE DECIDES AND NOTHING HERE WRITES -- no INSERT/UPDATE/DELETE and
+# no store writer, pinned by an AST test, because the failure mode is a later
+# edit threading a "just apply the matched ones" flag through and a behavioural
+# test over today's callers would still pass the day it happens. `matched` says
+# WHERE a revision goes, never that it may go there: the accept door
+# (cef-ui-03) is the only writer of dic_sections.content and a human decides
+# at it.
+# ABSENCE IS NOT A DECISION, and it is the one inference this refuses to make.
+# An exported redline that does NOT come back is consistent with the reviewer
+# ACCEPTING it (Word then writes the text plain), REJECTING it (the text is
+# simply gone), never reaching it, deleting the whole paragraph, or the upload
+# being a different document. One observation, five causes, four of them not
+# decisions -- so it lands under `absent_from_upload`, a labelled ABSENCE.
+# LOCATION IS AGAINST THE PARAGRAPH THE REVIEWER RECEIVED: `before` is equal +
+# delete, the paragraph with every revision REJECTED, which is what was in the
+# .docx when it left here. Looked up through docx_revisions.paragraph_spans --
+# dwr-word-01's partition, IMPORTED. Exactly one match locates; an ambiguous
+# match is never resolved by picking one. Located by SPAN but not by PARAGRAPH
+# is a CONFLICT (base_paragraph_changed), never a match: both sides moved.
+# A COMMENT IS NOT AN EDIT, so a comment is never `conflicting`. One anchored to
+# a span a pending redline proposes to replace is the NORMAL case -- a reviewer
+# asking about a proposal -- and flagging it would bury the real findings. The
+# contest is carried as `contested_by` CONTEXT, never as the verdict.
+# COUNTS ARE None AND NEVER 0 when nothing was measured. An `unmeasurable` rail
+# makes the WHOLE report unmeasurable, not merely the contest half: `matched`
+# asserts "nothing contests this span", which is a claim about the rail.
+# UNTRUSTED INPUT IS BOUNDED BEFORE IT IS PARSED (sandbox-coverage Gap 70): a
+# declared DOCTYPE is REFUSED unparsed, a part over
+# ICDEV_DOCX_IMPORT_MAX_PART_BYTES (64 MiB) is refused on its DECLARED
+# uncompressed size BEFORE decompression, only word/document.xml,
+# word/comments.xml and word/commentsExtended.xml are ever read, and a hit
+# bound reports `truncated` (ICDEV_DOCX_IMPORT_MAX_REVISIONS, 5000) rather than
+# a quietly short list.
+# THE ROUND TRIP IS MEASURED, THROUGH WORD ITSELF -- export, open in Word 16.0
+# over COM with track changes on, edit, save BY WORD, reconcile. It found THREE
+# defects the unit suite structurally could not, because that suite reads back
+# XML this repo wrote:
+#   1. The exporter emits a WORD-LEVEL diff (FIPS 140-2 -> 140-3 leaves as del
+#      `2` / ins `3`), so comparing a returned revision against a suggestion's
+#      OWN anchor_text/suggested_content columns matched nothing and THREE OF
+#      THREE of our own redlines came back reported as rivals to themselves.
+#      The expectation is now re-derived through word_diff.diff_words, the
+#      exporter's own function, imported.
+#   2. Threads were searched for ROOTS ONLY, so our own author's reply came
+#      back as a stranger's new remark. And structurally: dwr-word-01
+#      highlights a thread ONCE with one w:commentReference per reply inside
+#      that single range, while Word 16.0 saving the same file writes a range
+#      PER COMMENT. Both are legal; `thread_range` resolves a comment to its
+#      own range or its nearest thread ancestor's.
+#   3. An item named only as a CONTESTER was ALSO reported absent -- telling a
+#      reader the same proposal both came back and did not.
+# A COM GOTCHA THAT PRODUCED A GREEN LOG OVER AN UNEDITED FILE: late-bound
+# Find.Execute(Replace=wdReplaceAll) returns a truthy hit and SILENTLY DOES NOT
+# REPLACE. Call Execute POSITIONALLY.
+# NOT BUILT, and named: no route and no page (an upload endpoint owes CSRF,
+# RBAC and its own sandbox entry, and a report surface owes the 8-point page
+# gate); nothing turns a matched reviewer edit into a dic_suggestions row --
+# that is a WRITE and a separate act with its own door; and a revision on the
+# section HEADING is unmatched by name, because a heading is its own column and
+# carries no anchors. Exit 0 = a report was produced, whatever it says. Exit 2
+# = it could not be, which is never the same as a clean round trip.
+# Round trip in full: docs/audits/dwr-word-02-round-trip.md
 ```
 
 ---
