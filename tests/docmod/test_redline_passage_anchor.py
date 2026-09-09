@@ -69,9 +69,22 @@ def _reset_db():
         store._ensure_tables(conn)
         conn.execute("DELETE FROM dic_suggestions")
         for ddl in (
+            # MIRROR THE MIGRATED SCHEMA, EVERY NOT NULL OF IT -- the same rule
+            # the dic_chunk_links block below already learned. This fixture
+            # declared four of dic_sections' NOT NULL columns and omitted
+            # `doc_id`, so `CREATE TABLE IF NOT EXISTS` let the weaker
+            # definition win wherever the real table was absent: green locally,
+            # `NOT NULL constraint failed: dic_sections.doc_id` in CI. The
+            # canonical DDL is tools/document_intelligence/ingest_orchestrator.py.
             """CREATE TABLE IF NOT EXISTS dic_sections (
-                   section_id TEXT PRIMARY KEY, version_id TEXT, heading TEXT,
-                   content TEXT, status TEXT, origin TEXT, created_at TEXT)""",
+                   section_id TEXT PRIMARY KEY, version_id TEXT NOT NULL,
+                   doc_id TEXT NOT NULL, heading TEXT NOT NULL, content TEXT,
+                   citations_json TEXT, status TEXT DEFAULT 'draft',
+                   origin TEXT DEFAULT 'ai_generated', assigned_to TEXT,
+                   reviewed_by TEXT, reviewed_at TEXT, created_at TEXT NOT NULL,
+                   created_by TEXT, tenant_id TEXT, classification TEXT,
+                   verified INTEGER, citation_report TEXT, abstained INTEGER,
+                   confidence REAL)""",
             """CREATE TABLE IF NOT EXISTS rag_chunks (
                    id TEXT PRIMARY KEY, content TEXT)""",
             # MIRROR THE MIGRATED SCHEMA, EVERY NOT NULL OF IT. This fixture
@@ -127,13 +140,18 @@ def _reset_db():
 
 
 def _section(section_id="sec-1", version_id="ver-1", heading="Transport Profile",
-             content=SECTION_TEXT):
+             content=SECTION_TEXT, doc_id="doc-1"):
     from tools.db.storage import get_connection
     with get_connection() as conn:
         conn.execute(
-            "INSERT INTO dic_sections (section_id, version_id, heading, content, "
-            "status, origin, created_at) VALUES (%s,%s,%s,%s,'approved','human','t')",
-            (section_id, version_id, heading, content),
+            # doc_id included: it is NOT NULL in the migrated table, and the
+            # DDL above now declares it so, which makes an omission fail HERE
+            # rather than only on a host where the real table already exists.
+            # 'doc-1' is the same document the chunk-link helper below uses.
+            "INSERT INTO dic_sections (section_id, version_id, doc_id, heading, "
+            "content, status, origin, created_at) "
+            "VALUES (%s,%s,%s,%s,%s,'approved','human','t')",
+            (section_id, version_id, doc_id, heading, content),
         )
         conn.commit()
     return section_id
