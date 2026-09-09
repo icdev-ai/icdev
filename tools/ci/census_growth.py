@@ -190,7 +190,7 @@ CENSUSES = (
     ),
     Census(
         path="args/schema_drift_census.txt",
-        unit="CREATE TABLE site that disagrees with the schema of record",
+        unit="CREATE-TABLE site that disagrees with the schema of record",
         reader=_names_from_plain_list,
         remedy=(
             "copy the canonical definition from tools/db/schema/pg_consolidated.sql "

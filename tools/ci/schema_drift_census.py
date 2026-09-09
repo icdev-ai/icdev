@@ -87,7 +87,7 @@ SKIP_PARTS = ("__pycache__", ".tmp", "node_modules", "/icdev/tools", "\\icdev\\t
 #: counting parentheses, because a non-greedy `(.*?)` stops at the first `)` it
 #: meets -- and the first `)` in real DDL is almost always inside a type
 #: (`VARCHAR(255)`, `NUMERIC(12,2)`). The first draft of this file did exactly
-#: that, reported ZERO definitions across 12,372 CREATE TABLE sites, and looked
+#: that, reported ZERO definitions across 12,372 CREATE-TABLE sites, and looked
 #: clean. A census that cannot see its subject is worse than no census.
 _CREATE_HEAD = re.compile(
     r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"
@@ -376,7 +376,7 @@ def load_census() -> List[str]:
 
 def _census_header(n: int) -> str:
     return f"""# CUI // SP-CTI
-# Schema-drift census — CREATE TABLE sites that disagree with the schema of
+# Schema-drift census — CREATE-TABLE sites that disagree with the schema of
 # record (tools/db/schema/pg_consolidated.sql).
 #
 # Written by tools/ci/schema_drift_census.py. Each line is a SITE identity
@@ -458,7 +458,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     if ns.check:
         if new:
-            print(f"::error::schema drift census: {len(new)} CREATE TABLE site(s) "
+            print(f"::error::schema drift census: {len(new)} CREATE-TABLE site(s) "
                   f"disagree with the schema of record and are not in the census. "
                   f"`CREATE TABLE IF NOT EXISTS` never ALTERS an existing table, so "
                   f"whichever definition runs first wins — this is green on your "

@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# Schema-drift census — CREATE TABLE sites that disagree with the schema of
+# Schema-drift census — CREATE-TABLE sites that disagree with the schema of
 # record (tools/db/schema/pg_consolidated.sql).
 #
 # Written by tools/ci/schema_drift_census.py. Each line is a SITE identity
