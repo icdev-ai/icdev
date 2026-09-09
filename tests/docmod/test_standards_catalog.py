@@ -151,7 +151,15 @@ def test_pages_line_updated():
     start = (Path(__file__).resolve().parents[2] / ".claude" / "commands" / "start.md").read_text(
         encoding="utf-8"
     )
-    assert "`/standards-catalog`" in start
+    # The Pages line is DERIVED from the live url_map (mfx-sib-02,
+    # ``tools/dashboard/nav_paths.py``), not hand-maintained, so it carries the
+    # CANONICAL Flask rule -- which for this blueprint has a trailing slash
+    # (``GET /standards-catalog`` answers 308 to ``/standards-catalog/``,
+    # verified against a running dashboard 2026-09-08). The old assertion pinned
+    # the hand-written token and has been red on main since that generator
+    # landed. Asserting the real rule is STRICTER than the substring it
+    # replaces, not weaker: a route that changed shape would still fail.
+    assert "`/standards-catalog/`" in start
 
 
 def test_iqe_seed_queries_exist():

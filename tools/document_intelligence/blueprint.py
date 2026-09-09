@@ -753,6 +753,38 @@ def api_workspace_body():
     return jsonify(document_body(doc_id))
 
 
+@dic_bp.route("/api/workspace/poll", methods=["GET"])
+def api_workspace_poll():
+    """Document-scoped change-state deltas since a cursor (dwr-collab-01).
+
+    The feed that lets a SECOND reviewer's page learn what a first reviewer
+    decided, without a reload and without an SSE stream holding a synchronous
+    WSGI worker open. D103's transport, and deliberately NOT ``/api/events/poll``
+    -- that endpoint is bound to ``hook_events``, a platform-wide tool-call feed
+    that has no notion of a document.
+
+    Query: ``doc_id`` (required), ``cursor`` (a UTC ISO-8601 stamp; omit it to
+    be handed a baseline one).
+
+    GET, and no POST sibling: it reads, it decides nothing, and it does not
+    heartbeat presence -- the client keeps beating on the presence route that
+    already exists, so a reviewer's visibility to others never depends on a feed
+    whose failure mode is an exponential backoff.
+
+    Always 200 with a ``state``, EXCEPT for a missing ``doc_id``, which is the
+    caller's error. A failed read is ``state: unmeasured`` with the cursor
+    echoed back unchanged -- a poll that could not look must not be able to
+    report a quiet document, and must not skip the window it could not read.
+    """
+    from tools.document_intelligence.collab import poll_document
+
+    doc_id = request.args.get("doc_id") or ""
+    if not doc_id:
+        return jsonify({"error": "doc_id is required"}), 400
+    cursor = request.args.get("cursor") or ""
+    return jsonify(poll_document(doc_id, cursor, me=_current_user()))
+
+
 @dic_bp.route("/workspace/<doc_id>")
 def workspace(doc_id: str):
     """The two-pane workspace: the document, and one card per proposal (dwr-ws-02).
@@ -788,6 +820,10 @@ def workspace(doc_id: str):
         doc=doc,
         doc_id=doc_id,
         body=ctx["body"],
+        # dwr-collab-01: stamped by workspace_context BEFORE it read anything,
+        # so no decision can land in the gap between this render and the page's
+        # first poll.
+        poll_cursor=ctx["poll_cursor"],
         document_findings=ctx["document_findings"],
         any_document_findings=ctx["any_document_findings"],
         any_unmeasured_gate=ctx["any_unmeasured_gate"],
@@ -5261,6 +5297,88 @@ def _read_section_content(conn, section_id: str) -> str | None:
     return (row[0] if isinstance(row, (list, tuple)) else row["content"]) or ""
 
 
+def _newest_decision(suggestion_id: str) -> dict | None:
+    """The newest ``dic_suggestion_decisions`` row, through the store's own reader.
+
+    ``get_decisions_for_suggestion`` is imported rather than re-SELECTed: the
+    store owns what a decision row looks like, and a refusal message naming a
+    decider must not be able to disagree with the audit chain it is quoting.
+    Best-effort -- an unreadable chain leaves the refusal without a name, which
+    is what it honestly has, and never turns the refusal into an exception.
+    """
+    try:
+        from tools.document_intelligence.suggestion_store import get_decisions_for_suggestion
+        rows = get_decisions_for_suggestion(suggestion_id) or []
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("dic: could not read decisions for %s: %s", suggestion_id, exc)
+        return None
+    return rows[-1] if rows else None  # ordered by decided_at ASC
+
+
+def _decided_refusal(suggestion_id: str, current: dict | None,
+                     *, attempted: str, section_id: str = ""):
+    """The 409 a SECOND reviewer gets for a change somebody already decided.
+
+    dwr-collab-01. Both doors already refused a non-``pending`` change, and the
+    refusal said ``{"error": "already decided", "status": "accepted"}`` -- a
+    status and nothing else. A reviewer who has just had their decision thrown
+    away needs the state that STANDS: who decided it, when, and to what, so the
+    next move is a conversation with a person rather than a page reload.
+
+    One shape for both doors and for both ways of reaching it -- the pre-read
+    guard, and the conditional UPDATE losing the race -- so a client reads
+    ``error: already_decided`` without knowing which rung refused. ``applied``
+    is always False: the point of the refusal is that THIS decision did not
+    happen. ``decided_by`` is absent rather than guessed when no decision row
+    exists, which is the honest reading of a ``superseded`` status: a mechanism
+    retired the change and no human decided anything.
+    """
+    current = current or {}
+    decision = current.get("decision") or {}
+    if not decision and current.get("suggestion_id"):
+        decision = _newest_decision(current["suggestion_id"]) or {}
+    standing = current.get("status") or decision.get("decision")
+    who = decision.get("decided_by")
+    when = decision.get("decided_at") or current.get("updated_at")
+    # A SUPERSEDE IS NEVER PHRASED AS A PERSON'S DECISION, whether or not the
+    # chain names an actor. `supersede_suggestion` writes the MECHANISM into
+    # `decided_by` (`system:anchor_verify`, `redraft:<actor>`) precisely so a
+    # retirement "can never be read as somebody's accept-or-reject"
+    # (dwr-ev-03), and rendering it through the "<who> already <status> this
+    # change" template would undo that one sentence later: the reader is told a
+    # name in the grammatical position a decider occupies. What a reviewer
+    # needs here is the CAUSE -- the document moved -- with the mechanism
+    # named as a mechanism.
+    if standing == "superseded":
+        message = ("This change was superseded before your decision landed -- the "
+                   "document moved under it%s. Your %s was NOT recorded." % (
+                       (" (retired by %s)" % who) if who else "", attempted))
+    elif who:
+        message = ("%s already %s this change%s. Your %s was NOT recorded and the "
+                   "document was not changed by it." % (
+                       who, standing or "decided", (" at %s" % when) if when else "",
+                       attempted))
+    else:
+        message = ("This change is already %s, so your %s was NOT recorded." % (
+            standing or "decided", attempted))
+    return jsonify({
+        "error": "already_decided",
+        "message": message,
+        "suggestion_id": suggestion_id,
+        "section_id": section_id or None,
+        "attempted": attempted,
+        # The state that STANDS, not the one the caller tried to write.
+        "current": {
+            "status": standing,
+            "decided_by": who,
+            "decided_at": when,
+            "note": decision.get("note"),
+        },
+        "decision_recorded": False,
+        "applied": False,
+    }), 409
+
+
 def _anchor_refusal(suggestion_id: str, section_id: str, verify: dict,
                     *, suggestion_status: str = "pending") -> tuple:
     """The 409 an accept returns when the proposal CANNOT be applied (dwr-anchor-05).
@@ -5341,8 +5459,8 @@ def api_suggestion_accept(suggestion_id: str):
     ``{"status": "accepted"}`` over zero rows.
     """
     from tools.document_intelligence.suggestion_store import (
-        get_suggestion, decide_suggestion, verify_anchor, supersede_suggestion,
-        section_of_record,
+        get_suggestion, decide_outcome, DECIDE_ALREADY, verify_anchor,
+        supersede_suggestion, section_of_record,
         record_application,
     )
     s = get_suggestion(suggestion_id)
@@ -5360,7 +5478,15 @@ def api_suggestion_accept(suggestion_id: str):
         return _forbid("editor")
 
     if s.get("status") != "pending":
-        return jsonify({"error": "suggestion already decided", "status": s["status"]}), 409
+        # dwr-collab-01: the cheap refusal, for a reviewer whose page was drawn
+        # before somebody else decided. It is NOT the guard -- the conditional
+        # UPDATE inside ``decide_outcome`` is, and it is what catches the two
+        # clicks that land inside one poll interval.
+        return _decided_refusal(
+            suggestion_id,
+            {"suggestion_id": suggestion_id, "status": s.get("status"),
+             "updated_at": s.get("updated_at"), "applied_by": s.get("applied_by")},
+            attempted="accept", section_id=section_id)
 
     suggested_content = s.get("suggested_content") or ""
     data = request.get_json(silent=True) or {}
@@ -5421,16 +5547,26 @@ def api_suggestion_accept(suggestion_id: str):
     # The residual case is the mirror image and is deliberately preferred: a
     # decision recorded whose apply then fails is VISIBLE (the reviewer gets a
     # 500 naming both facts) and honest — the human did authorise it.
+    #
+    # dwr-collab-01 -- AND ``recorded == False`` IS TWO ANSWERS, NOT ONE. The
+    # conditional UPDATE refuses a change another reviewer decided in the
+    # milliseconds since the guard above read it. That is a REFUSAL (409, with
+    # the state that stands), not the server error this branch returned for
+    # every falsy return: a reviewer told "500" reloads and tries again, and a
+    # reviewer told "alice accepted this at 21:59" does not.
     try:
-        recorded = decide_suggestion(
+        outcome = decide_outcome(
             suggestion_id, "accepted", user,
             note=note, tenant_id=tenant_id, classification=classification,
         )
     except Exception as exc:
         logger.warning("dic suggestion accept: decision write failed for %s: %s",
                        suggestion_id, exc)
-        recorded = False
-    if not recorded:
+        outcome = {"recorded": False, "outcome": "write_failed", "current": None}
+    if outcome.get("outcome") == DECIDE_ALREADY:
+        return _decided_refusal(suggestion_id, outcome.get("current"),
+                                attempted="accept", section_id=section_id)
+    if not outcome.get("recorded"):
         return jsonify({
             "error": "decision_not_recorded",
             "message": ("The accept decision could not be recorded, so the "
@@ -5556,7 +5692,7 @@ def api_suggestion_accept(suggestion_id: str):
 def api_suggestion_reject(suggestion_id: str):
     """Reject a suggestion with an optional note. Requires editor or reviewer role."""
     from tools.document_intelligence.suggestion_store import (
-        get_suggestion, decide_suggestion,
+        get_suggestion, decide_outcome, DECIDE_ALREADY,
     )
     s = get_suggestion(suggestion_id)
     if s is None:
@@ -5567,18 +5703,30 @@ def api_suggestion_reject(suggestion_id: str):
         return _forbid("editor")
 
     if s.get("status") != "pending":
-        return jsonify({"error": "suggestion already decided", "status": s["status"]}), 409
+        # dwr-collab-01 -- the same refusal shape the accept door returns. A
+        # reviewer whose reject was thrown away because somebody else ACCEPTED
+        # is the case that matters most: the document already holds the text
+        # they were declining.
+        return _decided_refusal(
+            suggestion_id,
+            {"suggestion_id": suggestion_id, "status": s.get("status"),
+             "updated_at": s.get("updated_at"), "applied_by": s.get("applied_by")},
+            attempted="reject", section_id=s.get("section_id") or "")
 
     data = request.get_json(silent=True) or {}
     note = data.get("note", "")
     user = data.get("reviewer") or _current_user()
     tenant_id, classification = _security_context()
 
-    result = decide_suggestion(
+    outcome = decide_outcome(
         suggestion_id, "rejected", user,
         note=note, tenant_id=tenant_id, classification=classification,
     )
-    if not result:
+    if outcome.get("outcome") == DECIDE_ALREADY:
+        return _decided_refusal(suggestion_id, outcome.get("current"),
+                                attempted="reject",
+                                section_id=s.get("section_id") or "")
+    if not outcome.get("recorded"):
         return jsonify({"error": "could not record rejection",
                         "suggestion_id": suggestion_id,
                         "decision_recorded": False, "applied": False}), 500

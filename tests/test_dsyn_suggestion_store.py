@@ -26,6 +26,14 @@ class _FakeConn:
     def commit(self):
         self._db.commit()
 
+    def rollback(self):
+        # dwr-collab-01: ``StorageConnection`` has had ``rollback`` all along
+        # and this double did not, so the store's refusal path -- the branch a
+        # second reviewer's decision takes -- died on an AttributeError that
+        # said nothing about the code under test. A double that under-implements
+        # the interface fails for its own reasons.
+        self._db.rollback()
+
     def close(self):
         pass
 

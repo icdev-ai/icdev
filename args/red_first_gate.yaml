@@ -596,3 +596,41 @@ exemptions:
       Docker-free. Scoped to this ONE file, which is deliberately EXCLUDED from
       the merge gate in args/test_gating_gate.yaml and runs only in the
       docker-suite job of .github/workflows/floci-iac-gate.yml.
+
+  - pattern: "tests/docmod/test_standards_catalog.py"
+    reason: >-
+      PURE ASSERTION REPAIR OF A TEST THAT IS RED ON MAIN — NO PRODUCTION
+      BEHAVIOUR CHANGED, so there is no new RED for a pre-change tree to record
+      (dwr-collab-01; the escalation record is
+      docs/audits/task-det-21a987e887-needed-a-human-resolution.md).
+      `test_pages_line_updated` asserted the hand-written token
+      "`/standards-catalog`" appeared in .claude/commands/start.md. That line is
+      no longer hand-written: mfx-sib-02 made the `Pages:` block DERIVED from
+      the live Flask url_map by tools/dashboard/nav_paths.py, and the canonical
+      rule for this blueprint carries a TRAILING SLASH — `docmod_bp` is
+      constructed with url_prefix="/standards-catalog" and its index is
+      @docmod_bp.route("/"), so the rule is `/standards-catalog/` and a request
+      to `/standards-catalog` answers 308. The generator therefore writes
+      "`/standards-catalog/`", which does not contain the token the old
+      assertion looked for, and the test has been red on main since that
+      generator landed — MEASURED 2026-09-09 on origin/main at 0f16cfb7d: 1
+      failed of 8, AssertionError on that exact line. The repair pins the
+      CANONICAL rule instead, which is STRICTER than the substring it replaces,
+      not weaker: a route that changed shape, lost its trailing slash or
+      vanished from the derived block would still fail it. All 8 pass on this
+      branch. Because the repaired assertion is true of the merge-base tree as
+      well (start.md there already carries the derived token), red-first
+      correctly reports the file non-discriminating — the defect was in the
+      TEST, never in the tree, so there is no commit at which the new assertion
+      would have been red.
+      The RED that IS recorded for what this PR actually CHANGES is
+      tests/docmod/test_collab_poll.py and tests/docmod/test_suggestion_accept_anchor.py
+      in the same change, both reported `discriminating` by the gate.
+      Scoped to this ONE file. A test-only repair is not mechanically
+      distinguishable from a test weakened to match broken code, so this is NOT
+      the pattern for the next one — the same caveat the
+      tests/test_aca_cert_evidence.py entry above carries. Deliberately NOT
+      gated here: the file stays in args/ci_test_backlog.txt because promoting
+      it needs the green-alone AND green-in-suite proof gate_promoter runs, and
+      widening the gated set is not this PR's subject. Remove this exemption the
+      moment this file is edited for anything but that assertion repair.

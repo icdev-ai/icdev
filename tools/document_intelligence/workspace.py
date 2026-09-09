@@ -324,10 +324,21 @@ def workspace_context(doc_id: str) -> dict:
     assembled here is the half the change set has no opinion about: the document
     body, the version, and the document-level gates.
     """
+    # dwr-collab-01 -- THE POLL CURSOR IS STAMPED BEFORE THE PAGE IS READ, not
+    # by the page's first poll. A cursor taken when the client's first poll
+    # arrives leaves a window -- render, ship HTML, parse, fetch -- in which
+    # another reviewer's decision lands and is never delivered, and the second
+    # reviewer's rail is stale from the moment it draws. Stamped here, that
+    # window is closed: everything this render saw is at or before the cursor,
+    # and everything after it is a delta. The inclusive `>=` comparison means a
+    # decision landing in the same microsecond is re-delivered rather than lost.
+    from tools.document_intelligence.collab import now_cursor
+    cursor = now_cursor()
     body = document_body(doc_id)
     findings = document_findings(body.get("version_id") or "")
     return {
         "doc_id": doc_id,
+        "poll_cursor": cursor,
         "body": body,
         "document_findings": findings,
         "any_document_findings": any(

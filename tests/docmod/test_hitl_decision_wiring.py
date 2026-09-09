@@ -301,7 +301,12 @@ def test_apply_refuses_when_the_decision_cannot_be_recorded(client, db, monkeypa
     def _boom(*a, **k):
         raise RuntimeError("decision log unavailable")
 
-    monkeypatch.setattr(store, "decide_suggestion", _boom)
+    # dwr-collab-01 -- the door calls ``decide_outcome``; ``decide_suggestion``
+    # now delegates to it and is no longer on the accept path. Patching the old
+    # name left this guard intercepting NOTHING: the real decision succeeded,
+    # the route returned 200, and a test written to prove the door fails closed
+    # passed for a run in which it never fired. Patch what the door calls.
+    monkeypatch.setattr(store, "decide_outcome", _boom)
 
     resp = client.post(f"{P}/api/suggestions/{suggestion_id}/accept", json={})
     assert resp.status_code == 500

@@ -169,10 +169,39 @@ def teardown(doc_id: str) -> dict:
     return {"doc_id": doc_id, "sections": len(sections), "removed": removed}
 
 
+def decisions(suggestion_id: str) -> dict:
+    """The append-only decision chain for one proposal (dwr-collab-01).
+
+    Read through ``suggestion_store.get_decisions_for_suggestion`` -- the store's
+    own reader, never a SELECT written here -- so what the E2E asserts about the
+    chain and what the application shows of it cannot be two different readings.
+
+    IT IS THE ONLY WAY THE E2E CAN SEE THE LOST WRITE. The refused reviewer gets
+    a 409 either way; what separates a real refusal from a cosmetic one is
+    whether a SECOND row landed behind it, and that is not visible from any
+    route the page calls.
+    """
+    from tools.document_intelligence.suggestion_store import (
+        get_decisions_for_suggestion, get_suggestion,
+    )
+    rows = get_decisions_for_suggestion(suggestion_id) or []
+    current = get_suggestion(suggestion_id) or {}
+    return {
+        "suggestion_id": suggestion_id,
+        "status": current.get("status"),
+        "decisions": [
+            {"decision": r.get("decision"), "decided_by": r.get("decided_by"),
+             "decided_at": r.get("decided_at")}
+            for r in rows
+        ],
+    }
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--seed", action="store_true")
     ap.add_argument("--teardown", metavar="DOC_ID")
+    ap.add_argument("--decisions", metavar="SUGGESTION_ID")
     ap.add_argument("--collection-id", default="default")
     args = ap.parse_args()
     if args.seed:
@@ -181,7 +210,10 @@ def main() -> int:
     if args.teardown:
         print(json.dumps(teardown(args.teardown)))
         return 0
-    ap.error("one of --seed / --teardown is required")
+    if args.decisions:
+        print(json.dumps(decisions(args.decisions)))
+        return 0
+    ap.error("one of --seed / --teardown / --decisions is required")
     return 2
 
 
