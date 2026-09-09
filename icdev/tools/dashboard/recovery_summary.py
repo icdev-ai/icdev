@@ -160,6 +160,27 @@ def summarize_recovery(
             entry["outcome"] = RECOVERED
         else:
             entry["outcome"] = UNRESOLVED
+        # DOES IT NEED A HUMAN *NOW*, as opposed to having needed one?
+        #
+        # `outcome` answers "was this recovered autonomously", and
+        # NEEDED_A_HUMAN is a permanent historical fact about the attempt: the
+        # watcher escalated, and no later merge unmakes that. Correct for the
+        # question it answers, and deliberately unchanged here.
+        #
+        # It is the wrong answer to the question a PANEL asks, which is "what
+        # is waiting for me". Measured on the live board 2026-09-09, the
+        # headline read `6 needed a human` while ALL SIX subjects were `done` --
+        # six calls to action with nothing behind any of them, which is the
+        # same shape as the "14 auto-recovered" overstatement this module was
+        # written to fix, pointing the other way.
+        #
+        # Derived HERE and not in the template, for the reason the closed-status
+        # list is a constant here: a second hand-maintained copy of "what counts
+        # as closed" is the defect, and a template that re-implemented it would
+        # be exactly that.
+        entry["needs_attention"] = bool(
+            entry["escalated"] and status not in CLOSED_STATUSES
+        )
         out.append(entry)
 
     out.sort(key=lambda r: (r.get("at") or ""), reverse=True)

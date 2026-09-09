@@ -29,7 +29,10 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import pytest  # noqa: E402
+
 from tools.dashboard.recovery_summary import (  # noqa: E402
+    CLOSED_STATUSES,
     NEEDED_A_HUMAN,
     RECOVERED,
     UNRESOLVED,
@@ -232,3 +235,116 @@ def test_closed_statuses_match_the_project_card():
     src = (ROOT / "tools" / "dashboard" / "app.py").read_text(encoding="utf-8")
     assert '_closed_statuses = ("done", "decomposed", "cancelled", "merged")' in src
     assert CLOSED_STATUSES == ("done", "decomposed", "cancelled", "merged")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# "needed a human" is a fact about the past; "needs a human" is a call to
+# action. The panel conflated them (2026-09-09)
+#
+# MEASURED on the live board that morning: the Autonomous Recovery headline
+# read `6 needed a human` and ALL SIX subjects were `done` -- six calls to
+# action with nothing behind any of them. That is the same overstatement this
+# module exists to fix ("14 auto-recovered" where the honest answer was 3),
+# pointing the other way: the panel now understated how much was FINISHED.
+# ══════════════════════════════════════════════════════════════════════════
+
+def _escalated_rows(task_id="t1"):
+    """One attempt and the watcher's own escalation, the shape that yields
+    NEEDED_A_HUMAN whatever follows it."""
+    return [
+        {"action": "pr_watcher.resume", "created_at": "2026-09-09T01:00:00+00:00",
+         "d": json.dumps({"task_id": task_id, "reason": "first injection"})},
+        {"action": "pr_watcher.escalate", "created_at": "2026-09-09T02:00:00+00:00",
+         "d": json.dumps({"task_id": task_id, "reason": "resume undelivered"})},
+    ]
+
+
+class TestNeedsAttentionSeparatesOpenFromHistorical:
+
+    def test_an_escalation_on_an_OPEN_task_needs_attention(self):
+        out = summarize_recovery(_escalated_rows(), task_status={"t1": "pr_opened"})
+        assert len(out) == 1
+        assert out[0]["outcome"] == NEEDED_A_HUMAN
+        assert out[0]["needs_attention"] is True
+
+    def test_an_escalation_on_a_DONE_task_does_not(self):
+        """The human already came. The escalation stays in the record; it stops
+        being a call to action."""
+        out = summarize_recovery(_escalated_rows(), task_status={"t1": "done"})
+        assert out[0]["outcome"] == NEEDED_A_HUMAN, "the historical fact is unchanged"
+        assert out[0]["needs_attention"] is False
+
+    @pytest.mark.parametrize("status", list(CLOSED_STATUSES))
+    def test_every_closed_status_clears_the_call_to_action(self, status):
+        """One definition of closed. A second copy in the template is the defect
+        this field exists to prevent."""
+        out = summarize_recovery(_escalated_rows(), task_status={"t1": status})
+        assert out[0]["needs_attention"] is False, status
+
+    def test_an_unknown_board_status_still_needs_attention(self):
+        """Fail toward asking. A task the board cannot speak for is not
+        evidence that a human has been."""
+        out = summarize_recovery(_escalated_rows(), task_status={})
+        assert out[0]["needs_attention"] is True
+
+    def test_a_recovered_task_never_needs_attention(self):
+        rows = [
+            {"action": "pr_watcher.resume", "created_at": "2026-09-09T01:00:00+00:00",
+             "d": json.dumps({"task_id": "t2", "reason": "r"})},
+            {"action": "pr_watcher.merge", "created_at": "2026-09-09T02:00:00+00:00",
+             "d": json.dumps({"task_id": "t2", "reason": "auto-merge ok"})},
+        ]
+        out = summarize_recovery(rows, task_status={"t2": "done"})
+        assert out[0]["outcome"] == RECOVERED
+        assert out[0]["needs_attention"] is False
+
+    def test_an_unresolved_task_is_not_reported_as_needing_a_human(self):
+        """`still trying` is the watcher's own state and has its own colour; it
+        must not be folded into the escalation count."""
+        rows = [{"action": "pr_watcher.resume",
+                 "created_at": "2026-09-09T01:00:00+00:00",
+                 "d": json.dumps({"task_id": "t3", "reason": "r"})}]
+        out = summarize_recovery(rows, task_status={"t3": "in_progress"})
+        assert out[0]["outcome"] == UNRESOLVED
+        assert out[0]["needs_attention"] is False
+
+    def test_the_field_is_present_on_every_entry(self):
+        """The template branches on it, so a missing key would silently read as
+        falsy and paint an open escalation as resolved."""
+        rows = _escalated_rows("a") + _escalated_rows("b")
+        out = summarize_recovery(rows, task_status={"a": "done"})
+        assert len(out) == 2
+        assert all("needs_attention" in e for e in out)
+
+
+class TestThePanelReadsTheDerivedFieldRatherThanReimplementingIt:
+    """Source assertions. The headline and the row colour are the two places a
+    second definition of "closed" would grow back."""
+
+    @staticmethod
+    def _panel() -> str:
+        from pathlib import Path
+        import tools.dashboard as d
+        return (Path(d.__file__).parent / "templates"
+                / "_autonomy_status.html").read_text(encoding="utf-8")
+
+    def test_the_headline_counts_open_escalations_separately(self):
+        src = self._panel()
+        assert "_humanOpen" in src
+        assert "r.needs_attention" in src
+        assert "NEED a human" in src
+
+    def test_a_fully_resolved_batch_says_so(self):
+        assert "needed a human, all resolved" in self._panel()
+
+    def test_the_template_does_not_carry_its_own_closed_list(self):
+        """It must branch on needs_attention, never on board_status strings."""
+        src = self._panel()
+        for literal in ("'decomposed'", '"decomposed"', "'cancelled'", '"cancelled"'):
+            assert literal not in src, f"{literal} is a second closed-status copy"
+
+    def test_red_is_reserved_for_what_is_still_open(self):
+        src = self._panel()
+        i = src.index("needs_attention")
+        window = src[i:i + 400]
+        assert "#dc3545" in window, "red must sit on the needs_attention branch"
