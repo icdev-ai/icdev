@@ -174,6 +174,19 @@ the watcher — the resolution is discarded on every attempt and the same confli
 returns. The only exit is to merge `main` IN again, which is exactly what the
 operator then did.
 
+**This cause is already carded — do not file it again, and do not re-derive the
+theory it disproves.** `kpr-watch-14` (`scheduled`) carries the survey of all 65
+lifetime `union_refused` rows, in which `CLAUDE.md` is 35 of 63 (55.6%), the
+single largest cause; the record is
+`docs/audits/task-det-d6615e5bd4-needed-a-human-resolution.md`. That survey also
+establishes that the `icdev/` copy appearing in every refusal message is a
+SORT-ORDER artifact of `_unmerged_files` (git's sorted `--diff-filter=U` output,
+where `icdev/` precedes `tools/`) and **not** a mirror-declaration gap:
+`match_declaration` strips the mirror prefix. Declaring `CLAUDE.md` is not a
+one-liner — `args/pr_watcher_config.yaml` is a `protected_path` (so it needs the
+mfx-mrg-04 door) and mfx-ci-04 requires the packaged bootstrap be regenerated
+with it.
+
 ## Who repaired it
 
 Three hand-authored commits on `kanban/dwr-fid-03`, all AFTER the 09:53:01Z
@@ -257,6 +270,7 @@ verdict — dwr-fid-03 escalated, needed a human, and got one, on either row set
 | derivation | **still reports** — clears at `2026-09-09T09:52:02.99Z`, 7h48m after this card was scheduled |
 | `detector_findings` row `73b8573563ae33c5` | `active`, seen 2, first seen 2026-09-08T14:21:33, last seen 2026-09-08T20:45:26 — HELD at close (`held_closed_early`), clears on the first MEASURABLE cycle after 09:52:02Z |
 | `--records` disposition | **`record`** — *"a pr_watcher.merge at 2026-09-08T21:07:29 landed AFTER the escalation at 2026-09-08T09:53:01, and the subject is `done`: nothing is left to land"* |
+| the hold this close relies on | `git merge-base --is-ancestor fb989f6ad origin/main` -> **true**, verified before closing (a `-r2` appearing anyway would mean the daemon is running a tree older than #2057) |
 
 The autonomy-act-04 disposition is worth quoting on its own: this finding reads
 `record`, not `card`, **today**. It read `card` when it was filed at 14:21:33Z,
