@@ -819,6 +819,244 @@ def list_open_prs(*, runner=None, limit: int = 100,
     return list(json.loads(getattr(proc, "stdout", "") or "[]"))
 
 
+# ────────────────────────────────────────────────────────────────────────────
+# REST fallback (kpr-watch-16) — the SAME question, the transport that answers
+# ────────────────────────────────────────────────────────────────────────────
+#
+# `gh pr list` is GRAPHQL, and GraphQL is refused independently of REST.
+# MEASURED 2026-09-09 23:01Z on this host and again 2026-09-05: in the same
+# second, `gh api graphql` returned `graphql_rate_limit` ("API rate limit
+# already exceeded for user ID 263484343") while
+# `gh api repos/{owner}/{repo}/pulls?state=open` returned rc=0. The Home panel
+# then renders "Could not read merge readiness ... showing the last good report
+# below" — correct behaviour (kpr-watch-03), but the report is STALE and the
+# transport that could have answered was never asked.
+#
+# `gh api rate_limit` IS NOT THE INSTRUMENT. Probed immediately before AND
+# immediately after the refusal it reported {"limit":5000,"remaining":5000,
+# "used":0}, with `reset` advancing a second per call — a window that has never
+# been consumed. The refusal names a USER ID, not the token, so the per-token
+# endpoint cannot see it, and "sleep until reset" waits on a number that never
+# moves. Nothing here consults it.
+#
+# THE LADDER IS UNTOUCHED. `classify_merge_readiness` is pure and stays so; this
+# swaps ONLY the blocked transport, the move `pr_linker`'s injectable
+# `pr_lister` already makes. A REST record is built to be FAITHFUL, not
+# plausible — see `_rest_pr_record`.
+
+#: stderr fragments that mean "GraphQL refused this on budget grounds". The
+#: fallback is taken for NOTHING else: a missing `gh`, an unauthenticated host
+#: or a 404 must still RAISE, because `collect_report`'s own contract is that
+#: "an empty report and a report that could not be produced are different
+#: answers, and only the first is data". Falling back on every error would turn
+#: an auth failure into a quietly degraded report nobody questions.
+_RATE_LIMIT_MARKERS = (
+    "api rate limit already exceeded",
+    "graphql_rate_limit",
+    "secondary rate limit",
+)
+
+#: PRs whose per-PR detail is fetched on the REST path. The list itself is
+#: never truncated — only the DETAIL — and what was deferred is reported by
+#: number, because a truncated fetch that reports only its successes reads as
+#: full coverage.
+REST_DETAIL_BUDGET = 40
+
+
+class PRGather(NamedTuple):
+    """Open PRs plus WHICH transport answered and what it could not measure."""
+
+    prs: List[Dict[str, Any]]
+    transport: str                    # "graphql" | "rest"
+    degraded: List[str]               # per-field fetch failures, by name
+    detail_deferred: List[int]        # PR numbers over REST_DETAIL_BUDGET
+
+    @property
+    def ok(self) -> bool:
+        return not self.degraded and not self.detail_deferred
+
+
+def _is_graphql_rate_limit(stderr: str) -> bool:
+    low = (stderr or "").lower()
+    return any(marker in low for marker in _RATE_LIMIT_MARKERS)
+
+
+def _gh_rest(path: str, *, gh_bin: str = "gh", runner=None) -> Any:
+    """One `gh api <path>` call, parsed. Raises on a non-zero exit."""
+    if runner is None:
+        runner = subprocess.run
+    proc = runner([gh_bin, "api", path],
+                  capture_output=True, text=True, encoding="utf-8",
+                  errors="replace", timeout=60)
+    if getattr(proc, "returncode", 1) != 0:
+        raise RuntimeError(
+            "gh api %s failed (rc=%s): %s"
+            % (path, getattr(proc, "returncode", "?"),
+               (getattr(proc, "stderr", "") or "").strip()[:200]))
+    return json.loads(getattr(proc, "stdout", "") or "null")
+
+
+#: REST `mergeable` is a tri-state boolean; the ladder reads GraphQL's word.
+_MERGEABLE_WORD = {True: "MERGEABLE", False: "CONFLICTING", None: "UNKNOWN"}
+
+
+def _rest_pr_record(pull: Dict[str, Any], rest, *,
+                    degraded: List[str], want_detail: bool) -> Dict[str, Any]:
+    """One REST pull, shaped as the ladder's record — FAITHFULLY.
+
+    A MISSING key and an EMPTY one are not the same answer here, and getting
+    that wrong fabricates findings:
+
+    * an empty ``statusCheckRollup`` classifies as ``no_checks`` — a REAL
+      finding state CLAUDE.md says is never folded into ``awaiting_ci``. So a
+      rollup we could not ask for is OMITTED, never emitted as ``[]``.
+    * ``_changed_files`` returns None when ``files`` is absent and the
+      protected-path rung then FAILS CLOSED, which is the answer the merger
+      already gives when it cannot see a PR's files.
+
+    The two rollup shapes are kept DISTINCT because `error_classifier` judges
+    them differently and says so: a CheckRun carries ``conclusion`` and no
+    ``state``; a StatusContext carries ``state`` and no ``conclusion``.
+    Flattening them to one shape would silently change every verdict.
+    """
+    number = pull.get("number")
+    head = pull.get("head") or {}
+    base = pull.get("base") or {}
+    rec: Dict[str, Any] = {
+        "number": number,
+        "url": pull.get("html_url") or "",
+        "title": pull.get("title") or "",
+        "headRefName": (head.get("ref") or ""),
+        "headRefOid": (head.get("sha") or ""),
+        "baseRefName": (base.get("ref") or ""),
+        "isDraft": bool(pull.get("draft")),
+        "state": (pull.get("state") or "open").upper(),
+        "updatedAt": pull.get("updated_at") or "",
+        "createdAt": pull.get("created_at") or "",
+        "labels": [{"name": (lab or {}).get("name") or ""}
+                   for lab in (pull.get("labels") or [])],
+    }
+    if not want_detail:
+        return rec
+
+    sha = head.get("sha") or ""
+
+    def _try(label: str, fn):
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001 - recorded, never swallowed
+            degraded.append("PR #%s %s: %s" % (number, label, str(exc)[:120]))
+            return None
+
+    detail = _try("detail", lambda: rest("repos/{owner}/{repo}/pulls/%s" % number))
+    if isinstance(detail, dict):
+        rec["mergeable"] = _MERGEABLE_WORD.get(detail.get("mergeable"), "UNKNOWN")
+        # REST `mergeable_state` and GraphQL `mergeStateStatus` share one
+        # vocabulary (clean/dirty/behind/blocked/unstable/...), so the map is a
+        # case change and not an interpretation.
+        state = (detail.get("mergeable_state") or "").strip().upper()
+        if state:
+            rec["mergeStateStatus"] = state
+
+    rollup: List[Dict[str, Any]] = []
+    # BOTH sources must answer. A PARTIAL rollup is worse than an absent one:
+    # if the half we could read is green and the failing check sat in the half
+    # we could not, the ladder reads `ready` for a red PR. So this is an AND,
+    # never an OR -- and `sha` absent means neither was even askable.
+    checks_ok = statuses_ok = False
+    if sha:
+        runs = _try("check-runs",
+                    lambda: rest("repos/{owner}/{repo}/commits/%s/check-runs" % sha))
+        if isinstance(runs, dict):
+            checks_ok = True
+            for run in runs.get("check_runs") or []:
+                entry = {"name": run.get("name") or "",
+                         "status": (run.get("status") or "").upper(),
+                         "conclusion": (run.get("conclusion") or "").upper()}
+                if run.get("started_at"):
+                    entry["startedAt"] = run["started_at"]
+                if run.get("completed_at"):
+                    entry["completedAt"] = run["completed_at"]
+                rollup.append(entry)
+
+        combined = _try("status",
+                        lambda: rest("repos/{owner}/{repo}/commits/%s/status" % sha))
+        if isinstance(combined, dict):
+            statuses_ok = True
+            for ctx in combined.get("statuses") or []:
+                entry = {"context": ctx.get("context") or "",
+                         "state": (ctx.get("state") or "").upper()}
+                if ctx.get("updated_at"):
+                    entry["completedAt"] = ctx["updated_at"]
+                rollup.append(entry)
+
+    # Only assert a rollup we actually MEASURED. An empty list here would mean
+    # "this PR has no checks", which is a finding; silence means "not asked".
+    if checks_ok and statuses_ok:
+        rec["statusCheckRollup"] = rollup
+
+    reviews = _try("reviews",
+                   lambda: rest("repos/{owner}/{repo}/pulls/%s/reviews" % number))
+    if isinstance(reviews, list):
+        rec["reviews"] = [{"state": (r.get("state") or "").upper()}
+                          for r in reviews if isinstance(r, dict)]
+
+    files = _try("files",
+                 lambda: rest("repos/{owner}/{repo}/pulls/%s/files" % number))
+    if isinstance(files, list):
+        rec["files"] = [{"path": f.get("filename") or ""}
+                        for f in files if isinstance(f, dict)]
+    return rec
+
+
+def list_open_prs_rest(*, rest=None, limit: int = 100,
+                       max_detail: Optional[int] = None,
+                       gh_bin: str = "gh", runner=None) -> PRGather:
+    """Every open PR over REST, shaped as the ladder's record.
+
+    Cost is 1 + 5N calls against a 5,000/hr REST budget — ~76 for 15 open PRs.
+    """
+    if rest is None:
+        def rest(path):  # noqa: E306 - tiny local transport
+            return _gh_rest(path, gh_bin=gh_bin, runner=runner)
+
+    budget = REST_DETAIL_BUDGET if max_detail is None else int(max_detail)
+    pulls = rest("repos/{owner}/{repo}/pulls?state=open&per_page=%d"
+                 % max(1, min(int(limit), 100)))
+    pulls = list(pulls or [])
+
+    degraded: List[str] = []
+    deferred: List[int] = []
+    records: List[Dict[str, Any]] = []
+    for idx, pull in enumerate(pulls):
+        want_detail = idx < budget
+        if not want_detail:
+            deferred.append(pull.get("number"))
+        records.append(_rest_pr_record(pull, rest, degraded=degraded,
+                                       want_detail=want_detail))
+    return PRGather(prs=records, transport="rest", degraded=degraded,
+                    detail_deferred=deferred)
+
+
+def gather_open_prs(*, runner=None, limit: int = 100, gh_bin: str = "gh",
+                    rest=None, max_detail: Optional[int] = None) -> PRGather:
+    """Open PRs from GraphQL, falling back to REST when GraphQL is rate-limited.
+
+    The report SAYS which transport answered: a REST record is never silently
+    presented as a GraphQL one.
+    """
+    try:
+        prs = list_open_prs(runner=runner, limit=limit, gh_bin=gh_bin)
+    except RuntimeError as exc:
+        if not _is_graphql_rate_limit(str(exc)):
+            raise
+        return list_open_prs_rest(rest=rest, limit=limit,
+                                  max_detail=max_detail, gh_bin=gh_bin,
+                                  runner=runner)
+    return PRGather(prs=prs, transport="graphql", degraded=[],
+                    detail_deferred=[])
+
+
 def linked_pr_urls(get_connection=None) -> FrozenSet[str]:
     """PR urls a kanban task already points at. Raises if the board is unreadable.
 
@@ -1180,13 +1418,19 @@ def collect_report(
     Raises on an input it could not obtain. An empty report and a report that
     could not be produced are different answers, and only the first is data.
     """
+    # kpr-watch-16: `gh pr list` is GRAPHQL, refused independently of REST, so
+    # the gatherer falls back rather than letting the panel go stale. WHICH
+    # transport answered rides on the report -- a REST record is never silently
+    # presented as a GraphQL one.
+    gather: Optional[PRGather] = None
     if from_json:
         path = pathlib.Path(from_json)
         prs = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(prs, list):
             raise ValueError("%s does not contain a PR list" % path)
     else:
-        prs = list_open_prs(limit=limit)
+        gather = gather_open_prs(limit=limit)
+        prs = gather.prs
 
     if not default_branch:
         from tools.ci.pr_watcher import repo_default_branch  # local: import cycle
@@ -1254,6 +1498,14 @@ def collect_report(
     # Why the board was unreadable, not merely that it was. A degraded report
     # that cannot say what degraded it sends the reader to the wrong fix.
     report["linked_lookup_error"] = linked_lookup_error
+    # `from_json` is a replay of somebody else's dump: the transport that
+    # produced it is not knowable from here, so it is `replay` rather than a
+    # guess at graphql.
+    report["transport"] = gather.transport if gather else "replay"
+    if gather and gather.degraded:
+        report["transport_degraded"] = list(gather.degraded)
+    if gather and gather.detail_deferred:
+        report["transport_detail_deferred"] = list(gather.detail_deferred)
     return report
 
 
