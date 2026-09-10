@@ -70,9 +70,34 @@ WRITE_VERBS = frozenset({
 WRITE_FLAGS = frozenset({"-X", "--method", "-f", "-F", "--input", "--field",
                          "--raw-field"})
 
-#: Short by design. The watcher polls on a 30s floor and shells out twice per
-#: iteration, so 60s dedupes the pair and the immediate re-poll without ever
-#: hiding a real state change for more than one iteration.
+#: Short by design: it BOUNDS HOW LONG A STATE CHANGE CAN BE HIDDEN to under
+#: one floor interval (30s), and that is the whole justification.
+#:
+#: IT DOES *NOT* DEDUPE THE TWO CALLS AN ITERATION MAKES. kpr-watch-17 shipped
+#: a comment here claiming it did; kpr-watch-18 withdrew that. `poll_once` ->
+#: `_auto_merge_unlinked` asks `--limit 100` for twelve fields, and
+#: `_open_pr_index` asks `--limit 200` for `url,files,mergeable,isDraft`. The
+#: KEY IS THE FULL ARGV -- deliberately, so two callers asking different
+#: questions never share an answer -- so those two hash apart and BOTH always
+#: reach the forge. The rule that makes the cache safe is the same rule that
+#: makes it useless for that pair, and no TTL can change it.
+#:
+#: THE REPEATED IDENTICAL ASK IS `_open_pr_index()`, invoked at SEVEN sites in
+#: pr_watcher.py (1259, 1371, 3435, 4805, 4806, 4818, 4819) with one argv --
+#: and 4805/4806 and 4818/4819 are same-line double calls, once for the `in`
+#: test and once for the value, INSIDE the per-unlinked-PR loop. That is what
+#: this cache collapses.
+#:
+#: ITS LIVE SAVING IS UNMEASURED, and saying so is the point: the board held
+#: ZERO open PRs when this was written, so that loop body never ran. Two
+#: figures are MEASURED and nothing else may be claimed -- the MECHANISM
+#: (three identical asks -> 1 forge call, 2 hits, 66.7%) and the BACKOFF
+#: (120 -> 10 iterations per idle hour, 91.7% fewer).
+#:
+#: AND THE BACKOFF OUTRUNS THIS TTL BY DESIGN. `next_poll_interval` passes 60s
+#: at idle_streak 2, so on an idle board every entry expires before the next
+#: poll and the cache contributes NOTHING there -- the backoff is doing all of
+#: that 91.7%. Do not read the two as additive.
 DEFAULT_TTL_SECONDS = int(os.environ.get("ICDEV_GH_CACHE_TTL", "60") or 60)
 
 #: Off switch. The cache is a convenience over a working call path; a
