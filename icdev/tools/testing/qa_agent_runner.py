@@ -112,6 +112,13 @@ class QARunResult:
     spec_files_no_report: List[str] = field(default_factory=list)
     batches: List[Dict[str, Any]] = field(default_factory=list)
 
+    #: When the runner began and finished, in the text form PostgreSQL's
+    #: CURRENT_TIMESTAMP writes into these TEXT columns. Empty means NOT
+    #: MEASURED (a result built by hand): `record_run` then leaves the start to
+    #: the column default and the finish NULL rather than guess either.
+    started_at: str = ""
+    completed_at: str = ""
+
     def to_dict(self) -> dict:
         d = asdict(self)
         d["failures"] = [asdict(f) for f in self.failures]
@@ -223,6 +230,18 @@ def _npx_cmd() -> str:
         return get_npx_cmd()
     except Exception:
         return "npx.cmd" if sys.platform == "win32" else "npx"
+
+
+def _now_text() -> str:
+    """UTC now, spelled the way the ace_qa_runs column default spells it.
+
+    The timestamp columns are TEXT and every existing row carries PostgreSQL's
+    `2026-09-10 20:48:47.073977+00`. An ISO `T` separator would sort every row
+    written from here after every older row of the same day.
+    """
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f+00")
 
 
 def _make_run_id() -> str:
@@ -353,6 +372,7 @@ def run_e2e_suite(
         run_id=run_id,
         trigger=trigger,
         canvas_filter=canvas_filter or "",
+        started_at=_now_text(),
     )
 
     rel_specs = resolve_spec_files(canvas_filter)
@@ -362,6 +382,7 @@ def run_e2e_suite(
             "qa_agent_runner: no spec files matching canvas '%s'", canvas_filter or "*"
         )
         result.status = STATUS_NO_TESTS
+        result.completed_at = _now_text()
         return result
 
     env = os.environ.copy()
@@ -485,6 +506,7 @@ def run_e2e_suite(
     # Derive the verdict BEFORE persisting it. The two lines used to run the
     # other way round, so the file `report_path` sends a reader to carried the
     # `running` the result was constructed with -- for every sweep ever taken.
+    result.completed_at = _now_text()
     result.status = derive_status(result)
     write_run_report(result)
 
@@ -661,37 +683,36 @@ def record_run(result: QARunResult) -> str:
     except ImportError:
         from tools.db.storage import get_canvas_connection  # type: ignore[no-reattr]
 
+    # Both times are NAMED. Left to the column default, `started_at` recorded
+    # the moment of this INSERT -- which happens after the sweep -- and
+    # `completed_at` stayed NULL on every row. An unmeasured start (a result
+    # built by hand) still falls back to the default; an unmeasured finish is
+    # NULL, never a guess.
+    started_at = result.started_at or None
+    completed_at = result.completed_at or None
     conn = get_canvas_connection("ICDEV_ACE_DB_URL")
     try:
         conn.execute(
             """INSERT INTO ace_qa_runs
                (id, trigger, canvas_filter, status,
-                total_tests, passed, failed, screenshot_count, report_path)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                total_tests, passed, failed, screenshot_count, report_path,
+                started_at, completed_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s,
+                       COALESCE(%s, CURRENT_TIMESTAMP), %s)
                ON CONFLICT (id) DO NOTHING""",
             (
                 result.run_id, result.trigger, result.canvas_filter, result.status,
                 result.total, result.passed, result.failed,
                 result.screenshot_count, result.report_path,
+                started_at, completed_at,
             ),
         )
         conn.commit()
-    except Exception:
-        try:
-            conn.execute(
-                """INSERT OR IGNORE INTO ace_qa_runs
-                   (id, trigger, canvas_filter, status,
-                    total_tests, passed, failed, screenshot_count, report_path)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    result.run_id, result.trigger, result.canvas_filter, result.status,
-                    result.total, result.passed, result.failed,
-                    result.screenshot_count, result.report_path,
-                ),
-            )
-            conn.commit()
-        except Exception as exc2:
-            logger.error("qa_agent_runner: record_run failed: %s", exc2)
+    except Exception as exc:
+        # ONE dialect. A SQLite `?` retry used to follow this statement: on
+        # SQLite it never ran (storage translates `%s`), and on PostgreSQL it
+        # could only raise -- so what it did was log ITS error instead of this.
+        logger.error("qa_agent_runner: record_run failed: %s", exc)
     finally:
         conn.close()
     return result.run_id
@@ -725,22 +746,9 @@ def record_failure(
             ),
         )
         conn.commit()
-    except Exception:
-        try:
-            conn.execute(
-                """INSERT OR IGNORE INTO ace_qa_failures
-                   (id, run_id, test_name, spec_file, error_message,
-                    screenshot_path, severity, kanban_task_id)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    failure_id, run_id, failure.test_name, failure.spec_file,
-                    failure.error_message, failure.screenshot_path,
-                    failure.severity, kanban_task_id,
-                ),
-            )
-            conn.commit()
-        except Exception as exc2:
-            logger.error("qa_agent_runner: record_failure failed: %s", exc2)
+    except Exception as exc:
+        # ONE dialect -- see record_run.
+        logger.error("qa_agent_runner: record_failure failed: %s", exc)
     finally:
         conn.close()
     return failure_id
@@ -755,13 +763,11 @@ def get_run_status(run_id: str) -> Optional[Dict[str, Any]]:
 
     conn = get_canvas_connection("ICDEV_ACE_DB_URL")
     try:
+        # ONE dialect. A `?` re-ask for a missing run raised on PostgreSQL and
+        # was logged as a failure; "not found" is an answer, not an error.
         row = conn.execute(
             "SELECT * FROM ace_qa_runs WHERE id = %s", (run_id,)
         ).fetchone()
-        if row is None:
-            row = conn.execute(
-                "SELECT * FROM ace_qa_runs WHERE id = ?", (run_id,)
-            ).fetchone()
         if row is None:
             return None
         # A psycopg2 RealDictRow IS a mapping and carries no `.cursor`, so the
