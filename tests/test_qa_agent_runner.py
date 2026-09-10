@@ -835,6 +835,113 @@ class TestRecordRun(unittest.TestCase):
         mock_conn.close.assert_called_once()
 
 
+class TestRecordRunTimestamps(unittest.TestCase):
+    """The row must say WHEN the run happened, measured by the runner.
+
+    `record_run` named neither `started_at` nor `completed_at`, so the column
+    default filled `started_at` with the moment of the INSERT -- which runs
+    AFTER the sweep -- and `completed_at` stayed NULL. Measured 2026-09-10 on
+    run qa-1789072164: batches began 20:29:24Z, the row reads 20:48:47Z, and
+    all 21 rows in the table had a NULL `completed_at`. A 19-minute sweep was
+    recorded as starting at its own finish, with no duration recoverable.
+    """
+
+    _DDL = (
+        "CREATE TABLE ace_qa_runs (id TEXT PRIMARY KEY, trigger TEXT NOT NULL DEFAULT '', "
+        "trigger_ref TEXT NOT NULL DEFAULT '', canvas_filter TEXT NOT NULL DEFAULT '', "
+        "started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, completed_at TEXT, "
+        "status TEXT NOT NULL DEFAULT 'running', total_tests INTEGER NOT NULL DEFAULT 0, "
+        "passed INTEGER NOT NULL DEFAULT 0, failed INTEGER NOT NULL DEFAULT 0, "
+        "screenshot_count INTEGER NOT NULL DEFAULT 0, report_path TEXT NOT NULL DEFAULT '')"
+    )
+
+    def _record_and_read(self, result: QARunResult) -> dict:
+        import tempfile
+        from tests._sql_compat import connect
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "ace.db"
+            setup = connect(db_path)
+            setup.execute(self._DDL)
+            setup.commit()
+            setup.close()
+            with patch(
+                "icdev.tools.db.storage.get_canvas_connection",
+                side_effect=lambda *_a, **_kw: connect(db_path),
+            ):
+                record_run(result)
+            reader = connect(db_path)
+            try:
+                row = reader.execute(
+                    "SELECT started_at, completed_at FROM ace_qa_runs WHERE id = %s",
+                    (result.run_id,),
+                ).fetchone()
+            finally:
+                reader.close()
+        assert row is not None, "record_run wrote no row"
+        return dict(row)
+
+    def test_the_runners_own_timestamps_are_persisted(self):
+        result = QARunResult(
+            run_id="qa-ts-1", status="passed",
+            started_at="2026-09-10 20:29:24.000000+00",
+            completed_at="2026-09-10 20:48:46.000000+00",
+        )
+        row = self._record_and_read(result)
+        assert row["started_at"] == "2026-09-10 20:29:24.000000+00"
+        assert row["completed_at"] == "2026-09-10 20:48:46.000000+00"
+
+    def test_an_unstamped_result_keeps_the_default_and_a_null_finish(self):
+        """A caller that builds a result by hand has no measured times. The
+        start falls back to the column default (it is NOT NULL) and the finish
+        stays NULL -- never an empty string, never a guessed time."""
+        row = self._record_and_read(QARunResult(run_id="qa-ts-2", status="passed"))
+        assert row["started_at"]
+        assert row["completed_at"] is None
+
+
+class TestRunE2ESuiteTimestamps(unittest.TestCase):
+    @staticmethod
+    def _parse(ts: str):
+        from datetime import datetime
+
+        return datetime.strptime(ts[:-3] + "+0000", "%Y-%m-%d %H:%M:%S.%f%z")
+
+    def test_run_is_stamped_before_the_first_batch_and_after_the_last(self):
+        from datetime import datetime, timezone
+
+        specs = ["tests/e2e/s0.spec.ts"]
+        report = json.dumps({"stats": {"expected": 1, "unexpected": 0, "skipped": 0}, "suites": []})
+        ok = MagicMock(returncode=0, stdout=report, stderr="")
+        seen = {}
+
+        def _run(*_a, **_kw):
+            seen["batch"] = datetime.now(timezone.utc)
+            return ok
+
+        before = datetime.now(timezone.utc)
+        with (
+            patch("icdev.tools.testing.qa_agent_runner.resolve_spec_files", return_value=specs),
+            patch("icdev.tools.testing.qa_agent_runner.subprocess.run", side_effect=_run),
+        ):
+            result = run_e2e_suite(deadline_seconds=600, batch_size=1)
+        after = datetime.now(timezone.utc)
+
+        started, completed = self._parse(result.started_at), self._parse(result.completed_at)
+        assert before <= started <= seen["batch"] <= completed <= after
+
+    def test_timestamps_use_the_text_form_the_column_default_writes(self):
+        """The columns are TEXT and every existing row carries PostgreSQL's
+        CURRENT_TIMESTAMP rendering. An ISO 'T' separator would sort every new
+        row after every old row of the same day under the started_at index."""
+        import re
+
+        result = run_e2e_suite(canvas_filter="no-such-canvas-zzz")
+        pattern = r"^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{6}\+00$"
+        assert re.match(pattern, result.started_at), result.started_at
+        assert re.match(pattern, result.completed_at), result.completed_at
+
+
 class TestRecordFailure(unittest.TestCase):
     def test_returns_failure_id_string(self):
         mock_conn = MagicMock()
@@ -858,6 +965,58 @@ class TestRecordFailure(unittest.TestCase):
         with patch("icdev.tools.db.storage.get_canvas_connection", return_value=mock_conn):
             record_failure(failure, "run-x")
         mock_conn.close.assert_called_once()
+
+
+class TestPersistenceSpeaksOneDialect(unittest.TestCase):
+    """Runtime SQL here is authored for PostgreSQL, once.
+
+    Each seam used to follow its `%s` statement with a SQLite-dialect `?`
+    retry. On SQLite the retry never ran -- storage's connection translates
+    `%s` to `?` -- and on PostgreSQL it could only raise, so all it did was
+    replace the real error with its own in the log (record_run,
+    record_failure) or log a spurious failure for an ordinary missing run
+    (get_run_status).
+    """
+
+    _LOGGER = "icdev.tools.testing.qa_agent_runner"
+
+    @staticmethod
+    def _sql_of(mock_conn) -> list:
+        return [c.args[0] for c in mock_conn.execute.call_args_list]
+
+    def test_record_run_issues_one_statement_and_logs_its_real_error(self):
+        mock_conn = MagicMock()
+        mock_conn.execute.side_effect = Exception("primary failure")
+        with (
+            patch("icdev.tools.db.storage.get_canvas_connection", return_value=mock_conn),
+            self.assertLogs(self._LOGGER, level="ERROR") as logs,
+        ):
+            record_run(QARunResult(run_id="qa-1"))
+        sql = self._sql_of(mock_conn)
+        assert len(sql) == 1 and "?" not in sql[0], sql
+        assert any("primary failure" in line for line in logs.output)
+
+    def test_record_failure_issues_one_statement_and_logs_its_real_error(self):
+        mock_conn = MagicMock()
+        mock_conn.execute.side_effect = Exception("primary failure")
+        with (
+            patch("icdev.tools.db.storage.get_canvas_connection", return_value=mock_conn),
+            self.assertLogs(self._LOGGER, level="ERROR") as logs,
+        ):
+            record_failure(TestFailure(test_name="X"), "run-x")
+        sql = self._sql_of(mock_conn)
+        assert len(sql) == 1 and "?" not in sql[0], sql
+        assert any("primary failure" in line for line in logs.output)
+
+    def test_get_run_status_asks_once_for_a_missing_run(self):
+        from icdev.tools.testing.qa_agent_runner import get_run_status
+
+        mock_conn = MagicMock()
+        mock_conn.execute.return_value.fetchone.return_value = None
+        with patch("icdev.tools.db.storage.get_canvas_connection", return_value=mock_conn):
+            assert get_run_status("qa-missing") is None
+        sql = self._sql_of(mock_conn)
+        assert len(sql) == 1 and "?" not in sql[0], sql
 
 
 class TestMainPersistsTheRun(unittest.TestCase):
