@@ -51,6 +51,7 @@ from typing import Any, Dict, FrozenSet, List, Optional, Tuple
 import yaml
 
 from tools.ci import error_classifier as ec
+from tools.ci import gh_cache
 from tools.ci import pr_superseded as sup
 from tools.ci.merge_readiness import (
     BEHIND_MAIN,
@@ -77,6 +78,45 @@ from tools.ci import resume_delivery
 logger = get_logger(__name__)
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG = ROOT / "args" / "pr_watcher_config.yaml"
+
+#: The test and any reader want ONE name for the declared config.
+CONFIG_PATH = DEFAULT_CONFIG
+
+#: Ceiling for the idle backoff when the config does not declare one.
+DEFAULT_IDLE_BACKOFF_MAX_SECONDS = 480
+
+
+def next_poll_interval(floor: int, ceiling: int, *, idle_streak: int) -> int:
+    """How long to sleep after an iteration that found `idle_streak` nothings.
+
+    THE PROBLEM. `run_forever` slept a FLAT `interval` forever, and each
+    iteration shells out to `gh` TWICE (`poll_once` and `_sweep_unlinked_prs`),
+    both GraphQL. On a board with zero open PRs and zero non-terminal tasks --
+    the live state 2026-09-09 -- that is ~120 iterations an hour asking the
+    forge to confirm nothing has changed.
+
+    NOT WEBHOOKS: GitHub must reach an inbound endpoint and this host is behind
+    NAT. The Actions side already fires on `check_suite`
+    (.github/workflows/pr-watcher.yml). The local win is simply not re-asking.
+
+    THE FLOOR IS NEVER CROSSED and a busy board is UNCHANGED: `idle_streak` 0
+    returns exactly `floor`, so the only behaviour that moves is on a board with
+    nothing to watch. Growth is geometric to `ceiling`, and ANY of an action, a
+    task in a PR-bearing status, or an error resets the streak to 0 -- so a PR
+    opened during a backed-off window is picked up within one ceiling.
+
+    A ceiling BELOW the floor is a misconfiguration that must not stop the
+    watcher: the floor wins, because polling slower than the declared floor is
+    the one outcome nobody asked for.
+    """
+    floor = max(1, int(floor))
+    ceiling = max(floor, int(ceiling))
+    if idle_streak <= 0:
+        return floor
+    # Bounded exponent: 2**large is a real number and a real memory problem.
+    grown = floor * (2 ** min(int(idle_streak), 20))
+    return min(ceiling, grown)
+
 
 # Max characters of CI log text we inject back into a resume message.
 #: Minimum gap between resume injections for the SAME PR.
@@ -1015,7 +1055,11 @@ class PRWatcher:
         self._fetch_state = fetch_state or fetch_pr_state
         self._fetch_logs = fetch_logs or fetch_ci_logs
         self._auto_merge_runner = auto_merge_runner or subprocess.run
-        self._pr_list_runner = pr_list_runner or subprocess.run
+        # kpr-watch-17: the READ runner is cached (short TTL, reads only,
+        # failures never cached). The merge and close runners below stay on the
+        # bare subprocess.run -- `is_read_only` would refuse to cache them
+        # anyway, but an ACT must not be routed through something named cache.
+        self._pr_list_runner = pr_list_runner or gh_cache.cached_runner()
         # mfx-mrg-02: CLOSING a superseded PR is a different act from merging
         # one, and a test asserting "this never merges" must be able to tell the
         # two apart. Separate seam, never the merge runner.
@@ -4870,6 +4914,7 @@ class PRWatcher:
         watch = bool(self.config.get("restart_on_code_change", True))
 
         iteration = 0
+        idle_streak = 0
         while True:
             iteration += 1
             # Keep the session row fresh — see tools/daemon/base.py for why a
@@ -4884,8 +4929,13 @@ class PRWatcher:
                     _sreg.heartbeat()
             except Exception:  # noqa: BLE001 — liveness reporting is not a dep
                 pass
+            # kpr-watch-17: an iteration that found NOTHING lets the sleep
+            # grow. An error is NOT idle -- it is an unknown, and an unknown
+            # must be re-asked at the floor rather than backed away from.
+            did_work = True
             try:
                 report = self.poll_once()
+                did_work = bool(report.tasks_checked) or bool(report.actions)
                 logger.info(
                     "pr_watcher: iteration=%d checked=%d actions=%d",
                     iteration, report.tasks_checked, len(report.actions),
@@ -4911,7 +4961,26 @@ class PRWatcher:
                     baseline, started_at=started_at, enabled=watch)
             except Exception as exc:  # noqa: BLE001 — watching must not kill it
                 logger.warning("pr_watcher: code-change check failed: %s", exc)
-            time.sleep(max(1, int(interval)))
+            # kpr-watch-17. The floor is `interval` and a busy board is
+            # unchanged; only an idle one decays, to the ceiling DECLARED in
+            # args/pr_watcher_config.yaml. Logged every time it backs off,
+            # because a watcher that has quietly stopped looking reads exactly
+            # like one with nothing to see.
+            if did_work:
+                idle_streak = 0
+            else:
+                idle_streak += 1
+            ceiling = int(self.config.get(
+                "idle_backoff_max_seconds", DEFAULT_IDLE_BACKOFF_MAX_SECONDS)
+                or DEFAULT_IDLE_BACKOFF_MAX_SECONDS)
+            sleep_for = next_poll_interval(interval, ceiling,
+                                           idle_streak=idle_streak)
+            if sleep_for > interval:
+                logger.info(
+                    "pr_watcher: idle x%d — sleeping %ds (floor %ds, ceiling %ds)",
+                    idle_streak, sleep_for, interval, ceiling,
+                )
+            time.sleep(max(1, int(sleep_for)))
 
 
 _REGISTRATION_INTENT = "pr watcher — merging eligible kanban PRs"
