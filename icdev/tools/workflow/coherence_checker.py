@@ -1575,6 +1575,50 @@ _HARDCODED_RETURN = re.compile(
 )
 
 
+def _returns_error_status(node: "ast.FunctionDef") -> bool:
+    """Does this handler return a NON-2xx status on any return path?
+
+    AN HONEST REFUSAL IS NOT A PLACEHOLDER (rem-hyg-20), and the two look
+    identical to a "literal return with no DB call" predicate.
+    ``api_macro_intelligence`` returns HTTP 503 with every badge NULL and a
+    stated reason because the macro feed left with the trading domain
+    (xit-rm-02); nav-plat-04 built it that way so "a data outage must NOT
+    masquerade as a benign NEUTRAL regime". Returning a plausible NEUTRAL would
+    be the fabrication -- so the refusal is the CORRECT code and the check was
+    calling it "likely placeholder code".
+
+    So the finding becomes a CONJUNCTION, the idiom perfect_score_census and
+    undeclared_import_census already use: literal data AND a success status. A
+    PREDICATE rather than another name in ``_HEALTH_ENDPOINT_NAMES``, because an
+    exemption list is a claim a reviewer must re-check and a predicate is one
+    the scanner re-derives every run.
+
+    Deliberately ANY return path, not all of them: a handler with one 503 arm is
+    reporting a real outage somewhere, which is the shape this exempts. A
+    genuinely hardcoded handler has no such arm at all.
+    """
+    for sub in ast.walk(node):
+        if not isinstance(sub, ast.Return):
+            continue
+        value = sub.value
+        # `return jsonify(...), 503`
+        if isinstance(value, ast.Tuple) and len(value.elts) >= 2:
+            status = value.elts[1]
+            if isinstance(status, ast.Constant) and isinstance(status.value, int):
+                if status.value >= 400:
+                    return True
+        # `return abort(410)` / `return Response(..., status=503)`
+        if isinstance(value, ast.Call):
+            fname = getattr(value.func, "id", "") or getattr(value.func, "attr", "")
+            if fname == "abort":
+                return True
+            for kw in value.keywords or []:
+                if kw.arg == "status" and isinstance(kw.value, ast.Constant):
+                    if isinstance(kw.value.value, int) and kw.value.value >= 400:
+                        return True
+    return False
+
+
 def check_api_wiring(
     changed_files: Optional[List[Path]] = None,
 ) -> CoherenceCheck:
@@ -1662,7 +1706,9 @@ def check_api_wiring(
             # Check: does it return jsonify with a literal?
             has_literal_return = bool(_HARDCODED_RETURN.search(func_body))
 
-            if has_literal_return and not has_db_call:
+            # A handler that REFUSES -- any non-2xx return path -- is not a
+            # placeholder however literal its payload is (rem-hyg-20).
+            if has_literal_return and not has_db_call and not _returns_error_status(node):
                 rel = py_path.relative_to(PROJECT_ROOT) if py_path.is_relative_to(PROJECT_ROOT) else py_path
                 hardcoded_apis.append(f"{rel}:{node.lineno}: {node.name}() returns hardcoded data (no DB/storage call)")
 
@@ -3073,17 +3119,41 @@ def _evaluate_capability_liveness(
         if not entry.get("telemetry_available"):
             unmeasurable.append(f"{name}: {entry.get('unmeasured_reason') or 'no telemetry'}")
             continue
-        never = int(entry.get("inert") or 0)
+        inert = int(entry.get("inert") or 0)
+        # ATTEMPTED-BUT-UNMEASURABLE IS NOT NEVER-CONSUMED (rem-hyg-20). A unit
+        # something DISPATCHED, which then returned `unmeasurable`, HAS a
+        # consumer -- what it lacks is a SUBSTRATE. Counting it here conflates
+        # "nothing calls it", the defect this gate exists for, with "it ran and
+        # honestly could not measure", which is a data gap with a different
+        # repair. `approval_park_is_whole` is the live case: dispatched by
+        # claim_verifier_reflex, reported [] against derived [] because this
+        # board holds no approval-gate rows.
+        #
+        # The COUNT is read, never `len(extra["attempted_never_measured"])` --
+        # that list is truncated to `max_listed_units` exactly as `inert_units`
+        # is, and this function's own contract is that everything is decided on
+        # counts. An ABSENT count is 0, never guessed from the list: an older
+        # report subtracts nothing and the gate stays strict, which is the
+        # fail-closed direction.
+        extra = entry.get("extra") or {}
+        raw_attempted = extra.get("attempted_never_measured_count")
+        try:
+            attempted = max(0, int(raw_attempted))
+        except (TypeError, ValueError):
+            attempted = 0
+        attempted = min(attempted, inert)
+        never = max(0, inert - attempted)
         # Clamp: the two passes are taken moments apart, and a class whose
         # declaration source is itself a table (skill_optimizer) can gain a unit
         # between them. A negative "idle" count would be an artefact of that
         # race, not a reading.
-        idle = max(0, window_inert.get(name, never) - never)
+        idle = max(0, window_inert.get(name, inert) - inert)
         allowed = int(budgets.get(name, 0))
         record = {
             "capability_class": name,
             "declared": int(entry.get("declared") or 0),
             "never_consumed": never,
+            "attempted_never_measured": attempted,
             "idle_this_window": idle,
             "allowed": allowed,
             "telemetry_table": str(entry.get("telemetry_table") or ""),

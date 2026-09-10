@@ -1382,9 +1382,20 @@ def probe_verified_claim(conn, since: datetime, threshold: int, max_listed: int)
     }
     # Declared, attempted, and never once measured: reached and broken, which is
     # a different repair from never reached.
-    res.extra["attempted_never_measured"] = sorted(
+    #
+    # THE LIST IS TRUNCATED AND A CONSUMER MUST NOT COUNT IT (rem-hyg-20).
+    # `[:max_listed]` below is the same truncation `inert_units` carries, and
+    # `_evaluate_capability_liveness` already warns that decisions are made on
+    # COUNTS "never on the ``inert_units`` name lists ... a set difference over
+    # them would silently under-report the 466-unit classes". So the COUNT ships
+    # beside the list: a reader that subtracts len(list) under-subtracts on
+    # exactly the large classes that warning is about.
+    _attempted = sorted(
         c for c in declared if counts.get(c, 0) <= threshold and unmeasurable.get(c, 0) > 0
-    )[:max_listed]
+    )
+    res.extra["attempted_never_measured_count"] = len(_attempted)
+    res.extra["attempted_never_measured"] = _attempted[:max_listed]
+    res.extra["attempted_never_measured_truncated"] = len(_attempted) > max_listed
     return res
 
 
