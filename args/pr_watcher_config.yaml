@@ -4,6 +4,24 @@
 # Seconds between polls in --daemon mode
 poll_interval_seconds: 30
 
+# kpr-watch-17 -- CEILING for the idle backoff, in seconds.
+#
+# `poll_interval_seconds` above is the FLOOR and is unchanged: a board with
+# anything on it is polled exactly as before. When an iteration finds NOTHING --
+# no action taken and no task in a PR-bearing status -- the sleep grows
+# geometrically toward this ceiling, and any action, any PR-bearing task, or any
+# error resets it to the floor immediately.
+#
+# WHY IT IS DECLARED HERE rather than living in code: a watcher that has quietly
+# stopped looking is indistinguishable from one with nothing to see, which is
+# this repo's signature defect. The bound belongs where a reader finds it, and
+# every backed-off iteration logs the interval it chose.
+#
+# 480s = 8 minutes. A PR opened into an idle board is therefore picked up within
+# 8 minutes rather than 30 seconds; that is the cost, and it is paid only while
+# the board is empty. Lower it if that is too slow for your queue.
+idle_backoff_max_seconds: 480
+
 # Hard cap on resume cycles per task — prevents infinite CI-failed loops
 max_resume_cycles_per_task: 5
 
