@@ -48,25 +48,22 @@ import os from 'node:os';
 import path from 'node:path';
 import { baseUrlSource as resolveBaseUrlSource, resolveBaseUrl } from './tests/e2e/fixtures/base_url';
 import { requestedDatabase, RequestedDatabase } from './tests/e2e/fixtures/e2e_database';
+import {
+  BaselineState,
+  classifyBaselineValue,
+  display,
+  maskEmbeddedCredentials,
+} from './tests/e2e/fixtures/env_redaction';
 import { PYTHON, icdevSubprocessEnv } from './tests/e2e/fixtures/subprocess_env';
 
 /** Set once diagnostics have been emitted in this process. */
 const DONE_MARKER = 'ICDEV_E2E_ENV_DIAG_DONE';
 
-/** Values whose contents must never reach a terminal or an uploaded artifact. */
-const SECRET_KEY_RE = /(PASSWORD|SECRET|TOKEN|CREDENTIAL|_KEY$|APIKEY)/i;
-
-/** Plain on/off values — never a secret, whatever the key is called. */
-const BOOLEAN_VALUE_RE = /^(true|false|0|1|yes|no|on|off)$/i;
-
-/**
- * The key regex is deliberately broad, which makes it over-match flags like
- * `ICDEV_CREDENTIAL_BROKER_ENABLED=true` — redacting those would hide a real
- * difference to protect the string "true". A boolean is never the secret.
- */
-function isSecret(key: string, value: string | undefined): boolean {
-  return SECRET_KEY_RE.test(key) && !BOOLEAN_VALUE_RE.test(value ?? '');
-}
+// What a value may look like in the report and the snapshot — redacted by KEY
+// NAME and, since qa-fail-0992fb60b78c0b2e, by credentials embedded in the VALUE
+// (a DSN's password under the innocuous key ICDEV_DATABASE_URL) — lives in
+// tests/e2e/fixtures/env_redaction.ts, where a spec can test it without Node
+// having to import this file.
 
 /**
  * Prefixes worth reporting as "set locally, not set by CI". The whole
@@ -305,10 +302,7 @@ function untrackedTestFiles(root: string): string[] {
 
 // ── env diff ─────────────────────────────────────────────────────────────────
 
-type DiffState = 'match' | 'differs' | 'missing-locally' | 'local-only' | 'redacted';
-
-/** What a redacted value looks like once it has been through `display()`. */
-const REDACTED = '<redacted>';
+type DiffState = BaselineState | 'local-only';
 
 /** Diagnostics' own knobs — reporting them as differences is just noise. */
 const SELF_KEYS = new Set([DONE_MARKER, 'ICDEV_E2E_ENV_BASELINE', 'ICDEV_E2E_ENV_DIAG']);
@@ -319,12 +313,6 @@ interface EnvDiffRow {
   ci?: string;
   local?: string;
   source: string;
-}
-
-function display(key: string, value: string | undefined): string {
-  if (value === undefined) return '<unset>';
-  if (isSecret(key, value)) return '<redacted>';
-  return value === '' ? '<empty>' : value;
 }
 
 function diffEnv(baseline: Record<string, string>, opts: EnvDiagnosticsOptions): EnvDiffRow[] {
@@ -347,14 +335,10 @@ function diffEnv(baseline: Record<string, string>, opts: EnvDiagnosticsOptions):
   for (const [key, ciValue] of Object.entries(baseline)) {
     if (SELF_KEYS.has(key)) continue;
     const { value, source } = effective(key);
-    let state: DiffState;
-    if (value === undefined) state = 'missing-locally';
-    else if (value === ciValue) state = 'match';
-    // A snapshot baseline stores secrets as `<redacted>`, so a secret can never
-    // compare equal to one. Calling that a difference would put two permanent
-    // false positives at the top of every artifact-baselined run.
-    else if (ciValue === REDACTED && isSecret(key, value)) state = 'redacted';
-    else state = 'differs';
+    // A snapshot baseline stores values AFTER redaction — `<redacted>` for a
+    // secret key, `scheme://user:<redacted>@host/db` for a DSN — so a redacted
+    // value can never compare equal to one. `redacted`, never `differs`.
+    const state: DiffState = classifyBaselineValue(key, ciValue, value);
     rows.push({ key, state, ci: ciValue, local: value, source });
   }
 
@@ -429,7 +413,8 @@ export function logEnvironmentDiagnostics(opts: EnvDiagnosticsOptions = {}): voi
       platform: `${process.platform} ${os.release()}`,
       cwd: process.cwd(),
       root,
-      dashboardUrl: opts.dashboardUrl ?? '',
+      // Not an env row, but it reaches the same artifact.
+      dashboardUrl: maskEmbeddedCredentials(opts.dashboardUrl ?? ''),
       webServer: opts.webServerActive ? 'playwright-managed' : 'external (ICDEV_NO_SERVER)',
     };
 
