@@ -1,0 +1,2 @@
+# qa-fail-0992fb60b78c0b2e -- the E2E env-diagnostics snapshot masks a URL-embedded password.
+tests/test_e2e_env_diagnostics_redaction.py
