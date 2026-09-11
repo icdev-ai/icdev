@@ -13,6 +13,7 @@ Complete CLI command reference for all ICDEV™ modules. See [CLAUDE.md](../../C
 
 # Memory system
 python tools/memory/memory_read.py --format markdown          # Load all memory
+python -m tools.hooks.session_context --json                # The SessionStart hook's block + measurement (xrv-mem-01); injected automatically on session start
 python tools/memory/memory_write.py --content "text" --type event  # Write to daily log + DB
 python tools/memory/memory_write.py --content "text" --type fact --importance 7  # Store a fact
 python tools/memory/memory_write.py --update-memory --content "text" --section user_preferences  # Update MEMORY.md

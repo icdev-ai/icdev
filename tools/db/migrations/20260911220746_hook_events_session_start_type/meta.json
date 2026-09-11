@@ -1,0 +1,7 @@
+{
+  "description": "hook_events_session_start_type",
+  "date": "2026-09-11",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}
