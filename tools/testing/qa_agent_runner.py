@@ -35,6 +35,20 @@ from icdev.tools.testing.qa_agent_runner import (  # noqa: F401
     get_run_status,
     write_run_report,
     main,
+    # qa-fail-5cacee65f1d03c8c: host-stall sampling beside every batch
+    SAMPLE_HEALTH_SLOW,
+    SAMPLE_HOST_STALLED,
+    SAMPLE_OK,
+    SAMPLE_UNREACHABLE,
+    STALL_KINDS,
+    StallSample,
+    StallSampler,
+    annotate_failures_with_stalls,
+    classify_sample,
+    failure_during_stall,
+    probe_health,
+    resolve_e2e_base_url,
+    summarize_stalls,
 )
 
 if __name__ == "__main__":

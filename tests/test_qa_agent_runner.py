@@ -21,26 +21,42 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from icdev.tools.testing.qa_agent_runner import (
+    SAMPLE_HEALTH_SLOW,
+    SAMPLE_HOST_STALLED,
+    SAMPLE_OK,
+    SAMPLE_UNREACHABLE,
+    STALL_KINDS,
     STATUS_FAILED,
     STATUS_INCOMPLETE,
     STATUS_NO_TESTS,
     STATUS_PASSED,
     QARunResult,
+    StallSample,
+    StallSampler,
     TestFailure,
     _DEADLINE_SECONDS,
+    _STALL_HEALTH_SLOW_SECONDS,
+    _STALL_HOST_OVERSHOOT_SECONDS,
+    _STALL_SAMPLE_SECONDS,
     _tally,
+    annotate_failures_with_stalls,
     batch_specs,
     build_playwright_cmd,
+    classify_sample,
     count_screenshot_attachments,
     derive_status,
     discover_coverage_gaps,
+    failure_during_stall,
     file_failure_tasks,
     generate_spec_stub,
     parse_playwright_json,
+    probe_url,
     record_failure,
     record_run,
+    resolve_e2e_base_url,
     resolve_spec_files,
     run_e2e_suite,
+    summarize_stalls,
 )
 
 
@@ -1227,3 +1243,525 @@ class TestGetRunStatusReadsAMappingRow(unittest.TestCase):
         assert out["status"] == "failed"
         assert out["total_tests"] == 840
         assert out["passed"] == 831
+
+
+# ---------------------------------------------------------------------------
+# Host-stall sampling (qa-fail-5cacee65f1d03c8c)
+# ---------------------------------------------------------------------------
+#
+# Run qa-1789161604 (2026-09-11): 4 of 849 tests timed out, every one inside a
+# window where the isolated server's request log went silent for 20-59 s and
+# a sampler beside the run saw its own 5 s loop stretch to 12-14 s while
+# /api/health still answered in 0.10 s. The runner recorded that sweep
+# IDENTICALLY to four product defects. These tests pin the sampler that now
+# runs beside every batch and the per-failure verdict it yields.
+
+
+def _stall_report(start_iso: str, duration_ms: int, title: str = "slow page") -> str:
+    """A nested Playwright report with ONE failed result at the given window."""
+    return json.dumps({
+        "stats": {"expected": 0, "unexpected": 1, "skipped": 0},
+        "suites": [{
+            "title": "x.spec.ts", "file": "x.spec.ts", "specs": [],
+            "suites": [{
+                "title": "Suite", "file": "x.spec.ts",
+                "specs": [{
+                    "title": title,
+                    "tests": [{"results": [{
+                        "status": "failed",
+                        "startTime": start_iso,
+                        "duration": duration_ms,
+                        "error": {"message": "TimeoutError: page.goto: Timeout 30000ms exceeded."},
+                        "attachments": [],
+                    }]}],
+                }],
+            }],
+        }],
+    })
+
+
+def _sample(kind: str, window_start: float, at: float, **kw) -> StallSample:
+    base = dict(
+        at="", at_epoch=at, window_start_epoch=window_start,
+        health_seconds=kw.pop("health_seconds", 0.1),
+        sleep_overshoot_seconds=kw.pop("overshoot", 0.0), kind=kind,
+    )
+    base.update(kw)
+    return StallSample(**base)
+
+
+class TestResolveE2EBaseUrl(unittest.TestCase):
+    """The Python mirror of tests/e2e/fixtures/base_url.ts::resolveBaseUrl.
+    Same three variables, same precedence -- the sampler must probe the origin
+    the suite is actually navigating to."""
+
+    def test_e2e_base_url_wins(self):
+        env = {
+            "ICDEV_E2E_BASE_URL": "http://127.0.0.1:5095",
+            "ICDEV_DASHBOARD_URL": "http://host.docker.internal:5050",
+            "ICDEV_DASHBOARD_PORT": "5090",
+        }
+        assert resolve_e2e_base_url(env) == "http://127.0.0.1:5095"
+
+    def test_dashboard_url_is_second(self):
+        env = {"ICDEV_DASHBOARD_URL": "http://localhost:5060", "ICDEV_DASHBOARD_PORT": "5090"}
+        assert resolve_e2e_base_url(env) == "http://localhost:5060"
+
+    def test_port_derives_the_default(self):
+        assert resolve_e2e_base_url({"ICDEV_DASHBOARD_PORT": "5090"}) == "http://localhost:5090"
+        assert resolve_e2e_base_url({}) == "http://localhost:5050"
+
+    def test_trailing_slash_is_dropped(self):
+        assert resolve_e2e_base_url({"ICDEV_E2E_BASE_URL": "http://x:1/"}) == "http://x:1"
+
+
+class TestProbeUrl(unittest.TestCase):
+    """Measured 2026-09-11 on this host: `localhost` resolves to ::1 first,
+    the dashboard binds IPv4 only, and the refusal takes 2.05 s -- so probing
+    `http://localhost:5050` costs 2.08 s a sample against 0.06 s direct, which
+    is the slow-health threshold to the decimal. The probe connects to
+    127.0.0.1 for that one hostname and says so in the census."""
+
+    def test_localhost_is_probed_over_ipv4(self):
+        assert probe_url("http://localhost:5050") == "http://127.0.0.1:5050/api/health"
+        assert probe_url("http://localhost") == "http://127.0.0.1/api/health"
+
+    def test_other_hosts_are_probed_as_given(self):
+        assert probe_url("http://127.0.0.1:5095") == "http://127.0.0.1:5095/api/health"
+        assert probe_url("http://dashboard.internal:5050/") == "http://dashboard.internal:5050/api/health"
+
+    def test_census_records_what_was_probed(self):
+        sampler = StallSampler("http://localhost:5050", interval_seconds=5.0, probe=lambda _b: 0.1)
+        assert sampler.census()["probe_url"] == "http://127.0.0.1:5050/api/health"
+        sampler.samples.append(_sample(SAMPLE_OK, 0, 5))
+        assert sampler.census()["probe_url"] == "http://127.0.0.1:5050/api/health"
+        assert sampler.census()["base_url"] == "http://localhost:5050"
+
+
+class TestClassifySample(unittest.TestCase):
+    def test_unreachable_when_no_health_answer(self):
+        assert classify_sample(None, 0.0) == SAMPLE_UNREACHABLE
+
+    def test_host_stalled_on_sleep_overshoot(self):
+        """The measured shape: health 0.10 s, loop period 12-14 s against 5 s."""
+        assert classify_sample(0.10, 7.0) == SAMPLE_HOST_STALLED
+
+    def test_health_slow_when_the_app_is_slow(self):
+        assert classify_sample(_STALL_HEALTH_SLOW_SECONDS, 0.0) == SAMPLE_HEALTH_SLOW
+
+    def test_host_stall_outranks_slow_health(self):
+        """A starved host also makes the probe slow; the host verdict is the
+        one that says where to look."""
+        assert classify_sample(9.0, 9.0) == SAMPLE_HOST_STALLED
+
+    def test_ordinary_sample_is_ok(self):
+        assert classify_sample(0.1, 0.02) == SAMPLE_OK
+
+    def test_unreachable_is_never_a_stall_kind(self):
+        """Playwright starts and stops its own webServer per batch, so a probe
+        before the server is up is EXPECTED, not a stall."""
+        assert SAMPLE_UNREACHABLE not in STALL_KINDS
+        assert {SAMPLE_HOST_STALLED, SAMPLE_HEALTH_SLOW} == set(STALL_KINDS)
+
+    def test_thresholds_sit_between_normal_jitter_and_the_measured_stall(self):
+        """Measured 2026-09-11: the sampler's loop stretched to 12 s and 14 s
+        against a 5 s interval (overshoot 7-9 s); normal overshoot on this host
+        is milliseconds. The threshold must catch the incident and ignore the
+        jitter, and the default interval is the one the incident was measured at."""
+        assert 0.1 < _STALL_HOST_OVERSHOOT_SECONDS < 7.0
+        assert _STALL_SAMPLE_SECONDS == 5.0
+
+
+class TestFailureDuringStall(unittest.TestCase):
+    START = "2026-09-11T21:28:14.504Z"
+    START_EPOCH = 1789162094.504
+    DURATION_MS = 39732
+
+    def test_none_when_nothing_was_sampled(self):
+        """No samples is UNMEASURED, never 'no stall'."""
+        assert failure_during_stall(self.START, self.DURATION_MS, []) is None
+
+    def test_none_when_the_failure_has_no_window(self):
+        s = _sample(SAMPLE_HOST_STALLED, self.START_EPOCH, self.START_EPOCH + 12, overshoot=7.0)
+        assert failure_during_stall("", None, [s]) is None
+        assert failure_during_stall("not-a-date", 10, [s]) is None
+
+    def test_true_when_a_stall_sample_overlaps_the_window(self):
+        s = _sample(SAMPLE_HOST_STALLED, self.START_EPOCH + 10, self.START_EPOCH + 22, overshoot=7.0)
+        assert failure_during_stall(self.START, self.DURATION_MS, [s]) is True
+
+    def test_false_when_samples_exist_but_none_overlap(self):
+        before = _sample(SAMPLE_HOST_STALLED, self.START_EPOCH - 60, self.START_EPOCH - 48, overshoot=7.0)
+        during_ok = _sample(SAMPLE_OK, self.START_EPOCH + 5, self.START_EPOCH + 10)
+        after = _sample(SAMPLE_HEALTH_SLOW, self.START_EPOCH + 100, self.START_EPOCH + 105, health_seconds=4.0)
+        assert failure_during_stall(self.START, self.DURATION_MS, [before, during_ok, after]) is False
+
+    def test_unreachable_samples_inside_the_window_are_not_a_stall(self):
+        s = _sample(SAMPLE_UNREACHABLE, self.START_EPOCH + 1, self.START_EPOCH + 6, health_seconds=None)
+        assert failure_during_stall(self.START, self.DURATION_MS, [s]) is False
+
+    def test_a_stall_that_ends_exactly_at_the_window_start_counts(self):
+        """The sample's covered interval is [sleep started, probe finished]; the
+        stall may have happened anywhere inside it, so touching the window is
+        overlap."""
+        s = _sample(SAMPLE_HOST_STALLED, self.START_EPOCH - 12, self.START_EPOCH, overshoot=7.0)
+        assert failure_during_stall(self.START, self.DURATION_MS, [s]) is True
+
+    def test_annotate_writes_the_verdict_and_the_detail(self):
+        f = TestFailure(test_name="t", started_at=self.START, duration_ms=self.DURATION_MS)
+        s = _sample(SAMPLE_HOST_STALLED, self.START_EPOCH + 10, self.START_EPOCH + 22, overshoot=7.0)
+        annotate_failures_with_stalls([f], [s])
+        assert f.during_stall is True
+        assert "host_stalled" in f.stall_detail and "7.0" in f.stall_detail
+
+    def test_annotate_leaves_unmeasured_failures_none(self):
+        f = TestFailure(test_name="t", started_at=self.START, duration_ms=self.DURATION_MS)
+        annotate_failures_with_stalls([f], [])
+        assert f.during_stall is None
+        assert "unmeasured" in f.stall_detail
+
+
+class TestParseTimingFields(unittest.TestCase):
+    def test_start_time_and_duration_are_carried_onto_the_failure(self):
+        failures = parse_playwright_json(_stall_report("2026-09-11T21:34:30.000Z", 30500))
+        assert len(failures) == 1
+        assert failures[0].started_at == "2026-09-11T21:34:30.000Z"
+        assert failures[0].duration_ms == 30500
+        assert failures[0].during_stall is None
+
+    def test_missing_timing_is_none_never_zero(self):
+        failures = parse_playwright_json(_PLAYWRIGHT_JSON_NESTED_FAIL)
+        assert failures[0].started_at == ""
+        assert failures[0].duration_ms is None
+
+
+class TestStallSampler(unittest.TestCase):
+    def test_takes_samples_until_stopped_and_never_raises(self):
+        probes = iter([0.1, None, 0.1])
+        sampler = StallSampler(
+            "http://127.0.0.1:1", interval_seconds=0.01,
+            probe=lambda _base: next(probes, 0.1),
+        )
+        sampler.start()
+        import time as _t
+        deadline = _t.time() + 5
+        while len(sampler.samples) < 3 and _t.time() < deadline:
+            _t.sleep(0.01)
+        sampler.stop()
+        assert len(sampler.samples) >= 3
+        kinds = [s.kind for s in sampler.samples[:3]]
+        assert kinds[1] == SAMPLE_UNREACHABLE
+        assert all(s.window_start_epoch <= s.at_epoch for s in sampler.samples)
+        assert sampler.error is None
+
+    def test_a_probe_that_raises_is_recorded_not_propagated(self):
+        def _boom(_base):
+            raise RuntimeError("probe broke")
+        sampler = StallSampler("http://127.0.0.1:1", interval_seconds=0.01, probe=_boom)
+        sampler.start()
+        import time as _t
+        deadline = _t.time() + 5
+        while sampler.error is None and _t.time() < deadline:
+            _t.sleep(0.01)
+        sampler.stop()
+        assert "probe broke" in (sampler.error or "")
+        census = sampler.census()
+        assert census["measured"] is False
+        assert census["reason"].startswith("sampler_error")
+
+    def test_census_counts_each_kind_separately(self):
+        sampler = StallSampler("http://x", interval_seconds=5.0, probe=lambda _b: 0.1)
+        sampler.samples.extend([
+            _sample(SAMPLE_OK, 0, 5),
+            _sample(SAMPLE_HOST_STALLED, 5, 17, overshoot=7.0),
+            _sample(SAMPLE_HOST_STALLED, 17, 31, overshoot=9.0),
+            _sample(SAMPLE_HEALTH_SLOW, 31, 40, health_seconds=4.0),
+            _sample(SAMPLE_UNREACHABLE, 40, 45, health_seconds=None),
+        ])
+        c = sampler.census()
+        assert c["measured"] is True
+        assert c["samples"] == 5
+        assert c["host_stalls"] == 2
+        assert c["health_slow"] == 1
+        assert c["unreachable"] == 1
+        assert c["reachable_samples"] == 4
+        assert c["health_max_seconds"] == 4.0
+        assert c["max_sleep_overshoot_seconds"] == 9.0
+        assert c["stalls"][0]["kind"] == SAMPLE_HOST_STALLED
+        assert c["interval_seconds"] == 5.0
+
+    def test_census_with_no_samples_is_unmeasured(self):
+        sampler = StallSampler("http://x", interval_seconds=5.0, probe=lambda _b: 0.1)
+        c = sampler.census()
+        assert c["measured"] is False
+        assert c["host_stalls"] is None and c["health_slow"] is None
+        assert c["health_max_seconds"] is None
+
+
+class TestRunE2ESuiteStallContext(unittest.TestCase):
+    """The sweep-level contract: every batch record carries its census, every
+    failure carries its verdict, and the verdict never moves the status."""
+
+    START = "2026-09-11T21:28:14.504Z"
+    START_EPOCH = 1789162094.504
+
+    def _fake_sampler_factory(self, samples):
+        module = sys.modules["icdev.tools.testing.qa_agent_runner"]
+
+        class _Fake(module.StallSampler):
+            def start(self_inner):  # noqa: N805
+                self_inner.samples.extend(samples)
+
+            def stop(self_inner, timeout=None):  # noqa: N805
+                return None
+
+        return _Fake
+
+    def test_failure_inside_a_measured_stall_is_named_and_status_stays_failed(self):
+        specs = ["tests/e2e/s0.spec.ts"]
+        proc = MagicMock(returncode=1, stdout=_stall_report(self.START, 39732), stderr="")
+        stall = _sample(SAMPLE_HOST_STALLED, self.START_EPOCH + 10, self.START_EPOCH + 22, overshoot=7.0)
+        with (
+            patch("icdev.tools.testing.qa_agent_runner.resolve_spec_files", return_value=specs),
+            patch("icdev.tools.testing.qa_agent_runner.subprocess.run", return_value=proc),
+            patch("icdev.tools.testing.qa_agent_runner.StallSampler", self._fake_sampler_factory([stall])),
+        ):
+            result = run_e2e_suite(deadline_seconds=600, batch_size=1)
+        assert result.status == STATUS_FAILED, "a stall explains a failure; it never excuses it"
+        assert result.failed == 1
+        assert result.failures[0].during_stall is True
+        assert result.failures_during_stall == 1
+        assert result.failures_stall_unmeasured == 0
+        census = result.batches[0]["stall_census"]
+        assert census["measured"] is True and census["host_stalls"] == 1
+        assert result.stall_summary["batches_sampled"] == 1
+        assert result.stall_summary["host_stalls"] == 1
+        assert result.stall_summary["base_url"]
+
+    def test_failure_with_no_stall_in_window_is_false(self):
+        specs = ["tests/e2e/s0.spec.ts"]
+        proc = MagicMock(returncode=1, stdout=_stall_report(self.START, 39732), stderr="")
+        ok = _sample(SAMPLE_OK, self.START_EPOCH + 5, self.START_EPOCH + 10)
+        with (
+            patch("icdev.tools.testing.qa_agent_runner.resolve_spec_files", return_value=specs),
+            patch("icdev.tools.testing.qa_agent_runner.subprocess.run", return_value=proc),
+            patch("icdev.tools.testing.qa_agent_runner.StallSampler", self._fake_sampler_factory([ok])),
+        ):
+            result = run_e2e_suite(deadline_seconds=600, batch_size=1)
+        assert result.failures[0].during_stall is False
+        assert result.failures_during_stall == 0
+        assert result.stall_summary["host_stalls"] == 0
+
+    def test_sampler_disabled_by_env_leaves_every_verdict_none(self):
+        """Off is REPORTED: `failures_during_stall` is None, never 0, and the
+        batch census says why."""
+        specs = ["tests/e2e/s0.spec.ts"]
+        proc = MagicMock(returncode=1, stdout=_stall_report(self.START, 39732), stderr="")
+        with (
+            patch("icdev.tools.testing.qa_agent_runner.resolve_spec_files", return_value=specs),
+            patch("icdev.tools.testing.qa_agent_runner.subprocess.run", return_value=proc),
+            patch.dict(os.environ, {"ICDEV_QA_STALL_SAMPLER": "0"}),
+        ):
+            result = run_e2e_suite(deadline_seconds=600, batch_size=1)
+        assert result.status == STATUS_FAILED
+        assert result.failures[0].during_stall is None
+        assert result.failures_during_stall is None
+        assert result.failures_stall_unmeasured == 1
+        assert result.batches[0]["stall_census"] == {"measured": False, "reason": "disabled_by_env"}
+        assert result.stall_summary["measured"] is False
+        assert result.stall_summary["batches_sampled"] == 0
+
+    def test_sampler_is_started_and_stopped_around_every_batch(self):
+        specs = ["tests/e2e/s0.spec.ts", "tests/e2e/s1.spec.ts"]
+        report = json.dumps({"stats": {"expected": 1, "unexpected": 0, "skipped": 0}, "suites": []})
+        proc = MagicMock(returncode=0, stdout=report, stderr="")
+        events: list = []
+        module = sys.modules["icdev.tools.testing.qa_agent_runner"]
+
+        class _Spy(module.StallSampler):
+            def start(self_inner):  # noqa: N805
+                events.append("start")
+
+            def stop(self_inner, timeout=None):  # noqa: N805
+                events.append("stop")
+
+        with (
+            patch("icdev.tools.testing.qa_agent_runner.resolve_spec_files", return_value=specs),
+            patch("icdev.tools.testing.qa_agent_runner.subprocess.run", return_value=proc),
+            patch("icdev.tools.testing.qa_agent_runner.StallSampler", _Spy),
+        ):
+            result = run_e2e_suite(deadline_seconds=600, batch_size=1)
+        assert events == ["start", "stop", "start", "stop"]
+        assert result.status == STATUS_PASSED
+        # A green batch still carries its census: "no stall" is a measurement
+        # only when something measured it.
+        assert result.batches[0]["stall_census"]["measured"] is False
+        assert result.failures_during_stall is None
+
+    def test_sampler_is_stopped_when_the_batch_is_deadline_killed(self):
+        specs = ["tests/e2e/s0.spec.ts"]
+        events: list = []
+        module = sys.modules["icdev.tools.testing.qa_agent_runner"]
+
+        class _Spy(module.StallSampler):
+            def start(self_inner):  # noqa: N805
+                events.append("start")
+
+            def stop(self_inner, timeout=None):  # noqa: N805
+                events.append("stop")
+
+        with (
+            patch("icdev.tools.testing.qa_agent_runner.resolve_spec_files", return_value=specs),
+            patch(
+                "icdev.tools.testing.qa_agent_runner.subprocess.run",
+                side_effect=subprocess.TimeoutExpired(cmd="npx", timeout=1),
+            ),
+            patch("icdev.tools.testing.qa_agent_runner.StallSampler", _Spy),
+        ):
+            run_e2e_suite(deadline_seconds=600, batch_size=1)
+        assert events == ["start", "stop"]
+
+
+class TestSummarizeStalls(unittest.TestCase):
+    def test_rolls_batches_up_without_folding_unmeasured(self):
+        result = QARunResult(batches=[
+            {"batch": 0, "stall_census": {"measured": True, "samples": 10, "host_stalls": 2,
+                                          "health_slow": 0, "unreachable": 1, "reachable_samples": 9}},
+            {"batch": 1, "stall_census": {"measured": False, "reason": "no_samples"}},
+            {"batch": 2, "status": "deadline_skipped"},
+        ])
+        s = summarize_stalls(result, base_url="http://x", interval_seconds=5.0)
+        assert s["measured"] is True
+        assert s["batches_sampled"] == 1
+        assert s["batches_unsampled"] == 2
+        assert s["host_stalls"] == 2 and s["health_slow"] == 0 and s["unreachable"] == 1
+        assert s["samples"] == 10
+
+    def test_nothing_sampled_is_unmeasured_with_none_counts(self):
+        result = QARunResult(batches=[{"batch": 0, "stall_census": {"measured": False, "reason": "x"}}])
+        s = summarize_stalls(result, base_url="http://x", interval_seconds=5.0)
+        assert s["measured"] is False
+        assert s["host_stalls"] is None and s["health_slow"] is None and s["samples"] is None
+
+
+class TestCLIRecordsFailures(unittest.TestCase):
+    """`record_failure` had a definition and NO call site in the runner, so
+    `ace_qa_failures` held 0 rows for a 4-failure sweep and 0 for a clean one
+    (the 2026-09-11 sweep report, s8). `--record` now writes one row per
+    failure, linked to the card when one was filed."""
+
+    def _result(self):
+        return QARunResult(
+            run_id="qa-1", status=STATUS_FAILED, total=2, passed=0, failed=2,
+            failures=[
+                TestFailure(test_name="a > one", spec_file="a.spec.ts", error_message="x"),
+                TestFailure(test_name="b > two", spec_file="b.spec.ts", error_message="y"),
+            ],
+        )
+
+    def test_record_writes_one_failure_row_per_failure(self):
+        from icdev.tools.testing.qa_agent_runner import main
+
+        recorded: list = []
+        out = io.StringIO()
+        with (
+            patch.object(sys, "argv", ["qa_agent_runner.py", "--run", "--json"]),
+            patch("icdev.tools.testing.qa_agent_runner.run_e2e_suite", return_value=self._result()),
+            patch("icdev.tools.testing.qa_agent_runner.record_run", return_value="qa-1"),
+            patch(
+                "icdev.tools.testing.qa_agent_runner.record_failure",
+                side_effect=lambda f, run_id, kanban_task_id="": recorded.append((f.test_name, run_id, kanban_task_id)) or "fid",
+            ),
+            contextlib.redirect_stdout(out),
+        ):
+            rc = main()
+        assert rc == 1
+        assert recorded == [("a > one", "qa-1", ""), ("b > two", "qa-1", "")]
+        payload = json.loads(out.getvalue())
+        assert payload["persistence"]["recorded_failures"] == 2
+        assert payload["persistence"]["record_failures_error"] is None
+
+    def test_filed_card_id_rides_on_its_failure_row(self):
+        from icdev.tools.testing.qa_agent_runner import main
+        import hashlib as _h
+
+        recorded: list = []
+        card_a = "qa-fail-" + _h.sha256(b"qa-1:a > one").hexdigest()[:16]
+        with (
+            patch.object(sys, "argv", ["qa_agent_runner.py", "--run", "--file-failures"]),
+            patch("icdev.tools.testing.qa_agent_runner.run_e2e_suite", return_value=self._result()),
+            patch("icdev.tools.testing.qa_agent_runner.record_run", return_value="qa-1"),
+            patch("icdev.tools.testing.qa_agent_runner.file_failure_tasks", return_value=[card_a]),
+            patch(
+                "icdev.tools.testing.qa_agent_runner.record_failure",
+                side_effect=lambda f, run_id, kanban_task_id="": recorded.append(kanban_task_id) or "fid",
+            ),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            main()
+        # Only the failure whose card was actually created carries the id; the
+        # other was deduped away (or refused) and must not claim a card.
+        assert recorded == [card_a, ""]
+
+    def test_no_record_writes_no_failure_rows_and_says_so(self):
+        from icdev.tools.testing.qa_agent_runner import main
+
+        out = io.StringIO()
+        with (
+            patch.object(sys, "argv", ["qa_agent_runner.py", "--run", "--no-record", "--json"]),
+            patch("icdev.tools.testing.qa_agent_runner.run_e2e_suite", return_value=self._result()),
+            patch("icdev.tools.testing.qa_agent_runner.record_failure") as rf,
+            contextlib.redirect_stdout(out),
+        ):
+            main()
+        rf.assert_not_called()
+        assert json.loads(out.getvalue())["persistence"]["recorded_failures"] is None
+
+    def test_a_failing_row_write_is_reported_not_raised(self):
+        from icdev.tools.testing.qa_agent_runner import main
+
+        out = io.StringIO()
+        with (
+            patch.object(sys, "argv", ["qa_agent_runner.py", "--run", "--json"]),
+            patch("icdev.tools.testing.qa_agent_runner.run_e2e_suite", return_value=self._result()),
+            patch("icdev.tools.testing.qa_agent_runner.record_run", return_value="qa-1"),
+            patch("icdev.tools.testing.qa_agent_runner.record_failure", side_effect=RuntimeError("db down")),
+            contextlib.redirect_stdout(out),
+        ):
+            rc = main()
+        assert rc == 1
+        p = json.loads(out.getvalue())["persistence"]
+        assert p["recorded_failures"] == 0
+        assert "db down" in p["record_failures_error"]
+
+    def test_text_output_names_the_stall_verdict_per_failure(self):
+        from icdev.tools.testing.qa_agent_runner import main
+
+        result = self._result()
+        result.failures[0].during_stall = True
+        result.failures[0].stall_detail = "host_stalled overshoot 7.0s at 21:28:26Z"
+        result.failures[1].during_stall = None
+        result.failures[1].stall_detail = "unmeasured: sampler took no sample during this batch"
+        result.failures_during_stall = 1
+        result.failures_stall_unmeasured = 1
+        result.stall_summary = {
+            "measured": True, "batches_sampled": 1, "batches_unsampled": 0,
+            "samples": 40, "host_stalls": 3, "health_slow": 0, "unreachable": 0,
+            "reachable_samples": 40, "interval_seconds": 5.0, "base_url": "http://127.0.0.1:5095",
+        }
+        out = io.StringIO()
+        with (
+            patch.object(sys, "argv", ["qa_agent_runner.py", "--run", "--no-record"]),
+            patch("icdev.tools.testing.qa_agent_runner.run_e2e_suite", return_value=result),
+            contextlib.redirect_stdout(out),
+        ):
+            main()
+        text = out.getvalue()
+        assert "DURING MEASURED STALL" in text
+        assert "STALL UNMEASURED" in text
+        assert "STALLS:" in text and "host stalls 3" in text
+        assert "1 of 2 failures inside a measured stall" in text
+
+
+if __name__ == "__main__":
+    unittest.main()
