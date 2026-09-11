@@ -6,9 +6,11 @@
 **ADRs:** D398–D401 (`docs/reference/adrs.md`, Phase 79)
 **Supersedes:** `docs/spikes/twx-spk-01-localstack-go-no-go.md` — **on the
 licensing question ONLY**, by a dated addendum appended to that spike
-**Status as at 2026-09-05:** 16 of 21 cards `done` (17 with this one),
-`flx-test-01` in flight,
-`flx-az-01` / `flx-gcp-01` / `flx-oci-01` in `backlog` and deliberately unbuilt
+**Status as at 2026-09-09:** 21 of 21 cards `done` -- `flx-test-01` (#2105),
+`flx-az-01` (#2107), `flx-gcp-01` (#2109) and `flx-oci-01` (#2110) landed between
+2026-09-05 and 2026-09-09; each sibling shipped only after its dated parity
+measurement (`docs/spikes/flx-{az,gcp,oci}-parity.md`). Pinned `floci/floci:2.0.1`
+is the current upstream release (2026-09-01). Line corrected 2026-09-11 (xrv card).
 
 ---
 

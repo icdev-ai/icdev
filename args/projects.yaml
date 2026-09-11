@@ -10164,3 +10164,48 @@ projects:
   - {key: ev, title: "AUTHOR CONTENT AS LATEST FACTS", priority: high}
   - {key: collab, title: "CONCURRENT REVIEWERS", priority: medium}
   - {key: word, title: "NATIVE WORD REVISIONS, BOTH DIRECTIONS", priority: low}
+- key: xrv
+  name: "XRV -- External Review Adaptations: nine repos, nine verdicts, one card"
+  description: >-
+    A 2026-09-11 review of nine external repositories (Ghidra, reverse-skill, ECC,
+    claude-mem, loopx, PRAXIST, codeburn, Obtainium-Emulation-Pack, floci) against
+    what ICDEV already has. Three explorers audited the tree first so nothing present
+    is rebuilt; every card names the existing seam it reuses. What was MEASURED, not
+    argued: the claude_cli adapter already parses total_cost_usd per dispatch and
+    nothing attributes it to a task; all four USD budget guards sit inside
+    router.invoke, so a kanban dispatch bypasses every cap (kpr-dup-09 was the
+    symptom); tools/memory/auto_capture.py is complete and has no hook caller; the
+    prompt-injection, secret and MCP-config scanners exist and none is pointed at
+    .claude/ .agents/ .cursor/ or .mcp.json; the tree has ZERO binary analysis while
+    args/analyzer_contract.yaml is a zero-dispatcher-change socket; the nightly
+    experiment reflex measures an identity baseline (0 kept, ever) and Foundry
+    emits 0 tasks behind a green metric because four of its stage modules do not
+    exist; digest pins exist for floci only and nothing asks upstream for a newer
+    release; CLAUDE.md is 352,915 bytes (~88k tokens) loaded by every session.
+    Rules of the card: report-only until a fire-rate survey is recorded; None never
+    0 over an empty denominator; wire an existing scanner before writing a new one;
+    PRAXIST (Fair Source) contributes its SHAPE only, never code. floci (flx) is
+    already 21/21 done and needs one stale doc line fixed, nothing more.
+  task_prefix: xrv-
+  default_open: true
+  briefs:
+  - 'cost (codeburn): transcript cost reader reusing fire_rate_survey.iter_transcripts; per-task attribution via token_tracker.log_usage(task_id=) from the reaped claude_cli JSON envelope; spend-that-shipped through landed_check; one-shot rate + waste survey (ghost commands/skills, re-reads, CLAUDE.md bloat); a Spend panel on the EXISTING /cache-savings page -- xrv-cost-01..04'
+  - 'run (loopx): ONE should_run verdict (proceed|wait|ask|refuse|unmeasurable) shaped like dispatch_admission.Verdict, calling every existing guard plus the missing BUDGET rung, report mode, surveyed; an evidence-backed handoff record in kanban_tasks.last_run_metadata rendered by _get_retry_coaching -- xrv-run-01..02'
+  - 'mem (claude-mem): SessionStart hook injecting a token-capped memory index; PostToolUse observation capture into the unused auto_capture.py with <private> spans dropped; progressive-disclosure retrieval (index -> timeline -> detail by id) -- xrv-mem-01..03'
+  - 'shield (ECC AgentShield): claude_dir_validator gains config-injection / config-secrets / mcp-config / hook-commands checks by WIRING the existing scanners; confidence 0..1 on NOVA learned patterns copying learning_collector thresholds -- xrv-shield-01..02'
+  - 'route (reverse-skill): args/tool_index.yaml + tools/dx/tool_index.py (present|absent|unmeasurable per external binary); a >=150-case routing regression corpus over the three routers + skill prerequisites frontmatter; a pin census gate (unpinned CI installs, tag-pinned actions) with a shrink-only ceiling -- xrv-route-01..03'
+  - 'bin (Ghidra): observable_types.binary + pure-Python binary_triage analyzer (sandboxed, Gap 71); optional ghidra_headless backend that reads unavailable when Ghidra is absent; binary SBOM hints and attestation corroboration that never fold into the signature verdict -- xrv-bin-01..03'
+  - 'lab (PRAXIST shape): the experiment reflex honours ICDEV_AUTORESEARCH_ENABLED and reports unmeasurable over placeholder metrics; Foundry names its missing stages; a standing claim; then, behind xrv-gate-00, real mutation for ONE domain in a worktree with incubator|frontier|archive lanes -- xrv-lab-01..02'
+  - 'pin (Obtainium idea): args/pinned_artifacts.yaml + artifact_freshness reflex (current|behind|unmeasurable, air-gap = unmeasurable never current) reusing image_vendor.parse_pin; files one card per drifted artifact; never pulls, never edits a pin -- xrv-pin-01'
+  - 'docs: feature doc with the nine verdicts and the NOT-adopted list, ADRs, commands.md, CLAUDE.md block + regenerated bootstrap payload, companion sync -- xrv-docs-01'
+  epics:
+  - {key: cost, title: "WHERE THE SPEND GOES, AND DID IT SHIP", priority: critical}
+  - {key: run, title: "ONE SHOULD-RUN VERDICT BEFORE A TOKEN IS SPENT", priority: critical}
+  - {key: mem, title: "MEMORY THAT CAPTURES AND RECALLS ITSELF", priority: high}
+  - {key: shield, title: "SCAN THE AGENT CONFIG SURFACE", priority: high}
+  - {key: route, title: "DETERMINISTIC, VERIFIABLE ROUTING", priority: medium}
+  - {key: bin, title: "A BINARY IS AN OBSERVABLE", priority: medium}
+  - {key: lab, title: "THE RESEARCH LOOP STOPS REPORTING A MEASUREMENT IT DID NOT MAKE", priority: high}
+  - {key: pin, title: "IS THE PINNED ARTIFACT STILL CURRENT", priority: medium}
+  - {key: docs, title: "FEATURE DOC AND REGISTRATIONS", priority: low}
+  - {key: gate, title: "MANUAL GATE (sentinel only)", priority: low}
