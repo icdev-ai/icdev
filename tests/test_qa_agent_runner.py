@@ -50,6 +50,7 @@ from icdev.tools.testing.qa_agent_runner import (
     file_failure_tasks,
     generate_spec_stub,
     parse_playwright_json,
+    probe_health,
     probe_url,
     record_failure,
     record_run,
@@ -1336,6 +1337,26 @@ class TestProbeUrl(unittest.TestCase):
         sampler.samples.append(_sample(SAMPLE_OK, 0, 5))
         assert sampler.census()["probe_url"] == "http://127.0.0.1:5050/api/health"
         assert sampler.census()["base_url"] == "http://localhost:5050"
+
+    def test_ipv4_refusal_falls_back_to_the_base_as_given(self):
+        """An IPv6-only bind must still answer; a down server refuses both."""
+        asked: list = []
+
+        def _get(url, timeout):
+            asked.append(url)
+            return 0.05 if url.startswith("http://localhost") else None
+
+        with patch("icdev.tools.testing.qa_agent_runner._time_get", side_effect=_get):
+            assert probe_health("http://localhost:5050") == 0.05
+        assert asked == ["http://127.0.0.1:5050/api/health", "http://localhost:5050/api/health"]
+
+        asked.clear()
+        with patch("icdev.tools.testing.qa_agent_runner._time_get", return_value=None):
+            assert probe_health("http://127.0.0.1:5095") is None
+        # A host probed as given is asked ONCE: there is no second spelling.
+        with patch("icdev.tools.testing.qa_agent_runner._time_get", side_effect=_get):
+            assert probe_health("http://127.0.0.1:5095") is None
+        assert asked == ["http://127.0.0.1:5095/api/health"]
 
 
 class TestClassifySample(unittest.TestCase):

@@ -346,6 +346,13 @@ def probe_url(base_url: str) -> str:
     resolver's cost, not the server's, and the sampler exists to measure the
     server. Chromium races both families and does not pay it. Any other host
     is probed as given; the census records `probe_url` either way.
+
+    NOT route_smoke.resolve_base, on purpose: that resolver pins the first
+    family that answers and CACHES an unchanged answer per process, so a
+    sampler whose first probe precedes a Playwright-managed webServer would pin
+    `localhost` for the whole run and pay the penalty on every later sample.
+    The fail-safe it provides is kept another way: `probe_health` retries the
+    base AS GIVEN when 127.0.0.1 refuses, so an IPv6-only bind still answers.
     """
     from urllib.parse import urlsplit, urlunsplit
 
@@ -364,13 +371,25 @@ def probe_health(base_url: str, timeout: float = _STALL_PROBE_TIMEOUT_SECONDS) -
     never as absent; a server that is up and starved must not read the same
     as one that is down.
     """
+    swapped = probe_url(base_url)
+    as_given = base_url.rstrip("/") + "/api/health"
+    elapsed = _time_get(swapped, timeout)
+    if elapsed is None and swapped != as_given:
+        # 127.0.0.1 refused. An IPv6-only bind answers on the base as given;
+        # a server that is down refuses both and stays `unreachable`.
+        elapsed = _time_get(as_given, timeout)
+    return elapsed
+
+
+def _time_get(url: str, timeout: float) -> Optional[float]:
+    """Seconds for one GET to answer (any status), or None if nothing did."""
     import socket
     import urllib.error
     import urllib.request
 
     t0 = time.perf_counter()
     try:
-        with urllib.request.urlopen(probe_url(base_url), timeout=timeout) as resp:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
             resp.read(4096)
         return time.perf_counter() - t0
     except urllib.error.HTTPError:
