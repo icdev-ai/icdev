@@ -5166,6 +5166,14 @@ python tools/llm/cost_intelligence.py --edge-vs-cloud --function code_generation
 python tools/llm/cost_intelligence.py --alerts --json                                  # Active cost alerts
 python tools/llm/cost_intelligence.py --gate                                           # Gate check (CI/CD)
 
+# Transcript Cost Reader (xrv-cost-01) -- the spend the router ledgers cannot see
+# Claude Code sessions bypass router.invoke, so their usage lives ONLY in the
+# transcripts. Prices input+output tokens from args/llm_config.yaml; an unknown
+# model is `unpriced` (cost_usd None, never $0); cache tokens are reported raw.
+python -m tools.cost.session_cost --survey --since-days 7 --project ICDev --json   # per-session USD by model and task type
+python -m tools.cost.session_cost --survey --since-days 30                          # human table, every project
+python -m tools.cost.session_cost --session <session-id> --json                     # one transcript; exit 2 if not found
+
 # Model Monitor
 python tools/llm/model_monitor.py --record --model qwen3-local --function code_generation --score 0.85 --json  # Record quality score
 python tools/llm/model_monitor.py --detect-drift --json                                # Detect model quality drift
