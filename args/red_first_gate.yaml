@@ -145,6 +145,29 @@ exemptions:
       Scoped to this one file. It runs in Test (PostgreSQL) via
       tests/pg_tier_allowlist.txt, and is excluded from CI gating for the
       reason written in args/test_gating_gate.yaml.
+  - pattern: "tests/pg_tier/test_cortex_rls_index_plan.py"
+    reason: >-
+      THE GATE CANNOT SEE THIS FILE: a module-level `skipif` on ICDEV_PYTEST_PG,
+      which the gate does not set, so both runs are "2 skipped" and it correctly
+      reports that it learned nothing. THE RED IS A FLIP RATE, NOT A FAILING
+      ASSERTION, AND IT WAS MEASURED (qa-fail-55f53c3df846c1a0): the seed
+      stamped created_at from NOW() against a window fixed at 2026-08-07, so the
+      window's share of the tenant slice grew every calendar day after the test
+      landed (10% on 2026-08-14, 52% on 2026-09-11) until the composite and the
+      single-column bitmap cost within 0.46-1.29% of each other -- inside what
+      ANALYZE's random sample moves the estimates by. On 2026-09-11 against a
+      live PostgreSQL 16.13 the merge-base file ran ten times: 6 passed, 4
+      FAILED (CI: 1 failed on the docs-only #2226). The fix pins the seed's
+      clock (SEED_CLOCK) so the window is 7 of 90 days forever, 24-31% margin,
+      and adds a geometry guard; the fixed file ran ten times: 10 passed. THE
+      EQUIVALENT PROOF WAS DONE BY MUTATION, because a file that is only
+      "greener" must not become a way to ship a test asserting nothing: with
+      the composite CREATE INDEX removed, ten runs: the plan test 10 of 10 RED,
+      and the cost test 10 of 10 RED once it demands a 10% margin (under the
+      original bare `after < before` it PASSED the mutation, comparing two
+      ANALYZE estimates of the same plan). Every number is in the file's own
+      docstring. Scoped to this one file; it runs in Test (PostgreSQL) via
+      tests/pg_tier_allowlist.txt.
   - pattern: "tests/llm/test_role_invoke_redaction.py"
     reason: >-
       A CONSUMER SWEEP OVER A SEAM ANOTHER PR CLOSED FIRST, so nothing here can
