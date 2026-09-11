@@ -11230,6 +11230,26 @@ def _startup_recover_stale_in_progress() -> None:
         logger.warning("startup-recovery sweep failed: %s", exc)
 
 
+def _task_project_id(task_id: str) -> str:
+    """The board's project_id for a task, "" when the column or row is absent.
+
+    xrv-cost-02: the cost row carries the project so `token_tracker`'s
+    per-project summaries see kanban spend. Best-effort; a board that cannot
+    answer yields "" and the row is still written, unattributed to a project.
+    """
+    try:
+        from tools.db.storage import column_exists
+        with get_connection() as _conn:
+            if not column_exists(_conn, "kanban_tasks", "project_id"):
+                return ""
+            row = _conn.execute(
+                "SELECT project_id FROM kanban_tasks WHERE id = %s", (task_id,),
+            ).fetchone()
+        return str(row["project_id"] or "") if row else ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def _check_completed():
     """Check for completed claude subprocesses and clean up.
 
@@ -11576,6 +11596,42 @@ def _check_completed():
                     }
             except Exception:
                 pass
+
+            # ── COST ATTRIBUTION (xrv-cost-02) ─────────────────────────
+            # The claude CLI wrote its `--output-format json` envelope as
+            # the LAST line of task_log (total_cost_usd, tokens, session_id)
+            # and nothing ever read it back: agent_token_usage.task_id held
+            # ZERO rows on the live board (2026-09-11). Record ONE row per
+            # reaped dispatch, task_id set, through the ONE writer
+            # (token_tracker.log_usage) and the ONE parser
+            # (claude_cli._parse_cli_json). Best-effort by construction: a
+            # failure logs one line and never touches the completion path;
+            # a log with no envelope (a killed process) or an envelope with
+            # no usage records NOTHING, never a zero row. Popen only -- the
+            # _LLMTaskHandle paths self-record through the router.
+            if isinstance(proc, subprocess.Popen):
+                try:
+                    from tools.cost.task_attribution import record_task_cost
+                    _cost_rec = record_task_cost(
+                        task_id, task_log,
+                        project_id=str(_task_project_id(task_id) or ""),
+                    )
+                    if _cost_rec.get("recorded"):
+                        logger.info(
+                            "cost attribution %s: $%.4f on %s (row %s, session %s)",
+                            task_id, _cost_rec.get("cost_usd") or 0.0,
+                            _cost_rec.get("model_id"), _cost_rec.get("row_id"),
+                            _cost_rec.get("session_id"),
+                        )
+                    else:
+                        logger.info(
+                            "cost attribution %s: nothing recorded (%s)",
+                            task_id, _cost_rec.get("reason"),
+                        )
+                except Exception as _cost_exc:  # noqa: BLE001 -- never the completion path
+                    logger.warning(
+                        "cost attribution skipped for %s: %s", task_id, _cost_exc,
+                    )
 
             # ── TOKEN EXHAUSTION CHECK (runs for ANY exit code) ───────
             is_exhausted, reset_hint = _detect_token_exhaustion(ret, claude_output)

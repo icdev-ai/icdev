@@ -5173,6 +5173,10 @@ python tools/llm/cost_intelligence.py --gate                                    
 python -m tools.cost.session_cost --survey --since-days 7 --project ICDev --json   # per-session USD by model and task type
 python -m tools.cost.session_cost --survey --since-days 30                          # human table, every project
 python -m tools.cost.session_cost --session <session-id> --json                     # one transcript; exit 2 if not found
+python -m tools.cost.session_cost --task <task-id> --json                          # xrv-cost-02: agent_token_usage rows for one kanban task + verdict shipped|abandoned|reverted|in_flight|unmeasurable
+python -m tools.cost.session_cost --task <task-id> --no-forge                      # same, without the gh PR-state call
+python -m tools.cost.session_cost --survey --by-verdict --json                     # spend that shipped: cost per verdict; a board with no attributed rows is unmeasurable, never $0
+python -m tools.cost.session_cost --survey --by-verdict --window-days 7 --forge    # rows in the last 7 days, PR state consulted per task
 
 # Model Monitor
 python tools/llm/model_monitor.py --record --model qwen3-local --function code_generation --score 0.85 --json  # Record quality score
