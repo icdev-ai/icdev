@@ -87,7 +87,10 @@ def read_db_recent(limit=10, user_id=None, tenant_id=None, clearance=None, compa
     # get_connection); translate_sql rewrites %s -> ? for the SQLite fallback. The
     # previous bare ? tripped translate_sql's "use %%s" warning on every read (this
     # is the Session Start Protocol command).
-    sql = "SELECT content, type, importance, created_at, classification, compartment FROM memory_entries WHERE 1=1"
+    # xrv-mem-01: `id` rides LAST so the six positional columns every existing
+    # consumer indexes (0-5) keep their meaning; the SessionStart index needs
+    # a stable handle a later `--layer detail` read can fetch by.
+    sql = "SELECT content, type, importance, created_at, classification, compartment, id FROM memory_entries WHERE 1=1"
     params = []
     if user_id:
         sql += " AND (user_id = %s OR user_id IS NULL)"
@@ -131,8 +134,8 @@ def format_markdown(memory_text, logs, db_entries):
 
     if db_entries:
         output.append("## Recent DB Entries\n")
-        # D6: read_db_recent selects SIX columns (content, type, importance,
-        # created_at, classification, compartment); unpacking four raised
+        # D6: read_db_recent selects SEVEN columns (content, type, importance,
+        # created_at, classification, compartment, id); unpacking four raised
         # ValueError: too many values to unpack. Index the display columns and
         # ignore the trailing security-context columns.
         for row in db_entries:

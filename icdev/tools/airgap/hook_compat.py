@@ -14,6 +14,7 @@ Covers:
 - pre_tool_use / post_tool_use: append-only table protection
 - stop hook: auto-commit without Claude Code session stop event
 - user_prompt_submit: prompt logging for non-Claude interfaces
+- session_start: the token-capped memory index a session opens with (xrv-mem-01)
 
 Usage::
 
@@ -22,6 +23,7 @@ Usage::
         store_event,
         run_pre_tool_check,
         run_auto_commit,
+        run_session_start,
     )
 """
 
@@ -715,6 +717,43 @@ def tool_error_middleware(fn):
             return err
 
     return wrapper
+
+
+# ── Session Start ──────────────────────────────────────────────────────
+
+
+def run_session_start(
+    session_id: Optional[str] = None,
+    directory: Optional[str] = None,
+    *,
+    record: bool = True,
+) -> Dict[str, Any]:
+    """Headless twin of ``.claude/hooks/session_start.py`` (xrv-mem-01).
+
+    Builds the SAME token-capped session-start block through the SAME builder
+    (``tools/hooks/session_context.build_block``) and records the same
+    ``session_start`` hook_events row — through this module's ``store_event``,
+    which reaches PostgreSQL where the Claude Code hook's ``send_event`` writes
+    only the local SQLite file. Returns the builder's result dict plus
+    ``event_recorded`` (True | False | None when ``record`` is off), so a
+    refused row is a measured outcome rather than a silent one.
+
+    Never raises: the builder swallows its own errors into ``reason``, and the
+    audit write is best-effort like every other hook_events write here.
+    """
+    import time as _time  # noqa: PLC0415
+
+    started = _time.perf_counter()
+    from tools.hooks.session_context import build_block, payload_for_event  # noqa: PLC0415
+
+    result = build_block(directory=directory, started=started)
+    result["event_recorded"] = None
+    if record:
+        payload = payload_for_event(result)
+        payload["source"] = "headless"
+        event_id = store_event(session_id or get_session_id(), "session_start", None, payload)
+        result["event_recorded"] = event_id != -1
+    return result
 
 
 # ── CLI ────────────────────────────────────────────────────────────────

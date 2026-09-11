@@ -2061,7 +2061,7 @@ CREATE TABLE IF NOT EXISTS hook_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT NOT NULL,
     hook_type TEXT NOT NULL CHECK(hook_type IN (
-        'pre_tool_use', 'post_tool_use', 'notification', 'stop', 'subagent_stop'
+@@HOOK_EVENT_TYPES@@
     )),
     tool_name TEXT,
     project_id TEXT,
@@ -11292,6 +11292,14 @@ _AUDIT_EVENT_TYPES_SQL = ",\n".join(
     f"        '{_t}'" for _t in _VALID_EVENT_TYPES
 )
 SCHEMA_SQL = SCHEMA_SQL.replace("@@AUDIT_EVENT_TYPES@@", _AUDIT_EVENT_TYPES_SQL)
+
+# xrv-mem-01: hook_events.hook_type derives from the same kind of tuple. The
+# literal it replaced admitted five names while two shipped hooks
+# (user_prompt_submit, pre_compact) had been writing a sixth and seventh into
+# a swallowed refusal since they were authored.
+from tools.hooks.hook_event_types import hook_type_values_sql as _hook_type_values_sql  # noqa: E402
+
+SCHEMA_SQL = SCHEMA_SQL.replace("@@HOOK_EVENT_TYPES@@", "        " + _hook_type_values_sql())
 
 # rmf-rfp-01: the ONE compliance matrix's two CHECKs derive from the tuples the
 # builder, the migration and the API share, so the vocabulary cannot drift.

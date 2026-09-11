@@ -1,0 +1,2 @@
+# xrv-mem-01 -- SessionStart hook: token-capped memory index injected as session context.
+tests/hooks/test_session_start.py
