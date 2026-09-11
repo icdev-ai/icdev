@@ -2665,6 +2665,13 @@ python -m tools.kanban.lane_conflicts --task <task-id>
 python -m tools.kanban.sibling_overlap --survey                    # replay recorded dispatches
 python -m tools.kanban.sibling_overlap --survey --window-days 30 --json
 python -m tools.kanban.sibling_overlap --holds                     # what would be held NOW
+
+# ONE pre-dispatch verdict, with the BUDGET rung nothing consulted (xrv-run-01)
+python -m tools.kanban.should_run --task <id> --json                # proceed|wait|ask|refuse|unmeasurable, every check named
+python -m tools.kanban.should_run --task <id> --env-file C:/AI/ICDev/.env   # from a worktree: read the LIVE board's ledgers
+python -m tools.kanban.should_run --survey [--window-days 30] [--json]      # replay recorded dispatches through the SAME fold
+# KANBAN_SHOULD_RUN=report (default: logs, changes no outcome) | enforce (parks a wait/refuse) | off
+# Survey: docs/audits/xrv-run-01-should-run-survey.md -- re-survey before arming enforce
 # lane_conflicts (above) REPORTS a seed-time race; this one REFUSES a dispatch-time one, and it
 # is armed. The MERGE door has serialized siblings since hold_on_sibling_conflict; DISPATCH did
 # not. Ten rmf-ui-* cards -- one route per card, by design -- each appended to the same lines of
