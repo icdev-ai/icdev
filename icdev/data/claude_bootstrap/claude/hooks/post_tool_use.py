@@ -17,6 +17,33 @@ if str(PROJECT_ROOT) not in sys.path:
 # _TRACKED_TOOLS in tools/awareness/hooks.py.
 _AWARENESS_TOOLS = frozenset({"Edit", "Write", "NotebookEdit", "MultiEdit"})
 
+# Tools an observation can be derived from (xrv-mem-02). Kept as a literal
+# here so a Read/Grep/WebFetch call never pays the library import; the
+# authoritative sets are observation_capture.EDIT_TOOLS / SHELL_TOOLS and a
+# test asserts this literal equals their union.
+_CAPTURE_TOOLS = frozenset({"Edit", "Write", "NotebookEdit", "MultiEdit", "Bash", "PowerShell"})
+
+
+def capture_memory_observation(tool_name: str, tool_input, tool_response, session_id: str):
+    """Deterministic memory capture into the auto_capture buffer (xrv-mem-02).
+
+    Edit/Write -> ``edited <relpath>``; Bash ``git commit`` -> the commit
+    subject git confirmed; Bash pytest -> pytest's own summary line. No model
+    call. ``<private>...</private>`` spans are removed BEFORE capture and a
+    wholly private observation is skipped; the per-session cap
+    (``memory_config.yaml: auto_capture.max_per_session``) skips silently.
+    Returns the capture verdict dict (recorded on the hook_events payload) or
+    None when the event yields no observation. Never raises.
+    """
+    if tool_name not in _CAPTURE_TOOLS:
+        return None
+    try:
+        from tools.hooks.observation_capture import capture_tool_event
+
+        return capture_tool_event(tool_name, tool_input, tool_response, session_id)
+    except Exception:
+        return None  # a context capture never fails a tool call
+
 
 def dispatch_extension_hook(tool_name: str, tool_input: dict, tool_output: str):
     """Best-effort dispatch of TOOL_EXECUTE_AFTER extension point (Phase 44 Feature 2).
@@ -66,7 +93,13 @@ def main():
         input_data = json.load(sys.stdin)
         tool_name = input_data.get("tool_name", "")
         tool_input = input_data.get("tool_input", {})
-        tool_output = input_data.get("tool_output", "")
+        # Claude Code sends the tool's result as ``tool_response`` (a dict with
+        # stdout/stderr for Bash); ``tool_output`` is the legacy name this hook
+        # read and it is NEVER populated (0 of the last 200 Bash rows carried an
+        # output, measured 2026-09-11). Both are read; the first wins.
+        tool_output = input_data.get("tool_response")
+        if tool_output is None:
+            tool_output = input_data.get("tool_output", "")
 
         # Import here to avoid issues if DB doesn't exist yet
         from send_event import get_session_id, store_event
@@ -84,15 +117,28 @@ def main():
         # Truncate large outputs to prevent DB bloat
         output_summary = str(tool_output)[:2000] if tool_output else ""
 
+        # xrv-mem-02: capture BEFORE the event row so the row can carry the
+        # capture verdict (kind + status), which is what makes the capture
+        # measurable from hook_events afterwards. Never the content.
+        memory_capture = capture_memory_observation(tool_name, tool_input, tool_output, session_id)
+
+        payload = {
+            "tool_input_keys": list(tool_input.keys()) if isinstance(tool_input, dict) else [],
+            "output_length": len(str(tool_output)) if tool_output else 0,
+            "output_summary": output_summary,
+        }
+        if memory_capture:
+            payload["memory_capture"] = {
+                "kind": memory_capture.get("kind"),
+                "status": memory_capture.get("status"),
+                "private_stripped": memory_capture.get("private_stripped", False),
+            }
+
         store_event(
             session_id=session_id,
             hook_type="post_tool_use",
             tool_name=tool_name,
-            payload={
-                "tool_input_keys": list(tool_input.keys()) if isinstance(tool_input, dict) else [],
-                "output_length": len(str(tool_output)) if tool_output else 0,
-                "output_summary": output_summary,
-            },
+            payload=payload,
         )
 
         # Dispatch Phase 44 extension hook (TOOL_EXECUTE_AFTER)
