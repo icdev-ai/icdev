@@ -53,6 +53,23 @@ def scan_for_injection(prompt: str) -> list:
     return findings
 
 
+def capture_decision(prompt: str, session_id: str):
+    """A user turn beginning ``decision:`` -> one auto_capture buffer row (xrv-mem-02).
+
+    Deterministic: the first sentence after the tag, ``<private>`` spans
+    dropped before capture, per-session cap honoured. Returns the capture
+    verdict or None when the turn is not a decision. Never raises.
+    """
+    if not isinstance(prompt, str) or not prompt.lstrip()[:9].lower().startswith("decision:"):
+        return None
+    try:
+        from tools.hooks.observation_capture import capture_prompt_event
+
+        return capture_prompt_event(prompt, session_id)
+    except Exception:
+        return None
+
+
 def main():
     try:
         input_data = json.loads(sys.stdin.read())
@@ -66,15 +83,27 @@ def main():
         # Scan for prompt injection
         findings = scan_for_injection(prompt) if prompt else []
 
+        payload = {
+            "prompt_length": len(prompt),
+            "prompt_preview": prompt[:200] if prompt else "",
+            "injection_findings": findings,
+            "injection_detected": len(findings) > 0,
+        }
+        # xrv-mem-02: a turn beginning `decision:` is captured (first sentence,
+        # <private> spans stripped) into the auto_capture buffer. The payload
+        # carries the verdict, never the sentence.
+        decision = capture_decision(prompt, sid)
+        if decision:
+            payload["memory_capture"] = {
+                "kind": decision.get("kind"),
+                "status": decision.get("status"),
+                "private_stripped": decision.get("private_stripped", False),
+            }
+
         store_event(
             session_id=sid,
             hook_type="user_prompt_submit",
-            payload={
-                "prompt_length": len(prompt),
-                "prompt_preview": prompt[:200] if prompt else "",
-                "injection_findings": findings,
-                "injection_detected": len(findings) > 0,
-            },
+            payload=payload,
         )
 
         # Warn-only mode: log but don't block.

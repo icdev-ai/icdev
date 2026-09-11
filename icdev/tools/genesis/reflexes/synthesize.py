@@ -153,6 +153,17 @@ def run(config: Dict = None, trust: Any = None, **kwargs) -> Dict[str, Any]:
         if patterns:
             stored = store_patterns(patterns)
             result["patterns_stored"] = stored
+            # xrv-mem-02: the SECOND sink for the chains this reflex ALREADY
+            # mined -- one `procedural` auto_capture buffer row per chain at
+            # or above min_pattern_frequency, so the miner's output reaches
+            # memory recall. The same list, never a second detection run;
+            # best-effort and reported, never a reflex failure.
+            try:
+                from tools.hooks.observation_capture import buffer_procedural_patterns
+
+                result["memory_sink"] = buffer_procedural_patterns(patterns, min_frequency=min_frequency)
+            except Exception as sink_exc:  # noqa: BLE001
+                result["memory_sink"] = {"status": "error", "reason": str(sink_exc)[:200]}
 
     except Exception as exc:
         result["errors"].append(f"pattern_detection: {exc}")

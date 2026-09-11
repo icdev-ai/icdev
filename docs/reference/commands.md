@@ -14,6 +14,9 @@ Complete CLI command reference for all ICDEV™ modules. See [CLAUDE.md](../../C
 # Memory system
 python tools/memory/memory_read.py --format markdown          # Load all memory
 python -m tools.hooks.session_context --json                # The SessionStart hook's block + measurement (xrv-mem-01); injected automatically on session start
+python -m tools.hooks.observation_capture --survey --since-days 7 --json   # xrv-mem-02: rows the PostToolUse capture yields per day, replayed over transcripts
+python -m tools.hooks.observation_capture --status --json   # what the auto_capture buffer holds, by source and session (the hook fills it; the reflex flushes it)
+python -m tools.hooks.observation_capture --procedural --dry-run --json    # pattern_detector's scored chains as procedural memories; --dry-run writes nothing
 python tools/memory/memory_write.py --content "text" --type event  # Write to daily log + DB
 python tools/memory/memory_write.py --content "text" --type fact --importance 7  # Store a fact
 python tools/memory/memory_write.py --update-memory --content "text" --section user_preferences  # Update MEMORY.md

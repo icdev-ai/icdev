@@ -15,6 +15,8 @@ Covers:
 - stop hook: auto-commit without Claude Code session stop event
 - user_prompt_submit: prompt logging for non-Claude interfaces
 - session_start: the token-capped memory index a session opens with (xrv-mem-01)
+- post_tool_use / user_prompt_submit memory capture: deterministic observations
+  into the auto_capture buffer, <private> spans dropped (xrv-mem-02)
 
 Usage::
 
@@ -24,6 +26,8 @@ Usage::
         run_pre_tool_check,
         run_auto_commit,
         run_session_start,
+        run_post_tool_capture,
+        run_prompt_capture,
     )
 """
 
@@ -754,6 +758,35 @@ def run_session_start(
         event_id = store_event(session_id or get_session_id(), "session_start", None, payload)
         result["event_recorded"] = event_id != -1
     return result
+
+
+# ── Post-tool / prompt memory capture (xrv-mem-02) ────────────────────
+
+
+def run_post_tool_capture(
+    tool_name: str,
+    tool_input: Any,
+    tool_response: Any = None,
+    session_id: Optional[str] = None,
+    **kwargs: Any,
+) -> Optional[Dict[str, Any]]:
+    """Headless twin of the capture ``.claude/hooks/post_tool_use.py`` makes.
+
+    Same ONE seam (``tools/hooks/observation_capture.capture_tool_event``):
+    Edit/Write path, ``git commit`` subject, pytest summary -- ``<private>``
+    spans dropped before the buffer sees them, the per-session cap honoured.
+    Returns the capture verdict or None when the event yields nothing.
+    """
+    from tools.hooks.observation_capture import capture_tool_event  # noqa: PLC0415
+
+    return capture_tool_event(tool_name, tool_input, tool_response, session_id or get_session_id(), **kwargs)
+
+
+def run_prompt_capture(prompt: Any, session_id: Optional[str] = None, **kwargs: Any) -> Optional[Dict[str, Any]]:
+    """Headless twin of the ``decision:`` capture in ``user_prompt_submit.py``."""
+    from tools.hooks.observation_capture import capture_prompt_event  # noqa: PLC0415
+
+    return capture_prompt_event(prompt, session_id or get_session_id(), **kwargs)
 
 
 # ── CLI ────────────────────────────────────────────────────────────────
