@@ -44,6 +44,14 @@ Usage::
 
     python -m tools.cost.session_cost --survey --since-days 7 --project ICDev --json
     python -m tools.cost.session_cost --session <session-id> --json
+    python -m tools.cost.session_cost --task <task-id> --json          # xrv-cost-02
+    python -m tools.cost.session_cost --survey --by-verdict --json     # spend that shipped
+
+``--task`` and ``--survey --by-verdict`` read the OTHER ledger -- the
+``agent_token_usage`` rows the kanban reflex writes at reap, task_id set --
+and join them to the outcome (``tools.cost.task_attribution``): shipped |
+abandoned | reverted | in_flight | unmeasurable. A board with no attributed
+rows reports ``unmeasurable``, never $0.
 
 Report only. Exit 2 when the transcript root is absent or the named session
 cannot be found -- a survey that could not be produced is never a clean one.
@@ -502,9 +510,24 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--root", type=Path, default=None,
                     help="override the transcript root (default: ~/.claude/projects)")
     ap.add_argument("--json", action="store_true")
+    # xrv-cost-02: the per-task ledger and the spend-that-shipped survey.
+    ap.add_argument("--task", metavar="TASK_ID",
+                    help="one kanban task's agent_token_usage rows joined to its outcome")
+    ap.add_argument("--by-verdict", action="store_true",
+                    help="with --survey: sum attributed task cost per outcome verdict")
+    ap.add_argument("--window-days", type=float, default=None,
+                    help="with --by-verdict: only rows created within N days (default all)")
+    ap.add_argument("--db-path", type=Path, default=None,
+                    help="an explicit SQLite ledger (tests/fixtures); default: the board")
+    ap.add_argument("--forge", dest="forge", action="store_true", default=None,
+                    help="consult the forge for each task's PR state (default: --task yes, "
+                         "--by-verdict no)")
+    ap.add_argument("--no-forge", dest="forge", action="store_false")
     args = ap.parse_args(argv)
-    if not args.survey and not args.session:
-        ap.error("one of --survey or --session is required")
+    if not args.survey and not args.session and not args.task:
+        ap.error("one of --survey, --session or --task is required")
+    if args.task or (args.survey and args.by_verdict):
+        return _ledger_main(args)
     root = args.root or transcript_root()
     try:
         if args.session:
@@ -524,6 +547,28 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(json.dumps(report, indent=2, default=str))
     else:
         print(_human(report))
+    return 0
+
+
+def _ledger_main(args) -> int:
+    """``--task`` / ``--survey --by-verdict`` (xrv-cost-02). Exit 2 = no report."""
+    from icdev.tools.cost import task_attribution as ta
+
+    try:
+        if args.task:
+            consult = True if args.forge is None else bool(args.forge)
+            report = ta.task_report(args.task, db_path=args.db_path, consult_forge=consult)
+            text = ta.human_task(report)
+        else:
+            consult = False if args.forge is None else bool(args.forge)
+            report = ta.survey_by_verdict(db_path=args.db_path, window_days=args.window_days,
+                                          consult_forge=consult)
+            text = ta.human_survey(report)
+    except Exception as exc:  # noqa: BLE001 -- a report that could not be produced
+        payload = {"error": str(exc), "state": ta.VERDICT_UNMEASURABLE}
+        print(json.dumps(payload, indent=2) if args.json else f"ERROR: {exc}")
+        return 2
+    print(ta.to_json(report) if args.json else text)
     return 0
 
 

@@ -122,6 +122,35 @@ def _schedule_cleanup(path: str, delay: float) -> None:
                      name="claude-cli-instr-cleanup").start()
 
 
+def _dominant_model(model_usage: Any) -> str:
+    """The `modelUsage` key with the largest `costUSD`; "" when unreadable.
+
+    Ties keep the first key in the CLI's own order, which is deterministic for
+    one envelope. A map with no numeric cost at all still names its first key:
+    a session that ran on one model at $0 (a local or unbilled provider) is
+    still a session on THAT model.
+    """
+    if not isinstance(model_usage, dict) or not model_usage:
+        return ""
+    best_key, best_cost = "", None
+    for key, entry in model_usage.items():
+        if not isinstance(key, str) or not key:
+            continue
+        cost = entry.get("costUSD") if isinstance(entry, dict) else None
+        cost = float(cost) if isinstance(cost, (int, float)) else 0.0
+        if best_cost is None or cost > best_cost:
+            best_key, best_cost = key, cost
+    return best_key
+
+
+def _thinking_tokens(usage: Dict[str, Any]) -> int:
+    details = usage.get("output_tokens_details")
+    if not isinstance(details, dict):
+        return 0
+    value = details.get("thinking_tokens")
+    return int(value) if isinstance(value, (int, float)) else 0
+
+
 def _parse_cli_json(stdout: str) -> Tuple[str, Dict[str, Any]]:
     """Split the CLI's ``--output-format json`` envelope into (text, structured).
 
@@ -176,6 +205,16 @@ def _parse_cli_json(stdout: str) -> Tuple[str, Dict[str, Any]]:
         + (usage.get("cache_creation_input_tokens") or 0),
         "output_tokens": usage.get("output_tokens") or 0,
         "duration_api_ms": payload.get("duration_api_ms") or 0,
+        # xrv-cost-02. The envelope names NO top-level model: the only place a
+        # model id appears is the per-model `modelUsage` map, and a session
+        # routinely touches two (a haiku sub-call beside the main model). The
+        # DOMINANT model -- the one that carried the most cost -- is what a
+        # per-task ledger row should name; "" when the map is absent, so the
+        # caller can fall back to its own label rather than read a blank one
+        # as a model. `thinking_tokens` is reported under
+        # usage.output_tokens_details and was previously discarded.
+        "model": _dominant_model(payload.get("modelUsage")),
+        "thinking_tokens": _thinking_tokens(usage),
     }
     text = payload.get("result")
     if not isinstance(text, str):
