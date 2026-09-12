@@ -704,6 +704,21 @@ def refill(*, repo_root: Any = None, base: str = "origin/main",
            expect_manifest: bool = True) -> Dict[str, Any]:
     """Top the pool up to `target_size`, at most `max_refills_per_run` per call.
 
+    THE POOL LOCK IS HELD FOR THE DECISION ONLY, NEVER ACROSS THE ADD, and that
+    ordering is load-bearing rather than tidy. Holding both locks through a 30s
+    checkout would make a concurrent dispatch's `claim` spend its whole 10s wait
+    on the pool lock, MISS, and then queue up to 90s behind the add lock for the
+    inline add it fell back to -- strictly worse than today for that dispatch,
+    produced by the very mechanism meant to speed it up. So the add runs under
+    the ADD lock alone, which is the real serialisation, and the pool lock is
+    retaken for nothing but the decision.
+
+    The cost of that split is stated rather than hidden: two dispatchers can
+    decide to refill at the same instant and create one entry more than
+    `target_size`. `max_size` is re-checked against the world immediately before
+    each add and `reap` enforces the ceiling regardless, so the overshoot is
+    bounded by the number of concurrent refills and is transient.
+
     Returns a report. Failures are NAMED in `failures` -- a refill that silently
     does nothing is indistinguishable from a pool that is full.
     """
@@ -717,6 +732,7 @@ def refill(*, repo_root: Any = None, base: str = "origin/main",
         report["skipped"] = MISS_DISABLED
         return report
     try:
+        # ---- decide, under the pool lock, in milliseconds --------------------
         with _pool_lock(CLAIM_LOCK_WAIT_SECONDS) as held:
             if not held:
                 report["skipped"] = MISS_LOCK
@@ -733,7 +749,6 @@ def refill(*, repo_root: Any = None, base: str = "origin/main",
             if want <= 0:
                 report["skipped"] = "at_target"
                 return report
-
             quiet = quiet_check(cfg)
             report["quiet_basis"] = quiet.get("basis")
             if not quiet["refill"]:
@@ -743,35 +758,41 @@ def refill(*, repo_root: Any = None, base: str = "origin/main",
                            pool_depth=len(healthy), quiet_basis=quiet.get("basis"))
                 return report
 
-            # THE REFILL YIELDS TO REAL WORK. The same cross-process lock a
-            # dispatch add takes, with a SHORT wait: the lock being held means a
-            # dispatch is checking out right now.
-            from tools.coordination.gitlock import worktree_add_lock  # noqa: PLC0415
+        # ---- add, under the ADD lock ALONE -----------------------------------
+        # THE REFILL YIELDS TO REAL WORK: a SHORT wait, because the lock being
+        # held means a dispatch is checking out right now.
+        from tools.coordination.gitlock import worktree_add_lock  # noqa: PLC0415
 
-            wait = float(cfg.get("refill_lock_wait_seconds", 5))
-            with worktree_add_lock(timeout=wait) as add_held:
-                if not add_held:
-                    report["skipped"] = "add_lock_busy"
-                    _log_event("refill_skipped", reason="add_lock_busy",
-                               pool_depth=len(healthy))
-                    return report
-                for _ in range(want):
-                    made = _create_entry(root, base, expect_manifest)
-                    if made.get("ok"):
-                        report["created"] += 1
-                        _log_event("refill", hex=made["hex"],
-                                   seconds=made.get("seconds"),
-                                   pool_depth=len(healthy) + report["created"])
-                    else:
-                        report["failures"].append(made)
-                        _log_event("refill_failed", reason=made.get("reason"),
-                                   hex=made.get("hex"),
-                                   seconds=made.get("seconds"),
-                                   pool_depth=len(healthy) + report["created"])
-                        break  # a failing add on a loaded disk will fail again
-            report["depth_after"] = len(healthy) + report["created"]
-            _log_event("pool_depth", pool_depth=report["depth_after"], after="refill")
-            return report
+        wait = float(cfg.get("refill_lock_wait_seconds", 5))
+        with worktree_add_lock(timeout=wait) as add_held:
+            if not add_held:
+                report["skipped"] = "add_lock_busy"
+                _log_event("refill_skipped", reason="add_lock_busy",
+                           pool_depth=len(healthy))
+                return report
+            for _ in range(want):
+                # The CEILING re-checked against the world as it is NOW: another
+                # dispatcher may have refilled while this one waited for the lock.
+                live = len([e for e in list_entries(root) if e["hex"]])
+                if live >= int(cfg.get("max_size", 3)):
+                    report["skipped"] = "at_max_size"
+                    break
+                made = _create_entry(root, base, expect_manifest)
+                if made.get("ok"):
+                    report["created"] += 1
+                    _log_event("refill", hex=made["hex"],
+                               seconds=made.get("seconds"),
+                               pool_depth=len(healthy) + report["created"])
+                else:
+                    report["failures"].append(made)
+                    _log_event("refill_failed", reason=made.get("reason"),
+                               hex=made.get("hex"), seconds=made.get("seconds"),
+                               pool_depth=len(healthy) + report["created"])
+                    break  # a failing add on a loaded disk will fail again
+
+        report["depth_after"] = len(healthy) + report["created"]
+        _log_event("pool_depth", pool_depth=report["depth_after"], after="refill")
+        return report
     except Exception as exc:  # noqa: BLE001 - a refill may never break the cycle
         logger.warning("worktree pool: refill failed: %s", exc)
         report["failures"].append({"ok": False, "reason": f"error:{exc}"})
