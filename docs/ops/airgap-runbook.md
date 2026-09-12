@@ -696,3 +696,114 @@ is to surface the blocker, not to bless the deployment.
 | `PLAYWRIGHT_BROWSERS_PATH` | Pre-staged browser cache directory (see §11) |
 
 Never set the first three in production.
+
+---
+
+## 14. Headless operation outside Claude Code
+
+Moved VERBATIM from CLAUDE.md's `## Running ICDEV Outside Claude Code` section on
+2026-09-12 (xrv-docs-02). That section's own last line already named this runbook as
+its long-form reference, so the two were the same material in two places; CLAUDE.md
+now carries the pointer and this file carries the content. Nothing was dropped.
+
+ICDEV™ is fully operable without the Claude Code CLI. Use `tools/airgap/` as the runtime shim — it replicates hooks, session management, and safety gates as plain Python.
+
+### Quick Start
+
+```bash
+# Detect environment (cloud vs air-gap)
+python -m tools.airgap --detect --json
+
+# Activate local-only LLM routing (air-gap mode)
+python -m tools.airgap --activate
+
+# Health check before any risky operation
+python tools/testing/health_check.py --json
+```
+
+### Cron Job Setup
+
+```bash
+# /etc/cron.d/icdev-audit — nightly compliance scan
+0 2 * * * icdev-user cd /opt/icdev && \
+  python -c "
+from tools.airgap.hook_compat import get_session_id, run_auto_commit
+get_session_id()   # sets CLAUDE_SESSION_ID + ICDEV_SESSION_ID for audit trail
+# ... invoke tools here (health_check, bandit, etc.) ...
+run_auto_commit('chore: nightly audit auto-commit')
+" >> /var/log/icdev/cron.log 2>&1
+```
+
+### CI/CD Pipeline (GitLab Stage End)
+
+```yaml
+# .gitlab-ci.yml — security gate + auto-commit at stage end
+security-scan:
+  stage: validate
+  script:
+    - export ICDEV_AUTO_COMMIT=true
+    - python tools/testing/health_check.py --json
+    - python -m bandit -r tools/ --severity-level medium
+    - python -c "from tools.airgap.hook_compat import run_pre_tool_check; \
+        r = run_pre_tool_check('Bash', {'command': 'git push'}); \
+        exit(0 if r['allowed'] else 1)"
+    - python -c "from tools.airgap.hook_compat import run_auto_commit; \
+        run_auto_commit('ci: post-scan auto-commit')"
+```
+
+### Headless ANVIL Workflow
+
+All 10 core ANVIL commands are runnable headlessly via `tools/anvil/<name>.py`.
+Each wrapper parses its source (`.claude/commands/*.md` or an `icdev-*` skill),
+extracts documented `python tools/…` steps, substitutes `$ARGUMENTS`, and runs
+them with an allowlisted prefix.
+
+```bash
+python tools/anvil/status.py --json                       # skill-backed
+python tools/anvil/feature.py --dry-run -- "add foo bar"  # md-backed preview
+python tools/anvil/feature.py --json -- "add foo bar"     # full execution
+```
+
+Available wrappers (11 total): `feature`, `bug`, `chore`, `test`, `review`,
+`commit`, `status`, `monitor`, `maintain`, `secure`, `deploy`.
+
+### Skill Invocation (Headless)
+
+Every `.agents/skills/icdev-*` skill is invokable from a non-Claude shell.
+
+```bash
+python tools/skills/invoke.py --list --json              # list all skills
+python tools/skills/invoke.py --show icdev-status        # print skill card
+python tools/skills/invoke.py --dry-run icdev-secure     # preview commands
+python tools/skills/invoke.py --exec icdev-status --json # execute + capture output
+python tools/skills/invoke.py --exec icdev-secure -- --scan tools/ --json  # with args
+```
+
+Allowlisted command prefixes: `python tools/`, `python -m tools`, `python -c`. Shell builtins, curl, etc. are refused.
+
+### Air-Gap LLM Routing (Ollama-only)
+
+```bash
+# .env — forces all routing through local Ollama, no cloud fallback
+OLLAMA_BASE_URL=http://localhost:11434
+ICDEV_LLM_PROVIDER=ollama
+# Also set in args/llm_config.yaml: two_tier.enabled: false
+```
+
+```python
+# Programmatic activation
+from tools.airgap import is_airgap, activate_airgap
+if is_airgap():
+    activate_airgap()   # patches llm_config.yaml routing to local-only
+```
+
+### Validation in Air-Gap Mode
+
+```bash
+python tools/testing/health_check.py --json                            # env + DB + deps
+python tools/testing/e2e_runner.py --run-all --mode native --json      # UI lifecycle tests
+python -m bandit -r tools/ --severity-level medium                     # security scan
+python tools/workflow/coherence_checker.py --all --gate                # coherence gate
+```
+
+> **Long-form reference:** [docs/ops/airgap-runbook.md](docs/ops/airgap-runbook.md)
