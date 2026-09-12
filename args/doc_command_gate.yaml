@@ -33,6 +33,15 @@ docs:
   # unbacked claim here is publishable. Adding the pattern surfaced no NEW
   # unresolved paths: every one already appears in the grandfather list below.
   - context/capabilities/*.yaml
+  # The 82 per-card incident essays that used to sit inline in CLAUDE.md's
+  # Essential Commands block (xrv-docs-02). Every command in them was already
+  # under this gate; the pattern keeps them under it now that they live one
+  # file per card, and covers a card added later by default.
+  - docs/reference/cards/*.md
+  # CLAUDE.md's `## Running ICDEV Outside Claude Code` section moved here in
+  # the same card, to §14. Its commands were under the gate as part of
+  # CLAUDE.md and must not leave it by being relocated.
+  - docs/ops/airgap-runbook.md
 
 # Pre-existing broken references as of oss-fix-02 (2026-07-25).
 # 55 distinct paths — whole subsystems documented in commands.md that were

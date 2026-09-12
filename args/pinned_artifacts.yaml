@@ -1,0 +1,276 @@
+# CUI // SP-CTI — the PINNED-ARTIFACT MANIFEST (xrv-pin-01)
+#
+# WHAT THIS FILE IS, AND WHAT IT IS NOT
+# -------------------------------------
+# It is the ENUMERATION of external artifacts this repository pins by version,
+# so that `python -m tools.airgap.artifact_freshness --survey` can ask upstream
+# whether a NEWER release exists. It is NOT a second copy of any pin: every
+# entry names the file that already declares the pin (`pin_source`), and the
+# survey RESOLVES the declared digest/version out of that file at run time. A
+# manifest that restated a digest would be a third spelling of one measured
+# fact -- exactly what `vendor/images/images-floci-runtime.txt` and
+# args/floci_runtime_images.yaml already have a test to prevent.
+#
+# WHY IT EXISTS. The floci pins are cryptographically verifiable
+# (`tools/airgap/image_vendor.py::parse_pin` refuses a tag) and NOTHING ever
+# asked upstream whether they were still the newest release. The 2.0.1 pin is a
+# 2026-09-01 snapshot re-asserted only by a test that two files agree with each
+# other -- and two files can agree perfectly about a version that shipped a
+# year ago. AGREEMENT IS NOT CURRENCY.
+#
+# THIS FILE IS A DECLARATION, NEVER AN ACTUATOR. Nothing in
+# tools/airgap/artifact_freshness.py pulls an image, writes a pin file, edits
+# docker-compose.yml or touches requirements.txt (AST-pinned by
+# tests/airgap/test_artifact_freshness.py). A `behind` verdict files a kanban
+# card and a HUMAN decides whether to move a pin.
+#
+# FIELDS
+#   name         unique key. Also the subject half of the card idempotency key.
+#   kind         image | package. An `image` is resolved through the OCI
+#                registry v2 API on whatever registry its `ref` names; a
+#                `package` through its index.
+#   ref          the repository (`floci/floci`, `public.ecr.aws/lambda/python`)
+#                or the distribution name. A bare Docker Hub name is
+#                normalised to `library/<name>` at query time, not here.
+#   pinned       the TAG or VERSION as declared upstream of us. For an entry
+#                whose pin_source carries the tag (compose, requirements) this
+#                is CROSS-CHECKED against that file, and a disagreement is
+#                `unmeasurable`, never silently resolved in favour of one side.
+#   pin_source   where the pin actually lives. The survey reads it.
+#   upstream     the registry/index the entry is SERVED BY. For an image this
+#                is cross-checked against the registry host that `ref` implies,
+#                so the label can never disagree with the fetch.
+#   decided_by   OPTIONAL, and the only supported value is `consumer`. See the
+#                block below. An unrecognised value is `unmeasurable`, never
+#                ignored -- a declaration nobody can read must not resolve to a
+#                clean bill.
+#   consumer     required by `decided_by: consumer`. The NAME of another
+#                artifact in this file whose currency decides this one.
+#                `tests/airgap/test_artifact_freshness.py` asserts it resolves,
+#                so the delegation cannot rot into a dangling pointer.
+#
+# A TAG SOMEBODY ELSE CHOOSES IS NOT CHASING ITS OWN RELEASE TRAIN
+# -----------------------------------------------------------------
+# (artifact-fresh-5b1750f240.) The survey's first full run said `rds-postgres`
+# was behind `18.6-alpine`, and acting on it would have BROKEN the air gap.
+# MEASURED 2026-09-12 by driving floci 2.0.1 the way flx-airgap-02 did:
+#
+#     CreateDBInstance(Engine=postgres)        -> EngineVersion 16.3, and the
+#       floci log: `ImageCacheService  Image already present locally,
+#       skipping pull: postgres:16.3-alpine`; the container it started ran
+#       `postgres:16.3-alpine`.
+#     CreateDBInstance(EngineVersion="16.99")  -> `Pulling image:
+#       postgres:16.99-alpine`, then a 404 from the registry.
+#
+# So the ref is `postgres:<EngineVersion>-alpine` and `16.3` is FLOCI'S DEFAULT
+# -- not this tree's opinion of postgres's newest release. `18.6-alpine` is a
+# real postgres release that floci requests only if a caller asks for it by
+# name, exactly like the per-runtime Lambda images args/floci_runtime_images.yaml
+# already calls out: the image set is a function of DECLARED CONFIGURATION.
+# Vendoring 18.6 would have left the image the DEFAULT path pulls out of the
+# bundle, so the first disconnected `create_db_instance` would fail -- the
+# precise failure vendor/images exists to prevent.
+#
+# `decided_by: consumer` therefore says: upstream's release train does not
+# decide this entry. It is decided on DIGEST DRIFT (has the tag stopped serving
+# the bytes we recorded -- on an immutable tag, a supply-chain alarm), and
+# upstream's newest comparable tag is still fetched and carried on
+# `upstream_newest` so nothing is hidden. The pin moves when FLOCI moves, which
+# is a re-measurement (`python -m tools.cloud.runtime_images --measure-help`),
+# never a bump -- and the `floci` entry below is what re-asks that question.
+#
+# NOT CONVERTED HERE, AND NAMED RATHER THAN IMPLIED. The same argument plainly
+# reaches the other ten runtime entries, and five of them are reported `behind`
+# today against releases floci does not request -- `mysql:8.0.36 -> 26.7.0`,
+# `registry:2 -> 3`, `amazonlinux:2023 -> 2027`, `valkey:8 -> 9`,
+# `opensearch:2.19.5 -> 3.8.0`. They are NOT flipped here, because this card
+# measured the postgres path and adding a row nobody observed is the
+# fabrication vendor/images/README.md is written against. Each arrives with its
+# own card; drive the emulator for that service, read the ImageCacheService log
+# line, and convert it with the measurement written down.
+#
+# WHY `pypi` AND `package` ARE HERE when the card sketched
+# image|binary x dockerhub|ghcr|github_releases: `testcontainers-floci` is a
+# PyPI distribution (requirements.txt:57) and that is a fact this repository
+# already records. Declaring it against a GitHub repository nobody has measured
+# would be the fabrication vendor/images/README.md is written against. The PyPI
+# lane reuses the EXISTING seam,
+# tools/maintenance/dependency_scanner._check_pypi_latest -- there is no second
+# package-index client here.
+#
+# NOT DECLARED, AND NAMED RATHER THAN IMPLIED
+# -------------------------------------------
+#   * BROWSER DRIVERS (tools/airgap/driver_vendor.py -- msedgedriver,
+#     chromedriver). They are pinned to the LOCALLY INSTALLED BROWSER's major
+#     version, not to a constant in this tree: `_detect_installed_edge_version`
+#     reads the host. "Is there a newer chromedriver" is therefore a question
+#     about that host's browser, not about a pin here, and answering it in this
+#     survey would report every developer machine as `behind` its own Chrome.
+#     A driver manifest needs its own card and its own survey.
+#   * `alpine:3.19` -- the ECS probe's own WORKLOAD image, deliberately absent
+#     from args/floci_runtime_images.yaml for the reason stated there.
+#   * every OTHER image in docker-compose.yml (postgres, redis, ...). This card
+#     seeds the floci pin surface; widening the manifest to the whole compose
+#     file is a separate decision owing its own review.
+
+enabled: true
+
+# Per-request budget. A survey makes at most three requests per image, so the
+# worst case is bounded at roughly 3 x timeout_seconds per artifact.
+timeout_seconds: 10
+
+# Total wall-clock budget for one --survey. Artifacts not reached inside it are
+# reported `unmeasurable` with reason `budget_exhausted` and NAMED -- never
+# quietly dropped, and never `current`.
+budget_seconds: 180
+
+user_agent: "icdev-artifact-freshness/1.0"
+
+artifacts:
+  # -- The emulator itself. Pinned BY DIGEST in vendor/images/images-floci.txt
+  # and BY TAG in docker-compose.yml; both are read at survey time.
+  - name: floci
+    kind: image
+    ref: floci/floci
+    pinned: "2.0.1"
+    pin_source: "compose:floci"
+    digest_source: "vendor/images/images-floci.txt"
+    upstream: dockerhub
+    note: >-
+      flx-ci-01 measured the digest on 2026-09-05 against a 2026-09-01 release.
+      This entry is the reason the card exists: nothing ever re-asked upstream.
+
+  # -- The three sibling emulators. Compose-tagged, NOT digest-pinned: no
+  # vendor/images topic exists for them, so `digest_drift` is unmeasurable and
+  # is reported as such rather than as agreement.
+  - name: floci-az
+    kind: image
+    ref: floci/floci-az
+    pinned: "0.12.0"
+    pin_source: "compose:floci-az"
+    upstream: dockerhub
+
+  - name: floci-gcp
+    kind: image
+    ref: floci/floci-gcp
+    pinned: "0.8.0"
+    pin_source: "compose:floci-gcp"
+    upstream: dockerhub
+
+  - name: floci-oci
+    kind: image
+    ref: floci/floci-oci
+    pinned: "0.4.0"
+    pin_source: "compose:floci-oci"
+    upstream: dockerhub
+
+  # -- The eleven MEASURED floci runtime base images (flx-airgap-02). Each is
+  # digest-pinned in vendor/images/images-floci-runtime.txt; the tag below is
+  # args/floci_runtime_images.yaml's `ref`, which a test already pins to that
+  # same file.
+  - name: lambda-python
+    kind: image
+    ref: public.ecr.aws/lambda/python
+    pinned: "3.11"
+    pin_source: "vendor/images/images-floci-runtime.txt"
+    upstream: ecr_public
+
+  - name: lambda-nodejs
+    kind: image
+    ref: public.ecr.aws/lambda/nodejs
+    pinned: "20"
+    pin_source: "vendor/images/images-floci-runtime.txt"
+    upstream: ecr_public
+
+  # DELIBERATELY KEPT at floci 2.0.1's default postgres engine version. See
+  # "A TAG SOMEBODY ELSE CHOOSES" above for the measurement; the decision
+  # record is docs/audits/artifact-fresh-5b1750f240-rds-postgres-pin.md.
+  - name: rds-postgres
+    kind: image
+    ref: postgres
+    pinned: "16.3-alpine"
+    pin_source: "vendor/images/images-floci-runtime.txt"
+    upstream: dockerhub
+    decided_by: consumer
+    consumer: floci
+    note: >-
+      floci builds the ref as `postgres:<EngineVersion>-alpine` and defaults to
+      16.3 (MEASURED 2026-09-12, artifact-fresh-5b1750f240). A deployment that
+      declares a different EngineVersion must vendor THAT tag -- the variant
+      rule args/floci_runtime_images.yaml already states for Lambda runtimes,
+      one level finer.
+
+  - name: rds-mysql
+    kind: image
+    ref: mysql
+    pinned: "8.0.36"
+    pin_source: "vendor/images/images-floci-runtime.txt"
+    upstream: dockerhub
+
+  - name: elasticache-valkey
+    kind: image
+    ref: valkey/valkey
+    pinned: "8"
+    pin_source: "vendor/images/images-floci-runtime.txt"
+    upstream: dockerhub
+
+  - name: elasticache-memcached
+    kind: image
+    ref: memcached
+    pinned: "1.6"
+    pin_source: "vendor/images/images-floci-runtime.txt"
+    upstream: dockerhub
+
+  - name: opensearch
+    kind: image
+    ref: opensearchproject/opensearch
+    pinned: "2.19.5"
+    pin_source: "vendor/images/images-floci-runtime.txt"
+    upstream: dockerhub
+
+  # `:latest` carries NO version ordering, so `behind` for these two can only
+  # be decided by DIGEST DRIFT -- which is precisely the caveat
+  # args/floci_runtime_images.yaml records as `mutable_tag: true`. The survey
+  # says so on the result (`basis: digest`) rather than inventing an ordering.
+  - name: kafka-redpanda
+    kind: image
+    ref: redpandadata/redpanda
+    pinned: "latest"
+    pin_source: "vendor/images/images-floci-runtime.txt"
+    upstream: dockerhub
+    mutable_tag: true
+
+  - name: eks-k3s
+    kind: image
+    ref: rancher/k3s
+    pinned: "latest"
+    pin_source: "vendor/images/images-floci-runtime.txt"
+    upstream: dockerhub
+    mutable_tag: true
+
+  - name: ec2-amazonlinux
+    kind: image
+    ref: public.ecr.aws/amazonlinux/amazonlinux
+    pinned: "2023"
+    pin_source: "vendor/images/images-floci-runtime.txt"
+    upstream: ecr_public
+
+  - name: ecr-registry
+    kind: image
+    ref: registry
+    pinned: "2"
+    pin_source: "vendor/images/images-floci-runtime.txt"
+    upstream: dockerhub
+
+  # -- The one non-image pin this card seeds.
+  - name: testcontainers-floci
+    kind: package
+    ref: testcontainers-floci
+    pinned: "0.1.1"
+    pin_source: "requirements.txt"
+    upstream: pypi
+    note: >-
+      requirements.txt declares `>=0.1.1`, a FLOOR rather than a pin, so
+      `behind` here means "a newer release exists than the floor we wrote" --
+      a weaker statement than it is for a digest-pinned image. Carried on the
+      result as `pin_strength: floor`.

@@ -140,6 +140,48 @@ def _opt_module(name: str) -> Any:
     return None
 
 
+#: Every stage of the cycle, in pipeline order. Declared HERE, once, so
+#: ``stages_missing`` describes the pipeline this function actually runs rather
+#: than a list a reader has to keep in step with it by hand.
+STAGE_MODULES: tuple[str, ...] = (
+    "harvester",
+    "synthesizer",
+    "novelty_gate",
+    "scorer",
+    "deliberator",
+    "spec_generator",
+    "task_graph",
+    "seeder",
+)
+
+#: The stage whose absence makes ``tasks_emitted`` UNMEASURABLE rather than
+#: zero: nothing else writes a kanban row, so without it the cycle CANNOT emit.
+#: Consumed by tools/genesis/reflexes/foundry_cycle.py -- do not respell it
+#: there.
+EMIT_STAGE = "seeder"
+
+
+def stage_availability() -> dict:
+    """Which stage modules exist on THIS deployment (xrv-lab-01).
+
+    ``run_cycle`` degrades a missing stage to a clean no-op -- correct, and for
+    four of the eight stages that no-op has been the permanent state since the
+    engine shipped: ``synthesizer``, ``scorer``, ``deliberator`` and ``seeder``
+    have no module in the tree. A cycle therefore harvested signals, synthesized
+    ZERO concepts because nothing can synthesize, and reported a green run with
+    ``tasks_emitted: 0`` -- a number a reader takes as "nothing novel passed the
+    gates". It was never a gate verdict; it was an absent pipeline.
+
+    Returns ``{present: [...], missing: [...]}`` in pipeline order. Import is the
+    only question asked here: a module that imports and then raises when called
+    has degraded too, and THAT is reported per-cycle as ``stages_ran``.
+    """
+    present, missing = [], []
+    for name in STAGE_MODULES:
+        (present if _opt_module(name) is not None else missing).append(name)
+    return {"present": present, "missing": missing}
+
+
 def _flex_call(fn: Any, **kwargs: Any) -> Any:
     """Call *fn* forwarding only the keyword args it actually declares.
 
@@ -157,18 +199,34 @@ def _flex_call(fn: Any, **kwargs: Any) -> Any:
     return fn(**accepted)
 
 
-def _stage_harvest(run_id: str, cfg: dict, conn: Any) -> list[dict]:
+def _mark_ran(ran: Optional[list], name: str) -> None:
+    """Record that ``name`` was actually INVOKED this cycle (xrv-lab-01).
+
+    Separate from :func:`stage_availability`, which only asks whether the module
+    imports. A stage can be present and still not run -- the cycle short-circuits
+    on the circuit breaker and on the active-project rate limit, and a stage
+    downstream of an empty list has nothing to be called with.
+    """
+    if ran is not None and name not in ran:
+        ran.append(name)
+
+
+def _stage_harvest(run_id: str, cfg: dict, conn: Any, ran: Optional[list] = None) -> list[dict]:
     """Stage 1 — harvest signals (shipped: tools.foundry.harvester)."""
     try:
         from tools.foundry import harvester
 
-        return list(_flex_call(harvester.harvest, run_id=run_id, config=cfg, conn=conn) or [])
+        out = list(_flex_call(harvester.harvest, run_id=run_id, config=cfg, conn=conn) or [])
+        _mark_ran(ran, "harvester")
+        return out
     except Exception as exc:  # noqa: BLE001
         logger.warning("harvest stage degraded: %s", exc)
         return []
 
 
-def _stage_synthesize(run_id: str, signals: list[dict], cfg: dict, conn: Any) -> list[dict]:
+def _stage_synthesize(
+    run_id: str, signals: list[dict], cfg: dict, conn: Any, ran: Optional[list] = None
+) -> list[dict]:
     """Stage 2 — cluster signals into concepts (tools.foundry.synthesizer).
 
     Absent until acf-synth-01 lands -> contributes zero concepts.
@@ -179,13 +237,17 @@ def _stage_synthesize(run_id: str, signals: list[dict], cfg: dict, conn: Any) ->
         logger.info("synthesize stage skipped (synthesizer not available)")
         return []
     try:
-        return list(_flex_call(fn, run_id=run_id, signals=signals, config=cfg, conn=conn) or [])
+        out = list(_flex_call(fn, run_id=run_id, signals=signals, config=cfg, conn=conn) or [])
+        _mark_ran(ran, "synthesizer")
+        return out
     except Exception as exc:  # noqa: BLE001
         logger.warning("synthesize stage degraded: %s", exc)
         return []
 
 
-def _stage_evaluate(concepts: list[dict], cfg: dict, conn: Any) -> list[dict]:
+def _stage_evaluate(
+    concepts: list[dict], cfg: dict, conn: Any, ran: Optional[list] = None
+) -> list[dict]:
     """Stages 3-5 — novelty gate (shipped) -> score (scorer) -> CoD go/no-go
     (deliberator). Returns the list of APPROVED concepts.
 
@@ -205,6 +267,7 @@ def _stage_evaluate(concepts: list[dict], cfg: dict, conn: Any) -> list[dict]:
             novelty_gate.apply_novelty_gate(c, config=cfg.get("novelty"))
             if c.get("status") != "rejected":
                 survivors.append(c)
+        _mark_ran(ran, "novelty_gate")
     except Exception as exc:  # noqa: BLE001 - degrade to all-pass rather than abort
         logger.warning("novelty stage degraded: %s", exc)
         survivors = list(concepts)
@@ -216,6 +279,7 @@ def _stage_evaluate(concepts: list[dict], cfg: dict, conn: Any) -> list[dict]:
         for c in survivors:
             try:
                 _flex_call(score_fn, concept=c, config=cfg, conn=conn)
+                _mark_ran(ran, "scorer")
             except Exception as exc:  # noqa: BLE001
                 logger.debug("score skip for %s: %s", c.get("slug"), exc)
 
@@ -232,6 +296,7 @@ def _stage_evaluate(concepts: list[dict], cfg: dict, conn: Any) -> list[dict]:
         if delib_fn is not None:
             try:
                 verdict = _flex_call(delib_fn, concept=c, config=cfg, conn=conn)
+                _mark_ran(ran, "deliberator")
                 if isinstance(verdict, dict):
                     decision = str(verdict.get("decision") or verdict.get("verdict") or "")
                 else:
@@ -252,7 +317,9 @@ def _stage_evaluate(concepts: list[dict], cfg: dict, conn: Any) -> list[dict]:
     return approved
 
 
-def _stage_emit(approved: list[dict], cfg: dict, conn: Any, *, dry_run: bool) -> int:
+def _stage_emit(
+    approved: list[dict], cfg: dict, conn: Any, *, dry_run: bool, ran: Optional[list] = None
+) -> int:
     """Stages 6-8 — spec_generator -> task_graph -> seeder.emit. Returns the number
     of kanban tasks emitted (0 in dry_run, or when the seeder module is absent).
 
@@ -276,8 +343,10 @@ def _stage_emit(approved: list[dict], cfg: dict, conn: Any, *, dry_run: bool) ->
     for concept in approved:
         try:
             spec = spec_generator.generate_spec(concept, config=cfg, conn=conn, persist=not dry_run)
+            _mark_ran(ran, "spec_generator")
             contract = spec.get("canvas_contract") or {}
             tasks = task_graph.build_task_graph(concept, contract)
+            _mark_ran(ran, "task_graph")
         except Exception as exc:  # noqa: BLE001 - one concept failing must not abort the rest
             logger.warning("spec/task-graph failed for %s: %s", concept.get("slug"), exc)
             continue
@@ -288,6 +357,7 @@ def _stage_emit(approved: list[dict], cfg: dict, conn: Any, *, dry_run: bool) ->
             continue
         try:
             res = _flex_call(emit_fn, concept=concept, tasks=tasks, dry_run=dry_run, conn=conn)
+            _mark_ran(ran, "seeder")
             if isinstance(res, dict):
                 total += int(res.get("emitted", 0) or 0)
             elif isinstance(res, int):
@@ -586,7 +656,13 @@ def run_cycle(
     Returns a roll-up dict::
 
         {run_id, id, harvested, concepts_proposed, concepts_approved,
-         tasks_emitted, active_projects, status, dry_run, rate_limited?, detail}
+         tasks_emitted, active_projects, status, dry_run, rate_limited?,
+         stages_missing, stages_present, stages_ran, detail}
+
+    ``stages_missing`` names the stage modules that are ABSENT on this
+    deployment (xrv-lab-01). It is the difference between "the gates rejected
+    everything" and "the pipeline has no stage that could have produced
+    anything", which ``tasks_emitted: 0`` cannot express on its own.
 
     ``status`` is one of ``completed`` | ``rate_limited`` | ``failed``.
     """
@@ -611,6 +687,13 @@ def run_cycle(
     self_vet_cfg = {**_DEFAULT_SELF_VET, **(cfg.get("self_vet", {}) or {})}
     _cb_cfg_early = {**_DEFAULT_CIRCUIT, **(cfg.get("circuit", {}) or {})}
 
+    # xrv-lab-01: what this deployment CAN run, probed before the pipeline so a
+    # short-circuit path (circuit breaker, rate limit) still reports it. Four of
+    # the eight stage modules have never existed, which is why `tasks_emitted: 0`
+    # was never the gate verdict it read as.
+    availability = stage_availability()
+    stages_ran: list[str] = []
+
     result: dict = {
         "run_id": run_id,
         "id": run_pk,
@@ -621,11 +704,18 @@ def run_cycle(
         "active_projects": 0,
         "status": "completed",
         "dry_run": dry_run,
+        "stages_missing": availability["missing"],
+        "stages_present": availability["present"],
+        "stages_ran": stages_ran,
         "detail": {
             "max_concepts_per_cycle": cap_concepts,
             "max_active_projects": max_active,
             "circuit": _cb_cfg_early,
             "self_vet": self_vet_cfg,
+            "stages_missing": availability["missing"],
+            "stages_present": availability["present"],
+            "emit_stage": EMIT_STAGE,
+            "emit_stage_missing": EMIT_STAGE in availability["missing"],
         },
     }
     detail = result["detail"]
@@ -652,15 +742,15 @@ def run_cycle(
             return result
 
         # 1. Harvest.
-        signals = _stage_harvest(run_id, cfg, conn)
+        signals = _stage_harvest(run_id, cfg, conn, ran=stages_ran)
         result["harvested"] = len(signals)
 
         # 2. Synthesize concepts.
-        concepts = _stage_synthesize(run_id, signals, cfg, conn)
+        concepts = _stage_synthesize(run_id, signals, cfg, conn, ran=stages_ran)
         result["concepts_proposed"] = len(concepts)
 
         # 3-5. Novelty gate -> score -> CoD go/no-go.
-        approved = _stage_evaluate(concepts, cfg, conn)
+        approved = _stage_evaluate(concepts, cfg, conn, ran=stages_ran)
 
         # 2b. Record every evaluation decision (approved + rejected) with the
         # Genesis Harness so compute_metrics(reflex='acf') can compute
@@ -692,7 +782,10 @@ def run_cycle(
             return result
 
         # 6-8. Spec -> task graph -> seed (seeder no-ops in dry_run).
-        result["tasks_emitted"] = _stage_emit(approved, cfg, conn, dry_run=dry_run)
+        result["tasks_emitted"] = _stage_emit(
+            approved, cfg, conn, dry_run=dry_run, ran=stages_ran
+        )
+        detail["stages_ran"] = list(stages_ran)
         _finalize_run(conn, run_pk, result)
 
         logger.info(

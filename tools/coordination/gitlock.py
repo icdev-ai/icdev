@@ -102,3 +102,41 @@ def worktree_add_lock(timeout: float = 60.0) -> Iterator[bool]:
             lock.release()
         except Exception:
             pass
+
+
+_WORKTREE_POOL_LOCK_PATH = COORD_DIR / "git-worktree-pool.lock"
+
+
+@contextlib.contextmanager
+def worktree_pool_lock(timeout: float = 10.0) -> Iterator[bool]:
+    """Serialize warm-pool BOOKKEEPING across every process (mfx-own-09).
+
+    Yields True when held, False on timeout (the caller should decline -- a
+    claim that cannot take this lock falls through to an inline `git worktree
+    add`, which is always available).
+
+    DELIBERATELY NOT ``worktree_add_lock``. That one is held for the 5-30s of a
+    checkout; this one guards ~1.3s of git plumbing (a branch rename, a
+    directory rename, a delta reset) plus the read of what the pool currently
+    holds. Sharing the add lock would make every claim queue behind whatever
+    add is in flight -- which is precisely the wait the pool exists to remove,
+    and precisely the moment the board most needs a warm worktree. A refill
+    takes BOTH: it is a real add, so it serialises with dispatch adds too.
+    """
+    COORD_DIR.mkdir(parents=True, exist_ok=True)
+    if FileLock is None:
+        yield True
+        return
+    lock = FileLock(str(_WORKTREE_POOL_LOCK_PATH), timeout=timeout)
+    try:
+        lock.acquire()
+    except _FLTimeout:
+        yield False
+        return
+    try:
+        yield True
+    finally:
+        try:
+            lock.release()
+        except Exception:
+            pass

@@ -252,6 +252,17 @@ REFLEX_NAMES = [
     # with a token minted at that moment (env only, never persisted). A
     # container in only one set is reported and never touched.
     "ci_runner_health",
+    # xrv-pin-01: the floci pins are cryptographically verifiable and NOTHING
+    # ever asked upstream whether they were still the newest release -- the
+    # 2.0.1 pin is a 2026-09-01 snapshot re-asserted only by a test that two
+    # files agree with each other, and agreement is not currency. Surveys
+    # args/pinned_artifacts.yaml against the OCI registry v2 API and PyPI and
+    # files ONE card per `behind` artifact. It never pulls and never edits a
+    # pin file; moving a pin is a supply-chain act and belongs in a reviewed
+    # diff. An air-gapped host reports every artifact `unmeasurable` -- never
+    # `current` -- while `success` stays True so the breaker cannot make the
+    # reflex permanently inert on exactly the deployments it serves.
+    "artifact_freshness",
 ]
 
 # Backward-compat aliases for module-level access used by other code
@@ -635,6 +646,11 @@ class GenesisDaemon(DaemonBase):
         proposal.setdefault("dry_run", True)
         return proposal
 
+    #: A reflex reporting one of these produced NO candidate artifact, so the
+    #: ORANGE proposal path stages nothing and returns its verdict verbatim.
+    #: `unmeasurable` is not a proposal, and it is not a clean cycle either.
+    _NO_PROPOSAL_STATUSES = frozenset({"disabled", "unmeasurable"})
+
     def _run_orange_proposal(
         self, name: str, config: Dict[str, Any], trust: TrustKernelBase, risk_tier: str
     ) -> Tuple[bool, float, Dict]:
@@ -676,8 +692,27 @@ class GenesisDaemon(DaemonBase):
             result = self._observe(name, run_fn, self._orange_proposal_config(config), trust)
 
         success = bool(result.get("success", False))
-        metric_value = float(result.get("metric_value", 0.0) or 0.0)
-        details = result.get("details", {})
+        raw_metric = result.get("metric_value", 0.0)
+        # xrv-lab-01: None means the reflex MEASURED NOTHING. `float(x or 0.0)`
+        # turned that into a confident 0.0 — an acceptance rate of zero for a
+        # run that never produced a rate — and then handed it to the GKP as a
+        # `confidence`. An unmeasured metric stays unmeasured all the way to the
+        # state row, which records it as NULL.
+        metric_value = None if raw_metric is None else float(raw_metric or 0.0)
+        details = result.get("details", {}) or {}
+
+        # THERE IS NOTHING TO PROPOSE from a run that did not run. A reflex that
+        # reports `disabled` (its own master switch is off) or `unmeasurable`
+        # (it could not measure what it exists to measure) produced no candidate
+        # artifact, and staging one anyway would put a pending_review GKP in
+        # front of a human with no proposal in it. Its own verdict is returned
+        # verbatim so `--reflex <name> --json` says exactly what the reflex said.
+        if str(details.get("status") or "") in self._NO_PROPOSAL_STATUSES:
+            logger.info(
+                "[GENESIS] ORANGE reflex '%s' reported status=%s — no proposal staged",
+                name, details.get("status"),
+            )
+            return success, metric_value, details
 
         gkp_id = self._stage_orange_gkp(name, risk_tier, success, metric_value, details)
 
@@ -694,7 +729,7 @@ class GenesisDaemon(DaemonBase):
         )
 
     def _stage_orange_gkp(
-        self, name: str, risk_tier: str, success: bool, metric_value: float, details: Dict[str, Any]
+        self, name: str, risk_tier: str, success: bool, metric_value, details: Dict[str, Any]
     ) -> str:
         """Persist the proposal as a pending_review GKP. Returns the GKP id or ''."""
         try:
@@ -711,7 +746,8 @@ class GenesisDaemon(DaemonBase):
                     "metric_value": metric_value,
                     "details": details,
                 },
-                confidence=metric_value,
+                # An unmeasured metric is not a confidence of zero.
+                confidence=0.0 if metric_value is None else metric_value,
                 evidence={"daemon_version": self.daemon_version, "staged_at": utcnow_iso()},
             )
             gkp_id = gkp.get("id") or gkp.get("gkp_id") or ""

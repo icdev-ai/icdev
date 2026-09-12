@@ -28,6 +28,11 @@ public.ecr.aws/lambda/python@sha256:755093e1da2ba33f6bd2295c5a6a7ed8b94f1ef347b6
 public.ecr.aws/lambda/nodejs@sha256:a4440274d6f0fb4e6cb92cd5f2a97254efe6612f631d9974b197ecbd4a61fcab
 
 # rds/postgres -- postgres:16.3-alpine
+#   The tag is floci's DEFAULT EngineVersion: the ref is built as
+#   `postgres:<EngineVersion>-alpine` (measured 2026-09-12). A NEWER postgres is
+#   NOT an upgrade for this line -- vendoring 18.6-alpine instead of this one
+#   leaves the default path unvendored. See
+#   docs/audits/artifact-fresh-5b1750f240-rds-postgres-pin.md.
 postgres@sha256:36ed71227ae36305d26382657c0b96cbaf298427b3f1eaeb10d77a6dea3eec41
 
 # rds/mysql -- mysql:8.0.36

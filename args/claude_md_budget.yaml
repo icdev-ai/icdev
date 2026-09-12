@@ -1,0 +1,44 @@
+# CUI // SP-CTI
+# CLAUDE.md size budget (xrv-docs-02)
+#
+# WHY THIS FILE EXISTS. Claude Code loads CLAUDE.md into EVERY session, and
+# `icdev init` copies the packaged twin into every scaffolded project, so a byte
+# added here is paid for by every session on every deployment whether or not it
+# touches the subject. Measured 2026-09-12 the file had reached 367,462 bytes
+# (~91,674 tokens at len/4), of which 297,635 — 81.0% — was 82 per-card incident
+# essays inline. Those moved VERBATIM to docs/reference/cards/ and the file is
+# now an index: one line per card, carrying the id, the title and the single
+# command most worth knowing.
+#
+# Consumed by: tools/workflow/coherence_checker.py :: check_claude_md_budget
+# Tier: WARN. A size budget must never fail a commit — a gate that blocks a
+# rule somebody needed to write is one people learn to route around, and the
+# repair here is "move the essay", which is a judgement call, not a mechanism.
+#
+# THE BUDGET MAY ONLY GO DOWN. Raising it to land a commit is the defect this
+# file exists to catch: it is the census-ceiling move CLAUDE.md already forbids
+# for args/ci_test_backlog.txt, args/undeclared_import_census.txt and
+# args/perfect_score_gate.yaml. If a card needs an essay, write the essay in
+# docs/reference/cards/<id>.md and one index line here.
+
+# The post-move size (79,700 bytes on 2026-09-12) plus 10% headroom, so an
+# ordinary rule addition does not warn on the day it lands.
+max_bytes: 87670
+
+# Recorded so the check can report the delta rather than only the absolute.
+baseline:
+  measured_on: "2026-09-12"
+  bytes_before: 367462
+  bytes_after: 79700
+  essays_moved: 82
+  card: xrv-docs-02
+
+# Sections reported by name when the file is over budget, so the warning says
+# WHERE the bytes went instead of only that there are too many. Matched as a
+# markdown heading prefix; a section absent from the file is simply not reported.
+report_sections:
+  - "### Essential Commands"
+  - "### Development Rules"
+  - "### Compliance & Security Rules"
+  - "## Architecture"
+  - "## Guardrails"

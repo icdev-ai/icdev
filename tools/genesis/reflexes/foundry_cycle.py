@@ -17,6 +17,15 @@ Behaviour:
     users or burning API quota at night. Mirrors the pattern in
     ``tools/creative/creative_engine.py`` (D359). When the config is missing or
     empty the gate is disabled (backwards compatible).
+  * **No stage that could emit** — the engine degrades an absent stage module to
+    a clean no-op, and four of its eight stages (``synthesizer`` / ``scorer`` /
+    ``deliberator`` / ``seeder``) have no module in the tree. Without the
+    ``seeder`` NOTHING can write a kanban row, so ``tasks_emitted: 0`` is not
+    "nothing novel passed the gates" -- it is a pipeline with no exit. The
+    reflex then reports ``status='unmeasurable'`` with ``metric_value=None`` and
+    names ``details.stages_missing`` (xrv-lab-01). ``success`` stays True: an
+    unbuilt stage is a gap, not a failing cycle, and tripping the circuit
+    breaker on it would hide the gap behind a disabled reflex.
   * **Flag on** — delegates one cycle to :func:`tools.foundry.engine.run_cycle`,
     which owns the heavy lifting: harvest → synthesize → novelty-gate → score →
     CoD go/no-go → SIPA self-vet → seed kanban. The engine enforces intra-cycle
@@ -203,7 +212,9 @@ def run(config: Optional[Dict[str, Any]] = None, conn: Any = None) -> Dict[str, 
 
     result: Dict[str, Any] = {
         "success": True,
-        "metric_value": 0.0,
+        # None, not 0.0 — nothing has been measured until a cycle runs, and a
+        # skipped reflex reporting 0 emitted tasks reads as a measured zero.
+        "metric_value": None,
         "status": "ok",
         "harvested": 0,
         "concepts_proposed": 0,
@@ -222,6 +233,7 @@ def run(config: Optional[Dict[str, Any]] = None, conn: Any = None) -> Dict[str, 
     # 1. Clean no-op when the canvas is dark — never trips the circuit breaker.
     if not _is_enabled():
         result["status"] = "skipped"
+        details["status"] = "skipped"
         details["reason"] = f"{FEATURE_FLAG} off"
         logger.info("foundry_cycle: %s off — clean no-op", FEATURE_FLAG)
         return result
@@ -231,6 +243,7 @@ def run(config: Optional[Dict[str, Any]] = None, conn: Any = None) -> Dict[str, 
     # 2. Quiet hours — no engine import, no token spend; mirrors creative engine.
     if _in_quiet_hours():
         result["status"] = "skipped"
+        details["status"] = "skipped"
         details["reason"] = "skipped_quiet_hours"
         details["quiet_hours"] = _QUIET_HOURS
         logger.info(
@@ -244,6 +257,7 @@ def run(config: Optional[Dict[str, Any]] = None, conn: Any = None) -> Dict[str, 
         from tools.foundry.engine import run_cycle  # type: ignore
     except Exception as exc:  # noqa: BLE001 — engine not shipped yet -> skip, don't fail
         result["status"] = "skipped"
+        details["status"] = "skipped"
         details["reason"] = "foundry engine not available"
         details["errors"].append(str(exc))
         logger.info("foundry_cycle: engine unavailable (%s) — skipping", exc)
@@ -258,12 +272,47 @@ def run(config: Optional[Dict[str, Any]] = None, conn: Any = None) -> Dict[str, 
         result["harvested"] = int(cycle.get("harvested", 0) or 0)
         result["concepts_proposed"] = int(cycle.get("concepts_proposed", 0) or 0)
         result["tasks_emitted"] = int(cycle.get("tasks_emitted", 0) or 0)
-        # ROI metric = work actually emitted to the board this cycle.
-        result["metric_value"] = float(result["tasks_emitted"])
+
+        # xrv-lab-01 — CAN this pipeline emit at all? The engine names the stage
+        # modules it could not import; `seeder` is the only writer of a kanban
+        # row, so with it absent `tasks_emitted` is UNMEASURABLE and not a zero.
+        # `EMIT_STAGE` is imported from the engine, never respelled here: two
+        # spellings of "which stage writes the board" is how this pair comes to
+        # disagree about a pipeline neither of them changed.
+        stages_missing = list(cycle.get("stages_missing") or [])
+        details["stages_missing"] = stages_missing
+        details["stages_present"] = list(cycle.get("stages_present") or [])
+        details["stages_ran"] = list(cycle.get("stages_ran") or [])
+        try:
+            from tools.foundry.engine import EMIT_STAGE
+        except Exception:  # noqa: BLE001 — an engine too old to name it
+            EMIT_STAGE = "seeder"
+        emit_stage_missing = EMIT_STAGE in stages_missing
+        details["emit_stage"] = EMIT_STAGE
+        details["emit_stage_missing"] = emit_stage_missing
 
         engine_status = str(cycle.get("status", "ok"))
-        result["status"] = "error" if engine_status in ("error", "failed") else "ok"
+        if engine_status in ("error", "failed"):
+            result["status"] = "error"
+        elif emit_stage_missing:
+            result["status"] = "unmeasurable"
+        else:
+            result["status"] = "ok"
         result["success"] = result["status"] != "error"
+
+        # ROI metric = work actually emitted to the board this cycle — and None,
+        # never 0.0, when nothing in the pipeline COULD have emitted it.
+        if emit_stage_missing:
+            result["metric_value"] = None
+            details["status"] = "unmeasurable"
+            details["reason"] = (
+                f"stage '{EMIT_STAGE}' is absent — nothing can write a kanban "
+                f"task, so tasks_emitted is unmeasurable, not zero "
+                f"(missing: {', '.join(stages_missing) or 'none'})"
+            )
+        else:
+            result["metric_value"] = float(result["tasks_emitted"])
+            details.setdefault("status", result["status"])
 
         details["run_id"] = cycle.get("run_id") or cycle.get("id")
         details["concepts_approved"] = cycle.get("concepts_approved")
@@ -274,14 +323,18 @@ def run(config: Optional[Dict[str, Any]] = None, conn: Any = None) -> Dict[str, 
                 details[key] = cycle[key]
 
         logger.info(
-            "foundry_cycle: harvested=%d proposed=%d emitted=%d status=%s (dry_run=%s)",
-            result["harvested"], result["concepts_proposed"], result["tasks_emitted"],
-            result["status"], dry_run,
+            "foundry_cycle: harvested=%d proposed=%d emitted=%s status=%s "
+            "stages_missing=%s (dry_run=%s)",
+            result["harvested"], result["concepts_proposed"],
+            "unmeasurable" if emit_stage_missing else result["tasks_emitted"],
+            result["status"], ",".join(stages_missing) or "none", dry_run,
         )
     except Exception as exc:  # noqa: BLE001 — surface as a failed cycle, never crash the daemon
         logger.exception("foundry_cycle reflex error: %s", exc)
         result["status"] = "error"
         result["success"] = False
+        result["metric_value"] = None
+        details["status"] = "error"
         details["errors"].append(str(exc))
 
     return result

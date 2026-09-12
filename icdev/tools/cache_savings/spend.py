@@ -107,6 +107,15 @@ VERDICT_NOTES: Dict[str, str] = {
 #: template, the API and the test all quote the same words.
 EMPTY_HEADLINE = "no attributed dispatches in the window"
 
+#: What sits UNDER every em-dash on an unmeasured panel. The closed set of
+#: outcomes and the four KPIs render in BOTH states (xrv-cost-06) -- every
+#: figure ``None``, so no dollar and no percentage is ever drawn -- but the
+#: captions may not simply carry over: ``total_cost_usd is None`` means
+#: "dispatches ran and none reported a price" in the MEASURED state and
+#: "nothing was attributed at all" here, and those send a reader to different
+#: fixes. One spelling, quoted by the template and by the test.
+UNATTRIBUTED_CAPTION = "nothing in this window was attributed to a card"
+
 
 def _empty_verdicts() -> List[Dict[str, Any]]:
     """All five rows, every figure ``None``. A verdict missing from the table

@@ -428,20 +428,80 @@ def test_the_page_renders_measured_spend_through_a_real_request(monkeypatch):
     assert "Showing 1 of 1 attributed card" in html
 
 
-def test_the_page_says_unmeasurable_in_words_over_an_empty_board(monkeypatch):
-    """The panel must never render `$0.00` for a board nothing attributed."""
-    app = _page_app(monkeypatch, {"state": "unmeasurable",
-                                  "reason": "no_attributed_rows", "tasks": 0,
-                                  "total_cost_usd": None, "by_verdict": None,
+def _visible(html: str) -> str:
+    """Rendered TEXT, tags dropped. A `$`/`%` assertion over raw markup reads
+    `width:100%` out of a style attribute and fails for the one reason the
+    assertion is not about."""
+    return re.sub(r"<[^>]+>", " ", html)
+
+
+def _unmeasured_section(monkeypatch, reason="no_attributed_rows"):
+    app = _page_app(monkeypatch, {"state": "unmeasurable", "reason": reason,
+                                  "tasks": 0, "total_cost_usd": None,
+                                  "by_verdict": None,
                                   "shipped_cost_share_pct": None})
     with app.test_client() as c:
         html = c.get("/cache-savings").get_data(as_text=True)
+    return html.split("Spend by Card", 1)[1].split("<!-- iqe -->", 1)[0]
 
-    section = html.split("Spend by Card", 1)[1].split("<!-- iqe -->", 1)[0]
+
+def test_the_page_says_unmeasurable_in_words_over_an_empty_board(monkeypatch):
+    """The panel must never render `$0.00` for a board nothing attributed."""
+    section = _unmeasured_section(monkeypatch)
     assert "Unmeasurable" in section
     assert sp.EMPTY_HEADLINE in section
     assert "not an absence of spending" in section
     assert "$0.00" not in section and "0.0000" not in section
+
+
+def test_the_closed_set_renders_on_the_PAGE_and_not_only_in_the_API(monkeypatch):
+    """``shape`` already hands the template all five rows with every figure
+    ``None`` (``_empty_verdicts``) and the API serves them -- and until
+    xrv-cost-06 the template threw them away behind an ``{% else %}``, so the
+    JSON said five outcomes and the page said none. One surface, two answers.
+
+    A verdict absent from the table is indistinguishable from one that measured
+    zero, and that argument does not stop applying on the board where NOTHING
+    was measured -- it is the board where it applies most.
+    """
+    section = _unmeasured_section(monkeypatch)
+    for label in sp.VERDICT_LABELS.values():
+        assert label in section, "outcome missing from the unmeasured table: %s" % label
+    for note in sp.VERDICT_NOTES.values():
+        assert note.split(" - ")[0][:40] in section, (
+            "a bare label invites the reader to invent the meaning: %s" % note)
+    for kpi in ("Attributed Spend", "Spend That Shipped", "Unpriced Dispatches",
+                "Unmeasurable Cards"):
+        assert kpi in section, "KPI missing from the unmeasured panel: %s" % kpi
+    # ...and the whole point of rendering them: not one carries a figure. Read
+    # the rendered TEXT -- `width:100%` in a style attribute is not a figure.
+    text = _visible(section)
+    assert "$" not in text, "an unmeasured panel drew a dollar figure"
+    assert not re.search(r"\d\s*%", text), "an unmeasured panel drew a percentage"
+
+
+def test_a_kpi_caption_does_not_claim_dispatches_ran_over_an_unattributed_board(
+        monkeypatch):
+    """`total_cost_usd is none` means two DIFFERENT things and they send a
+    reader to different fixes: in the MEASURED state dispatches ran and every
+    one was unpriced (the `unpriced_dispatches` finding), in the UNMEASURABLE
+    state nothing was attributed at all. The em-dash is right either way; the
+    caption under it is not."""
+    section = _unmeasured_section(monkeypatch)
+    assert "no dispatch reported a price" not in section, (
+        "the unpriced caption claims dispatches ran and were unpriced")
+    assert "ran, but reported no dollars" not in section
+    assert sp.UNATTRIBUTED_CAPTION in section
+
+
+def test_the_row_count_footnote_is_not_asserted_over_an_unreadable_ledger(
+        monkeypatch):
+    """"Showing 0 of 0 attributed card(s)" is TRUE when the window held no
+    attributed rows and FALSE when the ledger could not be read -- there, how
+    many cards were attributed is exactly what is unknown."""
+    unreadable = _unmeasured_section(monkeypatch, reason="ledger_unreadable")
+    assert "Showing 0 of 0" not in unreadable
+    assert "costliest first" not in unreadable
 
 
 def test_the_page_route_passes_the_panel_into_the_template():

@@ -1,0 +1,5 @@
+# xrv-pin-01 -- pinned-artifact manifest + the artifact_freshness reflex.
+# Gated in the PR that makes it pass. Every registry request is scripted
+# through the module's _HTTP seam and the PyPI lane through the existing
+# dependency_scanner seam, so this file opens no socket.
+tests/airgap/test_artifact_freshness.py

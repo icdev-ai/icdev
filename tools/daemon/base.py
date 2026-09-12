@@ -294,7 +294,24 @@ def is_due(schedule: Dict[str, Any], last_run: Optional[str]) -> bool:
 
 
 def evaluate_metric(metric_config: Dict[str, Any], value: float) -> bool:
-    """Evaluate a success metric against its threshold."""
+    """Evaluate a success metric against its threshold.
+
+    An UNMEASURED value (None) passes (xrv-lab-01). A reflex that honestly
+    reports "I could not measure this cycle" -- the `experiment` reflex when its
+    engine returns placeholder metrics, `foundry_cycle` when the stage that
+    writes the board does not exist -- must not be scored a failure: three of
+    those in a row would trip its circuit breaker and the gap would then be
+    hidden behind a disabled reflex instead of surfaced. The state row records
+    `last_metric_value = NULL`, which is the honest signal, and the reflex's own
+    `details.status` carries the reason.
+
+    Note the two things this is NOT: it is not a pass for a MEASURED zero (0.0
+    is compared normally), and it is not an excuse for a reflex that failed --
+    a reflex reporting `success: False` never reaches this function's verdict.
+    """
+    if value is None:
+        return True
+
     if "composite" in metric_config:
         return True  # Composite metrics not evaluable without all values
 

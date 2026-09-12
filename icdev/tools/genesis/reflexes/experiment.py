@@ -79,14 +79,50 @@ def _fetch_high_score_signals(threshold: float = 0.70, limit: int = 10) -> list:
     return signals
 
 
+#: The run-level verdicts. `unmeasurable` is its own verdict and never folds
+#: into `ok` -- that conflation is the whole defect this card fixes.
+STATUS_DISABLED = "disabled"
+STATUS_UNMEASURABLE = "unmeasurable"
+STATUS_OK = "ok"
+
+
+def _rate(numerator: int, denominator: int):
+    """Acceptance rate, or None over an empty denominator.
+
+    ``kept / max(run, 1)`` returned a confident 0.0 for a run that executed no
+    experiments at all, so a measured "we tried and nothing was accepted" and
+    "nothing was tried" rendered identically. args/perfect_score_gate.yaml is
+    ratcheted to 0 for exactly this shape at the other end of the scale.
+    """
+    if not denominator:
+        return None
+    return round(numerator / denominator, 4)
+
+
 def run(config: dict, trust=None) -> dict:
     """Execute the Experiment Reflex.
 
-    1. Pull high-scoring signals from innovation_signals (adaptive or static threshold)
+    0. Honour the master switch (args/autoresearch_config.yaml -> ``enabled``,
+       ``ICDEV_AUTORESEARCH_ENABLED``). Off means the loop is NOT run and no
+       counts are reported.
+    1. Pull high-scoring signals from innovation_signals (adaptive or static)
     2. Load experiment programs for eligible domains
-    3. Run Bayesian-guided experiment loop per domain
-    4. Export results as GKP for promotion
+    3. Run the Bayesian-guided experiment loop per domain
+    4. Export results as a GKP for promotion -- ONLY from a measured run
     5. Return metric value and details
+
+    WHAT THIS REFLEX REFUSES TO CLAIM (xrv-lab-01).
+    ``experiment_engine.run_loop`` evaluates the domain, creates an experiment,
+    runs it, evaluates AGAIN with nothing changed, and decides keep/discard on
+    that delta -- which is why every result it returns carries
+    ``placeholder_metrics: True`` and a note saying the baseline is an IDENTITY
+    baseline. The reflex reported an ``acceptance_rate`` off those deltas
+    anyway, and that number was indistinguishable on every surface from one
+    measured against a real modification. A run built on placeholder metrics is
+    now ``unmeasurable``: ``metric_value`` is None, ``total_kept`` /
+    ``total_discarded`` are None, and NO GKP is exported -- promoting a
+    knowledge packet derived from an identity baseline is how a measurement
+    nobody made becomes a durable artifact.
 
     Args:
         config: Reflex configuration from genesis_config.yaml
@@ -95,6 +131,46 @@ def run(config: dict, trust=None) -> dict:
     Returns:
         Dict with success, metric_value, details
     """
+    # -- Step 0: master switch ----------------------------------------------
+    # Read through the engine's own gate so there is ONE reading of the switch.
+    try:
+        from tools.autoresearch.experiment_engine import autoresearch_enabled
+
+        gate = autoresearch_enabled()
+    except Exception as exc:  # noqa: BLE001 - an unreadable switch is not consent
+        return {
+            "success": True,
+            "metric_value": None,
+            "details": {
+                "status": STATUS_DISABLED,
+                "reason": "switch_unreadable",
+                "error": str(exc)[:200],
+                "total_experiments": None,
+                "total_kept": None,
+                "total_discarded": None,
+                "acceptance_rate": None,
+                "gkp_exported": False,
+            },
+        }
+
+    if not gate.get("enabled"):
+        # No loop run, no counts, no rate -- and success True, so an opt-in
+        # feature being off never trips the daemon circuit breaker.
+        return {
+            "success": True,
+            "metric_value": None,
+            "details": {
+                "status": STATUS_DISABLED,
+                "reason": f"autoresearch disabled ({gate.get('basis')})",
+                "switch": gate,
+                "total_experiments": None,
+                "total_kept": None,
+                "total_discarded": None,
+                "acceptance_rate": None,
+                "gkp_exported": False,
+            },
+        }
+
     adaptive_cfg = config.get("adaptive_threshold", {})
     if adaptive_cfg.get("enabled", False):
         signal_threshold = _compute_adaptive_threshold(
@@ -110,12 +186,18 @@ def run(config: dict, trust=None) -> dict:
     # Step 1: Fetch signals
     signals = _fetch_high_score_signals(signal_threshold)
 
-    # Step 2: Run experiment loop per domain
+    # Step 2: Run the experiment loop per domain
     from tools.autoresearch.experiment_engine import run_loop
 
     all_results = []
-    total_kept = 0
-    total_run = 0
+    measured_kept = 0
+    measured_run = 0
+    #: Domains split by whether their result is a MEASUREMENT. Never merged: a
+    #: total summed across a measured and an unmeasured domain is not a total.
+    measured_domains = []
+    placeholder_domains = []
+    failed_domains = []
+    placeholder_note = None
 
     for domain in domains:
         try:
@@ -124,38 +206,111 @@ def run(config: dict, trust=None) -> dict:
                 max_experiments=max_experiments,
                 seed=int(datetime.now(timezone.utc).timestamp()) % 10000,
             )
-            if loop_result.get("success"):
-                total_kept += loop_result.get("kept", 0)
-                total_run += loop_result.get("experiments_run", 0)
+            if not loop_result.get("success"):
+                failed_domains.append(domain)
                 all_results.append(
                     {
                         "domain": domain,
-                        "experiments_run": loop_result.get("experiments_run", 0),
-                        "kept": loop_result.get("kept", 0),
-                        "acceptance_rate": loop_result.get("acceptance_rate", 0.0),
-                        "total_improvement": loop_result.get("total_improvement", 0.0),
+                        "measured": False,
+                        "reason": str(loop_result.get("error") or "loop reported failure")[:200],
                     }
                 )
-        except Exception as exc:
+                continue
+
+            if loop_result.get("placeholder_metrics"):
+                placeholder_domains.append(domain)
+                placeholder_note = placeholder_note or loop_result.get("placeholder_note")
+                all_results.append(
+                    {
+                        "domain": domain,
+                        "measured": False,
+                        "reason": "placeholder_metrics",
+                        "experiments_run": loop_result.get("experiments_run", 0),
+                        # Deliberately NOT `kept`: the engine's keep/discard
+                        # decision came off an identity baseline, so reporting it
+                        # under the key a measured run uses is the conflation
+                        # this reflex exists to refuse.
+                        "kept_unmeasured": loop_result.get("kept", 0),
+                        "acceptance_rate": None,
+                    }
+                )
+                continue
+
+            measured_domains.append(domain)
+            measured_kept += loop_result.get("kept", 0)
+            measured_run += loop_result.get("experiments_run", 0)
             all_results.append(
                 {
                     "domain": domain,
+                    "measured": True,
+                    "experiments_run": loop_result.get("experiments_run", 0),
+                    "kept": loop_result.get("kept", 0),
+                    "acceptance_rate": loop_result.get("acceptance_rate"),
+                    "total_improvement": loop_result.get("total_improvement", 0.0),
+                }
+            )
+        except Exception as exc:
+            failed_domains.append(domain)
+            all_results.append(
+                {
+                    "domain": domain,
+                    "measured": False,
                     "error": str(exc)[:200],
                 }
             )
 
-    # Step 3: Export results as GKP (if any improvements found)
+    # -- Verdict -------------------------------------------------------------
+    # Three outcomes, and two of them report NO number. A run that mixed a
+    # measured domain with a placeholder one is unmeasurable as a WHOLE: the
+    # run-level rate would carry a denominator that is part fiction.
+    unmeasurable_reason = None
+    if placeholder_domains:
+        unmeasurable_reason = "placeholder_metrics"
+    elif not measured_domains:
+        unmeasurable_reason = "no_measured_domain"
+    elif measured_run == 0:
+        unmeasurable_reason = "no_experiments_run"
+
+    details = {
+        "signals_fetched": len(signals),
+        "domains_processed": len(domains),
+        "measured_domains": measured_domains,
+        "placeholder_domains": placeholder_domains,
+        "failed_domains": failed_domains,
+        "domain_results": all_results,
+        "switch": gate,
+    }
+    if placeholder_note:
+        details["placeholder_note"] = placeholder_note
+
+    if unmeasurable_reason:
+        details.update(
+            {
+                "status": STATUS_UNMEASURABLE,
+                "reason": unmeasurable_reason,
+                "total_experiments": None,
+                "total_kept": None,
+                "total_discarded": None,
+                "acceptance_rate": None,
+                "gkp_exported": False,
+            }
+        )
+        return {"success": True, "metric_value": None, "details": details}
+
+    acceptance_rate = _rate(measured_kept, measured_run)
+
+    # Step 3: Export results as a GKP -- only from a MEASURED run with a keep.
     gkp_exported = False
-    if total_kept > 0 and config.get("export_gkp", True):
+    if measured_kept > 0 and config.get("export_gkp", True):
         try:
             gkp = {
                 "type": "experiment_results",
                 "version": "1.0",
                 "source_reflex": "experiment",
                 "created_at": _now(),
-                "total_experiments": total_run,
-                "total_kept": total_kept,
-                "acceptance_rate": round(total_kept / max(total_run, 1), 4),
+                "total_experiments": measured_run,
+                "total_kept": measured_kept,
+                "acceptance_rate": acceptance_rate,
                 "domain_results": all_results,
             }
             export_dir = Path(_ROOT / "data" / "genesis" / "exports")
@@ -167,19 +322,19 @@ def run(config: dict, trust=None) -> dict:
         except Exception:
             pass
 
-    acceptance_rate = total_kept / max(total_run, 1)
+    details.update(
+        {
+            "status": STATUS_OK,
+            "total_experiments": measured_run,
+            "total_kept": measured_kept,
+            "total_discarded": measured_run - measured_kept,
+            "acceptance_rate": acceptance_rate,
+            "gkp_exported": gkp_exported,
+        }
+    )
 
     return {
         "success": True,
         "metric_value": acceptance_rate,
-        "details": {
-            "total_experiments": total_run,
-            "total_kept": total_kept,
-            "total_discarded": total_run - total_kept,
-            "acceptance_rate": round(acceptance_rate, 4),
-            "signals_fetched": len(signals),
-            "domains_processed": len(domains),
-            "domain_results": all_results,
-            "gkp_exported": gkp_exported,
-        },
+        "details": details,
     }

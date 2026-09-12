@@ -2494,6 +2494,217 @@ python tools/genesis/daemon.py --enable research              # Enable a reflex
 python tools/genesis/daemon.py --disable evolve               # Disable a reflex
 python tools/genesis/daemon.py --reset heal --json            # Reset circuit breaker
 
+# The research loop stops reporting a measurement it did not make (xrv-lab-01)
+python tools/genesis/daemon.py --reflex experiment --json      # disabled | unmeasurable, metric_value null
+python tools/genesis/daemon.py --reflex foundry_cycle --json   # names details.stages_missing
+python tools/awareness/claim_verifier.py --claim experiment_loop_measures_a_change
+python tools/awareness/capability_consumption.py --probe-substrate experiment_programs   # `empty`
+python -c "from tools.autoresearch.experiment_engine import autoresearch_enabled as f; print(f())"
+python -c "from tools.foundry.engine import stage_availability as f; print(f())"
+# THE MASTER SWITCH WAS DECLARED AND READ BY NOTHING. args/autoresearch_config.yaml
+# has shipped `enabled: false` plus `env_override: ICDEV_AUTORESEARCH_ENABLED`
+# since the engine landed, and the nightly `experiment` reflex ran the loop
+# anyway. `autoresearch_enabled()` is the ONE reading of it; the env override
+# outranks the config in BOTH directions, and an unreadable config is
+# FAIL-CLOSED (`basis: config_unreadable`, `config_enabled: None` -- "declared
+# off" and "could not tell" are different answers).
+# AND THE LOOP MEASURES AN IDENTITY BASELINE. run_loop evaluates the domain,
+# creates an experiment, runs it, evaluates AGAIN with nothing changed and
+# decides keep/discard on that delta -- which is why every result it returns
+# carries `placeholder_metrics: True` and a note saying so. The reflex published
+# an `acceptance_rate` off those deltas regardless. Now: any placeholder domain
+# makes the WHOLE run `unmeasurable` -- metric_value None, total_kept /
+# total_discarded / acceptance_rate None, NO GKP export, the engine's own note
+# carried through -- because a total summed across a measured and an unmeasured
+# domain is not a total. A placeholder domain's keep count rides as
+# `kept_unmeasured`, never `kept`. Proven end to end against the REAL engine on
+# 2026-09-12: status unmeasurable, reason placeholder_metrics, zero GKP files.
+# TWO MORE EMPTY DENOMINATORS, both previously a confident 0.0: a loop that ran
+# NO experiments (`kept / max(run, 1)` = 0/1) and a run where every domain
+# errored. Both are `unmeasurable` with reasons `no_experiments_run` /
+# `no_measured_domain`. A MEASURED 0.0 over real experiments still reports 0.0.
+# THE 0.0 WAS DELETING ITS OWN RECORD. Measured on the live board 2026-09-12:
+# genesis_reflex_state said 73 runs / 73 successes / last_metric_value 0.0, and
+# genesis_audit held 73 `reflex.started` rows and NOT ONE `reflex.completed` --
+# base.run_reflex suppresses the completed row when `metric_value == 0 and not
+# details.get("tasks")`. So the fabricated rate silently discarded the only
+# record of how it was reached. `None == 0` is False, so the row is written now.
+# TWO DAEMON SEAMS coerced the refusal back to a number and both are fixed:
+# `evaluate_metric(cfg, None)` returns True (an unmeasured run must not be
+# scored a threshold miss -- three of those trip its circuit breaker, and the
+# gap would then hide behind a disabled reflex), and the ORANGE proposal path no
+# longer does `float(metric or 0.0)` nor stages a pending_review GKP for a run
+# that did not run (`GenesisDaemon._NO_PROPOSAL_STATUSES`).
+# THE FOUNDRY HAS NO STAGE THAT COULD EMIT. `run_cycle` degrades an absent stage
+# module to a clean no-op; measured 2026-09-12, 4 of its 8 stages have no module
+# in the tree -- synthesizer, scorer, deliberator and SEEDER, the only writer of
+# a kanban row. So `tasks_emitted: 0` was never the gate verdict it reads as.
+# `stages_missing` / `stages_present` say which modules IMPORT; `stages_ran`
+# says which were actually INVOKED (a present stage still does not run when the
+# circuit breaker or the active-project rate limit short-circuits the cycle).
+# With EMIT_STAGE missing the reflex reports `unmeasurable` with metric_value
+# None and names the absent stages; `success` stays True. EMIT_STAGE is declared
+# once in the engine and IMPORTED by the reflex -- two spellings of "which stage
+# writes the board" is how the pair comes to disagree about a pipeline neither
+# of them changed.
+# STANDING CLAIM (autonomy-lrn-01): `experiment_loop_measures_a_change`.
+# Reported = the newest experiment reflex run's `total_kept`, off
+# genesis_audit.details (looking through the ORANGE wrapper's `reflex_result`
+# nesting). Derived, sharing no code = DISTINCT experiment ids in
+# `experiment_results` whose pre_metric != post_metric. A keep the results table
+# cannot account for is the defect; keeping FEWER than moved is just `discard`.
+# Both sides are None -- never 0 -- over no recorded run / no rows, so an empty
+# board is `unmeasurable`. Live verdict 2026-09-12: reported None (see the
+# suppression above), derived 0 over 9 rows, NONE of which moved a metric.
+# `experiment_programs` is created in BOTH schemas and read and written by
+# NOTHING -- every program load resolves to args/experiment_programs/<domain>.yaml
+# -- so it is registered under `substrates:` in args/capability_consumption.yaml
+# and probes `empty`, 0 rows. Dropping a table two schemas declare is its own
+# decision with its own migration; it is named here rather than removed.
+# STILL PLACEHOLDER for SEVEN of the eight domains, and deliberately so. The
+# eighth, `code_quality`, is xrv-lab-02 below -- and it too is behind a gate
+# that ships CLOSED, so until both switches open every run is honestly
+# unmeasurable.
+
+# ONE domain mutates for real, in a worktree, with evidence lanes (xrv-lab-02)
+python -m tools.autoresearch.real_mutation --gate --json     # both switches, with a NAMED basis
+python -m tools.autoresearch.real_mutation --plan --json     # what a run would do; ACTS ON NOTHING
+python -m tools.autoresearch.real_mutation --lanes --json    # candidate census by lane
+python tools/db/migrate.py --up                              # 20260912122759: experiment_candidates.lane
+python tools/autoresearch/experiment_engine.py --loop --domain code_quality --json
+# xrv-lab-01 left the loop saying honestly that it measures NOTHING: run_loop
+# evaluated the domain, created a candidate, ran it, evaluated AGAIN WITH
+# NOTHING CHANGED, and decided keep/discard on that delta. This makes ONE domain
+# measure something real, bounded and reversible. The shape is adapted from
+# PRAXIST (candidates -> task-owned evaluator -> evidence lanes); PRAXIST is
+# Fair Source 1.0, so the SHAPE is adapted and NONE of its code is vendored.
+# ONE DOMAIN, AND THE LIST IS IN PYTHON. `REAL_MUTATION_DOMAINS` is a frozen
+# tuple holding exactly `code_quality`; `real_mutation.domains` in
+# args/autoresearch_config.yaml can only NARROW it (the INTERSECTION is taken,
+# never the union), because widening autonomous code mutation to a domain nobody
+# vetted must not be a YAML edit. The other seven are untouched.
+# TWO GATES AND BOTH SHIP CLOSED: the master switch (ICDEV_AUTORESEARCH_ENABLED,
+# unchanged) plus `real_mutation.enabled` / ICDEV_AUTORESEARCH_REAL_MUTATION.
+# Off means the real path is NEVER taken and code_quality falls back to today's
+# identity-baseline path -- so the rollback is a flag flip, not a merge revert.
+# FOUR CLOSED VERDICTS, never merged, because each sends a reader somewhere
+# different: `domain_not_enabled` (a list), `disabled_by_config` (a config
+# value), `disabled_by_env` (an env var), `config_unreadable` (a broken file,
+# FAIL-CLOSED -- "we could not read the switch" is not consent).
+# THE RUN: worktree on `autoresearch/<candidate>` under the ALREADY-DECLARED
+# git.worktree_base -> BEFORE on the base -> the claude_cli adapter patches it
+# -> AFTER on the patched tree -> `experiment_engine.decide`, UNCHANGED, on two
+# real numbers. Both are persisted on experiment_results and
+# `placeholder_metrics` is False ONLY here -- and only when at least one
+# candidate produced BOTH sides. A real path that was open and measured nothing
+# is still `placeholder_metrics: True`, because `measured, nothing improved` and
+# `nothing was measured` are the two things xrv-lab-01 exists to keep apart.
+# THE TREE-WIDE READING CANNOT DETECT THE CHANGE IT MEASURES, and this was
+# MEASURED on this checkout 2026-09-12, not anticipated. `code_quality`
+# averages maintainability over EVERY file under `tools/` -- ~1,700 of them --
+# while the evolve declaration this loop obeys sets `max_files_per_cycle: 1`. A
+# deliberately awful 29-line module moved its OWN directory 0.988 -> 0.824 and
+# moved the tree-wide average 0.9312 -> 0.9312: identical at the reported
+# precision, four orders of magnitude below the 0.005 keep threshold. Fed that
+# number the loop would discard every hypothesis forever at delta 0.0 --
+# functionally the identity baseline xrv-lab-01 exposed, wearing a real
+# measurement's clothes.
+# SO THE DECISION IS FED THE SCOPED PAIR: the directory the patch touched,
+# before and after, SAME evaluator and SAME metric -- only the extent narrows.
+# The BEFORE is reconstructed from `HEAD` with `git ls-tree` + `git show`
+# (read-only) rather than measured earlier, because the scope is not knowable
+# until the patch exists; a file the patch ADDED is absent from it, correctly.
+# `patch_scope` returns None -- and the run falls back to the tree pair with
+# the dilution NAMED (`decision_basis: tree_wide_diluted`, and its own
+# `REAL_METRICS_DILUTED_NOTE`, never REAL_METRICS_NOTE) -- for a patch spanning
+# two directories, and for one whose directory IS `tools/`, where a "scoped"
+# reading is the tree reading and giving one number two names is how a diluted
+# delta comes to be believed. BOTH PAIRS RIDE ON EVERY RESULT
+# (`scoped_before/after`, `tree_before/after`) so the choice hides nothing.
+# PROVEN END TO END 2026-09-12 against a SCRATCH SQLite database -- real
+# worktree off origin/main, REAL code_analyzer on both trees, real
+# `experiment_engine.decide`, real lane write, real removal; the ONLY stub was
+# the adapter, because opening the gate for a live LLM dispatch is the decision
+# this card leaves to a human. One run, 106s:
+#   decision_basis scoped   scope tools/autoresearch
+#   scoped 0.9357 -> 0.9315   delta -0.0042   ->  discard
+#   tree   0.9312 -> 0.9312   (the dilution, in the same run)
+#   placeholder_metrics False; lane incubator -> archive; worktree removed;
+#   branch deleted; one experiment_results row with pre != post.
+# The two measurements cost ~106s per candidate on this host (a full
+# `code_analyzer` pass over tools/ is 64.5s and the scoped pair is seconds), and
+# `fitness_evaluator._run_tool` allows 120s -- so a loaded host can push the
+# tree-wide leg over its own timeout, which correctly reports
+# `base_unmeasurable` rather than a fabricated number. Do NOT raise that
+# timeout to make a run succeed.
+# A FAILED MEASUREMENT IS NEVER 0.0. `fitness_evaluator.evaluate` reports a
+# failed tool as `metric_value: 0.0, success: False` -- the SAME number a
+# genuinely zero-scoring tree gives. `measure()` reads `success` FIRST and
+# returns `metric: None`, so a broken analyzer can never read as "this tree
+# scored zero" and can never move a posterior. A MEASURED 0.0 still survives.
+# `unmeasurable` IS ITS OWN OUTCOME and never folds into `discarded`: nothing
+# judged that hypothesis, so it moves no posterior, joins no acceptance rate,
+# and the candidate STAYS in `incubator` with its reason named.
+# THE BOUNDS ARE THE EVOLVE REFLEX'S OWN. allowed_directories /
+# forbidden_files are READ from args/genesis_config.yaml -> reflexes.evolve,
+# never respelled here -- two spellings of "what may an autonomous writer touch"
+# is how one of them comes to permit what the other refuses. A HALF-READ
+# declaration (an empty forbidden list) is `readable: False` and REFUSES rather
+# than defaulting permissive. Forbidden wins over allowed, so
+# `tools/db/storage.py` is refused although it sits under `tools/`.
+# IT NEVER MERGES. Keep = commit, push, `gh pr create` titled
+# `autoresearch(<domain>): <hypothesis>`; a human merges it or nobody does.
+# There is no merge verb in real_mutation.py OR experiment_engine.py and
+# tests/autoresearch/test_real_mutation.py reads BOTH ASTs -- string literals
+# and argv LISTS -- to keep it that way. A behavioural test over today's callers
+# would still pass the day somebody threads an auto-merge through.
+# THE REMOVAL IS PROVEN, NOT BLUNT. `git worktree remove` is the door, never
+# shutil.rmtree (real_mutation imports no shutil, AST-pinned). The plain remove
+# is ALWAYS tried first -- and it is not enough, which was measured rather than
+# reasoned: EVERY discard is dirty by construction, so the plain remove refused
+# on every one and left a full checkout per rejected hypothesis. So the discard
+# path re-derives that the tree holds NO COMMIT beyond its base ref and only
+# then forces; `_holds_no_commits` returning None (cannot tell) REFUSES. The
+# branch goes with it through `git branch -d`, never `-D`: git's refusal to
+# delete an unmerged branch IS the proof there was nothing on it. A KEPT
+# candidate's branch SURVIVES -- the PR points at it.
+# BOUNDED, AND EVERY BOUND REPORTED: max_experiments_per_run (unchanged),
+# `wall_clock_seconds` per run (a spent budget stops STARTING candidates and
+# says `wall_clock_spent`) and `patch_timeout_seconds` per candidate, on whose
+# expiry the WHOLE process tree is killed -- a subprocess timeout kills only the
+# parent while children keep the inherited log handle open
+# (kph-repark-mfx-ci-04 measured a 115s block on that shape).
+# COST rides xrv-cost-02's `record_task_cost` with task_id = the CANDIDATE id.
+# `spawn` is used rather than `invoke` on purpose: spawn writes the CLI's RAW
+# --output-format json envelope to a log file, which is exactly what that reader
+# parses; invoke returns it already transformed.
+# THREE LANES, and the migration's CHECK is DERIVED from `real_mutation.LANES`:
+#   incubator  no real measurement exists -- new, or the before/after could not
+#              be made. NOT a failure.
+#   frontier   kept: measured better than its base, PR open, awaiting a human.
+#   archive    discarded, or superseded.
+# The column's DEFAULT backfills every pre-migration candidate to `incubator`,
+# and that is a measurement rather than a convenient default: all of them were
+# decided against an IDENTITY BASELINE, so no real measurement exists for any.
+# Laning a historically `discarded` one `archive` would assert something judged
+# it; laning a `completed` one `frontier` would assert it beat a base it was
+# never compared against. `lane_census` reports UNMEASURABLE -- never three
+# zeroes -- on a board that has not run the migration.
+# MEASURED 2026-09-12: the migration applies on SQLite (add, backfill, CHECK,
+# DEFAULT, idempotent re-run, down) and its DDL was exercised on PostgreSQL
+# against a throwaway table in `icdev_e2e` -- never the live board. On this
+# checkout `--lanes` reads `lane_column_absent` until migrate.py runs, which is
+# the tool's own distinction between "a migration never ran" and "a writer
+# never ran".
+# FOUND ON THE WAY, and fixed: run_loop's `kept / max(kept + discarded, 1)`
+# returned a confident 0.0 for a loop that judged NOTHING -- now None over an
+# empty denominator. And two ungated tests in
+# tests/test_genesis_reflex_experiment.py asserted the adaptive-threshold
+# branch while xrv-lab-01's early return meant `run()` never reached it: one was
+# red on main, the OTHER WAS GREEN FOR THE WRONG REASON, asserting "the helper
+# was not called" against a run that never got near the call. Both now open the
+# master switch through its documented env override.
+
 # CI runner health (mfx-boot-02) -- re-register a crash-looping self-hosted runner (FT and RT)
 python tools/genesis/daemon.py --reflex ci_runner_health --json   # one cycle through the daemon (acts)
 python tools/genesis/reflexes/ci_runner_health.py                 # hand-run: DRY RUN, proves and acts on nothing
@@ -9057,6 +9268,107 @@ block the one host most likely to need to re-cut a bundle.
 
 Convention and the reason no floci pin is committed yet: `vendor/images/README.md`.
 
+## Is a PINNED artifact still the newest one upstream? (xrv-pin-01)
+
+```bash
+python -m tools.airgap.artifact_freshness --survey --json
+python -m tools.airgap.artifact_freshness --survey                  # human table
+python -m tools.airgap.artifact_freshness --artifact floci --json   # one pin
+python -m tools.airgap.artifact_freshness --list                    # the manifest
+python -m tools.airgap.artifact_freshness --survey --offline        # force the air-gap verdict
+python tools/genesis/daemon.py --reflex artifact_freshness --json   # one cycle, through the daemon
+```
+
+The vendor above answers "does this bundle contain exactly what we pinned", and
+answers it cryptographically. It cannot answer, and nothing else asked, **"is
+what we pinned still the current release"**. The `floci/floci:2.0.1` pin is a
+2026-09-01 snapshot whose only ongoing assertion is a test that
+`vendor/images/images-floci.txt` and `args/floci_iac_gate.yaml` AGREE WITH EACH
+OTHER -- and two files can agree perfectly about a version that shipped a year
+ago. **AGREEMENT IS NOT CURRENCY.** The four `floci/*` compose tags and
+`testcontainers-floci` had no manifest at all, so there was not even a list to
+ask the question about.
+
+`args/pinned_artifacts.yaml` is that list -- 16 entries seeded from the two
+floci pin files, the four compose services and `testcontainers-floci`. It is a
+**DECLARATION and never a second copy of a pin**: each entry names the file the
+pin actually lives in (`pin_source`) and the survey reads it, through
+`image_vendor.parse_pin` for a digest line. A `pin_source` that disagrees with
+the manifest is `unmeasurable` rather than resolved in favour of one side --
+which one is right is the question, and answering it by preference is how the
+drift goes invisible.
+
+**THREE STATES, NEVER MERGED.** `current` (upstream's newest comparable release
+IS what we pin) | `behind` (a newer one exists, **NAMED**) | `unmeasurable` (we
+could not ask: an air-gapped host, a 4xx, an unparsable body, an exhausted
+budget). An air-gapped deployment -- the one `tools/airgap/` exists to serve --
+reports every artifact `unmeasurable` and **NEVER** `current`; a freshness check
+that read "I could not reach the registry" as "the pin is fine" would hand
+exactly the disconnected operator a fabricated clean bill. `current_pct` is
+`None`, never `100.0`, over an empty denominator, while a MEASURED `0.0` stays a
+real red bar.
+
+**TWO BASES FOR `behind`, and which one decided is recorded.**
+`version_tag` -- the pinned tag carries an ordering and a strictly greater tag
+of the **same SHAPE** exists. Shape is load-bearing: `16.4-alpine` supersedes
+`16.3-alpine` and `16.4` does not, because a different suffix is a different
+image line and crossing them reports a postgres pin as behind a variant nobody
+runs; a different component count is likewise not a successor.
+`digest` -- the pinned tag carries **no** ordering. `redpandadata/redpanda:latest`
+and `rancher/k3s:latest` are pinned by a MUTABLE tag (`args/floci_runtime_images.yaml`
+says so in as many words), so "newer" for them is knowable only as the tag having
+MOVED off the digest we recorded -- a real, measurable `behind`, and the one
+signal those two entries can give. `digest_drift` rides beside the status on
+every image and is `None` -- never `False` -- when it could not be compared.
+
+**ONE CODE PATH FOR EVERY REGISTRY.** The host comes from the `ref` and the
+bearer token from the registry's OWN 401 `WWW-Authenticate` challenge, so Docker
+Hub, `public.ecr.aws` and `ghcr.io` need no per-registry table and a fourth
+needs no edit. The declared `upstream:` is cross-checked against the host the
+ref implies, so a label can never disagree with the fetch it describes. The PyPI
+lane reuses the EXISTING seam, `dependency_scanner._check_pypi_latest` -- there
+is no second package-index client.
+
+**IT NEVER PULLS AND NEVER WRITES A PIN.** Structural, not a docstring promise:
+`subprocess`, `os` and `shutil` are unimportable in both modules, the one HTTP
+door is GET/HEAD only, and nothing opens `vendor/images/*`, `docker-compose.yml`
+or `requirements.txt` for writing. `tests/airgap/test_artifact_freshness.py`
+asserts all three against the **AST** and not the source text -- both modules
+explain in prose that they never touch `subprocess`, so a grep would flag their
+own explanation of themselves (the `model_id_gate` trap).
+
+**THE REFLEX** (`artifact_freshness`, 24h, green, registered in BOTH
+`daemon.REFLEX_NAMES` and `args/genesis_config.yaml`) files ONE card per
+`behind` artifact through `task_factory.create_tasks`, `idempotency_key=
+artifact-freshness:<name>:<newest>`, into `suggested` -- moving a digest pin is
+a supply-chain act and belongs in a reviewed diff, which is why the pins are
+digests. A further upstream release is a new key and a new card. Bounded by
+`max_cards_per_run` with deferred artifacts NAMED. A cycle that measures
+nothing reports `unmeasurable` with `metric_value 0`, never `ok`, while
+`success` stays True so the circuit breaker cannot make the reflex permanently
+inert on the very deployments it serves; an unreadable manifest is `error`,
+which is a third thing.
+
+**MEASURED on this host 2026-09-12, first live survey:** 16 declared, **10
+current, 6 behind, 0 unmeasurable**. `postgres` 16.3-alpine -> 18.6-alpine,
+`mysql` 8.0.36 -> 26.7.0, `valkey` 8 -> 9, `opensearch` 2.19.5 -> 3.8.0,
+`amazonlinux` 2023 -> 2027, `registry` 2 -> 3. THREE also carry digest drift
+(`lambda-python`, `elasticache-valkey`, `ec2-amazonlinux`): the pinned tag no
+longer serves the digest `vendor/images/images-floci-runtime.txt` names, so an
+air-gap bundle re-cut from the tag today would not contain what the pin file
+says. Both `:latest` pins were measured **unmoved** since 2026-09-05 -- the
+positive control for the digest lane. The four `floci/*` emulators and
+`testcontainers-floci` are current. Every one of the six is a card a human
+decides on; nothing here moved a pin.
+
+**Not declared, and named rather than implied:** browser drivers
+(`driver_vendor.py` pins to the LOCALLY INSTALLED browser's major version, so
+"is there a newer chromedriver" is a question about the host and answering it
+here would report every developer machine as behind its own Chrome), the ECS
+probe's own workload image, and the rest of `docker-compose.yml`. Each needs its
+own card.
+
+
 ## Floci Cloud Emulator — the rest of the surface (flx-docs-01)
 
 `docs/features/phase-flx-floci-emulator.md` is the feature doc; ADRs D398–D401
@@ -9296,3 +9608,104 @@ interrupted run -- reported an empty list.
 
 A task with NO record renders today's coaching byte-unchanged, so this is
 additive to every retry already on the board.
+
+---
+
+## Cards — the per-card incident records (xrv-docs-02)
+
+These 82 essays used to sit inline in CLAUDE.md's `### Essential Commands` block —
+297,635 of that file's 367,462 bytes, loaded into every session whether or not it
+touched one. They moved VERBATIM to `docs/reference/cards/`, one file per card, and
+CLAUDE.md now carries a one-line index. The essays are the record: what was MEASURED,
+what changed, and what deliberately did not.
+
+Below is the same entry point per card. The essay carries the rest of that card's
+commands, its measurements and its refusals.
+
+| Card | What it is | Entry point | Record |
+|---|---|---|---|
+| `xit-decl-01` | Which parent IS this checkout, and may it touch THIS database? | `python -m icdev.core.context --check` | [xit-decl-01.md](cards/xit-decl-01.md) |
+| `rmf-inert-03` | A reflex that is GREEN while it can reach 3 of 11 subjects | `python -m tools.genesis.reflexes.canvas_reassess --coverage` | [rmf-inert-03.md](cards/rmf-inert-03.md) |
+| `exa-live-01` | Capability consumption — is a DECLARED capability actually being used? | `python tools/awareness/capability_consumption.py --json` | [exa-live-01.md](cards/exa-live-01.md) |
+| `cef-ci-01` | The Cortex federation layer is UNDER that gate | `python tools/awareness/capability_consumption.py --class cortex_backend --json` | [cef-ci-01.md](cards/cef-ci-01.md) |
+| `rem-hyg-17` | Does the surface's CLAIM survive an INDEPENDENT re-derivation? | `python tools/awareness/claim_verifier.py --json` | [rem-hyg-17.md](cards/rem-hyg-17.md) |
+| `claim-verif-33c9f4cd11` | A service's session id is INHERITED by everything it spawns | `python tools/awareness/claim_verifier.py --claim scheduler_heartbeat_is_fresh` | [claim-verif-33c9f4cd11.md](cards/claim-verif-33c9f4cd11.md) |
+| `autonomy-id-06` | A daemon's reload watch set is what it EXECUTES, not what it had imported at start | `python -m pytest tests/genesis/test_code_reload.py -q` | [autonomy-id-06.md](cards/autonomy-id-06.md) |
+| `autonomy-lrn-02` | Is intervention actually FALLING? The AUTONOMY card held to its own standard | `python -m tools.awareness.autonomy_loop` | [autonomy-lrn-02.md](cards/autonomy-lrn-02.md) |
+| `autonomy-act-03, autonomy-dep-04` | The restore tier, ENUMERATED — four mechanical acts, and no fifth | `python tools/awareness/restore_acts.py --list` | [autonomy-act-03.md](cards/autonomy-act-03.md) |
+| `autonomy-lrn-01` | An INCIDENT becomes a STANDING CLAIM, and the claim cites it | `python tools/awareness/claim_verifier.py --incidents` | [autonomy-lrn-01.md](cards/autonomy-lrn-01.md) |
+| `trust-disc-04` | Substrate probe — does the thing you are about to design against HAVE ROWS? | `python tools/awareness/capability_consumption.py --probe-plan <plan.md> --substrate-gate` | [trust-disc-04.md](cards/trust-disc-04.md) |
+| `exa-audit-04` | Audit hash-chain integrity — is the audit_trail chain actually intact? | `python tools/audit/chain_sweep.py --json` | [exa-audit-04.md](cards/exa-audit-04.md) |
+| `cch-obs-01` | Per-provider prompt-cache effectiveness — not one aggregate number | `python tools/cache_savings/by_provider.py --json` | [cch-obs-01.md](cards/cch-obs-01.md) |
+| `dwr-fid-01` | The UPLOADED original is KEPT, content-addressed, before its temp file goes | `python -m tools.document_intelligence.originals --survey [--json] [--verify]` | [dwr-fid-01.md](cards/dwr-fid-01.md) |
+| `dwr-anchor-06` | A suggestion drafted against a TOKEN is retired, never back-filled | `python -m tools.document_intelligence.suggestion_redraft --census` | [dwr-anchor-06.md](cards/dwr-anchor-06.md) |
+| `dwr-fid-02` | Where on the page did each word SIT? The layer a left pane renders from | `python -m tools.document_intelligence.page_geometry --survey [--json]` | [dwr-fid-02.md](cards/dwr-fid-02.md) |
+| `dwr-fid-03` | A DEGRADED render SAYS it is degraded, and the ingest posture is REAL | `python -m tools.document_intelligence.reading_pane --survey [--json]` | [dwr-fid-03.md](cards/dwr-fid-03.md) |
+| `cef-di-01` | DocMod asks ONE governed seam instead of hand-querying tables | `from tools.doc_modernization.evidence import (` | [cef-di-01.md](cards/cef-di-01.md) |
+| `cef-di-03` | DocDrift's SSP evidence comes from ONE governed seam | `from icdev.tools.document_intelligence.ssp_evidence import resolve_evidence` | [cef-di-03.md](cards/cef-di-03.md) |
+| `cef-di-05` | DIC document generation asks ONE governed seam, and screens what it wrote | `from icdev.tools.document_intelligence.docgen_evidence import (` | [cef-di-05.md](cards/cef-di-05.md) |
+| `cef-di-04` | DIC grounded search asks ONE governed seam for its candidates | `from icdev.tools.document_intelligence.search_evidence import resolve_evidence` | [cef-di-04.md](cards/cef-di-04.md) |
+| `cef-ui-01` | DocDrift SHOWS the verdict — and shows an unknown as a finding | `from icdev.tools.document_intelligence.docdrift_evidence import (` | [cef-ui-01.md](cards/cef-ui-01.md) |
+| `cef-ui-03` | HITL approve/reject for a resolve-produced proposal — EXISTING routes | `POST /document-intelligence/api/modernization/findings/<id>/resolve` | [cef-ui-03.md](cards/cef-ui-03.md) |
+| `cef-ui-02` | A conflict/gap the request DIDN'T take with it, browsable on Explorer | `from tools.cortex.finding_store import list_findings, finding_stats` | [cef-ui-02.md](cards/cef-ui-02.md) |
+| `cef-fnd-04` | Is this entity still current? ONE store, any source, any domain | `python -m tools.currency.entity_currency --backfill --json` | [cef-fnd-04.md](cards/cef-fnd-04.md) |
+| `dwr-ev-01` | An AUTHOR's upload is a declared source, ranked top, and the catalog it contradicts survives | `python -m tools.currency.entity_currency --resolve "catalyst 6500" --entity-type hardware_model` | [dwr-ev-01.md](cards/dwr-ev-01.md) |
+| `dwr-ev-02` | A COMMENT is an instruction until a human promotes it; then it is CITED, and marked | `python -m tools.currency.entity_currency --resolve "tls 1.1" --entity-type crypto_protocol` | [dwr-ev-02.md](cards/dwr-ev-02.md) |
+| `dwr-ev-03` | Redraft with my comments — a button a human presses | `from tools.document_intelligence.redraft import redraft_change, run_stats` | [dwr-ev-03.md](cards/dwr-ev-03.md) |
+| `dwr-word-02` | A reviewer's Word revisions, read back in and RECONCILED | `python -m tools.document_intelligence.docx_review_import --file review.docx --version <version_id>` | [dwr-word-02.md](cards/dwr-word-02.md) |
+| `exa-bench-03` | Agent adapter capability matrix — DECLARED vs ACTUAL per adapter | `python tools/agents/capability_matrix.py --json` | [exa-bench-03.md](cards/exa-bench-03.md) |
+| `exa-bench-05` | PreToolUse hook enforcement — the hook's exit 2 now reaches the caller | `python tools/hooks/fire_rate_survey.py --json` | [exa-bench-05.md](cards/exa-bench-05.md) |
+| `kpr-rvfy-05` | A raw `gh pr merge` on a KANBAN-LINKED PR is refused | `python tools/hooks/fire_rate_survey.py --check gh_pr_merge_bypass --samples 10` | [kpr-rvfy-05.md](cards/kpr-rvfy-05.md) |
+| `mfx-mrg-04` | A protected-path PR lands through the DOOR, with an audited reason | `python tools/kanban/cli.py --set-status <id> done --merge --protected-ok --reason '<why>'` | [mfx-mrg-04.md](cards/mfx-mrg-04.md) |
+| `mfx-mrg-07` | The Actions auto-merge workflow is a FOURTH door, and it now honours protected_paths | `python tools/ci/protected_paths.py --config-file args/pr_watcher_config.yaml --files tools/ci/pr_watcher.py docs/x.md` | [mfx-mrg-07.md](cards/mfx-mrg-07.md) |
+| `mfx-mrg-08` | The union resolver DISCARDED a deletion: an empty side is not "nothing to say" | `python -m tools.kanban.union_deletion_survey` | [mfx-mrg-08.md](cards/mfx-mrg-08.md) |
+| `mfx-own-02` | A claim from a PLAIN SHELL now HOLDS -- `--claim` hands its lease to a keeper | `python tools/kanban/cli.py --claim <task-id> --intent "repairing its PR by hand" [--ttl 7200]` | [mfx-own-02.md](cards/mfx-own-02.md) |
+| `mfx-own-05` | A REPARK id extends a task id at the FRONT -- the matcher no longer binds it | `python -m tools.kanban.branch_match_survey --env-file C:/AI/ICDev/.env` | [mfx-own-05.md](cards/mfx-own-05.md) |
+| `kph-repark-kph-repark-mfx-ci-04` | The worktree-add budget is REAL, and the checkout is parallel | `python -m pytest tests/kanban/test_worktree_add_budget_is_real.py -q` | [kph-repark-kph-repark-mfx-ci-04.md](cards/kph-repark-kph-repark-mfx-ci-04.md) |
+| `mfx-own-04` | A worktree HUSK with no .git marker is provably dead -- swept on a clock of HOURS | `python -m tools.kanban.worktree_husks --survey [--json]` | [mfx-own-04.md](cards/mfx-own-04.md) |
+| `kpr-watch-15` | A `merge -s ours` supersede made the branch UNREBASABLE | `python -m tools.ci.rebase_merge_survey --classify` | [kpr-watch-15.md](cards/kpr-watch-15.md) |
+| `kpr-watch-13` | Did that resume REACH anything, or was a line just written? | `python -m tools.ci.resume_delivery --survey` | [kpr-watch-13.md](cards/kpr-watch-13.md) |
+| `kpr-watch-14` | CLAUDE.md is DECLARED for the union rung, and its generated copy is DERIVED | `python -m tools.kanban.claude_md_union_survey` | [kpr-watch-14.md](cards/kpr-watch-14.md) |
+| `kpr-watch-11` | Is a task's status OSCILLATING — two writers taking turns? | `python -m tools.kanban.status_churn --json` | [kpr-watch-11.md](cards/kpr-watch-11.md) |
+| `autonomy-act-05` | ONE statement of which pr_watcher actions are recovery evidence | `python -m tools.kanban.recovery_action_survey` | [autonomy-act-05.md](cards/autonomy-act-05.md) |
+| `autonomy-act-02` | Consume the detectors nobody runs — and file each finding ONCE, with its evidence | `python -m tools.kanban.detector_findings --json` | [autonomy-act-02.md](cards/autonomy-act-02.md) |
+| `kpr-fix-03` | Would that check have been RIGHT to refuse? Surveyed; answer is NO | `python -m tools.kanban.landed_dispatch_survey --json` | [kpr-fix-03.md](cards/kpr-fix-03.md) |
+| `kpr-rvfy-04` | A `done` task with NO artifact, and a comment mention read as a landing | `python -m tools.kanban.artifact_evidence --survey` | [kpr-rvfy-04.md](cards/kpr-rvfy-04.md) |
+| `trust-disc-05` | Is this task id ALREADY on main? task -> main, not task -> PR | `python -m tools.kanban.landed_check --task <task-id> --json` | [trust-disc-05.md](cards/trust-disc-05.md) |
+| `rem-hyg-03/04` | Does an epic CLAIM this task id? Surveyed, then armed to `report` | `python -m tools.kanban.identity_survey --json` | [rem-hyg-03-04.md](cards/rem-hyg-03-04.md) |
+| `tsg-iso-03` | An undeclared third-party import that fails SILENTLY | `python tools/ci/undeclared_import_census.py --check` | [tsg-iso-03.md](cards/tsg-iso-03.md) |
+| `xrv-route-03` | A CI reference that does NOT NAME THE BYTES it resolves to | `python tools/ci/pin_census.py --check` | [xrv-route-03.md](cards/xrv-route-03.md) |
+| `xit-leak-01` | This repo is PUBLIC: nothing from the trading domain comes back | `python tools/ci/domain_leak_gate.py --check` | [xit-leak-01.md](cards/xit-leak-01.md) |
+| `xit-decl-04` | Every table has ONE owner: core \| it \| ft | `python tools/db/schema_ownership.py --check` | [xit-decl-04.md](cards/xit-decl-04.md) |
+| `xit-decl-03` | A module that computes the REPO ROOT from its own location | `python tools/ci/self_root_census.py --check` | [xit-decl-03.md](cards/xit-decl-03.md) |
+| `rem-hyg-13` | A PERFECT SCORE returned when the denominator is empty | `python tools/ci/perfect_score_census.py --check` | [rem-hyg-13.md](cards/rem-hyg-13.md) |
+| `rem-tst-06` | Promote an ungated test module — but only if it is green BOTH WAYS | `python -m tools.ci.gate_promoter --plan --limit 10` | [rem-tst-06.md](cards/rem-tst-06.md) |
+| `rem-hyg-14` | An ungated test that is RED FROM BIRTH, not only one that regressed | `python tools/ci/born_red_survey.py` | [rem-hyg-14.md](cards/rem-hyg-14.md) |
+| `crx-test-05` | The gated pytest run is SHARDED across runners | `python tools/ci/gated_test_list.py --print --list core --shard 2/4` | [crx-test-05.md](cards/crx-test-05.md) |
+| `mfx-ci-02` | ONE ICDEV CI run per ref -- a newer push CANCELS the superseded run | `python -m pytest tests/ci/test_ci_concurrency.py -q` | [mfx-ci-02.md](cards/mfx-ci-02.md) |
+| `crx-test-07` | The shards are BIN-PACKED by measured duration, not file count | `python tools/ci/shard_timings.py --show` | [crx-test-07.md](cards/crx-test-07.md) |
+| `trust-disc-01` | Red-first proof — did the changed test actually go RED? | `python tools/ci/red_first_gate.py --gate` | [trust-disc-01.md](cards/trust-disc-01.md) |
+| `cef-ci-02` | A closed census may LOSE names and must never GAIN one | `python tools/ci/census_growth.py --check` | [cef-ci-02.md](cards/cef-ci-02.md) |
+| `mfx-ci-01` | A cheap static check that runs only on CI is a MANUAL FIX 20 minutes later | `python tools/dx/mirror_parity.py --files tools/db/storage.py --json` | [mfx-ci-01.md](cards/mfx-ci-01.md) |
+| `mfx-ci-04` | Editing CLAUDE.md without regenerating the packaged bootstrap is refused at COMMIT | `python tools/installer/prebuild_bootstrap.py` | [mfx-ci-04.md](cards/mfx-ci-04.md) |
+| `qa-fail-6a87916931be3793` | The E2E suite writes fixtures — point it at a THROWAWAY database | `python tools/db/bootstrap_pg.py` | [qa-fail-6a87916931be3793.md](cards/qa-fail-6a87916931be3793.md) |
+| `qa-fail-5cacee65f1d03c8c` | A sweep whose timeouts fell inside a HOST STALL can now say so | `python tools/testing/qa_agent_runner.py --run --json` | [qa-fail-5cacee65f1d03c8c.md](cards/qa-fail-5cacee65f1d03c8c.md) |
+| `kpr-watch-01` | Which open PRs are awaiting merge, and WHY is each one not merging? | `python -m tools.ci.merge_readiness --json` | [kpr-watch-01.md](cards/kpr-watch-01.md) |
+| `kpr-watch-02` | A PR that IS eligible and STILL open — the merger has stalled | `python -m tools.ci.merge_stall` | [kpr-watch-02.md](cards/kpr-watch-02.md) |
+| `rem-hyg-05` | Raw board writers — does this INSERT bypass the canonical seeder? | `python tools/kanban/raw_insert_census.py --check` | [rem-hyg-05.md](cards/rem-hyg-05.md) |
+| `cef-fnd-03` | DataBridge external rung — 33 connectors, now ONE authorized | `python -m tools.databridge.seed_connections --seed --json` | [cef-fnd-03.md](cards/cef-fnd-03.md) |
+| `crx-test-06` | Is `E2E (Playwright)` reliable enough to be REQUIRED? Surveyed; answer is NOT YET | `python tools/ci/e2e_flake_survey.py --json` | [crx-test-06.md](cards/crx-test-06.md) |
+| `rmf-disc-02` | The page was live, the five endpoints it called were DEFINED NOWHERE | `python -m tools.network.discovery_store` | [rmf-disc-02.md](cards/rmf-disc-02.md) |
+| `rmf-zt-01` | A ZT check with NO PROBE behind it says `unknown`, never `passed` | `SC_STORAGE_BACKEND=sqlite python -m tools.security_canvas.zt_verdict_survey` | [rmf-zt-01.md](cards/rmf-zt-01.md) |
+| `rmf-rail-01` | No rate in the RMF surfaces returns 0.0 or 100.0 over an empty denominator | `python -m pytest tests/test_rmf_honesty_rails.py -q` | [rmf-rail-01.md](cards/rmf-rail-01.md) |
+| `rmf-rail-02` | The Compliance Posture widget's TWO remaining perfect scores, refused | `python -m pytest tests/test_compliance_posture_rail_02.py -q` | [rmf-rail-02.md](cards/rmf-rail-02.md) |
+| `rmf-wp-02` | A DIC version leaves the canvas through ONE gated door, and CoT/CoD prose is redacted | `from tools.document_intelligence.exporter import export_version, export_gate, EXPORT_FORMATS` | [rmf-wp-02.md](cards/rmf-wp-02.md) |
+| `mfx-boot-02` | A crash-looping self-hosted CI runner is re-registered with a fresh token | `python tools/genesis/daemon.py --reflex ci_runner_health --json` | [mfx-boot-02.md](cards/mfx-boot-02.md) |
+| `gepa-optimizer` | GEPA Optimizer — Genome Evolution Pressure Analyzer | `python tools/skills/gepa_optimizer.py --json` | [gepa-optimizer.md](cards/gepa-optimizer.md) |
+| `rmf-cyc-01` | RMF cycle time: TWO clocks that are never merged | `python -m tools.compliance.rmf_cycle_time` | [rmf-cyc-01.md](cards/rmf-cyc-01.md) |
+| `rmf-wp-01` | WHITEPAPER document type, and template_id made LOAD-BEARING | `python -m tools.quality.outline_contract --artifact-type WHITEPAPER` | [rmf-wp-01.md](cards/rmf-wp-01.md) |
+| `rmf-rfp-01` | The RFP shredder is WIRED, and there is ONE compliance matrix | `python tools/govcon/compliance_matrix_builder.py --opportunity-id "opp-xxx" --ingest solicitation.pdf --json` | [rmf-rfp-01.md](cards/rmf-rfp-01.md) |
+| `flx-twin-01` | A twin over the EMULATOR, read through the broker, marked `emulated` | `from tools.twin_core.registry import TwinRegistry` | [flx-twin-01.md](cards/flx-twin-01.md) |
+| `xrv` | Nine external repos reviewed; eight gaps were OUR OWN unconsumed capabilities | `python -m tools.cost.session_cost --survey --by-verdict --json` | [xrv.md](cards/xrv.md) |
+| `mfx-own-09` | A WARM worktree, pre-created while the host is quiet, claimed in ~1.3s | `python -m tools.kanban.worktree_pool --status [--json]` | [mfx-own-09.md](cards/mfx-own-09.md) |
+| `xrv-cost-05` | Every `tools/call` Claude Code makes leaves ONE audit row, counted apart from Studio's | `python -m tools.awareness.capability_consumption --class mcp_dispatch_tool --json` | [xrv-cost-05.md](cards/xrv-cost-05.md) |

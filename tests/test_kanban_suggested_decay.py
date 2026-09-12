@@ -498,9 +498,19 @@ def test_the_sweep_gate_is_deterministic_not_random():
 
     from tools.genesis.reflexes import kanban
 
-    src = inspect.getsource(kanban.run)
-    # The block that guards the suggested-recovery sweep.
-    match = re.search(r"\n([^\n]*\n){0,6}[^\n]*_promote_stale_suggested\(\)", src)
+    # THE WHOLE MODULE, NOT ONE FUNCTION. This read `inspect.getsource(kanban.run)`
+    # and broke the moment mfx-own-09 extracted the cycle body into `_run_cycle`,
+    # leaving `run` a 12-line delegator -- the call site was still correct and
+    # still deterministic, but the test could no longer see it and reported
+    # "could not locate the _promote_stale_suggested call site". What this test
+    # asserts is a property of the CALL SITE, which is true wherever the site
+    # lives, so pinning it to one enclosing function made an ordinary refactor
+    # look like the defect coming back.
+    src = inspect.getsource(kanban)
+    # The block that guards the suggested-recovery sweep. `(?<!def )` skips the
+    # DEFINITION, which the module source now also contains.
+    match = re.search(
+        r"\n([^\n]*\n){0,6}[^\n]*(?<!def )_promote_stale_suggested\(\)", src)
     assert match, "could not locate the _promote_stale_suggested call site"
     block = match.group(0)
 

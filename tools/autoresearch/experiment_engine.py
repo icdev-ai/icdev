@@ -22,10 +22,13 @@ Usage:
 import argparse
 import hashlib
 import json
+import os
 import subprocess
 import sys
+import time
 import uuid
 from pathlib import Path
+from typing import Mapping, Optional
 # kax-conflict-05: run by path, sys.path[0] is this file's own directory — never
 # the import root. Bootstrap it before the first first-party import below.
 # parents[N] is whatever holds this file's `tools` package: the repo root in
@@ -53,6 +56,21 @@ _PLACEHOLDER_METRICS_NOTE = (
     "Metrics are measured against an identity baseline — the engine does not "
     "apply real code modifications between pre/post measurement, so deltas are "
     "placeholder/heuristic, not real experiment evaluations."
+)
+
+
+#: What a run that DID mutate code reports instead. Only the real-mutation path
+#: may set this (xrv-lab-02).
+_REAL_MUTATION_NOTE = (
+    "Measured: each candidate was patched in its own worktree and scored "
+    "BEFORE and AFTER by the same evaluator against the same project_dir."
+)
+
+#: The real path was open and produced no measurement. NOT the same statement
+#: as either of the other two notes, and never folded into them.
+_REAL_MUTATION_UNMEASURABLE_NOTE = (
+    "The real-mutation path was open and no candidate produced both a before "
+    "and an after measurement, so this run measured nothing. Not a clean result."
 )
 
 
@@ -87,6 +105,81 @@ def _load_config() -> dict:
             return yaml.safe_load(f) or {}
     except ImportError:
         return {}
+
+
+#: What the config / env override accepts as "on". Same vocabulary as
+#: ``tools/genesis/reflexes/foundry_cycle.py::_is_enabled`` so two autonomous
+#: loops on one host cannot disagree about what a switch being on means.
+_TRUTHY = ("1", "true", "yes", "on", "enabled")
+
+#: The env var name shipped in args/autoresearch_config.yaml. Read from the
+#: config when present so the declaration stays the single source; this is the
+#: fallback for a config that cannot be read at all.
+_DEFAULT_ENV_OVERRIDE = "ICDEV_AUTORESEARCH_ENABLED"
+
+
+def autoresearch_enabled(env: Optional[Mapping[str, str]] = None) -> dict:
+    """Is the autoresearch loop switched ON? (xrv-lab-01)
+
+    ONE reading of the master switch. ``args/autoresearch_config.yaml`` has
+    declared ``enabled: false`` plus an ``env_override`` since the engine
+    shipped, and NOTHING consulted either: the nightly ``experiment`` reflex ran
+    the loop regardless and reported an acceptance rate for it. A declared
+    switch nothing reads is not a switch.
+
+    The ENV OVERRIDE OUTRANKS THE CONFIG, in both directions -- it is the
+    per-host knob for an opt-in loop that ships off, so it must be able to turn
+    the loop on AND off without editing a tracked file.
+
+    FAIL-CLOSED on an unreadable config: this gate guards a loop whose declared
+    purpose is autonomous code mutation, and "we could not read the switch" is
+    not consent. Reported as ``basis: config_unreadable``, never silently off.
+
+    Returns ``{enabled: bool, basis: str, env_var: str, env_value: str|None,
+    config_enabled: bool|None}`` -- ``config_enabled`` is None when the config
+    could not be read, never False, so "declared off" and "could not tell" stay
+    apart.
+    """
+    environ = os.environ if env is None else env
+
+    config: Optional[dict]
+    try:
+        config = _load_config()
+    except Exception:  # noqa: BLE001 - an unreadable switch is not consent
+        config = None
+
+    env_var = _DEFAULT_ENV_OVERRIDE
+    config_enabled: Optional[bool] = None
+    if isinstance(config, dict):
+        env_var = str(config.get("env_override") or _DEFAULT_ENV_OVERRIDE)
+        config_enabled = bool(config.get("enabled", False))
+
+    env_value = environ.get(env_var)
+    if env_value is not None and str(env_value).strip() != "":
+        return {
+            "enabled": str(env_value).strip().lower() in _TRUTHY,
+            "basis": f"env:{env_var}",
+            "env_var": env_var,
+            "env_value": str(env_value),
+            "config_enabled": config_enabled,
+        }
+
+    if config_enabled is None:
+        return {
+            "enabled": False,
+            "basis": "config_unreadable",
+            "env_var": env_var,
+            "env_value": None,
+            "config_enabled": None,
+        }
+
+    return {
+        "enabled": config_enabled,
+        "basis": "config:args/autoresearch_config.yaml",
+        "env_var": env_var,
+        "env_value": None,
+        "config_enabled": config_enabled,
+    }
 
 
 def _load_program(domain: str) -> dict:
@@ -653,6 +746,22 @@ def run_loop(
     discarded_count = 0
     total_improvement = 0.0
 
+    # ── The real-mutation path (xrv-lab-02) ─────────────────────────────────
+    # Asked ONCE per loop, not per candidate: the gate is a property of the
+    # domain and the deployment, and re-reading it mid-loop would let a config
+    # edit split one run across two regimes.
+    from tools.autoresearch import real_mutation as _real
+
+    real_gate = _real.real_mutation_gate(domain)
+    real_enabled = bool(real_gate.get("enabled"))
+    real_deadline = None
+    real_measured = 0
+    real_unmeasurable = 0
+    real_runs: list = []
+    if real_enabled:
+        _block = config.get("real_mutation") or {}
+        real_deadline = time.monotonic() + float(_block.get("wall_clock_seconds") or 1800)
+
     for i in range(min(max_experiments, len(candidates))):
         # Circuit breaker check
         if consecutive_failures >= max_failures:
@@ -718,22 +827,88 @@ def run_loop(
                 exc,
             )
 
-        # Run experiment (measure current metric)
-        run_result = run_experiment(exp_id)
-        pre_metric = run_result.get("pre_metric", baseline_metric)
+        if real_enabled:
+            # A REAL mutation: worktree -> BEFORE -> claude_cli patch -> AFTER.
+            # `decide` (below, unchanged) is called from inside that path with
+            # two measurements of two different trees, so the keep rule, the
+            # threshold and the posterior are the same ones the placeholder
+            # path uses -- only the numbers handed to them are real.
+            real_result = _real.run_real_experiment(
+                exp_id,
+                selected["hypothesis"],
+                domain=domain,
+                deadline=real_deadline,
+            )
+            real_runs.append(
+                {
+                    "experiment_id": exp_id,
+                    "outcome": real_result.get("outcome"),
+                    "lane": real_result.get("lane"),
+                    "reason": real_result.get("reason"),
+                    "metric_before": real_result.get("metric_before"),
+                    "metric_after": real_result.get("metric_after"),
+                    "branch": real_result.get("branch"),
+                    "pr": (real_result.get("pr") or {}).get("url"),
+                    "worktree_removed": real_result.get("worktree_removed"),
+                }
+            )
+            decision_result = real_result.get("decision") or {}
+            if real_result.get("measured"):
+                real_measured += 1
+                pre_metric = real_result.get("metric_before")
+                post_metric = real_result.get("metric_after")
+                decision = "keep" if real_result.get("outcome") == _real.OUTCOME_KEPT else "discard"
+            else:
+                # UNMEASURABLE is not a discard. Nothing judged this hypothesis,
+                # so it moves no posterior and joins no acceptance rate; the
+                # candidate stays in `incubator` with its reason named.
+                real_unmeasurable += 1
+                results.append(
+                    {
+                        "experiment_id": exp_id,
+                        "hypothesis": selected["hypothesis"][:200],
+                        "decision": "unmeasurable",
+                        "reason": real_result.get("reason"),
+                        "metric_delta": None,
+                        "info_gain_score": selection.get("info_gain_score", 0.0),
+                        "thompson_explored": selection.get("thompson_explored", False),
+                    }
+                )
+                recent.append(
+                    {
+                        "hypothesis": selected["hypothesis"],
+                        "content_hash": selected.get("content_hash", ""),
+                    }
+                )
+                if _real.is_fatal(real_result.get("reason")):
+                    # The HOST, not the hypothesis. The next candidate would hit
+                    # the same wall after paying for another full baseline
+                    # measurement, so stop -- without touching the circuit
+                    # breaker, which counts rejected IDEAS and would otherwise
+                    # latch this domain closed over an infrastructure outage.
+                    real_runs[-1]["stopped_run"] = True
+                    break
+                if real_deadline is not None and time.monotonic() > real_deadline:
+                    break
+                continue
+        else:
+            # Run experiment (measure current metric)
+            run_result = run_experiment(exp_id)
+            pre_metric = run_result.get("pre_metric", baseline_metric)
 
-        # Re-evaluate after experiment (in real usage, code is modified between)
-        post_eval = evaluate(domain)
-        post_metric = post_eval.get("metric_value", pre_metric)
+            # Re-evaluate after experiment (identity baseline -- placeholder)
+            post_eval = evaluate(domain)
+            post_metric = post_eval.get("metric_value", pre_metric)
 
-        # Decide
-        decision_result = decide(
-            exp_id,
-            pre_metric=pre_metric,
-            post_metric=post_metric,
-        )
+            # Decide
+            decision_result = decide(
+                exp_id,
+                pre_metric=pre_metric,
+                post_metric=post_metric,
+            )
 
-        decision = decision_result.get("decision", "discard")
+            decision = decision_result.get("decision", "discard")
+
         if decision == "keep":
             kept_count += 1
             consecutive_failures = 0
@@ -764,7 +939,16 @@ def run_loop(
             }
         )
 
-    acceptance_rate = kept_count / max(kept_count + discarded_count, 1)
+        if real_deadline is not None and time.monotonic() > real_deadline:
+            # The per-run wall clock is spent. Stop STARTING candidates; the one
+            # in flight already finished under its own budget.
+            break
+
+    # None, NEVER 0.0, over an empty denominator: a loop that judged nothing has
+    # no acceptance rate, and 0.0 there reads as "every hypothesis was rejected"
+    # (args/perfect_score_gate.yaml's defect, one metric over).
+    judged = kept_count + discarded_count
+    acceptance_rate = (kept_count / judged) if judged else None
 
     _audit(
         "experiment.loop_complete",
@@ -774,25 +958,46 @@ def run_loop(
             "experiments_run": len(results),
             "kept": kept_count,
             "discarded": discarded_count,
-            "acceptance_rate": round(acceptance_rate, 4),
+            "acceptance_rate": round(acceptance_rate, 4) if acceptance_rate is not None else None,
             "total_improvement": round(total_improvement, 6),
+            "real_mutation": real_enabled,
         },
     )
 
+    # THE ONE PLACE THIS LOOP MAY CLAIM IT MEASURED SOMETHING.
+    # False requires the real path to have been open AND at least one candidate
+    # to have produced BOTH a before and an after on two different trees. A real
+    # path that was open and measured nothing is still `placeholder_metrics:
+    # True` -- reporting False with `kept: 0` would read as "measured, nothing
+    # improved", which is the conflation xrv-lab-01 refused.
+    measured_run = real_enabled and real_measured > 0
     return {
         "success": True,
         "domain": domain,
         "experiments_run": len(results),
         "kept": kept_count,
         "discarded": discarded_count,
-        "acceptance_rate": round(acceptance_rate, 4),
+        "acceptance_rate": round(acceptance_rate, 4) if acceptance_rate is not None else None,
         "total_improvement": round(total_improvement, 6),
         "baseline_metric": round(baseline_metric, 6),
         "results": results,
         "circuit_breaker_tripped": consecutive_failures >= max_failures,
-        "placeholder_metrics": True,
-        "heuristic": True,
-        "placeholder_note": _PLACEHOLDER_METRICS_NOTE,
+        "placeholder_metrics": not measured_run,
+        "heuristic": not measured_run,
+        "placeholder_note": (
+            _REAL_MUTATION_NOTE if measured_run
+            else (_REAL_MUTATION_UNMEASURABLE_NOTE if real_enabled
+                  else _PLACEHOLDER_METRICS_NOTE)
+        ),
+        "real_mutation": {
+            "enabled": real_enabled,
+            "gate": real_gate,
+            # None, never 0, when the path was never open -- "nothing was
+            # mutated" and "mutation was switched off" are different facts.
+            "measured": real_measured if real_enabled else None,
+            "unmeasurable": real_unmeasurable if real_enabled else None,
+            "runs": real_runs if real_enabled else None,
+        },
         "timestamp": now_iso(),
     }
 

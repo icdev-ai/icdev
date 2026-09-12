@@ -1926,6 +1926,25 @@ def check_route_uniqueness(changed_files: Optional[List[Path]] = None) -> Cohere
 # Add to this list when a new external repo is cited; the check fails for
 # unregistered citations.
 _ATTRIBUTION_REGISTRY: Dict[str, Dict[str, str]] = {
+    "praxist": {
+        "url": "(Fair Source 1.0 project — shape cited, no code used)",
+        "license": "Fair Source 1.0",
+        "audit_status": (
+            "clean-room by construction 2026-09-12 (xrv-lab-02) — the SHAPE "
+            "was adapted from a written description, no source was read, "
+            "vendored or ported"
+        ),
+        "notes": (
+            "tools/autoresearch/real_mutation.py cites PRAXIST for the "
+            "candidates -> task-owned evaluator -> evidence lanes SHAPE only. "
+            "Fair Source 1.0 is a BLOCKING license for code reuse, which is "
+            "exactly why nothing was reused: the module is built on ICDEV's "
+            "own seams (fitness_evaluator, claude_cli adapter, "
+            "experiment_engine.decide, cost.task_attribution) and its three "
+            "lane names are ordinary English. No file in this repo is derived "
+            "from PRAXIST source."
+        ),
+    },
     "agent zero": {
         "url": "https://github.com/agent0ai/agent-zero",
         "license": "MIT",
@@ -8840,6 +8859,133 @@ def check_doc_command_paths(changed_files: Optional[List[Path]] = None) -> Coher
 
 
 # ---------------------------------------------------------------------------
+# Check 19b: CLAUDE.md size budget (xrv-docs-02)
+# ---------------------------------------------------------------------------
+#
+# Claude Code loads CLAUDE.md into EVERY session and `icdev init` copies the
+# packaged twin into every scaffolded project, so a byte added here is paid for
+# by every session on every deployment whether or not it touches the subject.
+# Measured 2026-09-12 the file had reached 367,462 bytes (~91,674 tokens at
+# len/4) and 297,635 of them — 81.0% — were 82 per-card incident essays inline.
+# They moved verbatim to docs/reference/cards/ and the block became an index.
+#
+# WARN, never fail. A size budget that blocks a commit is a gate people learn to
+# route around, and the repair ("move this essay out") is a judgement call about
+# what is a RULE and what is a RECORD, not a mechanism. The budget in
+# args/claude_md_budget.yaml may only go DOWN — raising it to land a commit is
+# the census-ceiling move this file already forbids three other places.
+
+_CLAUDE_MD_BUDGET_CONFIG = PROJECT_ROOT / "args" / "claude_md_budget.yaml"
+_CLAUDE_MD_CHECK_NAME = "CLAUDE.md Size Budget (xrv-docs-02)"
+
+
+def _claude_md_section_sizes(text: str, prefixes: List[str]) -> List[Tuple[str, int]]:
+    """``(heading, bytes)`` for each configured section, largest first.
+
+    A section runs to the next heading of the SAME OR SHALLOWER depth, so
+    ``## Guardrails`` reports the whole section including its ``###`` children
+    and ``### Development Rules`` reports only its own.
+    """
+    lines = text.splitlines()
+    newline = chr(10)
+    heads = [(i, ln) for i, ln in enumerate(lines) if re.match(r"^#{1,6} ", ln)]
+    sizes: List[Tuple[str, int]] = []
+    for want in prefixes:
+        depth = len(want) - len(want.lstrip("#"))
+        for k, (i, ln) in enumerate(heads):
+            if ln.strip() != want.strip():
+                continue
+            end = len(lines)
+            for j, nxt in heads[k + 1:]:
+                if len(nxt) - len(nxt.lstrip("#")) <= depth:
+                    end = j
+                    break
+            sizes.append((want, len(newline.join(lines[i:end]).encode("utf-8"))))
+            break
+    return sorted(sizes, key=lambda t: t[1], reverse=True)
+
+
+def check_claude_md_budget() -> CoherenceCheck:
+    """Warn when CLAUDE.md grows back past its declared budget (xrv-docs-02)."""
+    expected = ["CLAUDE.md at or under args/claude_md_budget.yaml :: max_bytes"]
+
+    def result(status: str, actual: List[str], message: str,
+               missing: Optional[List[str]] = None,
+               extra: Optional[List[str]] = None) -> CoherenceCheck:
+        return CoherenceCheck(
+            check_id="claude_md_budget",
+            check_name=_CLAUDE_MD_CHECK_NAME,
+            status=status,
+            expected=expected,
+            actual=actual,
+            missing=missing or [],
+            extra=extra or [],
+            message=message,
+        )
+
+    target = PROJECT_ROOT / "CLAUDE.md"
+    if not target.is_file():
+        # UNMEASURABLE, never a pass: a missing file is not a small one.
+        return result("warn", ["CLAUDE.md not found"],
+                      "unmeasurable — CLAUDE.md does not exist at the repo root, "
+                      "so its size cannot be compared with the budget")
+    try:
+        text = target.read_text(encoding="utf-8")
+    except OSError as exc:
+        return result("warn", [f"unreadable: {exc}"],
+                      "unmeasurable — CLAUDE.md could not be read")
+    size = len(text.encode("utf-8"))
+
+    max_bytes: Optional[int] = None
+    prefixes: List[str] = []
+    if _CLAUDE_MD_BUDGET_CONFIG.is_file() and _HAS_YAML:
+        try:
+            raw = yaml.safe_load(_CLAUDE_MD_BUDGET_CONFIG.read_text(encoding="utf-8")) or {}
+        except Exception:
+            raw = {}
+        if isinstance(raw, dict):
+            candidate = raw.get("max_bytes")
+            if isinstance(candidate, int) and candidate > 0:
+                max_bytes = candidate
+            sections = raw.get("report_sections")
+            if isinstance(sections, list):
+                prefixes = [str(x) for x in sections if isinstance(x, str)]
+
+    if max_bytes is None:
+        # No denominator: the percentage is None, never 0.0 and never 100.0.
+        return result(
+            "warn",
+            [f"CLAUDE.md is {size:,} bytes (~{len(text) // 4:,} tokens at len/4)",
+             "budget: unmeasurable (no usable max_bytes)"],
+            "unmeasurable — args/claude_md_budget.yaml declares no usable "
+            "`max_bytes`, so the file's size cannot be judged. This is NOT a "
+            "clean bill of health.",
+            missing=["args/claude_md_budget.yaml :: max_bytes"],
+        )
+
+    pct = round(size * 100.0 / max_bytes, 1)
+    actual = [
+        f"CLAUDE.md is {size:,} bytes (~{len(text) // 4:,} tokens at len/4)",
+        f"budget {max_bytes:,} bytes — {pct}% used",
+    ]
+    if size <= max_bytes:
+        return result("pass", actual,
+                      f"CLAUDE.md is {size:,} bytes, {max_bytes - size:,} under the "
+                      f"{max_bytes:,}-byte budget ({pct}% used)")
+
+    named = _claude_md_section_sizes(text, prefixes)
+    where = [f"{head}: {n:,} bytes" for head, n in named]
+    return result(
+        "warn", actual,
+        f"CLAUDE.md is {size:,} bytes, {size - max_bytes:,} OVER the {max_bytes:,}-byte "
+        f"budget ({pct}% used). Every session pays for this file. Move the record to "
+        f"docs/reference/cards/<id>.md and leave one index line — do NOT raise max_bytes, "
+        f"which may only go DOWN.",
+        extra=where,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check 20: INSERT column lists vs the LIVE database schema (swp-gate-01)
 # ---------------------------------------------------------------------------
 #
@@ -10992,6 +11138,7 @@ CHECK_REGISTRY = {
     "llm_injection_patterns": check_llm_injection_patterns,
     "skill_standard": check_skill_standard,
     "sandbox_coverage": check_sandbox_coverage,
+    "claude_md_budget": check_claude_md_budget,
     "agent_config_shield": check_agent_config_shield,
     "swallowed_persistence": check_swallowed_persistence,
     "reflex_registry": check_reflex_registry,
@@ -11310,6 +11457,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "llm_injection_patterns": "skip",  # WARN-tier; fixes need human review
     "skill_standard": "suggest",  # description rewrites need human judgment
     "sandbox_coverage": "skip",  # doc/decision — requires human judgment
+    "claude_md_budget": "skip",  # which prose is a RULE and which a RECORD is human judgment
     "agent_config_shield": "skip",  # a config-surface finding needs a human to read it
     "direct_anthropic_import": "skip",  # violations require code routing fix
     "llm_router_api": "skip",  # dead-API call sites require routing fix to invoke(fn, req)

@@ -207,6 +207,20 @@ substrates:
     note: >-
       The prompt registry's only table. LLMRouter reads it as a supplemental
       prompt layer, so an unseeded registry is a silently inert read path.
+  - ref: experiment_programs
+    note: >-
+      xrv-lab-01. The autoresearch loop's declared experiment programs. Created
+      in BOTH schemas (tools/db/init_icdev_db.py and
+      tools/db/schema/pg_consolidated.sql, with a UNIQUE(domain) and an
+      objective_direction CHECK) and read and written by NOTHING: every program
+      load in the tree resolves to args/experiment_programs/<domain>.yaml
+      (experiment_engine._load_program, hypothesis_generator, marketplace_exporter).
+      So it is not "a writer has not run yet" — there is no writer and no reader,
+      and this probe reporting it `empty` is the point. Listed rather than
+      dropped: deleting a table declared in two schemas and named in
+      context/agentic/capability_registry.yaml is its own decision with its own
+      migration, and an undeclared empty table is exactly what this section
+      exists to stop being invisible.
   - ref: agent_approval_log
     note: >-
       Every approval-gate decision. A gate whose decision log is empty has never

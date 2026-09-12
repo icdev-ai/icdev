@@ -1,0 +1,2 @@
+tests/kanban/test_worktree_pool.py
+tests/test_worktree_path_convention.py
