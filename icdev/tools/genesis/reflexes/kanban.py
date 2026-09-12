@@ -4019,6 +4019,44 @@ def _decompose_phase_exit_gates(tasks: list, conn: Any) -> list:
 
 MAX_FAILURES_BEFORE_DECOMPOSITION = _MAX_FAILURES_BEFORE_DECOMPOSITION_DEFAULT
 
+#: xrv-run-02: the validation metrics ``_run_verify_checks`` already computed
+#: for the attempt now being recorded, keyed by task id. In-memory ON PURPOSE:
+#: it is scoped to one dispatch, and a scheduler re-exec (code_reload) empties
+#: it, after which the record correctly reports ``validation: null`` rather
+#: than carrying a verdict from a process that no longer exists.
+_LAST_VALIDATION: Dict[str, Dict[str, Any]] = {}
+
+
+def _write_handoff_record(task_id: str, *, trigger: str,
+                          attempt: Optional[int], reason: str) -> None:
+    """Persist the evidence-backed handoff record for a run that did not finish.
+
+    Called from all three non-completion paths — verification failure, dispatch
+    timeout, token exhaustion — so a retry can read what the last attempt
+    already learned instead of re-deriving it.
+
+    Best-effort and never raises: a record that could not be written must never
+    turn a recorded failure into an exception that loses the failure itself.
+    """
+    try:
+        from tools.kanban.handoff_record import record_run  # noqa: PLC0415
+        record_run(
+            task_id,
+            trigger=trigger,
+            attempt=attempt,
+            reason=reason,
+            validation=_LAST_VALIDATION.get(task_id),
+            work_dir=_work_dir_for(task_id),
+            base_ref=_default_base_ref(),
+            task_log=PROMPT_DIR / f"{task_id}.log",
+        )
+    except Exception as exc:  # noqa: BLE001 -- never the failure path's problem
+        logger.warning("handoff record for %s not written: %s", task_id, exc)
+    finally:
+        # One record per attempt: the next dispatch measures its own run, and
+        # a stale entry here would let attempt N+1 report attempt N's metrics.
+        _LAST_VALIDATION.pop(task_id, None)
+
 
 def _record_failure_and_maybe_flag(task_id: str, reason: str) -> str:
     """guard-18: Increment failure_count; flag for decomposition after N fails.
@@ -4065,6 +4103,14 @@ def _record_failure_and_maybe_flag(task_id: str, reason: str) -> str:
                 (new_count, failure_clause[:500], now, narrative[:2000], task_id),
             )
             conn.commit()
+
+            # xrv-run-02: the reason above is ONE truncated clause. The record
+            # is the evidence under it — what the run touched, committed, ran
+            # and spent — written AFTER the failure is safely persisted, so a
+            # record that fails cannot cost us the failure.
+            _write_handoff_record(
+                task_id, trigger="failure", attempt=new_count, reason=reason,
+            )
 
             # Chain-blocker escalation: if any tasks are blocked waiting for
             # this one, escalate priority to critical so failure_triage picks
@@ -5949,6 +5995,25 @@ _FAILURE_COACHING = {
 }
 
 
+def _handoff_block(task_id: str) -> str:
+    """The rendered handoff record for *task_id*, or "" when there is none.
+
+    "" covers a first run, a record written by an older schema, an
+    agent-submitted handoff that is not one of ours, and an unreadable board —
+    and in every one of those cases the caller's output is byte-unchanged,
+    which is what keeps this additive.
+    """
+    try:
+        from tools.kanban.handoff_record import (  # noqa: PLC0415
+            load_record, render_record,
+        )
+        record = load_record(task_id)
+        return render_record(record) if record else ""
+    except Exception as exc:  # noqa: BLE001 -- never block a dispatch on this
+        logger.warning("handoff block for %s unavailable: %s", task_id, exc)
+        return ""
+
+
 def _get_retry_coaching(task_id: str) -> str:
     """Build a coaching preamble for the next run based on last failure.
 
@@ -5991,6 +6056,13 @@ def _get_retry_coaching(task_id: str) -> str:
     )
     if coaching:
         preamble += f"\nCoaching: {coaching}\n"
+    # xrv-run-02: the EVIDENCE under that one truncated clause — what the last
+    # attempt touched, committed, ran and spent — in handoff_generator's
+    # section order so the two records read alike. A task with no record adds
+    # nothing here, so today's coaching is byte-unchanged for it.
+    record_block = _handoff_block(task_id)
+    if record_block:
+        preamble += "\n" + record_block
     preamble += (
         "\nAdditional requirements for this retry:\n"
         "  - Actually modify files on disk; don't just describe changes.\n"
@@ -6031,7 +6103,24 @@ def _get_parent_handoff(task_id: str) -> Optional[str]:
         if summary:
             lines.append(f"Summary: {summary}")
         if metadata_raw:
-            lines.append(f"Metadata (JSON): {metadata_raw}")
+            # xrv-run-02: a parent whose last run did not finish now carries a
+            # handoff record in this column. Dumping it as raw JSON would put
+            # ~2KB of braces into a child's prompt for no gain, so it is
+            # rendered with the same renderer the retry path uses. Any OTHER
+            # metadata — an agent's own handoff POST — is passed through
+            # exactly as before.
+            try:
+                from tools.kanban.handoff_record import (  # noqa: PLC0415
+                    load_record, render_record,
+                )
+                parent_record = load_record(
+                    d["depends_on_task_id"], raw=metadata_raw)
+            except Exception:  # noqa: BLE001 -- fall back to the raw dump
+                parent_record = None
+            if parent_record:
+                lines.append(render_record(parent_record))
+            else:
+                lines.append(f"Metadata (JSON): {metadata_raw}")
         return "\n".join(lines) + "\n\n"
     except Exception:
         return None
@@ -9327,6 +9416,13 @@ def _run_full_verification(task_id: str, claude_output: str) -> Tuple[bool, str,
             reason = f"{reason} | {specific_reason}"
     if verified and not _is_bypass:
         validation_ok, validation_reason, metrics = _run_post_task_validation(task_id)
+        # xrv-run-02: keep THIS attempt's metrics so the handoff record can
+        # carry them without re-running the suite. Re-running it on the failure
+        # path would cost the 30-60s that path exists to avoid AND would answer
+        # a different question — what the tree looks like now, not what the run
+        # saw. A task with no entry here reports `validation: null`, which is
+        # the honest reading and never a clean bill of health.
+        _LAST_VALIDATION[task_id] = dict(metrics) if isinstance(metrics, dict) else {}
         if not validation_ok:
             verified = False
             reason = f"{reason} | VALIDATION FAILED: {validation_reason}"
@@ -11546,6 +11642,13 @@ def _check_completed():
                         )
                 except Exception as _fc_exc:
                     logger.warning("failure_count update failed for %s: %s", task_id, _fc_exc)
+                # xrv-run-02: a timed-out run is the case a handoff record is
+                # worth most — the session was killed mid-flight, so its
+                # worktree is the ONLY account of how far it got.
+                _write_handoff_record(
+                    task_id, trigger="timeout", attempt=_tout_count,
+                    reason=_timeout_reason,
+                )
                 if _tout_count >= MAX_TIMEOUT_RETRIES:
                     _move_task(
                         task_id, "suggested",
@@ -11771,6 +11874,19 @@ def _check_completed():
                 # task returning for its second budget starts at zero and every
                 # pass looks like a first attempt.
                 _lifetime_exh = _lifetime_exhaustion_count(task_id)
+                # xrv-run-02: written BEFORE the three outcome branches below,
+                # because two of them tear the worktree down — and the
+                # worktree is where the evidence of how far the session got
+                # still lives. All three outcomes (decompose, give up, park)
+                # are a run that did not finish and all three get a record.
+                _write_handoff_record(
+                    task_id, trigger="token_exhausted", attempt=_lifetime_exh,
+                    reason=(
+                        f"token exhaustion: retry {retry_count}/"
+                        f"{TOKEN_MAX_RETRY_COUNT}, {_lifetime_exh} lifetime"
+                        + (f" (reset hint: {reset_hint})" if reset_hint else "")
+                    ),
+                )
                 if _lifetime_exh >= EXHAUSTIONS_BEFORE_DECOMPOSITION:
                     logger.warning(
                         "Task %s has exhausted tokens %d times — decomposing "

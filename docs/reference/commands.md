@@ -3486,6 +3486,36 @@ python -c "from tools.ace.trust_calibrator import run_weekly_recalibration; impo
 python -c "from tools.evolution.artifact_evolver import evolve_artifact; import json; print(json.dumps(evolve_artifact('icdev-status', 'skill', dry_run=True), indent=2))"
 python -c "from tools.evolution.artifact_evolver import evolve_all_skills; import json; print(json.dumps(evolve_all_skills(dry_run=True, limit=3), indent=2))"
 python -c "from tools.evolution.eval_builder import build_dataset; ds = build_dataset('icdev-build', '', min_examples=3); print(f'train={len(ds.train)} val={len(ds.val)}')"
+
+# Pattern confidence — is a learned pattern CORROBORATED, or just frequent? (xrv-shield-02)
+python tools/nova/skill_generator.py --analyze --json          # every pattern carries confidence 0..1
+python tools/nova/skill_generator.py --analyze --min-count 1   # include once-seen patterns
+python tools/nova/skill_generator.py --analyze --no-injection-scan --json   # reports injection_scanned=false, NOT a clean scan
+python -c "from tools.nova.skill_generator import pattern_confidence; print(pattern_confidence(count=5, distinct_sessions=5, last_seen='2026-09-10T00:00:00+00:00'))"
+python -c "from tools.nova.skill_generator import score_candidate; print(score_candidate('python tools/memory/hybrid_search.py --query x'))"
+python -c "from tools.agent_runtime.skills_lifecycle import screen_candidates; print(screen_candidates(['icdev status']))"
+# ONE formula, in `pattern_confidence()`, weights DECLARED in args/nova_config.yaml:
+# occurrence count (saturating at 8), DISTINCT memory_entries.session_ref values
+# (saturating at 4), recency on args/memory_config.yaml's own half-lives, then
+# learning_collector's injection rule verbatim — a hit at block_confidence (0.7)
+# REJECTS to 0.0, a hit at demote_confidence (0.5) CAPS at 0.5. A detector that did
+# not RUN never demotes and reports injection_scanned=false, which is not a clean scan.
+# REPETITION IS NOT CORROBORATION: a pattern measured in exactly ONE session is capped
+# at 0.65, below the propose bar, however often it recurred — 40 hits in one session
+# are one observation, not forty.
+# confidence is None — NEVER 0.0 — when nothing could be measured; `sessions` is None,
+# never 0, when memory_entries carries no session_ref (migration 226) or none is
+# populated. mean_confidence / above_propose_threshold are null over an empty
+# denominator (args/perfect_score_gate.yaml).
+# maybe_propose_from_session now REFUSES below propose.min_confidence (0.7 — the bar
+# learning_collector blocks at) and reports `refused` plus every refusal's own count,
+# session spread, confidence and basis. A candidate history holds no evidence for is
+# refused as `unmeasurable`, never proposed.
+# MEASURED on the live board 2026-09-11: memory_entries holds 28,158 rows and ZERO
+# with `type LIKE 'session_%'`, so --analyze returns 0 patterns and every rate is
+# null. UNMEASURABLE, not clean — nothing has ever driven this analyser. The writer,
+# session_indexer.index_session_turn, now records `session_ref` (it had the session id
+# and dropped it), so attribution is measurable for turns indexed from here on.
 ```
 
 ---
@@ -9022,3 +9052,42 @@ bare runner, reading `protected_paths` from the PR's BASE branch and never its
 head. Exit 0 clean, 1 protected, 2 undecidable (fail-closed: the workflow skips).
 Measured 2026-09-07: 8 of the last 10 protected-path merges went through that
 workflow unattended. Survey: docs/audits/mfx-mrg-07-actions-auto-merge-door-survey.md
+
+### The handoff record a failed / timed-out / token-exhausted run leaves behind (xrv-run-02)
+
+```bash
+python -m tools.kanban.handoff_record --task <task-id> --json       # the stored schema-1 record
+python -m tools.kanban.handoff_record --task <task-id> --render     # the block the next prompt gets
+python -m tools.kanban.handoff_record --task <task-id> --render --max-tokens 600
+```
+
+`_get_retry_coaching` prepended ONLY `failure_count` plus a 500-char
+`last_failure_reason`, so every retry re-derived what the previous attempt had
+already learned. The scheduler now ALSO writes a schema-1 JSON record into the
+EXISTING `kanban_tasks.last_run_metadata` column (no migration) on all three
+non-completion paths -- verification failure, dispatch timeout, token
+exhaustion -- and renders it into the next prompt in `handoff_generator`'s
+section order, bounded at 1,200 tokens by `llm/context_budget.estimate_tokens`
+and shedding EVIDENCE before narrative, every shed item counted.
+
+EVERY UNREADABLE FIELD IS `null`, NEVER `[]` OR `0`, and the two render as
+different sentences -- "the worktree could not be read" against "the attempt
+changed no files". Collapsing them lets a wiped worktree read as an agent that
+wrote nothing, which is the phantom-completion reading the done-gate already
+refuses one layer up. `cost_usd` is `null` for BOTH an unreadable ledger and a
+task with no attributed row: neither is evidence the attempt was free.
+
+`validation` is the metrics dict `_run_post_task_validation` ALREADY returned
+for THAT attempt, captured once and consumed once. It is never re-run here --
+re-running costs the 30-60s the failure path exists to avoid, and it answers a
+different question (what the tree looks like NOW, not what the run saw), so a
+record with none says `null` and means it.
+
+`files_touched` is `git status --porcelain` unioned with `<base>...HEAD`, and
+NOT a bare `git diff --name-only`: its own positive control caught that a bare
+diff reports only UNSTAGED changes, so an attempt that had `git add`ed its work
+-- or written a new file and never added it, the commonest shape of an
+interrupted run -- reported an empty list.
+
+A task with NO record renders today's coaching byte-unchanged, so this is
+additive to every retry already on the board.
