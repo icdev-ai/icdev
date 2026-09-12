@@ -471,14 +471,21 @@ class StallSampler(threading.Thread):
         self.probe_timeout_seconds = probe_timeout_seconds
         self.samples: List[StallSample] = []
         self.error: Optional[str] = None
-        self._stop = threading.Event()
+        # `_halt`, NOT `_stop`: threading.Thread defines `_stop` as an internal
+        # METHOD on CPython <= 3.12, and `join()` -> `_wait_for_tstate_lock()`
+        # calls `self._stop()`. Assigning an Event to that name shadows the
+        # method, so every join raises `TypeError: 'Event' object is not
+        # callable`. It is INVISIBLE on a modern local interpreter -- 3.14 no
+        # longer has that attribute, so this passed locally and failed all 12
+        # sampler tests on CI, which pins python-version 3.11.
+        self._halt = threading.Event()
 
     def run(self) -> None:  # pragma: no cover - exercised through start()/stop()
         try:
-            while not self._stop.is_set():
+            while not self._halt.is_set():
                 sleep_started = time.time()
-                self._stop.wait(self.interval)
-                if self._stop.is_set():
+                self._halt.wait(self.interval)
+                if self._halt.is_set():
                     break
                 woke = time.time()
                 overshoot = max(0.0, (woke - sleep_started) - self.interval)
@@ -500,7 +507,7 @@ class StallSampler(threading.Thread):
             self.error = f"{type(exc).__name__}: {exc}"
 
     def stop(self, timeout: Optional[float] = None) -> None:
-        self._stop.set()
+        self._halt.set()
         if self.is_alive():
             self.join(timeout if timeout is not None else self.probe_timeout_seconds + 1.0)
 

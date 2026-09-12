@@ -1456,6 +1456,52 @@ class TestParseTimingFields(unittest.TestCase):
         assert failures[0].duration_ms is None
 
 
+class TestSamplerDoesNotShadowThreadInternals(unittest.TestCase):
+    """A Thread subclass that shadows one of Thread's own private METHODS with a
+    non-callable breaks `join()`, and the break is INVISIBLE locally.
+
+    MEASURED: `self._stop = threading.Event()` passed every local run on Python
+    3.14 -- which no longer has `Thread._stop` -- and failed ALL TWELVE sampler
+    tests on CI with `TypeError: 'Event' object is not callable`, because
+    .github/workflows/icdev-ci.yml pins python-version 3.11, where `_stop` IS a
+    method and `join()` -> `_wait_for_tstate_lock()` calls it.
+
+    So this asserts the GENERAL rule against whichever interpreter is running,
+    rather than banning one name: nothing the sampler assigns may turn one of
+    Thread's callables into a non-callable. On 3.14 it cannot see `_stop`; on
+    3.11 it catches it before CI does.
+    """
+
+    def test_no_thread_callable_is_shadowed_by_a_non_callable(self):
+        import threading as _t
+
+        sampler = StallSampler(base_url="http://127.0.0.1:1", interval_seconds=0.01)
+        shadowed = []
+        for name in dir(_t.Thread):
+            inherited = getattr(_t.Thread, name, None)
+            if not callable(inherited):
+                continue
+            mine = getattr(sampler, name, None)
+            if mine is not None and not callable(mine):
+                shadowed.append((name, type(mine).__name__))
+        self.assertEqual(
+            shadowed, [],
+            f"StallSampler shadows Thread callables with non-callables: {shadowed}. "
+            "On an interpreter where Thread defines that name, join() raises "
+            "TypeError. Rename the attribute (see `_halt`).",
+        )
+
+    def test_the_sampler_can_be_started_and_joined(self):
+        """The behaviour the shadowing broke, end to end: start, stop, join."""
+        sampler = StallSampler(
+            base_url="http://127.0.0.1:1", interval_seconds=0.01,
+            probe=lambda base: 0.01,
+        )
+        sampler.start()
+        sampler.stop(timeout=5)
+        self.assertFalse(sampler.is_alive())
+
+
 class TestStallSampler(unittest.TestCase):
     def test_takes_samples_until_stopped_and_never_raises(self):
         probes = iter([0.1, None, 0.1])
