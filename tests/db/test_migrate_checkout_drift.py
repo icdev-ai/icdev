@@ -294,3 +294,19 @@ def test_status_json_carries_checkout_drift_for_this_real_checkout():
     drift = migrate_cli.checkout_drift(runner)
     assert drift["state"] in {"behind", "current", "unmeasurable"}
     assert "ref" in drift
+
+
+def test_behind_enumeration_is_capped_so_the_count_stays_readable():
+    """400 absent migrations is a misconfigured root, not 400 lines of news."""
+    missing = [{"version": f"2026090100{i:04d}", "name": f"2026090100{i:04d}_m{i}"}
+               for i in range(50)]
+    lines = migrate_cli._format_checkout_drift({
+        "state": "behind", "ref": "origin/main",
+        "missing_count": len(missing), "missing_here": missing,
+    })
+    # The header line also ends "...merged and absent here:", so match the
+    # indented enumeration entries only.
+    named = [ln for ln in lines if ln.startswith("    absent here:")]
+    assert len(named) == 20, "cap the enumeration at 20, like the detector does"
+    assert any("... 30 more" in ln for ln in lines), "and say how many were elided"
+    assert any("50 migration(s)" in ln for ln in lines), "the COUNT must survive"

@@ -145,11 +145,17 @@ def _format_checkout_drift(drift: dict) -> list:
                 "merged migration is missing from this checkout)"]
     if state != BEHIND:
         return []
+    missing = drift.get("missing_here") or []
     lines = ["",
              f"THIS CHECKOUT IS BEHIND {drift.get('ref')} — "
              f"{drift['missing_count']} migration(s) merged and absent here:"]
-    for item in drift.get("missing_here") or []:
+    # Capped at 20 like the detector's own context list: a checkout missing 400
+    # migrations is a misconfigured root, and 400 lines bury the count that
+    # actually tells the operator that.
+    for item in missing[:20]:
         lines.append(f"    absent here: {item['name']}")
+    if len(missing) > 20:
+        lines.append(f"    ... {len(missing) - 20} more")
     lines.append("  A pending count read from this filesystem CANNOT see them, so "
                  "'Pending: 0' does not mean this deployment is current.")
     lines.append("  Merge the default branch into this checkout, then re-run. "
