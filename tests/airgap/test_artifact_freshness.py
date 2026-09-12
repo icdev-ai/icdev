@@ -428,6 +428,14 @@ def test_the_shipped_valkey_pin_is_decided_by_floci_which_hard_codes_the_tag():
                  if e["name"] == "elasticache-valkey")
     assert entry["pinned"] == "8"
 
+def test_the_shipped_mysql_pin_is_decided_by_floci_not_by_mysql_releases():
+    """artifact-fresh-da63da118f. MEASURED 2026-09-12: a default
+    CreateDBInstance(Engine=mysql) returns EngineVersion 8.0.36 and floci pulls
+    `mysql:<EngineVersion>` -- so `26.7.0` is a tag floci never asks for, and
+    acting on that card would drop the default path out of the air-gap bundle."""
+    entry = next(e for e in AF.load_config()["artifacts"] if e["name"] == "rds-mysql")
+    assert entry["pinned"] == "8.0.36"
+
 def test_the_shipped_opensearch_pin_is_decided_by_floci_not_by_opensearch_releases():
     """artifact-fresh-a7486018c7. Stronger than the postgres case: floci 2.0.1
     resolves the tag through a CLOSED EngineVersion table that stops at

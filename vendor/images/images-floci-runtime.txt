@@ -36,6 +36,11 @@ public.ecr.aws/lambda/nodejs@sha256:a4440274d6f0fb4e6cb92cd5f2a97254efe6612f631d
 postgres@sha256:36ed71227ae36305d26382657c0b96cbaf298427b3f1eaeb10d77a6dea3eec41
 
 # rds/mysql -- mysql:8.0.36
+#   The tag is floci's DEFAULT EngineVersion: the ref is built as
+#   `mysql:<EngineVersion>` -- NO suffix, unlike the postgres line above
+#   (measured 2026-09-12). A NEWER mysql is NOT an upgrade for this line, and
+#   `Engine=mariadb` is a different repository entirely. See
+#   docs/audits/artifact-fresh-da63da118f-rds-mysql-pin.md.
 mysql@sha256:a532724022429812ec797c285c1b540a644c15e248579c6bfdf12a8fbaab4964
 
 # elasticache/redis -- valkey/valkey:8
