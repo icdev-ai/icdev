@@ -2561,9 +2561,149 @@ python -c "from tools.foundry.engine import stage_availability as f; print(f())"
 # -- so it is registered under `substrates:` in args/capability_consumption.yaml
 # and probes `empty`, 0 rows. Dropping a table two schemas declare is its own
 # decision with its own migration; it is named here rather than removed.
-# STILL PLACEHOLDER, and deliberately so: nothing here makes the loop apply a
-# real code modification. That is behind the manual gate, and until it opens
-# every run is honestly unmeasurable.
+# STILL PLACEHOLDER for SEVEN of the eight domains, and deliberately so. The
+# eighth, `code_quality`, is xrv-lab-02 below -- and it too is behind a gate
+# that ships CLOSED, so until both switches open every run is honestly
+# unmeasurable.
+
+# ONE domain mutates for real, in a worktree, with evidence lanes (xrv-lab-02)
+python -m tools.autoresearch.real_mutation --gate --json     # both switches, with a NAMED basis
+python -m tools.autoresearch.real_mutation --plan --json     # what a run would do; ACTS ON NOTHING
+python -m tools.autoresearch.real_mutation --lanes --json    # candidate census by lane
+python tools/db/migrate.py --up                              # 20260912122759: experiment_candidates.lane
+python tools/autoresearch/experiment_engine.py --loop --domain code_quality --json
+# xrv-lab-01 left the loop saying honestly that it measures NOTHING: run_loop
+# evaluated the domain, created a candidate, ran it, evaluated AGAIN WITH
+# NOTHING CHANGED, and decided keep/discard on that delta. This makes ONE domain
+# measure something real, bounded and reversible. The shape is adapted from
+# PRAXIST (candidates -> task-owned evaluator -> evidence lanes); PRAXIST is
+# Fair Source 1.0, so the SHAPE is adapted and NONE of its code is vendored.
+# ONE DOMAIN, AND THE LIST IS IN PYTHON. `REAL_MUTATION_DOMAINS` is a frozen
+# tuple holding exactly `code_quality`; `real_mutation.domains` in
+# args/autoresearch_config.yaml can only NARROW it (the INTERSECTION is taken,
+# never the union), because widening autonomous code mutation to a domain nobody
+# vetted must not be a YAML edit. The other seven are untouched.
+# TWO GATES AND BOTH SHIP CLOSED: the master switch (ICDEV_AUTORESEARCH_ENABLED,
+# unchanged) plus `real_mutation.enabled` / ICDEV_AUTORESEARCH_REAL_MUTATION.
+# Off means the real path is NEVER taken and code_quality falls back to today's
+# identity-baseline path -- so the rollback is a flag flip, not a merge revert.
+# FOUR CLOSED VERDICTS, never merged, because each sends a reader somewhere
+# different: `domain_not_enabled` (a list), `disabled_by_config` (a config
+# value), `disabled_by_env` (an env var), `config_unreadable` (a broken file,
+# FAIL-CLOSED -- "we could not read the switch" is not consent).
+# THE RUN: worktree on `autoresearch/<candidate>` under the ALREADY-DECLARED
+# git.worktree_base -> BEFORE on the base -> the claude_cli adapter patches it
+# -> AFTER on the patched tree -> `experiment_engine.decide`, UNCHANGED, on two
+# real numbers. Both are persisted on experiment_results and
+# `placeholder_metrics` is False ONLY here -- and only when at least one
+# candidate produced BOTH sides. A real path that was open and measured nothing
+# is still `placeholder_metrics: True`, because `measured, nothing improved` and
+# `nothing was measured` are the two things xrv-lab-01 exists to keep apart.
+# THE TREE-WIDE READING CANNOT DETECT THE CHANGE IT MEASURES, and this was
+# MEASURED on this checkout 2026-09-12, not anticipated. `code_quality`
+# averages maintainability over EVERY file under `tools/` -- ~1,700 of them --
+# while the evolve declaration this loop obeys sets `max_files_per_cycle: 1`. A
+# deliberately awful 29-line module moved its OWN directory 0.988 -> 0.824 and
+# moved the tree-wide average 0.9312 -> 0.9312: identical at the reported
+# precision, four orders of magnitude below the 0.005 keep threshold. Fed that
+# number the loop would discard every hypothesis forever at delta 0.0 --
+# functionally the identity baseline xrv-lab-01 exposed, wearing a real
+# measurement's clothes.
+# SO THE DECISION IS FED THE SCOPED PAIR: the directory the patch touched,
+# before and after, SAME evaluator and SAME metric -- only the extent narrows.
+# The BEFORE is reconstructed from `HEAD` with `git ls-tree` + `git show`
+# (read-only) rather than measured earlier, because the scope is not knowable
+# until the patch exists; a file the patch ADDED is absent from it, correctly.
+# `patch_scope` returns None -- and the run falls back to the tree pair with
+# the dilution NAMED (`decision_basis: tree_wide_diluted`, and its own
+# `REAL_METRICS_DILUTED_NOTE`, never REAL_METRICS_NOTE) -- for a patch spanning
+# two directories, and for one whose directory IS `tools/`, where a "scoped"
+# reading is the tree reading and giving one number two names is how a diluted
+# delta comes to be believed. BOTH PAIRS RIDE ON EVERY RESULT
+# (`scoped_before/after`, `tree_before/after`) so the choice hides nothing.
+# PROVEN END TO END 2026-09-12 against a SCRATCH SQLite database -- real
+# worktree off origin/main, REAL code_analyzer on both trees, real
+# `experiment_engine.decide`, real lane write, real removal; the ONLY stub was
+# the adapter, because opening the gate for a live LLM dispatch is the decision
+# this card leaves to a human. One run, 106s:
+#   decision_basis scoped   scope tools/autoresearch
+#   scoped 0.9357 -> 0.9315   delta -0.0042   ->  discard
+#   tree   0.9312 -> 0.9312   (the dilution, in the same run)
+#   placeholder_metrics False; lane incubator -> archive; worktree removed;
+#   branch deleted; one experiment_results row with pre != post.
+# The two measurements cost ~106s per candidate on this host (a full
+# `code_analyzer` pass over tools/ is 64.5s and the scoped pair is seconds), and
+# `fitness_evaluator._run_tool` allows 120s -- so a loaded host can push the
+# tree-wide leg over its own timeout, which correctly reports
+# `base_unmeasurable` rather than a fabricated number. Do NOT raise that
+# timeout to make a run succeed.
+# A FAILED MEASUREMENT IS NEVER 0.0. `fitness_evaluator.evaluate` reports a
+# failed tool as `metric_value: 0.0, success: False` -- the SAME number a
+# genuinely zero-scoring tree gives. `measure()` reads `success` FIRST and
+# returns `metric: None`, so a broken analyzer can never read as "this tree
+# scored zero" and can never move a posterior. A MEASURED 0.0 still survives.
+# `unmeasurable` IS ITS OWN OUTCOME and never folds into `discarded`: nothing
+# judged that hypothesis, so it moves no posterior, joins no acceptance rate,
+# and the candidate STAYS in `incubator` with its reason named.
+# THE BOUNDS ARE THE EVOLVE REFLEX'S OWN. allowed_directories /
+# forbidden_files are READ from args/genesis_config.yaml -> reflexes.evolve,
+# never respelled here -- two spellings of "what may an autonomous writer touch"
+# is how one of them comes to permit what the other refuses. A HALF-READ
+# declaration (an empty forbidden list) is `readable: False` and REFUSES rather
+# than defaulting permissive. Forbidden wins over allowed, so
+# `tools/db/storage.py` is refused although it sits under `tools/`.
+# IT NEVER MERGES. Keep = commit, push, `gh pr create` titled
+# `autoresearch(<domain>): <hypothesis>`; a human merges it or nobody does.
+# There is no merge verb in real_mutation.py OR experiment_engine.py and
+# tests/autoresearch/test_real_mutation.py reads BOTH ASTs -- string literals
+# and argv LISTS -- to keep it that way. A behavioural test over today's callers
+# would still pass the day somebody threads an auto-merge through.
+# THE REMOVAL IS PROVEN, NOT BLUNT. `git worktree remove` is the door, never
+# shutil.rmtree (real_mutation imports no shutil, AST-pinned). The plain remove
+# is ALWAYS tried first -- and it is not enough, which was measured rather than
+# reasoned: EVERY discard is dirty by construction, so the plain remove refused
+# on every one and left a full checkout per rejected hypothesis. So the discard
+# path re-derives that the tree holds NO COMMIT beyond its base ref and only
+# then forces; `_holds_no_commits` returning None (cannot tell) REFUSES. The
+# branch goes with it through `git branch -d`, never `-D`: git's refusal to
+# delete an unmerged branch IS the proof there was nothing on it. A KEPT
+# candidate's branch SURVIVES -- the PR points at it.
+# BOUNDED, AND EVERY BOUND REPORTED: max_experiments_per_run (unchanged),
+# `wall_clock_seconds` per run (a spent budget stops STARTING candidates and
+# says `wall_clock_spent`) and `patch_timeout_seconds` per candidate, on whose
+# expiry the WHOLE process tree is killed -- a subprocess timeout kills only the
+# parent while children keep the inherited log handle open
+# (kph-repark-mfx-ci-04 measured a 115s block on that shape).
+# COST rides xrv-cost-02's `record_task_cost` with task_id = the CANDIDATE id.
+# `spawn` is used rather than `invoke` on purpose: spawn writes the CLI's RAW
+# --output-format json envelope to a log file, which is exactly what that reader
+# parses; invoke returns it already transformed.
+# THREE LANES, and the migration's CHECK is DERIVED from `real_mutation.LANES`:
+#   incubator  no real measurement exists -- new, or the before/after could not
+#              be made. NOT a failure.
+#   frontier   kept: measured better than its base, PR open, awaiting a human.
+#   archive    discarded, or superseded.
+# The column's DEFAULT backfills every pre-migration candidate to `incubator`,
+# and that is a measurement rather than a convenient default: all of them were
+# decided against an IDENTITY BASELINE, so no real measurement exists for any.
+# Laning a historically `discarded` one `archive` would assert something judged
+# it; laning a `completed` one `frontier` would assert it beat a base it was
+# never compared against. `lane_census` reports UNMEASURABLE -- never three
+# zeroes -- on a board that has not run the migration.
+# MEASURED 2026-09-12: the migration applies on SQLite (add, backfill, CHECK,
+# DEFAULT, idempotent re-run, down) and its DDL was exercised on PostgreSQL
+# against a throwaway table in `icdev_e2e` -- never the live board. On this
+# checkout `--lanes` reads `lane_column_absent` until migrate.py runs, which is
+# the tool's own distinction between "a migration never ran" and "a writer
+# never ran".
+# FOUND ON THE WAY, and fixed: run_loop's `kept / max(kept + discarded, 1)`
+# returned a confident 0.0 for a loop that judged NOTHING -- now None over an
+# empty denominator. And two ungated tests in
+# tests/test_genesis_reflex_experiment.py asserted the adaptive-threshold
+# branch while xrv-lab-01's early return meant `run()` never reached it: one was
+# red on main, the OTHER WAS GREEN FOR THE WRONG REASON, asserting "the helper
+# was not called" against a run that never got near the call. Both now open the
+# master switch through its documented env override.
 
 # CI runner health (mfx-boot-02) -- re-register a crash-looping self-hosted runner (FT and RT)
 python tools/genesis/daemon.py --reflex ci_runner_health --json   # one cycle through the daemon (acts)
