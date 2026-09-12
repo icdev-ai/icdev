@@ -304,7 +304,26 @@
         {% endif %}
       </div>
     </div>
-    {% else %}
+    {% endif %}
+
+    {# The KPI row and the outcome table render in BOTH states (xrv-cost-06).
+       `shape()` already hands over all five outcomes with every figure None
+       (`_empty_verdicts`) and the API already serves them, so hiding them here
+       made the JSON and the page disagree about what this panel carries. A
+       verdict absent from the table is indistinguishable from one that measured
+       zero -- and that argument applies MOST on the board where nothing was
+       measured. Nothing can be drawn as money: every None branch below renders
+       an em-dash, so an unmeasured panel contains no dollar and no percentage.
+
+       The CAPTIONS do not carry over, though. `total_cost_usd is none` means
+       "dispatches ran and none reported a price" when measured and "nothing was
+       attributed at all" when not, and those are different findings with
+       different fixes -- the panel counts `unpriced_dispatches` separately for
+       exactly that reason. #}
+    {% set unmeasured = spend.state != "measured" %}
+    {# ONE spelling, pinned to `spend.UNATTRIBUTED_CAPTION` by
+       tests/cache_savings/test_spend_panel.py so the two cannot drift. #}
+    {% set unattributed = "nothing in this window was attributed to a card" %}
 
     <!-- Spend KPI row -->
     <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px,1fr)); gap:16px; padding:18px;">
@@ -312,7 +331,7 @@
         {% if spend.total_cost_usd is none %}
         <div style="font-size:24px; font-weight:700; color:var(--text-dim);">&mdash;</div>
         <div style="font-size:12px; color:var(--text-dim); margin-top:4px;">Attributed Spend</div>
-        <div style="font-size:11px; color:var(--text-dim); margin-top:4px;">no dispatch reported a price</div>
+        <div style="font-size:11px; color:var(--text-dim); margin-top:4px;">{{ unattributed if unmeasured else "no dispatch reported a price" }}</div>
         {% else %}
         <div style="font-size:24px; font-weight:700; color:#f59e0b;">${{ "%.2f"|format(spend.total_cost_usd) }}</div>
         <div style="font-size:12px; color:var(--text-dim); margin-top:4px;">Attributed Spend</div>
@@ -326,7 +345,7 @@
         {% if spend.shipped_cost_share_pct is none %}
         <div style="font-size:24px; font-weight:700; color:var(--text-dim);">&mdash;</div>
         <div style="font-size:12px; color:var(--text-dim); margin-top:4px;">Spend That Shipped</div>
-        <div style="font-size:11px; color:var(--text-dim); margin-top:4px;">not measured &mdash; no judged spend in window</div>
+        <div style="font-size:11px; color:var(--text-dim); margin-top:4px;">not measured &mdash; {{ unattributed if unmeasured else "no judged spend in window" }}</div>
         {% else %}
         <div style="font-size:24px; font-weight:700; color:#22c55e;">{{ spend.shipped_cost_share_pct }}%</div>
         <div style="font-size:12px; color:var(--text-dim); margin-top:4px;">Spend That Shipped</div>
@@ -337,13 +356,13 @@
       <div style="text-align:center;">
         <div style="font-size:24px; font-weight:700; color:{{ '#818cf8' if spend.unpriced_dispatches else 'var(--text-dim)' }};">{{ spend.unpriced_dispatches if spend.unpriced_dispatches is not none else "—" }}</div>
         <div style="font-size:12px; color:var(--text-dim); margin-top:4px;">Unpriced Dispatches</div>
-        <div style="font-size:11px; color:var(--text-dim); margin-top:4px;">ran, but reported no dollars</div>
+        <div style="font-size:11px; color:var(--text-dim); margin-top:4px;">{{ unattributed if unmeasured else "ran, but reported no dollars" }}</div>
       </div>
 
       <div style="text-align:center;">
         <div style="font-size:24px; font-weight:700; color:{{ '#f59e0b' if spend.unmeasurable_tasks else 'var(--text-dim)' }};">{{ spend.unmeasurable_tasks if spend.unmeasurable_tasks is not none else "—" }}</div>
         <div style="font-size:12px; color:var(--text-dim); margin-top:4px;">Unmeasurable Cards</div>
-        <div style="font-size:11px; color:var(--text-dim); margin-top:4px;">outcome could not be established</div>
+        <div style="font-size:11px; color:var(--text-dim); margin-top:4px;">{{ unattributed if unmeasured else "outcome could not be established" }}</div>
       </div>
     </div>
 
@@ -417,7 +436,15 @@
     {% endif %}
 
     <div style="padding:12px 18px; border-top:1px solid var(--border); font-size:11px; color:var(--text-dim); line-height:1.6;">
+      {%- if unmeasured %}
+      {# "Showing 0 of 0 attributed card(s)" is TRUE for an empty window and
+         FALSE for a ledger that could not be read -- there, how many cards were
+         attributed is precisely what is unknown. So the count is withheld and
+         the table is described instead. #}
+      No card rows: {{ spend.headline }}. Every figure above is withheld rather than set to zero.
+      {%- else %}
       Showing {{ spend.tasks_shown }} of {{ spend.tasks_total }} attributed card(s), costliest first.
+      {%- endif %}
       Cost is the Claude Code envelope's own <code>total_cost_usd</code> per dispatch, recorded at
       reap against <code>agent_token_usage.task_id</code>; the outcome is re-derived from git
       (<em>did a commit naming this card land on the default branch</em>) and the board, with the
@@ -428,7 +455,6 @@
       different substrate. Re-derive any figure here with
       <code>python -m tools.cache_savings.spend --json</code>.
     </div>
-    {% endif %}
     {% endif %}
   </div>
 
