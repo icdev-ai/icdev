@@ -89,6 +89,13 @@
 # own card; drive the emulator for that service, read the ImageCacheService log
 # line, and convert it with the measurement written down.
 #
+# ONE OF THOSE FIVE HAS SINCE ARRIVED, the way that paragraph asks.
+# `ec2-amazonlinux` was measured on 2026-09-12 (artifact-fresh-b5394142b3) by
+# driving RunInstances, and it is converted BELOW with the log lines written
+# down -- including a finding postgres did not have: `amazonlinux:2023` is a
+# ROLLING tag whose digest moved under it. Four remain: mysql, registry, valkey,
+# opensearch. Do not flip them from this paragraph; measure each.
+#
 # WHY `pypi` AND `package` ARE HERE when the card sketched
 # image|binary x dockerhub|ghcr|github_releases: `testcontainers-floci` is a
 # PyPI distribution (requirements.txt:57) and that is a fact this repository
@@ -248,12 +255,27 @@ artifacts:
     upstream: dockerhub
     mutable_tag: true
 
+  # The second entry converted by measurement, and the record is
+  # docs/audits/artifact-fresh-b5394142b3-ec2-amazonlinux-pin.md.
   - name: ec2-amazonlinux
     kind: image
     ref: public.ecr.aws/amazonlinux/amazonlinux
     pinned: "2023"
     pin_source: "vendor/images/images-floci-runtime.txt"
     upstream: ecr_public
+    decided_by: consumer
+    consumer: floci
+    mutable_tag: true
+    note: >-
+      MEASURED 2026-09-12 (artifact-fresh-b5394142b3): `2023` is floci's OWN
+      default -- `defaultDockerImage` in its embedded AMI catalogue, which it
+      falls back to for an ImageId it does not know -- and the only other
+      amazonlinux tag floci 2.0.1 can ever request is `:2`, via
+      `ami-amazonlinux2`. Amazon Linux 2027 is a real release (published
+      2026-09-03) that no floci code path asks for, so it is carried on
+      `upstream_newest` and does not decide this entry. What DOES decide it is
+      digest drift, and here that is a live signal rather than a formality: this
+      major-version tag is ROLLING, so a re-vendor re-measures it.
 
   - name: ecr-registry
     kind: image

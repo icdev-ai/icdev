@@ -85,6 +85,18 @@ images:
     digest: "sha256:36ed71227ae36305d26382657c0b96cbaf298427b3f1eaeb10d77a6dea3eec41"
     service: rds
     variant: "postgres"
+    note: >-
+      The tag is floci's DEFAULT EngineVersion, not a version this tree chose.
+      Re-measured 2026-09-12 (artifact-fresh-5b1750f240): a default
+      CreateDBInstance(Engine=postgres) returns EngineVersion 16.3 and floci
+      logs `ImageCacheService  Image already present locally, skipping pull:
+      postgres:16.3-alpine`, while EngineVersion=16.99 makes it log `Pulling
+      image: postgres:16.99-alpine` -- so the ref is
+      `postgres:<EngineVersion>-alpine`. EngineVersion is therefore declared
+      configuration in the sense this file's header means, one level finer than
+      `variant`: a deployment declaring EngineVersion=18.6 must vendor
+      postgres:18.6-alpine TOO, and vendoring it INSTEAD of this one breaks the
+      default path. The same holds for mysql, whose default is 8.0.36.
 
   - ref: "mysql:8.0.36"
     digest: "sha256:a532724022429812ec797c285c1b540a644c15e248579c6bfdf12a8fbaab4964"
@@ -120,10 +132,34 @@ images:
       re-measure rather than assume.
 
   - ref: "public.ecr.aws/amazonlinux/amazonlinux:2023"
-    digest: "sha256:fb70bd54d4a849293bfef9785ce63aa1eac2557e0167af4f32f56286bd35d783"
+    digest: "sha256:a0646b8bd35abf5ca3ab94d8cdb5691b9024e19c357531eeefd0ac4762836438"
     service: ec2
     variant: null
-    note: "EC2 RunInstances starts an Amazon Linux container, whatever ImageId is given."
+    mutable_tag: true
+    note: >-
+      The tag is floci's OWN default, and `2023` is a ROLLING tag. RE-MEASURED
+      2026-09-12 (artifact-fresh-b5394142b3), which corrected both halves of the
+      one-line note this row used to carry.
+      (1) NOT "whatever ImageId is given": floci ships an AMI catalogue --
+      DescribeImages serves 10 entries -- and each imageId names its own
+      dockerImage (ami-ubuntu2204 -> ubuntu:22.04, ami-debian12 -> debian:12,
+      ami-alpine -> alpine:latest, ami-amazonlinux2 -> amazonlinux:2). What is
+      universal is the FALLBACK: an ImageId floci does not know is answered
+      `AmiImageResolver  Unknown AMI ID ...; falling back to default image
+      public.ecr.aws/amazonlinux/amazonlinux:2023`, and a default
+      RunInstances(ami-0abcdef1234567891) logged `ImageCacheService  Image
+      already present locally, skipping pull:
+      public.ecr.aws/amazonlinux/amazonlinux:2023`. So THIS row covers the
+      default and unknown-AMI paths; a deployment that declares another AMI in
+      that catalogue must vendor that AMI's image too -- the declared
+      configuration rule in the header, one level finer, exactly as for RDS
+      EngineVersion.
+      (2) The DIGEST MOVES UNDER THIS TAG. Upstream rebuilds the major-version
+      tag: it served AL 2023.12.20260831 (sha256:fb70bd54...) when this table was
+      first measured and AL 2023.12.20260909 (the digest above) on 2026-09-12.
+      Flagged `mutable_tag` for the same reason redpanda and k3s are -- a
+      re-vendor must re-measure rather than assume -- even though, unlike those
+      two, the tag does carry an ordering.
 
   - ref: "rancher/k3s:latest"
     digest: "sha256:5e0707cfd1239b358ef73f3254bc3eadc027dd30cd5ec6ca41e29e47652a1b8c"
