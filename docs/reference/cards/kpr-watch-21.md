@@ -1,6 +1,6 @@
 # CUI // SP-CTI
 
-# kpr-watch-21 — A refusal that names no remedy
+# A refusal that names no remedy (kpr-watch-21)
 
 **Measured 2026-09-12.** `pr_watcher.wait` carried **10,542** lifetime rows whose
 reason was `enforced gate: awaiting ICDEV done-verification`
