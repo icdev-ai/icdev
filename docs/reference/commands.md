@@ -9128,6 +9128,107 @@ block the one host most likely to need to re-cut a bundle.
 
 Convention and the reason no floci pin is committed yet: `vendor/images/README.md`.
 
+## Is a PINNED artifact still the newest one upstream? (xrv-pin-01)
+
+```bash
+python -m tools.airgap.artifact_freshness --survey --json
+python -m tools.airgap.artifact_freshness --survey                  # human table
+python -m tools.airgap.artifact_freshness --artifact floci --json   # one pin
+python -m tools.airgap.artifact_freshness --list                    # the manifest
+python -m tools.airgap.artifact_freshness --survey --offline        # force the air-gap verdict
+python tools/genesis/daemon.py --reflex artifact_freshness --json   # one cycle, through the daemon
+```
+
+The vendor above answers "does this bundle contain exactly what we pinned", and
+answers it cryptographically. It cannot answer, and nothing else asked, **"is
+what we pinned still the current release"**. The `floci/floci:2.0.1` pin is a
+2026-09-01 snapshot whose only ongoing assertion is a test that
+`vendor/images/images-floci.txt` and `args/floci_iac_gate.yaml` AGREE WITH EACH
+OTHER -- and two files can agree perfectly about a version that shipped a year
+ago. **AGREEMENT IS NOT CURRENCY.** The four `floci/*` compose tags and
+`testcontainers-floci` had no manifest at all, so there was not even a list to
+ask the question about.
+
+`args/pinned_artifacts.yaml` is that list -- 16 entries seeded from the two
+floci pin files, the four compose services and `testcontainers-floci`. It is a
+**DECLARATION and never a second copy of a pin**: each entry names the file the
+pin actually lives in (`pin_source`) and the survey reads it, through
+`image_vendor.parse_pin` for a digest line. A `pin_source` that disagrees with
+the manifest is `unmeasurable` rather than resolved in favour of one side --
+which one is right is the question, and answering it by preference is how the
+drift goes invisible.
+
+**THREE STATES, NEVER MERGED.** `current` (upstream's newest comparable release
+IS what we pin) | `behind` (a newer one exists, **NAMED**) | `unmeasurable` (we
+could not ask: an air-gapped host, a 4xx, an unparsable body, an exhausted
+budget). An air-gapped deployment -- the one `tools/airgap/` exists to serve --
+reports every artifact `unmeasurable` and **NEVER** `current`; a freshness check
+that read "I could not reach the registry" as "the pin is fine" would hand
+exactly the disconnected operator a fabricated clean bill. `current_pct` is
+`None`, never `100.0`, over an empty denominator, while a MEASURED `0.0` stays a
+real red bar.
+
+**TWO BASES FOR `behind`, and which one decided is recorded.**
+`version_tag` -- the pinned tag carries an ordering and a strictly greater tag
+of the **same SHAPE** exists. Shape is load-bearing: `16.4-alpine` supersedes
+`16.3-alpine` and `16.4` does not, because a different suffix is a different
+image line and crossing them reports a postgres pin as behind a variant nobody
+runs; a different component count is likewise not a successor.
+`digest` -- the pinned tag carries **no** ordering. `redpandadata/redpanda:latest`
+and `rancher/k3s:latest` are pinned by a MUTABLE tag (`args/floci_runtime_images.yaml`
+says so in as many words), so "newer" for them is knowable only as the tag having
+MOVED off the digest we recorded -- a real, measurable `behind`, and the one
+signal those two entries can give. `digest_drift` rides beside the status on
+every image and is `None` -- never `False` -- when it could not be compared.
+
+**ONE CODE PATH FOR EVERY REGISTRY.** The host comes from the `ref` and the
+bearer token from the registry's OWN 401 `WWW-Authenticate` challenge, so Docker
+Hub, `public.ecr.aws` and `ghcr.io` need no per-registry table and a fourth
+needs no edit. The declared `upstream:` is cross-checked against the host the
+ref implies, so a label can never disagree with the fetch it describes. The PyPI
+lane reuses the EXISTING seam, `dependency_scanner._check_pypi_latest` -- there
+is no second package-index client.
+
+**IT NEVER PULLS AND NEVER WRITES A PIN.** Structural, not a docstring promise:
+`subprocess`, `os` and `shutil` are unimportable in both modules, the one HTTP
+door is GET/HEAD only, and nothing opens `vendor/images/*`, `docker-compose.yml`
+or `requirements.txt` for writing. `tests/airgap/test_artifact_freshness.py`
+asserts all three against the **AST** and not the source text -- both modules
+explain in prose that they never touch `subprocess`, so a grep would flag their
+own explanation of themselves (the `model_id_gate` trap).
+
+**THE REFLEX** (`artifact_freshness`, 24h, green, registered in BOTH
+`daemon.REFLEX_NAMES` and `args/genesis_config.yaml`) files ONE card per
+`behind` artifact through `task_factory.create_tasks`, `idempotency_key=
+artifact-freshness:<name>:<newest>`, into `suggested` -- moving a digest pin is
+a supply-chain act and belongs in a reviewed diff, which is why the pins are
+digests. A further upstream release is a new key and a new card. Bounded by
+`max_cards_per_run` with deferred artifacts NAMED. A cycle that measures
+nothing reports `unmeasurable` with `metric_value 0`, never `ok`, while
+`success` stays True so the circuit breaker cannot make the reflex permanently
+inert on the very deployments it serves; an unreadable manifest is `error`,
+which is a third thing.
+
+**MEASURED on this host 2026-09-12, first live survey:** 16 declared, **10
+current, 6 behind, 0 unmeasurable**. `postgres` 16.3-alpine -> 18.6-alpine,
+`mysql` 8.0.36 -> 26.7.0, `valkey` 8 -> 9, `opensearch` 2.19.5 -> 3.8.0,
+`amazonlinux` 2023 -> 2027, `registry` 2 -> 3. THREE also carry digest drift
+(`lambda-python`, `elasticache-valkey`, `ec2-amazonlinux`): the pinned tag no
+longer serves the digest `vendor/images/images-floci-runtime.txt` names, so an
+air-gap bundle re-cut from the tag today would not contain what the pin file
+says. Both `:latest` pins were measured **unmoved** since 2026-09-05 -- the
+positive control for the digest lane. The four `floci/*` emulators and
+`testcontainers-floci` are current. Every one of the six is a card a human
+decides on; nothing here moved a pin.
+
+**Not declared, and named rather than implied:** browser drivers
+(`driver_vendor.py` pins to the LOCALLY INSTALLED browser's major version, so
+"is there a newer chromedriver" is a question about the host and answering it
+here would report every developer machine as behind its own Chrome), the ECS
+probe's own workload image, and the rest of `docker-compose.yml`. Each needs its
+own card.
+
+
 ## Floci Cloud Emulator — the rest of the surface (flx-docs-01)
 
 `docs/features/phase-flx-floci-emulator.md` is the feature doc; ADRs D398–D401
