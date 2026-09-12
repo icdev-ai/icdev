@@ -48,6 +48,11 @@ from tools.kanban.fixtures import is_test_fixture as _is_test_fixture  # noqa: F
 #: SEEDING ORDER override the real dependency graph.
 from tools.kanban.deps import deps_satisfied as _deps_satisfied  # noqa: E402
 
+#: A detector card is CARD-or-RECORD, and that verdict is re-derived here rather
+#: than trusted from seeding time (autonomy-act-07). The rule itself lives in
+#: ``detector_findings.card_disposition``; this module only asks.
+from tools.kanban.promotion_gate import filter_promotable as _filter_promotable  # noqa: E402
+
 
 def promote(
     *,
@@ -106,6 +111,21 @@ def promote(
 
         if max_tasks:
             eligible = eligible[:max_tasks]
+
+        # A detector card whose finding has BECOME a record since it was seeded
+        # is not work either — the subject landed and closed while the card sat
+        # in the queue, so a worker sent against it cannot go RED
+        # (autonomy-act-07). Same shape as the two guards above, asked here for
+        # the same reason: recognise it BEFORE it can become `scheduled`. The
+        # finding is kept and stays visible to `detector_findings --records`.
+        eligible, _withheld = _filter_promotable(
+            eligible, conn=conn, door="promote_backlog_to_scheduled")
+        for tid, v in (_withheld or {}).items():
+            # Once per card: this runs at the top of every scheduler cycle and
+            # a withheld card stays in `backlog`, so an unconditional print is
+            # a line a minute for as long as the card exists.
+            if not v.get("announced_before"):
+                print(f"  WITHHELD {tid}: {v.get('reason')}")
 
         if not eligible:
             print("No eligible backlog tasks to promote.")
