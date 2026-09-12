@@ -4069,174 +4069,105 @@ python -m tools.quality.outline_contract --list                            # eve
 # Migration 20260902235404 rebuilds the constraint from the tuple.
 ```
 
-# The RFP shredder is WIRED, and there is ONE compliance matrix (rmf-rfp-01)
-python tools/govcon/compliance_matrix_builder.py --opportunity-id "opp-xxx" --ingest solicitation.pdf --json
-python tools/govcon/compliance_matrix_builder.py --opportunity-id "opp-xxx" --coverage --json
-python tools/govcon/compliance_matrix_builder.py --opportunity-id "opp-xxx" --gate --json
-# Routes: POST /rfp/upload (multipart rfp_file, optional opportunity_id) and
-# POST /api/proposals/opportunities/<id>/compliance/batch with {"parsed": ...,
-# "section_text": {"L"|"M"|"C": ...}} beside the unchanged {"items": [...]}.
-# solicitation_parser.py extracted Section A-M, L.x instructions, M factors,
-# volumes and CLINs and NOTHING consumed it but response_drafter: no route, no
-# UI. compliance_matrix_builder.py had ZERO callers. Now an RFP upload seeds
-# ONE WORKBENCH SECTION PER SECTION L INSTRUCTION (rfi_workbench._rfp_section_rows,
-# never the RFI questionnaire defaults -- seeding those for an RFP fabricates
-# what the RFP asks for; a parse with no L items and no volumes seeds nothing
-# and says `parse_fallback`), and with an opportunity_id it populates that
-# opportunity's L/M/C matrix through build_from_parsed().
-# TWO MATRICES WAS THE DEFECT. proposal_compliance_matrix is what the
-# /api/proposals compliance routes, the auto-populate route, the detail pages
-# and the IQE adapter read and write -- 499 rows on the live board 2026-09-03.
-# pg_compliance_matrix held 0 rows (its only writer had no callers) while
-# opportunity_lifecycle's MAP->DRAFT gate, color_review_simulator,
-# program_bridge's CDRL gatherer and the proposal_genesis bridge/trace reflexes
-# ALL computed coverage over it: "No compliance matrix entries found" for
-# opportunities with hundreds of rows in the other table. Migration
-# 20260903185253 adds evaluation_factor / evaluation_weight / amendment_version
-# to the survivor, widens its requirement_type CHECK to the builder's sources
-# (C, attachment, amendment), copies any legacy rows across (status mapped:
-# addressed->compliant, gap->not_addressed, na->not_applicable) and DROPS the
-# second table. Both CHECKs and the fold derive from ONE module,
-# tools/govcon/compliance_matrix_schema.py, and
-# tests/govcon/test_rmf_rfp_one_matrix.py refuses any runtime SQL that names
-# pg_compliance_matrix again. Apply it on a live PG board with
-# `python tools/db/migrate.py --up`; SQLite keeps its old CHECK (a CHECK cannot
-# be ALTERed there) and a fresh SQLite database derives the new one from init.
+#### Card records — one line each; the essay is `docs/reference/cards/<id>.md`
 
-# A twin over the EMULATOR, read through the broker, marked `emulated` (flx-twin-01)
-# A library, no CLI. Import it:
-#   from tools.twin_core.registry import TwinRegistry
-#   twin = TwinRegistry.get("floci")
-#   snap = twin.take_snapshot("local", label="pre-apply")   # 7 brokered reads
-#   env  = twin.simulate_delta("local", {"services": ["lambda", "s3"]})
-#   twin.latest_status("local")   # the newest PERSISTED verdict; probes nothing
-# The twelfth adapter in tools/twin_core/adapters/ (filesystem-discovered), over
-# the LOCAL floci AWS emulator. `floci` is a `core_extension` in
-# args/component_registry.yaml, not a canvas -- it has no page, so the 8-point
-# page gate does not apply; the adapter renders inside the existing Twin
-# Observatory and emits the existing `twin_snapshot_taken` event.
-#
-# EVERY READ GOES THROUGH tools/databridge/broker.py::fetch as
-# `twin_observatory_analyst` -- the flx-bridge-02 grant -- so each of the seven
-# logical tables is authorized against the manifest and lands one
-# databridge_agent_access_log row. MEASURED 2026-09-05 on a scratch board: 57
-# rows, 28 allowed and 29 denied, every one under that agent id. Importing
-# FlociConnector and calling read() would return the SAME rows with NO
-# authorization check and NO audit row -- the ungoverned side channel cef-fnd-03
-# exists to close, and nothing about the values would look wrong. A structural
-# AST test refuses a direct connector read and pins the import list to
-# declarations + capability predicates (TABLES, boto3_available,
-# table_needs_boto3, table_is_docker_backed, table_service).
-#
-# THE BROKER NOW RELAYS THE CONNECTOR'S STATUS, and it had to. `fetch` read
-# `response.data` and nothing else, so a connector answering `disabled`,
-# `unsupported_without_docker` or `error` came back as `ok=True, row_count=0` --
-# indistinguishable from a table that answered and held no rows. That is the
-# exact conflation floci_connector._unsupported_response was written to prevent,
-# undone one layer up. FetchOutcome gains `connector_status` /
-# `connector_errors`; `ok` is deliberately UNCHANGED, so no existing caller's
-# verdict moves.
-#
-# FOUR VERDICTS, AND UNKNOWN IS NEVER PASS. Every one MEASURED live against
-# floci/floci:2.0.1 on 2026-09-05:
-#   pass     every declared table answered. resource_count 0 with an empty
-#            emulator and 1 after creating one bucket -- a MEASURED zero.
-#   warn     a container-backed table reported `unsupported_without_docker`
-#            (FLOCI_DOCKER_SOCKET pointed at an absent unix socket: lambda_
-#            functions refused, 6/7 answered, rc still 1), or a boto3-backed
-#            table has no SDK. boto3 is NOT in requirements.txt, so five of the
-#            seven tables error on a host without it -- that error did not come
-#            from the emulator, no socket opened, and scoring it `fail` would
-#            blame the estate for a local tooling gap. It is an UNANSWERED
-#            table, basis `sdk_unavailable`, kept apart from the docker case
-#            because the repairs differ.
-#   fail     a REACHABLE emulator returned an error.
-#   unknown  disabled | unreachable | broker_denied. resource_count is None --
-#            NEVER 0 -- because an unreachable emulator holds an UNKNOWN number
-#            of buckets and 0 asserts it holds none.
-# `saas_base.connect` returns False whenever health_check is not `healthy`, so
-# the connector's own `disabled` status NEVER reaches a brokered read and both
-# "switched off" and "on but nothing answered" arrive as one broker refusal. The
-# verdict is `unknown` either way; the BASIS is recovered from STRUCTURED facts
-# -- broker.list_available() for the grant, emulator.enabled() for the switch --
-# and never from the refusal's prose. Measured: FLOCI_ENABLED unset ->
-# `disabled`; set with no container -> `unreachable`; no connection row ->
-# `broker_denied`. Do NOT collapse them: one is a flag, one is
-# `docker compose --profile floci up -d`.
-#
-# PROVENANCE IS THE WHOLE DESIGN, and it is asserted THREE ways. target_csp is
-# `aws` / us-gov-west-1 so the GovCloud presets in args/twin_target_presets.yaml
-# and their service_parity flags apply to simulate_delta -- but every snapshot
-# carries provenance `emulated` (twin_core.schema.PROVENANCE_EMULATED, the
-# ni_devices.source vocabulary where `synthetic` is spelled out as "NOT evidence
-# of anything"). A floci S3 bucket is a container's in-process state and ranking
-# it beside a real inventory is the rmf-disc-02 defect one layer up. So:
-# `_persist_snapshot` takes NO provenance parameter and binds the module
-# constant; a test reads its AST and refuses one (a behavioural test over
-# today's callers -- which pass none -- would still pass the day somebody
-# threads a kwarg through); and migration 20260905070028 DERIVES a CHECK from
-# schema.SNAPSHOT_PROVENANCES, so the database refuses one too.
-# simulate_delta carries `provenance` in `extra` on EVERY envelope including a
-# clean one -- a consumer that only learns the estate was emulated when
-# something is wrong will read a clean run as evidence about a real deployment.
-#
-# Table `floci_twin_snapshots` (owner `it` by PREFIX RULE in
-# args/schema_ownership_rules.yaml, never a manifest line), registered as a
-# substrate in args/capability_consumption.yaml -- it reads `absent` until
-# `python tools/db/migrate.py --up` runs, which is the tool's own distinction
-# between "a migration never ran" and "a writer never ran".
-# NEVER source a performance, cost or capacity claim from this twin: an emulator
-# reproduces the AWS API contract, not its performance characteristics
-# (docs/spikes/twx-spk-01-localstack-go-no-go.md's standing guard).
+Each card below is a hard-won incident record: what was MEASURED, what changed, and
+what deliberately did not. The essays used to sit inline in this block — 297,635 of
+this file's 367,462 bytes — and every session paid for all 82 whether or not it
+touched one (xrv-docs-02). They moved VERBATIM to `docs/reference/cards/`, one file
+per card, named for the id below. Read the one your task names; the command here is
+the single entry point, and the essay carries the rest.
 
-# Nine external repos reviewed; eight gaps were OUR OWN unconsumed capabilities (xrv)
-python -m tools.cost.session_cost --survey --by-verdict --json   # spend that SHIPPED: shipped|reverted|abandoned|in_flight|unmeasurable
-python -m tools.cost.waste_survey --since-days 30 --project ICDev --json   # one-shot rate, ghost definitions, CLAUDE.md tokens/day
-python -m tools.cache_savings.spend --json                       # the /cache-savings "Spend by Card" panel payload
-python -m tools.kanban.should_run --survey --json                # ONE pre-dispatch verdict incl. the BUDGET rung
-python -m tools.hooks.session_context --json                     # the SessionStart block (injected automatically)
-python -m tools.hooks.observation_capture --survey --since-days 7 --json
-python tools/memory/hybrid_search.py --query "q" --layer index --json    # index -> timeline -> detail, approx_tokens on each
-python -m tools.security.agent_config_shield --json              # .claude/ .agents/ .cursor/ .mcp.json + the 10 companion files
-python -m tools.dx.tool_index --refresh --json                   # the ~36 external binaries; which() REFUSES an undeclared name
-python -m tools.routing.corpus_survey --json                     # 195 cases over the FOUR routers; adds no fifth
-python tools/ci/pin_census.py --check                            # a CI reference that does not name its bytes (69 sites, shrink-only)
-python -m tools.analyzers.binary_triage <path> --json            # pure-Python; executes NOTHING (AST-asserted)
-python -m tools.analyzers.ghidra_headless <path> --json           # OPTIONAL; `unavailable` on a default install IS the answer
-python -m tools.airgap.artifact_freshness --survey --json         # current|behind|unmeasurable; air-gap is NEVER current
-# Feature doc: docs/features/phase-xrv-external-review.md   ADRs: D402-D408
-# Surveys: docs/audits/xrv-{cost-03,mem-02,route-03,run-01,shield-01}-*.md
-# THREE RULES THIS PHASE ADDS, each measured before it shipped:
-#  1. AN ABSENT PRICE IS NEVER $0.00, AND AN UNMEASURED OUTCOME IS NEVER A VERDICT.
-#     A claude_cli dispatch bypasses router.invoke, so its cost lives only in the
-#     transcript; the CLI's own total_cost_usd is recorded AS REPORTED and never
-#     re-priced (args/llm_config.yaml prices no Claude Code model). `unpriced` is
-#     counted APART from shipped/abandoned -- a dispatch that reported no dollars
-#     still shipped. record_task_cost once defaulted an absent price to 0.0 and
-#     understated the bill in the direction that makes work look cheap. The two MCP
-#     usage counts (transcripts 3/472, Studio audit 1/472 on this host) measure
-#     DIFFERENT CALLERS and are never merged; nothing under tools/mcp/ writes a
-#     dispatch row, so Claude Code MCP calls are invisible to
-#     capability_consumption --class mcp_dispatch_tool (xrv-cost-05).
-#  2. DO NOT RAISE A BUDGET TO QUIETEN THE RUNG IT REFUSES. should_run ships
-#     KANBAN_SHOULD_RUN=report and changes no dispatch outcome. Replayed over 7,072
-#     scheduler dispatches: 28.11% `wait` lifetime, 100.00% in 2026-09 -- and EVERY
-#     fire is the module TOKEN cap, not one is USD (spent_usd 0.0 every month; every
-#     call routes to a $0/1k provider). So the rule is right about the ledger and the
-#     ledger is wrong about the cost: arming `enforce` today parks the whole board
-#     until 2026-10-01. The repair is the token cap moved after routing, then
-#     re-survey. Survey: docs/audits/xrv-run-01-should-run-survey.md
-#  3. ASK UPSTREAM; NEVER ACT ON THE PIN. artifact_freshness never pulls and never
-#     writes a pin (subprocess/os/shutil unimportable, AST-pinned) -- it files ONE
-#     `suggested` card per `behind` artifact, because moving a digest pin is a
-#     supply-chain act that belongs in a reviewed diff. AGREEMENT IS NOT CURRENCY: a
-#     test that two pin files agree with each other passes forever for a version that
-#     shipped a year ago. An air-gapped host reports every artifact `unmeasurable`,
-#     NEVER `current`. Measured 2026-09-12: 16 declared, 10 current, 6 behind, 3 of
-#     those also digest-drifted. Same rail everywhere in this phase: None never [],
-#     `unavailable` is not an empty result, the version TOKEN is not the version
-#     (OpenSSL 1.1.1k -> `1.1` is a WRONG version), and binary corroboration is
-#     reported BESIDE the signature verdict and can never downgrade it.
+Budget: `args/claude_md_budget.yaml`, warned by `coherence_checker.py --check
+claude_md_budget`. It may only go DOWN.
+
+Carried up from `flx-twin-01` because it is a RULE and not a record: NEVER source a
+performance, cost or capacity claim from the floci twin — an emulator reproduces the
+AWS API contract, not its performance characteristics.
+
+- `xit-decl-01` — Which parent IS this checkout, and may it touch THIS database? — `python -m icdev.core.context --check`
+- `rmf-inert-03` — A reflex that is GREEN while it can reach 3 of 11 subjects — `python -m tools.genesis.reflexes.canvas_reassess --coverage`
+- `exa-live-01` — Capability consumption — is a DECLARED capability actually being used? — `python tools/awareness/capability_consumption.py --json`
+- `cef-ci-01` — The Cortex federation layer is UNDER that gate — `python tools/awareness/capability_consumption.py --class cortex_backend --json`
+- `rem-hyg-17` — Does the surface's CLAIM survive an INDEPENDENT re-derivation? — `python tools/awareness/claim_verifier.py --json`
+- `claim-verif-33c9f4cd11` — A service's session id is INHERITED by everything it spawns — `python tools/awareness/claim_verifier.py --claim scheduler_heartbeat_is_fresh`
+- `autonomy-id-06` — A daemon's reload watch set is what it EXECUTES, not what it had imported at start — `python -m pytest tests/genesis/test_code_reload.py -q`
+- `autonomy-lrn-02` — Is intervention actually FALLING? The AUTONOMY card held to its own standard — `python -m tools.awareness.autonomy_loop`
+- `autonomy-act-03, autonomy-dep-04` — The restore tier, ENUMERATED — four mechanical acts, and no fifth — `python tools/awareness/restore_acts.py --list`
+- `autonomy-lrn-01` — An INCIDENT becomes a STANDING CLAIM, and the claim cites it — `python tools/awareness/claim_verifier.py --incidents`
+- `trust-disc-04` — Substrate probe — does the thing you are about to design against HAVE ROWS? — `python tools/awareness/capability_consumption.py --probe-plan <plan.md> --substrate-gate`
+- `exa-audit-04` — Audit hash-chain integrity — is the audit_trail chain actually intact? — `python tools/audit/chain_sweep.py --json`
+- `cch-obs-01` — Per-provider prompt-cache effectiveness — not one aggregate number — `python tools/cache_savings/by_provider.py --json`
+- `dwr-fid-01` — The UPLOADED original is KEPT, content-addressed, before its temp file goes — `python -m tools.document_intelligence.originals --survey [--json] [--verify]`
+- `dwr-anchor-06` — A suggestion drafted against a TOKEN is retired, never back-filled — `python -m tools.document_intelligence.suggestion_redraft --census`
+- `dwr-fid-02` — Where on the page did each word SIT? The layer a left pane renders from — `python -m tools.document_intelligence.page_geometry --survey [--json]`
+- `dwr-fid-03` — A DEGRADED render SAYS it is degraded, and the ingest posture is REAL — `python -m tools.document_intelligence.reading_pane --survey [--json]`
+- `cef-di-01` — DocMod asks ONE governed seam instead of hand-querying tables — `from tools.doc_modernization.evidence import (`
+- `cef-di-03` — DocDrift's SSP evidence comes from ONE governed seam — `from icdev.tools.document_intelligence.ssp_evidence import resolve_evidence`
+- `cef-di-05` — DIC document generation asks ONE governed seam, and screens what it wrote — `from icdev.tools.document_intelligence.docgen_evidence import (`
+- `cef-di-04` — DIC grounded search asks ONE governed seam for its candidates — `from icdev.tools.document_intelligence.search_evidence import resolve_evidence`
+- `cef-ui-01` — DocDrift SHOWS the verdict — and shows an unknown as a finding — `from icdev.tools.document_intelligence.docdrift_evidence import (`
+- `cef-ui-03` — HITL approve/reject for a resolve-produced proposal — EXISTING routes — `POST /document-intelligence/api/modernization/findings/<id>/resolve`
+- `cef-ui-02` — A conflict/gap the request DIDN'T take with it, browsable on Explorer — `from tools.cortex.finding_store import list_findings, finding_stats`
+- `cef-fnd-04` — Is this entity still current? ONE store, any source, any domain — `python -m tools.currency.entity_currency --backfill --json`
+- `dwr-ev-01` — An AUTHOR's upload is a declared source, ranked top, and the catalog it contradicts survives — `python -m tools.currency.entity_currency --resolve "catalyst 6500" --entity-type hardware_model`
+- `dwr-ev-02` — A COMMENT is an instruction until a human promotes it; then it is CITED, and marked — `python -m tools.currency.entity_currency --resolve "tls 1.1" --entity-type crypto_protocol`
+- `dwr-ev-03` — Redraft with my comments — a button a human presses — `from tools.document_intelligence.redraft import redraft_change, run_stats`
+- `dwr-word-02` — A reviewer's Word revisions, read back in and RECONCILED — `python -m tools.document_intelligence.docx_review_import --file review.docx --version <version_id>`
+- `exa-bench-03` — Agent adapter capability matrix — DECLARED vs ACTUAL per adapter — `python tools/agents/capability_matrix.py --json`
+- `exa-bench-05` — PreToolUse hook enforcement — the hook's exit 2 now reaches the caller — `python tools/hooks/fire_rate_survey.py --json`
+- `kpr-rvfy-05` — A raw `gh pr merge` on a KANBAN-LINKED PR is refused — `python tools/hooks/fire_rate_survey.py --check gh_pr_merge_bypass --samples 10`
+- `mfx-mrg-04` — A protected-path PR lands through the DOOR, with an audited reason — `python tools/kanban/cli.py --set-status <id> done --merge --protected-ok --reason '<why>'`
+- `mfx-mrg-07` — The Actions auto-merge workflow is a FOURTH door, and it now honours protected_paths — `python tools/ci/protected_paths.py --config-file args/pr_watcher_config.yaml --files tools/ci/pr_watcher.py docs/x.md`
+- `mfx-own-02` — A claim from a PLAIN SHELL now HOLDS -- `--claim` hands its lease to a keeper — `python tools/kanban/cli.py --claim <task-id> --intent "repairing its PR by hand" [--ttl 7200]`
+- `mfx-own-05` — A REPARK id extends a task id at the FRONT -- the matcher no longer binds it — `python -m tools.kanban.branch_match_survey --env-file C:/AI/ICDev/.env`
+- `kph-repark-kph-repark-mfx-ci-04` — The worktree-add budget is REAL, and the checkout is parallel — `python -m pytest tests/kanban/test_worktree_add_budget_is_real.py -q`
+- `mfx-own-04` — A worktree HUSK with no .git marker is provably dead -- swept on a clock of HOURS — `python -m tools.kanban.worktree_husks --survey [--json]`
+- `kpr-watch-15` — A `merge -s ours` supersede made the branch UNREBASABLE — `python -m tools.ci.rebase_merge_survey --classify`
+- `kpr-watch-13` — Did that resume REACH anything, or was a line just written? — `python -m tools.ci.resume_delivery --survey`
+- `kpr-watch-14` — CLAUDE.md is DECLARED for the union rung, and its generated copy is DERIVED — `python -m tools.kanban.claude_md_union_survey`
+- `kpr-watch-11` — Is a task's status OSCILLATING — two writers taking turns? — `python -m tools.kanban.status_churn --json`
+- `autonomy-act-05` — ONE statement of which pr_watcher actions are recovery evidence — `python -m tools.kanban.recovery_action_survey`
+- `autonomy-act-02` — Consume the detectors nobody runs — and file each finding ONCE, with its evidence — `python -m tools.kanban.detector_findings --json`
+- `kpr-fix-03` — Would that check have been RIGHT to refuse? Surveyed; answer is NO — `python -m tools.kanban.landed_dispatch_survey --json`
+- `kpr-rvfy-04` — A `done` task with NO artifact, and a comment mention read as a landing — `python -m tools.kanban.artifact_evidence --survey`
+- `trust-disc-05` — Is this task id ALREADY on main? task -> main, not task -> PR — `python -m tools.kanban.landed_check --task <task-id> --json`
+- `rem-hyg-03/04` — Does an epic CLAIM this task id? Surveyed, then armed to `report` — `python -m tools.kanban.identity_survey --json`
+- `tsg-iso-03` — An undeclared third-party import that fails SILENTLY — `python tools/ci/undeclared_import_census.py --check`
+- `xrv-route-03` — A CI reference that does NOT NAME THE BYTES it resolves to — `python tools/ci/pin_census.py --check`
+- `xit-leak-01` — This repo is PUBLIC: nothing from the trading domain comes back — `python tools/ci/domain_leak_gate.py --check`
+- `xit-decl-04` — Every table has ONE owner: core | it | ft — `python tools/db/schema_ownership.py --check`
+- `xit-decl-03` — A module that computes the REPO ROOT from its own location — `python tools/ci/self_root_census.py --check`
+- `rem-hyg-13` — A PERFECT SCORE returned when the denominator is empty — `python tools/ci/perfect_score_census.py --check`
+- `rem-tst-06` — Promote an ungated test module — but only if it is green BOTH WAYS — `python -m tools.ci.gate_promoter --plan --limit 10`
+- `rem-hyg-14` — An ungated test that is RED FROM BIRTH, not only one that regressed — `python tools/ci/born_red_survey.py`
+- `crx-test-05` — The gated pytest run is SHARDED across runners — `python tools/ci/gated_test_list.py --print --list core --shard 2/4`
+- `mfx-ci-02` — ONE ICDEV CI run per ref -- a newer push CANCELS the superseded run — `python -m pytest tests/ci/test_ci_concurrency.py -q`
+- `crx-test-07` — The shards are BIN-PACKED by measured duration, not file count — `python tools/ci/shard_timings.py --show`
+- `trust-disc-01` — Red-first proof — did the changed test actually go RED? — `python tools/ci/red_first_gate.py --gate`
+- `cef-ci-02` — A closed census may LOSE names and must never GAIN one — `python tools/ci/census_growth.py --check`
+- `mfx-ci-01` — A cheap static check that runs only on CI is a MANUAL FIX 20 minutes later — `python tools/dx/mirror_parity.py --files tools/db/storage.py --json`
+- `mfx-ci-04` — Editing CLAUDE.md without regenerating the packaged bootstrap is refused at COMMIT — `python tools/installer/prebuild_bootstrap.py`
+- `qa-fail-6a87916931be3793` — The E2E suite writes fixtures — point it at a THROWAWAY database — `python tools/db/bootstrap_pg.py`
+- `qa-fail-5cacee65f1d03c8c` — A sweep whose timeouts fell inside a HOST STALL can now say so — `python tools/testing/qa_agent_runner.py --run --json`
+- `kpr-watch-01` — Which open PRs are awaiting merge, and WHY is each one not merging? — `python -m tools.ci.merge_readiness --json`
+- `kpr-watch-02` — A PR that IS eligible and STILL open — the merger has stalled — `python -m tools.ci.merge_stall`
+- `rem-hyg-05` — Raw board writers — does this INSERT bypass the canonical seeder? — `python tools/kanban/raw_insert_census.py --check`
+- `cef-fnd-03` — DataBridge external rung — 33 connectors, now ONE authorized — `python -m tools.databridge.seed_connections --seed --json`
+- `crx-test-06` — Is `E2E (Playwright)` reliable enough to be REQUIRED? Surveyed; answer is NOT YET — `python tools/ci/e2e_flake_survey.py --json`
+- `rmf-disc-02` — The page was live, the five endpoints it called were DEFINED NOWHERE — `python -m tools.network.discovery_store`
+- `rmf-zt-01` — A ZT check with NO PROBE behind it says `unknown`, never `passed` — `SC_STORAGE_BACKEND=sqlite python -m tools.security_canvas.zt_verdict_survey`
+- `rmf-rail-01` — No rate in the RMF surfaces returns 0.0 or 100.0 over an empty denominator — `python -m pytest tests/test_rmf_honesty_rails.py -q`
+- `rmf-rail-02` — The Compliance Posture widget's TWO remaining perfect scores, refused — `python -m pytest tests/test_compliance_posture_rail_02.py -q`
+- `rmf-wp-02` — A DIC version leaves the canvas through ONE gated door, and CoT/CoD prose is redacted — `from tools.document_intelligence.exporter import export_version, export_gate, EXPORT_FORMATS`
+- `mfx-boot-02` — A crash-looping self-hosted CI runner is re-registered with a fresh token — `python tools/genesis/daemon.py --reflex ci_runner_health --json`
+- `gepa-optimizer` — GEPA Optimizer — Genome Evolution Pressure Analyzer — `python tools/skills/gepa_optimizer.py --json`
+- `rmf-cyc-01` — RMF cycle time: TWO clocks that are never merged — `python -m tools.compliance.rmf_cycle_time`
+- `rmf-wp-01` — WHITEPAPER document type, and template_id made LOAD-BEARING — `python -m tools.quality.outline_contract --artifact-type WHITEPAPER`
+- `rmf-rfp-01` — The RFP shredder is WIRED, and there is ONE compliance matrix — `python tools/govcon/compliance_matrix_builder.py --opportunity-id "opp-xxx" --ingest solicitation.pdf --json`
+- `flx-twin-01` — A twin over the EMULATOR, read through the broker, marked `emulated` — `from tools.twin_core.registry import TwinRegistry`
+- `xrv` — Nine external repos reviewed; eight gaps were OUR OWN unconsumed capabilities — `python -m tools.cost.session_cost --survey --by-verdict --json`
+
 
 ### Python Dependencies
 See `requirements.txt`. Key: sqlite3, pathlib, json (stdlib); openai, anthropic, python-dotenv (optional); pyyaml, jinja2, flask, pytest (ICDEV™).
@@ -4349,107 +4280,14 @@ If `memory/MEMORY.md` doesn't exist, this is a fresh environment. Run `/initiali
 
 ## Running ICDEV Outside Claude Code
 
-ICDEV™ is fully operable without the Claude Code CLI. Use `tools/airgap/` as the runtime shim — it replicates hooks, session management, and safety gates as plain Python.
+ICDEV™ is fully operable without the Claude Code CLI. `tools/airgap/` is the runtime
+shim — it replicates hooks, session management and safety gates as plain Python; the
+headless ANVIL wrappers (`python tools/anvil/<name>.py`), headless skill invocation
+(`python tools/skills/invoke.py --list --json`), cron/CI recipes, Ollama-only LLM
+routing and air-gap validation all live in one place:
 
-### Quick Start
-
-```bash
-# Detect environment (cloud vs air-gap)
-python -m tools.airgap --detect --json
-
-# Activate local-only LLM routing (air-gap mode)
-python -m tools.airgap --activate
-
-# Health check before any risky operation
-python tools/testing/health_check.py --json
-```
-
-### Cron Job Setup
-
-```bash
-# /etc/cron.d/icdev-audit — nightly compliance scan
-0 2 * * * icdev-user cd /opt/icdev && \
-  python -c "
-from tools.airgap.hook_compat import get_session_id, run_auto_commit
-get_session_id()   # sets CLAUDE_SESSION_ID + ICDEV_SESSION_ID for audit trail
-# ... invoke tools here (health_check, bandit, etc.) ...
-run_auto_commit('chore: nightly audit auto-commit')
-" >> /var/log/icdev/cron.log 2>&1
-```
-
-### CI/CD Pipeline (GitLab Stage End)
-
-```yaml
-# .gitlab-ci.yml — security gate + auto-commit at stage end
-security-scan:
-  stage: validate
-  script:
-    - export ICDEV_AUTO_COMMIT=true
-    - python tools/testing/health_check.py --json
-    - python -m bandit -r tools/ --severity-level medium
-    - python -c "from tools.airgap.hook_compat import run_pre_tool_check; \
-        r = run_pre_tool_check('Bash', {'command': 'git push'}); \
-        exit(0 if r['allowed'] else 1)"
-    - python -c "from tools.airgap.hook_compat import run_auto_commit; \
-        run_auto_commit('ci: post-scan auto-commit')"
-```
-
-### Headless ANVIL Workflow
-
-All 10 core ANVIL commands are runnable headlessly via `tools/anvil/<name>.py`.
-Each wrapper parses its source (`.claude/commands/*.md` or an `icdev-*` skill),
-extracts documented `python tools/…` steps, substitutes `$ARGUMENTS`, and runs
-them with an allowlisted prefix.
-
-```bash
-python tools/anvil/status.py --json                       # skill-backed
-python tools/anvil/feature.py --dry-run -- "add foo bar"  # md-backed preview
-python tools/anvil/feature.py --json -- "add foo bar"     # full execution
-```
-
-Available wrappers (11 total): `feature`, `bug`, `chore`, `test`, `review`,
-`commit`, `status`, `monitor`, `maintain`, `secure`, `deploy`.
-
-### Skill Invocation (Headless)
-
-Every `.agents/skills/icdev-*` skill is invokable from a non-Claude shell.
-
-```bash
-python tools/skills/invoke.py --list --json              # list all skills
-python tools/skills/invoke.py --show icdev-status        # print skill card
-python tools/skills/invoke.py --dry-run icdev-secure     # preview commands
-python tools/skills/invoke.py --exec icdev-status --json # execute + capture output
-python tools/skills/invoke.py --exec icdev-secure -- --scan tools/ --json  # with args
-```
-
-Allowlisted command prefixes: `python tools/`, `python -m tools`, `python -c`. Shell builtins, curl, etc. are refused.
-
-### Air-Gap LLM Routing (Ollama-only)
-
-```bash
-# .env — forces all routing through local Ollama, no cloud fallback
-OLLAMA_BASE_URL=http://localhost:11434
-ICDEV_LLM_PROVIDER=ollama
-# Also set in args/llm_config.yaml: two_tier.enabled: false
-```
-
-```python
-# Programmatic activation
-from tools.airgap import is_airgap, activate_airgap
-if is_airgap():
-    activate_airgap()   # patches llm_config.yaml routing to local-only
-```
-
-### Validation in Air-Gap Mode
-
-```bash
-python tools/testing/health_check.py --json                            # env + DB + deps
-python tools/testing/e2e_runner.py --run-all --mode native --json      # UI lifecycle tests
-python -m bandit -r tools/ --severity-level medium                     # security scan
-python tools/workflow/coherence_checker.py --all --gate                # coherence gate
-```
-
-> **Long-form reference:** [docs/ops/airgap-runbook.md](docs/ops/airgap-runbook.md)
+> **[docs/ops/airgap-runbook.md](docs/ops/airgap-runbook.md)** — §14 is the headless
+> operation section this heading used to hold inline (moved verbatim, xrv-docs-02).
 
 ---
 

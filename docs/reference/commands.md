@@ -9468,3 +9468,101 @@ interrupted run -- reported an empty list.
 
 A task with NO record renders today's coaching byte-unchanged, so this is
 additive to every retry already on the board.
+
+---
+
+## Cards — the per-card incident records (xrv-docs-02)
+
+These 82 essays used to sit inline in CLAUDE.md's `### Essential Commands` block —
+297,635 of that file's 367,462 bytes, loaded into every session whether or not it
+touched one. They moved VERBATIM to `docs/reference/cards/`, one file per card, and
+CLAUDE.md now carries a one-line index. The essays are the record: what was MEASURED,
+what changed, and what deliberately did not.
+
+Below is the same entry point per card. The essay carries the rest of that card's
+commands, its measurements and its refusals.
+
+| Card | What it is | Entry point | Record |
+|---|---|---|---|
+| `xit-decl-01` | Which parent IS this checkout, and may it touch THIS database? | `python -m icdev.core.context --check` | [xit-decl-01.md](cards/xit-decl-01.md) |
+| `rmf-inert-03` | A reflex that is GREEN while it can reach 3 of 11 subjects | `python -m tools.genesis.reflexes.canvas_reassess --coverage` | [rmf-inert-03.md](cards/rmf-inert-03.md) |
+| `exa-live-01` | Capability consumption — is a DECLARED capability actually being used? | `python tools/awareness/capability_consumption.py --json` | [exa-live-01.md](cards/exa-live-01.md) |
+| `cef-ci-01` | The Cortex federation layer is UNDER that gate | `python tools/awareness/capability_consumption.py --class cortex_backend --json` | [cef-ci-01.md](cards/cef-ci-01.md) |
+| `rem-hyg-17` | Does the surface's CLAIM survive an INDEPENDENT re-derivation? | `python tools/awareness/claim_verifier.py --json` | [rem-hyg-17.md](cards/rem-hyg-17.md) |
+| `claim-verif-33c9f4cd11` | A service's session id is INHERITED by everything it spawns | `python tools/awareness/claim_verifier.py --claim scheduler_heartbeat_is_fresh` | [claim-verif-33c9f4cd11.md](cards/claim-verif-33c9f4cd11.md) |
+| `autonomy-id-06` | A daemon's reload watch set is what it EXECUTES, not what it had imported at start | `python -m pytest tests/genesis/test_code_reload.py -q` | [autonomy-id-06.md](cards/autonomy-id-06.md) |
+| `autonomy-lrn-02` | Is intervention actually FALLING? The AUTONOMY card held to its own standard | `python -m tools.awareness.autonomy_loop` | [autonomy-lrn-02.md](cards/autonomy-lrn-02.md) |
+| `autonomy-act-03, autonomy-dep-04` | The restore tier, ENUMERATED — four mechanical acts, and no fifth | `python tools/awareness/restore_acts.py --list` | [autonomy-act-03.md](cards/autonomy-act-03.md) |
+| `autonomy-lrn-01` | An INCIDENT becomes a STANDING CLAIM, and the claim cites it | `python tools/awareness/claim_verifier.py --incidents` | [autonomy-lrn-01.md](cards/autonomy-lrn-01.md) |
+| `trust-disc-04` | Substrate probe — does the thing you are about to design against HAVE ROWS? | `python tools/awareness/capability_consumption.py --probe-plan <plan.md> --substrate-gate` | [trust-disc-04.md](cards/trust-disc-04.md) |
+| `exa-audit-04` | Audit hash-chain integrity — is the audit_trail chain actually intact? | `python tools/audit/chain_sweep.py --json` | [exa-audit-04.md](cards/exa-audit-04.md) |
+| `cch-obs-01` | Per-provider prompt-cache effectiveness — not one aggregate number | `python tools/cache_savings/by_provider.py --json` | [cch-obs-01.md](cards/cch-obs-01.md) |
+| `dwr-fid-01` | The UPLOADED original is KEPT, content-addressed, before its temp file goes | `python -m tools.document_intelligence.originals --survey [--json] [--verify]` | [dwr-fid-01.md](cards/dwr-fid-01.md) |
+| `dwr-anchor-06` | A suggestion drafted against a TOKEN is retired, never back-filled | `python -m tools.document_intelligence.suggestion_redraft --census` | [dwr-anchor-06.md](cards/dwr-anchor-06.md) |
+| `dwr-fid-02` | Where on the page did each word SIT? The layer a left pane renders from | `python -m tools.document_intelligence.page_geometry --survey [--json]` | [dwr-fid-02.md](cards/dwr-fid-02.md) |
+| `dwr-fid-03` | A DEGRADED render SAYS it is degraded, and the ingest posture is REAL | `python -m tools.document_intelligence.reading_pane --survey [--json]` | [dwr-fid-03.md](cards/dwr-fid-03.md) |
+| `cef-di-01` | DocMod asks ONE governed seam instead of hand-querying tables | `from tools.doc_modernization.evidence import (` | [cef-di-01.md](cards/cef-di-01.md) |
+| `cef-di-03` | DocDrift's SSP evidence comes from ONE governed seam | `from icdev.tools.document_intelligence.ssp_evidence import resolve_evidence` | [cef-di-03.md](cards/cef-di-03.md) |
+| `cef-di-05` | DIC document generation asks ONE governed seam, and screens what it wrote | `from icdev.tools.document_intelligence.docgen_evidence import (` | [cef-di-05.md](cards/cef-di-05.md) |
+| `cef-di-04` | DIC grounded search asks ONE governed seam for its candidates | `from icdev.tools.document_intelligence.search_evidence import resolve_evidence` | [cef-di-04.md](cards/cef-di-04.md) |
+| `cef-ui-01` | DocDrift SHOWS the verdict — and shows an unknown as a finding | `from icdev.tools.document_intelligence.docdrift_evidence import (` | [cef-ui-01.md](cards/cef-ui-01.md) |
+| `cef-ui-03` | HITL approve/reject for a resolve-produced proposal — EXISTING routes | `POST /document-intelligence/api/modernization/findings/<id>/resolve` | [cef-ui-03.md](cards/cef-ui-03.md) |
+| `cef-ui-02` | A conflict/gap the request DIDN'T take with it, browsable on Explorer | `from tools.cortex.finding_store import list_findings, finding_stats` | [cef-ui-02.md](cards/cef-ui-02.md) |
+| `cef-fnd-04` | Is this entity still current? ONE store, any source, any domain | `python -m tools.currency.entity_currency --backfill --json` | [cef-fnd-04.md](cards/cef-fnd-04.md) |
+| `dwr-ev-01` | An AUTHOR's upload is a declared source, ranked top, and the catalog it contradicts survives | `python -m tools.currency.entity_currency --resolve "catalyst 6500" --entity-type hardware_model` | [dwr-ev-01.md](cards/dwr-ev-01.md) |
+| `dwr-ev-02` | A COMMENT is an instruction until a human promotes it; then it is CITED, and marked | `python -m tools.currency.entity_currency --resolve "tls 1.1" --entity-type crypto_protocol` | [dwr-ev-02.md](cards/dwr-ev-02.md) |
+| `dwr-ev-03` | Redraft with my comments — a button a human presses | `from tools.document_intelligence.redraft import redraft_change, run_stats` | [dwr-ev-03.md](cards/dwr-ev-03.md) |
+| `dwr-word-02` | A reviewer's Word revisions, read back in and RECONCILED | `python -m tools.document_intelligence.docx_review_import --file review.docx --version <version_id>` | [dwr-word-02.md](cards/dwr-word-02.md) |
+| `exa-bench-03` | Agent adapter capability matrix — DECLARED vs ACTUAL per adapter | `python tools/agents/capability_matrix.py --json` | [exa-bench-03.md](cards/exa-bench-03.md) |
+| `exa-bench-05` | PreToolUse hook enforcement — the hook's exit 2 now reaches the caller | `python tools/hooks/fire_rate_survey.py --json` | [exa-bench-05.md](cards/exa-bench-05.md) |
+| `kpr-rvfy-05` | A raw `gh pr merge` on a KANBAN-LINKED PR is refused | `python tools/hooks/fire_rate_survey.py --check gh_pr_merge_bypass --samples 10` | [kpr-rvfy-05.md](cards/kpr-rvfy-05.md) |
+| `mfx-mrg-04` | A protected-path PR lands through the DOOR, with an audited reason | `python tools/kanban/cli.py --set-status <id> done --merge --protected-ok --reason '<why>'` | [mfx-mrg-04.md](cards/mfx-mrg-04.md) |
+| `mfx-mrg-07` | The Actions auto-merge workflow is a FOURTH door, and it now honours protected_paths | `python tools/ci/protected_paths.py --config-file args/pr_watcher_config.yaml --files tools/ci/pr_watcher.py docs/x.md` | [mfx-mrg-07.md](cards/mfx-mrg-07.md) |
+| `mfx-own-02` | A claim from a PLAIN SHELL now HOLDS -- `--claim` hands its lease to a keeper | `python tools/kanban/cli.py --claim <task-id> --intent "repairing its PR by hand" [--ttl 7200]` | [mfx-own-02.md](cards/mfx-own-02.md) |
+| `mfx-own-05` | A REPARK id extends a task id at the FRONT -- the matcher no longer binds it | `python -m tools.kanban.branch_match_survey --env-file C:/AI/ICDev/.env` | [mfx-own-05.md](cards/mfx-own-05.md) |
+| `kph-repark-kph-repark-mfx-ci-04` | The worktree-add budget is REAL, and the checkout is parallel | `python -m pytest tests/kanban/test_worktree_add_budget_is_real.py -q` | [kph-repark-kph-repark-mfx-ci-04.md](cards/kph-repark-kph-repark-mfx-ci-04.md) |
+| `mfx-own-04` | A worktree HUSK with no .git marker is provably dead -- swept on a clock of HOURS | `python -m tools.kanban.worktree_husks --survey [--json]` | [mfx-own-04.md](cards/mfx-own-04.md) |
+| `kpr-watch-15` | A `merge -s ours` supersede made the branch UNREBASABLE | `python -m tools.ci.rebase_merge_survey --classify` | [kpr-watch-15.md](cards/kpr-watch-15.md) |
+| `kpr-watch-13` | Did that resume REACH anything, or was a line just written? | `python -m tools.ci.resume_delivery --survey` | [kpr-watch-13.md](cards/kpr-watch-13.md) |
+| `kpr-watch-14` | CLAUDE.md is DECLARED for the union rung, and its generated copy is DERIVED | `python -m tools.kanban.claude_md_union_survey` | [kpr-watch-14.md](cards/kpr-watch-14.md) |
+| `kpr-watch-11` | Is a task's status OSCILLATING — two writers taking turns? | `python -m tools.kanban.status_churn --json` | [kpr-watch-11.md](cards/kpr-watch-11.md) |
+| `autonomy-act-05` | ONE statement of which pr_watcher actions are recovery evidence | `python -m tools.kanban.recovery_action_survey` | [autonomy-act-05.md](cards/autonomy-act-05.md) |
+| `autonomy-act-02` | Consume the detectors nobody runs — and file each finding ONCE, with its evidence | `python -m tools.kanban.detector_findings --json` | [autonomy-act-02.md](cards/autonomy-act-02.md) |
+| `kpr-fix-03` | Would that check have been RIGHT to refuse? Surveyed; answer is NO | `python -m tools.kanban.landed_dispatch_survey --json` | [kpr-fix-03.md](cards/kpr-fix-03.md) |
+| `kpr-rvfy-04` | A `done` task with NO artifact, and a comment mention read as a landing | `python -m tools.kanban.artifact_evidence --survey` | [kpr-rvfy-04.md](cards/kpr-rvfy-04.md) |
+| `trust-disc-05` | Is this task id ALREADY on main? task -> main, not task -> PR | `python -m tools.kanban.landed_check --task <task-id> --json` | [trust-disc-05.md](cards/trust-disc-05.md) |
+| `rem-hyg-03/04` | Does an epic CLAIM this task id? Surveyed, then armed to `report` | `python -m tools.kanban.identity_survey --json` | [rem-hyg-03-04.md](cards/rem-hyg-03-04.md) |
+| `tsg-iso-03` | An undeclared third-party import that fails SILENTLY | `python tools/ci/undeclared_import_census.py --check` | [tsg-iso-03.md](cards/tsg-iso-03.md) |
+| `xrv-route-03` | A CI reference that does NOT NAME THE BYTES it resolves to | `python tools/ci/pin_census.py --check` | [xrv-route-03.md](cards/xrv-route-03.md) |
+| `xit-leak-01` | This repo is PUBLIC: nothing from the trading domain comes back | `python tools/ci/domain_leak_gate.py --check` | [xit-leak-01.md](cards/xit-leak-01.md) |
+| `xit-decl-04` | Every table has ONE owner: core \| it \| ft | `python tools/db/schema_ownership.py --check` | [xit-decl-04.md](cards/xit-decl-04.md) |
+| `xit-decl-03` | A module that computes the REPO ROOT from its own location | `python tools/ci/self_root_census.py --check` | [xit-decl-03.md](cards/xit-decl-03.md) |
+| `rem-hyg-13` | A PERFECT SCORE returned when the denominator is empty | `python tools/ci/perfect_score_census.py --check` | [rem-hyg-13.md](cards/rem-hyg-13.md) |
+| `rem-tst-06` | Promote an ungated test module — but only if it is green BOTH WAYS | `python -m tools.ci.gate_promoter --plan --limit 10` | [rem-tst-06.md](cards/rem-tst-06.md) |
+| `rem-hyg-14` | An ungated test that is RED FROM BIRTH, not only one that regressed | `python tools/ci/born_red_survey.py` | [rem-hyg-14.md](cards/rem-hyg-14.md) |
+| `crx-test-05` | The gated pytest run is SHARDED across runners | `python tools/ci/gated_test_list.py --print --list core --shard 2/4` | [crx-test-05.md](cards/crx-test-05.md) |
+| `mfx-ci-02` | ONE ICDEV CI run per ref -- a newer push CANCELS the superseded run | `python -m pytest tests/ci/test_ci_concurrency.py -q` | [mfx-ci-02.md](cards/mfx-ci-02.md) |
+| `crx-test-07` | The shards are BIN-PACKED by measured duration, not file count | `python tools/ci/shard_timings.py --show` | [crx-test-07.md](cards/crx-test-07.md) |
+| `trust-disc-01` | Red-first proof — did the changed test actually go RED? | `python tools/ci/red_first_gate.py --gate` | [trust-disc-01.md](cards/trust-disc-01.md) |
+| `cef-ci-02` | A closed census may LOSE names and must never GAIN one | `python tools/ci/census_growth.py --check` | [cef-ci-02.md](cards/cef-ci-02.md) |
+| `mfx-ci-01` | A cheap static check that runs only on CI is a MANUAL FIX 20 minutes later | `python tools/dx/mirror_parity.py --files tools/db/storage.py --json` | [mfx-ci-01.md](cards/mfx-ci-01.md) |
+| `mfx-ci-04` | Editing CLAUDE.md without regenerating the packaged bootstrap is refused at COMMIT | `python tools/installer/prebuild_bootstrap.py` | [mfx-ci-04.md](cards/mfx-ci-04.md) |
+| `qa-fail-6a87916931be3793` | The E2E suite writes fixtures — point it at a THROWAWAY database | `python tools/db/bootstrap_pg.py` | [qa-fail-6a87916931be3793.md](cards/qa-fail-6a87916931be3793.md) |
+| `qa-fail-5cacee65f1d03c8c` | A sweep whose timeouts fell inside a HOST STALL can now say so | `python tools/testing/qa_agent_runner.py --run --json` | [qa-fail-5cacee65f1d03c8c.md](cards/qa-fail-5cacee65f1d03c8c.md) |
+| `kpr-watch-01` | Which open PRs are awaiting merge, and WHY is each one not merging? | `python -m tools.ci.merge_readiness --json` | [kpr-watch-01.md](cards/kpr-watch-01.md) |
+| `kpr-watch-02` | A PR that IS eligible and STILL open — the merger has stalled | `python -m tools.ci.merge_stall` | [kpr-watch-02.md](cards/kpr-watch-02.md) |
+| `rem-hyg-05` | Raw board writers — does this INSERT bypass the canonical seeder? | `python tools/kanban/raw_insert_census.py --check` | [rem-hyg-05.md](cards/rem-hyg-05.md) |
+| `cef-fnd-03` | DataBridge external rung — 33 connectors, now ONE authorized | `python -m tools.databridge.seed_connections --seed --json` | [cef-fnd-03.md](cards/cef-fnd-03.md) |
+| `crx-test-06` | Is `E2E (Playwright)` reliable enough to be REQUIRED? Surveyed; answer is NOT YET | `python tools/ci/e2e_flake_survey.py --json` | [crx-test-06.md](cards/crx-test-06.md) |
+| `rmf-disc-02` | The page was live, the five endpoints it called were DEFINED NOWHERE | `python -m tools.network.discovery_store` | [rmf-disc-02.md](cards/rmf-disc-02.md) |
+| `rmf-zt-01` | A ZT check with NO PROBE behind it says `unknown`, never `passed` | `SC_STORAGE_BACKEND=sqlite python -m tools.security_canvas.zt_verdict_survey` | [rmf-zt-01.md](cards/rmf-zt-01.md) |
+| `rmf-rail-01` | No rate in the RMF surfaces returns 0.0 or 100.0 over an empty denominator | `python -m pytest tests/test_rmf_honesty_rails.py -q` | [rmf-rail-01.md](cards/rmf-rail-01.md) |
+| `rmf-rail-02` | The Compliance Posture widget's TWO remaining perfect scores, refused | `python -m pytest tests/test_compliance_posture_rail_02.py -q` | [rmf-rail-02.md](cards/rmf-rail-02.md) |
+| `rmf-wp-02` | A DIC version leaves the canvas through ONE gated door, and CoT/CoD prose is redacted | `from tools.document_intelligence.exporter import export_version, export_gate, EXPORT_FORMATS` | [rmf-wp-02.md](cards/rmf-wp-02.md) |
+| `mfx-boot-02` | A crash-looping self-hosted CI runner is re-registered with a fresh token | `python tools/genesis/daemon.py --reflex ci_runner_health --json` | [mfx-boot-02.md](cards/mfx-boot-02.md) |
+| `gepa-optimizer` | GEPA Optimizer — Genome Evolution Pressure Analyzer | `python tools/skills/gepa_optimizer.py --json` | [gepa-optimizer.md](cards/gepa-optimizer.md) |
+| `rmf-cyc-01` | RMF cycle time: TWO clocks that are never merged | `python -m tools.compliance.rmf_cycle_time` | [rmf-cyc-01.md](cards/rmf-cyc-01.md) |
+| `rmf-wp-01` | WHITEPAPER document type, and template_id made LOAD-BEARING | `python -m tools.quality.outline_contract --artifact-type WHITEPAPER` | [rmf-wp-01.md](cards/rmf-wp-01.md) |
+| `rmf-rfp-01` | The RFP shredder is WIRED, and there is ONE compliance matrix | `python tools/govcon/compliance_matrix_builder.py --opportunity-id "opp-xxx" --ingest solicitation.pdf --json` | [rmf-rfp-01.md](cards/rmf-rfp-01.md) |
+| `flx-twin-01` | A twin over the EMULATOR, read through the broker, marked `emulated` | `from tools.twin_core.registry import TwinRegistry` | [flx-twin-01.md](cards/flx-twin-01.md) |
+| `xrv` | Nine external repos reviewed; eight gaps were OUR OWN unconsumed capabilities | `python -m tools.cost.session_cost --survey --by-verdict --json` | [xrv.md](cards/xrv.md) |
