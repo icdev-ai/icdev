@@ -103,6 +103,14 @@ the landed check, sibling holds, the respawn guard — runs **after**
 **The pool was chosen.** The 1.3 s difference is 0.3% of a dispatch that then
 runs an autonomous worker session for minutes.
 
+The card's constraint on the JIT variant — *"do NOT pre-create for a task that is
+gate-held, claimed by another session, or already has a worktree"* — is satisfied
+**structurally** rather than by a predicate: the pool pre-creates for no task at
+all, so there is no task whose eligibility could be got wrong. The three cases
+are still refused at claim time, by the dispatcher's own gates running before
+`_create_worktree` is ever called, and by `claim`'s `destination_exists` and
+`task_branch_exists` misses.
+
 ## 6. What the pool costs
 
 - **Disk:** `target_size: 2` × 275 MB = ~550 MB steady state, ceiling
