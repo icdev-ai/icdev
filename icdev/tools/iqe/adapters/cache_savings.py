@@ -1,16 +1,21 @@
 # CUI // SP-CTI
 """IQE cache_savings collection adapters.
 
-Registering this module exposes three IQE collections:
+Registering this module exposes four IQE collections:
   cache.stats        — per-function hit rate, avoided calls, token savings, cost saved
   cache.entries      — raw llm_response_cache rows (non-expired)
   cache.by_provider  — per-provider PREFIX-cache effectiveness (cch-obs-01)
+  cache.spend        — per-kanban-card spend joined to its outcome (xrv-cost-04)
 
 The first two describe the RESPONSE cache (an LLM call avoided entirely) and
 read `llm_response_cache`. The third describes PREFIX caching (cached input
 tokens on a call that still happened) and reads `ai_telemetry`. They are
 different questions about different substrates; querying one for the other's
 answer returns a confidently wrong number.
+
+The fourth is a different question again — not what caching SAVED but what the
+board SPENT and whether that spend shipped. It reads `agent_token_usage` joined
+to git and the board through `task_attribution`. Never net one against another.
 """
 from __future__ import annotations
 
@@ -105,6 +110,24 @@ def _by_provider_adapter(conn: Any) -> list[dict]:
         return []
 
 
+def _spend_adapter(conn: Any) -> list[dict]:
+    """Per-kanban-card spend joined to its outcome (xrv-cost-04).
+
+    `cost_usd` is deliberately NULL rather than 0 for a card whose every
+    dispatch reported no price, so an IQE query that sorts or filters on it
+    cannot rank "nobody reported what this cost" alongside "this was free".
+    An unmeasurable panel returns NO rows rather than five empty buckets —
+    zero rows is the honest answer to "which cards spent what" when nothing
+    was attributed.
+    """
+    try:
+        from tools.cache_savings.spend import spend_panel
+        return spend_panel().get("by_task", [])
+    except Exception:
+        return []
+
+
 register_collection("cache.stats",       _get_stats_simple)
 register_collection("cache.entries",     _entries_adapter)
 register_collection("cache.by_provider", _by_provider_adapter)
+register_collection("cache.spend",       _spend_adapter)

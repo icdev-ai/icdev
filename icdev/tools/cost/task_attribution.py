@@ -101,6 +101,11 @@ REASON_RECORDED = "recorded"
 
 PR_STATE_NOT_CONSULTED = "not_consulted"
 
+# How a bucket's USD figure was arrived at. `unpriced` is NEVER $0.00 (xrv-cost-04).
+COST_BASIS_PRICED = "priced"
+COST_BASIS_PARTIAL = "partial"
+COST_BASIS_UNPRICED = "unpriced"
+
 _SESSION_LINE_RE = re.compile(r"^\s*\{")
 
 
@@ -247,6 +252,41 @@ def usage_rows(task_id: str, *, db_path: Optional[Path] = None) -> Optional[List
     return [dict(r) for r in rows]
 
 
+def row_is_unpriced(row: Dict[str, Any]) -> bool:
+    """True when this dispatch's USD figure was never REPORTED (xrv-cost-04).
+
+    ``record_task_cost`` writes the CLI envelope's ``total_cost_usd`` and falls
+    back to ``0.0`` when the envelope carries no cost field, so an ABSENT price
+    reaches the ledger as a zero rather than as a NULL. Summing it as 0
+    understates the total in the direction that makes spend look cheaper than
+    it was -- the ``args/perfect_score_gate.yaml`` defect wearing a dollar sign.
+
+    A row with NO tokens is never written at all (``envelope_has_usage``
+    refuses it), so "no dollars beside real tokens" is the whole unpriced class
+    and a genuinely free local dispatch cannot fall into it.
+    """
+    cost = row.get("cost_estimate_usd")
+    if cost is None:
+        return True
+    try:
+        cost = float(cost)
+    except (TypeError, ValueError):
+        return True
+    tokens = int(row.get("input_tokens") or 0) + int(row.get("output_tokens") or 0)
+    return cost <= 0.0 and tokens > 0
+
+
+def cost_basis(priced_rows: int, unpriced_rows: int) -> Optional[str]:
+    """``priced`` | ``partial`` | ``unpriced``; None over no rows at all."""
+    if priced_rows and unpriced_rows:
+        return COST_BASIS_PARTIAL
+    if priced_rows:
+        return COST_BASIS_PRICED
+    if unpriced_rows:
+        return COST_BASIS_UNPRICED
+    return None
+
+
 def attributed_totals(*, db_path: Optional[Path] = None,
                       window_days: Optional[float] = None) -> Optional[Dict[str, Dict[str, Any]]]:
     """``{task_id: {rows, cost_usd, ...}}`` over every attributed row; None if unreadable."""
@@ -271,17 +311,25 @@ def attributed_totals(*, db_path: Optional[Path] = None,
         r = dict(r)
         bucket = totals.setdefault(str(r["task_id"]), {
             "rows": 0, "cost_usd": 0.0, "input_tokens": 0, "output_tokens": 0,
-            "models": set(), "last_at": "",
+            "models": set(), "last_at": "", "priced_rows": 0, "unpriced_rows": 0,
         })
         bucket["rows"] += 1
-        bucket["cost_usd"] += float(r.get("cost_estimate_usd") or 0.0)
+        if row_is_unpriced(r):
+            bucket["unpriced_rows"] += 1
+        else:
+            bucket["priced_rows"] += 1
+            bucket["cost_usd"] += float(r.get("cost_estimate_usd") or 0.0)
         bucket["input_tokens"] += int(r.get("input_tokens") or 0)
         bucket["output_tokens"] += int(r.get("output_tokens") or 0)
         bucket["models"].add(str(r.get("model_id") or ""))
         bucket["last_at"] = max(bucket["last_at"], str(r.get("created_at") or ""))
     for bucket in totals.values():
         bucket["models"] = sorted(m for m in bucket["models"] if m)
-        bucket["cost_usd"] = round(bucket["cost_usd"], 6)
+        bucket["cost_basis"] = cost_basis(bucket["priced_rows"], bucket["unpriced_rows"])
+        # A task whose every dispatch is unpriced has NO cost, not a cost of
+        # zero: $0.00 beside 28M tokens reads as a free build.
+        bucket["cost_usd"] = (round(bucket["cost_usd"], 6)
+                              if bucket["priced_rows"] else None)
     return totals
 
 
@@ -494,17 +542,24 @@ def task_report(task_id: str, *, db_path: Optional[Path] = None, consult_forge: 
     rows = usage_rows(task_id, db_path=db_path)
     outcome = outcomes_for([task_id], db_path=db_path, consult_forge=consult_forge,
                            **probe_fns)[str(task_id)]
+    unpriced = None if rows is None else sum(1 for r in rows if row_is_unpriced(r))
     if rows is None:
-        cost_state, cost = "unmeasurable", None
+        cost_state, cost, basis = "unmeasurable", None, None
     elif not rows:
-        cost_state, cost = "no_rows", None
+        cost_state, cost, basis = "no_rows", None, None
     else:
-        cost_state = "measured"
-        cost = round(sum(float(r.get("cost_estimate_usd") or 0.0) for r in rows), 6)
+        priced = [float(r["cost_estimate_usd"]) for r in rows if not row_is_unpriced(r)]
+        basis = cost_basis(len(priced), unpriced)
+        # Every dispatch unpriced: no dollars were ever reported, so there is
+        # no figure -- $0.00 would read as a free build (xrv-cost-04).
+        cost_state = "measured" if priced else COST_BASIS_UNPRICED
+        cost = round(sum(priced), 6) if priced else None
     report = {
         "task_id": str(task_id),
         "cost_usd": cost,
         "cost_state": cost_state,
+        "cost_basis": basis,
+        "unpriced_dispatches": unpriced,
         "dispatches": None if rows is None else len(rows),
         "rows": rows or [],
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -537,25 +592,38 @@ def survey_by_verdict(*, db_path: Optional[Path] = None, window_days: Optional[f
     outcomes = outcomes_for(sorted(totals), db_path=db_path, consult_forge=consult_forge,
                             **probe_fns)
     by_verdict: Dict[str, Dict[str, Any]] = {
-        v: {"tasks": 0, "dispatches": 0, "cost_usd": None, "task_ids": []} for v in VERDICTS
+        v: {"tasks": 0, "dispatches": 0, "cost_usd": None, "task_ids": [],
+            "unpriced_dispatches": 0} for v in VERDICTS
     }
     tasks_out: List[Dict[str, Any]] = []
+    unpriced_dispatches = 0
+    unpriced_tasks = 0
     for tid, bucket in sorted(totals.items()):
         verdict = outcomes[tid]["verdict"]
         b = by_verdict[verdict]
         b["tasks"] += 1
         b["dispatches"] += bucket["rows"]
-        b["cost_usd"] = round((b["cost_usd"] or 0.0) + bucket["cost_usd"], 6)
-        b["task_ids"].append(tid)
+        b["unpriced_dispatches"] += bucket["unpriced_rows"]
+        unpriced_dispatches += bucket["unpriced_rows"]
+        if bucket["cost_basis"] == COST_BASIS_UNPRICED:
+            unpriced_tasks += 1
+        # A task with NO priced dispatch contributes no dollars, and adding 0.0
+        # for it would turn an absent price into a measured zero one line later.
+        if bucket["cost_usd"] is not None:
+            b["cost_usd"] = round((b["cost_usd"] or 0.0) + bucket["cost_usd"], 6)
         tasks_out.append({
             "task_id": tid, "verdict": verdict, "reasons": outcomes[tid]["reasons"],
             "status": outcomes[tid]["status"], "cost_usd": bucket["cost_usd"],
-            "dispatches": bucket["rows"], "models": bucket["models"],
-            "last_at": bucket["last_at"],
+            "cost_basis": bucket["cost_basis"],
+            "dispatches": bucket["rows"], "unpriced_dispatches": bucket["unpriced_rows"],
+            "models": bucket["models"], "last_at": bucket["last_at"],
         })
-    total_cost = round(sum(b["cost_usd"] for b in totals.values()), 6)
-    measured_cost = sum((by_verdict[v]["cost_usd"] or 0.0)
-                        for v in VERDICTS if v != VERDICT_UNMEASURABLE)
+        b["task_ids"].append(tid)
+    priced = [b["cost_usd"] for b in totals.values() if b["cost_usd"] is not None]
+    total_cost = round(sum(priced), 6) if priced else None
+    measured = [by_verdict[v]["cost_usd"] for v in VERDICTS
+                if v != VERDICT_UNMEASURABLE and by_verdict[v]["cost_usd"] is not None]
+    measured_cost = sum(measured) if measured else 0.0
     shipped_cost = by_verdict[VERDICT_SHIPPED]["cost_usd"] or 0.0
     return {
         **base,
@@ -564,6 +632,12 @@ def survey_by_verdict(*, db_path: Optional[Path] = None, window_days: Optional[f
         "total_cost_usd": total_cost,
         "measured_cost_usd": round(measured_cost, 6),
         "unmeasurable_cost_usd": by_verdict[VERDICT_UNMEASURABLE]["cost_usd"],
+        # Dispatches whose USD figure was never reported. Counted apart from
+        # every verdict: an unpriced dispatch still SHIPPED or was still
+        # ABANDONED, so folding it into `unmeasurable` would make the verdict
+        # answer a question about the price rather than about the outcome.
+        "unpriced_dispatches": unpriced_dispatches,
+        "unpriced_tasks": unpriced_tasks,
         # Share of the MEASURED spend that shipped. None when nothing was
         # measured -- an all-unmeasurable board is not "0% shipped".
         "shipped_cost_share_pct": _pct(shipped_cost, measured_cost),
@@ -573,8 +647,14 @@ def survey_by_verdict(*, db_path: Optional[Path] = None, window_days: Optional[f
 
 
 def human_task(report: Dict[str, Any]) -> str:
-    cost = "unmeasurable" if report["cost_state"] == "unmeasurable" else (
-        "no rows" if report["cost_usd"] is None else f"${report['cost_usd']:.4f}")
+    if report["cost_usd"] is not None:
+        cost = "$%.4f" % report["cost_usd"]
+    elif report["cost_state"] == "unmeasurable":
+        cost = "unmeasurable"
+    elif report["cost_state"] == COST_BASIS_UNPRICED:
+        cost = "unpriced"
+    else:
+        cost = "no rows"
     lines = [
         f"Task {report['task_id']}: verdict {report['verdict']} "
         f"({', '.join(report['reasons'])})",
@@ -598,8 +678,14 @@ def human_survey(report: Dict[str, Any]) -> str:
     lines = [
         f"Spend by verdict over {report['tasks']} attributed task(s), "
         f"window {report['window_days'] or 'all'} days, forge consulted {report['forge_consulted']}",
-        f"  total ${report['total_cost_usd']:.4f}; measured ${report['measured_cost_usd']:.4f}; "
-        f"shipped share {report['shipped_cost_share_pct'] if report['shipped_cost_share_pct'] is not None else '?'}%",
+        "  total %s; measured $%.4f; shipped share %s%%" % (
+            "unpriced" if report["total_cost_usd"] is None
+            else "$%.4f" % report["total_cost_usd"],
+            report["measured_cost_usd"],
+            "?" if report["shipped_cost_share_pct"] is None
+            else report["shipped_cost_share_pct"]),
+        "  unpriced dispatches %s over %s wholly unpriced task(s)" % (
+            report.get("unpriced_dispatches"), report.get("unpriced_tasks")),
     ]
     for v in VERDICTS:
         b = report["by_verdict"][v]

@@ -1,0 +1,8 @@
+# Intent: Find cards whose dispatches ran but reported no dollars. Their cost
+#         is NULL and never 0.0, so summing spend without noticing them
+#         understates the bill in the direction that makes work look free.
+# Expected: rows from cache.spend carrying at least one unpriced dispatch.
+
+foreach t in cache.spend
+  where t.unpriced_dispatches > 0
+  select t.task_id, t.verdict, t.dispatches, t.unpriced_dispatches, t.cost_basis

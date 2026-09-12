@@ -5368,6 +5368,19 @@ python -m tools.cost.session_cost --task <task-id> --no-forge                   
 python -m tools.cost.session_cost --survey --by-verdict --json                     # spend that shipped: cost per verdict; a board with no attributed rows is unmeasurable, never $0
 python -m tools.cost.session_cost --survey --by-verdict --window-days 7 --forge    # rows in the last 7 days, PR state consulted per task
 
+# Spend panel on the EXISTING /cache-savings page (xrv-cost-04)
+python -m tools.cache_savings.spend --json                                         # the panel's exact payload: spend by card and by outcome
+python -m tools.cache_savings.spend --window-days 30                               # human table over a wider window
+python -m tools.cache_savings.spend --no-cache --json                              # bypass the 120s panel cache
+# UI: /cache-savings -> "Spend by Card"   API: GET /api/cache-savings/spend?window_days=N
+# Computes no cost of its own -- one task_attribution.survey_by_verdict call, forge NOT
+# consulted. Four empty states and none of them is $0.00: unavailable | ledger_unreadable |
+# no_attributed_rows ("no attributed dispatches in the window" -- an absence of ATTRIBUTION,
+# not of spending) | measured. All five verdict rows always render, because a verdict missing
+# from the table is indistinguishable from one that measured zero. `unpriced` is counted apart
+# from every verdict: a dispatch that reported no dollars still shipped or was still abandoned.
+# Exit 2 = the panel could not be produced, which is never the same as a panel measuring nothing.
+
 # Waste Survey -- behavioural, not billing (xrv-cost-03)
 python -m tools.cost.waste_survey --json                                           # one-shot rate, re-reads, ghost definitions, CLAUDE.md tokens/day, MCP usage
 python -m tools.cost.waste_survey --since-days 30 --project ICDev                  # human report over this repo's sessions

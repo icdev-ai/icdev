@@ -46,7 +46,41 @@ def cache_savings_page():
             "providers": [], "totals": {},
             "window_days": 0, "window_start": "", "window_end": "",
         }
-    return render_template("cache_savings/page.html", stats=stats, by_provider=by_provider)
+    # xrv-cost-04: the Spend section. Best-effort for the same reason as the
+    # block above, and it degrades to `unmeasurable` with a stated reason --
+    # never to an empty table, which on a cost surface reads as "nothing was
+    # spent". `spend_panel` never raises; the import can.
+    try:
+        from tools.cache_savings.spend import spend_panel
+        spend = spend_panel()
+    except Exception as exc:  # noqa: BLE001
+        # None means the panel could not be LOADED at all. The template says so
+        # in words; it never renders the section as an empty, reassuring table.
+        logger.warning("spend panel unavailable: %s", exc)
+        spend = None
+    return render_template("cache_savings/page.html", stats=stats,
+                           by_provider=by_provider, spend=spend)
+
+
+@bp.route("/api/cache-savings/spend")
+def api_cache_savings_spend():
+    """GET /api/cache-savings/spend -- spend by kanban task and by outcome.
+
+    GET only, and there is deliberately no POST sibling: this panel reports
+    what the ledger and git already say and changes nothing about a task, a
+    branch or a row (xrv-cost-04). Optional ``?window_days=N`` overrides the
+    7-day default.
+    """
+    from tools.cache_savings.spend import spend_panel
+
+    raw = flask_request.args.get("window_days")
+    try:
+        window_days = float(raw) if raw else None
+    except ValueError:
+        return jsonify({"error": "window_days must be a number"}), 400
+    if window_days is not None and window_days <= 0:
+        return jsonify({"error": "window_days must be positive"}), 400
+    return jsonify(spend_panel(window_days))
 
 
 @bp.route("/api/cache-savings/by-provider")
