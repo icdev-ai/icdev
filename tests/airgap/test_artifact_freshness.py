@@ -404,6 +404,17 @@ def test_the_shipped_postgres_pin_is_decided_by_floci_not_by_postgres_releases()
     assert entry["consumer"] == "floci"
 
 
+def test_the_shipped_mysql_pin_is_decided_by_floci_not_by_mysql_releases():
+    """artifact-fresh-da63da118f. MEASURED 2026-09-12: a default
+    CreateDBInstance(Engine=mysql) returns EngineVersion 8.0.36 and floci pulls
+    `mysql:<EngineVersion>` -- so `26.7.0` is a tag floci never asks for, and
+    acting on that card would drop the default path out of the air-gap bundle."""
+    entry = next(e for e in AF.load_config()["artifacts"] if e["name"] == "rds-mysql")
+    assert entry["pinned"] == "8.0.36"
+    assert entry["decided_by"] == AF.DECIDED_BY_CONSUMER
+    assert entry["consumer"] == "floci"
+
+
 # --------------------------------------------------------------------------- #
 # ordering — same SHAPE only
 # --------------------------------------------------------------------------- #

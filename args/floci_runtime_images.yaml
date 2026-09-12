@@ -96,12 +96,28 @@ images:
       configuration in the sense this file's header means, one level finer than
       `variant`: a deployment declaring EngineVersion=18.6 must vendor
       postgres:18.6-alpine TOO, and vendoring it INSTEAD of this one breaks the
-      default path. The same holds for mysql, whose default is 8.0.36.
+      default path. The same holds for mysql -- see the entry below, which has
+      now been measured rather than inferred from this one.
 
   - ref: "mysql:8.0.36"
     digest: "sha256:a532724022429812ec797c285c1b540a644c15e248579c6bfdf12a8fbaab4964"
     service: rds
     variant: "mysql"
+    note: >-
+      Also floci's DEFAULT EngineVersion, MEASURED IN ITS OWN RIGHT on
+      2026-09-12 (artifact-fresh-da63da118f) rather than assumed from the
+      postgres row: a default CreateDBInstance(Engine=mysql) returns
+      EngineVersion 8.0.36, floci logs `ImageCacheService  Image already
+      present locally, skipping pull: mysql:8.0.36`, and the container it
+      starts runs mysql:8.0.36 at the digest above. EngineVersion=8.0.99 makes
+      it log `Pulling image: mysql:8.0.99` and 404 -- so the ref is
+      `mysql:<EngineVersion>` with NO SUFFIX. The `-alpine` on the postgres row
+      is per-engine, not a house style, and assuming it here would vendor a tag
+      that does not exist. `Engine=mariadb` builds
+      `mariadb:<EngineVersion>` (EngineVersion=99.99 measured the same way) --
+      a DIFFERENT repository that this row does not cover; its default tag has
+      not been measured, because doing so pulls an image, and no deployment
+      here declares it.
 
   - ref: "valkey/valkey:8"
     digest: "sha256:98c6217ccc2fe5e6c4b5dcd5c40eef4de2a68924e7ecef50d5a0a30b57dfaef6"
