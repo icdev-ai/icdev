@@ -29,6 +29,11 @@ Usage examples:
   python tools/kanban/cli.py --set-status zig-ext-08 done --merge --dry-run
   python tools/kanban/cli.py --set-status zig-ext-08 done --merge --json
 
+  # ...and if that refuses with "enforced gate: awaiting ICDEV done-verification",
+  # the verification is something you RUN, not something that arrives:
+  python tools/kanban/cli.py --reverify zig-ext-08
+  python tools/kanban/cli.py --set-status zig-ext-08 done --merge
+
   # ...including a PR that touches a protected path: overrides that ONE rung,
   # runs all thirteen checks, audits the reason verbatim before merging
   python tools/kanban/cli.py --set-status mfx-mrg-04 done --merge       --protected-ok --reason 'this card changes _auto_merge itself; reviewed by <name>'
@@ -1276,7 +1281,12 @@ def main():
                              "green CI, no requested changes, and the enforced "
                              "done-gate) and mark done only once GitHub reports "
                              "it MERGED. One task id; not combinable with "
-                             "--force-done. Add --dry-run to preflight only.")
+                             "--force-done. Add --dry-run to preflight only. "
+                             "If it refuses on the enforced done-gate "
+                             "('awaiting ICDEV done-verification'), that row is "
+                             "written by a dispatch and will not arrive on its "
+                             "own — clear it with --reverify <id>, which "
+                             "re-derives the verdict from git.")
     parser.add_argument("--protected-ok", dest="protected_ok",
                         action="store_true",
                         help="With --merge: land a PR that touches one of "
