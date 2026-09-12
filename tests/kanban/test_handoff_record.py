@@ -46,14 +46,28 @@ _VALIDATION = {
     "modified_py": 2,
 }
 
-_DDL = (
-    "CREATE TABLE kanban_tasks ("
-    " id TEXT PRIMARY KEY, title TEXT, description TEXT, status TEXT,"
-    " priority TEXT, failure_count INTEGER DEFAULT 0,"
-    " last_failure_reason TEXT, last_failure_at TEXT,"
-    " last_run_summary TEXT, last_run_metadata TEXT,"
-    " executor_url TEXT, depends_on_task_id TEXT, updated_at TEXT)"
+# Columns match tools/db/schema/pg_consolidated.sql — the schema-drift census
+# scans test DDL too, and rightly: a fixture table that disagrees with the
+# schema of record proves the code against a shape production never has.
+_DDL = """
+CREATE TABLE kanban_tasks (
+    id                  TEXT NOT NULL,
+    title               TEXT NOT NULL,
+    description         TEXT DEFAULT '',
+    task_type           TEXT DEFAULT 'build' NOT NULL,
+    status              TEXT DEFAULT 'backlog',
+    priority            TEXT DEFAULT 'high',
+    failure_count       INTEGER DEFAULT 0,
+    last_failure_reason TEXT,
+    last_failure_at     TEXT,
+    last_run_summary    TEXT,
+    last_run_metadata   TEXT,
+    executor_url        TEXT,
+    depends_on_task_id  TEXT,
+    updated_at          TEXT,
+    PRIMARY KEY (id)
 )
+"""
 
 
 @pytest.fixture()
