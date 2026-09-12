@@ -22,10 +22,12 @@ Usage:
 import argparse
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import uuid
 from pathlib import Path
+from typing import Mapping, Optional
 # kax-conflict-05: run by path, sys.path[0] is this file's own directory — never
 # the import root. Bootstrap it before the first first-party import below.
 # parents[N] is whatever holds this file's `tools` package: the repo root in
@@ -87,6 +89,81 @@ def _load_config() -> dict:
             return yaml.safe_load(f) or {}
     except ImportError:
         return {}
+
+
+#: What the config / env override accepts as "on". Same vocabulary as
+#: ``tools/genesis/reflexes/foundry_cycle.py::_is_enabled`` so two autonomous
+#: loops on one host cannot disagree about what a switch being on means.
+_TRUTHY = ("1", "true", "yes", "on", "enabled")
+
+#: The env var name shipped in args/autoresearch_config.yaml. Read from the
+#: config when present so the declaration stays the single source; this is the
+#: fallback for a config that cannot be read at all.
+_DEFAULT_ENV_OVERRIDE = "ICDEV_AUTORESEARCH_ENABLED"
+
+
+def autoresearch_enabled(env: Optional[Mapping[str, str]] = None) -> dict:
+    """Is the autoresearch loop switched ON? (xrv-lab-01)
+
+    ONE reading of the master switch. ``args/autoresearch_config.yaml`` has
+    declared ``enabled: false`` plus an ``env_override`` since the engine
+    shipped, and NOTHING consulted either: the nightly ``experiment`` reflex ran
+    the loop regardless and reported an acceptance rate for it. A declared
+    switch nothing reads is not a switch.
+
+    The ENV OVERRIDE OUTRANKS THE CONFIG, in both directions -- it is the
+    per-host knob for an opt-in loop that ships off, so it must be able to turn
+    the loop on AND off without editing a tracked file.
+
+    FAIL-CLOSED on an unreadable config: this gate guards a loop whose declared
+    purpose is autonomous code mutation, and "we could not read the switch" is
+    not consent. Reported as ``basis: config_unreadable``, never silently off.
+
+    Returns ``{enabled: bool, basis: str, env_var: str, env_value: str|None,
+    config_enabled: bool|None}`` -- ``config_enabled`` is None when the config
+    could not be read, never False, so "declared off" and "could not tell" stay
+    apart.
+    """
+    environ = os.environ if env is None else env
+
+    config: Optional[dict]
+    try:
+        config = _load_config()
+    except Exception:  # noqa: BLE001 - an unreadable switch is not consent
+        config = None
+
+    env_var = _DEFAULT_ENV_OVERRIDE
+    config_enabled: Optional[bool] = None
+    if isinstance(config, dict):
+        env_var = str(config.get("env_override") or _DEFAULT_ENV_OVERRIDE)
+        config_enabled = bool(config.get("enabled", False))
+
+    env_value = environ.get(env_var)
+    if env_value is not None and str(env_value).strip() != "":
+        return {
+            "enabled": str(env_value).strip().lower() in _TRUTHY,
+            "basis": f"env:{env_var}",
+            "env_var": env_var,
+            "env_value": str(env_value),
+            "config_enabled": config_enabled,
+        }
+
+    if config_enabled is None:
+        return {
+            "enabled": False,
+            "basis": "config_unreadable",
+            "env_var": env_var,
+            "env_value": None,
+            "config_enabled": None,
+        }
+
+    return {
+        "enabled": config_enabled,
+        "basis": "config:args/autoresearch_config.yaml",
+        "env_var": env_var,
+        "env_value": None,
+        "config_enabled": config_enabled,
+    }
 
 
 def _load_program(domain: str) -> dict:

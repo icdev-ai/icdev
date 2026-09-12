@@ -1253,6 +1253,177 @@ def _security_number_agrees_with_assessments(reported: Any, derived: Any) -> boo
 
 
 
+
+# --------------------------------------------------------------------------- #
+# N. The experiment loop measures a CHANGE  (xrv-lab-01)
+# --------------------------------------------------------------------------- #
+#: The reflex whose reported count is under test, and the audit event the
+#: daemon writes for a completed run.
+_EXPERIMENT_REFLEX = "experiment"
+
+
+def _reported_experiment_kept() -> Any:
+    """What the EXPERIMENT REFLEX last reported it KEPT.
+
+    Read straight off the daemon's own record -- ``genesis_audit.details`` is
+    the reflex result the daemon persisted -- so this side is the surface's
+    claim and nothing else. None when no run has ever been recorded, or when
+    the newest run reported no count at all (a `disabled` / `unmeasurable` run
+    reports None by design after xrv-lab-01, and None is the honest reading:
+    there is no claim to check).
+
+    TWO SOURCES, IN ORDER, AND BOTH ARE THE LOOP'S OWN CLAIM. The daemon's
+    record is asked first; ``experiment_results.decision`` -- the keep/discard
+    verdict ``decide()`` wrote and the durable record a human reads off the
+    autoresearch surface -- is the fallback. It has to exist, because THE
+    FABRICATED RATE WAS DELETING THE RECORD OF ITSELF: measured 2026-09-12,
+    `genesis_reflex_state` carried 73 runs, 73 successes and
+    `last_metric_value = 0.0` for this reflex, while `genesis_audit` held 73
+    `reflex.started` rows and NOT ONE `reflex.completed` -- base.run_reflex
+    suppresses the completed row when `metric_value == 0 and not
+    details.get("tasks")`, and the rate was `kept / max(run, 1)` = 0/1 over an
+    identity baseline. A claim whose only source is a row that a zero deletes
+    can never see the zero. (After xrv-lab-01 the metric is None, `None == 0` is
+    False, and the row is written -- so the primary source takes over from the
+    next real run.)
+
+    The fallback shares a TABLE with the derived side and shares no column, no
+    reduction and no author: ``decision`` is what ``decide()`` concluded from
+    its improvement thresholds, ``pre_metric``/``post_metric`` are the raw pair
+    it should rest on. That is the comparison, not a re-run of one computation.
+    """
+    conn = _conn()
+    try:
+        rows = conn.execute(
+            "SELECT details FROM genesis_audit WHERE reflex_name = %s "
+            "ORDER BY created_at DESC LIMIT 25",
+            (_EXPERIMENT_REFLEX,),
+        ).fetchall()
+    except Exception:
+        return None                      # unreadable audit -> unmeasurable
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    for row in rows or []:
+        raw = dict(row).get("details")
+        if not raw:
+            continue
+        try:
+            payload = json.loads(raw) if isinstance(raw, str) else dict(raw)
+        except Exception:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        # The ORANGE proposal wrapper nests the reflex's own dict one level
+        # down; look through it rather than reading the wrapper's counts.
+        inner = payload.get("reflex_result")
+        if isinstance(inner, dict) and "total_kept" in inner:
+            payload = inner
+        if "total_kept" not in payload:
+            continue
+        kept = payload.get("total_kept")
+        if kept is None:
+            # THIS RUN made no claim (`disabled` / `unmeasurable` report
+            # total_kept None by design). That is not "no claim exists": the
+            # experiment_results rows a previous run wrote are still the
+            # standing record every autoresearch surface reads. Fall through.
+            break
+        try:
+            return int(kept)
+        except (TypeError, ValueError):
+            return None
+
+    return _kept_from_results()
+
+
+def _kept_from_results() -> Any:
+    """Fallback: how many experiments the loop RECORDED as kept.
+
+    ``experiment_results.decision`` is the engine's own verdict, persisted
+    append-only. None (never 0) when the table is absent, unreadable or empty --
+    no rows is no claim.
+    """
+    conn = _conn()
+    try:
+        total = conn.execute("SELECT COUNT(*) AS c FROM experiment_results").fetchone()
+        if int(dict(total).get("c") or 0) == 0:
+            return None
+        row = conn.execute(
+            "SELECT COUNT(DISTINCT experiment_id) AS c FROM experiment_results "
+            "WHERE decision = %s",
+            ("keep",),
+        ).fetchone()
+        return int(dict(row).get("c") or 0)
+    except Exception:
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _derived_experiments_that_moved_a_metric() -> Any:
+    """How many experiments ACTUALLY moved a metric — from the results table.
+
+    Shares no code with the reflex, the engine, or each other's reduction: a
+    straight read of ``experiment_results`` counting DISTINCT experiment ids
+    whose ``pre_metric`` and ``post_metric`` differ. That is the whole question
+    behind the card -- ``run_loop`` evaluates the domain, creates an experiment,
+    runs it and evaluates AGAIN with nothing changed, so a keep decision can be
+    reached without any metric having moved at all.
+
+    None (never 0) when the table is absent, unreadable, or holds no rows: a
+    derivation over zero rows measured nothing, and this registry's own rule is
+    that two empty sides are UNMEASURABLE rather than agreement.
+    """
+    conn = _conn()
+    try:
+        total = conn.execute("SELECT COUNT(*) AS c FROM experiment_results").fetchone()
+        if int(dict(total).get("c") or 0) == 0:
+            return None                  # nothing recorded -> nothing derived
+        rows = conn.execute(
+            "SELECT experiment_id, pre_metric, post_metric FROM experiment_results "
+            "WHERE pre_metric IS NOT NULL AND post_metric IS NOT NULL"
+        ).fetchall()
+    except Exception:
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    moved = set()
+    for row in rows or []:
+        record = dict(row)
+        try:
+            pre = float(record.get("pre_metric"))
+            post = float(record.get("post_metric"))
+        except (TypeError, ValueError):
+            continue
+        if pre != post:
+            moved.add(record.get("experiment_id"))
+    return len(moved)
+
+
+def _kept_implies_a_measured_change(reported: Any, derived: Any) -> bool:
+    """An experiment cannot be KEPT for an improvement nothing recorded.
+
+    One-directional, like _scored_implies_evidence. More experiments moving a
+    metric than the loop kept is ordinary -- that is what `discard` means. The
+    defect is the other way round: a reported keep count that the results table
+    cannot account for, which is what an identity baseline produces.
+    """
+    try:
+        return int(derived) >= int(reported)
+    except (TypeError, ValueError):
+        return False
+
+
 REGISTRY: List[Claim] = [
     Claim(
         claim_id="posture_score_needs_evidence",
@@ -1526,5 +1697,26 @@ REGISTRY: List[Claim] = [
                           "open_findings counts the latest assessments' own "
                           "findings_json and a perfect score beside open "
                           "findings is refused as score_basis contested"),
+    ),
+    Claim(
+        claim_id="experiment_loop_measures_a_change",
+        description=(
+            "The autoresearch reflex may report experiments KEPT only over "
+            "experiments whose recorded metric actually moved. run_loop "
+            "evaluates the domain, creates an experiment, runs it and "
+            "evaluates AGAIN with nothing changed -- every result it returns "
+            "carries placeholder_metrics: True -- and the reflex published an "
+            "acceptance_rate off those deltas nightly, indistinguishable from "
+            "one measured against a real modification."
+        ),
+        reported=_reported_experiment_kept,
+        derived=_derived_experiments_that_moved_a_metric,
+        agree=_kept_implies_a_measured_change,
+        tier="propose",
+        tags=["autoresearch", "genesis", "xrv-lab-01"],
+        incident=Incident(["xrv-lab-01"], "2026-09-12",
+                          "a placeholder-metrics run reports metric_value None "
+                          "and status unmeasurable, exports no GKP, and the "
+                          "master switch is honoured before the loop runs"),
     ),
 ]
