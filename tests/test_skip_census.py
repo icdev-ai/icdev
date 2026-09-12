@@ -572,3 +572,62 @@ def test_seed_refuses_to_overwrite_an_existing_census(fake_repo):
     one-command way to launder a new skip past the by-name check."""
     with pytest.raises(sc.SkipCensusError, match="already exists"):
         sc.seed(fake_repo)
+
+
+class TestXfailIsNotASkip:
+    """pytest writes an `xfail` outcome as `<skipped type="pytest.xfail">` -- the
+    SAME element a real skip uses -- and they are opposites.
+
+    A skipped test did not run and asserts nothing: the coverage-claim defect
+    this census exists to catch. An xfailed test RAN, behaved exactly as its
+    author declared, and under `strict=True` FAILS THE BUILD the moment the
+    defect it records is fixed. It is an active assertion.
+
+    MEASURED 2026-09-12: tests/routing/test_routing_corpus.py (xrv-route-02)
+    declares 5 known router disagreements with `pytest.mark.xfail(strict=True)`,
+    ran 219 cases with ZERO real skips, and the runtime half reported "1 gated
+    file(s) SKIPPED at runtime while declaring no skip site in their own source"
+    -- turning Test Gates red for using xfail correctly. The static half cannot
+    catch it either, because there IS no skip site to find.
+    """
+
+    @staticmethod
+    def _xml(tmp_path, cases: str):
+        p = tmp_path / "junit.xml"
+        p.write_text(
+            '<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite '
+            f'name="pytest" tests="9">{cases}</testsuite></testsuites>',
+            encoding="utf-8",
+        )
+        return p
+
+    _XFAIL = (
+        '<testcase classname="tests.routing.test_routing_corpus" name="t_x">'
+        '<skipped type="pytest.xfail" message="known disagreement">'
+        'tests/routing/test_routing_corpus.py:1: known</skipped></testcase>'
+    )
+    _REAL = (
+        '<testcase classname="tests.routing.test_routing_corpus" name="t_s">'
+        '<skipped type="pytest.skip" message="needs a server">'
+        'tests/routing/test_routing_corpus.py:2: Skipped</skipped></testcase>'
+    )
+
+    def test_an_xfail_is_not_counted_as_a_skip(self, tmp_path):
+        out = _load_module().runtime_report([self._xml(tmp_path, self._XFAIL)])
+        assert out["total_skipped"] == 0
+        assert out["total_xfailed"] == 1
+        assert out["unaccounted"] == []
+
+    def test_a_real_skip_is_STILL_counted(self, tmp_path):
+        """THE CONTROL. A change that simply stopped counting skips would pass
+        the test above and silently disable the whole runtime half."""
+        out = _load_module().runtime_report([self._xml(tmp_path, self._REAL)])
+        assert out["total_skipped"] == 1
+        assert out["total_xfailed"] == 0
+
+    def test_the_two_are_separated_in_one_file(self, tmp_path):
+        out = _load_module().runtime_report(
+            [self._xml(tmp_path, self._XFAIL + self._REAL)]
+        )
+        assert out["total_skipped"] == 1, "the real skip must survive"
+        assert out["total_xfailed"] == 1, "the xfail must be reported, not dropped"
