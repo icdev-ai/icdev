@@ -5250,6 +5250,14 @@ python -m tools.cost.session_cost --task <task-id> --no-forge                   
 python -m tools.cost.session_cost --survey --by-verdict --json                     # spend that shipped: cost per verdict; a board with no attributed rows is unmeasurable, never $0
 python -m tools.cost.session_cost --survey --by-verdict --window-days 7 --forge    # rows in the last 7 days, PR state consulted per task
 
+# Waste Survey -- behavioural, not billing (xrv-cost-03)
+python -m tools.cost.waste_survey --json                                           # one-shot rate, re-reads, ghost definitions, CLAUDE.md tokens/day, MCP usage
+python -m tools.cost.waste_survey --since-days 30 --project ICDev                  # human report over this repo's sessions
+python -m tools.cost.waste_survey --no-studio --json                               # skip the Studio-side MCP figure (no database read)
+python -m tools.cost.waste_survey --reread-threshold 5 --max-listed 50 --json      # widen the re-read bar, name more offenders
+# A RETRY is the same file Edited again after a Bash call in between. Report only, no --gate;
+# exit 2 = the survey could not be produced, which is never a clean survey.
+
 # Model Monitor
 python tools/llm/model_monitor.py --record --model qwen3-local --function code_generation --score 0.85 --json  # Record quality score
 python tools/llm/model_monitor.py --detect-drift --json                                # Detect model quality drift
