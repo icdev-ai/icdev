@@ -31,11 +31,12 @@ every database built after it.
 
 STRUCTURAL RATHER THAN LIVE-POSTGRESQL, DELIBERATELY. The assertion below fails
 on PostgreSQL and passes on SQLite, so a run under the SQLite-forced test
-conftest could never see it. It is therefore driven through `_PgLikeConn`, a
-SQLite-backed connection that enforces THE ONE PostgreSQL behaviour this defect
-turns on -- a failed statement poisons every later statement until the
-transaction ends -- and answers `information_schema.tables` from
-`sqlite_master`. The same class runs with the abort rule OFF as the `sqlite`
+conftest could never see it. It is therefore driven through `_PgLikeConn`, a proxy
+sitting IN FRONT of a real `StorageConnection(raw, "sqlite")` -- so production
+`translate_sql` still runs -- that enforces THE ONE PostgreSQL behaviour this
+defect turns on: a failed statement poisons every later statement until the
+transaction ends. It answers `information_schema.tables` from `sqlite_master`
+and refuses to fake any other catalogue read. The same class runs with the abort rule OFF as the `sqlite`
 arm, because SQLite genuinely does not abort; that arm passes against the old
 code too, which is exactly the asymmetry that hid this for a month. A skip would
 have been the wrong answer here: a gated test that skips is an unmeasured test.
@@ -52,6 +53,8 @@ import textwrap
 from pathlib import Path
 
 import pytest
+
+from tools.db.storage import StorageConnection
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -84,7 +87,13 @@ def _load_migration():
 
 
 class _PgLikeConn:
-    """SQLite under the one PostgreSQL rule this defect turns on.
+    """A proxy IN FRONT of a real StorageConnection, adding one PostgreSQL rule.
+
+    It wraps `StorageConnection(raw, "sqlite")` rather than a bare
+    `sqlite3.connect`, so what reaches the migration still runs every statement
+    through the production `translate_sql` — the SQL-recorder shape
+    `coherence_checker.check_test_db_isolation` sanctions, and the reason a
+    `%s`/`?` difference cannot hide in here.
 
     `aborts_on_error=True` models PostgreSQL: after a statement raises, every
     later statement in the same transaction raises "current transaction is
@@ -99,8 +108,8 @@ class _PgLikeConn:
     PostgreSQL does for it.
     """
 
-    def __init__(self, path: Path, *, backend: str, aborts_on_error: bool):
-        self._raw = sqlite3.connect(str(path))
+    def __init__(self, inner, *, backend: str, aborts_on_error: bool):
+        self._inner = inner
         self._cursor = None
         self._backend = backend
         self._aborts_on_error = aborts_on_error
@@ -130,7 +139,7 @@ class _PgLikeConn:
                 f"_PgLikeConn does not emulate this catalogue read: {sql!r}"
             )
         try:
-            self._cursor = self._raw.execute(sql, tuple(params or ()))
+            self._cursor = self._inner.execute(sql, params)
         except Exception:
             if self._aborts_on_error:
                 self.aborted = True
@@ -144,21 +153,25 @@ class _PgLikeConn:
         return self._cursor.fetchall()
 
     def commit(self):
-        self._raw.commit()
+        self._inner.commit()
         self.aborted = False
 
     def rollback(self):
         self.rollbacks += 1
-        self._raw.rollback()
+        self._inner.rollback()
         self.aborted = False
 
     def close(self):
-        self._raw.close()
+        self._inner.close()
 
     # -- internal bookkeeping, not part of the emulated surface -----------
     def _has_column(self, table: str, column: str) -> bool:
-        rows = self._raw.execute(f"PRAGMA table_info({table})").fetchall()
-        return any(r[1] == column for r in rows)
+        rows = self._inner.execute(f"PRAGMA table_info({table})").fetchall()
+        names = [
+            r[1] if isinstance(r, (list, tuple)) else dict(r).get("name")
+            for r in rows
+        ]
+        return column in names
 
 
 def _seed(path: Path) -> None:
@@ -208,7 +221,8 @@ def test_a_later_table_is_backfilled_after_an_earlier_one_is_absent(
     first = module._TABLES[0]
     assert not _columns(db, first), f"{first} must be absent from the fixture"
 
-    conn = _PgLikeConn(db, backend=backend, aborts_on_error=aborts_on_error)
+    real = StorageConnection(sqlite3.connect(str(db)), "sqlite")
+    conn = _PgLikeConn(real, backend=backend, aborts_on_error=aborts_on_error)
     monkeypatch.setenv("ICDEV_STORAGE_BACKEND", backend)
     monkeypatch.setattr(module, "get_connection", lambda *a, **k: conn)
 
@@ -249,7 +263,8 @@ def test_a_database_with_no_studio_tables_is_a_clean_no_op(
     sqlite3.connect(str(db)).close()
 
     module = _load_migration()
-    conn = _PgLikeConn(db, backend=backend, aborts_on_error=aborts_on_error)
+    real = StorageConnection(sqlite3.connect(str(db)), "sqlite")
+    conn = _PgLikeConn(real, backend=backend, aborts_on_error=aborts_on_error)
     monkeypatch.setenv("ICDEV_STORAGE_BACKEND", backend)
     monkeypatch.setattr(module, "get_connection", lambda *a, **k: conn)
 
