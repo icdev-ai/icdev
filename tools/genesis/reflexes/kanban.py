@@ -3558,8 +3558,12 @@ def _get_due_tasks() -> list:
         try:
             from tools.kanban.promotion_gate import filter_promotable
 
-            result, _held = filter_promotable(
-                result, conn=conn, door="_get_due_tasks")
+            # Its OWN connection, deliberately, unlike the two promotion doors:
+            # by this point the cycle has run reclaim, decomposition and the
+            # sibling/respawn filters on `conn`, and a read the gate issues must
+            # not be able to disturb that transaction. One pooled connection,
+            # and only on a cycle that actually has candidates.
+            result, _held = filter_promotable(result, door="_get_due_tasks")
             for _tid, _v in (_held or {}).items():
                 # Once per card, not once per 60s cycle: a withheld card stays
                 # selectable, so an unconditional print is 1,440 lines a day.
