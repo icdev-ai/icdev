@@ -3486,6 +3486,36 @@ python -c "from tools.ace.trust_calibrator import run_weekly_recalibration; impo
 python -c "from tools.evolution.artifact_evolver import evolve_artifact; import json; print(json.dumps(evolve_artifact('icdev-status', 'skill', dry_run=True), indent=2))"
 python -c "from tools.evolution.artifact_evolver import evolve_all_skills; import json; print(json.dumps(evolve_all_skills(dry_run=True, limit=3), indent=2))"
 python -c "from tools.evolution.eval_builder import build_dataset; ds = build_dataset('icdev-build', '', min_examples=3); print(f'train={len(ds.train)} val={len(ds.val)}')"
+
+# Pattern confidence — is a learned pattern CORROBORATED, or just frequent? (xrv-shield-02)
+python tools/nova/skill_generator.py --analyze --json          # every pattern carries confidence 0..1
+python tools/nova/skill_generator.py --analyze --min-count 1   # include once-seen patterns
+python tools/nova/skill_generator.py --analyze --no-injection-scan --json   # reports injection_scanned=false, NOT a clean scan
+python -c "from tools.nova.skill_generator import pattern_confidence; print(pattern_confidence(count=5, distinct_sessions=5, last_seen='2026-09-10T00:00:00+00:00'))"
+python -c "from tools.nova.skill_generator import score_candidate; print(score_candidate('python tools/memory/hybrid_search.py --query x'))"
+python -c "from tools.agent_runtime.skills_lifecycle import screen_candidates; print(screen_candidates(['icdev status']))"
+# ONE formula, in `pattern_confidence()`, weights DECLARED in args/nova_config.yaml:
+# occurrence count (saturating at 8), DISTINCT memory_entries.session_ref values
+# (saturating at 4), recency on args/memory_config.yaml's own half-lives, then
+# learning_collector's injection rule verbatim — a hit at block_confidence (0.7)
+# REJECTS to 0.0, a hit at demote_confidence (0.5) CAPS at 0.5. A detector that did
+# not RUN never demotes and reports injection_scanned=false, which is not a clean scan.
+# REPETITION IS NOT CORROBORATION: a pattern measured in exactly ONE session is capped
+# at 0.65, below the propose bar, however often it recurred — 40 hits in one session
+# are one observation, not forty.
+# confidence is None — NEVER 0.0 — when nothing could be measured; `sessions` is None,
+# never 0, when memory_entries carries no session_ref (migration 226) or none is
+# populated. mean_confidence / above_propose_threshold are null over an empty
+# denominator (args/perfect_score_gate.yaml).
+# maybe_propose_from_session now REFUSES below propose.min_confidence (0.7 — the bar
+# learning_collector blocks at) and reports `refused` plus every refusal's own count,
+# session spread, confidence and basis. A candidate history holds no evidence for is
+# refused as `unmeasurable`, never proposed.
+# MEASURED on the live board 2026-09-11: memory_entries holds 28,158 rows and ZERO
+# with `type LIKE 'session_%'`, so --analyze returns 0 patterns and every rate is
+# null. UNMEASURABLE, not clean — nothing has ever driven this analyser. The writer,
+# session_indexer.index_session_turn, now records `session_ref` (it had the session id
+# and dropped it), so attribution is measurable for turns indexed from here on.
 ```
 
 ---

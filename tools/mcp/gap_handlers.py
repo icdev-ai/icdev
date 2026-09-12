@@ -2700,13 +2700,29 @@ def handle_nova_trust_summary(args: dict) -> dict:
 
 
 def handle_nova_analyze_patterns(args: dict) -> dict:
-    """Scan session history for repeated command patterns suggesting a skill gap."""
+    """Scan session history for repeated command patterns suggesting a skill gap.
+
+    Each pattern carries its `confidence` (xrv-shield-02) verbatim from
+    `analyze_patterns` — this handler adapts the calling convention and computes
+    nothing.
+    """
     try:
         limit = int(args.get("limit", 50))
         min_count = int(args.get("min_count", 2))
-        from tools.nova.skill_generator import analyze_patterns
-        patterns = analyze_patterns(limit=limit, min_count=min_count)
-        return {"patterns": patterns, "total": len(patterns)}
+        scan_injection = bool(args.get("scan_injection", True))
+        from tools.nova.skill_generator import analyze_patterns, propose_min_confidence
+        patterns = analyze_patterns(
+            limit=limit, min_count=min_count, scan_injection=scan_injection
+        )
+        scored = [p for p in patterns if p.get("confidence") is not None]
+        return {
+            "patterns": patterns,
+            "total": len(patterns),
+            # None, never 0, when nothing was scored.
+            "scored": len(scored) or None,
+            "unmeasurable": len(patterns) - len(scored),
+            "propose_min_confidence": propose_min_confidence(),
+        }
     except ImportError as exc:
         logger.warning("handle_nova_analyze_patterns import: %s", exc)
         return {"error": "NOVA skill generator not available", "details": str(exc), "status": "pending"}

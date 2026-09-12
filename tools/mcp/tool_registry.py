@@ -7370,14 +7370,27 @@ TOOL_REGISTRY = {
         "handler": "handle_nova_analyze_patterns",
         "description": (
             "Scan session history for repeated command patterns that suggest a missing "
-            "ICDEV™ skill. Returns list of {pattern, count, category, example} dicts "
-            "sorted by frequency. Part of Hermes adaptation (adapt-hermes-04)."
+            "ICDEV™ skill. Returns {pattern, count, category, example, sessions, "
+            "last_seen, confidence, confidence_basis, confidence_terms, "
+            "injection_scanned, injection_detected} dicts sorted by confidence then "
+            "count. `confidence` is 0..1 from args/nova_config.yaml's declared weights "
+            "and is null — never 0.0 — for a pattern nothing could be measured about; "
+            "`sessions` is null when session attribution is unavailable, never 0. "
+            "Hermes adaptation (adapt-hermes-04) + confidence (xrv-shield-02)."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "limit": {"type": "integer", "default": 50, "description": "Max patterns to return"},
                 "min_count": {"type": "integer", "default": 2, "description": "Minimum occurrences to surface"},
+                "scan_injection": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": (
+                        "Run the prompt-injection scan per pattern. False reports "
+                        "injection_scanned=false, which is NOT a clean scan."
+                    ),
+                },
             },
         },
     },

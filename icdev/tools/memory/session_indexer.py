@@ -59,6 +59,23 @@ def _fts5_available(conn) -> bool:
 # Index a single session turn
 # ---------------------------------------------------------------------------
 
+def _has_session_ref(conn) -> bool:
+    """Does the live memory_entries table carry `session_ref` (migration 226)?
+
+    Asked of the table, never assumed — the SQLite init path declares
+    memory_entries without it.
+    """
+    try:
+        conn.execute("SELECT session_ref FROM memory_entries LIMIT 1").fetchone()
+        return True
+    except Exception:  # noqa: BLE001
+        try:
+            conn.rollback()  # PG aborts the transaction on a failed probe
+        except Exception:  # noqa: BLE001
+            pass
+        return False
+
+
 def index_session_turn(
     session_id: str,
     role: str,
@@ -87,15 +104,37 @@ def index_session_turn(
 
     conn = _get_conn()
     try:
-        conn.execute(
-            # `topics`, not `tags` (swp-scan-01) — every indexed session turn
-            # raised UndefinedColumn, so the session index was always empty.
-            """INSERT INTO memory_entries
-               (id, type, content, importance, topics, classification, created_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s)
-               ON CONFLICT (id) DO NOTHING""",
-            (entry_id, entry_type, content, importance, tags, classification, now),
-        )
+        # `topics`, not `tags` (swp-scan-01) — every indexed session turn
+        # raised UndefinedColumn, so the session index was always empty.
+        #
+        # TWO LITERAL STATEMENTS, not one f-string over a column list.
+        # `session_ref` is migration 226's column and the SQLite init path does
+        # not declare it, so it is named only when the LIVE table carries it —
+        # but an INSERT built by interpolation is invisible to
+        # `coherence_checker --check schema_code`, which reads the column list
+        # statically. Two spellings cost three lines and stay checkable.
+        if _has_session_ref(conn):
+            # xrv-shield-02: WITHOUT the session id the turn carries no
+            # attribution at all, and NOVA's pattern confidence can never tell
+            # one chatty session from four independent ones — repetition is not
+            # corroboration.
+            conn.execute(
+                """INSERT INTO memory_entries
+                   (id, type, content, importance, topics, classification, created_at,
+                    session_ref)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (id) DO NOTHING""",
+                (entry_id, entry_type, content, importance, tags, classification, now,
+                 session_id),
+            )
+        else:
+            conn.execute(
+                """INSERT INTO memory_entries
+                   (id, type, content, importance, topics, classification, created_at)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (id) DO NOTHING""",
+                (entry_id, entry_type, content, importance, tags, classification, now),
+            )
         conn.commit()
 
         # Refresh FTS5 if available (SQLite only)
