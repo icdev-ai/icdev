@@ -404,6 +404,19 @@ def test_the_shipped_postgres_pin_is_decided_by_floci_not_by_postgres_releases()
     assert entry["consumer"] == "floci"
 
 
+def test_the_shipped_ec2_pin_is_decided_by_floci_not_by_amazon_linux_releases():
+    """artifact-fresh-b5394142b3, the same defect one service over.
+
+    MEASURED 2026-09-12 by driving floci 2.0.1: its AMI catalogue maps each
+    ImageId it knows to a docker image, and an ImageId it does not know is
+    answered `AmiImageResolver  Unknown AMI ID ami-0f00f00f00f00f00f; falling
+    back to default image public.ecr.aws/amazonlinux/amazonlinux:2023`. `2027`
+    is a real Amazon Linux release -- and floci 2.0.1 has no code path that
+    requests it, so vendoring it would leave the DEFAULT path out of the bundle.
+    """
+    entry = next(e for e in AF.load_config()["artifacts"] if e["name"] == "ec2-amazonlinux")
+    assert entry["pinned"] == "2023"
+
 def test_the_shipped_valkey_pin_is_decided_by_floci_which_hard_codes_the_tag():
     """artifact-fresh-ee3339893b. Harder than the postgres case: that one is
     floci's DEFAULT for a knob a caller can turn, this one is a CONSTANT. Four

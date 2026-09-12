@@ -54,6 +54,115 @@ def _db_label(engine: str, db_path) -> str:
     return f"postgresql://{host}:{port}/{name}"
 
 
+BEHIND = "behind"
+CHECKOUT_CURRENT = "current"
+CHECKOUT_UNMEASURABLE = "unmeasurable"
+
+
+def checkout_drift(runner, ref: str = "origin/main", root=None) -> dict:
+    """Does *ref* hold migrations THIS FILESYSTEM does not contain?
+
+    ``--status`` and ``--up`` both read the filesystem, so a checkout behind the
+    default branch reports ``Pending: 0`` and applies nothing — which reads as
+    "this deployment is fully migrated" while merged migrations sit unapplied.
+    Measured 2026-09-12 from a worktree 7 commits behind main: against the SAME
+    live PostgreSQL, in the same minute, ``migration_drift.py`` reported
+    ``pending`` naming ``20260912122759_add_experiment_candidate_lane`` while
+    ``--up --dry-run`` printed ``No pending migrations.`` The tool an operator
+    ACTS on was the one that read as "nothing to do".
+
+    The consumer turned that into a certification, not just confusing output.
+    ``production_audit.check_migration_status`` (PRF-001) reads the
+    ``pending_count`` below and reports ``pass`` / "All migrations applied";
+    ``production_remediate`` then auto-fixes PRF-001 by running ``--up``, which
+    applies nothing and exits 0. The audit that exists to catch an unmigrated
+    deployment certified one — autonomy-dep-01's own defect, one layer up, in
+    the tool prescribed to fix it.
+
+    THE COMPARISON IS AGAINST DIRECTORY NAMES, NOT ``discover_migrations()``.
+    That method drops a directory carrying neither ``up.sql`` nor ``up.py``
+    (17 exist), so comparing against it would report a present-but-unrunnable
+    migration as "your checkout is behind" — a different defect with a different
+    fix. The same ``_VERSION_DIR_RE`` the runner parses names with is used here,
+    so "what counts as a migration" cannot drift between applying and auditing.
+
+    Three states, and only one of them is silence:
+
+        current       the branch holds nothing this checkout lacks
+        behind        named versions are on the branch and absent here — merge
+                      origin/main before believing ``Pending: 0``
+        unmeasurable  the ref could not be read (no remote, shallow clone)
+
+    ``unmeasurable`` is never folded into ``current``, for the reason
+    ``migration_drift`` states: a check that could not run is not a check that
+    found nothing.
+    """
+    try:
+        # Reuse the detector's git read — the question "what is on the branch"
+        # must have exactly one answer in this tree.
+        from tools.db.migration_drift import branch_migrations
+    except Exception as exc:  # noqa: BLE001
+        return {"state": CHECKOUT_UNMEASURABLE, "ref": ref,
+                "reason": f"migration_drift could not be imported: {str(exc)[:120]}",
+                "missing_here": None, "missing_count": None}
+
+    on_branch = branch_migrations(ref, root)
+    if on_branch is None:
+        return {"state": CHECKOUT_UNMEASURABLE, "ref": ref,
+                "reason": f"migrations on {ref} could not be read",
+                "missing_here": None, "missing_count": None}
+
+    import re
+
+    from tools.db.migration_runner import _VERSION_DIR_RE, _VERSION_FILE_RE
+
+    here = set()
+    migrations_dir = getattr(runner, "migrations_dir", None)
+    if migrations_dir is not None and migrations_dir.exists():
+        for entry in migrations_dir.iterdir():
+            pattern = _VERSION_FILE_RE if entry.is_file() else _VERSION_DIR_RE
+            match = re.match(pattern, entry.name)
+            if match:
+                here.add(match.group(1))
+
+    missing = sorted(v for v in on_branch if v not in here)
+    return {
+        "state": BEHIND if missing else CHECKOUT_CURRENT,
+        "ref": ref,
+        "missing_count": len(missing),
+        "missing_here": [{"version": v, "name": on_branch[v]} for v in missing],
+    }
+
+
+def _format_checkout_drift(drift: dict) -> list:
+    """Lines warning that ``Pending: 0`` does not mean current. Never silent."""
+    state = (drift or {}).get("state")
+    if state == CHECKOUT_UNMEASURABLE:
+        return ["",
+                f"Checkout vs {drift.get('ref')}: unmeasurable — "
+                f"{drift.get('reason')}",
+                "  (unmeasurable is NOT current — nobody could check whether a "
+                "merged migration is missing from this checkout)"]
+    if state != BEHIND:
+        return []
+    missing = drift.get("missing_here") or []
+    lines = ["",
+             f"THIS CHECKOUT IS BEHIND {drift.get('ref')} — "
+             f"{drift['missing_count']} migration(s) merged and absent here:"]
+    # Capped at 20 like the detector's own context list: a checkout missing 400
+    # migrations is a misconfigured root, and 400 lines bury the count that
+    # actually tells the operator that.
+    for item in missing[:20]:
+        lines.append(f"    absent here: {item['name']}")
+    if len(missing) > 20:
+        lines.append(f"    ... {len(missing) - 20} more")
+    lines.append("  A pending count read from this filesystem CANNOT see them, so "
+                 "'Pending: 0' does not mean this deployment is current.")
+    lines.append("  Merge the default branch into this checkout, then re-run. "
+                 "Cross-check with: python tools/db/migration_drift.py")
+    return lines
+
+
 def _format_status(status: dict) -> str:
     """Format migration status for human-readable output."""
     lines = [
@@ -78,6 +187,11 @@ def _format_status(status: dict) -> str:
         lines.append("\nIssues:")
         for issue in status["issues"]:
             lines.append(f"  [{issue['version']}] {issue['issue']}: {issue['detail']}")
+
+    # Printed LAST and unconditionally when it has something to say: the
+    # pending count above is filesystem-scoped and cannot see a merged
+    # migration this checkout does not hold.
+    lines.extend(_format_checkout_drift(status.get("checkout_drift")))
 
     return "\n".join(lines)
 
@@ -124,6 +238,9 @@ def main():
     # ---- Status ----
     if args.status:
         status = runner.get_status()
+        # A filesystem-scoped pending count is not an answer to "is this
+        # deployment migrated" unless the checkout holds what merged.
+        status["checkout_drift"] = checkout_drift(runner)
         if args.json:
             print(json.dumps(status, indent=2, default=str))
         else:
@@ -206,6 +323,11 @@ def main():
                 label = _db_label(_backend, db_path)
                 if not results:
                     print(f"[{label}] No pending migrations.")
+                    # "Nothing to apply" and "nothing to apply THAT THIS
+                    # CHECKOUT CAN SEE" are different claims, and only the
+                    # second one is true from a checkout behind the branch.
+                    for line in _format_checkout_drift(checkout_drift(runner)):
+                        print(line)
                     continue
                 print(f"[{label}]")
                 for r in results:

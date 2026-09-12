@@ -83,6 +83,7 @@ python -c "from tools.genesis.reflexes.awareness import run; run({}, None)"  # F
 # UI: http://localhost:5050/components-map (visual map) + /ask-icdev (Q&A chat)
 # Config: args/awareness_config.yaml — 3h cadence, 7 gap rules, 0.7 threshold
 
+
 ```
 
 #### Card records — one line each; the essay is `docs/reference/cards/<id>.md`
@@ -187,6 +188,10 @@ AWS API contract, not its performance characteristics.
 
 
 - `mfx-own-09` — `git worktree add` is OFF the dispatch critical path -- a warm pool — `python -m tools.kanban.worktree_pool --status [--json]      # depth, each entry's health, refill verdict` — `docs/reference/cards/mfx-own-09.md`
+
+- `kpr-watch-19` — The resume queue now has a consumer on the executor that RUNS, and is ONE directory from every checkout — `python -m tools.ci.resume_delivery --survey` — `docs/reference/cards/kpr-watch-19.md`
+
+- `xrv-cost-05` — Every `tools/call` Claude Code makes leaves ONE audit row — `python -m tools.awareness.capability_consumption --class mcp_dispatch_tool --json  # extra.by_caller_source` — `docs/reference/cards/xrv-cost-05.md`
 
 ### Python Dependencies
 See `requirements.txt`. Key: sqlite3, pathlib, json (stdlib); openai, anthropic, python-dotenv (optional); pyyaml, jinja2, flask, pytest (ICDEV™).
