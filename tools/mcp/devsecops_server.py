@@ -197,7 +197,15 @@ def handle_attestation_verify(args: dict) -> dict:
     image = args.get("image")
     if not project_id or not image:
         return {"error": "project_id and image are required"}
-    return verify(project_id, image)
+    # Evidence about the SUBJECT (xrv-bin-03). Passing none leaves the result
+    # byte-identical to what this handler has always returned.
+    return verify(
+        project_id,
+        image,
+        artifact=args.get("artifact"),
+        attestation=args.get("attestation"),
+        sbom=args.get("sbom"),
+    )
 
 
 def handle_zta_posture_check(args: dict) -> dict:
@@ -414,12 +422,19 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="attestation_verify",
-        description="Verify image signing and SBOM attestations. Returns verification commands for cosign CLI.",
+        description=(
+            "Verify image signing and SBOM attestations. Returns verification commands for cosign CLI. "
+            "Supply artifact/attestation/sbom to also report corroboration (agrees | disagrees | "
+            "unmeasurable) beside — never instead of — the signature verdict."
+        ),
         input_schema={
             "type": "object",
             "properties": {
                 "project_id": {"type": "string", "description": "Project identifier"},
                 "image": {"type": "string", "description": "Container image reference (e.g., registry/app:v1.0)"},
+                "artifact": {"type": "string", "description": 'Local path to the compiled artifact the attestation is about. Adds a corroboration block BESIDE the result and never changes the verdict already in it (xrv-bin-03).'},
+                "attestation": {"type": "string", "description": 'Path to an in-toto v1 statement whose subject digest the artifact is compared against.'},
+                "sbom": {"type": "string", "description": "Path to a CycloneDX or SPDX document to compare the artifact's observations against."},
             },
             "required": ["project_id", "image"],
         },

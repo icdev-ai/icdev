@@ -319,16 +319,38 @@ attestation:provenance:
 # ---------------------------------------------------------------------------
 
 
-def verify_attestation(project_id: str, image_ref: str, expected_policies: list = None) -> dict:
+def verify_attestation(
+    project_id: str,
+    image_ref: str,
+    expected_policies: list = None,
+    artifact: str = None,
+    attestation: str = None,
+    sbom: str = None,
+) -> dict:
     """Verify image attestation (dry-run check — actual verification requires cosign CLI).
 
     Args:
         project_id: Project identifier.
         image_ref: Image reference (e.g., "registry/app:v1.0").
         expected_policies: List of expected attestation types.
+        artifact: Local path to the compiled artifact the attestation is ABOUT
+            (xrv-bin-03). Supplying it adds a `corroboration` block BESIDE the
+            verification result and changes nothing already in it: the artifact's
+            own digest against the attestation subject's, and what
+            `binary_triage` OBSERVES in the bytes against what the SBOM DECLARES.
+        attestation: Path to an in-toto v1 statement whose `subject` carries the
+            digest to compare against. Without one the digest axis reports
+            `unmeasurable` with its reason — this function has no attestation
+            document of its own, it emits the cosign commands that would fetch
+            one.
+        sbom: Path to a CycloneDX or SPDX document to compare the artifact
+            against.
 
     Returns:
-        Dict with verification instructions and expected checks.
+        Dict with verification instructions and expected checks. Every key it
+        has ever carried is unchanged; `corroboration` is added only when
+        `artifact` is supplied, and it is EVIDENCE about the subject rather
+        than a verdict about a signature.
     """
     if expected_policies is None:
         profile = _get_profile(project_id)
@@ -355,13 +377,27 @@ def verify_attestation(project_id: str, image_ref: str, expected_policies: list 
                 f"--type slsaprovenance {image_ref}"
             )
 
-    return {
+    result = {
         "project_id": project_id,
         "image_ref": image_ref,
         "expected_attestations": expected_policies,
         "verification_commands": verification_commands,
         "note": "Run these commands in an environment with cosign CLI and KMS access",
     }
+
+    if artifact is None and attestation is None and sbom is None:
+        return result
+
+    # `attach` returns a NEW mapping carrying every key above unchanged and
+    # exactly one added key, and refuses to overwrite one. That is what makes
+    # "the verification result is byte-identical with and without --artifact"
+    # a property of the seam rather than a habit of this call site.
+    from tools.devsecops.artifact_corroboration import attach, corroborate
+
+    return attach(
+        result,
+        corroborate(artifact, attestation=attestation, sbom=sbom),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -413,6 +449,21 @@ def main():
     parser.add_argument("--pipeline", action="store_true", help="Generate attestation pipeline jobs")
     parser.add_argument("--verify", action="store_true", help="Verify image attestation")
     parser.add_argument("--image", help="Image reference for --verify")
+    parser.add_argument(
+        "--artifact",
+        help=(
+            "Path to the compiled artifact the attestation is about (xrv-bin-03). "
+            "Adds a corroboration block BESIDE the verification result; never changes it."
+        ),
+    )
+    parser.add_argument(
+        "--attestation",
+        help="Path to an in-toto v1 statement whose subject digest the artifact is compared against",
+    )
+    parser.add_argument(
+        "--sbom",
+        help="Path to a CycloneDX or SPDX document to compare the artifact's observations against",
+    )
     parser.add_argument("--status", action="store_true", help="Get attestation status")
     parser.add_argument("--output", help="Write output to file")
     parser.add_argument("--json", action="store_true", help="JSON output")
@@ -427,7 +478,13 @@ def main():
         if not args.image:
             result = {"error": "--verify requires --image"}
         else:
-            result = verify_attestation(args.project_id, args.image)
+            result = verify_attestation(
+                args.project_id,
+                args.image,
+                artifact=args.artifact,
+                attestation=args.attestation,
+                sbom=args.sbom,
+            )
     elif args.status:
         result = get_attestation_status(args.project_id)
     else:
@@ -459,6 +516,11 @@ def main():
             print("Verification commands:")
             for cmd in result["verification_commands"]:
                 print(f"  $ {cmd}")
+            block = result.get("corroboration")
+            if block:
+                print(f"Corroboration (evidence, not a signature verdict): {block['corroboration']}")
+                print(f"  digest: {block['digest']['verdict']}")
+                print(f"  sbom:   {block['sbom']['verdict']}")
 
 
 if __name__ == "__main__":

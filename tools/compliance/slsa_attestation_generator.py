@@ -422,6 +422,9 @@ def verify_slsa_level(
     project_id: str,
     target_level: int = 3,
     db_path: Path = None,
+    artifact: str = None,
+    attestation: str = None,
+    sbom: str = None,
 ) -> dict:
     """Verify project meets a target SLSA level.
 
@@ -429,9 +432,25 @@ def verify_slsa_level(
         project_id: Project identifier.
         target_level: Target SLSA level (0-4, default 3).
         db_path: Optional database path override.
+        artifact: Local path to the built artifact (xrv-bin-03). This function
+            verifies BUILD EVIDENCE -- predicates about how a thing was made --
+            and has never opened the thing. Supplying a path adds a
+            `corroboration` block BESIDE the level verdict and changes nothing
+            already in it.
+        attestation: Path to an in-toto v1 statement whose `subject` carries the
+            digest to compare against. `generate_slsa_provenance` builds exactly
+            that statement; pass the file it was written to. Its subject digests
+            are computed from `sbom_records` ids rather than from artifact
+            bytes, so an unmatched digest against a statement of ours is a
+            statement about THAT generator, which is why this reports and never
+            gates.
+        sbom: Path to a CycloneDX or SPDX document to compare the artifact
+            against.
 
     Returns:
-        dict with verification result, gaps, and recommendations.
+        dict with verification result, gaps, and recommendations. Every key it
+        has ever carried is unchanged; `corroboration` is added only when one of
+        the three evidence arguments is supplied.
     """
     conn = _get_connection(db_path)
 
@@ -457,7 +476,7 @@ def verify_slsa_level(
                 }
                 recommendations.append(rec_map.get(req, f"Address requirement: {req}"))
 
-        return {
+        result = {
             "project_id": project_id,
             "target_level": target_level,
             "current_level": current_level,
@@ -468,6 +487,20 @@ def verify_slsa_level(
             "recommendations": recommendations,
             "evidence": evidence,
         }
+
+        if artifact is None and attestation is None and sbom is None:
+            return result
+
+        # `attach` returns a NEW mapping carrying every key above unchanged and
+        # exactly one added key, and refuses to overwrite one. `meets_target`
+        # and `current_level` are therefore untouchable from here: a triage that
+        # cannot load pefile must never downgrade a SLSA level.
+        from tools.devsecops.artifact_corroboration import attach, corroborate
+
+        return attach(
+            result,
+            corroborate(artifact, attestation=attestation, sbom=sbom),
+        )
     finally:
         if conn:
             conn.close()
@@ -481,6 +514,21 @@ def main():
     parser.add_argument("--verify", action="store_true", help="Verify SLSA level")
     parser.add_argument("--target-level", type=int, default=3, help="Target SLSA level (0-4)", dest="target_level")
     parser.add_argument("--db", help="Database path")
+    parser.add_argument(
+        "--artifact",
+        help=(
+            "Path to the built artifact (xrv-bin-03). Adds a corroboration block BESIDE "
+            "the --verify result; never changes the level verdict."
+        ),
+    )
+    parser.add_argument(
+        "--attestation",
+        help="Path to an in-toto v1 statement whose subject digest the artifact is compared against",
+    )
+    parser.add_argument(
+        "--sbom",
+        help="Path to a CycloneDX or SPDX document to compare the artifact's observations against",
+    )
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")
     args = parser.parse_args()
@@ -499,7 +547,14 @@ def main():
         results["vex"] = generate_vex_document(args.project_id, db_path=db)
 
     if args.verify:
-        results["verification"] = verify_slsa_level(args.project_id, args.target_level, db_path=db)
+        results["verification"] = verify_slsa_level(
+            args.project_id,
+            args.target_level,
+            db_path=db,
+            artifact=args.artifact,
+            attestation=args.attestation,
+            sbom=args.sbom,
+        )
 
     if args.json_output:
         print(json.dumps(results, indent=2, default=str))
@@ -524,6 +579,11 @@ def main():
                     print(f"  Gaps ({result['gap_count']}):")
                     for gap in result["gaps"]:
                         print(f"    - {gap}")
+                block = result.get("corroboration")
+                if block:
+                    print(f"  Corroboration (evidence, not a level): {block['corroboration']}")
+                    print(f"    digest: {block['digest']['verdict']}")
+                    print(f"    sbom:   {block['sbom']['verdict']}")
 
 
 if __name__ == "__main__":

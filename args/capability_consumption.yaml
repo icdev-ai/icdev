@@ -415,6 +415,26 @@ substrates:
       `floci_gcp_twin_snapshots` are the same shape and are NOT registered
       here; their absence from this list is an omission, not a claim that they
       hold rows.
+  - ref: sbom_components
+    note: >-
+      The per-component inventory `sbom_generator._persist_components` writes,
+      one row per finished CycloneDX component. Registered by xrv-bin-03, which
+      added a SECOND kind of row to it: a component OBSERVED in a compiled
+      artifact's strings rather than DECLARED in a manifest. That kind exists
+      only where an operator passed `--binary`, so on a deployment that never
+      does, this table holds exactly what it always held -- an empty read here
+      is "no SBOM has been generated", NEVER "the artifacts contain nothing".
+      Its own history is the reason it is listed: the column `license` sat dead
+      from migration 209 until sbx-fld-04, because the canonical generator had
+      never written the table at all, and nothing said so.
+  - ref: sbom_records
+    note: >-
+      One row per generated SBOM. The DENOMINATOR for the table above, and the
+      distinction xrv-bin-03 needs: `sbom_components` empty WITH rows here is a
+      writer problem, and both empty is a deployment that has generated no SBOM.
+      It is also the only place a generated document's path is recorded, which
+      is what a corroboration (`tools/devsecops/artifact_corroboration.py`) is
+      pointed at when an operator does not name an SBOM file by hand.
 
 # The five incidents this measurement was built for. Each is asserted to be
 # measurable — `--gate` fails when a case's class cannot be measured at all,
