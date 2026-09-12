@@ -1,0 +1,382 @@
+# CUI // SP-CTI
+# External tool index (xrv-route-01)
+#
+# ONE declared list of the external BINARIES ICDEV shells out to, so that a
+# deployment can be asked "which of the things this platform invokes are
+# actually on this PATH, and at what version" before something fails at the
+# point of use with a swallowed FileNotFoundError.
+#
+# WHAT BELONGS HERE: a binary resolved from PATH by `shutil.which(...)` or
+# handed to `subprocess` as argv[0]. Nothing else. Five shapes that look like
+# they belong and DO NOT are recorded under `excluded:` below with their
+# reasons -- an omission a reader cannot see is indistinguishable from an
+# oversight, which is the defect this file exists to remove.
+#
+# `binary` may be a plain string, or a mapping keyed by platform:
+#     binary: {default: foo, windows: foo-win, linux: foo, darwin: foo}
+# Only a differing STEM needs an override. `shutil.which` already resolves
+# PATHEXT on Windows (.exe/.cmd/.bat), so `oscal-cli` finds `oscal-cli.cmd`
+# and `java` finds `java.exe` with no entry here. ZERO declared tools need an
+# override today; `--refresh --json` reports `os_overrides_declared` so that
+# zero is MEASURED and never assumed.
+#
+# `version_cmd` is REQUIRED for every entry. It is what separates `present`
+# (the binary answered) from `unmeasurable` (the binary is on PATH and did not
+# answer) -- and a `present` verdict that never ran the binary is a claim about
+# a file name, not about a working tool. Both stdout AND stderr are searched:
+# `java -version` writes its banner to stderr, and so do several others.
+#
+# `used_by` names the PRINCIPAL consumers and is deliberately NOT exhaustive
+# for a ubiquitous binary (git has 81 invocation sites). Every path listed is
+# validated to exist. Re-derive the full, current set from the tree with:
+#     python -m tools.dx.tool_index --call-sites git
+#
+# `optional: false` means ICDEV cannot function without it, and health_check
+# reports its absence as an ERROR. Everything else is a WARNING: an absent
+# optional tool is a capability this deployment does not have, not a fault.
+
+version: 1
+
+defaults:
+  # Matches "2.55.0", "v24.11.0", "1.5.0", "0.69.3", "2026.06.09".
+  version_regex: '(\d+(?:\.\d+)+)'
+  timeout_seconds: 20
+
+tools:
+  # -- source control / forge ----------------------------------------------
+  - name: git
+    binary: git
+    version_cmd: [git, --version]
+    min_version: "2.20"
+    optional: false
+    used_by:
+      - tools/workflow/git_utils.py
+      - tools/ci/pr_watcher.py
+      - tools/kanban/cli.py
+      - tools/dx/mirror_parity.py
+      - tools/genesis/code_reload.py
+      - tools/awareness/code_staleness.py
+
+  - name: gh
+    binary: gh
+    version_cmd: [gh, --version]
+    min_version: "2.0"
+    optional: true
+    used_by:
+      - tools/ci/pr_watcher.py
+      - tools/ci/merge_readiness.py
+      - tools/kanban/dispatch_admission.py
+      - tools/airgap/hook_compat.py
+      - tools/workflow/core_api_manifest.py
+
+  # -- containers / orchestration -------------------------------------------
+  - name: docker
+    binary: docker
+    version_cmd: [docker, --version]
+    optional: true
+    used_by:
+      - tools/cli/provision_db.py
+      - tools/databridge/forge/sandbox_manager.py
+      - tools/genesis/reflexes/ci_runner_health.py
+      - tools/studio/executors/gns3_sim.py
+      - tools/airgap/image_vendor.py
+
+  - name: docker-compose
+    binary: docker-compose
+    version_cmd: [docker-compose, --version]
+    optional: true
+    used_by:
+      - tools/cli/setup_wizard.py
+
+  - name: kubectl
+    binary: kubectl
+    version_cmd: [kubectl, version, --client]
+    optional: true
+    used_by:
+      - tools/infra/infra_status.py
+      - tools/saas/infra/namespace_provisioner.py
+
+  - name: helm
+    binary: helm
+    version_cmd: [helm, version, --short]
+    optional: true
+    used_by:
+      - tools/pipeline/iac_validator.py
+
+  - name: kind
+    binary: kind
+    version_cmd: [kind, --version]
+    optional: true
+    used_by:
+      - tools/pipeline/iac_validator.py
+
+  - name: terraform
+    binary: terraform
+    version_cmd: [terraform, version]
+    optional: true
+    used_by:
+      - tools/pipeline/iac_validator.py
+      - tools/infra_canvas/adapters/floci_adapter.py
+
+  - name: localstack
+    binary: localstack
+    version_cmd: [localstack, --version]
+    optional: true
+    used_by:
+      - tools/pipeline/iac_validator.py
+
+  # -- security scanning -----------------------------------------------------
+  - name: trivy
+    binary: trivy
+    version_cmd: [trivy, --version]
+    optional: true
+    used_by:
+      - tools/security/container_scanner.py
+
+  - name: osv-scanner
+    binary: osv-scanner
+    version_cmd: [osv-scanner, --version]
+    optional: true
+    used_by:
+      - tools/security/osv_scanner.py
+      - tools/testing/health_check.py
+
+  - name: detect-secrets
+    binary: detect-secrets
+    version_cmd: [detect-secrets, --version]
+    optional: true
+    used_by:
+      - tools/security/secret_detector.py
+
+  - name: pip-audit
+    binary: pip-audit
+    version_cmd: [pip-audit, --version]
+    optional: true
+    used_by:
+      - tools/security/dependency_auditor.py
+
+  - name: semgrep
+    binary: semgrep
+    version_cmd: [semgrep, --version]
+    optional: true
+    used_by:
+      - tools/aiify/pattern_classifier.py
+      - tools/ai_augmentation/pattern_classifier.py
+
+  - name: syft
+    binary: syft
+    version_cmd: [syft, version]
+    optional: true
+    used_by:
+      - tools/network/airgap_bundle.py
+
+  - name: skillspector
+    binary: skillspector
+    version_cmd: [skillspector, --version]
+    optional: true
+    used_by:
+      - tools/integrity/adapters/skillspector_adapter.py
+      - tools/workflow/coherence_checker.py
+
+  - name: sigma
+    binary: sigma
+    version_cmd: [sigma, --version]
+    optional: true
+    used_by:
+      - tools/observability_canvas/sigma_generator.py
+
+  - name: tor
+    binary: tor
+    version_cmd: [tor, --version]
+    optional: true
+    used_by:
+      - tools/strategos/darkweb_monitor.py
+
+  # -- language toolchains ---------------------------------------------------
+  - name: node
+    binary: node
+    version_cmd: [node, --version]
+    min_version: "18.0"
+    optional: true
+    used_by:
+      - tools/kanban/union_resolver.py
+
+  - name: npm
+    binary: npm
+    version_cmd: [npm, --version]
+    optional: true
+    used_by:
+      - tools/kanban/union_resolver.py
+      - tools/security/dependency_auditor.py
+      - tools/maintenance/vulnerability_checker.py
+
+  - name: npx
+    binary: npx
+    version_cmd: [npx, --version]
+    optional: true
+    used_by:
+      - tools/mcp/lsp_server.py
+      - tools/builder/linter.py
+      - tools/security/sast_runner.py
+      - tools/testing/e2e_runner.py
+
+  - name: go
+    binary: go
+    version_cmd: [go, version]
+    optional: true
+    used_by:
+      - tools/mcp/lsp_server.py
+
+  - name: cargo
+    binary: cargo
+    version_cmd: [cargo, --version]
+    optional: true
+    used_by:
+      - tools/mcp/lsp_server.py
+      - tools/builder/linter.py
+      - tools/security/dependency_auditor.py
+
+  - name: java
+    binary: java
+    # java writes its version banner to STDERR, not stdout.
+    version_cmd: [java, -version]
+    optional: true
+    used_by:
+      - tools/compliance/oscal_tools.py
+
+  # -- python linting / typing (PATH console scripts) ------------------------
+  - name: ruff
+    binary: ruff
+    version_cmd: [ruff, --version]
+    optional: true
+    used_by:
+      - tools/mcp/lsp_server.py
+      - tools/quality/review_loop.py
+
+  - name: mypy
+    binary: mypy
+    version_cmd: [mypy, --version]
+    optional: true
+    used_by:
+      - tools/mcp/lsp_server.py
+
+  - name: pyright
+    binary: pyright
+    version_cmd: [pyright, --version]
+    optional: true
+    used_by:
+      - tools/mcp/lsp_server.py
+
+  # -- compliance / documents / media ----------------------------------------
+  - name: oscal-cli
+    binary: oscal-cli
+    version_cmd: [oscal-cli, --version]
+    optional: true
+    used_by:
+      - tools/compliance/oscal_tools.py
+
+  - name: tesseract
+    # Reached through the pytesseract wrapper, which shells to this binary.
+    binary: tesseract
+    version_cmd: [tesseract, --version]
+    optional: true
+    used_by:
+      - tools/document_intelligence/extractors.py
+      - tools/docgen/context_builder.py
+      - tools/bom/forensics.py
+
+  - name: yt-dlp
+    binary: yt-dlp
+    version_cmd: [yt-dlp, --version]
+    optional: true
+    used_by:
+      - tools/document_intelligence/extractors.py
+      - tools/platform_connectors/adapters/youtube.py
+
+  # -- LLM / agent CLIs ------------------------------------------------------
+  - name: claude
+    binary: claude
+    version_cmd: [claude, --version]
+    optional: true
+    used_by:
+      - tools/agents/adapters/claude_cli.py
+      - tools/airgap/detector.py
+      - tools/llm/cli_bridge_manager.py
+
+  - name: ollama
+    binary: ollama
+    version_cmd: [ollama, --version]
+    optional: true
+    used_by:
+      - tools/genesis/launch.py
+      - tools/genesis/reflexes/learn.py
+      - tools/finetune/gguf_exporter.py
+
+  # -- data / database -------------------------------------------------------
+  - name: pg_dump
+    binary: pg_dump
+    version_cmd: [pg_dump, --version]
+    optional: true
+    used_by:
+      - tools/db/export_ft_data.py
+      - tools/db/regen_pg_snapshot.py
+
+  - name: dvc
+    binary: dvc
+    version_cmd: [dvc, --version]
+    optional: true
+    used_by:
+      - tools/ops_hub/adapters/dvc_adapter.py
+
+  # -- browser drivers -------------------------------------------------------
+  - name: chromedriver
+    binary: chromedriver
+    version_cmd: [chromedriver, --version]
+    optional: true
+    used_by:
+      - tools/browser/driver_manager.py
+
+  - name: msedgedriver
+    binary: msedgedriver
+    version_cmd: [msedgedriver, --version]
+    optional: true
+    used_by:
+      - tools/browser/driver_manager.py
+
+# -- DECLARED ABSENCES -------------------------------------------------------
+# Each of these was named as a seed candidate and each is NOT a PATH binary
+# ICDEV resolves. Declaring one would put a fabricated `absent` finding on
+# every deployment; leaving it out silently would read as an oversight.
+excluded:
+  - name: bandit
+    reason: >-
+      Invoked as a PYTHON MODULE, never from PATH --
+      [sys.executable, "-m", "bandit", ...] in
+      tools/databridge/forge/static_validator.py, and `python -m bandit` in
+      every documented command. PATH is not consulted, so a PATH probe would
+      report `absent` on a host where `python -m bandit` works.
+
+  - name: cosign
+    reason: >-
+      ICDEV GENERATES pipeline configuration that calls cosign
+      (tools/devsecops/attestation_manager.py, tools/pipeline/deploy_generator.py);
+      no ICDEV process ever invokes it. The binary is a dependency of the
+      generated pipeline's runner, not of this platform.
+
+  - name: analyzeHeadless
+    reason: >-
+      Zero references in the tree (measured 2026-09-11). The Ghidra headless
+      analyser belongs to the not-yet-built xrv-bin-01..03 binary-triage cards;
+      declaring it now is a capability declared before its consumer exists.
+
+  - name: playwright
+    reason: >-
+      tools/testing/e2e_runner.py resolves it from the project's
+      node_modules/.bin as playwright.cmd / playwright and carries an explicit
+      comment REFUSING a bare shutil.which("playwright") fallback. The PATH
+      binary this platform actually needs is `npx`, which IS declared.
+
+  - name: grype
+    reason: >-
+      Named only in generated runbook text (tools/pipeline/runbooks.py) and in
+      a requirements-intake keyword list. No invocation site in the tree.

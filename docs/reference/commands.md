@@ -4236,6 +4236,20 @@ python tools/dx/mcp_config_generator.py --all --write --json              # Gene
 python tools/dx/skill_translator.py --all --write --json                  # Translate skills to all platforms
 python tools/dx/skill_translator.py --list                                # List available Claude Code skills
 
+# External tool index — the binaries ICDEV shells to, probed on PATH (xrv-route-01)
+python -m tools.dx.tool_index --refresh --json                            # Every declared tool: present | absent | unmeasurable
+python -m tools.dx.tool_index --refresh                                   # Human table + the declared absences and why
+python -m tools.dx.tool_index --name git --json                           # One tool
+python -m tools.dx.tool_index --validate                                  # Validate the DECLARATION (exit 1 on a problem)
+python -m tools.dx.tool_index --call-sites git                            # Re-derive consumers from the tree with ast
+# `which(name)` in that module is the ONE lookup new code calls instead of a
+# bare shutil.which — it refuses an undeclared name, and an EXCLUDED name
+# raises carrying the reason (bandit is `python -m`, cosign is generated
+# config, playwright comes from node_modules/.bin — see args/tool_index.yaml).
+# `present` requires the binary to ANSWER its version_cmd; `unmeasurable` (on
+# PATH, would not answer) is its own verdict and never folds into either other.
+# Consumed by: python tools/testing/health_check.py --json -> checks.external_tools
+
 # Maintenance Audit
 python tools/maintenance/dependency_scanner.py --project-id "proj-123"           # Scan all deps
 python tools/maintenance/vulnerability_checker.py --project-id "proj-123"        # Check CVEs

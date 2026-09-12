@@ -599,6 +599,80 @@ def check_osv_scanner() -> CheckResult:
     )
 
 
+def check_external_tools() -> CheckResult:
+    """Every binary declared in args/tool_index.yaml, probed on PATH (xrv-route-01).
+
+    Distinct from ``check_tools`` above, which probes Python IMPORTS and says
+    nothing about the ~36 external binaries this platform shells out to.
+
+    REPORT ONLY, with one exception. An absent OPTIONAL tool is a warning --
+    it is a capability this deployment does not have, not a fault, and failing
+    a health check because a developer machine has no ``terraform`` would
+    teach people to ignore the check. A tool declared ``optional: false``
+    (``git`` alone today) is an error: nothing in this repository works
+    without it. ``unmeasurable`` -- on PATH and would not answer -- is always
+    a warning and is never folded into either other count.
+
+    Costs ~6s on a host with 18 of the 36 present (measured 2026-09-11): one
+    subprocess per resolved binary.
+    """
+    try:
+        from tools.dx import tool_index
+    except ImportError as exc:
+        return CheckResult(
+            success=True,
+            warning=f"tool_index module unavailable: {exc}",
+            details={"status": "unavailable"},
+        )
+
+    try:
+        report = tool_index.probe_all()
+    except Exception as exc:  # noqa: BLE001 -- an unreadable declaration
+        return CheckResult(
+            success=True,
+            warning=f"external tool index unreadable: {exc}",
+            details={"status": tool_index.STATUS_UNMEASURABLE},
+        )
+
+    counts = report["counts"]
+    absent_optional = [r["name"] for r in report["tools"]
+                       if r["status"] == tool_index.STATUS_ABSENT and r["optional"]]
+    unmeasurable = [f"{r['name']} ({r['reason']})" for r in report["tools"]
+                    if r["status"] == tool_index.STATUS_UNMEASURABLE]
+    details = {
+        "declared": report["declared"],
+        "present": counts[tool_index.STATUS_PRESENT],
+        "absent": counts[tool_index.STATUS_ABSENT],
+        "unmeasurable": counts[tool_index.STATUS_UNMEASURABLE],
+        "present_pct": report["present_pct"],
+        "required_absent": report["required_absent"],
+        "absent_optional": absent_optional,
+        "unmeasurable_detail": unmeasurable,
+        "below_min_version": report["below_min_version"],
+    }
+
+    if report["required_absent"]:
+        return CheckResult(
+            success=False,
+            error=("required external tool(s) not on PATH: "
+                   + ", ".join(report["required_absent"])),
+            details=details,
+        )
+
+    notes: List[str] = []
+    if absent_optional:
+        notes.append(f"{len(absent_optional)} optional tool(s) absent")
+    if unmeasurable:
+        notes.append(f"{len(unmeasurable)} on PATH but unmeasurable")
+    if report["below_min_version"]:
+        notes.append("below declared minimum: " + ", ".join(report["below_min_version"]))
+    return CheckResult(
+        success=True,
+        warning="; ".join(notes) if notes else None,
+        details=details,
+    )
+
+
 # ────────────────────────────────────────────────────────────────────────────
 # Aggregate driver
 # ────────────────────────────────────────────────────────────────────────────
@@ -615,6 +689,7 @@ _HEALTH_CHECKS: Dict[str, Callable[[], CheckResult]] = {
     "claude_code": check_claude_code,
     "playwright": check_playwright,
     "osv_scanner": check_osv_scanner,
+    "external_tools": check_external_tools,
 }
 
 
