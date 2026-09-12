@@ -173,6 +173,64 @@ def _record_text(essay: Dict[str, Any]) -> str:
     return "\n".join(out).rstrip() + "\n"
 
 
+def _is_marking(line: str) -> bool:
+    """A classification banner, e.g. `# CUI // SP-CTI` -- a marking, not a title."""
+    body = line.lstrip("#").strip()
+    return "//" in body and len(body) <= 40
+
+
+def _record_index_line(path: Path) -> Optional[str]:
+    """An index line for a record ALREADY on disk, read from its own header.
+
+    A record's first line is `# <title> (<ids>)` -- the same shape an inline
+    essay's header has, because `_record_text` wrote it -- so the SAME
+    `ESSAY_HEADER` parses it and there is no second spelling of what a card
+    header is. A file whose first line does not match is left alone and
+    reported: inventing an index entry for a document this tool does not
+    understand is worse than not indexing it.
+    """
+    try:
+        head = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    # SKIP A CLASSIFICATION BANNER. `# CUI // SP-CTI` is a required marking, not
+    # a heading, and two records already carry one; taking the first non-blank
+    # line made every marked record unindexable.
+    m = None
+    for ln in head[:6]:
+        if not ln.strip() or _is_marking(ln):
+            continue
+        m = ESSAY_HEADER.match(ln)
+        break
+    if not m:
+        return None
+    ids = [t.strip() for t in m.group("ids").split(",") if t.strip()]
+    if not ids:
+        return None
+    # THE INDEX CITES A COMMAND, NOT THE RECORD'S PATH. The shipped lines end at
+    # the entry point (`- `id` -- title -- `cmd``), and
+    # test_every_indexed_command_appears_in_its_own_record reads the first
+    # backticked token after the id and requires the RECORD to contain it -- so
+    # emitting the path there asserts the record quotes its own filename, which
+    # it does not. A record with no command block gets no command: an index that
+    # invents an entry point is worse than one that omits it.
+    cmd = ""
+    fenced = False
+    for ln in head:
+        if ln.startswith("```"):
+            if fenced:
+                break
+            fenced = True
+            continue
+        if fenced and ln.strip():
+            cmd = ln.strip()
+            break
+    rest = m.group("title").strip()
+    if cmd:
+        rest = f"{rest} {EMDASH} `{cmd}`"
+    return f"- `{', '.join(ids)}` {EMDASH} {rest}"
+
+
 def _index_line(essay: Dict[str, Any]) -> str:
     """One line per card. The command is optional -- some cards are libraries."""
     cmd = next((c.strip() for c in essay["body"]
@@ -206,6 +264,9 @@ def survey() -> Dict[str, Any]:
         "indexed": len(indexed),
         "missing_record": sorted(e["slug"] for e in essays if e["slug"] not in on_disk),
         "missing_index": sorted(e["slug"] for e in essays if e["slug"] not in indexed),
+        # Records on disk carrying no index line. `--check` must see these or a
+        # card that ships its record directly drifts silently until CI says so.
+        "unindexed_records": sorted(on_disk - indexed),
         "has_index_heading": idx is not None,
     }
 
@@ -217,7 +278,11 @@ def apply(dry_run: bool = False) -> Dict[str, Any]:
         return before
     lines = CLAUDE_MD.read_text(encoding="utf-8").splitlines()
     prelude, essays = parse_essays(lines)
-    if not essays:
+    # "Nothing inline" is NOT "nothing to do": a card that shipped its record
+    # directly still needs its index line, and returning here is why the first
+    # `--apply` after PR #2277 reported `changed: false` over a record it could
+    # see was unindexed.
+    if not essays and not before.get("unindexed_records"):
         return {**before, "changed": False, "reason": "no inline essay to move"}
 
     CARDS_DIR.mkdir(parents=True, exist_ok=True)
@@ -249,10 +314,27 @@ def apply(dry_run: bool = False) -> Dict[str, Any]:
     # index lines for anything not already indexed
     idx = _index_bounds(lines)
     new_index: List[str] = []
+    unindexable: List[str] = []
     if idx:
         have = {slug(m.group("ids").split(",")[0])
                 for ln in lines[idx[0]:idx[1]] if (m := INDEX_LINE.match(ln))}
         new_index = [_index_line(e) for e in safe if e["slug"] not in have]
+        # A RECORD WRITTEN DIRECTLY IS STILL A CARD. Since xrv-docs-02 a new
+        # card ships its record rather than an inline essay, so indexing only
+        # what this run EXTRACTED leaves every such card unindexed and reddens
+        # test_every_card_record_is_indexed_from_claude_md (PR #2277). Orphans
+        # are indexed from their own header; one that cannot be parsed is left
+        # alone and named in `unindexable`.
+        seen = set(have) | {e["slug"] for e in safe}
+        for rec in sorted(CARDS_DIR.glob("*.md")) if CARDS_DIR.exists() else []:
+            if rec.stem in seen:
+                continue
+            line = _record_index_line(rec)
+            if line is None:
+                unindexable.append(rec.stem)
+                continue
+            new_index.append(line)
+            seen.add(rec.stem)
 
     lo, hi = _fence_bounds(lines)
     unsafe = {k["slug"] for k in kept_inline}
@@ -271,6 +353,7 @@ def apply(dry_run: bool = False) -> Dict[str, Any]:
     after = survey()
     return {"changed": True, "records_written": wrote, "trimmed": len(safe),
             "kept_inline": kept_inline, "index_lines_added": len(new_index),
+            "unindexable_records": unindexable,
             "bytes_before": before["bytes"], "bytes_after": after["bytes"],
             "inline_essays_after": after["inline_essays"]}
 

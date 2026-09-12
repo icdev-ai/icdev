@@ -193,6 +193,9 @@ AWS API contract, not its performance characteristics.
 
 - `xrv-cost-05` — Every `tools/call` Claude Code makes leaves ONE audit row — `python -m tools.awareness.capability_consumption --class mcp_dispatch_tool --json  # extra.by_caller_source` — `docs/reference/cards/xrv-cost-05.md`
 
+
+- `kpr-watch-21` — A refusal that names no remedy — `python tools/kanban/cli.py --reverify <task-id>`
+
 ### Python Dependencies
 See `requirements.txt`. Key: sqlite3, pathlib, json (stdlib); openai, anthropic, python-dotenv (optional); pyyaml, jinja2, flask, pytest (ICDEV™).
 

@@ -177,7 +177,8 @@ def preflight(task_id: str, *, get_conn=None, watcher=None) -> dict:
             return _refusal(
                 task_id,
                 f"PR base '{base_ref or '<unknown>'}' is not the default branch "
-                f"'{default_branch}' — merging it would strand the work off-main",
+                f"'{default_branch}' — merging it would strand the work off-main. "
+                f"Retarget it: gh pr edit {pr_url} --base {default_branch}",
                 pr_url, checks,
             )
         checks.append(_ck("base_is_default", True, base_ref))
@@ -203,7 +204,9 @@ def preflight(task_id: str, *, get_conn=None, watcher=None) -> dict:
         # ── (b) CI green ───────────────────────────────────────────────────
         if ec.is_ci_failed(state):
             checks.append(_ck("ci_green", False, "a check failed"))
-            return _refusal(task_id, "CI is red — fix the failing checks first",
+            return _refusal(task_id,
+                            f"CI is red — fix the failing checks first; "
+                            f"gh pr checks {pr_url} names them",
                             pr_url, checks)
         if ec.is_in_progress(state):
             checks.append(_ck("ci_green", False, "checks still running"))
@@ -215,7 +218,9 @@ def preflight(task_id: str, *, get_conn=None, watcher=None) -> dict:
             checks.append(_ck("ci_green", False, "no conclusive green rollup"))
             return _refusal(
                 task_id,
-                "CI is not green (no conclusive successful check rollup)",
+                f"CI is not green (no conclusive successful check rollup) — "
+                f"gh pr checks {pr_url} shows what has reported; if nothing has, "
+                f"push a commit to trigger the workflows",
                 pr_url, checks,
             )
         checks.append(_ck("ci_green", True))
@@ -286,7 +291,9 @@ def preflight(task_id: str, *, get_conn=None, watcher=None) -> dict:
             return _refusal(
                 task_id,
                 f"held: shares source file(s) with {len(sib)} open PR(s) — "
-                f"{detail}",
+                f"{detail}. The lowest-numbered mergeable sibling goes first: "
+                f"land it, rebase this branch onto the default branch, and "
+                f"re-run",
                 pr_url, checks,
             )
         checks.append(_ck(

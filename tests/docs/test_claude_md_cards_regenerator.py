@@ -157,3 +157,81 @@ def test_a_missing_claude_md_is_unmeasurable_not_zero(sandbox, monkeypatch):
     out = cards.survey()
     assert out["state"] == "unmeasurable"
     assert "bytes" not in out, "a missing file must not report a size"
+
+
+# ── a record that shipped DIRECTLY is still a card ──────────────────────────
+
+
+def _record(sandbox, stem: str, body: str) -> None:
+    cards.CARDS_DIR.mkdir(parents=True, exist_ok=True)
+    (cards.CARDS_DIR / (stem + ".md")).write_text(body, encoding="utf-8")
+
+
+def test_an_orphan_record_is_indexed_from_its_own_header(sandbox, monkeypatch):
+    """THE DEFECT PR #2277 HIT. Since xrv-docs-02 a new card ships its RECORD
+    rather than an inline essay, and the index was built only from what this run
+    EXTRACTED -- so the first card to follow the new convention was never
+    indexed and `test_every_card_record_is_indexed_from_claude_md` went red on a
+    tree where nothing was wrong except the tool's reach.
+    """
+    monkeypatch.setattr(cards, "CLAUDE_MD", _tree(sandbox, "cmd" + NL))
+    _record(sandbox, "aa-01", "# A measured thing (aa-01)" + NL * 2 + "prose" + NL)
+
+    assert cards.survey()["unindexed_records"] == ["aa-01"]
+    out = cards.apply()
+    assert out["index_lines_added"] == 1
+    assert out["unindexable_records"] == []
+    assert "- `aa-01`" in cards.CLAUDE_MD.read_text(encoding="utf-8")
+
+
+def test_nothing_inline_is_not_nothing_to_do(sandbox, monkeypatch):
+    """`apply` returned early on an empty fence, so the first run after #2277
+    reported `changed: false` over a record it had just reported unindexed."""
+    monkeypatch.setattr(cards, "CLAUDE_MD", _tree(sandbox, "cmd" + NL))
+    _record(sandbox, "bb-02", "# Another (bb-02)" + NL * 2 + "prose" + NL)
+    assert cards.apply()["changed"] is True
+
+
+def test_a_classification_banner_is_not_a_title(sandbox, monkeypatch):
+    """`# CUI // SP-CTI` is a REQUIRED MARKING, not a heading. Taking the first
+    non-blank line made every marked record unindexable -- and marked records
+    exist, so that is a live population and not a hypothetical one."""
+    monkeypatch.setattr(cards, "CLAUDE_MD", _tree(sandbox, "cmd" + NL))
+    _record(sandbox, "cc-03",
+            "# CUI // SP-CTI" + NL * 2 + "# Marked card (cc-03)" + NL * 2 + "prose" + NL)
+    out = cards.apply()
+    assert out["unindexable_records"] == []
+    assert "- `cc-03`" in cards.CLAUDE_MD.read_text(encoding="utf-8")
+
+
+def test_the_index_cites_a_command_only_when_the_record_has_one(sandbox, monkeypatch):
+    """The index's first backticked token after the id is read as the CARD'S
+    COMMAND and must appear in the record. Emitting the record's own PATH there
+    asserts the record quotes its own filename, which it does not -- so a record
+    with no command block gets NO command rather than an invented one.
+    """
+    monkeypatch.setattr(cards, "CLAUDE_MD", _tree(sandbox, "cmd" + NL))
+    _record(sandbox, "dd-04", "# Prose only (dd-04)" + NL * 2 + "no commands here" + NL)
+    _record(sandbox, "ee-05",
+            "# With a command (ee-05)" + NL * 2 + "```bash" + NL
+            + "python -m tools.thing --json" + NL + "```" + NL)
+    cards.apply()
+    body = cards.CLAUDE_MD.read_text(encoding="utf-8")
+
+    prose = next(ln for ln in body.splitlines() if ln.startswith("- `dd-04`"))
+    assert "`" not in prose.split("`dd-04`", 1)[1], (
+        "a record with no command must not have one invented for it")
+    assert ".md`" not in prose, "the record's path is not its command"
+
+    withcmd = next(ln for ln in body.splitlines() if ln.startswith("- `ee-05`"))
+    assert "`python -m tools.thing --json`" in withcmd
+
+
+def test_an_unparseable_record_is_reported_not_guessed(sandbox, monkeypatch):
+    """A document this tool does not understand is NAMED. Inventing an index
+    entry for it would be the fabrication every rail in this repo refuses."""
+    monkeypatch.setattr(cards, "CLAUDE_MD", _tree(sandbox, "cmd" + NL))
+    _record(sandbox, "ff-06", "no header at all, just prose" + NL)
+    out = cards.apply()
+    assert out["unindexable_records"] == ["ff-06"]
+    assert "- `ff-06`" not in cards.CLAUDE_MD.read_text(encoding="utf-8")
