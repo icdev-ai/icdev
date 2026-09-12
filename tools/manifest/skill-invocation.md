@@ -21,3 +21,25 @@ A `SKILL.md` may declare two OPTIONAL frontmatter fields; both narrow the invoke
 
 Enforcement lives in `invoke.py` at the same seam as `_ALLOWED_PREFIXES` (`check_scope()` → `run_command()`/`invoke_skill()`), so it applies to every caller including `tools/anvil/runner.py` and `tools/agent_runtime/`. A violation is a hard stop: the command is never spawned, the remaining steps are abandoned even under `--keep-going`, and the CLI exits 1. `--dry-run` runs the same check without executing, so it doubles as a static scope audit. Scope is re-read from the live `SKILL.md` at invoke time rather than trusted from `registry.json`, because a stale cache would fail open. Tests: `tests/skills/test_scope.py`, `tests/skills/e2e_skill_invoke.py`. Authoring guide: `.agents/skills/README.md`.
 
+## `prerequisites:` — external binaries, reported not enforced (xrv-route-02)
+A `SKILL.md` may declare the external binaries its documented commands shell out
+to, by their `args/tool_index.yaml` name:
+
+```yaml
+prerequisites:
+  - trivy
+  - bandit
+  - detect-secrets
+  - pip-audit
+```
+
+`tools/skills/registry.py` parses the field (schema_version 3) and
+`tools/skills/invoke.py` probes each name through `tools/dx/tool_index.py` — the
+one external-tool index, never a second `shutil.which` — printing the verdict
+BEFORE step 1 in both `--dry-run` and `--exec`. Four verdicts: `present` |
+`absent` (install it) | `unmeasurable` (on PATH and silent, or excluded from the
+index by name, e.g. `bandit`, which is invoked as `python -m bandit` so PATH
+cannot answer) | `undeclared` (a typo in the card). The aggregate
+`not_declared` is NOT `satisfied`. Unlike `paths:`/`tools:` this enforces
+NOTHING — an absent optional tool is a capability this deployment lacks, not a
+reason to refuse the steps that work. Test: `tests/skills/test_prerequisites.py`.

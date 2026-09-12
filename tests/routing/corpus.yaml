@@ -1,0 +1,1242 @@
+# [TEMPLATE: CUI // SP-CTI]
+# Routing regression corpus (xrv-route-02) -- ONE declared set of cases for the
+# four deterministic routers ICDEV keeps deliberately separate.
+#
+# Replay it:   python -m tools.routing.corpus_survey --json
+# Validate it: python -m tools.routing.corpus_survey --validate
+# Gate it:     pytest tests/routing -q
+#
+# A case is {query, router, expected, note} plus three optional keys:
+#
+#   context              rag_shape only -- the retrieved passage the query is
+#                        judged answerable against
+#   expected_agent_mode  cortex_facade only -- pins the agent_mode HINT as well
+#                        as the intent, because "graph" is the one value
+#                        cortex.agent's own "auto" can never select
+#   known_disagreement   WHY the router is WRONG here today. `expected` stays
+#                        what the router SHOULD say; the test marks the case
+#                        xfail(strict) and the survey counts it apart from a
+#                        fresh regression. A known case that starts AGREEING
+#                        fails the suite and reports `resolved` -- the
+#                        declaration is then stale and must be removed.
+#
+# HOW TO CHANGE A CASE. If a router change moves a case, the question is which
+# of the two is wrong. If the ROUTER is now right, change `expected` and say so
+# in `note`. If the router is now wrong, that is the regression this file
+# exists to catch -- fix the router. Never delete a case to get a commit
+# through, and never add `known_disagreement` to quieten one: that field is for
+# a defect a reader can act on, with the mechanism named.
+#
+# `note` is REQUIRED on every case (enforced by --validate): a case whose
+# intent nobody can read cannot be re-judged when a rule changes, and a corpus
+# of 150 unreadable assertions is a wall people learn to edit rather than read.
+---
+
+cases:
+
+  # =====================================================================
+  # chat_canvas -- tools/chat_router/intent_classifier.py::classify
+  # WHICH CANVAS. intake (the default) or one of nine design canvases.
+  # =====================================================================
+
+  # --- intake: the strong-signal family, which PRE-EMPTS every canvas rule ---
+  - id: chat-intake-build-app
+    router: chat_canvas
+    query: "I need to build a new timekeeping app"
+    expected: intake
+    note: "_INTAKE_STRONG `i (need|want) to build` -- a greenfield ask is intake."
+  - id: chat-intake-build-me-a
+    router: chat_canvas
+    query: "build me a tool for tracking contract deliverables"
+    expected: intake
+    note: "`build me a` is the canonical greenfield phrasing."
+  - id: chat-intake-create-app
+    router: chat_canvas
+    query: "create an inventory application for the warehouse"
+    expected: intake
+    note: "`create a <word> (app|application|system|tool)` -- the noun must follow."
+  - id: chat-intake-new-project
+    router: chat_canvas
+    query: "starting a new project for the logistics office"
+    expected: intake
+    note: "`new (project|app|application|system)`."
+  - id: chat-intake-requirements
+    router: chat_canvas
+    query: "here are the requirements for the partner portal"
+    expected: intake
+    note: "`requirement` -- requirements text is intake whatever it describes."
+  - id: chat-intake-acceptance-criteria
+    router: chat_canvas
+    query: "write the acceptance criteria for the login story"
+    expected: intake
+    note: "`acceptance criteria` -- and note cortex_facade reads the same message
+      as `complete`. Different questions, different answers, same text."
+  - id: chat-intake-user-story
+    router: chat_canvas
+    query: "draft user stories for the claims reviewer role"
+    expected: intake
+    note: "`user stor` matches both singular and plural."
+  - id: chat-intake-ricoas
+    router: chat_canvas
+    query: "run RICOAS scoring on this capability request"
+    expected: intake
+    note: "`ricoas` is an intake-only acronym."
+  - id: chat-intake-feasibility
+    router: chat_canvas
+    query: "assess feasibility of delivering this by Q3"
+    expected: intake
+    note: "`feasibilit` -- stem, so feasibility and feasible both hit."
+  - id: chat-intake-project-brief
+    router: chat_canvas
+    query: "put together a project brief for the sponsor"
+    expected: intake
+    note: "`project brief`."
+
+  # --- intake: the intelligence/OSINT family, which must NEVER read as NDC ---
+  - id: chat-intake-osint
+    router: chat_canvas
+    query: "OSINT collection plan for the threat actor"
+    expected: intake
+    note: "The OSINT/ISR family is intake BY NAME -- an intelligence request is a
+      requirements conversation, never a network design."
+  - id: chat-intake-isr
+    router: chat_canvas
+    query: "ISR data fusion requirements for the watch floor"
+    expected: intake
+    note: "`isr` -- bare acronym, word-bounded."
+  - id: chat-intake-sigint-geoint
+    router: chat_canvas
+    query: "correlate SIGINT with GEOINT for the target package"
+    expected: intake
+    note: "Two intelligence disciplines; either alone is enough."
+  - id: chat-intake-ioc
+    router: chat_canvas
+    query: "enrich each indicator of compromise from the feed"
+    expected: intake
+    note: "`indicator of (compromise|attack)`."
+  - id: chat-intake-attribution
+    router: chat_canvas
+    query: "attribution analysis for the intrusion set"
+    expected: intake
+    note: "`attribution` -- deliberately intake rather than SDC."
+  - id: chat-intake-threat-intel
+    router: chat_canvas
+    query: "stand up threat intelligence monitoring for the region"
+    expected: intake
+    note: "`threat (intelligence|actor|hunt)` is intake; `threat model` is SDC.
+      The two live one word apart and must not merge."
+
+  # --- intake: the DEFAULT, reached when no rule fires at all ---
+  - id: chat-default-greeting
+    router: chat_canvas
+    query: "hello"
+    expected: intake
+    note: "DEFAULT. No keyword fires; confidence 0.55. In production this is the
+      one input that reaches the governed provider fallback -- the corpus pins
+      the rule answer, not the provider's."
+  - id: chat-default-smalltalk
+    router: chat_canvas
+    query: "thanks, that looks good"
+    expected: intake
+    note: "DEFAULT. A conversational turn is not a canvas."
+  - id: chat-default-calendar
+    router: chat_canvas
+    query: "can you reschedule the meeting to Thursday"
+    expected: intake
+    note: "DEFAULT. Off-topic, and must not be assigned a canvas."
+  - id: chat-default-weather
+    router: chat_canvas
+    query: "what is the weather in Norfolk today"
+    expected: intake
+    note: "DEFAULT. Negative case -- `what is` is a rag_shape fact pattern and
+      means nothing here."
+  - id: chat-default-vague-app
+    router: chat_canvas
+    query: "create an app for tracking inventory"
+    expected: intake
+    note: "DEFAULT, not the intake KEYWORD path: `create a <word> (app|...)`
+      needs the noun immediately after one word, and `an app for` does not
+      match. Same verdict by a different route -- confidence 0.55 not 0.90."
+
+  # --- cam: migration / modernization ---
+  - id: chat-cam-oracle
+    router: chat_canvas
+    query: "migrate our Oracle database to PostgreSQL on AWS GovCloud"
+    expected: cam
+    note: "Three cam patterns at once (migrat, oracle, the migrate-to-engine
+      rule) -- the highest-confidence shape in the taxonomy."
+  - id: chat-cam-java8-eol
+    router: chat_canvas
+    query: "the Java 8 service is EOL, what are our options"
+    expected: cam
+    note: "`eol` plus the language/EOL pairing rule."
+  - id: chat-cam-modernize
+    router: chat_canvas
+    query: "modernize the legacy claims system"
+    expected: cam
+    note: "`moderniz` and `legacy (app|system|...)`."
+  - id: chat-cam-lift-shift
+    router: chat_canvas
+    query: "lift and shift the reporting app to Azure"
+    expected: cam
+    note: "`lift.and.shift` plus `move to azure`."
+  - id: chat-cam-coa
+    router: chat_canvas
+    query: "we need a COA for the mainframe sunset"
+    expected: cam
+    note: "`coa` and `sunsett?` -- COA lives on cam, not on requirements."
+  - id: chat-cam-strangler
+    router: chat_canvas
+    query: "strangler fig approach for the monolith"
+    expected: cam
+    note: "`strangler fig` -- a named migration pattern."
+  - id: chat-cam-deprecated
+    router: chat_canvas
+    query: "the deprecated SOAP endpoints need a plan"
+    expected: cam
+    note: "`deprecated?`."
+  - id: chat-cam-beats-bdc
+    router: chat_canvas
+    query: "stakeholder analysis for the modernization board"
+    expected: cam
+    note: "PRECEDENCE. `stakeholder analysis` is a bdc pattern and `moderniz` is
+      a cam one; cam's weight is 0.95 against bdc's 0.85, so cam wins on a
+      single hit each. Pinned because the scoring is weight * sqrt(hits) and a
+      weight change would silently move this class of message."
+
+  # --- ndc: network design ---
+  - id: chat-ndc-topology
+    router: chat_canvas
+    query: "design the network topology for the new enclave"
+    expected: ndc
+    note: "Two ndc patterns -- `network (topology|design|...)` twice over."
+  - id: chat-ndc-firewall
+    router: chat_canvas
+    query: "firewall rule design for the DMZ"
+    expected: ndc
+    note: "`firewall (design|rule|policy|architecture)`."
+  - id: chat-ndc-vlan
+    router: chat_canvas
+    query: "VLAN segmentation design for the lab"
+    expected: ndc
+    note: "`vlan (design|segmentation|...)`."
+  - id: chat-ndc-bgp
+    router: chat_canvas
+    query: "BGP peering design with the transit carrier"
+    expected: ndc
+    note: "`(bgp|ospf|eigrp|isis) (routing|design|peering)`."
+  - id: chat-ndc-subnet
+    router: chat_canvas
+    query: "subnet CIDR allocation design for the VPC"
+    expected: ndc
+    note: "`subnet (design|mask|cidr|allocation)`."
+  - id: chat-ndc-blast-radius
+    router: chat_canvas
+    query: "network segmentation to reduce blast radius"
+    expected: ndc
+    note: "`network segmentation` plus `blast radius`."
+  - id: chat-ndc-ppsm
+    router: chat_canvas
+    query: "PPSM registration for the new ports"
+    expected: ndc
+    note: "`ppsm` -- a DoD-specific acronym carried on ndc alone."
+
+  # --- sdc: security design ---
+  - id: chat-sdc-threat-model
+    router: chat_canvas
+    query: "threat model the payment API"
+    expected: sdc
+    note: "`threat model` -- and contrast chat-intake-threat-intel: `threat
+      intelligence` is intake. One word apart, two canvases."
+  - id: chat-sdc-architecture
+    router: chat_canvas
+    query: "security architecture for the tenant isolation layer"
+    expected: sdc
+    note: "`security (architecture|design|model)`."
+  - id: chat-sdc-pki
+    router: chat_canvas
+    query: "PKI design for device certificates"
+    expected: sdc
+    note: "`pki (design|architecture)`."
+  - id: chat-sdc-nist
+    router: chat_canvas
+    query: "NIST 800-53 control inheritance for the platform"
+    expected: sdc
+    note: "`nist 800` plus `security control` -- the compliance vocabulary sits
+      on sdc in this taxonomy, not on a compliance canvas."
+  - id: chat-sdc-encryption
+    router: chat_canvas
+    query: "encryption design for data at rest"
+    expected: sdc
+    note: "`encryption design`. Note `data` alone does not pull this to eda --
+      the eda rules all require a second word."
+  - id: chat-sdc-zero-trust
+    router: chat_canvas
+    query: "zero trust architecture for the mission owner"
+    expected: sdc
+    note: "`zero trust (architecture|design)` is sdc; `zero-trust-network` is
+      ndc. The hyphenated network form is the discriminator."
+
+  # --- eda: enterprise data architecture ---
+  - id: chat-eda-kafka
+    router: chat_canvas
+    query: "stream telemetry through kafka into the lake"
+    expected: eda
+    note: "`kafka` plus `data lake`-adjacent wording; avoids the `build me a`
+      intake pre-empt on purpose (see chat-intake-preempts-eda)."
+  - id: chat-eda-etl
+    router: chat_canvas
+    query: "ETL from the warehouse into the lake"
+    expected: eda
+    note: "`etl`."
+  - id: chat-eda-cqrs
+    router: chat_canvas
+    query: "event sourcing and CQRS for the order service"
+    expected: eda
+    note: "Two patterns -- `event sourcing` and `cqrs`."
+  - id: chat-eda-ingestion
+    router: chat_canvas
+    query: "data ingestion design for the sensor feeds"
+    expected: eda
+    note: "`data ingestion`."
+  - id: chat-eda-pubsub
+    router: chat_canvas
+    query: "pub/sub message bus between the two enclaves"
+    expected: eda
+    note: "`pub.sub` plus `message bus`."
+  - id: chat-intake-preempts-eda
+    router: chat_canvas
+    query: "build a kafka data pipeline for telemetry"
+    expected: intake
+    note: "PRECEDENCE, and the single most surprising case in this section.
+      `_INTAKE_STRONG` is checked BEFORE any canvas rule and returns
+      immediately, so `build a` pre-empts two eda hits (`kafka`, `data
+      pipeline`). The docstring states the rule -- if these match strongly,
+      stay in intake regardless -- and it is pinned here because the cost of
+      losing it is that every greenfield request is filed as a design task."
+
+  # --- ddc: database design ---
+  - id: chat-ddc-schema
+    router: chat_canvas
+    query: "database schema design for the audit tables"
+    expected: ddc
+    note: "`database (schema|design|model)`."
+  - id: chat-ddc-er
+    router: chat_canvas
+    query: "ER diagram for the claims domain"
+    expected: ddc
+    note: "`er diagram`."
+  - id: chat-ddc-sharding
+    router: chat_canvas
+    query: "sharding strategy for the events table"
+    expected: ddc
+    note: "`sharding`."
+  - id: chat-ddc-index
+    router: chat_canvas
+    query: "index strategy design for the search table"
+    expected: ddc
+    note: "`index (strategy|design)` plus `table design`."
+  - id: chat-ddc-normalization
+    router: chat_canvas
+    query: "normalisation of the reference tables"
+    expected: ddc
+    note: "`normali[sz]ation` -- both spellings."
+  - id: chat-ddc-governance
+    router: chat_canvas
+    query: "data governance for the master data domains"
+    expected: ddc
+    note: "`data governance` plus `master data` sit on ddc, not eda."
+
+  # --- pdc: process design ---
+  - id: chat-pdc-process-model
+    router: chat_canvas
+    query: "business process model for onboarding"
+    expected: pdc
+    note: "`process (design|flow|model)` and `business process`. Note `business
+      process diagram` is a bdc pattern -- model vs diagram decides."
+  - id: chat-pdc-bpmn
+    router: chat_canvas
+    query: "BPMN for the approval chain"
+    expected: pdc
+    note: "`bpmn`."
+  - id: chat-pdc-saga
+    router: chat_canvas
+    query: "saga pattern for distributed checkout"
+    expected: pdc
+    note: "`saga pattern`."
+  - id: chat-pdc-state-machine
+    router: chat_canvas
+    query: "state machine for the case lifecycle"
+    expected: pdc
+    note: "`state machine`."
+
+  # --- bdc: business design ---
+  - id: chat-bdc-value-stream
+    router: chat_canvas
+    query: "value stream map for the intake team"
+    expected: bdc
+    note: "`value stream`."
+  - id: chat-bdc-capability-map
+    router: chat_canvas
+    query: "capability map for the program office"
+    expected: bdc
+    note: "`capability map`."
+  - id: chat-bdc-org-design
+    router: chat_canvas
+    query: "organizational design for the new directorate"
+    expected: bdc
+    note: "`organizational design`."
+
+  # --- odc: observability design ---
+  - id: chat-odc-observability
+    router: chat_canvas
+    query: "observability design for the new service"
+    expected: odc
+    note: "`observabilit` stem."
+  - id: chat-odc-otel
+    router: chat_canvas
+    query: "opentelemetry tracing architecture"
+    expected: odc
+    note: "`opentelemetry` plus `tracing (design|architecture)`."
+  - id: chat-odc-alerting
+    router: chat_canvas
+    query: "alerting strategy design for the SRE team"
+    expected: odc
+    note: "`alerting (design|strategy)` plus `sre (design|architecture)`."
+  - id: chat-odc-siem
+    router: chat_canvas
+    query: "SIEM design for the SOC"
+    expected: odc
+    note: "`siem design` is odc, not sdc -- a SIEM is telemetry plumbing here."
+  - id: chat-odc-logging
+    router: chat_canvas
+    query: "logging architecture for the audit trail"
+    expected: odc
+    note: "`logging architecture`."
+
+  # --- idc: infrastructure design ---
+  - id: chat-idc-terraform
+    router: chat_canvas
+    query: "terraform design for the GovCloud landing zone"
+    expected: idc
+    note: "`terraform design`."
+  - id: chat-idc-k8s
+    router: chat_canvas
+    query: "kubernetes architecture for the cluster"
+    expected: idc
+    note: "`kubernetes (design|architecture)` plus `cluster design`."
+  - id: chat-idc-mesh
+    router: chat_canvas
+    query: "service mesh for east-west traffic"
+    expected: idc
+    note: "`service mesh`."
+  - id: chat-idc-helm
+    router: chat_canvas
+    query: "helm chart design for the API gateway"
+    expected: idc
+    note: "`helm (chart|design)`."
+  - id: chat-idc-gitops
+    router: chat_canvas
+    query: "gitops deployment architecture"
+    expected: idc
+    note: "`gitops` plus `deployment architecture`."
+  - id: chat-idc-microservices
+    router: chat_canvas
+    query: "microservices architecture for the platform"
+    expected: idc
+    note: "`microservices architecture`."
+
+  # =====================================================================
+  # cortex_facade -- tools/cortex/intent_router.py::route
+  # WHICH CORTEX FACADE. search | ask | complete | agent, default ask.
+  # =====================================================================
+
+  # --- search: pull passages out of the corpora ---
+  - id: cx-search-kb
+    router: cortex_facade
+    query: "search the knowledge base for FedRAMP evidence"
+    expected: search
+    note: "`search` plus `knowledge base`."
+  - id: cx-search-docs-about
+    router: cortex_facade
+    query: "find documents about continuous monitoring"
+    expected: search
+    note: "`find` plus the `documents about` shape."
+  - id: cx-search-lookup
+    router: cortex_facade
+    query: "look up the SSP for system 42"
+    expected: search
+    note: "`look up` with a space -- the pattern admits both spellings."
+  - id: cx-search-retrieve
+    router: cortex_facade
+    query: "retrieve the passages mentioning AC-2"
+    expected: search
+    note: "`retrieve` plus `passages mentioning`."
+  - id: cx-search-policy-say
+    router: cortex_facade
+    query: "what does our policy say about MFA"
+    expected: search
+    note: "`what does (our|the|my) X say` -- a corpus question wearing a
+      question's clothes. Retrieval, not an analyst query."
+  - id: cx-search-related
+    router: cortex_facade
+    query: "show me related documents for this finding"
+    expected: search
+    note: "`related documents`. Note `show me all` is an _ASK_RULES shape -- the
+      word after `show me` decides."
+  - id: cx-search-semantic
+    router: cortex_facade
+    query: "semantic search over the compliance corpus"
+    expected: search
+    note: "`semantic search`."
+  - id: cx-search-citations
+    router: cortex_facade
+    query: "citations for the zero trust claim"
+    expected: search
+    note: "`citations for`."
+  - id: cx-search-locate
+    router: cortex_facade
+    query: "locate the references for the IL5 decision"
+    expected: search
+    note: "`locate` plus `references for`."
+
+  # --- ask: a structured answer computed over rows ---
+  - id: cx-ask-how-many
+    router: cortex_facade
+    query: "how many open POAM items are there"
+    expected: ask
+    note: "`how many` -- the canonical analyst question."
+  - id: cx-ask-count
+    router: cortex_facade
+    query: "count the tasks currently in progress"
+    expected: ask
+    note: "`count`."
+  - id: cx-ask-list-all
+    router: cortex_facade
+    query: "list all tenants holding CUI data"
+    expected: ask
+    note: "`list (all|the|every|our)`."
+  - id: cx-ask-show-every
+    router: cortex_facade
+    query: "show me every failed scan from last week"
+    expected: ask
+    note: "`show me every` -- contrast cx-search-related."
+  - id: cx-ask-which-have
+    router: cortex_facade
+    query: "which controls have no evidence attached"
+    expected: ask
+    note: "`(which|what) X (have|has|are|is)`."
+  - id: cx-ask-average
+    router: cortex_facade
+    query: "average time to close a finding"
+    expected: ask
+    note: "An aggregate verb -- average/sum/max/min/median."
+  - id: cx-ask-top-n
+    router: cortex_facade
+    query: "top 10 slowest tests in the gated suite"
+    expected: ask
+    note: "`top \\d+` -- the digit is required."
+  - id: cx-ask-breakdown
+    router: cortex_facade
+    query: "breakdown of findings by severity"
+    expected: ask
+    note: "`breakdown (of|by)`."
+  - id: cx-ask-group-by
+    router: cortex_facade
+    query: "group by provider and sum the token cost"
+    expected: ask
+    note: "`group by` plus `sum` -- two hits."
+  - id: cx-ask-how-much
+    router: cortex_facade
+    query: "how much did we spend on tokens in August"
+    expected: ask
+    note: "`how much`."
+  - id: cx-ask-rows
+    router: cortex_facade
+    query: "how many rows does the audit table hold"
+    expected: ask
+    note: "`how many` plus `(rows|tables|records|entries)`."
+
+  # --- complete: produce new prose ---
+  - id: cx-complete-write
+    router: cortex_facade
+    query: "write a paragraph about the program objectives"
+    expected: complete
+    note: "`write`."
+  - id: cx-complete-draft-email
+    router: cortex_facade
+    query: "draft an email to the authorizing official"
+    expected: complete
+    note: "`draft`."
+  - id: cx-complete-summarize
+    router: cortex_facade
+    query: "summarize the Q3 compliance report"
+    expected: complete
+    note: "`summari[sz]e`. rag_shape calls the same sentence `summary` -- a
+      different question about the same text, which is the whole point of
+      keeping the two routers apart."
+  - id: cx-complete-translate
+    router: cortex_facade
+    query: "translate this notice into Spanish"
+    expected: complete
+    note: "`translate|localize`."
+  - id: cx-complete-explain
+    router: cortex_facade
+    query: "explain the rationale for the waiver"
+    expected: complete
+    note: "`explain` is GENERATIVE here and REASONING in rag_shape. Two
+      taxonomies, one word, and neither is wrong."
+  - id: cx-complete-rewrite
+    router: cortex_facade
+    query: "rewrite this more formally for the sponsor"
+    expected: complete
+    note: "`rewrite`."
+  - id: cx-complete-brainstorm
+    router: cortex_facade
+    query: "brainstorm names for the new service"
+    expected: complete
+    note: "`brainstorm|come up with|suggest`."
+  - id: cx-complete-shorter
+    router: cortex_facade
+    query: "make it shorter"
+    expected: complete
+    note: "`make (it|this) (shorter|longer|...)` -- a two-word turn that still
+      carries a facade decision."
+  - id: cx-complete-memo
+    router: cortex_facade
+    query: "generate a memo for the review board"
+    expected: complete
+    note: "`generate a <noun>` where the noun is a prose artifact. Contrast
+      cx-agent-pipeline-that: `generate` alone is not generative intent."
+  - id: cx-complete-tldr
+    router: cortex_facade
+    query: "tldr of the incident timeline"
+    expected: complete
+    note: "`tl;?dr`."
+
+  # --- agent: a multi-step goal ---
+  - id: cx-agent-orchestrate
+    router: cortex_facade
+    query: "orchestrate the nightly compliance sweep"
+    expected: agent
+    expected_agent_mode: auto
+    note: "`orchestrat` stem. Multi-step, but no DAG described -- so the mode
+      hint stays `auto`, which is what cortex.agent can decide for itself."
+  - id: cx-agent-automate
+    router: cortex_facade
+    query: "automate the evidence collection for AC-2"
+    expected: agent
+    expected_agent_mode: auto
+    note: "`automate`."
+  - id: cx-agent-build-then-deploy
+    router: cortex_facade
+    query: "build the API and then deploy it to staging"
+    expected: agent
+    expected_agent_mode: auto
+    note: "The `build ... and then deploy` chain rule -- two actions, one ask."
+  - id: cx-agent-setup-then-test
+    router: cortex_facade
+    query: "set up the pipeline and then run the tests"
+    expected: agent
+    expected_agent_mode: auto
+    note: "`set up ... and then run`."
+  - id: cx-agent-multi-step
+    router: cortex_facade
+    query: "multi-step goal: ingest, classify and publish the feed"
+    expected: agent
+    expected_agent_mode: auto
+    note: "`multi-step` said outright."
+  - id: cx-agent-team
+    router: cortex_facade
+    query: "@team take this end-to-end"
+    expected: agent
+    expected_agent_mode: auto
+    note: "`@team` plus `end-to-end`. Every agent case carries
+      requires_confirm=True -- asserted in the test, not here."
+  - id: cx-agent-coworker
+    router: cortex_facade
+    query: "hand this to a co-worker to finish"
+    expected: agent
+    expected_agent_mode: auto
+    note: "`co-?worker`."
+
+  # --- agent: GRAPH-shaped, which needs TWO families to fire ---
+  - id: cx-graph-scan-parallel-gate
+    router: cortex_facade
+    query: "first scan the repo, then in parallel run bandit and trivy, then
+      require approval from the ISSO"
+    expected: agent
+    expected_agent_mode: graph
+    note: "THREE families -- sequence, parallel, gate. agent_mode=graph is the
+      load-bearing half: cortex.agent's `auto` can NEVER select graph on its
+      own, so without the hint a described DAG is silently handed a single
+      agent loop."
+  - id: cx-graph-stages
+    router: cortex_facade
+    query: "stage one ingests, stage two validates in parallel, and a human
+      approval gate before publish"
+    expected: agent
+    expected_agent_mode: graph
+    note: "sequence (`stage one`), parallel, gate (`human approval`)."
+  - id: cx-graph-template-gate
+    router: cortex_facade
+    query: "run the nightly.yaml workflow with an approval gate before the
+      deploy step"
+    expected: agent
+    expected_agent_mode: graph
+    note: "template plus gate -- a NAMED workflow is the one thing `auto` cannot
+      infer."
+  - id: cx-graph-on-success
+    router: cortex_facade
+    query: "on success generate the SBOM and on failure rollback, in parallel
+      with the notification branch"
+    expected: agent
+    expected_agent_mode: graph
+    note: "sequence (`on success`/`on failure`) plus parallel."
+  - id: cx-graph-one-family-sequence
+    router: cortex_facade
+    query: "if the tests pass then deploy, otherwise notify the team"
+    expected: agent
+    expected_agent_mode: auto
+    note: "ONE family only (sequence), so `is_graph` is False and the mode stays
+      `auto` -- _GRAPH_MIN_FAMILIES is 2. The intent is still agent, from the
+      `then ... deploy` chain rule. This is the case that proves the threshold
+      is doing something."
+  - id: cx-graph-gate-mention-only
+    router: cortex_facade
+    query: "explain the approval gate for FedRAMP"
+    expected: complete
+    note: "NEGATIVE. The gate family fires on `approval gate`, and this is a
+      QUESTION ABOUT a gate, not a request to build one. One family is not a
+      DAG -- `explain` wins and the facade is complete. Exactly the example
+      _GRAPH_MIN_FAMILIES=2 was chosen for."
+  - id: cx-graph-template-mention-only
+    router: cortex_facade
+    query: "run the report pipeline"
+    expected: ask
+    note: "NEGATIVE, and a DOUBLE default: the template family fires alone (not
+      a DAG) and no facade rule fires at all, so this falls through to the
+      DEFAULT_INTENT `ask` at confidence 0.40. A one-step run is not an agent
+      launch."
+
+  # --- cortex_facade: defaults and negatives ---
+  - id: cx-default-greeting
+    router: cortex_facade
+    query: "hello"
+    expected: ask
+    note: "DEFAULT. `ask` is the documented safe default -- the grounded analyst
+      path, which cites rather than generates."
+  - id: cx-default-vague
+    router: cortex_facade
+    query: "the thing is broken"
+    expected: ask
+    note: "DEFAULT. No rule fires in any of the four families."
+  - id: cx-default-empty
+    router: cortex_facade
+    query: " "
+    expected: ask
+    note: "DEFAULT on an empty message, at confidence 1.0 -- the one case where
+      the router is certain BECAUSE there is nothing to classify."
+  - id: cx-status-of-migration
+    router: cortex_facade
+    query: "what is the status of the migration"
+    expected: ask
+    known_disagreement: "Returns `agent`. The base classifier reads `migration`
+      as the cam design canvas and adds +2 to agent, beating the single
+      `status of` ask hit -- so a plain STATUS QUESTION is routed to the facade
+      that proposes launching an agent loop (requires_confirm=True). The +2 is
+      documented as `enough to win against a single incidental keyword from
+      another family`; here the incidental keyword is the real intent and the
+      design-mode signal is the incidental one. Report-only: narrowing the
+      design-mode boost is a routing change owing its own fire-rate survey."
+    note: "A question about a migration's status is a data question, not a
+      request to perform a migration."
+
+  # =====================================================================
+  # rag_shape -- tools/rag/query_classifier.py::classify_query
+  # WHAT SHAPE of answer. fact_single | summary | reasoning | unanswerable.
+  # =====================================================================
+
+  # --- fact_single: one concise answer from one passage ---
+  - id: rag-fact-what-is
+    router: rag_shape
+    query: "What is AC-2?"
+    expected: fact_single
+    note: "`what is` anchored at the START of the query -- this family is the
+      only one of the three that is anchored."
+  - id: rag-fact-who-is
+    router: rag_shape
+    query: "Who is the ISSO for the platform?"
+    expected: fact_single
+    note: "`who is`."
+  - id: rag-fact-when-was
+    router: rag_shape
+    query: "When was NIST 800-53 Rev 5 published?"
+    expected: fact_single
+    note: "`when was`."
+  - id: rag-fact-which
+    router: rag_shape
+    query: "Which FIPS level applies to IL5?"
+    expected: fact_single
+    note: "`which`."
+  - id: rag-fact-how-many
+    router: rag_shape
+    query: "How many controls are in the moderate baseline?"
+    expected: fact_single
+    note: "`how many` is fact_single HERE and `ask` in cortex_facade -- the same
+      words, two different questions, two correct answers."
+  - id: rag-fact-define
+    router: rag_shape
+    query: "Define continuous monitoring."
+    expected: fact_single
+    note: "`define ` with its trailing space -- `defined` does not match."
+  - id: rag-fact-stand-for
+    router: rag_shape
+    query: "What does ATO stand for?"
+    expected: fact_single
+    note: "`what does X stand for`."
+  - id: rag-fact-version
+    router: rag_shape
+    query: "What version of OSCAL do we emit?"
+    expected: fact_single
+    note: "`what version`."
+  - id: rag-fact-where
+    router: rag_shape
+    query: "Where is the SSP template stored?"
+    expected: fact_single
+    note: "`where is`."
+  - id: rag-fact-with-context
+    router: rag_shape
+    query: "How many POAM items are overdue?"
+    context: "The POAM register lists 14 overdue items as of March, of which 3
+      are past their scheduled completion date."
+    expected: fact_single
+    note: "Context that OVERLAPS the query never triggers the unanswerable
+      check, so the pattern families decide as usual."
+
+  # --- summary: synthesis across passages ---
+  - id: rag-summary-summarize
+    router: rag_shape
+    query: "Summarize the FedRAMP authorization process."
+    expected: summary
+    note: "`summarize`."
+  - id: rag-summary-overview
+    router: rag_shape
+    query: "Give an overview of CMMC Level 2."
+    expected: summary
+    note: "`give an overview`."
+  - id: rag-summary-describe
+    router: rag_shape
+    query: "Describe the key controls for IL5."
+    expected: summary
+    note: "`describe` plus `what are the key`-adjacent wording."
+  - id: rag-summary-outline
+    router: rag_shape
+    query: "Outline the cATO evidence requirements."
+    expected: summary
+    note: "`outline`."
+  - id: rag-summary-list
+    router: rag_shape
+    query: "List the STIG severity categories."
+    expected: summary
+    note: "`list` is SUMMARY here. cortex_facade reads `list all` as `ask`. Two
+      taxonomies that disagree about one verb, on purpose."
+  - id: rag-summary-main-phases
+    router: rag_shape
+    query: "What are the main phases of the RMF?"
+    expected: summary
+    note: "`what are the (main|key|primary|core)` -- this is the ONE `what are`
+      shape that beats the fact_single anchor, because summary is tested first."
+  - id: rag-summary-enumerate
+    router: rag_shape
+    query: "Enumerate the seven Rs of migration."
+    expected: summary
+    note: "`enumerate`."
+  - id: rag-summary-covers
+    router: rag_shape
+    query: "What does the SSP cover for inherited controls?"
+    expected: summary
+    note: "`what (does|do) X cover`."
+  - id: rag-summary-short-query-guard
+    router: rag_shape
+    query: "Summarize the incident"
+    context: "Unrelated note about weather patterns over the Pacific."
+    expected: summary
+    note: "The unanswerable check needs at least 3 distinct 4+ letter query
+      words (_MIN_QUERY_WORDS); `summarize` and `incident` are two, so it is
+      SKIPPED even with irrelevant context and the summary family decides. A
+      two-word query cannot be judged by keyword overlap."
+
+  # --- reasoning: explanation, inference, causation ---
+  - id: rag-reason-why
+    router: rag_shape
+    query: "Why does FedRAMP require continuous monitoring?"
+    expected: reasoning
+    note: "`why`."
+  - id: rag-reason-how-does
+    router: rag_shape
+    query: "How does zero trust prevent lateral movement?"
+    expected: reasoning
+    note: "`how does`."
+  - id: rag-reason-what-would-happen
+    router: rag_shape
+    query: "What would happen if MFA were disabled?"
+    expected: reasoning
+    note: "`what would happen`."
+  - id: rag-reason-rationale
+    router: rag_shape
+    query: "Explain the rationale behind NIST 800-171."
+    expected: reasoning
+    note: "`explain` plus `what is the rationale`-adjacent wording."
+  - id: rag-reason-compare
+    router: rag_shape
+    query: "Compare CMMC Level 2 with FedRAMP Moderate."
+    expected: reasoning
+    note: "`compare`."
+  - id: rag-reason-impact-singular
+    router: rag_shape
+    query: "What is the impact of a failed STIG check?"
+    expected: reasoning
+    note: "`what is the impact` -- SINGULAR. The control for
+      rag-reason-plural-advantages below: the same sentence in the plural
+      classifies differently, which is how that defect was found."
+  - id: rag-reason-risk-singular
+    router: rag_shape
+    query: "What is the risk of running without an ATO?"
+    expected: reasoning
+    note: "`what is the risk` -- singular, and the second half of the plural
+      control pair."
+  - id: rag-reason-justify
+    router: rag_shape
+    query: "How should we justify an inherited control?"
+    expected: reasoning
+    note: "`how should` plus `justify`."
+  - id: rag-reason-evaluate
+    router: rag_shape
+    query: "Evaluate the trade-off between speed and assurance."
+    expected: reasoning
+    note: "`evaluate`."
+  - id: rag-reason-caused
+    router: rag_shape
+    query: "What caused the authorization to lapse?"
+    expected: reasoning
+    note: "`what (causes|caused)`."
+  - id: rag-reason-discuss
+    router: rag_shape
+    query: "Discuss the tradeoffs of the shared responsibility model."
+    expected: reasoning
+    note: "`discuss`."
+  - id: rag-reason-explain-with-context
+    router: rag_shape
+    query: "Explain the encryption requirements for CUI at rest"
+    context: "Encryption of CUI at rest requires FIPS 140-3 validated modules
+      per NIST SP 800-171 requirement 3.13.11."
+    expected: reasoning
+    note: "Relevant context, so the unanswerable check does not fire and
+      `explain` decides. Pair with rag-unanswerable-encryption, which is the
+      SAME query against irrelevant context."
+  - id: rag-reason-plural-advantages
+    router: rag_shape
+    query: "What are the advantages of OSCAL over spreadsheets?"
+    expected: reasoning
+    known_disagreement: "Returns `fact_single`. _REASONING_PATTERNS spells the
+      noun list `(reason|rationale|purpose|benefit|advantage|disadvantage|risk|
+      impact)` with a trailing `\\b` and NO `s?`, so every PLURAL form misses;
+      the query then matches the `what are` fact_single anchor instead. One
+      missing `s?` turns three of the eight reasoning nouns into fact questions.
+      Compare rag-reason-impact-singular, which agrees."
+    note: "A question about advantages is an inference question whatever the
+      grammatical number of the noun."
+  - id: rag-reason-plural-risks
+    router: rag_shape
+    query: "What are the risks of an expired ATO?"
+    expected: reasoning
+    known_disagreement: "Returns `fact_single`, same missing `s?` in
+      _REASONING_PATTERNS as rag-reason-plural-advantages. `What is the risk`
+      (rag-reason-risk-singular) agrees, so the pair isolates the mechanism to
+      the plural alone."
+    note: "Plural of a reasoning noun is still a reasoning question."
+  - id: rag-reason-plural-benefits
+    router: rag_shape
+    query: "What are the benefits of continuous authorization?"
+    expected: reasoning
+    known_disagreement: "Returns `fact_single` -- the third plural form of the
+      same one-character defect. Listed separately rather than folded in,
+      because a fix that repairs only `risks` must still leave two red."
+    note: "Plural of a reasoning noun is still a reasoning question."
+
+  # --- unanswerable, and the DEFAULT ---
+  - id: rag-unanswerable-procurement
+    router: rag_shape
+    query: "Tell me about the procurement timeline for the award"
+    context: "The kitchen renovation budget was approved last spring and the
+      contractor starts in June."
+    expected: unanswerable
+    note: "Keyword overlap below 10% with 3+ distinct query words -- a
+      RETRIEVAL failure, not a property of the question."
+  - id: rag-unanswerable-encryption
+    router: rag_shape
+    query: "Explain the encryption requirements for CUI at rest"
+    context: "Recipe: combine flour, sugar and butter, then bake for forty
+      minutes."
+    expected: unanswerable
+    note: "PRECEDENCE. The identical query is `reasoning` against relevant
+      context (rag-reason-explain-with-context) -- the answerability check runs
+      BEFORE the three pattern families, so context can override an otherwise
+      certain label."
+  - id: rag-default-bare-control
+    router: rag_shape
+    query: "AC-2 account management"
+    expected: fact_single
+    note: "DEFAULT. No family fires, confidence 0.50 -- and note the default is
+      a real label, so a caller cannot tell `matched fact_single` from `nothing
+      matched` without reading `confidence`."
+  - id: rag-default-statement
+    router: rag_shape
+    query: "the SSP needs updating before the next review"
+    expected: fact_single
+    note: "DEFAULT. A statement is not a question, and the taxonomy has no label
+      for that."
+  - id: rag-default-single-token
+    router: rag_shape
+    query: "POAM"
+    expected: fact_single
+    note: "DEFAULT on one bare token."
+  - id: rag-empty-query
+    router: rag_shape
+    query: " "
+    expected: unanswerable
+    note: "An EMPTY query is unanswerable at confidence 1.0 by an explicit early
+      return -- the one place in this taxonomy where `unanswerable` describes
+      the question rather than the corpus."
+
+  # =====================================================================
+  # skill_category -- tools/agent/skill_selector.py::select_skills
+  # WHICH CATEGORIES get injected. The whole matched SET is pinned, joined
+  # with '+'; `fallback_all` is the default (nothing matched, so EVERY
+  # category is injected and the selection says nothing about the query).
+  # =====================================================================
+
+  # --- build ---
+  - id: skill-build-python
+    router: skill_category
+    query: "implement the new endpoint in python"
+    expected: build
+    note: "Two build keywords (implement, python). Token-exact matching, so
+      `python` hits and `pythonic` would not."
+  - id: skill-build-scaffold
+    router: skill_category
+    query: "scaffold a typescript client"
+    expected: build
+    note: "scaffold + typescript."
+  - id: skill-build-lint
+    router: skill_category
+    query: "lint and format the module"
+    expected: build
+    note: "lint + format."
+  - id: skill-build-unit-test
+    router: skill_category
+    query: "write a unit test for the parser"
+    expected: build
+    note: "SINGULAR `test` matches. The control for skill-build-plural-tests."
+  - id: skill-build-translate
+    router: skill_category
+    query: "translate the cobol to java"
+    expected: build
+    note: "`java` is a build keyword; the translation canvas is not a category."
+  - id: skill-build-refactor-flask
+    router: skill_category
+    query: "refactor the flask blueprint"
+    expected: build+dashboard
+    note: "TWO categories, and correctly: `refactor` is build and `flask` is in
+      BOTH build and dashboard. The whole set is pinned because what gets
+      injected into an agent's context is the union, not the winner."
+
+  # --- compliance ---
+  - id: skill-compliance-ssp-poam
+    router: skill_category
+    query: "generate the SSP and POAM for the ATO package"
+    expected: build+compliance
+    note: "`generate` is a build keyword and ssp/poam/ato are compliance ones --
+      so a compliance artifact request also injects the build skills. Pinned as
+      the SET, since dropping `generate` from build would silently change what
+      an ATO task sees."
+  - id: skill-compliance-crosswalk
+    router: skill_category
+    query: "map NIST 800-53 controls to CMMC"
+    expected: compliance
+    note: "nist + control + cmmc."
+  - id: skill-compliance-stig-sbom
+    router: skill_category
+    query: "run a STIG check and produce the SBOM"
+    expected: compliance
+    note: "stig + sbom."
+  - id: skill-compliance-fips199
+    router: skill_category
+    query: "categorize the system under FIPS 199"
+    expected: compliance
+    note: "`fips` alone -- one keyword is enough (min_keyword_matches is 1, and
+      one match scores exactly the 0.30 threshold)."
+  - id: skill-compliance-cui
+    router: skill_category
+    query: "mark the artifacts CUI and record the crosswalk"
+    expected: compliance
+    note: "cui + crosswalk."
+
+  # --- infrastructure ---
+  - id: skill-infra-terraform
+    router: skill_category
+    query: "deploy to staging with terraform"
+    expected: infrastructure
+    note: "deploy + terraform."
+  - id: skill-infra-k8s-helm
+    router: skill_category
+    query: "write the kubernetes manifests and helm chart"
+    expected: infrastructure
+    note: "kubernetes + helm."
+  - id: skill-infra-zero-trust
+    router: skill_category
+    query: "set up the CICD pipeline with zero trust controls"
+    expected: infrastructure
+    note: "`zero trust` is a MULTI-WORD keyword, matched as a phrase against the
+      raw query and weighted DOUBLE -- which is why this scores 0.90 where a
+      single-token hit scores 0.30."
+  - id: skill-infra-container
+    router: skill_category
+    query: "harden the container image"
+    expected: infrastructure
+    note: "`container`. `harden` is not a keyword in any category."
+
+  # --- requirements ---
+  - id: skill-req-safe
+    router: skill_category
+    query: "decompose the requirements into SAFe epics"
+    expected: requirements
+    note: "requirements + safe + epic."
+  - id: skill-req-monte-carlo
+    router: skill_category
+    query: "run a monte carlo simulation for the COA"
+    expected: requirements
+    note: "`monte carlo` is a multi-word phrase (double weight) plus simulation
+      and coa."
+  - id: skill-req-readiness
+    router: skill_category
+    query: "score readiness for the intake session"
+    expected: requirements
+    note: "readiness + intake."
+  - id: skill-req-bdd
+    router: skill_category
+    query: "generate gherkin bdd scenarios"
+    expected: build+requirements
+    note: "bdd/gherkin are requirements keywords and `generate` is a build one."
+
+  # --- maintenance ---
+  - id: skill-maint-cve
+    router: skill_category
+    query: "check for a cve in the lockfile"
+    expected: maintenance
+    note: "`cve` singular. See skill-maint-plural-cves for the plural."
+  - id: skill-maint-modernize
+    router: skill_category
+    query: "modernize the legacy service and remediate the vulnerability"
+    expected: maintenance
+    note: "modernize + legacy + remediate + vulnerability -- four hits, 0.90.
+      chat_canvas reads the same sentence as `cam`."
+  - id: skill-maint-supply-chain
+    router: skill_category
+    query: "check the supply chain for vendor risk"
+    expected: maintenance
+    note: "`supply chain` phrase (double weight) plus vendor."
+  - id: skill-maint-upgrade
+    router: skill_category
+    query: "upgrade the dependency to a patched release"
+    expected: maintenance
+    note: "upgrade + dependency, both singular."
+
+  # --- dashboard ---
+  - id: skill-dash-kanban
+    router: skill_category
+    query: "add a kanban panel to the dashboard"
+    expected: dashboard
+    note: "kanban + dashboard."
+  - id: skill-dash-jinja
+    router: skill_category
+    query: "fix the jinja template on the monitoring page"
+    expected: dashboard
+    note: "jinja + template + monitoring."
+  - id: skill-dash-heartbeat
+    router: skill_category
+    query: "investigate the agent heartbeat"
+    expected: dashboard
+    note: "`agent` and `heartbeat` are dashboard keywords -- agent MONITORING,
+      not agent building."
+
+  # --- mbse / marketplace: the two categories only the YAML config declares ---
+  - id: skill-mbse-sysml
+    router: skill_category
+    query: "import the sysml model from the repository"
+    expected: mbse
+    note: "`sysml`. This category exists only in
+      args/skill_injection_config.yaml, not in the module's DEFAULT_CONFIG --
+      so the case also proves the config is what is being read."
+  - id: skill-marketplace-publish
+    router: skill_category
+    query: "publish a skill to the marketplace"
+    expected: marketplace
+    note: "`marketplace`, likewise config-only."
+
+  # --- multi-category and the DEFAULT ---
+  - id: skill-multi-three
+    router: skill_category
+    query: "deploy the compliance dashboard with terraform after the tests pass"
+    expected: compliance+dashboard+infrastructure
+    note: "THREE categories from one sentence. `tests` contributes nothing (see
+      skill-build-plural-tests) -- build is absent from this set, which is the
+      stemming defect visible from the other side."
+  - id: skill-default-standup
+    router: skill_category
+    query: "reschedule the standup"
+    expected: fallback_all
+    note: "DEFAULT. Nothing matches, so the selector's safety fallback injects
+      EVERY category -- which is the opposite of a confident nine-category
+      match and must never be rendered as one."
+  - id: skill-default-weather
+    router: skill_category
+    query: "what is the weather in Norfolk"
+    expected: fallback_all
+    note: "DEFAULT. Negative case."
+  - id: skill-default-nonsense
+    router: skill_category
+    query: "the quick brown fox jumps over the lazy dog"
+    expected: fallback_all
+    note: "DEFAULT over text with no technical vocabulary at all."
+  - id: skill-default-review-pr
+    router: skill_category
+    query: "review the pull request"
+    expected: fallback_all
+    note: "DEFAULT, and a deliberate trap: `review`, `commit` and
+      `pull_request` are COMMANDS in the build category, not KEYWORDS, so they
+      match nothing. They arrive anyway through `always_include.commands` --
+      which is why this is the right verdict rather than a defect."
+  - id: skill-build-plural-tests
+    router: skill_category
+    query: "fix the login tests"
+    expected: build
+    known_disagreement: "Returns `fallback_all`. This is the selector's OWN
+      documented example (`--query \"fix the login tests\"` in its module
+      docstring), and it matches nothing: match_keywords tokenises the query
+      and tests membership of each keyword in that token SET, with no stemming,
+      so the keyword `test` does not match the token `tests`. Nothing matches,
+      so the safety fallback injects all nine categories -- the most
+      expensive possible answer for the most ordinary possible task. Compare
+      skill-build-unit-test (singular), which agrees. Report-only: adding
+      stemming widens every category's reach and owes its own survey."
+    note: "A task about tests is a build task."
+  - id: skill-maint-plural-cves
+    router: skill_category
+    query: "audit dependencies for CVEs"
+    expected: maintenance
+    note: "Agrees, and shows the stemming defect is about which WORD is plural,
+      not about plurals as such: `dependencies` and `CVEs` both miss, but
+      `audit` is a maintenance keyword in the YAML config and carries the
+      match on its own."

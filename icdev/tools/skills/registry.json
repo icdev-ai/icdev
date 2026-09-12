@@ -14,6 +14,7 @@
       ],
       "paths": [],
       "tools": [],
+      "prerequisites": [],
       "commands": [],
       "mcp_references": [],
       "body_line_count": 17
@@ -32,6 +33,7 @@
       ],
       "paths": [],
       "tools": [],
+      "prerequisites": [],
       "commands": [],
       "mcp_references": [
         "MCP tool `write_tests` MCP tool from icdev-builder:",
@@ -58,6 +60,7 @@
       ],
       "paths": [],
       "tools": [],
+      "prerequisites": [],
       "commands": [],
       "mcp_references": [],
       "body_line_count": 17
@@ -76,6 +79,7 @@
       ],
       "paths": [],
       "tools": [],
+      "prerequisites": [],
       "commands": [],
       "mcp_references": [
         "MCP tool `terraform_plan` MCP tool from icdev-infra:",
@@ -100,6 +104,7 @@
       ],
       "paths": [],
       "tools": [],
+      "prerequisites": [],
       "commands": [
         "python tools/llm/chain_orchestrator.py --divergence --function capability_deliberation --prompt \"How should we reduce cold-start latency in the enclave?\" --json",
         "python tools/quality/divergence_critic.py --function capability_deliberation --pool-file .tmp/idea_pool.md --json"
@@ -123,6 +128,7 @@
       ],
       "paths": [],
       "tools": [],
+      "prerequisites": [],
       "commands": [
         "python tools/audit/audit_query.py --project-id <UUID> --recent 5"
       ],
@@ -150,6 +156,7 @@
       ],
       "paths": [],
       "tools": [],
+      "prerequisites": [],
       "commands": [],
       "mcp_references": [],
       "body_line_count": 7
@@ -168,6 +175,7 @@
       ],
       "paths": [],
       "tools": [],
+      "prerequisites": [],
       "commands": [],
       "mcp_references": [],
       "body_line_count": 18
@@ -179,6 +187,7 @@
       "allowed_tools": [],
       "paths": [],
       "tools": [],
+      "prerequisites": [],
       "commands": [],
       "mcp_references": [],
       "body_line_count": 5
@@ -197,6 +206,7 @@
       ],
       "paths": [],
       "tools": [],
+      "prerequisites": [],
       "commands": [],
       "mcp_references": [],
       "body_line_count": 20
@@ -215,6 +225,7 @@
       ],
       "paths": [],
       "tools": [],
+      "prerequisites": [],
       "commands": [
         "python tools/maintenance/dependency_scanner.py --project-id <id> [--offline]",
         "python tools/maintenance/vulnerability_checker.py --project-id <id>",
@@ -245,6 +256,7 @@
       ],
       "paths": [],
       "tools": [],
+      "prerequisites": [],
       "commands": [],
       "mcp_references": [],
       "body_line_count": 6
@@ -263,6 +275,7 @@
       ],
       "paths": [],
       "tools": [],
+      "prerequisites": [],
       "commands": [],
       "mcp_references": [],
       "body_line_count": 17
@@ -274,6 +287,7 @@
       "allowed_tools": [],
       "paths": [],
       "tools": [],
+      "prerequisites": [],
       "commands": [],
       "mcp_references": [],
       "body_line_count": 1
@@ -292,6 +306,7 @@
       ],
       "paths": [],
       "tools": [],
+      "prerequisites": [],
       "commands": [
         "python tools/monitor/health_checker.py --project-id <id>",
         "python tools/monitor/log_analyzer.py --project-id <id> --since <timeframe>",
@@ -316,6 +331,7 @@
       ],
       "paths": [],
       "tools": [],
+      "prerequisites": [],
       "commands": [],
       "mcp_references": [],
       "body_line_count": 16
@@ -327,6 +343,7 @@
       "allowed_tools": [],
       "paths": [],
       "tools": [],
+      "prerequisites": [],
       "commands": [],
       "mcp_references": [],
       "body_line_count": 1
@@ -345,6 +362,7 @@
       ],
       "paths": [],
       "tools": [],
+      "prerequisites": [],
       "commands": [
         "python tools/security/vuln_scanner.py --project-dir <path>",
         "python tools/compliance/cui_marker.py --verify --directory <path>"
@@ -371,6 +389,12 @@
       ],
       "paths": [],
       "tools": [],
+      "prerequisites": [
+        "trivy",
+        "bandit",
+        "detect-secrets",
+        "pip-audit"
+      ],
       "commands": [
         "python tools/security/sast_runner.py --project-dir <path>",
         "python tools/security/dependency_auditor.py --project-dir <path>",
@@ -390,6 +414,7 @@
       "allowed_tools": [],
       "paths": [],
       "tools": [],
+      "prerequisites": [],
       "commands": [],
       "mcp_references": [],
       "body_line_count": 6
@@ -408,16 +433,21 @@
       ],
       "paths": [],
       "tools": [],
+      "prerequisites": [],
       "commands": [
-        "python tools/project/session_context_builder.py --format markdown"
+        "python tools/project/session_context_builder.py --format markdown",
+        "python tools/memory/hybrid_search.py --query \"helm chart rollout\" --layer index --json",
+        "python tools/memory/hybrid_search.py --layer timeline --since 2026-09-11T00:00:00 --json",
+        "python tools/memory/hybrid_search.py --layer detail --ids 28184,28183 --json"
       ],
       "mcp_references": [
         "MCP tool `project_list` MCP tool from icdev-core to list all projects.",
         "MCP tool `project_status` MCP tool from icdev-core for full details.",
         "MCP tool `get_recommendations` MCP tool from icdev-knowledge (if available):",
-        "MCP tool `agent_status` MCP tool from icdev-core:"
+        "MCP tool `agent_status` MCP tool from icdev-core:",
+        "MCP tool `search_knowledge` takes the same `layer`/`ids`/`since`/`until`. See REFERENCE.md."
       ],
-      "body_line_count": 93
+      "body_line_count": 100
     },
     "icdev-test": {
       "name": "icdev-test",
@@ -433,6 +463,7 @@
       ],
       "paths": [],
       "tools": [],
+      "prerequisites": [],
       "commands": [],
       "mcp_references": [
         "MCP tool `run_tests` MCP tool from icdev-builder:",
@@ -447,12 +478,13 @@
       "allowed_tools": [],
       "paths": [],
       "tools": [],
+      "prerequisites": [],
       "commands": [],
       "mcp_references": [],
       "body_line_count": 1
     }
   },
   "count": 23,
-  "schema_version": 2,
+  "schema_version": 3,
   "generated_from": ".agents\\skills"
 }

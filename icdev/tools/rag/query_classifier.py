@@ -310,7 +310,7 @@ def _llm_classify(query: str, context: str = "") -> Optional[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
-def classify_query(query: str, context: str = "") -> Dict[str, Any]:
+def classify_query(query: str, context: str = "", *, allow_llm: bool = True) -> Dict[str, Any]:
     """Classify a single query-context pair into a taxonomy label.
 
     Tries LLM classification first (scanner-tier qwen3.5); falls back to
@@ -319,6 +319,18 @@ def classify_query(query: str, context: str = "") -> Dict[str, Any]:
     Args:
         query: The user query string.
         context: Optional retrieved context text to check for answerability.
+        allow_llm: When False, answer from the deterministic heuristics ALONE
+            and never reach a provider. The default is unchanged, so no existing
+            caller moves. The knob exists because the heuristics are the only
+            part of this classifier a regression corpus can pin — the LLM lane's
+            answer depends on whether a provider is reachable, and a corpus whose
+            expected values move with network reachability is not a corpus
+            (xrv-route-02). Note for a future reader: several callers already
+            DESCRIBE this function as deterministic (the MCP ``query_classify``
+            registry entry, and ``cortex.api.classify``'s "deterministic
+            degradation" branch) while calling it LLM-first. Passing False there
+            is a behaviour change with its own survey to do, and is deliberately
+            not done by this card.
 
     Returns:
         Dict with keys: label, confidence, method, reasoning.
@@ -333,7 +345,7 @@ def classify_query(query: str, context: str = "") -> Dict[str, Any]:
         }
 
     # Strategy 1: LLM (scanner-tier, no Claude tokens)
-    llm_result = _llm_classify(query, context)
+    llm_result = _llm_classify(query, context) if allow_llm else None
     if llm_result is not None:
         return llm_result
 

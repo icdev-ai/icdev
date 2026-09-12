@@ -252,18 +252,25 @@ def graph_signal(message: str) -> dict[str, Any]:
     }
 
 
-def _base_signal(message: str) -> dict[str, Any]:
+def _base_signal(message: str, *, allow_llm_fallback: bool = True) -> dict[str, Any]:
     """Thin call into the shared chat intent classifier (best-effort)."""
     try:
         from tools.chat_router.intent_classifier import classify as _classify
 
-        return _classify(message) or {}
+        return _classify(message, allow_llm_fallback=allow_llm_fallback) or {}
     except Exception:  # noqa: BLE001 — classifier optional; router still works
         return {}
 
 
-def route(message: str) -> dict[str, Any]:
+def route(message: str, *, allow_llm_fallback: bool = True) -> dict[str, Any]:
     """Classify *message* into a Cortex intent and the facade that serves it.
+
+    This module's own rules are pure keyword matching and make no provider call
+    (see the boundary note above). The ONE provider-reachable step is the base
+    signal it consumes — ``intent_classifier.classify``'s low-confidence
+    fallback. ``allow_llm_fallback=False`` forwards through to that classifier's
+    keyword rules alone, which makes this router's answer deterministic for the
+    xrv-route-02 regression corpus; the default is unchanged.
 
     Returns::
 
@@ -277,7 +284,7 @@ def route(message: str) -> dict[str, Any]:
         }
     """
     text = (message or "").strip()
-    base = _base_signal(text)
+    base = _base_signal(text, allow_llm_fallback=allow_llm_fallback)
     graph = graph_signal(text)
     if not text:
         return _decision(DEFAULT_INTENT, 1.0, "empty message", base, graph)

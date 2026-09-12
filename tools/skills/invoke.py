@@ -39,6 +39,21 @@ can only ever narrow it, never widen it. A skill that omits both fields
 behaves exactly as it did before. A scoped skill whose command reaches
 outside its declaration is BLOCKED (the command is not executed and the
 invocation exits non-zero) — it is never merely warned about.
+
+xrv-route-02 — external-binary prerequisites
+--------------------------------------------
+A SKILL.md may also declare:
+
+    prerequisites:  external binaries its commands shell out to, by
+                    their `args/tool_index.yaml` name
+
+They are probed through `tools/dx/tool_index.py` and REPORTED before the
+first step runs, in `--dry-run` and in `--exec` alike, so an operator
+learns that `trivy` is absent up front instead of at step 5. Unlike
+`paths:`/`tools:`, this one ENFORCES NOTHING — an absent optional tool is
+a capability this deployment lacks, not a reason to refuse the steps that
+do work. See `probe_prerequisites` for the four verdicts and why
+`absent`, `unmeasurable` and `undeclared` are never merged.
 """
 from __future__ import annotations
 
@@ -120,6 +135,198 @@ def resolve_scope(entry: dict[str, Any], *, root: Path | None = None) -> dict[st
 
 def is_scoped(scope: dict[str, list[str]] | None) -> bool:
     return bool(scope and (scope.get("paths") or scope.get("tools")))
+
+
+# ---------------------------------------------------------------------------
+# xrv-route-02 — optional `prerequisites:`, REPORTED up front, never enforced
+# ---------------------------------------------------------------------------
+# A skill's documented commands shell out to external binaries, and until now
+# the only way to learn that `trivy` was not installed was to run the skill and
+# watch step 5 fail. `prerequisites:` declares those binaries BY THEIR
+# args/tool_index.yaml NAME, and this probes them before the first step runs.
+#
+# FOUR VERDICTS, and the last two are why this is not one boolean:
+#
+#   present      the index resolved it from PATH and it ANSWERED its version_cmd
+#   absent       PATH holds no such binary. THE FINDING — install it
+#   unmeasurable it could not be ASKED. `basis` says which:
+#                  version_cmd_*        it IS on PATH and would not answer, so
+#                                       the install is BROKEN, not missing
+#                  excluded_from_index  args/tool_index.yaml declares, by name
+#                                       and with a reason, that PATH cannot
+#                                       answer for this tool — `bandit` is
+#                                       invoked as `python -m bandit`, so a PATH
+#                                       probe would report `absent` on a host
+#                                       where it works perfectly. Reporting that
+#                                       as absent is a fabricated finding.
+#                  index_unreadable     the declaration itself could not be read
+#   undeclared   the SKILL names something args/tool_index.yaml does not know —
+#                a declaration error in the card, not a fact about the host
+#
+# NOTHING REFUSES. An absent optional tool is a capability this deployment does
+# not have, and the skill's other steps still work — refusing the whole
+# invocation would make `--exec icdev-secure` fail on a host where bandit,
+# pip-audit and detect-secrets are all fine. Report-only is also why no
+# fire-rate survey is owed: the verdict changes no decision the invoker makes.
+#
+# The probe goes through tools/dx/tool_index.py (xrv-route-01) and NEVER a
+# second shutil.which — that index exists because the bare name was being
+# resolved ad hoc in 30+ modules, and a tool that resolves by name without
+# answering is a claim about a FILE, not about a working tool.
+PREREQ_PRESENT = "present"
+PREREQ_ABSENT = "absent"
+PREREQ_UNMEASURABLE = "unmeasurable"
+PREREQ_UNDECLARED = "undeclared"
+
+#: The aggregate verdict. `not_declared` is NOT `satisfied`: a skill that
+#: declares no prerequisite has been measured for nothing, and the two must not
+#: render the same.
+PREREQ_VERDICT_NOT_DECLARED = "not_declared"
+PREREQ_VERDICT_SATISFIED = "satisfied"
+PREREQ_VERDICT_MISSING = "missing"
+PREREQ_VERDICT_UNMEASURABLE = "unmeasurable"
+
+
+def resolve_prerequisites(entry: dict[str, Any], *,
+                          root: Path | None = None) -> list[str]:
+    """Return the external-binary names a skill DECLARES it needs.
+
+    Read from the live SKILL.md when it is present, for the same reason
+    :func:`resolve_scope` does: ``registry.json`` is a committed cache and a
+    stale copy would drop the field silently — which here means reporting a
+    skill as having NO prerequisites rather than reporting its prerequisites as
+    unmeasurable.
+    """
+    base = Path(root) if root else BASE_DIR
+    rel = entry.get("path")
+    if rel:
+        card = base / rel
+        try:
+            if card.is_file():
+                fm, _ = _parse_frontmatter(
+                    card.read_text(encoding="utf-8", errors="replace"))
+                return _as_list(fm.get("prerequisites"))
+        except OSError:
+            pass
+    return _as_list(entry.get("prerequisites"))
+
+
+def probe_prerequisites(names: list[str]) -> dict[str, Any]:
+    """Probe each declared prerequisite through the ONE external-tool index."""
+    declared = [str(n).strip() for n in (names or []) if str(n).strip()]
+    if not declared:
+        return {"verdict": PREREQ_VERDICT_NOT_DECLARED, "declared": 0,
+                "present": 0, "absent": 0, "unmeasurable": 0, "undeclared": 0,
+                "tools": []}
+
+    try:
+        from tools.dx import tool_index
+
+        index = tool_index.load_index()
+        known = {e.get("name") for e in tool_index.entries(index)}
+        excluded = {e.get("name"): (e.get("reason") or "").strip()
+                    for e in (index.get("excluded") or [])}
+    except Exception as exc:  # noqa: BLE001 — an unreadable index is a verdict
+        reason = f"{type(exc).__name__}: {str(exc)[:160]}"
+        return {
+            "verdict": PREREQ_VERDICT_UNMEASURABLE,
+            "declared": len(declared), "present": 0, "absent": 0,
+            "unmeasurable": len(declared), "undeclared": 0,
+            "tools": [{"name": n, "status": PREREQ_UNMEASURABLE,
+                       "basis": "index_unreadable", "reason": reason}
+                      for n in declared],
+        }
+
+    tools: list[dict[str, Any]] = []
+    for name in declared:
+        if name in known:
+            try:
+                probed = tool_index.probe(name, index)
+            except Exception as exc:  # noqa: BLE001
+                tools.append({"name": name, "status": PREREQ_UNMEASURABLE,
+                              "basis": "probe_failed",
+                              "reason": f"{type(exc).__name__}: {str(exc)[:160]}"})
+                continue
+            status = probed.get("status")
+            item: dict[str, Any] = {
+                "name": name,
+                "status": status,
+                "basis": "path_probe",
+                "path": probed.get("path"),
+                "version": probed.get("version"),
+                "optional": probed.get("optional"),
+                "used_by": probed.get("used_by"),
+            }
+            if status == tool_index.STATUS_UNMEASURABLE:
+                # On PATH and would not answer. `basis` carries the index's own
+                # reason code, because "broken install" and "not installed" are
+                # different repairs.
+                item["basis"] = probed.get("reason") or "version_cmd_error"
+            tools.append(item)
+        elif name in excluded:
+            tools.append({
+                "name": name,
+                "status": PREREQ_UNMEASURABLE,
+                "basis": "excluded_from_index",
+                "reason": excluded[name] or
+                "declared absent from args/tool_index.yaml on purpose",
+            })
+        else:
+            tools.append({
+                "name": name,
+                "status": PREREQ_UNDECLARED,
+                "basis": "not_in_tool_index",
+                "reason": "not declared in args/tool_index.yaml — declare the "
+                          "binary there (name, binary, version_cmd, used_by)",
+            })
+
+    counts = {
+        "present": sum(1 for t in tools if t["status"] == PREREQ_PRESENT),
+        "absent": sum(1 for t in tools if t["status"] == PREREQ_ABSENT),
+        "unmeasurable": sum(1 for t in tools
+                            if t["status"] == PREREQ_UNMEASURABLE),
+        "undeclared": sum(1 for t in tools if t["status"] == PREREQ_UNDECLARED),
+    }
+    if counts["absent"]:
+        verdict = PREREQ_VERDICT_MISSING
+    elif counts["unmeasurable"] or counts["undeclared"]:
+        # Not `satisfied`: something could not be asked, and a report that calls
+        # that satisfied is the reassurance this shape exists to refuse.
+        verdict = PREREQ_VERDICT_UNMEASURABLE
+    else:
+        verdict = PREREQ_VERDICT_SATISFIED
+    return {"verdict": verdict, "declared": len(declared), "tools": tools,
+            **counts}
+
+
+def prerequisite_lines(report: dict[str, Any]) -> list[str]:
+    """Human lines for a prerequisite report, printed BEFORE the first step."""
+    verdict = report.get("verdict")
+    if verdict == PREREQ_VERDICT_NOT_DECLARED:
+        return ["prerequisites: none declared (not measured — which is not the "
+                "same as none needed)"]
+    lines = [
+        f"prerequisites: {report.get('present', 0)} present, "
+        f"{report.get('absent', 0)} absent, "
+        f"{report.get('unmeasurable', 0)} unmeasurable, "
+        f"{report.get('undeclared', 0)} undeclared "
+        f"[{verdict}]"
+    ]
+    for tool in report.get("tools", []):
+        status = tool.get("status")
+        name = tool.get("name")
+        if status == PREREQ_PRESENT:
+            lines.append(f"  present       {name} "
+                         f"{tool.get('version') or ''}".rstrip())
+        elif status == PREREQ_ABSENT:
+            lines.append(f"  ABSENT        {name} — nothing on PATH; the steps "
+                         "that shell out to it will fail mid-run")
+        elif status == PREREQ_UNDECLARED:
+            lines.append(f"  UNDECLARED    {name} — {tool.get('reason')}")
+        else:
+            lines.append(f"  unmeasurable  {name} — {tool.get('basis')}: "
+                         f"{tool.get('reason') or ''}".rstrip())
+    return lines
 
 
 def _norm_target(value: str) -> str:
@@ -373,6 +580,10 @@ def invoke_skill(name: str, args: list[str], *, dry_run: bool = False,
     steps: list[dict] = []
     scope = resolve_scope(entry)
     scoped = is_scoped(scope)
+    # Probed BEFORE the first step, in dry-run AND in exec: the whole point is
+    # that an operator learns `trivy` is absent now rather than at step 5. It
+    # REFUSES NOTHING -- see the vocabulary note above probe_prerequisites.
+    prerequisites = probe_prerequisites(resolve_prerequisites(entry))
 
     for idx, cmd in enumerate(cmds, start=1):
         expanded = _substitute_args(cmd, args)
@@ -412,6 +623,7 @@ def invoke_skill(name: str, args: list[str], *, dry_run: bool = False,
         "blocked_count": len(blocked),
         "scoped": scoped,
         "scope": scope,
+        "prerequisites": prerequisites,
         "dry_run": dry_run,
     }
 
@@ -468,6 +680,9 @@ def main(argv: list[str] | None = None) -> int:
             if is_scoped(scope):
                 print(f"Scoped paths: {', '.join(scope['paths']) or '(unscoped)'}")
                 print(f"Scoped tools: {', '.join(scope['tools']) or '(unscoped)'}")
+            declared_prereqs = resolve_prerequisites(entry)
+            print(f"Prerequisites: "
+                  f"{', '.join(declared_prereqs) or '(none declared)'}")
             print(f"\nCommands ({len(entry['commands'])}):")
             for i, c in enumerate(entry["commands"], 1):
                 print(f"  {i:2d}. {c}")
@@ -489,6 +704,10 @@ def main(argv: list[str] | None = None) -> int:
         if result.get("error"):
             print(f"  ERROR: {result['error']}")
             return 1
+        # UP FRONT, above the steps -- a prerequisite verdict printed after the
+        # run is a post-mortem, not a warning.
+        for line in prerequisite_lines(result.get("prerequisites") or {}):
+            print(f"  {line}")
         for step in result.get("steps", []):
             print(f"  step {step['step']}: {step.get('command', '')[:100]}")
             if step.get("blocked"):
