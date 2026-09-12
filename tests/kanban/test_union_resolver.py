@@ -186,11 +186,35 @@ def test_table_rows_keeps_both_rows_and_drops_a_duplicate():
     assert notes == ["table_rows@3"]
 
 
-def test_an_empty_side_resolves_to_the_other_on_any_declared_file():
-    base, main, card = L("a\nb\nc\n"), L("a\nc\n"), L("a\nB\nc\n")
-    merged, notes = ur.merge_three_way(base, main, card, rules=["keep_both_blocks"])
+def test_an_empty_side_resolves_to_the_other_over_an_EMPTY_base():
+    """The rung's intended case: a pure insertion by one side, both ways.
+
+    This test used to assert `base="a\\nb\\nc\\n", main="a\\nc\\n"` -- MAIN
+    DELETED `b` -- resolved to the card's rewrite of it, i.e. it PINNED the
+    silent discard of a deletion as expected behaviour. mfx-mrg-08 narrowed the
+    rung to an empty base, which is the only shape where an empty side means
+    "nothing to say" rather than "removed"; the deletion case is asserted to
+    REFUSE in tests/kanban/test_union_deletion_rung.py.
+    """
+    base = L("a\nc\n")
+    merged, notes = ur.merge_three_way(base, base, L("a\nB\nc\n"),
+                                       rules=["keep_both_blocks"])
     assert merged == L("a\nB\nc\n")
-    assert notes == ["other_side_when_empty@2"]
+    assert notes == []
+    got, rule = ur._resolve_cluster([], [], L("B\n"), ["keep_both_blocks"], 1)
+    assert (got, rule) == (L("B\n"), ur.RULE_OTHER_SIDE_WHEN_EMPTY)
+    got, rule = ur._resolve_cluster([], L("B\n"), [], ["keep_both_blocks"], 1)
+    assert (got, rule) == (L("B\n"), ur.RULE_OTHER_SIDE_WHEN_EMPTY)
+
+
+def test_a_deletion_is_never_silently_restored(): # mfx-mrg-08
+    """The shape the test above used to bless: main removed `b`, the card
+    rewrote it. Both sides changed the same lines, so a human decides."""
+    base, main, card = L("a\nb\nc\n"), L("a\nc\n"), L("a\nB\nc\n")
+    with pytest.raises(ur.UnionRefused):
+        ur.merge_three_way(base, main, card, rules=["keep_both_blocks"])
+    with pytest.raises(ur.UnionRefused):
+        ur.merge_three_way(base, card, main, rules=["keep_both_blocks"])
 
 
 def test_adjacent_edits_of_different_lines_merge_only_when_declared():
