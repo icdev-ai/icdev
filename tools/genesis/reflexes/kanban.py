@@ -1339,6 +1339,45 @@ def _remove_partial_worktree(worktree_path: Path, branch_name: str, repo_root) -
     return not worktree_path.exists()
 
 
+def _scrub_tracked_pycs(worktree_path, task_id: str) -> None:
+    """Drop accidentally-tracked pyc/pycache files from a new worktree's index.
+
+    Build artifacts that should never be committed; if they slipped into the
+    index on main, every worktree inherits them and marks them dirty after any
+    import. Extracted from the add path so a worktree CLAIMED from the warm pool
+    (mfx-own-09) gets the identical treatment -- a pool entry is reset to the
+    same `origin/<default>` and would carry the same tracked artifacts, and a
+    guard that runs on one of two creation paths is a guard with a hole in it.
+    """
+    import subprocess as _sp
+
+    try:
+        tracked_pycs = _sp.run(
+            ["git", "ls-files", "*.pyc", "*.pyo", "*.pyd"],
+            cwd=str(worktree_path),
+            capture_output=True, text=True, timeout=10,
+        ).stdout.strip()
+        if tracked_pycs:
+            pyc_list = tracked_pycs.split("\n")
+            _sp.run(
+                ["git", "rm", "--cached", "--force", "--ignore-unmatch"] + pyc_list,
+                cwd=str(worktree_path),
+                capture_output=True, text=True, timeout=15,
+            )
+            _sp.run(
+                ["git", "commit", "-m",
+                 "chore: remove accidentally-tracked pyc files from worktree index"],
+                cwd=str(worktree_path),
+                capture_output=True, text=True, timeout=15,
+            )
+            logger.info(
+                "Scrubbed %d tracked pyc(s) from worktree index for %s",
+                len(pyc_list), task_id,
+            )
+    except Exception as _pyc_exc:  # noqa: BLE001 - hygiene, never a dispatch failure
+        logger.warning("pyc scrub failed for %s: %s", task_id, _pyc_exc)
+
+
 def _create_worktree(task_id: str) -> Optional[str]:
     """Create an isolated git worktree for a kanban task.
 
@@ -1516,6 +1555,39 @@ def _create_worktree(task_id: str) -> Optional[str]:
     else:
         base = _base_branch
 
+    # A WARM WORKTREE, IF ONE IS WAITING (mfx-own-09). The add below is on the
+    # CRITICAL PATH of a dispatch, and mfx-own-08 measured this host 3-20x slower
+    # for minutes at a time while self-hosted CI runs on it: 23.0s median and 15
+    # of 37 adds KILLED with CI in flight against a 30s budget, each kill a
+    # `worktree-isolation-guard` park. A pool entry is a complete checkout on a
+    # throwaway branch that this claim renames and moves onto `kanban/<id>` in
+    # ~1.3s -- a ref update, a directory rename and a DELTA reset, none of which
+    # scales with the 20,352-file tree, so there is no duration here for a budget
+    # to kill.
+    #
+    # IT IS AN OPTIMISATION AND NEVER A NEW WAY TO FAIL. `claim` returns None for
+    # every doubt -- empty pool, busy lock, an unreadable `git worktree list`, an
+    # entry that fails its health check -- and never raises, so an empty pool
+    # falls through to exactly the add that runs today. Do NOT add a park, a
+    # retry or a wait on this path.
+    try:
+        from tools.kanban import worktree_pool as _pool  # noqa: PLC0415
+
+        _warm = _pool.claim(
+            task_id, worktree_path, repo_root=_repo_root, base=base,
+            expect_manifest=(_repo_root == BASE_DIR),
+        )
+        if _warm:
+            logger.info(
+                "Claimed a warm worktree for %s at %s -- no `git worktree add` ran",
+                task_id, _warm,
+            )
+            _scrub_tracked_pycs(Path(_warm), task_id)
+            return _warm
+    except Exception as _pool_exc:  # noqa: BLE001 -- the pool may never break dispatch
+        logger.debug("worktree pool unavailable for %s (%s) -- adding inline",
+                     task_id, _pool_exc)
+
     try:
         # Create a new branch from the chosen base for this task.
         #
@@ -1674,35 +1746,7 @@ def _create_worktree(task_id: str) -> Optional[str]:
             task_id, worktree_path, time.monotonic() - _add_started,
             WORKTREE_ADD_TIMEOUT_SECONDS,
         )
-        # Guard: scrub any accidentally-tracked pyc/pycache files from the new
-        # worktree's index before the agent runs. These are build artifacts that
-        # should never be committed; if they slipped into the index on main,
-        # every worktree inherits them and marks them as dirty after any import.
-        try:
-            tracked_pycs = _sp.run(
-                ["git", "ls-files", "*.pyc", "*.pyo", "*.pyd"],
-                cwd=str(worktree_path),
-                capture_output=True, text=True, timeout=10,
-            ).stdout.strip()
-            if tracked_pycs:
-                pyc_list = tracked_pycs.split("\n")
-                _sp.run(
-                    ["git", "rm", "--cached", "--force", "--ignore-unmatch"] + pyc_list,
-                    cwd=str(worktree_path),
-                    capture_output=True, text=True, timeout=15,
-                )
-                _sp.run(
-                    ["git", "commit", "-m",
-                     "chore: remove accidentally-tracked pyc files from worktree index"],
-                    cwd=str(worktree_path),
-                    capture_output=True, text=True, timeout=15,
-                )
-                logger.info(
-                    "Scrubbed %d tracked pyc(s) from worktree index for %s",
-                    len(pyc_list), task_id,
-                )
-        except Exception as _pyc_exc:
-            logger.warning("pyc scrub failed for %s: %s", task_id, _pyc_exc)
+        _scrub_tracked_pycs(worktree_path, task_id)
         return str(worktree_path)
     except Exception as exc:
         logger.warning("Worktree creation failed for %s: %s", task_id, exc)
@@ -2232,6 +2276,21 @@ def _sweep_roots() -> list:
             roots.append(sanctioned)
     except Exception as exc:  # noqa: BLE001 -- a missing resolver must not stop the legacy sweep
         logger.debug("Sweep: sanctioned worktree root unavailable (%s)", exc)
+    # The warm pool (mfx-own-09) is a BACKSTOP entry here, not its primary
+    # hygiene: `worktree_pool.reap` enforces the pool's own ceiling and age on
+    # every cycle. This adds the 7-day rule on top, so an entry the pool's
+    # reaper somehow never reaches is still swept. Safe by construction: a pool
+    # entry's branch is `kanban-pool/<hex>`, so `_worktree_task_id` returns None
+    # and the in_progress guard cannot be fooled, and `_worktree_is_disposable`
+    # still has to prove the checkout holds no work before anything is removed.
+    try:
+        from tools.kanban.worktree_pool import pool_root as _pool_root
+
+        pool = Path(str(_pool_root()))
+        if pool.is_dir():
+            roots.append(pool)
+    except Exception as exc:  # noqa: BLE001 -- an absent pool must not stop the sweep
+        logger.debug("Sweep: worktree pool root unavailable (%s)", exc)
     return roots
 
 
@@ -13169,8 +13228,73 @@ def _decompose_one_task(task: dict, ai_narrative: bool = False) -> dict:
     return {"subtasks": inserted, "narrative": narrative}
 
 
+def _tend_worktree_pool() -> None:
+    """Top up and reap the warm worktree pool (mfx-own-09), AFTER the dispatches.
+
+    AFTER, not before, and that placement is the whole point. A refill is a real
+    `git worktree add` under the same lock a dispatch add takes, so running it at
+    the top of the cycle would put a 30s checkout in front of the cycle's first
+    dispatch -- reinstating the critical-path cost this card removes. Running it
+    on the way out spends the idle gap between cycles instead, which is exactly
+    when the host is most likely to be quiet.
+
+    Every path out of the cycle reaches it (it is called from a `finally`),
+    including the idle ones -- `no_due_tasks` and `at capacity` are the states in
+    which a warm worktree is cheapest to build and most valuable to have ready.
+
+    Never raises: the pool is an optimisation, and a cycle must not fail because
+    a checkout could not be pre-created.
+    """
+    try:
+        import os as _os  # noqa: PLC0415
+
+        if _os.environ.get("PYTEST_CURRENT_TEST"):
+            # A test that drives a cycle must not spend 275 MB and a checkout on
+            # the REAL repository. The pool's own behaviour is tested directly in
+            # tests/kanban/test_worktree_pool.py, against a throwaway repo.
+            return
+        from tools.kanban import worktree_pool as _pool  # noqa: PLC0415
+
+        if not _pool.enabled():
+            return
+        _base = _default_base_ref(_canonical_repo_root())
+        rep = _pool.refill(base=_base)
+        if rep.get("created"):
+            logger.info("worktree pool: created %d warm worktree(s), depth %s -> %s",
+                        rep["created"], rep.get("depth_before"), rep.get("depth_after"))
+        if rep.get("failures"):
+            # NEVER SWALLOWED: a refill that quietly fails is indistinguishable
+            # from a pool that is simply full, and the next park would have no
+            # explanation on record.
+            logger.warning("worktree pool: refill failure(s): %s", rep["failures"])
+        # The pool's own ceiling and age rule, sampled like the worktree sweep
+        # above it -- reaping walks the entries and is not worth a cycle.
+        import random as _r  # noqa: PLC0415
+        if _r.random() < 0.033:  # ~1 in 30 cycles  # noqa: S311
+            reaped = _pool.reap()
+            if reaped.get("removed"):
+                logger.info("worktree pool: reaped %d entr(ies): %s",
+                            len(reaped["removed"]), reaped["removed"])
+    except Exception as _pool_exc:  # noqa: BLE001 -- never break the cycle
+        logger.warning("worktree pool tending failed: %s", _pool_exc)
+
+
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
-    """Execute the Kanban Executor Reflex."""
+    """Execute the Kanban Executor Reflex.
+
+    A thin wrapper so the warm worktree pool is tended on EVERY exit path from
+    the cycle (mfx-own-09). `_run_cycle` returns from a dozen places -- idle, at
+    capacity, paused, token-retry -- and the idle ones are precisely where the
+    pool should be filling.
+    """
+    try:
+        return _run_cycle(config, trust)
+    finally:
+        _tend_worktree_pool()
+
+
+def _run_cycle(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
+    """The cycle itself. Call `run`; this exists so `run` can own the finally."""
     global _current_exec_tier, _LAST_SIBLING_HOLDS
     # Unmeasured until the admission actually runs this cycle (mfx-sib-01). A
     # stale list from the previous cycle read as this one's would be a count

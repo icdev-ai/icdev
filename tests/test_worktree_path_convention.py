@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import tempfile
 import sys
 from pathlib import Path
 
@@ -112,7 +113,15 @@ def test_runner_legacy_base_stays_sanctioned(monkeypatch, tmp_path):
 def test_session_scratchpad_is_sanctioned(monkeypatch, tmp_path):
     """Already namespaced by session id, and CLAUDE.md directs sessions there."""
     monkeypatch.setenv("ICDEV_WORKTREE_ROOT", str(tmp_path / "sanctioned"))
-    p = Path(r"C:\Users\u\AppData\Local\Temp\claude\c--AI-ICDev\some-uuid\scratchpad\wt-x")
+    # BUILT FROM PARTS, not from a Windows literal. The rule under test is
+    # `"scratchpad" in parts and "claude" in parts`, which is platform-neutral
+    # -- but a backslash literal only SPLITS into those parts on Windows. On
+    # Linux the whole literal is ONE relative component, is_sanctioned refuses
+    # it at the is_absolute() guard, and the test fails for a reason that has
+    # nothing to do with the rule. CI runs ubuntu-latest, so this passed here
+    # and failed there.
+    p = (Path(tempfile.gettempdir()) / "claude" / "c--AI-ICDev" / "some-uuid"
+         / "scratchpad" / "wt-x")
     assert is_sanctioned(p, repo_root=REPO_ROOT) is True
 
 
@@ -167,7 +176,17 @@ def test_windows_backslash_path_survives_parsing():
     resolved against cwd. A session sitting inside its own scratchpad then saw
     the mangled path as sanctioned and the guard passed every stray through.
     """
-    got = _target(r"git worktree add -b feat/x C:\Users\u\AppData\Local\Temp\claude\wt-dup origin/main")
+    # `_target_mode(..., posix=False)`, not `_target`: this asserts the
+    # WINDOWS branch, and `_target` picks its mode from the RUNNING platform.
+    # On Linux the POSIX lexer eats the backslashes and returns
+    # `C:UsersuAppData...` -- precisely the defect the docstring forbids, so
+    # the platform default makes this test assert the bug it exists to catch.
+    # The file already provides `_target_mode` so both branches stay testable
+    # on either OS.
+    got = _target_mode(
+        r"git worktree add -b feat/x C:\Users\u\AppData\Local\Temp\claude\wt-dup origin/main",
+        posix=False,
+    )
     assert got == r"C:\Users\u\AppData\Local\Temp\claude\wt-dup", got
 
 
@@ -297,6 +316,16 @@ def test_no_module_invents_its_own_worktree_base():
     pattern = re.compile(
         r"^\s*[A-Z_]*(?:WORKTREE|TREES)[A-Z_]*\s*=\s*"
         r"(?!.*worktree_paths)"
+        # A LOCK FILE under the coordination directory is not a worktree base,
+        # and `COORD_DIR / "git-worktree-add.lock"` (mfx-own-06) matched the
+        # path-construction lookahead below on the `/ "` alone. It has been
+        # tripping this test on main ever since -- unnoticed, because this module
+        # is ungated. The same false positive the comment above describes, one
+        # step further out: the NAME contains WORKTREE and the right-hand side
+        # looks like a path, but the thing being named is a lock, not a base.
+        # Excluded by where it is ROOTED, not by module name, so a real worktree
+        # base in the same file would still be caught.
+        r"(?!.*COORD_DIR)"
         r"(?=.*(?:Path\(|BASE_DIR|_repo_root|__file__|/\s*[\"']|\.tmp))",
         re.M,
     )

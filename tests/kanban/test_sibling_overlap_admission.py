@@ -287,13 +287,19 @@ class TestDispatchAdmission:
         import inspect
 
         reflex = self._reflex()
-        source = inspect.getsource(reflex.run)
+        # `run` became a thin wrapper whose only job is to tend the warm worktree
+        # pool in a `finally` (mfx-own-09); the cycle it delegates to is where the
+        # reset must live. The invariant is unchanged -- only where it is read
+        # from. `getattr(..., run)` keeps this honest if the two are ever merged
+        # back into one function.
+        cycle = getattr(reflex, "_run_cycle", reflex.run)
+        source = inspect.getsource(cycle)
         assert "_LAST_SIBLING_HOLDS = None" in source
         reset_at = source.index("_LAST_SIBLING_HOLDS = None")
         # ... before anything that could dispatch.
         assert reset_at < source.index("_get_due_tasks")
 
-        payload = inspect.getsource(reflex.run)
+        payload = inspect.getsource(cycle)
         assert "None if _LAST_SIBLING_HOLDS is None else len(_LAST_SIBLING_HOLDS)" in payload
 
     def test_a_measured_cycle_with_no_holds_reports_an_empty_list(self, monkeypatch):
