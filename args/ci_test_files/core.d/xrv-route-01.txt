@@ -1,0 +1,2 @@
+# xrv-route-01 -- external tool index: declared binaries probed on PATH, three-state.
+tests/dx/test_tool_index.py
