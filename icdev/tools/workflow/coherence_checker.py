@@ -45,6 +45,10 @@ Checks:
                       args/self_root_gate.yaml may only go DOWN (xit-decl-03)
  29. agent_config_shield — WARN: the three existing scanners (prompt injection, secrets, MCP) pointed at the AGENT
                       CONFIG surface, plus what .claude/settings.json hook commands actually execute (xrv-shield-01)
+ 30. pin_census — WARN: a NEW unpinned CI supply-chain reference (an unpinned `pip install`, a tag-pinned
+                      `uses:`, a compose image with no digest in vendor/images/, a `curl … | sh`); the 69 that
+                      existed at adoption are grandfathered BY NAME in args/pin_census.txt and the ceiling in
+                      args/pin_gate.yaml may only go DOWN (xrv-route-03)
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 (openapi_parity imports Flask/dashboard at runtime; gracefully skips if unavailable.)
@@ -3729,6 +3733,208 @@ def check_board_writer_census(changed_files: Optional[List[Path]] = None) -> Coh
         f"no unregistered raw board INSERT; {report['registered']} known bypasser(s) "
         f"enumerated in {report['census_file']} against a ceiling of "
         f"{report['raw_insert_max']} (rem-hyg-06 converts them).",
+        actual,
+    )
+
+
+_PIN_CENSUS_CHECK_ID = "pin_census"
+_PIN_CENSUS_CHECK_NAME = "Pin Census (xrv-route-03)"
+_PIN_CENSUS_EXPECTED = [
+    "every unpinned CI supply-chain reference — an unpinned `pip install`, a "
+    "tag-pinned `uses:`, a compose `image:` with no digest in vendor/images/, a "
+    "`curl … | sh` — is either enumerated BY NAME in args/pin_census.txt or "
+    "excluded with a written reason in args/pin_gate.yaml"
+]
+
+
+def _pin_census_check(
+    status: str, message: str, actual: List[str], missing: Optional[List[str]] = None
+) -> CoherenceCheck:
+    return CoherenceCheck(
+        check_id=_PIN_CENSUS_CHECK_ID,
+        check_name=_PIN_CENSUS_CHECK_NAME,
+        status=status,
+        expected=_PIN_CENSUS_EXPECTED,
+        actual=actual,
+        missing=missing or [],
+        extra=[],
+        message=message,
+    )
+
+
+def check_pin_census(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """xrv-route-03 — a NEW unpinned supply-chain reference in CI.
+
+    Four things in this repository decide, at run time, which bytes a build
+    executes, and nothing checked any of them: an unpinned ``pip install``
+    (``.gitlab-ci.yml:148`` installs ``llm-sandbox docker pyyaml`` with no
+    version — the shape the ``reverse-skill`` external review fails CI on), a
+    TAG-pinned ``uses:`` (a git tag is mutable, and whoever owns the action
+    repository can move ``v4`` to any commit), a compose ``image:`` with no
+    measured digest in ``vendor/images/``, and ``curl … | sh``.
+
+    ``warn``, not ``fail``, and deliberately. This is a brand-new gate over a
+    surface nobody has drained — 69 sites at adoption — and arming a hard refusal
+    on a set that large without a fire-rate survey is how a check earns itself a
+    ``|| true``. The standalone tool DOES exit 1 (``python tools/ci/pin_census.py
+    --check``), so the refusal exists and is opt-in; what this check does is make
+    a new site visible to the session that added it. Promote it to ``fail`` with a
+    survey, not with an edit.
+
+    With a diff the scan is scoped to it and costs milliseconds; the ceiling and
+    stale-entry halves are suppressed on a partial scan, because a subset cannot
+    tell a deleted site from an unscanned one and "69 entries are stale" on a
+    one-file commit is the same lie as a skipped test reporting green.
+    """
+    try:
+        from tools.ci.pin_census import (
+            PinCensusError,
+            build_report,
+            filter_scope,
+            load_config,
+        )
+    except Exception as exc:  # noqa: BLE001
+        # NOT a pass. An unimportable census is an unmeasured one, and the whole
+        # point of this family of gates is that "did not run" must not read as
+        # "found nothing".
+        return _pin_census_check(
+            "warn",
+            f"tools/ci/pin_census.py could not be imported ({exc}) — unpinned CI "
+            "references NOT verified. This is 'unmeasured', not 'clean'.",
+            [f"import failed: {exc}"],
+        )
+
+    try:
+        cfg = load_config()
+    except Exception as exc:  # noqa: BLE001
+        return _pin_census_check(
+            "warn",
+            f"args/pin_gate.yaml could not be read ({exc}) — unpinned CI references "
+            "NOT verified.",
+            [f"gate config failed: {exc}"],
+        )
+
+    scoped: Optional[List[str]] = None
+    if changed_files:
+        try:
+            scoped = filter_scope(_relative_changed(changed_files), cfg)
+        except Exception as exc:  # noqa: BLE001
+            return _pin_census_check(
+                "warn",
+                f"could not resolve the census scope for this diff ({exc}) — "
+                "unpinned CI references NOT verified.",
+                [f"scope failed: {exc}"],
+            )
+        if not scoped:
+            return _pin_census_check(
+                "pass",
+                "this change touches no CI workflow, .gitlab-ci.yml, Dockerfile or "
+                "compose file, so it cannot add an unpinned supply-chain reference.",
+                [],
+            )
+
+    try:
+        report = build_report(only=scoped, cfg=cfg)
+    except PinCensusError as exc:
+        return _pin_census_check(
+            "warn",
+            f"the pin census could not be produced: {exc}",
+            [str(exc)],
+            missing=[str(exc)],
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _pin_census_check(
+            "warn",
+            f"pin census failed to run ({exc}) — unpinned CI references NOT verified.",
+            [f"census failed: {exc}"],
+        )
+
+    kinds = report["by_kind"]
+    scope_label = "changed file(s)" if report["partial"] else "in-scope file(s)"
+    actual = [
+        f"{report['sites_seen']} unpinned reference(s) across "
+        f"{len(report['scanned_files'] or [])} {scope_label}"
+        if report["partial"] else
+        f"{report['sites_seen']} unpinned reference(s) across the CI surface",
+        f"{report['registered']} registered (ceiling {report['ceiling']})",
+        f"by kind: {kinds['tag_pinned_action']} tag-pinned action, "
+        f"{kinds['unpinned_install']} unpinned install, "
+        f"{kinds['undigested_image']} undigested image, "
+        f"{kinds['unpinned_script']} unpinned script",
+    ]
+
+    if report["unmeasurable"]:
+        # Its own verdict. "I could not look" must never render as "I looked and
+        # found nothing".
+        return _pin_census_check(
+            "warn",
+            "the pin census is UNMEASURABLE for: "
+            + "; ".join(report["unmeasurable"][:5]),
+            actual,
+            missing=list(report["unmeasurable"]),
+        )
+
+    if report["unregistered"]:
+        return _pin_census_check(
+            "warn",
+            f"{len(report['unregistered'])} NEW unpinned supply-chain reference(s). "
+            "Pin it at the site: `pkg==<version>`, `owner/repo@<40-hex sha>`, a "
+            "digest line in vendor/images/, or a vendored installer. Run `python "
+            "tools/ci/pin_census.py --check` for the per-site repair.",
+            actual,
+            missing=[
+                f"{site['file']}:{site['line']} [{site['kind']}] {site['reference']}"
+                for site in report["unregistered"][:20]
+            ],
+        )
+
+    if report["thin_reasons"]:
+        return _pin_census_check(
+            "warn",
+            f"{len(report['thin_reasons'])} census entr(ies) carry no written reason — "
+            "a registered debt without a reason is a line nobody can act on.",
+            actual,
+            missing=list(report["thin_reasons"])[:20],
+        )
+
+    if report["stale_entries"]:
+        # A site that vanished is somebody pinning a reference. Never warn as if
+        # that were a regression — say thank you and point at the ratchet.
+        return _pin_census_check(
+            "warn",
+            f"{len(report['stale_entries'])} census entr(ies) name a reference that no "
+            "longer exists — something was pinned. Run `python "
+            "tools/ci/pin_census.py --prune` and LOWER `pin_census.pin_max` in "
+            f"args/pin_gate.yaml to {report['registered']}.",
+            actual,
+            missing=list(report["stale_entries"])[:20],
+        )
+
+    if report["over_ceiling"]:
+        return _pin_census_check(
+            "warn",
+            f"census {report['census_size']} > ceiling {report['ceiling']}. "
+            "`pin_census.pin_max` may only go DOWN.",
+            actual,
+            missing=[f"census {report['census_size']} over ceiling {report['ceiling']}"],
+        )
+
+    if report["partial"]:
+        # Say what was actually measured. "69 known sites against a ceiling of
+        # 69" is true of the tree and says nothing about the diff.
+        return _pin_census_check(
+            "pass",
+            f"none of the changed CI file(s) adds an unregistered unpinned reference "
+            f"({report['sites_seen']} seen, all registered). Tree-wide totals and the "
+            "ceiling are checked by the full tier, not by this diff-scoped run.",
+            actual,
+        )
+
+    return _pin_census_check(
+        "pass",
+        f"no unregistered unpinned reference; {report['registered']} known site(s) "
+        f"enumerated in {report['census_file']} against a ceiling of "
+        f"{report['ceiling']}.",
         actual,
     )
 
@@ -10830,6 +11036,7 @@ CHECK_REGISTRY = {
     "doc_command_paths": check_doc_command_paths,
     "insert_schema_parity": check_insert_schema_parity,
     "board_writer_census": check_board_writer_census,
+    "pin_census": check_pin_census,
     "schema_ownership": check_schema_ownership,
     "self_rooting": check_self_rooting,
     "core_api": check_core_api,
@@ -10976,6 +11183,25 @@ HEAVY_CHECKS: Dict[str, Tuple[str, ...]] = {
         "task_factory",
         "seed_",
     ),
+    # xrv-route-03: the criterion here is SCOPE, not cost — the whole scan reads
+    # about twenty files and finishes in well under a second. But it is a claim
+    # about the CI SURFACE, and that surface does not change because a diff
+    # touched an unrelated module, so running it on every per-task gate would
+    # re-report the same 69 grandfathered sites to sessions that cannot act on
+    # them. The full tier (nightly sweep, post-merge reflex) always runs it, and
+    # the fast tier re-adds it exactly when the diff touches a file that CAN
+    # change its verdict — a workflow, the GitLab config, a Dockerfile, a compose
+    # file, the vendored digests, or the gate/census pair itself.
+    "pin_census": (
+        ".github/workflows/",
+        ".gitlab-ci.yml",
+        "Dockerfile",
+        "docker-compose",
+        "vendor/images/",
+        "args/pin_gate.yaml",
+        "args/pin_census.txt",
+        "tools/ci/pin_census.py",
+    ),
 }
 
 
@@ -11110,6 +11336,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "external_only_surfaces": "skip",  # satisfy the obligation or drop the declaration — both are decisions
     "gate_sentinel_shape": "skip",  # rename the task or make it a real gate — both are decisions
     "board_writer_census": "skip",  # route the write through create_tasks, or register it with a written reason — both are decisions, and auto-registering would be the gate widening its own allowlist
+    "pin_census": "skip",  # a pin is a decision -- which version, which sha, which digest -- and auto-registering a site would be the gate widening its own allowlist
     "schema_ownership": "skip",  # an owner is a decision: add a rule and --regenerate; auto-assigning would be the gate widening itself
     "self_rooting": "skip",  # `python tools/ci/self_root_census.py --fix <file>` rewrites the simple form; auto-running it inside a coherence run would change imports behind the caller
 }

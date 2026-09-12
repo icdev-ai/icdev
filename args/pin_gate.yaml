@@ -1,0 +1,115 @@
+# CUI // SP-CTI
+# Pin Gate (xrv-route-03)
+#
+# THE POLICY THIS ENCODES
+# -----------------------
+# Four things in this repository decide, at run time, which bytes a build
+# executes, and nothing checked any of them:
+#
+#   * .gitlab-ci.yml:148 runs `pip install --quiet llm-sandbox docker pyyaml`
+#     with no version on any of the three. The `reverse-skill` external review
+#     fails CI on exactly that shape.
+#   * Every `uses:` in .github/workflows/*.yml is TAG-pinned
+#     (actions/checkout@v4), not SHA-pinned. A git tag is mutable: whoever owns
+#     the action repository can move `v4` to any commit, and every workflow here
+#     runs it with the token the job was given.
+#   * docker-compose.yml names four floci/* emulator images by TAG and only the
+#     AWS one has a measured digest in vendor/images/.
+#   * `curl -fsSL https://ollama.com/install.sh | sh` executes whatever that URL
+#     serves at the moment the job runs.
+#
+# WHAT IS AND IS NOT A SITE
+# -------------------------
+# The finding is A REFERENCE THAT DOES NOT NAME THE BYTES IT RESOLVES TO — not
+# "an install". Four predicates keep it high-signal, and each is RE-DERIVED every
+# run rather than kept as an exemption list (an exemption list is a claim a
+# reviewer must check; a predicate is one the scanner proves):
+#
+#   * `pip install -r requirements.txt` / `-e .` / `dist/*.whl` names no package
+#     literal. The pin lives in the declared file, so there is nothing to pin.
+#   * `npm ci` and a bare `npm install` resolve through package-lock.json, which
+#     IS the pin. Only `npm install -g <pkg>` has no lockfile behind it.
+#   * A compose service carrying `build:` BUILDS its image from a Dockerfile in
+#     this tree. It is never pulled, so a registry digest cannot describe it.
+#     Measured at adoption: 21 of the 29 services in docker-compose.yml are built
+#     here, so this predicate alone is the difference between 8 real sites and 29
+#     mostly-noise ones.
+#   * `uses: ./.github/...` is a path into this repository — pinned by the commit
+#     under review.
+#
+# The policy is a RATCHET, not a sweep:
+#
+#   1. A NEW unpinned reference fails `python tools/ci/pin_census.py --check` BY
+#      NAME. The fix is at the site: `pkg==<version>`, `owner/repo@<40-hex sha>`,
+#      a digest line in vendor/images/, or a vendored installer.
+#   2. The references that existed at adoption are grandfathered BY NAME in
+#      args/pin_census.txt. They are debt, enumerated so it is countable — and so
+#      the SET cannot churn behind a constant count, which is exactly how the
+#      ungated-test gap regrew behind a green gate.
+#   3. `pin_max` may ONLY go DOWN. Lower it when a reference is pinned. Raising
+#      it is the visible, reviewable act of taking on more mutable supply chain,
+#      and it belongs in a PR description — never in a drive-by edit to get a
+#      commit through.
+#
+# SURVEYED, NOT GATED: requirements.txt declares 46 distributions and 45 use
+# `>=`. That is a RANGE, not a pin, and it is reported under
+# `surveyed_not_gated` rather than gated — the install-time pin for a deployment
+# is the vendored wheel set (tools/airgap/wheel_vendor.py), and refusing 45
+# ranges would refuse routine work, the defect the PreToolUse fire-rate survey
+# found. Quoting the number is what lets a later card decide with evidence.
+#
+# Gate:  python tools/ci/pin_census.py --check
+#        python tools/ci/pin_census.py --changed <files> --check
+#        python tools/workflow/coherence_checker.py --check pin_census
+
+pin_census:
+  # The enumerated census. Flat and line-oriented, so `merge=union` would be
+  # safe for it the way it is for the manifest shards (see .gitattributes).
+  census_file: args/pin_census.txt
+
+  # Ceiling on REGISTERED sites. MAY ONLY GO DOWN.
+  #
+  # 2026-09-12 adoption: exactly today's count, not a round number above it —
+  # headroom is permission. By kind, MEASURED on this tree: 34 tag-pinned
+  # actions, 26 unpinned installs, 7 undigested compose images, 2 remote install
+  # scripts. (69 third-party `uses:` OCCURRENCES, across only 10 distinct
+  # actions and none sha-pinned, collapse to 34 sites: the key is per
+  # (file, action), and a workflow checking out in four jobs took one decision
+  # once.)
+  #
+  # The cheapest cohort to drain is the compose images: four of the seven are
+  # the floci/* siblings, whose AWS sibling ALREADY has a measured digest in
+  # vendor/images/images-floci.txt — so the repair is `docker image inspect
+  # <ref> --format '{{index .RepoDigests 0}}'` on a connected host and one line
+  # per image. The action cohort is the largest and the most mechanical: repin to
+  # the 40-hex sha and keep the tag in a trailing comment.
+  pin_max: 69
+
+  # A reason shorter than this is not a reason. Applies to census entries and to
+  # the exclusions below.
+  min_reason_chars: 12
+
+  # Files whose shell commands are scanned for installs and fetch-pipe-shell.
+  command_files:
+    - .github/workflows/*.yml
+    - .github/workflows/*.yaml
+    - .gitlab-ci.yml
+    - Dockerfile*
+    - docker/Dockerfile*
+
+  # Files whose `uses:` entries are scanned. GitHub Actions only — nothing else
+  # in this tree has an equivalent.
+  action_files:
+    - .github/workflows/*.yml
+    - .github/workflows/*.yaml
+
+  # Files whose `image:` entries are checked against vendor/images/*.txt.
+  compose_files:
+    - docker-compose*.yml
+    - docker-compose*.yaml
+
+  # An EXCLUSION asserts the unpinned reference is CORRECT here — a different
+  # claim from a census entry, and it must not count against the ceiling we are
+  # driving down. Every one needs a written reason. EMPTY at adoption: every site
+  # in this tree is debt to be drained, not a case for an excuse.
+  exclude: []
