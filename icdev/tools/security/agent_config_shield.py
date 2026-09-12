@@ -461,8 +461,17 @@ def check_config_secrets(root: Optional[Path] = None) -> ShieldCheck:
                 found, tools, errors = _scan_both_arms(
                     str(staged), "(instruction files)", prefix=""
                 )
-                for err in errors:
-                    unmeasurable.extend({"target": rel, "error": err["error"]} for rel in loose)
+                if tools:
+                    # Partial coverage: name the arm that died ONCE, not once per
+                    # staged file -- the files were read, one rulebook was not.
+                    unmeasurable.extend(errors)
+                else:
+                    # Nothing read them at all, so each one is individually
+                    # unmeasured and must say so by name.
+                    unmeasurable.extend(
+                        {"target": rel, "error": errors[0]["error"] if errors else "not scanned"}
+                        for rel in loose
+                    )
                 if tools:
                     measured.extend(loose)
                     files_present += len(loose)
