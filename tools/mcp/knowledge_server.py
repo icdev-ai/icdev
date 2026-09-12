@@ -48,7 +48,37 @@ def _get_db() -> sqlite3.Connection:
 
 
 def handle_search_knowledge(args: dict) -> dict:
-    """Search the knowledge base for patterns matching a query."""
+    """Search the knowledge base for patterns matching a query.
+
+    xrv-mem-03: with ``layer`` set (index | timeline | detail) the call is a
+    progressive-disclosure read of memory_entries through
+    ``tools.memory.hybrid_search.run_layer`` -- an index of headlines, a
+    chronological window interleaved with the session activity feed, or the
+    full rows for the ids named -- every response carrying ``approx_tokens``.
+    Without ``layer`` the handler is byte-for-byte today's knowledge_patterns
+    search. ``ids`` is a list or a comma-separated string; ``query`` is
+    required for ``index`` (and for the default), optional for ``timeline``,
+    ignored for ``detail``.
+    """
+    layer = args.get("layer")
+    if layer:
+        run_layer = _import_tool("tools.memory.hybrid_search", "run_layer")
+        if run_layer is None:
+            raise RuntimeError("tools.memory.hybrid_search is unavailable")
+        return run_layer(
+            layer,
+            query=args.get("query"),
+            ids=args.get("ids"),
+            since=args.get("since"),
+            until=args.get("until"),
+            limit=args.get("limit", 10),
+            session_id=args.get("session_id"),
+            user_id=args.get("user_id"),
+            tenant_id=args.get("tenant_id"),
+            clearance=args.get("clearance"),
+            compartments=args.get("compartments"),
+        )
+
     search = _import_tool("tools.knowledge.pattern_detector", "search_patterns")
 
     query = args.get("query")

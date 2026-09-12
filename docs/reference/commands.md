@@ -20,6 +20,9 @@ python tools/memory/memory_write.py --update-memory --content "text" --section u
 python tools/memory/memory_db.py --action search --query "keyword"   # Keyword search
 python tools/memory/semantic_search.py --query "concept"             # Semantic search (requires OpenAI key)
 python tools/memory/hybrid_search.py --query "query"                 # Best: combined keyword + semantic
+python tools/memory/hybrid_search.py --query "query" --layer index --json      # xrv-mem-03: {id, ts, type, headline, score} + approx_tokens (~40 tokens a row)
+python tools/memory/hybrid_search.py --layer timeline --since 2026-09-11T00:00:00 --json   # index rows in a window, chronological, interleaved with the session activity feed
+python tools/memory/hybrid_search.py --layer detail --ids 28184,28183 --json   # full rows for those ids only; missing_ids named
 python tools/memory/embed_memory.py --all                            # Generate embeddings for all entries
 
 # Agentic generation (Phase 19)

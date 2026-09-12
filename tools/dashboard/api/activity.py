@@ -11,6 +11,10 @@ from tools.db.storage import get_connection, sql_placeholder
 from flask import Blueprint, jsonify, request
 
 from tools.dashboard.config import DB_PATH
+# xrv-mem-03: the UNION (activity_query.MERGED_QUERY) lives in a module with no
+# Flask in it, so the memory CLI's `timeline` layer reads the SAME chronology
+# this feed renders through the one builder below.
+from tools.dashboard.api.activity_query import build_feed_query
 
 activity_api = Blueprint("activity_api", __name__, url_prefix="/api/activity")
 
@@ -18,40 +22,6 @@ activity_api = Blueprint("activity_api", __name__, url_prefix="/api/activity")
 def _get_db():
     conn = get_connection(db_path=str(DB_PATH))
     return conn
-
-
-# ---------------------------------------------------------------------------
-# Merged activity feed query (D174)
-# ---------------------------------------------------------------------------
-
-MERGED_QUERY = """
-SELECT * FROM (
-    SELECT
-        'audit' AS source,
-        id,
-        event_type,
-        actor AS actor_or_agent,
-        action AS summary,
-        project_id,
-        classification,
-        created_at
-    FROM audit_trail
-
-    UNION ALL
-
-    SELECT
-        'hook' AS source,
-        id,
-        hook_type AS event_type,
-        session_id AS actor_or_agent,
-        tool_name AS summary,
-        project_id,
-        classification,
-        created_at
-    FROM hook_events
-) merged
-WHERE 1=1
-"""
 
 
 @activity_api.route("/feed")
@@ -69,27 +39,17 @@ def activity_feed():
     conn = _get_db()
     ph = sql_placeholder(conn)
     try:
-        query = MERGED_QUERY
-        params = []
-
-        if source:
-            query += f" AND source = {ph}"
-            params.append(source)
-        if event_type:
-            query += f" AND event_type = {ph}"
-            params.append(event_type)
-        if actor:
-            query += f" AND actor_or_agent LIKE {ph}"
-            params.append(f"%{actor}%")
-        if project_id:
-            query += f" AND project_id = {ph}"
-            params.append(project_id)
-        if since:
-            query += f" AND created_at >= {ph}"
-            params.append(since)
-
-        query += f" ORDER BY created_at DESC LIMIT {ph} OFFSET {ph}"
-        params.extend([limit, offset])
+        query, params = build_feed_query(
+            ph,
+            source=source,
+            event_type=event_type,
+            actor=actor,
+            project_id=project_id,
+            since=since,
+            order="DESC",
+            limit=limit,
+            offset=offset,
+        )
 
         rows = conn.execute(query, params).fetchall()
         events = [dict(r) for r in rows]
@@ -107,15 +67,7 @@ def activity_poll():
     conn = _get_db()
     ph = sql_placeholder(conn)
     try:
-        query = MERGED_QUERY
-        params = []
-
-        if cursor:
-            query += f" AND created_at > {ph}"
-            params.append(cursor)
-
-        query += f" ORDER BY created_at DESC LIMIT {ph}"
-        params.append(limit)
+        query, params = build_feed_query(ph, after=cursor or None, order="DESC", limit=limit)
 
         rows = conn.execute(query, params).fetchall()
         events = [dict(r) for r in rows]

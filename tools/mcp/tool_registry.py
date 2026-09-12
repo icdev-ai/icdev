@@ -1295,8 +1295,27 @@ TOOL_REGISTRY = {
                     "enum": ["error", "performance", "security", "compliance", "deployment", "configuration"],
                 },
                 "limit": {"type": "integer", "description": "Max results to return", "default": 10},
+                "layer": {
+                    "type": "string",
+                    "description": (
+                        "xrv-mem-03 progressive disclosure over memory_entries: 'index' = {id, ts, type, "
+                        "headline<=120, score} for the top-K of query; 'timeline' = index rows in a "
+                        "since/until window in chronological order interleaved with the session activity "
+                        "feed; 'detail' = full rows for ids only (missing_ids named). Every layered "
+                        "response carries approx_tokens. Omit for today's knowledge_patterns search."
+                    ),
+                    "enum": ["index", "timeline", "detail"],
+                },
+                "ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "memory_entries ids to expand (layer=detail)",
+                },
+                "since": {"type": "string", "description": "ISO-8601 lower bound (layer=timeline; default last 24h)"},
+                "until": {"type": "string", "description": "ISO-8601 upper bound (layer=timeline)"},
+                "session_id": {"type": "string", "description": "Narrow timeline session events to one session id"},
             },
-            "required": ["query"],
+            "required": [],
         },
     },
     "add_pattern": {

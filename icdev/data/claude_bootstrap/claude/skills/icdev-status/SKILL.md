@@ -107,6 +107,14 @@ Recent Activity:
   2024-01-15 10:20 - code.commit by developer
 ```
 
+### 10. Recall memory progressively (xrv-mem-03)
+Index, then timeline, then detail by id — never full-row cost for a recall you have not chosen yet. Every layer reports `approx_tokens`; the MCP tool `search_knowledge` takes the same `layer`/`ids`/`since`/`until`. See REFERENCE.md.
+```bash
+python tools/memory/hybrid_search.py --query "helm chart rollout" --layer index --json   # {id, ts, type, headline, score}
+python tools/memory/hybrid_search.py --layer timeline --since 2026-09-11T00:00:00 --json  # + session activity feed, chronological
+python tools/memory/hybrid_search.py --layer detail --ids 28184,28183 --json              # full rows; missing_ids named
+```
+
 ## Error Handling
 - If project not found: show available projects
 - If database unavailable: report connection error
