@@ -92,7 +92,7 @@ The pin moves when **floci** moves — a re-measurement
 
 ## Residual risk, stated rather than buried
 
-`opensearch:2.19.5` is two major lines behind upstream's `3.8.0`, and floci's own
+`opensearch:2.19.5` is a major line behind upstream's `3.8.0`, and floci's own
 ceiling (`3.6.0`) is itself behind upstream. A deployment that wants a newer
 OpenSearch must (a) declare a supported `EngineVersion` — `OpenSearch_3.6` at the
 most — and (b) **vendor `opensearchproject/opensearch:3.6.0` as well**, which
