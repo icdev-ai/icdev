@@ -40,6 +40,54 @@
 #   upstream     the registry/index the entry is SERVED BY. For an image this
 #                is cross-checked against the registry host that `ref` implies,
 #                so the label can never disagree with the fetch.
+#   decided_by   OPTIONAL, and the only supported value is `consumer`. See the
+#                block below. An unrecognised value is `unmeasurable`, never
+#                ignored -- a declaration nobody can read must not resolve to a
+#                clean bill.
+#   consumer     required by `decided_by: consumer`. The NAME of another
+#                artifact in this file whose currency decides this one.
+#                `tests/airgap/test_artifact_freshness.py` asserts it resolves,
+#                so the delegation cannot rot into a dangling pointer.
+#
+# A TAG SOMEBODY ELSE CHOOSES IS NOT CHASING ITS OWN RELEASE TRAIN
+# -----------------------------------------------------------------
+# (artifact-fresh-5b1750f240.) The survey's first full run said `rds-postgres`
+# was behind `18.6-alpine`, and acting on it would have BROKEN the air gap.
+# MEASURED 2026-09-12 by driving floci 2.0.1 the way flx-airgap-02 did:
+#
+#     CreateDBInstance(Engine=postgres)        -> EngineVersion 16.3, and the
+#       floci log: `ImageCacheService  Image already present locally,
+#       skipping pull: postgres:16.3-alpine`; the container it started ran
+#       `postgres:16.3-alpine`.
+#     CreateDBInstance(EngineVersion="16.99")  -> `Pulling image:
+#       postgres:16.99-alpine`, then a 404 from the registry.
+#
+# So the ref is `postgres:<EngineVersion>-alpine` and `16.3` is FLOCI'S DEFAULT
+# -- not this tree's opinion of postgres's newest release. `18.6-alpine` is a
+# real postgres release that floci requests only if a caller asks for it by
+# name, exactly like the per-runtime Lambda images args/floci_runtime_images.yaml
+# already calls out: the image set is a function of DECLARED CONFIGURATION.
+# Vendoring 18.6 would have left the image the DEFAULT path pulls out of the
+# bundle, so the first disconnected `create_db_instance` would fail -- the
+# precise failure vendor/images exists to prevent.
+#
+# `decided_by: consumer` therefore says: upstream's release train does not
+# decide this entry. It is decided on DIGEST DRIFT (has the tag stopped serving
+# the bytes we recorded -- on an immutable tag, a supply-chain alarm), and
+# upstream's newest comparable tag is still fetched and carried on
+# `upstream_newest` so nothing is hidden. The pin moves when FLOCI moves, which
+# is a re-measurement (`python -m tools.cloud.runtime_images --measure-help`),
+# never a bump -- and the `floci` entry below is what re-asks that question.
+#
+# NOT CONVERTED HERE, AND NAMED RATHER THAN IMPLIED. The same argument plainly
+# reaches the other ten runtime entries, and five of them are reported `behind`
+# today against releases floci does not request -- `mysql:8.0.36 -> 26.7.0`,
+# `registry:2 -> 3`, `amazonlinux:2023 -> 2027`, `valkey:8 -> 9`,
+# `opensearch:2.19.5 -> 3.8.0`. They are NOT flipped here, because this card
+# measured the postgres path and adding a row nobody observed is the
+# fabrication vendor/images/README.md is written against. Each arrives with its
+# own card; drive the emulator for that service, read the ImageCacheService log
+# line, and convert it with the measurement written down.
 #
 # WHY `pypi` AND `package` ARE HERE when the card sketched
 # image|binary x dockerhub|ghcr|github_releases: `testcontainers-floci` is a
@@ -134,12 +182,23 @@ artifacts:
     pin_source: "vendor/images/images-floci-runtime.txt"
     upstream: ecr_public
 
+  # DELIBERATELY KEPT at floci 2.0.1's default postgres engine version. See
+  # "A TAG SOMEBODY ELSE CHOOSES" above for the measurement; the decision
+  # record is docs/audits/artifact-fresh-5b1750f240-rds-postgres-pin.md.
   - name: rds-postgres
     kind: image
     ref: postgres
     pinned: "16.3-alpine"
     pin_source: "vendor/images/images-floci-runtime.txt"
     upstream: dockerhub
+    decided_by: consumer
+    consumer: floci
+    note: >-
+      floci builds the ref as `postgres:<EngineVersion>-alpine` and defaults to
+      16.3 (MEASURED 2026-09-12, artifact-fresh-5b1750f240). A deployment that
+      declares a different EngineVersion must vendor THAT tag -- the variant
+      rule args/floci_runtime_images.yaml already states for Lambda runtimes,
+      one level finer.
 
   - name: rds-mysql
     kind: image

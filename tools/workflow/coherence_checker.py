@@ -1926,6 +1926,25 @@ def check_route_uniqueness(changed_files: Optional[List[Path]] = None) -> Cohere
 # Add to this list when a new external repo is cited; the check fails for
 # unregistered citations.
 _ATTRIBUTION_REGISTRY: Dict[str, Dict[str, str]] = {
+    "praxist": {
+        "url": "(Fair Source 1.0 project — shape cited, no code used)",
+        "license": "Fair Source 1.0",
+        "audit_status": (
+            "clean-room by construction 2026-09-12 (xrv-lab-02) — the SHAPE "
+            "was adapted from a written description, no source was read, "
+            "vendored or ported"
+        ),
+        "notes": (
+            "tools/autoresearch/real_mutation.py cites PRAXIST for the "
+            "candidates -> task-owned evaluator -> evidence lanes SHAPE only. "
+            "Fair Source 1.0 is a BLOCKING license for code reuse, which is "
+            "exactly why nothing was reused: the module is built on ICDEV's "
+            "own seams (fitness_evaluator, claude_cli adapter, "
+            "experiment_engine.decide, cost.task_attribution) and its three "
+            "lane names are ordinary English. No file in this repo is derived "
+            "from PRAXIST source."
+        ),
+    },
     "agent zero": {
         "url": "https://github.com/agent0ai/agent-zero",
         "license": "MIT",

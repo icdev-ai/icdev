@@ -20,8 +20,10 @@ THREE DECISIONS, and each one is the whole design:
     args/pr_watcher_config.yaml maps a path pattern to an ORDERED rule list. A
     file no entry matches REFUSES -- the resolver never guesses what a hunk
     "looks like", because "looks like a quoted list" is exactly how the object
-    literal got broken. An empty side always resolves to the other, on any
-    declared file, before any rule is consulted.
+    literal got broken. An empty side resolves to the other, on any declared
+    file, before any rule is consulted -- but ONLY over an empty base: an
+    empty side over a NON-EMPTY base is a DELETION, and yielding to the other
+    side discards it silently (mfx-mrg-08).
 
   * **The merge is a WHOLE-FILE three-way over the index stages**, not a parse
     of conflict markers. `:1` is the base, `:2` the side already on the branch
@@ -118,7 +120,7 @@ DECLARABLE_RULES = frozenset({
 })
 
 RULE_DESCRIPTIONS = {
-    RULE_OTHER_SIDE_WHEN_EMPTY: "universal: a side with nothing in the hunk yields to the other",
+    RULE_OTHER_SIDE_WHEN_EMPTY: "universal: over an EMPTY base, a side with nothing in the hunk yields to the other (an empty side over a non-empty base is a DELETION and refuses)",
     RULE_KEEP_BOTH_BLOCKS: "both inserted at one point: main's block then the card's",
     RULE_TABLE_ROWS: "keep_both_blocks restricted to | rows, duplicates dropped",
     RULE_QUOTED_LIST_LINE: "one quoted-token line: main's tokens plus the card's new ones",
@@ -436,10 +438,23 @@ _CLUSTER_RULES: Dict[str, Callable] = {
 
 
 def _resolve_cluster(base_seg, main_seg, card_seg, rules: Sequence[str], lo: int):
-    if not main_seg and card_seg:
-        return list(card_seg), RULE_OTHER_SIDE_WHEN_EMPTY
-    if not card_seg and main_seg:
-        return list(main_seg), RULE_OTHER_SIDE_WHEN_EMPTY
+    # AN EMPTY SIDE OVER AN EMPTY BASE is "this branch had nothing to say
+    # here" -- a pure insertion by the other side. AN EMPTY SIDE OVER A
+    # NON-EMPTY BASE is "this branch DELETED these lines", and yielding to the
+    # other side silently discards that deletion while reporting success
+    # (mfx-mrg-08). The two are indistinguishable without `base_seg`, which is
+    # why `keep_both_blocks` and `table_rows` both open `if base_seg: return
+    # None` -- and why this rung, which runs FIRST and refuses nothing, has to
+    # ask the same question. A deletion falls through to the declared rules,
+    # every one of which declines it, so the conflict reaches a human:
+    # `resolve_index_conflicts`' invariant is that a human sees the conflict,
+    # not a half-resolution, and a discarded deletion is worse than a half
+    # resolution because it looks complete.
+    if not base_seg:
+        if not main_seg and card_seg:
+            return list(card_seg), RULE_OTHER_SIDE_WHEN_EMPTY
+        if not card_seg and main_seg:
+            return list(main_seg), RULE_OTHER_SIDE_WHEN_EMPTY
     tried = []
     for rule in rules:
         fn = _CLUSTER_RULES.get(rule)
@@ -449,10 +464,15 @@ def _resolve_cluster(base_seg, main_seg, card_seg, rules: Sequence[str], lo: int
         got = fn(base_seg, main_seg, card_seg)
         if got is not None:
             return got, rule
+    deleted = ""
+    if base_seg and not main_seg:
+        deleted = " -- the base branch DELETED these lines and the card rewrote them"
+    elif base_seg and not card_seg:
+        deleted = " -- the card DELETED these lines and the base branch rewrote them"
     raise UnionRefused(
         f"no declared rule resolves the hunk at line {lo + 1} "
         f"(base {len(base_seg)} line(s), main {len(main_seg)}, card {len(card_seg)}; "
-        f"tried {tried or 'nothing'})"
+        f"tried {tried or 'nothing'}){deleted}"
     )
 
 

@@ -287,6 +287,124 @@ def test_digest_drift_is_none_when_it_could_not_be_compared(registry, monkeypatc
 
 
 # --------------------------------------------------------------------------- #
+# a tag the CONSUMER chooses is not chasing upstream's release train
+# --------------------------------------------------------------------------- #
+def _consumer_entry(**over):
+    base = _entry(pinned="16.3-alpine", decided_by="consumer", consumer="floci")
+    base.update(over)
+    return base
+
+
+def _pg_registry(pinned_digest=DIGEST_A):
+    """Upstream's postgres shape: the pinned tag, a newer one in the same major
+    line, and a newer major line."""
+    return _Registry(
+        manifests={"registry-1.docker.io/acme/demo:16.3-alpine": pinned_digest},
+        tags={"registry-1.docker.io/acme/demo": [
+            "16.3-alpine", "16.15-alpine", "18.6-alpine"]},
+    )
+
+
+def _digest_pin(digest):
+    return lambda entry: {
+        "digest": digest,
+        "tag": None,
+        "pin_strength": "digest" if digest else None,
+        "errors": [],
+    }
+
+
+def test_a_consumer_decided_pin_is_not_behind_a_release_the_consumer_never_asks_for(
+    registry, monkeypatch
+):
+    """MEASURED 2026-09-12: floci 2.0.1 builds `postgres:<EngineVersion>-alpine`
+    and defaults to 16.3, so `18.6-alpine` is an image it never requests.
+    Calling the pin `behind` it recommends vendoring an image the emulator will
+    not pull -- and leaves the one it DOES pull out of the air-gap bundle."""
+    monkeypatch.setattr(AF, "resolve_pin", _digest_pin(DIGEST_A))
+    registry(_pg_registry())
+    row = AF.check_artifact(_consumer_entry())
+    assert row["status"] == AF.STATUS_CURRENT
+    assert row["basis"] == AF.BASIS_DIGEST
+    assert row["decided_by"] == AF.DECIDED_BY_CONSUMER
+    assert row["consumer"] == "floci"
+
+
+def test_a_consumer_decided_pin_still_names_the_release_it_is_not_chasing(
+    registry, monkeypatch
+):
+    """Not chasing a release is not the same as not knowing about it. The newer
+    tag is looked up and carried; it just does not decide the status."""
+    monkeypatch.setattr(AF, "resolve_pin", _digest_pin(DIGEST_A))
+    registry(_pg_registry())
+    row = AF.check_artifact(_consumer_entry())
+    assert row["upstream_newest"] == "18.6-alpine"
+    assert "floci" in row["reason"]
+    assert "18.6-alpine" in row["reason"]
+
+
+def test_a_consumer_decided_pin_is_behind_when_its_tag_stops_serving_the_pinned_bytes(
+    registry, monkeypatch
+):
+    """The one currency question upstream CAN answer about a tag chosen by
+    somebody else -- and on an immutable tag it is a supply-chain alarm."""
+    monkeypatch.setattr(AF, "resolve_pin", _digest_pin(DIGEST_A))
+    registry(_pg_registry(pinned_digest=DIGEST_B))
+    row = AF.check_artifact(_consumer_entry())
+    assert row["status"] == AF.STATUS_BEHIND
+    assert row["basis"] == AF.BASIS_DIGEST
+    assert row["digest_drift"] is True
+    assert row["newest"] == DIGEST_B
+
+
+def test_a_consumer_decided_pin_with_no_declared_digest_is_unmeasurable_never_current(
+    registry, monkeypatch
+):
+    monkeypatch.setattr(AF, "resolve_pin", _digest_pin(None))
+    registry(_pg_registry())
+    row = AF.check_artifact(_consumer_entry())
+    assert row["status"] == AF.STATUS_UNMEASURABLE
+    assert "nothing to compare" in row["reason"]
+
+
+def test_decided_by_consumer_with_no_consumer_named_is_unmeasurable(registry, monkeypatch):
+    monkeypatch.setattr(AF, "resolve_pin", _digest_pin(DIGEST_A))
+    registry(_pg_registry())
+    row = AF.check_artifact(_consumer_entry(consumer=None))
+    assert row["status"] == AF.STATUS_UNMEASURABLE
+
+
+def test_an_unknown_decided_by_is_unmeasurable_never_current(registry, monkeypatch):
+    """An unreadable declaration must never resolve to a clean bill."""
+    monkeypatch.setattr(AF, "resolve_pin", _digest_pin(DIGEST_A))
+    registry(_pg_registry())
+    row = AF.check_artifact(_consumer_entry(decided_by="vibes"))
+    assert row["status"] == AF.STATUS_UNMEASURABLE
+    assert "vibes" in row["reason"]
+
+
+def test_every_consumer_names_a_declared_artifact():
+    """The delegation has to point somewhere real: `rds-postgres` is current
+    only for as long as `floci` is, and the `floci` entry is what re-asks it."""
+    config = AF.load_config()
+    names = {e["name"] for e in config["artifacts"]}
+    delegating = [e for e in config["artifacts"]
+                  if e.get("decided_by") == AF.DECIDED_BY_CONSUMER]
+    assert delegating, "the shipped manifest is supposed to carry the postgres decision"
+    for entry in delegating:
+        assert entry.get("consumer") in names, entry["name"]
+
+
+def test_the_shipped_postgres_pin_is_decided_by_floci_not_by_postgres_releases():
+    """artifact-fresh-5b1750f240. Re-arming the upstream tag comparison on this
+    entry files a card recommending an image floci never pulls."""
+    entry = next(e for e in AF.load_config()["artifacts"] if e["name"] == "rds-postgres")
+    assert entry["pinned"] == "16.3-alpine"
+    assert entry["decided_by"] == AF.DECIDED_BY_CONSUMER
+    assert entry["consumer"] == "floci"
+
+
+# --------------------------------------------------------------------------- #
 # ordering — same SHAPE only
 # --------------------------------------------------------------------------- #
 def test_a_different_suffix_is_a_different_image_line():
