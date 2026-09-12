@@ -198,7 +198,12 @@ tools/kanban/seed_ahx_arr_clx.py        tools/workflow/coherence_checker.py
                                         tools/workflow/validated_commit.py
 ```
 
-Three censuses **declare `icdev/tools` a scan root** in their gate config —
+Not every one of those 17 *needs* the mirror, and the list is a candidate set
+rather than a verdict — `tools/ci/schema_drift_census.py`, for instance, names
+the path in order to **exclude** it (`SKIP_PARTS`). That is exactly why section
+(c) runs the gates for real instead of counting references.
+
+But three censuses **declare `icdev/tools` a scan root** in their gate config —
 `args/undeclared_import_gate.yaml`, `args/board_writer_gate.yaml`,
 `args/perfect_score_gate.yaml`. (`args/self_root_gate.yaml` deliberately scans
 `tools` only, and its own comment says why: the mirror "would double-count".)
