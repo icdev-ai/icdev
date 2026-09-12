@@ -443,3 +443,37 @@ def test_holding_the_pool_lock_does_not_block_an_add():
         assert pool_held is True
         with worktree_add_lock(timeout=1) as add_held:
             assert add_held is True
+
+
+# ── the failure cooldown ────────────────────────────────────────────────────
+def test_a_failed_refill_buys_silence_rather_than_retrying_every_cycle(repo, cfg):
+    """On an IDLE board `host_io` is UNMEASURABLE, so the quiet check correctly
+    allows a refill -- and without a cooldown the pool would burn 30s of disk per
+    cycle for a whole CI window, competing with the runs slowing it down."""
+    hot = dict(cfg, refill_failure_cooldown_seconds=600)
+    rep = P.refill(repo_root=repo, base="no-such-ref", cfg=hot, expect_manifest=False)
+    assert rep["failures"], rep
+    again = P.refill(repo_root=repo, base="main", cfg=hot, expect_manifest=False)
+    assert again["skipped"] == "failure_cooldown"
+    assert again["created"] == 0
+    assert again["cooldown_remaining_seconds"] > 0
+
+
+def test_the_cooldown_expires_and_is_not_a_backoff_ladder(repo, cfg):
+    """The next attempt after the cooldown is an ORDINARY attempt: no doubling,
+    no retry budget. The dispatch path's no-retry rule is about a TASK's add;
+    this is the pool declining to spend."""
+    zero = dict(cfg, refill_failure_cooldown_seconds=0)
+    rep = P.refill(repo_root=repo, base="no-such-ref", cfg=zero, expect_manifest=False)
+    assert rep["failures"]
+    assert P.refill_cooldown_remaining(repo, zero) == 0.0
+    again = P.refill(repo_root=repo, base="main", cfg=zero, expect_manifest=False)
+    assert again["created"] == 1, again
+
+
+def test_an_unreadable_cooldown_stamp_holds_nothing_back(repo, cfg):
+    """Fail OPEN: a stamp that cannot be parsed must not freeze the pool."""
+    stamp = P.pool_root(repo) / P._FAILURE_STAMP
+    stamp.parent.mkdir(parents=True, exist_ok=True)
+    stamp.write_text("not-a-timestamp", encoding="utf-8")
+    assert P.refill_cooldown_remaining(repo, cfg) == 0.0

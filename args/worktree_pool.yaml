@@ -43,3 +43,12 @@ refill_requires_quiet: true
 # adding right now, and the pool must yield to real work rather than queue
 # behind it.
 refill_lock_wait_seconds: 5
+
+# Seconds of silence after a refill add FAILS. A refill add is killed at the same
+# 30s budget a dispatch add is, and the host is slow for MINUTES at a time -- on
+# an IDLE board `host_io` reports UNMEASURABLE (no dispatch add was recorded,
+# because no dispatch happened), so without this the pool would burn 30s of disk
+# per cycle for the whole CI window, competing with the runs that are slowing it
+# down. NOT a retry budget and NOT a backoff ladder: the next attempt after the
+# cooldown is an ordinary attempt.
+refill_failure_cooldown_seconds: 600

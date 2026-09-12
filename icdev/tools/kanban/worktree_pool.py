@@ -206,6 +206,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "entry_max_age_hours": 24,
     "refill_requires_quiet": True,
     "refill_lock_wait_seconds": 5,
+    "refill_failure_cooldown_seconds": 600,
 }
 
 _CONFIG_RELPATH = Path("args") / "worktree_pool.yaml"
@@ -680,6 +681,46 @@ def _create_entry(root: Path, base: str, expect_manifest: bool) -> Dict[str, Any
             "seconds": round(time.monotonic() - started, 2)}
 
 
+#: One line, one timestamp: when a refill add last FAILED. A file rather than an
+#: in-process variable because two dispatchers refill against one disk, and a
+#: cooldown only one of them can see is not a cooldown.
+_FAILURE_STAMP = ".last-refill-failure"
+
+
+def _record_refill_failure(root: Path) -> None:
+    try:
+        stamp = pool_root(root) / _FAILURE_STAMP
+        stamp.parent.mkdir(parents=True, exist_ok=True)
+        stamp.write_text(str(time.time()), encoding="utf-8")
+    except OSError:  # a stamp that cannot be written must not break a refill
+        logger.debug("worktree pool: could not record the refill failure stamp")
+
+
+def refill_cooldown_remaining(root: Path, cfg: Dict[str, Any]) -> float:
+    """Seconds left on the cooldown after a FAILED refill add. 0.0 when clear.
+
+    WHY THIS EXISTS, and it is a cost this card would otherwise have ADDED. A
+    refill add is killed at the same 30s budget a dispatch add is, and the host
+    is slow for MINUTES at a time. On an idle board `host_io` reports
+    UNMEASURABLE -- no dispatch add was recorded, because no dispatch happened --
+    so the quiet check correctly allows a refill, and without this the pool would
+    burn 30s of disk per cycle for the whole CI window, competing with the very
+    runs that are slowing it down. One failure buys ten minutes of silence.
+
+    NOT a retry budget and NOT a backoff ladder: the next attempt after the
+    cooldown is an ordinary attempt. The dispatch path's "no retry" rule is about
+    a task's add, and this is the pool declining to spend, not declining to work.
+    """
+    try:
+        raw = (pool_root(root) / _FAILURE_STAMP).read_text(encoding="utf-8")
+        last = float(raw.strip())
+    except (OSError, ValueError):
+        return 0.0  # no stamp, or an unreadable one: nothing is held back
+    cooldown = float(cfg.get("refill_failure_cooldown_seconds", 600))
+    remaining = (last + cooldown) - time.time()
+    return max(0.0, remaining)
+
+
 def quiet_check(cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """May the pool spend a checkout right now? `basis` says on what evidence."""
     cfg = cfg or load_config()
@@ -749,6 +790,11 @@ def refill(*, repo_root: Any = None, base: str = "origin/main",
             if want <= 0:
                 report["skipped"] = "at_target"
                 return report
+            cooling = refill_cooldown_remaining(root, cfg)
+            if cooling > 0:
+                report["skipped"] = "failure_cooldown"
+                report["cooldown_remaining_seconds"] = round(cooling, 1)
+                return report
             quiet = quiet_check(cfg)
             report["quiet_basis"] = quiet.get("basis")
             if not quiet["refill"]:
@@ -785,6 +831,7 @@ def refill(*, repo_root: Any = None, base: str = "origin/main",
                                pool_depth=len(healthy) + report["created"])
                 else:
                     report["failures"].append(made)
+                    _record_refill_failure(root)
                     _log_event("refill_failed", reason=made.get("reason"),
                                hex=made.get("hex"), seconds=made.get("seconds"),
                                pool_depth=len(healthy) + report["created"])

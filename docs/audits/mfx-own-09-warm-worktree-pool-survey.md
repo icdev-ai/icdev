@@ -114,6 +114,15 @@ runs an autonomous worker session for minutes.
   30 s budget and the same `checkout.workers=0` as a dispatch add, holding the
   same cross-process `worktree_add_lock` with a **5 s** wait — so it yields to a
   dispatch that is adding rather than queueing ahead of it.
+- **After a FAILED refill: ten minutes of silence.** A refill add is killed at
+  the same 30 s budget, and on an *idle* board `host_io` reports `UNMEASURABLE`
+  — no dispatch add was recorded because no dispatch happened — so the quiet
+  check correctly allows a refill. Without a cooldown the pool would burn 30 s of
+  disk per cycle for a whole CI window, competing with the very runs slowing it
+  down. That is a cost this card would otherwise have **added**, and the stamp is
+  a file under the pool root because two dispatchers refill against one disk and
+  a cooldown only one of them can see is not a cooldown. It is not a retry
+  budget and not a backoff ladder: the next attempt is an ordinary attempt.
 
 ## 7. The honesty rails, and how each is proven
 
