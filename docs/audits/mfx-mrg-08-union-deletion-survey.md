@@ -210,3 +210,33 @@ three-way engine are byte-identical, pinned by source hash in
 `--list-rules` still lists the same five rules and the same declarations; the
 `other_side_when_empty` DESCRIPTION changed, because a rung described as
 "universal" that is no longer universal is the drift this repo refuses.
+
+### One function changed, re-derived rather than asserted
+
+```
+$ python - <<'PY'
+import ast, subprocess
+old = subprocess.run(["git","show","origin/main:tools/kanban/union_resolver.py"],
+                     capture_output=True, text=True, encoding="utf-8").stdout
+new = open("tools/kanban/union_resolver.py", encoding="utf-8").read()
+def segs(src):
+    tree = ast.parse(src)
+    return {n.name: ast.get_source_segment(src, n)
+            for n in tree.body if isinstance(n, (ast.FunctionDef, ast.ClassDef))}
+a, b = segs(old), segs(new)
+assert set(a) == set(b)
+print("top-level defs/classes:", len(a),
+      "| CHANGED:", sorted(k for k in a if a[k] != b[k]))
+PY
+top-level defs/classes: 43 | CHANGED: ['_resolve_cluster']
+```
+
+Nothing was added or removed from the module's top level, and of its 43
+definitions exactly one differs. The only other bytes in the diff are two
+PROSE corrections — the module docstring's "an empty side always resolves to
+the other" bullet and the `RULE_DESCRIPTIONS` value — both of which the
+narrowing makes false, and leaving a false description is the drift this repo
+refuses. The rule functions themselves are pinned by hash in
+`tests/kanban/test_union_deletion_rung.py`, which is where the claim is
+checked on every CI run; this re-derivation is the whole-file version of the
+same claim and is recorded here because the gated shards cannot run it.
