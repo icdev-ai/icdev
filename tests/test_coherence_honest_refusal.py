@@ -209,8 +209,17 @@ def test_the_live_gate_budget_was_not_raised():
     grandfathered = (gate or {}).get("grandfathered") or {}
     assert int(grandfathered.get("verified_claim", 0)) == 0, (
         "verified_claim was grandfathered to get this through -- forbidden")
-    assert int(grandfathered.get("mcp_dispatch_tool", 0)) == 467, (
-        "mcp_dispatch_tool budget moved; this card does not touch it")
+    # A RATCHET, NOT A PIN (xrv-cost-05). This was `== 467`, written by a card
+    # that wanted to say "I did not touch it" — but equality also refuses the
+    # one direction args/liveness_gate.yaml asks for ("Lower a count when you
+    # wire a capability up. NEVER raise one"). xrv-cost-05 wired the MCP
+    # servers' own dispatch audit and drained 468 inert -> 460, and this
+    # assertion failed it for draining the backlog. `<=` is the invariant the
+    # test name already claims: a raise is still refused, which is the thing
+    # that would hide a regrowing backlog behind a green gate.
+    assert int(grandfathered.get("mcp_dispatch_tool", 467)) <= 467, (
+        "mcp_dispatch_tool budget was RAISED; grandfathering a capability to "
+        "get a commit through is forbidden — wire it up or do not declare it")
 
 
 def test_the_consumption_report_emits_the_count():

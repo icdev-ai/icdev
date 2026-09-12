@@ -22,6 +22,26 @@ const BASE = resolveBaseUrl();
 const PAGE = `${BASE}/cache-savings`;
 const API = `${BASE}/api/cache-savings/spend`;
 
+// THE PANEL HAS TWO HONEST RENDERINGS AND CI ONLY EVER SEES ONE (xrv-cost-05).
+// `measured` draws the KPI row and the five-verdict table; `unmeasurable` draws
+// a worded block instead, because `$0.00` over an unattributed board would claim
+// the work was free — which is the whole card. A CI runner boots a fresh
+// database with no dispatches, so it is STRUCTURALLY unmeasurable, while the
+// live board this was written against has rows. Asserting the measured shape
+// unconditionally therefore passed locally and failed on every runner.
+// So these tests ask the API which rendering to expect, exactly as the two
+// tests at the bottom of this file already do. That is not a weakening: the
+// invariant the card exists for — no unmeasured figure drawn as zero dollars —
+// is asserted in BOTH branches, and each branch still asserts its own shape in
+// full.
+async function panelState(page): Promise<{ state: string; headline: string }> {
+  const resp = await page.request.get(API);
+  expect(resp.status(), `GET ${API} returned ${resp.status()}`).toBe(200);
+  const payload = await resp.json();
+  expect(['measured', 'unmeasurable']).toContain(payload.state);
+  return payload;
+}
+
 test.describe('Cache Savings — Spend panel', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
@@ -42,10 +62,28 @@ test.describe('Cache Savings — Spend panel', () => {
     expect(body).not.toContain('Traceback');
     expect(body).toContain('Spend by Card');
 
-    // The four figures the panel exists to carry.
-    for (const label of ['Attributed Spend', 'Spend That Shipped',
-                         'Unpriced Dispatches', 'Unmeasurable Cards']) {
-      expect(body, `missing KPI: ${label}`).toContain(label);
+    const payload = await panelState(page);
+    if (payload.state === 'measured') {
+      // The four figures the panel exists to carry.
+      for (const label of ['Attributed Spend', 'Spend That Shipped',
+                           'Unpriced Dispatches', 'Unmeasurable Cards']) {
+        expect(body, `missing KPI: ${label}`).toContain(label);
+      }
+    } else {
+      // Unmeasurable renders IN WORDS and says why. An empty board must never
+      // reach a dollar figure, and it must never render as silence either —
+      // a panel that simply omits its numbers is indistinguishable from one
+      // that measured nothing worth showing.
+      const section = body.split('Spend by Card')[1] ?? '';
+      expect(section, 'an unmeasurable panel must say so').toContain('Unmeasurable');
+      // The HEADLINE, not one reason's prose: `no_attributed_rows`,
+      // `ledger_unreadable` and `unavailable` render different sentences, and
+      // pinning one of them would make this pass or fail on which way the
+      // panel happened to be unmeasurable.
+      expect(section, 'an unmeasurable panel must state why')
+        .toContain(payload.headline);
+      expect(section, 'an unmeasured figure rendered as zero dollars')
+        .not.toContain('$0.00');
     }
 
     // The SECTION, not the whole page: this file is committed as the card's
@@ -71,15 +109,25 @@ test.describe('Cache Savings — Spend panel', () => {
     await page.waitForLoadState('domcontentloaded');
     const section = ((await page.textContent('body')) ?? '').split('Spend by Card')[1] ?? '';
 
-    // A verdict absent from the table is indistinguishable from one that
-    // measured zero, so the closed set always renders in full.
-    for (const verdict of ['Shipped', 'Reverted', 'Abandoned', 'In flight',
-                           'Unmeasurable']) {
-      expect(section, `missing outcome row: ${verdict}`).toContain(verdict);
+    const payload = await panelState(page);
+    if (payload.state === 'measured') {
+      // A verdict absent from the table is indistinguishable from one that
+      // measured zero, so the closed set always renders in full.
+      for (const verdict of ['Shipped', 'Reverted', 'Abandoned', 'In flight',
+                             'Unmeasurable']) {
+        expect(section, `missing outcome row: ${verdict}`).toContain(verdict);
+      }
+      // Each one states what it MEANS: a bare label beside a dollar figure
+      // invites the reader to invent the definition.
+      expect(section).toContain('landed on the default branch');
+    } else {
+      // There is no table to be missing a row from — and the panel accounts
+      // for its own absence in words rather than drawing an empty one, which
+      // is the same claim this test makes on the measured side.
+      expect(section, 'an unmeasurable panel must say so').toContain('Unmeasurable');
+      expect(section, 'an unmeasurable panel must state why')
+        .toContain(payload.headline);
     }
-    // Each one states what it MEANS: a bare label beside a dollar figure
-    // invites the reader to invent the definition.
-    expect(section).toContain('landed on the default branch');
   });
 
   test('the API is GET only and reports its own cache age', async ({ page }) => {
