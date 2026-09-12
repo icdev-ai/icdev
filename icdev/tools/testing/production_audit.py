@@ -1542,6 +1542,52 @@ def check_migration_status() -> AuditCheck:
             pending = data.get("pending_count", data.get("pending", 0))
             if isinstance(pending, list):
                 pending = len(pending)
+
+            # `pending` is FILESYSTEM-SCOPED. From a checkout behind the default
+            # branch it is 0 while merged migrations sit unapplied, and this
+            # check used to read that as "All migrations applied" — then
+            # production_remediate auto-fixed PRF-001 with `--up`, which applied
+            # nothing and exited 0. Measured 2026-09-12 (task-det-12d839d263):
+            # pending 0 here, `migration_drift.py` reporting one pending on the
+            # same live PostgreSQL. `migrate.py --status` now reports the
+            # checkout's own drift; a `behind` verdict is the finding, and an
+            # `unmeasurable` one is NOT a pass, because nobody could check.
+            drift = data.get("checkout_drift") or {}
+            drift_state = drift.get("state")
+            if drift_state == "behind":
+                missing = drift.get("missing_count") or 0
+                names = ", ".join(
+                    m.get("name", m.get("version", "?"))
+                    for m in (drift.get("missing_here") or [])[:5]
+                )
+                return AuditCheck(
+                    check_id="PRF-001",
+                    check_name="DB Migration Status",
+                    category="performance",
+                    status="warn",
+                    severity="warning",
+                    message=(
+                        f"{pending} pending here, but this checkout is BEHIND "
+                        f"{drift.get('ref')} by {missing} migration(s) it cannot "
+                        f"see ({names}) — pending count is not a currency claim"
+                    ),
+                    details=data,
+                )
+            if drift_state == "unmeasurable":
+                return AuditCheck(
+                    check_id="PRF-001",
+                    check_name="DB Migration Status",
+                    category="performance",
+                    status="warn",
+                    severity="warning",
+                    message=(
+                        f"{pending} pending here; drift vs "
+                        f"{drift.get('ref')} unmeasurable "
+                        f"({drift.get('reason')}) — not a pass"
+                    ),
+                    details=data,
+                )
+
             ok = pending == 0
             return AuditCheck(
                 check_id="PRF-001",
