@@ -1831,7 +1831,7 @@ def write_target_paths(tool_name: str, tool_input: dict) -> List[str]:
     return []
 
 
-def _main_checkout(anchor: Path) -> Optional[Path]:
+def main_checkout(anchor: Path) -> Optional[Path]:
     """The main worktree's root, read from ``<anchor>/.git`` — no subprocess.
 
     ``tools.git.worktree_paths.canonical_repo_root`` answers the same question by
@@ -1858,6 +1858,14 @@ def _main_checkout(anchor: Path) -> Optional[Path]:
     except (OSError, ValueError, RuntimeError):
         return None
     return None
+
+
+#: Public since kpr-watch-19, which made this the one answer to "which
+#: checkout" for the mid-run message queue as well as for the write boundary:
+#: a watcher and a worktree-resident worker have to address ONE queue, and a
+#: second spelling of the question is how they came to disagree. The private
+#: name stays as an alias so no existing caller has to move.
+_main_checkout = main_checkout
 
 
 def sanctioned_write_roots(repo_root: Optional[Path] = None) -> Tuple[Path, ...]:
@@ -1891,7 +1899,7 @@ def sanctioned_write_roots(repo_root: Optional[Path] = None) -> Tuple[Path, ...]
 
     anchor = _resolve_root(repo_root)
     add(anchor)
-    add(_main_checkout(Path(anchor).resolve()))
+    add(main_checkout(Path(anchor).resolve()))
     add(tempfile.gettempdir())
     for var in ("TMPDIR", "TEMP", "TMP"):
         add(os.environ.get(var, "").strip())

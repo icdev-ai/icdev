@@ -89,6 +89,21 @@ def test_mutable_tags_are_declared_as_such():
             assert row["mutable_tag"] is True, f"{ref} is a mutable tag and must be flagged"
 
 
+def test_the_ec2_base_image_tag_is_declared_mutable():
+    """`:latest` is not the only mutable tag in this table (artifact-fresh-b5394142b3).
+
+    MEASURED 2026-09-12: `public.ecr.aws/amazonlinux/amazonlinux:2023` is a
+    ROLLING major-version tag. It moved from Amazon Linux 2023.12.20260831
+    (sha256:fb70bd54...) to 2023.12.20260909 (sha256:a0646b8b...) in the fortnight
+    after this table was measured, while the file said nothing about it -- so a
+    digest recorded here is a re-vendor signal the moment it drifts, exactly like
+    the two `:latest` rows, and it has to be DECLARED to be one.
+    """
+    row = next(r for r in ri.declared_images()
+               if r["ref"] == "public.ecr.aws/amazonlinux/amazonlinux:2023")
+    assert row["mutable_tag"] is True
+
+
 def test_the_ecs_workload_image_is_not_declared_as_a_runtime_base():
     """`alpine:3.19` was pulled during the measured run BY THE PROBE'S OWN TASK
     DEFINITION. It is a workload image, not a floci runtime base, and recording

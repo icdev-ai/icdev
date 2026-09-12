@@ -44,7 +44,16 @@ postgres@sha256:36ed71227ae36305d26382657c0b96cbaf298427b3f1eaeb10d77a6dea3eec41
 mysql@sha256:a532724022429812ec797c285c1b540a644c15e248579c6bfdf12a8fbaab4964
 
 # elasticache/redis -- valkey/valkey:8
-valkey/valkey@sha256:98c6217ccc2fe5e6c4b5dcd5c40eef4de2a68924e7ecef50d5a0a30b57dfaef6
+#   The tag is a CONSTANT inside floci 2.0.1, not a version this tree chose:
+#   the native binary contains exactly one valkey image string and
+#   EngineVersion is ignored (measured 2026-09-12 -- default, 7.1, 99.99 and
+#   Engine=valkey/EngineVersion=9 ALL started valkey/valkey:8). valkey 9 exists
+#   upstream and floci cannot be made to request it, so vendoring 9 instead of
+#   this line leaves EVERY ElastiCache path unvendored. DIGEST RE-MEASURED the
+#   same day: the tag moved off sha256:98c6217c... to the digest below, same
+#   engine (Valkey 8.1.10) either side -- a base-image rebuild, not an upgrade.
+#   See docs/audits/artifact-fresh-ee3339893b-elasticache-valkey-pin.md.
+valkey/valkey@sha256:3fbd2e3e4b6e85e046c1e7c215e8f79087bc0357789184305806664e320996f3
 
 # elasticache/memcached -- memcached:1.6
 memcached@sha256:75c93cc91e76853da7c029e74d6e8dbd44774dd3713c93be8cd1971ad26120a4
@@ -55,8 +64,15 @@ opensearchproject/opensearch@sha256:4ee82ecb35d837a6186c81aaa64c8a5bce71aa956edb
 # kafka -- redpandadata/redpanda:latest   # MUTABLE TAG upstream -- re-measure, never assume
 redpandadata/redpanda@sha256:468bd13a9f2bd24794cb7fddc867c767fb1008b9a07b297b89fde48c564d7d96
 
-# ec2 -- public.ecr.aws/amazonlinux/amazonlinux:2023
-public.ecr.aws/amazonlinux/amazonlinux@sha256:fb70bd54d4a849293bfef9785ce63aa1eac2557e0167af4f32f56286bd35d783
+# ec2 -- public.ecr.aws/amazonlinux/amazonlinux:2023   # ROLLING TAG upstream -- re-measure, never assume
+#   The tag is floci's OWN default: `defaultDockerImage` in its embedded AMI
+#   catalogue, which an unknown ImageId falls back to (measured 2026-09-12).
+#   Amazon Linux 2027 exists upstream and floci 2.0.1 cannot request it. But
+#   `2023` is a MAJOR-VERSION tag that upstream REBUILDS, so the digest moves
+#   without the tag moving: re-measured 2026-09-12 from AL 2023.12.20260831
+#   (sha256:fb70bd54...) to AL 2023.12.20260909 below. See
+#   docs/audits/artifact-fresh-b5394142b3-ec2-amazonlinux-pin.md.
+public.ecr.aws/amazonlinux/amazonlinux@sha256:a0646b8bd35abf5ca3ab94d8cdb5691b9024e19c357531eeefd0ac4762836438
 
 # eks -- rancher/k3s:latest   # MUTABLE TAG upstream -- re-measure, never assume
 rancher/k3s@sha256:5e0707cfd1239b358ef73f3254bc3eadc027dd30cd5ec6ca41e29e47652a1b8c
