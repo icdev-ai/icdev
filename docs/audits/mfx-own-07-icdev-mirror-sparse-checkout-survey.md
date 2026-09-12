@@ -40,9 +40,10 @@ python tools/ci/mirror_disk_readers.py --imports         # the blockers
 python -m tools.kanban.host_io --survey --days 7         # why timing cannot fix it
 ```
 
-The timing harness, the load generator and the gate runner are disposable
-scratch scripts, reproduced in full in the appendix rather than cited by a
-`.tmp/` path that will not exist tomorrow.
+The timing harness ran from a scratch directory outside the repo, so it is
+reproduced **in full** in the appendix rather than cited by a path that will
+not exist tomorrow. The load generator and the gate runner are described there
+too, in enough detail to rebuild.
 
 ---
 
@@ -422,11 +423,143 @@ is a strictly worse failure than a slow `git worktree add`.
 
 ## Appendix — the harness
 
-Rotated timing harness (`timing.py`), competing-add load generator
-(`load.py`), sparse gate runner (`sparse_gates.py`) and the paired control
-(`control_suite.py`) were run from a scratch directory outside the repo. Their
-substance is stated above in full: four arms, order rotated per trial, each arm
-timed end to end, cleanup between every trial, file and byte counts taken from
-a walk of the produced worktree with `.git` excluded. The one non-obvious
-detail worth carrying forward is the rotation itself — without it this survey
-would have reported a 5× speedup that does not exist.
+Run from a scratch directory outside the repo as
+`python timing.py origin/main <trials> <label>`. The one non-obvious detail
+worth carrying forward is the **rotation**: without it this survey would have
+reported a 5x speedup that does not exist.
+
+```python
+"""mfx-own-07: does skipping the icdev/ mirror make `git worktree add` cheaper?
+
+Interleaved arms so host drift is shared equally. Each arm is timed as the
+WHOLE cost of getting a usable worktree, not just the first git command --
+the sparse arms need three commands and a survey that timed only the first
+would be measuring a `--no-checkout` add.
+"""
+import json, os, shutil, stat, subprocess, sys, time
+from pathlib import Path
+
+REPO = Path(r"C:/AI/ICDev")
+BASE = sys.argv[1] if len(sys.argv) > 1 else "origin/main"
+TRIALS = int(sys.argv[2]) if len(sys.argv) > 2 else 3
+LABEL = sys.argv[3] if len(sys.argv) > 3 else "run"
+ROOT = Path(r"C:/Users/schuo/AppData/Local/Temp/icdev-worktrees/cli/mfx-own-07-scratch/trees")
+ROOT.mkdir(parents=True, exist_ok=True)
+CFG = ["-c", "checkout.workers=0"]
+
+
+def git(args, cwd=REPO, timeout=600):
+    return subprocess.run(["git", *args], cwd=str(cwd), capture_output=True,
+                          text=True, timeout=timeout)
+
+
+def onerr(fn, path, exc):
+    try:
+        os.chmod(path, stat.S_IWRITE); fn(path)
+    except Exception:
+        pass
+
+
+def cleanup(p: Path):
+    git(["worktree", "remove", "--force", str(p)])
+    if p.exists():
+        shutil.rmtree(p, onerror=onerr)
+    git(["worktree", "prune"])
+
+
+def count(p: Path):
+    n = b = 0
+    for dirpath, dirnames, filenames in os.walk(p):
+        if ".git" in dirnames:
+            dirnames.remove(".git")
+        for f in filenames:
+            try:
+                b += os.path.getsize(os.path.join(dirpath, f)); n += 1
+            except OSError:
+                pass
+    return n, b
+
+
+def arm_full(p):
+    t = time.monotonic()
+    r = git([*CFG, "worktree", "add", "--detach", str(p), BASE])
+    return time.monotonic() - t, r.returncode, [time.monotonic() - t]
+
+
+def _sparse(p, patterns):
+    marks = []
+    t = time.monotonic()
+    r = git([*CFG, "worktree", "add", "--no-checkout", "--detach", str(p), BASE])
+    marks.append(round(time.monotonic() - t, 3))
+    if r.returncode:
+        return time.monotonic() - t, r.returncode, marks
+    r = git(["sparse-checkout", "set", "--no-cone", *patterns], cwd=p)
+    marks.append(round(time.monotonic() - t, 3))
+    if r.returncode:
+        return time.monotonic() - t, r.returncode, marks + [r.stderr[:200]]
+    r = git([*CFG, "checkout"], cwd=p)
+    marks.append(round(time.monotonic() - t, 3))
+    return time.monotonic() - t, r.returncode, marks
+
+
+def arm_no_icdev_tools(p):
+    return _sparse(p, ["/*", "!/icdev/tools/"])
+
+
+def arm_no_icdev(p):
+    return _sparse(p, ["/*", "!/icdev/"])
+
+
+def arm_no_checkout(p):
+    t = time.monotonic()
+    r = git([*CFG, "worktree", "add", "--no-checkout", "--detach", str(p), BASE])
+    return time.monotonic() - t, r.returncode, [round(time.monotonic() - t, 3)]
+
+
+ARMS = [("full", arm_full),
+        ("sparse_no_icdev_tools", arm_no_icdev_tools),
+        ("sparse_no_icdev", arm_no_icdev),
+        ("no_checkout", arm_no_checkout)]
+
+rows = []
+for i in range(TRIALS):
+    # ROTATE the arm order every trial. The smoke run put `full` first and it
+    # read 24.9s against 4.9s for a sparse arm writing 73% of the files -- a
+    # non-linearity that order alone could explain (git's pack/object cache is
+    # cold on the first add of a run). Rotating means every arm takes the
+    # first slot equally often, so an order effect shows up as within-arm
+    # variance instead of hiding inside a between-arm difference.
+    order = ARMS[i % len(ARMS):] + ARMS[:i % len(ARMS)]
+    for name, fn in order:
+        p = ROOT / f"{LABEL}-{name}-{i}"
+        cleanup(p)
+        try:
+            dur, rc, marks = fn(p)
+            n, b = count(p) if rc == 0 else (None, None)
+            rows.append({"trial": i, "arm": name, "seconds": round(dur, 2), "rc": rc,
+                         "files": n, "bytes": b, "marks": marks,
+                         "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
+            print(json.dumps(rows[-1]), flush=True)
+        finally:
+            cleanup(p)
+
+out = Path(sys.argv[4]) if len(sys.argv) > 4 else Path(
+    r"C:/Users/schuo/AppData/Local/Temp/icdev-worktrees/cli/mfx-own-07-scratch/timing-%s.json" % LABEL)
+out.write_text(json.dumps(rows, indent=2), encoding="utf-8")
+print("WROTE", out)
+```
+
+**The load generator** (`load.py`) is a loop that repeatedly removes and re-adds
+a full `--detach` worktree of `origin/main` against the same disk, alternating
+between two paths and exiting when a `STOP` sentinel file appears. It
+deliberately does **not** take the `mfx-own-06` add lock: the point is the load
+a lock cannot remove.
+
+**The gate runner** (`sparse_gates.py`) builds the sparse worktree
+(`worktree add --no-checkout` -> `sparse-checkout set --no-cone '/*'
+'!/icdev/tools/'` -> `checkout`), then runs each command in the section (c)
+table with `cwd` set to that worktree, `PYTHONPATH` set to it, and
+`ICDEV_STORAGE_BACKEND=sqlite`, recording exit code and output. **The control**
+(`control_suite.py`) then runs `git sparse-checkout disable` in that same
+worktree and re-runs `pytest --co -q` over the same 706 targets, changing
+nothing else.
