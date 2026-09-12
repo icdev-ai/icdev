@@ -298,3 +298,23 @@ after that.
 - The card's quoted fingerprint `7e346f293fa08a08` is the `finding_id`; the
   `fingerprint` COLUMN reads `needed_a_human` and `detector` reads `recovery`
   (not `recovery_summary`). Query by `subject`.
+
+---
+
+## Postscript: `kpr-watch-19` landed
+
+The card this resolution filed at §1 — *nothing drains the resume queue on the
+executor that actually runs* — has since shipped. The queue now has a consumer
+on the `claude_cli` path (`PostToolUse` mid-run, `SessionStart` for the task's
+next session) and is anchored to the MAIN checkout, so a worktree no longer
+reports `unmeasured -- queue empty` for a message that is really there.
+
+* Derivation and measurements:
+  [kpr-watch-19-resume-delivery-derivation.md](kpr-watch-19-resume-delivery-derivation.md)
+* Card record: [../reference/cards/kpr-watch-19.md](../reference/cards/kpr-watch-19.md)
+
+**What it did NOT fix, and which bears on every future reading of this class:**
+910 of those 911 messages are addressed to tasks that are `done`, so the backlog
+can never drain by delivery — `pr_watcher` enqueues resumes for tasks it has no
+way to reach. That is a WRITE-side defect and is still open.
+

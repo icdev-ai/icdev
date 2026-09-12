@@ -189,6 +189,8 @@ AWS API contract, not its performance characteristics.
 
 - `mfx-own-09` — `git worktree add` is OFF the dispatch critical path -- a warm pool — `python -m tools.kanban.worktree_pool --status [--json]      # depth, each entry's health, refill verdict` — `docs/reference/cards/mfx-own-09.md`
 
+- `kpr-watch-19` — The resume queue now has a consumer on the executor that RUNS, and is ONE directory from every checkout — `python -m tools.ci.resume_delivery --survey` — `docs/reference/cards/kpr-watch-19.md`
+
 - `xrv-cost-05` — Every `tools/call` Claude Code makes leaves ONE audit row — `python -m tools.awareness.capability_consumption --class mcp_dispatch_tool --json  # extra.by_caller_source` — `docs/reference/cards/xrv-cost-05.md`
 
 ### Python Dependencies

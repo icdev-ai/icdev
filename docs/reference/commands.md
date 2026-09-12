@@ -9708,4 +9708,5 @@ commands, its measurements and its refusals.
 | `flx-twin-01` | A twin over the EMULATOR, read through the broker, marked `emulated` | `from tools.twin_core.registry import TwinRegistry` | [flx-twin-01.md](cards/flx-twin-01.md) |
 | `xrv` | Nine external repos reviewed; eight gaps were OUR OWN unconsumed capabilities | `python -m tools.cost.session_cost --survey --by-verdict --json` | [xrv.md](cards/xrv.md) |
 | `mfx-own-09` | A WARM worktree, pre-created while the host is quiet, claimed in ~1.3s | `python -m tools.kanban.worktree_pool --status [--json]` | [mfx-own-09.md](cards/mfx-own-09.md) |
+| `kpr-watch-19` | The resume queue has a consumer on the executor that RUNS, and is ONE directory from every checkout | `python -m tools.ci.resume_delivery --survey` | [kpr-watch-19.md](cards/kpr-watch-19.md) |
 | `xrv-cost-05` | Every `tools/call` Claude Code makes leaves ONE audit row, counted apart from Studio's | `python -m tools.awareness.capability_consumption --class mcp_dispatch_tool --json` | [xrv-cost-05.md](cards/xrv-cost-05.md) |
