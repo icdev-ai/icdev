@@ -203,6 +203,80 @@ This is a card against the DISPOSITION SURFACE, not against
 later merge is exactly right here, because the merge came after a human's fix.
 Neither the detector, its threshold nor its window was touched.
 
+#### Resolved 2026-09-12 — "landed" has TWO doors
+
+The first half of `card_disposition`'s conjunction asked one question —
+*is there a `pr_watcher.merge` row newer than the newest `pr_watcher.escalate`
+row?* — and only the watcher writes one. It now asks whether the subject
+**landed on main** after that escalation, which either row can answer:
+
+- `pr_watcher.merge` newer than the escalation (unchanged, `landed_via:
+  pr_watcher.merge`), **or**
+- a merge-LEDGER row newer than the escalation — `tools/idp/delivery_events`'
+  `change landed on main: <task-id>`, whose payload carries
+  `source: kanban_merge_ledger` (`landed_via: merge_ledger`).
+
+Four properties were kept deliberately identical to the watcher half, because
+each one is the thing that stops the widening from becoming an inflation:
+
+1. **The ordering discipline.** A landing OLDER than the newest escalation
+   reports `landed: False`, exactly as a pre-escalation `pr_watcher.merge`
+   does — the watcher escalated about something that came after. Measured: all
+   nine subjects land AFTER their escalation, so nothing rests on this being
+   relaxed.
+2. **The conjunction.** A landing alone is still not a record; the subject must
+   also be CLOSED on the board, read through the one `CLOSED_STATUSES`
+   declaration.
+3. **Every unknown keeps the card.** No escalation to order against →
+   `measurable: False` with `landed: None`, never `False`. An unreadable
+   ledger degrades to `[]`, which means "no landing", which keeps the card.
+4. **`source`, not `event_type`.** `deployment_initiated` is a shared
+   vocabulary word any writer may use. The action prefix selects the rows and
+   the payload's `source` confirms them, so another writer borrowing the prefix
+   is not counted as a landing.
+
+**Replay of the shipped predicate over all 42 lifetime findings**
+(`python -m tools.kanban.detector_findings --records`, 55,130 watcher rows /
+3,380 ledger rows):
+
+| | record | card | % record |
+|---|---|---|---|
+| before | 32 | 10 | 76.2% |
+| after | **41** | **1** | **97.6%** |
+
+The 32 pre-existing records are unchanged and all still read
+`landed_via: pr_watcher.merge` — the widening ADDED nine and re-classified
+none. Per subject:
+
+| subject | board | watcher merges | ledger rows | before | after | via |
+|---|---|---|---|---|---|---|
+| `qa-fail-5cacee65f1d03c8c` | done | 0 | 1 | card | record | merge_ledger |
+| `fni-api-01` | done | 0 | 1 | card | record | merge_ledger |
+| `mfx-mrg-01` | done | 0 | 1 | card | record | merge_ledger |
+| `mfx-sib-03` | done | 0 | 1 | card | record | merge_ledger |
+| `kpr-stale-05` | done | 0 | 1 | card | record | merge_ledger |
+| `rmf-ui-13` | done | 0 | 1 | card | record | merge_ledger |
+| `qa-fail-b2537204d4a9b6dd` | done | 0 | 1 | card | record | merge_ledger |
+| `qa-fail-84f92cebcf4fe498` | done | 0 | 1 | card | record | merge_ledger |
+| `task-det-920b4f1072` | done | 0 | 1 | card | record | merge_ledger |
+| `xrv-cost-05` | pr_opened | 0 | 0 | card | **card** | — |
+
+`xrv-cost-05` is the negative control and did not flip: it has no ledger row
+and is still `pr_opened`, and its reason now names BOTH doors — *"the
+escalation is the newer of the two rows; the merge ledger records no landing
+for xrv-cost-05 after the escalation at …"* — so "no watcher merge" and "no
+landing at all" stay distinguishable to a reader.
+
+The one remaining `card` is the honest denominator. 97.6% is not a perfect
+score and the surface is not claiming one; it is claiming that the single card
+left is the single subject with work still in it.
+
+`git diff` touches `tools/kanban/detector_findings.py` and its test only —
+never `summarize_recovery`, never an `args/` threshold, never `window_hours`
+(the four diff lines naming it are all inside the new `merge_ledger_rows`,
+which takes it for the same LIFETIME-by-default reason `watcher_outcome_rows`
+does).
+
 ## Why this card is closed, and how
 
 Ordinary PR, no `hold` label, no `scheduled_at` deferral — the recipe confirmed
