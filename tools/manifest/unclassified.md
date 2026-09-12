@@ -18,3 +18,4 @@
 | Auto-added constants.py | tools/infra_canvas/constants.py | (auto-added by remediation; update description) | --json | stdout |
 | Auto-added digest_service.py | tools/notification_service/digest_service.py | (auto-added by remediation; update description) | --json | stdout |
 | Auto-added controller.py | tools/ace/controller.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added prebuild_bootstrap.py | tools/installer/prebuild_bootstrap.py | (auto-added by remediation; update description) | --json | stdout |
