@@ -80,14 +80,29 @@
 # never a bump -- and the `floci` entry below is what re-asks that question.
 #
 # NOT CONVERTED HERE, AND NAMED RATHER THAN IMPLIED. The same argument plainly
-# reaches the other ten runtime entries, and five of them are reported `behind`
-# today against releases floci does not request -- `mysql:8.0.36 -> 26.7.0`,
-# `registry:2 -> 3`, `amazonlinux:2023 -> 2027`, `valkey:8 -> 9`,
-# `opensearch:2.19.5 -> 3.8.0`. They are NOT flipped here, because this card
-# measured the postgres path and adding a row nobody observed is the
-# fabrication vendor/images/README.md is written against. Each arrives with its
-# own card; drive the emulator for that service, read the ImageCacheService log
-# line, and convert it with the measurement written down.
+# reaches the other runtime entries, and four of them are reported `behind`
+# today against releases floci does not request -- `registry:2 -> 3`,
+# `amazonlinux:2023 -> 2027`, `valkey:8 -> 9`, `opensearch:2.19.5 -> 3.8.0`.
+# They are NOT flipped here, because each card measures ONE path and adding a
+# row nobody observed is the fabrication vendor/images/README.md is written
+# against. Each arrives with its own card; drive the emulator for that service,
+# read the ImageCacheService log line, and convert it with the measurement
+# written down.
+#
+# `rds-mysql` WAS converted, by artifact-fresh-da63da118f, on its own
+# measurement of the mysql path -- MEASURED 2026-09-12 against floci 2.0.1:
+#
+#     CreateDBInstance(Engine=mysql)           -> EngineVersion 8.0.36, and the
+#       floci log: `ImageCacheService  Image already present locally,
+#       skipping pull: mysql:8.0.36`; the container it started ran
+#       `mysql:8.0.36` at the digest this tree pins.
+#     CreateDBInstance(EngineVersion="8.0.99") -> `Pulling image: mysql:8.0.99`,
+#       then a 404 from the registry.
+#
+# So the mysql ref is `mysql:<EngineVersion>` with NO suffix -- the postgres
+# `-alpine` is not a house style, it is per-engine -- and `26.7.0` is a tag
+# floci asks for only if a caller names EngineVersion=26.7.0. The shipped
+# binary's only mysql image string is `mysql:8.0`.
 #
 # ONE OF THOSE FIVE HAS SINCE ARRIVED, the way that paragraph asks.
 # `ec2-amazonlinux` was measured on 2026-09-12 (artifact-fresh-b5394142b3) by
@@ -233,12 +248,22 @@ artifacts:
       rule args/floci_runtime_images.yaml already states for Lambda runtimes,
       one level finer.
 
+  # DELIBERATELY KEPT at floci 2.0.1's default mysql engine version. See
+  # "A TAG SOMEBODY ELSE CHOOSES" above for the measurement; the decision
+  # record is docs/audits/artifact-fresh-da63da118f-rds-mysql-pin.md.
   - name: rds-mysql
     kind: image
     ref: mysql
     pinned: "8.0.36"
     pin_source: "vendor/images/images-floci-runtime.txt"
     upstream: dockerhub
+    decided_by: consumer
+    consumer: floci
+    note: >-
+      floci builds the ref as `mysql:<EngineVersion>` -- no suffix, unlike the
+      postgres line -- and defaults to 8.0.36 (MEASURED 2026-09-12,
+      artifact-fresh-da63da118f). `Engine=mariadb` is a DIFFERENT repository,
+      `mariadb:<EngineVersion>`, and is not vendored by this entry.
 
   # DELIBERATELY KEPT at 8. Unlike rds-postgres this is not floci's default for
   # a knob a caller can turn -- it is a CONSTANT in the emulator, and no API
