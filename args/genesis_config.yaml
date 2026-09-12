@@ -894,7 +894,14 @@ reflexes:
   evolve:
     enabled: true
     risk_tier: orange
-    schedule: "daily 21:30"
+    # MORNING WINDOW (07:00-09:00 ET), so a self-improvement run lands while
+    # somebody is awake to read what it did. Schedules here are UTC -- see
+    # tools/daemon/base.py::parse_schedule, "All times are UTC" -- so these are
+    # the EDT (UTC-4) equivalents and shift an hour earlier in ET when the US
+    # leaves DST in November (11:00 UTC becomes 06:00 ET). Chosen over a
+    # DST-aware scheduler because nothing here parses zones and a wrong zone is
+    # worse than a predictable one-hour drift.
+    schedule: "daily 12:00"   # 08:00 ET
     description: "Autoresearch-style: pick worst tool → improve → test → keep/discard"
     success_metric:
       name: test_pass_and_complexity
@@ -993,7 +1000,14 @@ reflexes:
   experiment:
     enabled: true
     risk_tier: orange
-    schedule: "daily 15:00"
+    # MORNING WINDOW (07:00-09:00 ET), so a self-improvement run lands while
+    # somebody is awake to read what it did. Schedules here are UTC -- see
+    # tools/daemon/base.py::parse_schedule, "All times are UTC" -- so these are
+    # the EDT (UTC-4) equivalents and shift an hour earlier in ET when the US
+    # leaves DST in November (11:00 UTC becomes 06:00 ET). Chosen over a
+    # DST-aware scheduler because nothing here parses zones and a wrong zone is
+    # worse than a predictable one-hour drift.
+    schedule: "daily 11:00"   # 07:00 ET
     description: "Bayesian Autoresearch — Karpathy-loop autonomous experiments"
     success_metric:
       name: experiments_accepted_pct
@@ -1305,7 +1319,18 @@ reflexes:
     timeout_seconds: 600     # heavy reflex — harvest→synth→novelty-gate→score→CoD→SIPA→seed
     enabled: true
     risk_tier: green
-    schedule: "every 12h"
+    # MORNING WINDOW (07:00-09:00 ET), so a self-improvement run lands while
+    # somebody is awake to read what it did. Schedules here are UTC -- see
+    # tools/daemon/base.py::parse_schedule, "All times are UTC" -- so these are
+    # the EDT (UTC-4) equivalents and shift an hour earlier in ET when the US
+    # leaves DST in November (11:00 UTC becomes 06:00 ET). Chosen over a
+    # DST-aware scheduler because nothing here parses zones and a wrong zone is
+    # worse than a predictable one-hour drift.
+    # WAS `every 12h` (twice a day). A window cannot be expressed as an
+    # interval, so this becomes ONCE daily -- a deliberate halving of cadence,
+    # not an oversight. interval_seconds below is now unused by the schedule
+    # and is left as the documented cooldown floor.
+    schedule: "daily 13:00"   # 09:00 ET
     interval_seconds: 43200  # 12 hours — a full ACF cycle is expensive (LLM synth + scoring)
     cooldown_minutes: 120
     description: "ACF: run one Autonomous Capability Foundry cycle on cadence; clean no-op when ICDEV_FOUNDRY_ENABLED is off. Delegates to tools.foundry.engine.run_cycle (novelty gate + CoD go/no-go + SIPA self-vet + kanban seed)"
