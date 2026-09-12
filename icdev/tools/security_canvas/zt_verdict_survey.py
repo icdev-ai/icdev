@@ -69,7 +69,16 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from icdev.core.paths import repo_root
+# sys.path BOOTSTRAP first, so `python tools/security_canvas/zt_verdict_survey.py`
+# reaches main() (kax-conflict-04); then the ONE root resolver. Without it the
+# first-party import above dies with ModuleNotFoundError before argparse runs on
+# any checkout where icdev-core is not already importable. Depth is 3: this file
+# is <repo>/tools/security_canvas/<name>.py.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from icdev.core.paths import repo_root  # noqa: E402
 
 BASE_DIR = repo_root(__file__)
 
