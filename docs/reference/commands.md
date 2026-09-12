@@ -8106,6 +8106,31 @@ python -m tools.kanban.detector_findings --dry-run       # run the detectors; wr
 python -m tools.kanban.detector_findings --list          # browse the projection (--detector, --status active|cleared)
 python -m tools.kanban.detector_findings --stats         # per-detector denominator: never_ran | unmeasurable | clean | findings
 python tools/genesis/daemon.py --reflex detector_findings_reflex   # the 6h reflex, once, through the daemon
+
+# Is that detector card still WORK, at the moment it is promoted? (autonomy-act-07)
+python -m tools.kanban.promotion_gate --check task-det-04931fe8de   # re-derive one card's verdict
+python -m tools.kanban.promotion_gate --records --json              # every OPEN detector card's verdict
+python -m tools.kanban.promotion_gate --survey --json               # replay: what it would have withheld, and the control
+# card_disposition decides CARD-or-RECORD ONCE, AT SEEDING, and nothing asks again.
+# MEASURED 2026-09-12: three artifact-freshness cards were RIGHT when seeded at
+# ~17:00; two of their subjects merged at 20:58 and 21:22; all three were promoted
+# and dispatched at 21:34 and force-closed by hand at 21:35. Three worker sessions
+# that could not go RED.
+# This RE-DERIVES the disposition at the promotion, from the same primary rows and
+# through the same functions (merge_after_escalation / ledger_landing /
+# card_disposition), never from a stored verdict — an ordering verdict goes stale
+# the moment either row's successor is written. Asked at three doors: the dashboard
+# `promote-all` move out of `suggested`, promote_backlog_to_scheduled, and
+# _get_due_tasks (the last stop before a token is spent).
+# THE DETECTOR IS UNTOUCHED: no threshold, no window, no _upsert_finding, no
+# seen_count, no _clear_missing. A withheld card's finding is KEPT and still shows
+# in `detector_findings --records`.
+# EVERY UNKNOWN DISPATCHES — unreadable order, subject off the board, subject in
+# flight, unreadable board, absent projection, any raised exception.
+# REPLAYED before arming over all 40 promoted detector cards, point-in-time: 18
+# card->record (the new withholds), 13 record->record, 9 card->card; control — 18/18
+# of those 18 subjects independently confirmed on origin/main, 0 withheld wrongly.
+# ICDEV_PROMOTION_GATE=report records the verdict and withholds nothing; =off skips it.
 # THE DEFECT. status_churn (kpr-watch-11), born_red_survey (rem-hyg-14) and
 # recovery_summary (rem-hyg-16) were each built because a human found the defect
 # BY HAND, and each then sat imported by NOBODY on any runtime path — the

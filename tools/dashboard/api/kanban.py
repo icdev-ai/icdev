@@ -1391,6 +1391,19 @@ def bulk_move_tasks():
         conn.close()
 
 
+def _withheld_detail(withheld: dict) -> list:
+    """One line per card the promotion gate held back (autonomy-act-07).
+
+    SURFACED, never silently dropped: the caller clicked "Promote" and a card
+    did not move, so the response says which one and why.
+    """
+    return [
+        {"task_id": tid, "subject": v.get("subject"),
+         "finding_id": v.get("finding_id"), "reason": v.get("reason")}
+        for tid, v in sorted((withheld or {}).items())
+    ]
+
+
 @kanban_api.route("/tasks/promote-all", methods=["POST"])
 def promote_all_suggested():
     """Move suggested cards to backlog, with optional value/confidence/rule gates.
@@ -1470,11 +1483,29 @@ def promote_all_suggested():
                     continue
             eligible_ids.append(t["id"])
 
+        # The door OUT of `suggested` (autonomy-act-07). A detector card whose
+        # record-not-card disposition has BECOME `record` since it was seeded —
+        # its subject landed and closed while it sat here — is withheld, because
+        # a worker sent against delivered work cannot go RED. Re-derived from
+        # primary data at this moment, never a stored verdict; every unknown
+        # promotes. The finding is untouched and still shows in
+        # `detector_findings --records`.
+        withheld_map: dict = {}
+        try:
+            from tools.kanban.promotion_gate import filter_promotable
+
+            eligible_ids, withheld_map = filter_promotable(
+                eligible_ids, conn=conn, door="dashboard.promote_all_suggested")
+        except Exception as exc:  # noqa: BLE001 — a gate that cannot see must not refuse
+            current_app.logger.warning("promote-all: promotion gate skipped: %s", exc)
+
         count = len(eligible_ids)
         if count == 0:
             return jsonify({
                 "promoted": 0,
                 "filtered": filtered,
+                "withheld": len(withheld_map),
+                "withheld_detail": _withheld_detail(withheld_map),
                 "message": "No suggested cards matched the promotion gate",
             })
 
@@ -1494,7 +1525,10 @@ def promote_all_suggested():
             )
         except Exception:
             pass
-        return jsonify({"promoted": count, "filtered": filtered, "new_status": "backlog"})
+        return jsonify({"promoted": count, "filtered": filtered,
+                        "withheld": len(withheld_map),
+                        "withheld_detail": _withheld_detail(withheld_map),
+                        "new_status": "backlog"})
     except Exception as exc:
         return jsonify({"error": str(exc)[:200]}), 500
     finally:
