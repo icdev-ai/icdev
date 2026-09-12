@@ -1,0 +1,80 @@
+# [TEMPLATE: CUI // SP-CTI]
+# NOVA pattern confidence — xrv-shield-02
+#
+# `tools/nova/skill_generator.py::analyze_patterns` used to return a RAW FREQUENCY
+# with a `min_count=2` floor and no confidence at all, and
+# `tools/agent_runtime/skills_lifecycle.py::maybe_propose_from_session` queued a
+# NOVA proposal with nothing to refuse on. The precedent already in the tree is
+# `tools/registry/learning_collector.py`: `child_learned_behaviors.confidence` is
+# `REAL CHECK(0..1)`, clamped, with an injection scan that BLOCKS at 0.7 and
+# DEMOTES at 0.5. These weights are that precedent, declared.
+#
+# THE FORMULA LIVES IN ONE FUNCTION — `skill_generator.pattern_confidence()`.
+# Do not re-derive it anywhere else; a second copy is how two surfaces come to
+# disagree about the same pattern.
+---
+
+pattern_confidence:
+  # Weights MUST sum to 1.0 — `pattern_confidence()` refuses a set that does not
+  # (a silently renormalised weight set is a formula nobody declared).
+  weights:
+    frequency: 0.40          # how often the pattern was seen at all
+    distinct_sessions: 0.35  # how many DIFFERENT sessions saw it
+    recency: 0.25            # how long ago the newest occurrence was
+
+  # The frequency term reaches 1.0 at this count and is linear below it. A
+  # saturation rather than an unbounded count: 400 occurrences in one session is
+  # not 100x the evidence of 4 across four sessions. REPETITION IS NOT
+  # CORROBORATION — that is what the distinct_sessions term is for.
+  frequency_saturation_count: 8
+
+  # The distinct-session term reaches 1.0 at this many DISTINCT `session_ref`s.
+  distinct_sessions_saturation: 4
+
+  # A pattern measured in EXACTLY ONE session cannot exceed this, whatever its
+  # frequency. Without it a session that ran one command 40 times scored 0.7375
+  # and cleared `propose.min_confidence` on repetition alone — the thing the
+  # distinct_sessions term exists to refuse. A ceiling rather than a re-weighting
+  # because every alternative weighting that refuses 40-in-one-session also
+  # refuses 5-across-5-sessions-this-week, which is the case worth proposing.
+  # Applied ONLY when the session count is MEASURED and equals 1: an unmeasured
+  # count is not known to be one session, and it already scores below this.
+  single_session_ceiling: 0.65
+
+  # What the distinct-session term scores when session attribution CANNOT be
+  # measured (the `memory_entries.session_ref` column is absent, or every row
+  # carrying the pattern has a NULL one). ZERO, on purpose: an unattributable
+  # occurrence is not corroboration, and crediting it would let one chatty
+  # session manufacture a confident pattern. The result carries
+  # `confidence_basis: count_recency_only` so a reader can tell a measured 0
+  # from an unmeasured one.
+  unmeasured_session_credit: 0.0
+
+  recency:
+    # Half-life key looked up in args/memory_config.yaml -> time_decay.half_lives.
+    # `session` is deliberately NOT a key there, so this falls through to that
+    # file's declared `default_half_life` (30 days). A repeated COMMAND is not a
+    # transient `event` (half-life 7) — it is evidence about how the platform is
+    # actually driven, and it stays informative for about a month.
+    half_life_key: session
+    # Floor, mirroring memory_config's `min_decay_factor`: an ancient pattern
+    # decays towards irrelevance without being zeroed outright.
+    min_decay_factor: 0.01
+
+  # Same spelling as args/evolution_config.yaml -> evaluation.injection_scan,
+  # which is what learning_collector reads. Kept here rather than imported so a
+  # NOVA deployment can tighten one without moving the other, and kept
+  # IDENTICAL in value so the two surfaces agree today.
+  injection_scan:
+    # A hit at or above this confidence is a REJECTION — the pattern scores 0.0.
+    block_confidence: 0.7
+    # A hit at or above this confidence CAPS the pattern at `demote_ceiling`.
+    demote_confidence: 0.5
+    demote_ceiling: 0.5
+
+propose:
+  # `maybe_propose_from_session` refuses a candidate below this. 0.7 is
+  # learning_collector's own block threshold, reused: the bar for "this is
+  # corroborated enough to queue for a human" is the bar for "this is confident
+  # enough to act on".
+  min_confidence: 0.7

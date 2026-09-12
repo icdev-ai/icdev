@@ -45,6 +45,10 @@ _AUTO_PREFIX = "icdev-auto-"
 _PROPOSALS_ENV = "ICDEV_SAG_SKILL_PROPOSALS"  # gate the automatic post-session hook
 _DEFAULT_ARCHIVE_DAYS = 30
 _MIN_NOVEL_TURNS = 2
+#: Used ONLY when NOVA's scorer cannot be imported at all. It matches
+#: args/nova_config.yaml -> propose.min_confidence, so an unreachable
+#: generator refuses on the same bar rather than a softer one.
+_FALLBACK_MIN_CONFIDENCE = 0.7
 
 
 def proposals_enabled() -> bool:
@@ -523,6 +527,80 @@ def _archive_skill(name: str, skill_dir: Optional[str], *, conn=None) -> None:
 # ---------------------------------------------------------------------------
 # Post-session hook
 # ---------------------------------------------------------------------------
+def screen_candidates(patterns, *, min_confidence=None) -> dict:
+    """Screen candidate patterns against NOVA's confidence bar.
+
+    The ONE screening seam. It calls `skill_generator.score_candidate` — NOVA's
+    own scorer, reading NOVA's own evidence — rather than re-deriving a score
+    here; a second formula is how two surfaces come to disagree about the same
+    pattern. There is deliberately no arithmetic in this file.
+
+    A candidate is ACCEPTED only when its confidence is measured AND at or above
+    the bar. ``confidence: None`` is a REFUSAL with reason ``unmeasurable``,
+    never an approval: nothing corroborated it, and an unscored candidate must
+    not ride through a gate that exists to score.
+
+    Returns:
+        ``{accepted, refused, refused_count, min_confidence, scored}`` — every
+        refusal carries the evidence it was refused on (count, sessions,
+        confidence, basis), because a bare "refused" teaches nobody anything.
+    """
+    try:
+        # NOVA's scorer, lazily — a missing generator must annotate, not raise
+        # (this module's contract), the same idiom `propose_skill` uses.
+        from tools.nova.skill_generator import propose_min_confidence, score_candidate
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("skills_lifecycle: NOVA scorer unavailable: %s", exc)
+        propose_min_confidence, score_candidate = None, None
+
+    if min_confidence is not None:
+        bar = float(min_confidence)
+    elif propose_min_confidence is not None:
+        bar = propose_min_confidence()
+    else:
+        bar = _FALLBACK_MIN_CONFIDENCE
+
+    accepted, refused = [], []
+    for pattern in patterns:
+        scored = None
+        if score_candidate is not None:
+            try:
+                scored = score_candidate(pattern)
+            except Exception as exc:  # noqa: BLE001 — scoring is a layer
+                logger.debug("skills_lifecycle: scoring %r failed: %s", pattern, exc)
+        if scored is None:
+            scored = {
+                "pattern": pattern,
+                "count": 0,
+                "sessions": None,
+                "confidence": None,
+                "basis": "scorer_unavailable",
+            }
+        conf = scored.get("confidence")
+        entry = {
+            "pattern": pattern,
+            "count": scored.get("count"),
+            "sessions": scored.get("sessions"),
+            "confidence": conf,
+            "basis": scored.get("basis"),
+        }
+        if conf is None:
+            entry["reason"] = "unmeasurable"
+            refused.append(entry)
+        elif conf < bar:
+            entry["reason"] = "below_min_confidence"
+            refused.append(entry)
+        else:
+            accepted.append(entry)
+    return {
+        "accepted": accepted,
+        "refused": refused,
+        "refused_count": len(refused),
+        "min_confidence": bar,
+        "scored": len(accepted) + len(refused),
+    }
+
+
 def maybe_propose_from_session(runtime: Any, *, force: bool = False) -> dict[str, Any]:
     """Best-effort post-session skill proposal (env-gated unless ``force``).
 
@@ -530,8 +608,18 @@ def maybe_propose_from_session(runtime: Any, *, force: bool = False) -> dict[str
     ``ICDEV_SAG_SKILL_PROPOSALS`` (falling back to
     ``subsystems.skill_proposals.enabled`` in ``args/agent_runtime.yaml``) so it
     is silent by default. Derives a candidate pattern from the session title (a
-    novel, tool-solved task), novelty-gates it, and queues a NOVA proposal.
-    Never raises.
+    novel, tool-solved task), novelty-gates it, SCORES it, and queues a NOVA
+    proposal only if the score clears the bar. Never raises.
+
+    xrv-shield-02: the candidate is screened through :func:`screen_candidates`
+    against ``propose.min_confidence`` in ``args/nova_config.yaml`` (default 0.7
+    — the bar `learning_collector` blocks at). A candidate history holds no
+    evidence for is REFUSED as ``unmeasurable``, not proposed: queueing an
+    uncorroborated title spends a human's review on something that happened
+    once. Every refusal is REPORTED — ``refused`` (how many) and ``refusals``
+    (which, with the occurrence count and session spread each was refused on) —
+    because a gate whose refusals are invisible is indistinguishable from one
+    that never fires.
     """
     if not force and not proposals_enabled():
         return {"proposed": False, "reason": "disabled"}
@@ -544,11 +632,27 @@ def maybe_propose_from_session(runtime: Any, *, force: bool = False) -> dict[str
         title = (getattr(session, "title", "") or "").strip()
         if not title or title.lower() in ("untitled session", "untitled"):
             return {"proposed": False, "reason": "no descriptive title"}
-        return propose_skill(
+        screen = screen_candidates([title])
+        if not screen["accepted"]:
+            return {
+                "proposed": False,
+                "reason": "below_confidence",
+                "refused": screen["refused_count"],
+                "refusals": screen["refused"],
+                "min_confidence": screen["min_confidence"],
+            }
+        winner = screen["accepted"][0]
+        result = propose_skill(
             title,
             session_id=getattr(session, "context_id", ""),
             model=getattr(runtime, "llm_function", ""),
         )
+        if isinstance(result, dict):
+            result.setdefault("confidence", winner["confidence"])
+            result.setdefault("confidence_basis", winner["basis"])
+            result.setdefault("refused", screen["refused_count"])
+            result.setdefault("min_confidence", screen["min_confidence"])
+        return result
     except Exception as exc:  # noqa: BLE001 — hook is best-effort
         logger.debug("skills_lifecycle: post-session hook failed: %s", exc)
         return {"proposed": False, "error": str(exc)}
