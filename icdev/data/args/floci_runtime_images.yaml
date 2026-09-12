@@ -150,7 +150,15 @@ images:
     digest: "sha256:4ee82ecb35d837a6186c81aaa64c8a5bce71aa956edbd87f1f684ab56af52c44"
     service: opensearch
     variant: null
-    note: "Largest of the set. Creating a domain took 115s on the measured host."
+    note: >-
+      Largest of the set. Creating a domain took 115s on the measured host.
+      The ref is floci's DEFAULT EngineVersion (`OpenSearch_2.19`), taken from a
+      CLOSED table floci will enumerate via `list_versions()`; the table tops
+      out at `OpenSearch_3.6` -> `opensearch:3.6.0` and `OpenSearch_3.8` is
+      refused with a ValidationException (measured 2026-09-12,
+      artifact-fresh-a7486018c7). A deployment declaring another supported
+      version must vendor that tag too -- the `variant` rule below, one level
+      finer, exactly as RDS states for EngineVersion.
 
   - ref: "redpandadata/redpanda:latest"
     digest: "sha256:468bd13a9f2bd24794cb7fddc867c767fb1008b9a07b297b89fde48c564d7d96"

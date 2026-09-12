@@ -59,6 +59,12 @@ valkey/valkey@sha256:3fbd2e3e4b6e85e046c1e7c215e8f79087bc0357789184305806664e320
 memcached@sha256:75c93cc91e76853da7c029e74d6e8dbd44774dd3713c93be8cd1971ad26120a4
 
 # opensearch -- opensearchproject/opensearch:2.19.5
+#   The tag comes from floci's CLOSED EngineVersion->image table, and 2.19.5 is
+#   the default (`OpenSearch_2.19`, measured 2026-09-12). `3.8.0` is not a
+#   newer choice available here: floci 2.0.1 REFUSES
+#   `EngineVersion=OpenSearch_3.8` outright, and its table stops at
+#   `OpenSearch_3.6` -> `opensearch:3.6.0`. See
+#   docs/audits/artifact-fresh-a7486018c7-opensearch-pin.md.
 opensearchproject/opensearch@sha256:4ee82ecb35d837a6186c81aaa64c8a5bce71aa956edbd87f1f684ab56af52c44
 
 # kafka -- redpandadata/redpanda:latest   # MUTABLE TAG upstream -- re-measure, never assume
