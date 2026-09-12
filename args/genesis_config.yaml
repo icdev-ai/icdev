@@ -2037,6 +2037,41 @@ reflexes:
       threshold: 0
       operator: gte          # informational - 0 is a healthy fleet OR unmeasurable; `status` says which
 
+  artifact_freshness:
+    enabled: true
+    risk_tier: green
+    schedule: every 24h
+    interval_seconds: 86400
+    timeout_seconds: 300     # 16 artifacts x up to 3 read-only requests each
+    a2a_eligible: false
+    dry_run: false
+    # Cards one cycle may file. Further `behind` artifacts are reported
+    # `cards_deferred` BY NAME, never dropped. Cards land in `suggested`
+    # because moving a pin is a human decision.
+    max_cards_per_run: 5
+    description: >-
+      Pinned-artifact freshness (xrv-pin-01). The floci pins are
+      cryptographically verifiable - image_vendor.parse_pin refuses a tag and
+      verify_bundle re-hashes every blob - and NOTHING ever asked upstream
+      whether what we pinned was still the current release. The floci/floci
+      2.0.1 pin is a 2026-09-01 snapshot re-asserted only by a test that two
+      files agree with each other, and two files can agree perfectly about a
+      version that shipped a year ago. Each cycle surveys
+      args/pinned_artifacts.yaml through the OCI registry v2 API (host derived
+      from the ref, token from the registry's own 401 challenge, so Docker Hub,
+      public.ecr.aws and ghcr.io are one code path) and the existing PyPI seam,
+      and files ONE card per `behind` artifact carrying what we pin, what
+      upstream publishes and which basis decided it. It NEVER pulls and NEVER
+      edits a pin file, compose or requirements - AST-pinned - because moving a
+      digest pin is a supply-chain act that belongs in a reviewed diff. An
+      air-gapped host reports every artifact `unmeasurable`, never `current`;
+      `success` stays True there so the breaker cannot make the reflex
+      permanently inert on the very deployments tools/airgap exists to serve.
+    success_metric:
+      name: artifacts_measured
+      threshold: 0
+      operator: gte          # informational - 0 is UNMEASURABLE, never a clean fleet; `status` says which
+
 # ── Reflex Health & Alerting (crx-gen-02) ────────────────────────────────────
 # Turns critical-reflex failures into operator alerts on the /monitoring page
 # (via the shared `alerts` table) and backs the reflex health-trend queries in

@@ -252,6 +252,17 @@ REFLEX_NAMES = [
     # with a token minted at that moment (env only, never persisted). A
     # container in only one set is reported and never touched.
     "ci_runner_health",
+    # xrv-pin-01: the floci pins are cryptographically verifiable and NOTHING
+    # ever asked upstream whether they were still the newest release -- the
+    # 2.0.1 pin is a 2026-09-01 snapshot re-asserted only by a test that two
+    # files agree with each other, and agreement is not currency. Surveys
+    # args/pinned_artifacts.yaml against the OCI registry v2 API and PyPI and
+    # files ONE card per `behind` artifact. It never pulls and never edits a
+    # pin file; moving a pin is a supply-chain act and belongs in a reviewed
+    # diff. An air-gapped host reports every artifact `unmeasurable` -- never
+    # `current` -- while `success` stays True so the breaker cannot make the
+    # reflex permanently inert on exactly the deployments it serves.
+    "artifact_freshness",
 ]
 
 # Backward-compat aliases for module-level access used by other code
