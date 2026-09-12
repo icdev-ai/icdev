@@ -298,6 +298,23 @@ def test_the_next_prompt_contains_the_rendered_handoff(wired, board):
     assert "RETRY ATTEMPT #2" in coaching, "the existing preamble is unchanged"
 
 
+def test_the_composed_dispatch_instruction_carries_the_block(wired, board):
+    """The PROMPT, not just the helper.
+
+    ``_build_instruction`` is what an executor actually receives, and it is
+    where a block could be dropped between being rendered and being sent —
+    a gap no assertion on ``_get_retry_coaching`` alone can see.
+    """
+    wired._LAST_VALIDATION[_TASK] = dict(_VALIDATION)
+    wired._record_failure_and_maybe_flag(_TASK, "VALIDATION FAILED: ruff 7 issues")
+
+    instruction = wired._build_instruction(
+        _TASK, "fixture task", "Do the thing.", "/tmp/prompt.md")
+    assert "## Current Position" in instruction
+    assert "## Evidence from the last attempt" in instruction
+    assert "Do the thing." in instruction, "the task's own prompt is still there"
+
+
 def test_a_task_with_no_record_gets_todays_coaching_unchanged(wired, board):
     """Additive, or it is a regression to every retry on the board."""
     conn = get_connection(db_path=str(board))
