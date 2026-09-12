@@ -140,6 +140,33 @@ def _wait_result(client, job_id: str, timeout: float = 20.0) -> dict:
     raise AssertionError(f"ingest job {job_id} did not finish")
 
 
+def _wait_until(predicate, what: str, timeout: float = 15.0) -> None:
+    """Poll until ``predicate()`` holds, then return; otherwise fail saying what
+    never happened.
+
+    ``_wait_result`` returns the moment the ingest thread writes its result into
+    ``_JOB_RESULTS``, and THREE things happen after that write: the
+    filename/title restore UPDATE, the ``dic_ingest_jobs`` UPDATE, and the
+    temp-file ``os.unlink`` in the thread's ``finally``. Asserting any of them
+    immediately after ``_wait_result`` is a race, and it is one this file has
+    always had — measured 2026-09-12, CI shard 2 read the title before the
+    restore UPDATE landed (`still the temp stem: 'tmp2iq5b0jc'`) and this
+    Windows host read the temp path before the unlink, 5 runs out of 5. The
+    file only looked stable because nothing had changed its timing.
+
+    A DEADLINE, NEVER A SLEEP. `time.sleep(0.1)` is a guess about a thread's
+    speed under a load the test cannot see; this waits for the actual
+    post-condition and still FAILS — with the step named — if it genuinely
+    never happens, so the assertion loses no strength.
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if predicate():
+            return
+        time.sleep(0.05)
+    raise AssertionError(f"timed out after {timeout}s waiting for {what}")
+
+
 @pytest.fixture()
 def stub_ingest(monkeypatch):
     """A stand-in for ingest_file that writes the document row the way the
@@ -227,8 +254,10 @@ def test_upload_retains_before_ingest_records_sha_and_still_deletes_the_temp(cli
 
     # retained BEFORE ingest: the temp file was still there when ingest ran ...
     assert stub_ingest["existed_at_ingest"] is True
-    # ... and the deletion is KEPT: it is gone now.
-    time.sleep(0.1)
+    # ... and the deletion is KEPT: it is gone now. The unlink sits in the
+    # ingest thread's `finally`, AFTER the result this test already waited for.
+    _wait_until(lambda: not os.path.exists(stub_ingest["path"]),
+                "the ingest thread to unlink its temp file")
     assert not os.path.exists(stub_ingest["path"])
 
     original = result["original"]
@@ -535,6 +564,11 @@ def test_a_temp_stem_title_is_replaced_by_the_uploaded_name(client, monkeypatch)
     assert r.status_code == 202, r.get_json()
     assert _wait_result(client, r.get_json()["job_id"])["status"] == "done"
 
+    # The restore UPDATE runs AFTER the result this test just waited for, and
+    # it sets `filename` unconditionally — so the filename reaching the row is
+    # the barrier for the title decision made by the same statement.
+    _wait_until(lambda: _title_of(seen["doc_id"])[1] == "peering-policy-update.pdf",
+                "the uploaded filename to be restored on the document row")
     title, filename = _title_of(seen["doc_id"])
     assert title == "peering-policy-update", f"still the temp stem: {title!r}"
     assert not title.startswith("tmp")
@@ -556,6 +590,11 @@ def test_a_real_extracted_title_is_kept(client, monkeypatch):
     assert r.status_code == 202
     assert _wait_result(client, r.get_json()["job_id"])["status"] == "done"
 
+    # The restore UPDATE runs AFTER the result this test just waited for, and
+    # it sets `filename` unconditionally — so the filename reaching the row is
+    # the barrier for the title decision made by the same statement.
+    _wait_until(lambda: _title_of(seen["doc_id"])[1] == "upload-2.pdf",
+                "the uploaded filename to be restored on the document row")
     title, filename = _title_of(seen["doc_id"])
     assert title == "Peering Policy, Q3 Revision"
     assert filename == "upload-2.pdf", "the filename is still restored either way"
@@ -572,5 +611,10 @@ def test_an_empty_title_is_filled_from_the_upload(client, monkeypatch):
     )
     assert r.status_code == 202
     assert _wait_result(client, r.get_json()["job_id"])["status"] == "done"
+    # The restore UPDATE runs AFTER the result this test just waited for, and
+    # it sets `filename` unconditionally — so the filename reaching the row is
+    # the barrier for the title decision made by the same statement.
+    _wait_until(lambda: _title_of(seen["doc_id"])[1] == "no-title-here.pdf",
+                "the uploaded filename to be restored on the document row")
     assert _title_of(seen["doc_id"])[0] == "no-title-here"
 
