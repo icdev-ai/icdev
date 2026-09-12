@@ -72,6 +72,17 @@ else:
 os.environ.setdefault("ICDEV_CSRF_ENFORCE", "0")
 os.environ.setdefault("ICDEV_CANVAS_ACCESS_OPEN", "true")
 
+# xrv-cost-05: the server-side MCP dispatch audit is OFF for the suite by
+# default. `MCPServer._handle_tools_call` now appends one
+# `studio_mcp_dispatch_audit` row per tools/call, and tests that exercise a
+# fixture server (tests/test_mcp_instrumentation.py dispatches eight) would
+# otherwise write real rows into whatever database the suite happens to point
+# at — the ambient-write hazard, and it would also inflate the very
+# consumption measurement this writer exists to make honest. The dedicated
+# tests/mcp/test_dispatch_audit_on_server.py turns it back on per-test against
+# a tmp_path database. An explicit env value still wins.
+os.environ.setdefault("ICDEV_MCP_DISPATCH_AUDIT", "0")
+
 # sdt-auth-01: the slides canvas is `default_enabled: false` in
 # args/component_registry.yaml, so tools/slides/blueprint.py is only mounted when
 # ICDEV_SLIDES_ENABLED is on — and that toggle lives in the repo .env, which a fresh
