@@ -1,1 +1,2 @@
 tests/kanban/test_host_io_survey.py
+tests/ci/test_mirror_disk_readers.py

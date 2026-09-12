@@ -7673,6 +7673,51 @@ python tools/ci/born_red_survey.py --limit 40
 python tools/ci/born_red_survey.py --run 25                  # measure never-observed files now
 python tools/ci/born_red_survey.py --confirm 5               # run the top N at their landing commit
 python tools/ci/born_red_survey.py --out .tmp/born-red.json
+
+# WHO READS THE icdev/ MIRROR FROM DISK -- and who merely imports it? (mfx-own-07)
+# `icdev/tools/` is 5,409 tracked files and 88.8 MB: 27% of the files and 30% of
+# the bytes every `git worktree add` writes under a 30s budget that may not rise
+# and may not be retried. CLAUDE.md (xit-decl-02) says the two spellings are ONE
+# module object in a source checkout -- "the physical file is the one under
+# tools/" -- which reads as a licence to sparse-checkout the mirror away. This
+# enumerates who would break. THE WHOLE TOOL TURNS ON ONE DISCRIMINATION: a
+# reference carrying a PATH SEPARATOR (`icdev/tools`, `icdev\tools`,
+# `Path(...) / "icdev" / "tools"`) is a disk_read; a DOTTED `icdev.tools.x` --
+# an import, an import_module, a patch target -- is an import_reference and is
+# reported under its OWN kind, so "nothing reads the mirror from disk" can never
+# be produced by a scanner that simply did not look at imports.
+python tools/ci/mirror_disk_readers.py                       # human report
+python tools/ci/mirror_disk_readers.py --json
+python tools/ci/mirror_disk_readers.py --kind disk_read
+python tools/ci/mirror_disk_readers.py --imports             # the import blockers
+# FIVE KINDS. `prose_mention` is split out because the naive net read 1,077
+# findings against 717 real ones and this module's own docstring names the path
+# five times. `import_blocker` is the case the separator rule structurally CANNOT
+# see: a module the finder cannot alias because there is no `tools/<rest>` twin
+# to alias ONTO -- 68 mirror-ONLY Python modules (34 migrations, two genesis
+# reflexes, `llm/agent_loop_session.py` which 15 files import, the whole
+# strategos/ and ai_augmentation/ trees, and three package __init__.py files) and
+# 5 back-compat SHIMS. The shim set comes from IMPORTING
+# `icdev._shim.is_backcompat_shim` -- the one statement of what a shim is -- and
+# a failed import reports UNMEASURABLE, never an empty shim list.
+# MEASURED 2026-09-12: 717 disk reads across 216 files -- 168 test files, 190
+# census ENTRIES naming mirror paths by name, 17 runtime modules (three censuses
+# declare `icdev/tools` a scan root), and the wheel-build chain.
+# THE VERDICT IS DO-NOT-SKIP, and the deciding finding is that absence is NOT
+# fail-closed: with `icdev/tools` gone, `import icdev.tools.llm.agent_loop_session`
+# SUCCEEDED and bound `C:\AI\new\FathomDesk\icdev\tools\...` -- a DIFFERENT
+# repository -- because two editable installs both map the top-level name `icdev`
+# and `icdev/__init__.py` calls pkgutil.extend_path. On a host with only the ICDEV
+# install it would bind the MAIN checkout at whatever commit main is on, not the
+# branch under test, while every gate still read green. The gated suite does not
+# collect at all in a sparse worktree (22 errors, 0 tests; paired control with the
+# mirror restored: rc 0, all 706 collect), and the gates do not refuse -- they go
+# QUIET: mirror_parity reports `not_mirrored` and passes, undeclared_import sees
+# 91 of 179 sites, and raw_insert_census PRINTS an instruction to `--prune` 102
+# real entries and ratchet a one-way ceiling from 203 to 101.
+# Report only, no --gate (kpr-fix-03). Exit 2 = the report could not be produced,
+# which is never the same as "nothing reads the mirror".
+# Survey: docs/audits/mfx-own-07-icdev-mirror-sparse-checkout-survey.md
 # FIVE states, never merged: born_red (every observation has been a failure — the
 # finding) | regressed (observed passing once; the drift reflex's half, not
 # re-reported here) | history_unknown (failing, no recorded first verdict) |
