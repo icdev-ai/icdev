@@ -1261,6 +1261,13 @@ def _default_base_ref(repo_root: Optional[Path] = None) -> str:
 # never more patience -- see the comment inside _create_worktree.
 WORKTREE_ADD_TIMEOUT_SECONDS = 30
 
+#: How long a dispatcher waits for the cross-process add lock before giving up
+#: on serialisation and adding anyway (mfx-own-06). Bounded rather than
+#: infinite: the lock is an optimisation against a MEASURED collision, never a
+#: correctness boundary, so a stuck holder must not wedge the board. An add
+#: takes 5-25s alone on this host, so 90s covers three queued adds.
+WORKTREE_ADD_LOCK_WAIT_SECONDS = _int_env("KANBAN_WORKTREE_ADD_LOCK_WAIT", 90)
+
 # Parallel checkout for the add. `git -c` is exported to every child git as
 # GIT_CONFIG_PARAMETERS, so the `reset --hard` that actually writes the tree
 # honours it. Measured 2026-09-06 on the live host: 33.1s / 18.7s -> 8.5s.
@@ -1315,6 +1322,16 @@ def _remove_partial_worktree(worktree_path: Path, branch_name: str, repo_root) -
         if not worktree_path.exists():
             break
         time.sleep(0.5)
+    # `git worktree prune` SKIPS a LOCKED registration, and a killed
+    # `git worktree add` leaves exactly that: measured 2026-09-11, xrv-route-01
+    # kept `worktree .../xrv-route-01 / branch refs/heads/kanban/xrv-route-01 /
+    # locked initializing` with the directory already gone, so prune reported
+    # nothing to do, `git branch -D` then refused ("used by worktree at ..."),
+    # and orphan_requeue's empty-checkout act refused with
+    # `branch_delete_failed` until a human ran unlock + prune by hand. Unlock
+    # first; a registration that is not locked makes this a no-op.
+    subprocess.run(["git", "worktree", "unlock", str(worktree_path)],
+                   cwd=str(repo_root), capture_output=True, text=True, timeout=10)
     subprocess.run(["git", "worktree", "prune"], cwd=str(repo_root),
                    capture_output=True, text=True, timeout=10)
     subprocess.run(["git", "branch", "-D", branch_name], cwd=str(repo_root),
@@ -1524,6 +1541,38 @@ def _create_worktree(task_id: str) -> Optional[str]:
         #    (_kill_process_tree), the partial worktree is removed and its
         #    branch deleted, so an abandoned add stops consuming I/O and the
         #    park describes what is actually on disk -- nothing.
+        # SERIALISE THE ADD ACROSS PROCESSES (mfx-own-06). Two dispatchers run
+        # adds against this one disk -- the genesis daemon's `kanban` reflex
+        # (schedule: continuous) and tools/genesis/kanban_scheduler.py -- and the
+        # per-task lease keeps them off the same CARD, not off the same DISK.
+        # Measured on this host 2026-09-11: an add is 5.1-25.3s ALONE and
+        # 34.2-35.9s whenever two OVERLAP, against the 30s budget above, so the
+        # loser is killed and its task parked; three tasks were parked that way
+        # in one evening and one needed a human to unwedge.
+        #
+        # It WAITS rather than skipping, and that is deliberate: a skip needs a
+        # second not-a-failure return path through a caller whose only
+        # vocabulary is "worktree creation failed -> park", and parking a task
+        # because a DIFFERENT task was being checked out is the very reading
+        # this change removes. Waiting costs one add's duration and changes no
+        # control flow.
+        #
+        # The budget starts AFTER the lock is held, so it still measures the add
+        # ALONE and tests/kanban/test_worktree_add_budget_is_real.py is unaffected.
+        # Imported here, not at module scope: tools.coordination.gitlock is the
+        # only new dependency this path takes, and the module's own idiom for a
+        # narrow helper is a local import (see `import subprocess as _sp` above).
+        from tools.coordination.gitlock import worktree_add_lock  # noqa: PLC0415
+
+        _wt_lock = worktree_add_lock(timeout=WORKTREE_ADD_LOCK_WAIT_SECONDS)
+        if not _wt_lock.__enter__():
+            logger.info(
+                "worktree add for %s: waited %ds for the add lock and is "
+                "proceeding without it. The lock is an optimisation against a "
+                "measured collision, not a correctness boundary -- a stuck "
+                "holder must not wedge the board.",
+                task_id, WORKTREE_ADD_LOCK_WAIT_SECONDS,
+            )
         _add_started = time.monotonic()
         _proc = _sp.Popen(
             ["git", *WORKTREE_ADD_GIT_CONFIG, "worktree", "add", "-b",
@@ -1558,6 +1607,14 @@ def _create_worktree(task_id: str) -> Optional[str]:
                 "removed" if _removed else "NOT fully removed (still on disk)",
             )
             return None
+        finally:
+            # The checkout is the contended part; everything below is cheap
+            # verification. Release here so a queued dispatcher starts at once,
+            # and release on the `return None` above too.
+            try:
+                _wt_lock.__exit__(None, None, None)
+            except Exception:  # noqa: BLE001 - a lock release must never mask the add's outcome
+                logger.debug("worktree add lock release failed for %s", task_id)
         if _proc.returncode != 0:
             logger.warning(
                 "git worktree add failed for %s (rc=%d): %s",
