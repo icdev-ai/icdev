@@ -548,6 +548,14 @@ def census(
 
 
 # --------------------------------------------------------------------------- #
+#: pytest's JUnit writer emits an `xfail` outcome as `<skipped type="pytest.xfail">`
+#: -- the SAME element a real skip uses. This is the one value that tells them
+#: apart, and they are opposites: a skip asserts nothing, an xfail ran and
+#: behaved as declared (and under `strict=True` fails the build when the defect
+#: it records is fixed).
+_XFAIL_TYPE = "pytest.xfail"
+
+
 # Runtime half — what the gated run ACTUALLY skipped
 # --------------------------------------------------------------------------- #
 def _rel_from_body(text: str, root: Path) -> str:
@@ -609,6 +617,7 @@ def runtime_report(
     per_file: Dict[str, List[Dict[str, str]]] = defaultdict(list)
     total_tests = 0
     total_skipped = 0
+    total_xfailed = 0
     unattributed: List[Dict[str, str]] = []
 
     for path in xml_paths:
@@ -622,6 +631,30 @@ def runtime_report(
             total_tests += 1
             skipped = case.find("skipped")
             if skipped is None:
+                continue
+            # AN XFAIL IS NOT A SKIP, and pytest's JUnit writer makes them look
+            # identical: an `xfail` outcome is emitted as
+            # `<skipped type="pytest.xfail">`, the same element a real skip uses.
+            # They are opposites. A skipped test did not run and asserts nothing
+            # -- the coverage-claim defect this whole census exists to catch. An
+            # xfailed test RAN, behaved exactly as the author declared, and under
+            # `strict=True` FAILS THE BUILD the moment the defect it records is
+            # fixed. It is an active assertion about a known defect.
+            #
+            # MEASURED 2026-09-12: tests/routing/test_routing_corpus.py (xrv-route-02)
+            # declares 5 known router disagreements with
+            # `pytest.mark.xfail(strict=True, reason=...)`, ran 219 cases with
+            # ZERO real skips, and this half reported
+            # "1 gated file(s) SKIPPED at runtime while declaring no skip site in
+            # their own source" -- turning Test Gates red for using xfail
+            # correctly. The static half cannot see it either, because there IS
+            # no skip site to find.
+            #
+            # They are COUNTED SEPARATELY rather than dropped: an xfail is still
+            # a declared defect worth a number, and silently discarding a JUnit
+            # outcome is how a census stops measuring what it claims to.
+            if (skipped.get("type") or "").strip() == _XFAIL_TYPE:
+                total_xfailed += 1
                 continue
             total_skipped += 1
             rel = _rel_from_body(skipped.text or "", root) or _rel_from_classname(
@@ -672,6 +705,7 @@ def runtime_report(
         "unreadable": unreadable,
         "total_tests": total_tests,
         "total_skipped": total_skipped,
+        "total_xfailed": total_xfailed,
         "skip_rate": round(total_skipped / total_tests, 4) if total_tests else 0.0,
         "per_file": {
             rel: {"skipped": len(recs), "registered_sites": sites_by_file.get(rel, 0),
