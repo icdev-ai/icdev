@@ -1,1 +1,2 @@
 tests/docs/test_claude_md_index.py
+tests/docs/test_claude_md_cards_regenerator.py

@@ -9566,3 +9566,4 @@ commands, its measurements and its refusals.
 | `rmf-rfp-01` | The RFP shredder is WIRED, and there is ONE compliance matrix | `python tools/govcon/compliance_matrix_builder.py --opportunity-id "opp-xxx" --ingest solicitation.pdf --json` | [rmf-rfp-01.md](cards/rmf-rfp-01.md) |
 | `flx-twin-01` | A twin over the EMULATOR, read through the broker, marked `emulated` | `from tools.twin_core.registry import TwinRegistry` | [flx-twin-01.md](cards/flx-twin-01.md) |
 | `xrv` | Nine external repos reviewed; eight gaps were OUR OWN unconsumed capabilities | `python -m tools.cost.session_cost --survey --by-verdict --json` | [xrv.md](cards/xrv.md) |
+| `mfx-own-09` | A WARM worktree, pre-created while the host is quiet, claimed in ~1.3s | `python -m tools.kanban.worktree_pool --status [--json]` | [mfx-own-09.md](cards/mfx-own-09.md) |
