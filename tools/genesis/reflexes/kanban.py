@@ -7179,6 +7179,34 @@ def _get_executor_type(task_id: str) -> str | None:
         return None
 
 
+def _circuit_breaker_tripped(task: dict) -> tuple:
+    """ONE statement of the per-task circuit breaker (xrv-run-01).
+
+    Returns ``(tripped, failure_count, max_retries)``. Both dispatch sites and
+    ``tools/kanban/should_run.py`` read this, so the pre-dispatch verdict and
+    the guard it reports on cannot disagree about when a task is broken.
+    """
+    max_retries = int(task.get("max_retries") or 5)
+    failures = int(task.get("failure_count") or 0)
+    return failures >= max_retries, failures, max_retries
+
+
+def _task_row(task_id: str) -> Optional[dict]:
+    """One board row by id, or None. The loader ``should_run``'s CLI reads
+    through -- that module names no board table, by design."""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT id, title, status, failure_count, max_retries, project_id "
+            "FROM kanban_tasks WHERE id = %s", (task_id,)).fetchone()
+        return dict(row) if row is not None else None
+    finally:
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def _dispatch_to_claude(task: dict, prompt_path: str):
     """Dispatch a task to the appropriate executor.
 
@@ -7197,6 +7225,39 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
     """
     task_id = task["id"]
     title = task.get("title", "Untitled")
+
+    # ── should_run: ONE recorded verdict, before any guard below (xrv-run-01) ─
+    # Every guard that follows still runs and still decides; this call asks
+    # them all (plus the BUDGET rung none of them is -- the four USD caps live
+    # inside router.invoke, which a claude_cli dispatch never enters) and logs
+    # one line per dispatch. DEFAULT `report`: it changes NO outcome, asserted
+    # by test. `KANBAN_SHOULD_RUN=enforce` parks a wait/refuse exactly as
+    # admission does. Unmeasurable never blocks, and a verdict that cannot be
+    # produced at all must never wedge dispatch.
+    try:
+        from tools.kanban.should_run import assess as _should_run_assess
+
+        _should_run = _should_run_assess(task)
+        logger.info(
+            "kanban: should_run %s for %s: %s",
+            _should_run.verdict, task_id,
+            "; ".join(_should_run.reasons) or "no objections",
+        )
+        if _should_run.blocks:
+            logger.warning(
+                "kanban: should_run %s %s -- parking (mode=enforce)",
+                _should_run.verdict.upper(), task_id,
+            )
+            try:
+                _move_task(task_id, "validating", actor="should-run",
+                           reason=f"should_run {_should_run.verdict}: "
+                                  f"{'; '.join(_should_run.reasons)}")
+            except Exception:  # noqa: BLE001
+                logger.exception("kanban: could not park %s after should_run %s",
+                                 task_id, _should_run.verdict)
+            return
+    except Exception as exc:  # noqa: BLE001 -- the verdict must never wedge dispatch
+        logger.debug("kanban: should_run unavailable for %s: %s", task_id, exc)
 
     # ── Manual Build: the board keeps working; the runner does not build ──────
     # This is the single choke point where an executor is spawned — the normal
@@ -7307,9 +7368,8 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
     # Auto-block if failure_count has reached max_retries for this task.
     # Overrides the global decomposition threshold for tasks that explicitly
     # set a different cap.
-    _task_max_retries = int(task.get("max_retries") or 5)
-    _task_failures = int(task.get("failure_count") or 0)
-    if _task_failures >= _task_max_retries:
+    _breaker_tripped, _task_failures, _task_max_retries = _circuit_breaker_tripped(task)
+    if _breaker_tripped:
         logger.warning(
             "Circuit breaker: %s hit max_retries=%d (failure_count=%d) — blocking",
             task_id, _task_max_retries, _task_failures,
@@ -12334,9 +12394,8 @@ def _check_token_exhausted_tasks() -> list:
             #     task as token_exhausted (refreshing updated_at), causing an
             #     infinite spin loop.  Catch it here instead and send to
             #     'suggested' for HITL review so the board stays clean.
-            _task_max_retries = int(task.get("max_retries") or 5)
-            _task_failures = int(task.get("failure_count") or 0)
-            if _task_failures >= _task_max_retries:
+            _breaker_tripped, _task_failures, _task_max_retries = _circuit_breaker_tripped(task)
+            if _breaker_tripped:
                 logger.warning(
                     "Task %s circuit-broken (fc=%d >= max=%d) — parking in 'suggested' for HITL",
                     task_id, _task_failures, _task_max_retries,
