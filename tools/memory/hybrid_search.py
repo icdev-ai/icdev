@@ -385,9 +385,474 @@ def search(
         return []
 
 
+# ---------------------------------------------------------------------------
+# xrv-mem-03: progressive disclosure -- index -> timeline -> detail by id
+# ---------------------------------------------------------------------------
+# WHY. The default output (the `full` layer, unchanged) returns the ranked rows
+# with their whole content, so every recall paid full-row cost before a reader
+# could decide which rows it wanted. claude-mem's measured saving comes from
+# filtering BEFORE fetching: a ~40-token index line per hit, expansion by id
+# only for the rows that matter. Three layers, each reporting its own cost:
+#   index     {id, ts, type, headline<=120, score} for the top-K of a query
+#   timeline  index rows inside a time window, chronological, INTERLEAVED with
+#             the activity feed's session events (audit_trail UNION ALL
+#             hook_events -- the dashboard's own query builder, imported from
+#             tools/dashboard/api/activity_query; never a second copy)
+#   detail    the full rows for the ids asked for, and ONLY those. Unknown ids
+#             are NAMED under `missing_ids`; rows a clearance withholds are
+#             NAMED under `withheld_ids`. Neither is an empty list wearing the
+#             other's meaning.
+# `approx_tokens` on every layered response is context_budget.estimate_tokens
+# over the serialised payload (the platform's ONE estimator -- there is no
+# third beside it and context_pressure's, which measures a SESSION from
+# hook_events and is the wrong instrument for a payload). It is computed over
+# the payload WITHOUT the count field itself, so it is the cost of what a
+# reader actually receives.
+# The headline is session_context.headline -- the same 120-char rule the
+# SessionStart index (xrv-mem-01) prints, so an id read off a session start
+# block and an id read off `--layer index` describe one entry the same way.
+# The `full` layer is byte-identical to the pre-card output and carries NO
+# approx_tokens: the default shape is what profile_memory, chat_manager and
+# memory_consolidation read today.
+
+LAYERS = ("full", "index", "timeline", "detail")
+DEFAULT_LAYER = "full"
+DEFAULT_TIMELINE_WINDOW_HOURS = 24
+TIMELINE_KINDS = ("memory", "audit", "hook")
+
+
+def _ts(value) -> str | None:
+    """One ISO-8601 spelling for a stored timestamp, for sorting and windows.
+
+    PostgreSQL returns datetimes and SQLite returns whatever was written --
+    ``datetime('now')`` spells ``YYYY-MM-DD HH:MM:SS`` while Python's
+    ``isoformat()`` spells the ``T`` form, and the two do not compare
+    lexicographically (a space sorts before a ``T``), so both are normalised
+    to the ``T`` form before any comparison.
+    """
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):
+        try:
+            return value.isoformat()
+        except Exception:  # noqa: BLE001 -- a datetime-alike that cannot format
+            pass
+    text = str(value).strip()
+    if len(text) > 10 and text[10] == " ":
+        text = text[:10] + "T" + text[11:]
+    return text
+
+
+def approx_tokens(payload) -> int:
+    """context_budget.estimate_tokens over the serialised payload."""
+    from tools.llm.context_budget import estimate_tokens
+
+    return estimate_tokens(json.dumps(payload, default=str, sort_keys=True))
+
+
+def _with_cost(payload: dict) -> dict:
+    payload = dict(payload)
+    payload.pop("approx_tokens", None)
+    payload["approx_tokens"] = approx_tokens(payload)
+    return payload
+
+
+def _headline(content) -> str:
+    from tools.hooks.session_context import headline
+
+    return headline(content)
+
+
+def _index_row(score, id_, content, type_, created_at) -> dict:
+    return {
+        "id": id_,
+        "ts": _ts(created_at),
+        "type": type_,
+        "headline": _headline(content),
+        "score": None if score is None else round(score, 4),
+    }
+
+
+def _ranked(query, entries, bm25_weight, semantic_weight, time_decay=False):
+    """Rank ``entries`` for ``query`` the way the full layer does."""
+    bm25_scores = bm25_search(query, entries)
+    semantic_scores = semantic_search(query, entries)
+    decay_config = None
+    if time_decay:
+        try:
+            from tools.memory.time_decay import load_decay_config
+
+            decay_config = load_decay_config()
+        except Exception:  # noqa: BLE001 -- decay is optional, exactly as in main()
+            decay_config = None
+    ranked = hybrid_rank(
+        entries, bm25_scores, semantic_scores, bm25_weight, semantic_weight,
+        time_decay_enabled=time_decay, decay_config=decay_config,
+    )
+    return ranked, semantic_scores is not None
+
+
+def _log_access(query, count, search_type) -> bool:
+    """Best-effort memory_access_log row through the test seam; never raises."""
+    try:
+        conn = _connect()
+        try:
+            conn.execute(
+                "INSERT INTO memory_access_log (query, results_count, search_type) VALUES (%s, %s, %s)",
+                (query or "", count, search_type),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return True
+    except Exception:  # noqa: BLE001 -- the log is a record of the search, not the search
+        return False
+
+
+def layer_index(
+    query: str,
+    limit: int = 10,
+    *,
+    user_id=None,
+    tenant_id=None,
+    clearance=None,
+    compartments=None,
+    bm25_weight: float = 0.7,
+    semantic_weight: float = 0.3,
+    time_decay: bool = False,
+) -> dict:
+    """Top-K index rows for ``query``: id, ts, type, headline, score."""
+    if not query or not query.strip():
+        raise ValueError("--query is required for --layer index")
+    entries = get_all_entries(user_id=user_id, tenant_id=tenant_id, clearance=clearance, compartments=compartments)
+    rows: list[dict] = []
+    semantic_available = False
+    if entries:
+        ranked, semantic_available = _ranked(query, entries, bm25_weight, semantic_weight, time_decay)
+        for score, id_, content, type_, _importance, created_at in ranked[:limit]:
+            if score > 0:
+                rows.append(_index_row(score, id_, content, type_, created_at))
+    logged = _log_access(query, len(rows), "hybrid_index")
+    return _with_cost({
+        "classification": "CUI // SP-CTI",
+        "layer": "index",
+        "query": query,
+        "count": len(rows),
+        "limit": limit,
+        "search_type": "hybrid_index",
+        "semantic_available": semantic_available,
+        "access_logged": logged,
+        "entries": rows,
+    })
+
+
+def parse_ids(ids) -> tuple[list[int], list[str]]:
+    """Split a caller's ids into integer ids and the tokens that are not ids.
+
+    ``memory_entries.id`` is an INTEGER; a non-numeric token is reported under
+    ``missing_ids`` without ever reaching SQL (an ``integer = text`` compare
+    raises on PostgreSQL and silently matches nothing on SQLite).
+    """
+    if ids is None:
+        tokens: list = []
+    elif isinstance(ids, str):
+        tokens = [t.strip() for t in ids.split(",")]
+    else:
+        tokens = [str(t).strip() for t in ids]
+    numeric: list[int] = []
+    bad: list[str] = []
+    seen: set[int] = set()
+    for tok in tokens:
+        if not tok:
+            continue
+        text = tok[1:] if tok.startswith("#") else tok
+        try:
+            value = int(text)
+        except ValueError:
+            bad.append(tok)
+            continue
+        if value not in seen:
+            seen.add(value)
+            numeric.append(value)
+    return numeric, bad
+
+
+def layer_detail(
+    ids,
+    *,
+    user_id=None,
+    tenant_id=None,
+    clearance=None,
+    compartments=None,
+) -> dict:
+    """Full rows for exactly the given ids, in the order asked."""
+    wanted, bad = parse_ids(ids)
+    if not wanted and not bad:
+        raise ValueError("--ids is required for --layer detail")
+    found: dict[int, dict] = {}
+    withheld: list[int] = []
+    if wanted:
+        conn = _connect()
+        try:
+            ph = "%s"
+            # The IN list is placeholders only; every id is bound as an int.
+            sql = (
+                "SELECT id, content, type, importance, created_at, classification, compartment "  # nosec B608
+                "FROM memory_entries WHERE id IN (" + ",".join([ph] * len(wanted)) + ")"
+            )
+            params: list = list(wanted)
+            if user_id:
+                sql += f" AND (user_id = {ph} OR user_id IS NULL)"
+                params.append(user_id)
+            if tenant_id:
+                sql += f" AND (tenant_id = {ph} OR tenant_id IS NULL)"
+                params.append(tenant_id)
+            c = conn.cursor()
+            c.execute(sql, params)
+            fetched = c.fetchall()
+        finally:
+            conn.close()
+        user_level = _classification_level(clearance) if clearance is not None else None
+        for row in fetched:
+            id_, content, type_, importance, created_at, classification, compartment = tuple(row)[:7]
+            if user_level is not None and not (
+                _classification_level(classification) <= user_level
+                and _compartments_allowed(compartment, compartments)
+            ):
+                withheld.append(int(id_))
+                continue
+            found[int(id_)] = {
+                "id": id_,
+                "content": content,
+                "type": type_,
+                "importance": importance,
+                "created_at": _ts(created_at),
+                "classification": classification,
+                "compartment": compartment,
+            }
+    entries = [found[i] for i in wanted if i in found]
+    missing = [str(i) for i in wanted if i not in found and i not in withheld] + bad
+    return _with_cost({
+        "classification": "CUI // SP-CTI",
+        "layer": "detail",
+        "requested_ids": [str(i) for i in wanted] + bad,
+        "count": len(entries),
+        "entries": entries,
+        "missing_ids": missing,
+        "withheld_ids": [str(i) for i in withheld],
+    })
+
+
+def _activity_events(since, until, limit, session_id) -> tuple[list[dict], dict]:
+    """The activity feed's rows inside the window, newest-K, through the ONE builder.
+
+    Returns ``(events, status)`` where status is ``{"status": "ok"}`` or
+    ``{"status": "unmeasurable", "reason": "error:<Type>"}`` -- a database with
+    no audit_trail/hook_events (a fixture, a child app) is not a session with
+    no events.
+    """
+    from tools.dashboard.api.activity_query import build_feed_query
+
+    try:
+        conn = _connect()
+        try:
+            from tools.db.storage import is_pg, sql_placeholder
+
+            ph = sql_placeholder(conn)
+            sql, params = build_feed_query(
+                ph, since=since, until=until, actor=session_id, order="DESC", limit=limit,
+                normalise_ts=not is_pg(conn),
+            )
+            c = conn.cursor()
+            c.execute(sql, params)
+            rows = c.fetchall()
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001 -- reported as unmeasurable, never as empty
+        return [], {"status": "unmeasurable", "reason": f"error:{type(exc).__name__}"}
+    events = []
+    for row in rows:
+        source, id_, event_type, actor, summary, project_id, _classification, created_at = tuple(row)[:8]
+        events.append({
+            "kind": source,
+            "id": id_,
+            "ts": _ts(created_at),
+            "type": event_type,
+            "headline": _headline(summary if summary else actor),
+            "actor": actor,
+            "project_id": project_id,
+            "score": None,
+        })
+    return events, {"status": "ok"}
+
+
+def layer_timeline(
+    query: str | None = None,
+    *,
+    since: str | None = None,
+    until: str | None = None,
+    limit: int = 10,
+    session_id: str | None = None,
+    user_id=None,
+    tenant_id=None,
+    clearance=None,
+    compartments=None,
+    bm25_weight: float = 0.7,
+    semantic_weight: float = 0.3,
+    time_decay: bool = False,
+) -> dict:
+    """Index rows in a window, chronological, interleaved with session events.
+
+    With a query the memory rows are the top-K by hybrid score inside the
+    window (then re-sorted by time); without one they are the newest K.
+    ``limit`` bounds EACH side and both counts are reported.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    window_basis = "explicit"
+    if not since and not until:
+        since = (datetime.now(timezone.utc) - timedelta(hours=DEFAULT_TIMELINE_WINDOW_HOURS)).isoformat()
+        window_basis = f"default_{DEFAULT_TIMELINE_WINDOW_HOURS}h"
+    since_n = _ts(since)
+    until_n = _ts(until)
+
+    entries = get_all_entries(user_id=user_id, tenant_id=tenant_id, clearance=clearance, compartments=compartments)
+    in_window = []
+    for entry in entries:
+        ts = _ts(entry[5])
+        if ts is None:
+            continue
+        if since_n and ts < since_n:
+            continue
+        if until_n and ts > until_n:
+            continue
+        in_window.append(entry)
+
+    memory_rows: list[dict] = []
+    semantic_available = None
+    if in_window:
+        if query and query.strip():
+            ranked, semantic_available = _ranked(query, in_window, bm25_weight, semantic_weight, time_decay)
+            for score, id_, content, type_, _importance, created_at in ranked[:limit]:
+                if score > 0:
+                    memory_rows.append(_index_row(score, id_, content, type_, created_at))
+        else:
+            newest = sorted(in_window, key=lambda e: _ts(e[5]) or "", reverse=True)[:limit]
+            for entry in newest:
+                id_, content, type_, _importance, _emb, created_at = tuple(entry)[:6]
+                memory_rows.append(_index_row(None, id_, content, type_, created_at))
+    for row in memory_rows:
+        row["kind"] = "memory"
+
+    activity, activity_status = _activity_events(since_n, until_n, limit, session_id)
+    events = sorted(memory_rows + activity, key=lambda e: (e["ts"] or "", str(e["id"])))
+    logged = _log_access(query, len(memory_rows), "hybrid_timeline")
+    return _with_cost({
+        "classification": "CUI // SP-CTI",
+        "layer": "timeline",
+        "query": query or None,
+        "window": {"since": since_n, "until": until_n, "basis": window_basis},
+        "limit": limit,
+        "session_id": session_id,
+        "counts": {"memory": len(memory_rows), "activity": len(activity), "total": len(events)},
+        "semantic_available": semantic_available,
+        "activity": activity_status,
+        "access_logged": logged,
+        "events": events,
+    })
+
+
+def run_layer(layer: str, **kwargs) -> dict:
+    """Dispatch one non-default layer; the MCP handler's entry point.
+
+    Accepted kwargs: query, ids, since, until, limit, session_id, user_id,
+    tenant_id, clearance, compartments, bm25_weight, semantic_weight,
+    time_decay. ``full`` is deliberately not dispatched here -- its output is
+    main()'s and the MCP handler's default is a different search altogether.
+    """
+    if layer not in LAYERS or layer == "full":
+        raise ValueError(f"layer must be one of {LAYERS[1:]}, got {layer!r}")
+    scope = {k: kwargs.get(k) for k in ("user_id", "tenant_id", "clearance", "compartments")}
+    if layer == "detail":
+        return layer_detail(kwargs.get("ids"), **scope)
+    weights = {
+        "bm25_weight": kwargs.get("bm25_weight", 0.7),
+        "semantic_weight": kwargs.get("semantic_weight", 0.3),
+        "time_decay": bool(kwargs.get("time_decay", False)),
+    }
+    limit = int(kwargs.get("limit") or 10)
+    if layer == "index":
+        return layer_index(kwargs.get("query"), limit, **scope, **weights)
+    return layer_timeline(
+        kwargs.get("query"),
+        since=kwargs.get("since"),
+        until=kwargs.get("until"),
+        limit=limit,
+        session_id=kwargs.get("session_id"),
+        **scope,
+        **weights,
+    )
+
+
+def _print_layer(result: dict) -> None:
+    layer = result["layer"]
+    if layer == "detail":
+        for e in result["entries"]:
+            print(f"[#{e['id']}] ({e['type']}, importance:{e['importance']}) {e['content']}  -- {e['created_at']}")
+        if result["missing_ids"]:
+            print(f"missing: {', '.join(result['missing_ids'])}")
+        if result["withheld_ids"]:
+            print(f"withheld by clearance: {', '.join(result['withheld_ids'])}")
+    elif layer == "index":
+        for e in result["entries"]:
+            print(f"#{e['id']} [{e['type']}] {e['ts']} (score:{e['score']:.3f}) {e['headline']}")
+    else:
+        w = result["window"]
+        print(f"window {w['since']} .. {w['until'] or 'now'} ({w['basis']}); activity: {result['activity']['status']}")
+        for e in result["events"]:
+            tag = f"#{e['id']}" if e["kind"] == "memory" else f"{e['kind']}:{e['id']}"
+            score = "" if e["score"] is None else f" (score:{e['score']:.3f})"
+            print(f"{e['ts']} {tag} [{e['type']}]{score} {e['headline']}")
+    print(f"approx_tokens: {result['approx_tokens']}")
+
+
+def _run_layer(args) -> None:
+    comps = None
+    if args.compartments:
+        comps = [c.strip() for c in args.compartments.split(",") if c.strip()]
+    result = run_layer(
+        args.layer,
+        query=args.query,
+        ids=args.ids,
+        since=args.since,
+        until=args.until,
+        limit=args.limit,
+        session_id=args.session_id,
+        user_id=args.user_id,
+        tenant_id=args.tenant_id,
+        clearance=args.clearance,
+        compartments=comps,
+        bm25_weight=args.bm25_weight,
+        semantic_weight=args.semantic_weight,
+        time_decay=args.time_decay,
+    )
+    if args.json:
+        print(json.dumps(result, indent=2, default=str))
+    else:
+        _print_layer(result)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Hybrid search (BM25 + semantic)")
-    parser.add_argument("--query", required=True, help="Search query")
+    parser.add_argument("--query", help="Search query (required for --layer full|index)")
+    # xrv-mem-03: progressive disclosure. The default layer is byte-identical
+    # to the pre-card output; the three others carry approx_tokens.
+    parser.add_argument("--layer", choices=LAYERS, default=DEFAULT_LAYER,
+                        help="full (default, the ranked rows with content) | index | timeline | detail")
+    parser.add_argument("--ids", help="Comma-separated memory_entries ids for --layer detail")
+    parser.add_argument("--since", help="ISO-8601 lower bound for --layer timeline (default: last 24h)")
+    parser.add_argument("--until", help="ISO-8601 upper bound for --layer timeline")
+    parser.add_argument("--session-id", help="Narrow --layer timeline's session events to one session id")
     parser.add_argument("--limit", type=int, default=10, help="Max results")
     parser.add_argument("--bm25-weight", type=float, default=0.7, help="BM25 weight (default 0.7)")
     parser.add_argument("--semantic-weight", type=float, default=0.3, help="Semantic weight (default 0.3)")
@@ -409,6 +874,17 @@ def main():
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     args = parser.parse_args()
+
+    if args.layer in ("full", "index") and not args.query:
+        parser.error("the following arguments are required: --query")
+    if args.layer == "detail" and not args.ids:
+        parser.error("--layer detail requires --ids")
+    if args.layer != DEFAULT_LAYER:
+        try:
+            _run_layer(args)
+        except ValueError as exc:
+            parser.error(str(exc))
+        return
 
     comps = None
     if args.compartments:

@@ -90,3 +90,34 @@ Recent Activity:
   2024-01-15 10:25 - test.execute passed
   2024-01-15 10:20 - code.commit by developer
 ```
+
+### Recall memory progressively — index, then timeline, then detail by id (xrv-mem-03)
+Never pay full-row cost for a recall you have not yet decided you want. Three
+layers of `tools/memory/hybrid_search.py`, each reporting `approx_tokens` for
+what it returned (the MCP tool `search_knowledge` takes the same `layer`,
+`ids`, `since`, `until` parameters; without `layer` it is the knowledge-pattern
+search it has always been):
+
+1. **index** — the top-K headlines for a query, ~40 tokens a row:
+   ```bash
+   python tools/memory/hybrid_search.py --query "helm chart rollout" --layer index --json
+   ```
+   Each row is `{id, ts, type, headline, score}`. Read the headlines, pick ids.
+2. **timeline** — what happened WHEN: index rows inside a window, in
+   chronological order, interleaved with the session activity feed (audit
+   trail and hook events, the dashboard's own `/api/activity/feed` query):
+   ```bash
+   python tools/memory/hybrid_search.py --layer timeline --since 2026-09-11T00:00:00 --json
+   python tools/memory/hybrid_search.py --layer timeline --query "rollout" --session-id <id> --json
+   ```
+   `activity.status` is `unmeasurable` when the activity tables could not be
+   read — that is not an idle session. The window defaults to the last 24h
+   and says so under `window.basis`.
+3. **detail** — the full rows for the ids you chose, and only those:
+   ```bash
+   python tools/memory/hybrid_search.py --layer detail --ids 28184,28183 --json
+   ```
+   An id that does not exist is named under `missing_ids`; a row your
+   clearance withholds is named under `withheld_ids`. Neither is silent.
+
+The default (no `--layer`) is unchanged: the ranked rows with full content.
