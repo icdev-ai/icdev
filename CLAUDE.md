@@ -193,7 +193,6 @@ AWS API contract, not its performance characteristics.
 
 - `xrv-cost-05` — Every `tools/call` Claude Code makes leaves ONE audit row — `python -m tools.awareness.capability_consumption --class mcp_dispatch_tool --json  # extra.by_caller_source` — `docs/reference/cards/xrv-cost-05.md`
 
-
 - `kpr-watch-21` — A refusal that names no remedy
 
 ### Python Dependencies

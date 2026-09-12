@@ -9711,3 +9711,4 @@ commands, its measurements and its refusals.
 | `kpr-watch-19` | The resume queue has a consumer on the executor that RUNS, and is ONE directory from every checkout | `python -m tools.ci.resume_delivery --survey` | [kpr-watch-19.md](cards/kpr-watch-19.md) |
 | `xrv-cost-05` | Every `tools/call` Claude Code makes leaves ONE audit row, counted apart from Studio's | `python -m tools.awareness.capability_consumption --class mcp_dispatch_tool --json` | [xrv-cost-05.md](cards/xrv-cost-05.md) |
 | `kpr-watch-21` | A refusal that names no remedy: the done-gate says what is wrong, not what clears it | *(no CLI; see the record)* | [kpr-watch-21.md](cards/kpr-watch-21.md) |
+| `kpr-watch-21` | A refusal that names no remedy: 10,542 done-gate waits never said `--reverify` | `python tools/kanban/cli.py --reverify <task-id>` | [kpr-watch-21.md](cards/kpr-watch-21.md) |
