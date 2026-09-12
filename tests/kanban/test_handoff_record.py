@@ -243,6 +243,34 @@ def test_the_sections_follow_handoff_generator_order():
     assert "## Recent Decisions" not in block
 
 
+def test_an_agents_own_handoff_is_preserved_and_our_record_never_nests(board):
+    """``POST /handoff`` writes the SAME column, so we must not just clobber it.
+
+    The second half is the one that would fail silently: without the
+    schema check, each failure would nest the previous record inside the new
+    one and `last_run_metadata` would grow without bound across retries — on a
+    column that is carried verbatim into a child task's prompt.
+    """
+    conn = get_connection(db_path=str(board))
+    try:
+        conn.execute(
+            "UPDATE kanban_tasks SET last_run_metadata = %s WHERE id = %s",
+            (json.dumps({"summary": "agent said so", "files": ["a.py"]}), _TASK),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    first = hr.record_run(_TASK, trigger=hr.TRIGGER_FAILURE, attempt=1,
+                          reason="ruff failed", db_path=str(board))
+    assert first["agent_metadata"] == {"summary": "agent said so", "files": ["a.py"]}
+
+    second = hr.record_run(_TASK, trigger=hr.TRIGGER_FAILURE, attempt=2,
+                           reason="ruff failed", db_path=str(board))
+    assert second["agent_metadata"] is None, "our own record is never nested"
+    assert "agent_metadata" not in json.dumps(second["agent_metadata"] or {})
+
+
 def test_load_record_refuses_anything_that_is_not_one_of_ours():
     """An agent's own handoff POST writes the same column. It is not a record."""
     assert hr.load_record("x", raw="") is None
