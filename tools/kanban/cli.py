@@ -534,6 +534,40 @@ def cmd_set_status(
             except Exception as exc:  # noqa: BLE001
                 r["lease"] = {"state": "error", "why": str(exc)}
 
+    # THE LANDING ROW, AT MERGE TIME (autonomy-act-08). This door merges — it is
+    # `land.py`'s `--merge` path (mfx-mrg-04) — and the merge ledger is the
+    # DOOR-AGNOSTIC record of a change reaching main, the one
+    # `detector_findings.ledger_landing` reads (autonomy-act-06). Until now the
+    # only writer of that row was a 6-hourly reflex backfill, so a task landed
+    # here was invisible to the record-not-card ordering rule for hours:
+    # measured 2026-09-12 over the preceding 30 days, p50 4.0h / p95 9.2h /
+    # max 96.8h, and on 2026-09-03 `rmf-ui-13` landed at 18:43, had its detector
+    # card promoted at 20:11 and its ledger row written at 22:40
+    # (docs/audits/autonomy-act-08-ledger-latency.md).
+    #
+    # It deliberately does NOT write a `pr_watcher.merge` row: that action name
+    # is the WATCHER's own audit vocabulary and a second writer of it would make
+    # every pr_watcher survey wrong.
+    #
+    # Best-effort and AFTER the connection closed, for the same two reasons the
+    # lease release above is: the `done` row is already written and a ledger
+    # failure must not un-write it, and the 6-hourly sweep is still the backstop
+    # for a row that fails here. Never silent — the outcome is reported.
+    if status == "done" and merge_verdict is not None:
+        for r in results:
+            if "error" in r:
+                continue
+            try:
+                # Imported here, inside the guard: an import failure is one more
+                # way this can fail, and it must fail the same way — reported,
+                # with the `done` row standing.
+                from tools.idp import delivery_events  # noqa: PLC0415
+
+                r["landing"] = delivery_events.emit_landing(r["id"])
+            except Exception as exc:  # noqa: BLE001
+                r["landing"] = {"task_id": r["id"], "emitted": False,
+                                "state": "error", "why": str(exc)}
+
     if json_out:
         payload = ({"merge": merge_verdict, "tasks": results}
                    if merge_verdict is not None else results)
@@ -550,6 +584,10 @@ def cmd_set_status(
                 if lease and lease.get("state") != "none":
                     why = f" — {_ascii(lease['why'])}" if lease.get("why") else ""
                     print(f"    lease: {lease['state']}{why}")
+                landing = r.get("landing")
+                if landing:
+                    why = f" — {_ascii(landing['why'])}" if landing.get("why") else ""
+                    print(f"    landing: {landing['state']}{why}")
     return 0
 
 

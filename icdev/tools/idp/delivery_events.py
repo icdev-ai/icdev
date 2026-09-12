@@ -24,6 +24,20 @@ projected here into the shapes the DORA query already reads.
     python tools/idp/delivery_events.py --status --json     # what DORA can see now
     python tools/idp/delivery_events.py --sync --dry-run    # what would be emitted
     python tools/idp/delivery_events.py --sync --days 90    # emit
+    python tools/idp/delivery_events.py --landing <task-id> # record ONE landing now
+    python tools/idp/delivery_events.py --landing-latency --json   # how late the ledger is
+
+**The sweep is a backfill, and a backfill has a latency.** ``sync_delivery_events``
+runs on a 6-hourly reflex, and the ledger is not only a DORA input — it is the
+DOOR-AGNOSTIC record of a change reaching main that
+``tools/kanban/detector_findings.ledger_landing`` orders a recovery escalation
+against. Measured over the 625 landings of the 30 days to 2026-09-12 the row
+arrived p50 3.5h / p95 9.2h / max 96.8h after the landing it describes, so a
+merge door's subject read as undelivered for hours. ``emit_landing`` is the same
+row written at merge time by the door itself, deduped against the sweep through
+the same ``emitted_task_ids`` set; ``landing_latency`` is the estimator that
+measured the above and is how a reader re-checks it. Neither changes what counts
+as a landing.
 
 The mapping, stated plainly so nobody has to reverse-engineer it from a rating:
 
@@ -200,21 +214,38 @@ def _verification_bounds(conn, task_ids: list[str]) -> dict[str, dict[str, Any]]
     return bounds
 
 
-def collect_changes(conn, days: int = DEFAULT_WINDOW_DAYS) -> list[dict[str, Any]]:
+def collect_changes(
+    conn,
+    days: int = DEFAULT_WINDOW_DAYS,
+    task_ids: list[str] | None = None,
+) -> list[dict[str, Any]]:
     """Project the kanban merge ledger into delivery-change records.
 
     One record per change that landed on main inside the window, carrying the
     evidence each DORA key needs plus the provenance fields that justify the
     classification.
+
+    ``task_ids`` narrows the same derivation to named tasks — that is all it
+    does. ``emit_landing`` uses it so a merge door records ONE landing with the
+    identical derivation the 6-hourly sweep would have used hours later; a
+    second, door-local projection of the same row is exactly the divergence
+    this argument exists to prevent. An empty list selects nothing (never
+    everything).
     """
-    rows = conn.execute(
+    sql = (
         "SELECT id, title, task_type, created_at, scheduled_at, completed_at, "
         "       completed_via_bypass, failure_count, files_changed, lines_added, lines_removed "
         "FROM kanban_tasks "
-        "WHERE status = 'done' AND completed_at IS NOT NULL AND completed_at >= %s "
-        "ORDER BY completed_at",
-        (_cutoff(days),),
-    ).fetchall()
+        "WHERE status = 'done' AND completed_at IS NOT NULL AND completed_at >= %s"
+    )
+    params: tuple = (_cutoff(days),)
+    if task_ids is not None:
+        wanted = [str(t) for t in task_ids]
+        if not wanted:
+            return []
+        sql += " AND id IN (" + ",".join(["%s"] * len(wanted)) + ")"
+        params = (*params, *wanted)
+    rows = conn.execute(sql + " ORDER BY completed_at", params).fetchall()
 
     changes: list[dict[str, Any]] = []
     for row in rows:
@@ -425,6 +456,226 @@ def sync_delivery_events(
             conn.close()
 
 
+def emit_landing(
+    task_id: str,
+    days: int = DEFAULT_WINDOW_DAYS,
+    conn=None,
+) -> dict[str, Any]:
+    """Record ONE task's landing on the merge ledger NOW, at merge time.
+
+    THE SWEEP IS A BACKFILL, AND A BACKFILL HAS A LATENCY (autonomy-act-08).
+    ``sync_delivery_events`` runs on a 6-hourly reflex, so every consumer of the
+    ledger — ``detector_findings.ledger_landing`` above all, which is the ONLY
+    door through which a ``land.py`` merge is visible to the record-not-card
+    ordering rule — learns about a landing hours after it happened. Measured
+    2026-09-12 over the 625 landings of the preceding 30 days (the estimator is
+    ``landing_latency`` below): p50 **3.5h**, p95 **9.2h**, max **96.8h**. The
+    six-hour figure is the reflex CADENCE; the TAIL is four days, because a
+    skipped or circuit-broken cycle simply waits for the next one. Inside that
+    window a delivered subject still reads as undelivered: on 2026-09-03
+    ``rmf-ui-13`` landed at 18:43, its detector card was promoted at 20:11 and
+    the ledger row was not written until 22:40.
+
+    This is the SAME row the sweep writes, not a second shape — same
+    ``collect_changes`` derivation, same ``_emit_change`` writer, same action
+    prefix and ``source``. Only the moment changes, which is the whole of what
+    autonomy-act-08 is.
+
+    IDEMPOTENT IN BOTH DIRECTIONS, THROUGH THE EXISTING DEDUPE. This asks
+    ``emitted_task_ids`` before writing, so a landing the sweep already recorded
+    is not written twice; and the sweep asks the same function, so a landing
+    THIS wrote is not written again six hours later. One set, read by both — a
+    second dedupe key would be a second thing to keep in step. The check and the
+    write are not one atomic statement, so a sweep running in the same second as
+    a door can still produce two rows; every consumer already tolerates that
+    (``ledger_landing`` counts ``ledger_rows`` and orders the EARLIEST landing
+    after the escalation), and closing it would mean a uniqueness constraint on
+    an append-only table this module does not own.
+
+    It does NOT widen what counts as a landing: a task with no ``done`` row and
+    no ``completed_at`` yields nothing, exactly as it does for the sweep. Call
+    it AFTER the ``done`` row is committed — the board row is the evidence, and
+    there is nothing to derive until it exists.
+
+    Commits its own write. A caller that hands in ``conn`` therefore must have
+    no uncommitted work of its own riding on that connection; the kanban CLI
+    door calls it on a fresh connection after its own transaction closed, so a
+    failed ledger write can never un-write a confirmed merge (and the sweep is
+    still the backstop for one that fails).
+    """
+    own_conn = conn is None
+    conn = conn or get_connection()
+    tid = str(task_id)
+    try:
+        if tid in emitted_task_ids(conn):
+            return {"task_id": tid, "emitted": False, "state": "already",
+                    "why": "the merge ledger already carries a landing for this task"}
+        changes = collect_changes(conn, days=days, task_ids=[tid])
+        if not changes:
+            return {"task_id": tid, "emitted": False, "state": "skipped",
+                    "why": (f"{tid} is not a landed change: no 'done' row with a "
+                            f"completed_at inside {days}d")}
+        try:
+            written = _emit_change(conn, changes[0], _existing_pipeline_ids(conn))
+            conn.commit()
+        except Exception as exc:  # noqa: BLE001 - re-raised; never swallowed
+            conn.rollback()
+            raise DeliveryEventError(
+                f"landing event for {tid} could not be written: {exc}"
+            ) from exc
+        return {
+            "task_id": tid,
+            "emitted": True,
+            "state": "recorded",
+            "why": "landing recorded on the merge ledger at merge time",
+            "deploy_events": int(written["deploy"]),
+            "failure_events": int(written["failure"]),
+            "pipeline_runs": int(written["pipeline"]),
+        }
+    finally:
+        if own_conn:
+            conn.close()
+
+
+#: Ledger rows whose ``audit_trail`` ids differ by no more than this are read as
+#: ONE emission. A sweep inserts its rows back to back, so a gap is another
+#: writer having run in between; 5 leaves room for the ``deployment_failed`` and
+#: pipeline rows a single change can interleave.
+_EMISSION_GAP = 5
+
+
+def landing_latency(days: int = 30, conn=None) -> dict[str, Any]:
+    """How long after a change landed was its ledger row actually WRITTEN?
+
+    THE ROW CANNOT TIME ITS OWN INSERTION. ``_emit_change`` stamps ``created_at``
+    with the moment the change LANDED, deliberately (the module docstring says
+    so: "not at backfill time"), which is what makes ``deploy_frequency``
+    countable — and which means the emission time is nowhere in the row. Asking
+    "is the ledger current?" by reading ledger timestamps therefore always
+    answers yes.
+
+    ``audit_trail`` ids are assigned in insertion order, so the row is bracketed
+    from ABOVE by the first NON-ledger row with a higher id: whatever wrote that
+    row did so after this one was inserted. Every lag reported here is an UPPER
+    BOUND, and ``bracket_seconds`` is how loose it is — measured on the live
+    board the brackets were tens of seconds wide against lags of hours.
+
+    Ledger rows are grouped into emissions by contiguous id (see
+    ``_EMISSION_GAP``) so one bracketing query serves a whole sweep instead of
+    one per row.
+
+    A row with NO later foreign row cannot be bracketed and is counted in
+    ``unbracketed`` rather than dropped: a survey that silently discards what it
+    cannot measure reports a cleaner distribution than the one it observed.
+    """
+    own_conn = conn is None
+    conn = conn or get_connection()
+    try:
+        rows = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT id, details, created_at FROM audit_trail "
+                "WHERE event_type = %s AND created_at >= %s ORDER BY id",
+                (DEPLOY_EVENT_TYPE, _cutoff(days)),
+            ).fetchall()
+        ]
+        ledger: list[dict[str, Any]] = []
+        for row in rows:
+            try:
+                payload = json.loads(row["details"] or "{}")
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(payload, dict) or payload.get("source") != SOURCE:
+                continue
+            landed = _to_dt(row["created_at"])
+            if landed is None:
+                continue
+            ledger.append({"id": row["id"], "task_id": payload.get("task_id"),
+                           "landed_at": landed})
+
+        summary: dict[str, Any] = {
+            "window_days": days,
+            "ledger_rows": len(ledger),
+            "measured": 0,
+            "unbracketed": 0,
+            "buckets": {"<1m": 0, "<1h": 0, "1-3h": 0, "3-6h": 0,
+                        "6-12h": 0, "12-24h": 0, ">24h": 0},
+        }
+        if not ledger:
+            summary["reason"] = f"no merge-ledger rows landed inside {days}d"
+            return summary
+
+        emissions: list[list[dict[str, Any]]] = [[ledger[0]]]
+        for prev, cur in zip(ledger, ledger[1:]):
+            if cur["id"] - prev["id"] <= _EMISSION_GAP:
+                emissions[-1].append(cur)
+            else:
+                emissions.append([cur])
+
+        lags: list[float] = []
+        brackets: list[float] = []
+        for group in emissions:
+            # BOTH ledger event types are excluded from the bracket, not just
+            # the deploy one: `deployment_failed` is written in the same
+            # transaction and is backdated the same way, so counting it as a
+            # foreign row would bracket an emission with its own output.
+            after = conn.execute(
+                "SELECT created_at FROM audit_trail "
+                "WHERE id > %s AND event_type NOT IN (%s, %s) ORDER BY id LIMIT 1",
+                (group[-1]["id"], DEPLOY_EVENT_TYPE, DEPLOY_FAILED_EVENT_TYPE),
+            ).fetchone()
+            before = conn.execute(
+                "SELECT created_at FROM audit_trail "
+                "WHERE id < %s AND event_type NOT IN (%s, %s) ORDER BY id DESC LIMIT 1",
+                (group[0]["id"], DEPLOY_EVENT_TYPE, DEPLOY_FAILED_EVENT_TYPE),
+            ).fetchone()
+            emitted_by = _to_dt(dict(after)["created_at"]) if after else None
+            emitted_after = _to_dt(dict(before)["created_at"]) if before else None
+            if emitted_by is None:
+                summary["unbracketed"] += len(group)
+                continue
+            if emitted_after is not None:
+                brackets.append(max(0.0, (emitted_by - emitted_after).total_seconds()))
+            for entry in group:
+                lag = max(0.0, (emitted_by - entry["landed_at"]).total_seconds())
+                lags.append(lag)
+                hours = lag / 3600.0
+                key = ("<1m" if lag < 60 else "<1h" if hours < 1 else
+                       "1-3h" if hours < 3 else "3-6h" if hours < 6 else
+                       "6-12h" if hours < 12 else "12-24h" if hours < 24 else ">24h")
+                summary["buckets"][key] += 1
+
+        summary["emissions"] = len(emissions)
+        summary["measured"] = len(lags)
+        if lags:
+            ordered = sorted(lags)
+
+            def _pct(p: float) -> float:
+                pos = (len(ordered) - 1) * p
+                low = int(pos)
+                high = min(low + 1, len(ordered) - 1)
+                return ordered[low] + (ordered[high] - ordered[low]) * (pos - low)
+
+            summary["lag_hours"] = {
+                "min": round(ordered[0] / 3600.0, 2),
+                "p50": round(_pct(0.5) / 3600.0, 2),
+                "p75": round(_pct(0.75) / 3600.0, 2),
+                "p90": round(_pct(0.9) / 3600.0, 2),
+                "p95": round(_pct(0.95) / 3600.0, 2),
+                "max": round(ordered[-1] / 3600.0, 2),
+            }
+            summary["at_merge_time"] = summary["buckets"]["<1m"]
+        if brackets:
+            summary["bracket_seconds"] = {
+                "median": round(sorted(brackets)[len(brackets) // 2], 1),
+                "max": round(max(brackets), 1),
+            }
+        return summary
+    finally:
+        if own_conn:
+            conn.close()
+
+
 def dora_input_status(days: int = 30, conn=None) -> dict[str, Any]:
     """What the DORA query can currently see, table by table.
 
@@ -482,6 +733,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--sync", action="store_true", help="emit events for changes with none yet")
     parser.add_argument("--status", action="store_true", help="report what the DORA query can see")
+    parser.add_argument("--landing", metavar="TASK_ID",
+                        help="record ONE landed task's ledger row now (idempotent)")
+    parser.add_argument("--landing-latency", dest="landing_latency", action="store_true",
+                        help="how late the ledger rows in the window were written")
     parser.add_argument("--dry-run", action="store_true", help="with --sync: count, do not write")
     parser.add_argument(
         "--days",
@@ -492,12 +747,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true", help="machine-readable output")
     args = parser.parse_args(argv)
 
-    if not (args.sync or args.status):
-        parser.error("nothing to do — pass --sync and/or --status")
+    if not (args.sync or args.status or args.landing or args.landing_latency):
+        parser.error("nothing to do — pass --sync, --status, --landing or --landing-latency")
 
     result: dict[str, Any] = {}
     if args.sync:
         result["sync"] = sync_delivery_events(days=args.days, dry_run=args.dry_run)
+    if args.landing:
+        result["landing"] = emit_landing(args.landing, days=args.days)
+    if args.landing_latency:
+        result["landing_latency"] = landing_latency(days=min(args.days, 30))
     if args.status:
         result["status"] = dora_input_status(days=min(args.days, 30))
 

@@ -7820,7 +7820,27 @@ python tools/idp/delivery_events.py --sync --dry-run --json
 # Emit (incremental and idempotent; re-running adds only new changes)
 python tools/idp/delivery_events.py --sync --json
 python tools/idp/delivery_events.py --sync --days 90 --json   # cold-install backfill
+
+# Record ONE landed task's ledger row NOW — what the --merge door calls
+python tools/idp/delivery_events.py --landing <task-id> --json
+
+# How late were the rows in the window actually written? (autonomy-act-08)
+python tools/idp/delivery_events.py --landing-latency --days 30 --json
 ```
+
+**The sweep is a backfill, and a backfill has a latency.** The ledger is also
+the door-agnostic record `tools/kanban/detector_findings.ledger_landing` reads
+to decide whether a recovery escalation has since been answered — the only door
+through which a `land.py` merge is visible to that rule. Measured over the 625
+landings of the 30 days to 2026-09-12 the row arrived **p50 4.0h / p95 9.2h /
+max 96.8h** after the landing it describes (6h is the reflex *cadence*, not the
+lag), and on 2026-09-03 `rmf-ui-13` landed at 18:43, had its detector card
+promoted at 20:11 and got its ledger row at 22:40. `cli.py --set-status <id>
+done --merge` now calls `emit_landing` itself, deduped against the sweep through
+the same `emitted_task_ids` set. `--landing-latency` is the estimator that
+measured it: a ledger row is stamped at the *landing*, so it cannot time its own
+insertion — the first non-ledger `audit_trail` id after it bounds that from
+above. Survey: [autonomy-act-08-ledger-latency.md](../audits/autonomy-act-08-ledger-latency.md).
 
 The mapping: one `done` task = one `deployment_initiated` event stamped at the
 moment the change landed (not at backfill time); a change whose *most recent*
