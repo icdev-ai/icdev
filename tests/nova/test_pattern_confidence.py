@@ -186,17 +186,39 @@ def test_half_life_is_read_from_memory_config():
 def _make_db(*, with_session_ref: bool):
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
-    extra = ", session_ref TEXT" if with_session_ref else ""
     # `topics`, not `tags` — that is the column the live table carries and the
     # column `index_session_turn` writes (swp-scan-01). A fixture spelling it
     # `tags` makes every INSERT raise into a best-effort `except` and the test
     # then asserts against a no-op it caused itself.
-    conn.execute(
-        "CREATE TABLE memory_entries ("
-        " id TEXT PRIMARY KEY, type TEXT, content TEXT, topics TEXT DEFAULT '',"
-        " importance INTEGER DEFAULT 5, classification TEXT DEFAULT 'CUI',"
-        f" created_at TEXT{extra})"
-    )
+    # NOT NULL on id and content mirrors the schema of record
+    # (tools/db/schema/pg_consolidated.sql) — `CREATE TABLE IF NOT EXISTS` never
+    # ALTERs, so a fixture that drifts from it is green here and red on a fresh
+    # database. Two whole statements rather than one built by concatenation:
+    # `tools/ci/schema_drift_census.py` parses the DDL literal, and a spliced
+    # one is exactly what it cannot read.
+    if with_session_ref:
+        conn.execute(
+            """CREATE TABLE memory_entries (
+                   id TEXT NOT NULL PRIMARY KEY,
+                   type TEXT,
+                   content TEXT NOT NULL,
+                   topics TEXT DEFAULT '',
+                   importance INTEGER DEFAULT 5,
+                   classification TEXT DEFAULT 'CUI',
+                   created_at TEXT,
+                   session_ref TEXT)"""
+        )
+    else:
+        conn.execute(
+            """CREATE TABLE memory_entries (
+                   id TEXT NOT NULL PRIMARY KEY,
+                   type TEXT,
+                   content TEXT NOT NULL,
+                   topics TEXT DEFAULT '',
+                   importance INTEGER DEFAULT 5,
+                   classification TEXT DEFAULT 'CUI',
+                   created_at TEXT)"""
+        )
     conn.commit()
     return conn
 
