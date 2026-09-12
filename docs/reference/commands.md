@@ -9029,3 +9029,42 @@ bare runner, reading `protected_paths` from the PR's BASE branch and never its
 head. Exit 0 clean, 1 protected, 2 undecidable (fail-closed: the workflow skips).
 Measured 2026-09-07: 8 of the last 10 protected-path merges went through that
 workflow unattended. Survey: docs/audits/mfx-mrg-07-actions-auto-merge-door-survey.md
+
+### The handoff record a failed / timed-out / token-exhausted run leaves behind (xrv-run-02)
+
+```bash
+python -m tools.kanban.handoff_record --task <task-id> --json       # the stored schema-1 record
+python -m tools.kanban.handoff_record --task <task-id> --render     # the block the next prompt gets
+python -m tools.kanban.handoff_record --task <task-id> --render --max-tokens 600
+```
+
+`_get_retry_coaching` prepended ONLY `failure_count` plus a 500-char
+`last_failure_reason`, so every retry re-derived what the previous attempt had
+already learned. The scheduler now ALSO writes a schema-1 JSON record into the
+EXISTING `kanban_tasks.last_run_metadata` column (no migration) on all three
+non-completion paths -- verification failure, dispatch timeout, token
+exhaustion -- and renders it into the next prompt in `handoff_generator`'s
+section order, bounded at 1,200 tokens by `llm/context_budget.estimate_tokens`
+and shedding EVIDENCE before narrative, every shed item counted.
+
+EVERY UNREADABLE FIELD IS `null`, NEVER `[]` OR `0`, and the two render as
+different sentences -- "the worktree could not be read" against "the attempt
+changed no files". Collapsing them lets a wiped worktree read as an agent that
+wrote nothing, which is the phantom-completion reading the done-gate already
+refuses one layer up. `cost_usd` is `null` for BOTH an unreadable ledger and a
+task with no attributed row: neither is evidence the attempt was free.
+
+`validation` is the metrics dict `_run_post_task_validation` ALREADY returned
+for THAT attempt, captured once and consumed once. It is never re-run here --
+re-running costs the 30-60s the failure path exists to avoid, and it answers a
+different question (what the tree looks like NOW, not what the run saw), so a
+record with none says `null` and means it.
+
+`files_touched` is `git status --porcelain` unioned with `<base>...HEAD`, and
+NOT a bare `git diff --name-only`: its own positive control caught that a bare
+diff reports only UNSTAGED changes, so an attempt that had `git add`ed its work
+-- or written a new file and never added it, the commonest shape of an
+interrupted run -- reported an empty list.
+
+A task with NO record renders today's coaching byte-unchanged, so this is
+additive to every retry already on the board.
