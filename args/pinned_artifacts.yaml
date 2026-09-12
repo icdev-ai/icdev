@@ -91,8 +91,8 @@
 #
 # A CONSTANT IS NOT A DEFAULT, AND `elasticache-valkey` IS THE HARDER CASE
 # ------------------------------------------------------------------------
-# (artifact-fresh-ee3339893b, the second of those five, measured the same way on
-# 2026-09-12.) `rds-postgres` is a DEFAULT: floci builds
+# (artifact-fresh-ee3339893b -- the first of those five to get its own card,
+# measured the same way on 2026-09-12.) `rds-postgres` is a DEFAULT: floci builds
 # `postgres:<EngineVersion>-alpine`, so a caller who asks for 18.6 by name gets
 # it and must vendor it. ElastiCache has no such knob. floci 2.0.1's native
 # binary contains exactly ONE valkey image string, `valkey/valkey:8`, and FOUR
