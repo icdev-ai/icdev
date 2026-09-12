@@ -408,6 +408,109 @@ def probe_reflex(conn, since: datetime, threshold: int, max_listed: int) -> Clas
     return res
 
 
+#: Caller-source values written by ``tools/mcp/dispatch_audit.py`` all carry
+#: this prefix. Imported nowhere and duplicated nowhere else: the reader must
+#: not import an MCP server module to measure it (that pulls in the whole tool
+#: registry), and a test pins the two spellings together.
+_MCP_SERVER_SOURCE_PREFIX = "mcp_server:"
+
+#: What an empty or NULL ``caller_source`` is reported as. NEVER folded into
+#: either real caller: a row whose writer did not say who it was is a third
+#: thing, and attributing it to Studio (the only writer before xrv-cost-05)
+#: would be a guess dressed as a measurement.
+_UNATTRIBUTED_SOURCE = "(unattributed)"
+
+
+def _dispatch_by_caller_source(
+    conn, since: datetime, declared: set, max_listed: int
+) -> Dict[str, Any]:
+    """Split ``studio_mcp_dispatch_audit`` events by WHO dispatched them.
+
+    WHY (xrv-cost-05). Until this card the table had exactly two writers, both
+    Studio-internal, and nothing under ``tools/mcp/`` -- the servers Claude
+    Code talks to -- wrote a row. So ``consumed``/``inert`` above described ONE
+    CALLER while wearing the name of all callers, and a tool used daily from a
+    Claude Code session read ``inert``. ``base_server._handle_tools_call`` now
+    writes a row with ``caller_source = 'mcp_server:<name>'``, so the next
+    reader can say WHICH caller the consumption came from.
+
+    THE TWO ARE NEVER MERGED INTO ONE NUMBER. They answer different questions
+    -- "did a governed workflow dispatch this" and "did an interactive session
+    use this" -- and a sum answers neither. ``consumed``/``inert`` on the
+    ClassResult remain the union, which is the right denominator for "is this
+    tool used at all"; this is the attribution beside it, never instead of it.
+    """
+    out: Dict[str, Any] = {
+        "note": (
+            "Studio-gate dispatches and MCP-server dispatches are counted "
+            "APART and never summed: they measure different callers. "
+            "consumed/inert above is the union."
+        ),
+    }
+    try:
+        bound = _window_bound(conn, "studio_mcp_dispatch_audit", "recorded_at", since)
+        rows = conn.execute(
+            "SELECT caller_source AS src, tool AS tool, decision AS decision, "
+            "COUNT(*) AS n FROM studio_mcp_dispatch_audit "
+            "WHERE recorded_at IS NOT NULL AND recorded_at >= %s "
+            "GROUP BY caller_source, tool, decision",
+            (bound,),
+        ).fetchall()
+    except Exception as exc:  # noqa: BLE001
+        _rollback(conn)
+        # UNMEASURED, never an empty split: a board whose caller_source column
+        # cannot be read has not told us that every dispatch came from Studio.
+        out["state"] = "unmeasured"
+        out["reason"] = f"caller_source query failed: {exc}"
+        out["sources"] = None
+        return out
+
+    by_source: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
+        rec = dict(row)
+        src = str(rec.get("src") or "").strip() or _UNATTRIBUTED_SOURCE
+        n = int(rec.get("n") or 0)
+        entry = by_source.setdefault(
+            src,
+            {
+                "kind": (
+                    "mcp_server"
+                    if src.startswith(_MCP_SERVER_SOURCE_PREFIX)
+                    else ("unattributed" if src == _UNATTRIBUTED_SOURCE else "studio_gate")
+                ),
+                "events": 0,
+                "allowed_events": 0,
+                "declared_tools": set(),
+                "undeclared_tools": set(),
+            },
+        )
+        entry["events"] += n
+        if str(rec.get("decision") or "") == "allowed":
+            entry["allowed_events"] += n
+        tool = str(rec.get("tool") or "")
+        if tool in declared:
+            entry["declared_tools"].add(tool)
+        else:
+            entry["undeclared_tools"].add(tool)
+
+    sources: Dict[str, Any] = {}
+    for src, entry in sorted(by_source.items()):
+        declared_tools = sorted(entry.pop("declared_tools"))
+        undeclared_tools = sorted(entry.pop("undeclared_tools"))
+        entry["declared_tools_consumed"] = len(declared_tools)
+        entry["declared_tools_sample"] = declared_tools[:max_listed]
+        # An undeclared tool is REPORTED and never folded into the class's
+        # consumed count -- the same rule the cortex_facade probe already
+        # follows for an operation its declaration does not list.
+        entry["undeclared_tools_observed"] = len(undeclared_tools)
+        entry["undeclared_tools_sample"] = undeclared_tools[:max_listed]
+        sources[src] = entry
+
+    out["state"] = "measured" if sources else "no_events_in_window"
+    out["sources"] = sources
+    return out
+
+
 def probe_mcp_dispatch_tool(conn, since: datetime, threshold: int, max_listed: int) -> ClassResult:
     """MCP tools in the registry vs. dispatch attempts the tool gate recorded."""
     res = ClassResult(
@@ -452,6 +555,9 @@ def probe_mcp_dispatch_tool(conn, since: datetime, threshold: int, max_listed: i
     allowed_declared = sum(allowed.get(name, 0) for name in set(declared))
     res.extra["allowed_events"] = allowed_declared
     res.extra["denied_events"] = res.events - allowed_declared
+    res.extra["by_caller_source"] = _dispatch_by_caller_source(
+        conn, since, set(declared), max_listed
+    )
     return res
 
 

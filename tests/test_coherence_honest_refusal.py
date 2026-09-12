@@ -209,8 +209,31 @@ def test_the_live_gate_budget_was_not_raised():
     grandfathered = (gate or {}).get("grandfathered") or {}
     assert int(grandfathered.get("verified_claim", 0)) == 0, (
         "verified_claim was grandfathered to get this through -- forbidden")
-    assert int(grandfathered.get("mcp_dispatch_tool", 0)) == 467, (
-        "mcp_dispatch_tool budget moved; this card does not touch it")
+    # A RATCHET, NOT A PIN (xrv-cost-05). This was `== 467`, written by a card
+    # that wanted to say "I did not touch it" — but equality also refuses the
+    # one direction args/liveness_gate.yaml asks for ("Lower a count when you
+    # wire a capability up. NEVER raise one"). xrv-cost-05 wired the MCP
+    # servers' own dispatch audit and drained 468 inert -> 460, and the equality
+    # failed it for draining the backlog.
+    #
+    # THE CEILING IS THE CURRENT VALUE, NOT THE OLD ONE, and that is what makes
+    # this a ratchet rather than a relaxation. `<= 467` would have permitted a
+    # silent regrowth from 460 back to 467 — a backlog rebuilding itself behind
+    # a green gate, which is the exact failure the census discipline exists to
+    # stop. Pinning the ceiling at what we actually drained to is the same rule
+    # `backlog_max`, `skip_max` and `self_root_max` already carry: it may only
+    # ever be LOWERED, by the card that does the wiring.
+    #
+    # It is also what makes this change DISCRIMINATING. `<= 467` passes against
+    # the merge base unchanged (467 <= 467), so it asserts current behaviour and
+    # the red-first gate refuses it — correctly, because a test relaxed to admit
+    # a change can never have gone red for it. `<= 460` fails at the merge base
+    # (467 > 460) and passes here, so the RED is recorded.
+    assert int(grandfathered.get("mcp_dispatch_tool", 10**9)) <= 460, (
+        "mcp_dispatch_tool budget was RAISED above the 460 this card drained it "
+        "to; grandfathering a capability to get a commit through is forbidden — "
+        "wire it up or do not declare it. Lower this ceiling when you drain it "
+        "further; never raise it.")
 
 
 def test_the_consumption_report_emits_the_count():

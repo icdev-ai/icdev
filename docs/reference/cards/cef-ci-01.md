@@ -54,8 +54,13 @@ args/liveness_gate.yaml ARE the measurement, not a chosen allowance:
 Declarations are read from source with `ast`, never imported: `tools.cortex`
 pulls in the retrieval stack and the LLM router, so an importing probe would
 go UNMEASURABLE on precisely the deployment where a backend is broken.
-NOT drained by this card, and pre-existing: `mcp_dispatch_tool` is 468 over a
+NOT drained by this card, and pre-existing: `mcp_dispatch_tool` was 468 over a
 467 budget because cef-rsv-01 registered the `cortex_resolve` MCP tool and
-only 4 tools in the whole 472-entry registry have ever been dispatched through
+only 4 tools in the whole 472-entry registry had ever been dispatched through
 the Studio gate. Raising that budget is forbidden; the repair is routing the
-other MCP entry points through the same audit.
+other MCP entry points through the same audit -- WHICH IS WHAT xrv-cost-05
+DID. `tools/mcp/base_server.py::_handle_tools_call`, the ONE choke point every
+MCP server in this tree dispatches through, now appends a row with
+`caller_source = 'mcp_server:<name>'`; measured on the live board 2026-09-12,
+lifetime: declared 472, consumed 4 -> 12, INERT 468 -> 460, and the budget is
+ratcheted DOWN to 460. See `docs/reference/cards/xrv-cost-05.md`.
