@@ -124,6 +124,39 @@
 # consumer-decided pin is still decided on, so converting those would leave them
 # `behind` rather than silence them -- a re-vendor question, and its own card.
 #
+# ONE OF THOSE FIVE HAS SINCE ARRIVED, the way that paragraph asks.
+# `ec2-amazonlinux` was measured on 2026-09-12 (artifact-fresh-b5394142b3) by
+# driving RunInstances, and it is converted BELOW with the log lines written
+# down -- including a finding postgres did not have: `amazonlinux:2023` is a
+# ROLLING tag whose digest moved under it. VALKEY followed, and is measured in
+# the block below. Three remain: mysql, registry, opensearch. Do not flip them
+# from this paragraph; measure each.
+
+# A CONSTANT IS NOT A DEFAULT, AND `elasticache-valkey` IS THE HARDER CASE
+# ------------------------------------------------------------------------
+# (artifact-fresh-ee3339893b -- the first of those five to get its own card,
+# measured the same way on 2026-09-12.) `rds-postgres` is a DEFAULT: floci builds
+# `postgres:<EngineVersion>-alpine`, so a caller who asks for 18.6 by name gets
+# it and must vendor it. ElastiCache has no such knob. floci 2.0.1's native
+# binary contains exactly ONE valkey image string, `valkey/valkey:8`, and FOUR
+# CreateReplicationGroup calls -- default, EngineVersion=7.1,
+# EngineVersion=99.99, and Engine=valkey/EngineVersion=9 -- ALL started
+# `valkey/valkey:8`; not one of them 404ed the way postgres:16.99-alpine did,
+# because the version was never read. DescribeCacheEngineVersions answers
+# UnsupportedOperation, so this too had to be driven rather than asked.
+#
+# So `valkey:8 -> 9` is not "a default a deployment could override": there is no
+# declaration in any API that makes floci 2.0.1 request valkey 9. Vendoring 9
+# would leave EVERY ElastiCache path unvendored, not merely the default one.
+#
+# THE DIGEST HALF OF THAT CARD WAS REAL, AND WAS ACTED ON. The same survey also
+# reported the tag had moved off sha256:98c6217c...; re-measured, `valkey:8` now
+# serves sha256:3fbd2e3e... and the container reports Valkey 8.1.10 on BOTH --
+# a base-image rebuild, not an engine upgrade. That is exactly the drift
+# `decided_by: consumer` exists to catch, so the pin files were re-cut to the
+# observed digest. Record:
+# docs/audits/artifact-fresh-ee3339893b-elasticache-valkey-pin.md.
+#
 # WHY `pypi` AND `package` ARE HERE when the card sketched
 # image|binary x dockerhub|ghcr|github_releases: `testcontainers-floci` is a
 # PyPI distribution (requirements.txt:57) and that is a fact this repository
@@ -242,12 +275,25 @@ artifacts:
     pin_source: "vendor/images/images-floci-runtime.txt"
     upstream: dockerhub
 
+  # DELIBERATELY KEPT at 8. Unlike rds-postgres this is not floci's default for
+  # a knob a caller can turn -- it is a CONSTANT in the emulator, and no API
+  # call reaches valkey 9. See "A CONSTANT IS NOT A DEFAULT" above; the decision
+  # record is docs/audits/artifact-fresh-ee3339893b-elasticache-valkey-pin.md.
   - name: elasticache-valkey
     kind: image
     ref: valkey/valkey
     pinned: "8"
     pin_source: "vendor/images/images-floci-runtime.txt"
     upstream: dockerhub
+    decided_by: consumer
+    consumer: floci
+    note: >-
+      floci 2.0.1 hard-codes `valkey/valkey:8` for every ElastiCache Redis and
+      Valkey replication group; EngineVersion is accepted and IGNORED (MEASURED
+      2026-09-12, artifact-fresh-ee3339893b). Upstream's valkey 9 is carried on
+      `upstream_newest` and does not decide this entry, because no declared
+      configuration makes this consumer request it. The pin moves when floci
+      moves, or when the tag stops serving the recorded digest.
 
   - name: elasticache-memcached
     kind: image
@@ -298,12 +344,27 @@ artifacts:
     upstream: dockerhub
     mutable_tag: true
 
+  # The second entry converted by measurement, and the record is
+  # docs/audits/artifact-fresh-b5394142b3-ec2-amazonlinux-pin.md.
   - name: ec2-amazonlinux
     kind: image
     ref: public.ecr.aws/amazonlinux/amazonlinux
     pinned: "2023"
     pin_source: "vendor/images/images-floci-runtime.txt"
     upstream: ecr_public
+    decided_by: consumer
+    consumer: floci
+    mutable_tag: true
+    note: >-
+      MEASURED 2026-09-12 (artifact-fresh-b5394142b3): `2023` is floci's OWN
+      default -- `defaultDockerImage` in its embedded AMI catalogue, which it
+      falls back to for an ImageId it does not know -- and the only other
+      amazonlinux tag floci 2.0.1 can ever request is `:2`, via
+      `ami-amazonlinux2`. Amazon Linux 2027 is a real release (published
+      2026-09-03) that no floci code path asks for, so it is carried on
+      `upstream_newest` and does not decide this entry. What DOES decide it is
+      digest drift, and here that is a live signal rather than a formality: this
+      major-version tag is ROLLING, so a re-vendor re-measures it.
 
   - name: ecr-registry
     kind: image

@@ -21,10 +21,23 @@ from tools.db.storage import column_exists, get_connection, is_pg, table_exists
 
 
 def _row_count(conn, table: str) -> int:
-    try:
-        return int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
-    except Exception:  # noqa: BLE001 - missing table counts as empty
+    """Rows in *table*, 0 when it is absent — ABSENCE ASKED OF THE CATALOGUE.
+
+    This was ``try: SELECT COUNT(*) ... except Exception: return 0``, i.e. a
+    read of the relation under test with failure as the expected path. On
+    PostgreSQL a failed statement ABORTS THE TRANSACTION, so reading the
+    exception as "absent" poisons every later statement in this rollback — the
+    rename and the constraint restores below — and the caller cannot tell an
+    empty table from a dead transaction. Same defect as migration 326's
+    ``_table_exists`` (mfx-ci-05); the census that found that one found this.
+
+    ``table_exists`` reads ``information_schema`` / ``sqlite_master``, which
+    returns a row or no row and raises in neither case, so there is nothing to
+    roll back. Behaviour is unchanged: absent still counts as empty.
+    """
+    if not table_exists(conn, table):
         return 0
+    return int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
 
 
 def _restore_nc_constraints(conn) -> None:

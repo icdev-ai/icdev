@@ -64,7 +64,42 @@ def _read_input() -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def deliver_resume_inbox() -> None:
+    """kpr-watch-19: hand this session anything queued for its task.
+
+    THE WINDOW THAT PAYS FOR pr_watcher TRAFFIC. Every ``pr_watcher.resume`` is
+    enqueued POST-run -- the watcher only resumes a task whose PR is already
+    open, and for qa-fail-5cacee65f1d03c8c the PR appeared at 22:45:33Z with the
+    resume written 19 minutes later. By then the session that opened it is
+    typically gone, so the mid-run PostToolUse drain cannot be the whole answer:
+    the message has to be waiting for the task's NEXT session, which is here.
+
+    Deliberately NOT under ``ICDEV_SESSION_START_HOOK``: that switch stands down
+    the memory/context block, and a resume is a different capability -- silently
+    losing one because someone quietened the context index is the class of
+    failure this card exists to end. Its own switch is ``ICDEV_RESUME_INBOX=0``.
+
+    Printed FIRST and separately from the context block: it is actionable, the
+    block is background, and a builder failure must not cost a delivery.
+    Never raises.
+    """
+    if os.environ.get("ICDEV_RESUME_INBOX", "1") == "0":
+        return
+    try:
+        from tools.hooks.resume_inbox import deliver
+
+        text = deliver(source="session_start").text
+        if text:
+            # Claude Code injects a SessionStart hook's stdout as context.
+            sys.stdout.write(text + "\n\n")
+            sys.stdout.flush()
+    except Exception:  # noqa: BLE001 — an inbox never fails a session
+        pass
+
+
 def main() -> None:
+    deliver_resume_inbox()
+
     if os.environ.get("ICDEV_SESSION_START_HOOK", "1") == "0":
         sys.exit(0)
 

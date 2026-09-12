@@ -131,7 +131,25 @@ grandfathered:
   # coupled to the registry SIZE, so a tool added without a gated dispatch trips
   # the check by +1. That is the gate working — a newly declared tool nothing
   # dispatches is precisely the defect. Wire it, or do not register it yet.
-  mcp_dispatch_tool: 467
+  #
+  # 467 -> 460 (xrv-cost-05). "Draining this means routing the other MCP entry
+  # points through the same audit" -- the paragraph above -- is exactly what
+  # happened. `tools/mcp/base_server.py::_handle_tools_call`, the ONE choke
+  # point every MCP server in this tree dispatches through, now appends a row
+  # with `caller_source = 'mcp_server:<name>'`. Before this card the table had
+  # exactly two writers, both Studio-internal, so the figure described ONE
+  # CALLER while wearing the name of all callers: 468 inert lifetime against
+  # a transcript-derived count showing Claude Code invoking `kanban_get_task`
+  # and `kanban_update_task` fifteen times in thirty days (tools/cost/
+  # waste_survey.py, xrv-cost-03) with not one of them visible here.
+  # MEASURED on the live PostgreSQL board 2026-09-12, lifetime, through the
+  # shipped probe: declared 472, consumed 4 -> 12, inert 468 -> 460, and the
+  # new `extra.by_caller_source` keeps the two callers APART -- 4 tools via
+  # the Studio gate, 9 via `mcp_server:icdev-unified`, one (`health_check`)
+  # shared, which is why the union is 12 and not 13.
+  # docs/audits/xrv-cost-05-mcp-dispatch-audit.md records both readings, the
+  # measured added latency, and what the 9 are.
+  mcp_dispatch_tool: 460
 
   # agent_approval_log holds not one gate decision — 0 rows with a tier
   # classify() can emit, whole table, whole lifetime. A gate whose decision log

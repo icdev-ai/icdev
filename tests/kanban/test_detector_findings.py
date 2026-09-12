@@ -734,6 +734,132 @@ def test_closed_is_read_from_the_one_declaration_never_respelled():
     assert "decomposed" not in whole, "CLOSED_STATUSES has been respelled here"
 
 
+# --------------------------------------------------------------------------
+# the SECOND door a landing comes through: the merge ledger (autonomy-act-06)
+# --------------------------------------------------------------------------
+def _ledger_row(subject, at, *, source=df.LEDGER_SOURCE, result="passed"):
+    """One `change landed on main: <id>` audit row, as `tools/idp/delivery_events`
+    writes it."""
+    return {"action": f"{df.LEDGER_ACTION_PREFIX}{subject}",
+            "d": json.dumps({"source": source, "task_id": subject,
+                             "landed_at": at.isoformat(),
+                             "verification_result": result}),
+            "created_at": at.isoformat()}
+
+
+def test_ledger_landing_is_the_order_of_a_ledger_row_against_the_escalation():
+    landed = df.ledger_landing([_ledger_row("mfx-mrg-01", ESC + timedelta(hours=2))],
+                               "mfx-mrg-01", escalated_at=ESC.isoformat())
+    assert landed["measurable"] is True and landed["landed"] is True
+    assert landed["landed_at"] == (ESC + timedelta(hours=2)).isoformat()
+
+    # a landing BEFORE the escalation is not an answer to it -- the watcher
+    # escalated about something that came after
+    before = df.ledger_landing([_ledger_row("mfx-mrg-01", ESC - timedelta(hours=2))],
+                               "mfx-mrg-01", escalated_at=ESC.isoformat())
+    assert before["measurable"] is True and before["landed"] is False
+
+    # another subject's landing is not this subject's evidence
+    other = df.ledger_landing([_ledger_row("mfx-mrg-02", ESC + timedelta(hours=2))],
+                              "mfx-mrg-01", escalated_at=ESC.isoformat())
+    assert other["landed"] is False
+
+    # a `deployment_initiated` row from somewhere OTHER than the merge ledger is
+    # not a landing -- the event_type is shared, the source is what names it
+    foreign = df.ledger_landing(
+        [_ledger_row("mfx-mrg-01", ESC + timedelta(hours=2), source="some_other_writer")],
+        "mfx-mrg-01", escalated_at=ESC.isoformat())
+    assert foreign["landed"] is False
+
+    # no escalation to order against -> UNMEASURABLE, and `landed` is None,
+    # NEVER False: "cannot tell" and "it did not land" send a caller to
+    # opposite places, exactly as `merge_after_escalation` already refuses.
+    for esc in (None, ""):
+        unknown = df.ledger_landing([_ledger_row("mfx-mrg-01", ESC)], "mfx-mrg-01",
+                                    escalated_at=esc)
+        assert unknown["measurable"] is False and unknown["landed"] is None
+
+
+def test_a_subject_that_landed_through_the_MERGE_door_reads_record():
+    """autonomy-act-06. `cli.py --set-status <id> done --merge` (mfx-mrg-04), the
+    Actions auto-merge workflow (mfx-mrg-07) and a hand `gh pr merge` all leave
+    ZERO `pr_watcher.merge` rows. Measured over all 42 lifetime dispositioned
+    recovery findings on 2026-09-12: 9 of the 10 `card` verdicts were subjects
+    already `done` on the board with a merge-ledger row and no watcher merge."""
+    f = _ordered_finding("mfx-mrg-01", superseded=False)
+    # the watcher's own half says NO -- the escalation is the newer of its rows
+    assert f["merge_after_escalation"]["superseded"] is False
+    landed = df.ledger_landing([_ledger_row("mfx-mrg-01", ESC + timedelta(days=1))],
+                               "mfx-mrg-01",
+                               escalated_at=f["merge_after_escalation"]["escalated_at"])
+
+    got = df.card_disposition(f, subject_status="done", landed_on_main=landed)
+    assert got["disposition"] == df.DISPOSITION_RECORD
+    assert got["landed_via"] == df.LANDED_VIA_LEDGER
+    assert got["landed_at"] == (ESC + timedelta(days=1)).isoformat()
+    # the watcher never merged it, and the record must not claim otherwise
+    assert got["merged_at"] is None
+    assert "nothing is left to land" in got["reason"]
+
+    # the CONJUNCTION is unchanged: a landing alone is not enough
+    for status in ("pr_opened", "in_progress", None):
+        assert df.card_disposition(f, subject_status=status,
+                                   landed_on_main=landed)["disposition"] == \
+            df.DISPOSITION_CARD
+
+    # and the watcher door still reports itself as the watcher door
+    watcher = df.card_disposition(_ordered_finding("rmf-ui-10"), subject_status="done")
+    assert watcher["landed_via"] == df.LANDED_VIA_WATCHER and watcher["merged_at"]
+
+
+def test_no_ledger_landing_keeps_the_card(conn, seeded):
+    """The negative control: `xrv-cost-05` is genuinely `pr_opened` with no
+    ledger row, and must not flip."""
+    f = _ordered_finding("xrv-cost-05", superseded=False)
+    esc = f["merge_after_escalation"]["escalated_at"]
+    for landed in (None, {}, df.ledger_landing([], "xrv-cost-05", escalated_at=esc)):
+        got = df.card_disposition(f, subject_status="pr_opened", landed_on_main=landed)
+        assert got["disposition"] == df.DISPOSITION_CARD
+        assert got["reason"]
+
+
+def test_dispositions_reads_the_merge_ledger_for_a_subject_the_watcher_never_merged(
+        conn, seeded):
+    """End to end through the SHIPPED surface: board `done`, a
+    `change landed on main:` row, and NO `pr_watcher.merge` row at all."""
+    f = _ordered_finding("mfx-mrg-01", superseded=False)
+    conn.execute("INSERT INTO kanban_tasks (id, title, status) VALUES (?, ?, ?)",
+                 ("mfx-mrg-01", "the subject", "done"))
+    conn.commit()
+    df.consume({}, conn=conn, runners=_runners(recovery=("findings", [f])))
+
+    conn.execute(
+        "INSERT INTO audit_trail (event_type, actor, action, details, created_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        ("pr_watcher", "pr_watcher", "pr_watcher.escalate",
+         json.dumps({"task_id": "mfx-mrg-01", "reason": "CI failed"}), ESC.isoformat()))
+    landed_at = ESC + timedelta(days=2)
+    row = _ledger_row("mfx-mrg-01", landed_at)
+    conn.execute(
+        "INSERT INTO audit_trail (event_type, actor, action, details, created_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        ("deployment_initiated", "kanban-delivery-pipeline", row["action"],
+         row["d"], row["created_at"]))
+    conn.commit()
+
+    # nothing wrote a pr_watcher.merge -- the landing came through another door
+    assert not [r for r in df.watcher_outcome_rows(conn)
+                if str(dict(r)["action"]).endswith(".merge")]
+    assert len(df.merge_ledger_rows(conn)) == 1
+
+    got = df.dispositions(conn)
+    assert got["measured"] is True and got["record_only"] == 1 and got["card"] == 0
+    entry = got["findings"][0]
+    assert entry["disposition"] == df.DISPOSITION_RECORD
+    assert entry["landed_via"] == df.LANDED_VIA_LEDGER
+    assert entry["landed_at"] == landed_at.isoformat()
+
+
 def test_a_delivered_subject_is_RECORDED_and_never_dispatched(conn, seeded):
     f = _ordered_finding("rmf-ui-10")
     conn.execute("INSERT INTO kanban_tasks (id, title, status) VALUES (?, ?, ?)",

@@ -26,6 +26,8 @@ import sys
 import traceback
 from typing import Any, Callable, Dict, List, Optional
 
+from tools.mcp import dispatch_audit
+
 # Configure logging to stderr so it does not interfere with the JSON-RPC stdio transport.
 logging.basicConfig(
     stream=sys.stderr,
@@ -296,6 +298,16 @@ class MCPServer:
         if self._prompts:
             capabilities["prompts"] = {"listChanged": False}
 
+        # xrv-cost-05: say whether this server's dispatch audit is recording.
+        # A client that cannot tell "switched off" from "on and recording
+        # nothing" reads an empty audit table as a quiet fleet, which is the
+        # exact misreading this writer exists to end.
+        try:
+            audit = dispatch_audit.audit_status()
+        except Exception as exc:  # noqa: BLE001 - never break the handshake
+            logger.warning("Dispatch audit status unavailable: %s", exc)
+            audit = {"enabled": None, "reason": f"status unavailable: {exc}"}
+
         return {
             "protocolVersion": PROTOCOL_VERSION,
             "capabilities": capabilities,
@@ -303,6 +315,7 @@ class MCPServer:
                 "name": self.name,
                 "version": self.version,
             },
+            "icdev": {"dispatchAudit": audit},
         }
 
     def _handle_tools_list(self, params: dict) -> dict:
@@ -318,15 +331,46 @@ class MCPServer:
             )
         return {"tools": tools_list}
 
+    def _audit_dispatch(
+        self, tool_name: str, arguments: Any, decision: str, reason: str,
+        detail: str = "",
+    ) -> None:
+        """The ONE server-side dispatch-audit call site (xrv-cost-05).
+
+        Here and nowhere else: every MCP server in this tree subclasses this
+        class and every ``tools/call`` funnels through
+        :meth:`_handle_tools_call`, so one site covers all of them, while a
+        per-server hook would be fifteen chances to forget one. Best-effort by
+        construction -- ``record_tool_call`` never raises and never touches the
+        result -- and the import is lazy so a server that never dispatches a
+        tool never pays it. See ``tools/mcp/dispatch_audit.py``.
+        """
+        try:
+            dispatch_audit.record_tool_call(
+                self.name, tool_name, arguments,
+                decision=decision, reason=reason, detail=detail,
+            )
+        except Exception as exc:  # noqa: BLE001 - an audit must never break a call
+            logger.warning("Dispatch audit unavailable for %s: %s", tool_name, exc)
+
     def _handle_tools_call(self, params: dict) -> dict:
         """Dispatch a tool call to the registered handler.
 
         D284: Auto-instruments all 15 MCP servers via trace span.
+        xrv-cost-05: Leaves exactly one ``studio_mcp_dispatch_audit`` row on
+        every path out of here -- unknown tool, raising handler, or dispatched.
         """
         tool_name = params.get("name", "")
         arguments = params.get("arguments", {})
 
         if tool_name not in self._tools:
+            # An unknown tool IS a tools/call, and a client asking for one is
+            # exactly the thing an audit should be able to answer afterwards.
+            self._audit_dispatch(
+                tool_name, arguments, dispatch_audit.DECISION_REFUSED,
+                dispatch_audit.REASON_UNKNOWN_TOOL,
+                detail=f"Unknown tool: {tool_name}",
+            )
             raise _MethodNotFound(f"Unknown tool: {tool_name}")
 
         handler = self._tools[tool_name]["handler"]
@@ -358,6 +402,11 @@ class MCPServer:
             result = handler(arguments)
         except Exception as exc:
             logger.error("Tool %s raised: %s", tool_name, exc)
+            self._audit_dispatch(
+                tool_name, arguments, dispatch_audit.DECISION_REFUSED,
+                type(exc).__name__,
+                detail=str(exc),
+            )
             if span:
                 span.set_status("ERROR", str(exc))
                 span.add_event(
@@ -385,6 +434,11 @@ class MCPServer:
             text = result
         else:
             text = json.dumps(result, indent=2, default=str)
+
+        self._audit_dispatch(
+            tool_name, arguments, dispatch_audit.DECISION_ALLOWED,
+            dispatch_audit.REASON_DISPATCHED,
+        )
 
         if span:
             _result_hash = _hl.sha256(text.encode()).hexdigest()[:16]

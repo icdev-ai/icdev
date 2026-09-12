@@ -404,6 +404,30 @@ def test_the_shipped_postgres_pin_is_decided_by_floci_not_by_postgres_releases()
     assert entry["consumer"] == "floci"
 
 
+def test_the_shipped_ec2_pin_is_decided_by_floci_not_by_amazon_linux_releases():
+    """artifact-fresh-b5394142b3, the same defect one service over.
+
+    MEASURED 2026-09-12 by driving floci 2.0.1: its AMI catalogue maps each
+    ImageId it knows to a docker image, and an ImageId it does not know is
+    answered `AmiImageResolver  Unknown AMI ID ami-0f00f00f00f00f00f; falling
+    back to default image public.ecr.aws/amazonlinux/amazonlinux:2023`. `2027`
+    is a real Amazon Linux release -- and floci 2.0.1 has no code path that
+    requests it, so vendoring it would leave the DEFAULT path out of the bundle.
+    """
+    entry = next(e for e in AF.load_config()["artifacts"] if e["name"] == "ec2-amazonlinux")
+    assert entry["pinned"] == "2023"
+
+def test_the_shipped_valkey_pin_is_decided_by_floci_which_hard_codes_the_tag():
+    """artifact-fresh-ee3339893b. Harder than the postgres case: that one is
+    floci's DEFAULT for a knob a caller can turn, this one is a CONSTANT. Four
+    CreateReplicationGroup calls -- default, EngineVersion=7.1,
+    EngineVersion=99.99 and Engine=valkey/EngineVersion=9 -- ALL started
+    valkey/valkey:8 (measured 2026-09-12), so no declared configuration reaches
+    valkey 9 and bumping this pin unvendors EVERY ElastiCache path."""
+    entry = next(e for e in AF.load_config()["artifacts"]
+                 if e["name"] == "elasticache-valkey")
+    assert entry["pinned"] == "8"
+
 def test_the_shipped_opensearch_pin_is_decided_by_floci_not_by_opensearch_releases():
     """artifact-fresh-a7486018c7. Stronger than the postgres case: floci 2.0.1
     resolves the tag through a CLOSED EngineVersion table that stops at
@@ -417,6 +441,26 @@ def test_the_shipped_opensearch_pin_is_decided_by_floci_not_by_opensearch_releas
     assert entry["consumer"] == "floci"
 
 
+def test_the_valkey_digest_is_the_one_re_measured_after_the_tag_moved():
+    """The version half of that card was refused; the DIGEST half was real and
+    was acted on. A revert to the stale digest would make an air-gap bundle
+    re-cut from the tag disagree with the file that names it."""
+    remeasured = (
+        "sha256:3fbd2e3e4b6e85e046c1e7c215e8f79087bc0357789184305806664e320996f3"
+    )
+    stale = (
+        "sha256:98c6217ccc2fe5e6c4b5dcd5c40eef4de2a68924e7ecef50d5a0a30b57dfaef6"
+    )
+    pins = (ROOT / "vendor" / "images" / "images-floci-runtime.txt").read_text(
+        encoding="utf-8"
+    )
+    # Only the PIN lines decide what gets vendored; the stale digest is still
+    # named in a comment above them, on purpose, as the thing that moved.
+    active = [ln.strip() for ln in pins.splitlines()
+              if ln.strip() and not ln.lstrip().startswith("#")]
+    valkey = [ln for ln in active if ln.startswith("valkey/valkey@")]
+    assert valkey == [f"valkey/valkey@{remeasured}"]
+    assert not any(stale in ln for ln in active)
 # --------------------------------------------------------------------------- #
 # ordering — same SHAPE only
 # --------------------------------------------------------------------------- #

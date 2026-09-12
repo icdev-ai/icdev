@@ -86,12 +86,39 @@ def _table_exists(conn, table: str) -> bool:
     The studio schema is created by tools/studio/init_db.py, not by the
     migration chain, so a database that has never had studio initialised will
     not have these tables at all. That is not an error for this migration.
+
+    ASK THE CATALOGUE, NEVER THE RELATION UNDER TEST. This probed with
+    ``SELECT 1 FROM {table} LIMIT 1`` and read the exception as absence, so
+    FAILURE WAS THE EXPECTED PATH -- and on PostgreSQL a failed statement
+    ABORTS THE TRANSACTION. The skip WAS the abort, which is the one thing the
+    paragraph above says this function exists to avoid. Worse here than in a
+    single probe because ``up()`` is a LOOP: the first absent table poisoned
+    the transaction, every later probe then failed for that reason and read as
+    ABSENT, every later ``_add_column`` failed too, and the migration reported
+    success having backfilled NOTHING -- against exactly the fresh-PostgreSQL
+    database (studio never initialised) that motivated the skip. The same
+    defect took ``Test (PostgreSQL)`` and all four E2E shards down from
+    ``20260912122759_add_experiment_candidate_lane`` (run 34696022955,
+    2026-09-12) and blanked a live column in ``posture._has_rows`` (rmf-rail-02).
+
+    A catalogue read returns a row or no row and raises in neither case, so
+    there is nothing to roll back -- the idiom migration 020 established for
+    ``kanban_tasks``. NOT ``conn.rollback()``: this runs on a connection
+    ``get_connection()`` owns, and a rollback there discards whatever
+    uncommitted work the caller was in the middle of.
     """
-    try:
-        conn.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchall()
-        return True
-    except Exception:  # noqa: BLE001
-        return False
+    if is_pg(conn):
+        row = conn.execute(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema='public' AND table_name=?",
+            (table,),
+        ).fetchone()
+        return row is not None
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (table,),
+    ).fetchone()
+    return row is not None
 
 
 def up(conn=None) -> None:
