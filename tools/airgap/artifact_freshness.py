@@ -57,6 +57,32 @@ TWO BASES FOR `behind`, AND WHICH ONE DECIDED IS RECORDED
                         is the one signal those two entries can give.
 ``basis: version``      a package index answered with a version string.
 
+A TAG SOMEBODY ELSE CHOOSES IS NOT CHASING ITS OWN RELEASE TRAIN
+-----------------------------------------------------------------
+The shape rule above stops ``16.3-alpine`` being reported behind ``16.4``.
+MEASURED 2026-09-12, it did not go far enough: the eleven floci RUNTIME base
+images are refs the EMULATOR asks for, and it asks for them by a tag it builds
+from its own defaults. Driven live, floci 2.0.1 logged ``Image already present
+locally, skipping pull: postgres:16.3-alpine`` for a default
+``CreateDBInstance(Engine=postgres)`` and ``Pulling image: postgres:16.99-alpine``
+when ``EngineVersion=16.99`` was requested -- so the ref is
+``postgres:<EngineVersion>-alpine`` and 16.3 is floci's DEFAULT, not our guess
+at postgres's newest. Reporting that pin ``behind 18.6-alpine`` recommends
+vendoring an image floci will never pull WHILE leaving the one it does pull out
+of the air-gap bundle, which is the exact failure vendor/images exists to stop.
+Six of the eleven were being reported that way, ``mysql:8.0.36 -> 26.7.0``
+loudest among them.
+
+So an entry may declare ``decided_by: consumer`` naming the ``consumer`` whose
+currency really decides it (``floci``, itself an artifact in this manifest, so
+the delegation is checkable and a test asserts it resolves). Such an entry is
+decided on DIGEST DRIFT -- the one currency question upstream can answer about
+a tag chosen by someone else -- and upstream's newest comparable tag is still
+looked up and carried on ``upstream_newest``. It is reported, never hidden; it
+simply does not decide the status. A consumer-decided pin moves when the
+CONSUMER moves, which is a re-measurement (``python -m tools.cloud.runtime_images
+--measure-help``), not a bump.
+
 DIGEST DRIFT IS REPORTED ON EVERY IMAGE, not only the mutable ones. For a
 semver-pinned image the STATUS is decided by the tag ordering and the drift
 rides alongside as ``digest_drift`` -- ``True`` | ``False`` | ``None``, and
@@ -138,6 +164,12 @@ STATUSES = (STATUS_CURRENT, STATUS_BEHIND, STATUS_UNMEASURABLE)
 BASIS_VERSION_TAG = "version_tag"
 BASIS_DIGEST = "digest"
 BASIS_VERSION = "version"
+
+#: ``decided_by: consumer`` -- the pinned TAG is chosen by a named consumer in
+#: this manifest, not by the artifact's own release train. See the module
+#: docstring and args/pinned_artifacts.yaml. The only value there is: an
+#: unrecognised ``decided_by`` is ``unmeasurable``, never silently ignored.
+DECIDED_BY_CONSUMER = "consumer"
 
 KIND_IMAGE = "image"
 KIND_PACKAGE = "package"
@@ -521,9 +553,93 @@ def _unmeasurable(entry: Dict[str, Any], reason: str, **extra: Any) -> Dict[str,
         "observed_digest": None,
         "digest_drift": None,
         "pin_strength": None,
+        # Set only on the consumer lane, and always PRESENT so a reader never
+        # has to tell "not delegated" from "key absent".
+        "decided_by": None,
+        "consumer": None,
+        "upstream_newest": None,
     }
     result.update(extra)
     return result
+
+
+def _decide_by_digest(
+    result: Dict[str, Any],
+    *,
+    pinned: str,
+    pin: Dict[str, Any],
+    seen: Dict[str, Any],
+    what: str,
+) -> Dict[str, Any]:
+    """`behind` iff the tag no longer serves the digest we recorded.
+
+    The lane for every pin whose TAG ordering cannot decide the question --
+    ``:latest``, which has no ordering at all, and a consumer-chosen tag, whose
+    ordering is real but is not ours to chase. ``what`` names which, because
+    the two send a reader somewhere different.
+    """
+    if seen["digest"] is None:
+        result["reason"] = seen["reason"]
+        return result
+    if pin["digest"] is None:
+        result["reason"] = f"{what} with no declared digest -- nothing to compare it against"
+        return result
+    result["basis"] = BASIS_DIGEST
+    if result["digest_drift"]:
+        result["status"] = STATUS_BEHIND
+        result["newest"] = seen["digest"]
+        result["reason"] = (
+            f"the {what} {pinned!r} has moved: pinned {pin['digest']}, "
+            f"upstream now serves {seen['digest']}"
+        )
+    else:
+        result["status"] = STATUS_CURRENT
+        result["reason"] = None
+    return result
+
+
+def _decide_by_consumer(
+    result: Dict[str, Any],
+    *,
+    ref: str,
+    pinned: str,
+    consumer: str,
+    pin: Dict[str, Any],
+    seen: Dict[str, Any],
+    timeout: float,
+) -> Dict[str, Any]:
+    """A tag a CONSUMER chooses is not chasing its own upstream release train.
+
+    Upstream's newest comparable tag is still looked up and carried on
+    ``upstream_newest`` -- not chasing a release is not the same as not knowing
+    about it, and a survey that dropped it would be hiding the thing it exists
+    to find. It just does not DECIDE the status, because a release the consumer
+    will never request is not a release this tree can move to. What decides it
+    is the one currency question upstream can answer about somebody else's
+    choice: is that tag still serving the bytes we recorded?
+    """
+    result["decided_by"] = DECIDED_BY_CONSUMER
+    result["consumer"] = consumer
+
+    listing = list_tags(ref, timeout=timeout)
+    if listing["tags"] is not None:
+        result["tags_seen"] = len(listing["tags"])
+        result["upstream_newest"] = newest_comparable(pinned, listing["tags"])
+
+    decided = _decide_by_digest(
+        result, pinned=pinned, pin=pin, seen=seen,
+        what=f"tag {consumer} chooses",
+    )
+    if decided["status"] == STATUS_CURRENT:
+        newer = decided["upstream_newest"]
+        decided["reason"] = (
+            f"{consumer} requests {ref}:{pinned} and the tag still serves the pinned digest"
+            + (
+                f"; upstream also publishes {newer!r}, which {consumer} does not request"
+                if newer else ""
+            )
+        )
+    return decided
 
 
 def check_artifact(entry: Dict[str, Any], *, timeout: float = 10.0) -> Dict[str, Any]:
@@ -582,30 +698,28 @@ def check_artifact(entry: Dict[str, Any], *, timeout: float = 10.0) -> Dict[str,
     if pin["digest"] and seen["digest"]:
         result["digest_drift"] = pin["digest"] != seen["digest"]
 
+    decided_by = str(entry.get("decided_by") or "").strip()
+    if decided_by:
+        if decided_by != DECIDED_BY_CONSUMER:
+            # An unreadable declaration must never resolve to a clean bill.
+            result["reason"] = f"unsupported decided_by {decided_by!r}"
+            return result
+        consumer = str(entry.get("consumer") or "").strip()
+        if not consumer:
+            result["reason"] = "decided_by: consumer names no `consumer`"
+            return result
+        return _decide_by_consumer(
+            result, ref=ref, pinned=pinned, consumer=consumer,
+            pin=pin, seen=seen, timeout=timeout,
+        )
+
     orderable = version_shape(pinned) is not None
     if not orderable:
         # `:latest`. The ONLY knowable `behind` is the tag having moved off the
         # digest we recorded -- args/floci_runtime_images.yaml's own caveat.
-        if seen["digest"] is None:
-            result["reason"] = seen["reason"]
-            return result
-        if pin["digest"] is None:
-            result["reason"] = (
-                "mutable tag with no declared digest -- nothing to compare it against"
-            )
-            return result
-        result["basis"] = BASIS_DIGEST
-        if result["digest_drift"]:
-            result["status"] = STATUS_BEHIND
-            result["newest"] = seen["digest"]
-            result["reason"] = (
-                f"the mutable tag {pinned!r} has moved: pinned {pin['digest']}, "
-                f"upstream now serves {seen['digest']}"
-            )
-        else:
-            result["status"] = STATUS_CURRENT
-            result["reason"] = None
-        return result
+        return _decide_by_digest(
+            result, pinned=pinned, pin=pin, seen=seen, what="mutable tag"
+        )
 
     listing = list_tags(ref, timeout=timeout)
     if listing["tags"] is None:
@@ -777,6 +891,13 @@ def _render(report: Dict[str, Any]) -> str:
             lines.append(f"         newest: {row['newest']}   basis={row['basis']}")
         if row.get("digest_drift") is True:
             lines.append("         digest drift: the pinned tag no longer serves the pinned digest")
+        newer = row.get("upstream_newest")
+        if newer and newer not in (row.get("reason") or ""):
+            # Named even when it did not decide the status -- but once, not twice.
+            lines.append(
+                f"         upstream also publishes {newer} -- "
+                f"{row['consumer']} does not request it"
+            )
         if row.get("reason"):
             lines.append(f"         {row['reason']}")
     if report["unmeasurable"]:

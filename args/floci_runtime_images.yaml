@@ -85,6 +85,18 @@ images:
     digest: "sha256:36ed71227ae36305d26382657c0b96cbaf298427b3f1eaeb10d77a6dea3eec41"
     service: rds
     variant: "postgres"
+    note: >-
+      The tag is floci's DEFAULT EngineVersion, not a version this tree chose.
+      Re-measured 2026-09-12 (artifact-fresh-5b1750f240): a default
+      CreateDBInstance(Engine=postgres) returns EngineVersion 16.3 and floci
+      logs `ImageCacheService  Image already present locally, skipping pull:
+      postgres:16.3-alpine`, while EngineVersion=16.99 makes it log `Pulling
+      image: postgres:16.99-alpine` -- so the ref is
+      `postgres:<EngineVersion>-alpine`. EngineVersion is therefore declared
+      configuration in the sense this file's header means, one level finer than
+      `variant`: a deployment declaring EngineVersion=18.6 must vendor
+      postgres:18.6-alpine TOO, and vendoring it INSTEAD of this one breaks the
+      default path. The same holds for mysql, whose default is 8.0.36.
 
   - ref: "mysql:8.0.36"
     digest: "sha256:a532724022429812ec797c285c1b540a644c15e248579c6bfdf12a8fbaab4964"
