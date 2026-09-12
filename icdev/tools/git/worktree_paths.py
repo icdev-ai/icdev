@@ -51,7 +51,12 @@ ACTORS = ("kanban", "cli", "verify", "autofix")
 
 #: Where the runner has always put its worktrees. Grandfathered as sanctioned so
 #: this module can ship without relocating in-flight tasks; see MIGRATION below.
-_LEGACY_REPO_RELATIVE = (".tmp/worktrees", "trees", ".tmp/autofix")
+#: `.tmp/worktree-pool` is the warm pool (mfx-own-09): runner-owned, inside the
+#: repo's own scratch tree, and created by the dispatcher itself. Blessed for the
+#: same reason `.tmp/worktrees` is -- an audit that reports the platform's own
+#: directory as a violation is an audit people learn to ignore.
+_LEGACY_REPO_RELATIVE = (".tmp/worktrees", "trees", ".tmp/autofix",
+                         ".tmp/worktree-pool")
 
 
 def canonical_repo_root(start: Optional[Path] = None) -> Path:

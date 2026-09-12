@@ -297,6 +297,16 @@ def test_no_module_invents_its_own_worktree_base():
     pattern = re.compile(
         r"^\s*[A-Z_]*(?:WORKTREE|TREES)[A-Z_]*\s*=\s*"
         r"(?!.*worktree_paths)"
+        # A LOCK FILE under the coordination directory is not a worktree base,
+        # and `COORD_DIR / "git-worktree-add.lock"` (mfx-own-06) matched the
+        # path-construction lookahead below on the `/ "` alone. It has been
+        # tripping this test on main ever since -- unnoticed, because this module
+        # is ungated. The same false positive the comment above describes, one
+        # step further out: the NAME contains WORKTREE and the right-hand side
+        # looks like a path, but the thing being named is a lock, not a base.
+        # Excluded by where it is ROOTED, not by module name, so a real worktree
+        # base in the same file would still be caught.
+        r"(?!.*COORD_DIR)"
         r"(?=.*(?:Path\(|BASE_DIR|_repo_root|__file__|/\s*[\"']|\.tmp))",
         re.M,
     )
