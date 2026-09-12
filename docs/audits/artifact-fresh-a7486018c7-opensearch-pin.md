@@ -122,6 +122,12 @@ it here, and `lambda-python` has since joined, so the set churned while the coun
 held at five. That is the reason these are enumerated on every card rather than
 counted once.
 
+**Two of the five are already in flight as this lands** — #2267
+(`elasticache-valkey`) and #2269 (`rds-mysql`) were open alongside this PR, and
+`origin/main` carried only the `rds-postgres` conversion when the table above was
+measured. So read the table as the state of *this* tree on its measured date, and
+re-run the survey rather than trusting it. That is the churn, happening.
+
 The consumer argument plainly reaches all five, and they are still NOT flipped,
 because this card measured the **opensearch** path and a row nobody observed is
 the fabrication `vendor/images/README.md` is written against. Each arrives with

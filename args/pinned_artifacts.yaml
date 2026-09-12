@@ -107,7 +107,10 @@
 # `ec2-amazonlinux 2023 -> 2027`, `ecr-registry 2 -> 3`. That is NOT the list the
 # postgres card named: `opensearch` left it here and `lambda-python` has since
 # joined, so the SET CHURNED while the COUNT held at five -- which is exactly why
-# these are enumerated on every card. They are NOT flipped here, because these
+# these are enumerated on every card. TWO OF THE FIVE ARE ALREADY IN FLIGHT as
+# this lands (#2267 elasticache-valkey, #2269 rds-mysql), so read the list as the
+# state of THIS tree on its measured date and re-run the survey rather than
+# trusting it. They are NOT flipped here, because these
 # two cards measured the postgres and opensearch paths and adding a row nobody
 # observed is the fabrication vendor/images/README.md is written against. Each
 # arrives with its own card; drive the emulator for that service, read the

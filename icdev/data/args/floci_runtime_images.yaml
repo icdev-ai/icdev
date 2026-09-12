@@ -85,6 +85,18 @@ images:
     digest: "sha256:36ed71227ae36305d26382657c0b96cbaf298427b3f1eaeb10d77a6dea3eec41"
     service: rds
     variant: "postgres"
+    note: >-
+      The tag is floci's DEFAULT EngineVersion, not a version this tree chose.
+      Re-measured 2026-09-12 (artifact-fresh-5b1750f240): a default
+      CreateDBInstance(Engine=postgres) returns EngineVersion 16.3 and floci
+      logs `ImageCacheService  Image already present locally, skipping pull:
+      postgres:16.3-alpine`, while EngineVersion=16.99 makes it log `Pulling
+      image: postgres:16.99-alpine` -- so the ref is
+      `postgres:<EngineVersion>-alpine`. EngineVersion is therefore declared
+      configuration in the sense this file's header means, one level finer than
+      `variant`: a deployment declaring EngineVersion=18.6 must vendor
+      postgres:18.6-alpine TOO, and vendoring it INSTEAD of this one breaks the
+      default path. The same holds for mysql, whose default is 8.0.36.
 
   - ref: "mysql:8.0.36"
     digest: "sha256:a532724022429812ec797c285c1b540a644c15e248579c6bfdf12a8fbaab4964"
@@ -106,7 +118,15 @@ images:
     digest: "sha256:4ee82ecb35d837a6186c81aaa64c8a5bce71aa956edbd87f1f684ab56af52c44"
     service: opensearch
     variant: null
-    note: "Largest of the set. Creating a domain took 115s on the measured host."
+    note: >-
+      Largest of the set. Creating a domain took 115s on the measured host.
+      The ref is floci's DEFAULT EngineVersion (`OpenSearch_2.19`), taken from a
+      CLOSED table floci will enumerate via `list_versions()`; the table tops
+      out at `OpenSearch_3.6` -> `opensearch:3.6.0` and `OpenSearch_3.8` is
+      refused with a ValidationException (measured 2026-09-12,
+      artifact-fresh-a7486018c7). A deployment declaring another supported
+      version must vendor that tag too -- the `variant` rule below, one level
+      finer, exactly as RDS states for EngineVersion.
 
   - ref: "redpandadata/redpanda:latest"
     digest: "sha256:468bd13a9f2bd24794cb7fddc867c767fb1008b9a07b297b89fde48c564d7d96"
