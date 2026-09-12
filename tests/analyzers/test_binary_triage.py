@@ -285,7 +285,27 @@ def test_a_header_claiming_more_sections_than_the_bound_is_refused(tmp_path):
     report = bt.triage(_write(tmp_path, "lying.elf", blob))
 
     assert report["sections"] is None
-    assert report["sections_basis"] in (bt.BASIS_MALFORMED, bt.BASIS_TRUNCATED)
+    assert report["sections_basis"] == bt.BASIS_MALFORMED
+
+
+def test_a_header_pointing_past_a_file_read_WHOLE_is_malformed_not_truncated(tmp_path):
+    """The two send a reader to different repairs, so they are not one word.
+
+    A table walker sees only a buffer and cannot tell "the cap cut this short"
+    from "the header is lying". ``triage`` knows which, and re-labels -- because
+    ``truncated`` tells every reader to raise ``ICDEV_BINARY_MAX_BYTES``, and on
+    a file read end to end that cannot work.
+    """
+    # sh_off far past a file that is read in FULL: nothing was cut short.
+    blob = _elf64_header(sh_off=1_000_000, sh_num=3, sh_strndx=0) + b"\x00" * 64
+    whole = bt.triage(_write(tmp_path, "lying.elf", blob))
+    assert whole["status"] == bt.STATUS_OK           # the read itself succeeded
+    assert whole["sections_basis"] == bt.BASIS_MALFORMED
+
+    # The SAME header, now genuinely cut short by the cap: truncated stands.
+    cut = bt.triage(_write(tmp_path, "lying2.elf", blob), max_bytes=70)
+    assert cut["status"] == bt.STATUS_TRUNCATED
+    assert cut["sections_basis"] == bt.BASIS_TRUNCATED
 
 
 # ---------------------------------------------------------------------------

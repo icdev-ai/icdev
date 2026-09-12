@@ -39,8 +39,14 @@ and the reason is named beside them in ``sections_basis`` / ``imports_basis``:
     library_unavailable pefile / pyelftools is not installed on this host
     library_failed      it IS installed and raised
     format_unsupported  no parser here reads that format's table
-    truncated           the structure sits past the bytes this run read
-    malformed_header    the header itself did not read
+    truncated           the structure sits past the bytes this run read, AND
+                        the read really was cut short by the byte cap
+    malformed_header    the header did not read, or it points past the end of a
+                        file that WAS read end to end -- which is the artifact
+                        lying, not a bound this run hit. The walkers cannot tell
+                        those apart from a buffer alone; ``triage`` can, and
+                        re-labels, because one sends a reader to a bigger cap
+                        and the other does not
 
 WHAT IS PURE PYTHON AND WHAT NEEDS A LIBRARY, and why the line is there. The
 format magic, the architecture, the SHA-256, the strings and the PE/ELF SECTION
@@ -466,6 +472,33 @@ def _elf_sections(blob: bytes) -> Tuple[Optional[List[Dict[str, Any]]], str, Opt
     return sections, BASIS_PARSED, arch
 
 
+def _relabel_if_not_truncated(
+    sections: Optional[List[Dict[str, Any]]],
+    basis: str,
+    *,
+    read_was_truncated: bool,
+) -> Tuple[Optional[List[Dict[str, Any]]], str]:
+    """Re-label ``truncated`` as ``malformed_header`` when the read was COMPLETE.
+
+    The table walkers see only a buffer, so "this offset is past the end" is
+    ambiguous to them: the file may have been cut short by the byte cap, or the
+    header may be claiming a section that is not in the file. ``triage`` is the
+    one place that knows which, and the two send a reader somewhere different --
+    raise ``ICDEV_BINARY_MAX_BYTES`` and try again, versus the artifact itself is
+    malformed. Reporting ``truncated`` for a file read end to end would send
+    every reader to the first repair, which cannot work.
+    """
+    if read_was_truncated:
+        return sections, basis
+    if basis == BASIS_TRUNCATED:
+        basis = BASIS_MALFORMED
+    if sections:
+        for section in sections:
+            if section.get("entropy_basis") == BASIS_TRUNCATED:
+                section["entropy_basis"] = BASIS_MALFORMED
+    return sections, basis
+
+
 def _macho_arch(blob: bytes) -> Optional[str]:
     head = blob[:4]
     if head not in _MACHO_THIN or len(blob) < 8:
@@ -689,6 +722,7 @@ def triage(
         sections, basis, arch = None, BASIS_FORMAT_UNSUPPORTED, None
         imports, imports_basis, detail = None, BASIS_FORMAT_UNSUPPORTED, None
 
+    sections, basis = _relabel_if_not_truncated(sections, basis, read_was_truncated=truncated)
     report["sections"] = sections
     report["sections_basis"] = basis
     report["arch"] = arch
