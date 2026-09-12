@@ -174,3 +174,23 @@ buckets are never merged:
   have been running. **Not a clean result.**
 
 Counts are `None`, never `0`, when the pool has recorded nothing in the window.
+
+## 11. Named residuals
+
+- **The claim's duration under CI load is unmeasured** (§4). Structural argument
+  only.
+- **The 7-day `_sweep_old_worktrees` backstop does not take the pool lock**, so
+  it could in principle remove an entry in the moment between a claim reading it
+  and moving it. The claim then fails its post-move verification, tears down and
+  falls through to an inline add — the safe outcome. The window also requires an
+  entry older than 7 days, which the pool's own 24 h `entry_max_age_hours`
+  prevents; the backstop exists for entries the pool's reaper never reaches.
+- **Two dispatchers can each decide to refill at the same instant**, creating one
+  entry over `target_size`. Bounded by the number of concurrent refills,
+  re-checked against `max_size` immediately before each add, and reaped.
+- **`sweep_husks` cannot act on a pool entry** (§9). The pool applies that
+  module's rule itself.
+- **The pool's NDJSON is written by whichever checkout runs it** while `measure`
+  reads the canonical one. They coincide for the scheduler, which runs in the
+  main checkout; a pool run from a linked worktree reports `unmeasurable` there,
+  never a false clean.
