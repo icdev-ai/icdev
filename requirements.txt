@@ -215,6 +215,17 @@ pyotp>=2.9
 pdfplumber>=0.11          # PDF text + TABLE extraction (oss-table-01); imported by tools/document_intelligence/
 beautifulsoup4>=4.12      # imported by tools/pulse/engine/researcher.py and 3 others (oss-table-02)
 openpyxl>=3.1             # XLSX extraction (MIT) — imported best-effort by tools/document_intelligence/extractors.py:989; without it all XLSX ingestion silently no-ops on a clean install
+
+# xrv-bin-01: binary triage (tools/analyzers/binary_triage.py). DECLARED rather
+# than imported quietly — the tsg-iso-03 census refuses an undeclared
+# third-party import behind a handler that swallows, and these two are imported
+# inside a try/except ImportError. Both are pure-Python and permissive (MIT /
+# BSD-like public domain), so neither carries the AGPL problem pymupdf does.
+# Without them the format, architecture, sha256, sections, entropy and strings
+# still report from stdlib `struct`; IMPORTS alone read None with
+# `library_unavailable` named. Never `[]`.
+pefile>=2023.2.7          # PE import directory (MIT) — tools/analyzers/binary_triage.py::_pe_imports
+pyelftools>=0.31          # ELF dynamic symbols (public domain) — tools/analyzers/binary_triage.py::_elf_imports
 # NOT declared by design: pymupdf/fitz (extractors.py:773) is dual-licensed
 # AGPL-3.0 / Artifex-commercial — a copyleft license ICDEV (Apache-2.0) cannot ship.
 # It is an optional accelerator; the PDF pass degrades to pypdf/pdfplumber without

@@ -509,6 +509,16 @@ python tools/analyzers/dispatch.py --type cve --value CVE-2024-3094 \
     --context '{"project_id":"p1","component":"xz","cvss_score":10.0,"severity":"critical","description":"backdoor"}'
 python tools/analyzers/dispatch.py --type vendor --value Acme --json      # machine-readable reports
 python tools/analyzers/dispatch.py --type ip --value 1.2.3.4 --analyzer threat_intel_match
+
+# Binary triage -- a compiled artifact is an observable (xrv-bin-01)
+python -m tools.analyzers.binary_triage <path> --json          # format, sha256, sections+entropy, imports, strings
+python -m tools.analyzers.binary_triage <path>                 # human report
+python -m tools.analyzers.binary_triage <path> --max-bytes 1048576 --max-strings 50
+python tools/analyzers/dispatch.py --type binary --value <path>   # through the contract fan-out
+# `sections`/`imports` are None -- never [] -- when nothing looked, with the reason named
+# (library_unavailable | library_failed | format_unsupported | truncated | malformed_header).
+# ICDEV_BINARY_MAX_BYTES (64 MiB) / ICDEV_BINARY_MAX_STRINGS (500) bound the read; over the byte
+# cap the status is `truncated` and sha256_scope reads `prefix`, never the artifact's identity.
 python tools/analyzers/dispatch.py --type ip --value 1.2.3.4 --responders # responders ACT — opt-in
 ```
 
