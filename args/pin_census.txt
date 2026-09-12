@@ -1,0 +1,100 @@
+# CUI // SP-CTI
+# Pin census -- every UNPINNED supply-chain reference in CI, enumerated BY NAME.
+#
+# Policy, ceiling and the four predicates that decide what IS a site:
+#   args/pin_gate.yaml
+# Re-derive this file:
+#   python tools/ci/pin_census.py --seed
+# The gate:
+#   python tools/ci/pin_census.py --check
+#
+# ENUMERATED, NOT COUNTED. A bare count can be held constant while the set
+# churns -- delete one site, add another, count unchanged, gate green, and the
+# thing the gate exists to notice has happened unobserved. That is how the
+# ungated-test gap regrew behind a green gate; identity is the only thing that
+# survives it.
+#
+# `pin_census.pin_max` in args/pin_gate.yaml is the ceiling on this file's
+# length and MAY ONLY GO DOWN. Lower it when you pin a reference. Never raise
+# it to get a commit through -- the fix is at the site, and every line below
+# names it.
+#
+# KEY: <file>::<kind>::<subject>. No line number (it churns on every edit above
+# the site) and no ref (a routine `@v4 -> @v5` bump is the SAME unpinned
+# decision, and keying on the ref would demand a census edit that says nothing).
+#
+# 2026-09-12 adoption, measured on this tree:
+#   34 tag_pinned_action   every `uses:` in .github/workflows -- repin to the sha
+#   26 unpinned_install    a pip/npm-global package literal with no `==`
+#    7 undigested_image    a compose image with no digest in vendor/images/
+#    2 unpinned_script     `curl … | sh`, unpinned by construction
+#   -- 69 total
+.github/workflows/ci_cd_pipeline.yml::tag_pinned_action::actions/checkout  # actions/checkout@v4: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/floci-iac-gate.yml::tag_pinned_action::actions/checkout  # actions/checkout@v4: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/floci-iac-gate.yml::tag_pinned_action::actions/setup-python  # actions/setup-python@v5: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/floci-iac-gate.yml::tag_pinned_action::actions/upload-artifact  # actions/upload-artifact@v4: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/floci-iac-gate.yml::unpinned_install::boto3  # boto3>=1.34: unpinned at adoption -- pin it with `==<version>`
+.github/workflows/floci-iac-gate.yml::unpinned_install::pip  # pip: unpinned at adoption -- pin it with `==<version>`
+.github/workflows/gate-promoter.yml::tag_pinned_action::actions/checkout  # actions/checkout@v4: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/gate-promoter.yml::tag_pinned_action::actions/setup-python  # actions/setup-python@v5: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/gate-promoter.yml::tag_pinned_action::actions/upload-artifact  # actions/upload-artifact@v4: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/gate-promoter.yml::unpinned_install::pip  # pip: unpinned at adoption -- pin it with `==<version>`
+.github/workflows/icdev-ci.yml::tag_pinned_action::actions/checkout  # actions/checkout@v4: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/icdev-ci.yml::tag_pinned_action::actions/setup-node  # actions/setup-node@v4: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/icdev-ci.yml::tag_pinned_action::actions/setup-python  # actions/setup-python@v5: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/icdev-ci.yml::tag_pinned_action::actions/upload-artifact  # actions/upload-artifact@v4: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/icdev-ci.yml::tag_pinned_action::azure/setup-helm  # azure/setup-helm@v4: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/icdev-ci.yml::unpinned_install::bandit  # bandit: unpinned at adoption -- pin it with `==<version>`
+.github/workflows/icdev-ci.yml::unpinned_install::icdev-core  # icdev-core @ git+https://github.com/icdev-ai/icdev-core@v0.2.0: unpinned at adoption -- pin it with `==<version>`
+.github/workflows/icdev-ci.yml::unpinned_install::pip-audit  # pip-audit: unpinned at adoption -- pin it with `==<version>`
+.github/workflows/icdev-ci.yml::unpinned_install::ruff  # ruff: unpinned at adoption -- pin it with `==<version>`
+.github/workflows/icdev-ci.yml::unpinned_script::https://ollama.com/install.sh  # https://ollama.com/install.sh: remote install script, unpinned by construction -- vendor the installer, or fetch a release asset and check its sha256
+.github/workflows/icdev-kanban-runner.yml::tag_pinned_action::actions/checkout  # actions/checkout@v4: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/icdev-kanban-runner.yml::tag_pinned_action::actions/setup-node  # actions/setup-node@v4: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/icdev-kanban-runner.yml::tag_pinned_action::actions/setup-python  # actions/setup-python@v5: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/icdev-kanban-runner.yml::unpinned_install::flask  # flask: unpinned at adoption -- pin it with `==<version>`
+.github/workflows/icdev-kanban-runner.yml::unpinned_install::pyyaml  # pyyaml: unpinned at adoption -- pin it with `==<version>`
+.github/workflows/icdev-kanban-runner.yml::unpinned_install::requests  # requests: unpinned at adoption -- pin it with `==<version>`
+.github/workflows/icdev-kanban-runner.yml::unpinned_script::https://ollama.com/install.sh  # https://ollama.com/install.sh: remote install script, unpinned by construction -- vendor the installer, or fetch a release asset and check its sha256
+.github/workflows/infrastructure-ci.yml::tag_pinned_action::actions/checkout  # actions/checkout@v4: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/infrastructure-ci.yml::tag_pinned_action::actions/setup-python  # actions/setup-python@v5: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/infrastructure-ci.yml::tag_pinned_action::actions/upload-artifact  # actions/upload-artifact@v4: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/infrastructure-ci.yml::tag_pinned_action::azure/setup-helm  # azure/setup-helm@v4: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/infrastructure-ci.yml::tag_pinned_action::docker/build-push-action  # docker/build-push-action@v6: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/infrastructure-ci.yml::tag_pinned_action::docker/login-action  # docker/login-action@v3: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/infrastructure-ci.yml::tag_pinned_action::docker/setup-buildx-action  # docker/setup-buildx-action@v3: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/interface_validation_steps.yaml::tag_pinned_action::actions/checkout  # actions/checkout@v4: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/interface_validation_steps.yaml::tag_pinned_action::actions/setup-python  # actions/setup-python@v5: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/interface_validation_steps.yaml::tag_pinned_action::actions/upload-artifact  # actions/upload-artifact@v4: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/interface_validation_steps.yaml::unpinned_install::bandit  # bandit: unpinned at adoption -- pin it with `==<version>`
+.github/workflows/interface_validation_steps.yaml::unpinned_install::openapi-spec-validator  # openapi-spec-validator: unpinned at adoption -- pin it with `==<version>`
+.github/workflows/interface_validation_steps.yaml::unpinned_install::pip-audit  # pip-audit: unpinned at adoption -- pin it with `==<version>`
+.github/workflows/pr-watcher.yml::tag_pinned_action::actions/checkout  # actions/checkout@v4: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/pr-watcher.yml::unpinned_install::pyyaml  # pyyaml: unpinned at adoption -- pin it with `==<version>`
+.github/workflows/pypi-publish.yml::tag_pinned_action::actions/checkout  # actions/checkout@v4: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/pypi-publish.yml::tag_pinned_action::actions/download-artifact  # actions/download-artifact@v4: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/pypi-publish.yml::tag_pinned_action::actions/setup-python  # actions/setup-python@v5: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/pypi-publish.yml::tag_pinned_action::actions/upload-artifact  # actions/upload-artifact@v4: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/pypi-publish.yml::tag_pinned_action::pypa/gh-action-pypi-publish  # pypa/gh-action-pypi-publish@release/v1: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/pypi-publish.yml::unpinned_install::build  # build: unpinned at adoption -- pin it with `==<version>`
+.github/workflows/pypi-publish.yml::unpinned_install::twine  # twine: unpinned at adoption -- pin it with `==<version>`
+.github/workflows/shard-timings.yml::tag_pinned_action::actions/checkout  # actions/checkout@v4: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/shard-timings.yml::tag_pinned_action::actions/setup-python  # actions/setup-python@v5: tag-pinned at adoption -- repin to the 40-hex commit sha
+.github/workflows/shard-timings.yml::tag_pinned_action::actions/upload-artifact  # actions/upload-artifact@v4: tag-pinned at adoption -- repin to the 40-hex commit sha
+.gitlab-ci.yml::unpinned_install::bandit  # bandit: unpinned at adoption -- pin it with `==<version>`
+.gitlab-ci.yml::unpinned_install::behave  # behave: unpinned at adoption -- pin it with `==<version>`
+.gitlab-ci.yml::unpinned_install::docker  # docker: unpinned at adoption -- pin it with `==<version>`
+.gitlab-ci.yml::unpinned_install::llm-sandbox  # llm-sandbox: unpinned at adoption -- pin it with `==<version>`
+.gitlab-ci.yml::unpinned_install::pyyaml  # pyyaml: unpinned at adoption -- pin it with `==<version>`
+.gitlab-ci.yml::unpinned_install::ruff  # ruff: unpinned at adoption -- pin it with `==<version>`
+docker-compose.yml::undigested_image::alpine/git  # alpine/git:latest: tag-pinned at adoption -- measure the digest and record it in vendor/images/
+docker-compose.yml::undigested_image::floci/floci-az  # floci/floci-az:0.12.0: tag-pinned at adoption -- measure the digest and record it in vendor/images/
+docker-compose.yml::undigested_image::floci/floci-gcp  # floci/floci-gcp:0.8.0: tag-pinned at adoption -- measure the digest and record it in vendor/images/
+docker-compose.yml::undigested_image::floci/floci-oci  # floci/floci-oci:0.4.0: tag-pinned at adoption -- measure the digest and record it in vendor/images/
+docker-compose.yml::undigested_image::ghcr.io/berriai/litellm-non_root  # ghcr.io/berriai/litellm-non_root:main-stable: tag-pinned at adoption -- measure the digest and record it in vendor/images/
+docker-compose.yml::undigested_image::gns3/gns3-server  # gns3/gns3-server:latest: tag-pinned at adoption -- measure the digest and record it in vendor/images/
+docker-compose.yml::undigested_image::pgvector/pgvector  # pgvector/pgvector:pg16: tag-pinned at adoption -- measure the digest and record it in vendor/images/
+docker/Dockerfile.alpine.base::unpinned_install::pip  # pip: unpinned at adoption -- pin it with `==<version>`
+docker/Dockerfile.iac::unpinned_install::ansible  # ansible: unpinned at adoption -- pin it with `==<version>`
+docker/Dockerfile.iac::unpinned_install::boto3  # boto3: unpinned at adoption -- pin it with `==<version>`
+docker/Dockerfile.iac::unpinned_install::botocore  # botocore: unpinned at adoption -- pin it with `==<version>`

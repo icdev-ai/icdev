@@ -7862,6 +7862,50 @@ python tools/ci/undeclared_import_census.py --changed tools/foo.py --check
 python tools/ci/undeclared_import_census.py --staged          # only what this commit touches
 python tools/ci/undeclared_import_census.py --prune           # drop entries whose site is gone
 
+# An UNPINNED CI supply-chain reference -- one that does not name the bytes it
+# resolves to (xrv-route-03)
+#
+# FOUR KINDS, never merged, because each sends a reader to a different repair:
+#   unpinned_install   a pip / `npm install -g` package literal with no `==`.
+#                      .gitlab-ci.yml:148 installs `llm-sandbox docker pyyaml`
+#                      unversioned -- the shape reverse-skill fails CI on.
+#   tag_pinned_action  a `uses:` pinned to a mutable git TAG. Of 70 `uses:` lines
+#                      in .github/workflows, 69 are third party and ZERO are
+#                      sha-pinned; whoever owns the action repository can move
+#                      `v4` to any commit.
+#   undigested_image   a compose `image:` whose repo has no MEASURED digest line
+#                      in vendor/images/*.txt -- three of the four floci/*
+#                      siblings, while the AWS one has had a digest since flx-ci-01.
+#   unpinned_script    `curl … | sh`, unpinned by construction.
+# FOUR PREDICATES keep it high-signal, each RE-DERIVED every run rather than kept
+# as an exemption list: `pip install -r requirements.txt` / `-e .` / `dist/*.whl`
+# names no package literal; `npm ci` and a bare `npm install` resolve through
+# package-lock.json, which IS the pin; a compose service carrying `build:` is
+# BUILT here and never pulled, so a registry digest cannot describe it (21 of the
+# 29 services in docker-compose.yml -- the difference between 8 real sites and 29
+# mostly-noise ones); and `uses: ./...` is a path into this repo.
+# tools/airgap/image_vendor.parse_pin is IMPORTED for the digest half, never
+# re-spelled, so the vendor and the gate cannot disagree about a fact neither
+# changed.
+# KEY: <file>::<kind>::<subject> -- no line number (churn) and NO REF, because
+# `@v4 -> @v5` is a routine bump and the SAME unpinned decision.
+# SURVEYED, NOT GATED: requirements.txt's 45 `>=` ranges and its one git-tag
+# direct reference ride under `surveyed_not_gated` with the reason. The
+# install-time pin is the vendored wheel set, and refusing 45 ranges would refuse
+# routine work.
+# UNMEASURABLE is its own verdict: an unparseable compose file or an absent
+# vendor/images makes `ok` False rather than reading as clean, and --prune REFUSES
+# against an unmeasurable scan -- that is the direction that deletes a live entry.
+# 69 sites grandfathered BY NAME in args/pin_census.txt (34 action, 26 install,
+# 7 image, 2 script); `pin_max` in args/pin_gate.yaml may only go DOWN.
+python tools/ci/pin_census.py --check                         # the gate; exit 1 on a NEW site
+python tools/ci/pin_census.py --json                          # full report, by kind
+python tools/ci/pin_census.py --changed .gitlab-ci.yml --check
+python tools/ci/pin_census.py --staged                        # only what this commit touches
+python tools/ci/pin_census.py --prune                         # drop entries whose site is gone
+python tools/ci/pin_census.py --seed                          # re-derive the census; writes nothing
+python tools/workflow/coherence_checker.py --check pin_census --json   # WARN tier
+
 # A PERFECT SCORE returned when the denominator is empty (rem-hyg-13)
 #
 #     pct = round(within / total_relevant * 100, 1) if total_relevant > 0 else 100.0
