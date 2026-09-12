@@ -79,15 +79,47 @@
 # is a re-measurement (`python -m tools.cloud.runtime_images --measure-help`),
 # never a bump -- and the `floci` entry below is what re-asks that question.
 #
-# NOT CONVERTED HERE, AND NAMED RATHER THAN IMPLIED. The same argument plainly
-# reaches the other ten runtime entries, and five of them are reported `behind`
-# today against releases floci does not request -- `mysql:8.0.36 -> 26.7.0`,
-# `registry:2 -> 3`, `amazonlinux:2023 -> 2027`, `valkey:8 -> 9`,
-# `opensearch:2.19.5 -> 3.8.0`. They are NOT flipped here, because this card
-# measured the postgres path and adding a row nobody observed is the
-# fabrication vendor/images/README.md is written against. Each arrives with its
-# own card; drive the emulator for that service, read the ImageCacheService log
-# line, and convert it with the measurement written down.
+# `opensearch` WAS CONVERTED THE SAME WAY, and the measurement came out
+# STRONGER (artifact-fresh-a7486018c7, MEASURED 2026-09-12). Where RDS had to be
+# driven blind because `describe_db_engine_versions` answers `UnsupportedOperation`,
+# OpenSearch ANSWERS: `list_versions()` returns a closed table of 21 engine
+# versions, and `CreateDomain` refuses anything outside it --
+#
+#     CreateDomain()                                -> EngineVersion
+#       OpenSearch_2.19, and the floci log: `OpenSearchDomainManager  Starting
+#       OpenSearch container for domain: probe-default (version=OpenSearch_2.19,
+#       image=opensearchproject/opensearch:2.19.5)`.
+#     CreateDomain(EngineVersion="OpenSearch_3.8")  -> `ValidationException:
+#       Unsupported EngineVersion: OpenSearch_3.8. Supported: [OpenSearch_3.6,
+#       ... OpenSearch_2.19, ...]`.
+#     CreateDomain(EngineVersion="OpenSearch_3.6")  -> the table's top, logged
+#       as `image=opensearchproject/opensearch:3.6.0`.
+#
+# So `3.8.0` is not a release floci merely declines to request by default, the
+# way `postgres:18.6-alpine` is: it is a release NO CALLER CAN REACH through
+# floci 2.0.1 at all. Chasing it would have vendored an image the emulator
+# cannot be made to pull while dropping the one its default path does.
+#
+# NOT CONVERTED HERE, AND ENUMERATED RATHER THAN COUNTED. Measured 2026-09-12
+# right after the opensearch conversion, the survey reads 16 declared / 11
+# current / 5 behind / 0 unmeasurable, and the five are `lambda-python 3.11 ->
+# 3.13`, `rds-mysql 8.0.36 -> 26.7.0`, `elasticache-valkey 8 -> 9`,
+# `ec2-amazonlinux 2023 -> 2027`, `ecr-registry 2 -> 3`. That is NOT the list the
+# postgres card named: `opensearch` left it here and `lambda-python` has since
+# joined, so the SET CHURNED while the COUNT held at five -- which is exactly why
+# these are enumerated on every card. They are NOT flipped here, because these
+# two cards measured the postgres and opensearch paths and adding a row nobody
+# observed is the fabrication vendor/images/README.md is written against. Each
+# arrives with its own card; drive the emulator for that service, read the
+# ImageCacheService log line, and convert it with the measurement written down
+# -- asking `list_versions()` or its per-service equivalent FIRST, because
+# OpenSearch answered it and RDS did not.
+#
+# THREE OF THE FIVE ALSO REPORT `digest_drift: true` (`lambda/python:3.11`,
+# `valkey:8`, `amazonlinux:2023`): tags upstream REBUILDS in place, so the tag no
+# longer serves the bytes vendor/images recorded. That is the one signal a
+# consumer-decided pin is still decided on, so converting those would leave them
+# `behind` rather than silence them -- a re-vendor question, and its own card.
 #
 # WHY `pypi` AND `package` ARE HERE when the card sketched
 # image|binary x dockerhub|ghcr|github_releases: `testcontainers-floci` is a
@@ -221,12 +253,27 @@ artifacts:
     pin_source: "vendor/images/images-floci-runtime.txt"
     upstream: dockerhub
 
+  # DELIBERATELY KEPT at floci 2.0.1's default OpenSearch engine version, and
+  # `3.8.0` is not merely un-requested here -- it is UNREQUESTABLE. See "A TAG
+  # SOMEBODY ELSE CHOOSES" above; the decision record is
+  # docs/audits/artifact-fresh-a7486018c7-opensearch-pin.md.
   - name: opensearch
     kind: image
     ref: opensearchproject/opensearch
     pinned: "2.19.5"
     pin_source: "vendor/images/images-floci-runtime.txt"
     upstream: dockerhub
+    decided_by: consumer
+    consumer: floci
+    note: >-
+      floci maps EngineVersion to image tag through a CLOSED table it will
+      enumerate on request, and `OpenSearch_2.19` -> `opensearchproject/
+      opensearch:2.19.5` is its default (MEASURED 2026-09-12,
+      artifact-fresh-a7486018c7). The table tops out at `OpenSearch_3.6` ->
+      `opensearch:3.6.0`, so CreateDomain(EngineVersion="OpenSearch_3.8") is
+      REFUSED with a ValidationException -- no caller can make floci 2.0.1 pull
+      `3.8.0`. A deployment declaring a different supported version must vendor
+      THAT tag as well.
 
   # `:latest` carries NO version ordering, so `behind` for these two can only
   # be decided by DIGEST DRIFT -- which is precisely the caveat

@@ -390,7 +390,7 @@ def test_every_consumer_names_a_declared_artifact():
     names = {e["name"] for e in config["artifacts"]}
     delegating = [e for e in config["artifacts"]
                   if e.get("decided_by") == AF.DECIDED_BY_CONSUMER]
-    assert delegating, "the shipped manifest is supposed to carry the postgres decision"
+    assert delegating, "the shipped manifest is supposed to carry the floci-consumer decisions"
     for entry in delegating:
         assert entry.get("consumer") in names, entry["name"]
 
@@ -400,6 +400,19 @@ def test_the_shipped_postgres_pin_is_decided_by_floci_not_by_postgres_releases()
     entry files a card recommending an image floci never pulls."""
     entry = next(e for e in AF.load_config()["artifacts"] if e["name"] == "rds-postgres")
     assert entry["pinned"] == "16.3-alpine"
+    assert entry["decided_by"] == AF.DECIDED_BY_CONSUMER
+    assert entry["consumer"] == "floci"
+
+
+def test_the_shipped_opensearch_pin_is_decided_by_floci_not_by_opensearch_releases():
+    """artifact-fresh-a7486018c7. Stronger than the postgres case: floci 2.0.1
+    resolves the tag through a CLOSED EngineVersion table that stops at
+    `OpenSearch_3.6`, and refuses `OpenSearch_3.8` with a ValidationException --
+    so `3.8.0` is not merely un-requested, it is unreachable by any caller.
+    Re-arming the upstream tag comparison here files a card recommending an
+    image the emulator cannot be made to pull."""
+    entry = next(e for e in AF.load_config()["artifacts"] if e["name"] == "opensearch")
+    assert entry["pinned"] == "2.19.5"
     assert entry["decided_by"] == AF.DECIDED_BY_CONSUMER
     assert entry["consumer"] == "floci"
 
