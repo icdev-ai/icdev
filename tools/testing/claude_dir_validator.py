@@ -19,9 +19,14 @@ Usage:
     python tools/testing/claude_dir_validator.py --check cli-json
     python tools/testing/claude_dir_validator.py --check cli-naming
     python tools/testing/claude_dir_validator.py --check db-path
+    python tools/testing/claude_dir_validator.py --check config-injection
+    python tools/testing/claude_dir_validator.py --check config-secrets
+    python tools/testing/claude_dir_validator.py --check mcp-config
+    python tools/testing/claude_dir_validator.py --check hook-commands
     python tools/testing/claude_dir_validator.py --check all
 
-Exit codes: 0 = all checks pass, 1 = at least one check failed
+Exit codes: 0 = all checks pass, 1 = at least one check failed,
+            2 = a check could not MEASURE (xrv-shield-01) -- never a clean run
 """
 
 from __future__ import annotations
@@ -37,6 +42,15 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
+# Run as a SCRIPT, sys.path[0] is tools/testing/ and `tools` resolves from
+# whatever PYTHONPATH happens to name -- which in a worktree is the SHARED
+# checkout, so `--check config-injection` would scan this tree with the other
+# tree's scanners, or fail to import a module this tree just added. The
+# sanctioned bootstrap idiom (xit-decl-03): resolve the IMPORT root from
+# __file__ and put it first.
+if str(PROJECT_ROOT) not in sys.path[:1]:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 
 def _is_airgap() -> bool:
@@ -63,7 +77,7 @@ class ClaudeConfigCheck:
 
     check_id: str
     check_name: str
-    status: str  # "pass", "fail", "warn"
+    status: str  # "pass", "fail", "warn", "unmeasurable" (xrv-shield-01)
     expected: List[str]
     actual: List[str]
     missing: List[str]
@@ -89,6 +103,10 @@ class ClaudeConfigReport:
     passed_checks: int
     failed_checks: int
     warned_checks: int
+    #: xrv-shield-01 — a check that could not measure anything. Counted APART
+    #: from passed/warned, because "the scanner did not run" and "the scanner
+    #: ran and found nothing" justify opposite actions.
+    unmeasurable_checks: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -98,6 +116,7 @@ class ClaudeConfigReport:
             "passed_checks": self.passed_checks,
             "failed_checks": self.failed_checks,
             "warned_checks": self.warned_checks,
+            "unmeasurable_checks": self.unmeasurable_checks,
             "checks": [c.to_dict() for c in self.checks],
         }
 
@@ -761,6 +780,81 @@ def check_db_path_centralization(
 
 
 # ---------------------------------------------------------------------------
+# AgentShield checks (xrv-shield-01) — thin wrappers over existing scanners
+# ---------------------------------------------------------------------------
+#
+# The four checks below point `prompt_injection_detector`, `secret_detector` and
+# `mcp_scanner` at the agent CONFIG surface (.claude/, .agents/, .cursor/,
+# CLAUDE.md, the ten companion instruction files, every declared MCP config) and
+# read `.claude/settings.json`'s hook command strings. None of those scanners had
+# ever been pointed there, and the checks above this line see hook SYNTAX and
+# file REFERENCES only — never what a hook command actually executes.
+#
+# They are WRAPPERS: every pattern lives in the scanner, and
+# `tools/security/agent_config_shield.py` carries the reasoning, the severity bar
+# and the survey. Verdicts are pass | fail | unmeasurable | warn, and
+# `unmeasurable` is mapped through to this report's own status vocabulary rather
+# than folded into `pass` — a scanner that raised has measured nothing.
+
+
+def _shield_check(name: str) -> ClaudeConfigCheck:
+    """Run one `agent_config_shield` check and adapt it to ClaudeConfigCheck.
+
+    An import or scanner failure is `unmeasurable`, NEVER `pass`: this file is
+    importable in minimal environments (see `_is_airgap`) and a shield that
+    cannot run must not report a clean config surface.
+    """
+    try:
+        from icdev.tools.security import agent_config_shield  # noqa: PLC0415
+
+        result = agent_config_shield.CHECKS[name]()
+    except Exception as exc:
+        return ClaudeConfigCheck(
+            check_id=name.replace("-", "_"),
+            check_name=f"Agent Config — {name}",
+            status="unmeasurable",
+            expected=[],
+            actual=[],
+            missing=[],
+            extra=[],
+            message=f"agent_config_shield could not run: {exc}",
+        )
+    findings = [
+        f"{f.get('severity')} {f.get('pattern')} {f.get('file')}" for f in result.findings
+    ]
+    return ClaudeConfigCheck(
+        check_id=result.check_id,
+        check_name=result.check_name,
+        status=result.verdict,
+        expected=list(result.targets_measured),
+        actual=[f"{k}={v}" for k, v in sorted(result.severity_counts.items())],
+        missing=findings,
+        extra=[f"{t['target']}: {t['error'][:80]}" for t in result.targets_unmeasurable],
+        message=result.message,
+    )
+
+
+def check_config_injection() -> ClaudeConfigCheck:
+    """Prompt-injection scan of the agent config surface (xrv-shield-01)."""
+    return _shield_check("config-injection")
+
+
+def check_config_secrets() -> ClaudeConfigCheck:
+    """Secret scan of the agent config surface (xrv-shield-01)."""
+    return _shield_check("config-secrets")
+
+
+def check_mcp_config() -> ClaudeConfigCheck:
+    """MCP server config scan over every declared config file (xrv-shield-01)."""
+    return _shield_check("mcp-config")
+
+
+def check_hook_commands() -> ClaudeConfigCheck:
+    """What `.claude/settings.json` hook commands actually execute (xrv-shield-01)."""
+    return _shield_check("hook-commands")
+
+
+# ---------------------------------------------------------------------------
 # Check registry and orchestrator
 # ---------------------------------------------------------------------------
 
@@ -774,6 +868,10 @@ CHECK_REGISTRY: Dict[str, callable] = {
     "cli-json": check_cli_json_flag,
     "cli-naming": check_cli_project_naming,
     "db-path": check_db_path_centralization,
+    "config-injection": check_config_injection,
+    "config-secrets": check_config_secrets,
+    "mcp-config": check_mcp_config,
+    "hook-commands": check_hook_commands,
 }
 
 
@@ -788,6 +886,7 @@ def run_all_checks(selected: Optional[List[str]] = None) -> ClaudeConfigReport:
     passed = sum(1 for r in results if r.status == "pass")
     failed = sum(1 for r in results if r.status == "fail")
     warned = sum(1 for r in results if r.status == "warn")
+    unmeasurable = sum(1 for r in results if r.status == "unmeasurable")
 
     return ClaudeConfigReport(
         overall_pass=(failed == 0),
@@ -797,6 +896,7 @@ def run_all_checks(selected: Optional[List[str]] = None) -> ClaudeConfigReport:
         passed_checks=passed,
         failed_checks=failed,
         warned_checks=warned,
+        unmeasurable_checks=unmeasurable,
     )
 
 
@@ -813,7 +913,12 @@ def format_human(report: ClaudeConfigReport) -> str:
     lines.append("=" * 60)
     lines.append("")
 
-    status_icons = {"pass": "[PASS]", "fail": "[FAIL]", "warn": "[WARN]"}
+    status_icons = {
+        "pass": "[PASS]",
+        "fail": "[FAIL]",
+        "warn": "[WARN]",
+        "unmeasurable": "[ ?? ]",
+    }
 
     for check in report.checks:
         icon = status_icons.get(check.status, "[????]")
@@ -831,7 +936,7 @@ def format_human(report: ClaudeConfigReport) -> str:
     lines.append(
         f"  Overall: {overall} "
         f"({report.passed_checks} passed, {report.failed_checks} failed, "
-        f"{report.warned_checks} warned)"
+        f"{report.warned_checks} warned, {report.unmeasurable_checks} unmeasurable)"
     )
     lines.append("=" * 60)
 
@@ -862,7 +967,13 @@ def main():
     else:
         print(json.dumps(report.to_dict(), indent=2))
 
-    sys.exit(0 if report.overall_pass else 1)
+    # xrv-shield-01: a check that could not MEASURE is not a check that found
+    # nothing, so it gets its own code rather than riding on `overall_pass`
+    # (which keeps its meaning for every consumer that reads the report: failed
+    # == 0). 1 = a finding, 2 = the report could not be produced in full.
+    if not report.overall_pass:
+        sys.exit(1)
+    sys.exit(2 if report.unmeasurable_checks else 0)
 
 
 if __name__ == "__main__":

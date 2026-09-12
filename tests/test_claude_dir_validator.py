@@ -721,6 +721,13 @@ class TestCheckRegistry:
             "cli-json",
             "cli-naming",
             "db-path",
+            # xrv-shield-01 — the four AgentShield checks, thin wrappers over
+            # prompt_injection_detector / secret_detector / mcp_scanner plus the
+            # hook command strings nothing else reads.
+            "config-injection",
+            "config-secrets",
+            "mcp-config",
+            "hook-commands",
         }
         assert set(CHECK_REGISTRY.keys()) == expected
 

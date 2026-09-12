@@ -43,6 +43,8 @@ Checks:
  28. self_rooting — a NEW module that computes the REPO ROOT from its own location fails; the 1,369 that
                       existed at adoption are grandfathered BY NAME in args/self_root_census.txt and the ceiling in
                       args/self_root_gate.yaml may only go DOWN (xit-decl-03)
+ 29. agent_config_shield — WARN: the three existing scanners (prompt injection, secrets, MCP) pointed at the AGENT
+                      CONFIG surface, plus what .claude/settings.json hook commands actually execute (xrv-shield-01)
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 (openapi_parity imports Flask/dashboard at runtime; gracefully skips if unavailable.)
@@ -4157,6 +4159,90 @@ def check_sandbox_coverage() -> CoherenceCheck:
         missing=[],
         extra=[],
         message=f"All {len(required)} gap references present in sandbox-coverage.md",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Check: Agent Config Shield (xrv-shield-01)
+# ---------------------------------------------------------------------------
+
+
+def check_agent_config_shield() -> CoherenceCheck:
+    """xrv-shield-01 — the three existing scanners, pointed at the AGENT CONFIG
+    surface, plus what `.claude/settings.json` hook commands execute.
+
+    A WRAPPER over `tools/security/agent_config_shield.py`, which is itself a
+    wrapper over `prompt_injection_detector`, `secret_detector` and
+    `mcp_scanner`. No pattern is spelled in either place.
+
+    CAPPED AT `warn`, ON PURPOSE AND FOR THIS CARD. The surveyed live tree
+    carries 33 medium/high findings that are all scanner artefacts (40-char
+    content hashes matching the base64-block heuristic, a UTF-8 BOM, stdio MCP
+    servers with nothing to authenticate), so a `fail` here would red-light every
+    commit for a condition the committer did not cause. The deliberate tool --
+    `python tools/testing/claude_dir_validator.py --check config-injection` --
+    exits 1 on a critical finding; this registration exists so the surface is
+    SWEPT on the nightly full tier instead of only when somebody remembers.
+    Promoting it to `fail` needs its own fire-rate survey.
+
+    `unmeasurable` maps to `warn` with the reason carried: a scanner that could
+    not run has not given this surface a clean bill of health.
+    """
+    check_name = "Agent Config Shield (xrv-shield-01)"
+    try:
+        from icdev.tools.security import agent_config_shield  # noqa: PLC0415
+
+        report = agent_config_shield.run()
+    except Exception as exc:
+        return CoherenceCheck(
+            check_id="agent_config_shield",
+            check_name=check_name,
+            status="warn",
+            expected=["agent_config_shield.run()"],
+            actual=["(could not run)"],
+            missing=[],
+            extra=[f"{type(exc).__name__}: {exc}"],
+            message=f"agent_config_shield could not run: {exc} — UNMEASURABLE, not clean",
+        )
+
+    findings: List[str] = []
+    unmeasurable: List[str] = []
+    for check in report["checks"]:
+        for f in check["findings"]:
+            findings.append(
+                f"{f.get('severity')} {f.get('pattern')} {f.get('file')} [{check['check_id']}]"
+            )
+        for t in check["targets_unmeasurable"]:
+            unmeasurable.append(f"{check['check_id']}: {t['target']} — {str(t['error'])[:80]}")
+
+    verdicts = report["by_verdict"]
+    critical = report["critical_findings"]
+    if report["overall_verdict"] == "pass":
+        status = "pass"
+        message = (
+            f"agent config surface clean: {report['surface']['dirs_present']} dir(s) + "
+            f"{report['surface']['files_present']} instruction file(s) scanned by "
+            f"{len(report['checks_run'])} wired scanner(s), no findings"
+        )
+    else:
+        status = "warn"
+        message = (
+            f"agent config surface: {critical} critical of {report['total_findings']} "
+            f"finding(s) across {len(report['checks_run'])} check(s) "
+            f"({verdicts['fail']} fail, {verdicts['warn']} warn, "
+            f"{verdicts['unmeasurable']} unmeasurable) — "
+            "re-derive with `python -m tools.security.agent_config_shield`"
+        )
+
+    return CoherenceCheck(
+        check_id="agent_config_shield",
+        check_name=check_name,
+        status=status,
+        expected=sorted(agent_config_shield.CHECKS),
+        actual=[f"{k}={v}" for k, v in sorted(verdicts.items())],
+        missing=findings[:40],
+        extra=unmeasurable,
+        message=message,
     )
 
 
@@ -10700,6 +10786,7 @@ CHECK_REGISTRY = {
     "llm_injection_patterns": check_llm_injection_patterns,
     "skill_standard": check_skill_standard,
     "sandbox_coverage": check_sandbox_coverage,
+    "agent_config_shield": check_agent_config_shield,
     "swallowed_persistence": check_swallowed_persistence,
     "reflex_registry": check_reflex_registry,
     "capability_liveness": check_capability_liveness,
@@ -10846,6 +10933,36 @@ HEAVY_CHECKS: Dict[str, Tuple[str, ...]] = {
         "icdev/tools/llm/",
         "args/llm_config.yaml",
     ),
+    # xrv-shield-01: three scanners over ~230 files (22 injection regexes per
+    # file, a detect-secrets subprocess per directory, an MCP parse per config)
+    # — measured 11.6s for the injection half alone on this host, so it is a
+    # full-tier sweep. The triggers are the config surface ITSELF, which is the
+    # only thing that can change its verdict: a diff that edits a hook, a skill,
+    # a rule file, an instruction file or an MCP config re-adds it to the fast
+    # tier, which is exactly when a planted injection or a neutralised hook would
+    # arrive.
+    "agent_config_shield": (
+        ".claude/",
+        ".agents/",
+        ".cursor/",
+        ".windsurf/",
+        ".amazonq/",
+        ".junie/",
+        ".github/copilot-instructions.md",
+        ".mcp.json",
+        "mcp_config",
+        "CLAUDE.md",
+        "AGENTS.md",
+        "GEMINI.md",
+        "CONVENTIONS.md",
+        ".clinerules",
+        ".goosehints",
+        "args/companion_registry.yaml",
+        "tools/security/agent_config_shield.py",
+        "tools/security/prompt_injection_detector.py",
+        "tools/security/secret_detector.py",
+        "tools/mcp/mcp_scanner.py",
+    ),
     # The criterion here is SCOPE, not cost — two queries, well under a second.
     # gate_sentinel_shape reads the live board, and board rows do not change
     # because a diff touched an unrelated module, so running it on every per-task
@@ -10967,6 +11084,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "llm_injection_patterns": "skip",  # WARN-tier; fixes need human review
     "skill_standard": "suggest",  # description rewrites need human judgment
     "sandbox_coverage": "skip",  # doc/decision — requires human judgment
+    "agent_config_shield": "skip",  # a config-surface finding needs a human to read it
     "direct_anthropic_import": "skip",  # violations require code routing fix
     "llm_router_api": "skip",  # dead-API call sites require routing fix to invoke(fn, req)
     "karpathy_sync": "skip",  # add section to CLAUDE.md + companion sync, then re-run
