@@ -121,7 +121,11 @@ def promote(
         eligible, _withheld = _filter_promotable(
             eligible, conn=conn, door="promote_backlog_to_scheduled")
         for tid, v in (_withheld or {}).items():
-            print(f"  WITHHELD {tid}: {v.get('reason')}")
+            # Once per card: this runs at the top of every scheduler cycle and
+            # a withheld card stays in `backlog`, so an unconditional print is
+            # a line a minute for as long as the card exists.
+            if not v.get("announced_before"):
+                print(f"  WITHHELD {tid}: {v.get('reason')}")
 
         if not eligible:
             print("No eligible backlog tasks to promote.")
