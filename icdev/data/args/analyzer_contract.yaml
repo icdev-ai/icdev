@@ -131,6 +131,9 @@ observable_types:
   network:
     description: Identifier of a network under analysis, used to scope NQE device-inventory queries.
     consumers: [tools/network/attack_surface_mapper.py]
+  binary:
+    description: A compiled executable, shared library or firmware image on disk.
+    consumers: [tools/analyzers/binary_triage.py]
 
 # ---------------------------------------------------------------------------
 # Closed vocabulary: output taxonomy
@@ -151,6 +154,7 @@ taxonomy:
     DSOC: tools/dsoc_canvas/ — DDoS, BGP and network-defence analyzers.
     STRATEGOS: tools/strategos/ — intelligence feeds, importers and OSINT.
     NETWORK: tools/network/ — predictive vulnerability management and attack-surface analysis.
+    BINARY: tools/analyzers/ — triage of a compiled artifact's own bytes (format, sections, imports, strings).
 
 # ---------------------------------------------------------------------------
 # Closed vocabulary: sandbox posture
@@ -435,6 +439,33 @@ analyzers:
     binding:
       observable_arg: advisory_ids
       observable_form: list
+
+  # -------------------------------------------------------------------------
+  # Compiled artifacts (xrv-bin-01)
+  # -------------------------------------------------------------------------
+  # The first analyzer in this contract whose observable is a set of BYTES
+  # rather than an identifier the platform already holds a row for. It is
+  # declared `sandboxed` for that reason: every other entry here reads
+  # first-party data, this one opens a file somebody handed us.
+  - key: binary_triage
+    kind: analyzer
+    display_name: Binary Triage
+    description: Identifies a compiled artifact and reports its format, sections, imports and strings.
+    module: tools.analyzers.binary_triage
+    entrypoint: triage
+    accepts: [binary]
+    taxonomy:
+      namespace: BINARY
+      predicates: [format, packed, imports, strings]
+      levels: [info, suspicious, malicious]
+    sandbox: sandboxed
+    rate_limit:
+      max_calls: 120
+      per_seconds: 3600
+    # triage(path, *, max_bytes=None, max_strings=None, min_string_length=6)
+    # — every keyword carries a default, so only the observable is bound.
+    binding:
+      observable_arg: path
 
   - key: pvm_attack_surface
     kind: analyzer

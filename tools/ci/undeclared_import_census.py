@@ -112,6 +112,7 @@ IMPORT_TO_DIST = {
     "dateutil": "python_dateutil",
     "docx": "python_docx",
     "dotenv": "python_dotenv",
+    "elftools": "pyelftools",
     "fitz": "pymupdf",
     "git": "gitpython",
     "jose": "python_jose",
