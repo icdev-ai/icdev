@@ -13,9 +13,16 @@
 
 **The escalation was CORRECT, it fired EARLY BY DESIGN, and a human answered it
 with a real defect fix.** Eighth POSITIVE control in this card class (after
-rmf-ui-08, fni-api-01, rmf-ui-13, dwr-anchor-05, dwr-ev-01, dwr-ws-02,
-dwr-fid-03), and the second of the `#2184` early-escalation shape whose repair
-is a single commit rather than a hand merge.
+rmf-ui-08, fni-api-01, rmf-ui-13, dwr-anchor-05/dwr-ev-01, dwr-ws-02,
+dwr-fid-03, dwr-fid-02).
+
+It is also the **sixth of nine lifetime `#2184` early-escalation rows**
+(`action='pr_watcher.escalate' AND details LIKE '%resume undelivered after%'`):
+dwr-fid-02, dwr-ev-03, dwr-ws-02, dwr-collab-01, autonomy-act-05, **this one**,
+then xrv-run-01, xrv-route-02, xrv-cost-05 — the last three all inside the last
+33 hours, and all three are the other subjects the derivation reports right now.
+**The shape is the NORM for this class, not an anomaly**, and it now arrives in
+batches; seven of the nine escalated on their FIRST cycle.
 
 Nothing on the subject is outstanding: PR #2231 merged 2026-09-12T03:18:21Z
 (merge commit `108efd883`, a real two-parent merge, not a squash) and
