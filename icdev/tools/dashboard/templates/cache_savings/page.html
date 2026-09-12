@@ -13,6 +13,8 @@
     {"label": "Cost savings breakdown",  "query": "SELECT function, cost_usd_saved FROM cache.stats ORDER BY cost_usd_saved DESC"},
     {"label": "Prefix cache by provider", "query": "SELECT provider, status, cached_share_pct, usd_saved FROM cache.by_provider ORDER BY calls DESC"},
     {"label": "Providers with no traffic", "query": "SELECT provider, capability FROM cache.by_provider WHERE status = 'no_data'"},
+    {"label": "Spend that did not ship",  "query": "SELECT task_id, verdict, status, cost_usd FROM cache.spend WHERE verdict != 'shipped'"},
+    {"label": "Cards with unpriced dispatches", "query": "SELECT task_id, verdict, dispatches, unpriced_dispatches FROM cache.spend WHERE unpriced_dispatches > 0"},
 ] %}
 
 {% block content %}
@@ -245,6 +247,188 @@
       average over the mix would double-count every cached token from half of them.
       Claims live in <code>args/cache_effectiveness.yaml</code>.
     </div>
+    {% endif %}
+  </div>
+
+  {# ------------------------------------------------------------------
+     SPEND BY CARD (xrv-cost-04)
+
+     A different question from everything above it. The tables above ask what
+     CACHING saved; this asks what the board SPENT and whether that spend
+     shipped. They are never added together and never share a rate.
+
+     Every empty state is rendered IN WORDS. $0.00 on a cost panel reads as
+     "this was free", which is the one thing an unattributed board must never
+     be mistaken for — the cards may well have cost money, nothing attributed
+     it. `unpriced` is counted apart from every verdict: a dispatch whose
+     envelope reported no dollars still shipped or was still abandoned.
+  ------------------------------------------------------------------ #}
+  <div class="card" id="spend-by-card" style="margin-bottom:24px;">
+    <div class="card-label" style="padding:14px 18px; border-bottom:1px solid var(--border); font-weight:600; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+      <span>Spend by Card</span>
+      {% if spend %}
+      <span style="font-size:11px; font-weight:400; color:var(--text-dim);">
+        last {{ spend.window_days }}d &middot; cached {{ spend.cache_age_seconds }}s ago
+        (refreshes every {{ spend.cache_ttl_seconds }}s)
+      </span>
+      {% endif %}
+      <a href="/api/cache-savings/spend" target="_blank" style="margin-left:auto; font-size:12px; color:var(--accent-blue-light);">JSON API &#8599;</a>
+    </div>
+
+    {% if not spend %}
+    <div style="padding:24px 18px; color:var(--text-dim); font-size:13px; line-height:1.6;">
+      <strong style="color:#f59e0b;">Unavailable.</strong>
+      The spend panel did not load. This is not a statement that nothing was spent.
+    </div>
+    {% else %}
+
+    {% if spend.error %}
+    <div style="padding:10px 18px; background:#3f2d0a; color:#fbbf24; font-size:12px; border-bottom:1px solid var(--border);">
+      Served from cache &mdash; the last refresh failed: {{ spend.error }}
+    </div>
+    {% endif %}
+
+    {% if spend.state != "measured" %}
+    <div style="padding:24px 18px; color:var(--text-dim); font-size:13px; line-height:1.6;">
+      <strong style="color:#f59e0b;">Unmeasurable</strong> &mdash; {{ spend.headline }}.
+      <div style="margin-top:8px; font-size:12px;">
+        {% if spend.reason == "no_attributed_rows" %}
+        No dispatch in the last {{ spend.window_days }} days recorded a cost envelope against a
+        card. That is an absence of attribution, not an absence of spending &mdash; so this
+        section reads as unmeasurable rather than as a dollar figure of zero.
+        {% elif spend.reason == "ledger_unreadable" %}
+        The <code>agent_token_usage</code> ledger could not be read, so nothing here was measured.
+        {% else %}
+        The survey could not be produced ({{ spend.reason }}). A panel that could not run is never
+        a panel that found nothing.
+        {% endif %}
+      </div>
+    </div>
+    {% else %}
+
+    <!-- Spend KPI row -->
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px,1fr)); gap:16px; padding:18px;">
+      <div style="text-align:center;">
+        {% if spend.total_cost_usd is none %}
+        <div style="font-size:24px; font-weight:700; color:var(--text-dim);">&mdash;</div>
+        <div style="font-size:12px; color:var(--text-dim); margin-top:4px;">Attributed Spend</div>
+        <div style="font-size:11px; color:var(--text-dim); margin-top:4px;">no dispatch reported a price</div>
+        {% else %}
+        <div style="font-size:24px; font-weight:700; color:#f59e0b;">${{ "%.2f"|format(spend.total_cost_usd) }}</div>
+        <div style="font-size:12px; color:var(--text-dim); margin-top:4px;">Attributed Spend</div>
+        <div style="font-size:11px; color:var(--text-dim); margin-top:4px;">{{ spend.tasks }} card(s), last {{ spend.window_days }}d</div>
+        {% endif %}
+      </div>
+
+      <div style="text-align:center;">
+        {# None means nothing was MEASURED — an all-unmeasurable window is not
+           "0% shipped", and a board with no rows is not "100% shipped". #}
+        {% if spend.shipped_cost_share_pct is none %}
+        <div style="font-size:24px; font-weight:700; color:var(--text-dim);">&mdash;</div>
+        <div style="font-size:12px; color:var(--text-dim); margin-top:4px;">Spend That Shipped</div>
+        <div style="font-size:11px; color:var(--text-dim); margin-top:4px;">not measured &mdash; no judged spend in window</div>
+        {% else %}
+        <div style="font-size:24px; font-weight:700; color:#22c55e;">{{ spend.shipped_cost_share_pct }}%</div>
+        <div style="font-size:12px; color:var(--text-dim); margin-top:4px;">Spend That Shipped</div>
+        <div style="font-size:11px; color:var(--text-dim); margin-top:4px;">share of the measured spend</div>
+        {% endif %}
+      </div>
+
+      <div style="text-align:center;">
+        <div style="font-size:24px; font-weight:700; color:{{ '#818cf8' if spend.unpriced_dispatches else 'var(--text-dim)' }};">{{ spend.unpriced_dispatches if spend.unpriced_dispatches is not none else "—" }}</div>
+        <div style="font-size:12px; color:var(--text-dim); margin-top:4px;">Unpriced Dispatches</div>
+        <div style="font-size:11px; color:var(--text-dim); margin-top:4px;">ran, but reported no dollars</div>
+      </div>
+
+      <div style="text-align:center;">
+        <div style="font-size:24px; font-weight:700; color:{{ '#f59e0b' if spend.unmeasurable_tasks else 'var(--text-dim)' }};">{{ spend.unmeasurable_tasks if spend.unmeasurable_tasks is not none else "—" }}</div>
+        <div style="font-size:12px; color:var(--text-dim); margin-top:4px;">Unmeasurable Cards</div>
+        <div style="font-size:11px; color:var(--text-dim); margin-top:4px;">outcome could not be established</div>
+      </div>
+    </div>
+
+    <!-- By verdict -->
+    <div style="overflow-x:auto; border-top:1px solid var(--border);">
+      <table style="width:100%; border-collapse:collapse; font-size:13px;">
+        <thead>
+          <tr style="background:var(--bg-hover);">
+            <th style="padding:8px 14px; text-align:left; color:var(--text-dim); font-weight:600;">Outcome</th>
+            <th style="padding:8px 14px; text-align:right; color:var(--text-dim); font-weight:600;">Cards</th>
+            <th style="padding:8px 14px; text-align:right; color:var(--text-dim); font-weight:600;">Dispatches</th>
+            <th style="padding:8px 14px; text-align:right; color:var(--text-dim); font-weight:600;">Cost</th>
+            <th style="padding:8px 14px; text-align:right; color:var(--text-dim); font-weight:600;">Share</th>
+            <th style="padding:8px 14px; text-align:left; color:var(--text-dim); font-weight:600;">What it means</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in spend.by_verdict %}
+          <tr style="border-top:1px solid var(--border);">
+            <td style="padding:8px 14px; font-weight:600;">{{ row.label }}</td>
+            <td style="padding:8px 14px; text-align:right;">{{ row.tasks if row.tasks is not none else "—" }}</td>
+            <td style="padding:8px 14px; text-align:right;">{{ row.dispatches if row.dispatches is not none else "—" }}</td>
+            <td style="padding:8px 14px; text-align:right;">
+              {%- if row.cost_usd is none %}<span style="color:var(--text-dim);" title="no priced dispatch in this outcome">&mdash;</span>
+              {%- else %}<span style="color:#f59e0b; font-weight:600;">${{ "%.4f"|format(row.cost_usd) }}</span>{% endif -%}
+            </td>
+            <td style="padding:8px 14px; text-align:right; color:var(--text-dim);">
+              {{- (row.cost_share_pct ~ "%") if row.cost_share_pct is not none else "—" -}}
+            </td>
+            <td style="padding:8px 14px; color:var(--text-dim); font-size:12px;">{{ row.note }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- By task -->
+    {% if spend.by_task %}
+    <div style="overflow-x:auto; border-top:1px solid var(--border);">
+      <table style="width:100%; border-collapse:collapse; font-size:13px;">
+        <thead>
+          <tr style="background:var(--bg-hover);">
+            <th style="padding:8px 14px; text-align:left; color:var(--text-dim); font-weight:600;">Card</th>
+            <th style="padding:8px 14px; text-align:left; color:var(--text-dim); font-weight:600;">Outcome</th>
+            <th style="padding:8px 14px; text-align:left; color:var(--text-dim); font-weight:600;">Board status</th>
+            <th style="padding:8px 14px; text-align:right; color:var(--text-dim); font-weight:600;">Dispatches</th>
+            <th style="padding:8px 14px; text-align:right; color:var(--text-dim); font-weight:600;">Cost</th>
+            <th style="padding:8px 14px; text-align:left; color:var(--text-dim); font-weight:600;">Model(s)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in spend.by_task %}
+          <tr style="border-top:1px solid var(--border);">
+            <td style="padding:8px 14px; font-family:monospace;">{{ row.task_id }}</td>
+            <td style="padding:8px 14px;">{{ row.label }}</td>
+            <td style="padding:8px 14px; color:var(--text-dim);">{{ row.status or "not on board" }}</td>
+            <td style="padding:8px 14px; text-align:right;">
+              {{- row.dispatches -}}
+              {%- if row.unpriced_dispatches %} <span style="color:#818cf8;" title="{{ row.unpriced_dispatches }} of them reported no dollars">({{ row.unpriced_dispatches }} unpriced)</span>{% endif -%}
+            </td>
+            <td style="padding:8px 14px; text-align:right;">
+              {%- if row.cost_usd is none %}<span style="color:var(--text-dim);" title="every dispatch for this card reported no cost — this is not $0.00">unpriced</span>
+              {%- else %}<span style="color:#f59e0b; font-weight:600;">${{ "%.4f"|format(row.cost_usd) }}</span>{% endif -%}
+            </td>
+            <td style="padding:8px 14px; color:var(--text-dim); font-size:12px;">{{ row.models|join(", ") or "—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    <div style="padding:12px 18px; border-top:1px solid var(--border); font-size:11px; color:var(--text-dim); line-height:1.6;">
+      Showing {{ spend.tasks_shown }} of {{ spend.tasks_total }} attributed card(s), costliest first.
+      Cost is the Claude Code envelope's own <code>total_cost_usd</code> per dispatch, recorded at
+      reap against <code>agent_token_usage.task_id</code>; the outcome is re-derived from git
+      (<em>did a commit naming this card land on the default branch</em>) and the board, with the
+      forge deliberately not consulted so a page render costs no network round-trip.
+      <br>
+      This spend is <strong>not</strong> netted against the caching figures above &mdash; those
+      describe calls avoided and input tokens cached, which is a different question and a
+      different substrate. Re-derive any figure here with
+      <code>python -m tools.cache_savings.spend --json</code>.
+    </div>
+    {% endif %}
     {% endif %}
   </div>
 

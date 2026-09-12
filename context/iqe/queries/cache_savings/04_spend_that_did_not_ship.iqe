@@ -1,0 +1,9 @@
+# Intent: Which cards spent money and did NOT land on the default branch, so
+#         the abandoned and reverted spend is visible beside the shipped spend.
+# Expected: rows from cache.spend whose verdict is not 'shipped'. An empty
+#           result means every attributed card shipped -- it does NOT mean
+#           nothing was spent, which is what a zero on this page would imply.
+
+foreach t in cache.spend
+  where t.verdict != "shipped"
+  select t.task_id, t.verdict, t.status, t.cost_usd, t.dispatches
