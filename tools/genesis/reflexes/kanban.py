@@ -3561,7 +3561,10 @@ def _get_due_tasks() -> list:
             result, _held = filter_promotable(
                 result, conn=conn, door="_get_due_tasks")
             for _tid, _v in (_held or {}).items():
-                print(f"  Kanban: WITHHELD {_tid} — {_v.get('reason')}")
+                # Once per card, not once per 60s cycle: a withheld card stays
+                # selectable, so an unconditional print is 1,440 lines a day.
+                if not _v.get("announced_before"):
+                    print(f"  Kanban: WITHHELD {_tid} — {_v.get('reason')}")
         except Exception as _pg_exc:  # noqa: BLE001 — never wedge dispatch
             logger.warning("promotion gate skipped: %s", _pg_exc)
 

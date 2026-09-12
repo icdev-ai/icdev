@@ -115,6 +115,24 @@ def test_a_land_py_subject_is_recorded_through_the_ledger_door(board):
     assert v["landed_via"] == DF.LANDED_VIA_LEDGER
 
 
+def test_a_withheld_card_is_announced_once_not_once_a_cycle(board, monkeypatch):
+    """`_get_due_tasks` re-selects a withheld card every 60s; the log must not."""
+    monkeypatch.setattr(PG, "_ANNOUNCED", set())
+    board["watcher"] = [_escalate(), _watcher_merge()]
+    board["status"] = {SUBJECT: "done"}
+
+    _, first = PG.filter_promotable([{"id": CARD}], conn=object(), door="cycle")
+    _, again = PG.filter_promotable([{"id": CARD}], conn=object(), door="cycle")
+
+    assert first[CARD]["announced_before"] is False
+    assert again[CARD]["announced_before"] is True
+    # Still WITHHELD on every cycle — only the announcement is deduped.
+    assert again[CARD]["withheld"] is True
+    # A different door announces on its own account.
+    _, other = PG.filter_promotable([{"id": CARD}], conn=object(), door="promote")
+    assert other[CARD]["announced_before"] is False
+
+
 def test_filter_promotable_drops_only_the_record_and_keeps_the_order(board):
     board["watcher"] = [_escalate(), _watcher_merge()]
     board["status"] = {SUBJECT: "done"}

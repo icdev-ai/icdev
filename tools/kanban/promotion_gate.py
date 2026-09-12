@@ -37,6 +37,13 @@ stays exactly as it was and is still surfaced by
 ``python -m tools.kanban.detector_findings --records``. This is a PROMOTION
 check, not a change to what counts as a finding.
 
+WHAT A WITHHELD CARD DOES NEXT — nothing, and that is the deliberate trade. It
+stays where it is (``suggested`` or ``backlog``), visible on the board, and a
+human closes it. That is exactly what happened at 21:35 on 2026-09-12 anyway;
+what this removes is the three worker sessions in front of it. CLOSING the card
+would need this module to write to the board, which is the one thing a read-only
+promotion check must not start doing.
+
 EVERY UNKNOWN STILL DISPATCHES. An unreadable order, a subject not on the board,
 a subject still in flight, an unreadable board, an absent projection, a raised
 exception anywhere in here: all keep the card. That is ``card_disposition``'s
@@ -224,13 +231,25 @@ def verdicts(task_ids: Sequence[Any], *, conn=None,
                 pass
 
 
+#: ``(door, task_id, finding_id)`` already announced by THIS process.
+#:
+#: A withheld card stays where it is, so ``_get_due_tasks`` re-selects it on
+#: every 60s cycle and would log the same line 1,440 times a day — the shape
+#: that gets a log filtered and then ignored. First sight is a WARNING, every
+#: repeat is DEBUG. Keyed on the finding id as well as the task, so a card whose
+#: finding is superseded announces again rather than inheriting the old silence.
+_ANNOUNCED: set = set()
+
+
 def filter_promotable(tasks: Sequence[Any], *, conn=None,
                       key: Optional[Callable[[Any], Any]] = None,
                       door: str = "") -> Tuple[List[Any], Dict[str, Dict[str, Any]]]:
     """``(promotable, withheld_by_task_id)``, order preserved.
 
     ``door`` names the caller in the log line, because three of them ask and a
-    withhold nobody can attribute is a withhold nobody can audit.
+    withhold nobody can attribute is a withhold nobody can audit. Each held
+    entry carries ``announced_before`` so a caller that prints to a console can
+    print once rather than once a cycle.
     """
     if not tasks:
         return list(tasks or []), {}
@@ -239,12 +258,17 @@ def filter_promotable(tasks: Sequence[Any], *, conn=None,
         return list(tasks), {}
     held = {k: v for k, v in verds.items() if v.get("withheld")}
     for tid, v in verds.items():
-        if v.get("would_withhold"):
-            logger.warning(
-                "promotion_gate[%s]: %s %s — %s (finding %s stays ACTIVE; see "
-                "`detector_findings --records`)",
-                door or "?", "WITHHELD" if v.get("withheld") else "would withhold",
-                tid, v.get("reason"), v.get("finding_id"))
+        if not v.get("would_withhold"):
+            continue
+        stamp = (door, tid, v.get("finding_id"))
+        seen = stamp in _ANNOUNCED
+        _ANNOUNCED.add(stamp)
+        v["announced_before"] = seen
+        (logger.debug if seen else logger.warning)(
+            "promotion_gate[%s]: %s %s — %s (finding %s stays ACTIVE; see "
+            "`detector_findings --records`)",
+            door or "?", "WITHHELD" if v.get("withheld") else "would withhold",
+            tid, v.get("reason"), v.get("finding_id"))
     if not held:
         return list(tasks), {}
 
