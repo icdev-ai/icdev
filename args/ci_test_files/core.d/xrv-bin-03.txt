@@ -1,0 +1,2 @@
+tests/compliance/test_sbom_binary_hints.py
+tests/devsecops/test_attestation_corroboration.py

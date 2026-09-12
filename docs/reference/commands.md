@@ -522,6 +522,64 @@ python tools/analyzers/dispatch.py --type binary --value <path>   # through the 
 python tools/analyzers/dispatch.py --type ip --value 1.2.3.4 --responders # responders ACT — opt-in
 ```
 
+### The two consumers of that triage (xrv-bin-03)
+
+```bash
+# 1. SBOM HINTS. sbom_generator discovers components from DECLARED manifests only;
+#    this adds what the artifact itself appears to contain.
+python -m tools.compliance.binary_components <artifact> --json     # the hinted components, standalone
+python -m tools.compliance.binary_components <artifact>            # human report, skips included
+python tools/compliance/sbom_generator.py --project-id "sparkpilot" --binary /opt/app/bin/app
+python tools/compliance/sbom_generator.py --project-id "sparkpilot" --binary a.so --binary b.so
+# EVERY hinted component is labelled one, in its CycloneDX properties:
+#   icdev:sbom:binary-hint:evidence        binary_strings
+#   icdev:sbom:binary-hint:confidence      unasserted   <- there is no second value
+#   icdev:sbom:binary-hint:evidence-string the RAW string, so the reader can check
+#   icdev:sbom:binary-hint:version-token   what binary_triage returned
+#   icdev:sbom:binary-hint:version-basis   triage_token | triage_token_extended_in_string
+# THE TOKEN IS NOT THE VERSION. `_VERSION_TOKEN` ends at a word boundary, so the seam's
+# hint for `OpenSSL 1.1.1k` is **1.1** -- a WRONG version, not a vague one, and a CVE
+# lookup against it answers about a release the artifact does not contain. The token is
+# extended over the version characters that FOLLOW IT IN THE SAME STRING, bounded at 40
+# chars, and both values ride on the component. Measured residual, and it belongs to
+# binary_triage: that same `\b` means `v1.1.1k` yields NO hint at all, and this module
+# reports the zero rather than running a second regex the triage would disagree with.
+# A hint with NO identifier beside it is SKIPPED BY NAME (`no_name_adjacent`) with the
+# string it came from -- binaries are full of version-shaped numbers, and a component
+# named after nothing buries the real entries. No purl is ever invented: a purl asserts
+# an ecosystem and a namespace, and a string in a binary names neither.
+# Five statuses: ok | no_hints (READ, carries none -- a MEASURED zero) | unmeasurable
+# (could not be read -- NOTHING is known) | unsupported_format | truncated.
+
+# 2. CORROBORATION. attestation_verify and slsa_verify check METADATA about an artifact
+#    and have never opened it -- the "the binary does not match the SBOM" rebuttal.
+python -m tools.devsecops.artifact_corroboration --artifact app.exe \
+    --attestation provenance.json --sbom sbom.cdx.json --json
+python tools/devsecops/attestation_manager.py --project-id p1 --verify --image reg/app:v1 \
+    --artifact app.exe --attestation provenance.json --sbom sbom.cdx.json --json
+python tools/compliance/slsa_attestation_generator.py --project-id p1 --verify \
+    --artifact app.exe --sbom sbom.cdx.json --json
+# MCP: attestation_verify / slsa_verify both take artifact / attestation / sbom.
+# TWO AXES, NEVER MERGED, each agrees | disagrees | unmeasurable:
+#   digest  the artifact's own SHA-256 vs the attestation SUBJECT's. The strong one:
+#           a mismatch means the statement is about a DIFFERENT FILE. A PREFIX digest
+#           (the byte cap was hit) is `unmeasurable`, never `disagrees` -- accusing a
+#           correct attestation because of OUR bound is a fabricated finding.
+#   sbom    what the triage OBSERVED vs what the SBOM DECLARES. CycloneDX and SPDX are
+#           both read, because the generator emits both from one build.
+# REPORTED BESIDE THE SIGNATURE VERDICT AND NEVER FOLDED INTO IT. `attach()` returns a
+# NEW mapping with every existing key unchanged and REFUSES to overwrite -- so a triage
+# that cannot load pefile can never downgrade a cryptographically sound verification,
+# and an adversary who can make the triage unmeasurable cannot move the verdict.
+# THE SBOM AXIS IS DELIBERATELY ASYMMETRIC: only a VERSION CONTRADICTION on a name BOTH
+# sides carry reaches `disagrees`. A component the binary never mentions (static linking
+# leaves no trace) and a string the SBOM never declares (a protocol, a file format,
+# somebody else's requirement) are carried as CONTEXT -- `declared_not_observed` and
+# `observed_not_declared`, counted and named. An `unknown` declared version cannot
+# contradict anything: the generator's honest unknown marker must not become a finding.
+# Report only, no --gate: exit 0 even on `disagrees` (kpr-fix-03).
+```
+
 ### Rate limits and sandbox posture (anz-rate-01)
 
 Each declaration's `rate_limit` and `sandbox` posture are **enforced** on every

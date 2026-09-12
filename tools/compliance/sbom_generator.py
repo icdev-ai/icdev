@@ -67,6 +67,10 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from tools.compliance.binary_components import (
+    binary_hint_properties,
+    hinted_components,
+)
 from tools.compliance.component_licenser import (
     PROPERTY_LICENSE,
     license_entries,
@@ -1568,6 +1572,15 @@ def _build_cyclonedx_sbom(
                 names["alternates"].append({"name": spelling, "kind": NAME_DECLARED})
         apply_names_to_cyclonedx(cdx_comp, names, disclosure)
 
+        # A component OBSERVED in a compiled artifact's strings rather than
+        # declared in a manifest (xrv-bin-03). Empty for every manifest-declared
+        # component, which is what makes this hook additive: an SBOM generated
+        # without --binary is byte-identical with and without this line. The
+        # properties carry `evidence: binary_strings` and `confidence:
+        # unasserted` plus the raw string, so a recipient can never read a
+        # hinted entry as something a build file said.
+        cdx_comp.setdefault("properties", []).extend(binary_hint_properties(comp))
+
         cdx_components.append(cdx_comp)
 
     # The target component is a component too, so the element applies to it —
@@ -1737,6 +1750,7 @@ def generate_sbom(
     python_env=None,
     build_id=None,
     sbom_author=None,
+    binary_paths=None,
 ):
     """Generate a Software Bill of Materials for a project.
 
@@ -1758,6 +1772,13 @@ def generate_sbom(
         sbom_author: SBOM Author — the full name of the entity generating this
             SBOM, which is not the tool and not its vendor. Falls back to
             `$ICDEV_SBOM_AUTHOR`, then to DEFAULT_SBOM_AUTHOR.
+        binary_paths: Compiled artifacts to triage for OBSERVED components
+            (xrv-bin-03). Every component discovered this way is a HINT and says
+            so — `evidence: binary_strings`, `confidence: unasserted`, plus the
+            raw string it came from — because a version in a binary's `.rodata`
+            is as consistent with a string constant naming somebody else's
+            requirement as it is with a vendored copy. Passing none is the
+            default and leaves the document byte-identical to before.
 
     Returns:
         Path to the generated SBOM file
@@ -1798,6 +1819,26 @@ def generate_sbom(
         )
         all_components = resolution["components"]
         coverage = resolution["coverage"]
+
+        # OBSERVED components (xrv-bin-03). Appended to the DECLARED set rather
+        # than replacing any part of it: a manifest is a statement by the
+        # producer and a string in a binary is an observation about the
+        # artifact, and the SBOM carries both with each labelled for what it is.
+        # The whole per-artifact report — including the hints that were SKIPPED
+        # and why — rides on the audit event below, because a hint dropped
+        # without a reason is the defect this card exists one layer above.
+        binary_reports = []
+        for binary_path in binary_paths or []:
+            hinted = hinted_components(binary_path)
+            binary_reports.append(hinted)
+            all_components.extend(hinted["components"])
+            print(
+                f"  [observed] {hinted['artifact']}: {hinted['status']}, "
+                f"{hinted['component_count']} hinted component(s), "
+                f"{hinted['skipped_count']} skipped"
+            )
+            for skipped in hinted["skipped"]:
+                print(f"      skipped {skipped['version_token']}: {skipped['reason']}")
 
         for eco in resolution["ecosystems"]:
             flag = "resolved" if eco["complete"] else "DECLARED ONLY"
@@ -1981,6 +2022,13 @@ def generate_sbom(
                 "content_digest": revision["content_digest"],
                 "content_changed": revision["content_changed"],
                 "source_revision": revision["source_revision"],
+                # None, never 0, when no artifact was triaged: "nobody looked"
+                # and "we looked and found nothing" are different statements
+                # about this document's coverage.
+                "binary_hint_count": (
+                    sum(r["component_count"] for r in binary_reports) if binary_reports else None
+                ),
+                "binary_reports": binary_reports or None,
             },
             out_file,
         )
@@ -2069,6 +2117,19 @@ def main():
             f"Defaults to ${SBOM_AUTHOR_ENV}, then to '{DEFAULT_SBOM_AUTHOR}'."
         ),
     )
+    parser.add_argument(
+        "--binary",
+        dest="binary_paths",
+        action="append",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Compiled artifact to triage for OBSERVED components (xrv-bin-03). Repeatable. "
+            "Every component found this way is a HINT -- it carries evidence 'binary_strings', "
+            "confidence 'unasserted' and the raw string it came from -- and is never presented "
+            "as something a manifest declared."
+        ),
+    )
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
@@ -2082,6 +2143,7 @@ def main():
             python_env=args.python_env,
             build_id=args.build_id,
             sbom_author=args.sbom_author,
+            binary_paths=args.binary_paths,
         )
         print(f"\nSBOM path: {path}")
     except (FileNotFoundError, ValueError) as e:

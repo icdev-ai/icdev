@@ -3215,6 +3215,11 @@ def handle_slsa_verify(args: dict) -> dict:
     cli_args = ["--project-id", str(args.get("project_id", "")), "--verify"]
     if args.get("target_level") is not None:
         cli_args.extend(["--target-level", str(args["target_level"])])
+    # Evidence about the artifact (xrv-bin-03). Omitting all three leaves the
+    # result byte-identical to what this handler has always returned.
+    for flag in ("artifact", "attestation", "sbom"):
+        if args.get(flag):
+            cli_args.extend(["--" + flag, str(args[flag])])
     return _run_cli("tools/compliance/slsa_attestation_generator.py", cli_args)
 
 
