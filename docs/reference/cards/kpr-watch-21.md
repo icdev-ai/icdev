@@ -2,6 +2,10 @@
 
 # A refusal that names no remedy (kpr-watch-21)
 
+```bash
+python tools/kanban/cli.py --reverify <task-id>
+```
+
 **Measured 2026-09-12.** `pr_watcher.wait` carried **10,542** lifetime rows whose
 reason was `enforced gate: awaiting ICDEV done-verification`
 (`tools/ci/pr_watcher.py`). The sentence was accurate and it named **no remedy**,
