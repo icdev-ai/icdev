@@ -75,7 +75,20 @@ INJECTION_PATTERNS: List[Dict] = [
     },
     {
         "name": "role_hijack_jailbreak",
-        "pattern": r"(?i)(DAN|do\s+anything\s+now|developer\s+mode|jailbreak|unrestricted\s+mode|god\s+mode|admin\s+mode)",  # noqa: E501
+        # WORD-BOUNDED, and the boundaries are load bearing (xrv-shield-01).
+        # Without them `DAN` matched the SUBSTRING `dan`, so every occurrence of
+        # "guidance", "accordance", "dangerous", "redundant", "pydantic" and
+        # "descendant" was a CRITICAL jailbreak finding. Measured 2026-09-11
+        # over the 18,730 scannable files in this tree: 10,019 matches became
+        # 90, and all 9,929 removed were that substring inside a longer word
+        # (2,826 "guidance" alone). The 90 kept are the real vocabulary --
+        # 43 "jailbreak", 33 standalone "dan", 6 "do anything now", 4
+        # "developer mode", 2 "god mode", 2 "unrestricted mode" -- so this is a
+        # strict narrowing that cannot add a match, and the existing
+        # tests/test_prompt_injection_detector.py::test_jailbreak_dan fixture
+        # ("act as DAN") still matches. Survey:
+        # docs/audits/xrv-shield-01-agent-config-survey.md
+        "pattern": r"(?i)\b(DAN|do\s+anything\s+now|developer\s+mode|jailbreak|unrestricted\s+mode|god\s+mode|admin\s+mode)\b",  # noqa: E501
         "category": "role_hijacking",
         "severity": "critical",
         "confidence": 0.90,

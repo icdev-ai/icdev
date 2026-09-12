@@ -3704,6 +3704,20 @@ python tools/testing/claude_dir_validator.py --json   # Validate .claude config 
 python tools/testing/claude_dir_validator.py --human   # Human-readable terminal output
 python tools/testing/claude_dir_validator.py --check append-only --json  # Single check
 
+# Agent config shield (xrv-shield-01) — the three existing scanners pointed at
+# .claude/ .agents/ .cursor/ CLAUDE.md, the 10 companion files and every MCP config
+python -m tools.security.agent_config_shield                 # human report (exit 1 on a critical)
+python -m tools.security.agent_config_shield --json
+python -m tools.security.agent_config_shield --surface       # the declared surface, scans nothing
+python -m tools.security.agent_config_shield --check mcp-config --json
+python tools/testing/claude_dir_validator.py --check config-injection --json  # prompt injection
+python tools/testing/claude_dir_validator.py --check config-secrets --json    # secrets
+python tools/testing/claude_dir_validator.py --check mcp-config --json        # MCP servers
+python tools/testing/claude_dir_validator.py --check hook-commands --json     # what a hook EXECUTES
+python tools/workflow/coherence_checker.py --check agent_config_shield --json # warn, full tier
+# Verdicts are pass | warn | fail | unmeasurable; unmeasurable NEVER folds into pass.
+# Survey: docs/audits/xrv-shield-01-agent-config-survey.md
+
 # Health check
 python tools/testing/health_check.py                 # Full system health check
 python tools/testing/health_check.py --json           # JSON output
