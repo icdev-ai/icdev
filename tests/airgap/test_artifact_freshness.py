@@ -404,6 +404,42 @@ def test_the_shipped_postgres_pin_is_decided_by_floci_not_by_postgres_releases()
     assert entry["consumer"] == "floci"
 
 
+def test_the_shipped_valkey_pin_is_decided_by_floci_which_hard_codes_the_tag():
+    """artifact-fresh-ee3339893b. Harder than the postgres case: that one is
+    floci's DEFAULT for a knob a caller can turn, this one is a CONSTANT. Four
+    CreateReplicationGroup calls -- default, EngineVersion=7.1,
+    EngineVersion=99.99 and Engine=valkey/EngineVersion=9 -- ALL started
+    valkey/valkey:8 (measured 2026-09-12), so no declared configuration reaches
+    valkey 9 and bumping this pin unvendors EVERY ElastiCache path."""
+    entry = next(e for e in AF.load_config()["artifacts"]
+                 if e["name"] == "elasticache-valkey")
+    assert entry["pinned"] == "8"
+    assert entry["decided_by"] == AF.DECIDED_BY_CONSUMER
+    assert entry["consumer"] == "floci"
+
+
+def test_the_valkey_digest_is_the_one_re_measured_after_the_tag_moved():
+    """The version half of that card was refused; the DIGEST half was real and
+    was acted on. A revert to the stale digest would make an air-gap bundle
+    re-cut from the tag disagree with the file that names it."""
+    remeasured = (
+        "sha256:3fbd2e3e4b6e85e046c1e7c215e8f79087bc0357789184305806664e320996f3"
+    )
+    stale = (
+        "sha256:98c6217ccc2fe5e6c4b5dcd5c40eef4de2a68924e7ecef50d5a0a30b57dfaef6"
+    )
+    pins = (ROOT / "vendor" / "images" / "images-floci-runtime.txt").read_text(
+        encoding="utf-8"
+    )
+    # Only the PIN lines decide what gets vendored; the stale digest is still
+    # named in a comment above them, on purpose, as the thing that moved.
+    active = [ln.strip() for ln in pins.splitlines()
+              if ln.strip() and not ln.lstrip().startswith("#")]
+    valkey = [ln for ln in active if ln.startswith("valkey/valkey@")]
+    assert valkey == [f"valkey/valkey@{remeasured}"]
+    assert not any(stale in ln for ln in active)
+
+
 # --------------------------------------------------------------------------- #
 # ordering — same SHAPE only
 # --------------------------------------------------------------------------- #
