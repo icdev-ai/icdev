@@ -188,6 +188,23 @@ DISPOSITION_RECORD = "record"  # a true statement about the past; nothing to act
 #: defect, a named constant saying why is the answer.
 OUTCOME_ACTIONS = ("pr_watcher.escalate", "pr_watcher.merge")
 
+#: The SECOND door a landing comes through (autonomy-act-06). ``OUTCOME_ACTIONS``
+#: sees only what the WATCHER merged, and a PR landed by
+#: ``cli.py --set-status <id> done --merge`` (mfx-mrg-04), by the Actions
+#: auto-merge workflow (mfx-mrg-07) or by a hand ``gh pr merge`` writes no
+#: ``pr_watcher.merge`` row at all -- so a fully-delivered subject was ordered
+#: "the escalation is the newer of the two rows" forever. These are the merge
+#: LEDGER's rows, written by ``tools/idp/delivery_events``: an action naming the
+#: task and a payload carrying ``source`` and ``task_id``.
+LEDGER_ACTION_PREFIX = "change landed on main: "
+LEDGER_SOURCE = "kanban_merge_ledger"
+
+#: Which door a RECORD's landing came through. Named, because "the watcher
+#: merged it" and "somebody else did and the ledger recorded it" are different
+#: facts and a record that blurs them cannot be audited.
+LANDED_VIA_WATCHER = "pr_watcher.merge"
+LANDED_VIA_LEDGER = "merge_ledger"
+
 #: A card in one of these is no longer anybody's work item, so a finding that
 #: comes back while its card sits here has RECURRED and earns a fresh card.
 TERMINAL_CARD_STATUSES = frozenset({"done", "failed"})
@@ -538,8 +555,74 @@ def merge_after_escalation(rows: Sequence[Mapping[str, Any]],
             "reason": "a pr_watcher.merge landed after the escalation"}
 
 
+def ledger_landing(rows: Sequence[Mapping[str, Any]], subject: str, *,
+                   escalated_at: Any) -> Dict[str, Any]:
+    """Did the MERGE LEDGER record this subject landing on main AFTER its
+    escalation? PURE (autonomy-act-06).
+
+    THE COMPANION QUESTION TO ``merge_after_escalation``, ASKED OF THE OTHER
+    DOOR. That function reads ``pr_watcher.merge``, which only the WATCHER
+    writes; three other merge paths exist and none of them writes one. This
+    reads the row the merge ledger writes for EVERY landing whatever merged it
+    -- ``tools/idp/delivery_events``' ``change landed on main: <task-id>``,
+    whose payload carries ``source: kanban_merge_ledger``.
+
+    Measured on the live board 2026-09-12 over all 42 lifetime dispositioned
+    recovery findings: of the 10 ``card`` verdicts, NINE were subjects already
+    ``done`` with exactly one ledger row and zero ``pr_watcher.merge`` rows,
+    and in all nine the landing was AFTER the escalation. Only ``xrv-cost-05``
+    was genuinely still open.
+
+    THE ORDERING DISCIPLINE IS THE SAME ONE, DELIBERATELY. A landing older than
+    the newest escalation is not an answer to it -- the watcher escalated about
+    something that came after -- so it reports ``landed: False``, exactly as a
+    pre-escalation ``pr_watcher.merge`` does. And ``measurable`` is False with
+    ``landed`` None -- NEVER False -- when there is no escalation to order
+    against: "I cannot tell" and "it has not landed" send a caller to opposite
+    places.
+
+    ``event_type`` is NOT the filter. ``deployment_initiated`` is a shared
+    vocabulary word any writer may use; ``source`` is what names the ledger, so
+    a row from another writer is not counted as a landing.
+    """
+    at0 = (parse_utc_timestamp(escalated_at)
+           if isinstance(escalated_at, str) else escalated_at)
+    if not isinstance(at0, datetime):
+        return {"measurable": False, "landed": None, "landed_at": None,
+                "ledger_rows": 0,
+                "reason": f"no escalation to order a landing for {subject} against"}
+
+    landings: List[datetime] = []
+    for row in rows or []:
+        record = dict(row)
+        if not str(record.get("action") or "").startswith(LEDGER_ACTION_PREFIX):
+            continue
+        try:
+            payload = json.loads(record.get("d") or "{}")
+        except (TypeError, ValueError):
+            continue
+        if str(payload.get("source") or "") != LEDGER_SOURCE:
+            continue
+        if str(payload.get("task_id") or "") != str(subject):
+            continue
+        at = parse_utc_timestamp(record.get("created_at"))
+        if at is not None:
+            landings.append(at)
+
+    later = sorted(a for a in landings if a > at0)
+    if not later:
+        return {"measurable": True, "landed": False, "landed_at": None,
+                "ledger_rows": len(landings),
+                "reason": (f"the merge ledger records no landing for {subject} after "
+                           f"the escalation at {at0.isoformat()}")}
+    return {"measurable": True, "landed": True, "landed_at": later[0].isoformat(),
+            "ledger_rows": len(landings),
+            "reason": "the merge ledger recorded a landing after the escalation"}
+
+
 def card_disposition(f: Mapping[str, Any], *,
-                     subject_status: Optional[str]) -> Dict[str, Any]:
+                     subject_status: Optional[str],
+                     landed_on_main: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
     """CARD or RECORD for one projected finding. PURE.
 
     THE OBJECTION THIS ANSWERS (autonomy-act-04). ``summarize_recovery`` is
@@ -553,13 +636,29 @@ def card_disposition(f: Mapping[str, Any], *,
     Such a dispatch cannot go RED — there is nothing left to change.
 
     THE CONJUNCTION IS THE CONTROL, and both halves are primary data:
-      * a ``pr_watcher.merge`` row NEWER than the newest ``pr_watcher.escalate``
+      * the subject LANDED ON MAIN after the newest ``pr_watcher.escalate``
         row for the subject (the ORDER of two audit rows), AND
       * the subject task is CLOSED on the board.
     Measured on the live board 2026-09-05, all 25 recorded ``recovery``
     findings: 15 hold both, and the merge that answered the escalation was the
     watcher's OWN (``auto-merge ok``) for 12 of the 16 subjects that merged
     after escalating — the escalation asked for a human and no human came.
+
+    "LANDED" HAS TWO DOORS, AND READING ONLY ONE WAS WRONG 90% OF THE TIME
+    (autonomy-act-06). The first half used to accept a ``pr_watcher.merge`` row
+    and NOTHING ELSE. Only the watcher writes one, and three other merge paths
+    exist — ``cli.py --set-status <id> done --merge`` (mfx-mrg-04), the Actions
+    auto-merge workflow (mfx-mrg-07) and a hand ``gh pr merge`` — so a subject
+    that landed through any of them was ordered "the escalation is the newer of
+    the two rows", i.e. REAL WORK LEFT, forever. Measured over all 42 lifetime
+    dispositioned recovery findings 2026-09-12: of the 10 ``card`` verdicts,
+    NINE were subjects already ``done`` on the board carrying a merge-ledger
+    row and zero watcher merges, and each of those nine cost an LLM session
+    re-deriving "nothing outstanding". So the first half now accepts EITHER
+    row, ``landed_via`` says which, and the ordering discipline and the second
+    half of the conjunction are untouched. Widening what counts as LANDED
+    changes what is REPORTED, never what is FILED — ``summarize_recovery``'s
+    verdict, its threshold and its window are not in this function's reach.
 
     EVERY UNKNOWN KEEPS THE CARD. An unreadable order, a subject that is not on
     the board, a subject still in flight: each returns CARD. A card filed
@@ -581,28 +680,40 @@ def card_disposition(f: Mapping[str, Any], *,
         return _card("not a recovery finding — the rule is scoped to the "
                      "watcher's own escalations")
     order = dict(f.get("merge_after_escalation") or {})
+    ledger = dict(landed_on_main or {})
     if not order:
         return _card("escalation/merge order UNMEASURED: no watcher rows were read")
     if not order.get("measurable"):
         return _card(f"escalation/merge order UNMEASURABLE: {order.get('reason')}")
-    if not order.get("superseded"):
-        return _card(str(order.get("reason") or "the escalation still stands"))
+
+    if order.get("superseded"):
+        landed_via, landed_at = LANDED_VIA_WATCHER, order.get("merged_at")
+    elif ledger.get("landed"):
+        landed_via, landed_at = LANDED_VIA_LEDGER, ledger.get("landed_at")
+    else:
+        # Neither door. The ledger's own account is appended when it was read,
+        # so "no watcher merge" and "no landing at all" stay distinguishable.
+        reason = str(order.get("reason") or "the escalation still stands")
+        if ledger.get("reason"):
+            reason = f"{reason}; {ledger['reason']}"
+        return _card(reason)
+
+    evidence = {"escalated_at": order.get("escalated_at"), "landed_at": landed_at,
+                "landed_via": landed_via, "merged_at": order.get("merged_at")}
     if subject_status is None:
         return _card("the subject is not on the board — its status cannot be read",
-                     **{k: order.get(k) for k in ("escalated_at", "merged_at")})
+                     **evidence)
     if str(subject_status) not in CLOSED_STATUSES:
         return _card(f"the subject is `{subject_status}`, not closed — work may remain",
-                     subject_status=str(subject_status),
-                     **{k: order.get(k) for k in ("escalated_at", "merged_at")})
+                     subject_status=str(subject_status), **evidence)
     return {
         "disposition": DISPOSITION_RECORD,
-        "reason": (f"a pr_watcher.merge at {order['merged_at']} landed AFTER the "
-                   f"escalation at {order['escalated_at']}, and the subject is "
+        "reason": (f"the subject landed on main at {landed_at} (via {landed_via}) "
+                   f"AFTER the escalation at {order['escalated_at']}, and it is "
                    f"`{subject_status}`: nothing is left to land"),
         "subject_status": str(subject_status),
-        "escalated_at": order.get("escalated_at"),
-        "merged_at": order.get("merged_at"),
         "merge_reason": order.get("merge_reason"),
+        **evidence,
     }
 
 
@@ -722,6 +833,33 @@ def watcher_outcome_rows(conn, *, window_hours: Optional[int] = None) -> List[di
     sql = (f"SELECT action, {details} AS d, created_at FROM audit_trail "  # nosec B608
            f"WHERE action IN ({placeholders})")
     params: tuple = tuple(OUTCOME_ACTIONS)
+    if window_hours is not None:
+        sql += " AND created_at >= %s"
+        params = (*params, (_now() - timedelta(hours=int(window_hours))).isoformat())
+    return [dict(r) for r in conn.execute(sql + " ORDER BY created_at", params).fetchall()]
+
+
+def merge_ledger_rows(conn, *, window_hours: Optional[int] = None) -> List[dict]:
+    """The merge ledger's landing rows ``ledger_landing`` orders (autonomy-act-06).
+
+    A SEPARATE READER FOR A SEPARATE ROW SET, for the same reason
+    ``watcher_outcome_rows`` is separate from ``recovery_rows``: these rows
+    answer "did this subject reach main", the watcher rows answer "which of
+    these two watcher actions is newer", and a reader cannot see a row kind it
+    does not FETCH. Filtered on the ACTION PREFIX rather than on
+    ``event_type``, because ``deployment_initiated`` is a shared vocabulary
+    word — ``ledger_landing`` then re-checks ``source`` in the payload, so a
+    row from another writer that happened to borrow the prefix is still not
+    counted as a landing.
+
+    ``window_hours=None`` is LIFETIME, matching ``watcher_outcome_rows``: a
+    finding projected days ago has its landing outside any recent window.
+    """
+    pg = str(getattr(conn, "_backend", "")).startswith("postgres")
+    details = "details::text" if pg else "details"
+    sql = (f"SELECT action, {details} AS d, created_at FROM audit_trail "  # nosec B608
+           "WHERE action LIKE %s")
+    params: tuple = (f"{LEDGER_ACTION_PREFIX}%",)
     if window_hours is not None:
         sql += " AND created_at >= %s"
         params = (*params, (_now() - timedelta(hours=int(window_hours))).isoformat())
@@ -1120,8 +1258,29 @@ def _task_status(conn, task_id: Optional[str]) -> Optional[str]:
     return str(dict(row)["status"]) if row else None
 
 
-def _disposition(conn, f: Mapping[str, Any]) -> Dict[str, Any]:
-    """``card_disposition`` with the one board read it needs (autonomy-act-04)."""
+def _ledger_rows_safe(conn) -> List[dict]:
+    """``merge_ledger_rows`` with an unreadable ledger degraded to NO EVIDENCE.
+
+    ``[]`` here means "the ledger records no landing", which KEEPS the card —
+    the safe direction, and the same one every other unknown takes in
+    ``card_disposition``. The read is logged so a silently empty ledger is not
+    mistaken for a board on which nothing has ever merged.
+    """
+    try:
+        return merge_ledger_rows(conn)
+    except Exception as exc:  # noqa: BLE001 — an unreadable ledger KEEPS the card
+        logger.warning("detector_findings: merge ledger unreadable: %s", exc)
+        return []
+
+
+def _disposition(conn, f: Mapping[str, Any], *,
+                 ledger_rows: Optional[Sequence[Mapping[str, Any]]] = None
+                 ) -> Dict[str, Any]:
+    """``card_disposition`` with the reads it needs (autonomy-act-04/-06).
+
+    ``ledger_rows`` is hoisted by the caller when there are many findings to
+    disposition — one query for the run rather than one per finding.
+    """
     if str(f.get("detector") or "") != DETECTOR_RECOVERY:
         return card_disposition(f, subject_status=None)
     try:
@@ -1131,7 +1290,11 @@ def _disposition(conn, f: Mapping[str, Any]) -> Dict[str, Any]:
                        f.get("subject"), exc)
         return {"disposition": DISPOSITION_CARD,
                 "reason": f"the board could not be read: {type(exc).__name__}"}
-    return card_disposition(f, subject_status=subject_status)
+    rows = _ledger_rows_safe(conn) if ledger_rows is None else ledger_rows
+    order = dict(f.get("merge_after_escalation") or {})
+    landed = ledger_landing(rows, str(f.get("subject") or ""),
+                            escalated_at=order.get("escalated_at"))
+    return card_disposition(f, subject_status=subject_status, landed_on_main=landed)
 
 
 # ---------------------------------------------------------------------------
@@ -1499,15 +1662,21 @@ def dispositions(conn=None, *, window_hours: Optional[int] = None,
         findings = list_findings(conn, detector=DETECTOR_RECOVERY, status=status,
                                  limit=10_000)
         rows = watcher_outcome_rows(conn, window_hours=window_hours)
+        ledger = _ledger_rows_safe(conn)
         if not findings:
             return {"state": "no_findings", "measured": False, "findings": [],
-                    "record_only": None, "card": None, "watcher_rows": len(rows)}
+                    "record_only": None, "card": None, "watcher_rows": len(rows),
+                    "ledger_rows": len(ledger)}
         out: List[Dict[str, Any]] = []
         for rec in findings:
             subject = str(rec.get("subject") or "")
             probe = dict(rec)
-            probe["merge_after_escalation"] = merge_after_escalation(rows, subject)
-            disp = card_disposition(probe, subject_status=_task_status(conn, subject))
+            order = merge_after_escalation(rows, subject)
+            probe["merge_after_escalation"] = order
+            disp = card_disposition(
+                probe, subject_status=_task_status(conn, subject),
+                landed_on_main=ledger_landing(ledger, subject,
+                                              escalated_at=order.get("escalated_at")))
             out.append({
                 "finding_id": rec.get("finding_id"), "subject": subject,
                 "finding_status": rec.get("status"), "task_id": rec.get("task_id"),
@@ -1517,7 +1686,7 @@ def dispositions(conn=None, *, window_hours: Optional[int] = None,
         record_only = sum(1 for r in out if r["disposition"] == DISPOSITION_RECORD)
         return {
             "state": "ok", "measured": True, "window_hours": window_hours,
-            "watcher_rows": len(rows), "findings": out,
+            "watcher_rows": len(rows), "ledger_rows": len(ledger), "findings": out,
             "record_only": record_only, "card": len(out) - record_only,
             # `pct if total else 100.0` here would breach args/perfect_score_gate.yaml.
             "record_only_pct": (round(100.0 * record_only / len(out), 1) if out else None),
