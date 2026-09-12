@@ -21,6 +21,12 @@ silently absent.
 Note: Playwright shuts down a webServer it started, so with no dashboard
 already listening each batch pays that startup again. Point the run at a
 running dashboard, or set ICDEV_NO_SERVER=1, to avoid it.
+
+A sampler runs beside every batch (qa-fail-5cacee65f1d03c8c) so a sweep whose
+timeouts fell inside a HOST STALL can say so: each failure carries
+`during_stall` (True / False / None -- unmeasured is never "no stall") and each
+batch a `stall_census`. The verdict never moves the run's status. See the
+"Host-stall sampling" section below for what it measures and what it cannot.
 """
 from __future__ import annotations
 
@@ -33,6 +39,8 @@ import logging
 import os
 import subprocess
 import sys
+import threading
+import time
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -82,6 +90,15 @@ class TestFailure:
     error_message: str = ""
     screenshot_path: str = ""
     severity: str = "high"
+    #: Playwright's own `startTime` (UTC ISO) and `duration` (ms) for the
+    #: result that failed -- the window a stall sample is intersected with.
+    #: Empty / None when the report carried neither; never 0.
+    started_at: str = ""
+    duration_ms: Optional[int] = None
+    #: True: a measured stall overlaps this test's window. False: the batch
+    #: was sampled and none does. None: UNMEASURED. See the stall section.
+    during_stall: Optional[bool] = None
+    stall_detail: str = ""
 
 
 @dataclass
@@ -118,6 +135,13 @@ class QARunResult:
     #: the column default and the finish NULL rather than guess either.
     started_at: str = ""
     completed_at: str = ""
+
+    #: Host-stall sampling (qa-fail-5cacee65f1d03c8c). `failures_during_stall`
+    #: is None -- never 0 -- when no batch was sampled; the run-level
+    #: `stall_summary` rolls the per-batch `stall_census` records up.
+    failures_during_stall: Optional[int] = None
+    failures_stall_unmeasured: int = 0
+    stall_summary: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -218,6 +242,420 @@ test.describe('{display_name} QA Smoke', () => {{
   }});
 }});
 """
+
+# ---------------------------------------------------------------------------
+# Host-stall sampling (qa-fail-5cacee65f1d03c8c)
+# ---------------------------------------------------------------------------
+#
+# Run qa-1789161604 (2026-09-11) timed out 4 of 849 tests, all four inside
+# windows where the isolated server's request log went SILENT for 20-59 s
+# (thirteen such gaps in the run) and a hand-run sampler beside batches 6-11
+# saw its own 5 s loop stretch to 12 s and 14 s while /api/health still
+# answered in 0.10 s. Every one of the four pages answered in under 2 s minutes
+# later. The host, not the app, was stalling -- and the runner recorded that
+# sweep IDENTICALLY to four product defects: `status=failed failed=4`, twice
+# the wall clock of the same suite the day before, and no field anywhere that
+# could say so.
+#
+# So a sampler now runs beside EVERY batch and each failure carries a verdict:
+#   during_stall True   a stall sample's covered interval overlaps the test's
+#                       own [startTime, startTime + duration] window
+#   during_stall False  the batch WAS sampled and no stall sample overlaps
+#   during_stall None   UNMEASURED -- sampler off, no sample in the batch, or
+#                       a result that carries no timing. Never folded into
+#                       False: "nobody looked" is not "no stall".
+# THE VERDICT NEVER MOVES THE STATUS. A stall EXPLAINS a timeout; it does not
+# excuse it -- a sweep with four timeouts inside a stall is still a red sweep,
+# and reading it green would be the "re-run to get green" the card forbids.
+#
+# TWO SIGNALS, NEVER MERGED, because they send a reader to different places:
+#   host_stalled  the sampler thread's `Event.wait(interval)` returned late by
+#                 more than _STALL_HOST_OVERSHOOT_SECONDS. This process was not
+#                 scheduled. Measured on the incident: 7-9 s over a 5 s
+#                 interval; normal overshoot on this host is milliseconds.
+#   health_slow   /api/health took >= _STALL_HEALTH_SLOW_SECONDS. The server
+#                 answered, slowly -- the app or its database, not the host.
+# `unreachable` (no answer at all) is NOT a stall kind: Playwright starts and
+# stops its own webServer per batch unless ICDEV_NO_SERVER is set, so a probe
+# before the server is up is expected. It is counted, apart.
+#
+# WHAT IT CANNOT SAY, named: the sampler lives in the runner's own process, so
+# `host_stalled` proves THIS process was starved and infers the host from that
+# -- on the incident the two coincided (the hand sampler was a separate
+# process and stretched identically), but a reader should treat it as "the
+# host did not run us" evidence, not a CPU measurement. It does not read the
+# server's request log (another process's stdout), so the 20 s+ SILENCE that
+# was the incident's primary evidence is not re-derived here. And the census
+# lives in the run report JSON `report_path` names, under a disposable
+# `.tmp/`: `ace_qa_runs` has no column for it and this card adds no migration,
+# so the TABLE row still cannot say "stall" -- the sweep report written from
+# the JSON can, which is what the card asked for.
+#
+# Kill switch ICDEV_QA_STALL_SAMPLER=0 (reported as `disabled_by_env`, never
+# silent); ICDEV_QA_STALL_SAMPLE_SECONDS overrides the interval.
+
+#: Seconds between samples. The incident was measured at 5 s.
+_STALL_SAMPLE_SECONDS = 5.0
+#: A sleep that returns this much late is a host stall. Measured incident:
+#: 7-9 s overshoot; ordinary jitter: milliseconds. Sits well inside both.
+_STALL_HOST_OVERSHOOT_SECONDS = 2.0
+#: A /api/health answer this slow is a slow SERVER (it answers in ~0.1 s idle
+#: and answered 0.10 s DURING the host stall).
+_STALL_HEALTH_SLOW_SECONDS = 2.0
+#: How long one probe may wait for /api/health before it is recorded as slow.
+_STALL_PROBE_TIMEOUT_SECONDS = 15.0
+
+_ENV_STALL_SAMPLER = "ICDEV_QA_STALL_SAMPLER"
+_ENV_STALL_SAMPLE_SECONDS = "ICDEV_QA_STALL_SAMPLE_SECONDS"
+
+SAMPLE_OK = "ok"
+SAMPLE_HOST_STALLED = "host_stalled"
+SAMPLE_HEALTH_SLOW = "health_slow"
+SAMPLE_UNREACHABLE = "unreachable"
+#: The kinds that count as a stall for a failure's verdict. `unreachable` is
+#: deliberately absent -- see the section comment.
+STALL_KINDS = (SAMPLE_HOST_STALLED, SAMPLE_HEALTH_SLOW)
+
+
+def resolve_e2e_base_url(environ: Optional[Mapping[str, str]] = None) -> str:
+    """The origin the E2E suite navigates to -- the Python mirror of
+    tests/e2e/fixtures/base_url.ts::resolveBaseUrl, same three variables in
+    the same order. That file is the ONE resolver for every spec and the
+    config; this is the one for the runner, and it exists because the sampler
+    must probe the server the suite is talking to, not a second guess at it.
+    """
+    env = os.environ if environ is None else environ
+    url = (
+        env.get("ICDEV_E2E_BASE_URL")
+        or env.get("ICDEV_DASHBOARD_URL")
+        or f"http://localhost:{env.get('ICDEV_DASHBOARD_PORT') or '5050'}"
+    )
+    return url.rstrip("/")
+
+
+def probe_url(base_url: str) -> str:
+    """The URL the sampler probes -- <base>/api/health, with `localhost`
+    connected as 127.0.0.1.
+
+    MEASURED on this host (Windows 11, 2026-09-11): getaddrinfo("localhost")
+    lists ::1 before 127.0.0.1, the dashboard binds IPv4 only, and the ::1
+    attempt takes 2.05 s to be REFUSED before the fallback answers in 0.05 s
+    -- so a probe of `http://localhost:5050` costs 2.08 s every time, exactly
+    the _STALL_HEALTH_SLOW_SECONDS threshold, and a default run (no
+    ICDEV_E2E_BASE_URL) would read EVERY sample as `health_slow`. That is the
+    resolver's cost, not the server's, and the sampler exists to measure the
+    server. Chromium races both families and does not pay it. Any other host
+    is probed as given; the census records `probe_url` either way.
+
+    NOT route_smoke.resolve_base, on purpose: that resolver pins the first
+    family that answers and CACHES an unchanged answer per process, so a
+    sampler whose first probe precedes a Playwright-managed webServer would pin
+    `localhost` for the whole run and pay the penalty on every later sample.
+    The fail-safe it provides is kept another way: `probe_health` retries the
+    base AS GIVEN when 127.0.0.1 refuses, so an IPv6-only bind still answers.
+    """
+    from urllib.parse import urlsplit, urlunsplit
+
+    parts = urlsplit(base_url)
+    if parts.hostname == "localhost":
+        netloc = "127.0.0.1" + (f":{parts.port}" if parts.port else "")
+        parts = parts._replace(netloc=netloc)
+    return urlunsplit(parts).rstrip("/") + "/api/health"
+
+
+def probe_health(base_url: str, timeout: float = _STALL_PROBE_TIMEOUT_SECONDS) -> Optional[float]:
+    """Seconds for GET <base>/api/health to answer, or None if nothing answered.
+
+    An HTTP error IS an answer (the server is up). A timeout is an answer that
+    came too late -- returned as the elapsed time so it classifies as slow,
+    never as absent; a server that is up and starved must not read the same
+    as one that is down.
+    """
+    swapped = probe_url(base_url)
+    as_given = base_url.rstrip("/") + "/api/health"
+    elapsed = _time_get(swapped, timeout)
+    if elapsed is None and swapped != as_given:
+        # 127.0.0.1 refused. An IPv6-only bind answers on the base as given;
+        # a server that is down refuses both and stays `unreachable`.
+        elapsed = _time_get(as_given, timeout)
+    return elapsed
+
+
+def _time_get(url: str, timeout: float) -> Optional[float]:
+    """Seconds for one GET to answer (any status), or None if nothing did."""
+    import socket
+    import urllib.error
+    import urllib.request
+
+    t0 = time.perf_counter()
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            resp.read(4096)
+        return time.perf_counter() - t0
+    except urllib.error.HTTPError:
+        return time.perf_counter() - t0
+    except (TimeoutError, socket.timeout):
+        return time.perf_counter() - t0
+    except urllib.error.URLError as exc:
+        if isinstance(getattr(exc, "reason", None), (TimeoutError, socket.timeout)):
+            return time.perf_counter() - t0
+        return None
+    except (OSError, ValueError):
+        return None
+
+
+def classify_sample(
+    health_seconds: Optional[float],
+    sleep_overshoot_seconds: float,
+    *,
+    host_overshoot_seconds: float = _STALL_HOST_OVERSHOOT_SECONDS,
+    health_slow_seconds: float = _STALL_HEALTH_SLOW_SECONDS,
+) -> str:
+    """One kind per sample. The host verdict is asked FIRST: a starved host
+    also makes the probe slow, and "the host did not run us" is the finding
+    that says where to look."""
+    if sleep_overshoot_seconds >= host_overshoot_seconds:
+        return SAMPLE_HOST_STALLED
+    if health_seconds is None:
+        return SAMPLE_UNREACHABLE
+    if health_seconds >= health_slow_seconds:
+        return SAMPLE_HEALTH_SLOW
+    return SAMPLE_OK
+
+
+@dataclass
+class StallSample:
+    #: When the probe finished, UTC ISO text (for a reader) and epoch (for the
+    #: overlap arithmetic, on the same host clock Playwright stamps startTime).
+    at: str
+    at_epoch: float
+    #: When the sleep before this sample BEGAN. The sample's covered interval
+    #: is [window_start_epoch, at_epoch]: a stall recorded here happened
+    #: somewhere inside it.
+    window_start_epoch: float
+    health_seconds: Optional[float]
+    sleep_overshoot_seconds: float
+    kind: str
+
+
+def _iso_utc(epoch: float) -> str:
+    from datetime import datetime, timezone
+
+    return datetime.fromtimestamp(epoch, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
+class StallSampler(threading.Thread):
+    """Samples the server and the sampler's own scheduling beside one batch.
+
+    Daemon thread: a probe that hangs can never hold the sweep past its own
+    deadline. Nothing it does can raise into the run -- a broken probe is
+    recorded on `error` and the census reports itself unmeasured.
+    """
+
+    def __init__(
+        self,
+        base_url: str,
+        interval_seconds: float = _STALL_SAMPLE_SECONDS,
+        probe=None,
+        *,
+        host_overshoot_seconds: float = _STALL_HOST_OVERSHOOT_SECONDS,
+        health_slow_seconds: float = _STALL_HEALTH_SLOW_SECONDS,
+        probe_timeout_seconds: float = _STALL_PROBE_TIMEOUT_SECONDS,
+    ) -> None:
+        super().__init__(name="qa-stall-sampler", daemon=True)
+        self.base_url = base_url
+        self.interval = max(0.001, float(interval_seconds))
+        self.probe = probe or (lambda base: probe_health(base, timeout=probe_timeout_seconds))
+        self.host_overshoot_seconds = host_overshoot_seconds
+        self.health_slow_seconds = health_slow_seconds
+        self.probe_timeout_seconds = probe_timeout_seconds
+        self.samples: List[StallSample] = []
+        self.error: Optional[str] = None
+        # `_halt`, NOT `_stop`: threading.Thread defines `_stop` as an internal
+        # METHOD on CPython <= 3.12, and `join()` -> `_wait_for_tstate_lock()`
+        # calls `self._stop()`. Assigning an Event to that name shadows the
+        # method, so every join raises `TypeError: 'Event' object is not
+        # callable`. It is INVISIBLE on a modern local interpreter -- 3.14 no
+        # longer has that attribute, so this passed locally and failed all 12
+        # sampler tests on CI, which pins python-version 3.11.
+        self._halt = threading.Event()
+
+    def run(self) -> None:  # pragma: no cover - exercised through start()/stop()
+        try:
+            while not self._halt.is_set():
+                sleep_started = time.time()
+                self._halt.wait(self.interval)
+                if self._halt.is_set():
+                    break
+                woke = time.time()
+                overshoot = max(0.0, (woke - sleep_started) - self.interval)
+                health = self.probe(self.base_url)
+                finished = time.time()
+                self.samples.append(StallSample(
+                    at=_iso_utc(finished),
+                    at_epoch=finished,
+                    window_start_epoch=sleep_started,
+                    health_seconds=None if health is None else round(float(health), 3),
+                    sleep_overshoot_seconds=round(overshoot, 3),
+                    kind=classify_sample(
+                        health, overshoot,
+                        host_overshoot_seconds=self.host_overshoot_seconds,
+                        health_slow_seconds=self.health_slow_seconds,
+                    ),
+                ))
+        except Exception as exc:  # noqa: BLE001 - recorded, never propagated
+            self.error = f"{type(exc).__name__}: {exc}"
+
+    def stop(self, timeout: Optional[float] = None) -> None:
+        self._halt.set()
+        if self.is_alive():
+            self.join(timeout if timeout is not None else self.probe_timeout_seconds + 1.0)
+
+    def census(self) -> Dict[str, Any]:
+        """What this batch's sampling measured. `measured` is False -- with a
+        reason -- when there is nothing to count; counts are then None, never 0."""
+        if not self.samples:
+            reason = f"sampler_error: {self.error}" if self.error else "no_samples"
+            return {
+                "measured": False, "reason": reason, "samples": 0,
+                "host_stalls": None, "health_slow": None, "unreachable": None,
+                "reachable_samples": None, "health_max_seconds": None,
+                "max_sleep_overshoot_seconds": None,
+                "interval_seconds": self.interval, "base_url": self.base_url,
+                "probe_url": probe_url(self.base_url),
+            }
+        kinds = [s.kind for s in self.samples]
+        reachable = [s.health_seconds for s in self.samples if s.health_seconds is not None]
+        out: Dict[str, Any] = {
+            "measured": True,
+            "samples": len(self.samples),
+            "host_stalls": kinds.count(SAMPLE_HOST_STALLED),
+            "health_slow": kinds.count(SAMPLE_HEALTH_SLOW),
+            "unreachable": kinds.count(SAMPLE_UNREACHABLE),
+            "reachable_samples": len(reachable),
+            "health_max_seconds": max(reachable) if reachable else None,
+            "max_sleep_overshoot_seconds": max(s.sleep_overshoot_seconds for s in self.samples),
+            "interval_seconds": self.interval,
+            "base_url": self.base_url,
+            "probe_url": probe_url(self.base_url),
+            "stalls": [
+                {
+                    "at": s.at or _iso_utc(s.at_epoch), "kind": s.kind,
+                    "health_seconds": s.health_seconds,
+                    "sleep_overshoot_seconds": s.sleep_overshoot_seconds,
+                }
+                for s in self.samples if s.kind in STALL_KINDS
+            ],
+        }
+        if self.error:
+            out["error"] = self.error
+        return out
+
+
+def _parse_playwright_start(started_at: str) -> Optional[float]:
+    """Playwright's `startTime` (`2026-09-11T21:28:14.504Z`) as an epoch, or None."""
+    from datetime import datetime, timezone
+
+    text = (started_at or "").strip()
+    if not text:
+        return None
+    try:
+        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.timestamp()
+
+
+def _overlapping_stalls(
+    started_at: str, duration_ms: Optional[int], samples: List[StallSample],
+) -> Optional[List[StallSample]]:
+    start = _parse_playwright_start(started_at)
+    if start is None or duration_ms is None or not samples:
+        return None
+    end = start + max(0, int(duration_ms)) / 1000.0
+    return [
+        s for s in samples
+        if s.kind in STALL_KINDS and s.window_start_epoch <= end and s.at_epoch >= start
+    ]
+
+
+def failure_during_stall(
+    started_at: str, duration_ms: Optional[int], samples: List[StallSample],
+) -> Optional[bool]:
+    """True / False / None -- and None is "nobody measured", never "no stall".
+
+    Overlap is between the test's own window [startTime, startTime + duration]
+    and each stall sample's covered interval [sleep started, probe finished];
+    a stall may have happened anywhere inside the latter, so touching counts.
+    Both clocks are the same host's.
+    """
+    hits = _overlapping_stalls(started_at, duration_ms, samples)
+    if hits is None:
+        return None
+    return bool(hits)
+
+
+def _describe_sample(s: StallSample) -> str:
+    at = s.at or _iso_utc(s.at_epoch)
+    if s.kind == SAMPLE_HOST_STALLED:
+        return f"{s.kind} overshoot {s.sleep_overshoot_seconds:.1f}s at {at}"
+    return f"{s.kind} health {s.health_seconds:.1f}s at {at}"
+
+
+def annotate_failures_with_stalls(failures: List[TestFailure], samples: List[StallSample]) -> None:
+    """Write `during_stall` and a human `stall_detail` onto each failure."""
+    for f in failures:
+        hits = _overlapping_stalls(f.started_at, f.duration_ms, samples)
+        if hits is None:
+            f.during_stall = None
+            if not samples:
+                f.stall_detail = "unmeasured: sampler took no sample during this batch"
+            else:
+                f.stall_detail = "unmeasured: result carries no startTime/duration"
+            continue
+        f.during_stall = bool(hits)
+        if hits:
+            f.stall_detail = "; ".join(_describe_sample(s) for s in hits)
+        else:
+            f.stall_detail = (
+                f"no stall sample overlaps the test window ({len(samples)} samples in batch)"
+            )
+
+
+def summarize_stalls(result: QARunResult, *, base_url: str, interval_seconds: float) -> Dict[str, Any]:
+    """Roll the per-batch censuses up. A batch that was not sampled is COUNTED
+    as unsampled, never averaged in, and a run where nothing was sampled
+    reports None counts."""
+    sampled = [
+        b["stall_census"] for b in result.batches
+        if isinstance(b.get("stall_census"), dict) and b["stall_census"].get("measured")
+    ]
+    summary: Dict[str, Any] = {
+        "measured": bool(sampled),
+        "batches_sampled": len(sampled),
+        "batches_unsampled": len(result.batches) - len(sampled),
+        "interval_seconds": interval_seconds,
+        "base_url": base_url,
+    }
+    for key in ("samples", "host_stalls", "health_slow", "unreachable", "reachable_samples"):
+        summary[key] = sum(int(c.get(key) or 0) for c in sampled) if sampled else None
+    return summary
+
+
+def _stall_sampler_config(env: Mapping[str, str]) -> Dict[str, Any]:
+    """Read the sampler's switches ONCE per run, from the run's own env."""
+    enabled = (env.get(_ENV_STALL_SAMPLER) or "1").strip().lower() not in ("0", "false", "no", "off")
+    raw = env.get(_ENV_STALL_SAMPLE_SECONDS)
+    interval = _STALL_SAMPLE_SECONDS
+    if raw:
+        try:
+            interval = max(0.5, float(raw))
+        except ValueError:
+            logger.warning("qa_agent_runner: %s=%r is not a number; using %s",
+                           _ENV_STALL_SAMPLE_SECONDS, raw, _STALL_SAMPLE_SECONDS)
+    return {"enabled": enabled, "interval": interval, "base_url": resolve_e2e_base_url(env)}
 
 
 # ---------------------------------------------------------------------------
@@ -392,6 +830,8 @@ def run_e2e_suite(
 
     npx = _npx_cmd()
     batches = batch_specs(rel_specs, batch_size)
+    stall_cfg = _stall_sampler_config(env)
+    disabled_census = {"measured": False, "reason": "disabled_by_env"}
     started = time.time()
     deadline = started + max(1, int(deadline_seconds))
 
@@ -416,7 +856,17 @@ def run_e2e_suite(
         report_path = _batch_report_path(run_tag)
         report_path.parent.mkdir(parents=True, exist_ok=True)
 
+        # The sampler runs beside the batch and is stopped on EVERY exit path
+        # (the `finally`), so a deadline kill cannot leave a probe thread
+        # sampling a server the next batch will replace.
+        sampler = (
+            StallSampler(stall_cfg["base_url"], interval_seconds=stall_cfg["interval"])
+            if stall_cfg["enabled"] else None
+        )
         t0 = time.time()
+        killed = False
+        if sampler is not None:
+            sampler.start()
         try:
             proc = subprocess.run(
                 build_playwright_cmd(npx, batch),
@@ -435,11 +885,7 @@ def run_e2e_suite(
             result.spec_files_not_run.extend(batch)
             for pending in batches[idx + 1:]:
                 result.spec_files_not_run.extend(pending)
-            result.batches.append({
-                "batch": idx, "status": "deadline_killed",
-                "seconds": round(time.time() - t0, 1), "files": list(batch),
-            })
-            break
+            killed = True
         except FileNotFoundError:
             for pending in batches[idx:]:
                 result.spec_files_not_run.extend(pending)
@@ -448,6 +894,18 @@ def run_e2e_suite(
                 error_message="npx/playwright not found — install Node.js and @playwright/test",
                 severity="critical",
             ))
+            break
+        finally:
+            if sampler is not None:
+                sampler.stop()
+        stall_census = sampler.census() if sampler else disabled_census
+        stall_samples = sampler.samples if sampler else []
+        if killed:
+            result.batches.append({
+                "batch": idx, "status": "deadline_killed",
+                "seconds": round(time.time() - t0, 1), "files": list(batch),
+                "stall_census": stall_census,
+            })
             break
 
         elapsed = round(time.time() - t0, 1)
@@ -458,6 +916,7 @@ def run_e2e_suite(
                 "batch": idx, "status": "no_report", "seconds": elapsed,
                 "returncode": proc.returncode, "files": list(batch),
                 "error": (proc.stderr or proc.stdout or "")[:500],
+                "stall_census": stall_census,
             })
             continue
 
@@ -468,10 +927,13 @@ def run_e2e_suite(
             result.batches.append({
                 "batch": idx, "status": "unparseable_report", "seconds": elapsed,
                 "returncode": proc.returncode, "files": list(batch),
+                "stall_census": stall_census,
             })
             continue
 
-        result.failures.extend(parse_playwright_json(raw_json))
+        batch_failures = parse_playwright_json(raw_json)
+        annotate_failures_with_stalls(batch_failures, stall_samples)
+        result.failures.extend(batch_failures)
         _tally(report, result)
         result.screenshot_count += count_screenshot_attachments(report)
         result.spec_files_run.extend(batch)
@@ -481,6 +943,7 @@ def run_e2e_suite(
             "returncode": proc.returncode, "files": list(batch),
             "report_path": str(report_path),
             "stats": {k: stats.get(k) for k in ("expected", "unexpected", "skipped", "flaky")},
+            "stall_census": stall_census,
         }
         # Report-level errors say WHY a batch ran zero tests — a webServer that
         # never came up, a config that failed to load. `no_tests` on its own is
@@ -503,6 +966,18 @@ def run_e2e_suite(
             "were parsed into failures (%d unnamed)",
             run_id, result.failed, len(result.failures), result.failures_unparsed,
         )
+    # The stall verdicts are ROLLED UP, never folded into the status: a stall
+    # explains a timeout and does not excuse it. `failures_during_stall` is
+    # None when no batch was sampled -- a sweep nobody measured must not read
+    # as "0 failures during a stall".
+    result.stall_summary = summarize_stalls(
+        result, base_url=stall_cfg["base_url"], interval_seconds=stall_cfg["interval"],
+    )
+    result.failures_during_stall = (
+        sum(1 for f in result.failures if f.during_stall is True)
+        if result.stall_summary["measured"] else None
+    )
+    result.failures_stall_unmeasured = sum(1 for f in result.failures if f.during_stall is None)
     # Derive the verdict BEFORE persisting it. The two lines used to run the
     # other way round, so the file `report_path` sends a reader to carried the
     # `running` the result was constructed with -- for every sweep ever taken.
@@ -612,12 +1087,15 @@ def _walk_suites(
                         break
 
                 severity = "critical" if any(k in test_name.lower() for k in ("auth", "rls", "login", "permission")) else "high"
+                duration = last.get("duration")
                 failures.append(TestFailure(
                     test_name=test_name,
                     spec_file=spec_file or spec.get("file") or "",
                     error_message=error_msg[:1000],
                     screenshot_path=screenshot_path,
                     severity=severity,
+                    started_at=str(last.get("startTime") or ""),
+                    duration_ms=int(duration) if isinstance(duration, (int, float)) else None,
                 ))
         _walk_suites(suite.get("suites") or [], suite_title, spec_file, failures)
 
@@ -625,6 +1103,13 @@ def _walk_suites(
 # ---------------------------------------------------------------------------
 # Kanban task filing
 # ---------------------------------------------------------------------------
+
+def failure_task_id(run_id: str, test_name: str) -> str:
+    """The card id a failure files under: `qa-fail-` + sha256(run:test)[:16].
+    ONE derivation, read by the filer and by the failure-row writer, so a row's
+    `kanban_task_id` can never name a card the filer would not have created."""
+    return "qa-fail-" + hashlib.sha256(f"{run_id}:{test_name}".encode()).hexdigest()[:16]
+
 
 def file_failure_tasks(
     failures: List[TestFailure],
@@ -643,8 +1128,8 @@ def file_failure_tasks(
 
     specs = []
     for f in failures:
-        idem_key = hashlib.sha256(f"{run_id}:{f.test_name}".encode()).hexdigest()[:16]
-        task_id = f"qa-fail-{idem_key}"
+        task_id = failure_task_id(run_id, f.test_name)
+        idem_key = task_id[len("qa-fail-"):]
         desc_lines = [
             f"**Test**: {f.test_name}",
             f"**Spec file**: {f.spec_file}",
@@ -798,6 +1283,30 @@ def get_run_status(run_id: str) -> Optional[Dict[str, Any]]:
 # CLI entrypoint
 # ---------------------------------------------------------------------------
 
+def _print_stall_summary(result: QARunResult) -> None:
+    """The stall lines of the human report. Unmeasured says so BY NAME; a
+    sweep whose sampler never ran must not print a reassuring zero."""
+    ss = result.stall_summary or {}
+    if not ss.get("measured"):
+        reason = ss.get("reason") or (
+            "no batch was sampled" if ss else "sampler did not run"
+        )
+        print(f"  STALLS: not measured ({reason})")
+        return
+    batches = int(ss.get("batches_sampled") or 0) + int(ss.get("batches_unsampled") or 0)
+    print(
+        f"  STALLS: batches sampled {ss.get('batches_sampled')}/{batches}, "
+        f"host stalls {ss.get('host_stalls')}, slow health {ss.get('health_slow')}, "
+        f"unreachable {ss.get('unreachable')} "
+        f"(every {ss.get('interval_seconds')}s at {ss.get('base_url')})"
+    )
+    if result.failures:
+        print(
+            f"  {result.failures_during_stall} of {len(result.failures)} failures inside "
+            f"a measured stall; {result.failures_stall_unmeasured} unmeasured"
+        )
+
+
 def _setup_logging(verbose: bool = False) -> None:
     level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(
@@ -861,6 +1370,7 @@ def main() -> int:
         persistence: Dict[str, Any] = {
             "recorded": None, "record_error": None,
             "filed_tasks": None, "file_failures_error": None,
+            "recorded_failures": None, "record_failures_error": None,
         }
         if args.record:
             try:
@@ -876,6 +1386,27 @@ def main() -> int:
             except Exception as exc:
                 persistence["file_failures_error"] = repr(exc)
                 logger.error("qa_agent_runner: file_failure_tasks failed: %s", exc)
+        # `record_failure` had a definition and NO call site here, so
+        # `ace_qa_failures` held 0 rows for a 4-failure sweep and 0 for a clean
+        # one (2026-09-11 sweep report, s8). One row per failure, after the
+        # cards, so a row can name the card that was ACTUALLY created for it --
+        # a deduped or refused card is "" on its row, never the derived id.
+        if args.record:
+            written = 0
+            try:
+                filed = set(persistence["filed_tasks"] or [])
+                for f in result.failures:
+                    derived = failure_task_id(result.run_id, f.test_name)
+                    record_failure(
+                        f, run_id=result.run_id,
+                        kanban_task_id=derived if derived in filed else "",
+                    )
+                    written += 1
+                persistence["recorded_failures"] = written
+            except Exception as exc:
+                persistence["recorded_failures"] = written
+                persistence["record_failures_error"] = repr(exc)
+                logger.error("qa_agent_runner: record_failure failed: %s", exc)
 
         if args.json:
             payload = result.to_dict()
@@ -888,7 +1419,14 @@ def main() -> int:
                 print(f"  filed tasks: {persistence['filed_tasks'] if persistence['filed_tasks'] is not None else persistence['file_failures_error'] or 'not attempted (--file-failures is off)'}")
             print(f"  spec files: {len(result.spec_files_run)}/{result.spec_files_total} measured")
             for f in result.failures:
+                tag = {
+                    True: "DURING MEASURED STALL",
+                    False: "no stall in window",
+                    None: "STALL UNMEASURED",
+                }[f.during_stall]
                 print(f"  FAIL: {f.test_name} — {f.error_message[:120]}")
+                print(f"        [{tag}: {f.stall_detail or 'no sampler ran'}]")
+            _print_stall_summary(result)
             # Name the unmeasured spec files. A truncated sweep that printed
             # only what it got through would read as full coverage.
             for label, files in (
