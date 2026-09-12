@@ -2,6 +2,7 @@
 """Post-tool-use hook — logs tool results + dispatches extension hooks. Always exits 0."""
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -22,6 +23,96 @@ _AWARENESS_TOOLS = frozenset({"Edit", "Write", "NotebookEdit", "MultiEdit"})
 # authoritative sets are observation_capture.EDIT_TOOLS / SHELL_TOOLS and a
 # test asserts this literal equals their union.
 _CAPTURE_TOOLS = frozenset({"Edit", "Write", "NotebookEdit", "MultiEdit", "Bash", "PowerShell"})
+
+
+# ── kpr-watch-19: the mid-run resume inbox ──────────────────────────────────
+#
+# The queue at `.tmp/kanban/messages/<task>.jsonl` had exactly one consumer --
+# the text-only LLMRouter executor loop -- while 99.73% of dispatched tasks run
+# `claude_cli`, which never looked. 911 undrained pr_watcher messages, 0 drain
+# receipts, measured 2026-09-12. This hook is the consumer on the path that
+# actually runs, and PostToolUse is the mid-run window: a message queued while
+# the session is alive is delivered within one tool call.
+#
+# THE PATH IS RE-SPELLED HERE WITH STDLIB ONLY, ON PURPOSE. This fires on every
+# tool call and `import tools.*` costs ~137ms (measured 2026-09-12: 40ms bare
+# interpreter, 177ms with the `tools` package shim), which the overwhelmingly
+# common answer -- "no file, nothing to do" -- cannot justify paying. So the
+# existence check is one env read and one stat, and the authority
+# (`tools.airgap.hook_compat.message_queue_dir`) is imported only once there is
+# something to deliver. The cost of that bargain is a second spelling of the
+# path; the mitigation is `tests/ci/test_resume_inbox.py`, which asserts the two
+# resolve to the same directory -- the same bargain `_CAPTURE_TOOLS` above
+# already strikes with observation_capture.
+
+
+def _main_checkout(anchor: Path):
+    """The main worktree's root, read from the anchor's `.git` -- no subprocess.
+
+    A linked worktree's `.git` is a FILE reading `gitdir: <main>/.git/worktrees/
+    <name>`. Mirrors tools/hooks/shared_checks.py::main_checkout. Returns None
+    for a plain checkout, where the anchor already IS the main checkout.
+    """
+    try:
+        dot_git = anchor / ".git"
+        if not dot_git.is_file():
+            return None
+        text = dot_git.read_text(encoding="utf-8", errors="replace").strip()
+        if not text.startswith("gitdir:"):
+            return None
+        gitdir = Path(text.split(":", 1)[1].strip()).expanduser()
+        if not gitdir.is_absolute():
+            gitdir = anchor / gitdir
+        for parent in gitdir.resolve().parents:
+            if parent.name == ".git":
+                return parent.parent
+    except (OSError, ValueError, RuntimeError):
+        return None
+    return None
+
+
+def _queue_dir(anchor: Path) -> Path:
+    """Where this anchor's task messages wait -- the MAIN checkout's queue.
+
+    pr_watcher enqueues from the main checkout and a dispatched worker reads
+    from its worktree; resolving this per-checkout is why they never met.
+    """
+    override = (os.environ.get("ICDEV_MESSAGE_QUEUE_DIR") or "").strip()
+    if override:
+        return Path(override).expanduser()
+    try:
+        anchor = anchor.resolve()
+    except (OSError, ValueError, RuntimeError):
+        pass
+    return (_main_checkout(anchor) or anchor) / ".tmp" / "kanban" / "messages"
+
+
+def _queue_dir_for_cwd() -> Path:
+    return _queue_dir(PROJECT_ROOT)
+
+
+def _queue_file(task_id: str, anchor=None) -> Path:
+    base = _queue_dir_for_cwd() if anchor is None else _queue_dir(Path(anchor))
+    return base / "{}.jsonl".format(task_id)
+
+
+def drain_resume_inbox() -> str:
+    """Deliver anything queued for the running task. Returns "" for nothing.
+
+    Never raises: an inbox failure must not disturb the tool call it rides on.
+    """
+    try:
+        task_id = (os.environ.get("ICDEV_DISPATCH_TASK_ID") or "").strip()
+        if not task_id:
+            return ""
+        # The fast path ends here for every session that has no mail: one stat.
+        if not _queue_file(task_id).exists():
+            return ""
+        from tools.hooks.resume_inbox import deliver
+
+        return deliver(task_id, source="post_tool_use").text or ""
+    except Exception:
+        return ""
 
 
 def capture_memory_observation(tool_name: str, tool_input, tool_response, session_id: str):
@@ -146,6 +237,16 @@ def main():
 
     except Exception:
         pass  # Never block tool execution
+
+    # kpr-watch-19: deliver any message queued for this task mid-run. Outside
+    # the try above so a logging failure cannot swallow the delivery -- the
+    # words reaching the model are the point, the hook_events row is not.
+    # Verified on this deployment 2026-09-12 (live session kpr-watch-19) that
+    # PostToolUse additionalContext reaches the model, before it was wired.
+    inbox = drain_resume_inbox()
+    if inbox:
+        print(json.dumps({"hookSpecificOutput": {
+            "hookEventName": "PostToolUse", "additionalContext": inbox}}))
 
     sys.exit(0)
 

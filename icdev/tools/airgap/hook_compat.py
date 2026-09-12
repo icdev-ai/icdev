@@ -413,7 +413,53 @@ def run_auto_commit(message: Optional[str] = None) -> Dict[str, Any]:
 
 # Queue directory for mid-run messages. Each task id gets a .jsonl file;
 # each line is one queued message. check_message_queue drains the file.
-MESSAGE_QUEUE_DIR = BASE_DIR / ".tmp" / "kanban" / "messages"
+
+
+def message_queue_dir(anchor: Path | str | None = None) -> Path:
+    """Where a task's mid-run messages wait — the MAIN checkout's, always.
+
+    ONE QUEUE, TWO PROCESSES, AND THEY HAD DIFFERENT CHECKOUTS (kpr-watch-19).
+    This used to be ``BASE_DIR / ".tmp" / ...`` with ``BASE_DIR`` a self-root
+    (xit-decl-03): it answers "which copy of this file am I", and in a git
+    worktree that is the worktree. ``pr_watcher`` runs in the main checkout and
+    enqueues there; a dispatched worker lives in a worktree and looked there;
+    the two addressed different directories and neither erred.
+
+    MEASURED 2026-09-12 on task ``aca-hyg-06-d4-d3``: the main checkout reported
+    ``undelivered -- 5 pr_watcher message(s) still unread``, and the same
+    ``resume_delivery --task`` command from a worktree reported ``unmeasured --
+    queue empty``. A worker diagnosing its own undelivered resume was told there
+    was nothing pending.
+
+    ``tools/kanban/build_mode.py::_main_checkout`` fixed exactly this shape for
+    the Manual Build flag ("reported MANUAL from C:/AI/ICDev and AUTOMATIC from
+    a worktree of it, in the same minute"). Same argument, same fix: the queue
+    is ONE global thing, so a worktree asking must get the main checkout's
+    answer or the queue means nothing.
+
+    Resolution, in order: ``ICDEV_MESSAGE_QUEUE_DIR`` (an operator relocating
+    the queue, and what tests set); the main checkout the anchor is linked to;
+    the anchor itself when it is not a linked worktree (a plain clone, a source
+    tarball, an installed wheel). Never raises -- a queue that cannot be located
+    degrades to this checkout's own, which is what the caller had before.
+
+    The resolver is :func:`tools.hooks.shared_checks.main_checkout`, which reads
+    the ``gitdir:`` line out of a linked worktree's ``.git`` FILE rather than
+    shelling out to ``git rev-parse --git-common-dir``: this is imported on hook
+    paths, and a git subprocess per import is a cost they cannot justify.
+    """
+    override = os.environ.get("ICDEV_MESSAGE_QUEUE_DIR", "").strip()
+    if override:
+        return Path(override).expanduser()
+    root = Path(anchor) if anchor is not None else BASE_DIR
+    try:
+        root = root.resolve()
+    except (OSError, ValueError, RuntimeError):
+        pass
+    return (shared_checks.main_checkout(root) or root) / ".tmp" / "kanban" / "messages"
+
+
+MESSAGE_QUEUE_DIR = message_queue_dir()
 
 
 def check_message_queue(task_id: str) -> list[dict]:
