@@ -519,6 +519,33 @@ python tools/analyzers/dispatch.py --type binary --value <path>   # through the 
 # (library_unavailable | library_failed | format_unsupported | truncated | malformed_header).
 # ICDEV_BINARY_MAX_BYTES (64 MiB) / ICDEV_BINARY_MAX_STRINGS (500) bound the read; over the byte
 # cap the status is `truncated` and sha256_scope reads `prefix`, never the artifact's identity.
+
+# Ghidra headless decompilation -- an OPTIONAL backend that reports its absence (xrv-bin-02)
+python -m tools.analyzers.ghidra_headless <path> --json         # functions, imports, strings, entry C
+python -m tools.analyzers.ghidra_headless <path>                # human report
+python -m tools.analyzers.ghidra_headless <path> --timeout 900 --max-cpu 4
+python -m tools.analyzers.ghidra_headless <path> --ghidra-home /opt/ghidra_11.1.2_PUBLIC
+python -m tools.dx.tool_index --name analyzeHeadless --json     # is Ghidra on this host at all?
+# ON A DEFAULT INSTALL THIS REPORTS `unavailable`, and that IS the correct reading.
+# Ghidra needs a JDK 21+ and a ~400 MB install, so it is deliberately NOT in
+# requirements.txt. Point ICDEV_GHIDRA_HOME at the install (the launcher is
+# <home>/support/analyzeHeadless[.bat]) or put it on PATH. ICDEV_GHIDRA_ENABLED=0
+# switches the backend off, and off is REPORTED (`reason: disabled_by_env`).
+# `functions`/`imports`/`strings` are None -- NEVER [] -- when nothing looked, with
+# the reason named (ghidra_unavailable | disabled_by_env | run_timeout | run_failed |
+# export_absent | export_malformed | script_error). An [] there would read as "Ghidra
+# looked at this binary and found no functions" -- a claim about the ARTIFACT from a
+# run that never opened it.
+# FIVE statuses: ok | truncated | unavailable | timeout | error. Bounds:
+# ICDEV_GHIDRA_TIMEOUT (600s wall) / _MAX_CPU (2) / _MAX_FUNCTIONS (2000) / _MAX_STRINGS
+# (500); a hit bound is `truncated` with `truncation` naming which, never a short list.
+# Ghidra's own -analysisTimeoutPerFile is set BELOW the wall budget, so an over-running
+# analysis yields a PARTIAL export this module can label rather than a killed process
+# with no export at all. On the wall budget the whole PROCESS TREE is killed (the
+# launcher is a .bat/sh wrapping a JVM), and `kill_method` says how.
+# `unmeasurable` from tool_index for this binary is EXPECTED on a host that HAS it:
+# analyzeHeadless has no version flag. The version is read from
+# <home>/Ghidra/application.properties and is on every report.
 python tools/analyzers/dispatch.py --type ip --value 1.2.3.4 --responders # responders ACT — opt-in
 ```
 

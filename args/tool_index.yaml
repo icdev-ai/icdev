@@ -192,6 +192,31 @@ tools:
     used_by:
       - tools/strategos/darkweb_monitor.py
 
+  - name: analyzeHeadless
+    # NSA Ghidra's headless analyser. Declared here as of xrv-bin-02, which is
+    # the consumer whose absence kept it under `excluded:` until now.
+    #
+    # IT REPORTS `unmeasurable` ON A HOST THAT HAS IT, BY CONSTRUCTION, and
+    # that is the honest reading rather than a defect to be worked around.
+    # The launcher has NO version flag: run with no arguments (or with any
+    # bad argument) it prints a usage banner carrying no version and exits
+    # NON-ZERO, so `probe` reports unmeasurable / version_cmd_exit_nonzero.
+    # Declaring a `version_cmd` that cannot succeed is deliberate -- the field
+    # is required precisely so `present` is never claimed from a filename
+    # alone, and this binary genuinely cannot answer. The REAL version is read
+    # from <ghidra_home>/Ghidra/application.properties by
+    # tools/analyzers/ghidra_headless.py::ghidra_version, a file read that
+    # costs no JVM start, and it is on every report that module produces.
+    #
+    # `absent` on a host WITHOUT Ghidra is still exact -- shutil.which answers
+    # before the version command is ever run -- so the one signal an operator
+    # needs from this entry (is it installed?) is not degraded.
+    binary: analyzeHeadless
+    version_cmd: [analyzeHeadless]
+    optional: true
+    used_by:
+      - tools/analyzers/ghidra_headless.py
+
   # -- language toolchains ---------------------------------------------------
   - name: node
     binary: node
@@ -362,12 +387,6 @@ excluded:
       (tools/devsecops/attestation_manager.py, tools/pipeline/deploy_generator.py);
       no ICDEV process ever invokes it. The binary is a dependency of the
       generated pipeline's runner, not of this platform.
-
-  - name: analyzeHeadless
-    reason: >-
-      Zero references in the tree (measured 2026-09-11). The Ghidra headless
-      analyser belongs to the not-yet-built xrv-bin-01..03 binary-triage cards;
-      declaring it now is a capability declared before its consumer exists.
 
   - name: playwright
     reason: >-

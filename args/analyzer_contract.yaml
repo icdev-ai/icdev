@@ -154,7 +154,7 @@ taxonomy:
     DSOC: tools/dsoc_canvas/ — DDoS, BGP and network-defence analyzers.
     STRATEGOS: tools/strategos/ — intelligence feeds, importers and OSINT.
     NETWORK: tools/network/ — predictive vulnerability management and attack-surface analysis.
-    BINARY: tools/analyzers/ — triage of a compiled artifact's own bytes (format, sections, imports, strings).
+    BINARY: tools/analyzers/ — analysis of a compiled artifact (format, sections, imports, strings; and decompilation where a backend is installed).
 
 # ---------------------------------------------------------------------------
 # Closed vocabulary: sandbox posture
@@ -463,6 +463,41 @@ analyzers:
       max_calls: 120
       per_seconds: 3600
     # triage(path, *, max_bytes=None, max_strings=None, min_string_length=6)
+    # — every keyword carries a default, so only the observable is bound.
+    binding:
+      observable_arg: path
+
+  - key: ghidra_decompile
+    kind: analyzer
+    display_name: Ghidra Headless Decompiler
+    description: >-
+      Decompiles a compiled artifact with NSA Ghidra headless when Ghidra is
+      installed, and reports `unavailable` — naming ICDEV_GHIDRA_HOME — when it
+      is not. A SEPARATE declaration from binary_triage on purpose: that
+      analyzer executes nothing at all (asserted from its AST), this one spawns
+      a JVM, and one entry covering both would silently widen the guarantee
+      that made binary_triage's posture arguable.
+    module: tools.analyzers.ghidra_headless
+    entrypoint: decompile
+    accepts: [binary]
+    taxonomy:
+      namespace: BINARY
+      predicates: [functions, imports, strings, decompiled]
+      # No `malicious` and no `suspicious`: this analyzer REPORTS structure and
+      # derives no verdict about the artifact. A predicate vocabulary that can
+      # spell a verdict invites one to be invented downstream from a function
+      # list, which is exactly the reduction defect claim_verifier exists for.
+      levels: [info]
+    sandbox: sandboxed
+    # Ten calls an hour against a backend whose single run has a 600s wall
+    # budget: a limit that permits more concurrent decompilations than the host
+    # has cores is not a limit. binary_triage's 120/hour is a pure-Python read
+    # of one file and is not comparable.
+    rate_limit:
+      max_calls: 10
+      per_seconds: 3600
+    # decompile(path, *, timeout_s=None, max_cpu=None, ghidra_home=None,
+    #           max_functions=None, max_strings=None)
     # — every keyword carries a default, so only the observable is bound.
     binding:
       observable_arg: path
