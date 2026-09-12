@@ -64,7 +64,10 @@ class TestIntentRouter:
     def _deterministic_base_signal(self, monkeypatch):
         from tools.cortex import intent_router
 
-        monkeypatch.setattr(intent_router, "_base_signal", lambda _msg: {})
+        # **_kw: route() forwards allow_llm_fallback through to the base
+        # signal (xrv-route-02), so a stub must tolerate the keyword.
+        monkeypatch.setattr(intent_router, "_base_signal",
+                            lambda _msg, **_kw: {})
 
     def test_search_shaped_routes_to_search(self):
         from tools.cortex import intent_router

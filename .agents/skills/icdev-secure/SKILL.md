@@ -2,6 +2,11 @@
 name: icdev-secure
 description: "Run comprehensive security scanning (SAST, dependency audit, secret detection, container scan). Use when scanning code or containers for security vulnerabilities before deployment."
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
+prerequisites:
+  - trivy
+  - bandit
+  - detect-secrets
+  - pip-audit
 ---
 
 # $icdev-secure

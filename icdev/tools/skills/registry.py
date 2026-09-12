@@ -20,6 +20,22 @@ was — scoping only ever narrows, never widens. Note that ``tools:`` is
 distinct from ``allowed-tools:``: the latter is the Claude Code agent
 tool list (Bash, Read, …) and is unchanged.
 
+xrv-route-02 — a third OPTIONAL field:
+
+    prerequisites:  EXTERNAL BINARIES the skill's documented commands
+                    shell out to, by their ``args/tool_index.yaml`` name
+
+It is a DECLARATION and not a gate: ``invoke.py`` probes each one
+through ``tools/dx/tool_index.py`` (the one external-tool index,
+xrv-route-01 — never a second ``shutil.which``) and REPORTS the verdict
+up front, so an operator learns that ``trivy`` is absent before the
+skill runs four steps and fails on the fifth. Nothing refuses. A name
+the index does not declare is reported as such rather than guessed at,
+and a name the index deliberately EXCLUDES (``bandit`` is invoked as a
+python module, so PATH cannot answer for it) is reported with the
+index's own declared reason — never as ``absent``, which would call a
+working tool missing.
+
 Usage:
     python tools/skills/registry.py --rebuild --json
     python tools/skills/registry.py --list --json
@@ -46,7 +62,8 @@ REGISTRY_PATH = BASE_DIR / "tools" / "skills" / "registry.json"
 # Bumped whenever parse_skill() gains a field. registry.json is a committed
 # cache, so a stale copy would silently omit the scoping fields and the
 # invoker would fail OPEN. load_registry() rebuilds on a version mismatch.
-SCHEMA_VERSION = 2
+# 3: `prerequisites` (xrv-route-02).
+SCHEMA_VERSION = 3
 
 
 _FENCE_RE = re.compile(r"```(?:bash|shell|sh)?\n(.*?)```", re.DOTALL)
@@ -153,6 +170,9 @@ def parse_skill(skill_dir: Path) -> dict[str, Any]:
         # ars-scope-01 — optional capability scoping, enforced by invoke.py.
         "paths": _as_list(fm.get("paths")),
         "tools": _as_list(fm.get("tools")),
+        # xrv-route-02 — optional external-binary prerequisites, REPORTED by
+        # invoke.py against args/tool_index.yaml. Never enforced.
+        "prerequisites": _as_list(fm.get("prerequisites")),
         "commands": _extract_commands(body),
         "mcp_references": _extract_mcp_refs(body),
         "body_line_count": len([ln for ln in body.splitlines() if ln.strip()]),

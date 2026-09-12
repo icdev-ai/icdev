@@ -380,15 +380,24 @@ def _llm_classify(text: str) -> dict[str, Any]:
         return _intake_default("LLM unavailable, defaulting to intake")
 
 
-def classify(message: str) -> dict[str, Any]:
-    """Classify a user message. Returns mode, canvas_type, confidence, reason."""
+def classify(message: str, *, allow_llm_fallback: bool = True) -> dict[str, Any]:
+    """Classify a user message. Returns mode, canvas_type, confidence, reason.
+
+    ``allow_llm_fallback=False`` answers from the keyword rules ALONE. The
+    default is unchanged, so no existing caller's behaviour moves — the knob
+    exists because this is the one classify surface that reaches a provider, and
+    a caller that needs a DETERMINISTIC answer (the xrv-route-02 routing
+    regression corpus and its survey) would otherwise have to monkeypatch a
+    private or depend on whether a provider happens to be reachable. A corpus
+    whose expected values move with network reachability is not a corpus.
+    """
     if not message or not message.strip():
         return {"mode": INTAKE_MODE, "canvas_type": None, "confidence": 1.0, "reason": "empty message"}
 
     result = _score_message(message)
 
     # Use LLM for low-confidence keyword results (not for clear intake signals)
-    if result["confidence"] < 0.70 and result["mode"] == INTAKE_MODE:
+    if allow_llm_fallback and result["confidence"] < 0.70 and result["mode"] == INTAKE_MODE:
         result = _llm_classify(message)
 
     return result

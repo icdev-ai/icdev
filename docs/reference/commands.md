@@ -4264,6 +4264,29 @@ python -m tools.dx.tool_index --call-sites git                            # Re-d
 # PATH, would not answer) is its own verdict and never folds into either other.
 # Consumed by: python tools/testing/health_check.py --json -> checks.external_tools
 
+# Skill prerequisites — the external binaries a skill needs, named up front (xrv-route-02)
+python tools/skills/invoke.py --dry-run icdev-secure                      # prerequisite verdicts BEFORE step 1
+python tools/skills/invoke.py --dry-run icdev-secure --json               # .prerequisites: verdict + per-tool status
+python tools/skills/invoke.py --show icdev-secure                         # the declared list
+python tools/skills/registry.py --get icdev-secure --json                 # parsed `prerequisites:` frontmatter
+# Declared in SKILL.md frontmatter by args/tool_index.yaml NAME, probed through
+# tools/dx/tool_index.py (never a second shutil.which). present | absent |
+# unmeasurable | undeclared, and `not_declared` is NOT `satisfied`. Reports
+# only — an absent optional tool never refuses the steps that do work.
+
+# Routing regression corpus — 195 cases over the FOUR deterministic routers (xrv-route-02)
+python -m tools.routing.corpus_survey --json                              # agreement per router, every disagreement by name
+python -m tools.routing.corpus_survey                                     # human report
+python -m tools.routing.corpus_survey --router cortex_facade --json       # one router
+python -m tools.routing.corpus_survey --list-routers                      # the four, with each one's question and default
+python -m tools.routing.corpus_survey --validate                          # check the corpus DECLARATION (exit 1)
+python -m pytest tests/routing -q                                         # the gate
+# Corpus: tests/routing/corpus.yaml. Run the survey BEFORE landing a router
+# change. Adds no fifth router — read the boundary note atop
+# tools/cortex/intent_router.py first. Agreement is None, never 0.0 or 100.0,
+# over an empty denominator; a router with no case reads `never_asked`, not
+# clean. Report only, no --gate (kpr-fix-03); exit 2 = no report produced.
+
 # Maintenance Audit
 python tools/maintenance/dependency_scanner.py --project-id "proj-123"           # Scan all deps
 python tools/maintenance/vulnerability_checker.py --project-id "proj-123"        # Check CVEs
