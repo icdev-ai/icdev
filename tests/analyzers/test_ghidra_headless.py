@@ -33,6 +33,7 @@ import os
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -517,15 +518,15 @@ def test_the_version_is_read_from_application_properties_not_from_a_jvm(tmp_path
 def test_the_temporary_project_directory_does_not_survive_the_run(tmp_path, artifact):
     home = tmp_path / "ghidra"
     _install_fake_ghidra(home, "ok")
-    before = set(Path(os.environ.get("TMPDIR") or __import__("tempfile").gettempdir()).glob(
-        "icdev-ghidra-*"
-    ))
+    scratch = Path(tempfile.gettempdir())
 
+    before = set(scratch.glob("icdev-ghidra-*"))
     gh.decompile(str(artifact), ghidra_home=str(home), timeout_s=120)
+    after = set(scratch.glob("icdev-ghidra-*"))
 
-    after = set(Path(os.environ.get("TMPDIR") or __import__("tempfile").gettempdir()).glob(
-        "icdev-ghidra-*"
-    ))
+    # A SUBSET, not equality: a concurrent session on this host may hold one of
+    # its own, and failing on somebody else's directory would make this test
+    # flake for a reason that has nothing to do with the code under test.
     assert after <= before, f"a project directory leaked: {sorted(after - before)}"
 
 
