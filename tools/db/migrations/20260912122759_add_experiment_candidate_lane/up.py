@@ -38,23 +38,79 @@ DEFAULT also means `create_experiment` needs no edit: a new candidate is
 from __future__ import annotations
 
 
+TABLE = "experiment_candidates"
+COLUMN = "lane"
+
+
+def _is_pg(conn) -> bool:
+    return getattr(conn, "_backend", "sqlite") == "postgresql"
+
+
+def _table_present(conn) -> bool:
+    """Is the table there at all? A migrate-only fresh database may lack it.
+
+    `experiment_candidates` is created by `init_icdev_db.py` at app runtime and
+    not by this chain, so a `migrate.py --up` against an empty database
+    legitimately has no such table -- migration 020 records the same reasoning
+    for `kanban_tasks`. Skip rather than abort the whole chain.
+    """
+    if _is_pg(conn):
+        row = conn.execute(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema='public' AND table_name=?",
+            (TABLE,),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            (TABLE,),
+        ).fetchone()
+    return row is not None
+
+
 def _lane_present(conn) -> bool:
-    """Ask the LIVE catalogue, never the DDL.
+    """Ask the LIVE CATALOGUE -- never a SELECT that raises when absent.
 
     `CREATE TABLE IF NOT EXISTS` never alters an existing table, so the DDL in
-    `init_icdev_db.py` says nothing about a table an older migration created.
+    `init_icdev_db.py` says nothing about a table an older migration created,
+    and the catalogue is the only honest source.
+
+    THE PROBE MUST NOT BE THE THING THAT BREAKS THE MIGRATION. This asked
+    `SELECT lane FROM experiment_candidates LIMIT 1` and read the exception as
+    absence. That reads correctly on SQLite and is fatal on PostgreSQL, where a
+    failed statement ABORTS THE TRANSACTION: every later command in the same
+    transaction -- here the ALTER this function exists to authorise -- returns
+    "current transaction is aborted, commands ignored until end of transaction
+    block". So on PostgreSQL the column could never be added, and because
+    `bootstrap_pg` fails loudly rather than leaving a schema that claims to be
+    current, it took `Test (PostgreSQL)` and all four E2E shards down with it
+    (run 34696022955, 2026-09-12).
+    This is the same defect rmf-rail-02 fixed in `posture._has_rows`, where a
+    probe of an absent table aborted the transaction and blanked a live column.
+    A catalogue read returns a row or no row and raises in neither case, so
+    there is nothing to roll back.
     """
-    try:
-        conn.execute("SELECT lane FROM experiment_candidates LIMIT 1").fetchall()
-        return True
-    except Exception:  # noqa: BLE001 - absence is the answer, not an error
-        return False
+    if _is_pg(conn):
+        row = conn.execute(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_schema='public' AND table_name=? AND column_name=?",
+            (TABLE, COLUMN),
+        ).fetchone()
+        return row is not None
+    rows = conn.execute(f"PRAGMA table_info({TABLE})").fetchall()
+    return any(
+        (r[1] if isinstance(r, (list, tuple)) else dict(r).get("name")) == COLUMN
+        for r in rows
+    )
 
 
 def up(conn) -> dict:
     """Add the column if the live table lacks it. Idempotent, both backends."""
     from tools.autoresearch.real_mutation import LANE_INCUBATOR, LANES
 
+    if not _table_present(conn):
+        return {"column_added": False, "reason": "table_absent",
+                "lanes": list(LANES)}
     if _lane_present(conn):
         return {"column_added": False, "reason": "already_present",
                 "lanes": list(LANES)}
@@ -80,7 +136,7 @@ def down(conn) -> dict:
     `column_dropped: False` with its reason; the column stays, which is safe
     because nothing outside xrv-lab-02 reads it.
     """
-    if not _lane_present(conn):
+    if not _table_present(conn) or not _lane_present(conn):
         return {"column_dropped": False, "reason": "not_present"}
     try:
         conn.execute("ALTER TABLE experiment_candidates DROP COLUMN lane")

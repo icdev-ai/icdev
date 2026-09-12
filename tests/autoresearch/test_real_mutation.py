@@ -452,10 +452,27 @@ def candidates_db():
     def _make(with_lane: bool):
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row
-        lane_col = ", lane TEXT DEFAULT 'incubator'" if with_lane else ""
-        conn.execute(
-            "CREATE TABLE experiment_candidates (id TEXT PRIMARY KEY, domain TEXT, "
-            f"updated_at TEXT{lane_col})")
+        # THE CANONICAL NOT NULL COLUMNS ARE CARRIED, and each branch is ONE
+        # triple-quoted literal. A minimal fixture DDL is how a table's real
+        # shape stops being tested (`schema_drift_census`), and a concatenated
+        # or f-string DDL reads to that census as a partial table.
+        if with_lane:
+            conn.execute(
+                """CREATE TABLE experiment_candidates (
+                    id TEXT PRIMARY KEY,
+                    domain TEXT NOT NULL DEFAULT '',
+                    hypothesis TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL DEFAULT '',
+                    updated_at TEXT NOT NULL DEFAULT '',
+                    lane TEXT DEFAULT 'incubator')""")
+        else:
+            conn.execute(
+                """CREATE TABLE experiment_candidates (
+                    id TEXT PRIMARY KEY,
+                    domain TEXT NOT NULL DEFAULT '',
+                    hypothesis TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL DEFAULT '',
+                    updated_at TEXT NOT NULL DEFAULT '')""")
         opened.append(conn)
         return conn
 
@@ -536,8 +553,19 @@ def _migration():
 def test_migration_applies_on_sqlite_and_is_idempotent(sqlite_conn):
     module = _migration()
     conn = sqlite_conn()
-    conn.execute("CREATE TABLE experiment_candidates (id TEXT PRIMARY KEY, status TEXT)")
-    conn.execute("INSERT INTO experiment_candidates VALUES ('exp-old', 'discarded')")
+    conn.execute(
+        """CREATE TABLE experiment_candidates (
+            id TEXT PRIMARY KEY,
+            status TEXT,
+            domain TEXT NOT NULL DEFAULT '',
+            hypothesis TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL DEFAULT '')""")
+    # NAMED, not positional: the fixture now carries the canonical columns, and
+    # a positional VALUES list silently binds whichever four columns happen to
+    # come first.
+    conn.execute("INSERT INTO experiment_candidates (id, status) "
+                 "VALUES ('exp-old', 'discarded')")
 
     first = module.up(conn)
     assert first["column_added"] is True
@@ -559,7 +587,13 @@ def test_migration_applies_on_sqlite_and_is_idempotent(sqlite_conn):
 def test_migration_check_refuses_a_lane_outside_the_python_tuple(sqlite_conn):
     module = _migration()
     conn = sqlite_conn()
-    conn.execute("CREATE TABLE experiment_candidates (id TEXT PRIMARY KEY)")
+    conn.execute(
+        """CREATE TABLE experiment_candidates (
+            id TEXT PRIMARY KEY,
+            domain TEXT NOT NULL DEFAULT '',
+            hypothesis TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL DEFAULT '')""")
     module.up(conn)
     for lane in rm.LANES:
         conn.execute("INSERT INTO experiment_candidates (id, lane) VALUES (?, ?)",
@@ -577,13 +611,70 @@ def test_migration_emits_portable_ddl_for_postgresql():
     that has no PostgreSQL to ask.
     """
     source = (MIGRATION_DIR / "up.py").read_text(encoding="utf-8")
+
+    # THE EMITTED DDL, not the whole file. The module legitimately contains a
+    # backend-branched catalogue probe (`PRAGMA table_info` on SQLite), which is
+    # migration 020's idiom and is NOT part of any statement this migration
+    # emits. Reading the whole file here forbade the portable idiom itself.
+    emitted = [ln for ln in source.splitlines()
+               if "ALTER TABLE" in ln or "ADD COLUMN" in ln or "DROP COLUMN" in ln]
+    assert emitted, "no emitted DDL found to check"
     for sqlite_only in ("AUTOINCREMENT", "PRAGMA", "WITHOUT ROWID", "INSERT OR REPLACE"):
-        assert sqlite_only not in source.upper()
+        for line in emitted:
+            assert sqlite_only not in line.upper(), (sqlite_only, line)
     assert "ALTER TABLE experiment_candidates ADD COLUMN lane TEXT " in source
     # The CHECK list is BUILT from LANES; a literal IN list would be a second
     # spelling of the vocabulary.
     assert "IN ({allowed})" in source
     assert "from tools.autoresearch.real_mutation import LANE_INCUBATOR, LANES" in source
+
+
+def test_the_presence_probe_reads_the_catalogue_not_a_failing_select():
+    """The probe must never be the thing that breaks the migration.
+
+    MEASURED 2026-09-12, run 34696022955: `_lane_present` was
+
+        try:
+            conn.execute("SELECT lane FROM experiment_candidates LIMIT 1")
+            return True
+        except Exception:
+            return False
+
+    which reads correctly on SQLite and is FATAL on PostgreSQL, where a failed
+    statement ABORTS THE TRANSACTION -- so the ALTER that follows returned
+    "current transaction is aborted, commands ignored until end of transaction
+    block". The column could never be added on PostgreSQL, and because
+    `bootstrap_pg` fails loudly rather than leaving a schema that claims to be
+    current, it took `Test (PostgreSQL)` and ALL FOUR E2E shards with it. Same
+    defect as rmf-rail-02's `posture._has_rows`.
+
+    A catalogue read returns a row or no row and raises in neither case, so
+    there is nothing to roll back. This is asserted STRUCTURALLY because a
+    behavioural test on SQLite passes for BOTH versions -- SQLite does not abort
+    the transaction, which is precisely why the defect reached CI.
+    """
+    import ast
+
+    source = (MIGRATION_DIR / "up.py").read_text(encoding="utf-8")
+    fn = next((n for n in ast.walk(ast.parse(source))
+               if isinstance(n, ast.FunctionDef) and n.name == "_lane_present"), None)
+    assert fn is not None, "no _lane_present in the migration"
+
+    # PROSE IS NOT CODE. The docstring QUOTES the broken statement in order to
+    # forbid it, so a substring scan over the whole function reports the fix as
+    # the defect -- the trap rem-hyg-13's census and dwr-ev-03's module docstring
+    # both record. `model_id_gate` settled this rule: read the executable body.
+    stmts = fn.body[1:] if (fn.body and isinstance(fn.body[0], ast.Expr)
+                            and isinstance(fn.body[0].value, ast.Constant)
+                            and isinstance(fn.body[0].value.value, str)) else fn.body
+    body = "\n".join(ast.unparse(st) for st in stmts)
+
+    assert "information_schema.columns" in body, "the PostgreSQL leg must read the catalogue"
+    assert "PRAGMA table_info" in body, "the SQLite leg must read the catalogue"
+    assert "SELECT lane FROM" not in body, (
+        "a SELECT of the column under test aborts the PostgreSQL transaction")
+    assert not any(isinstance(n, ast.ExceptHandler) for n in ast.walk(fn)), (
+        "absence must be a catalogue answer, never a swallowed exception")
 
 
 def test_the_init_ddl_literal_matches_the_python_tuple():
