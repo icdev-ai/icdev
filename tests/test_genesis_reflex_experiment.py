@@ -102,7 +102,13 @@ class TestRunAdaptiveThreshold:
         return fake_result
 
     def test_run_uses_adaptive_threshold_when_enabled(self, reflex, monkeypatch):
-        """run() calls _compute_adaptive_threshold when adaptive_threshold.enabled=True."""
+        """run() calls _compute_adaptive_threshold when adaptive_threshold.enabled=True.
+
+        The master switch (xrv-lab-01) is opened through its documented env
+        override: `run()` returns before the threshold branch when the loop is
+        off, so without this the test asserts nothing about thresholds.
+        """
+        monkeypatch.setenv("ICDEV_AUTORESEARCH_ENABLED", "1")
         calls = []
 
         def fake_adaptive(fallback=0.70, z_factor=0.5, min_samples=10):
@@ -130,7 +136,13 @@ class TestRunAdaptiveThreshold:
         assert calls[0]["fallback"] == 0.70
 
     def test_run_uses_static_threshold_when_adaptive_disabled(self, reflex, monkeypatch):
-        """run() does NOT call _compute_adaptive_threshold when adaptive disabled."""
+        """run() does NOT call _compute_adaptive_threshold when adaptive disabled.
+
+        Same switch, and here it is load-bearing in the other direction: with
+        the loop off this assertion held for a run that never reached the
+        branch, so it would have passed for any implementation at all.
+        """
+        monkeypatch.setenv("ICDEV_AUTORESEARCH_ENABLED", "1")
         calls = []
 
         def fake_adaptive(**kwargs):

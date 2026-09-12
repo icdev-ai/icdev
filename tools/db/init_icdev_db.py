@@ -10468,6 +10468,13 @@ CREATE TABLE IF NOT EXISTS experiment_candidates (
     thompson_sample REAL,
     estimated_impact TEXT CHECK(estimated_impact IN ('high', 'medium', 'low')),
     risk_level      TEXT CHECK(risk_level IN ('high', 'medium', 'low')),
+    -- xrv-lab-02. Kept byte-identical to real_mutation.LANES by
+    -- tests/autoresearch/test_real_mutation.py; migration
+    -- 20260912122759 DERIVES the same CHECK from that tuple for a
+    -- table this DDL can no longer reach.
+    lane            TEXT DEFAULT 'incubator' CHECK(lane IN (
+        'incubator', 'frontier', 'archive'
+    )),
     classification  TEXT DEFAULT 'CUI',
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL
