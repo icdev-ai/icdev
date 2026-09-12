@@ -385,10 +385,18 @@ def _rate(part: int, total: int) -> Optional[float]:
     The one place a percentage is computed here. ``pct if total else 100.0``
     would breach args/perfect_score_gate.yaml, ratcheted to 0 by rem-hyg-13: a
     router nobody asked anything must not render as one that answered perfectly.
+
+    100.0 is reserved for a rate that IS 100. An imperfect rate that rounds up
+    to it at one decimal place FLOORS to 99.9 instead (dwr-fid-02's rule) --
+    it cannot arise at today's 195 cases, where the worst imperfect rate rounds
+    to 99.5, and it arises the day the corpus passes ~2000.
     """
     if total <= 0:
         return None
-    return round(part / total * 100.0, 1)
+    pct = round(part / total * 100.0, 1)
+    if pct >= 100.0 and part < total:
+        return 99.9
+    return pct
 
 
 def judge(case: Dict[str, Any], answer: Dict[str, Any]) -> Dict[str, Any]:
@@ -558,9 +566,13 @@ def human(report: Dict[str, Any]) -> str:
     for name, sec in sorted(report.get("routers", {}).items()):
         pct = sec.get("agreement_pct")
         shown = "unmeasured" if pct is None else f"{pct:.1f}%"
+        # The numerator is agrees + resolved, which is what agreement_pct
+        # counts -- printing `agrees` beside a percentage that includes a
+        # resolved case would not add up on screen.
+        numerator = sec.get("agrees", 0) + sec.get("resolved_disagreements", 0)
         lines.append(f"  {name:15s} {sec.get('state', '?'):14s} "
                      f"agreement {shown:>10s}  "
-                     f"({sec.get('agrees', 0)}/{sec.get('measured', 0)} measured,"
+                     f"({numerator}/{sec.get('measured', 0)} measured,"
                      f" {sec.get('total', 0)} declared)")
         lines.append(f"    {sec.get('entry_point', '')}")
         lines.append(f"    determinism: {sec.get('determinism', '')}")
@@ -582,7 +594,8 @@ def human(report: Dict[str, Any]) -> str:
     pct = tot.get("agreement_pct")
     lines.append("  TOTAL agreement: "
                  f"{'unmeasured' if pct is None else f'{pct:.1f}%'} "
-                 f"({tot.get('agrees', 0)}/{tot.get('measured', 0)}), "
+                 f"({tot.get('agrees', 0) + tot.get('resolved_disagreements', 0)}"
+                 f"/{tot.get('measured', 0)}), "
                  f"{tot.get('disagrees', 0)} disagreement(s), "
                  f"{tot.get('known_disagreements', 0)} known, "
                  f"{tot.get('unmeasurable', 0)} unmeasurable")

@@ -176,6 +176,15 @@ class TestSurveyReport:
             assert sec["agreement_pct"] is None, name
             assert sec["state"] == "never_asked", name
 
+    def test_an_imperfect_rate_never_rounds_up_to_100(self):
+        """100.0 is reserved for a rate that IS 100 (dwr-fid-02's rule)."""
+        from tools.routing.corpus_survey import _rate
+
+        assert _rate(1999, 2000) == 99.9
+        assert _rate(2000, 2000) == 100.0
+        assert _rate(0, 0) is None
+        assert _rate(0, 10) == 0.0, "a MEASURED zero is a real finding"
+
     def test_live_report_measures_every_router(self):
         report = replay(CORPUS)
         for name, sec in report["routers"].items():
