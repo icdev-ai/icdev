@@ -106,13 +106,16 @@ import sys
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from icdev.core.paths import repo_root
+from tools.common.helpers import parse_utc_timestamp
+from tools.logging.icdev_logger import get_logger
 
-_BASE = repo_root(__file__)
-if str(_BASE) not in sys.path:
-    sys.path.insert(0, str(_BASE))
-
-from tools.common.helpers import parse_utc_timestamp  # noqa: E402
-from tools.logging.icdev_logger import get_logger  # noqa: E402
+# NO `sys.path` BOOTSTRAP, deliberately. This module is documented and invoked as
+# `python -m tools.kanban.promotion_gate` only — never `python <path>.py` — so
+# the import root is already resolved and a bootstrap would have to compute the
+# repo root from `__file__` ABOVE the `icdev.core.paths` import that exists to
+# stop exactly that (xit-decl-03 vs kax-conflict-04, which is how CI shard 4 went
+# red). `detector_findings`, this module's only caller-side sibling, is the same
+# shape. `repo_root` is used once, in `__main__`, to find the `.env`.
 
 logger = get_logger("icdev.kanban.promotion_gate")
 
@@ -524,7 +527,7 @@ if __name__ == "__main__":
     try:
         from dotenv import load_dotenv as _load
 
-        _load(_BASE / ".env", override=True)
+        _load(repo_root(__file__) / ".env", override=True)
     except ImportError:
         pass
     sys.exit(main())
