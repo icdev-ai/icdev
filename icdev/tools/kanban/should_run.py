@@ -92,7 +92,14 @@ import os
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence
+
+# sys.path BOOTSTRAP first, so `python tools/kanban/should_run.py --task x`
+# reaches main() (kax-conflict-04); then the ONE root resolver.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 from icdev.core.paths import repo_root  # noqa: E402
 
