@@ -9710,3 +9710,4 @@ commands, its measurements and its refusals.
 | `mfx-own-09` | A WARM worktree, pre-created while the host is quiet, claimed in ~1.3s | `python -m tools.kanban.worktree_pool --status [--json]` | [mfx-own-09.md](cards/mfx-own-09.md) |
 | `kpr-watch-19` | The resume queue has a consumer on the executor that RUNS, and is ONE directory from every checkout | `python -m tools.ci.resume_delivery --survey` | [kpr-watch-19.md](cards/kpr-watch-19.md) |
 | `xrv-cost-05` | Every `tools/call` Claude Code makes leaves ONE audit row, counted apart from Studio's | `python -m tools.awareness.capability_consumption --class mcp_dispatch_tool --json` | [xrv-cost-05.md](cards/xrv-cost-05.md) |
+| `kpr-watch-21` | A refusal that names no remedy: 10,542 done-gate waits never said `--reverify` | `python tools/kanban/cli.py --reverify <task-id>` | [kpr-watch-21.md](cards/kpr-watch-21.md) |
