@@ -2494,6 +2494,77 @@ python tools/genesis/daemon.py --enable research              # Enable a reflex
 python tools/genesis/daemon.py --disable evolve               # Disable a reflex
 python tools/genesis/daemon.py --reset heal --json            # Reset circuit breaker
 
+# The research loop stops reporting a measurement it did not make (xrv-lab-01)
+python tools/genesis/daemon.py --reflex experiment --json      # disabled | unmeasurable, metric_value null
+python tools/genesis/daemon.py --reflex foundry_cycle --json   # names details.stages_missing
+python tools/awareness/claim_verifier.py --claim experiment_loop_measures_a_change
+python tools/awareness/capability_consumption.py --probe-substrate experiment_programs   # `empty`
+python -c "from tools.autoresearch.experiment_engine import autoresearch_enabled as f; print(f())"
+python -c "from tools.foundry.engine import stage_availability as f; print(f())"
+# THE MASTER SWITCH WAS DECLARED AND READ BY NOTHING. args/autoresearch_config.yaml
+# has shipped `enabled: false` plus `env_override: ICDEV_AUTORESEARCH_ENABLED`
+# since the engine landed, and the nightly `experiment` reflex ran the loop
+# anyway. `autoresearch_enabled()` is the ONE reading of it; the env override
+# outranks the config in BOTH directions, and an unreadable config is
+# FAIL-CLOSED (`basis: config_unreadable`, `config_enabled: None` -- "declared
+# off" and "could not tell" are different answers).
+# AND THE LOOP MEASURES AN IDENTITY BASELINE. run_loop evaluates the domain,
+# creates an experiment, runs it, evaluates AGAIN with nothing changed and
+# decides keep/discard on that delta -- which is why every result it returns
+# carries `placeholder_metrics: True` and a note saying so. The reflex published
+# an `acceptance_rate` off those deltas regardless. Now: any placeholder domain
+# makes the WHOLE run `unmeasurable` -- metric_value None, total_kept /
+# total_discarded / acceptance_rate None, NO GKP export, the engine's own note
+# carried through -- because a total summed across a measured and an unmeasured
+# domain is not a total. A placeholder domain's keep count rides as
+# `kept_unmeasured`, never `kept`. Proven end to end against the REAL engine on
+# 2026-09-12: status unmeasurable, reason placeholder_metrics, zero GKP files.
+# TWO MORE EMPTY DENOMINATORS, both previously a confident 0.0: a loop that ran
+# NO experiments (`kept / max(run, 1)` = 0/1) and a run where every domain
+# errored. Both are `unmeasurable` with reasons `no_experiments_run` /
+# `no_measured_domain`. A MEASURED 0.0 over real experiments still reports 0.0.
+# THE 0.0 WAS DELETING ITS OWN RECORD. Measured on the live board 2026-09-12:
+# genesis_reflex_state said 73 runs / 73 successes / last_metric_value 0.0, and
+# genesis_audit held 73 `reflex.started` rows and NOT ONE `reflex.completed` --
+# base.run_reflex suppresses the completed row when `metric_value == 0 and not
+# details.get("tasks")`. So the fabricated rate silently discarded the only
+# record of how it was reached. `None == 0` is False, so the row is written now.
+# TWO DAEMON SEAMS coerced the refusal back to a number and both are fixed:
+# `evaluate_metric(cfg, None)` returns True (an unmeasured run must not be
+# scored a threshold miss -- three of those trip its circuit breaker, and the
+# gap would then hide behind a disabled reflex), and the ORANGE proposal path no
+# longer does `float(metric or 0.0)` nor stages a pending_review GKP for a run
+# that did not run (`GenesisDaemon._NO_PROPOSAL_STATUSES`).
+# THE FOUNDRY HAS NO STAGE THAT COULD EMIT. `run_cycle` degrades an absent stage
+# module to a clean no-op; measured 2026-09-12, 4 of its 8 stages have no module
+# in the tree -- synthesizer, scorer, deliberator and SEEDER, the only writer of
+# a kanban row. So `tasks_emitted: 0` was never the gate verdict it reads as.
+# `stages_missing` / `stages_present` say which modules IMPORT; `stages_ran`
+# says which were actually INVOKED (a present stage still does not run when the
+# circuit breaker or the active-project rate limit short-circuits the cycle).
+# With EMIT_STAGE missing the reflex reports `unmeasurable` with metric_value
+# None and names the absent stages; `success` stays True. EMIT_STAGE is declared
+# once in the engine and IMPORTED by the reflex -- two spellings of "which stage
+# writes the board" is how the pair comes to disagree about a pipeline neither
+# of them changed.
+# STANDING CLAIM (autonomy-lrn-01): `experiment_loop_measures_a_change`.
+# Reported = the newest experiment reflex run's `total_kept`, off
+# genesis_audit.details (looking through the ORANGE wrapper's `reflex_result`
+# nesting). Derived, sharing no code = DISTINCT experiment ids in
+# `experiment_results` whose pre_metric != post_metric. A keep the results table
+# cannot account for is the defect; keeping FEWER than moved is just `discard`.
+# Both sides are None -- never 0 -- over no recorded run / no rows, so an empty
+# board is `unmeasurable`. Live verdict 2026-09-12: reported None (see the
+# suppression above), derived 0 over 9 rows, NONE of which moved a metric.
+# `experiment_programs` is created in BOTH schemas and read and written by
+# NOTHING -- every program load resolves to args/experiment_programs/<domain>.yaml
+# -- so it is registered under `substrates:` in args/capability_consumption.yaml
+# and probes `empty`, 0 rows. Dropping a table two schemas declare is its own
+# decision with its own migration; it is named here rather than removed.
+# STILL PLACEHOLDER, and deliberately so: nothing here makes the loop apply a
+# real code modification. That is behind the manual gate, and until it opens
+# every run is honestly unmeasurable.
+
 # CI runner health (mfx-boot-02) -- re-register a crash-looping self-hosted runner (FT and RT)
 python tools/genesis/daemon.py --reflex ci_runner_health --json   # one cycle through the daemon (acts)
 python tools/genesis/reflexes/ci_runner_health.py                 # hand-run: DRY RUN, proves and acts on nothing
