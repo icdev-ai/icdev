@@ -193,6 +193,8 @@ AWS API contract, not its performance characteristics.
 
 - `xrv-cost-05` — Every `tools/call` Claude Code makes leaves ONE audit row — `python -m tools.awareness.capability_consumption --class mcp_dispatch_tool --json  # extra.by_caller_source` — `docs/reference/cards/xrv-cost-05.md`
 
+- `kpr-watch-20` — The artifact-pin pair is DECLARED, and the survey that armed it counts HUNKS — `python -m tools.kanban.artifact_pin_union_survey` — `docs/reference/cards/kpr-watch-20.md`
+
 
 - `kpr-watch-21` — A refusal that names no remedy — `python tools/kanban/cli.py --reverify <task-id>`
 

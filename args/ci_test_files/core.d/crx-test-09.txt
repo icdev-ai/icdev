@@ -1,0 +1,6 @@
+# crx-test-09 -- the order-dependence sweep that told this card its own premise
+# was wrong. `tests/document_intelligence/test_original_retention.py` failed on
+# CI shard 2 after a bin-pack move, passed alone, and was NOT order-dependent:
+# it raced its own ingest thread. These tests pin the classification that keeps
+# a flake from being reported as ordering.
+tests/ci/test_order_dependence_sweep.py
