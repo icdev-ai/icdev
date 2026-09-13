@@ -556,6 +556,43 @@ union_resolver:
     # block seam. Re-derive with tools/kanban/claude_md_union_survey.py.
     - path: CLAUDE.md
       rules: [keep_both_blocks, adjacent_edits]
+    # THE ARTIFACT-PIN PAIR (kpr-watch-20). Every artifact-freshness card
+    # appends one measurement comment block to the manifest and one pinning
+    # test function to the suite, so four cards in one epic collided with every
+    # sibling that landed first: 24 `union_refused` rows across
+    # #2267/#2269/#2270, all `undeclared: args/pinned_artifacts.yaml`, all
+    # resolved by a human. SURVEYED PER HUNK before arming, over the 6 hunks
+    # git itself conflicted on -- `python -m tools.kanban.artifact_pin_union_survey`:
+    #   1 exact, 3 union_kept_more, 1 human_also_edited, 1 refused,
+    #   and union_lost_content = 0.
+    # The 3 `union_kept_more` are the reason to declare rather than a blemish:
+    # each hand resolution DROPPED two `assert entry["decided_by"] ...` /
+    # `assert entry["consumer"] ...` lines, and three of the five
+    # `test_the_shipped_*_pin_is_decided_by_floci` tests sit on main today
+    # asserting nothing of the kind. The union kept all six.
+    # The 1 `refused` is CORRECT and stays refused: on that merge both sides
+    # REWROTE the same "NOT CONVERTED HERE" enumeration paragraph, so base_seg
+    # is non-empty and `keep_both_blocks` declines it -- a human decides which
+    # enumeration is true. Declaring this pair does not claim otherwise.
+    - path: args/pinned_artifacts.yaml
+      rules: [keep_both_blocks, adjacent_edits]
+    - path: tests/airgap/test_artifact_freshness.py
+      rules: [keep_both_blocks, adjacent_edits]
+      tests: ["tests/airgap/test_artifact_freshness.py"]
+    # NOT DECLARED, AND MEASURED RATHER THAN JUDGED (kpr-watch-20):
+    # `icdev/data/args/floci_runtime_images.yaml` conflicted on #2269 and is a
+    # candidate by proximity only. Its one conflict is an ADD/ADD of the SAME
+    # `note:` key under the SAME entry -- both branches re-added a note the
+    # wheel mirror had never received -- and a `keep_both_blocks` union there
+    # emits a DUPLICATE YAML mapping key that `yaml.safe_load` accepts
+    # silently, so the rung's YAML verifier PASSES and ships a declaration of
+    # record carrying two contradictory notes. It is also not append-shaped at
+    # all: `tools/installer/sync_package_tree.py` regenerates it from
+    # args/floci_runtime_images.yaml, which merged CLEAN in 4 of 4. Nor is
+    # `derived_from` the answer -- the source was NOT in any conflict set, the
+    # one shape kpr-watch-14 records the derivation rung refusing to repair.
+    # The real gap is that `mirror_parity` only watches tools/ <-> icdev/tools/,
+    # so args/ -> icdev/data/args/ drifts unobserved; that is its own card.
     # NOT unioned -- DERIVED. mfx-ci-04 requires this payload to be regenerated
     # whenever CLAUDE.md changes, and `prebuild_bootstrap.SOURCES` regenerates
     # it with a bare `shutil.copy2`, so copying the resolved CLAUDE.md IS the
