@@ -172,7 +172,59 @@ python -m tools.ci.order_dependence_sweep --root . --match document_intelligence
 
 ### Result
 
-<!-- SWEEP-RESULT -->
+```
+order-dependence sweep: 17 file(s), 3 permutation(s), 3 solo repeat(s),
+                        seed 20260912, 431.3s
+  order_dependent: 0
+  order_suspect:   0
+  flaky_alone:     1
+  alone_red:       0
+  stable:          16
+    flaky_alone: tests/document_intelligence/test_original_retention.py
+                 (solo failed/passed/passed; in-suite passed/passed/passed)
+```
+
+**The number criterion 5 asks for is ZERO.** Sixteen of the seventeen gated
+`document_intelligence` files are `stable`; none is `order_dependent`, and none is
+even `order_suspect`. A measured zero is the deliverable here — it is not the same
+as not having looked, and it is the reason the sweep exists rather than a pin.
+
+The seventeenth is this card's own subject, and the verdict is the one the tool was
+built to return: **`flaky_alone`** — red in a *solo* repeat, with nothing else in the
+process, which by construction rules ordering out. Note what the in-suite column
+says: green in all three shuffles. The file is *more* reliable in company than alone,
+which is the exact inverse of the shape the card set out to find.
+
+### The residue, stated plainly
+
+That solo red did **not** reproduce, and it was chased hard before being written
+down as residue:
+
+| re-run | solo runs | red |
+|---|---|---|
+| the sweep itself | 51 (17 files x 3) | **1** |
+| the same solo baseline, re-run whole | 51 | 0 |
+| the subject file, quiet host | 8 | 0 |
+| the subject file, bytecode caches dropped each time (cold start) | 6 | 0 |
+| the subject file, 4 sibling DI files churning in parallel | 6 | 0 |
+
+**122 solo runs after the fix, 1 red — about 0.8%.** The load arm matters: the
+parallel churn lifted the file's own runtime from 1.4s to 4.7s, so the host really was
+contended and the file still passed 6 of 6. Cold start is ruled out too, which was the
+obvious first guess given the sweep's red was that file's FIRST repeat.
+
+The sweep ran concurrently with this session's own gate checks and four platform
+daemons (`pr_watcher`, the kanban scheduler, the genesis daemon, `proposal_genesis`),
+so a host stall is the leading candidate — `_wait_result` allows 20s and `_wait_until`
+15s, and a stalled host can exceed either. **That remains a hypothesis, not a
+measurement**, and it is recorded as one.
+
+**Why that is not a confident answer: the tool threw the evidence away.** It reported
+`flaky_alone` and discarded the pytest tail, so *which* assertion lost is unknowable
+from the report — and naming the carrier is this card's whole standard. That is a
+defect in the sweep, not in the suite, and it is fixed here: a red run's output is now
+kept on the entry it produced (`solo_red_output`, `in_suite_red_output`, bounded to
+`OUTPUT_KEPT` bytes), so the next `flaky_alone` arrives with its message attached.
 
 ---
 

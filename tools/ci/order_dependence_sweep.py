@@ -59,6 +59,9 @@ REPO_ROOT = repo_root(__file__)
 DEFAULT_PERMUTATIONS = 3
 DEFAULT_REPEATS = 2
 DEFAULT_TIMEOUT = 1800
+# How much of a failing run's output a report keeps. A verdict without the message
+# under it is not evidence (see solo_baseline).
+OUTPUT_KEPT = 3000
 
 # Verdicts, most-actionable first.
 ORDER_DEPENDENT = "order_dependent"      # green in every solo repeat, red under some order
@@ -119,7 +122,10 @@ def _outcomes(xml: Path, targets: Sequence[str]) -> Dict[str, str]:
     if not xml.exists():
         return result
     try:
-        tree = ElementTree.parse(xml)
+        # `xml` is the --junitxml report THIS module's own pytest subprocess just
+        # wrote into a private mkdtemp directory (see _run_pytest): first-party
+        # output, never a user-supplied or network-sourced document.
+        tree = ElementTree.parse(xml)  # nosec B314
     except ElementTree.ParseError:
         return result
     for case in tree.iter("testcase"):
@@ -142,15 +148,26 @@ def _outcomes(xml: Path, targets: Sequence[str]) -> Dict[str, str]:
 # -- the sweep ----------------------------------------------------------------
 
 def solo_baseline(root: Path, files: Sequence[str], repeats: int,
-                  timeout: int, log=print) -> Dict[str, List[str]]:
-    """Run every file ALONE, ``repeats`` times, each in its own process."""
+                  timeout: int, log=print,
+                  evidence: Optional[Dict[str, str]] = None) -> Dict[str, List[str]]:
+    """Run every file ALONE, ``repeats`` times, each in its own process.
+
+    ``evidence``, when given, collects the pytest tail of each file's FIRST red run.
+    That output is the whole point of a solo red: `flaky_alone` names a verdict, and
+    without the message underneath it the next reader has to reproduce the race from
+    scratch to learn which assertion lost. Measured on this card — a sweep reported
+    this file `flaky_alone`, the tail was discarded, and 20 subsequent solo runs
+    (quiet, cold-cache and 4x loaded) all passed, so the one red could not be named.
+    """
     baseline: Dict[str, List[str]] = {f: [] for f in files}
     for rel in files:
         for n in range(repeats):
             t0 = time.time()
-            _, outcomes, _ = _run_pytest(root, [rel], timeout)
+            _, outcomes, tail = _run_pytest(root, [rel], timeout)
             verdict = outcomes.get(str(rel).replace("\\", "/"), "absent")
             baseline[rel].append(verdict)
+            if verdict != "passed" and evidence is not None and rel not in evidence:
+                evidence[rel] = tail
             log("  alone %d/%d %s: %s (%.1fs)" % (n + 1, repeats, rel, verdict, time.time() - t0))
     return baseline
 
@@ -198,17 +215,20 @@ def sweep(root: Path, files: Sequence[str], *, permutation_count: int = DEFAULT_
           bisect: bool = False, log=print) -> Dict[str, object]:
     started = time.time()
     log("solo baseline: %d file(s) x %d repeat(s)" % (len(files), repeats))
-    baseline = solo_baseline(root, files, repeats, timeout, log=log)
+    solo_evidence: Dict[str, str] = {}
+    baseline = solo_baseline(root, files, repeats, timeout, log=log, evidence=solo_evidence)
 
     orders = permutations(files, permutation_count, seed)
     per_order: List[Dict[str, str]] = []
+    order_output: List[str] = []
     for i, order in enumerate(orders, 1):
         log("permutation %d/%d (seed %d)" % (i, len(orders), seed))
         t0 = time.time()
-        _, outcomes, _ = _run_pytest(root, order, timeout)
+        _, outcomes, tail = _run_pytest(root, order, timeout)
         red = [f for f, v in outcomes.items() if v != "passed"]
         log("  %d not-green (%.1fs): %s" % (len(red), time.time() - t0, ", ".join(red) or "-"))
         per_order.append(outcomes)
+        order_output.append(tail)
 
     findings: Dict[str, dict] = {}
     for rel in files:
@@ -216,6 +236,8 @@ def sweep(root: Path, files: Sequence[str], *, permutation_count: int = DEFAULT_
         solo = baseline[rel]
         entry: dict = {"file": rel, "solo": solo,
                        "in_suite": [o.get(key, "absent") for o in per_order]}
+        if rel in solo_evidence:
+            entry["solo_red_output"] = solo_evidence[rel][-OUTPUT_KEPT:]
         if solo and all(v == "failed" for v in solo):
             entry["verdict"] = ALONE_RED
         elif any(v != "passed" for v in solo):
@@ -228,6 +250,7 @@ def sweep(root: Path, files: Sequence[str], *, permutation_count: int = DEFAULT_
             # company, and calling it order dependence sends the next reader to the
             # wrong fix.
             idx = next(i for i, v in enumerate(entry["in_suite"]) if v != "passed")
+            entry["in_suite_red_output"] = order_output[idx][-OUTPUT_KEPT:]
             _, again, _ = _run_pytest(root, orders[idx], timeout)
             reproduced = again.get(key, "absent") != "passed"
             entry["verdict"] = ORDER_DEPENDENT if reproduced else SUSPECT

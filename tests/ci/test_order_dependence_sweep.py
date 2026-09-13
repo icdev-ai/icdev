@@ -61,12 +61,14 @@ class TestTheJunitReportIsReadPerFile:
         assert out == {"tests/b.py": "passed"}
 
 
-def _sweep_with(monkeypatch, plan, orders=None):
+def _sweep_with(monkeypatch, plan, orders=None, tails=None):
     """Drive `sweep` over a stubbed pytest. ``plan`` maps a tuple of targets to a
     list of per-run outcome dicts, consumed in order.
 
     ``orders`` pins the permutations so a test states the order it means rather
-    than depending on what `random.Random(seed)` happens to produce.
+    than depending on what `random.Random(seed)` happens to produce. ``tails``
+    maps a tuple of targets to the pytest output that run should report, so a
+    test can assert the report CARRIES the failure message.
     """
     calls = {"n": 0}
     state: dict = {}
@@ -75,7 +77,8 @@ def _sweep_with(monkeypatch, plan, orders=None):
         key = tuple(targets)
         seq = state.setdefault(key, list(plan[key]))
         calls["n"] += 1
-        return 0, seq.pop(0) if len(seq) > 1 else seq[0], ""
+        tail = (tails or {}).get(key, "")
+        return 0, seq.pop(0) if len(seq) > 1 else seq[0], tail
 
     monkeypatch.setattr(ods, "_run_pytest", fake_run)
     if orders is not None:
@@ -217,3 +220,58 @@ class TestTheGateOnlyFiresOnAConfirmedFinding:
             "counts": counts, "order_dependent": [], "results": [], "elapsed_seconds": 0.0,
         })
         assert ods.main(["--files", "tests/a.py", "--gate", "--json"]) == expected
+
+
+class TestAVerdictCarriesTheMessageUnderneathIt:
+    """A verdict without its failure output is not evidence.
+
+    MEASURED on this card: the sweep reported
+    `tests/document_intelligence/test_original_retention.py` as `flaky_alone` on
+    1 of 3 solo repeats, the pytest tail was DISCARDED, and the red never
+    reproduced -- 20 further solo runs (quiet, cold-cache, and under 4x host
+    load) all passed. Which assertion lost was therefore unknowable from the
+    report, and naming the carrier is this card's whole standard. So a red run's
+    output is kept ON the entry that red produced.
+    """
+
+    def test_a_solo_red_keeps_its_pytest_output(self, monkeypatch):
+        a = "tests/a.py"
+        _sweep_with(monkeypatch, {(a,): [{a: "passed"}, {a: "failed"}]},
+                    orders=[(a,)], tails={(a,): "E   AssertionError: still the temp stem"})
+        rep = ods.sweep(Path("."), [a], permutation_count=1, repeats=2, seed=1,
+                        log=lambda *_: None)
+        entry = rep["results"][0]
+        assert entry["verdict"] == ods.FLAKY_ALONE
+        assert "still the temp stem" in entry["solo_red_output"],             "a flaky_alone verdict must carry the message that produced it"
+
+    def test_a_green_file_carries_no_output(self, monkeypatch):
+        a = "tests/a.py"
+        _sweep_with(monkeypatch, {(a,): [{a: "passed"}]}, orders=[(a,)],
+                    tails={(a,): "noise that no red produced"})
+        rep = ods.sweep(Path("."), [a], permutation_count=1, repeats=1, seed=1,
+                        log=lambda *_: None)
+        assert "solo_red_output" not in rep["results"][0]
+        assert "in_suite_red_output" not in rep["results"][0]
+
+    def test_an_in_suite_red_keeps_the_output_of_the_order_that_produced_it(self, monkeypatch):
+        a, b = "tests/a.py", "tests/b.py"
+        _sweep_with(monkeypatch, {
+            (a,): [{a: "passed"}],
+            (b,): [{b: "passed"}],
+            (a, b): [{a: "passed", b: "passed"}],
+            (b, a): [{a: "failed", b: "passed"}],
+        }, orders=[(a, b), (b, a)],
+            tails={(b, a): "E   AssertionError: b poisoned a"})
+        rep = ods.sweep(Path("."), [a, b], permutation_count=2, repeats=1, seed=1,
+                        log=lambda *_: None)
+        entry = next(e for e in rep["results"] if e["file"] == a)
+        assert entry["verdict"] == ods.ORDER_DEPENDENT
+        assert "b poisoned a" in entry["in_suite_red_output"],             "the kept output must be the order that went red, not another permutation"
+
+    def test_the_kept_output_is_bounded(self, monkeypatch):
+        a = "tests/a.py"
+        _sweep_with(monkeypatch, {(a,): [{a: "failed"}]}, orders=[(a,)],
+                    tails={(a,): "x" * (ods.OUTPUT_KEPT * 3)})
+        rep = ods.sweep(Path("."), [a], permutation_count=1, repeats=1, seed=1,
+                        log=lambda *_: None)
+        assert len(rep["results"][0]["solo_red_output"]) == ods.OUTPUT_KEPT
