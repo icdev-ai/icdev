@@ -21,10 +21,23 @@ A fourth joined them (autonomy-dep-02):
                                       migration pending, which is why that card
                                       recorded nothing after it merged.
 
+A sixth is not a detector that nobody ran but TELEMETRY that nobody read
+(kpr-watch-22):
+
+    union_candidate   (kpr-watch-22)  a file named in `pr_watcher.union_refused`
+                                      that matches no `union_resolver.files`
+                                      entry. The rung had resolved TWO conflicts
+                                      in its lifetime against 37 refusals in
+                                      twelve hours; `union_refused` had exactly
+                                      ONE mention outside its writer and it was
+                                      a docstring, so a stalled PR and a human
+                                      reading audit rows by hand was the only
+                                      discovery path there was.
+
 Each was built because a human found the defect BY HAND, and each then sat
 waiting for a human to run it by hand — declared-but-unconsumed, this
 platform's signature defect, reaching its own self-observation layer. This
-module is the consumer. It BUILDS NO DETECTOR: it calls the three that exist,
+module is the consumer. It BUILDS NO DETECTOR: it calls the ones that exist,
 on the Genesis cadence, and files what they report.
 
 A CARD CARRIES ITS DERIVATION, never a bare alert. Every card rendered here
@@ -124,8 +137,10 @@ DETECTOR_BORN_RED = "born_red"
 DETECTOR_RECOVERY = "recovery"
 DETECTOR_MIGRATION_DRIFT = "migration_drift"
 DETECTOR_DEPLOYMENT_FRESHNESS = "deployment_freshness"
+DETECTOR_UNION_CANDIDATE = "union_candidate"
 DETECTORS = (DETECTOR_STATUS_CHURN, DETECTOR_BORN_RED, DETECTOR_RECOVERY,
-             DETECTOR_MIGRATION_DRIFT, DETECTOR_DEPLOYMENT_FRESHNESS)
+             DETECTOR_MIGRATION_DRIFT, DETECTOR_DEPLOYMENT_FRESHNESS,
+             DETECTOR_UNION_CANDIDATE)
 
 #: detector_runs.last_state — and the per-detector ``state`` in a report.
 RUN_FINDINGS = "findings"
@@ -169,6 +184,13 @@ FINGERPRINT_SEP = "|"
 #:                  only -- a real design decision, and asserting it without
 #:                  measuring the population would be the very defect this
 #:                  constant exists to fix. Declare it when it has a survey.
+#:   union_candidate  ``<shape>|<recommendation>`` -- TWO VERDICTS ABOUT ONE
+#:                  FILE, not two members. Neither is resolvable on its own:
+#:                  nobody "fixes" the shape of a file's history, and the
+#:                  recommendation is derived from the same survey the shape
+#:                  is. The subject (the file) carries the identity; a shape
+#:                  that changes means the evidence changed, which IS a new
+#:                  finding.
 SET_VALUED_FINGERPRINT_DETECTORS = frozenset({DETECTOR_MIGRATION_DRIFT})
 
 #: What ``consume`` does with a finding it has just projected (autonomy-act-04).
@@ -1080,6 +1102,154 @@ def run_deployment_freshness(conn, cfg: Mapping[str, Any]) -> dict:
     return _result(RUN_FINDINGS if findings else RUN_CLEAN, findings, summary=summary)
 
 
+def union_candidate_findings(report: Mapping[str, Any]) -> List[Finding]:
+    """union_candidates.candidates() -> findings. ONE per UNDECLARED file.
+
+    A MEASURABLE CANDIDATE ONLY. A candidate whose survey could not be produced
+    -- no conflicting merge in history, or every conflict hunk `refused` or
+    `unanchorable` so nothing was ever COMPARED -- files nothing at all
+    (kpr-watch-22 AC 3). It is carried in the run summary, because a proposal
+    without evidence is precisely what this detector replaces: kpr-watch-14
+    records that "declaring one to quieten a refusal is how the wrong rule
+    shipped a broken file twice on 2026-09-03".
+
+    ATTRIBUTION IS THE UPSTREAM MODULE'S JOB and it is to the UNDECLARED
+    member: a refusal names the whole conflict set, one undeclared file refuses
+    the set, and a file `match_declaration` already accepts is COLLATERAL and
+    never a candidate. Nothing here re-ranks by refusal count.
+
+    THE CARD PROPOSES, THE HUMAN DECLARES. The one-line declaration is TEXT on
+    a `suggested` card; no code path in this module or in `union_candidates`
+    writes `union_resolver.files`.
+    """
+    from tools.kanban.union_candidates import (
+        RECOMMEND_DECLARE, SHAPE_APPEND, STATE_MEASURABLE)
+
+    window = report.get("window_hours")
+    out: List[Finding] = []
+    for entry in report.get("candidates") or []:
+        if str(entry.get("state")) != STATE_MEASURABLE:
+            continue
+        path = str(entry.get("file"))
+        recommend = str(entry.get("recommendation"))
+        proposes = recommend == RECOMMEND_DECLARE
+        refusals = int(entry.get("refusals") or 0)
+        shape = str(entry.get("shape"))
+        shape_note = (
+            "every observed conflict hunk is a PURE INSERTION on both sides "
+            "(the base region is empty) -- the shape `keep_both_blocks` is for"
+            if shape == SHAPE_APPEND else
+            f"{entry.get('hunks_rewriting_base')} of {entry.get('hunks')} observed "
+            "conflict hunk(s) REWRITE base lines: two cards changed the same lines, "
+            "which is what a source module's collisions look like. It is not on its "
+            "own a refusal -- CLAUDE.md is correctly declared with 1 of 15 -- but it "
+            "is the thing to read before declaring")
+        if proposes:
+            advice = (
+                f"The union rung REFUSED {refusals} merge attempt(s) in the last "
+                f"{window}h because `{path}` matches no `union_resolver.files` entry in "
+                "args/pr_watcher_config.yaml, and every one of those refusals cost a "
+                "rebase attempt out of the per-base-era budget and ended in an escalation "
+                "a human had to answer. THE SURVEY SAYS A UNION WOULD HAVE BEEN RIGHT: "
+                f"over {entry.get('decisive_hunks')} hunk(s) that git itself conflicted on "
+                f"and that were actually COMPARED against what landed, the union dropped "
+                f"NO content ({entry.get('agreeing')} reproduced the human resolution "
+                f"exactly or bar ordering/blank lines). Shape: {shape_note}. "
+                "IF YOU AGREE, add exactly this line under `union_resolver.files`:\n\n"
+                f"```yaml\n{entry.get('declaration')}\n```\n\n"
+                "Read the hunks first — `python -m tools.kanban.artifact_pin_union_survey "
+                f"--file {path}` prints every one. If the file is a VERBATIM COPY of "
+                "another declared file, declare `derived_from:` instead of rules "
+                "(kpr-watch-14): unioning both copies independently resolves each "
+                "plausibly and leaves them out of parity. NOTHING WILL ADD THE LINE FOR "
+                "YOU and nothing should — an actuator that edits its own guardrail is the "
+                "tier `restore_acts` deliberately does not have.")
+            title = (f"union rung refuses `{path}` ({refusals} refusal(s)) and the survey "
+                     "says a union would have been RIGHT")
+            priority, task_type = "high", "chore"
+        else:
+            advice = (
+                f"The union rung REFUSED {refusals} merge attempt(s) in the last "
+                f"{window}h naming `{path}`, which matches no `union_resolver.files` "
+                "entry — but DO NOT DECLARE IT. Replayed against what actually landed "
+                f"over {entry.get('decisive_hunks')} compared hunk(s), the union DROPS "
+                f"{entry.get('lost_content')} line(s) that landed and that came from a "
+                "side: declaring it would resolve a real conflict by losing content, "
+                "silently, on a branch nobody reviews. Shape: " + shape_note + ". "
+                "The repair is upstream of the resolver — find why two cards are editing "
+                "the same lines of this file and sequence or split them. Re-derive the "
+                f"hunks with `python -m tools.kanban.artifact_pin_union_survey --file {path}`.")
+            title = (f"union rung refuses `{path}` ({refusals} refusal(s)) and a union "
+                     f"would LOSE {entry.get('lost_content')} line(s)")
+            priority, task_type = "medium", "fix"
+        out.append(Finding(
+            DETECTOR_UNION_CANDIDATE, subject=path,
+            fingerprint=f"{shape}{FINGERPRINT_SEP}{recommend}",
+            title=title, priority=priority, task_type=task_type,
+            evidence={k: v for k, v in entry.items()},
+            derivation=(f"python -m tools.kanban.union_candidates "
+                        f"--window-hours {window} --json"),
+            advice=advice,
+        ))
+    return out
+
+
+def run_union_candidate(conn, cfg: Mapping[str, Any]) -> dict:
+    """Consume `pr_watcher.union_refused` — the telemetry NOTHING read (kpr-watch-22).
+
+    No new table and no new writer: the audit rows already exist. The corpus is
+    read here, the read transaction is closed before the surveys leave for git,
+    and the surveys are kpr-watch-20's, imported.
+
+    UNMEASURABLE CLEARS NOTHING, and there are exactly two ways this run is
+    unmeasurable: the corpus could not be read, or it is EMPTY (the rung may be
+    idle, the watcher may be down, or the audit writer may be bypassed — none
+    of those is "no file needs declaring"). A THIRD, narrower one is checked
+    here: if GIT itself could not be read, every candidate would report zero
+    conflicting merges and a finding filed on a previous cycle would be cleared
+    by a run that looked at nothing.
+    """
+    from tools.kanban.union_candidates import DEFAULT_WINDOW_HOURS, candidates
+
+    window = cfg.get("window_hours", DEFAULT_WINDOW_HOURS)
+    window = int(window) if window else None
+    report = candidates(
+        conn=conn, window_hours=window,
+        max_files=int(cfg.get("max_files") or 6),
+        ref=str(cfg.get("ref") or "origin/main"),
+        end_read_txn=end_read_txn,
+    )
+    surveyed = list(report.get("candidates") or [])
+    summary: Dict[str, Any] = {
+        "window_hours": report.get("window_hours"),
+        "rows": report.get("rows"),
+        "unparsed_rows": report.get("unparsed_rows"),
+        "candidate_files": report.get("candidate_files"),
+        "surveyed": len(surveyed),
+        "deferred": report.get("deferred"),
+        # The declined candidates, NAMED. A suppression nobody can see is a
+        # suppression nobody can audit, and these are the source modules the
+        # detector is meant to decline.
+        "unmeasurable_candidates": [
+            {"file": e.get("file"), "refusals": e.get("refusals"),
+             "shape": e.get("shape"), "reason": e.get("reason")}
+            for e in surveyed if str(e.get("state")) != "measurable"],
+        "collateral": report.get("collateral") or {},
+    }
+    if not report.get("measurable"):
+        return _result(RUN_UNMEASURABLE, reason=str(report.get("reason") or "unmeasurable"),
+                       summary=summary)
+    if surveyed and not any(e.get("git_readable") for e in surveyed):
+        return _result(
+            RUN_UNMEASURABLE,
+            reason=("git merge history is unreadable in this checkout: every candidate "
+                    "would report zero conflicting merges, which would clear findings "
+                    "nothing looked at"),
+            summary=summary)
+    findings = union_candidate_findings(report)
+    return _result(RUN_FINDINGS if findings else RUN_CLEAN, findings, summary=summary)
+
+
 #: Cheap, SQL-only detectors first; the ones that leave the database for tens
 #: of seconds last, with everything before them already committed.
 DEFAULT_RUNNERS: Dict[str, Callable[[Any, Mapping[str, Any]], dict]] = {
@@ -1088,6 +1258,7 @@ DEFAULT_RUNNERS: Dict[str, Callable[[Any, Mapping[str, Any]], dict]] = {
     DETECTOR_BORN_RED: run_born_red,
     DETECTOR_MIGRATION_DRIFT: run_migration_drift,
     DETECTOR_DEPLOYMENT_FRESHNESS: run_deployment_freshness,
+    DETECTOR_UNION_CANDIDATE: run_union_candidate,
 }
 
 #: One line per detector, for the card: what it measures and where it came from.
@@ -1111,6 +1282,13 @@ DETECTOR_BLURB = {
         "is absent from the services running here. The restore tier was asked "
         "first (restore_acts.restore_auto_managed_file); this card exists because "
         "it could not prove the local change regenerable."),
+    DETECTOR_UNION_CANDIDATE: (
+        "union_candidates (kpr-watch-22) — a file named in `pr_watcher.union_refused` "
+        "that matches NO `union_resolver.files` entry, so every sibling-append "
+        "collision on it costs a rebase attempt and ends in an escalation. "
+        "Attributed to the UNDECLARED member (a declared file named in the same set "
+        "is collateral), and each candidate carries the per-hunk survey that replays "
+        "the merges git conflicted on against WHAT LANDED."),
 }
 
 
@@ -1353,6 +1531,7 @@ def build_spec(f: Finding, *, seen_count: int, first_seen_at: Optional[str],
         DETECTOR_STATUS_CHURN: "[CHURN]",
         DETECTOR_BORN_RED: "[BORN-RED]",
         DETECTOR_RECOVERY: "[NEEDED-A-HUMAN]",
+        DETECTOR_UNION_CANDIDATE: "[UNION-CANDIDATE]",
     }.get(f["detector"], "[DETECTOR]")
     return {
         "id": task_id,

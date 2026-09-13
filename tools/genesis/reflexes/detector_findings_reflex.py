@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Genesis Detector-Findings Reflex (autonomy-act-02) — runs the three detectors
-nobody else runs (status_churn, born_red_survey, recovery_summary) and turns
-each finding into ONE kanban card carrying its evidence and its derivation.
+"""Genesis Detector-Findings Reflex (autonomy-act-02) — runs the detectors
+nobody else runs (status_churn, born_red_survey, recovery_summary,
+migration_drift, deployment_freshness) and the telemetry nobody else reads
+(union_candidate, kpr-watch-22), and turns each finding into ONE kanban card
+carrying its evidence and its derivation.
 
 Delegates all logic to tools/kanban/detector_findings.py. Dedupes on the
 FINDING (one projection row per detector/subject/fingerprint, ``seen_count``

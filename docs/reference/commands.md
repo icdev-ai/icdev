@@ -8127,6 +8127,27 @@ python -m tools.kanban.detector_findings --list          # browse the projection
 python -m tools.kanban.detector_findings --stats         # per-detector denominator: never_ran | unmeasurable | clean | findings
 python tools/genesis/daemon.py --reflex detector_findings_reflex   # the 6h reflex, once, through the daemon
 
+# Which UNDECLARED file is costing union_refused rows, and would a union have been RIGHT? (kpr-watch-22)
+python -m tools.kanban.union_candidates                  # 30 days, every candidate, with its per-hunk survey
+python -m tools.kanban.union_candidates --json
+python -m tools.kanban.union_candidates --window-hours 12   # tonight only
+python -m tools.kanban.union_candidates --attribute-only    # split the corpus; no git, no survey
+# NOTHING CONSUMED `pr_watcher.union_refused`: the rung had resolved TWO conflicts
+# in its lifetime against 37 refusals in twelve hours, and that action name had
+# exactly ONE mention outside its writer -- a docstring -- so an undeclared
+# append-shaped file was only ever found by a human reading audit rows by hand.
+# ATTRIBUTION IS TO THE UNDECLARED MEMBER: a refusal names the WHOLE conflict set
+# and one undeclared file refuses the set, so CLAUDE.md (declared since
+# kpr-watch-14) is named in 51 of the 30-day rows and caused none of them.
+# Candidacy is re-asked of the shipped `match_declaration` per file, so a declared
+# file can never be proposed. A hunk that was `refused` or `unanchorable` COMPARED
+# NOTHING, so `lost_content` is None -- never 0 -- and a file with no decisive hunk
+# is `unmeasurable` and files NO card. The SHAPE is reported with its count and is
+# not a veto: CLAUDE.md (1 of 15 hunks rewrite base) and args/pinned_artifacts.yaml
+# (1 of 2) were BOTH correctly declared by hand. Consumed as the sixth detector on
+# detector_findings_reflex; the card PROPOSES the one-line declaration and a human
+# adds it -- nothing writes `union_resolver.files`, pinned by an AST test.
+
 # Is that detector card still WORK, at the moment it is promoted? (autonomy-act-07)
 python -m tools.kanban.promotion_gate --check task-det-04931fe8de   # re-derive one card's verdict
 python -m tools.kanban.promotion_gate --records --json              # every OPEN detector card's verdict

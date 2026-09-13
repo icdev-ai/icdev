@@ -736,6 +736,18 @@ reflexes:
         # `restore: false` files the card without asking the restore tier.
         ref: origin/main
         restore: true
+      union_candidate:
+        # kpr-watch-22: `pr_watcher.union_refused` had exactly ONE mention
+        # outside its writer and it was a docstring, so an undeclared
+        # append-shaped file was only ever discovered by a human noticing a
+        # stalled PR. 30 days: long enough that a file colliding once per epic
+        # is visible, short enough that a file declared weeks ago leaves the
+        # corpus on its own. Each surveyed candidate shells out to git once per
+        # merge commit touching it, so the per-run count is bounded and the
+        # remainder is reported as `deferred`.
+        window_hours: 720
+        max_files: 6
+        ref: origin/main
     description: "autonomy-act-02: run status_churn, born_red_survey and recovery_summary; project findings into detector_findings (deduped on the finding, seen_count on recurrence) and file one evidence-carrying card per NEW finding via task_factory"
     success_metric:
       name: findings_seen
