@@ -3547,6 +3547,31 @@ def _get_due_tasks() -> list:
         # sequential sub-tasks each within its own 900s window.
         result = _decompose_phase_exit_gates(result, conn)
 
+        # LAST STOP BEFORE A TOKEN IS SPENT (autonomy-act-07). A detector card
+        # whose record-not-card disposition has become `record` since it was
+        # seeded — the subject landed and closed while the card queued — is
+        # withheld here as well as at the two promotion doors, for the same
+        # reason `_is_test_fixture` is asked twice: a card can reach `scheduled`
+        # by a dashboard move or the decay sweep without passing either. The
+        # verdict is re-derived from primary data; every unknown dispatches, and
+        # the finding is left untouched.
+        try:
+            from tools.kanban.promotion_gate import filter_promotable
+
+            # Its OWN connection, deliberately, unlike the two promotion doors:
+            # by this point the cycle has run reclaim, decomposition and the
+            # sibling/respawn filters on `conn`, and a read the gate issues must
+            # not be able to disturb that transaction. One pooled connection,
+            # and only on a cycle that actually has candidates.
+            result, _held = filter_promotable(result, door="_get_due_tasks")
+            for _tid, _v in (_held or {}).items():
+                # Once per card, not once per 60s cycle: a withheld card stays
+                # selectable, so an unconditional print is 1,440 lines a day.
+                if not _v.get("announced_before"):
+                    print(f"  Kanban: WITHHELD {_tid} — {_v.get('reason')}")
+        except Exception as _pg_exc:  # noqa: BLE001 — never wedge dispatch
+            logger.warning("promotion gate skipped: %s", _pg_exc)
+
         return result
     finally:
         conn.close()
