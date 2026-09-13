@@ -198,6 +198,8 @@ AWS API contract, not its performance characteristics.
 
 - `kpr-watch-21` — A refusal that names no remedy — `python tools/kanban/cli.py --reverify <task-id>`
 
+- `kpr-watch-22` — Nothing consumed `union_refused`: the rung had resolved 2 conflicts in its lifetime — `python -m tools.kanban.union_candidates` — `docs/reference/cards/kpr-watch-22.md`
+
 ### Python Dependencies
 See `requirements.txt`. Key: sqlite3, pathlib, json (stdlib); openai, anthropic, python-dotenv (optional); pyyaml, jinja2, flask, pytest (ICDEV™).
 

@@ -8127,6 +8127,27 @@ python -m tools.kanban.detector_findings --list          # browse the projection
 python -m tools.kanban.detector_findings --stats         # per-detector denominator: never_ran | unmeasurable | clean | findings
 python tools/genesis/daemon.py --reflex detector_findings_reflex   # the 6h reflex, once, through the daemon
 
+# Which UNDECLARED file is costing union_refused rows, and would a union have been RIGHT? (kpr-watch-22)
+python -m tools.kanban.union_candidates                  # 30 days, every candidate, with its per-hunk survey
+python -m tools.kanban.union_candidates --json
+python -m tools.kanban.union_candidates --window-hours 12   # tonight only
+python -m tools.kanban.union_candidates --attribute-only    # split the corpus; no git, no survey
+# NOTHING CONSUMED `pr_watcher.union_refused`: the rung had resolved TWO conflicts
+# in its lifetime against 37 refusals in twelve hours, and that action name had
+# exactly ONE mention outside its writer -- a docstring -- so an undeclared
+# append-shaped file was only ever found by a human reading audit rows by hand.
+# ATTRIBUTION IS TO THE UNDECLARED MEMBER: a refusal names the WHOLE conflict set
+# and one undeclared file refuses the set, so CLAUDE.md (declared since
+# kpr-watch-14) is named in 51 of the 30-day rows and caused none of them.
+# Candidacy is re-asked of the shipped `match_declaration` per file, so a declared
+# file can never be proposed. A hunk that was `refused` or `unanchorable` COMPARED
+# NOTHING, so `lost_content` is None -- never 0 -- and a file with no decisive hunk
+# is `unmeasurable` and files NO card. The SHAPE is reported with its count and is
+# not a veto: CLAUDE.md (1 of 15 hunks rewrite base) and args/pinned_artifacts.yaml
+# (1 of 2) were BOTH correctly declared by hand. Consumed as the sixth detector on
+# detector_findings_reflex; the card PROPOSES the one-line declaration and a human
+# adds it -- nothing writes `union_resolver.files`, pinned by an AST test.
+
 # Is that detector card still WORK, at the moment it is promoted? (autonomy-act-07)
 python -m tools.kanban.promotion_gate --check task-det-04931fe8de   # re-derive one card's verdict
 python -m tools.kanban.promotion_gate --records --json              # every OPEN detector card's verdict
@@ -9756,4 +9777,5 @@ commands, its measurements and its refusals.
 | `kpr-watch-19` | The resume queue has a consumer on the executor that RUNS, and is ONE directory from every checkout | `python -m tools.ci.resume_delivery --survey` | [kpr-watch-19.md](cards/kpr-watch-19.md) |
 | `xrv-cost-05` | Every `tools/call` Claude Code makes leaves ONE audit row, counted apart from Studio's | `python -m tools.awareness.capability_consumption --class mcp_dispatch_tool --json` | [xrv-cost-05.md](cards/xrv-cost-05.md) |
 | `kpr-watch-21` | A refusal that names no remedy: the done-gate says what is wrong, not what clears it | `python tools/kanban/cli.py --reverify <task-id>` | [kpr-watch-21.md](cards/kpr-watch-21.md) |
+| `kpr-watch-22` | Nothing consumed `union_refused`: the rung had resolved 2 conflicts in its lifetime | `python -m tools.kanban.union_candidates` | [kpr-watch-22.md](cards/kpr-watch-22.md) |
 | `kpr-watch-20` | The artifact-pin pair is DECLARED, and the survey that armed it counts HUNKS | `python -m tools.kanban.artifact_pin_union_survey` | [kpr-watch-20.md](cards/kpr-watch-20.md) |

@@ -1,0 +1,8 @@
+# kpr-watch-22 -- nothing consumed `pr_watcher.union_refused`; `union_candidate`
+# is the sixth detector on the act-02 path.
+# Every test here drives the survey through an INJECTED `survey_fn` and the
+# corpus through injected rows: no git history and no board. That is deliberate
+# for the same reason kpr-watch-20 recorded -- the gated run checks out at depth
+# 1, so a test replaying real merge history would report UNMEASURABLE and pass,
+# which is a perfect score over an empty denominator (rem-hyg-13).
+tests/kanban/test_union_candidates.py

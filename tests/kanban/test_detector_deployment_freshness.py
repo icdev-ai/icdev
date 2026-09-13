@@ -223,8 +223,10 @@ def test_consume_hands_every_detector_the_dry_run_flag(monkeypatch):
 def test_the_detector_is_in_the_registry_and_the_dispatch_table():
     assert df.DETECTOR_DEPLOYMENT_FRESHNESS in df.DETECTORS
     assert df.DEFAULT_RUNNERS[df.DETECTOR_DEPLOYMENT_FRESHNESS] is df.run_deployment_freshness
-    assert list(df.DEFAULT_RUNNERS)[-1] == df.DETECTOR_DEPLOYMENT_FRESHNESS, \
-        "it leaves the database for git and runs last, after the cheap ones committed"
+    assert list(df.DEFAULT_RUNNERS)[-2:] == [df.DETECTOR_DEPLOYMENT_FRESHNESS,
+                                             df.DETECTOR_UNION_CANDIDATE], \
+        ("both leave the database for git and run LAST, after the cheap ones have "
+         "committed; kpr-watch-22 appended union_candidate behind this one")
 
 
 def test_it_has_a_blurb_like_every_other_detector():
