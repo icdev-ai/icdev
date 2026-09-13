@@ -84,4 +84,13 @@ public.ecr.aws/amazonlinux/amazonlinux@sha256:a0646b8bd35abf5ca3ab94d8cdb5691b90
 rancher/k3s@sha256:5e0707cfd1239b358ef73f3254bc3eadc027dd30cd5ec6ca41e29e47652a1b8c
 
 # ecr -- registry:2
+#   The tag is floci's DEFAULT, exposed as its OWN deployment property
+#   `floci.services.ecr.registry-image` -- not an AWS API field like RDS
+#   EngineVersion, and not a hard constant like the valkey line either
+#   (measured 2026-09-13). registry 3 is REAL and it WORKS: pointing that
+#   property at `registry:3` made floci pull and run distribution 3.1.1. But
+#   nothing in this repository sets the property, so the DEFAULT path still
+#   pulls `registry:2` -- vendoring 3 instead of this line leaves that path
+#   unvendored. A deployment that sets the property vendors the tag it names,
+#   TOO. See docs/audits/artifact-fresh-54fe12d6ad-ecr-registry-pin.md.
 registry@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373
