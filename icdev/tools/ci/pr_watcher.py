@@ -499,6 +499,25 @@ def _set_task_status(get_conn, task_id: str, status: str, reason: str = "") -> b
         except Exception:  # noqa: BLE001
             pass
 
+def reverify_remedy(task_id: str) -> str:
+    """The command that clears a done-gate hold, as a sentence a refusal can carry.
+
+    kpr-watch-21. ``_enforced_done_ok`` had refused 10,542 times with a reason
+    that was accurate and ACTIONLESS — "awaiting ICDEV done-verification" reads
+    as *wait*, and waiting never clears it: nothing writes a
+    ``kanban_verifications`` row except a dispatch, so the verification is
+    something an operator RUNS. The command was recoverable only from session
+    memory. Every other refusal in this tree names its repair (mfx-ci-04's
+    bootstrap gate names the ``git add``, the census gates print the ratchet
+    command, ``restore_acts`` names the undo per act); this rung simply did not.
+
+    Message only. The gate's predicate and its fail-closed posture are unchanged.
+    """
+    return (f"clear it with: python tools/kanban/cli.py --reverify {task_id} "
+            f"(--dry-run to preview) — it re-derives the verdict from the "
+            f"branch's git state and appends it")
+
+
 def _enforced_done_ok(get_connection, task_id: str) -> Tuple[bool, str]:
     """Enforced done-gate for auto-merge (Governed Delivery Pipeline).
 
@@ -511,6 +530,15 @@ def _enforced_done_ok(get_connection, task_id: str) -> Tuple[bool, str]:
     Returns ``(ok, reason)``. Enforcement OFF → always ``ok`` (no new blocker,
     behavior unchanged). **Fail-closed** under enforcement: a missing, failed, or
     unreadable verification holds the merge (the watcher retries next cycle).
+
+    Each refusal names its own remedy (kpr-watch-21), and they are NOT the same
+    remedy — ``--reverify`` is right for three of the four holds and WRONG for
+    the fourth. ``reverify_is_allowed`` refuses to refresh a
+    ``review_passed=false`` row because a fresh NULL verdict would launder a real
+    conformance failure, so naming ``--reverify`` there would send a reader to a
+    command that is designed to refuse them. That branch names the audited
+    bypass instead. The reasons keep their ``enforced gate:`` prefix, which is
+    what ``merge_stall`` classifies on.
     """
     if os.environ.get("KANBAN_PIPELINE_ENFORCE", "0").strip().lower() not in ("1", "true", "yes"):
         return True, "enforcement off"
@@ -524,18 +552,33 @@ def _enforced_done_ok(get_connection, task_id: str) -> Tuple[bool, str]:
         )
         row = cur.fetchone()
     except Exception as exc:  # noqa: BLE001 — hold the merge, don't merge blind
-        return False, f"enforced gate: verification unreadable, holding ({exc})"
+        # NOT a --reverify case: the verification STORE is unreadable, and
+        # --reverify reads the same store. Naming it would send the reader into
+        # the same failure.
+        return False, (f"enforced gate: verification unreadable, holding ({exc}) "
+                       f"— this is a storage fault, not a task state: check the "
+                       f"database is reachable; the watcher retries next cycle")
     if not row:
-        return False, "enforced gate: awaiting ICDEV done-verification"
+        return False, ("enforced gate: awaiting ICDEV done-verification — nothing "
+                       "writes that row except a dispatch, so it will not arrive "
+                       f"on its own; {reverify_remedy(task_id)}")
     result = str((row["result"] if isinstance(row, dict) else row[0]) or "").lower()
     review_passed = row["review_passed"] if isinstance(row, dict) else row[1]
     if result == "failed":
-        return False, "enforced gate: ICDEV verification result=failed (e.g. conformance)"
+        return False, ("enforced gate: ICDEV verification result=failed (e.g. "
+                       f"conformance) — {reverify_remedy(task_id)}")
     if review_passed == 0:  # int 0 or bool False — conformance failed (None = not judged, allowed)
-        return False, "enforced gate: conformance review_passed=false"
+        # The ONE hold --reverify cannot clear, and saying so is the point:
+        # `reverify_is_allowed` refuses this case outright ("a refresh would
+        # launder it"). The remedy is to fix what conformance found.
+        return False, ("enforced gate: conformance review_passed=false — "
+                       "--reverify will NOT clear this (it refuses to launder a "
+                       "conformance failure): address the finding and re-dispatch, "
+                       "or --force-done --reason '<why>' (audit-logged)")
     if result in ("pass", "passed", "bypassed"):
         return True, f"enforced gate passed (result={result})"
-    return False, f"enforced gate: verification not yet passed (result={result or 'pending'})"
+    return False, (f"enforced gate: verification not yet passed "
+                   f"(result={result or 'pending'}) — {reverify_remedy(task_id)}")
 
 
 def _latest_verification(get_connection, task_id: str) -> Optional[dict]:

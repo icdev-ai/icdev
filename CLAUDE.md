@@ -195,6 +195,9 @@ AWS API contract, not its performance characteristics.
 
 - `kpr-watch-20` — The artifact-pin pair is DECLARED, and the survey that armed it counts HUNKS — `python -m tools.kanban.artifact_pin_union_survey` — `docs/reference/cards/kpr-watch-20.md`
 
+
+- `kpr-watch-21` — A refusal that names no remedy — `python tools/kanban/cli.py --reverify <task-id>`
+
 ### Python Dependencies
 See `requirements.txt`. Key: sqlite3, pathlib, json (stdlib); openai, anthropic, python-dotenv (optional); pyyaml, jinja2, flask, pytest (ICDEV™).
 
