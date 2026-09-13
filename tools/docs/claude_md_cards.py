@@ -54,6 +54,7 @@ BASE_DIR = repo_root(__file__)
 
 CLAUDE_MD = BASE_DIR / "CLAUDE.md"
 CARDS_DIR = BASE_DIR / "docs" / "reference" / "cards"
+COMMANDS_MD = BASE_DIR / "docs" / "reference" / "commands.md"
 
 EMDASH = chr(8212)
 COMMANDS_HEADING = "### Essential Commands"
@@ -179,43 +180,54 @@ def _is_marking(line: str) -> bool:
     return "//" in body and len(body) <= 40
 
 
-def _record_index_line(path: Path) -> Optional[str]:
-    """An index line for a record ALREADY on disk, read from its own header.
+def _parse_record_header(path: Path):
+    """(ids, title, command) from a record, or None when it has no heading.
 
-    A record's first line is `# <title> (<ids>)` -- the same shape an inline
-    essay's header has, because `_record_text` wrote it -- so the SAME
-    `ESSAY_HEADER` parses it and there is no second spelling of what a card
-    header is. A file whose first line does not match is left alone and
-    reported: inventing an index entry for a document this tool does not
-    understand is worse than not indexing it.
+    THE FILENAME IS THE CARD ID. That is a fact, not a guess -- every test keys
+    on `cards/<stem>.md` -- so the id is never parsed out of the heading and a
+    record cannot be unregisterable merely for writing its heading differently.
+    Two shapes are in the wild and BOTH must read:
+
+        # <title> (<ids>)     the canonical form, 84 of 86 records
+        # <id> -- <title>     what two recent workers wrote
+
+    Only the canonical form carries EXTRA ids (a record for several cards), so
+    it is tried first and its id list is preferred; otherwise the stem stands
+    alone. A record with no `# ` heading at all is still None -- that one this
+    tool genuinely cannot read.
     """
     try:
         head = path.read_text(encoding="utf-8").splitlines()
     except OSError:
         return None
-    # SKIP A CLASSIFICATION BANNER. `# CUI // SP-CTI` is a required marking, not
-    # a heading, and two records already carry one; taking the first non-blank
-    # line made every marked record unindexable.
-    m = None
+
+    heading = None
     for ln in head[:6]:
         if not ln.strip() or _is_marking(ln):
             continue
-        m = ESSAY_HEADER.match(ln)
+        if ln.startswith("# "):
+            heading = ln
         break
-    if not m:
+    if heading is None:
         return None
-    ids = [t.strip() for t in m.group("ids").split(",") if t.strip()]
+
+    ids: List[str] = []
+    m = ESSAY_HEADER.match(heading)
+    if m:
+        ids = [t.strip() for t in m.group("ids").split(",") if t.strip()]
+        title = m.group("title").strip()
+    else:
+        title = heading[2:].strip()
+        # `# <id> -- <title>`: drop the id, it is the stem and is already known.
+        for dash in (EMDASH, "--"):
+            prefix = path.stem + " " + dash + " "
+            if title.startswith(prefix):
+                title = title[len(prefix):].strip()
+                break
     if not ids:
-        return None
-    # THE INDEX CITES A COMMAND, NOT THE RECORD'S PATH. The shipped lines end at
-    # the entry point (`- `id` -- title -- `cmd``), and
-    # test_every_indexed_command_appears_in_its_own_record reads the first
-    # backticked token after the id and requires the RECORD to contain it -- so
-    # emitting the path there asserts the record quotes its own filename, which
-    # it does not. A record with no command block gets no command: an index that
-    # invents an entry point is worse than one that omits it.
-    cmd = ""
-    fenced = False
+        ids = [path.stem]
+
+    cmd, fenced = "", False
     for ln in head:
         if ln.startswith("```"):
             if fenced:
@@ -223,11 +235,21 @@ def _record_index_line(path: Path) -> Optional[str]:
             fenced = True
             continue
         if fenced and ln.strip():
-            cmd = ln.strip()
+            # Drop a trailing inline comment: the index cites the ENTRY POINT,
+            # and the trimmed form is still a substring of the record, which is
+            # what test_every_indexed_command_appears_in_its_own_record checks.
+            cmd = ln.strip().split("  #", 1)[0].rstrip()
             break
-    rest = m.group("title").strip()
-    if cmd:
-        rest = f"{rest} {EMDASH} `{cmd}`"
+    return ids, title, cmd
+
+
+def _record_index_line(path: Path) -> Optional[str]:
+    """An index line for a record ALREADY on disk, from the shared parser."""
+    parsed = _parse_record_header(path)
+    if parsed is None:
+        return None
+    ids, title, cmd = parsed
+    rest = title if not cmd else f"{title} {EMDASH} `{cmd}`"
     return f"- `{', '.join(ids)}` {EMDASH} {rest}"
 
 
@@ -239,6 +261,71 @@ def _index_line(essay: Dict[str, Any]) -> str:
     if cmd:
         rest = f"{essay['title']} {EMDASH} `{cmd}` {EMDASH} `docs/reference/cards/{essay['slug']}.md`"
     return f"- `{', '.join(essay['ids'])}` {EMDASH} {rest}"
+
+
+#: A Cards-table row: ``| `ids` | title | `cmd` | [stem.md](cards/stem.md) |``
+COMMANDS_ROW = "| `{ids}` | {title} | {cmd} | [{stem}.md](cards/{stem}.md) |"
+
+
+def _commands_rows_present() -> Optional[set]:
+    """Record stems already linked from commands.md, or None if unreadable.
+
+    The test's predicate is a SUBSTRING -- `cards/<stem>.md` appearing anywhere
+    in the file -- so that is what is asked here rather than a second opinion
+    about what a table row looks like.
+    """
+    try:
+        body = COMMANDS_MD.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    return {p.stem for p in CARDS_DIR.glob("*.md")
+            if f"cards/{p.stem}.md" in body} if CARDS_DIR.exists() else set()
+
+
+def _commands_row(path: Path) -> Optional[str]:
+    """A Cards-table row for a record, from the SAME header the index uses."""
+    parsed = _parse_record_header(path)
+    if parsed is None:
+        return None
+    ids, title, cmd = parsed
+    return COMMANDS_ROW.format(
+        ids=", ".join(ids), title=title,
+        cmd=f"`{cmd}`" if cmd else "*(no CLI; see the record)*",
+        stem=path.stem)
+
+
+def _append_commands_rows(stems: List[str]) -> List[str]:
+    """Append a row per stem AFTER the table's last row. Returns what landed.
+
+    Anchored on the LAST line that is already a table row, so the row joins the
+    table rather than the end of the file -- and a commands.md with no Cards
+    table at all is left alone and reported, never guessed at.
+    """
+    if not stems:
+        return []
+    try:
+        lines = COMMANDS_MD.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    last = None
+    for i, ln in enumerate(lines):
+        if ln.startswith("| `") and "](cards/" in ln:
+            last = i
+    if last is None:
+        return []
+    added, rows = [], []
+    for stem in stems:
+        row = _commands_row(CARDS_DIR / f"{stem}.md")
+        if row is None:
+            continue
+        rows.append(row)
+        added.append(stem)
+    if not rows:
+        return []
+    out = lines[:last + 1] + rows + lines[last + 1:]
+    COMMANDS_MD.write_text("\n".join(out).rstrip() + "\n",
+                           encoding="utf-8", newline="\n")
+    return added
 
 
 def survey() -> Dict[str, Any]:
@@ -267,6 +354,12 @@ def survey() -> Dict[str, Any]:
         # Records on disk carrying no index line. `--check` must see these or a
         # card that ships its record directly drifts silently until CI says so.
         "unindexed_records": sorted(on_disk - indexed),
+        # The SECOND registration. `test_commands_md_lists_every_card`
+        # asserts it, and it was the manual half that reddened three
+        # consecutive PRs. None -- never [] -- when commands.md is
+        # unreadable: absence is not emptiness.
+        "unlisted_in_commands": (None if (_c := _commands_rows_present()) is None
+                                 else sorted(on_disk - _c)),
         "has_index_heading": idx is not None,
     }
 
@@ -282,7 +375,8 @@ def apply(dry_run: bool = False) -> Dict[str, Any]:
     # directly still needs its index line, and returning here is why the first
     # `--apply` after PR #2277 reported `changed: false` over a record it could
     # see was unindexed.
-    if not essays and not before.get("unindexed_records"):
+    if (not essays and not before.get("unindexed_records")
+            and not before.get("unlisted_in_commands")):
         return {**before, "changed": False, "reason": "no inline essay to move"}
 
     CARDS_DIR.mkdir(parents=True, exist_ok=True)
@@ -344,6 +438,12 @@ def apply(dry_run: bool = False) -> Dict[str, Any]:
             body_keep += [f"# {e['title']} ({', '.join(e['ids'])})"] + e["body"]
     out = lines[:lo] + body_keep + lines[hi:]
 
+    listed = _commands_rows_present()
+    rows_added = ([] if listed is None
+                  else _append_commands_rows(
+                      sorted({p.stem for p in CARDS_DIR.glob("*.md")} - listed)
+                      if CARDS_DIR.exists() else []))
+
     if new_index:
         idx2 = _index_bounds(out)
         if idx2:
@@ -354,6 +454,7 @@ def apply(dry_run: bool = False) -> Dict[str, Any]:
     return {"changed": True, "records_written": wrote, "trimmed": len(safe),
             "kept_inline": kept_inline, "index_lines_added": len(new_index),
             "unindexable_records": unindexable,
+            "commands_rows_added": rows_added,
             "bytes_before": before["bytes"], "bytes_after": after["bytes"],
             "inline_essays_after": after["inline_essays"]}
 

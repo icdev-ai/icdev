@@ -21,6 +21,7 @@ import pytest
 cards = importlib.import_module("tools.docs.claude_md_cards")
 
 NL = chr(10)
+EMDASH = chr(8212)
 
 
 def _tree(tmp_path: Path, fence_body: str, index: str = "") -> Path:
@@ -43,7 +44,17 @@ def _tree(tmp_path: Path, fence_body: str, index: str = "") -> Path:
 
 @pytest.fixture()
 def sandbox(tmp_path, monkeypatch):
+    """EVERY path the tool writes is redirected, not just the ones a test uses.
+
+    An earlier version patched CARDS_DIR only, so `apply()` appended fixture
+    rows (`aa-01`, `ee-05`) into the REAL docs/reference/commands.md and
+    `check_doc_command_paths` then refused two commands that never existed.
+    A test that can reach a tracked file will eventually write to it, so the
+    fixture closes every door rather than the door today's tests happen to open.
+    """
     monkeypatch.setattr(cards, "CARDS_DIR", tmp_path / "cards")
+    monkeypatch.setattr(cards, "COMMANDS_MD", tmp_path / "unset-commands.md")
+    monkeypatch.setattr(cards, "CLAUDE_MD", tmp_path / "unset-claude.md")
     return tmp_path
 
 
@@ -88,14 +99,14 @@ def test_a_header_after_a_blank_line_is_an_essay(sandbox, monkeypatch):
 
 
 def test_the_essay_is_removed_only_after_its_record_is_on_disk(sandbox, monkeypatch):
-    body = "cmd" + NL * 2 + "# One (aa-01)" + NL + "# prose" + NL + "python tools/one.py" + NL
+    body = "cmd" + NL * 2 + "# One (aa-01)" + NL + "# prose" + NL + "fixture-entrypoint --one" + NL
     monkeypatch.setattr(cards, "CLAUDE_MD", _tree(sandbox, body))
     out = cards.apply()
 
     record = cards.CARDS_DIR / "aa-01.md"
     assert record.exists(), "the record must be written"
     assert "prose" in record.read_text(encoding="utf-8")
-    assert "python tools/one.py" in record.read_text(encoding="utf-8"), (
+    assert "fixture-entrypoint --one" in record.read_text(encoding="utf-8"), (
         "the card's commands must travel with it")
     assert out["inline_essays_after"] == 0
     assert "cmd" in cards.CLAUDE_MD.read_text(encoding="utf-8"), "the prelude must survive"
@@ -214,7 +225,7 @@ def test_the_index_cites_a_command_only_when_the_record_has_one(sandbox, monkeyp
     _record(sandbox, "dd-04", "# Prose only (dd-04)" + NL * 2 + "no commands here" + NL)
     _record(sandbox, "ee-05",
             "# With a command (ee-05)" + NL * 2 + "```bash" + NL
-            + "python -m tools.thing --json" + NL + "```" + NL)
+            + "fixture-entrypoint --thing" + NL + "```" + NL)
     cards.apply()
     body = cards.CLAUDE_MD.read_text(encoding="utf-8")
 
@@ -224,7 +235,7 @@ def test_the_index_cites_a_command_only_when_the_record_has_one(sandbox, monkeyp
     assert ".md`" not in prose, "the record's path is not its command"
 
     withcmd = next(ln for ln in body.splitlines() if ln.startswith("- `ee-05`"))
-    assert "`python -m tools.thing --json`" in withcmd
+    assert "`fixture-entrypoint --thing`" in withcmd
 
 
 def test_an_unparseable_record_is_reported_not_guessed(sandbox, monkeypatch):
@@ -235,3 +246,103 @@ def test_an_unparseable_record_is_reported_not_guessed(sandbox, monkeypatch):
     out = cards.apply()
     assert out["unindexable_records"] == ["ff-06"]
     assert "- `ff-06`" not in cards.CLAUDE_MD.read_text(encoding="utf-8")
+
+
+# ── registering a card is TWO edits, not one ────────────────────────────────
+
+
+def _commands_md(sandbox, rows: str = "") -> Path:
+    md = sandbox / "commands.md"
+    md.write_text(
+        "# Commands" + NL * 2 + "## Cards" + NL * 2
+        + "| id | what | command | record |" + NL
+        + "|----|------|---------|--------|" + NL
+        + "| `zz-99` | An existing card | `fixture-entrypoint --zz` | "
+          "[zz-99.md](cards/zz-99.md) |" + NL
+        + (rows.rstrip(NL) + NL if rows else ""),
+        encoding="utf-8")
+    return md
+
+
+def test_a_record_is_registered_in_BOTH_places(sandbox, monkeypatch):
+    """THE GAP THAT REDDENED THREE CONSECUTIVE PRs. A card must carry an index
+    line in CLAUDE.md AND a row in commands.md; the tool wrote only the first,
+    so the second stayed a step a human had to remember after every card --
+    #2277, #2281 and xrv-cost-05 each went red on exactly that missing row.
+    """
+    monkeypatch.setattr(cards, "CLAUDE_MD", _tree(sandbox, "cmd" + NL))
+    monkeypatch.setattr(cards, "COMMANDS_MD", _commands_md(sandbox))
+    _record(sandbox, "aa-01",
+            "# A measured thing (aa-01)" + NL * 2 + "```bash" + NL
+            + "fixture-entrypoint --aa" + NL + "```" + NL)
+
+    before = cards.survey()
+    assert before["unindexed_records"] == ["aa-01"]
+    assert before["unlisted_in_commands"] == ["aa-01"]
+
+    out = cards.apply()
+    assert out["index_lines_added"] == 1
+    assert out["commands_rows_added"] == ["aa-01"]
+    assert "- `aa-01`" in cards.CLAUDE_MD.read_text(encoding="utf-8")
+    body = cards.COMMANDS_MD.read_text(encoding="utf-8")
+    assert "[aa-01.md](cards/aa-01.md)" in body, "the row the test asserts"
+    assert "| `zz-99` |" in body, "the existing table survived"
+    assert cards.apply()["changed"] is False, "must be idempotent"
+
+
+def test_both_record_header_shapes_read(sandbox, monkeypatch):
+    """TWO SHAPES ARE IN THE WILD and the id is the FILENAME, never parsed out
+    of the heading -- a record cannot become unregisterable for writing its
+    heading differently, which is how kpr-watch-22 was reported unindexable.
+    """
+    monkeypatch.setattr(cards, "CLAUDE_MD", _tree(sandbox, "cmd" + NL))
+    monkeypatch.setattr(cards, "COMMANDS_MD", _commands_md(sandbox))
+    _record(sandbox, "bb-02", "# Canonical shape (bb-02)" + NL * 2 + "x" + NL)
+    _record(sandbox, "cc-03",
+            "# CUI // SP-CTI" + NL * 2 + "# cc-03 " + EMDASH
+            + " id-first shape" + NL * 2 + "x" + NL)
+
+    out = cards.apply()
+    assert out["unindexable_records"] == []
+    body = cards.CLAUDE_MD.read_text(encoding="utf-8")
+    assert "- `bb-02` " + EMDASH + " Canonical shape" in body
+    # the id prefix is dropped: it is the stem and is already the first field
+    assert "- `cc-03` " + EMDASH + " id-first shape" in body
+
+
+def test_the_cited_command_drops_its_trailing_comment(sandbox, monkeypatch):
+    """The index cites the ENTRY POINT. The trimmed form is still a substring of
+    the record, which is what the index/record agreement test checks."""
+    monkeypatch.setattr(cards, "CLAUDE_MD", _tree(sandbox, "cmd" + NL))
+    monkeypatch.setattr(cards, "COMMANDS_MD", _commands_md(sandbox))
+    _record(sandbox, "dd-04",
+            "# Noisy command (dd-04)" + NL * 2 + "```bash" + NL
+            + "fixture-entrypoint --dd                  # 30 days, with a survey"
+            + NL + "```" + NL)
+    cards.apply()
+    line = next(ln for ln in cards.CLAUDE_MD.read_text(encoding="utf-8").splitlines()
+                if ln.startswith("- `dd-04`"))
+    assert "`fixture-entrypoint --dd`" in line
+    assert "30 days" not in line
+
+
+def test_an_unreadable_commands_md_is_unmeasurable_not_empty(sandbox, monkeypatch):
+    """None, never [] -- absence is not emptiness, and a missing file must not
+    read as 'every card is already listed'."""
+    monkeypatch.setattr(cards, "CLAUDE_MD", _tree(sandbox, "cmd" + NL))
+    monkeypatch.setattr(cards, "COMMANDS_MD", sandbox / "nope.md")
+    _record(sandbox, "ee-05", "# Orphan (ee-05)" + NL * 2 + "x" + NL)
+    assert cards.survey()["unlisted_in_commands"] is None
+
+
+def test_a_commands_md_with_no_cards_table_is_left_alone(sandbox, monkeypatch):
+    """No anchor row means no table; appending to the end of the file would put
+    a table row in whatever section happened to be last."""
+    monkeypatch.setattr(cards, "CLAUDE_MD", _tree(sandbox, "cmd" + NL))
+    md = sandbox / "commands.md"
+    md.write_text("# Commands" + NL * 2 + "Nothing tabular here." + NL, encoding="utf-8")
+    monkeypatch.setattr(cards, "COMMANDS_MD", md)
+    _record(sandbox, "ff-06", "# Orphan (ff-06)" + NL * 2 + "x" + NL)
+    out = cards.apply()
+    assert out["commands_rows_added"] == []
+    assert md.read_text(encoding="utf-8").rstrip().endswith("Nothing tabular here.")
