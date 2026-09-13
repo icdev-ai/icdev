@@ -416,6 +416,9 @@ def test_the_shipped_ec2_pin_is_decided_by_floci_not_by_amazon_linux_releases():
     """
     entry = next(e for e in AF.load_config()["artifacts"] if e["name"] == "ec2-amazonlinux")
     assert entry["pinned"] == "2023"
+    assert entry["decided_by"] == AF.DECIDED_BY_CONSUMER
+    assert entry["consumer"] == "floci"
+
 
 def test_the_shipped_valkey_pin_is_decided_by_floci_which_hard_codes_the_tag():
     """artifact-fresh-ee3339893b. Harder than the postgres case: that one is
@@ -427,6 +430,9 @@ def test_the_shipped_valkey_pin_is_decided_by_floci_which_hard_codes_the_tag():
     entry = next(e for e in AF.load_config()["artifacts"]
                  if e["name"] == "elasticache-valkey")
     assert entry["pinned"] == "8"
+    assert entry["decided_by"] == AF.DECIDED_BY_CONSUMER
+    assert entry["consumer"] == "floci"
+
 
 def test_the_shipped_mysql_pin_is_decided_by_floci_not_by_mysql_releases():
     """artifact-fresh-da63da118f. MEASURED 2026-09-12: a default
@@ -435,6 +441,9 @@ def test_the_shipped_mysql_pin_is_decided_by_floci_not_by_mysql_releases():
     acting on that card would drop the default path out of the air-gap bundle."""
     entry = next(e for e in AF.load_config()["artifacts"] if e["name"] == "rds-mysql")
     assert entry["pinned"] == "8.0.36"
+    assert entry["decided_by"] == AF.DECIDED_BY_CONSUMER
+    assert entry["consumer"] == "floci"
+
 
 def test_the_shipped_opensearch_pin_is_decided_by_floci_not_by_opensearch_releases():
     """artifact-fresh-a7486018c7. Stronger than the postgres case: floci 2.0.1
@@ -445,6 +454,34 @@ def test_the_shipped_opensearch_pin_is_decided_by_floci_not_by_opensearch_releas
     image the emulator cannot be made to pull."""
     entry = next(e for e in AF.load_config()["artifacts"] if e["name"] == "opensearch")
     assert entry["pinned"] == "2.19.5"
+    assert entry["decided_by"] == AF.DECIDED_BY_CONSUMER
+    assert entry["consumer"] == "floci"
+
+
+def test_the_shipped_ecr_registry_pin_is_decided_by_floci_though_registry_3_works():
+    """artifact-fresh-54fe12d6ad, and the ONLY entry of this family where the
+    newer release is both reachable and working -- so the reason it is refused
+    is different from all four siblings above, and swapping the reasons in
+    would get it wrong in both directions.
+
+    floci names the ECR backing registry through a property of ITS OWN
+    deployment, `floci.services.ecr.registry-image`, and uses the value as the
+    FULL REF. MEASURED 2026-09-13 against a live floci 2.0.1: a default
+    CreateRepository logged `ImageCacheService  Image already present locally,
+    skipping pull: registry:2` and ran `service=registry version=2.8.3`; the
+    property set to `registry:99.99` logged `Pulling image: registry:99.99` and
+    404ed, proving the value reaches the ref verbatim; and set to `registry:3`
+    floci pulled and ran distribution 3.1.1 SUCCESSFULLY.
+
+    So this is not the valkey case (3 is not unreachable) and not the postgres
+    case either (no AWS API field reaches it -- only an operator can). It is
+    refused because NOTHING IN THIS REPOSITORY SETS THAT PROPERTY, so the
+    default path pulls `registry:2`; re-cutting vendor/images to 3 without also
+    setting it would vendor an image floci is never asked for and drop the one
+    it always pulls.
+    """
+    entry = next(e for e in AF.load_config()["artifacts"] if e["name"] == "ecr-registry")
+    assert entry["pinned"] == "2"
     assert entry["decided_by"] == AF.DECIDED_BY_CONSUMER
     assert entry["consumer"] == "floci"
 

@@ -154,8 +154,10 @@
 # driving RunInstances, and it is converted BELOW with the log lines written
 # down -- including a finding postgres did not have: `amazonlinux:2023` is a
 # ROLLING tag whose digest moved under it. VALKEY followed, and is measured in
-# the block below. Three remain: mysql, registry, opensearch. Do not flip them
-# from this paragraph; measure each.
+# the block below. Three remained when this paragraph was written -- mysql,
+# registry, opensearch -- and all three have since been measured on their own
+# cards (da63da118f, 54fe12d6ad, a7486018c7), which is why none is left to name
+# here. Do not flip a pin from this paragraph; measure each.
 
 # A CONSTANT IS NOT A DEFAULT, AND `elasticache-valkey` IS THE HARDER CASE
 # ------------------------------------------------------------------------
@@ -181,6 +183,72 @@
 # `decided_by: consumer` exists to catch, so the pin files were re-cut to the
 # observed digest. Record:
 # docs/audits/artifact-fresh-ee3339893b-elasticache-valkey-pin.md.
+#
+# A DEFAULT AN OPERATOR CAN TURN, AND THE ONE CASE WHERE THE NEWER RELEASE WORKS
+# -------------------------------------------------------------------------------
+# (artifact-fresh-54fe12d6ad, MEASURED 2026-09-13 -- the last of the five.) The
+# four blocks above resolve to two shapes: a DEFAULT a caller can override
+# through an AWS API field (rds-postgres, rds-mysql, opensearch) and a CONSTANT
+# no caller can reach (elasticache-valkey, and ec2-amazonlinux's fallback).
+# `ecr-registry` is a THIRD, and reading it as either of the first two gets the
+# reasoning wrong.
+#
+# floci names the ECR backing registry through a property of ITS OWN
+# deployment, `floci.services.ecr.registry-image`
+# (`FLOCI_SERVICES_ECR_REGISTRY_IMAGE`), and uses the value as the FULL REF --
+# not a version substituted into a template. MEASURED against a live floci
+# 2.0.1 driven with boto3:
+#
+#     CreateRepository()                      -> `ImageCacheService  Image
+#       already present locally, skipping pull: registry:2`, then
+#       `EcrRegistryManager  Started ECR backing registry floci-ecr-registry on
+#       host port 5100`; the container reported `service=registry
+#       version=2.8.3`.
+#     property = "registry:99.99"             -> `Pulling image: registry:99.99`
+#       and the call failed with a registry 404 -- so the property reaches the
+#       ref verbatim, and it is not read from any request field.
+#     property = "registry:3"                 -> floci pulled it and ran
+#       distribution `version=3.1.1`; CreateRepository SUCCEEDED.
+#
+# The shipped binary carries exactly ONE registry image string, `registry:2`, at
+# three sites -- the same grep that showed valkey to be a constant -- so `2` is
+# the built-in default rather than something this tree chose.
+#
+# SO THIS IS THE ONE ENTRY OF THE FIVE WHERE THE NEWER RELEASE IS BOTH
+# REACHABLE AND WORKING. opensearch 3.8 is refused with a ValidationException;
+# valkey 9 cannot be requested at all; here, registry 3 runs. The pin still does
+# not move, and the reason is the postgres reason rather than the valkey one:
+# nothing in this repository sets that property, so the path every deployment
+# here actually takes pulls `registry:2`. Re-cutting vendor/images to 3 without
+# also setting the property would vendor an image floci is never asked for and
+# drop the one it always pulls -- the first disconnected CreateRepository would
+# then fail on a pull, which is the precise failure vendor/images exists to
+# prevent. A deployment that DOES set the property vendors the tag it names,
+# TOO; that is the declared-configuration rule, one level out from the service.
+#
+# WITH THIS ENTRY THE `behind` SET IS EMPTY, AND THAT IS WORTH DISTRUSTING.
+# MEASURED immediately after this change: 16 declared / 16 current / 0 behind /
+# 0 unmeasurable. Every card in this family enumerated the survivors instead of
+# counting them, precisely so an empty list would have to be earned; this one is
+# the first to have nothing to enumerate, so here is what it does NOT mean.
+#
+#   * It is not "no pin is stale". Six of the sixteen are current because
+#     `decided_by: consumer` says upstream's release train is the wrong
+#     question for them, and each still carries the release it declined --
+#     `rds-postgres 18.6-alpine`, `rds-mysql 26.7.0`, `elasticache-valkey 9`,
+#     `opensearch 3.8.0`, `ec2-amazonlinux 2027`, `ecr-registry 3`. Not chasing
+#     a release is not the same as not knowing about it, and a reader who takes
+#     `current: 16` as "nothing newer exists" has read this file backwards.
+#   * It is not a stable state. `lambda-python` reports `digest_drift: true`
+#     while reporting `current`, because it is decided on `version_tag` and no
+#     greater tag of its shape was found -- the tag is serving bytes
+#     vendor/images did not record, and the survey's own verdict does not say
+#     so. That is a real gap in the DECISION RULE, not in this pin, and it is
+#     named here rather than quietly left in a JSON field. It owns its own card.
+#   * The earlier blocks in this file enumerate five and four `behind` entries
+#     on their own measured dates. Those lists are HISTORY, correct when
+#     written; re-run the survey rather than trusting any of them, this one
+#     included.
 #
 # WHY `pypi` AND `package` ARE HERE when the card sketched
 # image|binary x dockerhub|ghcr|github_releases: `testcontainers-floci` is a
@@ -401,12 +469,29 @@ artifacts:
       digest drift, and here that is a live signal rather than a formality: this
       major-version tag is ROLLING, so a re-vendor re-measures it.
 
+  # DELIBERATELY KEPT at floci 2.0.1's default ECR backing registry. The one
+  # entry of this family where the newer release is REACHABLE AND WORKS, and it
+  # is still not this pin -- see "A DEFAULT AN OPERATOR CAN TURN" above; the
+  # decision record is
+  # docs/audits/artifact-fresh-54fe12d6ad-ecr-registry-pin.md.
   - name: ecr-registry
     kind: image
     ref: registry
     pinned: "2"
     pin_source: "vendor/images/images-floci-runtime.txt"
     upstream: dockerhub
+    decided_by: consumer
+    consumer: floci
+    note: >-
+      floci names the ECR backing registry through its OWN deployment property
+      `floci.services.ecr.registry-image`, whose default is `registry:2`
+      (MEASURED 2026-09-13, artifact-fresh-54fe12d6ad). No AWS API field
+      reaches it, so no caller can vary it the way RDS EngineVersion varies the
+      postgres tag -- but unlike the valkey constant an OPERATOR can, and
+      `registry:3` genuinely works (floci ran distribution 3.1.1 on it). This
+      repository sets no override, so the default path pulls `registry:2` and
+      vendoring 3 instead would unvendor it. A deployment that sets the
+      property vendors the tag it names as well.
 
   # -- The one non-image pin this card seeds.
   - name: testcontainers-floci

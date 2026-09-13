@@ -215,6 +215,31 @@ images:
       was pulled during the ECS/EKS probes, not by an explicit ECR call, so it
       is attributed to `ecr` and required whenever ECS or EKS is used — see
       `implies` below.
+      RE-MEASURED 2026-09-13 (artifact-fresh-54fe12d6ad) against a live floci
+      2.0.1, this time by an EXPLICIT ECR call: `CreateRepository` logged
+      `ImageCacheService  Image already present locally, skipping pull:
+      registry:2`, then `EcrRegistryManager  Started ECR backing registry
+      floci-ecr-registry on host port 5100`, and the container reported
+      `service=registry version=2.8.3`. So the row is reachable through the ECR
+      API in its own right, not only as a side effect of ECS/EKS.
+      `registry:2` is floci's DEFAULT, and this is a THIRD shape of default,
+      distinct from both siblings above. It is not an AWS API field like RDS
+      EngineVersion — no boto3 call reaches it — and it is not a hard constant
+      like `valkey/valkey:8` either: floci exposes the FULL REF as its own
+      deployment property `floci.services.ecr.registry-image`
+      (`FLOCI_SERVICES_ECR_REGISTRY_IMAGE`), and the value is used verbatim.
+      MEASURED both ways: with the property set to `registry:99.99` floci logged
+      `Pulling image: registry:99.99` and failed the call with a registry 404,
+      and with it set to `registry:3` floci pulled and ran distribution 3.1.1
+      successfully. So `registry:3` WORKS here — unlike opensearch 3.8, which
+      floci refuses, and valkey 9, which it cannot be made to request. It is
+      still not this row: nothing in this repository sets that property, so the
+      default path pulls `registry:2`, and vendoring 3 INSTEAD of this line
+      would leave the path every deployment here actually takes unvendored. A
+      deployment that DOES set the property must vendor the tag it names, the
+      same declared-configuration rule this file's header states for Lambda
+      runtimes and RDS EngineVersion. See
+      docs/audits/artifact-fresh-54fe12d6ad-ecr-registry-pin.md.
 
 # ECS pulled NO runtime base of its own during the measured run: the only image
 # it fetched was the one its task definition named. So `ecs` requires nothing
