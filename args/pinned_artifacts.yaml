@@ -300,6 +300,14 @@ artifacts:
     note: >-
       flx-ci-01 measured the digest on 2026-09-05 against a 2026-09-01 release.
       This entry is the reason the card exists: nothing ever re-asked upstream.
+      DELIBERATELY KEPT at 2.0.1 past upstream's 2.1.0 (artifact-fresh-1f206ea0ad,
+      2026-09-15): 2.1.0's release notes touch the ECR backing-registry lifecycle
+      and the RDS Aurora/MySQL image-tag mapping -- the exact surfaces the six
+      `decided_by: consumer` entries below and args/floci_runtime_images.yaml were
+      MEASURED against on a live 2.0.1. This is the root every one of those
+      measurements was taken against; moving it needs the same drive-and-observe
+      re-measurement those cards each did, not a tag edit. See
+      docs/audits/artifact-fresh-1f206ea0ad-floci-pin.md.
 
   # -- The three sibling emulators. Compose-tagged, NOT digest-pinned: no
   # vendor/images topic exists for them, so `digest_drift` is unmeasurable and
