@@ -170,7 +170,7 @@ images:
       re-measure rather than assume.
 
   - ref: "public.ecr.aws/amazonlinux/amazonlinux:2023"
-    digest: "sha256:a0646b8bd35abf5ca3ab94d8cdb5691b9024e19c357531eeefd0ac4762836438"
+    digest: "sha256:155687eb8e1f156da67beda919f1ca4dab36a9f6fc7576cc514d7773b7d6a311"
     service: ec2
     variant: null
     mutable_tag: true
@@ -194,10 +194,12 @@ images:
       EngineVersion.
       (2) The DIGEST MOVES UNDER THIS TAG. Upstream rebuilds the major-version
       tag: it served AL 2023.12.20260831 (sha256:fb70bd54...) when this table was
-      first measured and AL 2023.12.20260909 (the digest above) on 2026-09-12.
-      Flagged `mutable_tag` for the same reason redpanda and k3s are -- a
-      re-vendor must re-measure rather than assume -- even though, unlike those
-      two, the tag does carry an ordering.
+      first measured, AL 2023.12.20260909 on 2026-09-12, and AL 2023.12.20260914
+      (the digest above) RE-MEASURED 2026-09-15 (artifact-fresh-f1edf3d78e) by
+      `docker pull` + `docker image inspect` of the live tag. Flagged
+      `mutable_tag` for the same reason redpanda and k3s are -- a re-vendor must
+      re-measure rather than assume -- even though, unlike those two, the tag
+      does carry an ordering.
 
   - ref: "rancher/k3s:latest"
     digest: "sha256:5e0707cfd1239b358ef73f3254bc3eadc027dd30cd5ec6ca41e29e47652a1b8c"
