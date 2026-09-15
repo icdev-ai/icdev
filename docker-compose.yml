@@ -1088,9 +1088,9 @@ services:
     profiles: ["floci-az"]
     # PINNED, never `:latest`. Kept in step with emulator_az.IMAGE by hand —
     # YAML cannot import a Python constant — and a test pins them equal.
-    # Digest measured 2026-09-05:
-    #   sha256:0c673d49bb75b502ea0750f1c1347777483ffc33945539e1d9254438cb441a03
-    image: floci/floci-az:0.12.0
+    # Digest measured 2026-09-15 (artifact-fresh-d3f3dd3e03, bumped from 0.12.0):
+    #   sha256:3a71953fbc0940aa33bbc1c5e88211a320b66812c0840831a9f8558d3d3521c5
+    image: floci/floci-az:0.13.0
     container_name: icdev-floci-az
     ports:
       # Loopback-only: an emulator holding the host docker socket must not be
