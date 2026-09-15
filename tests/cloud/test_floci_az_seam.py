@@ -478,6 +478,25 @@ def test_image_tag_is_pinned_never_latest():
     assert emulator_az.IMAGE_DIGEST.startswith("sha256:")
 
 
+def test_pinned_artifacts_manifest_agrees_with_the_seam():
+    """``args/pinned_artifacts.yaml`` is a DECLARATION, not a second pin.
+
+    xrv-pin-01's freshness reflex reads the ``pinned:`` field on the
+    ``floci-az`` entry and compares it to upstream; if that field ever drifted
+    from ``emulator_az.IMAGE_TAG`` the reflex would report a stale tag as
+    current (or a current one as behind) without anyone touching the actual
+    pin. Three files name this version (compose, the seam, this manifest) and
+    this is the one test connecting the third to the other two.
+    """
+    manifest = yaml.safe_load(
+        (REPO_ROOT / "args" / "pinned_artifacts.yaml").read_text(encoding="utf-8")
+    )
+    entries = [a for a in manifest["artifacts"] if a["name"] == "floci-az"]
+    assert len(entries) == 1
+    assert entries[0]["pinned"] == emulator_az.IMAGE_TAG
+    assert entries[0]["pin_source"] == "compose:floci-az"
+
+
 def test_component_registry_flag_matches_the_seam():
     """``icdev enable floci-az`` must write the flag the seam actually reads."""
     from tools.config.component_registry import ComponentRegistry
