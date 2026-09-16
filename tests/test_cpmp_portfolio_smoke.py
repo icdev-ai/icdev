@@ -283,3 +283,48 @@ class TestCpmpPortfolioEmptyData:
     def test_empty_portfolio_total_contracts_is_zero(self, cpmp_app):
         result = _call_cpmp(cpmp_app, portfolio_return=self._EMPTY_RESULT)
         assert result["portfolio"]["total_contracts"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Regression: /cpmp must not recompute a per-contract health matrix the
+# template never reads (gcpl-cset-06 — qa-fail-0b822ea439ccffe6).
+#
+# compute_contract_health() does 5 SELECTs plus an UPDATE + commit per
+# contract; the route used to call it once per row in `contracts` to build a
+# `health_matrix` value that cpmp/portfolio.html never references (it builds
+# its own health matrix client-side from `contracts`, which already carries
+# cpi/spi). Because e2e fixtures accumulate contracts across runs with no
+# cleanup, that made /cpmp do unbounded, wholly wasted DB writes on every
+# load — enough to blow past a 30s Playwright navigation timeout on a
+# contended host. Fixed by dropping the dead computation.
+# ---------------------------------------------------------------------------
+
+class TestCpmpPortfolioSkipsUnusedHealthMatrix:
+    """/cpmp must not call compute_contract_health per row for an unused value."""
+
+    def test_compute_contract_health_never_called(self, cpmp_app):
+        with patch("tools.govcon.portfolio_manager.compute_contract_health") as mock_health:
+            _call_cpmp(cpmp_app)
+        mock_health.assert_not_called()
+
+    def test_context_has_no_health_matrix_key(self, cpmp_app):
+        result = _call_cpmp(cpmp_app)
+        assert "health_matrix" not in result
+
+    def test_exception_path_context_has_no_health_matrix_key(self, cpmp_app):
+        captured = {}
+
+        def fake_render(template_name, **kwargs):
+            captured.update(kwargs)
+            captured["_template"] = template_name
+            return "OK"
+
+        with patch(
+            "tools.govcon.portfolio_manager.get_portfolio_summary",
+            side_effect=RuntimeError("DB offline"),
+        ):
+            with patch("tools.dashboard.app.render_template", side_effect=fake_render):
+                with cpmp_app.test_client() as c:
+                    c.get("/cpmp")
+
+        assert "health_matrix" not in captured
