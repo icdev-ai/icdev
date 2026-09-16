@@ -244,12 +244,72 @@ def _recovery_rows() -> List[Dict[str, Any]]:
 #: Narrowing it here rather than leaving it in place is the same discipline the
 #: repo applies to arming any check: a rule that fires on correct behaviour
 #: refuses routine work, and that is how a check earns itself a `|| true`.
+#:
+#: It recurred on 2026-09-15 (claim-verif-7e972c20a1): `updated_at` had moved
+#: (something touched the design row), so the timestamp proxy alone called it
+#: `stuck_writer` -- but recomputing from the CURRENT graph reproduced the
+#: persisted value exactly, because the edit never touched a node type the
+#: MITRE catalog scores against. "The input's timestamp moved" is itself
+#: repetition-without-corroboration for "the value's determinants moved" --
+#: the same trap this claim exists to catch, one layer up. See
+#: `_odc_persisted_score_matches_recompute`: only a mismatched recompute now
+#: confirms `stuck_writer`.
 _STUCK_MIN_ROWS = 20
 #: (canvas, series table, subject col, value col, input table, input time col)
 _STUCK_SERIES = [
     ("Observability", "odc_gap_scores", "design_id", "overall_gap_score",
      "observability_designs", "updated_at"),
 ]
+
+
+def _odc_persisted_score_matches_recompute(cc, design_id: str) -> Optional[bool]:
+    """Recompute odc_gap_scores' value from the CURRENT design graph and
+    compare it to the latest persisted row -- read-only, no write.
+
+    `_input_changed_since_series_start` answers "was the design row touched",
+    which is not the same question as "did the number the formula produces
+    move". `observability_designs.updated_at` bumps on ANY edit to the row --
+    a renamed label, a moved node, a node type the MITRE catalog does not
+    score against -- none of which `compute_gap_score` depends on. That gap
+    reopened the exact false positive this claim was narrowed for
+    (rem-hyg-17): odc_gap_scores flagged `stuck_writer` on 2026-09-15 while
+    recomputing from the live graph reproduced the persisted 0.85 exactly
+    (covered=0, partial=6, gap=14, both sides) -- the writer was correct,
+    the design row had simply been touched by something the score ignores.
+
+    Returns None (unmeasurable) if the design or a prior score is missing, or
+    the recompute itself fails -- never manufacture a stuck-writer finding
+    out of an inability to check.
+    """
+    try:
+        design_row = cc.execute(
+            "SELECT graph_json FROM observability_designs WHERE id=%s", (design_id,)
+        ).fetchone()
+        latest_row = cc.execute(
+            "SELECT overall_gap_score FROM odc_gap_scores WHERE design_id=%s "
+            "ORDER BY assessed_at DESC LIMIT 1", (design_id,)
+        ).fetchone()
+        if not design_row or not latest_row:
+            return None
+        persisted = dict(latest_row).get("overall_gap_score")
+        if persisted is None:
+            return None
+        graph_raw = dict(design_row).get("graph_json")
+        graph = json.loads(graph_raw) if isinstance(graph_raw, str) else (graph_raw or {})
+        from tools.observability_canvas.mitre_coverage_twin import compute_gap_score
+        fresh = compute_gap_score(design_id, graph if isinstance(graph, dict) else {}, persist=False)
+        return abs(float(fresh["gap_score"]) - float(persisted)) < 1e-9
+    except Exception:
+        return None
+
+
+#: Per-series confirmation that a repeated value is a REAL stuck writer, not
+#: merely a design row touched for a reason the value's formula ignores. Only
+#: registered for series where an independent, read-only recompute exists;
+#: a series with none falls back to the timestamp proxy alone.
+_STUCK_CONFIRM = {
+    "odc_gap_scores": _odc_persisted_score_matches_recompute,
+}
 
 
 def _input_changed_since_series_start(cc, series_table: str, input_table: str,
@@ -319,11 +379,18 @@ def _derived_series_health() -> Dict[str, str]:
             elif distinct > 1:
                 out[table] = "well_corroborated"
             else:
-                # One value across a long series. STUCK only if the input moved;
-                # otherwise a snapshot writer faithfully reporting an unchanged
+                # One value across a long series. STUCK only if the input moved
+                # AND a fresh recompute against the current input no longer
+                # matches the persisted value; otherwise a snapshot writer
+                # faithfully reporting an unchanged (or irrelevantly-touched)
                 # subject, which is what odc_gap_scores actually is.
-                out[table] = ("stuck_writer" if _input_changed_since_series_start(
-                    cc, table, input_table, input_col) else "stable_input")
+                if not _input_changed_since_series_start(cc, table, input_table, input_col):
+                    out[table] = "stable_input"
+                else:
+                    confirm = _STUCK_CONFIRM.get(table)
+                    design_id = dict(rows[0]).get("s") if rows else None
+                    matches = confirm(cc, design_id) if (confirm and design_id) else None
+                    out[table] = "stable_input" if matches is True else "stuck_writer"
         except Exception:
             continue
         finally:
