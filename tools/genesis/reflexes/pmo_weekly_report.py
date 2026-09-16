@@ -259,6 +259,15 @@ def _assess_data_quality(snapshot: Dict[str, Any]) -> Dict[str, Any]:
             "portfolio average is one constant restated and ranks nothing"
         )
 
+    unscored = snapshot.get("unscored_contracts") or 0
+    if unscored > 0:
+        reasons.append("health_unscored")
+        details.append(
+            f"{unscored} of {n} contract(s) carry a status outside active/option_pending "
+            "and are excluded from the Green/Yellow/Red breakdown, so Total Contracts and "
+            "the health counts below describe different populations"
+        )
+
     if "unidentified_contracts" in reasons or "placeholder_titles" in reasons:
         state = DQ_SYNTHETIC
     elif reasons:
@@ -342,6 +351,7 @@ def _gather_portfolio_snapshot() -> Dict[str, Any]:
             "burn_rate": summary.get("burn_rate_pct", 0),
             "overdue_deliverables": summary.get("overdue_deliverables", 0),
             "health": summary.get("health_distribution", {"green": 0, "yellow": 0, "red": 0}),
+            "unscored_contracts": summary.get("unscored_contracts", 0),
             "upcoming_deliverables": (summary.get("upcoming_deliverables") or [])[:5],
             "contracts": summary.get("contracts") or [],
         })
@@ -448,8 +458,9 @@ def _data_quality_advisory(snapshot: Dict[str, Any]) -> str:
             "figure in this brief as describing test data until real contracts are loaded."
         ),
         DQ_DEGRADED: (
-            "The contract records are real but at least one feed behind these figures is "
-            "not discriminating between contracts. Repair the feed before ranking anything."
+            "The contract records are real, but at least one figure below does not mean "
+            "what it appears to at a glance. Read the detail before ranking or totaling "
+            "anything."
         ),
     }.get(state, "")
 
@@ -621,6 +632,15 @@ def _render_html_report(snapshot: Dict[str, Any], narrative: str, report_date: s
             "</div>"
         )
 
+    # Published beside the total: Green/Yellow/Red is scoped to active and
+    # option_pending contracts, so a draft/closed/terminated contract counts
+    # toward "Total Contracts" but toward none of the three bars. Without this
+    # note the two numbers silently describe different populations.
+    unscored = snapshot.get("unscored_contracts") or 0
+    total_note = (
+        f"Total Contracts ({unscored} not scored for health)" if unscored > 0 else "Total Contracts"
+    )
+
     # Published beside the average: an average over one repeated value ranks
     # nothing, and the stat tile is where that has to be visible.
     distinct = snapshot.get("cpi_distinct_values")
@@ -685,7 +705,7 @@ td{{padding:7px 12px;border-bottom:1px solid #eee;font-size:12px;}}
 
 <h2>Portfolio Health</h2>
 <div class="stat-grid">
-  <div class="stat"><div class="stat-val">{snapshot.get("total_contracts",0)}</div><div class="stat-lbl">Total Contracts</div></div>
+  <div class="stat"><div class="stat-val">{snapshot.get("total_contracts",0)}</div><div class="stat-lbl">{total_note}</div></div>
   <div class="stat"><div class="stat-val" style="color:#28a745;">{health.get("green",0)}</div><div class="stat-lbl">Green</div></div>
   <div class="stat"><div class="stat-val" style="color:#ffc107;">{health.get("yellow",0)}</div><div class="stat-lbl">Yellow</div></div>
   <div class="stat"><div class="stat-val" style="color:#dc3545;">{health.get("red",0)}</div><div class="stat-lbl">Red</div></div>
