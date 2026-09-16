@@ -293,6 +293,67 @@ def test_an_unreadable_input_never_manufactures_a_finding():
     assert _input_changed_since_series_start(_Boom(), "s", "i", "c") is False
 
 
+def test_a_touched_row_with_an_unchanged_formula_is_not_stuck(monkeypatch):
+    """The 2026-09-15 recurrence (claim-verif-7e972c20a1): `updated_at` moved,
+    but the edit never touched a node type the MITRE catalog scores against,
+    so a fresh read-only recompute reproduces the persisted value exactly.
+    The timestamp proxy alone would call this `stuck_writer`; the recompute
+    confirmation must override it to `stable_input`-equivalent (True)."""
+    from tools.awareness import claims as claims_mod
+
+    class _Conn:
+        def execute(self, sql, params=None):
+            return self
+
+        def fetchone(self):
+            return {"graph_json": "{}", "overall_gap_score": 0.85}
+
+    def _fake_compute(design_id, graph, persist=True):
+        assert persist is False
+        return {"gap_score": 0.85}
+
+    monkeypatch.setattr(
+        "tools.observability_canvas.mitre_coverage_twin.compute_gap_score", _fake_compute
+    )
+    assert claims_mod._odc_persisted_score_matches_recompute(_Conn(), "d-1") is True
+
+
+def test_a_genuinely_stale_score_is_still_caught(monkeypatch):
+    """The recompute confirmation must not blanket-clear every touched row —
+    a persisted value that a fresh recompute contradicts is a real defect."""
+    from tools.awareness import claims as claims_mod
+
+    class _Conn:
+        def execute(self, sql, params=None):
+            return self
+
+        def fetchone(self):
+            return {"graph_json": "{}", "overall_gap_score": 0.85}
+
+    def _fake_compute(design_id, graph, persist=True):
+        return {"gap_score": 0.40}
+
+    monkeypatch.setattr(
+        "tools.observability_canvas.mitre_coverage_twin.compute_gap_score", _fake_compute
+    )
+    assert claims_mod._odc_persisted_score_matches_recompute(_Conn(), "d-1") is False
+
+
+def test_recompute_confirmation_is_unmeasurable_without_a_prior_score(monkeypatch):
+    """No persisted row / no design to recompute against -- unmeasurable, not
+    a manufactured finding."""
+    from tools.awareness import claims as claims_mod
+
+    class _EmptyConn:
+        def execute(self, sql, params=None):
+            return self
+
+        def fetchone(self):
+            return None
+
+    assert claims_mod._odc_persisted_score_matches_recompute(_EmptyConn(), "d-1") is None
+
+
 def test_only_a_stuck_writer_counts_as_disagreement():
     """The two sides differ by construction whenever a series repeats — the
     reported side is what a ROW COUNT concludes. Demanding equality would flag
