@@ -125,14 +125,22 @@ logger = get_logger(__name__)
 MODE = "floci-oci"
 
 # ── Image identity ─────────────────────────────────────────────────────────
+#
+# Moved 0.4.0 -> 0.4.1 on 2026-09-16 (artifact-fresh-3d8a95dede) after driving
+# a live 0.4.1 container: startup banner, `/health` (still 7 services in the
+# log / 8 at `/health`, `functions` still the discrepancy), storage-mode
+# honouring, the container-local `cryptoEndpoint` quirk, and OKE's `--token`
+# failure with `lifecycleState: ACTIVE` all reproduce byte-for-byte. See
+# docs/spikes/flx-oci-parity.md §9 for the full delta (there is none of
+# substance -- a Quarkus point bump, nothing else).
 IMAGE_REPOSITORY = "floci/floci-oci"
-IMAGE_TAG = "0.4.0"
+IMAGE_TAG = "0.4.1"
 IMAGE = f"{IMAGE_REPOSITORY}:{IMAGE_TAG}"
 
-#: Digest measured on 2026-09-05. The air-gap cache is keyed on THIS, never on
-#: the tag -- a tag-only check reports a fabricated hit for a bundle loaded by
-#: digest.
-IMAGE_DIGEST = "sha256:584fd7f977077ab040063d7c2efaaaa1beabacccd903f5297eaa7bbe8f744a8b"
+#: Digest MEASURED from the pulled image on 2026-09-16. Recorded so an air-gap
+#: bundle can be verified by digest rather than by tag -- a tag-only check
+#: reads a `docker load`ed bundle as absent (see the flx-airgap-01 discipline).
+IMAGE_DIGEST = "sha256:58b4b17069508b30e48bdf5888fd2759a52c23de082bd758484e3b8e2592b1cb"
 
 # ── Network ────────────────────────────────────────────────────────────────
 CONTAINER_PORT = 4599
