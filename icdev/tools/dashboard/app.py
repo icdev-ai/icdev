@@ -411,58 +411,19 @@ def _register_govcon_pages(app: "Flask", _get_db):
             except Exception:
                 risk_summary = {}
 
-            # Health matrix: per-contract dimension breakdown (fast DB-only calls)
-            health_matrix = []
+            # `health_matrix` used to be recomputed here via a per-contract
+            # compute_contract_health() call (5 queries + an UPDATE + commit
+            # each) even though tools/dashboard/templates/cpmp/portfolio.html
+            # builds its health matrix client-side from `contracts` (which
+            # already carries cpi/spi via the portfolio summary's LEFT JOIN)
+            # and never reads a `health_matrix` template variable at all. On
+            # a portfolio whose contract count only grows (e2e fixtures are
+            # never deleted, see tests/e2e/fixtures/govcon_cpmp.ts), that
+            # made /cpmp do unbounded, unused DB writes on every load. The
+            # real per-contract breakdown is served on demand by
+            # GET /api/cpmp/portfolio/health-matrix (tools/dashboard/api/cpmp.py).
             try:
-                from tools.govcon.portfolio_manager import compute_contract_health
                 from tools.govcon.option_period_tracker import get_portfolio_countdown
-
-                def _dim_tier(score):
-                    if score is None:
-                        return "unknown"
-                    try:
-                        s = float(score)
-                    except (TypeError, ValueError):
-                        return "unknown"
-                    return "green" if s >= 0.75 else "yellow" if s >= 0.50 else "red"
-
-                for c in contracts:
-                    cid = c.get("id") or c.get("contract_id")
-                    if not cid:
-                        continue
-                    try:
-                        h = compute_contract_health(cid)
-                        dims = h.get("dimension_scores") or h.get("dimensions") or {}
-                        raw_score = h.get("health_score")
-                        # Normalize: score may be 0-1 or 0-100
-                        if raw_score is not None and raw_score <= 1.0:
-                            display_score = round(raw_score * 100)
-                        else:
-                            display_score = round(raw_score) if raw_score is not None else None
-                        health_matrix.append({
-                            "contract_id": cid,
-                            "contract_number": c.get("contract_number", "—"),
-                            "title": c.get("title", ""),
-                            "agency": c.get("agency", ""),
-                            "overall": h.get("health", "unknown"),
-                            "health_score": display_score,
-                            "evm": _dim_tier(dims.get("evm")),
-                            "deliverables": _dim_tier(dims.get("deliverables")),
-                            "cpars": _dim_tier(dims.get("cpars")),
-                            "funding": _dim_tier(dims.get("funding")),
-                            "negative_events": _dim_tier(dims.get("negative_events")),
-                        })
-                    except Exception:
-                        health_matrix.append({
-                            "contract_id": cid,
-                            "contract_number": c.get("contract_number", "—"),
-                            "title": c.get("title", ""),
-                            "agency": c.get("agency", ""),
-                            "overall": "unknown",
-                            "health_score": None,
-                            "evm": "unknown", "deliverables": "unknown",
-                            "cpars": "unknown", "funding": "unknown", "negative_events": "unknown",
-                        })
 
                 option_countdown = get_portfolio_countdown().get("options", [])
             except Exception:
@@ -474,7 +435,6 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 contracts=contracts,
                 upcoming_deliverables=upcoming,
                 risk_summary=risk_summary,
-                health_matrix=health_matrix,
                 option_countdown=option_countdown,
             )
         except Exception as e:
@@ -494,7 +454,6 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 contracts=[],
                 upcoming_deliverables=[],
                 risk_summary={},
-                health_matrix=[],
                 option_countdown=[],
                 error=str(e),
             )
