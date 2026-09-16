@@ -572,3 +572,67 @@ def test_the_snapshot_publishes_the_ranking_verdict_beside_the_rows(no_side_chan
     assert snap["worst_cpi_ranking"]["reason"] == reflex.RANK_ALL_SHOWN_EQUAL
     # The rows themselves are unchanged in kind — still the worst-valued ones.
     assert snap["worst_cpi_contracts"] == snap["worst_cpi_ranking"]["rows"]
+
+
+# ---------------------------------------------------------------------------
+# "Total Contracts" and the health breakdown silently described different
+# populations (pmo-rpt-031e7dada9)
+#
+# `get_portfolio_summary`'s health_distribution query is scoped to
+# `status IN ('active', 'option_pending')` — a draft, complete, closed or
+# terminated contract is deliberately left out of the health/at-risk picture.
+# But `total_contracts` counts every status. MEASURED on the live board the
+# week of 2026-09-14: 9 cpmp_contracts rows, one of them ('probe', [5f111a23])
+# status='draft'. The report showed "Total Contracts: 9" beside a Green/
+# Yellow/Red breakdown of 3/5/0 = 8, with nothing on the page explaining the
+# missing contract — a reader doing the arithmetic finds a gap the brief never
+# admits to.
+# ---------------------------------------------------------------------------
+
+
+def test_unscored_contracts_is_propagated_from_the_portfolio_summary(no_side_channels):
+    """The snapshot must carry the count through, not just the health totals."""
+    with patch(
+        "tools.govcon.portfolio_manager.get_portfolio_summary",
+        return_value=_summary(unscored_contracts=1),
+    ):
+        snap = reflex._gather_portfolio_snapshot()
+
+    assert snap["unscored_contracts"] == 1
+
+
+def test_a_draft_contract_excluded_from_health_is_flagged_not_hidden(no_side_channels):
+    """The live case: 9 total, 8 scored (3 green + 5 yellow + 0 red)."""
+    with patch(
+        "tools.govcon.portfolio_manager.get_portfolio_summary",
+        return_value=_summary(
+            contracts=_placeholder_contracts(),
+            health_distribution={"green": 3, "yellow": 5, "red": 0},
+            unscored_contracts=1,
+        ),
+    ):
+        snap = reflex._gather_portfolio_snapshot()
+
+    dq = snap["data_quality"]
+    assert "health_unscored" in dq["reasons"]
+    assert "1 of 9 contract(s)" in dq["detail"]
+
+    html = reflex._render_html_report(snap, reflex._deterministic_narrative(snap), "2026-09-14")
+    assert "Total Contracts (1 not scored for health)" in html
+
+
+def test_no_unscored_contracts_leaves_the_total_contracts_label_plain(no_side_channels):
+    """Negative control: when every contract is scored, no caveat is added."""
+    with patch(
+        "tools.govcon.portfolio_manager.get_portfolio_summary",
+        return_value=_summary(contracts=_real_contracts(), total_contracts=2,
+                              health_distribution={"green": 1, "yellow": 1, "red": 0},
+                              unscored_contracts=0),
+    ):
+        snap = reflex._gather_portfolio_snapshot()
+
+    assert "health_unscored" not in snap["data_quality"]["reasons"]
+
+    html = reflex._render_html_report(snap, reflex._deterministic_narrative(snap), "2026-09-14")
+    assert "not scored for health" not in html
+    assert ">Total Contracts<" in html
