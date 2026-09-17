@@ -100,14 +100,21 @@ MODE = "floci-az"
 # carries the same literal for the opt-in `floci-az` profile; YAML cannot import
 # a Python constant, so those two are kept in step by hand and a test pins them
 # equal. Change both or neither.
+#
+# Moved 0.12.0 -> 0.13.0 on 2026-09-15 (artifact-fresh-d3f3dd3e03) after driving
+# a live 0.13.0 container: health contract unchanged (still no `services` map),
+# the compose-parity test's shape assertions hold, and no consumer here reads
+# past that health check. See docs/spikes/flx-az-parity.md §9 for what else
+# changed (new postgres/mysql/mariadb/containerapps ARM lanes, Event Hubs now
+# docker-backed instead of mocked) -- none of it is designed against yet.
 IMAGE_REPOSITORY = "floci/floci-az"
-IMAGE_TAG = "0.12.0"
+IMAGE_TAG = "0.13.0"
 IMAGE = f"{IMAGE_REPOSITORY}:{IMAGE_TAG}"
 
-#: Digest MEASURED from the pulled image on 2026-09-05. Recorded so an air-gap
+#: Digest MEASURED from the pulled image on 2026-09-15. Recorded so an air-gap
 #: bundle can be verified by digest rather than by tag -- a tag-only check reads
 #: a `docker load`ed bundle as absent (see the flx-airgap-01 discipline).
-IMAGE_DIGEST = "sha256:0c673d49bb75b502ea0750f1c1347777483ffc33945539e1d9254438cb441a03"
+IMAGE_DIGEST = "sha256:3a71953fbc0940aa33bbc1c5e88211a320b66812c0840831a9f8558d3d3521c5"
 
 #: Port floci-az serves the Azure API edge on, INSIDE the container. The
 #: host-side port is a deployment's choice; this one is the emulator's.

@@ -315,9 +315,13 @@ artifacts:
   - name: floci-az
     kind: image
     ref: floci/floci-az
-    pinned: "0.12.0"
+    pinned: "0.13.0"
     pin_source: "compose:floci-az"
     upstream: dockerhub
+    note: >-
+      Bumped from 0.12.0 on 2026-09-15 (artifact-fresh-d3f3dd3e03) after
+      driving a live 0.13.0 container -- health contract unchanged, compose
+      parity test holds. See docs/spikes/flx-az-parity.md for the delta.
 
   - name: floci-gcp
     kind: image
