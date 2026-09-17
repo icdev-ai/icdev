@@ -657,3 +657,29 @@ exemptions:
       it needs the green-alone AND green-in-suite proof gate_promoter runs, and
       widening the gated set is not this PR's subject. Remove this exemption the
       moment this file is edited for anything but that assertion repair.
+
+  - pattern: "tests/cloud/test_floci_az_seam.py"
+    reason: >-
+      task-det-d38246c003 (NEEDED-A-HUMAN escalation on
+      artifact-fresh-d3f3dd3e03, PR #2287). The only change to this file is
+      one new test, test_pinned_artifacts_manifest_agrees_with_the_seam, which
+      asserts that args/pinned_artifacts.yaml's floci-az `pinned:` field equals
+      emulator_az.IMAGE_TAG. Both sides of that comparison were bumped
+      0.12.0 -> 0.13.0 TOGETHER in this same PR (args/pinned_artifacts.yaml and
+      tools/cloud/emulator_az.py), so the two values agree at the merge base
+      (both 0.12.0) exactly as they agree here (both 0.13.0) -- the assertion
+      is FORWARD-looking (it guards the pin and the manifest from drifting
+      apart on some FUTURE change that updates one without the other) and
+      cannot be back-dated onto the commit that moves them in lockstep. MEASURED:
+      merge-base ddd4bfaf7005 runs this file's 48 tests and they pass; this
+      branch's 48 (same count, one renamed/added) also pass -- red_first_gate's
+      own output for this file. There is no commit in this PR at which a
+      literal-value assertion on "0.13.0" would be any more meaningful: it
+      would only test that the author typed the same string twice, not that the
+      two files can't drift, and it would need editing on every future bump
+      forever, which is the opposite of what the test is for.
+      NOT A PRECEDENT FOR A TEST-ONLY REPAIR: no production behaviour here was
+      previously broken, and no other test in this PR's diff needed this
+      exemption. Scoped to this ONE file. Remove this exemption if a future
+      change to this file adds a test that is not a cross-file consistency
+      guard of this shape.
