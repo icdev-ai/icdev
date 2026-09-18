@@ -28,7 +28,7 @@ RULE_ID = "airgap-emulator-runtime-images"
 # set is DETERMINED and the verdict turns on the registry posture alone.
 DESIGN = {
     "resources": [
-        {"type": "aws_lambda_function", "name": "ingest", "runtime": "python3.11"},
+        {"type": "aws_lambda_function", "name": "ingest", "runtime": "python3.12"},
         {"type": "aws_db_instance", "name": "store", "engine": "postgres"},
     ]
 }
@@ -93,7 +93,7 @@ FULL_CACHE = _cache(ri.PRESENT_TAGGED)
         ("postgres:16.3-alpine", "docker.io"),
         ("mysql:8.0.36", "docker.io"),
         ("valkey/valkey:8", "docker.io"),            # org/name is still Hub
-        ("public.ecr.aws/lambda/python:3.11", "public.ecr.aws"),
+        ("public.ecr.aws/lambda/python:3.12", "public.ecr.aws"),
         ("registry.internal.example.mil:5000/postgres:16", "registry.internal.example.mil:5000"),
         ("localhost:5000/postgres:16", "localhost:5000"),
         ("", "docker.io"),
@@ -191,7 +191,7 @@ def test_an_unmirrored_registry_is_external_even_when_another_is_mirrored():
         ],
     }
     assert fr.pull_origin("postgres:16.3-alpine", cfg)["external"] is False
-    ecr = fr.pull_origin("public.ecr.aws/lambda/python:3.11", cfg)
+    ecr = fr.pull_origin("public.ecr.aws/lambda/python:3.12", cfg)
     assert ecr["external"] is True
     assert ecr["origin"] == fr.ORIGIN_NO_MIRROR
 

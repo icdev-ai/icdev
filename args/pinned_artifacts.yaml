@@ -352,9 +352,13 @@ artifacts:
   - name: lambda-python
     kind: image
     ref: public.ecr.aws/lambda/python
-    pinned: "3.11"
+    pinned: "3.12"
     pin_source: "vendor/images/images-floci-runtime.txt"
     upstream: ecr_public
+    note: >-
+      MOVED 3.11 -> 3.12 2026-09-18 (artifact-fresh-591100ea58): every Lambda
+      runtime this repository's own IaC generators declare is python3.12, not
+      python3.11. See docs/audits/artifact-fresh-591100ea58-lambda-python-pin.md.
 
   - name: lambda-nodejs
     kind: image

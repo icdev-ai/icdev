@@ -19,10 +19,19 @@
 # one PER ENGINE, so this file is the full measured set and not a shopping list:
 # a deployment running only a python Lambda over postgres needs four of these
 # eleven. `python -m tools.cloud.runtime_images --check --services lambda,rds
-# --variants python3.11,postgres` says which.
+# --variants python3.12,postgres` says which.
 
-# lambda/python3.11 -- public.ecr.aws/lambda/python:3.11
-public.ecr.aws/lambda/python@sha256:755093e1da2ba33f6bd2295c5a6a7ed8b94f1ef347b6ca649874d9cbef5a3e3c
+# lambda/python3.12 -- public.ecr.aws/lambda/python:3.12
+#   MOVED 2026-09-18 (artifact-fresh-591100ea58): this repo's own IaC
+#   generators (tools/infra/dr_generator.py, tools/aadc/iac_generator.py,
+#   tools/data/iac_generator.py, tools/infra_canvas/iac_generator.py,
+#   tools/ohc/iac_generator.py, args/dr_config.yaml) declare `python3.12` for
+#   every Lambda they emit -- none declare python3.11. Like
+#   amazonlinux:2023, the tag is REBUILT IN PLACE even though it carries an
+#   ordering: re-measured by `docker pull` + `docker image inspect`, not
+#   copied off a cached image. See
+#   docs/audits/artifact-fresh-591100ea58-lambda-python-pin.md.
+public.ecr.aws/lambda/python@sha256:5207fd64cca3808107491740d81875d86876eafb15b0cbfb15586c750dfc218d
 
 # lambda/nodejs20.x -- public.ecr.aws/lambda/nodejs:20
 public.ecr.aws/lambda/nodejs@sha256:a4440274d6f0fb4e6cb92cd5f2a97254efe6612f631d9974b197ecbd4a61fcab

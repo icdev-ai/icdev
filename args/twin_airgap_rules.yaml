@@ -98,7 +98,7 @@ rules:
   # literally names `docker.io/foo`. An emulator's container-backed
   # dependency is ABSENT from the configuration — a floci config that declares
   # a Lambda contains no image reference at all, and floci resolves
-  # `public.ecr.aws/lambda/python:3.11` at RUN TIME, on first use, from the
+  # `public.ecr.aws/lambda/python:3.12` at RUN TIME, on first use, from the
   # public internet. A string matcher is structurally blind to it: there is no
   # string. So this rule is DERIVE-THEN-CHECK — derive the required image set
   # from the declared services (args/floci_runtime_images.yaml, every entry
