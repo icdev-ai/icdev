@@ -368,6 +368,17 @@ def get_portfolio_summary():
     for key in ("green", "yellow", "red"):
         health_dist.setdefault(key, 0)
 
+    # health_dist is scoped to status IN ('active', 'option_pending') — a draft,
+    # complete, closed or terminated contract is not being executed, so it is
+    # deliberately left out of the health/at-risk picture. But `total` counts
+    # every status, so the two silently describe different populations: a
+    # portfolio of 9 contracts with one 'draft' renders "Total Contracts: 9"
+    # beside a green/yellow/red breakdown that only sums to 8, with nothing
+    # saying why. Reported alongside health_distribution rather than folded
+    # into one of its buckets, so a consumer can add it back to reconcile the
+    # total instead of discovering the gap by subtraction.
+    unscored_contracts = total - sum(health_dist.values())
+
     conn.close()
     remaining_obligation = (obligated_val or 0) - (value_row["billed_val"] or 0)
 
@@ -385,6 +396,7 @@ def get_portfolio_summary():
             "overdue_deliverables": overdue,
             "at_risk_contracts": at_risk,
             "health_distribution": health_dist,
+            "unscored_contracts": unscored_contracts,
             "upcoming_deliverables": [dict(u) for u in upcoming],
             "contracts": contracts,
         },

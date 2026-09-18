@@ -62,12 +62,17 @@ def score_technique_coverage(
     return state, sorted(present), sorted(required - present)
 
 
-def compute_gap_score(design_id: str, graph_data: dict) -> dict:
+def compute_gap_score(design_id: str, graph_data: dict, persist: bool = True) -> dict:
     """Compute per-technique coverage and overall gap score for a design.
 
     Args:
         design_id: ODC design ID (used for DB persistence).
         graph_data: Dict with "nodes" list.
+        persist: When False, compute only -- no odc_gap_scores /
+            odc_technique_coverage rows are written. Used by read-only
+            freshness checks (e.g. claim_verifier's stuck-writer detection)
+            that must recompute the current answer without perturbing the
+            history they are trying to verify.
 
     Returns:
         Dict with coverage_by_technique, covered_count, partial_count, gap_count,
@@ -153,7 +158,8 @@ def compute_gap_score(design_id: str, graph_data: dict) -> dict:
         "assessed_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    _persist_gap_score(design_id, result)
+    if persist:
+        _persist_gap_score(design_id, result)
     return result
 
 

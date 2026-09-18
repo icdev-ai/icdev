@@ -1,6 +1,6 @@
 # CUI // SP-CTI
 
-# flx-az-parity — what floci-az 0.12.0 ACTUALLY answers
+# flx-az-parity — what floci-az ACTUALLY answers (0.12.0, re-measured on 0.13.0 in §9)
 
 **Measured 2026-09-05** on this host (Windows 11, Docker Desktop 28.5.1,
 `linux/amd64`), against:
@@ -298,3 +298,47 @@ the exact defect this project exists to stop shipping.
 the pinned digest on 2026-09-05. An emulated estate is never evidence about a
 real one — snapshots taken through this emulator carry provenance `emulated`
 (`twin_core.schema.PROVENANCE_EMULATED`).*
+
+---
+
+## 9. Re-measured against 0.13.0 (2026-09-15, artifact-fresh-d3f3dd3e03)
+
+The pin moved 0.12.0 → 0.13.0 (`artifact_freshness` / xrv-pin-01). Everything
+above was spot-checked against the new digest
+(`sha256:3a71953fbc0940aa33bbc1c5e88211a320b66812c0840831a9f8558d3d3521c5`)
+rather than re-run in full; nothing this seam relies on moved:
+
+* `/_floci/health` is byte-shape identical — `{"status","edition","version"}`,
+  still no `services` map, still `"version":"dev"`. Quarkus went 3.37.4 →
+  3.39.2; the edition string (`floci-az-always-free`) is unchanged.
+* `/_localstack/health` still answers **501** — still not a LocalStack
+  drop-in.
+
+**What is new, and NOT designed against (yet), per the standing rule in §8:**
+
+* **Event Hubs changed from mocked to docker-backed.** 0.12.0 logged
+  `Event Hubs service mocked — skipping container startup`; 0.13.0 logs
+  `Event Hubs service enabled — namespaces start on-demand via PUT
+  /{account}-eventhub/namespaces/{ns}`. Driven without the host docker socket
+  mounted, that PUT now 500s (`ApacheDockerHttpClientImpl` connect failure)
+  instead of being silently absorbed — a real behavior change, but one this
+  seam never exercised (§8 already listed Event Hubs as "not designed
+  against").
+* **Three genuinely new, ARM-registered management-plane lanes**: driven with
+  `GET /subscriptions/{sub}/providers/{rp}`, `Microsoft.DBforPostgreSQL/
+  flexibleServers`, `Microsoft.DBforMySQL/flexibleServers` and
+  `Microsoft.App/containerApps` all now return **200** with a dedicated
+  handler in the log (`PostgresHandler`, `MySqlHandler`,
+  `ContainerAppsHandler`) — floci-az did not run managed databases or
+  Container Apps at all in 0.12.0.
+* **Two banner-only additions that are NOT ARM-registered**: `signalr` and
+  `apim` show `[enabled ]` in the startup banner but
+  `Microsoft.SignalRService/signalR` and `Microsoft.ApiManagement/service`
+  both still 404 — the §2 "banner is a configuration echo" finding holds
+  exactly as before for these two.
+
+None of this is consumed by `tools/cloud/emulator_az.py`,
+`tools/twin_core/adapters/floci_az.py` or `FlociAzConnector` today — the
+seam is read/inventory-only and none of the new surfaces are on its
+resource-list paths. Recorded here so the next parity pass does not have to
+re-discover it, per the same rule that made §7 necessary the first time.
