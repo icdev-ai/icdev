@@ -600,3 +600,14 @@ union_resolver:
     # declaring CLAUDE.md alone would have resolved none of them.
     - path: icdev/data/claude_bootstrap/CLAUDE.md
       derived_from: CLAUDE.md
+    # UNION-CANDIDATE (kpr-watch-22, task-det-d42b032ea5): 6 lifetime
+    # `undeclared:` refusals on this file, all append-shaped -- every red-first
+    # exemption card adds one entry under a different key. SURVEYED before
+    # arming: `python -m tools.kanban.artifact_pin_union_survey --file
+    # args/red_first_gate.yaml` -- 1 decisive hunk on origin/main, git conflicted
+    # on it, and the union lost NO content (0 of 1 reproduced the human
+    # resolution exactly or bar ordering/blank lines; the rest is a pure
+    # insertion on both sides -- base_seg empty -- which is exactly the shape
+    # `keep_both_blocks` is for).
+    - path: args/red_first_gate.yaml
+      rules: [keep_both_blocks, adjacent_edits]
