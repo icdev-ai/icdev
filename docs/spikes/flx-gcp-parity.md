@@ -476,3 +476,47 @@ weakened by anything measured above:
 against the pinned digest on 2026-09-05. An emulated estate is never evidence
 about a real one — snapshots taken through this emulator carry provenance
 `emulated` (`twin_core.schema.PROVENANCE_EMULATED`).*
+
+---
+
+## 10. Re-measured against `0.9.0` (artifact-fresh-6a0d68cce8, 2026-09-17)
+
+The `artifact_freshness` reflex (xrv-pin-01) found this pin behind upstream
+(`0.9.0` published, `0.8.0` pinned). Re-derived on this host (Windows 11,
+Docker Desktop 28.5.1, `linux/amd64`) against:
+
+```
+floci/floci-gcp:0.9.0
+sha256:ea29a53b34d04ba05240cdc6833608e43ae2b0a67849e5b97f01a7224e1138ea
+53.4 MB · native (Quarkus 3.38.3) · edition banner "GCP Local Emulator · Always Free"
+```
+
+Every fact this document's design depends on was spot-checked live and
+**reproduces byte-for-byte**, on both a socket-mounted and a socket-absent
+container:
+
+| Fact (section) | 0.8.0 | 0.9.0 |
+|---|---|---|
+| Health path / siblings 404 (§2) | `/health` 200, `/_floci/health` and `/_localstack/health` 404 | unchanged |
+| Service map: 23 names, all `"running"`, byte-identical with/without docker socket (§2) | confirmed | unchanged — same 23 names, same order |
+| `version` field reports the real release (§2) | `"0.8.0"` | `"0.9.0"` |
+| Firestore/Datastore REST 404, gRPC-only (§1) | confirmed | unchanged (REST `/v1/projects/{p}/databases/(default)/documents` and `:runQuery` both 404) |
+| GKE/Kafka path collision — `/v1/.../clusters` served by Kafka, real GKE at `/container/v1` (§4) | confirmed | unchanged — same handler, same `bootstrapAddress` shape, spawns `redpandadata/redpanda:latest` |
+| Container-backed spawns (§5): cloudsql → `postgres:15.18-alpine`, kafka → `redpandadata/redpanda:latest` | confirmed | unchanged |
+| Cloud Run fabricated 200 without a docker socket; cloudsql/kafka 500 (§5) | confirmed | unchanged — reproduced on a container with `FLOCI_GCP_DOCKER_DOCKER_HOST` pointed at a nonexistent path |
+| `FLOCI_GCP_STORAGE_MODE=persistent` honoured, banner reads `Storage: persistent` (§2) | confirmed | unchanged |
+| GCS/Pub/Sub/KMS round-trip (write reflected in project-scoped list) (§6) | confirmed | spot-checked on GCS (bucket create → list) |
+
+**What changed and is not designed against:** the image shrank from 92.2 MB to
+53.4 MB and Quarkus moved 3.37.4 → 3.38.3 — a packaging/runtime bump, not an
+API change. Nothing in `tools/cloud/emulator_gcp.py` or
+`tools/databridge/connectors/floci_gcp_connector.py` reads image size or the
+Quarkus version, so neither is consequential here.
+
+No new services appeared in the enabled-services banner, no path moved, and no
+status code flipped on any lane this seam composes. **This is a patch-shaped
+release relative to what ICDEV designs against.** The pin moves with no other
+seam or connector change needed; see
+`docs/audits/artifact-fresh-6a0d68cce8-floci-gcp-pin.md` for the decision
+record and `python -m tools.airgap.artifact_freshness --artifact floci-gcp
+--json`, which now reports `current`.

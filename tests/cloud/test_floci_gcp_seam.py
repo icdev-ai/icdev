@@ -441,7 +441,7 @@ def test_the_compose_image_and_the_seam_image_are_the_same_literal(compose):
     """YAML cannot import a Python constant, so the two are kept in step by
     hand -- and this is the test that makes "by hand" safe."""
     svc = compose["services"]["floci-gcp"]
-    assert svc["image"] == emulator_gcp.IMAGE == "floci/floci-gcp:0.8.0"
+    assert svc["image"] == emulator_gcp.IMAGE == "floci/floci-gcp:0.9.0"
     assert not svc["image"].endswith(":latest")
 
 
@@ -469,6 +469,25 @@ def test_the_spike_exists_and_is_dated():
     assert "Measured 2026-09-05" in text
     assert emulator_gcp.IMAGE_DIGEST in text
     assert emulator_gcp.IMAGE in text
+
+
+def test_pinned_artifacts_manifest_agrees_with_the_seam():
+    """``args/pinned_artifacts.yaml`` is a DECLARATION, not a second pin.
+
+    xrv-pin-01's freshness reflex reads the ``pinned:`` field on the
+    ``floci-gcp`` entry and compares it to upstream; if that field ever
+    drifted from ``emulator_gcp.IMAGE_TAG`` the reflex would report a stale
+    tag as current (or a current one as behind) without anyone touching the
+    actual pin. Three files name this version (compose, the seam, this
+    manifest) and this is the one test connecting the third to the other two.
+    """
+    manifest = yaml.safe_load(
+        (_ROOT / "args" / "pinned_artifacts.yaml").read_text(encoding="utf-8")
+    )
+    entries = [a for a in manifest["artifacts"] if a["name"] == "floci-gcp"]
+    assert len(entries) == 1
+    assert entries[0]["pinned"] == emulator_gcp.IMAGE_TAG
+    assert entries[0]["pin_source"] == "compose:floci-gcp"
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -499,7 +518,7 @@ class _FakeConnector(FlociGcpConnector):
 #: The measured health body shape: a services map whose every value is "running".
 _HEALTH_BODY = {
     "services": {n: "running" for n in ("gcs", "pubsub", "firestore", "cloudsql")},
-    "version": "0.8.0",
+    "version": "0.9.0",
 }
 
 

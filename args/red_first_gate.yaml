@@ -708,3 +708,20 @@ exemptions:
       exemption. Scoped to this ONE file. Remove this exemption if a future
       change to this file adds a test that is not a cross-file consistency
       guard of this shape.
+
+  - pattern: "tests/cloud/test_floci_gcp_seam.py"
+    reason: >-
+      artifact-fresh-6a0d68cce8, the floci-gcp sibling of the floci-az bump
+      above (task-det-d38246c003 / PR #2287). The only change to this file is
+      one new test, test_pinned_artifacts_manifest_agrees_with_the_seam, which
+      asserts that args/pinned_artifacts.yaml's floci-gcp `pinned:` field
+      equals emulator_gcp.IMAGE_TAG. Both sides of that comparison were bumped
+      0.8.0 -> 0.9.0 TOGETHER in this same PR (args/pinned_artifacts.yaml and
+      tools/cloud/emulator_gcp.py), so the assertion agrees at the merge base
+      (both 0.8.0) exactly as it agrees here (both 0.9.0) -- a forward-looking
+      drift guard between the manifest and the seam, not a regression test for
+      this pin bump, and it cannot be back-dated onto the commit that moves
+      both values in lockstep. Same reasoning as the floci-az entry immediately
+      above; scoped to this ONE file. Remove this exemption if a future change
+      to this file adds a test that is not a cross-file consistency guard of
+      this shape.

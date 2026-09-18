@@ -1179,9 +1179,9 @@ services:
     profiles: ["floci-gcp"]
     # PINNED, never `:latest`. Kept in step with emulator_gcp.IMAGE by hand —
     # YAML cannot import a Python constant — and a test pins them equal.
-    # Digest measured 2026-09-05:
-    #   sha256:5037d304aded5ab4ccf4697239131521fe66b8952f411f6c1781c9166d2ab01b
-    image: floci/floci-gcp:0.8.0
+    # Digest measured 2026-09-17 (artifact-fresh-6a0d68cce8, bumped from 0.8.0):
+    #   sha256:ea29a53b34d04ba05240cdc6833608e43ae2b0a67849e5b97f01a7224e1138ea
+    image: floci/floci-gcp:0.9.0
     container_name: icdev-floci-gcp
     ports:
       # Loopback-only: an emulator holding the host docker socket must not be
