@@ -87,22 +87,26 @@ class _MainConn:
 
 def _security_canvas(*, assessments=0, avg_risk=0.0, findings=None,
                      findings_raise=False, maturity_rows=0, maturity_avg=None,
-                     caps=0, acts=0, scans="absent"):
+                     caps=0, acts=0, scans="absent", rows=None):
     """One handler for the Security canvas, which serves BOTH the Security
     block and the Zero Trust block (they share the security_canvas backend).
 
     ``scans`` is "absent" (the table does not exist), or a row count.
+    ``avg_risk`` is the STRIDE engine's ``risk_score`` -- HIGHER IS BETTER --
+    written on ``assessments`` engine rows, one design each; ``rows`` replaces
+    them with explicit ``(design_id, assessment_type, risk_score, grade, ran_at)``.
     """
+    if rows is None:
+        rows = [(f"d{i}", "auto_stride", avg_risk, "F", TS) for i in range(assessments)]
+
     def handler(sql: str):
         # -- Security block --------------------------------------------------
         if "findings_json" in sql:
             if findings_raise:
                 raise RuntimeError("findings_json unreadable")
             return [(json.dumps(f),) for f in (findings or [])]
-        if "avg(risk_score)" in sql:
-            return (avg_risk if assessments else None,)
-        if "count(*) from sc_assessments" in sql:
-            return (assessments,)
+        if "from sc_assessments order by ran_at" in sql:
+            return list(rows)
         if "max(ran_at) as m" in sql:
             return {"m": TS if assessments else None}
         # -- Zero Trust block ------------------------------------------------
@@ -244,25 +248,63 @@ def test_no_score_in_the_aggregation_is_gated_on_truthiness():
 _FINDING = {"rule_id": "sec-001", "severity": "CAT1", "title": "x"}
 
 
-def test_a_perfect_security_score_beside_recorded_findings_is_contested(monkeypatch):
-    """THE defect. 13 assessments, risk_score 0.0 (the engine's grade F), three
-    findings each: the widget read 100.0 beside a count of assessment rows
-    called 'open findings'. Now the findings are the assessments' OWN, and
-    the composite is refused."""
+def test_thirteen_grade_f_engine_rows_are_a_measured_zero_not_a_perfect_score(monkeypatch):
+    """THE live board. 13 designs, the STRIDE engine's risk_score 0.0 (grade F),
+    three findings each. ``100 - avg(risk_score)`` read that as a perfect 100.0
+    and rmf-rail-02 could only refuse it as contested; the engine's own number
+    is 0.0, and that is the posture."""
     rows, overall, _ = _run(monkeypatch, {"Security": _security_canvas(
         assessments=13, avg_risk=0.0, findings=[[_FINDING] * 3] * 13)})
     sec = rows["Security"]
-    assert sec["score"] is None, "100.0 beside 39 open findings used to render"
+    assert sec["score"] == 0.0, "an F-graded estate used to read 100.0"
+    assert sec["score_basis"] == "measured"
+    assert sec["open_findings"] == 39
+    assert overall == 0.0
+
+
+def test_a_perfect_security_score_beside_recorded_findings_is_contested(monkeypatch):
+    """rmf-rail-02's rail still stands: 100.0 beside open findings is refused."""
+    rows, overall, _ = _run(monkeypatch, {"Security": _security_canvas(
+        assessments=13, avg_risk=100.0, findings=[[_FINDING] * 3] * 13)})
+    sec = rows["Security"]
+    assert sec["score"] is None
     assert sec["score_basis"] == "contested"
     assert sec["open_findings"] == 39
     assert overall is None
+
+
+def test_a_penalty_writer_row_is_inverted_and_an_engine_row_is_not(monkeypatch):
+    """Two writers, two semantics: a pipeline scan's 20 is a PENALTY (80.0),
+    the engine's 60 is a SCORE (60.0). Mean of the two designs: 70.0."""
+    rows, _, _ = _run(monkeypatch, {"Security": _security_canvas(rows=[
+        ("d1", "pipeline_scan", 20.0, "F", TS),
+        ("d2", "auto_stride", 60.0, "C", TS)], findings=[[], []])})
+    assert rows["Security"]["score"] == 70.0
+
+
+def test_only_each_designs_latest_scorable_row_counts(monkeypatch):
+    """A later placeholder (auto_remediator_verify: 0.0, grade N/A) measured
+    nothing, so the design keeps its latest REAL score; an older run is not
+    averaged in beside a newer one."""
+    rows, _, _ = _run(monkeypatch, {"Security": _security_canvas(rows=[
+        ("d1", "auto_stride", 10.0, "F", "2026-01-01"),
+        ("d1", "auto_stride", 40.0, "F", "2026-02-01"),
+        ("d1", "auto_remediator_verify", 0.0, "N/A", "2026-03-01")], findings=[[]])})
+    assert rows["Security"]["score"] == 40.0
+
+
+def test_only_placeholder_rows_are_unmeasured_not_zero(monkeypatch):
+    rows, _, _ = _run(monkeypatch, {"Security": _security_canvas(rows=[
+        ("d1", "auto_remediator_verify", 0.0, "N/A", TS)], findings=[[]])})
+    assert rows["Security"]["score"] is None
+    assert rows["Security"]["score_basis"] == "unmeasured"
 
 
 def test_security_findings_that_cannot_be_read_do_not_license_a_perfect_score(monkeypatch):
     """Unreadable is not zero findings. A perfect score whose findings could
     not be read is still contested, and the count says None, never 0."""
     rows, _, _ = _run(monkeypatch, {"Security": _security_canvas(
-        assessments=4, avg_risk=0.0, findings_raise=True)})
+        assessments=4, avg_risk=100.0, findings_raise=True)})
     sec = rows["Security"]
     assert sec["score"] is None
     assert sec["score_basis"] == "contested"
@@ -271,7 +313,7 @@ def test_security_findings_that_cannot_be_read_do_not_license_a_perfect_score(mo
 
 def test_security_with_measured_risk_and_no_findings_is_scored(monkeypatch):
     rows, overall, _ = _run(monkeypatch, {"Security": _security_canvas(
-        assessments=4, avg_risk=20.0, findings=[[]] * 4)})
+        assessments=4, avg_risk=80.0, findings=[[]] * 4)})
     sec = rows["Security"]
     assert sec["score"] == 80.0
     assert sec["score_basis"] == "measured"
@@ -283,7 +325,7 @@ def test_an_honest_perfect_security_score_is_still_a_score(monkeypatch):
     """Zero risk AND zero findings recorded is a measured 100.0. The rail
     refuses the contradiction, not the number."""
     rows, _, _ = _run(monkeypatch, {"Security": _security_canvas(
-        assessments=2, avg_risk=0.0, findings=[[], []])})
+        assessments=2, avg_risk=100.0, findings=[[], []])})
     assert rows["Security"]["score"] == 100.0
     assert rows["Security"]["score_basis"] == "measured"
 
