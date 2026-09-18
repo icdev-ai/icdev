@@ -218,31 +218,66 @@ def _security_findings(cc):
     return None
 
 
-def _security_score(avg_risk, assessed: bool, open_findings):
+#: Every sc_assessments row, oldest first, for the latest-per-design pick.
+_SECURITY_SCORE_ROWS = (
+    "SELECT design_id, assessment_type, risk_score, posture_grade, ran_at "
+    "FROM sc_assessments ORDER BY ran_at"
+)
+
+#: Writers that store a PENALTY in ``risk_score`` (higher is WORSE): the
+#: cross-canvas scans in tools/security_canvas/agent.py, graded F at >= 20/30.
+#: Every other writer is the STRIDE engine (``run_security_assessment``), whose
+#: ``risk_score`` is ``100 - penalty`` and graded A at >= 90.
+_SECURITY_PENALTY_TYPES = frozenset(
+    {"pipeline_scan", "idc_gap_scan", "ddc_cui_scan", "bdc_boundary_scan"})
+
+
+def _security_row_score(assessment_type, risk_score, grade):
+    """One sc_assessments row as a 0-100 higher-is-better score, or None.
+
+    ``risk_score`` carries two semantics (see ``_SECURITY_PENALTY_TYPES``), so
+    it is read per WRITER rather than averaged raw. MEASURED on the live board
+    2026-09-17: all 24 rows are ``auto_stride`` engine rows at 0.0, grade F,
+    and ``100 - avg(risk_score)`` rendered those 13 designs as a perfect 100 --
+    while the Security canvas's own posture page, which reads the column as
+    the engine writes it, shows grade F. None for a row that measured nothing:
+    no number, or ``auto_remediator_verify``'s placeholder (0.0, grade N/A).
+    """
+    if risk_score is None or grade == "N/A":
+        return None
+    value = float(risk_score)
+    if assessment_type in _SECURITY_PENALTY_TYPES:
+        value = 100.0 - value
+    return max(0.0, min(100.0, value))
+
+
+def _security_avg_score(rows):
+    """Mean of each design's LATEST scorable row, or None when none scores."""
+    latest = {}
+    for row in rows:
+        d = dict(row) if hasattr(row, "keys") else dict(zip(
+            ("design_id", "assessment_type", "risk_score", "posture_grade", "ran_at"), row))
+        value = _security_row_score(d["assessment_type"], d["risk_score"], d["posture_grade"])
+        if value is not None:
+            latest[d["design_id"]] = value  # rows arrive oldest first
+    if not latest:
+        return None
+    return round(sum(latest.values()) / len(latest), 1)
+
+
+def _security_score(avg_score, open_findings):
     """``(score, score_basis)`` for the Security row.
 
-    ``unmeasured``  no assessment row at all (rem-hyg-09): ``100 - 0`` is a
-                    perfect score for a canvas nobody assessed.
-    ``contested``   the rule yields a PERFECT 100.0 while the assessments it
-                    was reduced from carry open findings -- or the findings
-                    could not be read, which is not "none". MEASURED on the
-                    live board 2026-09-07: 13 latest-per-design assessments,
-                    every one stored with posture_grade F and 501 findings
-                    between them, and the row drew a full green bar. A reader
-                    cannot hold both numbers, so the composite is refused and
-                    the findings count stands (rmf-rail-02).
-    ``measured``    otherwise. A measured 0.0 is a real answer and stays.
-
-    NOT fixed here, and named: ``sc_assessments.risk_score`` carries two
-    semantics -- the STRIDE engine stores ``100 - penalty`` (higher is better,
-    graded A at >= 90) while the pipeline writers store a penalty (higher is
-    worse, F at >= 20) -- so ``100 - avg(risk_score)`` inverts the engine's
-    rows. A grade-F engine row (score 0.0) is exactly what read as 100.0 here.
-    Choosing one semantics for the column is a data-model card, not this one.
+    ``unmeasured``  no scorable assessment row at all (rem-hyg-09).
+    ``contested``   a PERFECT 100.0 while the assessments carry open findings,
+                    or the findings could not be read, which is not "none"
+                    (rmf-rail-02). A reader cannot hold both numbers.
+    ``measured``    otherwise. A measured 0.0 is a real answer and stays --
+                    thirteen grade-F designs ARE a Security posture of 0.0.
     """
-    if not assessed:
+    if avg_score is None:
         return None, "unmeasured"
-    score = round(max(0.0, 100.0 - float(avg_risk or 0)), 1)
+    score = round(float(avg_score), 1)
     if score >= 100.0 and (open_findings is None or open_findings > 0):
         return None, "contested"
     return score, "measured"
@@ -421,29 +456,18 @@ def compute_canvas_posture(conn) -> tuple[list[dict], float]:
         basis = None
         try:
             if canvas_name == "Security":
-                try:
-                    r = cconn.execute(
-                        "SELECT AVG(risk_score) FROM sc_assessments a1 "
-                        "WHERE ran_at = (SELECT MAX(ran_at) FROM sc_assessments a2 "
-                        "WHERE a2.design_id = a1.design_id)"
-                    ).fetchone()
-                    avg_risk = float(r[0] or 0)
-                except Exception:
-                    avg_risk = float(cconn.execute(
-                        "SELECT AVG(risk_score) FROM sc_assessments"
-                    ).fetchone()[0] or 0)
-                assessment_rows = int(cconn.execute(
-                    "SELECT COUNT(*) FROM sc_assessments"
-                ).fetchone()[0] or 0)
+                # Each design's latest SCORABLE assessment, put on one
+                # higher-is-better scale in Python (_security_row_score) --
+                # never `100 - AVG(risk_score)`, which inverted every engine row.
+                avg_score = _security_avg_score(cconn.execute(_SECURITY_SCORE_ROWS).fetchall())
                 # The findings the latest assessments RECORDED, off their own
                 # findings_json -- never the assessment row count wearing that
                 # name (rmf-rail-02). None means unreadable, not zero.
                 findings = _security_findings(cconn)
-                # NOT ASSESSED, never 100.0 (rem-hyg-09): with no rows the
-                # average risk is 0 and `100 - 0` is a perfect score for a
-                # canvas nobody has assessed. And never a perfect score BESIDE
-                # open findings (rmf-rail-02): that composite is `contested`.
-                score, basis = _security_score(avg_risk, assessment_rows > 0, findings)
+                # NOT ASSESSED, never 100.0 (rem-hyg-09): no scorable row is
+                # no score. And never a perfect score BESIDE open findings
+                # (rmf-rail-02): that composite is `contested`.
+                score, basis = _security_score(avg_score, findings)
                 open_f = findings
                 closed_f = 0
             elif canvas_name in ("Network", "Pipeline"):
