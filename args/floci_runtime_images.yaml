@@ -27,7 +27,7 @@
 # THE IMAGE SET IS A FUNCTION OF DECLARED CONFIGURATION, NOT OF THE SERVICE
 # -------------------------------------------------------------------------
 # This is the finding that makes a bare per-service list wrong. MEASURED:
-#   * a `python3.11` Lambda pulls public.ecr.aws/lambda/python:3.11, while a
+#   * a `python3.12` Lambda pulls public.ecr.aws/lambda/python:3.12, while a
 #     `nodejs20.x` Lambda pulls public.ecr.aws/lambda/nodejs:20;
 #   * an RDS instance with `Engine=postgres` pulls postgres:16.3-alpine, while
 #     `Engine=mysql` pulls mysql:8.0.36;
@@ -69,17 +69,34 @@ measured_against:
 # happen on the disconnected side. Every entry is therefore something an
 # air-gapped deployment must hold in its local cache BEFORE it is disconnected.
 images:
-  - ref: "public.ecr.aws/lambda/python:3.11"
-    digest: "sha256:755093e1da2ba33f6bd2295c5a6a7ed8b94f1ef347b6ca649874d9cbef5a3e3c"
+  - ref: "public.ecr.aws/lambda/python:3.12"
+    digest: "sha256:5207fd64cca3808107491740d81875d86876eafb15b0cbfb15586c750dfc218d"
     service: lambda
-    variant: "python3.11"
-    note: "One image PER LAMBDA RUNTIME. Vendor the runtimes the deployment declares."
+    variant: "python3.12"
+    mutable_tag: true
+    note: >-
+      MOVED 2026-09-18 (artifact-fresh-591100ea58): every Lambda runtime this
+      repository's own IaC generators declare (tools/infra/dr_generator.py,
+      tools/aadc/iac_generator.py, tools/data/iac_generator.py,
+      tools/infra_canvas/iac_generator.py, tools/ohc/iac_generator.py,
+      args/dr_config.yaml) is `python3.12`, not `python3.11` -- the prior pin
+      was vendoring a runtime nothing here declares. RE-MEASURED against a live
+      floci 2.0.1: a `create_function(Runtime="python3.12")` + `invoke` logged
+      `ImageCacheService  Image already present locally, skipping pull:
+      public.ecr.aws/lambda/python:3.12`, and the container reported Python
+      3.12.14. Like `amazonlinux:2023`, the tag carries an ordering AND is
+      rebuilt in place: the registry served a DIFFERENT digest than the
+      locally-cached one for the same tag, so the digest above is a fresh
+      `docker pull` + `docker image inspect`, not the cached copy. Flagged
+      `mutable_tag` for the same reason. One image PER LAMBDA RUNTIME; vendor
+      the runtimes the deployment declares. See
+      docs/audits/artifact-fresh-591100ea58-lambda-python-pin.md.
 
   - ref: "public.ecr.aws/lambda/nodejs:20"
     digest: "sha256:a4440274d6f0fb4e6cb92cd5f2a97254efe6612f631d9974b197ecbd4a61fcab"
     service: lambda
     variant: "nodejs20.x"
-    note: "Measured alongside python3.11 to prove the per-runtime split is real."
+    note: "Measured alongside python3.11 (since re-measured as python3.12, artifact-fresh-591100ea58) to prove the per-runtime split is real."
 
   - ref: "postgres:16.3-alpine"
     digest: "sha256:36ed71227ae36305d26382657c0b96cbaf298427b3f1eaeb10d77a6dea3eec41"
@@ -280,7 +297,7 @@ service_tokens:
 # blocker or a fabricated clean bill.
 variant_tokens:
   lambda:
-    python3.11: ["python3.11", "python3-11"]
+    python3.12: ["python3.12", "python3-12"]
     nodejs20.x: ["nodejs20.x", "nodejs20", "nodejs20x"]
   rds:
     postgres: ["postgres", "postgresql", "aurora-postgresql"]

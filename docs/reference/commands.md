@@ -9071,7 +9071,7 @@ Terraform provider block aimed at localhost.
 python -m tools.cloud.runtime_images --list                    # the measured table
 python -m tools.cloud.runtime_images --check                   # probe the local cache
 python -m tools.cloud.runtime_images --check --json
-python -m tools.cloud.runtime_images --check --services lambda,rds --variants python3.11,postgres
+python -m tools.cloud.runtime_images --check --services lambda,rds --variants python3.12,postgres
 python -m tools.cloud.runtime_images --measure-help            # how the table was measured
 python tools/airgap/image_vendor.py --save --topic floci-runtime --json   # low side
 python tools/airgap/image_vendor.py --verify --topic floci-runtime --no-daemon-probe --json
@@ -9092,8 +9092,8 @@ per-service attribution in `args/floci_runtime_images.yaml`; the vendor pins are
 `vendor/images/images-floci-runtime.txt` and a test asserts the two agree.
 
 THE IMAGE SET IS A FUNCTION OF DECLARED CONFIGURATION, NOT OF THE SERVICE, and
-that is why a bare per-service list is wrong. A `python3.11` Lambda pulls
-`public.ecr.aws/lambda/python:3.11` and a `nodejs20.x` one pulls
+that is why a bare per-service list is wrong. A `python3.12` Lambda pulls
+`public.ecr.aws/lambda/python:3.12` and a `nodejs20.x` one pulls
 `public.ecr.aws/lambda/nodejs:20`; RDS `postgres` pulls `postgres:16.3-alpine`
 and `mysql` pulls `mysql:8.0.36`; ElastiCache splits by API AND engine — Redis
 goes through CreateReplicationGroup and pulls `valkey/valkey:8` (floci REFUSES

@@ -24,7 +24,7 @@ UNMEASURED_RULE_ID = f"{RULE_ID}-unmeasured"
 # A design declaring two container-backed services, each with its variant named.
 DESIGN = {
     "resources": [
-        {"type": "aws_lambda_function", "name": "ingest", "runtime": "python3.11"},
+        {"type": "aws_lambda_function", "name": "ingest", "runtime": "python3.12"},
         {"type": "aws_db_instance", "name": "store", "engine": "postgres"},
     ]
 }
@@ -116,9 +116,9 @@ def test_the_ecs_workload_image_is_not_declared_as_a_runtime_base():
 
 def test_variant_is_load_bearing_python_vs_nodejs():
     """MEASURED: the runtime, not the service, picks the image."""
-    py, _ = ri.images_for(["lambda"], variants=["python3.11"])
+    py, _ = ri.images_for(["lambda"], variants=["python3.12"])
     node, _ = ri.images_for(["lambda"], variants=["nodejs20.x"])
-    assert [r["ref"] for r in py] == ["public.ecr.aws/lambda/python:3.11"]
+    assert [r["ref"] for r in py] == ["public.ecr.aws/lambda/python:3.12"]
     assert [r["ref"] for r in node] == ["public.ecr.aws/lambda/nodejs:20"]
 
 
@@ -171,7 +171,7 @@ def test_rule_FIRES_when_a_required_image_is_missing():
     assert violations, "a host missing every required image must trip the rule"
     assert {v["severity"] for v in violations} == {"blocker"}, "deployment_blocker -> blocker"
     named = " ".join(v["title"] for v in violations)
-    assert "public.ecr.aws/lambda/python:3.11" in named
+    assert "public.ecr.aws/lambda/python:3.12" in named
     assert "postgres:16.3-alpine" in named
 
 
@@ -185,7 +185,7 @@ def test_rule_fires_on_exactly_the_missing_image_not_the_present_one():
     """Sharper than either direction alone: a rule that fired on the whole
     requirement whenever ANY image was missing would pass both tests above."""
     violations = _rule_violations(
-        DESIGN, _cache_holding("public.ecr.aws/lambda/python:3.11")
+        DESIGN, _cache_holding("public.ecr.aws/lambda/python:3.12")
     )
     assert len(violations) == 1
     assert "postgres:16.3-alpine" in violations[0]["title"]
@@ -283,5 +283,5 @@ def test_nothing_in_this_path_can_pull():
 
 def test_repo_of_keeps_a_registry_port_and_strips_a_tag():
     assert ri.repo_of("postgres:16.3-alpine") == "postgres"
-    assert ri.repo_of("public.ecr.aws/lambda/python:3.11") == "public.ecr.aws/lambda/python"
+    assert ri.repo_of("public.ecr.aws/lambda/python:3.12") == "public.ecr.aws/lambda/python"
     assert ri.repo_of("localhost:5000/floci/floci") == "localhost:5000/floci/floci"

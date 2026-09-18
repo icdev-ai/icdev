@@ -398,7 +398,7 @@ fact cannot come to be spelled two ways.
 
 | service | variant | image |
 |---|---|---|
-| Lambda | `python3.11` | `public.ecr.aws/lambda/python:3.11` |
+| Lambda | `python3.12` | `public.ecr.aws/lambda/python:3.12` |
 | Lambda | `nodejs20.x` | `public.ecr.aws/lambda/nodejs:20` |
 | RDS | `postgres` | `postgres:16.3-alpine` |
 | RDS | `mysql` | `mysql:8.0.36` |
@@ -418,13 +418,13 @@ writes each shared layer once. Re-verifying the media with no daemon at all took
 2.8 s.
 
 **Vendor the variants you declare, not the table.** The image set is a function
-of declared configuration, not of the service: a `python3.11` Lambda and a
+of declared configuration, not of the service: a `python3.12` Lambda and a
 `nodejs20.x` Lambda pull *different* images, as do a postgres and a mysql RDS
 instance. A deployment running one python Lambda over postgres needs four of
 these eleven, not all of them. Ask:
 
 ```bash
-python -m tools.cloud.runtime_images --check --services lambda,rds --variants python3.11,postgres
+python -m tools.cloud.runtime_images --check --services lambda,rds --variants python3.12,postgres
 ```
 
 **Two of floci's own backing images are named by the mutable tag `:latest`**
