@@ -171,6 +171,31 @@ def _has_rows(cc, table: str) -> bool:
         return False
 
 
+def _has_measured_zt_verdict(cc, table: str) -> bool:
+    """Does the ZT device-scan corpus hold at least one MEASURED verdict?
+
+    A ``pass`` or ``fail`` -- never ``unknown``. ``_has_rows`` alone answers
+    "did the scanner run", not "did anything measure a device": rmf-zt-01's
+    scanner records every unprobed check as ``unknown``, and no caller in the
+    tree supplies a probe today, so a table can hold rows while having
+    measured NOTHING (rmf-rail-03). ``verdict`` may be absent on a canvas DB
+    predating the column (added in place by the scanner's own migration) --
+    absence reads as unmeasured, not as an error. Fail-closed to False on any
+    other error too, same as ``_has_rows``.
+    """
+    try:
+        r = cc.execute(
+            f"SELECT COUNT(*) AS c FROM {table} WHERE verdict IN ('pass', 'fail')"  # nosec B608
+        ).fetchone()
+        return int((r["c"] if isinstance(r, dict) else r[0]) or 0) > 0
+    except Exception:
+        try:
+            cc.rollback()
+        except Exception:
+            pass
+        return False
+
+
 #: The PROBE corpus a Zero Trust posture number has to stand on (rmf-rail-02).
 #: ``zig_maturity_scores`` is a reduction over DECLARED implementation statuses
 #: (zig_capabilities / zig_activities, plus the ZTA bridge); the estate itself
@@ -248,7 +273,7 @@ def _security_score(avg_risk, assessed: bool, open_findings):
     return score, "measured"
 
 
-def _zero_trust_score(declared, corpus_has_rows: bool):
+def _zero_trust_score(declared, corpus_has_rows: bool, corpus_has_measured: bool = True):
     """``(score, score_basis)`` for the Zero Trust row.
 
     ``declared`` is the maturity number the zig_* tables would produce --
@@ -262,11 +287,23 @@ def _zero_trust_score(declared, corpus_has_rows: bool):
     device posture reads ``not_evaluated``. rmf-zt-01 already states the
     reading: EXPECT ``unmeasured`` until a probe source is wired. The declared
     number is carried on the row, labelled, so it is reported and never scored.
+
+    ``corpus_has_rows`` alone is not enough (rmf-rail-03): the scanner records
+    every unprobed check as ``unknown``, and today NOTHING in the tree supplies
+    it a probe (the Falcon adapter is a stub, rmf-zt-01), so ``run_fleet_scan``
+    against real hostnames fills the table with rows that measured nothing at
+    all. That corpus reads ``_has_rows`` True the instant it exists -- so an
+    ordinary scanner run would have turned "Not assessed" straight into the
+    declared 100.0, measured over checks that measured nothing. A corpus that
+    holds rows but not one ``pass``/``fail`` verdict among them is therefore
+    its own distinct unmeasured reason, not the same one as no corpus at all.
     """
     if declared is None:
         return None, "unmeasured:no_maturity_rows"
     if not corpus_has_rows:
         return None, "unmeasured:no_device_scan_corpus"
+    if not corpus_has_measured:
+        return None, "unmeasured:no_measured_device_checks"
     return declared, "measured"
 
 
@@ -517,39 +554,37 @@ def compute_canvas_posture(conn) -> tuple[list[dict], float]:
                 open_f = 0
                 closed_f = 0
             elif canvas_name == "Migration":
+                # Score what the canvas WRITES (rmf-rail-03). This used to SUM
+                # cat1/2/3_findings gated on `assessment_type = 'validation'`
+                # while gating PRESENCE on `_has_rows(mc_assessments)` -- ANY
+                # row, of ANY type. The Assess button (mc_api_assess) writes
+                # 'full' and governance writes 'governance'; only
+                # tools/migration/validator.py writes 'validation'. So the
+                # ordinary path -- create a design, press Assess -- passed
+                # `_has_rows`, found zero 'validation' rows to SUM, and
+                # `100 - 0*20 - 0*10 - 0*5` read 100.0 beside whatever grade
+                # the Assess button actually recorded. Every mc_assessments
+                # row (whatever its assessment_type) already carries its OWN
+                # `score`/`grade` on the same 0-100 scale (mc_api_assess,
+                # mdc_api_governance, validator.py all compute and store it),
+                # exactly like every other canvas's `_score_or_none` -- so
+                # read that column instead of re-deriving one from a
+                # type-filtered SUM.
+                score = _score_or_none(cconn, "mc_assessments")
                 try:
                     cat_row = cconn.execute(
                         "SELECT SUM(cat1_findings) as c1, SUM(cat2_findings) as c2, "
                         "SUM(cat3_findings) as c3 FROM mc_assessments a1 "
-                        "WHERE assessment_type = 'validation' "
-                        "AND created_at = (SELECT MAX(created_at) FROM mc_assessments a2 "
-                        "WHERE a2.design_id = a1.design_id AND a2.assessment_type = 'validation')"
+                        "WHERE created_at = (SELECT MAX(created_at) FROM mc_assessments a2 "
+                        "WHERE a2.design_id = a1.design_id)"
                     ).fetchone()
-                    c1 = int(cat_row["c1"] or 0)
-                    c2 = int(cat_row["c2"] or 0)
-                    c3 = int(cat_row["c3"] or 0)
-                    # NOT ASSESSED, never 100.0 (rem-hyg-09): every SUM is NULL
-                    # on an empty table, so `100 - 0 - 0 - 0` scored a canvas
-                    # nobody had assessed as PERFECT. mc_assessments held ZERO
-                    # rows on the live board and rendered a full green bar.
-                    score = (round(max(0.0, 100.0 - c1 * 20 - c2 * 10 - c3 * 5), 1)
-                             if _has_rows(cconn, "mc_assessments") else None)
-                    open_f = c1 + c2 + c3
+                    open_f = int((cat_row["c1"] or 0) + (cat_row["c2"] or 0) + (cat_row["c3"] or 0))
                 except Exception:
                     row = cconn.execute(
                         "SELECT SUM(cat1_findings) as cat1, SUM(cat2_findings) as cat2, "
                         "SUM(cat3_findings) as cat3 FROM mc_assessments"
                     ).fetchone()
-                    c1 = int(row["cat1"] or 0)
-                    c2 = int(row["cat2"] or 0)
-                    c3 = int(row["cat3"] or 0)
-                    # NOT ASSESSED, never 100.0 (rem-hyg-09): every SUM is NULL
-                    # on an empty table, so `100 - 0 - 0 - 0` scored a canvas
-                    # nobody had assessed as PERFECT. mc_assessments held ZERO
-                    # rows on the live board and rendered a full green bar.
-                    score = (round(max(0.0, 100.0 - c1 * 20 - c2 * 10 - c3 * 5), 1)
-                             if _has_rows(cconn, "mc_assessments") else None)
-                    open_f = c1 + c2 + c3
+                    open_f = int((row["cat1"] or 0) + (row["cat2"] or 0) + (row["cat3"] or 0))
                 closed_f = 0
             else:
                 continue
@@ -665,8 +700,16 @@ def compute_canvas_posture(conn) -> tuple[list[dict], float]:
                 declared = round(zig_raw * 100, 1) if declared_rows else None
                 # Read the timestamp BEFORE probing a table that may not exist.
                 zig_last = _max_ts(zconn, "zig_maturity_scores", "assessment_run_at")
+                zt_corpus_has_rows = _has_rows(zconn, _ZT_SCAN_CORPUS)
+                # Only probe for a MEASURED verdict once rows exist -- same
+                # short-circuit rmf-rail-02 already relies on for the scan
+                # corpus itself, and it skips a query against a table that may
+                # not exist at all.
+                zt_corpus_has_measured = (
+                    zt_corpus_has_rows and _has_measured_zt_verdict(zconn, _ZT_SCAN_CORPUS)
+                )
                 zig_score, zig_basis = _zero_trust_score(
-                    declared, _has_rows(zconn, _ZT_SCAN_CORPUS))
+                    declared, zt_corpus_has_rows, zt_corpus_has_measured)
                 canvas_compliance.append({
                     "name": "Zero Trust",
                     "score": zig_score,
