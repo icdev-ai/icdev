@@ -90,6 +90,8 @@ def _json_canvas_conn(
         f"CREATE TABLE IF NOT EXISTS {atbl} ("
         f"  id TEXT PRIMARY KEY,"
         f"  design_id TEXT,"
+        # Real on sc_assessments: posture reads risk_score per WRITER type.
+        f"  assessment_type TEXT DEFAULT 'auto_stride',"
         f"  {score_col} REAL DEFAULT 0,"
         f"  {extra_col}"
         f"  cat1_findings INTEGER DEFAULT 0,"
