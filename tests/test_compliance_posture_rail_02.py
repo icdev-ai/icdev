@@ -87,7 +87,7 @@ class _MainConn:
 
 def _security_canvas(*, assessments=0, avg_risk=0.0, findings=None,
                      findings_raise=False, maturity_rows=0, maturity_avg=None,
-                     caps=0, acts=0, scans="absent", rows=None):
+                     caps=0, acts=0, scans="absent", rows=None, zt_measured=None):
     """One handler for the Security canvas, which serves BOTH the Security
     block and the Zero Trust block (they share the security_canvas backend).
 
@@ -95,6 +95,9 @@ def _security_canvas(*, assessments=0, avg_risk=0.0, findings=None,
     ``avg_risk`` is the STRIDE engine's ``risk_score`` -- HIGHER IS BETTER --
     written on ``assessments`` engine rows, one design each; ``rows`` replaces
     them with explicit ``(design_id, assessment_type, risk_score, grade, ran_at)``.
+    ``zt_measured`` is how many of ``scans`` carry a pass/fail verdict rather
+    than ``unknown`` (rmf-rail-03); defaults to ``scans`` itself so callers
+    that never distinguished the two keep their prior behaviour.
     """
     if rows is None:
         rows = [(f"d{i}", "auto_stride", avg_risk, "F", TS) for i in range(assessments)]
@@ -113,6 +116,8 @@ def _security_canvas(*, assessments=0, avg_risk=0.0, findings=None,
         if "count(*) as c from zig_device_compliance_scans" in sql:
             if scans == "absent":
                 raise RuntimeError('relation "zig_device_compliance_scans" does not exist')
+            if "where verdict" in sql:
+                return {"c": scans if zt_measured is None else zt_measured}
             return {"c": scans}
         if "count(*) as c from zig_maturity_scores" in sql:
             return {"c": maturity_rows}
