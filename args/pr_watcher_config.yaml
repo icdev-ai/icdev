@@ -579,6 +579,14 @@ union_resolver:
     - path: tests/airgap/test_artifact_freshness.py
       rules: [keep_both_blocks, adjacent_edits]
       tests: ["tests/airgap/test_artifact_freshness.py"]
+    # d42b032ea51b8d17 (kpr-watch-22): 6 refusals, all `undeclared:
+    # args/red_first_gate.yaml`. SURVEYED PER HUNK before arming --
+    # `python -m tools.kanban.artifact_pin_union_survey --file
+    # args/red_first_gate.yaml`: 1 decisive hunk, shape append_shaped
+    # (base_seg empty on both sides), 0 lost_content -- the union never
+    # drops content that landed.
+    - path: args/red_first_gate.yaml
+      rules: [keep_both_blocks, adjacent_edits]
     # NOT DECLARED, AND MEASURED RATHER THAN JUDGED (kpr-watch-20):
     # `icdev/data/args/floci_runtime_images.yaml` conflicted on #2269 and is a
     # candidate by proximity only. Its one conflict is an ADD/ADD of the SAME
