@@ -159,7 +159,7 @@ images:
       finer, exactly as RDS states for EngineVersion.
 
   - ref: "redpandadata/redpanda:latest"
-    digest: "sha256:468bd13a9f2bd24794cb7fddc867c767fb1008b9a07b297b89fde48c564d7d96"
+    digest: "sha256:9e83cfa99278f30d0133271c26bf670cd69c94ffa6ba0b42830dd0c3bd9dcfd9"
     service: kafka
     variant: null
     mutable_tag: true
@@ -167,7 +167,9 @@ images:
       MSK is served by REDPANDA, and floci names it by the MUTABLE tag `:latest`.
       The digest recorded here is what `:latest` resolved to on the measured
       date; it can move under the same tag without notice, so a re-vendor must
-      re-measure rather than assume.
+      re-measure rather than assume. Re-measured 2026-09-18 (rpk v26.2.2 ->
+      v26.2.3, a patch rebuild under the same tag); see
+      docs/audits/artifact-fresh-5e94142e90-kafka-redpanda-pin.md.
 
   - ref: "public.ecr.aws/amazonlinux/amazonlinux:2023"
     digest: "sha256:155687eb8e1f156da67beda919f1ca4dab36a9f6fc7576cc514d7773b7d6a311"
