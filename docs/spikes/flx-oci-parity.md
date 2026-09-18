@@ -1,6 +1,6 @@
 # CUI // SP-CTI
 
-# flx-oci-parity — what floci-oci 0.4.0 ACTUALLY answers, and what ICDEV can actually do with it
+# flx-oci-parity — what floci-oci ACTUALLY answers (0.4.0, re-measured on 0.4.1 in §9), and what ICDEV can actually do with it
 
 **Measured 2026-09-05** on this host (Windows 11, Docker Desktop 28.5.1,
 `linux/amd64`), against:
@@ -395,3 +395,39 @@ And one correction to an **earlier draft of this document**: the first pass
 recorded `functions` as absent, having taken the service set from the startup
 log line. `/health` lists it and it answers — [§2](#2-two-self-reports-of-the-service-list-and-they-disagree)
 exists because of that mistake.
+
+---
+
+## 9. Re-measured against 0.4.1 (2026-09-16, artifact-fresh-3d8a95dede)
+
+The pin moved 0.4.0 → 0.4.1 (`artifact_freshness` / xrv-pin-01). Driven live
+(Docker Desktop 28.5.1, `linux/amd64`) against:
+
+```
+floci/floci-oci:0.4.1
+sha256:58b4b17069508b30e48bdf5888fd2759a52c23de082bd758484e3b8e2592b1cb
+native (Quarkus 3.38.3) · edition banner unchanged
+```
+
+Every fact in §§1–8 was spot-checked, not re-run in full, and **none of it
+moved**:
+
+| probe | 0.4.0 (was pinned) | 0.4.1 (now pinned) |
+|---|---|---|
+| startup log, `ServiceRegistry` | 7 services (no `functions`) | identical — 7, same set |
+| `GET /health` → `services` | 8 (+ `functions`, all `"running"`) | identical — 8, same set, same value |
+| `POST /20180222/clusters` with a docker socket | 202, spawns `rancher/k3s:v1.30.1-k3s1`, container dies (`fatal msg="--token is required"`), API still reports `lifecycleState: ACTIVE` | **identical** — same fatal log line, same dead-container-reports-ACTIVE behavior, same k3s tag |
+| `FLOCI_OCI_STORAGE_MODE=persistent` | banner reads `Storage: persistent` | identical |
+| vault `cryptoEndpoint` on a non-default host port mapping | reports the container-internal `http://localhost:4599` regardless of the host mapping | identical — reproduced on host port 4601 |
+| object storage bucket create + list | write reflects, `compartmentId` honoured | identical |
+| Quarkus version in banner | 3.37.4 | 3.38.3 |
+
+**Nothing new was found and nothing designed against changed.** This is a
+patch-shaped release: a Quarkus point bump and the same broken-OKE, same
+7-vs-8 service-count, same container-local-endpoint quirks, byte-for-byte.
+Unlike floci-az's 0.12.0 → 0.13.0 move, there is no new surface to record
+here — the emulator gained nothing observable this pass.
+
+None of the findings in §§1–8 needed rewriting: the "ICDEV's OCI provider
+layer is the actual gap" conclusion, the OKE hazard, and the configuration
+table all hold for 0.4.1 exactly as measured for 0.4.0.

@@ -552,6 +552,25 @@ def test_the_compose_image_and_the_seam_image_are_the_same_literal(compose):
     assert ":latest" not in emulator_oci.IMAGE
 
 
+def test_pinned_artifacts_manifest_agrees_with_the_seam():
+    """``args/pinned_artifacts.yaml`` is a DECLARATION, not a second pin.
+
+    xrv-pin-01's freshness reflex reads the ``pinned:`` field on the
+    ``floci-oci`` entry and compares it to upstream; if that field ever
+    drifted from ``emulator_oci.IMAGE_TAG`` the reflex would report a stale
+    tag as current (or a current one as behind) without anyone touching the
+    actual pin. Three files name this version (compose, the seam, this
+    manifest) and this is the one test connecting the third to the other two.
+    """
+    manifest = yaml.safe_load(
+        (_ROOT / "args" / "pinned_artifacts.yaml").read_text(encoding="utf-8")
+    )
+    entries = [a for a in manifest["artifacts"] if a["name"] == "floci-oci"]
+    assert len(entries) == 1
+    assert entries[0]["pinned"] == emulator_oci.IMAGE_TAG
+    assert entries[0]["pin_source"] == "compose:floci-oci"
+
+
 def test_the_compose_healthcheck_probes_the_seams_health_path(compose):
     test = compose["services"]["floci-oci"]["healthcheck"]["test"]
     assert any(emulator_oci.HEALTH_PATH in str(part) for part in test), test

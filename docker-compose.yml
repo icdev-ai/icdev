@@ -1257,9 +1257,9 @@ services:
     profiles: ["floci-oci"]
     # PINNED, never `:latest`. Kept in step with emulator_oci.IMAGE by hand —
     # YAML cannot import a Python constant — and a test pins them equal.
-    # Digest measured 2026-09-05:
-    #   sha256:584fd7f977077ab040063d7c2efaaaa1beabacccd903f5297eaa7bbe8f744a8b
-    image: floci/floci-oci:0.4.0
+    # Digest measured 2026-09-16 (artifact-fresh-3d8a95dede, bumped from 0.4.0):
+    #   sha256:58b4b17069508b30e48bdf5888fd2759a52c23de082bd758484e3b8e2592b1cb
+    image: floci/floci-oci:0.4.1
     container_name: icdev-floci-oci
     ports:
       # Loopback-only: an emulator holding the host docker socket must not be
@@ -1302,11 +1302,13 @@ services:
       # actually started: rancher/k3s:v1.30.1-k3s1 (version-pinned, unlike the
       # GCP sibling's two `:latest` tags).
       #
-      # THE SOCKET IS MOUNTED KNOWING OKE IS BROKEN IN 0.4.0: the emulator
-      # starts k3s without a `--token`, the container exits immediately, and
-      # the API still reports lifecycleState ACTIVE. Mounting it keeps this
-      # profile identical in shape to its three siblings and lets a later
-      # release work with no compose change; nothing in ICDEV depends on OKE.
+      # THE SOCKET IS MOUNTED KNOWING OKE IS BROKEN: the emulator starts k3s
+      # without a `--token`, the container exits immediately, and the API
+      # still reports lifecycleState ACTIVE. RE-CONFIRMED unchanged in 0.4.1
+      # (artifact-fresh-3d8a95dede, 2026-09-16) — same fatal log line, same
+      # k3s tag. Mounting it keeps this profile identical in shape to its
+      # three siblings and lets a later release work with no compose change;
+      # nothing in ICDEV depends on OKE.
       # Without the socket, OKE fails honestly with a 500 — which is the more
       # informative failure, so a deployment that wants neither may drop this
       # line safely.

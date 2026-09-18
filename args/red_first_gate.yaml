@@ -683,3 +683,28 @@ exemptions:
       exemption. Scoped to this ONE file. Remove this exemption if a future
       change to this file adds a test that is not a cross-file consistency
       guard of this shape.
+
+  - pattern: "tests/cloud/test_floci_oci_seam.py"
+    reason: >-
+      task-det-963d36bf54 (NEEDED-A-HUMAN escalation on
+      artifact-fresh-3d8a95dede, PR #2289). Same shape as the floci-az
+      exemption for tests/cloud/test_floci_az_seam.py directly above
+      (task-det-d38246c003, commit 21b1f4073): the only change to this file
+      is one new test, test_pinned_artifacts_manifest_agrees_with_the_seam,
+      asserting that args/pinned_artifacts.yaml's floci-oci `pinned:` field
+      equals emulator_oci.IMAGE_TAG. Both sides were bumped 0.4.0 -> 0.4.1
+      TOGETHER in this same PR (args/pinned_artifacts.yaml and
+      tools/cloud/emulator_oci.py), so the assertion agrees at the merge base
+      (both 0.4.0) exactly as it agrees here (both 0.4.1) -- it is
+      FORWARD-looking (it guards the pin and the manifest from drifting apart
+      on some FUTURE change that updates one without the other), not a
+      regression test for this pin bump, and cannot be back-dated onto the
+      commit that moves both values in lockstep. MEASURED: merge-base
+      02c4d89537e3 runs this file's 86 tests and they pass; this branch's 86
+      (same count, one added) also pass -- red_first_gate's own output for
+      this file.
+      NOT A PRECEDENT FOR A TEST-ONLY REPAIR: no production behaviour here was
+      previously broken, and no other test in this PR's diff needed this
+      exemption. Scoped to this ONE file. Remove this exemption if a future
+      change to this file adds a test that is not a cross-file consistency
+      guard of this shape.

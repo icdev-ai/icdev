@@ -333,9 +333,17 @@ artifacts:
   - name: floci-oci
     kind: image
     ref: floci/floci-oci
-    pinned: "0.4.0"
+    pinned: "0.4.1"
     pin_source: "compose:floci-oci"
     upstream: dockerhub
+    note: >-
+      Bumped from 0.4.0 on 2026-09-16 (artifact-fresh-3d8a95dede) after
+      driving a live 0.4.1 container -- every measured fact in
+      docs/spikes/flx-oci-parity.md (services, health shape, OKE's `--token`
+      failure, storage-mode honouring, the container-local endpoint quirk)
+      reproduces unchanged. See docs/spikes/flx-oci-parity.md §9 for the
+      delta and docs/audits/artifact-fresh-3d8a95dede-floci-oci-pin.md for
+      the decision record.
 
   # -- The eleven MEASURED floci runtime base images (flx-airgap-02). Each is
   # digest-pinned in vendor/images/images-floci-runtime.txt; the tag below is
