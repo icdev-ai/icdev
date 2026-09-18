@@ -326,9 +326,17 @@ artifacts:
   - name: floci-gcp
     kind: image
     ref: floci/floci-gcp
-    pinned: "0.8.0"
+    pinned: "0.9.0"
     pin_source: "compose:floci-gcp"
     upstream: dockerhub
+    note: >-
+      Bumped from 0.8.0 on 2026-09-17 (artifact-fresh-6a0d68cce8) after
+      driving a live 0.9.0 container -- health contract, service-map
+      enablement-only shape, Firestore/Datastore gRPC-only split, the
+      GKE/Kafka path collision and the fabricated Cloud Run success without a
+      docker socket all reproduce unchanged. See
+      docs/audits/artifact-fresh-6a0d68cce8-floci-gcp-pin.md and
+      docs/spikes/flx-gcp-parity.md.
 
   - name: floci-oci
     kind: image
