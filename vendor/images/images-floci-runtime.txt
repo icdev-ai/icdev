@@ -89,10 +89,12 @@ redpandadata/redpanda@sha256:9e83cfa99278f30d0133271c26bf670cd69c94ffa6ba0b42830
 #   `2023` is a MAJOR-VERSION tag that upstream REBUILDS, so the digest moves
 #   without the tag moving: re-measured 2026-09-12 from AL 2023.12.20260831
 #   (sha256:fb70bd54...) to AL 2023.12.20260909, then again 2026-09-15 to AL
-#   2023.12.20260914 (sha256:155687eb...) below. See
-#   docs/audits/artifact-fresh-b5394142b3-ec2-amazonlinux-pin.md and
-#   docs/audits/artifact-fresh-f1edf3d78e-ec2-amazonlinux-pin.md.
-public.ecr.aws/amazonlinux/amazonlinux@sha256:155687eb8e1f156da67beda919f1ca4dab36a9f6fc7576cc514d7773b7d6a311
+#   2023.12.20260914 (sha256:155687eb...), then again 2026-09-19 to AL
+#   2023.12.20260918 (the digest below). See
+#   docs/audits/artifact-fresh-b5394142b3-ec2-amazonlinux-pin.md,
+#   docs/audits/artifact-fresh-f1edf3d78e-ec2-amazonlinux-pin.md and
+#   docs/audits/artifact-fresh-66057392f8-ec2-amazonlinux-pin.md.
+public.ecr.aws/amazonlinux/amazonlinux@sha256:06da5a3362eda00c5114227ac81abe56dd9b943395553b7c64a310457f4d9e2b
 
 # eks -- rancher/k3s:latest   # MUTABLE TAG upstream -- re-measure, never assume
 rancher/k3s@sha256:5e0707cfd1239b358ef73f3254bc3eadc027dd30cd5ec6ca41e29e47652a1b8c
