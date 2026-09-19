@@ -34,6 +34,11 @@
 public.ecr.aws/lambda/python@sha256:5207fd64cca3808107491740d81875d86876eafb15b0cbfb15586c750dfc218d
 
 # lambda/nodejs20.x -- public.ecr.aws/lambda/nodejs:20
+#   KEPT at 20 (artifact-fresh-333eeead1d): nothing in this tree declares a Node
+#   Lambda runtime. nodejs24.x was driven against floci 2.0.1 and works
+#   (`Pulling image: public.ecr.aws/lambda/nodejs:24`), so a deployment that
+#   declares it must vendor nodejs:24 TOO. See
+#   docs/audits/artifact-fresh-333eeead1d-lambda-nodejs-pin.md.
 public.ecr.aws/lambda/nodejs@sha256:a4440274d6f0fb4e6cb92cd5f2a97254efe6612f631d9974b197ecbd4a61fcab
 
 # rds/postgres -- postgres:16.3-alpine

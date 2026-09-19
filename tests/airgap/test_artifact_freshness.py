@@ -445,6 +445,19 @@ def test_the_shipped_mysql_pin_is_decided_by_floci_not_by_mysql_releases():
     assert entry["consumer"] == "floci"
 
 
+def test_the_shipped_lambda_nodejs_pin_is_decided_by_the_declared_runtime_not_by_upstream():
+    """artifact-fresh-333eeead1d. MEASURED 2026-09-19 against a live floci
+    2.0.1: nodejs20.x ran from `public.ecr.aws/lambda/nodejs:20` and nodejs24.x
+    pulled `public.ecr.aws/lambda/nodejs:24` -- so the image is a function of the
+    Runtime a caller declares, and this tree declares no Node runtime at all.
+    Re-arming the upstream tag comparison files a card for a release nothing
+    here requests."""
+    entry = next(e for e in AF.load_config()["artifacts"] if e["name"] == "lambda-nodejs")
+    assert entry["pinned"] == "20"
+    assert entry["decided_by"] == AF.DECIDED_BY_CONSUMER
+    assert entry["consumer"] == "floci"
+
+
 def test_the_shipped_opensearch_pin_is_decided_by_floci_not_by_opensearch_releases():
     """artifact-fresh-a7486018c7. Stronger than the postgres case: floci 2.0.1
     resolves the tag through a CLOSED EngineVersion table that stops at

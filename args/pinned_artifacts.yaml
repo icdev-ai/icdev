@@ -368,12 +368,28 @@ artifacts:
       runtime this repository's own IaC generators declare is python3.12, not
       python3.11. See docs/audits/artifact-fresh-591100ea58-lambda-python-pin.md.
 
+  # DELIBERATELY KEPT at 20. Nothing in this repository declares a Node Lambda
+  # runtime, and the `Runtime` a caller declares is what picks the image
+  # (`nodejs<N>.x` -> `nodejs:<N>`). MEASURED 2026-09-19 against a live floci
+  # 2.0.1: nodejs20.x logged `Image already present locally, skipping pull:
+  # public.ecr.aws/lambda/nodejs:20` (node v20.20.2) and nodejs24.x logged
+  # `Pulling image: public.ecr.aws/lambda/nodejs:24` (node v24.21.0) -- so 24
+  # IS reachable, and is a runtime a deployment must vendor TOO if it declares
+  # it. Decision record: docs/audits/artifact-fresh-333eeead1d-lambda-nodejs-pin.md.
   - name: lambda-nodejs
     kind: image
     ref: public.ecr.aws/lambda/nodejs
     pinned: "20"
     pin_source: "vendor/images/images-floci-runtime.txt"
     upstream: ecr_public
+    decided_by: consumer
+    consumer: floci
+    note: >-
+      Kept at 20 (artifact-fresh-333eeead1d): no IaC generator or args file in
+      this tree declares a Node Lambda runtime, so 24 would vendor an image
+      nothing requests. nodejs:24 was driven and works (digest observed
+      sha256:cf160411731b...); a deployment declaring nodejs24.x vendors it
+      alongside, never instead of, this one.
 
   # DELIBERATELY KEPT at floci 2.0.1's default postgres engine version. See
   # "A TAG SOMEBODY ELSE CHOOSES" above for the measurement; the decision
