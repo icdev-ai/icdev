@@ -145,3 +145,45 @@ class TestGpuCheck:
         assert isinstance(result, dict)
         assert "cuda_available" in result
         assert "sdxl_turbo_compatible" in result
+
+
+class TestCpuOnlyRequestSkipsGpuProbe:
+    """A slides_svg request must not import torch (cold import ~7 s; qa-fail-108b2061b017b237)."""
+
+    def test_cpu_only_preferred_providers_skip_gpu_probe(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("tools.viz.asset_generator._gpu_available") as probe:
+                result = generate_for_slide(
+                    title="No GPU needed",
+                    theme="midnight_executive",
+                    output_path=str(Path(tmp) / "out.svg"),
+                    preferred_providers=["slides_svg"],
+                )
+            assert result["success"] is True
+            probe.assert_not_called()
+
+    def test_unspecified_providers_still_probe_gpu(self):
+        with patch("tools.viz.asset_generator._gpu_available", return_value=False) as probe:
+            AssetGenerator(output_dir=Path(tempfile.gettempdir()))._select_providers(
+                AssetRequest(context="slides", title="t")
+            )
+        probe.assert_called_once()
+
+    def test_generate_for_slide_does_not_import_torch(self):
+        import subprocess
+
+        code = (
+            "import sys, tempfile, os;"
+            "from tools.viz.asset_generator import generate_for_slide;"
+            "d = tempfile.mkdtemp();"
+            "r = generate_for_slide(title='no-torch-' + os.urandom(6).hex(), theme='midnight_executive',"
+            " output_path=os.path.join(d, 'x.svg'), preferred_providers=['slides_svg']);"
+            "assert r['success'], r;"
+            "assert 'torch' not in sys.modules, 'torch was imported'"
+        )
+        env = {**os.environ, "PYTHONPATH": str(ROOT)}
+        proc = subprocess.run(
+            [sys.executable, "-c", code], cwd=str(ROOT), env=env,
+            capture_output=True, text=True, timeout=120,
+        )
+        assert proc.returncode == 0, proc.stderr

@@ -161,10 +161,19 @@ def check_gpu() -> Dict[str, Any]:
     return result
 
 
-def _available_providers() -> List[str]:
-    """Providers available on this machine right now."""
+# Providers that never touch a GPU. A request that names only these must not pay
+# for the GPU probe: `import torch` costs ~7 s cold, which is what pushed the
+# first /slides/api/asset-smoke past its 10 s API timeout.
+CPU_ONLY_PROVIDERS: frozenset[str] = frozenset({"slides_svg", "slides_matplotlib"})
+
+
+def _available_providers(probe_gpu: bool = True) -> List[str]:
+    """Providers available on this machine right now.
+
+    ``probe_gpu=False`` skips the (slow, first-call) torch import and reports no GPU.
+    """
     providers: List[str] = ["slides_svg", "slides_matplotlib"]
-    if _gpu_available():
+    if probe_gpu and _gpu_available():
         providers.insert(0, "pulse_sdxl")
     if os.environ.get("OPENAI_API_KEY"):
         providers.insert(0, "dalle")
@@ -262,7 +271,10 @@ class AssetGenerator:
 
     def _select_providers(self, req: AssetRequest) -> List[str]:
         """Resolve provider order: request → config → air-gap → availability."""
-        available = _available_providers()
+        cpu_only = bool(req.preferred_providers) and all(
+            p in CPU_ONLY_PROVIDERS for p in req.preferred_providers
+        )
+        available = _available_providers(probe_gpu=not cpu_only)
         candidates: List[str] = []
 
         # 1. Request override
