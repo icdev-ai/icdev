@@ -1272,6 +1272,105 @@ export async function assertDatabaseIsolated(
   throw new Error(isolationFailure(run));
 }
 
+// ── Warm the server before the first test (qa-fail-21bfa13285d6c50f) ──────────
+//
+// The first test of a sweep batch, `activity_feed.spec.ts`, died with
+// `page.goto: Timeout 30000ms exceeded navigating to /activity`. The stall
+// sampler did NOT overlap it (`during_stall: false`, 44 samples) and the same
+// canvas passed 4/4 alone against the same server, so it was a first-hit cost and
+// not a regression on /activity.
+//
+// WHAT WAS MEASURED, and what was not. A freshly started dashboard answers a cold
+// /activity in 0.06-0.25s and its largest static file (mermaid, 2.9 MB) in ~1.9s
+// on a cold file cache; the self-reload watcher cannot fire in a fresh process
+// (`_RELOAD_MIN_INTERVAL_SECONDS` = 1800). The 30s stall was NOT reproduced, so
+// this is a MITIGATION and a MEASUREMENT, not a proven fix: it moves whatever a
+// first hit pays out of the first test's 30s `navigationTimeout` and into a
+// budget of its own, and it RECORDS each first hit's duration so a recurrence
+// names the path instead of a bare TimeoutError.
+//
+// It never throws. A warm-up that failed the run would be a new way for a healthy
+// suite to go red; the reachability and isolation asserts above own that job.
+// ICDEV_E2E_WARMUP=0 turns it off, and says so.
+
+/** Pages whose first render is worth paying for outside a test's own timeout. */
+const WARMUP_PATHS = ['/', '/activity'];
+/** Cap on static files fetched per warm-up, so a page listing hundreds cannot run away. */
+const WARMUP_MAX_ASSETS = 60;
+/** A first hit slower than this is reported by name. */
+const WARMUP_SLOW_MS = 5000;
+
+export interface WarmupHit {
+  path: string;
+  status: number | null;
+  elapsedMs: number;
+  error?: string;
+}
+
+/** `/static/...` references in an HTML body, in document order, de-duplicated. */
+export function staticAssetPaths(html: string): string[] {
+  const seen = new Set<string>();
+  for (const m of html.matchAll(/(?:src|href)="(\/static\/[^"#?]+)/g)) {
+    seen.add(m[1]);
+  }
+  return [...seen];
+}
+
+async function warmOnce(baseUrl: string, path: string, timeoutMs: number): Promise<WarmupHit & { body?: string }> {
+  const started = Date.now();
+  try {
+    const res = await fetch(new URL(path, baseUrl).toString(), { signal: AbortSignal.timeout(timeoutMs) });
+    // Read the body: the server has not finished serving until the last byte.
+    const body = await res.text();
+    return { path, status: res.status, elapsedMs: Date.now() - started, body };
+  } catch (err) {
+    return { path, status: null, elapsedMs: Date.now() - started, error: (err as Error).message };
+  }
+}
+
+/**
+ * Hit each warm-up page once, then the static files they reference, and report how
+ * long every first hit took. Never throws.
+ */
+export async function warmDashboard(
+  baseUrl: string | undefined,
+  opts: { timeoutMs?: number } = {},
+): Promise<WarmupHit[]> {
+  if (process.env.ICDEV_E2E_WARMUP === '0' || process.env.ICDEV_E2E_WARMUP === 'off') {
+    console.log('  ! E2E server warm-up DISABLED (ICDEV_E2E_WARMUP=0)');
+    return [];
+  }
+  if (!baseUrl) return [];
+  const timeoutMs = opts.timeoutMs ?? 60000;
+
+  const hits: WarmupHit[] = [];
+  const assets = new Set<string>();
+  for (const path of WARMUP_PATHS) {
+    const { body, ...hit } = await warmOnce(baseUrl, path, timeoutMs);
+    hits.push(hit);
+    for (const a of staticAssetPaths(body ?? '')) assets.add(a);
+  }
+  const queue = [...assets].slice(0, WARMUP_MAX_ASSETS);
+  const workers = Array.from({ length: 4 }, async () => {
+    for (let a = queue.shift(); a !== undefined; a = queue.shift()) {
+      const { body: _body, ...hit } = await warmOnce(baseUrl, a, timeoutMs);
+      hits.push(hit);
+    }
+  });
+  await Promise.all(workers);
+
+  const total = hits.reduce((n, h) => n + h.elapsedMs, 0);
+  console.log(`  ✓ E2E server warmed: ${hits.length} first hits, ${total} ms summed`);
+  for (const h of hits) {
+    if (h.status === null || h.status >= 400) {
+      console.log(`    ! warm-up ${h.path}: ${h.error ?? `HTTP ${h.status}`} after ${h.elapsedMs} ms`);
+    } else if (h.elapsedMs >= WARMUP_SLOW_MS) {
+      console.log(`    ! SLOW FIRST HIT ${h.path}: ${h.elapsedMs} ms (a test's navigationTimeout is 30000 ms)`);
+    }
+  }
+  return hits;
+}
+
 /** Read the baseURL Playwright actually resolved, not a second copy of it. */
 function baseUrlFromConfig(config?: unknown): string | undefined {
   const projects = (config as { projects?: Array<{ use?: { baseURL?: string } }> } | undefined)?.projects;
@@ -1301,5 +1400,6 @@ export default async function globalSetup(config?: unknown): Promise<void> {
   // answer /api/health, and reporting that as 'isolation unmeasured' would
   // send the reader to the wrong fix for a cause already named above.
   await assertDatabaseIsolated(baseUrl);
+  await warmDashboard(baseUrl);
 }
 // CUI // SP-CTI
