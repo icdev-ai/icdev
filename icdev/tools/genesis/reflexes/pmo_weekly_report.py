@@ -12,7 +12,7 @@ import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -186,6 +186,35 @@ def _worst_cpi_selection(
         "reason": reason,
         "tied_beyond_cutoff": tied_beyond,
     }
+
+
+# "Top open issue" was `issues[0]` — the first issue of the first contract the
+# portfolio query happened to return, and `top_issues[:8]` kept the first eight
+# in that same order. Severity never entered into it, so a CRITICAL issue on
+# the ninth contract was cut while HIGH ones were kept, and on 2026-09-21 one of
+# eight equal HIGH issues was named "top" by row position (pmo-rpt-7db7269c9c).
+_SEVERITY_RANK = {"critical": 0, "high": 1}
+
+
+def _rank_issues(issues: List[Dict[str, Any]], limit: int = 8) -> List[Dict[str, Any]]:
+    """Order issues by severity (stable within a severity), THEN truncate."""
+    ranked = sorted(issues, key=lambda i: _SEVERITY_RANK.get(i.get("severity"), 2))
+    return ranked[:limit]
+
+
+def _top_issue_sentence(issues: List[Dict[str, Any]]) -> str:
+    """The narrative's issue line — naming a tie instead of picking a winner."""
+    lead = issues[0]
+    severity = (lead.get("severity") or "").upper()
+    tied = sum(1 for i in issues if i.get("severity") == lead.get("severity"))
+    contract = (lead.get("contract") or "").strip()
+    text = lead.get("issue", "")
+    if contract:
+        text = f"{text} ({contract})"
+    if tied > 1:
+        return (f"{tied} open issue(s) share the highest severity ({severity}) "
+                f"and none outranks the others; e.g. {text}")
+    return f"Top open issue ({severity}): {text}" if severity else f"Top open issue: {text}"
 
 
 def _is_placeholder_title(title: Any) -> bool:
@@ -427,7 +456,7 @@ def _gather_portfolio_snapshot() -> Dict[str, Any]:
                     })
             except Exception:
                 pass
-        snapshot["top_issues"] = top_issues[:8]
+        snapshot["top_issues"] = _rank_issues(top_issues)
     except Exception:
         snapshot["top_issues"] = []
 
@@ -550,9 +579,7 @@ def _deterministic_narrative(snapshot: Dict[str, Any]) -> str:
 
     issues = snapshot.get("top_issues", [])
     if issues:
-        contract = (issues[0].get("contract") or "").strip()
-        top = f"Top open issue: {issues[0].get('issue', '')}"
-        lines.append(f"{top} ({contract})" if contract else top)
+        lines.append(_top_issue_sentence(issues))
 
     advisory = _data_quality_advisory(snapshot)
     if advisory:
