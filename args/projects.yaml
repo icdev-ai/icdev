@@ -4,6 +4,47 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: ftl_bz
+  name: FT 30m BoxZone + Jev Intraday (stocks & crypto)
+  description: 'Port the NinjaTrader BoxZone indicator into ICDEV[FT] for 30-minute intraday
+    trading on stocks (NYSE, Alpaca SIP) and crypto (BTC/ETH, UTC-day sessions), LONG-ONLY,
+    with the Jev (TypeSafe System One) cross-check as a veto-only, fail-closed final verdict.
+    Validate first: NT8 parity oracle, pre-registered walk-forward study (worst of 3 Jev runs
+    PF >= 1.0 every year incl. 2025), forward observe-mode record before any paper orders.
+    UI: a /lab page rebuilt in the operator''s Jev Lab style. Builds in the icdev_ft repo
+    (ftl- prefix routing). Salvages the reviewed parts of branch wip/ft-jev-boxzone-nt8.'
+  task_prefix: ftl-bz-
+  default_open: true
+  briefs:
+  - 'salv: land jev.py, the NT8 signal bridge (byte-offset tailing, no lost rows) and NT8 sources from the WIP rescue branch - ftl-bz-salv-01'
+  - 'port: BoxZone port faithful to the .cs, NYSE RTH vs crypto UTC-day sessions, long-only - ftl-bz-port-01'
+  - 'parity: NT8 export replay harness, 100% long-signal match target - ftl-bz-parity-01'
+  - 'jev: 30m Jev gate, veto-only, fail-closed, fin_jev_calls replay log - ftl-bz-jev-01'
+  - 'study: engine gaps (flatten, SIP-delay fills) + pre-registered 30m study - ftl-bz-study-01'
+  - 'stream: multi-symbol observe/paper stream process, off by default - ftl-bz-stream-01'
+  - 'lab: /lab BoxZone Lab page + /api/v1/boxzone router - ftl-bz-lab-01'
+  epics:
+  - key: salv
+    title: Salvage from the WIP rescue branch
+    priority: high
+  - key: port
+    title: BoxZone port
+    priority: high
+  - key: parity
+    title: NT8 parity oracle
+    priority: high
+  - key: jev
+    title: Jev final-verdict gate
+    priority: high
+  - key: study
+    title: Pre-registered 30m study
+    priority: high
+  - key: stream
+    title: Observe/paper stream
+    priority: high
+  - key: lab
+    title: BoxZone Lab UI
+    priority: high
 - key: kph_repark_xrv
   name: Kph Repark Xrv Project
   description: Auto-registered project for tasks with prefix 'kph-repark-xrv-'. Update
