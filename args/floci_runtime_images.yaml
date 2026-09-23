@@ -137,7 +137,7 @@ images:
       here declares it.
 
   - ref: "valkey/valkey:8"
-    digest: "sha256:3fbd2e3e4b6e85e046c1e7c215e8f79087bc0357789184305806664e320996f3"
+    digest: "sha256:640c5e62cea04b6d6f2084232651d0cc70362d31f4f805e7be94dbed6855e8f2"
     service: elasticache
     variant: "redis"
     note: >-
@@ -153,8 +153,13 @@ images:
       it, so this pin does NOT follow it. The DIGEST was re-measured the same
       day — the tag had moved off sha256:98c6217c..., with the container
       reporting Valkey 8.1.10 on BOTH digests, i.e. a base-image rebuild rather
-      than an engine upgrade. Record:
-      docs/audits/artifact-fresh-ee3339893b-elasticache-valkey-pin.md.
+      than an engine upgrade. RE-MEASURED 2026-09-23 (artifact-fresh-6ba5fc339e)
+      by `docker pull` + `docker image inspect` of the live tag: it rebuilt again,
+      off sha256:3fbd2e3e... to the digest above, Valkey 8.1.10 on both and the
+      Debian base 13.6 -> 13.7; floci 2.0.1's binary still holds only
+      `valkey/valkey:8`. Records:
+      docs/audits/artifact-fresh-ee3339893b-elasticache-valkey-pin.md,
+      docs/audits/artifact-fresh-6ba5fc339e-elasticache-valkey-pin.md.
 
   - ref: "memcached:1.6"
     digest: "sha256:75c93cc91e76853da7c029e74d6e8dbd44774dd3713c93be8cd1971ad26120a4"

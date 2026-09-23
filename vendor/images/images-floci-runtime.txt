@@ -66,8 +66,12 @@ mysql@sha256:a532724022429812ec797c285c1b540a644c15e248579c6bfdf12a8fbaab4964
 #   this line leaves EVERY ElastiCache path unvendored. DIGEST RE-MEASURED the
 #   same day: the tag moved off sha256:98c6217c... to the digest below, same
 #   engine (Valkey 8.1.10) either side -- a base-image rebuild, not an upgrade.
-#   See docs/audits/artifact-fresh-ee3339893b-elasticache-valkey-pin.md.
-valkey/valkey@sha256:3fbd2e3e4b6e85e046c1e7c215e8f79087bc0357789184305806664e320996f3
+#   RE-MEASURED 2026-09-23 (artifact-fresh-6ba5fc339e): the tag rebuilt AGAIN,
+#   off sha256:3fbd2e3e... to the digest below -- still Valkey 8.1.10, base
+#   Debian 13.6 -> 13.7. floci 2.0.1's binary still holds only valkey/valkey:8.
+#   See docs/audits/artifact-fresh-ee3339893b-elasticache-valkey-pin.md and
+#   docs/audits/artifact-fresh-6ba5fc339e-elasticache-valkey-pin.md.
+valkey/valkey@sha256:640c5e62cea04b6d6f2084232651d0cc70362d31f4f805e7be94dbed6855e8f2
 
 # elasticache/memcached -- memcached:1.6
 memcached@sha256:75c93cc91e76853da7c029e74d6e8dbd44774dd3713c93be8cd1971ad26120a4
