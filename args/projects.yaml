@@ -4,6 +4,48 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: kph_repark_xrv
+  name: Kph Repark Xrv Project
+  description: Auto-registered project for tasks with prefix 'kph-repark-xrv-'. Update
+    name and description to reflect the project purpose.
+  task_prefix: kph-repark-xrv-
+  default_open: true
+  briefs: []
+  epics:
+  - key: cost
+    title: COST
+    priority: medium
+  - key: route
+    title: ROUTE
+    priority: medium
+- key: kph_repark_mfx
+  name: Kph Repark Mfx Project
+  description: Auto-registered project for tasks with prefix 'kph-repark-mfx-'. Update
+    name and description to reflect the project purpose.
+  task_prefix: kph-repark-mfx-
+  default_open: true
+  briefs: []
+  epics:
+  - key: ci
+    title: CI
+    priority: medium
+  - key: mrg
+    title: MRG
+    priority: medium
+  - key: own
+    title: OWN
+    priority: medium
+- key: kph_repark_kph_repark_mfx
+  name: Kph Repark Kph Repark Mfx Project
+  description: Auto-registered project for tasks with prefix 'kph-repark-kph-repark-mfx-'.
+    Update name and description to reflect the project purpose.
+  task_prefix: kph-repark-kph-repark-mfx-
+  default_open: true
+  briefs: []
+  epics:
+  - key: ci
+    title: CI
+    priority: medium
 - key: wire
   name: Wire Project
   description: Auto-registered project for tasks with prefix 'wire-'. Update name
