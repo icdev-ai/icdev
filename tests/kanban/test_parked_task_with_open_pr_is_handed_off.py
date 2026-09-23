@@ -128,6 +128,9 @@ def test_a_parked_task_with_an_open_pr_moves_to_pr_opened(monkeypatch):
                         moves.append((tid, status, actor, reason)))
     cleared = []
     monkeypatch.setattr(k, "_clear_resume_at", lambda tid: cleared.append(tid))
+    linked = []
+    monkeypatch.setattr(k, "_link_handed_off_pr",
+                        lambda tid, root, number: linked.append((tid, number)))
 
     number = k._hand_parked_task_to_pr_watcher(TASK, context="at park")
 
@@ -135,6 +138,37 @@ def test_a_parked_task_with_an_open_pr_moves_to_pr_opened(monkeypatch):
     assert moves == [(TASK, "pr_opened", "scheduler",
                       "open PR #2040 found while parked (at park); handed to pr_watcher")]
     assert cleared == [TASK], "a resume_at for a task the watcher owns is a lie"
+    # pr_watcher finds a PR ONLY through executor_url: a hand-off that does not
+    # link it hands to nobody (ftl-bz-port-01 / icdev_ft #417, 2026-09-23).
+    assert linked == [(TASK, 2040)]
+
+
+def test_the_hand_off_link_is_written_only_when_the_task_has_none(monkeypatch):
+    from tools.kanban import pr_linker
+
+    monkeypatch.setattr(pr_linker, "pr_url_for",
+                        lambda root, number, **kw: f"https://github.com/o/ext/pull/{number}")
+    conn = _Conn([])
+    monkeypatch.setattr(k, "get_connection", lambda *a, **kw: conn)
+
+    url = k._link_handed_off_pr(TASK, "C:/repos/ext", 417)
+
+    assert url == "https://github.com/o/ext/pull/417"
+    (sql, params), = conn.writes
+    assert "SET executor_url" in sql
+    assert "executor_url IS NULL OR executor_url = ''" in sql, "never overwrite a link"
+    assert params == ("https://github.com/o/ext/pull/417", TASK)
+
+
+def test_an_unresolvable_pr_url_writes_nothing_and_never_raises(monkeypatch):
+    from tools.kanban import pr_linker
+
+    monkeypatch.setattr(pr_linker, "pr_url_for", lambda root, number, **kw: None)
+    conn = _Conn([])
+    monkeypatch.setattr(k, "get_connection", lambda *a, **kw: conn)
+
+    assert k._link_handed_off_pr(TASK, "C:/repos/ext", 417) is None
+    assert conn.writes == []
 
 
 def test_a_parked_task_without_a_pr_is_left_parked(monkeypatch):
@@ -239,10 +273,19 @@ def test_startup_recovery_hands_a_parked_task_with_an_open_pr_to_the_watcher():
     out = sr.hand_off_parked_tasks_with_open_pr(
         conn_factory=lambda: conn,
         list_open_prs=lambda _root: {BRANCH: 2040, "kanban/rmf-wp-02": 2042},
+        resolve_pr_url=lambda _root, n: f"https://github.com/o/r/pull/{n}",
     )
     assert sorted(e["id"] for e in out["handed"]) == ["rmf-rfp-01", "rmf-wp-02"]
     assert {e["pr_number"] for e in out["handed"]} == {2040, 2042}
     assert conn.committed
+    # The watcher finds a PR ONLY through executor_url -- link it, never overwrite.
+    links = [(s, p) for s, p in conn.writes if "SET executor_url" in s]
+    assert sorted(p for _s, p in links) == [
+        ("https://github.com/o/r/pull/2040", "rmf-rfp-01"),
+        ("https://github.com/o/r/pull/2042", "rmf-wp-02"),
+    ]
+    for sql, _p in links:
+        assert "executor_url IS NULL OR executor_url = ''" in sql
     status_writes = [(s, p) for s, p in conn.writes if "SET status = 'pr_opened'" in s]
     assert len(status_writes) == 2
     for sql, params in status_writes:

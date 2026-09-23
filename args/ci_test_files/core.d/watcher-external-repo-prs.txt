@@ -1,0 +1,2 @@
+# fix/watcher-external-repo-prs: external-repo PRs judged against their own required checks
+tests/ci/test_watcher_external_repo_required_checks.py

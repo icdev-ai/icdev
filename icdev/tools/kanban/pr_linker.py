@@ -121,6 +121,51 @@ def _pr_number_of(url: str) -> Optional[str]:
     return m.group(1) if m else None
 
 
+def pr_url_for(
+    repo_root,
+    number: int,
+    *,
+    runner: Optional[Callable] = None,
+    gh_bin: str = "gh",
+) -> Optional[str]:
+    """The URL of PR #*number* in the repository checked out at *repo_root*.
+
+    Asked IN that checkout, so an external-repo task (icdev_ft, compass, ...)
+    resolves to ITS repository -- `link_open_prs` above lists only the repo the
+    process stands in, so it can never link an external PR after the fact.
+    None when the forge cannot be asked or the answer is not a PR URL.
+    """
+    run = runner or subprocess.run
+    try:
+        proc = run(
+            [gh_bin, "pr", "view", str(number), "--json", "url", "-q", ".url"],
+            cwd=str(repo_root), capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=30,
+        )
+    except Exception:  # noqa: BLE001 -- "could not ask" is None, never a raise
+        return None
+    if getattr(proc, "returncode", 1) != 0:
+        return None
+    url = (getattr(proc, "stdout", "") or "").strip()
+    return url if _PR_URL_RE.fullmatch(url) else None
+
+
+def link_if_unlinked(conn, task_id: str, pr_url: str) -> bool:
+    """Set `executor_url` to *pr_url* only when the task has none.
+
+    The same never-overwrite rule `link_open_prs` keeps: a wrong link would
+    make pr_watcher merge someone else's branch. Returns True when written.
+    """
+    if not pr_url:
+        return False
+    cur = conn.execute(
+        "UPDATE kanban_tasks SET executor_url = %s "
+        "WHERE id = %s AND (executor_url IS NULL OR executor_url = '')",
+        (pr_url, task_id),
+    )
+    return bool(getattr(cur, "rowcount", 0))
+
+
 def fetch_pr_state(
     number: str,
     *,

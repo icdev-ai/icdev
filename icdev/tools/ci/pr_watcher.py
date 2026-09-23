@@ -1123,6 +1123,8 @@ class PRWatcher:
         # session stubs so an un-injected watcher never reads the live forge.
         self._gh_runner = gh_runner
         self._required_checks_cache: Optional[tuple] = None   # (monotonic, set|None)
+        # Same shape, per EXTERNAL repo (see `required_checks_for`).
+        self._required_checks_by_repo: Dict[str, tuple] = {}
         # Re-verification attempts per task, for the life of this watcher.
         # Bounded so a task whose verification genuinely fails cannot spin: it is
         # re-checked once, and if it still fails the PR stays held until a human
@@ -1852,6 +1854,46 @@ class PRWatcher:
                 "pr_watcher: required checks UNRESOLVED for %s -- every check "
                 "counts until the next attempt", self._default_branch())
         self._required_checks_cache = (now, resolved)
+        return resolved
+
+    def required_checks_for(self, task_id: str, pr_url: str) -> Optional[FrozenSet[str]]:
+        """The required-check set for THIS PR's repository.
+
+        `required_checks()` reads branch protection of the repo this process
+        stands in (ICDev). Applied to an EXTERNAL-repo task's PR it names checks
+        that repo does not have: measured 2026-09-23, icdev_ft PR #417 ran
+        Test / UI / E2E / Bootstrap smoke -- all green -- and was judged against
+        {Lint, Test, Security Scan, Helm Lint}, so `is_passing` was False, the
+        PR classified PR_OPENED forever, and its task chain stalled.
+
+        An ICDev task keeps the exact path it had (no extra forge call). An
+        external task asks its own repo; unresolved -> None -> every check
+        counts, the same fail-safe reading `required_checks()` documents.
+        """
+        if not self.config.get("required_checks_only", True):
+            return None
+        try:
+            from tools.kanban.repo_registry import resolve_task_repo
+
+            target = resolve_task_repo(task_id)
+        except Exception:  # noqa: BLE001 -- unknown target reads as ICDev
+            target = None
+        repo = repo_of(pr_url)
+        if target is None or not target.is_external or not repo:
+            return self.required_checks()
+        ttl = float(self.config.get("required_checks_cache_seconds", 300) or 0)
+        now = time.monotonic()
+        cached = self._required_checks_by_repo.get(repo)
+        if cached is not None and now - cached[0] < ttl:
+            return cached[1]
+        resolved = None
+        try:
+            resolved = fetch_required_checks(
+                target.base_branch or "main", runner=self._gh_runner, repo=repo)
+        except Exception as exc:  # noqa: BLE001 -- unresolved, never a crash
+            logger.warning("pr_watcher: required-check resolution failed for %s: %s",
+                           repo, exc)
+        self._required_checks_by_repo[repo] = (now, resolved)
         return resolved
 
     def _default_branch(self) -> str:
@@ -3534,6 +3576,9 @@ class PRWatcher:
             if state.get("statusCheckRollup"):
                 ci_logs = self._fetch_logs(pr_url, max_chars=ci_log_max)
 
+            # The PR's OWN repo's required set: an external-repo PR judged
+            # against ICDev's protection could never read green.
+            required = self.required_checks_for(task["id"], pr_url)
             classification = ec.classify_pr_state(
                 state, ci_logs=ci_logs, require_approval=require_approval,
                 required=required,
