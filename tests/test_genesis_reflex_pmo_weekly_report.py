@@ -636,3 +636,64 @@ def test_no_unscored_contracts_leaves_the_total_contracts_label_plain(no_side_ch
     html = reflex._render_html_report(snap, reflex._deterministic_narrative(snap), "2026-09-14")
     assert "not scored for health" not in html
     assert ">Total Contracts<" in html
+
+
+# ---------------------------------------------------------------------------
+# "Top open issue" was row position, not severity (pmo-rpt-7db7269c9c)
+#
+# The 2026-09-21 brief named "5 CDRL(s) are past due" on Untitled Contract
+# [8143e17a] the top open issue. It was one of eight HIGH issues, and it was
+# first only because its contract came back first. `top_issues[:8]` truncated
+# in the same order, so a CRITICAL issue on a later contract could be cut
+# while HIGH ones were kept.
+# ---------------------------------------------------------------------------
+
+
+def _issue_contracts(n):
+    return [{"id": f"c{k:02d}", "contract_number": "", "title": f"Contract {k}"} for k in range(n)]
+
+
+def _issues_by_contract(mapping):
+    """auto_detect_issues stand-in: contract id -> list of (severity, description)."""
+    def fake(cid):
+        return {"issues": [{"severity": s, "description": d} for s, d in mapping.get(cid, [])]}
+    return fake
+
+
+def test_a_critical_issue_on_a_late_contract_is_ranked_first_and_never_cut():
+    contracts = _issue_contracts(10)
+    mapping = {c["id"]: [("high", f"{c['id']} CDRLs overdue")] for c in contracts[:9]}
+    mapping["c09"] = [("critical", "CPI = 0.700 — significantly over budget.")]
+    with patch(
+        "tools.govcon.portfolio_manager.get_portfolio_summary",
+        return_value=_summary(contracts=contracts, total_contracts=10),
+    ), patch(
+        "tools.govcon.option_period_tracker.get_portfolio_countdown",
+        return_value={"critical": 0, "warning": 0, "options": []},
+    ), patch.object(advisor, "auto_detect_issues", side_effect=_issues_by_contract(mapping)):
+        snap = reflex._gather_portfolio_snapshot()
+
+    assert len(snap["top_issues"]) == 8
+    assert snap["top_issues"][0]["severity"] == "critical"
+    assert "Contract 9" in snap["top_issues"][0]["contract"]
+
+    narrative = reflex._deterministic_narrative(snap)
+    assert "Top open issue (CRITICAL): CPI = 0.700" in narrative
+
+
+def test_tied_highest_severity_issues_are_not_narrated_as_one_top_issue():
+    """The live 2026-09-21 shape: eight HIGH issues, none outranking another."""
+    issues = [
+        {"contract": f"Untitled Contract [{k:08d}]", "issue": "5 CDRL(s) are past due and not yet accepted.",
+         "severity": "high"}
+        for k in range(8)
+    ]
+    narrative = reflex._deterministic_narrative({"top_issues": issues})
+    assert "Top open issue" not in narrative
+    assert "8 open issue(s) share the highest severity (HIGH)" in narrative
+
+
+def test_ranking_is_stable_within_a_severity():
+    issues = [{"issue": n, "severity": s} for n, s in
+              [("a", "high"), ("b", "critical"), ("c", "high"), ("d", "critical")]]
+    assert [i["issue"] for i in reflex._rank_issues(issues)] == ["b", "d", "a", "c"]
