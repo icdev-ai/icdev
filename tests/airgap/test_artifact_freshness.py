@@ -504,10 +504,10 @@ def test_the_valkey_digest_is_the_one_re_measured_after_the_tag_moved():
     was acted on. A revert to the stale digest would make an air-gap bundle
     re-cut from the tag disagree with the file that names it."""
     remeasured = (
-        "sha256:3fbd2e3e4b6e85e046c1e7c215e8f79087bc0357789184305806664e320996f3"
+        "sha256:640c5e62cea04b6d6f2084232651d0cc70362d31f4f805e7be94dbed6855e8f2"
     )
     stale = (
-        "sha256:98c6217ccc2fe5e6c4b5dcd5c40eef4de2a68924e7ecef50d5a0a30b57dfaef6"
+        "sha256:3fbd2e3e4b6e85e046c1e7c215e8f79087bc0357789184305806664e320996f3"
     )
     pins = (ROOT / "vendor" / "images" / "images-floci-runtime.txt").read_text(
         encoding="utf-8"

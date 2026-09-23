@@ -182,7 +182,10 @@
 # a base-image rebuild, not an engine upgrade. That is exactly the drift
 # `decided_by: consumer` exists to catch, so the pin files were re-cut to the
 # observed digest. Record:
-# docs/audits/artifact-fresh-ee3339893b-elasticache-valkey-pin.md.
+# docs/audits/artifact-fresh-ee3339893b-elasticache-valkey-pin.md. It rebuilt
+# AGAIN by 2026-09-23 (3fbd2e3e... -> 640c5e62..., Valkey 8.1.10 still, Debian
+# 13.6 -> 13.7) and was re-vendored the same way:
+# docs/audits/artifact-fresh-6ba5fc339e-elasticache-valkey-pin.md.
 #
 # A DEFAULT AN OPERATOR CAN TURN, AND THE ONE CASE WHERE THE NEWER RELEASE WORKS
 # -------------------------------------------------------------------------------
