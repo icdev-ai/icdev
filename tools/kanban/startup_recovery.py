@@ -601,12 +601,19 @@ def open_pr_numbers_by_branch(repo_root: Path) -> Optional[Dict[str, int]]:
 HANDOFF_REASON_TEMPLATE = "open PR #{number} found while parked (startup recovery); handed to pr_watcher"
 
 
+def _default_pr_url(root: Path, number: int) -> Optional[str]:
+    from tools.kanban.pr_linker import pr_url_for
+
+    return pr_url_for(root, number)
+
+
 def hand_off_parked_tasks_with_open_pr(
     *,
     conn_factory: Optional[Callable[[], Any]] = None,
     list_open_prs: Optional[Callable[[Path], Optional[Dict[str, int]]]] = None,
     dry_run: bool = False,
     repo_root: Optional[Path] = None,
+    resolve_pr_url: Optional[Callable[[Path, int], Optional[str]]] = None,
 ) -> Dict[str, Any]:
     """token_exhausted + an OPEN PR on kanban/<id> -> pr_opened, at startup (mfx-own-01).
 
@@ -689,6 +696,14 @@ def hand_off_parked_tasks_with_open_pr(
                 conn, task_id, reason,
                 from_status="token_exhausted", to_status="pr_opened",
             )
+            # pr_watcher finds a task's PR ONLY through executor_url. Without it
+            # the hand-off hands to nobody -- invisible forever for an external
+            # repo, which pr_linker (listing only this repo) can never link.
+            url = (resolve_pr_url or _default_pr_url)(root, number)
+            entry["pr_url"] = url
+            if url:
+                from tools.kanban.pr_linker import link_if_unlinked
+                link_if_unlinked(conn, task_id, url)
             logger.info(
                 "startup-recovery: %s token_exhausted -> pr_opened (open PR #%d; "
                 "handed to pr_watcher)", task_id, number,

@@ -10670,11 +10670,38 @@ def _hand_parked_task_to_pr_watcher(task_id: str, *, context: str) -> Optional[i
     # evaluation would read; the retry counter is kept, because it bounds the
     # token budget across the task's WHOLE life and a hand-off is not a reset.
     _clear_resume_at(task_id)
+    # pr_watcher finds a task's PR ONLY through executor_url, so a hand-off that
+    # does not write it hands to nobody. MEASURED 2026-09-23: ftl-bz-port-01
+    # (icdev_ft PR #417) sat green in pr_opened for 7h with executor_url NULL,
+    # holding its whole dependency chain -- and pr_linker, which lists only the
+    # repo the process stands in, can never link an external repo's PR.
+    _link_handed_off_pr(task_id, root, number)
     logger.info(
         "parked hand-off: %s token_exhausted -> pr_opened (open PR #%d, %s)",
         task_id, number, context,
     )
     return number
+
+
+def _link_handed_off_pr(task_id: str, root: str, number: int) -> Optional[str]:
+    """Write the handed-off PR's URL into executor_url when the task has none.
+
+    Best-effort: a hand-off must never fail because the link could not be
+    written. Returns the URL written (or already resolvable), None otherwise.
+    """
+    try:
+        from tools.kanban.pr_linker import link_if_unlinked, pr_url_for
+
+        url = pr_url_for(root, number)
+        if not url:
+            return None
+        with get_connection() as _conn:
+            link_if_unlinked(_conn, task_id, url)
+        return url
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("parked hand-off: could not link PR #%s for %s: %s",
+                       number, task_id, exc)
+        return None
 
 
 def _open_pr_listing_unavailable(repo_root: str) -> bool:
