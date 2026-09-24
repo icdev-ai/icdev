@@ -1,47 +1,65 @@
 # CUI // SP-CTI
 
-# Playwright E2E Full Smoke — 2026-09-23 (task-e2e-2170cb2b)
+# QA-Agent Full E2E Suite Sweep — 2026-09-23 (task-qa-sweep-81d2850b)
 
-Route smoke gate followed by the full Playwright suite, run exactly as the
-`[AUTO-RUN] Playwright E2E Suite — full smoke` card prescribes.
+Route smoke gate followed by the full Playwright suite through `qa_agent_runner`.
 Successor to [`e2e-full-smoke-2026-09-22.md`](e2e-full-smoke-2026-09-22.md).
 
 ## Results
 
 | Step | Outcome |
 |---|---|
-| 1. Route smoke (`route_smoke.py --all`) | **PASS — 88/88** (78 nav routes + 10 API endpoints), 0 failures |
-| 2. Full E2E (`npx playwright test tests/e2e/ --project=chromium --reporter=line`) | **853 total: 838 passed, 0 failed, 15 skipped** — 41.0m, 1 worker, exit 0 |
-| 3. `capture_playwright(...)` build log | **Captured**, `returncode=0` |
+| 1. Route smoke (`route_smoke.py --all --json`) | **PASS — 88/88**, 0 failures, no 500s |
+| 2. Full E2E (`qa_agent_runner.py --run --json`) | **PASSED — 853 total: 837 passed, 0 failed, 16 skipped** |
+| 3. File failure tasks | Not applicable — 0 failures, 0 unparsed failures, nothing filed |
+| 4. Persist to `ace_qa_runs` | **Recorded** as `qa-1790217315` (`record_error: null`, `recorded_failures: 0`) |
 
-No failing tests, so there are no failing titles to list.
+69/69 spec files ran (`not_run 0`, `no_report 0`) in 12 batches, every batch `ok`;
+wall clock 19.4m (02:35:15 → 02:54:36 UTC, 2026-09-24). 624 screenshots captured.
+Counts are identical to the 2026-09-21 and 2026-09-22 runs.
 
-## Differences from 2026-09-22
+## Host stalls — none
 
-- **Skips 16 → 15, passes 837 → 838.** The line reporter does not name skipped
-  tests, so which one moved is not recorded here. The 2026-09-22 list (ClawHub /
-  SkillHub on :5077, the `sess-9cc6891cb548` seed, two opt-in DWO specs, and the
-  pulse-post probe) is the likely set. The pulse-post probe skipped on 2026-09-22
-  only because the isolated `icdev_e2e` DB had no seeded post. This run used the
-  live DB, which does have one, so that probe is the most likely one that now ran.
-- **Not isolated.** The card's step 2 command names no throwaway database or port.
-  So Playwright managed its own server on `localhost:5050`, and the env diagnostics
-  measured it on **`icdev`** (via `ICDEV_DATABASE_URL`) for both the server and
-  subprocesses. The banner warned: *"Nothing requested a throwaway database — the
-  suite writes its fixtures into 'icdev'."* E2E fixture rows from this run are
-  therefore on the live board (see qa-fail-6a87916931be3793). The 2026-09-22 sweep
-  avoided this with `ICDEV_E2E_BASE_URL=http://127.0.0.1:5090`,
-  `ICDEV_DASHBOARD_PORT=5090` and `ICDEV_PG_DATABASE=icdev_e2e`. The AUTO-RUN card's
-  command should adopt the same settings.
+The `StallSampler` ran beside all 12 batches (212 samples at 5 s): `host_stalls 0`,
+`health_slow 0`, `failures_during_stall 0`. 26 samples were `unreachable`, expected
+between batches because Playwright starts and stops its own webServer per batch
+(qa-fail-5cacee65f1d03c8c).
+
+## How it was run — isolated
+
+Same recipe as 2026-09-22. Fixtures went to a throwaway database, not the live board
+(qa-fail-6a87916931be3793), and a spare port was named so `reuseExistingServer` could
+not attach to the canonical `:5050`:
+
+```bash
+ICDEV_E2E_BASE_URL=http://127.0.0.1:5090
+ICDEV_DASHBOARD_PORT=5090
+ICDEV_PG_DATABASE=icdev_e2e
+python tools/testing/qa_agent_runner.py --run --json --record --deadline-seconds 5400
+```
+
+Confirmed live mid-run against the runner's own server: `curl http://127.0.0.1:5090/api/health` →
+`{"backend":"postgresql","database":"icdev_e2e","database_measured":true,"db":true,"status":"ok"}`.
+Ports 5090–5092 were checked free beforehand.
+
+## Skips — 16
+
+Same total as the two previous sweeps (whose per-spec breakdown lists ClawHub/SkillHub
+services absent, a missing seed session, two opt-in DWO specs and an unseeded pulse
+post). The per-spec split was not re-derived for this run. A skipped test is not a
+passing test; none of these 16 asserted anything.
 
 ## Artifacts
 
 | What | Where |
 |---|---|
-| Raw line-reporter output, route smoke output | `.tmp/pw_out.txt`, `.tmp/route_smoke.txt` in the task worktree (gitignored, disposable) |
-| Env diagnostics snapshot | `.tmp/test_runs/e2e-env-diagnostics.json` |
-| Screenshots | `.tmp/test_runs/screenshots/` (341 files) |
-| HTML report | `npx playwright show-report` |
+| Run row | `ace_qa_runs`, run id `qa-1790217315` |
+| Route smoke JSON, run JSON, per-batch reports | `.tmp/` in the task worktree (gitignored, disposable) |
 
-The run rewrote the tracked `playwright/screenshots/xrv-cost-04-spend-panel.png`
-again. That is test-output churn, so it was restored and not committed.
+The run again rewrote the tracked `playwright/screenshots/xrv-cost-04-spend-panel.png`.
+That is test output churn, so it was restored and not committed.
+
+## Note on attempt one
+
+Attempt one of this task ended `no_commits`: it left only the screenshot churn above
+and committed nothing. This record is the committed output of the retry.
