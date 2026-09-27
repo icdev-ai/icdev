@@ -60,7 +60,10 @@ test.describe('NOCC — Read APIs', () => {
     test(`GET ${path} returns JSON`, async ({ page }) => {
       const resp = await page.goto(`${BASE}${path}`, { waitUntil: 'domcontentloaded' });
       expect(resp?.status()).toBe(200);
-      const json = JSON.parse((await page.textContent('body')) || '{}');
+      // Parse the response bytes, not the rendered DOM: a JSON route has no page
+      // to render, and page.textContent('body') timed out under host load after
+      // the 200 had already arrived (qa-fail-85c0984e518bac09).
+      const json = JSON.parse((await resp!.text()) || '{}');
       if (prop) expect(json).toHaveProperty(prop);
     });
   }
