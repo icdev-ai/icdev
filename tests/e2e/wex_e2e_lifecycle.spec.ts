@@ -69,8 +69,13 @@ test.describe('Scenario 1 — Chat → Generate → Save → Run', () => {
     // Open AI Chat panel via the toolbar button.
     const chatBtn = page.locator('#wf-chat-toggle-btn');
     await expect(chatBtn).toBeVisible({ timeout: 5000 });
-    await chatBtn.click();
-    await page.waitForTimeout(600);
+    // noWaitAfter: toggleChat() only flips a class -- it never navigates -- so the
+    // post-click "waiting for scheduled navigations" barrier (a CDP round trip to
+    // the renderer) can only add a hang, never a signal. qa-1790479571 hung there
+    // for 10 s AFTER "click action done" with the panel already open in the
+    // failure screenshot (qa-fail-280ed0bc2f813fa2). Wait on the state instead.
+    await chatBtn.click({ noWaitAfter: true });
+    await expect(page.locator('#wf-studio-layout')).toHaveClass(/wf-studio--chat-open/, { timeout: 5000 });
 
     await page.screenshot({ path: shot('s1_02_chat_open'), fullPage: true });
 
