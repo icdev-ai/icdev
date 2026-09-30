@@ -697,3 +697,44 @@ def test_ranking_is_stable_within_a_severity():
     issues = [{"issue": n, "severity": s} for n, s in
               [("a", "high"), ("b", "critical"), ("c", "high"), ("d", "critical")]]
     assert [i["issue"] for i in reflex._rank_issues(issues)] == ["b", "d", "a", "c"]
+
+
+# ---------------------------------------------------------------------------
+# The SPI tile restated one constant with no disclosure (pmo-rpt-da4435d88e)
+#
+# The 2026-09-28 brief labelled its CPI tile "(1 distinct value / 6)" and, right
+# beside it, showed "Avg Portfolio SPI 0.933" unqualified — every SPI on the
+# page was the same 0.9333.
+# ---------------------------------------------------------------------------
+
+
+def test_a_constant_spi_is_disclosed_on_its_tile(no_side_channels):
+    flat = [
+        {"id": f"c{i}", "contract_number": f"W15QKN-24-C-000{i}", "title": f"T{i}",
+         "cpi": 0.9 + i / 100, "spi": 0.9333}
+        for i in range(3)
+    ]
+    with patch(
+        "tools.govcon.portfolio_manager.get_portfolio_summary",
+        return_value=_summary(contracts=flat),
+    ):
+        snap = reflex._gather_portfolio_snapshot()
+
+    assert snap["spi_distinct_values"] == 1
+    assert snap["spi_sample_size"] == 3
+    html = reflex._render_html_report(snap, "narrative", "2026-09-28")
+    assert "Avg Portfolio SPI (1 distinct value / 3)" in html
+
+
+def test_a_varied_spi_tile_reports_its_dispersion(no_side_channels):
+    """Negative control: a real spread is reported as a spread, not as one value."""
+    with patch(
+        "tools.govcon.portfolio_manager.get_portfolio_summary",
+        return_value=_summary(contracts=_real_contracts(), total_contracts=2,
+                              health_distribution={"green": 1, "yellow": 1, "red": 0}),
+    ):
+        snap = reflex._gather_portfolio_snapshot()
+
+    html = reflex._render_html_report(snap, "narrative", "2026-09-28")
+    assert snap["spi_distinct_values"] == len({c["spi"] for c in _real_contracts()})
+    assert "1 distinct value /" not in html.split("Avg Portfolio SPI")[1][:40]
