@@ -422,6 +422,11 @@ def _gather_portfolio_snapshot() -> Dict[str, Any]:
         snapshot["cpi_distinct_values"] = len(set(cpi_vals)) if cpi_vals else None
         spi_vals = [float(c["spi"]) for c in contracts_raw if c.get("spi") and isinstance(c.get("spi"), (int, float))]
         snapshot["avg_portfolio_spi"] = round(sum(spi_vals) / len(spi_vals), 3) if spi_vals else None
+        # The same disclosure for SPI (pmo-rpt-da4435d88e): the 2026-09-28 brief
+        # flagged its CPI tile "1 distinct value / 6" beside an unqualified SPI
+        # tile of 0.933 that was one repeated 0.9333 just the same.
+        snapshot["spi_sample_size"] = len(spi_vals)
+        snapshot["spi_distinct_values"] = len(set(spi_vals)) if spi_vals else None
     except Exception:
         pass
 
@@ -676,6 +681,12 @@ def _render_html_report(snapshot: Dict[str, Any], narrative: str, report_date: s
         f"Avg Portfolio CPI ({distinct} distinct value{'' if distinct == 1 else 's'} / {sample})"
         if distinct is not None else "Avg Portfolio CPI"
     )
+    spi_distinct = snapshot.get("spi_distinct_values")
+    spi_sample = snapshot.get("spi_sample_size") or 0
+    spi_note = (
+        f"Avg Portfolio SPI ({spi_distinct} distinct value{'' if spi_distinct == 1 else 's'} / {spi_sample})"
+        if spi_distinct is not None else "Avg Portfolio SPI"
+    )
 
     # The table's own header and caveat. "Worst" is a superlative and is spent
     # only on a selection that earned it; an unranked one still RENDERS — a week
@@ -737,7 +748,7 @@ td{{padding:7px 12px;border-bottom:1px solid #eee;font-size:12px;}}
   <div class="stat"><div class="stat-val" style="color:#ffc107;">{health.get("yellow",0)}</div><div class="stat-lbl">Yellow</div></div>
   <div class="stat"><div class="stat-val" style="color:#dc3545;">{health.get("red",0)}</div><div class="stat-lbl">Red</div></div>
   <div class="stat"><div class="stat-val">{cpi}</div><div class="stat-lbl">{cpi_note}</div></div>
-  <div class="stat"><div class="stat-val">{spi}</div><div class="stat-lbl">Avg Portfolio SPI</div></div>
+  <div class="stat"><div class="stat-val">{spi}</div><div class="stat-lbl">{spi_note}</div></div>
   <div class="stat"><div class="stat-val" style="color:#dc3545;">{snapshot.get("overdue_deliverables",0)}</div><div class="stat-lbl">Overdue Deliverables</div></div>
   <div class="stat"><div class="stat-val" style="color:#dc3545;">{snapshot.get("critical_options",0)}</div><div class="stat-lbl">Critical Option Windows</div></div>
 </div>
