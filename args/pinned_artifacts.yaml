@@ -248,6 +248,11 @@
 #     vendor/images did not record, and the survey's own verdict does not say
 #     so. That is a real gap in the DECISION RULE, not in this pin, and it is
 #     named here rather than quietly left in a JSON field. It owns its own card.
+#     (CLOSED FOR THIS ENTRY 2026-10-02, artifact-fresh-9daf559a8b:
+#     `lambda-python` is now `decided_by: consumer`, so its digest drift
+#     DECIDES the status instead of riding beside a `current`. The rule itself
+#     is unchanged -- any other `version_tag` entry on a repository with more
+#     than one page of tags can still do this.)
 #   * The earlier blocks in this file enumerate five and four `behind` entries
 #     on their own measured dates. Those lists are HISTORY, correct when
 #     written; re-run the survey rather than trusting any of them, this one
@@ -360,16 +365,33 @@ artifacts:
   # digest-pinned in vendor/images/images-floci-runtime.txt; the tag below is
   # args/floci_runtime_images.yaml's `ref`, which a test already pins to that
   # same file.
+  #
+  # DELIBERATELY KEPT at 3.12, the runtime every IaC generator in this tree
+  # declares. The `Runtime` a caller declares is what picks the image
+  # (`python3.<N>` -> `python:3.<N>`). MEASURED 2026-10-02 against a live floci
+  # 2.0.1: python3.12 logged `Image already present locally, skipping pull:
+  # public.ecr.aws/lambda/python:3.12` (Python 3.12.15) and python3.14 logged
+  # `Pulling image: public.ecr.aws/lambda/python:3.14` (Python 3.14.8) -- so
+  # 3.14 IS reachable, and is a runtime a deployment must vendor TOO if it
+  # declares it. Decision record:
+  # docs/audits/artifact-fresh-9daf559a8b-lambda-python-pin.md.
   - name: lambda-python
     kind: image
     ref: public.ecr.aws/lambda/python
     pinned: "3.12"
     pin_source: "vendor/images/images-floci-runtime.txt"
     upstream: ecr_public
+    decided_by: consumer
+    consumer: floci
     note: >-
       MOVED 3.11 -> 3.12 2026-09-18 (artifact-fresh-591100ea58): every Lambda
       runtime this repository's own IaC generators declare is python3.12, not
       python3.11. See docs/audits/artifact-fresh-591100ea58-lambda-python-pin.md.
+      KEPT at 3.12 2026-10-02 (artifact-fresh-9daf559a8b): nothing here
+      declares python3.13 or python3.14, so 3.14 would vendor an image nothing
+      requests and drop the one every generated Lambda pulls. The digest was
+      re-vendored the same day (the tag rebuilt, Python 3.12.14 -> 3.12.15).
+      Decided on digest drift from here on, because `3.12` is rebuilt in place.
 
   # DELIBERATELY KEPT at 20. Nothing in this repository declares a Node Lambda
   # runtime, and the `Runtime` a caller declares is what picks the image

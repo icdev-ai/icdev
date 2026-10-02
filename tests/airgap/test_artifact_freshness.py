@@ -458,6 +458,20 @@ def test_the_shipped_lambda_nodejs_pin_is_decided_by_the_declared_runtime_not_by
     assert entry["consumer"] == "floci"
 
 
+def test_the_shipped_lambda_python_pin_is_decided_by_the_declared_runtime_not_by_upstream():
+    """artifact-fresh-9daf559a8b. MEASURED 2026-10-02 against a live floci
+    2.0.1: python3.12 ran from `public.ecr.aws/lambda/python:3.12` and python3.14
+    pulled `public.ecr.aws/lambda/python:3.14` -- so the image is a function of
+    the Runtime a caller declares, and every IaC generator in this tree declares
+    python3.12. Re-arming the upstream tag comparison files a card for a runtime
+    nothing here requests, and -- because `3.12` is rebuilt in place -- lets the
+    entry read `current` while the tag serves bytes vendor/images never recorded."""
+    entry = next(e for e in AF.load_config()["artifacts"] if e["name"] == "lambda-python")
+    assert entry["pinned"] == "3.12"
+    assert entry["decided_by"] == AF.DECIDED_BY_CONSUMER
+    assert entry["consumer"] == "floci"
+
+
 def test_the_shipped_opensearch_pin_is_decided_by_floci_not_by_opensearch_releases():
     """artifact-fresh-a7486018c7. Stronger than the postgres case: floci 2.0.1
     resolves the tag through a CLOSED EngineVersion table that stops at

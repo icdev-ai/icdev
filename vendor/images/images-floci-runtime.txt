@@ -31,7 +31,16 @@
 #   ordering: re-measured by `docker pull` + `docker image inspect`, not
 #   copied off a cached image. See
 #   docs/audits/artifact-fresh-591100ea58-lambda-python-pin.md.
-public.ecr.aws/lambda/python@sha256:5207fd64cca3808107491740d81875d86876eafb15b0cbfb15586c750dfc218d
+#   KEPT at 3.12 and RE-VENDORED 2026-10-02 (artifact-fresh-9daf559a8b): the
+#   card recommended 3.14, and python3.14 IS reachable -- floci 2.0.1 logged
+#   `Pulling image: public.ecr.aws/lambda/python:3.14` for a function declaring
+#   it -- but nothing in this tree declares python3.13 or python3.14, so 3.14
+#   instead of this line leaves every generated Lambda unvendored. A deployment
+#   that declares python3.14 vendors that image TOO. The DIGEST half was real:
+#   the tag rebuilt off sha256:5207fd64... (Python 3.12.14) to the digest below
+#   (Python 3.12.15), and floci was re-driven against the fresh pull. See
+#   docs/audits/artifact-fresh-9daf559a8b-lambda-python-pin.md.
+public.ecr.aws/lambda/python@sha256:7df298e6d9a1ca16b3ed1b69040dc0acd2907a96c533f8e5256189ec82b2ac56
 
 # lambda/nodejs20.x -- public.ecr.aws/lambda/nodejs:20
 #   KEPT at 20 (artifact-fresh-333eeead1d): nothing in this tree declares a Node
