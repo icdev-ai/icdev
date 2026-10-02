@@ -27,7 +27,7 @@
 # THE IMAGE SET IS A FUNCTION OF DECLARED CONFIGURATION, NOT OF THE SERVICE
 # -------------------------------------------------------------------------
 # This is the finding that makes a bare per-service list wrong. MEASURED:
-#   * a `python3.11` Lambda pulls public.ecr.aws/lambda/python:3.11, while a
+#   * a `python3.12` Lambda pulls public.ecr.aws/lambda/python:3.12, while a
 #     `nodejs20.x` Lambda pulls public.ecr.aws/lambda/nodejs:20;
 #   * an RDS instance with `Engine=postgres` pulls postgres:16.3-alpine, while
 #     `Engine=mysql` pulls mysql:8.0.36;
@@ -69,17 +69,44 @@ measured_against:
 # happen on the disconnected side. Every entry is therefore something an
 # air-gapped deployment must hold in its local cache BEFORE it is disconnected.
 images:
-  - ref: "public.ecr.aws/lambda/python:3.11"
-    digest: "sha256:755093e1da2ba33f6bd2295c5a6a7ed8b94f1ef347b6ca649874d9cbef5a3e3c"
+  - ref: "public.ecr.aws/lambda/python:3.12"
+    digest: "sha256:7df298e6d9a1ca16b3ed1b69040dc0acd2907a96c533f8e5256189ec82b2ac56"
     service: lambda
-    variant: "python3.11"
-    note: "One image PER LAMBDA RUNTIME. Vendor the runtimes the deployment declares."
+    variant: "python3.12"
+    mutable_tag: true
+    note: >-
+      MOVED 2026-09-18 (artifact-fresh-591100ea58): every Lambda runtime this
+      repository's own IaC generators declare (tools/infra/dr_generator.py,
+      tools/aadc/iac_generator.py, tools/data/iac_generator.py,
+      tools/infra_canvas/iac_generator.py, tools/ohc/iac_generator.py,
+      args/dr_config.yaml) is `python3.12`, not `python3.11` -- the prior pin
+      was vendoring a runtime nothing here declares. RE-MEASURED against a live
+      floci 2.0.1: a `create_function(Runtime="python3.12")` + `invoke` logged
+      `ImageCacheService  Image already present locally, skipping pull:
+      public.ecr.aws/lambda/python:3.12`, and the container reported Python
+      3.12.14. Like `amazonlinux:2023`, the tag carries an ordering AND is
+      rebuilt in place: the registry served a DIFFERENT digest than the
+      locally-cached one for the same tag, so the digest above is a fresh
+      `docker pull` + `docker image inspect`, not the cached copy. Flagged
+      `mutable_tag` for the same reason. One image PER LAMBDA RUNTIME; vendor
+      the runtimes the deployment declares. See
+      docs/audits/artifact-fresh-591100ea58-lambda-python-pin.md.
+      RE-VENDORED 2026-10-02 (artifact-fresh-9daf559a8b): the tag rebuilt off
+      sha256:5207fd64... (Python 3.12.14) to the digest above (Python 3.12.15).
+      Re-driven against a live floci 2.0.1 after a fresh `docker pull`: a
+      python3.12 function logged `skipping pull:
+      public.ecr.aws/lambda/python:3.12` and reported 3.12.15, a python3.14
+      function logged `Pulling image: public.ecr.aws/lambda/python:3.14`, and
+      python3.99 was refused. The tag is `python:<minor of the declared
+      Runtime>`, so 3.14 is reachable only by a deployment that declares it --
+      and none of the generators above does. See
+      docs/audits/artifact-fresh-9daf559a8b-lambda-python-pin.md.
 
   - ref: "public.ecr.aws/lambda/nodejs:20"
     digest: "sha256:a4440274d6f0fb4e6cb92cd5f2a97254efe6612f631d9974b197ecbd4a61fcab"
     service: lambda
     variant: "nodejs20.x"
-    note: "Measured alongside python3.11 to prove the per-runtime split is real."
+    note: "Measured alongside python3.11 (since re-measured as python3.12, artifact-fresh-591100ea58) to prove the per-runtime split is real."
 
   - ref: "postgres:16.3-alpine"
     digest: "sha256:36ed71227ae36305d26382657c0b96cbaf298427b3f1eaeb10d77a6dea3eec41"
@@ -96,8 +123,6 @@ images:
       configuration in the sense this file's header means, one level finer than
       `variant`: a deployment declaring EngineVersion=18.6 must vendor
       postgres:18.6-alpine TOO, and vendoring it INSTEAD of this one breaks the
-      default path. The same holds for mysql, whose default is 8.0.36.
-
       default path. The same holds for mysql -- see the entry below, which has
       now been measured rather than inferred from this one.
 
@@ -122,7 +147,7 @@ images:
       here declares it.
 
   - ref: "valkey/valkey:8"
-    digest: "sha256:3fbd2e3e4b6e85e046c1e7c215e8f79087bc0357789184305806664e320996f3"
+    digest: "sha256:640c5e62cea04b6d6f2084232651d0cc70362d31f4f805e7be94dbed6855e8f2"
     service: elasticache
     variant: "redis"
     note: >-
@@ -138,8 +163,13 @@ images:
       it, so this pin does NOT follow it. The DIGEST was re-measured the same
       day — the tag had moved off sha256:98c6217c..., with the container
       reporting Valkey 8.1.10 on BOTH digests, i.e. a base-image rebuild rather
-      than an engine upgrade. Record:
-      docs/audits/artifact-fresh-ee3339893b-elasticache-valkey-pin.md.
+      than an engine upgrade. RE-MEASURED 2026-09-23 (artifact-fresh-6ba5fc339e)
+      by `docker pull` + `docker image inspect` of the live tag: it rebuilt again,
+      off sha256:3fbd2e3e... to the digest above, Valkey 8.1.10 on both and the
+      Debian base 13.6 -> 13.7; floci 2.0.1's binary still holds only
+      `valkey/valkey:8`. Records:
+      docs/audits/artifact-fresh-ee3339893b-elasticache-valkey-pin.md,
+      docs/audits/artifact-fresh-6ba5fc339e-elasticache-valkey-pin.md.
 
   - ref: "memcached:1.6"
     digest: "sha256:75c93cc91e76853da7c029e74d6e8dbd44774dd3713c93be8cd1971ad26120a4"
@@ -161,7 +191,7 @@ images:
       finer, exactly as RDS states for EngineVersion.
 
   - ref: "redpandadata/redpanda:latest"
-    digest: "sha256:468bd13a9f2bd24794cb7fddc867c767fb1008b9a07b297b89fde48c564d7d96"
+    digest: "sha256:9e83cfa99278f30d0133271c26bf670cd69c94ffa6ba0b42830dd0c3bd9dcfd9"
     service: kafka
     variant: null
     mutable_tag: true
@@ -169,10 +199,12 @@ images:
       MSK is served by REDPANDA, and floci names it by the MUTABLE tag `:latest`.
       The digest recorded here is what `:latest` resolved to on the measured
       date; it can move under the same tag without notice, so a re-vendor must
-      re-measure rather than assume.
+      re-measure rather than assume. Re-measured 2026-09-18 (rpk v26.2.2 ->
+      v26.2.3, a patch rebuild under the same tag); see
+      docs/audits/artifact-fresh-5e94142e90-kafka-redpanda-pin.md.
 
   - ref: "public.ecr.aws/amazonlinux/amazonlinux:2023"
-    digest: "sha256:a0646b8bd35abf5ca3ab94d8cdb5691b9024e19c357531eeefd0ac4762836438"
+    digest: "sha256:12052e9b5d3fd85769abbdd863dd038e1890c9ace31d5fdbe1afa78eda97d061"
     service: ec2
     variant: null
     mutable_tag: true
@@ -196,10 +228,17 @@ images:
       EngineVersion.
       (2) The DIGEST MOVES UNDER THIS TAG. Upstream rebuilds the major-version
       tag: it served AL 2023.12.20260831 (sha256:fb70bd54...) when this table was
-      first measured and AL 2023.12.20260909 (the digest above) on 2026-09-12.
-      Flagged `mutable_tag` for the same reason redpanda and k3s are -- a
-      re-vendor must re-measure rather than assume -- even though, unlike those
-      two, the tag does carry an ordering.
+      first measured, AL 2023.12.20260909 on 2026-09-12, and AL 2023.12.20260914
+      RE-MEASURED 2026-09-15 (artifact-fresh-f1edf3d78e) by
+      `docker pull` + `docker image inspect` of the live tag, AL
+      2023.12.20260918 re-measured 2026-09-19 (artifact-fresh-66057392f8) the
+      same way, and AL 2023.12.20260930 (the digest above) re-measured
+      2026-10-02 (artifact-fresh-d20e410382) the same way -- two rebuilds past
+      the previous pin, because the tag moved again (off AL 2023.12.20260928,
+      sha256:99860dc4...) between the card being filed and being worked. Flagged
+      `mutable_tag` for the same reason redpanda and k3s are -- a re-vendor must
+      re-measure rather than assume -- even though, unlike those two, the tag
+      does carry an ordering.
 
   - ref: "rancher/k3s:latest"
     digest: "sha256:5e0707cfd1239b358ef73f3254bc3eadc027dd30cd5ec6ca41e29e47652a1b8c"
@@ -217,6 +256,31 @@ images:
       was pulled during the ECS/EKS probes, not by an explicit ECR call, so it
       is attributed to `ecr` and required whenever ECS or EKS is used — see
       `implies` below.
+      RE-MEASURED 2026-09-13 (artifact-fresh-54fe12d6ad) against a live floci
+      2.0.1, this time by an EXPLICIT ECR call: `CreateRepository` logged
+      `ImageCacheService  Image already present locally, skipping pull:
+      registry:2`, then `EcrRegistryManager  Started ECR backing registry
+      floci-ecr-registry on host port 5100`, and the container reported
+      `service=registry version=2.8.3`. So the row is reachable through the ECR
+      API in its own right, not only as a side effect of ECS/EKS.
+      `registry:2` is floci's DEFAULT, and this is a THIRD shape of default,
+      distinct from both siblings above. It is not an AWS API field like RDS
+      EngineVersion — no boto3 call reaches it — and it is not a hard constant
+      like `valkey/valkey:8` either: floci exposes the FULL REF as its own
+      deployment property `floci.services.ecr.registry-image`
+      (`FLOCI_SERVICES_ECR_REGISTRY_IMAGE`), and the value is used verbatim.
+      MEASURED both ways: with the property set to `registry:99.99` floci logged
+      `Pulling image: registry:99.99` and failed the call with a registry 404,
+      and with it set to `registry:3` floci pulled and ran distribution 3.1.1
+      successfully. So `registry:3` WORKS here — unlike opensearch 3.8, which
+      floci refuses, and valkey 9, which it cannot be made to request. It is
+      still not this row: nothing in this repository sets that property, so the
+      default path pulls `registry:2`, and vendoring 3 INSTEAD of this line
+      would leave the path every deployment here actually takes unvendored. A
+      deployment that DOES set the property must vendor the tag it names, the
+      same declared-configuration rule this file's header states for Lambda
+      runtimes and RDS EngineVersion. See
+      docs/audits/artifact-fresh-54fe12d6ad-ecr-registry-pin.md.
 
 # ECS pulled NO runtime base of its own during the measured run: the only image
 # it fetched was the one its task definition named. So `ecs` requires nothing
@@ -253,7 +317,7 @@ service_tokens:
 # blocker or a fabricated clean bill.
 variant_tokens:
   lambda:
-    python3.11: ["python3.11", "python3-11"]
+    python3.12: ["python3.12", "python3-12"]
     nodejs20.x: ["nodejs20.x", "nodejs20", "nodejs20x"]
   rds:
     postgres: ["postgres", "postgresql", "aurora-postgresql"]
