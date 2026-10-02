@@ -7,7 +7,7 @@ full smoke` run, extracted from its line-reporter output by step
 `task-e2e-47b0efe6-d5-d2`.
 Successor to [`e2e-full-smoke-2026-09-26.md`](e2e-full-smoke-2026-09-26.md).
 
-This record covers the counts only. The route smoke gate, the build-log capture
+This record covers the counts and the failing-title list only. The route smoke gate, the build-log capture
 and the artifact check belong to other steps of the card and are **not** asserted
 here.
 
@@ -65,6 +65,32 @@ code is 0.
 The word `failed` does appear 9 times in the file. All 9 are `[WebServer]`
 request-log lines, none is a test result. The anchored pattern does not match
 them; the card's step-3 heuristic (`'failed' in out.lower()`) would.
+
+## Failing test titles — 0
+
+Compiled by step `task-e2e-47b0efe6-d5-d3` from the same file (same SHA-256, read
+only). The list is **empty**: `[]`. The cap of 20 was not reached.
+
+Every failure indicator the step names was searched for after stripping ANSI
+sequences, and none is present:
+
+| Indicator | Pattern | Hits |
+|---|---|---|
+| Failure markers | `^\s*(✘\|×\|✗)\s` | 0 |
+| Numbered failure blocks in the error summary | `^\s+\d+\)\s+\[\w+\]\s+›` | 0 |
+| `FAIL` annotations | `\bFAIL\b` | 0 |
+| `N failed` / `flaky` / `interrupted` / `did not run` summary lines | `^\s*\d+\s+(failed\|flaky\|…)\b` | 0 |
+| Retries | `Retry #\d+` | 0 |
+| Indented `Error:` lines | `^\s+Error: ` | 0 |
+
+The progress lines cover all 853 indexes (`[1/853]` … `[853/853]`, 853 distinct),
+so the output is complete rather than truncated before a failure section. Of the
+77 non-blank lines that are neither a progress line nor a `[WebServer]` line, 75
+are the environment-diagnostics banner at the top and 2 are the summary lines.
+
+The 9 lowercase `failed` hits noted above are the `[WebServer]`
+`executescript: skipping failed statement` lines (206–236). They are server log
+output, not test titles, and are not in the list.
 
 ## Skips — 16
 
