@@ -158,10 +158,13 @@ test.describe('ACE Co-Worker Engine Lifecycle', () => {
     expect(result.body).toHaveProperty('instance_id');
     launchedInstanceId = result.body.instance_id;
 
-    await page.screenshot({
-      path: path.join(SCREENSHOTS, '05_launch_response.png'),
-      fullPage: true,
-    });
+    // Evidence only — the assertions above are the test. A fullPage capture
+    // timed out at 10s under sweep load (qa-1790999876) AFTER they passed, and
+    // a failed test restarts the worker, wiping launchedInstanceId and
+    // skipping every dependent test below. Viewport-only, and never fatal.
+    await page
+      .screenshot({ path: path.join(SCREENSHOTS, '05_launch_response.png') })
+      .catch((err) => console.warn(`05_launch_response screenshot skipped: ${err}`));
   });
 
   test('GET /coworker/<id> instance detail loads', async ({ page }) => {
