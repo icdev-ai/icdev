@@ -7,9 +7,26 @@ full smoke` run, extracted from its line-reporter output by step
 `task-e2e-47b0efe6-d5-d2`.
 Successor to [`e2e-full-smoke-2026-09-26.md`](e2e-full-smoke-2026-09-26.md).
 
-This record covers the counts and the failing-title list only. The route smoke gate, the build-log capture
+This record covers the counts, the failing-title list and the final summary only. The route smoke gate, the build-log capture
 and the artifact check belong to other steps of the card and are **not** asserted
 here.
+
+## Final summary (step `task-e2e-47b0efe6-d5-d4`)
+
+```
+Playwright E2E full smoke - 2026-09-30 AUTO-RUN (task-e2e-47b0efe6)
+  passed  : 837
+  failed  : 0
+  skipped : 16
+  total   : 853   (15.3m, EXIT 0)
+  failing test titles: none (failed = 0, so the list of up to 20 is empty)
+  artifact: .tmp/pw_out.txt  (parent worktree .tmp/worktrees/task-e2e-47b0efe6/,
+            sha256 26e44d5abd98afbce1850e82e4e10d23421424fb4d1992cd2ea382ccf77ea6c4)
+```
+
+Re-checked on 2026-10-04 at step d5-d4: the artifact's hash still matches, and its
+last lines still read `16 skipped`, `837 passed (15.3m)`, `EXIT 0`. Sources are the
+sections below. This summary adds no new measurements.
 
 ## Counts
 
