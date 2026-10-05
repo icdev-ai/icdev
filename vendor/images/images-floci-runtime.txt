@@ -40,7 +40,13 @@
 #   the tag rebuilt off sha256:5207fd64... (Python 3.12.14) to the digest below
 #   (Python 3.12.15), and floci was re-driven against the fresh pull. See
 #   docs/audits/artifact-fresh-9daf559a8b-lambda-python-pin.md.
-public.ecr.aws/lambda/python@sha256:7df298e6d9a1ca16b3ed1b69040dc0acd2907a96c533f8e5256189ec82b2ac56
+#   RE-VENDORED AGAIN 2026-10-05 (artifact-fresh-1bc0da203d): the tag rebuilt
+#   TWICE past that pin (7df298e6... -> 22103834... -> the digest below) with
+#   NO observed content change -- same Amazon Linux 2023.12.20260914, rpm set,
+#   Python 3.12.15, awslambdaric 4.1.0 and boto3 1.42.97 in all three. floci
+#   2.0.1 re-driven against the fresh pull. See
+#   docs/audits/artifact-fresh-1bc0da203d-lambda-python-pin.md.
+public.ecr.aws/lambda/python@sha256:517bcc7dc1a3ba62e324961c1563cc54a2bd6dc1060188f9d376211ecb7b2926
 
 # lambda/nodejs20.x -- public.ecr.aws/lambda/nodejs:20
 #   KEPT at 20 (artifact-fresh-333eeead1d): nothing in this tree declares a Node
