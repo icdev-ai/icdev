@@ -186,6 +186,26 @@ injects:
       finetune_required: false
       rubric: rubrics/network_gate.yaml
 
+  # aicur-gd-02: a parallel branch off the code sprint. It reuses that sprint's
+  # pipeline as the "same small task" and runs it through two coding harnesses.
+  - id: inject-06-harness-bakeoff
+    title: "Harness Bake-Off: Same Fix, Two Coding Harnesses"
+    at_minute: 50
+    sequence: 6
+    depends_on: inject-02-code-sprint
+    body_path: injects/inject-06-harness-bakeoff.yaml
+    ai_tools_allowed:
+      - code.analyzer
+      - knowledge.search
+    scoring:
+      base_pts: 150
+      receipt_bonus_per_call: 50
+      max_receipt_bonus: 150
+      time_bonus: false
+      receipt_gate: true
+      finetune_required: false
+      rubric: rubrics/harness_comparison.yaml
+
 ribbons:
   - id: speed_king
     label: "⚡ Code Velocity"
