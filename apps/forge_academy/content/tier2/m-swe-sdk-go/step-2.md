@@ -7,7 +7,7 @@ step_class: icdev:Lesson
 
 # Design Your Go Integration
 
-This step moves from concepts to design: defining a Go struct for structured output, a complete JSON schema injection, retry with exponential backoff, and a bounded parallel fan-out pattern.
+This step moves from concepts to design: a Go struct for structured output, the JSON schema that describes it, retry with exponential backoff, and a bounded parallel fan-out.
 
 ## Defining a Go struct for structured output
 
@@ -21,7 +21,7 @@ type ThreatReport struct {
 }
 ```
 
-Derive the JSON schema from the struct manually (or use a schema generator like `github.com/invopop/jsonschema`):
+Derive the JSON schema from the struct by hand, or with a schema generator such as `github.com/invopop/jsonschema`:
 
 ```go
 const threatSchema = `{
@@ -32,50 +32,75 @@ const threatSchema = `{
     "cves":     { "type": "array",  "items": { "type": "string" } },
     "mitre":    { "type": "array",  "items": { "type": "string" } }
   },
-  "required": ["summary","severity","cves","mitre"]
+  "required": ["summary","severity","cves","mitre"],
+  "additionalProperties": false
 }`
 ```
 
-## Unmarshalling the response
+Pass this schema as the structured-output format (`output_config.format`) when you can. Use it in the system prompt as the fallback.
+
+## Unmarshalling and validating the response
 
 ```go
+var allowedSeverity = map[string]bool{"low": true, "medium": true, "high": true, "critical": true}
+
 func parseThreatReport(raw string) (*ThreatReport, error) {
-    // Strip markdown fences if the model wraps JSON in ```json ... ```
+    // The system-prompt fallback sometimes wraps JSON in a ```json fence.
     raw = strings.TrimSpace(raw)
-    if strings.HasPrefix(raw, "```") {
-        raw = strings.Trim(raw, "`")
-        raw = strings.TrimPrefix(raw, "json")
-        raw = strings.TrimSpace(raw)
-    }
+    raw = strings.TrimPrefix(raw, "```json")
+    raw = strings.TrimPrefix(raw, "```")
+    raw = strings.TrimSuffix(raw, "```")
+    raw = strings.TrimSpace(raw)
 
     var report ThreatReport
-    if err := json.Unmarshal([]byte(raw), &report); err != nil {
-        return nil, fmt.Errorf("unmarshal failed: %w\nraw: %s", err, raw)
+    dec := json.NewDecoder(strings.NewReader(raw))
+    dec.DisallowUnknownFields()
+    if err := dec.Decode(&report); err != nil {
+        return nil, fmt.Errorf("unmarshal failed: %w", err)
+    }
+    if !allowedSeverity[report.Severity] {
+        return nil, fmt.Errorf("invalid severity %q", report.Severity)
     }
     return &report, nil
 }
 ```
 
-The markdown fence stripping is a practical necessity — even with schema instructions, Claude occasionally wraps JSON in a code fence.
+`json.Unmarshal` alone accepts any `severity` string and silently ignores unknown fields. Validation is your job unless the API enforced the schema.
+
+## Text of a response
+
+With thinking on (the default on current Opus models), `Content[0]` may be a thinking block. Collect the text blocks instead:
+
+```go
+func textOf(msg *anthropic.Message) string {
+    var sb strings.Builder
+    for _, block := range msg.Content {
+        if t, ok := block.AsAny().(anthropic.TextBlock); ok {
+            sb.WriteString(t.Text)
+        }
+    }
+    return sb.String()
+}
+```
 
 ## Retry with exponential backoff
 
-Using the standard library (no extra dependency):
+The SDK already retries 429 and 5xx responses twice. Raise that with `option.WithMaxRetries(n)` before you write your own loop. If you need custom policy, the SDK returns a single `*anthropic.Error` type for every non-2xx response; unwrap it with `errors.As` and branch on `StatusCode`:
 
 ```go
-func callWithRetry(ctx context.Context, client *anthropic.Client, params anthropic.MessageNewParams) (*anthropic.Message, error) {
+func callWithRetry(ctx context.Context, client anthropic.Client, params anthropic.MessageNewParams) (*anthropic.Message, error) {
     const maxAttempts = 4
     base := 500 * time.Millisecond
 
-    for attempt := range maxAttempts {
+    for attempt := 0; attempt < maxAttempts; attempt++ {
         msg, err := client.Messages.New(ctx, params)
         if err == nil {
             return msg, nil
         }
 
         var apiErr *anthropic.Error
-        if errors.As(err, &apiErr) && apiErr.StatusCode < 500 {
-            return nil, err // 4xx: don't retry
+        if errors.As(err, &apiErr) && apiErr.StatusCode < 500 && apiErr.StatusCode != 429 {
+            return nil, err // other 4xx: a caller bug, don't retry
         }
 
         if attempt == maxAttempts-1 {
@@ -90,33 +115,28 @@ func callWithRetry(ctx context.Context, client *anthropic.Client, params anthrop
         case <-time.After(wait):
         }
     }
-    panic("unreachable")
+    return nil, errors.New("unreachable")
 }
 ```
 
-`sethvargo/go-retry` provides a cleaner API with configurable back-off policies if you prefer a library.
+If you retry yourself, set `option.WithMaxRetries(0)` on the client so the two layers don't multiply.
 
 ## Bounded parallel fan-out
 
-Running all goroutines unbounded saturates the API rate limit instantly. Use a semaphore channel to bound concurrency:
+Unbounded goroutines saturate your rate limit instantly. `errgroup.SetLimit` bounds concurrency without a hand-rolled semaphore:
 
 ```go
-const maxConcurrent = 5
-
-sem := make(chan struct{}, maxConcurrent)
 g, ctx := errgroup.WithContext(context.Background())
+g.SetLimit(5)
 reports := make([]*ThreatReport, len(documents))
 
 for i, doc := range documents {
-    i, doc := i, doc
-    sem <- struct{}{} // acquire slot
-    g.Go(func() error {
-        defer func() { <-sem }() // release slot
+    g.Go(func() error { // blocks here while 5 calls are already in flight
         resp, err := callWithRetry(ctx, client, buildParams(doc))
         if err != nil {
             return err
         }
-        reports[i], err = parseThreatReport(resp.Content[0].Text)
+        reports[i], err = parseThreatReport(textOf(resp))
         return err
     })
 }
@@ -128,11 +148,16 @@ if err := g.Wait(); err != nil {
 
 ## Configuration questions
 
-1. Why do we capture `i` and `doc` as new variables inside the loop before passing them to the goroutine?
-2. The retry skips 4xx errors. What specific status code would a rate-limit response return, and should it be retried?
-3. If `sem <- struct{}{}` is placed inside the goroutine instead of outside, what race condition can occur?
-4. How would you modify `parseThreatReport` to validate that `severity` is one of the allowed enum values before returning?
-5. `errgroup.WithContext` returns a new context. What happens to that context when one goroutine returns an error?
+Pick an answer for each field on this step:
+
+1. **Response format your Go service needs.** Is it structured JSON (schema-validated), plain text or Markdown, streaming text, or tool-call results?
+2. **Retry strategy for API failures.** Choose exponential backoff, fixed interval, fail fast, or a circuit breaker. Remember the SDK's built-in retries when you choose.
+3. **Will you fan out concurrent LLM calls?** Choose a goroutine pool, errgroup (with `SetLimit`), or sequential calls only.
+
+Questions to think through as you choose:
+
+- What status code does a rate-limit response return, and why does the retry loop above treat it differently from other 4xx codes?
+- `errgroup.WithContext` returns a derived context. What happens to calls using it when one goroutine returns an error?
 
 ---
 

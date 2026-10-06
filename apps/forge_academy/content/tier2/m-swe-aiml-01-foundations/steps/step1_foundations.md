@@ -11,15 +11,18 @@ The AI/ML Model Canvas (AIMC) is your design surface for the full foundation mod
 
 ## The Model Taxonomy
 
-AIMC organizes models into 5 types:
+Every catalog entry (`FOUNDATION_MODELS` in `tools/aiml_canvas/constants.py`) carries a `type`. The catalog currently uses four:
 
-| Type | Use Case | Example |
+| Type | Use Case | Example in the catalog |
 |------|----------|---------|
-| **LLM** | Text generation, instruction following, Q&A | Qwen3, GPT-4o, Gemini 1.5 Pro |
-| **VLM** | Vision + language (charts, maps, docs) | LLaVA-Phi3, GPT-4o (vision) |
-| **Embedding** | Semantic search, RAG vector store | Nomic Embed, text-embedding-3-large |
-| **Code** | Code generation, review, completion | Granite 20B Code, CodeLlama |
-| **Classifier** | Intent routing, PII detection | Small distilled models |
+| **llm** | Text generation, instruction following, Q&A | Qwen3 (Local), GPT-4o (Azure OpenAI), Gemini 1.5 Pro (Vertex AI) |
+| **vlm** | Vision + language (charts, maps, docs) | LLaVA-Phi3 Vision (Local) |
+| **embedding** | Semantic search, RAG vector store | Nomic Embed Text, text-embedding-3-large (Azure OpenAI) |
+| **code** | Code generation, review, completion | Granite 20B Code (watsonx.ai), CodeLlama 34B Instruct |
+
+Filter by type with `GET /ai-ml/api/models?type=embedding`. Classifiers for intent routing or PII detection are usually small distilled models you bring yourself; the catalog has no `classifier` entries.
+
+Each entry also lists `il_suitability` (the IL levels it may run at, as integers, e.g. `[2, 4, 5, 6]`) and `air_gap_ready`.
 
 ## IL Selection Matrix
 
@@ -34,6 +37,13 @@ AIMC organizes models into 5 types:
 
 Call the AIMC model catalog API and answer the 5 questions below.
 
+> **Where this runs.** This is a reading step: run the script from your own terminal
+> against your own ICDEV instance (the Academy sandbox has no network). The AIMC canvas
+> is mounted at `/ai-ml` (`tools/aiml_canvas/blueprint.py`). If auth is on, send a
+> dashboard API key as `Authorization: Bearer icdev_dash_...`; the POST routes also
+> require a role allowed to edit AIMC designs.
+
+
 ```python
 import requests
 
@@ -43,7 +53,7 @@ BASE = "http://localhost:5050"
 r = requests.get(f"{BASE}/ai-ml/api/models")
 models = r.json()
 
-# 2. Get models ranked for IL4
+# 2. Get models ranked for IL4 (only models whose il_suitability includes 4, best first)
 r4 = requests.get(f"{BASE}/ai-ml/api/models/rank?il_level=IL4")
 ranked_il4 = r4.json()
 
@@ -52,10 +62,10 @@ r6 = requests.get(f"{BASE}/ai-ml/api/models/rank?il_level=IL6")
 ranked_il6 = r6.json()
 ```
 
-## Questions (answer in your submission)
+## Questions (work them out from the API output; this step has no answer box)
 
 1. How many total models are in the catalog?
-2. How many models support IL6?
+2. How many models support IL6? (count entries whose `il_suitability` contains `6`)
 3. Which provider has the most models?
 4. What is the top-ranked model for IL4 and why?
 5. What is the top-ranked model for IL6 and why?

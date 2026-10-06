@@ -16,10 +16,11 @@ Every production LLM system needs three layers:
                   (Benchmark + Rubric + Red Team)
 ```
 
-**OWASP LLM Top 10 coverage:**
+**OWASP LLM Top 10 coverage (2023 numbering, as used by the ICDEV canvases):**
+
 - LLM01 Prompt Injection → Input Guardrail
 - LLM02 Insecure Output Handling → Output Validator
-- LLM05 Sensitive Info Disclosure → PII Scrubber
+- LLM06 Sensitive Information Disclosure → PII Scrubber
 - LLM08 Excessive Agency → HITL gate (in AADC)
 
 ## Evaluation Node Types
@@ -33,15 +34,23 @@ Every production LLM system needs three layers:
 
 ## Your Mission
 
-Build an AIMC design with safety + eval nodes, run the assessment, and assert score ≥ 70.
+Build an AIMC design with safety + eval nodes, run the assessment, and assert score ≥ 70. The score is the percentage of AIMC canvas checks that pass (`run_assessment()` in `tools/aiml_canvas/aiml_engine.py`); the design below passes 11 of 15 at IL4 (73.3). The remaining failures point at what to add next: a PII scrubber on CUI inputs, a DoD RAI node, an AI BOM connected to every model, and placing every component inside a classification zone.
+
+> **Where this runs.** This is a reading step: run the script from your own terminal
+> against your own ICDEV instance (the Academy sandbox has no network). The AIMC canvas
+> is mounted at `/ai-ml` (`tools/aiml_canvas/blueprint.py`). If auth is on, send a
+> dashboard API key as `Authorization: Bearer icdev_dash_...`; the POST routes also
+> require a role allowed to edit AIMC designs.
+
 
 ```python
-import requests, json
+import requests
 
 BASE = "http://localhost:5050"
+HEADERS = {}  # e.g. {"Authorization": "Bearer icdev_dash_..."} if auth is on
 
 # Step 1: Create a design
-design = requests.post(f"{BASE}/ai-ml/api/designs", json={
+design = requests.post(f"{BASE}/ai-ml/api/designs", headers=HEADERS, json={
     "name": "Safety Eval Test Design",
     "il_level": "IL4",
     "classification": "CUI"
@@ -68,10 +77,10 @@ graph = {
         {"id": "e6", "source": "n7", "target": "n1", "type": "governance"},
     ]
 }
-requests.put(f"{BASE}/ai-ml/api/designs/{design_id}", json={"graph": graph})
+requests.put(f"{BASE}/ai-ml/api/designs/{design_id}", headers=HEADERS, json={"graph": graph})
 
 # Step 3: Run assessment
-result = requests.post(f"{BASE}/ai-ml/api/designs/{design_id}/assess").json()
+result = requests.post(f"{BASE}/ai-ml/api/designs/{design_id}/assess", headers=HEADERS).json()
 score = result.get("score", 0)
 print(f"Assessment score: {score}")
 assert score >= 70, f"Score {score} < 70 — add safety and governance nodes"

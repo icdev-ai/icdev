@@ -39,6 +39,7 @@ results = runner.run()  # -> {"stig_scan": {...}, "risk_score": {...}, "poam_dra
 ## Key concepts
 
 **Topological ordering** — Tasks must run in an order that respects all dependencies. Use a BFS/Kahn's algorithm approach:
+
 1. Find all tasks with `in_degree == 0` (no dependencies) → ready queue
 2. Run all ready tasks, collecting results
 3. For each completed task, reduce `in_degree` of its dependents by 1
@@ -50,6 +51,7 @@ results = runner.run()  # -> {"stig_scan": {...}, "risk_score": {...}, "poam_dra
 ## The compliance pipeline
 
 Your DAG runs a 4-stage compliance pipeline:
+
 1. `stig_scan` — simulate scanning 3 systems, return findings
 2. `risk_score` — calculate risk score from scan results (depends on stig_scan)
 3. `poam_draft` — draft POA&M entries (depends on stig_scan)
