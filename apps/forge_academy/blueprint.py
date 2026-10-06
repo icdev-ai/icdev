@@ -38,6 +38,20 @@ import threading as _threading
 _init_lock = _threading.Lock()
 
 
+@bp.teardown_app_request
+def _release_fa_connections(_exc=None):
+    """Close the connections db.get_connection reused for this request (aca-perf-demo).
+
+    App-wide, not blueprint-only: the nav context processor and other canvases call
+    Academy helpers too, and their request-held connections must not outlive it.
+    """
+    from .db import release_request_connections
+    try:
+        release_request_connections()
+    except Exception:
+        pass
+
+
 @bp.app_context_processor
 def _inject_fa_nav():
     """Inject FORGE Academy XP/rank badge data into every page template context."""

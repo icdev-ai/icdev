@@ -7,7 +7,9 @@ import logging
 import secrets
 from datetime import datetime, timezone
 
-from tools.db.storage import get_connection
+import weakref
+
+from tools.db.storage import get_connection as _storage_get_connection
 from .constants import (
     ACHIEVEMENTS,
     MISSION_STATUS_COMPLETED,
@@ -20,6 +22,138 @@ from .constants import (
 )
 
 _log = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Request-scoped connection reuse (aca-perf-demo)
+# ---------------------------------------------------------------------------
+# Every helper in this package does ``conn = get_connection()`` and almost none
+# close it. On PostgreSQL that leaks a checked-out slot of storage's 20-slot pool,
+# so in a long-running dashboard the pool is drained and every later call falls
+# back to a brand-new TCP+auth connect — measured 2026-10-05 at ~72ms each, and a
+# single Academy page made 45-58 of them (/academy/missions 3.8s,
+# /academy/mission/<slug> 4.7s, /api/academy/assessment/coverage 214 connects,
+# 16.5s). Query time was <0.3s of that.
+#
+# Inside a Flask request this hands out a thin proxy over a connection the
+# request already opened, once the previous holder is DONE with it: it called
+# close(), or it dropped its last reference (CPython frees it at once, which is
+# exactly when the old code's connection would have been garbage-collected and
+# closed). Before reuse the connection is rolled back — what closing it would
+# have done to any uncommitted work — and the request's security context is
+# re-attached, since a rollback reverts the session vars set_config wrote. A
+# connection whose proxy is still referenced is never shared, so no caller ever
+# sees another caller's transaction. Everything is rolled back and closed at
+# request teardown. Outside a request, and on SQLite, this is a pass-through.
+
+class _RequestConnection:
+    """Proxy over a request-held StorageConnection; ``close()`` releases it."""
+
+    def __init__(self, sc, slot):
+        self._sc = sc
+        self._slot = slot
+
+    def __getattr__(self, name):
+        sc = self.__dict__.get("_sc")
+        if sc is None:
+            raise AttributeError(f"connection is closed ({name})")
+        return getattr(sc, name)
+
+    def close(self):
+        sc = self.__dict__.get("_sc")
+        if sc is None:
+            return
+        try:
+            sc.rollback()  # what closing a pooled connection does
+        except Exception:
+            self._slot["broken"] = True
+        self._slot["ref"] = None
+        self._sc = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type:
+            self.rollback()
+        else:
+            self.commit()
+        self.close()
+        return False
+
+
+def _request_slots():
+    """Return the current request's connection slots, or None outside a request."""
+    try:
+        from flask import g, has_request_context
+    except ImportError:
+        return None
+    if not has_request_context():
+        return None
+    slots = getattr(g, "_fa_conn_slots", None)
+    if slots is None:
+        slots = []
+        g._fa_conn_slots = slots
+    return slots
+
+
+def _slot_free(slot) -> bool:
+    if slot.get("broken"):
+        return False
+    ref = slot.get("ref")
+    return ref is None or ref() is None
+
+
+def get_connection(*args, **kwargs):
+    """``tools.db.storage.get_connection``, reusing released connections per request."""
+    slots = _request_slots() if not args and not kwargs else None
+    if slots is None:
+        return _storage_get_connection(*args, **kwargs)
+    for slot in slots:
+        if not _slot_free(slot):
+            continue
+        sc = slot["sc"]
+        try:
+            sc.rollback()
+            from tools.db.storage import _attach_flask_security_context
+            _attach_flask_security_context(sc)
+        except Exception:
+            slot["broken"] = True
+            continue
+        proxy = _RequestConnection(sc, slot)
+        slot["ref"] = weakref.ref(proxy)
+        return proxy
+    sc = _storage_get_connection()
+    if getattr(sc, "_backend", None) != "postgresql":
+        return sc
+    slot = {"sc": sc, "ref": None}
+    proxy = _RequestConnection(sc, slot)
+    slot["ref"] = weakref.ref(proxy)
+    slots.append(slot)
+    return proxy
+
+
+def release_request_connections() -> int:
+    """Roll back and close every connection this request held. Returns the count."""
+    try:
+        from flask import g, has_request_context
+    except ImportError:
+        return 0
+    if not has_request_context():
+        return 0
+    slots = getattr(g, "_fa_conn_slots", None) or []
+    g._fa_conn_slots = []
+    for slot in slots:
+        sc = slot["sc"]
+        try:
+            sc.rollback()
+        except Exception:
+            pass
+        try:
+            sc.close()
+        except Exception:
+            pass
+    return len(slots)
 
 
 # ---------------------------------------------------------------------------
