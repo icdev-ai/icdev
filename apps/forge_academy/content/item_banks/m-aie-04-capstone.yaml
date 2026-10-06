@@ -1,0 +1,121 @@
+# CUI // SP-CTI
+#
+# Item bank for m-aie-04-capstone (aicur-eng-04, AI-Assisted Engineering capstone).
+#
+# Step 1 is the brief (a lesson); steps 2 and 3 are coding labs graded by
+# step2_test.py / step3_test.py in the code_runner sandbox, so they carry no bank.
+#
+# Authoring rules are the ones in m01-llm-fundamentals.yaml (validated by
+# assessment.validate_item_bank at seed time): >= 5 items per step, `correct` indexes
+# `options` as authored, `key` stable and unique per step, and every item answerable
+# from its own step's markdown alone.
+
+mission: m-aie-04-capstone
+
+steps:
+
+  # -------------------------------------------------------------------------
+  # Step 1 — Capstone Brief (steps/step1_the_brief.md)
+  # -------------------------------------------------------------------------
+  - step: 1
+    items:
+      - key: cap-why-it-shipped
+        prompt: >-
+          Why did the vibe-coded ledger ship with three defects nobody noticed?
+        options:
+          - "The model that wrote it was out of date"
+          - "None of the defects crashes on the happy path, and running it once was taken as evidence"
+          - "The defects only appear on Windows"
+          - "The specification was never written down"
+        correct: 1
+        explanation: >-
+          Each planted defect is an m-aie-03 anti-pattern that does not crash on the
+          happy path, so "it ran once" proved nothing.
+        difficulty: core
+
+      - key: cap-mutant-survived
+        prompt: >-
+          The step 2 grader puts a planted defect back into an otherwise-correct charge
+          and every one of your tests still passes. What does that surviving mutant mean?
+        options:
+          - "A test is missing — your suite cannot catch that defect"
+          - "The grader is broken"
+          - "The defect is harmless and can be ignored"
+          - "Your fix is wrong"
+        correct: 0
+        explanation: >-
+          A mutant your tests do not fail on has survived, and a surviving mutant means
+          a test is missing.
+        difficulty: core
+
+      - key: cap-tests-first
+        prompt: >-
+          Why does the brief tell you to write the tests from the spec and watch them go
+          red BEFORE fixing charge?
+        options:
+          - "Because the sandbox only runs tests once"
+          - "Because fixing first is slower"
+          - "Because a test you only ever saw green might pass whatever the implementation does"
+          - "Because the grader deletes your fix if tests come second"
+        correct: 2
+        explanation: >-
+          Seeing the test fail first proves it discriminates; m-aie-02 called a test
+          that was never red "not a test".
+        difficulty: core
+
+      - key: cap-red-test-response
+        prompt: >-
+          A test you wrote from the spec goes red against the shipped code. What is the
+          production-grade response?
+        options:
+          - "Weaken the assertion until it is green"
+          - "Fix the code — the defect is in the code, not the test"
+          - "Mark the test as skipped and file a ticket"
+          - "Rewrite the whole module from scratch"
+        correct: 1
+        explanation: >-
+          Weakening the assertion is the "editing the test until it passes" anti-pattern;
+          a full rewrite ignores "bound your edit scope".
+        difficulty: core
+
+      - key: cap-checkable-rule
+        prompt: >-
+          Which line belongs in a project instruction file such as AGENTS.md?
+        options:
+          - "Write good code."
+          - "Follow best practices for error handling."
+          - "Never catch a bare `except Exception` in charge(); let BudgetExceeded propagate."
+          - "Be careful with the budget logic."
+        correct: 2
+        explanation: >-
+          A useful rule is checkable: it names a command, a construct or a value. The
+          other three are wishes no one can verify.
+        difficulty: core
+
+      - key: cap-done-evidence
+        prompt: >-
+          According to the brief, what counts as evidence that the capstone is done?
+        options:
+          - "The agent saying all tests pass"
+          - "A screenshot of the editor with no red underlines"
+          - "The test output from running the exact test command"
+          - "A code review comment saying it looks good"
+        correct: 2
+        explanation: >-
+          "I've fixed it and all tests pass" is a sentence; evidence is the output of
+          running the exact command.
+        difficulty: core
+
+      - key: cap-instruction-budget
+        prompt: >-
+          Why does the brief tell you to keep the instruction file short?
+        options:
+          - "Harnesses reject files over one kilobyte"
+          - "It is read, and paid for, at the start of every session"
+          - "Markdown parsers cannot handle long files"
+          - "Short files are easier to translate"
+        correct: 1
+        explanation: >-
+          Harnesses load the instruction file every session; ICDEV budgets its own
+          CLAUDE.md with args/claude_md_budget.yaml for the same reason.
+        difficulty: core
