@@ -29,9 +29,11 @@ Portfolio Risk:     38/100    ← Elevated (threshold: 35)
 **Risk Aggregation Findings**
 - 1 system with expired ATO (Legacy-App-01) — accounts for 31% of portfolio risk elevation
 - 2 systems in CONDITIONAL status — combined 23% of remaining risk
-- Recommendation: Emergency ATO renewal for Legacy-App-01 or decommission by 2026-06-30
+- Recommendation: Emergency ATO renewal for Legacy-App-01 or decommission by 2027-03-31
 
 **Executive Brief Auto-Generated**
 3-paragraph brief with portfolio score, top 3 risk drivers, recommended actions, and projected posture improvement if Legacy-App-01 is remediated (78% → 91%).
 
 Brief formatted for SECDEF briefing style: no jargon, action-oriented, timeline-specific.
+
+*(The portfolio and its numbers are an illustrative scenario.)*

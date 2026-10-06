@@ -5,16 +5,18 @@ step_class: icdev:Lesson
 
 # Configure ATO Acceleration
 
-Set up the ATO Acceleration agent for your system.
+These are the inputs an ATO acceleration run takes. This step is a read-through. There is no form to fill in. When you've read what each input does, click **Understood → Continue**.
 
-## Configuration Fields
+## Inputs
 
 **System Name** — The system's formal name as it appears in eMASS/XACTA.
 
 **Impact Level** — Determines the applicable control baseline:
-- **IL2** — CUI Unclassified, FedRAMP Moderate baseline (325 controls)
-- **IL4** — CUI / DoD, FedRAMP High + DoD SRG baseline (421 controls)
-- **IL5** — CUI Sensitive / National Security, IL4 + additional DoD controls (450+ controls)
+- **IL2**: public or non-critical mission information. FedRAMP Moderate baseline (323 controls in Rev 5).
+- **IL4**: Controlled Unclassified Information (CUI). FedRAMP Moderate plus the DoD Cloud Computing SRG's additional (FedRAMP+) controls.
+- **IL5**: higher-sensitivity CUI and National Security Systems. FedRAMP High baseline (410 controls in Rev 5) plus FedRAMP+ controls.
+
+`python tools/compliance/crosswalk_engine.py --impact-level IL4` prints the controls ICDEV puts in scope for a level.
 
 **Compliance Framework** — Primary framework driving the ATO:
 - **RMF** — DoD Risk Management Framework (most common for internal systems)

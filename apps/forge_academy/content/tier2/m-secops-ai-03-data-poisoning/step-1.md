@@ -64,19 +64,23 @@ Your corpus is only as trustworthy as its sources. Vulnerable ingestion paths:
 | User-submitted documents | Critical | Any user can poison a shared corpus |
 | API-fed data | Medium | Compromised upstream API injects bad data |
 
-## The ICDEV Defense Tool: `tools/rag/quality_feedback_loop.py`
+## What ICDEV Gives You Today
 
-```python
-from tools.rag.quality_feedback_loop import run_feedback_cycle, get_feedback_status
+No single ICDEV tool "validates a corpus". You assemble the defense from three real pieces:
 
-# Run full validation cycle on a corpus
-results = run_feedback_cycle(corpus_id="contract-corpus")
+| Piece | What it actually does |
+|---|---|
+| `tools/rag/quality_feedback_loop.py` | Watches **aggregate retrieval quality** (average top retrieval score, nDCG, MRR over the last 7 days) against adaptive floors, and flags a metric that regresses. When quality degrades it can generate training pairs and trigger retraining. It is an **early-warning signal**, not a per-document scanner. |
+| `tools/security/prompt_injection_detector.py` | Scans text or files for injection patterns. Run it on documents **before** ingestion (`--file`, `--project-dir`) to catch Type 4 indirect injection. |
+| `tools/rag/provenance_ledger.py` | Writes the append-only `rag_provenance_ledger`, recording which source a retrieved chunk came from. That is your chain of custody when a poisoned answer needs to be traced back. |
 
-# Check current health
-status = get_feedback_status(corpus_id="contract-corpus")
+```bash
+python tools/rag/quality_feedback_loop.py --status --json     # current quality + anomaly verdict
+python tools/rag/quality_feedback_loop.py --dry-run --json    # check quality, don't generate pairs
+python tools/security/prompt_injection_detector.py --file incoming/vendor_notice.md --json
 ```
 
-The feedback loop scores all documents for quality, coherence, and source reliability, then flags anomalies for human review.
+Availability poisoning (Type 3) shows up in the feedback loop first, because flooding the corpus with noise drags retrieval scores down. Context hijacking and backdoor triggers (Types 1–2) are aimed at a few queries and usually do **not** move the aggregate metrics. Those you catch at ingestion, as Step 2 shows.
 
 ## NIST SI-10: Input Validation
 

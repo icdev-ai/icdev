@@ -7,9 +7,11 @@ step_class: icdev:Lesson
 
 # OWASP LLM Top 10 — Red Team Framework
 
-Red teaming AI systems requires a structured framework. The OWASP LLM Top 10 (2025) is the industry-standard attack taxonomy for LLM-based applications. Before you can defend your system, you need to understand all 10 attack surfaces and the methodology to test each one systematically.
+Red teaming AI systems requires a structured framework. The OWASP Top 10 for LLM Applications is the industry-standard attack taxonomy for LLM-based applications. Before you can defend your system, you need to understand all 10 attack surfaces and the methodology to test each one systematically.
 
-## The OWASP LLM Top 10 (2025)
+## The OWASP LLM Top 10 (v1.1, 2023 numbering)
+
+This mission and the audit form in Step 2 use the **v1.1 (2023) numbering**. The Agentic AI Design Canvas checks `llm01`–`llm10` use the same numbering (`tools/agentic_ai_canvas/constants.py`).
 
 | ID | Name | Description |
 |---|---|---|
@@ -23,6 +25,8 @@ Red teaming AI systems requires a structured framework. The OWASP LLM Top 10 (20
 | LLM08 | Excessive Agency | LLM has more permissions than required for its task |
 | LLM09 | Overreliance | Users or systems trust LLM output without verification |
 | LLM10 | Model Theft | Adversary extracts model weights or replicates behavior via API |
+
+**The 2025 edition renumbers the list.** It is LLM01 Prompt Injection, LLM02 Sensitive Information Disclosure, LLM03 Supply Chain, LLM04 Data and Model Poisoning, LLM05 Improper Output Handling, LLM06 Excessive Agency, LLM07 System Prompt Leakage, LLM08 Vector and Embedding Weaknesses, LLM09 Misinformation, LLM10 Unbounded Consumption. ICDEV's compliance assessor, `tools/compliance/owasp_llm_assessor.py`, scores projects against the 2025 list (`context/compliance/owasp_llm_top10.json`). When you cite an ID in a report, say which edition it comes from.
 
 ## Red Teaming Methodology
 
@@ -80,11 +84,12 @@ The principle of least privilege applies: an agent that only reads documents sho
 
 ## The AADC Canvas and MITRE ATLAS
 
-The AADC (AI-Assisted Design Canvas) includes node types mapped to the MITRE ATLAS (Adversarial Threat Landscape for AI Systems) framework. Each OWASP LLM item has a corresponding ATLAS technique ID. When you model your system in the AADC, the guardrail node automatically flags designs that expose OWASP LLM attack surfaces.
+The **Agentic AI Design Canvas (AADC)** at `/agentic-ai` maps node types to MITRE ATLAS (Adversarial Threat Landscape for AI Systems) techniques (`ATLAS_THREAT_MAP` in `tools/agentic_ai_canvas/constants.py`). When you click **Assess**, it scores the design against the `llm01`–`llm10` checks and lists the ATLAS techniques each node exposes.
 
-ATLAS technique catalog relevant to this mission:
-- `AML.T0054` — LLM Prompt Injection
-- `AML.T0048` — Societal Harm — maps to LLM09 Overreliance
-- `AML.T0051` — LLM Plugin Compromise — maps to LLM07
+ATLAS techniques relevant to this mission:
+- `AML.T0051`: LLM Prompt Injection (LLM01)
+- `AML.T0053`: LLM Plugin Compromise (LLM07)
+
+For a static red-team pass over ICDEV's own defences, run `python tools/security/atlas_red_team.py --all --json`. It checks that the defensive tooling exists and does not invoke a model.
 
 **Your task:** In the next step, audit your agent.

@@ -5,11 +5,11 @@ step_class: icdev:Lesson
 
 # Verify: Review the Triage Results
 
-The STIG Triage Agent has processed your configuration. Review the output below.
+Here is how to read a triage result before you act on it.
 
 ## What to look for
 
-**Severity classification** — Confirm the agent correctly identified the CAT level. CAT I findings appear in red; they require a POA&M entry within 30 days of discovery.
+**Severity classification**: confirm the agent identified the CAT level correctly against the STIG itself. CAT I findings appear in red and get the shortest remediation window.
 
 **Remediation recommendation** — The agent proposes a specific fix action. For SSH hardening findings, it generates the exact `sshd_config` directive. For most RHEL STIGs, it produces an Ansible task.
 
@@ -21,7 +21,7 @@ The STIG Triage Agent has processed your configuration. Review the output below.
 
 1. Review the recommendation for accuracy
 2. Assign to system admin team with the Ansible playbook
-3. Set the POA&M milestone dates (auto-populated from today + 30 days for CAT I)
+3. Set the POA&M milestone dates (auto-populated from today plus the window for that severity)
 4. Upload to XACTA or eMASS
 5. Schedule a verification scan after patching
 
