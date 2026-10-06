@@ -1657,11 +1657,23 @@ def _recommend_next_missions(user_id: int, role: str, limit: int = 3) -> list[di
     except Exception:
         pass
 
-    candidates = [m for m in all_missions if m["id"] not in completed_ids]
+    # aicur-eng-04: a mission with no steps is a dead end (fga-wire-06), so it is
+    # never recommended; and a mission whose prereqs are all completed outranks one
+    # still locked. Ranking by title alone meant a learner who finished m-aie-03 was
+    # offered alphabetically-earlier missions ahead of the capstone it unlocked.
+    candidates = [
+        m for m in all_missions
+        if m["id"] not in completed_ids and m.get("is_available", True)
+    ]
+    try:
+        prereq_state = mission_prereq_state(user_id, candidates)
+    except Exception:
+        prereq_state = {}
 
     def _sort_key(m):
         in_prog = 0 if m["id"] in in_prog_ids else 1
-        return (in_prog, m.get("tier", 99), m.get("title", ""))
+        locked = 0 if prereq_state.get(m["id"], {}).get("ready", True) else 1
+        return (in_prog, locked, m.get("tier", 99), m.get("order_idx", 0), m.get("title", ""))
 
     candidates.sort(key=_sort_key)
     return candidates[:limit]
