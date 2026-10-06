@@ -66,6 +66,19 @@
         {% endif %}
       </div>
       {% endfor %}
+      {% elif not schema.action %}
+      {# Steps discovered from lesson files carry no field schema, so this panel
+         offered nothing to fill in, promised to "execute this action", and
+         recorded {}. Capture the learner's answer to the lesson's task instead. #}
+      <div class="fa-form-group" style="margin-bottom:.9rem;">
+        <label for="cfg-{{ sidx }}-answer"
+               style="font-size:.75rem;color:var(--text-secondary);display:block;margin-bottom:.3rem;">
+          Your answer to this step's task
+        </label>
+        <textarea name="answer" id="cfg-{{ sidx }}-answer" rows="5"
+                  placeholder="Write your configuration or design here, as the lesson asks."
+                  style="width:100%;background:var(--fa-bg-0d1221);border:1px solid var(--fa-border);color:var(--text-primary);border-radius:6px;padding:.5rem .8rem;font-size:.82rem;font-family:monospace;resize:vertical;"></textarea>
+      </div>
       {% else %}
       <p style="color:var(--text-secondary);font-size:.82rem;">
         Click Configure to execute this action with default settings.

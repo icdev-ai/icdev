@@ -2655,6 +2655,43 @@ def _sanitize_html(rendered: str, raw_fallback: str = "") -> str:
     )
 
 
+_LIST_ITEM_RE = re.compile(r"^( *)([-*+]|\d+[.)])\s")
+
+
+def _indent_nested_lists(text: str) -> str:
+    """Re-indent nested list items to the 4 spaces per level Python-Markdown needs.
+
+    Lessons indent sub-lists by two spaces (some by three, some correctly by four),
+    and Python-Markdown reads anything under four as a continuation of the parent
+    item, so a nested list rendered merged into the parent's numbering. Within each
+    list the distinct indents seen are ranked into depths and each item is
+    re-indented to 4 x depth, so 2-, 3- and 4-space authoring all nest the same
+    way. A non-indented, non-list line ends the list; fenced code is untouched.
+    """
+    out: list[str] = []
+    stack: list[int] = []  # indents of the open list levels, outermost first
+    in_fence = False
+    for line in text.split("\n"):
+        stripped = line.lstrip()
+        if stripped.startswith(("```", "~~~")):
+            in_fence = not in_fence
+            out.append(line)
+            continue
+        m = None if in_fence else _LIST_ITEM_RE.match(line)
+        if m and (m.group(1) == "" or stack):
+            indent = len(m.group(1))
+            while stack and stack[-1] > indent:
+                stack.pop()
+            if not stack or indent > stack[-1]:
+                stack.append(indent)
+            out.append(" " * (4 * (len(stack) - 1)) + line[indent:])
+            continue
+        if not in_fence and stripped and not line.startswith(" "):
+            stack = []
+        out.append(line)
+    return "\n".join(out)
+
+
 def _md_to_html(text: str) -> str:
     """Convert markdown text to sanitized HTML.
 
@@ -2662,7 +2699,7 @@ def _md_to_html(text: str) -> str:
     for UNTRUSTED input — notably LLM coach hints surfaced at
     ``/api/academy/coach/hint`` — not only first-party lesson content.
     """
-    text = text or ""
+    text = _indent_nested_lists(text or "")
     try:
         import markdown as md_lib
         rendered = md_lib.markdown(text, extensions=["fenced_code", "tables", "nl2br"])
@@ -2816,17 +2853,21 @@ def load_step_content(content_path: str) -> dict:
     Returns dict with keys: html (str), frontmatter (dict).
     """
     if not content_path:
-        return {"html": "", "frontmatter": {}}
+        return {"html": "", "frontmatter": {}, "title": ""}
     full = CONTENT_ROOT / content_path
     try:
         raw = full.read_text(encoding="utf-8")
         fm, body = _parse_frontmatter(raw)
-        return {"html": _md_to_html(body), "frontmatter": fm}
+        # The lesson's own H1, by the rule discover_steps seeds titles with ("" when
+        # the lesson has none); see display_step_title for when it is used.
+        return {"html": _md_to_html(body), "frontmatter": fm,
+                "title": _title_from_body(body, "")}
     except FileNotFoundError:
-        return {"html": f"<p><em>Content file not found: <code>{content_path}</code></em></p>", "frontmatter": {}}
+        return {"html": f"<p><em>Content file not found: <code>{content_path}</code></em></p>",
+                "frontmatter": {}, "title": ""}
     except Exception as e:
         _log.warning("load_step_content %s: %s", content_path, e)
-        return {"html": "", "frontmatter": {}}
+        return {"html": "", "frontmatter": {}, "title": ""}
 
 
 def load_starter_code(path: str) -> str:
@@ -2847,6 +2888,25 @@ def load_test_code(path: str) -> str:
         return full.read_text(encoding="utf-8")
     except FileNotFoundError:
         return ""
+
+
+def display_step_title(stored: str, content: dict) -> str:
+    """The title the learner sees for a step.
+
+    A step row's title is seeded once and never refreshed. Two cases where the
+    lesson must win: it declares a ``title:`` in its frontmatter (how a corrected
+    lesson retires a stale claim such as "6 ML Predictors"), or the stored title is
+    a classification banner rather than a title (m11 seeded "CUI // SP-CTI").
+    Otherwise the authored step title stays: it is usually more specific than the
+    lesson's mission-level H1.
+    """
+    fm_title = str((content.get("frontmatter") or {}).get("title") or "")
+    fm_title = fm_title.strip().strip("\"'").strip()
+    if fm_title:
+        return fm_title[:200]
+    if content.get("title") and _is_classification_heading(stored or ""):
+        return content["title"]
+    return stored
 
 
 def get_mission_with_steps(slug: str) -> dict | None:
@@ -2870,6 +2930,7 @@ def get_mission_with_steps(slug: str) -> dict | None:
         content = load_step_content(step.get("content_path", ""))
         step["content_md"] = content["html"]
         step["content_frontmatter"] = content["frontmatter"]
+        step["title"] = display_step_title(step.get("title") or "", content)
         step["ontology_id"] = content["frontmatter"].get("ontology_id", "")
         step["step_class"] = content["frontmatter"].get("step_class", "")
         step["starter_code"] = load_starter_code(step.get("starter_code_path", ""))
