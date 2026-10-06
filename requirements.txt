@@ -215,6 +215,14 @@ pyotp>=2.9
 pdfplumber>=0.11          # PDF text + TABLE extraction (oss-table-01); imported by tools/document_intelligence/
 beautifulsoup4>=4.12      # imported by tools/pulse/engine/researcher.py and 3 others (oss-table-02)
 openpyxl>=3.1             # XLSX extraction (MIT) — imported best-effort by tools/document_intelligence/extractors.py:989; without it all XLSX ingestion silently no-ops on a clean install
+# Markdown rendering. Both are imported inside try/except, so a clean install that
+# lacked them did not fail -- it silently degraded: FORGE Academy
+# (apps/forge_academy/content_loader.py::_md_to_html) rendered every lesson as raw
+# <pre> text, and _sanitize_html fails SAFE to fully-escaped source without bleach.
+# Also used by tools/dashboard/ux_helpers.py, tools/dashboard/app.py (intake PRD
+# view), tools/aiify/blueprint.py and tools/docgen/workflow.py. Pure Python, air-gap safe.
+markdown>=3.10            # PyPI distribution "Markdown" (BSD-3-Clause)
+bleach>=6.0               # Allowlist HTML sanitizer for rendered markdown (Apache-2.0)
 
 # xrv-bin-01: binary triage (tools/analyzers/binary_triage.py). DECLARED rather
 # than imported quietly — the tsg-iso-03 census refuses an undeclared

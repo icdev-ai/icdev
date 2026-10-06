@@ -269,7 +269,7 @@ def get_usage_summary(
             query += " AND agent_id = ?"
             params.append(agent_id)
         if since:
-            query += " AND timestamp >= ?"
+            query += " AND created_at >= ?"
             params.append(since)
 
         row = conn.execute(query, params).fetchone()
