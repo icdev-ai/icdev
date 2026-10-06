@@ -20,7 +20,7 @@ cost = (input_tokens / 1000) * price_per_1k_input
      + (output_tokens / 1000) * price_per_1k_output
 ```
 
-Prices change often, so ICDEV does not hard-code them. Each model's `pricing: {input_per_1k, output_per_1k}` lives in `args/llm_config.yaml`, and `token_tracker.estimate_cost()` reads it from there. A local model served by Ollama (such as `qwen3-local`) is priced at $0.00. Token counts grow silently: a prompt that works at 500 tokens can balloon to 3,000 tokens as conversation history accumulates. Track per-agent, per-function, and per-day.
+Prices change often, so ICDEV does not hard-code them. Each model's `pricing: {input_per_1k, output_per_1k}` lives in `args/llm_config.yaml`, and `token_tracker.estimate_cost()` reads it from there. For orientation, as of September 2026 (source: Anthropic API first-party pricing, per million tokens — input / cached-input read / output): Claude Haiku 4.5 $1.00 / ~$0.10 / $5.00, Claude Sonnet 5.5 $2.00 / $0.20 / $10.00, Claude Opus 5.5 $4.00 / $0.20 / $20.00. A local model served by Ollama (such as `qwen3-local`) is priced at $0.00 per token (you pay in hardware instead). Reasoning ("thinking") tokens are billed as output tokens even when the reasoning text is hidden, so track them as their own series — they are the usual cause of an output bill that outgrows the visible answers. Token counts grow silently: a prompt that works at 500 tokens can balloon to 3,000 tokens as conversation history accumulates. Track per-agent, per-function, and per-day.
 
 ### 2. Latency (P50 / P95 / P99)
 

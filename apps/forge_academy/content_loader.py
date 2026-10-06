@@ -2939,6 +2939,27 @@ def seed_item_banks(conn) -> int:
                         (step_id, item["item_key"], *payload),
                     )
                 written += 1
+
+            # aicur-fun-01: an item whose key has left the bank is RETIRED, not left
+            # serving. Without this, correcting a false fact by removing its item
+            # changed the file and nothing else — the seeded row stayed active and
+            # learners kept being graded against it. Deactivated rather than deleted
+            # so recorded attempts still resolve their item_key.
+            authored = {item["item_key"] for item in items}
+            stale = conn.execute(
+                "SELECT id, item_key FROM fa_assessment_items "
+                "WHERE step_id=%s AND is_active=1",
+                (step_id,),
+            ).fetchall()
+            for srow in stale:
+                skey = srow["item_key"] if hasattr(srow, "keys") else srow[1]
+                if skey in authored:
+                    continue
+                sid = srow["id"] if hasattr(srow, "keys") else srow[0]
+                conn.execute(
+                    "UPDATE fa_assessment_items SET is_active=0 WHERE id=%s", (sid,)
+                )
+                written += 1
     if written:
         conn.commit()
         _log.info("FORGE Academy: seeded %d assessment item(s)", written)
