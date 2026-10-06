@@ -13,7 +13,6 @@ from apps.forge_academy import content_loader
 # Shrink-only. Remove an entry when its lesson is authored (the stale check below
 # fails until you do); never add one — write the stepN_*.md instead.
 ALLOWED_CODE_ONLY_STEPS = frozenset({
-    "tier1/m02-prompt-engineering/steps/step4",  # aicur-fun-04 authors it
     "tier2/m-dataops-03-corrective-rag/steps/step1",
     "tier2/m-dataops-04-capstone/steps/step1",
     "tier2/m-devops-03-gitops/steps/step1",

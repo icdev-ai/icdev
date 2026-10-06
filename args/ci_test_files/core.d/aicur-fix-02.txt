@@ -1,0 +1,1 @@
+tests/test_aicur_gameday_academy_wiring.py
