@@ -1,0 +1,233 @@
+# CUI // SP-CTI
+#
+# Item bank for m03-rag-basics (aicur-fun-05).
+# Spec: docs/features/forge-academy-aca-trn-01-assessment-model.md
+#
+# Step 1 is a lab with an authored step1_test.py and is graded by the coding path.
+# It deliberately carries NO bank here: grading.grade_step routes any step with an
+# active bank to the item path, so a bank on step 1 would silently replace the
+# lab's test with a quiz. Steps 2 and 3 are lessons and are graded by these banks.
+#
+# AUTHORING RULES are those of m01-llm-fundamentals.yaml (enforced by
+# assessment.validate_item_bank, called by the seeder). Every item is answerable
+# from the lesson markdown it assesses, and only from it.
+
+mission: m03-rag-basics
+
+steps:
+
+  # -------------------------------------------------------------------------
+  # Step 2 — Chunking and Why Retrieval Fails
+  # (steps/step2_chunking_and_failure_modes.md)
+  # -------------------------------------------------------------------------
+  - step: 2
+    items:
+      - key: chunk-unit
+        prompt: >-
+          What does a similarity search in a RAG system actually return?
+        options:
+          - "Whole documents, ranked by relevance"
+          - "The chunks whose embeddings are closest to the query's embedding"
+          - "A summary the vector database writes for the query"
+          - "Only chunks that are guaranteed to contain the answer"
+        correct: 1
+        explanation: >-
+          Retrieval never returns a document; it returns the closest chunks. The
+          chunk is the unit of retrieval, so it limits what the model can be shown.
+        difficulty: core
+
+      - key: chunk-too-large
+        prompt: >-
+          What goes wrong when chunks are too large (for example, one chunk
+          covering five controls)?
+        options:
+          - "The fact you need is cut off from the sentence that names it"
+          - "The index cannot be rebuilt"
+          - "The embedding is blurred so it matches nothing sharply, and irrelevant text wastes context space"
+          - "Retrieval stops returning top-K results"
+        correct: 2
+        explanation: >-
+          A large chunk yields one blurred embedding and spends context-window
+          space on material the question never asked about. Losing the
+          surrounding context is the too-SMALL failure.
+        difficulty: core
+
+      - key: chunk-overlap
+        prompt: >-
+          Why do consecutive chunks often share a few sentences of overlap?
+        options:
+          - "So a fact that straddles a chunk boundary still appears whole in at least one chunk"
+          - "To make the index smaller"
+          - "So the model sees every fact twice and trusts it more"
+          - "Overlap is required by vector databases"
+        correct: 0
+        explanation: >-
+          Overlap defends against the split-across-a-boundary failure: the
+          straddling fact is whole in at least one chunk.
+        difficulty: core
+
+      - key: fail-not-in-corpus
+        prompt: >-
+          A question is asked whose answer is not in the corpus at all. What does
+          similarity search return?
+        options:
+          - "Nothing — an empty result signals the answer is missing"
+          - "An error the application can catch"
+          - "The full corpus, so the model can search it"
+          - "Its top-K anyway, because there is always a nearest neighbour"
+        correct: 3
+        explanation: >-
+          Similarity search always returns its top-K. "Retrieved 3 chunks" can mean
+          "found the three least-irrelevant chunks", not "found the answer".
+        difficulty: core
+
+      - key: fail-vocab
+        prompt: >-
+          A user searches "2FA" and the policy chunk says "multi-factor
+          authentication". Keyword retrieval misses it. Which failure mode is this?
+        options:
+          - "Stale index"
+          - "Vocabulary mismatch"
+          - "Top-K too large"
+          - "Chunk boundary split"
+        correct: 1
+        explanation: >-
+          Vocabulary mismatch. Embedding retrieval narrows this gap but does not
+          close it for acronyms and control IDs.
+        difficulty: core
+
+      - key: fail-stale
+        prompt: >-
+          A policy changed last week, but the RAG system still answers with the old
+          rule. The index was built last quarter. What is the failure?
+        options:
+          - "The chunks are too small"
+          - "A distractor outranked the answer"
+          - "The index is stale — RAG is only as current as its last re-index"
+          - "The model's knowledge cutoff"
+        correct: 2
+        explanation: >-
+          A stale index serves outdated chunks. Re-indexing, not prompting, fixes it.
+        difficulty: core
+
+      - key: fail-measure
+        prompt: >-
+          Why does the lesson recommend evaluating retrieval separately from the
+          final answer?
+        options:
+          - "Retrieval failures are invisible in the final answer, and no downstream prompt can fix a retrieval miss"
+          - "Retrieval is cheaper to run than generation"
+          - "The final answer cannot be evaluated at all"
+          - "Vector databases require a separate evaluation by policy"
+        correct: 0
+        explanation: >-
+          Each failure mode produces a confident wrong answer with nothing to flag
+          it, so check whether known answering chunks appear in the top-K.
+        difficulty: stretch
+
+  # -------------------------------------------------------------------------
+  # Step 3 — Grounding Is Not Retrieval (steps/step3_grounding_vs_retrieval.md)
+  # -------------------------------------------------------------------------
+  - step: 3
+    items:
+      - key: ground-define
+        prompt: >-
+          Which statement correctly distinguishes grounding from retrieval?
+        options:
+          - "They are two names for the same step"
+          - "Grounding happens at index time; retrieval happens at query time"
+          - "Retrieval is a property of the answer; grounding is putting documents in the prompt"
+          - "Retrieval puts documents into the prompt; grounding means every claim in the answer is supported by that evidence"
+        correct: 3
+        explanation: >-
+          Retrieval succeeds when the right chunks arrive. Grounding is a property
+          of the ANSWER: it stays inside the evidence it was given.
+        difficulty: core
+
+      - key: ground-sufficient
+        prompt: >-
+          The correct chunk was retrieved and is in the prompt. Is the answer
+          therefore grounded?
+        options:
+          - "Yes — retrieval success guarantees grounding"
+          - "No — the model can still answer from training data or blend sources; retrieval is necessary but not sufficient"
+          - "Yes, as long as top-K is at least 3"
+          - "Only if the chunk is shorter than the answer"
+        correct: 1
+        explanation: >-
+          Retrieval can succeed while grounding fails. Having the documents in the
+          prompt is necessary for a grounded answer, not sufficient.
+        difficulty: core
+
+      - key: ground-cite
+        prompt: >-
+          Why should every claim in a RAG answer carry an inline citation such as
+          [source: stig-002]?
+        options:
+          - "Citations make the answer longer and more authoritative"
+          - "The vector database requires them"
+          - "An ungrounded claim looks exactly like a grounded one; a claim with no citation cannot be checked"
+          - "Citations reduce token cost"
+        correct: 2
+        explanation: >-
+          Grounding has to be made visible. A citation names the chunk a claim came
+          from so someone can check it.
+        difficulty: core
+
+      - key: ground-validate
+        prompt: >-
+          Why is a fabricated or misattributed citation described as worse than no
+          citation at all?
+        options:
+          - "It borrows authority the answer does not have"
+          - "It breaks the markdown renderer"
+          - "It increases latency"
+          - "It is not worse — any citation is better than none"
+        correct: 0
+        explanation: >-
+          A citation is itself a claim. One that points at a source that was not
+          retrieved, or does not support the sentence, lends false authority.
+        difficulty: core
+
+      - key: ground-abstain
+        prompt: >-
+          The retrieved context does not contain the answer. What is the correct
+          output?
+        options:
+          - "The model's best guess, phrased confidently"
+          - "Re-run retrieval until something matches"
+          - "An answer citing the closest chunk anyway"
+          - "A statement that the provided documents do not answer the question"
+        correct: 3
+        explanation: >-
+          Abstain. Retrieval always returns something, so the generation step is
+          where "not found" has to be said.
+        difficulty: core
+
+      - key: ground-icdev
+        prompt: >-
+          In ICDEV, what happens to an LLM-generated artifact with citation defects?
+        options:
+          - "It is exported with a warning banner"
+          - "Its citations are stripped automatically"
+          - "Export is blocked on the citation defects"
+          - "Nothing — citations are optional"
+        correct: 2
+        explanation: >-
+          ICDEV requires validated inline [source: …] citations and blocks export
+          on citation defects, building on tools/quality/citation_grounding.py.
+        difficulty: core
+
+      - key: ground-evaluate
+        prompt: >-
+          How should a RAG system's quality be evaluated, according to the lesson?
+        options:
+          - "One check: does the answer look right?"
+          - "Separately: retrieval by whether answering chunks came back, grounding by whether each claim is supported by a cited chunk"
+          - "Only by retrieval recall, since grounding follows automatically"
+          - "Only by user satisfaction ratings"
+        correct: 1
+        explanation: >-
+          A system can score well on one and badly on the other; a single "looks
+          right" check hides which one failed.
+        difficulty: stretch
