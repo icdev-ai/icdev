@@ -225,6 +225,187 @@ def score_aadc_design(design_id: str, required_checks: list[str]) -> dict[str, A
         return {"judge_pts": 0, "rationale": f"AADC scorer error: {exc}", "check_results": []}
 
 
+# ---------------------------------------------------------------------------
+# Red-first sprint: deterministic scoring of a team-written test (+ optional fix)
+# ---------------------------------------------------------------------------
+
+# Points: a test that fails on the buggy module AND passes on the hidden
+# reference fix is a discriminating test (70); a team fix that passes the
+# hidden acceptance tests earns the rest (30). A test that fails everywhere or
+# passes everywhere proves nothing and earns no discrimination points.
+RED_FIRST_DISCRIMINATION_PTS = 70
+RED_FIRST_FIX_PTS = 30
+_RED_FIRST_MARKER = "__RED_FIRST__"
+_RED_FIRST_FILES = ("buggy.py", "reference_fix.py", "hidden_tests.py")
+
+# Collected and run inside the code_runner sandbox; pytest is not importable
+# there, so plain ``test_*`` functions are collected by hand. ``raises`` is a
+# minimal stand-in for ``pytest.raises``.
+_RED_FIRST_PREAMBLE = '''
+import contextlib as _rf_contextlib
+
+
+@_rf_contextlib.contextmanager
+def raises(exc_type):
+    try:
+        yield
+    except exc_type:
+        return
+    raise AssertionError("expected " + exc_type.__name__)
+
+
+class _RFModule:
+    pass
+
+
+{module} = _RFModule()
+{module}.__dict__.update({{k: v for k, v in globals().items() if not k.startswith("_")}})
+'''
+
+_RED_FIRST_RUNNER = '''
+import json as _rf_json
+import sys as _rf_sys
+
+_rf_tests = [(n, f) for n, f in list(globals().items())
+             if n.startswith("test_") and callable(f)]
+_rf_failed = []
+for _rf_name, _rf_fn in _rf_tests:
+    try:
+        _rf_fn()
+    except BaseException as _rf_exc:
+        _rf_failed.append(_rf_name + ": " + type(_rf_exc).__name__ + " " + str(_rf_exc)[:120])
+print("__RED_FIRST__" + _rf_json.dumps({"collected": len(_rf_tests), "failed": _rf_failed}))
+_rf_sys.exit(0 if _rf_tests and not _rf_failed else 1)
+'''
+
+
+def _red_first_fixture(rubric: dict) -> tuple[dict[str, str] | None, str]:
+    """Load buggy/reference/hidden sources from the pack's fixture dir.
+
+    The reference fix and hidden tests live on disk, NOT in the rubric: the
+    rubric travels in ``config_json``, which the player page receives.
+    """
+    from .scenario_loader import _SCENARIOS_DIR
+
+    rel = rubric.get("fixture_dir", "") if isinstance(rubric, dict) else ""
+    if not rel:
+        return None, "rubric has no fixture_dir"
+    root = _SCENARIOS_DIR.resolve()
+    fdir = (root / rel).resolve()
+    if not fdir.is_relative_to(root):
+        return None, f"fixture_dir escapes the scenarios tree: {rel}"
+    files = {}
+    for name in _RED_FIRST_FILES:
+        path = fdir / name
+        if not path.is_file():
+            return None, f"fixture file missing: {rel}/{name}"
+        files[name] = path.read_text(encoding="utf-8")
+    return files, ""
+
+
+def _parse_red_first_submission(response_text: str) -> tuple[str, str]:
+    """Return (test_code, fix_code). JSON ``{test_code, fix_code}`` or bare test code."""
+    text = response_text or ""
+    if text.strip().startswith("{"):
+        try:
+            payload = json.loads(text)
+        except Exception:
+            payload = None
+        if isinstance(payload, dict):
+            return str(payload.get("test_code") or ""), str(payload.get("fix_code") or "")
+    return text, ""
+
+
+def _run_red_first(module_src: str, test_src: str, module_name: str) -> dict[str, Any]:
+    """Run ``test_src`` against ``module_src`` in the Academy sandbox."""
+    import re
+
+    from apps.forge_academy.code_runner import run_code
+
+    # The module's names are already in the shared namespace; an import of the
+    # module itself would fail in the sandbox, so drop it.
+    name = re.escape(module_name)
+    test_src = re.sub(rf"^[ \t]*from[ \t]+{name}[ \t]+import[ \t]+\([^)]*\)", "", test_src, flags=re.M)
+    test_src = re.sub(rf"^[ \t]*(from[ \t]+{name}[ \t]+import[ \t].*|import[ \t]+{name}\b.*)$",
+                      "", test_src, flags=re.M)
+    grader = _RED_FIRST_PREAMBLE.format(module=module_name) + "\n" + test_src + "\n" + _RED_FIRST_RUNNER
+    result = run_code(module_src, grader)
+    summary = {"collected": 0, "failed": []}
+    for line in (result.get("stdout") or "").splitlines():
+        if line.startswith(_RED_FIRST_MARKER):
+            try:
+                summary = json.loads(line[len(_RED_FIRST_MARKER):])
+            except Exception:
+                pass
+    return {
+        "passed": bool(result.get("passed")),
+        "collected": int(summary.get("collected", 0)),
+        "failed": summary.get("failed", []),
+        "blocked": result.get("error") == "blocked",
+        "stderr": (result.get("stderr") or "")[:400],
+    }
+
+
+def score_red_first(response_text: str, rubric: dict) -> dict[str, Any]:
+    """Score a red-first sprint deterministically — no LLM.
+
+    1. the team's test must FAIL against the buggy module (red);
+    2. the same test must PASS against the hidden reference fix (proves it is
+       not merely always-failing);
+    3. the team's fix, if submitted, must pass the hidden acceptance tests.
+
+    Returns {judge_pts, rationale, checks[, unscored]}.
+    """
+    files, err = _red_first_fixture(rubric)
+    if files is None:
+        log.warning("red-first scorer: %s", err)
+        return {"judge_pts": 0, "rationale": f"Red-first scorer unavailable: {err}",
+                "checks": {}, "unscored": True}
+    module_name = (rubric.get("module_name") or "chunker").strip()
+    if not module_name.isidentifier():
+        return {"judge_pts": 0, "rationale": f"Invalid module_name {module_name!r}",
+                "checks": {}, "unscored": True}
+
+    test_code, fix_code = _parse_red_first_submission(response_text)
+    checks = {"red_on_buggy": False, "green_on_reference": False, "fix_passes_hidden": False}
+    notes: list[str] = []
+
+    on_buggy = _run_red_first(files["buggy.py"], test_code, module_name)
+    if on_buggy["blocked"]:
+        return {"judge_pts": 0, "checks": checks,
+                "rationale": f"Test rejected by the sandbox: {on_buggy['stderr']}"}
+    if on_buggy["collected"] == 0:
+        return {"judge_pts": 0, "checks": checks,
+                "rationale": "No test_ functions were collected from the submission."}
+    on_ref = _run_red_first(files["reference_fix.py"], test_code, module_name)
+    checks["red_on_buggy"] = not on_buggy["passed"]
+    checks["green_on_reference"] = on_ref["passed"]
+
+    pts = 0
+    if checks["red_on_buggy"] and checks["green_on_reference"]:
+        pts += RED_FIRST_DISCRIMINATION_PTS
+        notes.append("Test is RED on the buggy code and GREEN on the fix.")
+    elif not checks["red_on_buggy"]:
+        notes.append("Test does not discriminate: it PASSES on the buggy code.")
+    else:
+        notes.append("Test does not discriminate: it also FAILS on the reference fix "
+                     f"({'; '.join(on_ref['failed'][:2]) or on_ref['stderr'][:160]}).")
+
+    if fix_code.strip():
+        on_fix = _run_red_first(fix_code, files["hidden_tests.py"], module_name)
+        checks["fix_passes_hidden"] = on_fix["passed"]
+        if on_fix["passed"]:
+            pts += RED_FIRST_FIX_PTS
+            notes.append("Fix passes the hidden acceptance tests.")
+        else:
+            notes.append(f"Fix fails {len(on_fix['failed']) or 'the'} hidden acceptance test(s).")
+    else:
+        notes.append("No fix submitted.")
+
+    return {"judge_pts": pts, "checks": checks,
+            "rationale": f"Red-first: {pts}/100. " + " ".join(notes)}
+
+
 def score_response(
     response_id: int,
     team_id: int,
@@ -264,6 +445,20 @@ def score_response(
             "confidence": 1.0,
             "check_results": aadc_result["check_results"],
         }
+    # Red-first sprint: run the team's test against buggy/fixed code instead
+    # of asking an LLM whether it looks right.
+    elif inject_type == "red_first_sprint":
+        rf = score_red_first(response_text, rubric if isinstance(rubric, dict) else {})
+        judge_result = {
+            "dimension_scores": {},
+            "total": rf["judge_pts"],
+            "rationale": rf["rationale"],
+            "confidence": 0.0 if rf.get("unscored") else 1.0,
+            "red_first": rf["checks"],
+        }
+        if rf.get("unscored"):
+            judge_result["unscored"] = True
+            judge_result["unscored_reason"] = rf["rationale"]
     else:
         judge_result = judge_response(inject_body, response_text, rubric, receipt_evidence)
 
@@ -308,4 +503,6 @@ def score_response(
     }
     if inject_type == "aadc_design_challenge":
         out["aadc_score"] = judge_pts
+    if inject_type == "red_first_sprint":
+        out["red_first"] = judge_result.get("red_first", {})
     return out

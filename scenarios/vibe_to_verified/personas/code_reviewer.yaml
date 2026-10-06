@@ -1,0 +1,23 @@
+# CUI // SP-CTI
+label: "Senior Reviewer / Tech Lead"
+description: "Reviews AI-generated pull requests and owns the bar for what merges."
+
+attributes:
+  - organization (government agency or defense contractor)
+  - review culture (GitHub PRs, GitLab MRs, pair review)
+  - supply-chain awareness (dependency pinning, allowlists, SBOMs)
+  - years reviewing production code
+  - clearance level
+
+prompt_hint: >
+  Generate a realistic Senior Reviewer persona. They read AI-written diffs as
+  an adversary: they check that every imported package exists, that no error
+  is swallowed, and that each test could actually fail. Green CI does not
+  impress them. Include a role_brief explaining that their FORGE Academy
+  verification training means they catch the hallucinated dependency, the
+  `except Exception: pass` and the self-mocking test in the PR review inject,
+  where an untrained reviewer approves because CI is green and coverage is 100%.
+
+academy_relevant_missions:
+  - m-aie-02-verification-harnesses
+  - m-aie-03-vibe-vs-engineering

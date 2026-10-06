@@ -1,0 +1,32 @@
+# CUI // SP-CTI
+name: "Benchmark Claim Counter-Eval Rubric"
+inject_type: benchmark_counter_eval
+description: "Did the team treat a vendor benchmark score as a claim to test, and make a defensible call?"
+max_score: 100
+
+dimensions:
+  - id: claim_critique
+    weight: 0.35
+    prompt: >
+      How many of these did the team identify: self-reported and not
+      independently reproduced; best-of-5 versus pass@1; custom scaffold (the
+      score is model+scaffold); 20 excluded tasks (480 is not 500,
+      cherry-pick risk); SWE-bench Verified is Python-only open-source and
+      transfers poorly to a Java/TS monorepo; contamination; no baseline for
+      "2x". Score 10 for five or more with explanation, 7 for four, 4 for
+      two or three, 0 for accepting the number.
+  - id: counter_eval_design
+    weight: 0.40
+    prompt: >
+      Is the counter-eval runnable in a week and sound: tasks from the team's
+      own recent private issues/PRs (contamination-free); resolved = real test
+      suite plus reviewer acceptance; pass@1 with a fixed attempt budget; the
+      same harness for incumbent and vendor; cost per resolved task and
+      latency recorded; regressions tracked? Score 0-10.
+  - id: decision
+    weight: 0.25
+    prompt: >
+      Is the adopt/reject/pilot call explicit, with a pre-registered threshold
+      that would change it (e.g. beat the incumbent by X points pass@1 at no
+      more than Y cost per resolved task, no rise in post-merge defects)?
+      "Adopt because 79%" scores 0. Score 0-10.

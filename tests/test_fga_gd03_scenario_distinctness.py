@@ -38,8 +38,24 @@ def test_every_pack_resolves_a_distinct_inject_set():
     assert not shared, f"packs serving identical injects: {list(shared.values())}"
 
 
+# The claim was made about these 9 packs. Named, not counted: a count breaks
+# every time a pack is added and can stay constant while the set churns.
+_AUDITED_PACKS = (
+    "ai_gameday", "document-integrity", "forge_ascent", "grounding-red-team",
+    "hunt_the_fleet", "interagency", "meridian", "red_team_the_ai", "slo-meltdown",
+)
+# Packs added since the audit — each must reach the picker too.
+_ADDED_PACKS = ("vibe_to_verified",)
+
+
 def test_all_nine_packs_are_present():
-    assert len(_slugs()) == 9, "the claim was made about 9 packs"
+    missing = set(_AUDITED_PACKS) - set(_slugs())
+    assert not missing, f"the claim was made about 9 packs; missing {sorted(missing)}"
+
+
+def test_packs_added_since_the_audit_are_present():
+    missing = set(_ADDED_PACKS) - set(_slugs())
+    assert not missing, f"packs added since the audit are not discovered: {sorted(missing)}"
 
 
 @pytest.mark.parametrize("slug", _slugs())

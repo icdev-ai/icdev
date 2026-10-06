@@ -1,0 +1,146 @@
+# CUI // SP-CTI
+# Operation VIBE TO VERIFIED — shipping AI-written code safely.
+# Covers AI-curriculum topics 1a (routing/providers), 1b (model serving),
+# 1c (benchmarks & evals), 2b (red-first / verification harnesses) and
+# 2c (reviewing AI-generated code).
+
+name: "Operation VIBE TO VERIFIED — Ship AI-Written Code Safely"
+slug: vibe_to_verified
+version: "1.0"
+session_mode: live
+duration_minutes: 120
+max_teams: 8
+classification: "CUI // SP-CTI"
+
+description: |
+  The program office adopted AI coding assistants six weeks ago. Velocity is up
+  40%. So is the change-failure rate. Last night an AI-authored pull request
+  dropped the final chunk of every document from the RAG index, the primary
+  self-hosted inference endpoint fell over, finance halved the token budget,
+  and a vendor is in the lobby with a slide that says their agent "beats
+  SWE-bench".
+
+  Over 120 minutes your team reviews AI-generated code like an adversary,
+  proves a bug with a test that goes RED before it goes GREEN, re-routes
+  inference around an outage inside a halved budget, and decides whether a
+  benchmark claim is evidence or marketing. Vibes got the code written.
+  Verification decides whether it ships.
+
+roles:
+  - id: ai_engineer
+    label: "AI Engineer / Harness Owner"
+    icon: "🤖"
+    color: "#A259FF"
+    description: "Owns the coding-assistant harness, red-first discipline and the verification gates AI-written code must pass."
+    academy_missions:
+      - m-aie-01-coding-harnesses
+      - m-aie-02-verification-harnesses
+      - m-aie-03-vibe-vs-engineering
+    persona_template: personas/ai_engineer.yaml
+
+  - id: code_reviewer
+    label: "Senior Reviewer / Tech Lead"
+    icon: "🔍"
+    color: "#00D4FF"
+    description: "Reviews AI-generated pull requests for hallucinated APIs, swallowed errors and tests that assert nothing."
+    academy_missions:
+      - m-aie-02-verification-harnesses
+      - m-aie-03-vibe-vs-engineering
+    persona_template: personas/code_reviewer.yaml
+
+  - id: ml_platform_engineer
+    label: "ML Platform Engineer"
+    icon: "⚙️"
+    color: "#FF6B35"
+    description: "Owns inference serving (vLLM / Ollama / managed APIs), the routing fallback chain and the token budget."
+    academy_missions:
+      - m12-model-serving
+      - m-aie-01-coding-harnesses
+    persona_template: personas/ml_platform_engineer.yaml
+
+  - id: eval_lead
+    label: "Evaluation Lead"
+    icon: "📏"
+    color: "#FFB800"
+    description: "Owns benchmarks, golden sets and the adopt/reject call on vendor capability claims."
+    academy_missions:
+      - m13-benchmarks-evals
+      - m-aie-03-vibe-vs-engineering
+    persona_template: personas/eval_lead.yaml
+
+injects:
+  - id: v2v-inject-01-ai-pr-review
+    title: "Review: The AI-Generated Pull Request"
+    at_minute: 10
+    sequence: 1
+    body_path: injects/inject-01-ai-pr-review.yaml
+    ai_tools_allowed:
+      - code.analyzer
+      - knowledge.search
+    scoring:
+      base_pts: 150
+      receipt_bonus_per_call: 50
+      max_receipt_bonus: 100
+      time_bonus: true
+      rubric: rubrics/ai_pr_review.yaml
+
+  - id: v2v-inject-02-red-first-sprint
+    title: "Red-First Sprint: Prove the Bug, Then Fix It"
+    at_minute: 35
+    sequence: 2
+    depends_on: v2v-inject-01-ai-pr-review
+    body_path: injects/inject-02-red-first-sprint.yaml
+    inject_type: red_first_sprint
+    ai_tools_allowed:
+      - code.analyzer
+    scoring:
+      base_pts: 200
+      receipt_bonus_per_call: 25
+      max_receipt_bonus: 50
+      time_bonus: true
+      rubric: rubrics/red_first_sprint.yaml
+
+  - id: v2v-inject-03-routing-outage
+    title: "Outage: Primary vLLM Endpoint Down, Budget Halved"
+    at_minute: 65
+    sequence: 3
+    depends_on: v2v-inject-02-red-first-sprint
+    body_path: injects/inject-03-routing-outage.yaml
+    ai_tools_allowed:
+      - knowledge.search
+      - llm.router
+    scoring:
+      base_pts: 175
+      receipt_bonus_per_call: 50
+      max_receipt_bonus: 100
+      time_bonus: true
+      rubric: rubrics/routing_fallback.yaml
+
+  - id: v2v-inject-04-benchmark-claim
+    title: "The Vendor Says It Beats SWE-bench"
+    at_minute: 95
+    sequence: 4
+    depends_on: v2v-inject-03-routing-outage
+    body_path: injects/inject-04-benchmark-claim.yaml
+    ai_tools_allowed:
+      - knowledge.search
+    scoring:
+      base_pts: 175
+      receipt_bonus_per_call: 50
+      max_receipt_bonus: 100
+      time_bonus: false
+      rubric: rubrics/benchmark_counter_eval.yaml
+
+ribbons:
+  - id: speed_king
+    label: "⚡ Red Then Green"
+    description: "Fastest discriminating test on the red-first sprint"
+  - id: ai_innovator
+    label: "🤖 Harness Builder"
+    description: "Highest combined receipt + judge score — AI used with verification, not vibes"
+  - id: doctrine_scholar
+    label: "🎓 Adversarial Reviewer"
+    description: "Highest judge score on the AI-generated PR review"
+  - id: strategist
+    label: "📏 Evidence Over Marketing"
+    description: "Best-defended adopt/reject call on the benchmark claim"

@@ -1,0 +1,23 @@
+# CUI // SP-CTI
+label: "Evaluation Lead"
+description: "Owns benchmarks, golden sets and the adopt/reject call on vendor capability claims."
+
+attributes:
+  - organization (government agency or defense contractor)
+  - evaluation experience (golden sets, LLM-as-judge, regression evals in CI)
+  - familiarity with public benchmarks (SWE-bench, HumanEval, LiveCodeBench)
+  - acquisition role (advisor, evaluator, contracting officer's representative)
+  - clearance level
+
+prompt_hint: >
+  Generate a realistic Evaluation Lead persona. They read a benchmark number
+  as a claim with conditions attached (attempts, scaffold, excluded tasks,
+  contamination) and answer it with an eval on the team's own work. Include a
+  role_brief explaining that their FORGE Academy benchmarks-and-evals training
+  means they design a contamination-free, pass@1 counter-eval in the vendor
+  inject, where an untrained evaluator adopts the tool because of a leaderboard
+  slide.
+
+academy_relevant_missions:
+  - m13-benchmarks-evals
+  - m-aie-03-vibe-vs-engineering
