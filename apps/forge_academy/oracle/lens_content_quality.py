@@ -34,18 +34,24 @@ class LensContentQuality(BaseLens):
         # Steps with high hint usage
         hint_steps = conn.execute(
             """
-            SELECT ms.id AS step_id, ms.title AS step_title, ms.mission_id,
-                   COUNT(*) AS total_attempts,
-                   SUM(CASE WHEN sp.hints_used > 0 THEN 1 ELSE 0 END) AS hint_count,
-                   AVG(sp.hints_used) AS avg_hints,
-                   AVG(sp.score) AS avg_score,
-                   m.slug AS mission_slug, m.title AS mission_title
-            FROM fa_step_progress sp
-            JOIN fa_mission_steps ms ON ms.id = sp.step_id
-            JOIN fa_missions m ON m.id = ms.mission_id
-            WHERE sp.status = 'completed'
-            GROUP BY ms.id
-            HAVING total_attempts >= %s AND CAST(hint_count AS REAL)/total_attempts > %s
+            -- aca-empty-demo: PostgreSQL rejects a SELECT alias in HAVING/ORDER BY
+            -- expressions and an ungrouped joined column, so this lens raised on PG
+            -- every run and the Oracle stayed empty. Filter the aliases in an outer
+            -- query instead (valid on both backends).
+            SELECT * FROM (
+                SELECT ms.id AS step_id, ms.title AS step_title, ms.mission_id,
+                       COUNT(*) AS total_attempts,
+                       SUM(CASE WHEN sp.hints_used > 0 THEN 1 ELSE 0 END) AS hint_count,
+                       AVG(sp.hints_used) AS avg_hints,
+                       AVG(sp.score) AS avg_score,
+                       m.slug AS mission_slug, m.title AS mission_title
+                FROM fa_step_progress sp
+                JOIN fa_mission_steps ms ON ms.id = sp.step_id
+                JOIN fa_missions m ON m.id = ms.mission_id
+                WHERE sp.status = 'completed'
+                GROUP BY ms.id, ms.title, ms.mission_id, m.slug, m.title
+            ) t
+            WHERE total_attempts >= %s AND CAST(hint_count AS REAL)/total_attempts > %s
             ORDER BY CAST(hint_count AS REAL)/total_attempts DESC
             LIMIT 20
             """,
@@ -55,18 +61,20 @@ class LensContentQuality(BaseLens):
         # Steps with high retry count
         retry_steps = conn.execute(
             """
-            SELECT ms.id AS step_id, ms.title AS step_title, ms.mission_id,
-                   COUNT(DISTINCT sp.user_id) AS unique_users,
-                   AVG(CAST(
-                       (SELECT COUNT(*) FROM fa_step_progress sp2
-                        WHERE sp2.user_id=sp.user_id AND sp2.step_id=sp.step_id)
-                       AS REAL)) AS avg_attempts,
-                   m.slug AS mission_slug, m.title AS mission_title
-            FROM fa_step_progress sp
-            JOIN fa_mission_steps ms ON ms.id = sp.step_id
-            JOIN fa_missions m ON m.id = ms.mission_id
-            GROUP BY ms.id
-            HAVING unique_users >= %s AND avg_attempts > %s
+            SELECT * FROM (
+                SELECT ms.id AS step_id, ms.title AS step_title, ms.mission_id,
+                       COUNT(DISTINCT sp.user_id) AS unique_users,
+                       AVG(CAST(
+                           (SELECT COUNT(*) FROM fa_step_progress sp2
+                            WHERE sp2.user_id=sp.user_id AND sp2.step_id=sp.step_id)
+                           AS REAL)) AS avg_attempts,
+                       m.slug AS mission_slug, m.title AS mission_title
+                FROM fa_step_progress sp
+                JOIN fa_mission_steps ms ON ms.id = sp.step_id
+                JOIN fa_missions m ON m.id = ms.mission_id
+                GROUP BY ms.id, ms.title, ms.mission_id, m.slug, m.title
+            ) t
+            WHERE unique_users >= %s AND avg_attempts > %s
             ORDER BY avg_attempts DESC
             LIMIT 20
             """,
@@ -76,15 +84,17 @@ class LensContentQuality(BaseLens):
         # Missions with low completion rate
         low_completion = conn.execute(
             """
-            SELECT m.id, m.slug, m.title, m.tier,
-                   COUNT(*) AS total_starters,
-                   SUM(CASE WHEN mp.status='completed' THEN 1 ELSE 0 END) AS completed_count
-            FROM fa_mission_progress mp
-            JOIN fa_missions m ON m.id = mp.mission_id
-            WHERE mp.status IN ('in_progress','completed')
-            GROUP BY m.id
-            HAVING total_starters >= %s
-               AND CAST(completed_count AS REAL)/total_starters < %s
+            SELECT * FROM (
+                SELECT m.id, m.slug, m.title, m.tier,
+                       COUNT(*) AS total_starters,
+                       SUM(CASE WHEN mp.status='completed' THEN 1 ELSE 0 END) AS completed_count
+                FROM fa_mission_progress mp
+                JOIN fa_missions m ON m.id = mp.mission_id
+                WHERE mp.status IN ('in_progress','completed')
+                GROUP BY m.id, m.slug, m.title, m.tier
+            ) t
+            WHERE total_starters >= %s
+              AND CAST(completed_count AS REAL)/total_starters < %s
             ORDER BY CAST(completed_count AS REAL)/total_starters ASC
             LIMIT 20
             """,

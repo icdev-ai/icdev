@@ -4,7 +4,7 @@
 {% block extra_css %}
 <style>
 :root { --fa-orange:#FF6B35; --fa-cyan:#00D4FF; --fa-green:#00FF88; --fa-gold:#FFB800; --fa-card:#12192b; --fa-border:rgba(74,144,217,.25); }
-.fa-ach-header { background:linear-gradient(135deg,#0a0a14,#12192b); border-bottom:1px solid var(--fa-border); padding:1.5rem 2rem; }
+.fa-ach-header { background:linear-gradient(135deg,var(--fa-bg-0a0a14),var(--fa-bg-12192b)); border-bottom:1px solid var(--fa-border); padding:1.5rem 2rem; }
 .fa-ach-header h1 { font-size:1.6rem; font-weight:900; background:linear-gradient(135deg,var(--fa-gold),var(--fa-orange)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin:0; }
 .fa-ach-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:1rem; padding:1.5rem 2rem; }
 .fa-ach-card {
@@ -17,9 +17,9 @@
 .fa-ach-title { font-size:.88rem; font-weight:700; margin-bottom:.3rem; }
 .fa-ach-desc { font-size:.72rem; color:var(--text-secondary); line-height:1.4; margin-bottom:.6rem; }
 .fa-ach-rarity { font-size:.62rem; text-transform:uppercase; letter-spacing:.1em; padding:2px 8px; border-radius:4px; display:inline-block; }
-.fa-ach-rarity.common     { background:rgba(160,160,184,.12); color:#a0a0b8; }
-.fa-ach-rarity.uncommon   { background:rgba(74,144,217,.12); color:#4a90d9; }
-.fa-ach-rarity.rare       { background:rgba(155,89,182,.12); color:#9b59b6; }
+.fa-ach-rarity.common     { background:rgba(160,160,184,.12); color:var(--fa-tx-a0a0b8); }
+.fa-ach-rarity.uncommon   { background:rgba(74,144,217,.12); color:var(--fa-tx-4a90d9); }
+.fa-ach-rarity.rare       { background:rgba(155,89,182,.12); color:var(--fa-tx-9b59b6); }
 .fa-ach-rarity.epic       { background:rgba(255,107,53,.12); color:var(--fa-orange); }
 .fa-ach-rarity.legendary  { background:rgba(255,184,0,.12); color:var(--fa-gold); }
 .fa-ach-xp { position:absolute; top:.5rem; right:.6rem; font-size:.65rem; color:var(--fa-gold); font-weight:600; }

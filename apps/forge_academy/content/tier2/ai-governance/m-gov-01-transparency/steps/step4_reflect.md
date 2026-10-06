@@ -4,10 +4,10 @@ step_class: icdev:reflect
 ---
 # Transparency Reflection
 
-You've now built an AI inventory and a model card. Two quick questions:
+You have now drafted an AI inventory and planned a model card. Two questions:
 
-1. **The harder question**: For the "known limitations" field — did you struggle to describe them accurately? Why is honest limitation documentation difficult to write for AI systems?
+1. **The harder question**: The "caveats and limitations" section is the one people struggle to write honestly. Why is accurate limitation documentation difficult for AI systems, and how does generating the card from evidence change that?
 
-2. **The governance question**: OMB M-25-21 requires agencies to review their AI inventory annually. What process would you design to ensure the inventory stays accurate as AI systems change, get deprecated, or get replaced?
+2. **The governance question**: OMB M-25-21 requires the AI use case inventory to be updated at least annually. What process would you design to keep it accurate as AI systems change, get deprecated, or get replaced?
 
-Write 150-200 words covering both questions. Include at least one specific example from the ICDEV systems you inventoried.
+Think through 150-200 words covering both questions, with at least one specific example from the ICDEV systems you inventoried, then press Continue.

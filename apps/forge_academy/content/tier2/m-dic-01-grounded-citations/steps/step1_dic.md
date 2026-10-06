@@ -43,6 +43,12 @@ A miniature citation guard, the same shape as the real one, using the stdlib `re
 3. `citation_guard()` — the gate: return `passed=False` with human-readable defects
    when any claim is uncited or any citation is ungrounded (fail closed).
 
+Your miniature differs from production in two deliberate ways. The real `parse_citations()`
+returns each source id **once**, in order, and it also accepts `[SOURCE-N]` tags and
+comma-separated ids (`[source: a, b]`). The real `citation_gate()` takes a list of document
+*sections*, not one string. The lab keeps duplicates so you can count how many times each source
+is cited.
+
 Open `step1_starter.py` and implement the three `TODO`s. Do not re-implement citation
 parsing in real code — build on `tools/quality/citation_grounding.py`; this lab just
 teaches the contract it enforces.

@@ -5,11 +5,11 @@ step_class: icdev:Lesson
 
 # Deploy: Activate Your STIG Triage Agent
 
-You've configured and reviewed the STIG Triage Agent. Now deploy it as a live pattern in ICDEV.
+You've configured and reviewed the STIG Triage Agent. Here is what deploying it as a standing workflow means.
 
 ## What "Deploy" means
 
-Clicking **Deploy Agent** registers the `stig-triage` pattern in your ICDEV instance. From this point:
+A deployed triage workflow runs on its own instead of waiting for you to start it. From that point:
 
 - The agent runs on a **scheduled cadence** (daily scan by default)
 - Any new CAT I STIG findings trigger an **automatic alert** to your configured recipients
@@ -18,14 +18,14 @@ Clicking **Deploy Agent** registers the `stig-triage` pattern in your ICDEV inst
 
 ## After deployment
 
-Your STIG Triage Agent will appear in the ICDEV Agents dashboard at `/agents/active`. You can:
-- Adjust the scan schedule (`Tools → Scheduler`)
+Running agents are listed on the ICDEV Agents page at `/agents`. For a deployed workflow you would typically:
+- Adjust the scan schedule
 - Add additional STIG IDs to the watch list
 - Connect it to your ticketing system (Jira, ServiceNow)
 - Enable auto-remediation for low-risk findings (ISSO approval required)
 
-## This is real
+## In this mission
 
-This isn't a simulation — the pattern is deployed to your actual ICDEV instance. Your ATO timeline just got shorter.
+This step is a read-through. Finishing it does **not** deploy anything to your ICDEV instance. Deploying a scheduled workflow is an administrator action, and it needs ISSO approval for any auto-remediation.
 
-Click **Deploy Agent** below to activate.
+Click **Understood → Continue** to finish the mission.

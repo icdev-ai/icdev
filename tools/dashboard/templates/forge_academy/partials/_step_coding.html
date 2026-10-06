@@ -18,6 +18,10 @@
 
   <div class="fa-controls">
     <button class="fa-btn-run" id="run-btn-{{ sidx }}" onclick="runCode({{ sidx }})">▶ Run Code</button>
+    {# Run is advisory: it grades read-only and never records an attempt or pays XP.
+       This button appears only after a passing Run and is the one thing that
+       submits for credit (the server re-grades the submission itself). #}
+    <button class="fa-btn-submit" id="submit-btn-{{ sidx }}" onclick="submitCode({{ sidx }})">✓ Submit for credit</button>
     <button class="fa-btn-next" id="next-btn-{{ sidx }}" onclick="nextStep({{ sidx }})">✓ Next Step →</button>
     {# The cost is quoted by the server (see getHint) rather than hardcoded here:
        this button used to advertise only the flat penalty, while a first hint

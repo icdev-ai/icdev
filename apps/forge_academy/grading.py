@@ -224,7 +224,7 @@ def _grade_reflect(step: dict, chosen_option) -> dict:
     )
 
 
-def _grade_items(user_id: int, step: dict, answers: dict) -> dict:
+def _grade_items(user_id: int, step: dict, answers: dict, *, record: bool = True) -> dict:
     """Score a step against its item bank (aca-trn-01).
 
     Takes precedence over the step's declared type, because an item bank is what
@@ -233,7 +233,7 @@ def _grade_items(user_id: int, step: dict, answers: dict) -> dict:
     """
     from .assessment import grade_attempt
 
-    result = grade_attempt(user_id, step["id"], answers)
+    result = grade_attempt(user_id, step["id"], answers, close=record)
     if not result.get("ok"):
         return _verdict(
             False, assessed=result.get("assessed", True),
@@ -261,12 +261,16 @@ def _grade_items(user_id: int, step: dict, answers: dict) -> dict:
 
 
 def grade_step(step_id: int | str, submission: str = "", *, chosen_option=None,
-               answers: dict | None = None, user_id: int | None = None) -> dict:
+               answers: dict | None = None, user_id: int | None = None,
+               record: bool = True) -> dict:
     """Authoritative verdict for a submission.
 
     There is intentionally no ``test_code`` parameter â€” a caller cannot supply the
     test it is graded against. Returns a dict with at least ``passed``,
     ``assessed``, ``score``, ``reason``, ``xp_base`` and the ``step`` row.
+
+    ``record=False`` grades without side effects: an item-bank attempt is scored
+    but left open (aca-presenter-preview). Every other path writes nothing anyway.
     """
     step = _load_step(step_id)
     if step is None:
@@ -279,7 +283,7 @@ def grade_step(step_id: int | str, submission: str = "", *, chosen_option=None,
         from .assessment import has_item_bank
 
         if has_item_bank(step["id"]):
-            return _grade_items(user_id, step, answers or {})
+            return _grade_items(user_id, step, answers or {}, record=record)
 
     step_type = (step.get("step_type") or "coding").strip().lower()
     if step_type == "coding":

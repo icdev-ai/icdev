@@ -46,6 +46,10 @@ _ALLOWED_IMPORTS = {
     "hashlib", "hmac", "uuid", "enum", "dataclasses", "typing", "abc",
     "contextlib", "copy", "pprint", "string", "textwrap", "traceback",
     "logging", "struct", "urllib.parse",
+    # Introspection the exercises themselves teach: m06/m08/m-swe-02 build an MCP
+    # inputSchema from inspect.signature, m-readiness-02 walks an ast tree. Neither
+    # reaches anything `sys` (already allowed) does not, and neither executes code.
+    "inspect", "ast",
 }
 
 # Builtins that provide a code-execution / import escape hatch.
@@ -59,6 +63,9 @@ _BLOCKED_OS_ATTRS = {
     "spawnv", "spawnve", "spawnvp", "spawnvpe", "execl", "execle", "execlp",
     "execlpe", "execv", "execve", "execvp", "execvpe", "startfile", "fork",
     "forkpty", "putenv",
+    # os._exit ends the process without unwinding, so the grader never runs and
+    # the exit code is whatever the learner chose.
+    "_exit",
 }
 
 # File-open builtins/functions whose first literal argument must not point outside
@@ -215,14 +222,52 @@ def _posix_resource_limits():  # pragma: no cover - platform dependent
     return _apply
 
 
+# Trusted driver for a GRADED run. It is written by the runner, never by the
+# learner, so it is not passed through the AST gate.
+#
+# Concatenating learner code and grader into one script let `sys.exit(0)` (or
+# `raise SystemExit`) at the end of a submission end the process with status 0
+# before a single assertion ran, which graded as a pass. Here the learner's code
+# runs first in the shared module namespace (graders read the learner's names
+# from globals()); a SystemExit it raises is swallowed, and the grader then runs
+# in that same namespace and alone decides the exit status. Any other exception
+# from the learner's code propagates and fails the run, as before.
+_GRADED_DRIVER = """\
+import sys as _fa_sys
+
+_fa_ns = {"__name__": "__main__", "__file__": _fa_sys.argv[1], "__builtins__": __builtins__}
+with open(_fa_sys.argv[1], encoding="utf-8") as _fa_f:
+    _fa_learner = compile(_fa_f.read(), "solution.py", "exec", dont_inherit=True)
+with open(_fa_sys.argv[2], encoding="utf-8") as _fa_f:
+    _fa_grader = compile(_fa_f.read(), "grader.py", "exec", dont_inherit=True)
+
+
+def _fa_run(code, swallow_exit):
+    try:
+        exec(code, _fa_ns)
+    except SystemExit:
+        if not swallow_exit:
+            raise
+    except BaseException as exc:
+        # Report from the learner's/grader's own frame, not this driver's.
+        import traceback as _fa_tb
+        _fa_tb.print_exception(type(exc), exc, exc.__traceback__.tb_next)
+        _fa_sys.exit(1)
+
+
+_fa_run(_fa_learner, True)
+_fa_run(_fa_grader, False)
+"""
+
+
 def run_code(code: str, test_code: str = "") -> dict:
     """Execute learner code in a hardened subprocess sandbox.
 
     Returns dict with stdout, stderr, passed, exit_code (and `error` when blocked).
     """
-    combined = textwrap.dedent(code or "")
-    if test_code:
-        combined += "\n\n" + textwrap.dedent(test_code)
+    learner = textwrap.dedent(code or "")
+    grader = textwrap.dedent(test_code) if test_code else ""
+    combined = learner + ("\n\n" + grader if grader else "")
 
     # The AST gate inspects the *combined* script — both learner code and any
     # supplied test harness must satisfy the allowlist.
@@ -233,12 +278,23 @@ def run_code(code: str, test_code: str = "") -> dict:
 
     with tempfile.TemporaryDirectory(prefix="fa_sandbox_") as tmpdir:
         script = Path(tmpdir) / "solution.py"
-        script.write_text(combined, encoding="utf-8")
+        script.write_text(learner, encoding="utf-8")
+        argv = [str(script)]
+        if grader:
+            (Path(tmpdir) / "grader.py").write_text(grader, encoding="utf-8")
+            driver = Path(tmpdir) / "_fa_driver.py"
+            driver.write_text(_GRADED_DRIVER, encoding="utf-8")
+            argv = [str(driver), str(script), str(Path(tmpdir) / "grader.py")]
         env = _build_scrubbed_env(tmpdir)
         preexec = _posix_resource_limits() if os.name != "nt" else None
         popen_kwargs: dict = {
             "capture_output": True,
             "text": True,
+            # The child writes UTF-8 (-X utf8); decoding with the parent's locale
+            # codec turned every em dash in a grader message into mojibake on
+            # Windows (cp1252).
+            "encoding": "utf-8",
+            "errors": "replace",
             "timeout": TIMEOUT_SECONDS,
             "cwd": tmpdir,
             "env": env,
@@ -247,7 +303,7 @@ def run_code(code: str, test_code: str = "") -> dict:
             popen_kwargs["preexec_fn"] = preexec
         try:
             result = subprocess.run(
-                [sys.executable, "-I", "-X", "utf8", str(script)],
+                [sys.executable, "-I", "-X", "utf8", *argv],
                 **popen_kwargs,
             )
             passed = result.returncode == 0

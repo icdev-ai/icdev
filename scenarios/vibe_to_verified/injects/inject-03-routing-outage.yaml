@@ -1,0 +1,72 @@
+# CUI // SP-CTI
+id: v2v-inject-03-routing-outage
+title: "Outage: Primary vLLM Endpoint Down, Budget Halved"
+
+body_md: |
+  ## INCIDENT — PRIMARY INFERENCE ENDPOINT DOWN
+
+  **Classification:** CUI // SP-CTI
+
+  At 06:12 the self-hosted vLLM node serving `code_generation` and
+  `ttx_judge` lost a GPU. Health probes have failed for 40 minutes. At 07:00
+  finance halved the monthly token budget from **$6,000 to $3,000**, with
+  $1,900 already spent and 12 days left in the month.
+
+  ### Current routing (shape of `args/llm_config.yaml`)
+
+  ```yaml
+  providers:
+    vllm:         {type: openai_compatible, base_url: http://gpu-a:8000/v1}  # DOWN
+    mistral_vllm: {type: openai_compatible, base_url: http://gpu-b:8100/v1}  # healthy, 1 replica
+    ollama:       {type: ollama, base_url: http://cpu-pool:11434}            # healthy, CPU only
+    managed_api:  {type: anthropic}                                           # healthy, metered
+
+  routing:
+    code_generation: {chain: [qwen-coder-vllm, managed-large]}
+    ttx_judge:       {chain: [qwen-coder-vllm, managed-large]}
+    summarization:   {chain: [mistral-small-vllm, managed-small]}
+  ```
+
+  ### Exercise data (fictional, not real prices or measurements)
+
+  | Model | Where | p50 latency | Cost / 1M tokens | Quality on your golden set |
+  |---|---|---|---|---|
+  | qwen-coder-vllm | vllm (DOWN) | 0.9 s | self-hosted | 81% |
+  | mistral-small-vllm | mistral_vllm | 0.7 s | self-hosted | 69% |
+  | llama-8b-ollama | ollama (CPU) | 6.5 s | self-hosted | 58% |
+  | managed-small | managed_api | 1.1 s | $1.00 | 74% |
+  | managed-large | managed_api | 2.4 s | $15.00 | 88% |
+
+  Daily volume: `code_generation` 9M tokens, `ttx_judge` 1.5M,
+  `summarization` 4M. CUI must not leave the enclave unless the managed
+  endpoint is an authorised GovCloud deployment (here it is, at IL4).
+
+  ### Your task
+
+  1. Write the **new `routing:` block** for all three functions, plus the
+     health and budget behaviour (circuit breaker, budget cap, degrade order).
+  2. **Do the arithmetic.** Show that your chains keep spend inside the
+     remaining budget for 12 days, or state exactly what you degrade when
+     they would not.
+  3. **Justify cost vs latency vs quality** per function: which function may
+     degrade to a weaker model, which must not, and why.
+  4. State what you change back when `vllm` recovers, and how you know it has
+     recovered (not "when it pings").
+
+context_note: >
+  ANSWER KEY. Remaining budget $1,100 over 12 days is about $91.67/day.
+  Sending all code_generation to managed-large costs 9M x $15 = $135/day, over
+  budget on its own, so a naive "fail over to the best model" answer is wrong.
+  A good answer: code_generation -> managed-small (9 x $1 = $9/day) or
+  mistral-small-vllm, with managed-large reserved for a hard-capped slice;
+  ttx_judge (quality matters, volume small) -> managed-large at 1.5 x $15 =
+  $22.50/day, or managed-small with a documented quality drop; summarization
+  stays on mistral-small-vllm (healthy, self-hosted) with ollama only as a
+  last resort (6.5 s p50 is unusable interactively). Total must stay under
+  about $91/day with headroom. Must include: a circuit breaker / health-probe
+  gate so the dead endpoint is skipped rather than timed out on every call; a
+  budget cap that degrades rather than overspends; a CUI note (IL4 GovCloud
+  authorised). Recovery: restore vllm only after sustained successful health
+  probes AND a canary of golden-set prompts passes, not a single ping. ICDEV
+  seams: tools/llm/router.py, provider_health.py, cost_budget.py,
+  routing_policy.py.

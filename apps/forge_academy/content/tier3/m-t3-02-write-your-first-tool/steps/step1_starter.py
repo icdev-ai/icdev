@@ -1,14 +1,16 @@
 
 """
 Tier 3 Mission 2: Write Your First ICDEV Tool
-Goal: Build a compliance evidence collector tool following the ICDEV tool contract.
+Goal: Build a compliance evidence collector tool following the tool contract.
 
-ICDEV Tool Contract:
+Tool contract used by this exercise:
   - Does one job
   - Returns {"status": "ok"|"error"|"partial", "data": {...}, "error": None|"msg"}
   - Handles its own errors (never raises)
   - Deterministic
 """
+
+from datetime import date
 
 
 # ── Evidence Database (simulated) ─────────────────────────────────────────────
@@ -76,7 +78,7 @@ def derive_compliance_status(evidence: list[dict]) -> str:
 def collect_evidence(system_name: str, control_id: str) -> dict:
     """TODO: Main tool function — collect and return structured evidence.
 
-    Follow the ICDEV tool contract:
+    Follow the tool contract:
     1. Look up evidence using lookup_evidence(system_name, control_id)
     2. Derive compliance status using derive_compliance_status(evidence)
     3. Build and return the result dict:

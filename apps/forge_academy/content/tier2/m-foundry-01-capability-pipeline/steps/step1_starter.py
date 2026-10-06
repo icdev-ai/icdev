@@ -49,9 +49,11 @@ def novelty_score(capability: set, catalog: list) -> float:
 
 def apply_novelty_gate(capability: set, catalog: list,
                        min_novelty: float = 0.35,
-                       duplicate_similarity: float = 0.8) -> dict:
+                       duplicate_similarity: float = 0.85) -> dict:
     """TODO: Decide whether a concept clears the novelty gate.
 
+    Defaults are novelty_gate.py's code defaults (args/foundry_config.yaml raises
+    min_novelty to 0.6 in production).
     Compute n = novelty_score(...); max_similarity = round(1 - n, 4).
     Verdict rules (in this order, mirroring novelty_gate.apply_novelty_gate):
       * max_similarity >= duplicate_similarity -> "duplicate"

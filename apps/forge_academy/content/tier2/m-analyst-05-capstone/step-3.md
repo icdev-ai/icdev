@@ -38,3 +38,5 @@ Beyond the mechanics, answer two questions:
 ---
 
 **Your task:** Write your Capstone Intelligence Brief using the four-stage format, followed by your two reflection answers. This is the deliverable you bring to your program sponsor or agency leadership to justify investment in an AI-assisted intelligence capability.
+
+**In the form below:** write your four-stage brief and both reflection answers in the single box.

@@ -1,0 +1,22 @@
+# CUI // SP-CTI
+label: "Contractor Software Engineer"
+description: "Builds the emergency integration layer connecting DHS and DIA data streams. Owns API design, data normalization, and rapid deployment."
+attributes:
+  - employer (defense or federal civilian contractor)
+  - primary language and data stack (Python, pandas, SQL)
+  - API design experience (REST or gRPC)
+  - experience with timestamp and identifier normalisation across systems
+  - clearance level
+
+prompt_hint: >
+  Generate a realistic contractor software engineer who has 20 minutes to build a
+  normaliser and boundary filter between two agencies whose records disagree on
+  identifiers, time zones and labels. They spot the local-time-versus-UTC defect quickly
+  and know a filter is only as good as its tests. Explain why Academy training in
+  API integration and code quality helps them ship a bridge with before/after test
+  records that prove the filter works.
+
+academy_relevant_missions:
+  - api-integration
+  - code-quality
+  - ai-build-sprint

@@ -1,0 +1,249 @@
+# CUI // SP-CTI
+#
+# Item bank for m-aie-01-coding-harnesses (aicur-eng-01).
+# Spec: docs/features/forge-academy-aca-trn-01-assessment-model.md
+#
+# Steps 1 and 2 are lessons; step 3 is a lab graded by its own step3_test.py. Every
+# item below is answerable from the lesson markdown it assesses, and only from it.
+# Authoring rules are enforced by assessment.validate_item_bank (see the m01 bank
+# header for the full list): >= 5 items per step, `correct` indexes `options` as
+# authored, `key` is stable and unique per step.
+
+mission: m-aie-01-coding-harnesses
+
+steps:
+
+  # -------------------------------------------------------------------------
+  # Step 1 — The Coding-Harness Landscape (steps/step1_harness_landscape.md)
+  # -------------------------------------------------------------------------
+  - step: 1
+    items:
+      - key: hl-model-vs-harness
+        prompt: >-
+          Which of these does a harness add on top of a raw model?
+        options:
+          - "More model parameters"
+          - "Tools, context assembly, permissions and memory"
+          - "A larger training dataset"
+          - "A faster tokenizer"
+        correct: 1
+        explanation: >-
+          A raw model only maps text to text. The harness adds tools, decides what
+          context the model sees, governs which tool calls may run, and carries memory
+          across sessions — usually as files re-read at session start.
+        difficulty: core
+
+      - key: hl-who-executes
+        prompt: >-
+          In a harness's agent loop, who actually executes a tool call such as
+          running the test suite?
+        options:
+          - "The model runs the command itself"
+          - "The IDE's syntax highlighter"
+          - "The harness, after the model asks for the call"
+          - "The git server"
+        correct: 2
+        explanation: >-
+          The model asks for a tool call; the harness executes it and feeds the
+          result back into context for the next turn.
+        difficulty: core
+
+      - key: hl-autocomplete
+        prompt: >-
+          What distinguishes inline autocomplete (such as Copilot's inline
+          suggestions) from an agentic harness?
+        options:
+          - "It has no agent loop or shell and predicts the next few lines as you type"
+          - "It can only run in a terminal"
+          - "It edits many files at once without asking"
+          - "It requires an MCP server to work"
+        correct: 0
+        explanation: >-
+          Autocomplete predicts the next lines from nearby context. There is no agent
+          loop, no shell and no multi-file plan — low risk, low leverage.
+        difficulty: core
+
+      - key: hl-headless
+        prompt: >-
+          Which shape of harness can run headless — in CI or launched by another
+          program — because it needs no editor?
+        options:
+          - "Inline autocomplete"
+          - "IDE agents"
+          - "Browser chat"
+          - "Terminal agents such as Claude Code, Codex CLI, Aider or Gemini CLI"
+        correct: 3
+        explanation: >-
+          Terminal agents run in a shell with no editor, so they can run unattended,
+          which is also why they need the strongest permission and isolation
+          discipline.
+        difficulty: core
+
+      - key: hl-file-mapping
+        prompt: >-
+          Which pairing of harness and project instruction file is correct?
+        options:
+          - "Codex CLI reads CLAUDE.md"
+          - "Claude Code reads CLAUDE.md; Codex CLI reads AGENTS.md"
+          - "Cursor reads GEMINI.md"
+          - "Copilot reads .cursor/rules/"
+        correct: 1
+        explanation: >-
+          Claude Code reads CLAUDE.md, Codex CLI reads AGENTS.md, Cursor reads
+          .cursor/rules/, Copilot reads .github/copilot-instructions.md and Gemini
+          CLI reads GEMINI.md.
+        difficulty: core
+
+      - key: hl-icdev-registry
+        prompt: >-
+          Where is ICDEV's canonical list of the AI coding platforms it ships
+          instruction files for?
+        options:
+          - "tools/dx/ai_platforms.py (AI_PLATFORM_FILES)"
+          - "A hand-maintained list in each platform's file"
+          - "The .env file"
+          - "There is none; each file is written by hand"
+        correct: 0
+        explanation: >-
+          tools/dx/ai_platforms.py holds AI_PLATFORM_FILES, and
+          tools/dx/instruction_generator.py renders each platform's file from one
+          source.
+        difficulty: stretch
+
+      - key: hl-why-agree
+        prompt: >-
+          Why must a team's instruction files for different harnesses agree with
+          each other?
+        options:
+          - "Harnesses refuse to start if the files differ"
+          - "Vendors charge more for inconsistent files"
+          - "Two harnesses reading two different sets of rules produce two different codebases"
+          - "Git cannot store more than one instruction file"
+        correct: 2
+        explanation: >-
+          Most teams use more than one harness. If their rules diverge, each harness
+          enforces different conventions and the codebase drifts.
+        difficulty: core
+
+  # -------------------------------------------------------------------------
+  # Step 2 — Driving a Harness Well (steps/step2_driving_a_harness.md)
+  # -------------------------------------------------------------------------
+  - step: 2
+    items:
+      - key: dh-instruction-contents
+        prompt: >-
+          Which set of sections belongs in a project instruction file?
+        options:
+          - "The full incident history of the project"
+          - "API keys the agent will need"
+          - "Every file's contents, pasted inline"
+          - "Project overview, exact commands, conventions and boundaries"
+        correct: 3
+        explanation: >-
+          Put in what the agent cannot reliably infer and must never get wrong:
+          overview, commands, conventions and boundaries. Long detail belongs in
+          linked docs read on demand.
+        difficulty: core
+
+      - key: dh-keep-short
+        prompt: >-
+          Why should an instruction file be kept short?
+        options:
+          - "It is loaded into context every session, so every byte is paid for whether the task needs it or not"
+          - "Harnesses truncate files over one page"
+          - "Markdown parsers are slow"
+          - "Git rejects large markdown files"
+        correct: 0
+        explanation: >-
+          The file is standing context on every session. ICDEV moved about 297 KB of
+          incident write-ups out of its 367 KB CLAUDE.md for exactly this reason.
+        difficulty: core
+
+      - key: dh-hook-exit
+        prompt: >-
+          In Claude Code, how does a PreToolUse hook block a tool call — and what
+          silently defeated ICDEV's hook?
+        options:
+          - "Printing BLOCKED; nothing defeated it"
+          - "Exit code 2; wrapping it as `... || true` made the shell always return 0"
+          - "Exit code 1; a missing newline"
+          - "Deleting the tool; a stale cache"
+        correct: 1
+        explanation: >-
+          Exit code 2 blocks the call. With `|| true` appended, the shell returned 0
+          whatever the hook decided, so every check printed BLOCKED and blocked
+          nothing.
+        difficulty: core
+
+      - key: dh-plan-mode
+        prompt: >-
+          What does Claude Code's `plan` permission mode do?
+        options:
+          - "Approves every action automatically"
+          - "Auto-approves file edits only"
+          - "Reads and proposes only, changing nothing"
+          - "Runs the plan in a cloud sandbox"
+        correct: 2
+        explanation: >-
+          Plan mode lets the agent read and propose without editing, so you can
+          correct a wrong assumption while it costs a sentence. bypassPermissions,
+          which approves everything, is for sandboxes only.
+        difficulty: core
+
+      - key: dh-subagent
+        prompt: >-
+          What is the main benefit of handing a wide search to a subagent?
+        options:
+          - "It uses a more powerful model"
+          - "It can bypass the permission mode"
+          - "It shares the main conversation's full context"
+          - "It works in its own fresh context and returns a conclusion, keeping the main thread focused"
+        correct: 3
+        explanation: >-
+          A subagent has its own context. It returns the conclusion rather than the
+          files it read, so the main conversation is not flooded.
+        difficulty: core
+
+      - key: dh-worktree
+        prompt: >-
+          Two agents work in the same repository at the same time. What does the
+          lesson recommend?
+        options:
+          - "Give each agent its own git worktree on its own branch"
+          - "Let them share one checkout and take turns with git checkout"
+          - "Run both in bypassPermissions mode"
+          - "Use git stash between their edits"
+        correct: 0
+        explanation: >-
+          Sharing a checkout lets one agent's `git checkout` move HEAD under the
+          other. A worktree per agent (git worktree add -b <branch> <path> origin/main)
+          isolates them.
+        difficulty: core
+
+      - key: dh-context-hygiene
+        prompt: >-
+          Which is good context hygiene?
+        options:
+          - "Paste whole files into the chat so nothing is missed"
+          - "Keep one session open for every task this week"
+          - "One task per session, compact long sessions, and point to file paths rather than pasting"
+          - "Store lessons learned only in the chat history"
+        correct: 2
+        explanation: >-
+          A polluted context degrades every later answer. Start fresh per task,
+          compact long sessions, point to paths, and persist what you learn in a file.
+        difficulty: core
+
+      - key: dh-mcp-least-privilege
+        prompt: >-
+          How should you choose which MCP servers to give a harness?
+        options:
+          - "Add every available server so the agent is never blocked"
+          - "Grant the narrowest server that does the job, read-only where read-only is enough"
+          - "MCP servers carry no risk because they run in a separate process"
+          - "Only add servers written in Python"
+        correct: 1
+        explanation: >-
+          Every MCP server is new reach for the agent. Least privilege applies:
+          the narrowest server, read-only where that suffices.
+        difficulty: stretch

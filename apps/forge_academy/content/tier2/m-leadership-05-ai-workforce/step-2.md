@@ -20,18 +20,19 @@ Some roles are best enhanced by AI — the human stays in the loop but works fas
 
 ### 3. Upskilling Path Per Category
 
-Use the FORGE Academy L1–L5 competency framework as your benchmark:
-- **L1–L2** (AI-Aware): 4–8 hours of guided instruction, no prerequisites
-- **L3** (AI-Capable): 20–40 hours, includes hands-on configuration
+Use the FORGE Academy L1–L5 competency levels (`args/academy_competencies.yaml`) as your benchmark: **L1 AI Aware**, **L2 AI Capable**, **L3 AI Proficient**, **L4 AI Expert**, **L5 AI Architect**. Mapped onto the taxonomy from Step 1 (hours are rough planning figures, not Academy requirements):
+
+- **L1** (AI-Aware): 4–8 hours of guided instruction, no prerequisites
+- **L2–L3** (AI-Capable): 20–40 hours, includes hands-on configuration
 - **L4–L5** (AI-Native): 80–200+ hours, includes technical lab work
 
 ### 4. Timeline and Investment Estimate
 
 | Role Category | Target Level | Training Hours | Cost Estimate | Timeline |
 |---|---|---|---|---|
-| Analyst | L3 AI-Capable | 30 hrs | $1,500/person | 6 weeks |
-| Program Manager | L2 AI-Aware | 8 hrs | $400/person | 2 weeks |
-| Engineer | L4 AI-Native | 100 hrs | $5,000/person | 4 months |
+| Analyst | L2–L3 (AI-Capable) | 30 hrs | $1,500/person | 6 weeks |
+| Program Manager | L1 (AI-Aware) | 8 hrs | $400/person | 2 weeks |
+| Engineer | L4 (AI-Native) | 100 hrs | $5,000/person | 4 months |
 
 ---
 

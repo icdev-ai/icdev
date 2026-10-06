@@ -4,23 +4,35 @@ step_class: icdev:reflect
 ---
 # Anomaly Detection
 
-The readiness checker includes an anomaly detector that flags pillars whose scores deviate significantly from the expected range. An anomaly means the score is suspiciously low (possible systematic gap) or suspiciously high (possible false positive).
+The readiness result carries two lists that flag pillars needing attention.
 
-## Reading anomaly output
+## `score_anomalies`: one entry per scored pillar
+
+A pillar is marked anomalous when its pass fraction falls below `min_passing_pct` (default `0.3`; a `score_anomaly:` block in `args/agent_readiness_config.yaml` can override it):
 
 ```json
 "score_anomalies": [
   {
     "pillar_id": "stig-compliance",
-    "score_pct": 12.5,
-    "threshold": 45.0,
+    "score_pct": 0.125,
+    "threshold": 0.3,
     "is_anomalous": true,
-    "reason": "Score is 2.3 standard deviations below the project mean",
-    "ai_reasoning": "The STIG compliance score is much lower than other pillars. This typically indicates no STIG markers are present, not that the system is actually non-compliant."
+    "reason": "Pillar 'stig-compliance' scored 12% — anomalously low (configured threshold: 30%).",
+    "ai_reasoning": ""
   }
 ]
 ```
 
-## Your task
+`ai_reasoning` stays empty unless `ai_analysis_enabled` is switched on in that same block; then an LLM writes a short remediation note from the pillar's failing criteria.
 
-Look at the `score_anomalies` in your checker output. For each anomalous pillar: (1) Is the anomaly a real gap or a false positive? (2) What one change would most improve that pillar's score?
+## `anomalies`: severity-ranked findings
+
+The second list holds findings such as a **critical** pillar (security, IL classification, NIST controls, STIG compliance, append-only audit) scoring below 50%.
+
+## Reading them well
+
+A very low score usually has one of two causes: a real gap, or a **missing marker** (for example, a codebase that is STIG-hardened but never references a V-ID scores near zero on pillar 10). The criterion `message` fields in `icdev_checks` tell you which.
+
+## Reflect
+
+Look at the anomalous pillars in your checker output (or, if you did not run it, the `testing` and `stig-compliance` pillars in the Step 2 sample). For each: (1) is it a real gap or a missing-marker false alarm, and which criterion message tells you? (2) what one change would most improve that pillar's score? Then press Continue.

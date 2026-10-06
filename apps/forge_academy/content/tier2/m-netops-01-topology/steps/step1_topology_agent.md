@@ -15,7 +15,7 @@ Three components wire together into `TopologyAgent`:
 
 1. **`parse_device_config(config_str)`** — Parse a single device config string. Extract the device hostname, its interfaces (name + IP + subnet), and any neighbor relationships declared in CDP/LLDP neighbor sections.
 
-2. **`build_topology(devices)`** — Given a list of parsed device dicts, build a topology graph. Return nodes (one per device) and edges (one per neighbor link, deduplicated).
+2. **`build_topology(devices)`** — Given a list of parsed device dicts, build a topology graph. Return nodes (one per **parsed** device — a neighbor with no config of its own is not a node) and edges (one per neighbor link, deduplicated).
 
 3. **`TopologyAgent.run(raw_configs)`** — Orchestrate: parse each config, build the graph, flag any device that appears as a neighbor but has no config of its own (unreachable/unknown nodes).
 
@@ -54,15 +54,19 @@ cdp neighbor
 
 ### Output of `build_topology`
 
+For two parsed devices — `core-sw-01` above and an `access-sw-01` whose config lists `core-sw-01` as its neighbor:
+
 ```python
 {
-    "nodes": ["core-sw-01", "edge-rtr-01", "access-sw-01"],
+    "nodes": ["core-sw-01", "access-sw-01"],      # parsed devices only
     "edges": [
-        {"source": "core-sw-01", "target": "edge-rtr-01"},
-        {"source": "core-sw-01", "target": "access-sw-01"},
+        {"source": "access-sw-01", "target": "core-sw-01"},   # listed by both, stored once
+        {"source": "core-sw-01", "target": "edge-rtr-01"},    # edge-rtr-01 has no config
     ]
 }
 ```
+
+`edge-rtr-01` is **not** a node: it has no config of its own. It still appears in an edge, and `TopologyAgent.run` reports it in `unknown_nodes`.
 
 Edges are **undirected** — if A lists B as neighbor and B lists A, store only one edge (alphabetical source < target).
 
@@ -70,9 +74,9 @@ Edges are **undirected** — if A lists B as neighbor and B lists A, store only 
 
 ```python
 {
-    "node_count": 3,
+    "node_count": 2,                  # same two-device example: len(topology["nodes"])
     "edge_count": 2,
-    "topology": { ... },          # full graph from build_topology
+    "topology": { ... },              # full graph from build_topology
     "unknown_nodes": ["edge-rtr-01"]  # neighbors with no config
 }
 ```
@@ -82,9 +86,9 @@ Edges are **undirected** — if A lists B as neighbor and B lists A, store only 
 - Parse hostname with: find the line starting with `hostname ` and take the second token.
 - Parse interfaces: lines starting with `interface ` open a block; `ip address` inside gives IP + mask.
 - Parse neighbors: lines under `cdp neighbor` block containing `neighbor:` give the remote hostname.
-- For `build_topology`, collect all node names first, then walk each device's neighbor list to produce edges. Use a set of frozensets to deduplicate bidirectional links.
+- For `build_topology`, collect the parsed device hostnames as the nodes first, then walk each device's neighbor list to produce edges. Use a set of frozensets to deduplicate bidirectional links.
 - Unknown nodes: take the set of all neighbor names mentioned across all devices, subtract the set of device hostnames you parsed.
 
 ## Grader Contract
 
-The auto-grader calls your functions with `SAMPLE_CONFIGS` (3 device configs, 3 edges, 1 unknown node). All assertions check specific field names and values — match the schema exactly.
+The auto-grader calls your functions with `SAMPLE_CONFIGS` (3 device configs → 3 nodes, 3 edges, 1 unknown node: `edge-rtr-01`). All assertions check specific field names and values — match the schema exactly.

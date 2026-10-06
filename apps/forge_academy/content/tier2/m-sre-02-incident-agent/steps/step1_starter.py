@@ -67,8 +67,8 @@ def classify_incident(alert: dict) -> dict:
     Check conditions in order (first match wins):
       SEV1: user_facing=True AND error_rate_pct > 10
       SEV2: user_facing=True AND (1 < error_rate_pct <= 10 OR latency_p99_ms > 2000)
-      SEV3: user_facing=False OR latency_p99_ms in [500, 2000]
-      SEV4: everything else
+      SEV3: 500 <= latency_p99_ms <= 2000 (any service)
+      SEV4: everything else (warnings, internal-only, low latency)
 
     page_oncall = True for SEV1 and SEV2 only.
     impact should be a short human-readable description of why this severity was assigned.

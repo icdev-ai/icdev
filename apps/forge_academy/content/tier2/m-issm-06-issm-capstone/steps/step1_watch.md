@@ -13,7 +13,7 @@ Watch ICDEV deploy and execute a full ATO evidence collection agent for ICDEV-Pr
 
 **Agent Configuration**
 - System: ICDEV-Prod (IL4, Moderate)
-- ATO expiry: 2026-10-15 (5 months away)
+- ATO expiry: 2027-09-15 (11 months away)
 - Evidence target: 47 controls, 3 frameworks (RMF primary, FedRAMP, CMMC)
 - Collection schedule: automated nightly, manual checkpoints weekly
 
@@ -23,7 +23,7 @@ Evidence collected:    312 items (automated)
 Controls with full evidence: 41/47 (87%)
 Controls with partial evidence: 6/47 (13%)
 Controls with no evidence: 0/47
-Estimated completion: 2026-06-15 (4 months ahead of ATO expiry)
+Estimated completion: 2027-05-15 (4 months ahead of ATO expiry)
 ```
 
 **SSP Assembly Progress**

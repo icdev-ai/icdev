@@ -45,8 +45,9 @@ class LensLearnerRisk(BaseLens):
             WHERE u.last_active IS NOT NULL
               AND u.last_active < %s
               AND u.last_active >= %s
-            GROUP BY u.id
-            HAVING incomplete_count > 0
+            GROUP BY u.id, u.username, u.display_name, u.last_active, u.streak_days
+            -- aca-empty-demo: PostgreSQL has no SELECT alias in HAVING.
+            HAVING COUNT(mp.id) > 0
             """,
             (cutoff_warn, cutoff_crit),
         ).fetchall()
@@ -60,8 +61,9 @@ class LensLearnerRisk(BaseLens):
                    ON mp.user_id = u.id AND mp.status IN ('in_progress','not_started')
             WHERE u.last_active IS NOT NULL
               AND u.last_active < %s
-            GROUP BY u.id
-            HAVING incomplete_count > 0
+            GROUP BY u.id, u.username, u.display_name, u.last_active, u.streak_days
+            -- aca-empty-demo: PostgreSQL has no SELECT alias in HAVING.
+            HAVING COUNT(mp.id) > 0
             """,
             (cutoff_crit,),
         ).fetchall()
@@ -76,8 +78,8 @@ class LensLearnerRisk(BaseLens):
             JOIN fa_users u ON u.id = sp.user_id
             WHERE sp.started_at >= %s
               AND sp.status = 'failed'
-            GROUP BY sp.user_id, sp.step_id
-            HAVING attempt_count >= %s
+            GROUP BY sp.user_id, sp.step_id, u.username, u.display_name
+            HAVING COUNT(*) >= %s
             """,
             (today, _RETRY_STORM_THRESHOLD),
         ).fetchall()

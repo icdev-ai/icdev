@@ -36,6 +36,20 @@ def _user_role(user: object) -> str:
     return str(getattr(user, "role", "") or "")
 
 
+def is_org_intel_user(user: object | None = None) -> bool:
+    """True when ``user`` (default: ``g.current_user``) is in ORG_INTEL_ROLES.
+
+    The boolean form of ``require_org_intel``, for callers that change behaviour
+    rather than refuse — e.g. the presenter preview on a locked mission
+    (aca-presenter-preview). One predicate, so the two can never disagree.
+    """
+    if user is None:
+        user = _current_user()
+    if user is None:
+        return False
+    return _user_role(user) in ORG_INTEL_ROLES
+
+
 def _deny_unauthenticated():
     """401 for API/JSON callers; redirect to login for browser page requests."""
     if request.is_json or request.path.startswith("/api/"):
@@ -62,7 +76,7 @@ def require_org_intel(view):
         user = _current_user()
         if user is None:
             return _deny_unauthenticated()
-        if _user_role(user) not in ORG_INTEL_ROLES:
+        if not is_org_intel_user(user):
             abort(403)
         return view(*args, **kwargs)
 

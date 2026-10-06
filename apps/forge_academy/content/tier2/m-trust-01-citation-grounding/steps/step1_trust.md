@@ -60,7 +60,8 @@ silent. Only an explicit `fail_closed: false` lets output through un-sanitized (
 Your `egress_gate()` encodes exactly that decision tree.
 
 > The companion toggle `redaction.mask_at_ingestion` (default off, opt-in) masks PII *before*
-> chunking/hashing in `tools/rag/ingestion_manager.py`. Both toggles ship off-by-default and
-> must never be removed — `check_trust_coverage` asserts their presence in config.
+> chunking/hashing in `tools/rag/ingestion_manager.py`. So the shipped defaults are
+> `fail_closed: true` and `mask_at_ingestion: false` (both in `args/redaction_config.yaml`), and
+> neither toggle may ever be removed — `check_trust_coverage` asserts their presence in config.
 
 Open `step1_starter.py` and implement the four `TODO`s.

@@ -1,0 +1,44 @@
+# CUI // SP-CTI
+id: inject-05-interop-governance
+title: "Interoperability Governance Framework"
+
+body_md: |
+  ## AFTER-ACTION TASKING — MAKE THE NEXT ONE EASIER
+
+  **Classification:** CUI // SP-CTI
+  **Priority:** ROUTINE
+  **DTG:** [T+105 minutes]
+
+  ---
+
+  The immediate crisis is contained. Leadership from both agencies wants to know
+  why it took a crisis to make two AI stacks talk — and what stops it happening again.
+
+  ### YOUR TASK
+
+  Draft a **one-page interoperability governance framework** for AI-enabled joint
+  threat analysis between a civilian and a military agency. Cover:
+
+  1. **Data:** a shared minimum schema and the handling rules that travel with each record.
+  2. **Models:** how each agency documents its AI tools (purpose, training-data
+     provenance, known failure modes) so the other can weigh their outputs.
+  3. **Decisions:** where a human must approve before an AI-derived output drives
+     action, and who that human is in each chain of command.
+  4. **Accountability:** the audit trail both agencies keep, and the standing
+     forum that owns this framework.
+  5. **Measures:** two indicators that show the framework is working.
+
+  **Deliverable — Governance Framework (≤ 400 words).**
+
+  **AI Tools:**
+  - **Strategos Oracle** — stress-test the framework against the failure modes seen today
+  - **Knowledge Search** — federal AI-use, oversight and data-sharing guidance
+
+  This inject is not time-bonused and carries no receipt bonus: it is judged on
+  the quality of the framework alone.
+
+context_note: >
+  Closing inject. Strong answers are concrete and trace each element back to a
+  friction point the team actually hit in Injects 1–4 (attribution authority, clock
+  drift, the boundary filter, the dual chain of command). Generic AI-ethics boilerplate
+  with no link to the exercise scores poorly.

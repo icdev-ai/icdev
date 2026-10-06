@@ -11,27 +11,30 @@
     <form id="configure-form-{{ sidx }}">
       {% if schema.fields %}
       {% for field in schema.fields %}
+      {# Authored content keys its fields by `id`; an input rendered with an empty
+         name is dropped by FormData, so the learner's answers never left the page. #}
+      {% set fname = field.name or field.id %}
       <div class="fa-form-group" style="margin-bottom:.9rem;">
         {# aca-trn-06: this label sits BESIDE its control rather than wrapping it, so
            without `for` it named nothing — select, textarea and text inputs were all
            reaching the a11y tree unlabelled. The checkbox branches below do wrap
            their inputs, so those were already associated. #}
-        <label for="cfg-{{ sidx }}-{{ field.name }}"
+        <label for="cfg-{{ sidx }}-{{ fname }}"
                style="font-size:.75rem;color:var(--text-secondary);display:block;margin-bottom:.3rem;">
-          {{ field.label | default(field.name) }}
-          {% if field.required %}<span style="color:#ff6b6b">*</span><span class="sr-only"> (required)</span>{% endif %}
+          {{ field.label | default(fname) }}
+          {% if field.required %}<span style="color:var(--fa-tx-ff6b6b)">*</span><span class="sr-only"> (required)</span>{% endif %}
         </label>
         {% if field.type == 'select' %}
-        <select name="{{ field.name }}" id="cfg-{{ sidx }}-{{ field.name }}"
+        <select name="{{ fname }}" id="cfg-{{ sidx }}-{{ fname }}"
                 {% if field.required %}required{% endif %}
-                style="width:100%;background:#0d1221;border:1px solid var(--fa-border);color:var(--text-primary);border-radius:6px;padding:.5rem .8rem;font-size:.85rem;">
+                style="width:100%;background:var(--fa-bg-0d1221);border:1px solid var(--fa-border);color:var(--text-primary);border-radius:6px;padding:.5rem .8rem;font-size:.85rem;">
           {% for opt in field.options | default([]) %}
           <option value="{{ opt.value | default(opt) }}">{{ opt.label | default(opt) }}</option>
           {% endfor %}
         </select>
         {% elif field.type == 'checkbox' %}
         <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;">
-          <input type="checkbox" name="{{ field.name }}" value="1"
+          <input type="checkbox" name="{{ fname }}" value="1"
                  {% if field.default %}checked{% endif %}
                  style="accent-color:var(--fa-orange);">
           <span style="font-size:.82rem;">{{ field.hint | default(field.help | default('')) }}</span>
@@ -40,29 +43,42 @@
         <div style="display:flex;flex-direction:column;gap:.4rem;">
           {% for opt in field.options | default([]) %}
           <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;">
-            <input type="checkbox" name="{{ field.name }}" value="{{ opt }}"
+            <input type="checkbox" name="{{ fname }}" value="{{ opt }}"
                    style="accent-color:var(--fa-orange);">
             <span style="font-size:.82rem;">{{ opt }}</span>
           </label>
           {% endfor %}
         </div>
         {% elif field.type == 'textarea' %}
-        <textarea name="{{ field.name }}" id="cfg-{{ sidx }}-{{ field.name }}" rows="4"
+        <textarea name="{{ fname }}" id="cfg-{{ sidx }}-{{ fname }}" rows="4"
                   placeholder="{{ field.placeholder | default('') }}"
                   {% if field.required %}required{% endif %}
-                  style="width:100%;background:#0d1221;border:1px solid var(--fa-border);color:var(--text-primary);border-radius:6px;padding:.5rem .8rem;font-size:.82rem;font-family:monospace;resize:vertical;"></textarea>
+                  style="width:100%;background:var(--fa-bg-0d1221);border:1px solid var(--fa-border);color:var(--text-primary);border-radius:6px;padding:.5rem .8rem;font-size:.82rem;font-family:monospace;resize:vertical;"></textarea>
         {% else %}
-        <input type="{{ field.type | default('text') }}" name="{{ field.name }}"
-               id="cfg-{{ sidx }}-{{ field.name }}"
+        <input type="{{ field.type | default('text') }}" name="{{ fname }}"
+               id="cfg-{{ sidx }}-{{ fname }}"
                placeholder="{{ field.placeholder | default('') }}"
                {% if field.required %}required{% endif %}
-               style="width:100%;background:#0d1221;border:1px solid var(--fa-border);color:var(--text-primary);border-radius:6px;padding:.5rem .8rem;font-size:.85rem;">
+               style="width:100%;background:var(--fa-bg-0d1221);border:1px solid var(--fa-border);color:var(--text-primary);border-radius:6px;padding:.5rem .8rem;font-size:.85rem;">
         {% endif %}
         {% if field.hint %}
         <div style="font-size:.72rem;color:var(--text-secondary);margin-top:.3rem;opacity:.75;">{{ field.hint }}</div>
         {% endif %}
       </div>
       {% endfor %}
+      {% elif not schema.action %}
+      {# Steps discovered from lesson files carry no field schema, so this panel
+         offered nothing to fill in, promised to "execute this action", and
+         recorded {}. Capture the learner's answer to the lesson's task instead. #}
+      <div class="fa-form-group" style="margin-bottom:.9rem;">
+        <label for="cfg-{{ sidx }}-answer"
+               style="font-size:.75rem;color:var(--text-secondary);display:block;margin-bottom:.3rem;">
+          Your answer to this step's task
+        </label>
+        <textarea name="answer" id="cfg-{{ sidx }}-answer" rows="5"
+                  placeholder="Write your configuration or design here, as the lesson asks."
+                  style="width:100%;background:var(--fa-bg-0d1221);border:1px solid var(--fa-border);color:var(--text-primary);border-radius:6px;padding:.5rem .8rem;font-size:.82rem;font-family:monospace;resize:vertical;"></textarea>
+      </div>
       {% else %}
       <p style="color:var(--text-secondary);font-size:.82rem;">
         Click Configure to execute this action with default settings.
@@ -70,13 +86,13 @@
       {% endif %}
 
       <button type="button" id="configure-btn-{{ sidx }}" onclick="submitConfigure({{ sidx }})"
-              style="background:linear-gradient(135deg,var(--fa-cyan),#008db3);color:#0a0a14;border:none;border-radius:6px;padding:.55rem 1.4rem;font-size:.82rem;font-weight:700;cursor:pointer;margin-top:.5rem;">
+              style="background:linear-gradient(135deg,var(--fa-cyan),var(--fa-bg-008db3));color:var(--fa-tx-0a0a14);border:none;border-radius:6px;padding:.55rem 1.4rem;font-size:.82rem;font-weight:700;cursor:pointer;margin-top:.5rem;">
         ⚙ Configure →
       </button>
     </form>
 
     <div id="configure-result-{{ sidx }}"
-         style="display:none;margin-top:1rem;background:#060910;border:1px solid var(--fa-border);border-radius:6px;padding:1rem;font-family:monospace;font-size:.78rem;color:var(--fa-green);white-space:pre-wrap;max-height:200px;overflow-y:auto;"></div>
+         style="display:none;margin-top:1rem;background:var(--fa-bg-060910);border:1px solid var(--fa-border);border-radius:6px;padding:1rem;font-family:monospace;font-size:.78rem;color:var(--fa-green);white-space:pre-wrap;max-height:200px;overflow-y:auto;"></div>
   </div>
 
   <div class="fa-controls">
@@ -99,10 +115,31 @@ async function submitConfigure(idx) {
     } else { config[k] = v; }
   }
   const step = STEPS[idx];
+  const action = step.config_schema && step.config_schema.action;
+  if (!action) {
+    // No ICDEV action stands behind this step: it is a design exercise, and the
+    // learner's configuration IS the answer. Dispatching the old default
+    // ('deploy_pattern' with an empty config) returned "Pattern not found" and the
+    // step could never be completed.
+    const d = await submitStep(idx, JSON.stringify(config));
+    resultPanel.style.display = 'block';
+    if (d) {
+      resultPanel.style.borderColor = 'var(--fa-green)';
+      resultPanel.textContent = (d.status === 'preview'
+        ? '✓ Configuration accepted (preview — not recorded).\n\n'
+        : '✓ Configuration recorded.\n\n') + JSON.stringify(config, null, 2);
+      document.getElementById('next-btn-' + idx).style.display = 'inline-block';
+    } else {
+      resultPanel.textContent = 'Could not record your configuration — check your connection and retry.';
+    }
+    btn.disabled = false;
+    btn.textContent = '⚙ Configure →';
+    return;
+  }
   try {
     const resp = await fetch('/api/academy/step/configure', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({action: step.config_schema?.action || 'deploy_pattern', config})
+      body: JSON.stringify({action, config})
     });
     const d = await resp.json();
     resultPanel.style.display = 'block';
@@ -112,7 +149,7 @@ async function submitConfigure(idx) {
     if (d.simulated) {
       const head = document.createElement('div');
       head.setAttribute('role', 'status');
-      head.style.cssText = 'background:#1a1206;border:1px solid #d98b12;color:#ffce7a;'
+      head.style.cssText = 'background:var(--fa-bg-1a1206);border:1px solid #d98b12;color:var(--fa-tx-ffce7a);'
         + 'border-radius:6px;padding:.6rem .8rem;margin-bottom:.6rem;font-family:inherit;'
         + 'font-size:.78rem;white-space:normal;';
       head.innerHTML = '<strong>&#9888; Simulated result &mdash; not a live system call.</strong><br>'

@@ -132,7 +132,7 @@
     <strong>What this does:</strong> Reads every node in your canvas design, maps each ops/safety/governance node
     to its runtime tool (from <code>args/aadc_node_tool_map.yaml</code>), and outputs:
     <ul style="margin:.5rem 0 0 1rem;padding:0;">
-      <li><code>args/ops_config_{{ design_id }}.yaml</code> — tool activation config with default thresholds</li>
+      <li><code>data/aadc_ops_config/ops_config_{{ design_id }}.yaml</code> — tool activation config with default thresholds</li>
       <li>One Kanban backlog task per tool to wire up, with CLI reference and config key</li>
     </ul>
     This is a <strong>configuration generator</strong> — not a runtime deployer. Your team wires the tools.

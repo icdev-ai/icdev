@@ -96,6 +96,6 @@ it returns a `"NONE"` sentinel telling you to consult the registry directly.
 - `score_canvas()` returns a float score for a given canvas code and description
 - `explain_canvas()` returns the human-readable purpose for a canvas code
 - `select()` returns the top-scoring canvas with confidence and reasoning
-- Tie-breaking: when scores are equal, prefer the canvas defined first (registry order)
+- Tie-breaking: when scores are equal, prefer the canvas defined first in `CANVASES` (dict insertion order)
 - Descriptions with **no** matches return `canvas="NONE"` (consult the registry — no guess)
 - `rank_canvases()` returns all seven canvases ranked by score, highest first

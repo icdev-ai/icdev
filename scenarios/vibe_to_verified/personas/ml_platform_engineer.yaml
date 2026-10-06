@@ -1,0 +1,23 @@
+# CUI // SP-CTI
+label: "ML Platform Engineer"
+description: "Owns inference serving, the LLM routing fallback chain and the token budget."
+
+attributes:
+  - organization (government agency or defense contractor)
+  - serving stack (vLLM, Ollama, TGI, managed APIs)
+  - GPU fleet size and air-gap constraints
+  - cost-control experience (budgets, caps, chargeback)
+  - clearance level
+
+prompt_hint: >
+  Generate a realistic ML Platform Engineer persona. They run self-hosted vLLM
+  next to metered managed APIs and know that the best failover target is the
+  one the budget can afford. They do the arithmetic before changing a chain.
+  Include a role_brief explaining that their FORGE Academy model-serving
+  training means they build a health-gated, budget-capped fallback chain in
+  the routing-outage inject, where an untrained engineer fails everything over
+  to the most expensive model and blows the month's budget in eight days.
+
+academy_relevant_missions:
+  - m12-model-serving
+  - m-aie-01-coding-harnesses

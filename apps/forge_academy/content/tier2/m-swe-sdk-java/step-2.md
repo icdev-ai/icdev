@@ -16,47 +16,41 @@ Never hardcode the API key. Spring Boot's `@Value` annotation reads from `applic
 ```properties
 # application.properties
 anthropic.api-key=${ANTHROPIC_API_KEY}
-anthropic.model=claude-sonnet-4-5
-anthropic.max-tokens=2048
+anthropic.model=claude-opus-5-5
+anthropic.max-tokens=16000
 ```
 
 For production, override `ANTHROPIC_API_KEY` via an environment variable injected by your secret store (AWS Secrets Manager, Azure Key Vault, Vault by HashiCorp). The `${...}` syntax delegates resolution to Spring's `Environment` abstraction automatically.
 
 ## Handling the ContentBlock response
 
-The API returns a `Message` with a `content` list of `ContentBlock` objects. Each block has a `type` — either `text` or `tool_use`. Always check the type before calling `.text()`:
+The API returns a `Message` whose `content()` is a list of `ContentBlock` unions. Each accessor returns an `Optional`: `block.text()` is present only for text blocks, `block.toolUse()` only for tool-use blocks, and `block.thinking()` only for thinking blocks. Filter rather than assume:
 
 ```java
 // Safely extract all text content
 String text = response.content().stream()
-    .filter(b -> b.type() == ContentBlock.Type.TEXT)
-    .map(b -> b.text().orElse(""))
-    .collect(Collectors.joining("\n"));
+    .flatMap(block -> block.text().stream())
+    .map(TextBlock::text)
+    .collect(Collectors.joining("
+"));
 ```
 
 ## Full ClaudeService skeleton
 
 ```java
 @Service
-@RequiredArgsConstructor
 public class ClaudeService {
 
-    @Value("${anthropic.api-key}")
-    private String apiKey;
+    private final AnthropicClient client;
+    private final String model;
+    private final long maxTokens;
 
-    @Value("${anthropic.model:claude-sonnet-4-5}")
-    private String model;
-
-    @Value("${anthropic.max-tokens:2048}")
-    private int maxTokens;
-
-    private Anthropic client;
-
-    @PostConstruct
-    public void init() {
-        this.client = Anthropic.builder()
-                .apiKey(apiKey)
-                .build();
+    public ClaudeService(AnthropicClient client,
+                         @Value("${anthropic.model:claude-opus-5-5}") String model,
+                         @Value("${anthropic.max-tokens:16000}") long maxTokens) {
+        this.client = client;
+        this.model = model;
+        this.maxTokens = maxTokens;
     }
 
     public String chat(String systemPrompt, String userMessage) {
@@ -67,12 +61,7 @@ public class ClaudeService {
                 .addUserMessage(userMessage)
                 .build();
 
-        var response = client.messages().create(params);
-
-        return response.content().stream()
-                .filter(b -> b.type() == ContentBlock.Type.TEXT)
-                .map(b -> b.text().orElse(""))
-                .collect(Collectors.joining("\n"));
+        return textOf(client.messages().create(params));
     }
 
     public String chatWithHistory(List<MessageParam> history, String newUserMessage) {
@@ -88,30 +77,40 @@ public class ClaudeService {
                 .messages(allMessages)
                 .build();
 
-        var response = client.messages().create(params);
-        return response.content().get(0).text().orElseThrow();
+        return textOf(client.messages().create(params));
+    }
+
+    private static String textOf(Message response) {
+        return response.content().stream()
+                .flatMap(block -> block.text().stream())
+                .map(TextBlock::text)
+                .collect(Collectors.joining("
+"));
     }
 }
 ```
 
 ## Tool use integration concept
 
-The SDK does not use Java annotations to declare tools — you define them as `ToolDefinition` objects carrying a JSON Schema for the input. Here is the pattern:
+Tools are defined as data: a `Tool` with a name, a description and a JSON Schema input (`Tool.InputSchema`). Here is the manual loop:
 
-1. Build a `ToolDefinition` with `name`, `description`, and an `inputSchema` (JSON object schema).
-2. Add it to `MessageCreateParams.builder().tools(List.of(myTool))`.
-3. Inspect the response: if any `ContentBlock` has `type == TOOL_USE`, extract the `toolUse()` block, run your Java method, and append a `tool_result` message.
-4. Call the API again with the full updated message history.
-5. Repeat until the response contains only `text` blocks.
+1. Build a `Tool` and add it with `MessageCreateParams.builder().addTool(myTool)`.
+2. Inspect the response. If `stopReason` is `tool_use`, take each block whose `toolUse()` is present, run your Java method with its input, and build a `tool_result` for its id.
+3. Append the assistant turn and **all** tool results (in one user message), then call the API again.
+4. Repeat until `stopReason` is `end_turn`.
 
-This agentic loop is typically extracted into a helper like `ToolLoopExecutor` to keep `ClaudeService` clean.
+Extract this loop into a helper such as `ToolLoopExecutor` to keep `ClaudeService` clean. Alternatively, use the SDK's beta tool runner, which drives the loop for annotated tool classes.
 
 ## Configuration questions
 
-1. Which Spring profile will hold your `ANTHROPIC_API_KEY` override in your deployment environment?
-2. Should `ClaudeService` be `@Singleton` (default) or `@RequestScope`? What are the memory implications of each?
-3. How would you expose `chat()` as a REST endpoint via a `@RestController`?
-4. What HTTP status code should your controller return when the Claude API returns a 529 (overloaded) error?
+Fill in the fields on this step:
+
+1. **What endpoint will call the LLM?** For example `/api/summarize`, exposed by a `@RestController` that delegates to `ClaudeService`.
+2. **Input type.** Free-form user text, structured JSON, document or file content, or a database record.
+3. **Streaming response required?** Stream tokens through `SseEmitter`, or return a single JSON response.
+4. **Does the LLM need to call tools (functions)?** If yes, plan the loop above.
+
+Think about this as you answer: what HTTP status should your controller return when the Claude API is overloaded (HTTP 529) even after the SDK's retries?
 
 ---
 

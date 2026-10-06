@@ -15,7 +15,9 @@ AI features in web applications live or die by perceived latency. A 4-second wai
 npm install @anthropic-ai/sdk
 ```
 
-The package ships CommonJS and ESM builds. It is safe to import in Next.js API routes and in Node.js `runtime = "nodejs"` edge functions. It is **not** safe to import on the client side — your API key would be exposed to the browser.
+The package ships CommonJS and ESM builds and runs on Node.js 18+ and on web-standard runtimes (it uses `fetch`), so it works in Next.js route handlers on either the Node.js or the Edge runtime. Never import it in a client component (`'use client'`): your API key would be exposed to the browser.
+
+> The code in this mission runs in your own Next.js project, not in the Academy sandbox.
 
 ## How Next.js App Router API routes work for AI
 
@@ -40,9 +42,9 @@ const client = new Anthropic(); // reads ANTHROPIC_API_KEY from process.env
 export async function POST(req: Request) {
   const { messages } = await req.json();
 
-  const stream = await client.messages.stream({
-    model: 'claude-sonnet-4-5',
-    max_tokens: 1024,
+  const stream = client.messages.stream({
+    model: 'claude-opus-5-5',
+    max_tokens: 16000,
     messages,
   });
 
@@ -71,14 +73,15 @@ The client uses `TextDecoder` to read the chunks back as strings and appends the
 ## The Message object structure
 
 A complete (non-streaming) response is a `Message` with:
+
 - `id` — unique identifier
 - `role` — always `"assistant"`
-- `content` — array of `ContentBlock` (type `"text"` or `"tool_use"`)
+- `content` — array of `ContentBlock` (`"text"`, `"tool_use"`, and on current Opus models `"thinking"`, so filter by type rather than reading `content[0]`)
 - `model` — the model that generated it
 - `stop_reason` — `"end_turn"`, `"tool_use"`, `"max_tokens"`, etc.
 - `usage` — `{ input_tokens, output_tokens }`
 
-During streaming, you receive `RawMessageStreamEvent` objects. The useful types are `content_block_delta` (carries the text chunk) and `message_delta` (carries `stop_reason` when done).
+During streaming, you receive `RawMessageStreamEvent` objects. The useful types are `content_block_delta` (carries the text chunk) and `message_delta` (carries `stop_reason` when done). If you also need the complete message, `await stream.finalMessage()` returns it once the stream ends.
 
 ## Why streaming matters for UX
 

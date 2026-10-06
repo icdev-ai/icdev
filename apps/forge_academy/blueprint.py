@@ -7,13 +7,13 @@ import secrets
 
 from flask import Blueprint, g, jsonify, redirect, render_template, request, url_for
 
-from .auth import require_org_intel
+from .auth import is_org_intel_user, require_org_intel
 from .constants import ROLES, TECHNICAL_ROLES, LEVELS, xp_to_next_level
 from .db import (
     migrate, get_or_create_user, get_user, update_user_role, update_user_display_name, list_missions, get_mission_by_id, get_mission_progress, record_mission_attempt, complete_mission,
     get_step_progress, complete_step, user_progress_summary,
     tier_progress, is_tier_unlocked, resume_target, mission_step_progress,
-    mission_prereq_state, earned_xp,
+    mission_prereq_state, earned_xp, mission_catalogue_counts, takeable_mission_count,
     get_user_achievements, grant_achievement,
     active_challenge_count, create_guild, join_guild, get_guild_stats, get_leaderboard, get_user_skills, unlock_skill,
     check_cert_eligibility, issue_certificate, get_user_certificates,
@@ -36,6 +36,20 @@ bp = Blueprint("forge_academy", __name__)
 _initialized = False
 import threading as _threading
 _init_lock = _threading.Lock()
+
+
+@bp.teardown_app_request
+def _release_fa_connections(_exc=None):
+    """Close the connections db.get_connection reused for this request (aca-perf-demo).
+
+    App-wide, not blueprint-only: the nav context processor and other canvases call
+    Academy helpers too, and their request-held connections must not outlive it.
+    """
+    from .db import release_request_connections
+    try:
+        release_request_connections()
+    except Exception:
+        pass
 
 
 @bp.app_context_processor
@@ -77,12 +91,14 @@ def get_init_health() -> dict:
 
 
 def _mission_count() -> int:
+    """Missions a learner can take — the shared TAKEABLE definition in db.py.
+
+    aca-numbers-demo: this counted is_active=1 (122 live) while the certificate
+    gate counted active-with-steps and the roster said 0/122. A catalogue of only
+    stepless "coming soon" rows is an empty Academy too, so init refuses it.
+    """
     try:
-        from tools.db.storage import get_connection
-        row = get_connection().execute(
-            "SELECT COUNT(*) FROM fa_missions WHERE is_active=1"
-        ).fetchone()
-        return int(row[0]) if row else 0
+        return takeable_mission_count()
     except Exception:
         return 0
 
@@ -226,7 +242,13 @@ def hub():
     # user's own role keeps the default view unchanged.
     role_filter = request.args.get("role", "")
     effective_role = role_filter or fa_user.get("role")
-    missions = list_missions(role=effective_role, tier=None)[:6]
+    missions = list_missions(role=effective_role, tier=None)
+    # aca-empty-demo: never spend one of the six hub slots on a mission with no
+    # steps (m-chat-agent-interview for pm/ciso/leadership learners). Guarded as in
+    # missions_browser: if no step count could be read, keep the list unchanged.
+    if any(m.get("is_available", True) for m in missions):
+        missions = [m for m in missions if m.get("is_available", True)]
+    missions = missions[:6]
     level_ctx = _level_ctx(fa_user)
 
     # aca-ux-03: the hub listed the first six missions by order_idx and offered no
@@ -260,6 +282,30 @@ def hub():
     )
 
 
+def role_label(role: str | None) -> str:
+    """Display name for a role key ('swe_arch' -> 'SWE / Architect')."""
+    if not role:
+        return ""
+    return ROLES.get(role, {}).get("label", role)
+
+
+def browser_listing_summary(missions: list[dict], role: str | None) -> dict:
+    """What the browser header may claim about the list it is showing.
+
+    aca-numbers-demo: the header read "45 missions available · SWE_ARCH track" —
+    a role-filtered list that counted stepless "coming soon" cards, under a raw
+    role key. ``takeable`` uses the same rule as db.TAKEABLE_MISSION_SQL (the list
+    is already active-only; is_available is step_count > 0), so filtering this
+    view by tier gives the number the certificate gate counts for that tier.
+    """
+    takeable = sum(1 for m in missions if m.get("is_available", True))
+    return {
+        "takeable": takeable,
+        "coming_soon": len(missions) - takeable,
+        "track_label": role_label(role),
+    }
+
+
 @bp.route("/academy/missions")
 def missions_browser():
     _ensure_init()
@@ -270,12 +316,36 @@ def missions_browser():
     role_filter = request.args.get("role", "")
     # When filtering by type, show all roles so guided missions are visible to any user.
     # Only narrow by user's role when browsing without a type constraint.
-    effective_role = role_filter or (None if mtype else (fa_user.get("role") if fa_user else None))
+    # A topic arrives from a skill-tree node the learner chose on purpose: show
+    # every role's missions for it, as for a type filter, or a node whose missions
+    # target other roles (ATO with AI -> issm/ciso) opens empty for everyone else.
+    effective_role = role_filter or (
+        None if (mtype or topic) else (fa_user.get("role") if fa_user else None)
+    )
     all_missions = list_missions(role=effective_role, tier=tier)
     if topic:
-        all_missions = [m for m in all_missions if m.get("topic") == topic]
+        # Skill-tree node slugs are not mission topics (aca-empty-demo): resolve a
+        # node to the missions that teach it; any other value stays a topic match.
+        from .constants import SKILL_NODE_MISSIONS
+        node_slugs = set(SKILL_NODE_MISSIONS.get(topic, ()))
+        all_missions = [
+            m for m in all_missions
+            if m.get("slug") in node_slugs or m.get("topic") == topic
+        ]
     if mtype:
         all_missions = [m for m in all_missions if m.get("mission_type") == mtype]
+    # aca-empty-demo: a mission with no authored steps is a dead end ("Coming
+    # soon"). Leave it out of the browse grid and say how many were left out.
+    # Only when SOME mission has steps: list_missions marks everything unavailable
+    # when the step count could not be read, and that must not empty the grid.
+    # The listing summary counts what is takeable vs coming soon, so it reads the
+    # list BEFORE the unauthored missions are dropped from the grid.
+    listing = browser_listing_summary(all_missions, effective_role)
+    unauthored_count = 0
+    if any(m.get("is_available", True) for m in all_missions):
+        authored = [m for m in all_missions if m.get("is_available", True)]
+        unauthored_count = len(all_missions) - len(authored)
+        all_missions = authored
     progress_map = {}
     if fa_user:
         for m in all_missions:
@@ -294,6 +364,7 @@ def missions_browser():
         "forge_academy/missions.html",
         fa_user=fa_user,
         missions=all_missions,
+        listing=listing,
         progress_map=progress_map,
         prereq_state=prereq_state,
         tier_info=tier_info,
@@ -302,6 +373,7 @@ def missions_browser():
         active_tier=tier,
         active_topic=topic,
         active_type=mtype,
+        unauthored_count=unauthored_count,
     )
 
 
@@ -339,6 +411,10 @@ def mission_runner(slug):
     tier_state = tier_info.get(mission_tier, {})
     tier_locked = not tier_state.get("unlocked", True)
     gating_tier = tier_state.get("gating_tier")
+    # aca-presenter-preview: the org-leadership tier (the same admin/pm/isso gate as
+    # the Oracle) can demo a locked mission end to end. api_step_submit grades it
+    # for real and records nothing; this flag only changes what the page says.
+    presenter_preview = tier_locked and is_org_intel_user()
 
     # aca-int-02/03: the template serialises this into page JavaScript. The raw step
     # rows carry the grading test and the answer key, so only the sanitised
@@ -363,6 +439,7 @@ def mission_runner(slug):
         fa_user=fa_user,
         mission=mission,
         tier_locked=tier_locked,
+        presenter_preview=presenter_preview,
         tier_state=tier_state,
         gating_state=tier_info.get(gating_tier, {}) if gating_tier else {},
         steps_client=steps_client,
@@ -373,6 +450,29 @@ def mission_runner(slug):
         roles=ROLES,
         TECHNICAL_ROLES=TECHNICAL_ROLES,
     )
+
+
+def _skill_nodes_in_pixels(nodes, width=900, height=600, margin=45):
+    """SKILL_NODES positions are GRID units (x 0..14, y -3..5); the template draws
+    them in a 900x600 SVG, which used them as pixels and stacked every node in the
+    top-left corner. Scale the grid's own extent onto the canvas."""
+    placed = [n for n in nodes if n.get("pos")]
+    if not placed:
+        return list(nodes)
+    xs = [n["pos"][0] for n in placed]
+    ys = [n["pos"][1] for n in placed]
+    span_x = (max(xs) - min(xs)) or 1
+    span_y = (max(ys) - min(ys)) or 1
+    out = []
+    for n in nodes:
+        if n.get("pos"):
+            x, y = n["pos"]
+            n = {**n, "pos": (
+                round(margin + (x - min(xs)) * (width - 2 * margin) / span_x),
+                round(margin + (y - min(ys)) * (height - 2 * margin) / span_y),
+            )}
+        out.append(n)
+    return out
 
 
 @bp.route("/academy/skill-tree")
@@ -386,7 +486,7 @@ def skill_tree():
     return render_template(
         "forge_academy/skill_tree.html",
         fa_user=fa_user,
-        skill_nodes=SKILL_NODES,
+        skill_nodes=_skill_nodes_in_pixels(SKILL_NODES),
         user_skills=user_skills,
         level_ctx=_level_ctx(fa_user) if fa_user else {},
     )
@@ -407,11 +507,24 @@ def guild():
     )
 
 
+def _leaderboard_period(value: str | None) -> str:
+    """Only the two periods get_leaderboard implements; anything else is all-time,
+    and the page/API echo back the period actually served."""
+    return value if value in ("weekly", "alltime") else "alltime"
+
+
+# What the score column measures, stated by the API as well as the page.
+LEADERBOARD_BASIS = {
+    "weekly": "XP earned from graded work in the last 7 days; daily-login attendance excluded",
+    "alltime": "XP earned from graded work, all time; daily-login attendance excluded",
+}
+
+
 @bp.route("/academy/leaderboard")
 def leaderboard_page():
     _ensure_init()
     fa_user = _fa_user()
-    period = request.args.get("period", "weekly")
+    period = _leaderboard_period(request.args.get("period", "weekly"))
     role_filter = request.args.get("role", "")
     rows = get_leaderboard(period=period, role=role_filter or None, limit=50, tenant_id=_fa_tenant_id())
     return render_template(
@@ -419,6 +532,7 @@ def leaderboard_page():
         fa_user=fa_user,
         rows=rows,
         period=period,
+        score_basis=LEADERBOARD_BASIS[period],
         role_filter=role_filter,
         roles=ROLES,
         level_ctx=_level_ctx(fa_user) if fa_user else {},
@@ -463,8 +577,13 @@ def arena():
     from tools.db.storage import get_connection
     conn = get_connection()
     try:
+        # aca-empty-demo: datetime('now') is SQLite-only; on PostgreSQL it raised
+        # and the except below hid it. ends_at is ISO-8601 TEXT, so compare to an
+        # ISO timestamp bound as a parameter (valid on both backends).
+        from datetime import datetime, timezone
         challenges = [dict(r) for r in conn.execute(
-            "SELECT * FROM fa_challenges WHERE ends_at > datetime('now') ORDER BY starts_at"
+            "SELECT * FROM fa_challenges WHERE ends_at > %s ORDER BY starts_at",
+            (datetime.now(timezone.utc).isoformat(),),
         ).fetchall()]
     except Exception:
         challenges = []
@@ -484,10 +603,18 @@ def workflow_builder_page():
     # Distinguish "no patterns configured" from "pattern source unavailable"
     # so the page cannot present a broken dependency as an empty catalogue.
     pattern_state = patterns_status()
+    # aca-empty-demo: the palette read ONLY the AISG registry (aisg_patterns, empty
+    # until its seeder runs) while /academy/patterns lists the Academy's own eight
+    # injection patterns, so the builder said "No patterns configured yet" beside a
+    # page full of them. The Academy library is the palette's first source; AISG
+    # patterns, when seeded, follow it.
+    from .patterns import INJECTION_PATTERNS
+    palette = [{"id": p["id"], "name": p["title"]} for p in INJECTION_PATTERNS]
+    palette += list(pattern_state["patterns"])
     return render_template(
         "forge_academy/workflow_builder.html",
         fa_user=fa_user,
-        patterns=pattern_state["patterns"],
+        patterns=palette,
         patterns_available=pattern_state["available"],
         patterns_error=pattern_state["error"],
         level_ctx=_level_ctx(fa_user) if fa_user else {},
@@ -588,9 +715,23 @@ def api_step_submit():
     # discarding the verdict would let a learner burn attempts to enumerate the item
     # bank, which is exactly what a summative cap exists to prevent.
     from .assessment import attempt_state
+    from .grading import _load_step
+
+    # aca-presenter-preview: decided BEFORE grading. A presenter (admin/pm/isso) on
+    # a tier they have not unlocked gets the real verdict and nothing is written —
+    # not progress, not XP, not even the closing of an item-bank attempt, which is
+    # why grading is told not to record.
+    _row = _load_step(step_id)
+    _row_mission = get_mission_by_id(_row["mission_id"]) if _row else None
+    preview = bool(
+        _row_mission
+        and not is_tier_unlocked(fa_user["id"], int(_row_mission.get("tier") or 1))
+        and is_org_intel_user()
+    )
 
     gate = attempt_state(fa_user["id"], step_id)
-    if not gate["allowed"] and gate["reason"] == "attempts_exhausted":
+    if (not preview and not gate["allowed"]
+            and gate["reason"] == "attempts_exhausted"):
         return jsonify({
             "ok": True,
             "passed": False,
@@ -608,7 +749,8 @@ def api_step_submit():
         })
 
     verdict = grade_step(step_id, submission, chosen_option=chosen_option,
-                         answers=answers, user_id=fa_user["id"])
+                         answers=answers, user_id=fa_user["id"],
+                         record=not preview)
     step = verdict.get("step")
     if step is None:
         return jsonify({"error": "unknown step", "passed": False}), 404
@@ -620,6 +762,26 @@ def api_step_submit():
     # aca-ux-04: the tier gate is enforced HERE, where credit is granted, not only
     # in the template. A locked mission stays readable and runnable; it just cannot
     # pay out or record completion.
+    if preview:
+        resp = {
+            "ok": True,
+            "passed": passed,
+            "assessed": verdict["assessed"],
+            "status": "preview",
+            "recorded": False,
+            "score": verdict.get("score"),
+            "reason": verdict.get("reason", ""),
+            "stdout": verdict.get("stdout", ""),
+            "stderr": verdict.get("stderr", ""),
+            "explanation": verdict.get("explanation", ""),
+            "correct_option": verdict.get("correct_option"),
+        }
+        for key in ("items", "correct", "total", "pass_threshold_pct",
+                    "attempts_used", "attempts_remaining"):
+            if verdict.get(key) is not None:
+                resp[key] = verdict[key]
+        return jsonify(resp)
+
     _m = get_mission_by_id(mission_id)
     if _m and not is_tier_unlocked(fa_user["id"], int(_m.get("tier") or 1)):
         return jsonify({
@@ -981,10 +1143,10 @@ def _step_allows_hint(step: dict) -> bool:
 
 @bp.route("/api/academy/leaderboard")
 def api_leaderboard():
-    period = request.args.get("period", "weekly")
+    period = _leaderboard_period(request.args.get("period", "weekly"))
     role = request.args.get("role")
     rows = get_leaderboard(period=period, role=role, limit=100, tenant_id=_fa_tenant_id())
-    return jsonify({"rows": rows, "period": period})
+    return jsonify({"rows": rows, "period": period, "score_basis": LEADERBOARD_BASIS[period]})
 
 
 @bp.route("/api/academy/challenge/enter", methods=["POST"])
@@ -1143,8 +1305,10 @@ def org_readiness_page():
         from apps.innovation.reporting_engine import compute_org_readiness
         readiness = compute_org_readiness()
     except Exception:
+        # aca-numbers-demo: "unavailable" is not a RED 0 — say what it is.
         readiness = {
-            "score": 0, "tier": "red", "tier_color": "#FF4444",
+            "score": None, "score_display": "—", "tier": "insufficient",
+            "tier_label": "INSUFFICIENT DATA", "tier_color": "#8899aa",
             "guidance": "Readiness data unavailable — ensure FORGE IGNITE is enabled.",
             "components": {}, "cohort": {}, "skill_gaps": [],
         }
@@ -1333,6 +1497,14 @@ def api_academy_health():
     """
     _ensure_init()
     health = get_init_health()
+    # aca-numbers-demo: the init-time figure is a snapshot taken before any later
+    # retirement; report the catalogue LIVE, split so each number names its set.
+    try:
+        catalogue = mission_catalogue_counts()
+        health["missions"] = catalogue
+        health["mission_count"] = catalogue["takeable"]
+    except Exception as exc:  # noqa: BLE001 — a probe must still answer
+        health["missions"] = {"error": str(exc)}
     chain = competency_chain_status()
     health["competency_chain"] = chain
     ok = health.get("initialized") and not chain.get("stalled") and chain.get("ok", True)
