@@ -11,16 +11,16 @@ A working integration is not the same as a production-ready one. This step cover
 
 ## Retry with Resilience4j
 
-Transient API errors (rate limits, network blips, 529 overloaded) should trigger automatic retry with exponential backoff — not propagate as 500s to your callers.
+The SDK already retries 429, 5xx (including 529 overloaded) and connection errors, 2 times by default (`.maxRetries(n)` on the client builder). Add Resilience4j for policy **on top**, chiefly the circuit breaker, and count both layers when you size retries.
 
 ```java
 @Bean
 public Retry claudeRetry(RetryRegistry registry) {
     return registry.retry("claude", RetryConfig.custom()
-        .maxAttempts(3)
+        .maxAttempts(2)
         .waitDuration(Duration.ofSeconds(1))
-        .retryExceptions(AnthropicServiceException.class, SocketTimeoutException.class)
-        .ignoreExceptions(AnthropicInvalidRequestException.class) // 400s: don't retry
+        .retryExceptions(RateLimitException.class, InternalServerException.class, AnthropicIoException.class)
+        .ignoreExceptions(BadRequestException.class) // 400s: don't retry
         .build());
 }
 
@@ -30,7 +30,7 @@ public String chat(String system, String user) {
 }
 ```
 
-The key rule: retry on `5xx` and network errors; never retry on `4xx` (those are caller bugs).
+The exception classes live in `com.anthropic.errors`. `AnthropicServiceException` is the base class for **every** HTTP error, including 4xx, so don't list it under `retryExceptions`. The rule: retry on 429, 5xx and network errors; never retry other 4xx errors, which are caller bugs.
 
 ## Circuit breaker pattern
 
@@ -61,7 +61,7 @@ Configure a dedicated `ThreadPoolTaskExecutor` named `aiExecutor` with bounded q
 
 ## Test strategy: WireMock
 
-Avoid real API calls in unit and integration tests. **WireMock** is the standard choice for HTTP-level contract tests:
+Avoid real API calls in unit and integration tests. **WireMock** is the standard choice for HTTP-level contract tests. Point the client at it with `AnthropicOkHttpClient.builder().baseUrl("http://localhost:8089")` in your test configuration:
 
 ```java
 @WireMockTest(httpPort = 8089)
@@ -96,21 +96,24 @@ If you need prompt debugging, use a dedicated audit log behind a feature flag ga
 
 ## Timeout configuration
 
-```properties
-# application.properties
-anthropic.connect-timeout-ms=5000
-anthropic.read-timeout-ms=30000
+```java
+AnthropicOkHttpClient.builder()
+    .apiKey(apiKey)
+    .timeout(Duration.ofSeconds(120))   // per request; the SDK default is 10 minutes
+    .maxRetries(2)
+    .build();
 ```
 
-Pass these to the SDK's `HttpClient` builder. Always set both — an absent read timeout means a stalled response holds a thread indefinitely.
+Set an explicit timeout that fits your endpoint's SLA, and stream long generations instead of raising the timeout. The SDK default (10 minutes) is far longer than most HTTP callers will wait.
 
 ## Reflection questions
 
-1. Why would you set `ignoreExceptions(AnthropicInvalidRequestException.class)` in the retry config?
-2. What is the risk of a shared `Anthropic` client instance across concurrent requests? (Hint: check if the SDK client is thread-safe.)
-3. A circuit breaker is in HALF_OPEN state. What does that mean, and how does the next call affect the state?
-4. Your integration test passes with WireMock but fails in staging. What are three things you would check first?
-5. Why must prompt content be excluded from standard application logs in a CUI environment?
+Answer the two fields on this step:
+
+1. **How will you handle LLM API failures without breaking your Spring Boot service?** Cover retries (SDK + yours), the circuit breaker, the fallback response, and the status code you return.
+2. **How will you test the AI feature: unit test, integration test, or contract test?**
+
+To go further: the SDK client is thread-safe, so what would go wrong if you built a new client per request instead of sharing one? And why must prompt content stay out of standard application logs in a CUI environment?
 
 ---
 

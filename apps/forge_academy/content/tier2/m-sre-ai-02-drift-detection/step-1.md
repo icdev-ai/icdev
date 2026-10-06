@@ -7,45 +7,45 @@ step_class: icdev:Lesson
 
 # AI Drift — 4 Types You Must Monitor
 
-Model drift is the silent production killer for AI systems. Unlike a server crash, drift is gradual. A model that scored 0.85 quality six months ago may be scoring 0.61 today — and your users have been getting degraded outputs the entire time. Standard health checks won't catch it. You need dedicated drift monitoring.
+Model drift is the silent production killer for AI systems. Unlike a server crash, drift is gradual. A model that scored 0.85 quality six months ago may score 0.61 today, and your users have been getting degraded outputs the entire time. Standard health checks won't catch it; you need dedicated drift monitoring.
 
 ## The 4 Drift Types in `model_drift_events`
 
-ICDEV tracks drift via the `model_drift_events` table in `data/icdev.db`. The `drift_type` column uses four canonical values:
+ICDEV's drift monitor is `tools/llm/model_monitor.py`. It records every drift finding in the append-only `model_drift_events` table in the ICDEV database (PostgreSQL by default, SQLite as the fallback). The `drift_type` column allows four canonical values:
 
 ### 1. `quality_degradation`
 
-Output quality score drops from its established baseline. Causes: model update on the provider side, prompt template changes, input distribution shift (users asking new types of questions), or RAG corpus degradation. This is the most dangerous type because it directly impacts user trust.
+Output quality score drops from its established baseline. Causes: a model update on the provider side, prompt template changes, input distribution shift (users asking new kinds of questions), or RAG corpus degradation. This is the most dangerous type because it directly erodes user trust.
 
-**Detection signal:** Rolling 24h average quality score vs. 30-day baseline.
+**Detection signal:** mean quality score of the recent window vs. the baseline mean.
 
 ### 2. `latency_increase`
 
-P99 response time rises beyond the acceptable threshold. Causes: token inflation (prompts growing longer over time), provider infrastructure issues, context window accumulation in multi-turn conversations. Latency increase often precedes quality degradation — a model struggling to respond quickly is often struggling to respond well.
+Response time rises beyond the acceptable threshold. Causes: token inflation (prompts growing longer over time), provider infrastructure issues, context accumulating in multi-turn conversations. Latency increase often comes before quality degradation: a model struggling to respond quickly is often struggling to respond well.
 
-**Detection signal:** P99 latency ratio: `current_p99 / baseline_p99 > threshold`.
+**Detection signal:** P95 latency of the recent window vs. baseline P95.
 
 ### 3. `token_inflation`
 
-Average token count per call grows over time for the same set of prompts. Causes: system prompt additions, conversation history accumulation, verbose model behavior after provider updates. Token inflation directly drives cost increases and is often invisible without per-function tracking.
+Average token count per call grows over time for the same kind of work. Causes: system prompt additions, conversation history accumulation, more verbose model behaviour after a provider update. Token inflation directly drives cost and is invisible without per-function tracking.
 
-**Detection signal:** Rolling average `output_tokens` per function vs. 30-day baseline.
+**Detection signal:** mean `token_count` of the recent window vs. baseline mean.
 
 ### 4. `availability_drop`
 
-Success rate (non-error responses / total requests) falls. Causes: rate limiting, provider outages, misconfigured timeouts, upstream dependency failures. Unlike the other drift types, availability drop is usually acute rather than gradual.
+Success rate (non-error responses / total requests) falls. Causes: rate limiting, provider outages, misconfigured timeouts, upstream dependency failures. Unlike the others it is usually acute rather than gradual. The table accepts this type, but `detect_drift()` does **not** compute it today: it only sees scored responses, never failed calls. Watch availability through error rates and SLOs (Mission SRE-AI-01 and SRE-AI-04).
 
-**Detection signal:** 1h rolling success rate vs. 30-day baseline.
+## Severity Levels — what `detect_drift()` actually applies
 
-## Severity Levels
+A deviation is reported only when it is also statistically significant (Welch's t-test, p < 0.05). The thresholds are fixed in `model_monitor.py`:
 
-| Deviation from Baseline | Severity | Default Action |
+| Drift type | `warning` when | `critical` when |
 |---|---|---|
-| > 5% | `info` | Log only |
-| > 15% | `warning` | Alert on-call; increase monitoring cadence |
-| > 30% | `critical` | Alert + auto-remediate (retrain or swap) |
+| `quality_degradation` | mean drops > 10% | mean drops > 25% |
+| `latency_increase` | P95 rises > 25% | P95 rises > 50% |
+| `token_inflation` | mean rises > 20% | mean rises > 40% |
 
-The `action_taken` column records: `none`, `alert`, `retrain_triggered`, or `model_swapped`.
+There is no `info` tier in practice. The `severity` column allows `info`, but `detect_drift()` never writes it. The `action_taken` column accepts `none`, `alert`, `retrain_triggered` or `model_swapped`. `detect_drift()` records `alert`, and `trigger_retrain()` records `retrain_triggered`.
 
 ## How `detect_drift()` Works
 
@@ -57,45 +57,45 @@ record_quality_score(
     model_id="qwen3-local",
     function_name="summarize",
     score=0.74,
-    response_time_ms=1240.0,
+    response_time_ms=1240,
     token_count=312,
 )
 
-# Run drift detection — computes rolling 24h window vs stored baseline
-result = detect_drift(model_id="qwen3-local", function_name="summarize")
+# Compare the last 7 days against the baseline
+events = detect_drift(model_id="qwen3-local", function_name="summarize")
 ```
 
-The `detect_drift()` function:
-1. Queries `model_quality_scores` for all records in the past 24 hours for the given `(model_id, function_name)` pair.
-2. Retrieves the stored baseline from `model_baselines`.
-3. Computes deviation percentage for quality, latency, and token count.
-4. If deviation exceeds a severity threshold, writes a record to `model_drift_events`.
-5. Returns a dict with the full drift assessment.
+`detect_drift(model_id=None, function_name=None, window_days=7, baseline_days=30)`:
+1. Finds every `(model_id, function_name)` pair in `model_quality_scores` (filtered by the arguments you pass).
+2. Takes the **baseline**: the first `baseline_days` of recorded data for that pair (`get_baseline()`). At least 5 samples are needed.
+3. Takes the **recent window**: the last `window_days` of data. At least 3 samples are needed.
+4. Compares quality, P95 latency and token count, applying the thresholds above plus the t-test.
+5. Writes each finding to `model_drift_events` and returns a **list** of event dicts. The list is empty when nothing drifted.
 
 ## Sample Return Value
 
 ```python
-{
+[
+  {
+    "id": "...",
     "model_id": "qwen3-local",
     "function_name": "summarize",
-    "drift_detected": True,
     "drift_type": "quality_degradation",
     "baseline_value": 0.83,
     "current_value": 0.61,
-    "deviation_pct": 26.5,
-    "severity": "warning",
+    "deviation_pct": 26.51,
+    "severity": "critical",          # > 25% drop
     "action_taken": "alert",
-    "event_id": "dft_20260509_0047a3"
-}
+    "window_start": "...", "window_end": "...", "created_at": "..."
+  }
+]
 ```
 
 ## CLI Quick-Check
 
 ```bash
-python tools/llm/model_monitor.py --model qwen3-local --function summarize --check
-# Output:
-# [qwen3-local/summarize] Last 24h quality avg: 0.61 (baseline: 0.83)
-# Deviation: 26.5% — severity: WARNING
+python tools/llm/model_monitor.py --detect-drift --model qwen3-local --function summarize --json
+python tools/llm/model_monitor.py --health --json        # per-model health summary
 ```
 
 **Your task:** In the next step, configure your thresholds.

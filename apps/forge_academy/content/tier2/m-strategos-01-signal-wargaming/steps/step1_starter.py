@@ -5,16 +5,17 @@ Goal: Score raw OSINT signals the way the Signal Scout reflex does, prioritize t
       then run the wargaming math that turns prioritized intel into a course-of-action call.
 
 Strategos (tools/strategos/, registry key `strategos` — "Strategic intelligence IQE adapter",
-Flask blueprint at /strategos, NO MCP tools) is a DIB (defense-industrial-base) supply-chain
-and wargaming intelligence subsystem. Two real pillars you'll model:
+Flask blueprint apps/strategos/blueprint.py at /strategos, NO strategos_* MCP tools) is a DIB
+(defense-industrial-base) supply-chain and wargaming intelligence subsystem. Two real pillars
+you'll model — in SIMPLIFIED form:
 
   * SIGNALS — the Signal Scout Genesis reflex (tools/genesis/reflexes/strategos/signal_scout.py)
-    scores `sg_raw_signals` across PMESII-PT domains using STANAG A-F source grading and a
-    half-life time decay, then writes the top-N into `sg_prioritized_signals`. The PMESII-PT
-    domain scorers live in tools/strategos/iw_scorers.py (EconomicSignalScorer,
-    MilitarySignalScorer, DiplomaticSignalScorer, InfrastructureScorer, InformationScorer).
-  * WARGAMING — tools/strategos/ooda.py provides the combat math: score_coa() ranks a course
-    of action, lanchester_square() predicts a force-on-force outcome.
+    scores `sg_raw_signals` (PMESII-PT rarity, STANAG A-F source grading, recency decay, PIR
+    coverage; weights in args/strategos_config.yaml) and writes the top-N into
+    `sg_prioritized_signals`. Here: a product of domain weight x STANAG grade x half-life decay.
+  * WARGAMING — tools/strategos/ooda.py: score_coa() ranks a list of COAs over six criteria,
+    lanchester_square() steps square-law attrition over time. Here: a one-COA score and the
+    closed-form square-law comparison.
 
 This lab reproduces score -> prioritize -> wargame with the stdlib (no live feeds).
 """
@@ -68,7 +69,7 @@ def prioritize_signals(signals: list, top_n: int) -> list:
 # ── Step 3: Score a course of action ──────────────────────────────────────────
 
 def score_coa(coa: dict) -> float:
-    """TODO: Score a COA (mirrors tools/strategos/ooda.py::score_coa).
+    """TODO: Score one COA (a simplified take on tools/strategos/ooda.py::score_coa).
 
     coa keys: "feasibility", "impact", "risk" (each 0..1).
     score = 0.4*feasibility + 0.4*impact - 0.2*risk

@@ -43,3 +43,5 @@ Use this for the AI system you identified in Step 1.
 ---
 
 **Your task:** Complete the fill-in template for your AI system. A completed template is a risk communication artifact — it can go directly into a board briefing package, an ATO package, or a Congressional notification if required.
+
+**In the form below:** the panel records the system, its primary risk category, the mitigation and the residual risk. Put the technical risk and business impact in the mitigation box, and the risk owner in the residual-risk box.

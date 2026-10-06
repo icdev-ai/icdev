@@ -1,0 +1,67 @@
+# CUI // SP-CTI
+id: v2v-inject-02-red-first-sprint
+title: "Red-First Sprint: Prove the Bug, Then Fix It"
+
+body_md: |
+  ## RED-FIRST SPRINT — THE CHUNKER DROPS THE TAIL
+
+  **Classification:** CUI // SP-CTI
+  **Scoring:** deterministic, no LLM judge. Your test is executed.
+
+  An AI-assisted PR rewrote the RAG ingest chunker. Since it merged, the last
+  clause of most contracts never reaches the index, and nobody noticed for
+  nine days because the existing test only checked that `chunk()` returns a
+  list.
+
+  ### The module as merged (`chunker.py`)
+
+  ```python
+  def chunk(items, size, overlap=0):
+      """Split items into windows of `size` that overlap by `overlap`.
+
+      Every element of `items` must appear in at least one window.
+      """
+      if size <= 0:
+          raise ValueError("size must be positive")
+      if overlap < 0 or overlap >= size:
+          raise ValueError("overlap must be in [0, size)")
+      step = size - overlap
+      return [items[i:i + size] for i in range(0, len(items) - size, step)]
+  ```
+
+  ### Your task
+
+  1. Write a test that **FAILS on the code above** because of the bug.
+  2. Fix `chunk()` so it honours its docstring.
+
+  Submit JSON:
+
+  ```json
+  {"test_code": "def test_...():\n    assert chunk(...) == ...",
+   "fix_code": "def chunk(items, size, overlap=0):\n    ..."}
+  ```
+
+  ### How you are scored (100 judge points)
+
+  | Check | Points |
+  |---|---|
+  | Your test FAILS on the buggy code **and** PASSES on a hidden reference fix | 70 |
+  | Your fix passes a hidden acceptance suite (tail kept, overlap, empty input, argument validation) | 30 |
+
+  A test that fails everywhere (`assert False`) or passes everywhere
+  (`assert isinstance(..., list)`) does not discriminate and earns **0** of
+  the 70. That is the point: a test that cannot go red is not a test.
+
+  **Rules:** plain `def test_*():` functions with `assert`. They run in the
+  offline Academy sandbox, so `pytest` is not importable. Call `chunk()`
+  directly (a `from chunker import chunk` line is stripped for you). Use
+  `with raises(ValueError):` to assert an exception.
+
+context_note: >
+  ANSWER KEY. Bug: `range(0, len(items) - size, step)` stops one window early.
+  It drops the final full window AND any partial tail: chunk([1,2,3,4,5], 2)
+  returns [[1,2],[3,4]] (5 is lost) and chunk([1,2,3,4], 2) loses [3,4]. A
+  discriminating test: `assert chunk([1,2,3,4,5], 2) == [[1,2],[3,4],[5]]`.
+  Fix: iterate `range(0, len(items), step)`, append items[i:i+size], and break
+  once i + size >= len(items). Keep the ValueError guards. Scored by
+  tools/ttx/ai_scorer.score_red_first against fixtures/red_first/.

@@ -24,19 +24,22 @@ TOOLS_DIR = PROJECT_ROOT / "tools"
 
 
 # ── Sample Goal Content (fallback if goals/ don't exist) ──────────────────────
+# The exercise sandbox has no copy of the repo, so these condensed fixtures are
+# what trace() reads there. Goal names are fixtures; the tool / args / table
+# names inside them exist in the real repo.
 
 SAMPLE_GOALS = {
     "compliance_scan": """
-# Compliance Scan Goal
-# Tools: tools/compliance/scanner.py, tools/db/storage.py
+# Compliance Scan Goal  (condensed from goals/compliance_workflow.md, Step 3: STIG)
+# Tools: tools/compliance/stig_checker.py, tools/db/storage.py
 # Args: args/compliance_config.yaml
-# Output: DB table audit_findings
+# Output: DB table stig_findings
 
-Run a STIG compliance scan against the target system.
-Uses: compliance/scanner.py to parse STIG XCCDF, storage.py to persist findings.
+Run a STIG compliance check against the target project.
+Uses: compliance/stig_checker.py to evaluate STIG rules, storage.py to persist findings.
 """,
     "memory_write": """
-# Memory Write Goal
+# Memory Write Goal  (condensed from the memory commands in CLAUDE.md)
 # Tools: tools/memory/memory_write.py
 # Args: args/memory_config.yaml
 # Output: DB table memory_entries, file memory/logs/
@@ -50,7 +53,7 @@ Uses: memory/memory_write.py to persist. Output stored in memory_entries table.
 # ── Step 1: Goal Parser ───────────────────────────────────────────────────────
 
 def parse_goal_file(goal_content: str) -> dict:
-    """TODO: Extract metadata from a goal file's content.
+    r"""TODO: Extract metadata from a goal file's content.
 
     Look for:
     1. Tool references: lines containing "Tools:" or "tools/" paths

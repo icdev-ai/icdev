@@ -7,67 +7,63 @@ step_class: icdev:Lesson
 
 # AI Incident Types and Triage
 
-AI incidents don't fit neatly into traditional incident management frameworks. A "500 Internal Server Error" is easy to detect and page on. A model that is confidently producing wrong answers for three days is not — it takes zero infrastructure errors while causing serious harm. You need AI-specific incident types, severity classifications, and different triage logic.
+AI incidents don't fit neatly into traditional incident management. A "500 Internal Server Error" is easy to detect and page on. A model that has confidently produced wrong answers for three days is not: it raises zero infrastructure errors while causing serious harm. You need AI-specific incident types, severity rules and triage logic.
 
 ## The 5 AI-Specific Incident Types
 
 ### Type 1: Hallucination Surge
 
-**Signals:** Quality scores drop below 0.6; users report factually wrong outputs; `model_drift_events` shows `quality_degradation` critical event.
+**Signals:** quality scores fall below about 0.6; users report factually wrong outputs; `model_drift_events` shows a critical `quality_degradation` event.
 
-**Why it's hard to detect:** The model still returns HTTP 200. Latency may be normal. Token counts may be normal. Only a quality evaluator catches this.
+**Why it's hard to detect:** the model still returns HTTP 200, and latency and token counts may look normal. Only a quality evaluator catches it.
 
-**Who handles it:** Human judgment required. Auto-resolver cannot determine whether output is factually wrong without domain context.
+**Who handles it:** a human. No automated resolver can decide whether output is factually wrong without domain context.
 
 ### Type 2: Prompt Injection Attack
 
-**Signals:** `ai_telemetry_logger` fires `security_anomaly` events; unusual tool calls appear in agent logs; system prompt fragments appear in user-visible output.
+**Signals:** `tools/security/prompt_injection_detector.py` flags inputs, and the router records the result in `ai_telemetry.injection_scan_result`. `AITelemetryLogger.detect_anomalies()` reports an `injection_attempts` anomaly. Unusual tool calls appear in agent traces, and system-prompt fragments show up in user-visible output.
 
-**Why it's dangerous:** Successful prompt injection can cause an agent to make unauthorized API calls, exfiltrate CUI, or execute destructive database operations.
+**Why it's dangerous:** successful injection can make an agent issue unauthorized API calls, exfiltrate CUI, or run destructive database operations.
 
-**Who handles it:** `auto_resolver.py` handles at confidence ≥0.7 (block the offending session, reset agent context). Human review required for confirmed exfiltration.
+**Who handles it:** a human, with security. Contain first (revoke the session or key, disable the agent), then investigate. Confirmed exfiltration is a `data_breach` incident.
 
 ### Type 3: Model Drift
 
-**Signals:** Gradual quality degradation over days/weeks; `detect_drift()` fires `warning` or `critical` events; user complaint rate slowly rising.
+**Signals:** gradual quality degradation over days or weeks; `detect_drift()` records `warning` or `critical` events; user complaints slowly rising.
 
-**Why it's hard to detect:** No single call looks wrong. The degradation is statistical. Without monitoring, it can persist for weeks.
+**Why it's hard to detect:** no single call looks wrong. The degradation is statistical, and without monitoring it can persist for weeks.
 
-**Who handles it:** `auto_resolver.py` handles at confidence ≥0.7 (trigger retrain or model swap). Human approval required for production model swap.
+**Who handles it:** on-call SRE, following the drift protocol from Mission SRE-AI-02. Retrain, roll the prompt back, or route the function to its previous model. A production model swap needs human approval.
 
 ### Type 4: Cost Runaway
 
-**Signals:** `check_budget()` returns `'block'` for multiple agents; `detect_cost_anomalies()` returns critical `spike` or `agent_loop_runaway` anomaly; daily spend 5x above baseline.
+**Signals:** `check_budget()` returns `action: 'block'` for one or more agents; `detect_cost_anomalies()` reports a `critical` spike (recent spend more than 5x the 7-day baseline).
 
-**Why it's dangerous:** An agent loop bug or mis-configured retry logic can generate tens of thousands of API calls before anyone notices.
+**Why it's dangerous:** an agent-loop bug or misconfigured retry can generate tens of thousands of API calls before anyone notices.
 
-**Who handles it:** Human judgment required. Auto-resolver will block the agent, but root cause analysis (finding the loop or misconfiguration) requires human review.
+**Who handles it:** budgets contain it automatically (`hard_stop` blocks further calls), but a human must find the loop or misconfiguration.
 
 ### Type 5: Context Window Overflow
 
-**Signals:** HTTP 400 errors with token limit messages; `conversation_history` growing unbounded; requests failing with "prompt too long."
+**Signals:** HTTP 400 errors with token-limit messages; conversation history growing without bound; requests failing with "prompt too long".
 
-**Why it happens:** Agents that append full conversation history without a compression or truncation strategy hit the context window limit as conversations grow.
+**Why it happens:** agents that append full conversation history with no compression or truncation strategy eventually hit the context limit.
 
-**Who handles it:** `auto_resolver.py` handles automatically (truncate history to last N turns).
+**Who handles it:** the owning team, by adding a history window or summarizer. It is a code fix, not a runtime toggle.
 
 ## Severity Classification
 
-| Incident Type | User Impact | Default Severity | Auto-Resolvable |
+| Incident Type | User Impact | Default Severity | Automatic containment |
 |---|---|---|---|
-| Hallucination Surge | Wrong outputs reaching users | High | No |
-| Prompt Injection | Security breach possible | Critical | Partial |
-| Model Drift | Gradual quality degradation | Medium → High | Yes (≥0.7 confidence) |
-| Cost Runaway | Budget blocked, agents down | High | No (block only) |
-| Context Window Overflow | Request failures | Medium | Yes |
+| Hallucination Surge | Wrong outputs reaching users | High | None: human judgment |
+| Prompt Injection | Security breach possible | Critical | Detection only |
+| Model Drift | Gradual quality degradation | Medium → High | Detection + `alert` event |
+| Cost Runaway | Budget blocked, agents down | High | Budget `hard_stop` |
+| Context Window Overflow | Request failures | Medium | None: code fix |
 
-## ICDEV Auto-Resolver Coverage
+## Where ICDEV records and routes AI incidents
 
-`tools/ai_ops/auto_resolver.py` handles Types 2, 3, and 5 automatically when resolution confidence is ≥0.7. Types 1 and 4 require human judgment because:
-
-- **Type 1 (Hallucination Surge):** Determining whether an output is factually wrong requires domain expertise the resolver doesn't have.
-- **Type 4 (Cost Runaway):** The resolver can block agents, but identifying the root bug (loop, misconfiguration, attack) needs human investigation.
-
-For all types, `normalize_alert()` structures the raw signal into a standard alert dict, and `analyze_alert()` produces resolution candidates with confidence scores regardless of whether auto-resolution is possible.
+- **AI incident log.** `tools/compliance/ai_incident_response.py` writes `log_incident(project_id, incident_type, description, ai_system=..., severity=...)` to `ai_incident_log`. The incident types are `confabulation`, `bias_detected`, `unauthorized_access`, `model_drift`, `data_breach`, `safety_violation`, `appeal_escalation` and `other`; severity is `critical`, `high`, `medium` or `low`.
+- **Auto-resolver.** `tools/monitor/auto_resolver.py` is ICDEV's general alert auto-resolver. It takes an alert from Sentry, Prometheus, ELK or a generic payload, normalizes it, and matches it against known `knowledge_patterns`. It acts **only** when confidence is at least 0.7 **and** the matched pattern is marked auto-healable. It has no built-in knowledge of AI incident types: it can help only where your knowledge base holds a matching pattern. That is why Types 1 and 2 stay with humans.
 
 **Your task:** In the next step, configure your runbook.

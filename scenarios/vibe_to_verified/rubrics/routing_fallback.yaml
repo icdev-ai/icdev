@@ -1,0 +1,37 @@
+# CUI // SP-CTI
+name: "Routing Outage & Budget Rubric"
+inject_type: routing_fallback
+description: "Did the team re-route inference around the outage inside the halved budget, with the arithmetic shown?"
+max_score: 100
+
+dimensions:
+  - id: fallback_chain
+    weight: 0.30
+    prompt: >
+      Is there a concrete routing block for code_generation, ttx_judge and
+      summarization that skips the dead vllm endpoint via a health probe /
+      circuit breaker rather than timing out on every call, and keeps
+      summarization on the healthy self-hosted mistral_vllm? Ollama on CPU
+      (6.5 s p50) should be a last resort only. Score 0-10.
+  - id: budget_arithmetic
+    weight: 0.30
+    prompt: >
+      Remaining budget is $1,100 over 12 days, about $91.67/day. Did the team
+      show the per-function daily cost of their chains and stay under it?
+      Routing all 9M daily code_generation tokens to managed-large ($135/day)
+      breaks the budget on its own; a team that did that without a cap scores
+      at most 3. Score 10 for correct arithmetic, a hard budget cap and a
+      stated degrade order.
+  - id: tradeoff_justification
+    weight: 0.25
+    prompt: >
+      Did the team justify cost vs latency vs quality per function, e.g. the
+      judge keeps quality because it is low-volume and scores people, while
+      bulk code generation may degrade with a documented quality drop? Did
+      they handle CUI (the managed endpoint is IL4 GovCloud authorised)?
+      Score 0-10.
+  - id: recovery_plan
+    weight: 0.15
+    prompt: >
+      Does the recovery plan restore vllm only after sustained successful
+      health probes AND a golden-set canary, not a single ping? Score 0-10.

@@ -8,6 +8,7 @@
 #   * even unblocked, `def test_*` functions are never called by plain python, so it
 #     would have passed everything.
 # The learner's module-level names are already in scope here. Assert on those.
+import pathlib
 
 _mappings = globals().get("STIG_MAPPINGS")
 _keywords = globals().get("PATTERN_KEYWORDS")
@@ -24,8 +25,23 @@ assert set(_mappings) == set(_keywords), (
 
 _find = globals().get("find_functions_needing_markers")
 assert callable(_find), "find_functions_needing_markers() must be defined."
-assert isinstance(_find("."), list), (
-    "find_functions_needing_markers() must return a list."
+# Exercise the scanner on a real file. The sandbox cwd is a fresh temp dir, so a
+# relative path is safe; the function takes a pathlib.Path, not a str.
+_sample = pathlib.Path("stig_sample.py")
+_sample.write_text("def login(u):\n    pass\n\n\ndef other():\n    pass\n", encoding="utf-8")
+_hits = _find(_sample)
+assert isinstance(_hits, list), "find_functions_needing_markers() must return a list."
+assert len(_hits) == 1, (
+    "In a file defining login() and other(), exactly ONE function (login) needs a "
+    f"STIG marker; got {len(_hits)}: {_hits}"
+)
+_hit = _hits[0]
+assert isinstance(_hit, dict), f"Each result must be a dict, got {type(_hit).__name__}"
+assert _hit.get("name") == "login", f"Expected the login function, got name={_hit.get('name')!r}"
+assert _hit.get("line") == 1, f"login is defined on line 1 of the sample, got line={_hit.get('line')!r}"
+assert _hit.get("stig_comment") == _mappings["auth"], (
+    "login matches the 'auth' keywords, so its stig_comment must be "
+    f"STIG_MAPPINGS['auth'] ({_mappings['auth']!r}); got {_hit.get('stig_comment')!r}"
 )
 assert callable(globals().get("inject_markers")), "inject_markers() must be defined."
 print("PASS: STIG mappings carry V-IDs and the remediation helpers are defined.")

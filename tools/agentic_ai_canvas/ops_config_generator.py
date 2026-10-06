@@ -14,6 +14,8 @@ the dev team wires the tools. FORGE OPS RUNTIME (Track C) builds the runtime.
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
+import copy
+import hashlib
 import json
 import os
 from datetime import datetime, timezone
@@ -223,7 +225,9 @@ def _default_tool_config(ntype: str, entry: dict) -> dict:
         "trusted-monitor":    {"enabled": True, "eval_interval_minutes": 30, "min_quality_score": 0.70},
         "prompt-registry":    {"enabled": True, "version_all_prompts": True, "require_approval_for_changes": False},
     }
-    cfg = defaults.get(ntype, {"enabled": True})
+    # Deep-copy: the module-level *_DEFAULTS dicts are shared, and writing
+    # tool_path/docs_link into them would leak one design's values into the next.
+    cfg = copy.deepcopy(defaults.get(ntype, {"enabled": True}))
     cfg["tool_path"] = entry.get("tool_path", "")
     cfg["docs_link"]  = entry.get("docs_link", "")
     return cfg
@@ -241,20 +245,48 @@ def _default_alert_routing() -> dict:
 # Kanban task builder
 # ---------------------------------------------------------------------------
 
+def _ops_task_key(design_id: str, ntype: str) -> str:
+    """Stable identity of the wiring task for one node type of one design."""
+    return f"aadc-ops-config:{design_id}:{ntype}"
+
+
+def _ops_task_id(design_id: str, ntype: str) -> str:
+    """Deterministic ``task-<hex>`` id, so re-generating a config is idempotent.
+
+    ``task-<hex>`` is the opaque machine-id shape the dashboard's own task API
+    uses; it is not card work and no project card is meant to count it.
+    """
+    digest = hashlib.sha256(_ops_task_key(design_id, ntype).encode("utf-8")).hexdigest()
+    return f"task-{digest[:10]}"
+
+
 def _make_kanban_task(design_id: str, design_name: str, ntype: str, entry: dict) -> dict:
+    cli_command = (entry.get("cli_command") or "").strip()
+    cli_section = (
+        f"**CLI reference:**\n```bash\n{cli_command}\n```\n\n" if cli_command else ""
+    )
+    config_key = entry.get("config_key", "")
     return {
+        "id": _ops_task_id(design_id, ntype),
+        "idempotency_key": _ops_task_key(design_id, ntype),
         "title": entry.get("task_title", f"Wire {ntype} node"),
         "description": (
             f"**AADC Design:** {design_name} (`{design_id}`)\n\n"
             f"**Node type:** `{ntype}`\n\n"
             f"**Tool:** `{entry.get('tool_path', '')}`\n\n"
             f"{entry.get('description', '')}\n\n"
-            f"**CLI reference:**\n```bash\n{entry.get('cli_command', '')}\n```\n\n"
-            f"**Config key in ops_config_{design_id}.yaml:** `{entry.get('config_key', '')}`\n\n"
+            f"{cli_section}"
+            f"**Config key in ops_config_{design_id}.yaml:** `{config_key}`\n\n"
             f"**Academy mission:** [{entry.get('docs_link','')}](/academy/mission/{entry.get('docs_link','')})\n\n"
             f"Wire this tool, update the config file with your thresholds, "
             f"then verify by running the health check."
         ),
+        "acceptance_criteria": (
+            f"The `{config_key}` section of ops_config_{design_id}.yaml is reviewed and its "
+            f"thresholds set; `{entry.get('tool_path', '')}` is invoked by the runtime for "
+            f"the `{ntype}` node; and a test or health check demonstrates it firing."
+        ),
+        "task_type": "build",
         "status": "backlog",
         "priority": "medium",
         "tags": ["ops-config", "aadc", ntype],
@@ -271,36 +303,36 @@ def _make_kanban_task(design_id: str, design_name: str, ntype: str, entry: dict)
 # Create the Kanban tasks in the DB
 # ---------------------------------------------------------------------------
 
-def create_kanban_tasks(kanban_tasks: list[dict]) -> list[int]:
-    """Insert the generated tasks into the Kanban DB. Returns list of created task IDs."""
-    from tools.db.storage import get_connection
-    import uuid
+def create_kanban_tasks(kanban_tasks: list[dict]) -> list[str]:
+    """Seed the generated tasks via the canonical seeder. Returns NEWLY created ids.
 
-    conn = get_connection()
-    ids: list[int] = []
-    now = datetime.now(timezone.utc).isoformat()
+    Routed through ``task_factory.create_tasks`` (never a raw INSERT), which
+    skips any id or idempotency key already on the board — so generating the
+    same design's config twice creates its tasks once.
+    """
+    from tools.kanban.task_factory import create_tasks
+
+    specs: list[dict] = []
     for task in kanban_tasks:
-        try:
-            cur = conn.execute(
-                """INSERT INTO kanban_tasks
-                   (id, title, description, status, priority,
-                    created_at, updated_at, dispatch_source)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
-                (
-                    str(uuid.uuid4()),
-                    task["title"],
-                    task["description"],
-                    "backlog",
-                    task.get("priority", "medium"),
-                    now, now,
-                    "ops_config_generator",
-                ),
-            )
-            ids.append(cur.lastrowid)
-        except Exception as e:
-            _log.warning("Failed to create Kanban task '%s': %s", task["title"], e)
-    conn.commit()
-    return ids
+        meta = task.get("metadata") or {}
+        design_id = meta.get("design_id", "")
+        ntype = meta.get("node_type", "")
+        specs.append({
+            "id": task.get("id") or _ops_task_id(design_id, ntype),
+            "idempotency_key": task.get("idempotency_key") or _ops_task_key(design_id, ntype),
+            "title": task["title"],
+            "description": task.get("description", ""),
+            "acceptance_criteria": task.get("acceptance_criteria"),
+            "task_type": task.get("task_type", "build"),
+            "status": "backlog",
+            "priority": task.get("priority", "medium"),
+            "dispatch_source": "ops_config_generator",
+        })
+    try:
+        return create_tasks(specs)
+    except Exception as e:  # the config was still generated; report, don't 500
+        _log.error("Failed to create ops-config Kanban tasks: %s", e)
+        return []
 
 
 # ---------------------------------------------------------------------------

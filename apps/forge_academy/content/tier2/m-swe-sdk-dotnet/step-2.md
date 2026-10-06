@@ -7,33 +7,31 @@ step_class: icdev:Lesson
 
 # Configure Your .NET Integration
 
-With the DI wiring in place, this step covers the full API usage: calling `CreateAsync`, streaming with `IAsyncEnumerable`, running parallel calls, and the configuration hierarchy for API key management.
+With the DI wiring in place, this step covers the API usage you will actually ship: handling the response union, streaming with `IAsyncEnumerable`, running parallel calls, and the configuration hierarchy for the API key.
 
-## Calling Messages.CreateAsync
+## Handling the response
+
+`response.Content` is a list of `ContentBlock` unions. Narrow each one with `TryPick*` or with `.Value` + `OfType<T>()`:
 
 ```csharp
-public async Task<string> AnalyzeAsync(string input, CancellationToken ct)
+foreach (var block in response.Content)
 {
-    var response = await _client.Messages.CreateAsync(new MessageParameters
+    if (block.TryPickText(out TextBlock? text))
     {
-        Model     = "claude-sonnet-4-5",
-        MaxTokens = 2048,
-        System    = [new SystemMessage("You are a security analyst.")],
-        Messages  = [new Message { Role = RoleType.User, Content = input }],
-    }, ct);
-
-    return response.Content
-                   .OfType<TextContent>()
-                   .Select(t => t.Text)
-                   .FirstOrDefault() ?? string.Empty;
+        sb.Append(text.Text);
+    }
+    else if (block.TryPickToolUse(out ToolUseBlock? toolUse))
+    {
+        // Claude wants a tool: run it, send a tool_result, call again.
+    }
 }
 ```
 
-`response.Content` is `IReadOnlyList<ContentBase>`. Use `OfType<TextContent>()` to filter — tool use responses will contain `ToolUseContent` blocks which you must handle separately in an agentic loop.
+If you filter with `OfType<TextBlock>()` alone, a tool-use turn comes back as an empty string. Check `response.StopReason` and handle tool use explicitly in an agentic loop.
 
 ## IAsyncEnumerable for streaming
 
-Streaming is the recommended pattern for user-facing features. The SDK exposes it as `IAsyncEnumerable<MessageStreamEvent>`:
+Streaming is the recommended pattern for user-facing features. `client.Messages.CreateStreaming(...)` returns an async stream of `RawMessageStreamEvent` unions:
 
 ```csharp
 public async IAsyncEnumerable<string> StreamAsync(
@@ -41,69 +39,67 @@ public async IAsyncEnumerable<string> StreamAsync(
     string userMessage,
     [EnumeratorCancellation] CancellationToken ct = default)
 {
-    var parameters = new MessageParameters
+    var parameters = new MessageCreateParams
     {
-        Model     = "claude-sonnet-4-5",
-        MaxTokens = 2048,
-        System    = [new SystemMessage(systemPrompt)],
-        Messages  = [new Message { Role = RoleType.User, Content = userMessage }],
-        Stream    = true,
+        Model     = _opts.Model,
+        MaxTokens = 64000,
+        System    = systemPrompt,
+        Messages  = [new() { Role = Role.User, Content = userMessage }],
     };
 
-    await foreach (var streamEvent in
-        _client.Messages.StreamClaudeMessageAsync(parameters, ct)
-                        .WithCancellation(ct))
+    await foreach (var streamEvent in _client.Messages.CreateStreaming(parameters).WithCancellation(ct))
     {
-        if (streamEvent is ContentBlockDeltaEvent { Delta: TextDelta td })
+        if (streamEvent.TryPickContentBlockDelta(out var delta) &&
+            delta.Delta.TryPickText(out var text))
         {
-            yield return td.Text;
+            yield return text.Text;
         }
     }
 }
 ```
 
-In a minimal API or controller, pipe this directly to a `StreamWriter` on the `HttpContext.Response` with `Content-Type: text/plain`. The `[EnumeratorCancellation]` attribute correctly propagates the `CancellationToken` when the client disconnects.
+In a minimal API or controller, write each chunk to `HttpContext.Response` and flush. `[EnumeratorCancellation]` makes the token passed through `WithCancellation(...)` reach the method, so the stream stops when the client disconnects.
 
-## Parallel calls with Task.WhenAll
+## Parallel calls with Task.WhenAll and a concurrency cap
 
 ```csharp
-public async Task<IEnumerable<string>> BatchAnalyzeAsync(
-    IEnumerable<string> inputs,
-    CancellationToken ct)
+public async Task<string[]> BatchAnalyzeAsync(IEnumerable<string> inputs, CancellationToken ct)
 {
-    var tasks = inputs.Select(input =>
-        _client.Messages.CreateAsync(new MessageParameters
+    using var gate = new SemaphoreSlim(10); // at most 10 calls in flight
+
+    var tasks = inputs.Select(async input =>
+    {
+        await gate.WaitAsync(ct);
+        try
         {
-            Model     = "claude-sonnet-4-5",
-            MaxTokens = 512,
-            Messages  = [new Message { Role = RoleType.User, Content = input }],
-        }, ct)
-        .ContinueWith(t => t.Result.Content.OfType<TextContent>()
-                                           .FirstOrDefault()?.Text ?? "",
-                      ct, TaskContinuationOptions.OnlyOnRanToCompletion,
-                      TaskScheduler.Default)
-    );
+            return await _claude.CompleteAsync("You are a security analyst.", input, ct);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    });
 
     return await Task.WhenAll(tasks);
 }
 ```
 
-Bound concurrency with `SemaphoreSlim` before the `Select` if your batch size is large — API rate limits apply at the account level.
+Rate limits apply at the organisation level, so an uncapped `Task.WhenAll` over a large batch just converts work into 429s. The SDK retries those, but slowly.
 
-## Config hierarchy: appsettings → User Secrets → Azure Key Vault
+## Config hierarchy: appsettings → User Secrets → Key Vault
 
-.NET configuration is layered. Each layer overrides the previous:
+.NET configuration is layered. Each layer overrides the previous one:
 
 | Layer | Used in |
 |---|---|
 | `appsettings.json` | Committed defaults (no secrets) |
-| `appsettings.{env}.json` | Environment-specific, not committed |
-| User Secrets (`dotnet user-secrets`) | Local dev only — `~/.microsoft/usersecrets/` |
-| Environment variables | CI/CD pipelines |
-| Azure Key Vault | Production — `AddAzureKeyVault(...)` |
+| `appsettings.{env}.json` | Environment-specific overrides |
+| User Secrets (`dotnet user-secrets`) | Local development only; stored in your user profile, outside the repo |
+| Environment variables | CI/CD and containers (`Anthropic__ApiKey` or `ANTHROPIC_API_KEY`) |
+| Azure Key Vault / AWS Secrets Manager | Production |
 
 ```csharp
-// Add Key Vault in production
+// Add Key Vault in production (Azure.Extensions.AspNetCore.Configuration.Secrets + Azure.Identity)
 if (builder.Environment.IsProduction())
 {
     var kvUri = builder.Configuration["KeyVaultUri"]!;
@@ -111,15 +107,17 @@ if (builder.Environment.IsProduction())
 }
 ```
 
-The API key in Key Vault is read as `Anthropic--ApiKey` (double-dash maps to the colon separator in the options class).
+A Key Vault secret named `Anthropic--ApiKey` surfaces as the configuration key `Anthropic:ApiKey`, because the double dash maps to the colon separator.
 
 ## Configuration questions
 
-1. Why is `[EnumeratorCancellation]` required on the `CancellationToken` parameter in an `async IAsyncEnumerable` method?
-2. `Task.WhenAll` with 100 simultaneous calls might hit rate limits. How would you add a `SemaphoreSlim` to cap concurrency at 10?
-3. User Secrets are stored outside the project directory. What is the risk if you rely on them in a Docker container build?
-4. The streaming method returns `IAsyncEnumerable<string>`. How would you convert this to an ASP.NET Core SSE response?
-5. `OfType<TextContent>()` returns empty if the model returns a `ToolUseContent` block. How would you detect and handle this case?
+Pick an answer for each field on this step:
+
+1. **DI service lifetime for the Claude client.** Singleton, scoped, or transient? The client holds an HTTP connection pool and is safe to share.
+2. **Async pattern.** Plain `async`/`await`, `IAsyncEnumerable` streaming, or `Task.WhenAll` fan-out.
+3. **Where will the API key live?** `appsettings.json` + `IOptions<T>`, an environment variable only, a vault (Azure Key Vault or AWS Secrets Manager), or User Secrets for local dev.
+
+Think about this as you choose: User Secrets live outside the project directory. What happens if a Docker image build relies on them?
 
 ---
 

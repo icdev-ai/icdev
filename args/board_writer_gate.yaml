@@ -69,7 +69,12 @@ raw_insert_census:
   # still-empty board as a failed conversion. 219 -> 207.
   # Remaining autonomous-path debt: 48 entries / 24 sites (38/19 under
   # tools/genesis/reflexes/, plus the ace, chat and awareness writers).
-  raw_insert_max: 203
+  #
+  # 2026-10-06, aadc-ops-config: agentic_ai_canvas/ops_config_generator.py
+  # create_kanban_tasks now seeds through task_factory.create_tasks with a
+  # deterministic id + idempotency key (it duplicated the set on every click).
+  # 1 site mirrored to 2 entries. 203 -> 201.
+  raw_insert_max: 201
 
   # A reason shorter than this is not a reason. Applies to census entries and to
   # the exclusions below.

@@ -4,7 +4,7 @@
 {% block extra_css %}
 <style>
 :root { --fa-orange:#FF6B35; --fa-cyan:#00D4FF; --fa-green:#00FF88; --fa-gold:#FFB800; --fa-card:#12192b; --fa-border:rgba(74,144,217,.25); }
-.fa-st-header { background:linear-gradient(135deg,#0a0a14,#12192b); border-bottom:1px solid var(--fa-border); padding:1.5rem 2rem; }
+.fa-st-header { background:linear-gradient(135deg,var(--fa-bg-0a0a14),var(--fa-bg-12192b)); border-bottom:1px solid var(--fa-border); padding:1.5rem 2rem; }
 .fa-st-header h1 { font-size:1.6rem; font-weight:900; letter-spacing:.08em; background:linear-gradient(135deg,var(--fa-orange),var(--fa-gold)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin:0; }
 .fa-st-wrap { padding:1.5rem 2rem; overflow-x:auto; }
 .fa-st-svg { display:block; margin:0 auto; }
@@ -83,10 +83,12 @@
       {% endif %}
       {% endfor %}
 
-      <!-- Tier labels -->
-      <text x="15" y="100" font-size="9" fill="rgba(74,144,217,.5)" font-weight="600" transform="rotate(-90,15,100)">TIER 1</text>
-      <text x="15" y="350" font-size="9" fill="rgba(255,107,53,.5)" font-weight="600" transform="rotate(-90,15,350)">TIER 2</text>
-      <text x="15" y="550" font-size="9" fill="rgba(255,45,85,.5)" font-weight="600" transform="rotate(-90,15,550)">TIER 3</text>
+      <!-- Tier legend (tiers run left to right, so a colour key, not row labels) -->
+      <g font-size="9" font-weight="600">
+        <circle cx="20" cy="588" r="4" fill="#4a90d9"/><text x="28" y="591" fill="rgba(74,144,217,.8)">TIER 1</text>
+        <circle cx="80" cy="588" r="4" fill="#FF6B35"/><text x="88" y="591" fill="rgba(255,107,53,.8)">TIER 2</text>
+        <circle cx="140" cy="588" r="4" fill="#FF2D55"/><text x="148" y="591" fill="rgba(255,45,85,.8)">TIER 3</text>
+      </g>
     </svg>
   </div>
 

@@ -4,7 +4,7 @@
 {% block extra_css %}
 <style>
 :root { --fa-orange:#FF6B35; --fa-cyan:#00D4FF; --fa-green:#00FF88; --fa-gold:#FFB800; --fa-card:#12192b; --fa-border:rgba(74,144,217,.25); }
-.fa-lb-header { background:linear-gradient(135deg,#0a0a14,#12192b); border-bottom:1px solid var(--fa-border); padding:1.5rem 2rem; }
+.fa-lb-header { background:linear-gradient(135deg,var(--fa-bg-0a0a14),var(--fa-bg-12192b)); border-bottom:1px solid var(--fa-border); padding:1.5rem 2rem; }
 .fa-lb-header h1 { font-size:1.6rem; font-weight:900; background:linear-gradient(135deg,var(--fa-gold),var(--fa-orange)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin:0; }
 .fa-lb-controls { display:flex; gap:.6rem; flex-wrap:wrap; padding:1rem 2rem; border-bottom:1px solid var(--fa-border); }
 .fa-lb-btn { background:transparent; border:1px solid var(--fa-border); color:var(--text-secondary); border-radius:6px; padding:.3rem .9rem; font-size:.72rem; text-transform:uppercase; letter-spacing:.1em; cursor:pointer; text-decoration:none; transition:all .15s; }
@@ -15,8 +15,8 @@
 .fa-lb-table tr:hover td { background:rgba(255,255,255,.02); }
 .fa-rank-cell { font-weight:800; font-size:1rem; width:48px; }
 .fa-rank-1 { color:var(--fa-gold); }
-.fa-rank-2 { color:#b0b0c8; }
-.fa-rank-3 { color:#cd7f32; }
+.fa-rank-2 { color:var(--fa-tx-b0b0c8); }
+.fa-rank-3 { color:var(--fa-tx-cd7f32); }
 .fa-xp-cell { font-weight:700; color:var(--fa-gold); }
 .fa-level-cell { font-size:.75rem; }
 .fa-lb-empty { text-align:center; padding:3rem; color:var(--text-secondary); }
@@ -28,7 +28,11 @@
 <div>
   <div class="fa-lb-header">
     <h1>⚡ Leaderboard</h1>
-    <p style="color:var(--text-secondary);margin:.3rem 0 0;font-size:.82rem;">Top operatives by XP earned</p>
+    <p style="color:var(--text-secondary);margin:.3rem 0 0;font-size:.82rem;">Top operatives by XP earned &mdash; {{ 'last 7 days' if period == 'weekly' else 'all time' }}</p>
+    {# aca-numbers-demo: the weekly tab used to rank by the all-time running total,
+       attendance included. The score is now the XP that drives rank, for the
+       period named above; say so beside the table. #}
+    <p style="color:var(--text-secondary);margin:.2rem 0 0;font-size:.72rem;">Score: {{ score_basis|default('') }}.</p>
     <a href="/academy" class="btn" style="font-size:.75rem;margin-top:.6rem;">← Hub</a>
   </div>
 
@@ -52,7 +56,7 @@
           <th>Operative</th>
           <th>Rank</th>
           <th>Role</th>
-          <th>XP</th>
+          <th>{{ 'XP (7 days)' if period == 'weekly' else 'XP earned' }}</th>
         </tr>
       </thead>
       <tbody>
@@ -65,7 +69,7 @@
           <td class="fa-level-cell" style="color:{{ row.level_color | default('#6c6c80') }}">
             {{ row.level_label | default('Recruit') }}
           </td>
-          <td style="font-size:.75rem;color:var(--text-secondary);">{{ row.role | default('') | title }}</td>
+          <td style="font-size:.75rem;color:var(--text-secondary);">{{ row.role_label | default(roles.get(row.role, {}).get('label', row.role)) }}</td>
           <td class="fa-xp-cell">{{ row.score | default(0) | int }}</td>
         </tr>
         {% endfor %}

@@ -14,7 +14,7 @@
     </p>
 
     {% if schema.pattern_id %}
-    <div style="background:#060910;border:1px solid var(--fa-border);border-radius:6px;padding:.7rem 1rem;margin-bottom:1rem;font-size:.78rem;text-align:left;font-family:monospace;color:var(--fa-cyan);">
+    <div style="background:var(--fa-bg-060910);border:1px solid var(--fa-border);border-radius:6px;padding:.7rem 1rem;margin-bottom:1rem;font-size:.78rem;text-align:left;font-family:monospace;color:var(--fa-cyan);">
       Pattern: {{ schema.pattern_id }}<br>
       Target: {{ schema.target | default('./deployments/') }}<br>
       Trust tier: {{ schema.trust_tier | default('suggest') }}
@@ -22,7 +22,7 @@
     {% endif %}
 
     <button id="deploy-btn-{{ sidx }}" onclick="runDeploy({{ sidx }})"
-            style="background:linear-gradient(135deg,var(--fa-orange),#e05a2b);color:#fff;border:none;border-radius:8px;padding:.75rem 2.5rem;font-size:.95rem;font-weight:800;cursor:pointer;letter-spacing:.05em;text-transform:uppercase;transition:opacity .15s;">
+            style="background:linear-gradient(135deg,var(--fa-orange),var(--fa-bg-e05a2b));color:#fff;border:none;border-radius:8px;padding:.75rem 2.5rem;font-size:.95rem;font-weight:800;cursor:pointer;letter-spacing:.05em;text-transform:uppercase;transition:opacity .15s;">
       ⚡ Deploy Now
     </button>
 

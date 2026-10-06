@@ -4,20 +4,29 @@ step_class: icdev:configure
 ---
 # IL Classification Remediation
 
-Pillar 8 (IL Classification) checks for CUI markings at the top of Python files containing sensitive data. The pattern: `# CUI // SP-CTI` or similar CUI header as the first or second line.
+Pillar 8 (IL Classification) samples the repository's Python files and checks that enough of them carry a classification header in their first lines (`cui_header_ratio: 0.5` in `args/agent_readiness.yaml`). It also checks that `CLAUDE.md` states the IL / classification context, that an IL environment variable is configured, and that `classification_manager` is used instead of hard-coded banners.
 
-## CUI marking rules
+## Marking by impact level
 
-- **IL4**: `# CUI // SP-CTI` — Controlled Unclassified Information
-- **IL5**: `# CUI // SP-CTI // NOFORN` — NOFORN adds no foreign nationals
-- **IL6**: `# SECRET // SI` — classified at SECRET level
+ICDEV maps impact levels to classifications in `tools/compliance/classification_manager.py`:
 
-Files that need CUI markings: any file that processes PII, security controls, authentication, keys, or classified data.
+- **IL2** -> PUBLIC
+- **IL4 and IL5** -> CUI. The Python code header starts `# CUI // SP-CTI`
+- **IL6** -> SECRET. The header starts `# SECRET // NOFORN`
 
-## Automated marking
+Files that need markings: anything that processes PII, security controls, authentication, keys, or controlled data.
 
-ICDEV's `tools/compliance/classification_manager.py` provides `get_marking_for_il(il_level)` — use it rather than hardcoding strings.
+## Use the manager, not a string literal
+
+```python
+from tools.compliance.classification_manager import get_classification_for_il, get_code_header
+
+classification = get_classification_for_il("IL4")      # -> "CUI"
+header = get_code_header(classification, "python")     # -> multi-line block, first line "# CUI // SP-CTI"
+```
+
+`get_code_header` returns the full multi-line header block (controlled-by, category, distribution, POC lines) in the comment style of the language you pass.
 
 ## Your task
 
-Write a script that identifies Python files missing CUI markings in a target directory and adds the appropriate IL4 marking. Use `classification_manager.get_marking_for_il("IL4")` for the marking string.
+Plan a script that finds Python files missing a classification header in a target directory and prepends the IL4 header. Write down: how you detect "already marked" (so the script is idempotent), where the header goes in a file that starts with a shebang or `from __future__ import`, and the two `classification_manager` calls you use. Press **Configure** to record that you completed the plan.

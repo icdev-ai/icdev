@@ -49,7 +49,7 @@ from datetime import datetime, timezone
 from tools.db.storage import get_connection
 
 from .constants import ROLES
-from .db import role_matches
+from .db import TAKEABLE_MISSION_SQL, role_matches, takeable_mission_count
 
 _log = logging.getLogger(__name__)
 
@@ -171,11 +171,13 @@ def roster(tenant_id: str | None = None, role: str | None = None) -> list[dict]:
 
 
 def _active_mission_count(conn) -> int:
+    """The roster's denominator: missions a learner can take (aca-numbers-demo).
+
+    Counted is_active=1 — 122 live, nine of them stepless and uncompletable — while
+    the certificate gate and the health probe each counted a different set.
+    """
     try:
-        row = conn.execute(
-            "SELECT COUNT(*) FROM fa_missions WHERE is_active=1"
-        ).fetchone()
-        return int(row[0]) if row else 0
+        return takeable_mission_count(conn)
     except Exception:  # noqa: BLE001
         return 0
 
@@ -185,9 +187,13 @@ def _learner_counters(conn, user_id: int) -> dict:
     out = {"missions_completed": 0, "steps_completed": 0, "submissions": 0,
            "reviews": 0}
     try:
+        # Numerator over the same TAKEABLE set as the denominator, so the roster
+        # can never print 3/2 after a mission is retired.
         out["missions_completed"] = int(conn.execute(
-            "SELECT COUNT(*) FROM fa_mission_progress "
-            "WHERE user_id=%s AND status='completed'", (user_id,),
+            "SELECT COUNT(DISTINCT mp.mission_id) FROM fa_mission_progress mp "
+            "JOIN fa_missions m ON m.id=mp.mission_id "
+            "WHERE mp.user_id=%s AND mp.status='completed' AND "
+            + TAKEABLE_MISSION_SQL, (user_id,),
         ).fetchone()[0])
         out["steps_completed"] = int(conn.execute(
             "SELECT COUNT(*) FROM fa_step_progress "

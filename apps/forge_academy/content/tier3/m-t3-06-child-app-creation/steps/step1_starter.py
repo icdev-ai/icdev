@@ -3,10 +3,11 @@
 Tier 3 Mission 6: Child App Creation
 Goal: Implement AppManifest — the structured spec that drives child app scaffolding.
 
-Every ICDEV child app passes through:
-  1. AppManifest.validate() → structural gate
-  2. child_app_generator.py → scaffold files from manifest
-  3. forge_validator.py --gate → 7-component gate check
+AppManifest is a simplified teaching model (not a class in the repo). The real
+pipeline for a generated child app is:
+  1. tools/builder/child_app_generator.py --blueprint bp.json --project-path DIR --name NAME
+  2. tools/builder/forge_validator.py --project-dir DIR/NAME --gate
+     (FORGE layers + the 8-component canvas completeness gate, FORGE-13)
 """
 
 import re
@@ -34,14 +35,14 @@ class AppManifest:
     author: str = "forge_academy"
 
     def validate(self) -> tuple[bool, list[str]]:
-        """TODO: Validate the manifest against forge_validator requirements.
+        """TODO: Validate the manifest (exercise rules below).
 
         Check (in order, collect ALL issues):
         1. app_name not empty → issue: "app_name cannot be empty"
         2. app_slug matches SLUG_PATTERN → issue: f"app_slug '{self.app_slug}' is invalid — use lowercase letters, digits, underscores only"
         3. canvas in VALID_CANVASES → issue: f"canvas '{self.canvas}' is not valid — must be one of {sorted(VALID_CANVASES)}"
         4. len(self.routes) >= 1 → issue: "at least one route is required"
-        5. any route starts with "/" → issue: "all routes must start with '/'"
+        5. any route starts with "/" → issue: "at least one route must start with '/'"
            (only add this if routes exist but none start with "/")
         6. len(self.db_tables) >= 1 → issue: "at least one DB table is required"
 

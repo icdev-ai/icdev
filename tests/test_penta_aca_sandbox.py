@@ -235,3 +235,63 @@ def test_timeout_still_enforced(monkeypatch):
     assert result["passed"] is False
     assert result["exit_code"] == -2
     assert "Time limit" in result["stderr"]
+
+
+# ---------------------------------------------------------------------------
+# Graded runs: the grader always runs, and decides the verdict alone
+# ---------------------------------------------------------------------------
+
+_ALWAYS_FAILS = "assert False, 'the grader ran and refused this'\n"
+
+
+@pytest.mark.parametrize("exit_stmt", [
+    "import sys\nsys.exit(0)\n",
+    "raise SystemExit(0)\n",
+    "import sys\nsys.exit()\n",
+])
+def test_exiting_early_does_not_skip_the_grader(exit_stmt):
+    """Learner code and grader used to be one script, so `sys.exit(0)` at the end of
+    a submission ended the process with status 0 before any assertion ran — and
+    status 0 graded as a pass on every coding step."""
+    result = run_code("x = 1\n" + exit_stmt, test_code=_ALWAYS_FAILS)
+    assert result["passed"] is False
+    assert "the grader ran and refused this" in result["stderr"]
+
+
+def test_os_exit_is_blocked():
+    """os._exit ends the process without unwinding, so nothing can run after it."""
+    ok, reason = _check_code_safety("import os\nos._exit(0)\n")
+    assert ok is False and "os._exit" in reason
+
+
+def test_the_grader_sees_the_learners_names_and_main_block():
+    """Graders read the learner's module-level names from globals(), and starters
+    run their demo under `if __name__ == "__main__":` — both must still hold."""
+    learner = 'answer = 42\nif __name__ == "__main__":\n    print("demo ran")\n'
+    result = run_code(learner, test_code="assert answer == 42\nprint('PASS')\n")
+    assert result["passed"] is True, result["stderr"]
+    assert result["stdout"] == "demo ran\nPASS\n"
+
+
+def test_a_learner_error_still_fails_and_names_their_line():
+    result = run_code("x = 1\ny = 1 / 0\n", test_code="print('PASS')\n")
+    assert result["passed"] is False
+    assert 'File "solution.py", line 2' in result["stderr"]
+    assert "_fa_driver" not in result["stderr"], "the trusted driver leaked into the traceback"
+    assert "PASS" not in result["stdout"]
+
+
+def test_output_is_decoded_as_utf8():
+    """The child writes UTF-8 (-X utf8); decoding with the Windows locale codec
+    showed every em dash in a grader message as mojibake."""
+    result = run_code("x = 1\n", test_code='assert False, "expected \u2014 got"\n')
+    assert "expected \u2014 got" in result["stderr"]
+    assert "\u00e2\u20ac" not in result["stderr"]
+
+
+@pytest.mark.parametrize("module", ["inspect", "ast"])
+def test_introspection_modules_the_exercises_teach_are_allowed(module):
+    """m06/m08/m-swe-02 tell learners to use inspect.signature; m-readiness-02 to walk
+    an ast tree. Blocking them made those exercises impossible as written."""
+    ok, reason = _check_code_safety(f"import {module}\n")
+    assert ok is True, reason

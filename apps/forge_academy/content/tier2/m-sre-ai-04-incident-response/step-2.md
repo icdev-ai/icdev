@@ -7,143 +7,121 @@ step_class: icdev:Lesson
 
 # Build Your AI Runbook with auto_resolver.py
 
-The `auto_resolver.py` tool is the first responder for AI incidents. It normalizes raw alerts into structured objects, analyzes them for resolution candidates, and executes resolutions when confidence is high enough. This step covers the full API and the model rollback pattern.
+`tools/monitor/auto_resolver.py` is ICDEV's first responder for alerts. It normalizes a raw alert, matches it against known failure patterns, and decides whether to fix it automatically, suggest a fix, or escalate to a human. This step covers its real API, the confidence thresholds, and how a model rollback works in ICDEV.
+
+## The decision rule
+
+The thresholds live under `auto_resolution` in `args/monitoring_config.yaml`:
+
+```yaml
+auto_resolution:
+  enabled: true
+  confidence_threshold: 0.7     # at or above this AND pattern auto_healable -> auto_fix
+  escalation_threshold: 0.3     # below this (or no matching pattern) -> escalate
+  max_auto_fixes_per_hour: 5
+  cooldown_minutes: 10
+  auto_create_pr: true
+  run_tests_before_pr: true
+```
+
+| Confidence | Pattern matched? | Decision |
+|---|---|---|
+| ≥ 0.7 and pattern `auto_healable` | yes | `auto_fix`: branch, fix, tests, PR |
+| 0.3 to 0.7 | yes | `suggest`: root cause and remediation shown to a human |
+| < 0.3, or no pattern | no or weak | `escalate` |
 
 ## `auto_resolver.py` API Reference
 
-### `normalize_alert(raw_alert)`
-
-Converts a raw alert dict (from monitoring, drift detector, or manual input) into a structured alert:
+### `normalize_alert(payload, source="generic")`
 
 ```python
-from tools.ai_ops.auto_resolver import normalize_alert
+from tools.monitor.auto_resolver import normalize_alert
 
 raw = {
-    "source": "drift_detector",
-    "model_id": "qwen3-local",
-    "function_name": "summarize",
-    "drift_type": "quality_degradation",
-    "deviation_pct": 31.2,
+    "title": "quality_degradation",
+    "description": "qwen3-local/summarize quality 31.2% below baseline",
+    "service": "llm-router",
     "severity": "critical",
-    "detected_at": "2026-05-09T14:32:00Z",
+    "source": "model_monitor",
 }
-
-alert = normalize_alert(raw)
-# Returns:
-# {
-#   "alert_id": "alr_20260509_a7f3c1",
-#   "incident_type": "model_drift",
-#   "severity": "critical",
-#   "model_id": "qwen3-local",
-#   "function_name": "summarize",
-#   "metadata": {...},
-#   "status": "open"
-# }
+alert = normalize_alert(raw, source="generic")
+# {"error_type": "quality_degradation", "error_message": "...", "service_name": "llm-router",
+#  "severity": "critical", "source": "model_monitor", "timestamp": "...", "raw_payload": {...}}
 ```
 
-### `analyze_alert(alert)`
+`source` selects the normalizer: `sentry`, `prometheus`, `elk` or `generic`.
 
-Produces a ranked list of resolution candidates with confidence scores:
+### `analyze_alert(payload, source="generic")`
+
+Runs normalize, feature extraction and pattern matching without changing anything:
 
 ```python
-from tools.ai_ops.auto_resolver import analyze_alert
+from tools.monitor.auto_resolver import analyze_alert
 
-candidates = analyze_alert(alert)
-# Returns:
-# [
-#   {
-#     "resolution_type": "model_rollback",
-#     "confidence": 0.82,
-#     "action": "swap_to_previous_stable",
-#     "previous_stable_model": "qwen3-local-v1.2",
-#     "estimated_recovery_time_min": 2
-#   },
-#   {
-#     "resolution_type": "retrain_trigger",
-#     "confidence": 0.61,
-#     "action": "queue_retrain_job",
-#     "estimated_recovery_time_min": 120
-#   }
-# ]
+analysis = analyze_alert(raw)
+# {"status": "ok", "confidence": 0.42, "decision": "suggest",
+#  "reason": "Confidence 0.42 between 0.3-0.7",
+#  "suggestion": {"pattern": ..., "root_cause": ..., "remediation": ...},
+#  "alert_normalized": {...}, "features": {...}}
 ```
 
-### `resolve_alert(alert_id)`
+### `resolve_alert(payload, source="generic", dry_run=False)`
 
-Executes the highest-confidence resolution if `confidence >= 0.7`, otherwise escalates to human:
+Runs the full pipeline: analyze, record in `auto_resolution_log`, then (for `auto_fix`) create a fix branch, run tests and open a PR. Use `dry_run=True` to preview.
+
+### `get_resolution_history(project_id=None, limit=50)`
+
+Reads `auto_resolution_log`, newest first.
+
+```bash
+python tools/monitor/auto_resolver.py --analyze --alert-file alert.json --json
+python tools/monitor/auto_resolver.py --resolve --alert-file alert.json --dry-run --json
+python tools/monitor/auto_resolver.py --history --limit 20 --json
+```
+
+## Model Rollback in ICDEV
+
+"Roll back the model" means changing which model serves a **function**:
 
 ```python
-from tools.ai_ops.auto_resolver import resolve_alert
+from tools.llm.model_monitor import detect_drift
+from tools.finetune.model_registry import get_active_model, demote_model
+from tools.compliance.ai_incident_response import log_incident
 
-result = resolve_alert(alert_id="alr_20260509_a7f3c1")
-# If confidence >= 0.7:
-# {"status": "resolved", "resolution_type": "model_rollback", "applied_at": "..."}
-#
-# If confidence < 0.7:
-# {"status": "escalated", "reason": "confidence=0.61 below threshold",
-#  "oncall_notified": True}
+def handle_critical_drift(project_id: str, model_id: str, function_name: str):
+    # 1. Confirm the drift
+    events = detect_drift(model_id=model_id, function_name=function_name)
+    critical = [e for e in events if e["severity"] == "critical"]
+    if not critical:
+        return None
+
+    # 2. Record the AI incident
+    log_incident(project_id=project_id, incident_type="model_drift",
+                 description=f"{critical[0]['drift_type']} {critical[0]['deviation_pct']}% on "
+                             f"{model_id}/{function_name}",
+                 ai_system=model_id, severity="critical")
+
+    # 3a. Fine-tuned model active for this function? Demote it: routing falls
+    #     back to the function's default chain in args/llm_config.yaml.
+    if get_active_model(function_name).get("active_model"):
+        return demote_model(function_name, reason="critical drift", demoted_by="oncall-sre")
+
+    # 3b. Otherwise reorder the function's `routing:` chain in args/llm_config.yaml
+    #     through a reviewed PR, never by rewriting the YAML from a script.
+    return {"action": "edit routing chain via PR", "function": function_name}
 ```
 
-### `get_resolution_history(hours=24)`
+Do **not** reset the drift baseline straight after a rollback. Wait for a stable window first (Mission SRE-AI-02, Step 3).
 
-```python
-from tools.ai_ops.auto_resolver import get_resolution_history
+## Escalation Path for Low-Confidence Alerts
 
-history = get_resolution_history(hours=24)
-# Returns list of past resolution dicts with timestamps, types, and outcomes
-```
+When `analyze_alert()` returns `decision: "escalate"` (confidence < 0.3, or no pattern):
 
-## Full Model Rollback Pattern
+1. `resolve_alert()` records the alert in `auto_resolution_log` with `resolution_status = 'escalated'` and notifies on-call.
+2. The on-call engineer receives the normalized alert and any partial pattern match.
+3. The engineer resolves it by hand, and logs an AI incident with `log_incident()` if it was an AI failure.
+4. Once the root cause is understood, record it as a knowledge pattern, so next time the alert lands in `suggest`, or in `auto_fix` if it is safe to automate.
 
-When `detect_drift()` returns a critical event and the resolver recommends `model_rollback`:
-
-```python
-from tools.llm.model_monitor import detect_drift, reset_baseline
-from tools.llm.model_registry import get_previous_stable
-from tools.ai_ops.auto_resolver import normalize_alert, resolve_alert
-import yaml
-from pathlib import Path
-
-def handle_critical_drift(model_id: str, function_name: str):
-    # 1. Detect drift
-    drift = detect_drift(model_id=model_id, function_name=function_name)
-    if drift["severity"] != "critical":
-        return
-
-    # 2. Get the last known-good model version
-    previous_stable = get_previous_stable(model_id=model_id)
-    # Returns: {"model_id": "qwen3-local-v1.2", "quality_avg": 0.84, "validated_at": "..."}
-
-    # 3. Swap model in llm_config.yaml
-    config_path = Path("args/llm_config.yaml")
-    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    config["two_tier"]["edge"]["primary_model"] = previous_stable["model_id"]
-    config_path.write_text(yaml.dump(config), encoding="utf-8")
-
-    # 4. Normalize and resolve via auto_resolver
-    alert = normalize_alert({
-        "source": "manual_rollback",
-        "model_id": model_id,
-        "function_name": function_name,
-        "drift_type": drift["drift_type"],
-        "severity": "critical",
-        "resolution_hint": "model_rollback",
-    })
-    result = resolve_alert(alert["alert_id"])
-
-    # 5. Do NOT reset baseline yet — wait for 48h stable window
-    print(f"Rollback complete. Monitoring for 48h before baseline reset.")
-    return result
-```
-
-## Escalation Path for Low-Confidence Incidents
-
-When `analyze_alert()` returns `confidence < 0.3`:
-
-1. `auto_resolver.py` writes the alert to `ai_incident_log` with `status='escalated'`.
-2. On-call engineer receives full alert context including all candidate resolutions and their confidence scores.
-3. Engineer selects the resolution manually: `resolve_alert(alert_id, override_resolution_type='retrain_trigger')`.
-4. Engineer documents root cause in the alert's `notes` field.
-
-The `confidence < 0.3` threshold triggers full escalation with complete context. The resolver never silently drops an alert regardless of confidence.
+The resolver never silently drops an alert, whatever the confidence.
 
 **Your task:** Answer the configuration questions.

@@ -4,32 +4,33 @@ step_class: icdev:verify
 ---
 # Inspect the Co-Worker Result
 
-After delegation, poll `/api/ace/coworker/{id}/result` until status is `completed` or `pending_hitl`.
+After a launch, poll `GET /api/ace/<instance_id>/status` until every co-worker has finished (`done` or `failed`) or one is waiting on a human (`hitl_pending`).
 
-## Result Schema
+## Status response
 
 ```json
 {
-  "coworker_id": "ace-abc123",
-  "role": "ai_developer",
-  "status": "completed",
-  "output": {
-    "artifact": "...",
-    "confidence": 0.92,
-    "steps_completed": 3,
-    "hitl_triggered": false
-  },
-  "created_at": "2026-06-25T12:00:00Z",
-  "completed_at": "2026-06-25T12:00:45Z"
+  "instance_id": "…",
+  "name": "…",
+  "state": "…",
+  "trust_tier": "yellow",
+  "created_at": "…",
+  "updated_at": "…",
+  "coworkers": [
+    {"id": "…", "role_id": "ai_developer", "state": "done", "assigned_step": "…"}
+  ]
 }
 ```
 
+Co-worker states you will see: `working`, `hitl_pending`, `done`, `failed`, `suspended`.
+
 ## Reading the output
 
-- `confidence` ≥ 0.8: accept the result directly
-- `confidence` 0.6–0.8: review carefully, may need iteration
-- `confidence` < 0.6: the co-worker flagged uncertainty — add more context and retry
+- `GET /api/ace/<instance_id>/artifacts` lists what the team produced (`artifact_type`, `title`, `classification`, `content_md`, `content_json`)
+- `GET /api/ace/<instance_id>/messages` shows the co-workers' message-bus traffic
+- `GET /api/ace/<instance_id>/audit` is the append-only audit trail: every step, gate and decision
+- The live view of a run is `/coworker/live/<instance_id>` on the dashboard
 
 ## Your task
 
-Call `/api/ace/coworker/{id}/result` for the co-worker you launched in Step 2. Check the confidence score. If < 0.8, identify what context is missing from the delegation request and improve it.
+For the launch you drafted in Step 2, write down the three calls you would make, in order, to (1) confirm the run finished, (2) read the generated code, and (3) prove afterwards which steps actually ran. If a co-worker ended in `failed`, which endpoint tells you why?

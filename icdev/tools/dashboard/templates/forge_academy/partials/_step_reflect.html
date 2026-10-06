@@ -6,7 +6,7 @@
   {% endif %}
 
   <div style="background:var(--fa-card);border:1px solid var(--fa-border);border-radius:10px;padding:1.5rem;margin-bottom:1rem;" id="reflect-{{ sidx }}">
-    <div style="font-size:.65rem;text-transform:uppercase;letter-spacing:.15em;color:var(--fa-purple,#9b59b6);margin-bottom:1rem;">◆ Knowledge Check</div>
+    <div style="font-size:.65rem;text-transform:uppercase;letter-spacing:.15em;color:var(--fa-purple,var(--fa-tx-9b59b6));margin-bottom:1rem;">◆ Knowledge Check</div>
 
     {% if schema.question %}
     <p style="font-size:.95rem;font-weight:600;margin:0 0 1.2rem;line-height:1.5;">{{ schema.question }}</p>
@@ -25,8 +25,38 @@
       </label>
       {% endfor %}
     </div>
+    {% elif schema.fields %}
+    {# The authored reflection questions live in `fields`; they were never rendered,
+       so a lesson saying "answer three questions" offered nowhere to answer. #}
+    <form id="reflect-form-{{ sidx }}" onsubmit="return false;">
+      {% for field in schema.fields %}
+      {% set fname = field.name or field.id %}
+      <div class="fa-form-group" style="margin-bottom:.9rem;">
+        <label for="refl-{{ sidx }}-{{ fname }}"
+               style="font-size:.8rem;color:var(--text-secondary);display:block;margin-bottom:.3rem;">{{ field.label | default(fname) }}</label>
+        {% if field.type == 'textarea' %}
+        <textarea name="{{ fname }}" id="refl-{{ sidx }}-{{ fname }}" rows="3"
+                  style="width:100%;background:var(--fa-bg-0d1221);border:1px solid var(--fa-border);color:var(--text-primary);border-radius:6px;padding:.5rem .8rem;font-size:.85rem;resize:vertical;"></textarea>
+        {% else %}
+        <input type="text" name="{{ fname }}" id="refl-{{ sidx }}-{{ fname }}"
+               style="width:100%;background:var(--fa-bg-0d1221);border:1px solid var(--fa-border);color:var(--text-primary);border-radius:6px;padding:.5rem .8rem;font-size:.85rem;">
+        {% endif %}
+      </div>
+      {% endfor %}
+    </form>
+    <button onclick="autoPassReflect({{ sidx }})"
+            style="background:linear-gradient(135deg,#9b59b6,#7d3c98);color:#fff;border:none;border-radius:6px;padding:.55rem 1.4rem;font-size:.82rem;font-weight:700;cursor:pointer;">
+      ◆ Save Reflection → Continue
+    </button>
     {% else %}
     <p style="color:var(--text-secondary);font-size:.82rem;">Reflect on what you've learned, then continue.</p>
+    {# No authored questions: offer one optional notes box so the reflection the
+       lesson asks for has somewhere to go. Saved with the acknowledgement. #}
+    <form id="reflect-form-{{ sidx }}" onsubmit="return false;">
+      <label for="refl-{{ sidx }}-notes" style="font-size:.8rem;color:var(--text-secondary);display:block;margin-bottom:.3rem;">Your notes (optional)</label>
+      <textarea name="notes" id="refl-{{ sidx }}-notes" rows="3"
+                style="width:100%;background:var(--fa-bg-0d1221);border:1px solid var(--fa-border);color:var(--text-primary);border-radius:6px;padding:.5rem .8rem;font-size:.85rem;resize:vertical;margin-bottom:.8rem;"></textarea>
+    </form>
     <button onclick="autoPassReflect({{ sidx }})"
             style="background:linear-gradient(135deg,#9b59b6,#7d3c98);color:#fff;border:none;border-radius:6px;padding:.55rem 1.4rem;font-size:.82rem;font-weight:700;cursor:pointer;">
       ◆ I Understand → Continue
@@ -100,7 +130,14 @@ async function checkAnswer(idx, el, optionIdx) {
 // A reflect step with no question is a prompt to think, not a test. The server
 // classifies it as an acknowledgement (assessed: false).
 async function autoPassReflect(idx) {
-  await submitStep(idx, 'reflected');
+  const form = document.getElementById('reflect-form-' + idx);
+  let submission = 'reflected';
+  if (form) {
+    const answers = {};
+    for (const [k, v] of new FormData(form).entries()) answers[k] = v;
+    submission = JSON.stringify(answers);
+  }
+  await submitStep(idx, submission);
   document.getElementById('next-btn-' + idx).style.display = 'inline-block';
 }
 </script>

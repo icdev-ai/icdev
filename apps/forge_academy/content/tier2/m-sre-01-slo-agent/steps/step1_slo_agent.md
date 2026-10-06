@@ -63,7 +63,7 @@ Round to 4 decimal places where needed.
 
 ```python
 {
-    "burn_rate": 13.33,
+    "burn_rate": 1728.0,     # (240.0 / 100) / (1 / 720) = 2.4 * 720
     "status": "critical",    # "healthy" | "elevated" | "fast_burn" | "critical"
     "alert": True
 }

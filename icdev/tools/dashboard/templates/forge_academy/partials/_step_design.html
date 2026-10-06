@@ -22,7 +22,7 @@
          disappears the moment anything is typed. #}
       <label for="design-id-{{ sidx }}" class="sr-only">Design ID to assess</label>
       <input id="design-id-{{ sidx }}" type="text" placeholder="design-id (e.g. d_abc123)"
-             style="flex:1;min-width:200px;background:#111;border:1px solid var(--fa-border);color:var(--text-primary);border-radius:6px;padding:.5rem .75rem;font-size:.82rem;font-family:monospace;" />
+             style="flex:1;min-width:200px;background:var(--fa-bg-111);border:1px solid var(--fa-border);color:var(--text-primary);border-radius:6px;padding:.5rem .75rem;font-size:.82rem;font-family:monospace;" />
       <button id="assess-btn-{{ sidx }}" onclick="assessDesign({{ sidx }})"
               style="background:linear-gradient(135deg,#30d158,#248a3d);color:#fff;border:none;border-radius:6px;padding:.55rem 1.2rem;font-size:.82rem;font-weight:700;cursor:pointer;white-space:nowrap;">
         ◈ Assess Design
@@ -89,7 +89,7 @@ async function assessDesign(idx) {
     } else {
       const failed = d.failed_checks || [];
       panel.innerHTML = `
-        <div style="background:rgba(255,45,85,.06);border:1px solid rgba(255,45,85,.2);border-radius:8px;padding:1rem;font-size:.82rem;color:#ff6b6b;">
+        <div style="background:rgba(255,45,85,.06);border:1px solid rgba(255,45,85,.2);border-radius:8px;padding:1rem;font-size:.82rem;color:var(--fa-tx-ff6b6b);">
           <strong>✗ Not Yet</strong> — Score: <strong>${d.score}/100</strong> (need ${minScore})<br>
           <strong>Failing checks:</strong> ${failed.join(', ') || 'none'}<br>
           <span style="color:var(--text-secondary);font-size:.78rem;">Use aadc.recommend in the canvas to see which nodes to add.</span>
@@ -97,7 +97,7 @@ async function assessDesign(idx) {
     }
   } catch(e) {
     panel.style.display = 'block';
-    panel.innerHTML = `<div style="background:rgba(255,45,85,.06);border:1px solid rgba(255,45,85,.2);border-radius:8px;padding:1rem;color:#ff6b6b;font-size:.82rem;">Assessment error: ${e.message}</div>`;
+    panel.innerHTML = `<div style="background:rgba(255,45,85,.06);border:1px solid rgba(255,45,85,.2);border-radius:8px;padding:1rem;color:var(--fa-tx-ff6b6b);font-size:.82rem;">Assessment error: ${e.message}</div>`;
   }
   btn.disabled = false;
   btn.textContent = '◈ Assess Design';

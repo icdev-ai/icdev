@@ -1,0 +1,20 @@
+# CUI // SP-CTI
+label: "Program Manager (Joint)"
+description: "Manages the joint task force schedule, tracks deliverables across agencies, and produces the interoperability governance framework."
+attributes:
+  - home agency and acquisition certification (FAC-P/PM, DAWIA, or PMP)
+  - experience running cross-agency programs
+  - stakeholder management style
+  - familiarity with federal AI-use and data-sharing policy
+
+prompt_hint: >
+  Generate a realistic joint program manager who keeps two agencies' deliverables on
+  one schedule and owns the after-action governance framework. They are not a security
+  or intelligence expert, but they noticed every friction point today and wrote it down.
+  Explain why Academy training in schedule/cost management and stakeholder reporting
+  helps them produce a framework that traces each rule back to a failure the task force
+  actually hit — what the judge rewards over generic policy language.
+
+academy_relevant_missions:
+  - m-pm-04-schedule-cost
+  - m-pm-05-stakeholder-reporting

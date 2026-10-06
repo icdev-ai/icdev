@@ -12,6 +12,7 @@ Governance starts with one policy, one committee, one decision. Organizations th
 The most impactful first AI policy in most government and DoD organizations is an **AI Acceptable Use Policy (AUP)** — a clear statement of what AI tools staff may use, on what data, for what purposes, and with what oversight.
 
 A minimal AI AUP answers four questions:
+
 1. Which AI tools are authorized for use?
 2. What categories of data may not be processed by AI (PII, CUI, classified, proprietary)?
 3. Who must review AI outputs before they are used for decisions?
@@ -37,3 +38,5 @@ Answer three questions:
 ---
 
 **Your task:** Write your three answers in plain language. This is not a policy draft — it is the decision that authorizes the policy draft. If you can answer all three, you are ready to commission your first AI governance deliverable.
+
+**In the form below:** answer questions 1-3 in the first box; in the second, say how long it would take to get the policy approved and published.

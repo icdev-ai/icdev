@@ -841,7 +841,6 @@ tests/test_feed.py
 tests/test_fga_academy_defects.py
 tests/test_fga_content_discovery.py
 tests/test_fga_gameday_reachability.py
-tests/test_fga_gd03_scenario_distinctness.py
 tests/test_fga_level_achievement_gap.py
 tests/test_field_security.py
 tests/test_filesync.py
@@ -1316,7 +1315,6 @@ tests/test_penta_aca_missions2.py
 tests/test_penta_aca_oracle.py
 tests/test_penta_aca_routes.py
 tests/test_penta_aca_routes_prefix.py
-tests/test_penta_aca_sandbox.py
 tests/test_penta_aiify_auth.py
 tests/test_penta_aiify_failclosed.py
 tests/test_penta_aiify_p2.py

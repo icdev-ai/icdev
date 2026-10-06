@@ -13,10 +13,12 @@ Watch ICDEV perform a cross-framework crosswalk for ICDEV-Prod:
 
 **Control Mapping Results**
 ```
-NIST 800-53 IA-2 → FedRAMP Moderate IA-2 → CMMC AC.1.001 + AC.1.002
-NIST 800-53 AC-2 → FedRAMP Moderate AC-2 → CMMC AC.2.005 + AC.2.006
-NIST 800-53 AU-2 → FedRAMP Moderate AU-2 → CMMC AU.2.041 + AU.2.042
+NIST 800-53 IA-2 → FedRAMP Moderate IA-2 → NIST 800-171 3.5.1 → CMMC IA.L2-3.5.1
+NIST 800-53 AC-2 → FedRAMP Moderate AC-2 → NIST 800-171 3.1.1 → CMMC AC.L2-3.1.1
+NIST 800-53 AU-2 → FedRAMP Moderate AU-2 → NIST 800-171 3.3.1 → CMMC AU.L2-3.3.1
 ```
+
+CMMC 2.0 practice IDs follow the NIST SP 800-171 requirement they come from (`<family>.L<level>-<800-171 id>`). The older CMMC 1.0 style (`AC.1.001`) has been retired.
 
 **Evidence Reuse Analysis**
 47 RMF controls mapped. Evidence reuse opportunities found:
@@ -34,3 +36,14 @@ With crosswalk: 63 unique tasks — **55% reduction in assessment effort**
 - RMF SSP: 47/47 controls documented (your primary framework)
 
 One evidence collection effort. Three compliance regimes covered.
+
+*(The counts above are an illustrative scenario.)*
+
+## Try it in ICDEV
+
+The mappings above come straight from ICDEV's crosswalk engine (`context/compliance/control_crosswalk.json`):
+
+```bash
+python tools/compliance/crosswalk_engine.py --control IA-2
+python tools/compliance/crosswalk_engine.py --framework fedramp --baseline moderate
+```

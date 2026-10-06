@@ -11,15 +11,16 @@ You have configured cost controls and run `recommend_optimizations()`. Now you n
 
 ## Interpreting `recommend_optimizations()` Output
 
-The function returns a list of recommendations ordered by estimated impact. Each recommendation has an `optimization_type` drawn from a fixed set:
+Each recommendation has a `recommendation_type` from a fixed set. These are the checks `cost_intelligence.py` runs today:
 
-| Type | What It Means | Typical Savings |
+| Type | What triggered it | Typical action |
 |---|---|---|
-| `prompt_compression` | Your prompts contain redundant tokens | 10–30% |
-| `model_downgrade` | A cheaper model can handle this function | 30–90% |
-| `caching` | Same prompts are being called repeatedly | 5–40% |
-| `batching` | Sequential calls should be combined | 10–25% |
-| `context_trimming` | Conversation history is growing unbounded | 15–50% |
+| `switch_to_local` | A cloud model with real spend in the last 30 days | Put `qwen3-local` first in that function's routing chain |
+| `reduce_tokens` | An agent whose average prompt is more than 2x the median | Compress the prompt, trim history |
+| `cache_responses` | 80% or more of an agent's prompts are repeats | Enable or extend `response_cache` for it |
+| `enable_cod` / `enable_cot` | A function that would benefit from a different reasoning architecture | Review the `architectures:` block in `args/llm_config.yaml` |
+
+Batching (combining many short calls into one) is a valid lever, but no detector recommends it. You will have to spot it yourself in `daily_trend` and `by_agent` call counts.
 
 ## Prioritization Matrix
 
@@ -37,7 +38,7 @@ Not all optimizations are equal. Prioritize by impact × effort:
                └──────────────┴────────────┴─────────────┘
 ```
 
-A `model_downgrade` recommendation with `estimated_savings_pct: 71` and `implementation_effort: low` is a DO FIRST action — it requires only a config change in `args/llm_config.yaml`.
+A `switch_to_local` recommendation with a large `estimated_savings_usd` is usually a DO FIRST action. It needs only a routing-chain change in `args/llm_config.yaml`, provided the local model's quality holds.
 
 ## The 4 Most Common Cost Anti-Patterns
 
@@ -45,7 +46,7 @@ A `model_downgrade` recommendation with `estimated_savings_pct: 71` and `impleme
 
 Engineers default to the best model "to be safe." In practice, `claude-sonnet` produces the same output as `qwen3-local` for 60–70% of production functions (classification, extraction, formatting). The capability gap matters only for complex reasoning tasks.
 
-**Fix:** Run `compare_edge_vs_cloud()` for every function. If `quality_delta < 0.05`, downgrade.
+**Fix:** Run `compare_edge_vs_cloud()` to see the cost gap. Then compare quality with `model_monitor.get_baseline()` for both models. Downgrade when the quality drop is within your tolerance (for example, under 5%).
 
 ### Anti-Pattern 2: Re-Embedding Unchanged Documents
 
@@ -57,7 +58,7 @@ RAG pipelines that re-embed the entire corpus on every run waste compute and (fo
 
 A user clicking "Refresh" on a report page should not trigger a new LLM call if the underlying data hasn't changed. Without caching, a report viewed 100 times/day = 100 LLM calls/day.
 
-**Fix:** Enable `response_cache` in `args/llm_config.yaml` with a TTL matching your data freshness SLA.
+**Fix:** Keep `response_cache` enabled in `args/llm_config.yaml`, with a TTL (or a `per_function` TTL) that matches your data-freshness SLA.
 
 ### Anti-Pattern 4: Sending Full Conversation History Every Turn
 
@@ -70,33 +71,28 @@ Multi-turn chat agents that append every message to the context window see token
 After implementing optimizations, re-project spend:
 
 ```python
-from tools.llm.cost_intelligence import project_monthly_spend, get_cost_dashboard
+from tools.llm.cost_intelligence import project_monthly_spend, detect_cost_anomalies
 
-# Before optimization (run last week): projected $246/month
-# After optimization:
-dashboard = get_cost_dashboard()
-current_daily = dashboard["total_spend_usd"] / 9  # 9 days elapsed
-projection = project_monthly_spend(current_daily_avg=current_daily)
-
-print(f"Projected month: ${projection['projected_month_total_usd']:.2f}")
-# Expected: ~$68/month after routing + caching optimizations
+projection = project_monthly_spend()
+print(f"Projected month: ${projection['total_projected_usd']:.2f}")
+# Compare with the projection you saved before the change.
 ```
 
-Also re-run `detect_cost_anomalies()` — a successful optimization removes the anomaly that triggered the recommendation. If the anomaly persists, the optimization was not applied correctly.
+Also re-run `detect_cost_anomalies()`. A successful optimization removes the spike that prompted it. If the anomaly persists, the optimization was not applied correctly.
 
 ## Quick CLI Validation Loop
 
 ```bash
 # 1. Baseline
-python tools/llm/cost_intelligence.py --project > before_opt.json
+python tools/llm/cost_intelligence.py --project --json > before_opt.json
 
 # 2. Apply optimizations (edit llm_config.yaml, deploy)
 
 # 3. Wait 24h for new data
 
 # 4. Compare
-python tools/llm/cost_intelligence.py --project > after_opt.json
-# Manually compare projected_month_total_usd values
+python tools/llm/cost_intelligence.py --project --json > after_opt.json
+# Compare total_projected_usd in the two files
 ```
 
 **Your task:** Answer the reflection questions.

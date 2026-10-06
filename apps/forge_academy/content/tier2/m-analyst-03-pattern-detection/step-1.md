@@ -20,11 +20,13 @@ Pattern detection is the intelligence analyst's core discipline. AI does not rep
 
 ### Rule-Based Detection
 Uses explicit thresholds you define. Fast to configure, transparent, auditable.
+
 - **Best for:** Known threats, compliance monitoring, clear business rules
 - **Limitation:** Cannot detect novel patterns you did not anticipate
 
 ### ML-Based Detection
 Learns baseline behavior and flags deviations without explicit rules. Can find what you did not know to look for.
+
 - **Best for:** Large, complex datasets with non-obvious patterns
 - **Limitation:** Requires training data, harder to explain outputs, higher false positive risk initially
 

@@ -121,15 +121,18 @@ class _Conn:
 
 def test_seed_retires_a_key_that_left_the_bank(monkeypatch):
     conn = _Conn()
-    conn.execute("CREATE TABLE fa_missions (id INTEGER PRIMARY KEY, slug TEXT)")
-    conn.execute("CREATE TABLE fa_mission_steps (id INTEGER PRIMARY KEY, mission_id INT, step_num INT)")
-    conn.execute(
-        "CREATE TABLE fa_assessment_items (id INTEGER PRIMARY KEY, step_id INT, item_key TEXT, "
-        "prompt TEXT, options_json TEXT, correct_index INT, explanation TEXT, difficulty TEXT, "
-        "is_active INTEGER NOT NULL DEFAULT 1)"
-    )
-    conn.execute("INSERT INTO fa_missions VALUES (1, 'm-x')")
-    conn.execute("INSERT INTO fa_mission_steps VALUES (10, 1, 1)")
+    conn.execute("""CREATE TABLE fa_missions (id INTEGER PRIMARY KEY, slug TEXT NOT NULL,
+                    title TEXT NOT NULL)""")
+    conn.execute("""CREATE TABLE fa_mission_steps (id INTEGER PRIMARY KEY,
+                    mission_id INTEGER NOT NULL, step_num INTEGER NOT NULL,
+                    title TEXT NOT NULL)""")
+    conn.execute("""CREATE TABLE fa_assessment_items (id INTEGER PRIMARY KEY,
+        step_id INTEGER NOT NULL, item_key TEXT NOT NULL, prompt TEXT NOT NULL,
+        options_json TEXT NOT NULL DEFAULT '[]', correct_index INTEGER NOT NULL DEFAULT 0,
+        explanation TEXT, difficulty TEXT DEFAULT 'core',
+        is_active INTEGER NOT NULL DEFAULT 1)""")
+    conn.execute("INSERT INTO fa_missions VALUES (1, 'm-x', 'M X')")
+    conn.execute("INSERT INTO fa_mission_steps VALUES (10, 1, 1, 'Step 1')")
 
     def _item(key):
         return {"item_key": key, "prompt": f"q {key}", "options": ["a", "b"],

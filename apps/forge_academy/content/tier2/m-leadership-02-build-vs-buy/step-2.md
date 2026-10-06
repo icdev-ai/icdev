@@ -30,9 +30,9 @@ Score each criterion 1–5 for your hypothetical AI assistant project. Higher is
 | Total Cost | 4 ($200K/yr) | 2 ($1.5M build) | 3 ($600K) |
 | Team Capability | 5 (no ML staff needed) | 2 (need 4 FTEs) | 4 |
 | Lock-in Risk | 2 | 5 | 3 |
-| **Total** | **22** | **20** | **23** |
+| **Total** | **22** | **20** | **21** |
 
-In this example, **Partner** edges out Buy on customization flexibility — but only if you have a qualified SI on contract.
+In this example **Buy** wins narrowly (22 vs. 21 for Partner). A one-point margin is a tie in practice: the decision turns on which criterion matters most to you. If data sovereignty and customization outweigh speed, Partner is the better call, but only if you have a qualified SI on contract.
 
 ---
 

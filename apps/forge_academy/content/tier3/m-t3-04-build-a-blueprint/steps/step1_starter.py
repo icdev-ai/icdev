@@ -2,9 +2,10 @@
 """
 Tier 3 Mission 4: Build a Blueprint
 Goal: Implement a BlueprintSpec validator that checks a blueprint module
-      against ICDEV's 7-component gate.
+      against 7 of the components ICDEV's dashboard-page gate requires.
 
-The 7 components every ICDEV dashboard page must have:
+CLAUDE.md's gate has 8 components; this exercise omits the 8th (IQE integration).
+The 7 checked here:
   1. template       — tools/dashboard/templates/<app>/page.html
   2. route          — @bp.route in apps/<app>/blueprint.py
   3. backing_module — apps/<app>/<app>.py (main logic module)
@@ -41,7 +42,7 @@ def mock_exists(path: str) -> bool:
 # ── Step 1: BlueprintSpec ─────────────────────────────────────────────────────
 
 class BlueprintSpec:
-    """Validates a blueprint module against ICDEV's 7-component gate."""
+    """Validates a blueprint module against the 7 file-checkable gate components."""
 
     def __init__(self, app_name: str, use_mock: bool = False):
         """TODO: Initialize the spec for a given app name.
@@ -115,7 +116,7 @@ class BlueprintSpec:
 # ── Step 2: Route Extractor ───────────────────────────────────────────────────
 
 def extract_routes(blueprint_content: str) -> list[str]:
-    """TODO: Extract route paths from blueprint Python source.
+    r"""TODO: Extract route paths from blueprint Python source.
 
     Find all @bp.route("...") decorators.
     Pattern: r'@bp\.route\(["\']([^"\']+)["\']'
@@ -130,7 +131,7 @@ def extract_routes(blueprint_content: str) -> list[str]:
 # ── Step 3: Migration Checker ─────────────────────────────────────────────────
 
 def check_migration_sql(sql: str) -> dict:
-    """TODO: Check if a migration SQL string follows ICDEV conventions.
+    r"""TODO: Check if a migration SQL string follows ICDEV conventions.
 
     Checks:
     1. "if_not_exists": True if "IF NOT EXISTS" in sql (case-insensitive)

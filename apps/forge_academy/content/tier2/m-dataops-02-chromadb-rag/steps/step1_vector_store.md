@@ -41,7 +41,7 @@ Where `A · B` is the dot product and `|A|` is the L2 norm.
 ## Success Criteria
 
 - `cosine_similarity(a, b)` returns 1.0 for identical vectors, 0 for orthogonal
-- `VectorCollection.add()` stores documents and validates id uniqueness
+- `VectorCollection.add()` stores documents and upserts — an existing id is overwritten (count does not grow)
 - `VectorCollection.query()` returns top-N results sorted by similarity (descending)
 - `VectorCollection.get()` retrieves by exact ID match
 - `VectorCollection.delete()` removes documents and returns count deleted

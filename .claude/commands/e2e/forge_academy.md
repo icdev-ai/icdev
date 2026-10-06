@@ -53,6 +53,8 @@ The single most important assertion in this file. Before the integrity work, 42 
   step's `test_code_path` — the client never supplies a test.
 - XP on `/academy/profile` is **unchanged**. Observed: `1615` → `1615`.
 - The sidebar item is **not** marked `done`.
+- `#submit-btn-<idx>` is **not** visible — Run is advisory and a failing Run
+  offers nothing to submit.
 
 ## Scenario 2 — a real solution passes and is credited
 
@@ -61,7 +63,12 @@ The single most important assertion in this file. Before the integrity work, 42 
    the list of three dicts. Set it through the CodeMirror instance
    (`window.editors[<idx>].setValue(...)`) — writing to the hidden textarea does
    not reach the editor.
-7. Click `#run-btn-<idx>` again and wait for the verdict.
+7. Click `#run-btn-<idx>` again and wait for the verdict. Run is ADVISORY: it
+   grades read-only via `/api/academy/code/run` and records nothing.
+   Assert `#output-<idx>` carries class `passed`, XP is still unchanged, and
+   `#submit-btn-<idx>` ("✓ Submit for credit") is now visible.
+7b. Click `#submit-btn-<idx>` — the only action that records the attempt; the
+    server re-grades the editor's contents.
 
 **Assert:**
 - `#output-<idx>` carries class `passed` and ends with the test's own

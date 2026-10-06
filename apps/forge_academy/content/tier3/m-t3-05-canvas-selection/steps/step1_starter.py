@@ -129,7 +129,7 @@ class CanvasSelector:
         1. Call score_canvas(code, description) for each canvas code in CANVASES
         2. Find the canvas with the highest score
         3. Tie-breaking: if multiple canvases tie for highest, prefer the one
-           defined FIRST in CANVASES (registry order — dict insertion order)
+           defined FIRST in CANVASES (dict insertion order)
         4. Calculate confidence: highest_score (already 0.0–1.0)
         5. If ALL scores are 0.0, do NOT guess — return a copy of NO_MATCH with
            an "all_scores" key added (canvas="NONE", confidence=0.0)

@@ -11,11 +11,13 @@ AI risk communication fails in one of two ways: it is so technical that decision
 
 | Risk | Plain-Language Definition |
 |---|---|
-| **Data Privacy** | The AI system processes sensitive data that could be exposed, misused, or retained longer than authorized |
+| **Hallucination / Wrong Output** | The system produces a confident, fluent answer that is wrong, and nobody notices without independent checking |
+| **Data Leakage** | The AI system processes sensitive data that could be exposed, misused, or retained longer than authorized |
 | **Model Bias** | The system produces outcomes that systematically disadvantage certain populations, leading to inequitable decisions |
-| **Operational Dependency** | Mission-critical processes rely on AI availability — an outage or degradation has direct operational impact |
 | **Adversarial Attacks** | Adversaries deliberately craft inputs designed to manipulate or deceive the AI into wrong outputs |
-| **Workforce Displacement** | Automation removes roles faster than the workforce can adapt, creating capability gaps and morale risk |
+| **Workforce Impact** | Automation removes roles faster than the workforce can adapt, creating capability gaps and morale risk |
+
+One more risk belongs in your continuity plan rather than this list: **operational dependency**, where a mission-critical process stops when the AI is unavailable or degraded.
 
 ## How to Frame Risk in Business Language
 

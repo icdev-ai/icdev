@@ -23,7 +23,7 @@
   <div style="background:var(--fa-card);border:1px solid var(--fa-border);border-radius:10px;padding:1.5rem;margin-bottom:1rem;"
        id="assess-{{ sidx }}">
     <div style="display:flex;justify-content:space-between;align-items:baseline;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;">
-      <div style="font-size:.65rem;text-transform:uppercase;letter-spacing:.15em;color:var(--fa-purple,#9b59b6);">◆ Knowledge Check</div>
+      <div style="font-size:.65rem;text-transform:uppercase;letter-spacing:.15em;color:var(--fa-purple,var(--fa-tx-9b59b6));">◆ Knowledge Check</div>
       <div id="assess-meta-{{ sidx }}" style="font-size:.7rem;color:var(--text-secondary);"></div>
     </div>
 
@@ -44,7 +44,10 @@
 </div>
 
 <script>
-(function() {
+// STEPS is declared by mission.html AFTER the step panes, so reading it while the
+// pane parses threw ReferenceError and left every knowledge check empty. Wait for
+// the document, by which point every inline script has run.
+document.addEventListener('DOMContentLoaded', function() {
   const idx = {{ sidx }};
   const a = (STEPS[idx] || {}).assessment;
   const itemsEl = document.getElementById('assess-items-' + idx);
@@ -110,7 +113,7 @@
     });
     itemsEl.appendChild(wrap);
   });
-})();
+});
 
 async function submitAssessment(idx) {
   const root = document.getElementById('assess-items-' + idx);

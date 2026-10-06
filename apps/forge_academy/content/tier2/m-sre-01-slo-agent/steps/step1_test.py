@@ -23,7 +23,7 @@ output = captured.getvalue()
 budget = calculate_error_budget(99.9, 1, 50000, 120)
 assert budget is not None, "calculate_error_budget() returned None"
 assert budget.get("slo_target_pct") == 99.9, "slo_target_pct must be 99.9"
-assert budget.get("budget_total_pct") == 0.1, f"budget_total_pct=0.1 for 99.9% SLO, got {budget.get('budget_total_pct')}"
+assert abs((budget.get("budget_total_pct") or 0) - 0.1) < 1e-9, f"budget_total_pct=0.1 for 99.9% SLO, got {budget.get('budget_total_pct')}"
 assert abs(budget.get("actual_error_pct", 0) - 0.24) < 0.001, \
     f"actual_error_pct=120/50000*100=0.24, got {budget.get('actual_error_pct')}"
 assert abs(budget.get("budget_consumed_pct", 0) - 240.0) < 0.1, \

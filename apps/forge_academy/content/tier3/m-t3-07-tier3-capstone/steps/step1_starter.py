@@ -4,7 +4,8 @@ Tier 3 Mission 7: Capstone — Ship a Real Child App
 Goal: Wire AppManifest + GoalValidator + BlueprintSpec + compliance tool
       into a CapstoneApp that produces a comprehensive readiness report.
 
-You must implement CapstoneApp.ship() using the components you built in T3-01 through T3-06.
+You must implement CapstoneApp.ship() using simplified versions of the components
+you built in T3-02 through T3-06 (self-contained: nothing here imports the repo).
 All the helper classes and functions below are provided — implement only CapstoneApp.ship().
 """
 
@@ -160,14 +161,16 @@ class CapstoneApp:
         5. completeness: 2 if manifest.completeness_score() == 5 else
                          1 if manifest.completeness_score() >= 3 else 0
 
-        Blockers: any component that scores 0.
+        Blockers: the names of every component that scores 0, using the
+        components-dict keys: "manifest", "goal", "blueprint", "tool",
+        "completeness" (e.g. an unknown system -> "tool" in blockers).
 
         Return:
         {
             "ready": score >= 8 and len(blockers) == 0,
             "score": total_score,
             "max_score": 10,
-            "blockers": [list of blocker names],
+            "blockers": [component keys that scored 0],
             "components": {
                 "manifest": {"score": N, "valid": bool, "issues": [...]},
                 "goal": {"score": N, "valid": bool, "issues": [...]},

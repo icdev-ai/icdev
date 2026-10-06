@@ -4,6 +4,8 @@ DevOps Mission 1: Build a CI/CD Pipeline Agent
 Goal: Analyze pipeline failures, diagnose root causes, generate fixes.
 """
 
+import re
+
 
 # ── Failure Patterns ─────────────────────────────────────────────────────────
 

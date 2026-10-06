@@ -5,9 +5,9 @@ step_class: icdev:Lesson
 
 # Configure AI Governance Inventory
 
-Set up the AI Inventory scanner for your organization.
+These are the settings an AI inventory run takes. This step is a read-through. There is no form to fill in. When you've read what each setting does, click **Understood → Continue**.
 
-## Configuration Fields
+## Settings
 
 **Organization Name** — Your agency or component name. Used in the OMB-format inventory report header.
 
@@ -16,11 +16,11 @@ Set up the AI Inventory scanner for your organization.
 - **New systems only** — Only systems added since the last inventory run
 - **Specific systems** — Comma-separated system IDs for targeted scan
 
-**OMB M-25-21 Check** — Enable to automatically classify each discovered AI system against the OMB M-25-21 use case taxonomy and flag any safety-impacting or rights-impacting systems missing required human oversight documentation.
+**OMB M-25-21 Check**: classifies each discovered AI use case as high-impact or not, and flags any high-impact use that is missing the required minimum practices (impact assessment, testing, monitoring, human oversight). In ICDEV this is `python tools/compliance/omb_m25_21_assessor.py --project-id <id> --json`.
 
 **Include Shadow AI Detection** — Scans service dependencies, API call logs, and container manifests for undocumented AI components. Recommended: ON.
 
-**Output Format** — `OMB Inventory CSV` (for official submission), `Executive Summary PDF`, or `Both`.
+**Output Format**: a machine-readable inventory export (`python tools/compliance/ai_inventory_manager.py --project-id <id> --export --json`), an executive summary for the CISO, or both.
 
 ## Privacy note
 
@@ -28,7 +28,7 @@ The scanner reads system metadata and dependency manifests only — it does not 
 
 ## What you get
 
-- Complete AI system inventory in OMB M-25-21 format
-- Classification of each system by use case (safety-impacting, rights-impacting, mission-operational)
+- A complete AI use case inventory
+- Each use case classified as high-impact or not
 - Gap list: systems missing required governance documentation
 - Executive summary for CISO briefing (auto-generated, plain English, no jargon)

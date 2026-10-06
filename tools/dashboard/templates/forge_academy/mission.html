@@ -10,9 +10,16 @@
   --fa-gold:#FFB800; --fa-card:#12192b; --fa-border:rgba(74,144,217,.25);
 }
 .fa-mission-layout { display:grid; grid-template-columns:280px 1fr; min-height:calc(100vh - 60px); }
+/* Phone width: a fixed 280px column left ~110px for the lesson and scrolled the
+   page sideways. Stack the step list above the content instead. */
+@media (max-width: 760px) {
+  .fa-mission-layout { grid-template-columns: 1fr; }
+  .fa-sidebar { position: static; max-height: none; border-right: none;
+                border-bottom: 1px solid var(--fa-border); }
+}
 /* Sidebar */
 .fa-sidebar {
-  background:#0d1221; border-right:1px solid var(--fa-border);
+  background:var(--fa-bg-0d1221); border-right:1px solid var(--fa-border);
   padding:1.2rem; overflow-y:auto; position:sticky; top:60px; max-height:calc(100vh - 60px);
 }
 .fa-sidebar-title {
@@ -35,7 +42,7 @@
   display:flex; align-items:center; justify-content:center;
   background:rgba(255,255,255,.07); flex-shrink:0; font-weight:700;
 }
-.fa-step-nav li.done .step-num { background:var(--fa-green); color:#0a0a14; }
+.fa-step-nav li.done .step-num { background:var(--fa-green); color:var(--fa-tx-0a0a14); }
 .fa-step-nav li.active .step-num { background:var(--fa-orange); color:#fff; }
 /* XP bar in sidebar */
 .fa-xp-mini { margin-top:auto; padding-top:1rem; border-top:1px solid var(--fa-border); }
@@ -48,7 +55,7 @@
 .fa-step-title { font-size:1.4rem; font-weight:800; margin:0 0 .8rem; }
 /* aca-trn-03: sits above the step content for the whole run, so it is calm —
    a tinted panel with a cyan rule, matched to the tier-locked notice below it. */
-.fa-mission-objective { background:#101018; border:1px solid #2a2a3a;
+.fa-mission-objective { background:var(--fa-bg-101018); border:1px solid #2a2a3a;
   border-left:3px solid var(--fa-cyan); border-radius:8px; padding:.85rem 1.1rem;
   margin-bottom:1.2rem; font-size:.9rem; line-height:1.5; color:var(--text-primary); }
 .fa-mission-objective-label { font-size:.62rem; letter-spacing:.1em;
@@ -66,17 +73,17 @@
 /* Coding step */
 .fa-code-layout { display:grid; grid-template-rows:auto 1fr auto; gap:.8rem; }
 .fa-editor-wrap {
-  background:#0a0f1a; border:1px solid var(--fa-border); border-radius:8px;
+  background:var(--fa-bg-0a0f1a); border:1px solid var(--fa-border); border-radius:8px;
   overflow:hidden; min-height:300px;
 }
 .fa-editor-wrap .CodeMirror { height:300px; font-size:.85rem; font-family:'Courier New',monospace; }
 .fa-output-panel {
-  background:#060910; border:1px solid var(--fa-border); border-radius:8px;
+  background:var(--fa-bg-060910); border:1px solid var(--fa-border); border-radius:8px;
   padding:.8rem 1rem; min-height:80px; font-family:monospace; font-size:.8rem;
-  white-space:pre-wrap; overflow-y:auto; max-height:200px; color:#ccc;
+  white-space:pre-wrap; overflow-y:auto; max-height:200px; color:var(--fa-tx-ccc);
 }
 .fa-output-panel.passed { border-color:var(--fa-green); color:var(--fa-green); }
-.fa-output-panel.failed { border-color:#FF2D55; color:#ff6b6b; }
+.fa-output-panel.failed { border-color:#FF2D55; color:var(--fa-tx-ff6b6b); }
 .fa-controls { display:flex; gap:.7rem; align-items:center; flex-wrap:wrap; }
 .fa-btn-run {
   background:var(--fa-orange); color:#fff; border:none; border-radius:6px;
@@ -86,10 +93,16 @@
 .fa-btn-run:hover { opacity:.85; }
 .fa-btn-run:disabled { opacity:.5; cursor:not-allowed; }
 .fa-btn-next {
-  background:linear-gradient(135deg,var(--fa-green),#00b860); color:#0a0a14;
+  background:linear-gradient(135deg,var(--fa-green),var(--fa-bg-00b860)); color:var(--fa-tx-0a0a14);
   border:none; border-radius:6px; padding:.5rem 1.2rem; font-size:.82rem;
   font-weight:700; cursor:pointer; display:none;
 }
+/* Shown only after a passing Run — Run itself is advisory and never submits. */
+.fa-btn-submit {
+  background:var(--fa-green); color:var(--fa-tx-0a0a14); border:none; border-radius:6px;
+  padding:.5rem 1.2rem; font-size:.82rem; font-weight:700; cursor:pointer; display:none;
+}
+.fa-btn-submit:disabled { opacity:.5; cursor:not-allowed; }
 .fa-btn-hint {
   background:transparent; border:1px solid var(--fa-border); color:var(--text-secondary);
   border-radius:6px; padding:.5rem 1rem; font-size:.78rem; cursor:pointer; margin-left:auto;
@@ -188,14 +201,26 @@
       {{ mission.learning_objective }}
     </div>
     {% endif %}
-    {% if tier_locked %}
+    {% if presenter_preview|default(false) %}
+    {# aca-presenter-preview: the org-leadership tier (admin/pm/isso) demoing a
+       locked mission. api_step_submit grades for real and records nothing. #}
+    <div role="status" id="fa-preview-banner"
+         style="background:#0f1a24;border:1px solid #2f5d78;border-left:3px solid var(--fa-cyan);
+                border-radius:8px;padding:1rem 1.2rem;margin-bottom:1.2rem;font-size:.85rem;
+                color:#c9cede;">
+      <strong style="color:var(--fa-cyan);">Presenter preview</strong> &mdash; answers are
+      graded and shown, nothing is recorded and no XP is awarded.
+      <span style="color:var(--text-secondary);">(Tier {{ mission.tier }} is not unlocked
+      for this account.)</span>
+    </div>
+    {% elif tier_locked %}
     {# aca-ux-04: locked-but-readable. The content below is fully readable; the
        server refuses credit (api_step_submit), so state that plainly rather than
        letting a learner work through it and wonder where the XP went. #}
-    <div role="status" style="background:#14141f;border:1px solid #4a4a5e;border-left:3px solid #d98b12;
+    <div role="status" style="background:var(--fa-bg-14141f);border:1px solid #4a4a5e;border-left:3px solid #d98b12;
                 border-radius:8px;padding:1rem 1.2rem;margin-bottom:1.2rem;font-size:.85rem;
-                color:#c9cede;">
-      <strong style="color:#ffce7a;">&#128274; Tier {{ mission.tier }} is not unlocked yet.</strong>
+                color:var(--fa-tx-c9cede);">
+      <strong style="color:var(--fa-tx-ffce7a);">&#128274; Tier {{ mission.tier }} is not unlocked yet.</strong>
       Read and experiment freely &mdash; nothing here is hidden &mdash; but steps will not
       earn XP or count toward a certificate until it unlocks.
       {% if gating_state and tier_state.required_pct %}
@@ -275,6 +300,9 @@ const STEPS = {{ steps_client | tojson }};
 const MISSION = {id: {{ mission.id | tojson }}, slug: {{ mission.slug | tojson }},
                  tier: {{ mission.tier | tojson }}};
 const FA_USER_ID = {{ fa_user.id if fa_user else 'null' }};
+// aca-presenter-preview: a presenter on a locked tier. The server's
+// status:"preview" response is what each step acts on; this only words the page.
+const FA_PREVIEW = {{ 'true' if presenter_preview|default(false) else 'false' }};
 let currentStep = 0;
 let hintsUsed = 0;
 let startTime = Date.now();
@@ -333,20 +361,46 @@ async function runCode(stepIdx) {
     const d = await resp.json();
     out.textContent = (d.stdout || '') + (d.stderr ? '\n\nSTDERR:\n' + d.stderr : '');
     out.className = 'fa-output-panel ' + (d.passed ? 'passed' : 'failed');
-    if (d.passed) {
-      // The server re-grades on submit; this call records the attempt and is the
-      // only thing that can award XP.
-      const verdict = await submitStep(stepIdx, code);
-      if (!verdict || verdict.passed) {
-        document.getElementById('next-btn-' + stepIdx).style.display = 'inline-block';
-      }
-    }
+    // Run is ADVISORY: /api/academy/code/run grades read-only and records nothing.
+    // It used to call submitStep on a pass, so pressing Run was also pressing
+    // Submit — an attempt recorded and XP paid without the learner choosing to.
+    // A pass now only reveals the explicit Submit button; a fail hides it.
+    const sub = document.getElementById('submit-btn-' + stepIdx);
+    if (sub) sub.style.display = d.passed ? 'inline-block' : 'none';
   } catch(e) {
     out.textContent = 'Error: ' + e.message;
     out.className = 'fa-output-panel failed';
   }
   btn.disabled = false;
   btn.textContent = '▶ Run';
+}
+
+// The only path that records a coding attempt and can award XP. It submits what
+// is in the editor NOW; the server re-grades it, so editing after a passing Run
+// cannot smuggle in an unchecked answer.
+async function submitCode(stepIdx) {
+  const ta = document.getElementById('code-editor-' + stepIdx);
+  const code = (window.editors && window.editors[stepIdx])
+    ? window.editors[stepIdx].getValue()
+    : (ta ? ta.value : '');
+  const sub = document.getElementById('submit-btn-' + stepIdx);
+  const out = document.getElementById('output-' + stepIdx);
+  sub.disabled = true;
+  sub.textContent = '⚙ Submitting...';
+  const verdict = await submitStep(stepIdx, code);
+  sub.disabled = false;
+  sub.textContent = '✓ Submit for credit';
+  // No verdict = not enrolled (submitStep already said so) — still let them move on,
+  // as Run used to.
+  if (!verdict || verdict.passed) {
+    sub.style.display = 'none';
+    document.getElementById('next-btn-' + stepIdx).style.display = 'inline-block';
+  } else {
+    sub.style.display = 'none';
+    out.className = 'fa-output-panel failed';
+    out.textContent += '\n\nSubmission not accepted — the server re-graded the ' +
+      'code in the editor and it did not pass. Run it again.';
+  }
 }
 
 // aca-trn-06: a live region that is already in the DOM and gets its text written
@@ -387,11 +441,11 @@ function faAnnounce(message) {
 function showXPToast(xp, label) {
   faAnnounce((label || 'Step Complete') + (xp ? ': ' + xp + ' XP earned' : ''));
   const t = document.createElement('div');
-  t.style.cssText = 'position:fixed;bottom:1.5rem;right:1.5rem;background:linear-gradient(135deg,#12192b,#1a2540);border:1px solid rgba(255,107,53,.5);border-radius:10px;padding:.9rem 1.4rem;font-size:.88rem;font-weight:700;color:#FF6B35;z-index:9999;box-shadow:0 4px 24px rgba(0,0,0,.5);display:flex;gap:.7rem;align-items:center;animation:slideInRight .3s ease';
+  t.style.cssText = 'position:fixed;bottom:1.5rem;right:1.5rem;background:linear-gradient(135deg,var(--fa-bg-12192b),var(--fa-bg-1a2540));border:1px solid rgba(255,107,53,.5);border-radius:10px;padding:.9rem 1.4rem;font-size:.88rem;font-weight:700;color:var(--fa-tx-ff6b35);z-index:9999;box-shadow:0 4px 24px rgba(0,0,0,.5);display:flex;gap:.7rem;align-items:center;animation:slideInRight .3s ease';
   // The visual toast is hidden from assistive tech because faAnnounce already said
   // it; exposing both announces the same event twice.
   t.setAttribute('aria-hidden', 'true');
-  t.innerHTML = '<span style="font-size:1.3rem;">⬡</span><div><div style="font-size:1.1rem">+' + xp + ' XP</div><div style="font-size:.72rem;color:#aaa;font-weight:400">' + (label||'Step Complete') + '</div></div>';
+  t.innerHTML = '<span style="font-size:1.3rem;">⬡</span><div><div style="font-size:1.1rem">+' + xp + ' XP</div><div style="font-size:.72rem;color:var(--fa-tx-aaa);font-weight:400">' + (label||'Step Complete') + '</div></div>';
   document.body.appendChild(t);
   setTimeout(() => { t.style.opacity='0'; t.style.transition='opacity .4s'; setTimeout(()=>t.remove(),400); }, 2800);
 }
@@ -406,12 +460,12 @@ function faEnrolNotice() {
     el.id = 'fa-enrol-notice';
     el.setAttribute('role', 'status');
     el.style.cssText = 'position:fixed;left:50%;bottom:1.5rem;transform:translateX(-50%);' +
-      'background:#1a1206;border:1px solid #d98b12;color:#ffce7a;border-radius:8px;' +
+      'background:var(--fa-bg-1a1206);border:1px solid #d98b12;color:var(--fa-tx-ffce7a);border-radius:8px;' +
       'padding:.75rem 1.1rem;font-size:.85rem;z-index:9999;max-width:32rem;';
     document.body.appendChild(el);
   }
   el.innerHTML = 'Your progress is not being saved — you are not enrolled in the Academy. ' +
-    '<a href="/academy/profile" style="color:#ffce7a;text-decoration:underline;">Set up your profile</a> to earn XP.';
+    '<a href="/academy/profile" style="color:var(--fa-tx-ffce7a);text-decoration:underline;">Set up your profile</a> to earn XP.';
 }
 
 // Submits an attempt and returns the SERVER's verdict. The caller no longer says
@@ -451,6 +505,12 @@ async function submitStep(stepIdx, submission, chosenOption, answers) {
         setTimeout(() => showXPToast(0, '🎖 Rank Up: ' + d.xp_event.new_level), 1000);
       }
     }
+    // aca-presenter-preview: a graded verdict that was NOT recorded. Callers treat
+    // it like any other verdict (show it, offer Next); this adds the caveat.
+    if (d.status === 'preview') {
+      faPreviewNote(stepIdx);
+      return d;
+    }
     // Only a real pass marks the step done in the sidebar.
     if (d.passed) {
       const navItems = document.querySelectorAll('#step-nav li');
@@ -460,6 +520,25 @@ async function submitStep(stepIdx, submission, chosenOption, answers) {
   } catch(e) {
     return null;
   }
+}
+
+// A small "(preview — not recorded)" beside the step's Next button, once.
+function faPreviewNote(stepIdx) {
+  const id = 'fa-preview-note-' + stepIdx;
+  if (document.getElementById(id)) return;
+  const note = document.createElement('span');
+  note.id = id;
+  note.className = 'fa-preview-note';
+  note.style.cssText = 'font-size:.75rem;color:var(--text-secondary);margin-left:.6rem;';
+  note.textContent = '(preview — not recorded)';
+  const next = document.getElementById('next-btn-' + stepIdx);
+  if (next && next.parentNode) {
+    next.parentNode.insertBefore(note, next.nextSibling);
+  } else {
+    const pane = document.getElementById('step-pane-' + stepIdx);
+    if (pane) pane.appendChild(note);
+  }
+  faAnnounce('Preview: graded, not recorded');
 }
 
 // The server counts the hint (against fa_step_progress) and quotes the real cost.
@@ -507,6 +586,19 @@ function nextStep(idx) {
     goStep(idx + 1);
   } else {
     // Mission complete
+    if (FA_PREVIEW) {
+      // aca-presenter-preview: nothing was recorded, so claim nothing.
+      document.getElementById('step-main').innerHTML = `
+      <div class="fa-complete-banner">
+        <h2>Preview complete</h2>
+        <p>Every step was graded for real. Nothing was recorded and no XP was awarded.</p>
+        <div style="display:flex;gap:.8rem;justify-content:center;margin-top:1rem;">
+          <a href="/academy/missions" class="fa-btn-run" style="text-decoration:none;display:inline-block;padding:.6rem 1.5rem;">Missions</a>
+          <a href="/academy" class="btn" style="font-size:.85rem;">← Hub</a>
+        </div>
+      </div>`;
+      return;
+    }
     document.getElementById('step-main').innerHTML = `
       <div class="fa-complete-banner">
         <div style="font-size:3rem;">🎯</div>

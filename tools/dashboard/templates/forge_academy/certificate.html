@@ -8,11 +8,11 @@
   --fa-red:#FF4444;  --fa-card:#12192b;  --fa-border:rgba(74,144,217,0.25);
 }
 .cert-hero {
-  background:linear-gradient(135deg,#0a0a14 0%,#12192b 60%,#1a1a14 100%);
+  background:linear-gradient(135deg,var(--fa-bg-0a0a14) 0%,var(--fa-bg-12192b) 60%,var(--fa-bg-1a1a14) 100%);
   border-bottom:1px solid var(--fa-border);padding:2rem 2rem 1.5rem;
 }
 .cert-hero h1 { font-size:1.6rem;font-weight:700;color:var(--fa-gold);margin:0 0 .25rem; }
-.cert-hero p  { color:#8899aa;margin:0;font-size:.9rem; }
+.cert-hero p  { color:var(--fa-tx-8899aa);margin:0;font-size:.9rem; }
 .cert-body    { max-width:900px;margin:0 auto;padding:1.5rem 2rem 4rem; }
 
 /* Certificate card */
@@ -28,11 +28,11 @@
 }
 .cert-icon  { font-size:4rem;margin-bottom:.5rem; }
 .cert-title { font-size:1.8rem;font-weight:800;color:var(--cert-color,var(--fa-gold));margin:.25rem 0; }
-.cert-name  { font-size:1.1rem;color:#ccd;margin:.25rem 0; }
-.cert-date  { font-size:.85rem;color:#8899aa;margin:.5rem 0; }
+.cert-name  { font-size:1.1rem;color:var(--fa-tx-ccd);margin:.25rem 0; }
+.cert-date  { font-size:.85rem;color:var(--fa-tx-8899aa);margin:.5rem 0; }
 .cert-token {
-  background:#0d1220;border:1px solid var(--fa-border);border-radius:8px;
-  padding:.5rem 1rem;font-family:monospace;font-size:.8rem;color:#8899aa;
+  background:var(--fa-bg-0d1220);border:1px solid var(--fa-border);border-radius:8px;
+  padding:.5rem 1rem;font-family:monospace;font-size:.8rem;color:var(--fa-tx-8899aa);
   word-break:break-all;margin:.75rem auto;max-width:500px;
 }
 .cert-verify-link { font-size:.8rem;color:var(--fa-blue);text-decoration:none; }
@@ -43,7 +43,7 @@
   text-decoration:none;border:none;cursor:pointer;
 }
 .cert-btn-primary { background:var(--cert-color,var(--fa-gold));color:#000; }
-.cert-btn-secondary { background:rgba(255,255,255,.08);color:#ccd;border:1px solid var(--fa-border); }
+.cert-btn-secondary { background:rgba(255,255,255,.08);color:var(--fa-tx-ccd);border:1px solid var(--fa-border); }
 
 /* Gates */
 .gates-section { margin-bottom:1.5rem; }
@@ -54,8 +54,8 @@
   border-radius:8px;padding:.65rem 1rem;margin-bottom:.5rem;
 }
 .gate-icon { font-size:1.1rem;flex-shrink:0; }
-.gate-name { font-weight:600;font-size:.9rem;color:#ccd;flex:1; }
-.gate-detail { font-size:.8rem;color:#8899aa; }
+.gate-name { font-weight:600;font-size:.9rem;color:var(--fa-tx-ccd);flex:1; }
+.gate-detail { font-size:.8rem;color:var(--fa-tx-8899aa); }
 .gate-met   { border-left:3px solid var(--fa-green); }
 .gate-unmet { border-left:3px solid var(--fa-red); }
 
@@ -64,7 +64,7 @@
 .tier-chip {
   display:inline-flex;align-items:center;gap:.4rem;
   padding:.35rem .9rem;border-radius:20px;font-size:.8rem;font-weight:600;
-  border:1px solid var(--fa-border);color:#ccd;background:rgba(255,255,255,.04);
+  border:1px solid var(--fa-border);color:var(--fa-tx-ccd);background:rgba(255,255,255,.04);
 }
 .tier-chip.active { color:#000; }
 
@@ -141,7 +141,7 @@
       <span class="gate-detail">{{ gate.detail }}</span>
     </div>
     {% else %}
-    <p style="color:#8899aa;font-size:.9rem;">Log in to check eligibility.</p>
+    <p style="color:var(--fa-tx-8899aa);font-size:.9rem;">Log in to check eligibility.</p>
     {% endfor %}
   </div>
 
@@ -162,7 +162,7 @@
   {% endif %}
 
   <div style="margin-top:1.5rem;padding:1rem;background:var(--fa-card);border:1px solid var(--fa-border);border-radius:10px;">
-    <p style="color:#8899aa;font-size:.85rem;margin:0;">
+    <p style="color:var(--fa-tx-8899aa);font-size:.85rem;margin:0;">
       <strong style="color:var(--fa-gold);">XP Bonus:</strong> +{{ cert_def.xp_bonus|int }} XP awarded on claim.
     </p>
   </div>

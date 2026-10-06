@@ -36,34 +36,26 @@ Score each finding by severity × exploitability to set priority order:
 If your audit found injection vulnerabilities, the remediation is the three-layer detector from Mission SecOps-AI-01. This is a P1 remediation for any agent that has tool access (file, network, database).
 
 ```python
-# Wire detector into every agent entrypoint
-from tools.security.prompt_injection import PromptInjectionDetector
+# Wire the detector into every agent entrypoint
+from tools.security.prompt_injection_detector import PromptInjectionDetector
 detector = PromptInjectionDetector()
 
-def agent_entrypoint(user_input: str, session_id: str):
-    result = detector.detect(user_input, session_id=session_id)
-    if result.detected:
+def agent_entrypoint(user_input: str):
+    result = detector.scan_text(user_input, source="agent_entrypoint")
+    if result["action"] in ("block", "flag"):
+        detector.log_detection(result)          # append-only prompt_injection_log
         return error_response("Request could not be processed.", code=400)
     return process_request(user_input)
 ```
 
 ### LLM06: Strip PII/CUI Before Cloud API Calls
 
-System prompts for cloud models must never contain CUI-marked content. Use `classification_manager.py` to detect and mask before transmission:
+System prompts for cloud models must never contain CUI-marked content. In ICDEV, two mechanisms do this work, and neither is "classify then mask":
 
-```python
-from tools.security.classification_manager import ClassificationManager
+- **PII**: every `LLMRouter.invoke()` call runs the pre-invoke redaction hook (`tools/redaction/`, configured in `args/redaction_config.yaml`). The hook masks names, emails, identifiers and similar before the request leaves. With `fail_closed: true`, the call is blocked if a required sanitizer cannot run.
+- **CUI**: redaction does not decide whether text is CUI. Keep CUI away from cloud models by **routing**. Give each LLM function that handles CUI a provider chain of local or IL-appropriate models in `args/llm_config.yaml`. `tools/compliance/classification_manager.py` supplies markings and IL requirements (for example `get_classification_for_il`), not text masking.
 
-cm = ClassificationManager()
-
-def prepare_system_prompt_for_cloud(system_prompt: str) -> str:
-    classification = cm.classify(system_prompt)
-    if classification.level in ("CUI", "SECRET"):
-        return cm.mask_cui(system_prompt)
-    return system_prompt
-```
-
-For IL4/IL5 systems: route all requests containing CUI to the local Ollama model only. Never transmit to cloud APIs.
+For IL4/IL5 systems: route every function that sees CUI to an approved local or IL-authorized model. Never send it to commercial cloud APIs.
 
 ### LLM08: Principle of Least Privilege for Agent Tools
 
@@ -108,8 +100,10 @@ Note: use `| e` (HTML escape) to remediate LLM02 (Insecure Output Handling) simu
 After implementing each remediation, re-run the specific audit test from Step 2:
 
 ```bash
-# Re-run full OWASP audit after remediations
-python tools/security/owasp_audit.py --agent research-agent --json > post_remediation.json
+# Re-run your own audit harness from Step 2 (save its JSON before and after),
+# and re-score the project with ICDEV's assessor:
+python tools/compliance/owasp_llm_assessor.py --project-id <id> --json
+python my_owasp_audit.py --agent research-agent > post_remediation.json   # your Step 2 harness
 
 # Compare findings count
 python -c "
@@ -122,15 +116,12 @@ print(f'Closed: {before[\"total\"] - after[\"total\"]} findings')
 "
 ```
 
-## Track in FORGE IGNITE Innovation Pipeline
+## Make the Fix Stick
 
-After closing findings, register the remediation patterns in the FORGE IGNITE innovation pipeline so they are applied to all future agents automatically:
+A remediation that lives only in one agent will be missing from the next one. Make it structural:
 
-```bash
-python tools/dx/companion.py --sync --write --json
-python tools/workflow/coherence_checker.py --all --fix --gate
-```
-
-The coherence checker enforces that new agent blueprints include injection detection and least-privilege tool sets, so future engineers inherit the security baseline automatically.
+- **Design time**: model the agent on the Agentic AI Design Canvas (`/agentic-ai`). Checks `llm01` (input-sanitizer upstream of every LLM), `llm06` (pii-detector + redaction-engine), `llm08` (circuit-breaker or hitl-gate downstream of every autonomous agent) and `llm10` (audit-logger) fail any future design that drops these controls.
+- **Run time**: send every model call through `LLMRouter`, so the injection screen and redaction hook apply without anyone having to remember them.
+- **Static check**: `python tools/security/atlas_red_team.py --all --json` re-checks that the defensive tooling is present.
 
 **Your task:** Answer the reflection questions.
