@@ -1,0 +1,54 @@
+# CUI // SP-CTI
+id: inject-03-integration-sprint
+title: "Emergency Integration Sprint — Build the Bridge"
+
+body_md: |
+  ## AI BUILD SPRINT — CROSS-DOMAIN DATA BRIDGE (20 MINUTES)
+
+  **Classification:** CUI // SP-CTI
+  **Challenge Type:** Build & Prove
+  **DTG:** [T+60 minutes]
+
+  ---
+
+  The task force commander has authorised an **emergency integration layer** that
+  lets DHS and DIA analysts work from one normalised feed of suspected adversary
+  nodes — without either agency handing over its raw collection.
+
+  ### Requirements
+
+  - Accept records from both agencies and normalise them to one schema
+    (shared identifier, UTC timestamps, a mapped label).
+  - Pass **indicators only** across the boundary: no U.S.-person identifying
+    fields leave the DHS side, no source/method fields leave the DIA side.
+  - Every record that crosses carries its originating agency and handling marking.
+  - Log every transfer so either agency can audit what the other received.
+
+  ### Build Options
+
+  **Option 1 (Full Build — max points):** Fine-tune or adapt a small model that
+  maps both label sets onto the shared label, deploy it behind the normaliser, and
+  submit the model/job ID plus 3 test records showing correct mapping and filtering.
+
+  **Option 2 (Code — partial points):** Submit a working normaliser + boundary filter
+  (code) and 3 test records run through it.
+
+  **Option 3 (Design — minimum points):** Submit the schema, the filter rules and
+  3 worked examples by hand.
+
+  **Required deliverable:**
+  - Option chosen
+  - Proof of AI tool usage (fine-tune receipt, code-analyzer receipt or search receipt)
+  - The 3 test records, before and after the bridge
+
+  **AI Tools:**
+  - **Code Analyzer** — check the normaliser and filter for leaks and defects
+  - **Knowledge Search** — cross-domain transfer and zero-trust requirements
+  - **Fine-tune Deploy** — adapt and deploy the label-mapping model
+
+context_note: >
+  Fine-tuning is required for full marks on this inject (finetune_required: true),
+  but the three tiers let teams of different AI maturity score. The judge weighs the
+  boundary filter most heavily: a bridge that leaks U.S.-person or source/method
+  fields fails regardless of how well it maps labels. When `fusion_achieved` is set
+  by Inject 2, teams may reuse their reconciled schema.

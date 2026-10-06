@@ -1,0 +1,60 @@
+# CUI // SP-CTI
+id: inject-02-data-fusion-failure
+title: "Conflicting Assessments — DHS vs. DIA"
+
+body_md: |
+  ## FUSION CELL ALERT — THE TWO AI STACKS DISAGREE
+
+  **Classification:** CUI // SP-CTI
+  **Priority:** IMMEDIATE
+  **DTG:** [T+35 minutes]
+
+  ---
+
+  ### SITUATION
+
+  The task force ran both agencies' AI triage pipelines over the same 48-hour
+  window. They disagree on the thing that matters most — which accounts are the
+  adversary's nodes:
+
+  - **DIA classifier** flags **412** accounts as adversary-controlled.
+  - **DHS classifier** flags **287** accounts.
+  - Only **96** accounts appear on both lists.
+
+  Fusion analysts have found three reasons the outputs cannot simply be merged:
+
+  1. **Schema mismatch** — DIA keys records by a hashed platform identifier; DHS
+     keys by display handle, which changes. Roughly 1 in 5 records cannot be joined.
+  2. **Clock drift** — DHS timestamps are local time with no offset; DIA's are UTC.
+     The coordinated-posting signal both models rely on is smeared by hours.
+  3. **Different labels** — DIA labels "state-directed"; DHS labels
+     "coordinated inauthentic behavior". Neither label is wrong; they answer
+     different questions.
+
+  ---
+
+  ### YOUR TASK
+
+  1. Diagnose which of the three issues most distorts the disagreement, and why.
+  2. Propose a reconciled node-list method: what you join on, how you normalise
+     time, and how you map the two label sets onto one decision.
+  3. State the confidence you would attach to the reconciled list, and what
+     must be true before it is used to take action against accounts.
+
+  **Deliverable — Fusion Diagnosis (≤ 250 words)** plus a 3-step reconciliation plan.
+
+  **AI Tools:**
+  - **IW Composite** — compare the two campaign pictures side by side
+  - **OODA Wargame** — model how the adversary exploits the time the agencies spend disagreeing
+  - **Knowledge Search** — data-handling rules for U.S.-person information in a joint product
+
+  If **two or more teams** reach ≥ 100 points here, the world state records
+  `fusion_achieved` and the integration sprint (Inject 3) starts from a reconciled
+  schema instead of from scratch.
+
+context_note: >
+  Clock drift is the strongest single answer — it corrupts the coordinated-timing
+  feature both models rely on — but a team that argues the identifier join and
+  defends it with evidence can score well. The judge rewards root-cause reasoning
+  grounded in the numbers given, calibrated confidence, and recognising the
+  U.S.-person handling constraint before acting on the merged list.

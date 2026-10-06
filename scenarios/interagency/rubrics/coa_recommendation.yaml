@@ -1,0 +1,33 @@
+# CUI // SP-CTI
+name: "Joint COA Recommendation Rubric"
+inject_type: coa_recommendation
+description: "Evaluates a single joint course of action issued under two chains of command."
+max_score: 100
+
+dimensions:
+  - id: decisiveness
+    weight: 0.25
+    prompt: >
+      Did the team recommend one COA (or a clearly defended hybrid) rather than
+      listing options? Is the choice justified against the adversary's ~6-hour
+      re-tuning cycle, and does it name what the rejected COAs would have offered?
+
+  - id: authority_split
+    weight: 0.30
+    prompt: >
+      Is it explicit which authority executes each action and who approves it —
+      DoD/IC for foreign infrastructure, DHS/CISA (with partners) for domestic
+      action? Could both the Task Group Commander and the DHS official sign it?
+
+  - id: consequence_analysis
+    weight: 0.25
+    prompt: >
+      Are second- and third-order effects analysed, including the effect on
+      unwitting domestic users who amplified the content? Did AI wargame output
+      visibly shape this analysis?
+
+  - id: decision_point
+    weight: 0.20
+    prompt: >
+      Is there a clear decision point and an observable indicator that would make
+      the team switch COA? Is the package within 300 words?

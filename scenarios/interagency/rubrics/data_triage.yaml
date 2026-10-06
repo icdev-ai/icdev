@@ -1,0 +1,34 @@
+# CUI // SP-CTI
+name: "Fusion Diagnosis Rubric"
+inject_type: data_triage
+description: "Evaluates diagnosis of why two agency AI pipelines disagree, and the plan to reconcile them."
+max_score: 100
+
+dimensions:
+  - id: root_cause
+    weight: 0.35
+    prompt: >
+      Did the team identify which issue most distorts the disagreement and justify
+      it from the numbers given (412 vs 287 flagged, 96 overlap, ~1 in 5 records
+      unjoinable)? Clock drift corrupting the coordinated-timing signal is the
+      strongest answer; a well-evidenced argument for the identifier join is
+      defensible. Unsupported guesses score low.
+
+  - id: reconciliation_plan
+    weight: 0.30
+    prompt: >
+      Is the 3-step reconciliation plan concrete — the join key, UTC normalisation
+      of the DHS timestamps, and a mapping of the two label sets onto one decision?
+      Could an engineer implement it?
+
+  - id: confidence_calibration
+    weight: 0.15
+    prompt: >
+      Did the team state a confidence for the reconciled list that matches the
+      residual uncertainty, and the conditions that must hold before acting on it?
+
+  - id: handling_constraints
+    weight: 0.20
+    prompt: >
+      Did the team recognise that the merged list contains U.S.-person information
+      and state how it must be handled before it is used against accounts?

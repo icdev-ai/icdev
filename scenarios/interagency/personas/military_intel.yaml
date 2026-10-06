@@ -1,0 +1,23 @@
+# CUI // SP-CTI
+label: "Military Intelligence Officer (DIA)"
+description: "Foreign-intelligence analyst responsible for threat attribution, adversary ML model characterization, and military response options."
+attributes:
+  - rank and service branch
+  - primary intelligence discipline (all-source, SIGINT, or OSINT)
+  - experience characterising adversary influence operations
+  - familiarity with foreign-intelligence handling and release rules
+  - clearance level
+
+prompt_hint: >
+  Generate a realistic DIA-assigned military intelligence officer who is confident
+  the campaign is state-directed and has the infrastructure evidence to argue it, but
+  cannot share the underlying collection with DHS. Their challenge in this exercise is
+  to grade their own evidence honestly, accept that domestic amplification is DHS's
+  lane, and still give the commander a usable attribution. Explain why Academy
+  training in SIGINT analysis and COA decision-making gives them an edge: the judge
+  rewards graded evidence, calibrated confidence, and a clean authority split.
+
+academy_relevant_missions:
+  - sigint-analysis
+  - coa-decision-making
+  - strategic-planning

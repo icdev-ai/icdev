@@ -1,0 +1,21 @@
+# CUI // SP-CTI
+label: "Cyber Intelligence Analyst"
+description: "Analyst who assesses the cyber dimension of the hunt — adversary network activity, deception, and the integrity of the crew's own data feeds."
+attributes:
+  - rank or civilian grade, and command
+  - cyber intelligence specialty (network exploitation analysis or defensive cyber)
+  - experience detecting deception and spoofed data
+  - zero-trust and defensive cyber experience
+  - clearance level
+
+prompt_hint: >
+  Generate a realistic cyber intelligence analyst attached to a task group hunting a
+  dark adversary fleet. Their job is to ask whether the data the crew is fusing can be
+  trusted — spoofed emissions, manipulated tracks, or a compromised feed. Explain why
+  Academy training in cyber defense, zero trust and threat modeling helps them flag
+  deception before it drives a strike decision.
+
+academy_relevant_missions:
+  - cyber-defense
+  - zero-trust
+  - threat-modeling
