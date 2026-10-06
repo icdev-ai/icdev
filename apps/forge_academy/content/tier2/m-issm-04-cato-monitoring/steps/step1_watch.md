@@ -30,3 +30,15 @@ Since last assessment: 2 control changes detected on ICDEV-Dev.
 
 **Evidence Cadence Report**
 Automated: 847 evidence items collected this month. Manual gaps: 2 (scheduled for Thursday). ISCM program score: 91/100 → On track for annual review.
+
+*(The systems and numbers above are an illustrative scenario.)*
+
+## Try it in ICDEV
+
+The cATO engine is `tools/compliance/cato_monitor.py`:
+
+```bash
+python tools/compliance/cato_monitor.py --project-id <id> --check-freshness   # which evidence is stale or expired
+python tools/compliance/cato_monitor.py --project-id <id> --readiness         # cATO readiness score
+python tools/compliance/cato_monitor.py --project-id <id> --dashboard         # data behind the posture view
+```

@@ -1,0 +1,33 @@
+# CUI // SP-CTI
+name: "AI-Generated PR Review Rubric"
+inject_type: ai_pr_review
+description: "Did the team review AI-written code as an adversary and find what green CI missed?"
+max_score: 100
+
+dimensions:
+  - id: defect_detection
+    weight: 0.45
+    prompt: >
+      Did the team find all three planted defects? (1) the HALLUCINATED
+      dependency `requests-retry-plus` / `RetrySession`, which does not exist
+      on PyPI (slopsquatting risk); (2) the SWALLOWED exception
+      `except Exception: pass`, which silently drops failed fetches; (3) the
+      NON-DISCRIMINATING test, which patches the function under test and
+      asserts `is not None` / `len >= 0`, so it can never fail. Score 10 for all
+      three with the line and the production consequence, 7 for two, 3 for one,
+      0 for none. Do not credit vague "error handling could be better" remarks.
+  - id: review_comment_quality
+    weight: 0.25
+    prompt: >
+      Is the review comment actionable: clearly blocking, specific about what
+      must change (real pinned retry library, specific exceptions with logging
+      and a partial-failure signal, a test that mocks the HTTP layer and
+      asserts exact output plus a failure path)? Score 0-10.
+  - id: guardrails
+    weight: 0.30
+    prompt: >
+      Did the team name an automated guardrail for each defect class that runs
+      before human review: dependency existence / allowlist / lockfile-hash
+      check; a lint or policy rule against bare except-pass; red-first or
+      mutation testing that proves a test can fail? Score 10 for three
+      specific guardrails, 6 for two, 3 for one, 0 for "be more careful".

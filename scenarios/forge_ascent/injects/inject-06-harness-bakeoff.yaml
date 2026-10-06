@@ -1,0 +1,129 @@
+# CUI // SP-CTI
+id: inject-06-harness-bakeoff
+title: "Harness Bake-Off: Same Fix, Two Coding Harnesses"
+
+body_md: |
+  ## HARNESS BAKE-OFF — SAME TASK, TWO HARNESSES
+
+  **Classification:** CUI // SP-CTI
+  **Challenge Type:** Controlled comparison of AI coding harnesses
+  **Time Box:** No time bonus. Evidence counts more than speed.
+
+  The Program Office has to standardise the team's AI coding tooling before the
+  next SENTINEL-ML release. They do not want opinions. They want a small,
+  controlled experiment run on a real piece of this pipeline.
+
+  A *harness* is everything wrapped around the model: the tools it may call,
+  the context it is given (instruction files, the repository), its permission
+  model, and its loop (plan, edit, run tests, retry). Two harnesses on the same
+  model can produce very different work.
+
+  ### The Task (identical for both runs)
+
+  Write `normalize_bounded(rows, bounds)` in `sentinel/normalize.py`. It is
+  plain Python on purpose: standard library only, so it runs offline with no
+  extra installs and both arms work in the same environment.
+
+  ```python
+  def normalize_bounded(rows: list[dict], bounds: dict[str, tuple[float, float]]) -> list[dict]:
+      """Return NEW row dicts where every key named in bounds is clipped to
+      [lo, hi] FIRST and then scaled to [0, 1]. A None in one of those keys is
+      filled with the median of that key's non-None values before clipping.
+      Keys not in bounds are returned unchanged. The input rows must not be
+      mutated."""
+  ```
+
+  Every run is graded against the same acceptance file, which the facilitator
+  hands out at dispatch. Do **not** show this file to the harness until the run
+  is finished. It is the hidden check.
+
+  ```python
+  # test_normalize_acceptance.py
+  import copy
+
+  import pytest
+  from sentinel.normalize import normalize_bounded
+
+  BOUNDS = {"fuel_consumption_delta": (-1.0, 1.0), "supply_latency_hours": (0.0, 720.0)}
+
+  def _rows():
+      return [
+          {"fuel_consumption_delta": -3.0, "supply_latency_hours": 0.0,   "sortie_rate_7d": 1.0},
+          {"fuel_consumption_delta": 0.0,  "supply_latency_hours": 360.0, "sortie_rate_7d": 2.0},
+          {"fuel_consumption_delta": 3.74, "supply_latency_hours": 900.0, "sortie_rate_7d": None},
+          {"fuel_consumption_delta": None, "supply_latency_hours": 10.0,  "sortie_rate_7d": 4.0},
+      ]
+
+  @pytest.mark.parametrize("col", sorted(BOUNDS))
+  def test_bounded_columns_land_in_unit_interval(col):
+      out = normalize_bounded(_rows(), BOUNDS)
+      assert all(0.0 <= r[col] <= 1.0 for r in out)
+
+  def test_clip_happens_before_scaling():
+      out = normalize_bounded(_rows(), BOUNDS)
+      assert out[2]["fuel_consumption_delta"] == pytest.approx(1.0)
+      assert out[0]["fuel_consumption_delta"] == pytest.approx(0.0)
+
+  def test_unbounded_columns_untouched_and_input_not_mutated():
+      rows = _rows()
+      before = copy.deepcopy(rows)
+      out = normalize_bounded(rows, BOUNDS)
+      assert rows == before
+      assert [r["sortie_rate_7d"] for r in out] == [1.0, 2.0, None, 4.0]
+  ```
+
+  ### Choose Your Two Arms
+
+  Pick ONE design and declare it before you start:
+
+  - **Design A: two harnesses.** For example a terminal agent (Claude Code,
+    OpenAI Codex CLI, Gemini CLI, Aider) against an IDE agent (Cursor, GitHub
+    Copilot agent mode, Windsurf). These product names are as of October 2026.
+  - **Design B: one harness, two configurations.** For example with and without
+    an instruction file (`CLAUDE.md` / `AGENTS.md` / `.cursor/rules`), or with
+    plan mode on and off.
+
+  Hold everything else still: same starting commit, same task prompt (paste it
+  verbatim into both runs), same model if the harnesses let you choose it, and
+  the same person driving. If something could not be held still, say what it
+  was.
+
+  ### Required Deliverable
+
+  1. **Setup declaration.** Design A or B, the two arms (harness name, version,
+     model, configuration), the starting commit SHA, and the exact task prompt.
+  2. **Two diffs.** The full `git diff` each arm produced, unedited. Label them
+     ARM-1 and ARM-2.
+  3. **Test evidence per arm.** The raw `pytest -q test_normalize_acceptance.py`
+     output for each arm (pass/fail counts as printed), plus any tests the
+     harness wrote by itself.
+  4. **Comparison table.** For each arm: acceptance tests passed (of 4), did it
+     pass on the first run, number of prompts or human corrections, wall-clock
+     minutes, files touched outside `sentinel/normalize.py` and its tests, and
+     whether it ran the tests itself without being asked.
+  5. **Verdict and limits.** Which arm you would standardise on and why, tied to
+     rows in your table. State what this n=1 experiment cannot tell you, and the
+     next experiment that would.
+
+  **Points are awarded for:**
+  - Correct code: both arms checked against the hidden acceptance file
+  - Real test evidence: raw output, not a summary of it
+  - A fair comparison: controlled variables, a declared design, honest limits
+  - Using Code Analyzer on each diff and Knowledge Search for harness docs.
+    Each verified tool call earns +50 pts toward this inject.
+
+  **Note:** Do not cite a benchmark score or a price for any harness unless you
+  give its date and its source. An undated number scores zero.
+
+context_note: >
+  Reference solution: out = [dict(r) for r in rows]; for each (col, (lo, hi)) in
+  bounds, fill = statistics.median of that key's non-None values, then for each
+  row v = fill if r[col] is None else r[col]; r[col] = (min(max(v, lo), hi) - lo) / (hi - lo).
+  Common harness failures to look for in the diffs: scaling before clipping
+  (fails test_clip_happens_before_scaling, since -3.0 scales to -1.0), mutating the
+  input rows in place (fails the mutation test), filling unbounded keys too
+  (fails the untouched-column check), and edits to files outside scope. A strong
+  team keeps prompt, commit and driver fixed across arms, reports raw pytest
+  output for BOTH arms even when one fails, and says that one run per arm cannot
+  separate harness effect from run-to-run variance (the fix is several runs per
+  arm, or swapping the order of the arms).

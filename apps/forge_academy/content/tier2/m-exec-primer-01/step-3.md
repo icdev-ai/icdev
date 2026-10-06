@@ -5,7 +5,7 @@ step_class: icdev:Lesson
 
 # AI Risks — The 5 You Must Own
 
-AI capability comes with AI risk. As an executive, you do not need to understand the technical mechanics of each risk — but you must be able to name them, describe their organizational impact, and brief your mitigation posture. These are the five risks Congress asks about.
+AI capability comes with AI risk. As an executive, you do not need to understand the technical mechanics of each risk — but you must be able to name them, describe their organizational impact, and brief your mitigation posture. These are the five that oversight bodies, boards and auditors most often ask leaders about.
 
 ## The Five Executive-Level AI Risks
 

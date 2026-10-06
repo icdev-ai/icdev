@@ -4,7 +4,8 @@ Tier 3 Mission 7: Capstone — Ship a Real Child App
 Goal: Wire AppManifest + GoalValidator + BlueprintSpec + compliance tool
       into a CapstoneApp that produces a comprehensive readiness report.
 
-You must implement CapstoneApp.ship() using the components you built in T3-01 through T3-06.
+You must implement CapstoneApp.ship() using simplified versions of the components
+you built in T3-02 through T3-06 (self-contained: nothing here imports the repo).
 All the helper classes and functions below are provided — implement only CapstoneApp.ship().
 """
 

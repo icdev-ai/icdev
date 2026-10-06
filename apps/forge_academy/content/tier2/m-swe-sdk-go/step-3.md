@@ -34,21 +34,24 @@ Set `ReadTimeout`, `WriteTimeout`, and `IdleTimeout` on `http.Server`. These pro
 
 ## ctx.Done() in streaming
 
-When streaming from the Claude API, check `ctx.Done()` between chunks to honour client cancellation:
+When streaming from the Claude API, pass the request context to `NewStreaming`. A cancelled context ends the stream, and `stream.Err()` reports it. Check `ctx.Done()` between chunks too, so you stop writing to a client that has gone:
 
 ```go
 stream := client.Messages.NewStreaming(ctx, params)
 for stream.Next() {
     event := stream.Current()
-    if delta, ok := event.Delta.(anthropic.ContentBlockDeltaEventDelta); ok {
-        select {
-        case <-ctx.Done():
-            return ctx.Err()
-        default:
-        }
-        w.Write([]byte(delta.Text))
-        if f, ok := w.(http.Flusher); ok {
-            f.Flush()
+    switch ev := event.AsAny().(type) {
+    case anthropic.ContentBlockDeltaEvent:
+        if delta, ok := ev.Delta.AsAny().(anthropic.TextDelta); ok {
+            select {
+            case <-ctx.Done():
+                return ctx.Err()
+            default:
+            }
+            w.Write([]byte(delta.Text))
+            if f, ok := w.(http.Flusher); ok {
+                f.Flush()
+            }
         }
     }
 }
@@ -57,59 +60,74 @@ if err := stream.Err(); err != nil && !errors.Is(err, context.Canceled) {
 }
 ```
 
-The non-blocking `select` with `default` checks for cancellation without blocking on every iteration.
+The non-blocking `select` with `default` checks for cancellation without blocking on every iteration. If you also need the full message at the end, call `message.Accumulate(event)` on an `anthropic.Message{}` inside the loop; the Go SDK has no `GetFinalMessage()` helper.
 
 ## slog structured logging without leaking prompt content
 
-Go 1.21's `log/slog` package is the standard structured logger. Log metadata, never content:
+Go's `log/slog` package is the standard structured logger. Log metadata, never content:
 
 ```go
 slog.Info("claude call complete",
-    slog.String("model", string(params.Model.Value)),
-    slog.Int("input_tokens",  int(msg.Usage.InputTokens)),
-    slog.Int("output_tokens", int(msg.Usage.OutputTokens)),
+    slog.String("model", string(params.Model)),
+    slog.Int64("input_tokens",  msg.Usage.InputTokens),
+    slog.Int64("output_tokens", msg.Usage.OutputTokens),
     slog.Duration("latency", time.Since(start)),
     slog.String("stop_reason", string(msg.StopReason)),
 )
 // NEVER: slog.String("prompt", systemPrompt)
-// NEVER: slog.String("response", msg.Content[0].Text)
+// NEVER: slog.String("response", textOf(msg))
 ```
 
-In a CUI environment, prompt and response content is classified data. It must not appear in application logs which may flow to unclassified log aggregators.
+In a CUI environment, prompt and response content is classified data. It must not appear in application logs, which may flow to unclassified log aggregators.
 
 ## Interface-based mocking for tests
 
-Define a `ClaudeClient` interface that matches the methods you call:
+Don't mock the SDK's types. Define a small interface at **your** service's boundary, so tests never need to construct SDK response structs:
 
 ```go
-type ClaudeClient interface {
-    NewMessage(ctx context.Context, params anthropic.MessageNewParams) (*anthropic.Message, error)
+// Completer is the only thing Service needs from Claude.
+type Completer interface {
+    Complete(ctx context.Context, system, user string) (string, error)
+}
+
+// claudeCompleter is the production implementation.
+type claudeCompleter struct {
+    client anthropic.Client
+    model  string
+}
+
+func (c claudeCompleter) Complete(ctx context.Context, system, user string) (string, error) {
+    msg, err := c.client.Messages.New(ctx, anthropic.MessageNewParams{
+        Model:     anthropic.Model(c.model),
+        MaxTokens: 16000,
+        System:    []anthropic.TextBlockParam{{Text: system}},
+        Messages:  []anthropic.MessageParam{anthropic.NewUserMessage(anthropic.NewTextBlock(user))},
+    })
+    if err != nil {
+        return "", err
+    }
+    return textOf(msg), nil
 }
 
 type Service struct {
-    claude ClaudeClient
+    claude Completer
 }
 ```
 
-In tests, implement the interface with a mock:
+In tests, implement the interface with a fake:
 
 ```go
-type mockClaude struct {
+type fakeCompleter struct {
     response string
     err      error
 }
 
-func (m *mockClaude) NewMessage(_ context.Context, _ anthropic.MessageNewParams) (*anthropic.Message, error) {
-    if m.err != nil {
-        return nil, m.err
-    }
-    return &anthropic.Message{
-        Content: []anthropic.ContentBlock{{Text: m.response}},
-    }, nil
+func (f fakeCompleter) Complete(context.Context, string, string) (string, error) {
+    return f.response, f.err
 }
 ```
 
-This approach tests your service logic without hitting the network, with full type safety.
+This tests your parsing, validation and error handling without the network, and it survives SDK upgrades.
 
 ## Graceful shutdown with context cancellation
 
@@ -134,11 +152,12 @@ The 30-second shutdown window must be longer than your longest expected Claude s
 
 ## Reflection questions
 
-1. What happens to a goroutine blocked on `client.Messages.New(...)` when the parent context is cancelled?
-2. Why is a non-blocking `select { case <-ctx.Done(): default: }` preferred over a blocking `select` in the streaming loop?
-3. Your service processes 1000 documents per minute. Each call averages 2 seconds. How many concurrent goroutines does your `maxConcurrent = 5` bounded fan-out actually keep busy at steady state?
-4. Why should the interface-based mock live in `_test.go` files rather than production code?
-5. You deploy your service and notice that after a rolling restart, some requests fail with `connection reset by peer`. What shutdown pattern change would address this?
+Answer the two fields on this step:
+
+1. **How will you propagate context cancellation from the HTTP handler to the Claude API call?**
+2. **How will you validate the structured JSON output against your Go struct schema?**
+
+To go further: what happens to a goroutine blocked on `client.Messages.New(...)` when its context is cancelled? And after a rolling restart, why might some requests fail with `connection reset by peer`, and what shutdown change fixes it?
 
 ---
 

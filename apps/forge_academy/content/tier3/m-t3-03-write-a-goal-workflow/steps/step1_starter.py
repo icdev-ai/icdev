@@ -3,7 +3,7 @@
 Tier 3 Mission 3: Write a Goal Workflow
 Goal: Build a GoalValidator that parses and validates ICDEV goal files.
 
-FORGE Goal Contract:
+Compact goal schema used by this exercise (real goals are Markdown prose):
   - Must have ≥1 tool reference (tools/<dir>/<name>.py)
   - Must have a ## Steps section with ≥1 numbered step
   - Must have an # Output: line (DB table or file)
@@ -15,19 +15,19 @@ FORGE Goal Contract:
 
 VALID_GOAL = """
 # Compliance Evidence Goal
-# Tools: tools/compliance/scanner.py, tools/db/storage.py
+# Tools: tools/compliance/stig_checker.py, tools/db/storage.py
 # Args: args/compliance_config.yaml
-# Output: DB table audit_findings
+# Output: DB table stig_findings
 
-Run a STIG compliance scan and store evidence in the audit database.
+Run a STIG compliance check and store the findings in the ICDEV database.
 
 ## Steps
-1. Initialize scanner — scanner.py (target_system, control_ids)
-2. Run STIG checks — scanner.py (xccdf_benchmark)
-3. Persist findings — storage.py (scan_results, table="audit_findings")
+1. Initialize the STIG check — stig_checker.py (project_id)
+2. Run STIG checks — stig_checker.py (stig_id)
+3. Persist findings — storage.py (results, table="stig_findings")
 
 ## Expected Output
-Rows inserted into audit_findings table with control_id, status, and evidence fields.
+Rows inserted into the stig_findings table, one per STIG rule evaluated.
 """
 
 INVALID_GOAL_NO_TOOLS = """
@@ -42,7 +42,7 @@ A goal with no tool references.
 
 INVALID_GOAL_NO_STEPS = """
 # My Goal
-# Tools: tools/compliance/scanner.py
+# Tools: tools/compliance/stig_checker.py
 # Output: file reports/output.txt
 
 No steps section here.
@@ -116,7 +116,7 @@ def validate_tools(tool_paths: list[str]) -> list[str]:
 # ── Step 4: GoalValidator ─────────────────────────────────────────────────────
 
 class GoalValidator:
-    """Validates ICDEV goal files against the FORGE schema."""
+    """Validates goal files written in the compact goal schema."""
 
     def validate(self, content: str) -> dict:
         """TODO: Validate a goal file and return a structured result.

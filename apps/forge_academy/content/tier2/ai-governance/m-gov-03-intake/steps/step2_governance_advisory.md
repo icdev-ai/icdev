@@ -4,16 +4,17 @@ step_class: icdev:configure
 ---
 # Governance Advisory Integration
 
-The ICDEV chat interface has a governance advisory mode that automatically surfaces relevant AI governance obligations when users discuss AI deployments.
+The ICDEV chat (`/chat`) surfaces AI governance obligations while you talk, in two ways:
 
-## Governance sidebar config
-
-The governance sidebar appears in the ICDEV chat when messages match governance-relevant intents (detected by the AI Governance Intake module):
-
-- "We're deploying an AI system for..." → triggers AI inventory checklist
-- "We need to automate decisions about..." → triggers oversight plan requirement
-- "CAIO review..." → triggers OMB M-25-21 compliance check
+- **Advisory messages.** After assistant responses, chat checks the conversation for AI keywords (`chat_governance.ai_keywords` in `args/ai_governance_config.yaml`: "automated decision", "chatbot", "llm", "predictive model", …). When they appear, an **[AI Governance Advisory]** message is injected. Advisories follow a priority order (`oversight_plan_missing`, `impact_assessment_missing`, `model_card_missing`, `caio_not_designated`, `fairness_not_assessed`, `reassessment_overdue`) and the same advisory is not repeated within 5 turns (`advisory_cooldown_turns`).
+- **The Governance sidebar.** The **Governance** button in the chat header toggles a sidebar with live counts from `/api/ai-transparency/stats` and `/api/ai-accountability/stats`: AI systems, model cards, oversight plans and so on.
 
 ## Your task
 
-In the ICDEV chat (`/chat`), describe a fictional AI deployment scenario (e.g., "We're deploying an AI system to assist case workers in benefits eligibility determination"). Does the governance sidebar appear? What obligations does it surface? Are they accurate for that scenario?
+In `/chat`, describe a fictional AI deployment, for example: "We're deploying an AI system to assist case workers in benefits eligibility determination; it makes automated decisions about applications." Then:
+
+1. Does an **[AI Governance Advisory]** appear? Which obligation does it lead with, and does that match the priority order above?
+2. Open the **Governance** sidebar. Which counts are zero for your project?
+3. Is the advisory accurate for this scenario (a high-impact system that affects individuals)? What did it miss?
+
+Press **Configure** to record that you completed the exercise.

@@ -8,7 +8,7 @@
   --fa-red:#FF4444;  --fa-card:#12192b;  --fa-border:rgba(74,144,217,0.25);
 }
 .mc-hero {
-  background:linear-gradient(135deg,#0a0a14 0%,#12192b 60%,#1a1a14 100%);
+  background:linear-gradient(135deg,var(--fa-bg-0a0a14) 0%,var(--fa-bg-12192b) 60%,var(--fa-bg-1a1a14) 100%);
   border-bottom:1px solid var(--fa-border);padding:2rem 2rem 1.5rem;
 }
 .mc-hero h1 { font-size:1.6rem;font-weight:700;color:var(--fa-gold);margin:0 0 .25rem; }
@@ -29,14 +29,14 @@
 }
 .cert-tile-icon  { font-size:2.5rem;text-align:center; }
 .cert-tile-name  { font-size:1rem;font-weight:700;color:var(--tc,var(--fa-gold));text-align:center; }
-.cert-tile-desc  { font-size:.8rem;color:#8899aa;text-align:center;flex:1; }
-.cert-tile-date  { font-size:.75rem;color:#8899aa;text-align:center; }
+.cert-tile-desc  { font-size:.8rem;color:var(--fa-tx-8899aa);text-align:center;flex:1; }
+.cert-tile-date  { font-size:.75rem;color:var(--fa-tx-8899aa);text-align:center; }
 .cert-tile-gates {
   display:flex;gap:.3rem;flex-wrap:wrap;justify-content:center;margin-top:.25rem;
 }
 .cert-tile-gate {
   font-size:.7rem;padding:.15rem .5rem;border-radius:10px;
-  background:rgba(255,255,255,.06);color:#8899aa;
+  background:rgba(255,255,255,.06);color:var(--fa-tx-8899aa);
 }
 .cert-tile-gate.met { background:rgba(0,255,136,.1);color:var(--fa-green); }
 .cert-tile-btns { display:flex;gap:.5rem;margin-top:.5rem; }
@@ -45,7 +45,7 @@
   text-align:center;text-decoration:none;border:none;cursor:pointer;
 }
 .cert-tile-btn-primary { background:var(--tc,var(--fa-gold));color:#000; }
-.cert-tile-btn-secondary { background:rgba(255,255,255,.08);color:#ccd;border:1px solid var(--fa-border); }
+.cert-tile-btn-secondary { background:rgba(255,255,255,.08);color:var(--fa-tx-ccd);border:1px solid var(--fa-border); }
 .cert-tile-btn:disabled { opacity:.45;cursor:not-allowed; }
 </style>
 {% include "forge_academy/partials/_chrome_clearance.html" %}
@@ -56,7 +56,7 @@
   <div style="max-width:900px;margin:0 auto;">
     <a href="/academy" style="color:var(--fa-gold);text-decoration:none;font-size:.85rem;">← FORGE Academy</a>
     <h1 style="margin-top:.5rem;">🏅 My Certificates</h1>
-    <p style="color:#8899aa;font-size:.9rem;">Track your FORGE AI credentials. CUI // SP-CTI</p>
+    <p style="color:var(--fa-tx-8899aa);font-size:.9rem;">Track your FORGE AI credentials. CUI // SP-CTI</p>
   </div>
 </div>
 

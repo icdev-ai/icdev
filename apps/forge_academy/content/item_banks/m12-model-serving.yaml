@@ -161,11 +161,11 @@ steps:
           You need to offer two DIFFERENT base models (a Qwen and a Mistral) from
           vLLM. What is the pattern the lesson describes?
         options:
-          - "Pass both model names to one `vllm serve` command"
           - "Run one vLLM server per base model on its own port, with a router in front"
+          - "Pass both model names to one `vllm serve` command"
           - "Load the Mistral as a LoRA adapter on the Qwen base"
           - "Use tensor parallelism to split the two models across GPUs"
-        correct: 1
+        correct: 0
         explanation: >-
           One vLLM process serves one base model. ICDEV runs `vllm` on 8000 and
           `mistral_vllm` on 8100 as independent servers and routes between them.
@@ -192,10 +192,10 @@ steps:
           fits the lesson's rule of thumb?
         options:
           - "--pipeline-parallel-size 4, because GPUs are in one node"
-          - "--tensor-parallel-size 4, splitting each layer across the node's GPUs"
-          - "--max-loras 4"
           - "--gpu-memory-utilization 4"
-        correct: 1
+          - "--max-loras 4"
+          - "--tensor-parallel-size 4, splitting each layer across the node's GPUs"
+        correct: 3
         explanation: >-
           Tensor parallelism splits each layer's weights across GPUs and exchanges
           results every layer, so it wants a fast in-node interconnect. Pipeline
@@ -222,10 +222,10 @@ steps:
           workloads?
         options:
           - "4-bit weight quantization"
-          - "Reuse of KV cache across requests that share a prefix, tracked in a radix tree"
           - "Automatic translation of prompts into SQL"
+          - "Reuse of KV cache across requests that share a prefix, tracked in a radix tree"
           - "Billing per request instead of per token"
-        correct: 1
+        correct: 2
         explanation: >-
           RadixAttention keeps KV cache for shared prefixes in a radix tree so later
           requests with the same prefix skip recomputing it.
@@ -236,11 +236,11 @@ steps:
           Which set of practices does the lesson give for serving inside an
           air-gapped enclave?
         options:
-          - "Pull weights from the Hugging Face Hub at start-up and pin images by tag"
           - "Serve weights from a local path, set HF_HUB_OFFLINE=1, pin images by digest, and end every router chain in a model reachable inside the enclave"
+          - "Pull weights from the Hugging Face Hub at start-up and pin images by tag"
           - "Disable the chat template to save space"
           - "Route all traffic to a managed API for reliability"
-        correct: 1
+        correct: 0
         explanation: >-
           Everything fetched at start-up must already be inside: local weights,
           offline hub mode, digest-pinned images, and chains that end in an in-enclave
@@ -253,10 +253,10 @@ steps:
           Azure OpenAI?
         options:
           - "They cannot run frontier models"
-          - "Data leaves your boundary, and you must confirm the service is authorised at your impact level"
-          - "They require you to manage GPUs yourself"
           - "They only support LoRA adapters"
-        correct: 1
+          - "They require you to manage GPUs yourself"
+          - "Data leaves your boundary, and you must confirm the service is authorised at your impact level"
+        correct: 3
         explanation: >-
           Managed APIs remove GPU operations, but data leaves your boundary and the
           service must be authorised at your impact level; billing is per token.

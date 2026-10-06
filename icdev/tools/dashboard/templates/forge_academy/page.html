@@ -17,7 +17,7 @@
 }
 .fa-hub { padding: 0 0 3rem; }
 .fa-hero {
-  background: linear-gradient(135deg, #0a0a14 0%, #12192b 60%, #1a1230 100%);
+  background: linear-gradient(135deg, var(--fa-bg-0a0a14) 0%, var(--fa-bg-12192b) 60%, var(--fa-bg-1a1230) 100%);
   border-bottom: 1px solid var(--fa-border);
   padding: 2.5rem 2rem 2rem;
   position: relative;
@@ -137,7 +137,7 @@
   background:rgba(74,144,217,.15); color:var(--fa-cyan);
 }
 .fa-card-type.coding   { background:rgba(0,255,136,.12); color:var(--fa-green); }
-.fa-card-type.guided   { background:rgba(155,89,182,.12); color:#c39bd3; }
+.fa-card-type.guided   { background:rgba(155,89,182,.12); color:var(--fa-tx-c39bd3); }
 .fa-card-type.hybrid   { background:rgba(255,107,53,.12); color:var(--fa-orange); }
 .fa-card-type.studio   { background:rgba(0,212,255,.12); color:var(--fa-cyan); }
 .fa-card-type.chat     { background:rgba(255,184,0,.12); color:var(--fa-gold); }
@@ -149,7 +149,7 @@
 }
 .fa-card-diff.beginner     { background:rgba(0,255,136,.12); color:var(--fa-green); }
 .fa-card-diff.intermediate { background:rgba(255,184,0,.12); color:var(--fa-gold); }
-.fa-card-diff.advanced     { background:rgba(255,45,85,.12); color:#ff6b6b; }
+.fa-card-diff.advanced     { background:rgba(255,45,85,.12); color:var(--fa-tx-ff6b6b); }
 .fa-card-status { font-size:.65rem; }
 .fa-card-status.completed { color:var(--fa-green); }
 .fa-card-status.in_progress { color:var(--fa-gold); }
@@ -229,10 +229,10 @@
            next confused learner with nothing. #}
         <div role="status" class="fa-xp-bar-label" style="margin-top:.45rem;display:block;
                     font-size:.7rem;color:var(--text-secondary);line-height:1.45;">
-          Total <strong>{{ level_ctx.total_xp|default(0) }} XP</strong>, of which
-          <strong>{{ level_ctx.attendance_xp }}</strong> is daily-login attendance.
-          Attendance still counts toward your total &mdash; rank is earned from
-          graded work only, so showing up does not buy a promotion.
+          Rank is computed from <strong>{{ level_ctx.earned_xp|default(0) }} XP</strong>
+          earned from graded work. Separately, <strong>{{ level_ctx.attendance_xp }} XP</strong>
+          of daily-login attendance is recorded but not ranked
+          ({{ level_ctx.total_xp|default(0) }} XP combined) &mdash; showing up does not buy a promotion.
         </div>
         {% endif %}
       </div>
@@ -242,16 +242,10 @@
       </div>
     </div>
 
-    <div class="fa-intel-feed" style="margin-top:1rem;">
-      <span class="fa-intel-ticker">
-        ◈ INTEL FEED &nbsp;|&nbsp;
-        LLM Token Economics — Complete M01 to unlock &nbsp;|&nbsp;
-        RAG Architecture — Agents that read documents without fine-tuning &nbsp;|&nbsp;
-        MCP Protocol — The universal API layer every agent needs &nbsp;|&nbsp;
-        New Mission Available: Amazon Strands Agents &nbsp;|&nbsp;
-        Guild challenge active — 48 hours remaining &nbsp;|&nbsp;
-      </span>
-    </div>
+    {# aca-empty-demo: the "INTEL FEED" ticker was hardcoded copy with no data source
+       ("Guild challenge active — 48 hours remaining" while no challenge exists), and it
+       rendered as an empty dark box between scroll passes. Removed rather than given a
+       fake feed. #}
     {% else %}
     <p style="color:var(--text-secondary);margin-top:1rem;">Set up your profile to begin your mission.</p>
     <a href="/academy/profile" class="btn" style="margin-top:.5rem;background:var(--fa-orange);border-color:var(--fa-orange);">Begin Mission</a>
@@ -269,9 +263,16 @@
     {% if fa_user %}
     <!-- Stats Row -->
     <div class="fa-stats-row">
+      {# aca-numbers-demo: the headline chip was fa_users.xp — 7635 live, 7385 of it
+         daily logins — beside a "Recruit" badge. The headline is now the figure the
+         rank is computed from; attendance gets its own, labelled chip. #}
       <div class="fa-stat-chip">
-        <div class="val">{{ stats.user.xp|default(0) }}</div>
-        <div class="lbl">Total XP</div>
+        <div class="val">{{ level_ctx.earned_xp|default(0) }}</div>
+        <div class="lbl">Earned XP (rank)</div>
+      </div>
+      <div class="fa-stat-chip">
+        <div class="val">{{ level_ctx.attendance_xp|default(0) }}</div>
+        <div class="lbl">Attendance XP (not ranked)</div>
       </div>
       <div class="fa-stat-chip">
         <div class="val">{{ stats.achievement_count|default(0) }}</div>
@@ -298,7 +299,7 @@
       <a href="/academy/arena" class="btn" style="font-size:.78rem;color:var(--fa-orange);border-color:var(--fa-orange);">⚡ Arena</a>
       {% endif %}
       <a href="/academy/workflow-builder" class="btn" style="font-size:.78rem;color:var(--fa-cyan);border-color:var(--fa-cyan);">⬡ Workflow Builder</a>
-      <a href="/academy/oracle" class="btn" style="font-size:.78rem;color:#9b59b6;border-color:#9b59b6;">🔮 Oracle Intel</a>
+      <a href="/academy/oracle" class="btn" style="font-size:.78rem;color:var(--fa-tx-9b59b6);border-color:#9b59b6;">🔮 Oracle Intel</a>
     </div>
 
     {# aca-ux-03: continue where you left off. Only rendered when the learner has
@@ -324,7 +325,7 @@
           {%- endif %}
         </span>
       </span>
-      <span style="font-size:.8rem;font-weight:700;color:var(--fa-orange,#FF6B35);">Resume &rarr;</span>
+      <span style="font-size:.8rem;font-weight:700;color:var(--fa-orange,var(--fa-tx-ff6b35));">Resume &rarr;</span>
     </a>
     {% endif %}
 
@@ -373,27 +374,27 @@
     </div>
 
     <!-- Oracle Intel Widget -->
-    <div style="margin-top:2rem;background:#12192b;border:1px solid rgba(155,89,182,.35);border-left:3px solid #9b59b6;border-radius:10px;padding:1rem 1.3rem;" id="oracle-widget">
+    <div style="margin-top:2rem;background:var(--fa-bg-12192b);border:1px solid rgba(155,89,182,.35);border-left:3px solid #9b59b6;border-radius:10px;padding:1rem 1.3rem;" id="oracle-widget">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:.5rem;">
         <div>
-          <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#9b59b6;margin-bottom:.4rem;">🔮 Oracle Intel</div>
+          <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--fa-tx-9b59b6);margin-bottom:.4rem;">🔮 Oracle Intel</div>
           <div style="display:flex;gap:1.4rem;flex-wrap:wrap;">
             <div>
-              <span style="font-size:1.4rem;font-weight:900;color:#00D4FF;" id="ora-total">—</span>
+              <span style="font-size:1.4rem;font-weight:900;color:var(--fa-tx-00d4ff);" id="ora-total">—</span>
               <span style="font-size:.68rem;color:var(--text-secondary);margin-left:.3rem;">predictions</span>
             </div>
             <div>
-              <span style="font-size:1.4rem;font-weight:900;color:#ff4d4d;" id="ora-crit">—</span>
+              <span style="font-size:1.4rem;font-weight:900;color:var(--fa-tx-ff4d4d);" id="ora-crit">—</span>
               <span style="font-size:.68rem;color:var(--text-secondary);margin-left:.3rem;">critical</span>
             </div>
             <div>
-              <span style="font-size:1.4rem;font-weight:900;color:#9b59b6;" id="ora-conv">—</span>
+              <span style="font-size:1.4rem;font-weight:900;color:var(--fa-tx-9b59b6);" id="ora-conv">—</span>
               <span style="font-size:.68rem;color:var(--text-secondary);margin-left:.3rem;">convergence</span>
             </div>
           </div>
           <div id="ora-last" style="font-size:.68rem;color:var(--text-secondary);margin-top:.35rem;"></div>
         </div>
-        <a href="/academy/oracle" style="background:rgba(155,89,182,.15);border:1px solid rgba(155,89,182,.4);color:#9b59b6;border-radius:6px;padding:.35rem .9rem;font-size:.73rem;text-decoration:none;text-transform:uppercase;letter-spacing:.1em;white-space:nowrap;align-self:center;">View Oracle →</a>
+        <a href="/academy/oracle" style="background:rgba(155,89,182,.15);border:1px solid rgba(155,89,182,.4);color:var(--fa-tx-9b59b6);border-radius:6px;padding:.35rem .9rem;font-size:.73rem;text-decoration:none;text-transform:uppercase;letter-spacing:.1em;white-space:nowrap;align-self:center;">View Oracle →</a>
       </div>
     </div>
   </div>
@@ -408,7 +409,7 @@
     document.getElementById('ora-conv').textContent  = d.convergence_events ?? '0';
     document.getElementById('ora-last').textContent  = d.last_run_at
       ? 'Last run: ' + d.last_run_at.slice(0,16) + ' UTC'
-      : 'No predictions yet — visit Oracle to run.';
+      : 'No risks predicted — the Oracle re-checks learner activity every 6 hours.';
   }).catch(()=>{});
 })();
 </script>

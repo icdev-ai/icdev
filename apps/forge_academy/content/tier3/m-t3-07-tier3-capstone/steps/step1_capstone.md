@@ -5,7 +5,9 @@ step_class: icdev:Lesson
 
 # Tier 3 Capstone — Ship a Real Child App
 
-You've traced goal executions, written tools, authored goals, built blueprints, selected canvases, and scaffolded manifests. Now you ship something real. In this capstone you'll integrate all 7 Tier 3 skills into a complete `CapstoneApp` — a mini ICDEV extension that wires the whole stack together.
+You've traced goal executions, written tools, authored goals, built blueprints, selected canvases, and scaffolded manifests. Now you put them together. In this capstone you'll integrate the Tier 3 building blocks into a `CapstoneApp` — a ship-readiness model that wires the manifest, goal, blueprint and tool layers into one report.
+
+> **Scope note:** `CapstoneApp` is a self-contained readiness model that runs in the exercise sandbox — the helper classes are the simplified versions you built in T3-02 to T3-06 and are provided in the starter. In the real repo, "ready to ship" is decided by `python tools/builder/forge_validator.py --project-dir <app> --gate` for a generated child app, and by the required CI checks (Lint, Test, Security Scan, Helm Lint) on its pull request.
 
 ## The Integration Challenge
 
@@ -16,9 +18,9 @@ AppManifest (canvas + slug + routes + tables)
     ↓
 GoalValidator (goal file validates before execution)
     ↓
-BlueprintSpec (7-component gate before shipping)
+BlueprintSpec (7 file-checkable gate components)
     ↓
-evidence collector tool (ICDEV tool contract)
+evidence collector tool (the T3-02 tool contract)
     ↓
 CapstoneApp.ship() → comprehensive readiness report
 ```

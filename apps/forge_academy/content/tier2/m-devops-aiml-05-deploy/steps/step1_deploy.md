@@ -19,26 +19,33 @@ step_class: icdev:Lesson
 
 ## Quantization Decision
 
+`tools/aiml_canvas/deployment_planner.py` picks the highest precision whose footprint fits in 90% of the available VRAM. Each level is shown as a fraction of the model's fp16 footprint:
+
 ```
-Available VRAM → Quantization
-≥ fp16 VRAM → fp16 (native precision)
-≥ Q8_0 VRAM → Q8_0 (near-native)
-≥ Q5_K_M VRAM → Q5_K_M (high quality)
-≥ Q4_K_M VRAM → Q4_K_M (best size/quality)
-otherwise → int4 (AWQ/GPTQ for CUDA)
+fp16    ×1.00 fits → fp16 (native precision)
+Q8_0    ×0.50 fits → Q8_0 (near-native)
+Q5_K_M  ×0.31 fits → Q5_K_M (high quality)
+Q4_K_M  ×0.25 fits → Q4_K_M (best size/quality)
+int4    ×0.22 fits → int4 (AWQ/GPTQ for CUDA)
+nothing fits       → Q4_K_M, plus a warning that the model exceeds available VRAM
 ```
+
+Server selection is checked in order. IL5/IL6 or air-gap always gets **Ollama**. A model hosted by a cloud provider then gets that provider's managed endpoint. Next, ≥ 20 RPS gets **vLLM**. Anything else defaults to Ollama.
 
 ## Your Mission
 
 Call the deployment plan API for 3 different models and verify the inference server selection logic.
 
+`POST /ai-ml/api/deploy/plan` (AI/ML canvas) requires a signed-in session with the `admin`, `pm`, `developer` or `isso` role. Use a `requests.Session` that carries your dashboard login cookie. On a machine without the dashboard running, call the same planner in-process instead: `from tools.aiml_canvas.deployment_planner import plan` and `plan(model_id=..., il_level=..., vram_gb=..., throughput_rps=...)` returns the identical dict.
+
 ```python
 import requests
 
 BASE = "http://localhost:5050"
+session = requests.Session()   # carry your dashboard login cookie on this session
 
 def plan(model_id, il_level="IL4", vram_gb=8, rps=1):
-    return requests.post(f"{BASE}/ai-ml/api/deploy/plan", json={
+    return session.post(f"{BASE}/ai-ml/api/deploy/plan", json={
         "model_id": model_id,
         "il_level": il_level,
         "vram_gb": vram_gb,

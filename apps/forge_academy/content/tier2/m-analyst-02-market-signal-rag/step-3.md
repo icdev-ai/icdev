@@ -36,3 +36,5 @@ Answer three questions:
 ---
 
 **Your task:** Write your answers to all three questions. The answer to question 3 is your first RAG improvement backlog item — document it and assign an owner before this step closes.
+
+**In the form below:** put question 1 (the corpus) and question 3 (its biggest coverage gap) in the first box, and your three questions in the second.

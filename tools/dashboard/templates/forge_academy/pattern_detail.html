@@ -8,15 +8,15 @@
   --fa-red:#FF4444;  --fa-card:#12192b;  --fa-border:rgba(74,144,217,0.25);
 }
 .pd-hero {
-  background:linear-gradient(135deg,#0a0a14 0%,#12192b 60%,#1a1a14 100%);
+  background:linear-gradient(135deg,var(--fa-bg-0a0a14) 0%,var(--fa-bg-12192b) 60%,var(--fa-bg-1a1a14) 100%);
   border-bottom:1px solid var(--fa-border);padding:2rem 2rem 1.5rem;
 }
-.pd-breadcrumb { font-size:.8rem;color:#8899aa;margin-bottom:.5rem; }
-.pd-breadcrumb a { color:#4A90E2;text-decoration:none; }
+.pd-breadcrumb { font-size:.8rem;color:var(--fa-tx-8899aa);margin-bottom:.5rem; }
+.pd-breadcrumb a { color:var(--fa-tx-4a90e2);text-decoration:none; }
 .pd-hero-title { display:flex;align-items:center;gap:.75rem;margin-bottom:.35rem; }
 .pd-icon { font-size:2.5rem; }
 .pd-title { font-size:1.6rem;font-weight:700;color:var(--fa-gold); }
-.pd-use-case { color:#8899aa;font-size:.95rem; }
+.pd-use-case { color:var(--fa-tx-8899aa);font-size:.95rem; }
 .pd-body { max-width:900px;margin:0 auto;padding:1.5rem 2rem 4rem; }
 .pd-meta-row { display:flex;gap:.75rem;flex-wrap:wrap;margin:1rem 0 1.5rem; }
 .pd-badge {
@@ -30,7 +30,7 @@
   border-radius:12px;padding:1.25rem;
 }
 .pd-arch {
-  font-family:monospace;font-size:.85rem;color:#00D4FF;
+  font-family:monospace;font-size:.85rem;color:var(--fa-tx-00d4ff);
   background:rgba(0,212,255,.05);border:1px solid rgba(0,212,255,.15);
   border-radius:8px;padding:1rem;margin-bottom:1rem;line-height:1.6;
   word-break:break-word;
@@ -38,7 +38,7 @@
 .pd-list { list-style:none;padding:0;margin:0; }
 .pd-list li {
   padding:.45rem 0;border-bottom:1px solid rgba(255,255,255,.05);
-  font-size:.88rem;color:#ccd;display:flex;align-items:flex-start;gap:.5rem;
+  font-size:.88rem;color:var(--fa-tx-ccd);display:flex;align-items:flex-start;gap:.5rem;
 }
 .pd-list li:last-child { border-bottom:none; }
 .pd-list li::before { content:"→";color:var(--fa-gold);flex-shrink:0;margin-top:.05rem; }
@@ -46,7 +46,7 @@
 .pd-steps-list { counter-reset:step; list-style:none;padding:0;margin:0; }
 .pd-steps-list li {
   counter-increment:step;padding:.5rem 0 .5rem 2.5rem;position:relative;
-  border-bottom:1px solid rgba(255,255,255,.05);font-size:.88rem;color:#ccd;
+  border-bottom:1px solid rgba(255,255,255,.05);font-size:.88rem;color:var(--fa-tx-ccd);
 }
 .pd-steps-list li:last-child { border-bottom:none; }
 .pd-steps-list li::before {
@@ -56,21 +56,21 @@
 }
 .pd-mission-chip {
   display:inline-block;background:rgba(74,144,226,.1);border:1px solid rgba(74,144,226,.2);
-  border-radius:6px;padding:.25rem .65rem;font-size:.78rem;color:#4A90E2;margin:.2rem;
+  border-radius:6px;padding:.25rem .65rem;font-size:.78rem;color:var(--fa-tx-4a90e2);margin:.2rem;
   text-decoration:none;
 }
 .pd-mission-chip:hover { background:rgba(74,144,226,.2); }
 .pd-ops-chip {
   display:inline-block;background:rgba(0,255,136,.07);border:1px solid rgba(0,255,136,.15);
-  border-radius:6px;padding:.25rem .65rem;font-size:.75rem;color:#00FF88;margin:.2rem;
+  border-radius:6px;padding:.25rem .65rem;font-size:.75rem;color:var(--fa-tx-00ff88);margin:.2rem;
   font-family:monospace;
 }
 .pd-phase-banner {
   border-radius:10px;padding:.75rem 1.1rem;font-size:.88rem;font-weight:600;margin-bottom:1.25rem;
 }
-.phase1 { background:rgba(0,255,136,.08);border:1px solid rgba(0,255,136,.2);color:#00FF88; }
-.phase2 { background:rgba(255,184,0,.08);border:1px solid rgba(255,184,0,.2);color:#FFB800; }
-.phase3 { background:rgba(255,68,68,.08);border:1px solid rgba(255,68,68,.2);color:#FF4444; }
+.phase1 { background:rgba(0,255,136,.08);border:1px solid rgba(0,255,136,.2);color:var(--fa-tx-00ff88); }
+.phase2 { background:rgba(255,184,0,.08);border:1px solid rgba(255,184,0,.2);color:var(--fa-tx-ffb800); }
+.phase3 { background:rgba(255,68,68,.08);border:1px solid rgba(255,68,68,.2);color:var(--fa-tx-ff4444); }
 </style>
 {% include "forge_academy/partials/_chrome_clearance.html" %}
 {% endblock %}
@@ -92,10 +92,10 @@
   <!-- Meta badges -->
   <div class="pd-meta-row">
     {% set phase_cls = {'phase1':'phase1','phase2':'phase2','phase3':'phase3'} %}
-    <span class="pd-badge {{ phase_cls.get(pattern.phase_tag,'') }}" style="{% if not phase_cls.get(pattern.phase_tag) %}background:rgba(255,255,255,.06);color:#ccd;{% endif %}">
+    <span class="pd-badge {{ phase_cls.get(pattern.phase_tag,'') }}" style="{% if not phase_cls.get(pattern.phase_tag) %}background:rgba(255,255,255,.06);color:var(--fa-tx-ccd);{% endif %}">
       {{ pattern.phase }}
     </span>
-    <span class="pd-badge" style="background:rgba(74,144,226,.1);color:#4A90E2;">{{ pattern.approach }}</span>
+    <span class="pd-badge" style="background:rgba(74,144,226,.1);color:var(--fa-tx-4a90e2);">{{ pattern.approach }}</span>
     {% set cplx_colors = {'Low':'#00FF88','Medium':'#FFB800','High':'#FF4444'} %}
     <span class="pd-badge" style="background:{{ cplx_colors.get(pattern.complexity,'#888') }}18;color:{{ cplx_colors.get(pattern.complexity,'#888') }};">
       {{ pattern.complexity }} complexity
@@ -128,7 +128,7 @@
   <!-- Example -->
   <div class="pd-section">
     <div class="pd-section-title">Real-World Example</div>
-    <div class="pd-card" style="color:#ccd;font-size:.9rem;line-height:1.6;">
+    <div class="pd-card" style="color:var(--fa-tx-ccd);font-size:.9rem;line-height:1.6;">
       {{ pattern.example }}
     </div>
   </div>
@@ -178,7 +178,7 @@
       <span class="pd-ops-chip">{{ tool }}</span>
       {% endfor %}
       <div style="font-size:.78rem;color:#556;margin-top:.75rem;">
-        Use the <a href="/aadc" style="color:#4A90E2;">AADC Ops Config Generator</a> to auto-generate wiring config for these tools from your design canvas.
+        Use the <a href="/aadc" style="color:var(--fa-tx-4a90e2);">AADC Ops Config Generator</a> to auto-generate wiring config for these tools from your design canvas.
       </div>
     </div>
   </div>
@@ -191,10 +191,10 @@
       Open AADC Canvas Template →
     </a>
     {% endif %}
-    <a href="/academy/patterns" style="background:rgba(255,255,255,.08);color:#e0e0e0;padding:.55rem 1.25rem;border-radius:8px;font-weight:600;text-decoration:none;font-size:.9rem;">
+    <a href="/academy/patterns" style="background:rgba(255,255,255,.08);color:var(--fa-tx-e0e0e0);padding:.55rem 1.25rem;border-radius:8px;font-weight:600;text-decoration:none;font-size:.9rem;">
       ← Back to Pattern Library
     </a>
-    <a href="/innovation/new" style="background:rgba(74,144,226,.15);color:#4A90E2;padding:.55rem 1.25rem;border-radius:8px;font-weight:600;text-decoration:none;font-size:.9rem;">
+    <a href="/innovation/new" style="background:rgba(74,144,226,.15);color:var(--fa-tx-4a90e2);padding:.55rem 1.25rem;border-radius:8px;font-weight:600;text-decoration:none;font-size:.9rem;">
       Submit Innovation Idea Using This Pattern →
     </a>
   </div>

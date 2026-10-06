@@ -20,8 +20,8 @@ Document with minute-level granularity:
 | Timestamp | Event |
 |---|---|
 | 2026-05-09 T14:32 | `detect_drift()` fires `critical` quality_degradation on `qwen3-local/summarize` |
-| T14:33 | `auto_resolver.py` normalizes alert, selects `model_rollback` (confidence 0.82) |
-| T14:35 | Model swapped to `qwen3-local-v1.2`. Quality monitoring resumed. |
+| T14:33 | On-call confirms the drift and logs an AI incident (`log_incident`, type `model_drift`) |
+| T14:35 | `summarize` routed back to its previous model. Quality monitoring resumed. |
 | T16:10 | Quality scores stabilizing. No new drift events. |
 | T16:10 | Root cause identified: Ollama updated `qwen3-local` to a new quantization level automatically |
 
@@ -34,12 +34,12 @@ Always record the exact model ID and version, not just the model family name. "q
 Quantify:
 - N requests processed during the incident window with degraded quality
 - User-visible error rate (if any)
-- Estimated quality score of affected outputs (use `get_drift_history()` to reconstruct)
+- Estimated quality score of affected outputs (`get_drift_history()` gives the drift events; the per-call scores are in `model_quality_scores`)
 - SLA breach? (If quality SLA requires ≥0.75 and the incident lasted 2h at 0.61, that is a breach)
 
 ### Field 4: Root Cause
 
-State the drift type, attack vector, or configuration change that caused it. Map to one of the ICDEV drift types (`quality_degradation`, `latency_increase`, `token_inflation`, `availability_drop`). Include the proximate cause (what triggered it) and the root cause (what allowed it to happen).
+State the drift type, attack vector, or configuration change that caused it. Map it to one of the ICDEV drift types (`quality_degradation`, `latency_increase`, `token_inflation`, `availability_drop`) or AI incident types (`confabulation`, `model_drift`, `data_breach`, ...). Include the proximate cause (what triggered it) and the root cause (what allowed it to happen).
 
 **Example:** Proximate — Ollama auto-updated model weights. Root — no version pin on `qwen3-local` in `llm_config.yaml`, and no automated smoke test fires on Ollama model updates.
 
@@ -51,7 +51,7 @@ State what monitoring, guardrail, or configuration change would have caught this
 
 ## Lessons from Real AI Incidents
 
-**Monitoring gaps are the #1 cause of delayed detection.** In a survey of 47 production AI incidents, the average time-to-detection was 3.4 days — not because incidents were rare, but because teams had no quality-score monitoring. Infrastructure monitoring (uptime, latency, error rate) is insufficient for AI systems.
+**Monitoring gaps are the most common cause of delayed detection.** Incidents are often found days late. They are not rare; the team simply had no quality-score monitoring. Infrastructure monitoring (uptime, latency, error rate) is not enough for AI systems.
 
 **Gradual drift is invisible without baselines.** Teams that hadn't established baselines had no reference point. A model scoring 0.64 looks fine if you don't know it used to score 0.86.
 
@@ -64,18 +64,12 @@ NIST IR-8 (Incident Response Planning) requires that the incident response plan 
 - Rollback procedures for each model in production
 - Data breach notification procedures if CUI was exposed via prompt injection
 
-## Post-Incident: Strengthen the Academy
+## Post-Incident: Strengthen the Academy and the Knowledge Base
 
-After closing an AI incident, add a new `BUILTIN_STEPS` test case to the FORGE Academy mission that encodes the failure pattern you discovered. This turns production failures into training material for the next engineer.
+Close the loop in two places:
 
-```python
-# Example: Add to apps/forge_academy/engine/builtin_steps.py
-BUILTIN_STEPS["m-sre-ai-04-incident-response"]["ollama_auto_update_drift"] = {
-    "description": "Ollama auto-updated model; quality dropped 26% before detection.",
-    "lesson": "Pin model versions. Add startup checksum validation.",
-    "prevention": "version_pin + startup_smoke_test",
-}
-```
+1. **Knowledge base.** Record the failure pattern so `auto_resolver.py` can match it next time, at `suggest` level unless the fix is provably safe to automate.
+2. **Training.** Turn the lesson into an assessment question. FORGE Academy item banks live in `apps/forge_academy/content/item_banks/<mission-slug>.yaml`, so a question about this incident type reaches the next SRE's training path.
 
 The Academy builds institutional memory from incidents. Every failure becomes a question in the next SRE's training path.
 

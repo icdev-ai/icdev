@@ -4,24 +4,21 @@ step_class: icdev:configure
 ---
 # Continuous Readiness Monitoring
 
-A one-time readiness check is useful. A continuous monitor that alerts on regression is essential.
+A one-time readiness check is useful. A monitor that alerts on regression is essential.
 
-## Setting up continuous monitoring
+## What ICDEV already monitors, and what it does not
 
-The ICDEV `tools/awareness/drift_detector.py` can detect readiness regressions as part of the awareness engine cycle. Configure it with a readiness check as an additional probe:
+ICDEV's Internal Awareness Engine runs on a 3-hour cadence (`schedule.interval_hours: 3` in `args/awareness_config.yaml`). Its drift detector, `tools/awareness/drift_detector.py`, compares component health snapshots and calls a **regression** after 2 consecutive failing snapshots (`drift.consecutive_fails_for_regression`) against a 7-day rolling baseline. Its probes are `http_head`, `module_import`, `db_table_present`, `api_surface_match`, `coherence_status` and the (disabled) `test_green`.
 
-```yaml
-# args/awareness_config.yaml — add under probes:
-probes:
-  - type: readiness
-    target: "."
-    threshold: 0.70
-    alert_on_regression: true
-    cadence_hours: 3
-```
+**Readiness is not one of those probes.** Adding a `readiness:` key to `args/awareness_config.yaml` would do nothing; the detector has no code that reads it. So continuous readiness monitoring is something you wire yourself, from parts that exist:
 
-The drift detector runs every 3 hours, compares current readiness to baseline, and promotes any regression to the kanban `suggested` column.
+1. **Run the check on a schedule.** A nightly CI job (or cron) runs `run_readiness_check('.')` and writes `overall_readiness_score` and each pillar's `percentage` to a dated JSON file or a table
+2. **Keep a baseline.** Compare tonight's scores to the last accepted run, not to an ideal
+3. **Alert on regression, not on low scores.** A drop of a pillar by more than your tolerance, or the overall score crossing below `0.7`, is the signal
+4. **Route the alert where work happens:** a failing CI job, an issue, or a kanban card
+
+The drift detector itself is still useful next to this: `python tools/awareness/drift_detector.py --detect --json` (add `--dry-run` to collect findings without writing) tells you whether the *platform's components* regressed in the same window.
 
 ## Your task
 
-Add the readiness probe to `args/awareness_config.yaml`. Run `python tools/awareness/drift_detector.py --detect --json` and confirm the readiness probe appears in the output. Set a baseline: `python tools/awareness/drift_detector.py --set-baseline --json`.
+Design your readiness monitor: the schedule, where the score history is stored, the baseline rule, the regression threshold (per pillar and overall) and where the alert goes. Then name one regression that the 0.7 overall gate from m-readiness-02 would miss but your per-pillar rule would catch. Press **Configure** to record that you completed the design.

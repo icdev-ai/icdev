@@ -7,131 +7,132 @@ step_class: icdev:Lesson
 
 # .NET / C# + Anthropic SDK — Dependency Injection Pattern
 
-.NET applications live on dependency injection. The Anthropic C# SDK is designed to plug into `IServiceCollection` cleanly, making it a first-class citizen alongside your EF Core contexts and HTTP clients.
+.NET applications live on dependency injection. This mission wires the official Anthropic C# SDK into `IServiceCollection` so the Claude client is a first-class dependency alongside your EF Core contexts and HTTP clients.
 
-## The Anthropic.SDK NuGet package
+> The code in this mission runs in your own .NET project, not in the Academy sandbox. Type names below match the official `Anthropic` NuGet package. There is also an older community package called `Anthropic.SDK`, with different type names (`MessageParameters`, `IAnthropicClient`), that this mission does **not** use.
+
+## The Anthropic NuGet package
 
 ```bash
-dotnet add package Anthropic.SDK
+dotnet add package Anthropic
 ```
 
-The package targets `net8.0` and higher. It ships `IAnthropicClient`, a concrete `AnthropicClient`, and strongly-typed models for messages, content blocks, and streaming events. All operations are `async` — the SDK has no synchronous API surface.
+The package gives you `AnthropicClient` (namespace `Anthropic`) and strongly-typed request and response models in `Anthropic.Models.Messages` (`MessageCreateParams`, `Role`, `TextBlock`, `ContentBlock`, ...). All calls are `async`. Typed exceptions live in `Anthropic.Exceptions`: `AnthropicRateLimitException`, `Anthropic5xxException`, `AnthropicApiException`, and others.
 
-## IAnthropicClient interface
+`new AnthropicClient()` reads `ANTHROPIC_API_KEY` from the environment. You can also set `ApiKey` explicitly. The client retries connection errors, 429 and 5xx responses on its own (2 retries by default).
 
-The SDK exposes `IAnthropicClient` as the primary abstraction:
+## A basic call
 
 ```csharp
-public interface IAnthropicClient
-{
-    Task<MessageResponse> Messages.CreateAsync(
-        MessageParameters parameters,
-        CancellationToken cancellationToken = default);
+using Anthropic;
+using Anthropic.Models.Messages;
 
-    IAsyncEnumerable<MessageStreamEvent> Messages.StreamClaudeMessageAsync(
-        MessageParameters parameters,
-        CancellationToken cancellationToken = default);
+AnthropicClient client = new();
+
+var response = await client.Messages.Create(new MessageCreateParams
+{
+    Model = "claude-opus-5-5",
+    MaxTokens = 16000,
+    Messages = [new() { Role = Role.User, Content = "Hello, Claude" }],
+});
+
+// ContentBlock is a union: unwrap with .Value and filter to TextBlock.
+// With thinking on (the default on current Opus models) the first block may
+// be a ThinkingBlock, so never assume Content[0] is text.
+foreach (var text in response.Content.Select(b => b.Value).OfType<TextBlock>())
+{
+    Console.WriteLine(text.Text);
 }
 ```
 
-Always depend on `IAnthropicClient`, never on the concrete class — this keeps your service testable with `Moq` or `NSubstitute` without any HTTP traffic.
+## Your own interface, not the SDK's
 
-## Registering via IServiceCollection
+`AnthropicClient` is a concrete class, and the SDK does not ship an interface for you to mock. The testable .NET pattern is to define a narrow interface for **what your application needs**, and implement it once over the SDK:
 
 ```csharp
-// Program.cs
-using Anthropic.SDK;
-using Anthropic.SDK.Extensions;
-
-var builder = WebApplication.CreateBuilder(args);
-
-builder.Services.AddAnthropic(options =>
+public interface IClaudeService
 {
-    options.ApiKey = builder.Configuration["Anthropic:ApiKey"]
-                    ?? throw new InvalidOperationException("Anthropic:ApiKey is required.");
-});
-
-builder.Services.AddSingleton<ClaudeService>();
+    Task<string> CompleteAsync(string systemPrompt, string userMessage, CancellationToken ct = default);
+}
 ```
 
-`AddAnthropic()` registers `IAnthropicClient` as a singleton and wires it to `IHttpClientFactory` internally. This means the SDK participates in .NET's `HttpClient` lifecycle management — no socket exhaustion, no stale DNS.
+The rest of your code depends on `IClaudeService`, and unit tests substitute it with `Moq` or `NSubstitute`. Only the one implementation class touches SDK types.
 
-## IConfiguration + IOptions<AnthropicOptions>
+## Options + registration
 
-For richer configuration:
-
-```csharp
-// appsettings.json
+```json
+// appsettings.json (no secrets here)
 {
   "Anthropic": {
-    "ApiKey": "",
-    "Model": "claude-sonnet-4-5",
-    "MaxTokens": 2048
+    "Model": "claude-opus-5-5",
+    "MaxTokens": 16000
   }
 }
 ```
 
 ```csharp
-public class AnthropicOptions
+public sealed class ClaudeOptions
 {
-    public string ApiKey   { get; set; } = string.Empty;
-    public string Model    { get; set; } = "claude-sonnet-4-5";
-    public int    MaxTokens { get; set; } = 2048;
+    public string Model     { get; set; } = "claude-opus-5-5";
+    public int    MaxTokens { get; set; } = 16000;
 }
-
-builder.Services.Configure<AnthropicOptions>(
-    builder.Configuration.GetSection("Anthropic"));
 ```
 
-Your service then injects `IOptions<AnthropicOptions>` to read these values without touching `IConfiguration` directly.
+```csharp
+// Program.cs
+using Anthropic;
 
-## Minimal ClaudeService + Program.cs
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.Configure<ClaudeOptions>(builder.Configuration.GetSection("Anthropic"));
+
+// One client for the whole app: it is safe to share across requests.
+builder.Services.AddSingleton(_ => new AnthropicClient
+{
+    ApiKey = builder.Configuration["Anthropic:ApiKey"]
+             ?? Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")
+             ?? throw new InvalidOperationException("Anthropic:ApiKey is required."),
+});
+
+builder.Services.AddSingleton<IClaudeService, ClaudeService>();
+```
+
+## Minimal ClaudeService
 
 ```csharp
-// ClaudeService.cs
-public sealed class ClaudeService
-{
-    private readonly IAnthropicClient _client;
-    private readonly AnthropicOptions _opts;
+using Anthropic;
+using Anthropic.Models.Messages;
+using Microsoft.Extensions.Options;
 
-    public ClaudeService(IAnthropicClient client, IOptions<AnthropicOptions> opts)
+public sealed class ClaudeService : IClaudeService
+{
+    private readonly AnthropicClient _client;
+    private readonly ClaudeOptions _opts;
+
+    public ClaudeService(AnthropicClient client, IOptions<ClaudeOptions> opts)
     {
         _client = client;
         _opts   = opts.Value;
     }
 
-    public async Task<string> CompleteAsync(
-        string systemPrompt,
-        string userMessage,
-        CancellationToken ct = default)
+    public async Task<string> CompleteAsync(string systemPrompt, string userMessage, CancellationToken ct = default)
     {
-        var response = await _client.Messages.CreateAsync(new MessageParameters
+        var response = await _client.Messages.Create(new MessageCreateParams
         {
-            Model      = _opts.Model,
-            MaxTokens  = _opts.MaxTokens,
-            System     = [new SystemMessage(systemPrompt)],
-            Messages   = [new Message { Role = RoleType.User, Content = userMessage }],
-        }, ct);
+            Model     = _opts.Model,
+            MaxTokens = _opts.MaxTokens,
+            System    = systemPrompt,
+            Messages  = [new() { Role = Role.User, Content = userMessage }],
+        }, cancellationToken: ct);
 
-        return response.Content
-                       .OfType<TextContent>()
-                       .FirstOrDefault()?.Text ?? string.Empty;
+        return string.Concat(response.Content.Select(b => b.Value).OfType<TextBlock>().Select(t => t.Text));
     }
 }
 ```
 
-## IHttpClientFactory integration
+If the compiler disagrees on an overload, such as how `System` or the cancellation token is passed, follow its error message. The SDK's XML docs are the reference for exact signatures.
 
-`AddAnthropic()` registers a named `HttpClient` via `IHttpClientFactory`. You can configure it:
-
-```csharp
-builder.Services.AddHttpClient("Anthropic", c =>
-{
-    c.Timeout = TimeSpan.FromSeconds(90);
-});
-```
-
-This is the correct .NET idiom — never create `new HttpClient()` manually in a service.
+The SDK also integrates with `Microsoft.Extensions.AI`'s `IChatClient` abstraction, if your app already standardises on that.
 
 ---
 

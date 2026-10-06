@@ -30,6 +30,8 @@
     var STORAGE_KEY = "icdev_tour_completed";
     var STORAGE_STEP_KEY = "icdev_tour_last_step";
     var P = "icdev-tour"; // ID/class prefix
+    /** Paths where the welcome overlay never auto-opens (see autoInit). */
+    var NO_AUTO_WELCOME_PREFIXES = ["/academy"];
 
     /** Built-in tour steps (fallback if /api/tour/steps fetch fails — air-gap safe). */
     var DEFAULT_STEPS = [
@@ -519,6 +521,14 @@
         // Automated browsers (Playwright, Selenium, ...) set navigator.webdriver.
         // Skip the auto-popup there — see the matching guard in onboarding.js.
         if (navigator.webdriver) return;
+        // The tour walks the DASHBOARD (.card-grid, .chart-grid, #role-select...).
+        // On a page that is its own product it highlights nothing it describes,
+        // and its full-screen modal swallowed every click on the first visit to
+        // the Academy. Never auto-popup there; ICDEV.startTour() still works.
+        var path = window.location.pathname || "";
+        for (var i = 0; i < NO_AUTO_WELCOME_PREFIXES.length; i++) {
+            if (path.indexOf(NO_AUTO_WELCOME_PREFIXES[i]) === 0) return;
+        }
         var done = false;
         try { done = localStorage.getItem(STORAGE_KEY) === "1"; } catch (e) { done = true; }
         if (done) return;

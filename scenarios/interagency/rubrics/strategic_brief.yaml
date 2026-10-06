@@ -1,0 +1,34 @@
+# CUI // SP-CTI
+name: "Interoperability Governance Framework Rubric"
+inject_type: strategic_brief
+description: "Evaluates a governance framework for AI-enabled joint civil-military threat analysis."
+max_score: 100
+
+dimensions:
+  - id: coverage
+    weight: 0.30
+    prompt: >
+      Does the framework cover all five required areas — data (shared schema and
+      handling rules), models (documentation of purpose, training-data provenance,
+      failure modes), decisions (human approval points and who approves),
+      accountability (audit trail and owning forum), and measures (two indicators)?
+
+  - id: traceability_to_exercise
+    weight: 0.30
+    prompt: >
+      Does each element trace back to a friction point the team actually hit —
+      attribution authority, clock drift and schema mismatch, the boundary filter,
+      the dual chain of command? Generic AI-ethics boilerplate with no link to the
+      exercise scores low.
+
+  - id: human_oversight
+    weight: 0.20
+    prompt: >
+      Are the human-approval points specific (which output, which decision, which
+      official in each chain of command) rather than a blanket "human in the loop"?
+
+  - id: actionability
+    weight: 0.20
+    prompt: >
+      Could both agencies adopt this framework next week? Are the measures
+      observable, and is it within 400 words?
