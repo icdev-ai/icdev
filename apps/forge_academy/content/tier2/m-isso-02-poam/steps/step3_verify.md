@@ -9,7 +9,7 @@ Review the generated POA&M package below before approving it.
 
 ## Quality checks to perform
 
-**Date math** — Confirm the Scheduled Completion Date for each CAT I finding is exactly 30 days from the Discovered date. CAT II: 90 days. CAT III: 180 days. These are DoD policy requirements — any deviation requires ISSM justification.
+**Date math**: confirm the Scheduled Completion Date for each finding is the Discovered date plus your organization's window for that severity (30 / 90 / 180 days for CAT I / II / III in this scenario). Any deviation needs ISSM justification.
 
 **Overdue flags** — Any finding where today's date exceeds the Scheduled Completion Date must have a status of `Ongoing` and include a milestone extension justification. The agent flags these automatically.
 
@@ -19,12 +19,8 @@ Review the generated POA&M package below before approving it.
 
 ## eMASS import
 
-The generated CSV follows the eMASS POA&M import template exactly. Download it and import directly via:
-
-`eMASS → POA&M → Import → Upload CSV`
-
-No manual reformatting required.
+The generated file is laid out for eMASS's POA&M import. Check it against the import template your eMASS instance currently publishes before you upload it. Templates change between eMASS releases.
 
 ## Approval flow
 
-Once you're satisfied: mark this step complete. The POA&M package is saved to your evidence folder and a draft notification is queued for your ISSM.
+Once you're satisfied, click **Understood → Continue** to finish the mission. In a live run, the next action is to route the package to your ISSM for approval.

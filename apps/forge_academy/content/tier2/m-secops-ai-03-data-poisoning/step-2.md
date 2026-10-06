@@ -7,63 +7,45 @@ step_class: icdev:Lesson
 
 # Configure Corpus Validation with quality_feedback_loop.py
 
-The threat model is clear. Now wire the validation pipeline into your RAG ingestion workflow. This step covers the full `quality_feedback_loop.py` API, the quarantine workflow, the four-stage validation pipeline, and a scheduled daily validation job.
+The threat model is clear. Now design the validation pipeline around your RAG corpus. This step covers what `quality_feedback_loop.py` really returns, the per-document checks you add at ingestion, and a scheduled job that ties them together. Answer the configuration questions at the end.
 
-## `run_feedback_cycle()` Return Value
+## What `run_feedback_cycle()` Returns
+
+`run_feedback_cycle()` works on the platform's RAG quality metrics, not on one named corpus. It takes `dry_run` and an optional DB connection:
 
 ```python
-from tools.rag.quality_feedback_loop import run_feedback_cycle
+from tools.rag.quality_feedback_loop import run_feedback_cycle, get_feedback_status
 
-results = run_feedback_cycle(
-    corpus_id="contract-corpus",
-    quality_threshold=0.7,    # documents below this score are flagged
-)
+result = run_feedback_cycle(dry_run=True)   # check quality only; don't generate training pairs
 
-# Returns:
+# result (shape):
 # {
-#   "corpus_id": "contract-corpus",
-#   "total_docs": 1847,
-#   "passed": 1821,
-#   "failed": 14,
-#   "quarantined": 12,
-#   "health_score": 0.987,
-#   "anomalies": [
-#     {
-#       "doc_id": "doc_0042f7",
-#       "anomaly_type": "topic_drift",
-#       "severity": "warning",
-#       "recommendation": "Review document source and topic alignment"
-#     },
-#     {
-#       "doc_id": "doc_1193a2",
-#       "anomaly_type": "source_anomaly",
-#       "severity": "critical",
-#       "recommendation": "Document origin does not match expected domain"
-#     }
-#   ]
+#   "cycle_id": "cycle-...",
+#   "dry_run": True,
+#   "quality_status": "ok",            # or "disabled" when the monitor is off
+#   "metrics": {"avg_retrieval_score": 0.71, "query_count": 412, "ndcg": 0.58, "mrr": 0.47},
+#   "alerts": [...],                    # metrics below their configured thresholds
+#   "retrain_recommended": False,
+#   "anomaly_detection": {"anomalous": False, "reasons": [], "floors": {...}},
+#   "actions": ["no_action_needed"],
 # }
+
+status = get_feedback_status()            # current quality, anomaly verdict, snapshot history
 ```
 
-## Anomaly Types
+The thresholds live in `args/finetune_config.yaml` under `quality_feedback:` (for example `min_ndcg: 0.5`, `min_mrr: 0.4`). The metrics come from `rag_retrieval_log` and `rag_evaluations` over the last 7 days. A sharp drop in `avg_retrieval_score` or `ndcg` after a big ingestion batch is the corpus-level poisoning signal.
 
-| Anomaly Type | What It Means | Default Action |
-|---|---|---|
-| `topic_drift` | Document topic diverges significantly from corpus centroid | Flag for review |
-| `quality_drop` | Document quality score below threshold | Flag for review |
-| `source_anomaly` | Document origin doesn't match expected domains | Quarantine immediately |
-| `duplicate` | Document is a near-copy of an existing document | Deduplicate |
+## The Four Ingestion Checks (you build these)
 
-`source_anomaly` is the highest-risk anomaly type — it indicates a document from an unexpected source was ingested, which could mean an injection attack or a misconfigured ingestion pipeline.
+The feedback loop tells you *that* quality moved, not *which* document moved it. Per-document validation happens before a document reaches the index. The four checks below are a design you implement in your ingestion path. They are not an ICDEV API.
 
-## The Four-Stage Validation Pipeline
+### Check 1: Source Validation
 
-Each document passes through four validation stages before being admitted to the production corpus:
-
-### Stage 1: Source Validation
-
-Check the origin of the document before processing its content:
+Check where a document came from before processing its content:
 
 ```python
+from urllib.parse import urlparse
+
 ALLOWED_DOMAINS = frozenset([
     "acquisition.gov",
     "sam.gov",
@@ -72,42 +54,42 @@ ALLOWED_DOMAINS = frozenset([
 ])
 
 def validate_source(doc_metadata: dict) -> bool:
-    origin = doc_metadata.get("source_url", "")
-    domain = origin.split("/")[2] if "://" in origin else "unknown"
-    return domain in ALLOWED_DOMAINS
+    host = urlparse(doc_metadata.get("source_url", "")).hostname or ""
+    return host in ALLOWED_DOMAINS
 ```
 
-### Stage 2: Content Quality Scoring
+### Check 2: Embedded-Instruction Scan
 
-Coherence (does the document make sense internally?), completeness (does it have a meaningful body?), and formatting (is it structured content or garbage bytes?).
+Run ICDEV's injection detector over the document text. This catches Type 4 attacks (instructions addressed to the LLM) before they reach the index:
 
 ```python
-from tools.rag.quality_feedback_loop import score_document_quality
+from tools.security.prompt_injection_detector import PromptInjectionDetector
 
-quality = score_document_quality(doc_id="doc_0042f7")
-# Returns: {"coherence": 0.81, "completeness": 0.94, "format_score": 0.88, "composite": 0.87}
+_detector = PromptInjectionDetector()
+
+def scan_document(text: str, doc_id: str) -> bool:
+    verdict = _detector.scan_text(text, source=f"rag_ingest:{doc_id}")
+    return verdict["action"] not in ("block", "flag")   # False -> quarantine
 ```
 
-### Stage 3: Semantic Consistency Check
+### Check 3: Semantic Consistency (design pattern)
 
-Compute cosine similarity between the document embedding and the corpus centroid. Documents far from the centroid are topic outliers:
+Compare the document's embedding with the corpus centroid. Documents far from the centroid are topic outliers worth a human look. Get embeddings from your configured embedding provider. ICDEV does not ship a corpus-centroid file.
 
 ```python
-import numpy as np
-from tools.rag.embedder import get_embedding
+import math
 
-corpus_centroid = np.load(f"data/corpora/{corpus_id}/centroid.npy")
-doc_embedding = get_embedding(document_text)
-similarity = float(np.dot(doc_embedding, corpus_centroid) /
-                   (np.linalg.norm(doc_embedding) * np.linalg.norm(corpus_centroid)))
+def cosine(a, b):
+    dot = sum(x * y for x, y in zip(a, b))
+    return dot / (math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b)))
 
-if similarity < 0.45:
-    flag_as_topic_drift(doc_id)
+def is_topic_outlier(doc_embedding, corpus_centroid, floor: float = 0.45) -> bool:
+    return cosine(doc_embedding, corpus_centroid) < floor
 ```
 
-### Stage 4: Freshness Check
+### Check 4: Freshness
 
-Reject documents past their TTL to prevent stale data from corrupting retrieval quality:
+Reject documents past their time-to-live (TTL) so stale data cannot crowd out current sources:
 
 ```python
 from datetime import datetime, timezone, timedelta
@@ -118,46 +100,40 @@ def check_freshness(doc_metadata: dict, ttl_days: int = 365) -> bool:
     return age < timedelta(days=ttl_days)
 ```
 
-## Scheduled Daily Validation Job
+## Scheduled Validation Job
+
+A small job that runs the corpus-level signal on a schedule and records an alert in ICDEV memory when it trips:
 
 ```python
-# tools/rag/validation_scheduler.py
-# Run via cron: 0 2 * * * python tools/rag/validation_scheduler.py
-
-from tools.rag.quality_feedback_loop import run_feedback_cycle, get_feedback_status
-from tools.memory.memory_write import write_memory
+# my_corpus_watch.py  (yours. Schedule it with cron or Task Scheduler)
 import json
-from datetime import datetime, timezone
+from tools.rag.quality_feedback_loop import run_feedback_cycle
+from tools.memory.memory_write import write_to_db
 
-CORPORA = ["contract-corpus", "policy-corpus", "technical-docs"]
-
-def daily_validation():
-    for corpus_id in CORPORA:
-        results = run_feedback_cycle(corpus_id=corpus_id, quality_threshold=0.7)
-        # Alert if corpus health drops below 0.95
-        if results["health_score"] < 0.95:
-            write_memory(
-                content=f"[ALERT] Corpus {corpus_id} health: {results['health_score']:.3f}. "
-                        f"{results['quarantined']} docs quarantined.",
-                memory_type="event",
-            )
-        # Log results
-        print(json.dumps({"corpus": corpus_id, **results}, indent=2))
+def nightly_check():
+    result = run_feedback_cycle(dry_run=True)
+    anomaly = result.get("anomaly_detection", {})
+    if anomaly.get("anomalous") or result.get("retrain_recommended"):
+        write_to_db(
+            "[ALERT] RAG quality regression: " + "; ".join(anomaly.get("reasons", [])),
+            entry_type="event",
+        )
+    print(json.dumps(result, indent=2, default=str))
 
 if __name__ == "__main__":
-    daily_validation()
+    nightly_check()
 ```
 
 ## Quarantine Workflow
 
-Documents that fail validation enter the quarantine bucket — they are removed from retrieval but not deleted:
+ICDEV has no quarantine table for RAG documents. This is the workflow you would build. Documents that fail a check are held out of the index, not deleted:
 
 ```
-Failed validation → quarantine_docs table → human review queue
-     ↓                                              ↓
-(removed from                           Reviewer approves → restore to corpus
- retrieval index)                       Reviewer rejects → permanently exclude
-                                        No action in 30d → auto-exclude
+Failed check → your quarantine store → human review queue
+     ↓                                          ↓
+(never indexed)                     Reviewer approves → ingest
+                                    Reviewer rejects → permanently exclude
+                                    No action in 30d → auto-exclude
 ```
 
-**Your task:** Answer the configuration questions.
+**Your task:** Answer the configuration questions below, then click **Configure →**. "Corpus ID" is whatever name your ingestion path uses for the collection, and "quality threshold" is the floor you would set for the corpus-level signal.
