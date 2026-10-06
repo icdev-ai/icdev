@@ -230,3 +230,76 @@ def award_ribbons(session_id: int) -> dict[str, dict | None]:
             }
 
     return ribbons
+
+
+# ---------------------------------------------------------------------------
+# Academy XP (aicur-fix-02)
+# ---------------------------------------------------------------------------
+
+def _member_academy_username(member: dict) -> str | None:
+    """The Academy account a player is linked to, or None.
+
+    Two writers set it: confirm_formation copies the registration's
+    academy_username into persona_json, and the scripted sims set the
+    ttx_team_members.academy_username column directly. Read through dict.get so a
+    database without that column still answers.
+    """
+    name = (member.get("academy_username") or "").strip()
+    if name:
+        return name
+    try:
+        persona = json.loads(member.get("persona_json") or "{}")
+    except (TypeError, ValueError):
+        return None
+    return (str(persona.get("academy_username") or "")).strip() or None
+
+
+def award_academy_xp(session_id: int, leaderboard: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Pay Academy GameDay XP to every linked player, by their team's final rank.
+
+    Idempotent per (user, session): a ledger row with source_type='gameday' and
+    source_id=session_id means that player was already paid, so ending a session
+    twice cannot double the award. Players with no Academy link, or whose
+    username no longer resolves, are skipped. Returns one entry per award made.
+    """
+    if not leaderboard:
+        return []
+    try:
+        from apps.forge_academy import db as fadb  # noqa: PLC0415
+        from apps.forge_academy.gamification import award_gameday_xp  # noqa: PLC0415
+    except Exception:
+        log.exception("Academy unavailable; no GameDay XP for session %s", session_id)
+        return []
+
+    conn = get_connection()
+    total_teams = len(leaderboard)
+    awards: list[dict[str, Any]] = []
+    for entry in leaderboard:
+        members = conn.execute(
+            "SELECT * FROM ttx_team_members WHERE team_id = %s", (entry["team_id"],)
+        ).fetchall()
+        for member in members:
+            username = _member_academy_username(dict(member))
+            if not username:
+                continue
+            try:
+                user = fadb.get_user_by_username(username)
+                if not user:
+                    continue
+                paid = fadb.get_connection().execute(
+                    "SELECT COUNT(*) FROM fa_xp_ledger "
+                    "WHERE user_id = %s AND source_type = 'gameday' AND source_id = %s",
+                    (user["id"], session_id),
+                ).fetchone()
+                if paid and paid[0]:
+                    continue
+                result = award_gameday_xp(
+                    user["id"], f"ttx-{session_id}", int(entry["rank"]), total_teams,
+                    source_id=session_id,
+                )
+            except Exception:
+                log.exception("GameDay XP award failed for %s in session %s",
+                              username, session_id)
+                continue
+            awards.append({"username": username, "team_id": entry["team_id"], **result})
+    return awards

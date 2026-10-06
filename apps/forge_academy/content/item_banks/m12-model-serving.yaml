@@ -1,0 +1,263 @@
+# CUI // SP-CTI
+#
+# Item bank for m12-model-serving (aicur-fun-02).
+# Spec: docs/features/forge-academy-aca-trn-01-assessment-model.md
+#
+# Steps 1 and 2 are lessons; step 3 is a lab graded by step3_test.py. Every item is
+# answerable from the lesson markdown it assesses, and only from it. Authoring rules
+# (>= 5 items per step, `correct` indexes `options` as authored, stable `key`) are
+# enforced by assessment.validate_item_bank at seed time.
+
+mission: m12-model-serving
+
+steps:
+
+  # -------------------------------------------------------------------------
+  # Step 1 — Inference-Server Anatomy (steps/step1_inference_server_anatomy.md)
+  # -------------------------------------------------------------------------
+  - step: 1
+    items:
+      - key: srv-prefill-decode
+        prompt: >-
+          Which statement correctly describes the two phases of a generation request?
+        options:
+          - "Prefill is sequential and memory-bound; decode is parallel and compute-bound"
+          - "Prefill processes the prompt in parallel and is compute-bound; decode emits one token at a time and is memory-bandwidth-bound"
+          - "Both phases process all tokens in parallel; they differ only in precision"
+          - "Prefill runs on the CPU and decode runs on the GPU"
+        correct: 1
+        explanation: >-
+          The whole prompt is known up front, so prefill computes it in parallel
+          (compute-bound). Decode depends on the previous token, so it is sequential
+          and dominated by reading weights and the KV cache (memory-bandwidth-bound).
+        difficulty: core
+
+      - key: srv-ttft
+        prompt: >-
+          A user complains they wait a long time before the FIRST token of a reply
+          appears when they paste a very long document. Which metric is this, and
+          which phase drives it?
+        options:
+          - "Inter-token latency, driven by decode"
+          - "Throughput, driven by batch size"
+          - "Time to first token, driven by prefill"
+          - "KV cache hit rate, driven by quantization"
+        correct: 2
+        explanation: >-
+          Time to first token (TTFT) is the wait before generation starts, and it is
+          dominated by prefill, whose cost grows with prompt length.
+        difficulty: core
+
+      - key: srv-kv-limit
+        prompt: >-
+          On a serving GPU, what usually limits how many users can be served
+          concurrently?
+        options:
+          - "The model weights, which grow with every request"
+          - "The KV cache, which grows with every concurrent request and every token of context"
+          - "The tokenizer vocabulary size"
+          - "The number of CPU cores"
+        correct: 1
+        explanation: >-
+          Weights are a fixed cost loaded once. The KV cache grows per request and per
+          token, so it is usually what runs out first.
+        difficulty: core
+
+      - key: srv-kv-size
+        prompt: >-
+          Using the lesson's formula, a Llama-3-8B-shaped model in FP16 needs 128 KiB
+          of KV cache per token. Roughly how much does ONE 8,192-token request need?
+        options:
+          - "128 KiB"
+          - "16 MiB"
+          - "1 GiB"
+          - "16 GiB"
+        correct: 2
+        explanation: >-
+          128 KiB x 8,192 tokens = 1,048,576 KiB = 1 GiB for a single request.
+        difficulty: stretch
+
+      - key: srv-paged
+        prompt: >-
+          What problem does PagedAttention solve?
+        options:
+          - "It compresses model weights to 4 bits"
+          - "It splits each layer across several GPUs"
+          - "It stores the KV cache in small on-demand blocks mapped by a block table, cutting the waste of reserving one contiguous max-length region per request"
+          - "It caches final answers so repeated questions skip the model"
+        correct: 2
+        explanation: >-
+          PagedAttention pages the KV cache like OS virtual memory: fixed-size blocks,
+          allocated on demand and mapped by a block table, so waste is limited to the
+          last partly filled block and shared prefixes can share blocks.
+        difficulty: core
+
+      - key: srv-continuous
+        prompt: >-
+          How does continuous batching differ from static batching?
+        options:
+          - "It admits new requests and retires finished ones after every decode step, so short requests are not held behind long ones"
+          - "It waits until the batch is full before running anything"
+          - "It runs every request on its own GPU"
+          - "It only batches requests that share the same prompt"
+        correct: 0
+        explanation: >-
+          Continuous (iteration-level) batching schedules per decode step. Static
+          batching cannot admit new work until the longest request in the batch ends.
+        difficulty: core
+
+      - key: srv-quant
+        prompt: >-
+          Which statement about quantization formats matches the lesson?
+        options:
+          - "FP8 runs on any GPU; AWQ needs special hardware"
+          - "AWQ and GPTQ are typically weight-only 4-bit methods; FP8 needs hardware FP8 support"
+          - "GPTQ quantizes the KV cache only"
+          - "Quantization never changes output quality, so evals need not be re-run"
+        correct: 1
+        explanation: >-
+          AWQ and GPTQ are weight-only methods usually used at 4 bits. FP8 needs GPUs
+          with FP8 support. Quantization trades some quality for memory, so re-run
+          your own evals.
+        difficulty: core
+
+      - key: srv-tradeoff
+        prompt: >-
+          You raise the maximum batch size on a busy server. What is the expected
+          effect?
+        options:
+          - "Throughput and per-request latency both improve"
+          - "Throughput rises while each request's inter-token latency gets worse"
+          - "Throughput falls while latency improves"
+          - "Nothing changes; batch size only affects prefill"
+        correct: 1
+        explanation: >-
+          Bigger batches raise total tokens per second, but each decode step does more
+          work, so per-request inter-token latency increases.
+        difficulty: core
+
+  # -------------------------------------------------------------------------
+  # Step 2 — vLLM in Practice (steps/step2_vllm_in_practice.md)
+  # -------------------------------------------------------------------------
+  - step: 2
+    items:
+      - key: vllm-openai
+        prompt: >-
+          Why can an existing OpenAI client talk to a vLLM server after changing only
+          its base URL?
+        options:
+          - "vLLM proxies every request to OpenAI"
+          - "vLLM's server exposes the OpenAI API shape (/v1/chat/completions, /v1/models, ...)"
+          - "vLLM translates requests into gRPC automatically"
+          - "OpenAI clients detect vLLM and switch protocol"
+        correct: 1
+        explanation: >-
+          vLLM serves an OpenAI-compatible HTTP API, which is why ICDEV declares it as
+          `type: openai_compatible` with a base_url.
+        difficulty: core
+
+      - key: vllm-many-models
+        prompt: >-
+          You need to offer two DIFFERENT base models (a Qwen and a Mistral) from
+          vLLM. What is the pattern the lesson describes?
+        options:
+          - "Run one vLLM server per base model on its own port, with a router in front"
+          - "Pass both model names to one `vllm serve` command"
+          - "Load the Mistral as a LoRA adapter on the Qwen base"
+          - "Use tensor parallelism to split the two models across GPUs"
+        correct: 0
+        explanation: >-
+          One vLLM process serves one base model. ICDEV runs `vllm` on 8000 and
+          `mistral_vllm` on 8100 as independent servers and routes between them.
+        difficulty: core
+
+      - key: vllm-lora
+        prompt: >-
+          Several teams have LoRA fine-tunes of the SAME base model. What is the
+          cheapest way to serve them all?
+        options:
+          - "One full copy of the base model per fine-tune"
+          - "Serve the base once with --enable-lora and load each fine-tune as a named adapter selected by the request's model field"
+          - "Merge all fine-tunes into one set of weights"
+          - "Quantize each fine-tune to FP8 and run them on separate servers"
+        correct: 1
+        explanation: >-
+          Base weights load once and adapters are small, so many variants share a GPU.
+          Clients choose an adapter by name in the `model` field.
+        difficulty: core
+
+      - key: vllm-tp
+        prompt: >-
+          A 70B model does not fit on one GPU in your 4-GPU NVLink node. Which option
+          fits the lesson's rule of thumb?
+        options:
+          - "--pipeline-parallel-size 4, because GPUs are in one node"
+          - "--gpu-memory-utilization 4"
+          - "--max-loras 4"
+          - "--tensor-parallel-size 4, splitting each layer across the node's GPUs"
+        correct: 3
+        explanation: >-
+          Tensor parallelism splits each layer's weights across GPUs and exchanges
+          results every layer, so it wants a fast in-node interconnect. Pipeline
+          parallelism is the usual choice across nodes.
+        difficulty: core
+
+      - key: vllm-ollama
+        prompt: >-
+          Where does Ollama fit best, according to the lesson's comparison?
+        options:
+          - "High-concurrency shared serving for hundreds of users"
+          - "A laptop or workstation for one user or a small team, running GGUF models via llama.cpp"
+          - "Multi-node tensor-parallel serving of 400B models"
+          - "Only as a managed cloud API"
+        correct: 1
+        explanation: >-
+          Ollama is a one-command local runtime with an OpenAI-compatible endpoint,
+          tuned for a single user or small team rather than high-concurrency serving.
+        difficulty: core
+
+      - key: vllm-sglang
+        prompt: >-
+          What does SGLang's RadixAttention add that helps agent and multi-turn
+          workloads?
+        options:
+          - "4-bit weight quantization"
+          - "Automatic translation of prompts into SQL"
+          - "Reuse of KV cache across requests that share a prefix, tracked in a radix tree"
+          - "Billing per request instead of per token"
+        correct: 2
+        explanation: >-
+          RadixAttention keeps KV cache for shared prefixes in a radix tree so later
+          requests with the same prefix skip recomputing it.
+        difficulty: core
+
+      - key: vllm-airgap
+        prompt: >-
+          Which set of practices does the lesson give for serving inside an
+          air-gapped enclave?
+        options:
+          - "Serve weights from a local path, set HF_HUB_OFFLINE=1, pin images by digest, and end every router chain in a model reachable inside the enclave"
+          - "Pull weights from the Hugging Face Hub at start-up and pin images by tag"
+          - "Disable the chat template to save space"
+          - "Route all traffic to a managed API for reliability"
+        correct: 0
+        explanation: >-
+          Everything fetched at start-up must already be inside: local weights,
+          offline hub mode, digest-pinned images, and chains that end in an in-enclave
+          model so a cloud outage is not your outage.
+        difficulty: core
+
+      - key: vllm-managed
+        prompt: >-
+          What is the main risk the lesson lists for managed APIs such as Bedrock or
+          Azure OpenAI?
+        options:
+          - "They cannot run frontier models"
+          - "They only support LoRA adapters"
+          - "They require you to manage GPUs yourself"
+          - "Data leaves your boundary, and you must confirm the service is authorised at your impact level"
+        correct: 3
+        explanation: >-
+          Managed APIs remove GPU operations, but data leaves your boundary and the
+          service must be authorised at your impact level; billing is per token.
+        difficulty: core

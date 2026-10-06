@@ -740,6 +740,17 @@ BUILTIN_MISSIONS = [
         "difficulty": "beginner", "estimated_minutes": 35,
         "prereqs": ["m10-tier1-capstone"],
     },
+    # ── TIER 1: Model serving (aicur-fun-02 — M12) ──────────────────────────
+    {
+        "slug": "m12-model-serving",
+        "title": "Serving Many Models",
+        "tagline": "Prefill, KV cache, PagedAttention, vLLM — then route across your own inference servers.",
+        "tier": 1, "topic": "llm", "role_filter": "all",
+        "mission_type": "coding",
+        "xp_reward": 350, "order_idx": 12,
+        "difficulty": "intermediate", "estimated_minutes": 45,
+        "prereqs": ["m01-llm-fundamentals"],
+    },
     # ── TIER 1: Benchmarks & Evals (aicur-fun-03 — M13) ─────────────────────
     {
         "slug": "m13-benchmarks-evals",

@@ -1036,6 +1036,7 @@ def api_form_teams(session_id: int):
     if not roster:
         return jsonify({"ok": False, "error": "No registrations to draft"}), 400
     max_teams = data.get("max_teams") or session.get("max_teams") or 8
+    roster = _registration.apply_academy_seed_bonus(roster)
     teams = _registration.snake_draft(roster, int(max_teams))
     _registration.save_formation_plan(session_id, teams)
     return jsonify({

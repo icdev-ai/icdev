@@ -339,6 +339,11 @@ mission_ontology_map:
     domain_classes: ["ai:Multimodal"]
     competency: "icdev:FundamentalCompetency"
     prerequisites: ["ai:LangChain"]
+  m12-model-serving:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["ai:LLM"]
+    competency: "icdev:FundamentalCompetency"
+    prerequisites: ["ai:LLM"]
 
   # Tier 2 — DevOps
   m-devops-01-pipeline-agent:
