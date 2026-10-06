@@ -183,8 +183,13 @@ def award_daily_login(user_id: int) -> dict | None:
     return {"xp": xp, "streak": streak, "bonus": bonus}
 
 
-def award_gameday_xp(user_id: int, tournament_id: str, final_rank: int, total_participants: int) -> dict:
+def award_gameday_xp(user_id: int, tournament_id: str, final_rank: int, total_participants: int,
+                     source_id: int | None = None) -> dict:
     """Award XP and achievements based on GameDay tournament performance.
+
+    aicur-fix-02: called by tools.ttx.leaderboard.award_academy_xp when a TTX
+    session ends. `source_id` is the TTX session id; it lands on the ledger row so
+    that caller can refuse to pay the same session twice.
 
     Rank bonuses:
     - Top 10: 500 XP + gameday_champion badge
@@ -216,6 +221,7 @@ def award_gameday_xp(user_id: int, tournament_id: str, final_rank: int, total_pa
 
     try:
         update_user_xp(user_id, xp, reason="achievement", source_type="gameday",
+                       source_id=source_id,
                        note=f"tournament {tournament_id} rank {final_rank}")
     except Exception:
         pass
@@ -239,8 +245,10 @@ def award_gameday_xp(user_id: int, tournament_id: str, final_rank: int, total_pa
 def get_gameday_seed_bonus(user_id: int) -> float:
     """Return a GameDay team seed bonus (0.0–0.25) based on Academy XP.
 
-    L4+ (5000+ XP) earns the maximum bonus of 0.25.
-    Used by GameDay team_runner to give higher-XP learners slightly better starting stats.
+    XP / 20000, capped at 0.25 (reached at 5000 XP).
+    aicur-fix-02: consumed by apps.ai_gameday.registration.apply_academy_seed_bonus,
+    which adds it to a player's match confidence before the snake draft, so
+    Academy-trained players are spread across teams rather than stacked.
     """
     # aca-hyg-01: this had three faults that combined into dead code. It imported
     # get_connection from `icdev.tools.db.storage` while every other query in this

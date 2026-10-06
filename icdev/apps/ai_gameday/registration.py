@@ -17,12 +17,15 @@ unreachable dead code — nothing routed to it. This one is wired; see
 """
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any, Dict, List, Optional, Sequence
 
 from tools.db.storage import get_connection
 
 from .constants import TECHNICAL_MARKERS
+
+_log = logging.getLogger(__name__)
 
 #: Tokens that carry no signal when matching a skill blurb to a role.
 _STOPWORDS = frozenset({
@@ -276,6 +279,40 @@ def delete_registration(registration_id: int) -> bool:
 # Snake draft
 # ---------------------------------------------------------------------------
 
+def apply_academy_seed_bonus(
+    registrations: Sequence[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Copy each registration with its Academy seed bonus as ``academy_seed_bonus``.
+
+    aicur-fix-02: the bonus (0.0-0.25, from Academy XP) is added to match
+    confidence when snake_draft orders the roster, so Academy-trained players are
+    treated as stronger picks and dealt across teams rather than stacked. A player
+    with no Academy link, an unknown username, or an Academy that cannot be read
+    gets 0.0 -- the draft must still run.
+    """
+    out: List[Dict[str, Any]] = []
+    try:
+        from apps.forge_academy.db import get_user_by_username  # noqa: PLC0415
+        from apps.forge_academy.gamification import get_gameday_seed_bonus  # noqa: PLC0415
+    except Exception:
+        _log.exception("Academy unavailable; drafting without seed bonuses")
+        return [dict(r, academy_seed_bonus=0.0) for r in registrations if r]
+    for reg in registrations:
+        if not reg:
+            continue
+        bonus = 0.0
+        username = str(reg.get("academy_username") or "").strip()
+        if username:
+            try:
+                user = get_user_by_username(username)
+                if user:
+                    bonus = float(get_gameday_seed_bonus(user["id"]))
+            except Exception:
+                _log.exception("seed bonus lookup failed for %s", username)
+        out.append(dict(reg, academy_seed_bonus=bonus))
+    return out
+
+
 def snake_draft(
     registrations: Sequence[Dict[str, Any]], max_teams: int
 ) -> List[Dict[str, Any]]:
@@ -307,7 +344,8 @@ def snake_draft(
         ordered.extend(
             sorted(
                 by_role[role_id],
-                key=lambda r: (-float(r.get("match_confidence") or 0.0),
+                key=lambda r: (-(float(r.get("match_confidence") or 0.0)
+                                 + float(r.get("academy_seed_bonus") or 0.0)),
                                int(r.get("registration_id") or 0)),
             )
         )
@@ -460,7 +498,11 @@ def confirm_formation(session_id: int) -> Dict[str, int]:
                 created["team_id"],
                 member["player_name"],
                 member["role_id"] or "",
-                persona={"from_registration_id": member["registration_id"]},
+                persona={
+                    "from_registration_id": member["registration_id"],
+                    # aicur-fix-02: the link end_session pays Academy XP through.
+                    "academy_username": member.get("academy_username"),
+                },
             )
             members_created += 1
 
