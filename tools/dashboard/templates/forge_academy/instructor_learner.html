@@ -8,11 +8,11 @@
   --fa-red:#FF4444;  --fa-card:#12192b;  --fa-border:rgba(74,144,217,0.25);
 }
 .il-hero {
-  background:linear-gradient(135deg,#0a0a14 0%,#12192b 60%,#1a1a14 100%);
+  background:linear-gradient(135deg,var(--fa-bg-0a0a14) 0%,var(--fa-bg-12192b) 60%,var(--fa-bg-1a1a14) 100%);
   border-bottom:1px solid var(--fa-border); padding:2rem 2rem 1.5rem;
 }
 .il-hero h1 { font-size:1.6rem;font-weight:700;color:var(--fa-gold);margin:0 0 .25rem; }
-.il-hero p  { color:#8899aa;margin:0;font-size:.9rem; }
+.il-hero p  { color:var(--fa-tx-8899aa);margin:0;font-size:.9rem; }
 .il-body    { max-width:1100px;margin:0 auto;padding:1.5rem 2rem 4rem; }
 .il-card {
   background:var(--fa-card);border:1px solid var(--fa-border);
@@ -22,33 +22,33 @@
 .il-chips { display:flex;gap:.75rem;flex-wrap:wrap; }
 .il-chip {
   background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);
-  border-radius:8px;padding:.5rem .95rem;font-size:.78rem;color:#8899aa;text-align:center;
+  border-radius:8px;padding:.5rem .95rem;font-size:.78rem;color:var(--fa-tx-8899aa);text-align:center;
 }
-.il-chip strong { display:block;font-size:1.35rem;font-weight:700;color:#e0e0e0; }
+.il-chip strong { display:block;font-size:1.35rem;font-weight:700;color:var(--fa-tx-e0e0e0); }
 .il-table { width:100%;border-collapse:collapse; }
 .il-table th {
-  text-align:left;font-size:.72rem;color:#8899aa;text-transform:uppercase;
+  text-align:left;font-size:.72rem;color:var(--fa-tx-8899aa);text-transform:uppercase;
   letter-spacing:.05em;padding:.45rem .6rem;border-bottom:1px solid var(--fa-border);
 }
-.il-table td { padding:.5rem .6rem;font-size:.85rem;color:#ccd;border-bottom:1px solid rgba(255,255,255,.04);vertical-align:top; }
+.il-table td { padding:.5rem .6rem;font-size:.85rem;color:var(--fa-tx-ccd);border-bottom:1px solid rgba(255,255,255,.04);vertical-align:top; }
 .il-table tr:last-child td { border-bottom:none; }
 .il-pill { display:inline-block;padding:.12rem .55rem;border-radius:10px;font-size:.7rem;font-weight:700; }
-.il-pill-ok    { background:rgba(0,255,136,.12);color:#00FF88;border:1px solid rgba(0,255,136,.3); }
-.il-pill-warn  { background:rgba(255,184,0,.12);color:#FFB800;border:1px solid rgba(255,184,0,.3); }
-.il-pill-bad   { background:rgba(255,68,68,.15);color:#FF4444;border:1px solid rgba(255,68,68,.35); }
-.il-pill-mute  { background:rgba(255,255,255,.06);color:#8899aa;border:1px solid rgba(255,255,255,.15); }
+.il-pill-ok    { background:rgba(0,255,136,.12);color:var(--fa-tx-00ff88);border:1px solid rgba(0,255,136,.3); }
+.il-pill-warn  { background:rgba(255,184,0,.12);color:var(--fa-tx-ffb800);border:1px solid rgba(255,184,0,.3); }
+.il-pill-bad   { background:rgba(255,68,68,.15);color:var(--fa-tx-ff4444);border:1px solid rgba(255,68,68,.35); }
+.il-pill-mute  { background:rgba(255,255,255,.06);color:var(--fa-tx-8899aa);border:1px solid rgba(255,255,255,.15); }
 .il-code {
-  font-family:ui-monospace,monospace;font-size:.72rem;color:#8899aa;
-  background:#0a0f1c;border:1px solid rgba(255,255,255,.06);border-radius:6px;
+  font-family:ui-monospace,monospace;font-size:.72rem;color:var(--fa-tx-8899aa);
+  background:var(--fa-bg-0a0f1c);border:1px solid rgba(255,255,255,.06);border-radius:6px;
   padding:.4rem .55rem;max-height:140px;overflow:auto;white-space:pre-wrap;margin:0;
 }
 .il-form { display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:.85rem;align-items:end; }
 .il-field label {
-  display:block;font-size:.72rem;color:#8899aa;text-transform:uppercase;
+  display:block;font-size:.72rem;color:var(--fa-tx-8899aa);text-transform:uppercase;
   letter-spacing:.05em;margin-bottom:.3rem;
 }
 .il-field select, .il-field input {
-  width:100%;background:#0a0f1c;border:1px solid var(--fa-border);color:#e0e0e0;
+  width:100%;background:var(--fa-bg-0a0f1c);border:1px solid var(--fa-border);color:var(--fa-tx-e0e0e0);
   border-radius:8px;padding:.5rem .6rem;font-size:.85rem;font-family:inherit;
 }
 .il-btn {
@@ -56,8 +56,8 @@
   border-radius:8px;font-weight:700;font-size:.85rem;cursor:pointer;font-family:inherit;
 }
 .il-msg { margin-top:.85rem;font-size:.85rem;display:none; }
-.il-empty { color:#8899aa;font-size:.85rem;padding:.5rem 0; }
-.il-note { color:#8899aa;font-size:.78rem;margin-top:.6rem;line-height:1.5; }
+.il-empty { color:var(--fa-tx-8899aa);font-size:.85rem;padding:.5rem 0; }
+.il-note { color:var(--fa-tx-8899aa);font-size:.78rem;margin-top:.6rem;line-height:1.5; }
 .il-footer { text-align:center;padding:2rem;font-size:.75rem;color:#555;margin-top:1rem; }
 </style>
 {% include "forge_academy/partials/_chrome_clearance.html" %}
@@ -65,8 +65,8 @@
 
 {% block content %}
 <div class="il-hero">
-  <div style="font-size:.78rem;color:#FFB800;letter-spacing:.1em;text-transform:uppercase;margin-bottom:.25rem;">
-    <a href="/academy/instructor" style="color:#FFB800;text-decoration:none;">← INSTRUCTOR CONSOLE</a>
+  <div style="font-size:.78rem;color:var(--fa-tx-ffb800);letter-spacing:.1em;text-transform:uppercase;margin-bottom:.25rem;">
+    <a href="/academy/instructor" style="color:var(--fa-tx-ffb800);text-decoration:none;">← INSTRUCTOR CONSOLE</a>
   </div>
   <h1>{{ learner.display_name }}</h1>
   <p>{{ learner.username }} — {{ roles.get(learner.role, {}).get('label', learner.role) }} · rank {{ learner.level }}</p>
@@ -95,7 +95,7 @@
         {% for a in assignments %}
         {% set mine = a.targets | selectattr('user_id', 'equalto', learner.id) | list | first %}
         <tr>
-          <td>{{ a.label }}{% if a.note %}<div style="color:#8899aa;font-size:.78rem;">{{ a.note }}</div>{% endif %}</td>
+          <td>{{ a.label }}{% if a.note %}<div style="color:var(--fa-tx-8899aa);font-size:.78rem;">{{ a.note }}</div>{% endif %}</td>
           <td>{{ (a.due_at or '—')[:10] }}</td>
           <td>{{ mine.completed if mine else 0 }}/{{ mine.total if mine else 0 }}</td>
           <td>
@@ -104,7 +104,7 @@
             {% elif a.overdue %}<span class="il-pill il-pill-bad">OVERDUE</span>
             {% else %}<span class="il-pill il-pill-warn">OPEN</span>{% endif %}
           </td>
-          <td style="color:#8899aa;font-size:.78rem;">{{ a.assigned_by }}</td>
+          <td style="color:var(--fa-tx-8899aa);font-size:.78rem;">{{ a.assigned_by }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -123,7 +123,7 @@
       <tbody>
         {% for s in submissions %}
         <tr>
-          <td>{{ s.mission_title }}<div style="color:#8899aa;font-size:.75rem;">T{{ s.tier }}</div></td>
+          <td>{{ s.mission_title }}<div style="color:var(--fa-tx-8899aa);font-size:.75rem;">T{{ s.tier }}</div></td>
           <td>{{ s.step_num }}. {{ s.step_title }}</td>
           <td>
             {{ s.step_type }}
@@ -142,7 +142,7 @@
             {% if s.has_submission %}
             <pre class="il-code">{{ s.submission }}</pre>
             {% else %}
-            <span style="color:#8899aa;font-size:.78rem;">no text submitted</span>
+            <span style="color:var(--fa-tx-8899aa);font-size:.78rem;">no text submitted</span>
             {% endif %}
           </td>
         </tr>
@@ -167,7 +167,7 @@
       <tbody>
         {% for e in evidence %}
         <tr>
-          <td style="color:#8899aa;font-size:.78rem;">{{ (e.created_at or e.issued_at or '')[:19] }}</td>
+          <td style="color:var(--fa-tx-8899aa);font-size:.78rem;">{{ (e.created_at or e.issued_at or '')[:19] }}</td>
           <td>
             {% if e.kind == 'certificate' %}<span class="il-pill il-pill-ok">CERTIFICATE</span>
             {% elif e.is_attendance %}<span class="il-pill il-pill-mute">ATTENDANCE</span>
@@ -175,7 +175,7 @@
           </td>
           <td>
             {% if e.kind == 'certificate' %}{{ e.cert_tier }}
-            {% else %}{{ e.reason }}{% if e.source_type %} <span style="color:#8899aa;">({{ e.source_type }} {{ e.source_id }})</span>{% endif %}{% endif %}
+            {% else %}{{ e.reason }}{% if e.source_type %} <span style="color:var(--fa-tx-8899aa);">({{ e.source_type }} {{ e.source_id }})</span>{% endif %}{% endif %}
           </td>
           <td>{% if e.kind == 'certificate' %}—{% else %}{{ e.xp_delta }} XP{% endif %}</td>
         </tr>
@@ -241,7 +241,7 @@
       <tbody>
         {% for r in reviews %}
         <tr>
-          <td style="color:#8899aa;font-size:.78rem;">{{ (r.created_at or '')[:19] }}</td>
+          <td style="color:var(--fa-tx-8899aa);font-size:.78rem;">{{ (r.created_at or '')[:19] }}</td>
           <td>
             {% if r.verdict == 'approved' %}<span class="il-pill il-pill-ok">APPROVED</span>
             {% elif r.verdict == 'rejected' %}<span class="il-pill il-pill-bad">REJECTED</span>
@@ -254,7 +254,7 @@
             {% else %}—{% endif %}
           </td>
           <td>{{ r.comment or '' }}</td>
-          <td style="color:#8899aa;font-size:.78rem;">{{ r.reviewer }}</td>
+          <td style="color:var(--fa-tx-8899aa);font-size:.78rem;">{{ r.reviewer }}</td>
         </tr>
         {% endfor %}
       </tbody>

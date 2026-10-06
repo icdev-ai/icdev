@@ -1,0 +1,164 @@
+{# Academy light/dark theme tokens.
+
+   The Academy was drawn for the dark theme only: cards, sidebars, output panels and
+   hero banners hard-coded near-black backgrounds (#12192b, #0d1221, #060910,
+   #0a0a14 ...) while body text followed the dashboard theme. With the sun toggle
+   (base.html sets html[data-theme="light"]) the text went dark on a still-dark card
+   and lesson content was unreadable.
+
+   Every such literal in forge_academy/ is now var(--fa-bg-<hex>) or
+   var(--fa-tx-<hex>). The DARK value of each token IS the original literal, so the
+   dark theme renders exactly as before; the light block gives each a readable
+   counterpart (backgrounds -> light surfaces, text -> darkened until it holds
+   >= 4.5:1 on the lightest surface). The shared accents (--fa-orange, --fa-cyan,
+   --fa-green, --fa-gold ...) are declared on :root by each page; the light block
+   below out-ranks them (html[data-theme] is more specific than :root) with darker
+   values that read as text on white.
+
+   Included once from _chrome_clearance.html, which every academy page already
+   includes. The SVG skill map keeps its own dark canvas in both themes. #}
+<style>
+:root {
+  --fa-bg-008db3:#008db3;
+  --fa-bg-00b860:#00b860;
+  --fa-bg-052e16:#052e16;
+  --fa-bg-060910:#060910;
+  --fa-bg-0a0a14:#0a0a14;
+  --fa-bg-0a0f1a:#0a0f1a;
+  --fa-bg-0a0f1c:#0a0f1c;
+  --fa-bg-0d1117:#0d1117;
+  --fa-bg-0d1220:#0d1220;
+  --fa-bg-0d1221:#0d1221;
+  --fa-bg-0f3460:#0f3460;
+  --fa-bg-101018:#101018;
+  --fa-bg-111:#111;
+  --fa-bg-12192b:#12192b;
+  --fa-bg-14141f:#14141f;
+  --fa-bg-16213e:#16213e;
+  --fa-bg-1a0a00:#1a0a00;
+  --fa-bg-1a1206:#1a1206;
+  --fa-bg-1a1230:#1a1230;
+  --fa-bg-1a1a14:#1a1a14;
+  --fa-bg-1a1a24:#1a1a24;
+  --fa-bg-1a1a2e:#1a1a2e;
+  --fa-bg-1a2540:#1a2540;
+  --fa-bg-1e1b4b:#1e1b4b;
+  --fa-bg-2a1200:#2a1200;
+  --fa-bg-2a2118:#2a2118;
+  --fa-bg-422006:#422006;
+  --fa-bg-450a0a:#450a0a;
+  --fa-bg-e05a2b:#e05a2b;
+  --fa-tx-00d4ff:#00d4ff;
+  --fa-tx-00ff88:#00ff88;
+  --fa-tx-0a0a14:#0a0a14;
+  --fa-tx-4a90d9:#4a90d9;
+  --fa-tx-4a90e2:#4a90e2;
+  --fa-tx-4ade80:#4ade80;
+  --fa-tx-58a6ff:#58a6ff;
+  --fa-tx-6366f1:#6366f1;
+  --fa-tx-7a8cb0:#7a8cb0;
+  --fa-tx-7ab3f0:#7ab3f0;
+  --fa-tx-8899aa:#8899aa;
+  --fa-tx-9aa0b5:#9aa0b5;
+  --fa-tx-9b59b6:#9b59b6;
+  --fa-tx-a0a0b8:#a0a0b8;
+  --fa-tx-a5b4fc:#a5b4fc;
+  --fa-tx-aaa:#aaa;
+  --fa-tx-aab:#aab;
+  --fa-tx-b0b0c8:#b0b0c8;
+  --fa-tx-c39bd3:#c39bd3;
+  --fa-tx-c9cede:#c9cede;
+  --fa-tx-ccc:#ccc;
+  --fa-tx-ccd:#ccd;
+  --fa-tx-cd7f32:#cd7f32;
+  --fa-tx-e0e0e0:#e0e0e0;
+  --fa-tx-e94560:#e94560;
+  --fa-tx-eaeaea:#eaeaea;
+  --fa-tx-fca5a5:#fca5a5;
+  --fa-tx-fde68a:#fde68a;
+  --fa-tx-ff2d55:#ff2d55;
+  --fa-tx-ff4444:#ff4444;
+  --fa-tx-ff4d4d:#ff4d4d;
+  --fa-tx-ff6b35:#ff6b35;
+  --fa-tx-ff6b6b:#ff6b6b;
+  --fa-tx-ffb800:#ffb800;
+  --fa-tx-ffce7a:#ffce7a;
+}
+html[data-theme="light"] {
+  --fa-bg-008db3:#007ea1;
+  --fa-bg-00b860:#008646;
+  --fa-bg-052e16:#e8f8ee;
+  --fa-bg-060910:#f1f3f8;
+  --fa-bg-0a0a14:#f1f3f8;
+  --fa-bg-0a0f1a:#f1f3f8;
+  --fa-bg-0a0f1c:#f1f3f8;
+  --fa-bg-0d1117:#f1f3f8;
+  --fa-bg-0d1220:#f4f6fb;
+  --fa-bg-0d1221:#f4f6fb;
+  --fa-bg-0f3460:#e3edf9;
+  --fa-bg-101018:#f4f6fb;
+  --fa-bg-111:#f1f3f8;
+  --fa-bg-12192b:#ffffff;
+  --fa-bg-14141f:#f4f6fb;
+  --fa-bg-16213e:#eef3fb;
+  --fa-bg-1a0a00:#fff4ea;
+  --fa-bg-1a1206:#fff6e5;
+  --fa-bg-1a1230:#f3f0fb;
+  --fa-bg-1a1a14:#f4f6fb;
+  --fa-bg-1a1a24:#f4f6fb;
+  --fa-bg-1a1a2e:#f4f6fb;
+  --fa-bg-1a2540:#eef3fb;
+  --fa-bg-1e1b4b:#eef0ff;
+  --fa-bg-2a1200:#ffeede;
+  --fa-bg-2a2118:#f8f2ea;
+  --fa-bg-422006:#fff3d6;
+  --fa-bg-450a0a:#fdecec;
+  --fa-bg-e05a2b:#c54f25;
+  --fa-tx-00d4ff:#007891;
+  --fa-tx-00ff88:#007c42;
+  --fa-tx-0a0a14:#ffffff;
+  --fa-tx-4a90d9:#3970a9;
+  --fa-tx-4a90e2:#386eae;
+  --fa-tx-4ade80:#297c47;
+  --fa-tx-58a6ff:#3b70ad;
+  --fa-tx-6366f1:#5b5ddd;
+  --fa-tx-7a8cb0:#606e8b;
+  --fa-tx-7ab3f0:#4c7097;
+  --fa-tx-8899aa:#636f7c;
+  --fa-tx-9aa0b5:#686c7b;
+  --fa-tx-9b59b6:#9354ac;
+  --fa-tx-a0a0b8:#6c6c7d;
+  --fa-tx-a5b4fc:#626b97;
+  --fa-tx-aaa:#6c6c6c;
+  --fa-tx-aab:#6c6c77;
+  --fa-tx-b0b0c8:#6b6b79;
+  --fa-tx-c39bd3:#7e6489;
+  --fa-tx-c9cede:#1f2433;
+  --fa-tx-ccc:#1f2433;
+  --fa-tx-ccd:#1f2433;
+  --fa-tx-cd7f32:#9b6025;
+  --fa-tx-e0e0e0:#1f2433;
+  --fa-tx-e94560:#c33950;
+  --fa-tx-eaeaea:#1f2433;
+  --fa-tx-fca5a5:#925f5f;
+  --fa-tx-fde68a:#766c40;
+  --fa-tx-ff2d55:#d12445;
+  --fa-tx-ff4444:#c93535;
+  --fa-tx-ff4d4d:#c43b3b;
+  --fa-tx-ff6b35:#b74d26;
+  --fa-tx-ff6b6b:#b54b4b;
+  --fa-tx-ffb800:#8e6700;
+  --fa-tx-ffce7a:#82693e;
+}
+html[data-theme="light"] {
+  --fa-orange:#c2410c; --fa-cyan:#0369a1; --fa-green:#047857; --fa-gold:#a16207;
+  --fa-blue:#1d5fa8; --fa-red:#c02626; --fa-purple:#7e3fa0;
+  --fa-card:#ffffff; --fa-bg:#f1f3f8; --fa-border:rgba(26,95,168,.28);
+}
+/* rgba(255,255,255,.0x) hovers and chips vanish on white: give them a tint. */
+html[data-theme="light"] .fa-step-nav li:hover { background:rgba(26,95,168,.06); }
+html[data-theme="light"] .fa-step-nav li .step-num { background:rgba(26,95,168,.12); }
+html[data-theme="light"] .fa-step-content code,
+html[data-theme="light"] .fa-step-content pre { background:#f1f3f8; }
+html[data-theme="light"] .fa-intel-feed { background:rgba(3,105,161,.06); }
+</style>

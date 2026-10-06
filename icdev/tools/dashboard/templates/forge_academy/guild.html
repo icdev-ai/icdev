@@ -4,7 +4,7 @@
 {% block extra_css %}
 <style>
 :root { --fa-orange:#FF6B35; --fa-cyan:#00D4FF; --fa-green:#00FF88; --fa-gold:#FFB800; --fa-card:#12192b; --fa-border:rgba(74,144,217,.25); }
-.fa-guild-header { background:linear-gradient(135deg,#0a0a14,#12192b); border-bottom:1px solid var(--fa-border); padding:1.5rem 2rem; }
+.fa-guild-header { background:linear-gradient(135deg,var(--fa-bg-0a0a14),var(--fa-bg-12192b)); border-bottom:1px solid var(--fa-border); padding:1.5rem 2rem; }
 .fa-guild-header h1 { font-size:1.6rem; font-weight:900; background:linear-gradient(135deg,var(--fa-cyan),var(--fa-green)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin:0; }
 .fa-guild-body { padding:1.5rem 2rem; display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; }
 @media(max-width:700px) { .fa-guild-body { grid-template-columns:1fr; } }
@@ -14,11 +14,11 @@
 .fa-member-list li { display:flex; align-items:center; gap:.6rem; padding:.45rem 0; border-bottom:1px solid rgba(255,255,255,.04); font-size:.82rem; }
 .fa-member-list li:last-child { border-bottom:none; }
 .fa-member-icon { width:28px; height:28px; border-radius:50%; background:rgba(74,144,217,.15); display:flex; align-items:center; justify-content:center; font-size:.7rem; flex-shrink:0; }
-.fa-invite-code { background:#060910; border:1px solid var(--fa-border); border-radius:6px; padding:.6rem 1rem; font-family:monospace; font-size:1.1rem; color:var(--fa-cyan); letter-spacing:.2em; text-align:center; margin:1rem 0; cursor:pointer; }
-.fa-form-input { width:100%; background:#060910; border:1px solid var(--fa-border); color:var(--text-primary); border-radius:6px; padding:.5rem .8rem; font-size:.85rem; margin-bottom:.6rem; }
-.fa-btn-action { background:linear-gradient(135deg,var(--fa-cyan),#008db3); color:#0a0a14; border:none; border-radius:6px; padding:.55rem 1.2rem; font-size:.82rem; font-weight:700; cursor:pointer; width:100%; transition:opacity .15s; }
+.fa-invite-code { background:var(--fa-bg-060910); border:1px solid var(--fa-border); border-radius:6px; padding:.6rem 1rem; font-family:monospace; font-size:1.1rem; color:var(--fa-cyan); letter-spacing:.2em; text-align:center; margin:1rem 0; cursor:pointer; }
+.fa-form-input { width:100%; background:var(--fa-bg-060910); border:1px solid var(--fa-border); color:var(--text-primary); border-radius:6px; padding:.5rem .8rem; font-size:.85rem; margin-bottom:.6rem; }
+.fa-btn-action { background:linear-gradient(135deg,var(--fa-cyan),var(--fa-bg-008db3)); color:var(--fa-tx-0a0a14); border:none; border-radius:6px; padding:.55rem 1.2rem; font-size:.82rem; font-weight:700; cursor:pointer; width:100%; transition:opacity .15s; }
 .fa-btn-action:hover { opacity:.85; }
-.fa-btn-create { background:linear-gradient(135deg,var(--fa-orange),#e05a2b); color:#fff; }
+.fa-btn-create { background:linear-gradient(135deg,var(--fa-orange),var(--fa-bg-e05a2b)); color:#fff; }
 </style>
 {% include "forge_academy/partials/_chrome_clearance.html" %}
 {% endblock %}
