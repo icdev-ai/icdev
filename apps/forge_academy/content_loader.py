@@ -2604,28 +2604,39 @@ def _sanitize_html(rendered: str, raw_fallback: str = "") -> str:
     )
 
 
-_LIST_ITEM_RE = re.compile(r"^( +)([-*+]|\d+[.)])\s")
+_LIST_ITEM_RE = re.compile(r"^( *)([-*+]|\d+[.)])\s")
 
 
 def _indent_nested_lists(text: str) -> str:
-    """Widen 2/3-space nested list indentation to the 4 Python-Markdown needs.
+    """Re-indent nested list items to the 4 spaces per level Python-Markdown needs.
 
-    Lessons indent sub-items by two spaces, which Python-Markdown reads as a
-    continuation of the parent item, so a nested list rendered merged into the
-    parent's numbering. Each indent level is rounded up to a multiple of four.
-    Fenced code blocks are left untouched.
+    Lessons indent sub-lists by two spaces (some by three, some correctly by four),
+    and Python-Markdown reads anything under four as a continuation of the parent
+    item, so a nested list rendered merged into the parent's numbering. Within each
+    list the distinct indents seen are ranked into depths and each item is
+    re-indented to 4 x depth, so 2-, 3- and 4-space authoring all nest the same
+    way. A non-indented, non-list line ends the list; fenced code is untouched.
     """
-    out, in_fence = [], False
+    out: list[str] = []
+    stack: list[int] = []  # indents of the open list levels, outermost first
+    in_fence = False
     for line in text.split("\n"):
         stripped = line.lstrip()
-        if stripped.startswith("```") or stripped.startswith("~~~"):
+        if stripped.startswith(("```", "~~~")):
             in_fence = not in_fence
             out.append(line)
             continue
         m = None if in_fence else _LIST_ITEM_RE.match(line)
-        if m and len(m.group(1)) % 4:
-            level = -(-len(m.group(1)) // 2)  # 2 spaces per level as authored
-            line = " " * (4 * level) + line[len(m.group(1)):]
+        if m and (m.group(1) == "" or stack):
+            indent = len(m.group(1))
+            while stack and stack[-1] > indent:
+                stack.pop()
+            if not stack or indent > stack[-1]:
+                stack.append(indent)
+            out.append(" " * (4 * (len(stack) - 1)) + line[indent:])
+            continue
+        if not in_fence and stripped and not line.startswith(" "):
+            stack = []
         out.append(line)
     return "\n".join(out)
 

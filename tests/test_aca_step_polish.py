@@ -20,7 +20,7 @@ from pathlib import Path
 
 import jinja2
 
-from apps.forge_academy.content_loader import _md_to_html, display_step_title
+from apps.forge_academy.content_loader import _indent_nested_lists, display_step_title
 
 _ROOT = Path(__file__).resolve().parent.parent
 PARTIALS = _ROOT / "tools" / "dashboard" / "templates" / "forge_academy" / "partials"
@@ -36,19 +36,33 @@ def _render_step(partial: str, schema: dict) -> str:
 
 
 # --- 1. nested lists ---------------------------------------------------------
+# Tested on the pre-render pass itself: the markdown package is optional (the gated
+# CI job does not install it, and _md_to_html then falls back to <pre>).
 
-def test_a_two_space_sub_list_nests_inside_its_parent():
-    html = _md_to_html("1. Parent\n  - child a\n  - child b\n2. Next\n")
-    assert html.count("<ol>") == 1
-    # The <ul> opens INSIDE the first <li>, before that item closes.
-    assert html.index("<ul>") < html.index("</li>")
-    assert "child a" in html and "child b" in html
+def test_a_two_space_sub_list_is_widened_to_four():
+    out = _indent_nested_lists("1. Parent\n  - child a\n  - child b\n2. Next\n")
+    assert out == "1. Parent\n    - child a\n    - child b\n2. Next\n"
+
+
+def test_two_space_authoring_nests_every_level():
+    out = _indent_nested_lists("- a\n  - b\n    - c\n- d\n")
+    assert out == "- a\n    - b\n        - c\n- d\n"
+
+
+def test_mixed_authoring_ranks_indents_by_depth():
+    """4-then-6 spaces is one level under b, not three levels deep."""
+    out = _indent_nested_lists("- a\n    - b\n      - c\n")
+    assert out == "- a\n    - b\n        - c\n"
+
+
+def test_indented_text_outside_a_list_is_left_alone():
+    text = "Para\n  - not a list item\n"
+    assert _indent_nested_lists(text) == text
 
 
 def test_code_fences_keep_their_indentation():
-    html = _md_to_html("```\n  - not a list\n```\n")
-    assert "<ul>" not in html
-    assert "  - not a list" in html
+    text = "```\n  - not a list\n```\n"
+    assert _indent_nested_lists(text) == text
 
 
 # --- 2. step titles ----------------------------------------------------------
