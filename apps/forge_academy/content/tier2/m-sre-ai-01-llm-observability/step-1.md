@@ -20,7 +20,7 @@ cost = (input_tokens / 1000) * price_per_1k_input
      + (output_tokens / 1000) * price_per_1k_output
 ```
 
-Reference prices (2025): `claude-haiku` ~$0.25/M input, `claude-sonnet` ~$3/M input, `qwen3-local` via Ollama = $0.00. Token counts grow silently — a prompt that works at 500 tokens can balloon to 3,000 tokens when conversation history accumulates. Track per-agent, per-function, and per-day.
+Reference prices, as of September 2026 (source: Anthropic API first-party pricing, per million tokens — input / cached-input read / output): Claude Haiku 4.5 $1.00 / ~$0.10 / $5.00, Claude Sonnet 5.5 $2.00 / $0.20 / $10.00, Claude Opus 5.5 $4.00 / $0.20 / $20.00; `qwen3-local` via Ollama = $0.00 per token (you pay in hardware instead). Reasoning ("thinking") tokens are billed as output tokens even when the reasoning text is hidden, so track them as their own series — they are the usual cause of an output bill that outgrows the visible answers. Token counts grow silently — a prompt that works at 500 tokens can balloon to 3,000 tokens when conversation history accumulates. Track per-agent, per-function, and per-day.
 
 ### 2. Latency (P50 / P95 / P99)
 

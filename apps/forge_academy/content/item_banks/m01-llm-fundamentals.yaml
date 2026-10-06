@@ -66,17 +66,70 @@ steps:
 
       - key: tok-prefix-cache
         prompt: >-
-          What does caching repeated context (prefix caching) buy you?
+          As of September 2026, roughly what does a cached-input read cost compared
+          with ordinary (uncached) input on the Claude models in the lesson's table?
         options:
-          - "Near-zero cost on the repeated portion of the context"
-          - "A larger context window"
-          - "Fewer output tokens"
-          - "Automatic summarization of old turns"
+          - "About a tenth of the input rate"
+          - "The same as the input rate"
+          - "Twice the input rate"
+          - "Nothing at all, ever"
         correct: 0
         explanation: >-
-          Prefix caching means the repeated context costs close to nothing on each
-          subsequent run. It does not change the size of the context window.
+          Cached reads are billed at roughly 0.1x the input rate - for example $0.20
+          against $2.00 per million tokens on Claude Sonnet 5.5 (Anthropic pricing,
+          September 2026). Writing the cache costs about 1.25x, so caching pays off
+          only on a prefix that is actually reused.
         difficulty: core
+
+      - key: tok-reasoning-billing
+        prompt: >-
+          A model thinks before answering, and the API hides the reasoning text from
+          you. How are those reasoning (thinking) tokens billed?
+        options:
+          - "They are free, because you never see them"
+          - "At the output-token rate, even though the text is hidden"
+          - "At the cached-input rate"
+          - "At the input-token rate"
+        correct: 1
+        explanation: >-
+          Reasoning tokens are generated tokens, so they are billed as output tokens
+          whether the reasoning is shown, summarised or omitted. A short visible
+          answer can carry a large output bill.
+        difficulty: core
+
+      - key: tok-tokenizer-families
+        prompt: >-
+          You measured a prompt at 10,000 tokens on one model family. Why should you
+          re-count it before budgeting for a different family?
+        options:
+          - "Token counts never differ, but prices do"
+          - "Each family trains its own tokenizer vocabulary, so the same text gives a different count"
+          - "The second model will add its own system prompt"
+          - "Token counts depend only on the number of words"
+        correct: 1
+        explanation: >-
+          Tokenizers are trained per family, so counts and token IDs are not
+          portable. Even within one vendor, the tokenizer introduced with Claude
+          Opus 4.7 uses about 1x to 1.35x as many tokens as the earlier one for the
+          same text (as of September 2026).
+        difficulty: core
+
+      - key: tok-cost-calc
+        prompt: >-
+          At $2.00 input, $0.20 cached input and $10.00 output per million tokens,
+          what does a request with 5,000 uncached input, 15,000 cached input, 500
+          output and 1,500 reasoning tokens cost?
+        options:
+          - "About $0.013"
+          - "About $0.018"
+          - "About $0.033"
+          - "About $0.050"
+        correct: 2
+        explanation: >-
+          5,000 x $2 + 15,000 x $0.20 + (500 + 1,500) x $10, divided by a million:
+          $0.010 + $0.003 + $0.020 = $0.033. Forgetting that reasoning tokens bill
+          at the output rate gives $0.018.
+        difficulty: stretch
 
       - key: tok-special-chars
         prompt: >-
@@ -174,20 +227,52 @@ steps:
           model on compression so the expensive model reasons over less text.
         difficulty: stretch
 
-      - key: ctx-router-threshold
+      # ctx-router-threshold was retired (aicur-fun-01): it asserted that the
+      # router summarizes at 80% of the context limit, and no such code exists.
+      # The seeder deactivates a key that leaves this file.
+      - key: ctx-floor-window
         prompt: >-
-          At what point does the ICDEV router automatically trigger a summarization
-          pass?
+          Why does ICDEV's context_budget.py budget against the SMALLEST context
+          window in a function's routing chain?
         options:
-          - "When the session reaches 50% of the model's context limit"
-          - "When the session reaches 80% of the model's context limit"
-          - "Only when an inference has already failed"
-          - "Only when the operator requests it"
+          - "Smaller windows are cheaper, so it saves money"
+          - "The model that actually serves the call can change at run time, so a budget sized for the largest window could overflow"
+          - "Larger windows are slower to fill"
+          - "Only the first model in the chain is ever used"
         correct: 1
         explanation: >-
-          The router tracks input plus output tokens per call and summarizes using
-          the cheaper model tier at 80% of the context limit, so the failure is
-          avoided rather than recovered from.
+          floor_window_for_function() takes the minimum across the chain because a
+          fallback or an air-gap local model may serve the request. A budget built
+          for a 1M-token model overflows a 32K local model.
+        difficulty: core
+
+      - key: ctx-overcount
+        prompt: >-
+          ICDEV's estimate_tokens() deliberately OVER-counts tokens. Why?
+        options:
+          - "Over-counting costs at most one fewer chunk; under-counting overflows a real request"
+          - "Providers bill on the estimate, not the real count"
+          - "It makes responses longer"
+          - "Over-counting improves retrieval ranking"
+        correct: 0
+        explanation: >-
+          An over-estimate merely packs one fewer chunk. An under-estimate sends a
+          request that exceeds the window, which the caller cannot recover from.
+        difficulty: core
+
+      - key: ctx-window-spread
+        prompt: >-
+          As of September 2026, how does the context window of Claude Sonnet 5.5
+          compare with the qwen3-local model ICDEV uses in air-gap mode?
+        options:
+          - "They are the same size"
+          - "The local model's window is larger"
+          - "Sonnet 5.5 has 1M tokens against the local model's 32K - more than thirtyfold"
+          - "Sonnet 5.5 has 8K tokens"
+        correct: 2
+        explanation: >-
+          Hosted frontier models offer 1M-token windows while qwen3-local is
+          configured at 32K, so a prompt that fits one can overflow the other.
         difficulty: core
 
   # -------------------------------------------------------------------------
