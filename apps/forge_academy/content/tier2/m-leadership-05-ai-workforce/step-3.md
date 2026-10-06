@@ -37,3 +37,5 @@ Answer three questions:
 ---
 
 **Your task:** Write your 90-day workforce plan in plain language — one paragraph per person, plus one closing sentence describing the team-level outcome. This is the briefing you bring to your deputy or CIO when requesting training budget.
+
+**In the form below:** question 1 (the people and why) goes in the first box; questions 2 and 3 (their training paths and the team-level outcome) go in the second.

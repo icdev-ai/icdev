@@ -36,3 +36,5 @@ Answer three questions:
 ---
 
 **Your task:** Write your intelligence product definition using the strong format above. If you cannot name the decision the product supports, the product is not yet ready to build.
+
+**In the form below:** answer questions 1-3 (the product, its consumer and decision, and the one decisive signal) in the first box; put the delivery cadence (hourly / daily / weekly) in the second.

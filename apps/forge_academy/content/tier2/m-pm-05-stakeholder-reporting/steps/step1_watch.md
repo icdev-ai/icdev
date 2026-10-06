@@ -5,13 +5,16 @@ step_class: icdev:Lesson
 
 # Stakeholder Reporting Agent — Configure Automated Status Reports
 
-PMs spend 30-40% of their time writing status reports. ICDEV's stakeholder reporting agent collects data from your project management tools, EVM system, and risk register, then generates tailored briefs for each audience — weekly, automatically.
+PMs spend a large share of their time writing status reports. This lesson shows the pattern for an automated reporting agent: collect from your project tools, EVM data and risk register, then generate a brief tailored to each audience on a schedule.
 
 ## What You'll See
 
-Watch ICDEV configure and generate the first automated status report cycle for 3 stakeholders:
+> **Illustrative walkthrough.** The project, the stakeholders and every figure below are fictional, written to show what the workflow produces. They are not the output of a live run on this platform. The *Run it for real* section names the ICDEV tools that do each part.
+
+A first automated status report cycle for 3 stakeholders:
 
 **Configuration (one-time setup)**
+
 - Data sources: Jira (task status), Confluence (documentation), EVM spreadsheet
 - Stakeholders: Program Executive, Contracting Officer, Technical Lead
 - Frequency: weekly (Fridays at 0800 EST)
@@ -38,6 +41,10 @@ Focuses on CDRL delivery status, contract compliance, and modification request s
 **Generated Report — Technical Lead (5-page)**
 Full sprint metrics, defect trends, velocity charts, technical risk register, and architecture decision log.
 
-Three audiences. Three different reports. Zero PM writing time.
+Three audiences, three different reports, from one set of data. The PM's job shifts from writing to reviewing: every brief still goes out under a human's name.
 
-**Annual PM time saved:** 312 hours → redirected to technical leadership and customer engagement.
+## Run it for real
+
+What ICDEV has today is the portfolio-level version of this: the **PMO weekly report** reflex (`tools/genesis/reflexes/pmo_weekly_report.py`) runs every Monday at 07:00, aggregates contract health, EVM performance, overdue deliverables and option-period countdowns, and writes an AI-narrated executive summary to the kanban board and memory. It labels its own data quality (`unmeasurable`, `synthetic`, `degraded`, `measured`), so a brief built on placeholder data says so. The underlying views are `/cpmp` and `/cpmp/reports`.
+
+Per-audience briefs (executive, contracting officer, technical lead) as shown above are a design you would build on that data, not a switch you turn on.

@@ -36,7 +36,11 @@ assert "AGENT READINESS REPORT" in _out, (
 
 _expected = _check(".")
 for _pid, _score in _expected["pillar_scores"].items():
-    _status = "PASS" if _score.get("percentage", 0) >= 70 else "FAIL"
+    # The real checker reports "percentage" as a fraction (0.0-1.0); an older starter
+    # used 0-100. Accept either scale so a learner's stub decides, not the grader.
+    _pct = float(_score.get("percentage", 0) or 0)
+    _frac = _pct / 100.0 if _pct > 1.0 else _pct
+    _status = "PASS" if _frac >= 0.7 else "FAIL"
     assert any(f"[{_status}]" in _l and _pid in _l for _l in _lines), (
         f"Expected a line like '[{_status}] {_pid}: NN%' for pillar {_pid!r}."
     )
