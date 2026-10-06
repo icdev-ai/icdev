@@ -5,19 +5,13 @@ step_class: icdev:coding
 
 # Run AgentSHAP Attribution
 
-Write a script that runs AgentSHAP attribution on a recent agent trace and produces a tool impact report.
+Write a script that runs AgentSHAP attribution on recent agent traces and produces a tool impact report.
 
-## AgentSHAP API
+## AgentSHAP on the platform
+
+On a live ICDEV install, AgentSHAP lives in `tools/observability/shap/agent_shap.py` (`AgentSHAP.analyze_trace(...)`) and reads spans from the `otel_traces` table. An attribution looks like:
 
 ```python
-from tools.xai.agent_shap import AgentSHAP
-
-shap = AgentSHAP()
-attribution = shap.explain(
-    trace_id="trace-abc123",
-    target="response_quality",
-)
-# Returns:
 # {
 #   "trace_id": "trace-abc123",
 #   "tool_attributions": [
@@ -25,14 +19,21 @@ attribution = shap.explain(
 #     ...
 #   ],
 #   "top_contributor": "knowledge.search",
-#   "explanation": "..."
 # }
 ```
 
+## In the exercise
+
+The Academy sandbox cannot import `tools.*` and has no database or network access. The starter therefore provides stubs with the same shape:
+
+- `SAMPLE_TRACES` and `get_recent_traces(n)` — the 5 most recent traces, newest first
+- `explain(trace_id)` — returns the attribution dict shown above for one trace
+
+Use the stubs as-is; do not try to import the platform module.
+
 ## Your task
 
-Write a Python script that:
-1. Lists the 5 most recent traces from the traces DB
-2. Runs AgentSHAP attribution on each trace
-3. Prints a ranked tool attribution table
-4. Identifies the tool with the highest average SHAP value across all 5 traces
+1. In `run_attribution_report()`, call `explain()` for each of the 5 recent traces and append the **attribution dict** (not the raw trace) to `results`
+2. Print a ranked tool attribution table for each trace (tool, `shap_value`)
+3. Implement `highest_average_tool(results)` — the tool with the highest average `shap_value` across all 5 traces (a tool missing from a trace counts as 0)
+4. Print that tool and its average as a summary line, and return `results`

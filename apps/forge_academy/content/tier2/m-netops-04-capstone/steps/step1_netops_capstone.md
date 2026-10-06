@@ -48,7 +48,7 @@ metrics_by_device = {
 {
     "topology": {
         "node_count": 3,
-        "edge_count": 2,
+        "edge_count": 3,   # core-edge, core-access (seen from both sides, counted once), dmz-edge
         "unknown_nodes": ["edge-rtr-01"]
     },
     "devices_checked": 2,

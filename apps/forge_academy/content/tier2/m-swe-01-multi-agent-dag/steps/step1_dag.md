@@ -23,13 +23,17 @@ DAGRunner executes:
 ## The architecture
 
 ```python
-dag = DAGRunner()
-dag.add_task("scan",   fn=stig_scan,    deps=[])
-dag.add_task("triage", fn=triage_agent, deps=["scan"])
-dag.add_task("report", fn=gen_report,   deps=["triage"])
-dag.add_task("notify", fn=send_alert,   deps=["scan"])   # parallel with triage
+# The whole graph is one dict: task name -> {"fn": callable(context) -> dict, "deps": [...]}
+COMPLIANCE_PIPELINE = {
+    "stig_scan":         {"fn": task_stig_scan,         "deps": []},
+    "risk_score":        {"fn": task_risk_score,        "deps": ["stig_scan"]},
+    "poam_draft":        {"fn": task_poam_draft,        "deps": ["stig_scan"]},  # parallel with risk_score
+    "executive_summary": {"fn": task_executive_summary, "deps": ["risk_score", "poam_draft"]},
+}
 
-results = dag.run()
+runner = DAGRunner(COMPLIANCE_PIPELINE)
+runner._build_order()   # -> [["stig_scan"], ["risk_score", "poam_draft"], ["executive_summary"]]
+results = runner.run()  # -> {"stig_scan": {...}, "risk_score": {...}, "poam_draft": {...}, "executive_summary": {...}}
 ```
 
 ## Key concepts

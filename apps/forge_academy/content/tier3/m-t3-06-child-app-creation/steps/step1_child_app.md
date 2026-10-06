@@ -48,7 +48,7 @@ manifest.to_dict()
 
 Before scaffolding, `AppManifest.validate()` checks:
 1. `app_slug` matches `^[a-z][a-z0-9_]*$` (lowercase, alphanumeric + underscore, starts with letter)
-2. `canvas` is one of the 7 valid canvas codes
+2. `canvas` is one of the canvas codes in `VALID_CANVASES`
 3. At least one route must start with "/"
 4. At least one DB table defined
 5. `app_name` is not empty

@@ -44,7 +44,10 @@
 </div>
 
 <script>
-(function() {
+// STEPS is declared by mission.html AFTER the step panes, so reading it while the
+// pane parses threw ReferenceError and left every knowledge check empty. Wait for
+// the document, by which point every inline script has run.
+document.addEventListener('DOMContentLoaded', function() {
   const idx = {{ sidx }};
   const a = (STEPS[idx] || {}).assessment;
   const itemsEl = document.getElementById('assess-items-' + idx);
@@ -110,7 +113,7 @@
     });
     itemsEl.appendChild(wrap);
   });
-})();
+});
 
 async function submitAssessment(idx) {
   const root = document.getElementById('assess-items-' + idx);

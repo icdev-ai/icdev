@@ -5,20 +5,13 @@ step_class: icdev:coding
 
 # Run a PNA Predictor
 
-Write a Python script that calls the BGP Predictor and interprets its output.
+Write a Python script that calls the BGP and Capacity predictors and interprets their output.
 
-## Predictor API
+## Predictor output
+
+A BGP prediction looks like this:
 
 ```python
-from tools.network.bgp_predictor import BGPPredictor
-
-predictor = BGPPredictor()
-result = predictor.predict(
-    as_number=64512,
-    prefix="10.0.0.0/8",
-    lookback_hours=24,
-)
-# Returns:
 # {
 #   "instability_probability": 0.73,
 #   "confidence": 0.85,
@@ -29,10 +22,20 @@ result = predictor.predict(
 # }
 ```
 
+A Capacity prediction (one per link) carries `link`, `utilization`, `risk_level` and `recommended_action`.
+
+## In the exercise
+
+The Academy sandbox cannot import `tools.*` and has no network access. The starter therefore provides stub predictors with the shapes above — use them as-is:
+
+- `bgp_predict(as_number, prefix, lookback_hours=24)` — one BGP prediction
+- `capacity_predict_top_n(n=3, lookback_hours=24)` — a list of predictions, highest-utilization link first
+
 ## Your task
 
-Write a script that:
-1. Runs the BGP Predictor for AS 64512
-2. Runs the Capacity Predictor for the top-3 highest-utilization links
-3. Prints a risk summary: which predictors flagged high risk, and what action do they recommend?
-4. If any predictor flags high risk, write the finding to the kanban backlog via the kanban API
+Complete `run_pna_analysis()` so that it:
+1. Runs the BGP predictor for AS 64512, prefix `10.0.0.0/8`, and appends `("BGP", result)`
+2. Runs the Capacity predictor for the top-3 highest-utilization links and appends `("Capacity", link)` for each
+3. Prints a risk summary: each predictor's `risk_level` and its `recommended_action`
+4. For every high-risk finding, builds a kanban backlog card (`title`, `status: "backlog"`, `description`) and prints it — on the platform you would POST it to the kanban API; the sandbox has no network
+5. Returns the list of `(predictor_name, prediction)` tuples

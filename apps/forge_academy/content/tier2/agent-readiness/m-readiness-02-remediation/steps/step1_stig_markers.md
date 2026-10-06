@@ -14,7 +14,9 @@ SESSION_TIMEOUT_SECONDS = 1800
 
 # STIG V-220160: Application must not store plaintext passwords
 def hash_password(plaintext: str) -> str:
-    return hashlib.sha256(plaintext.encode()).hexdigest()
+    salt = os.urandom(16)  # per-password random salt, stored alongside the hash
+    digest = hashlib.pbkdf2_hmac("sha256", plaintext.encode(), salt, 600_000)
+    return salt.hex() + ":" + digest.hex()
 ```
 
 ## Your task

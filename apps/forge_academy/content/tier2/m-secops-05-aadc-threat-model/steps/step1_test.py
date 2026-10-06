@@ -22,7 +22,11 @@ _severe = [f for f in _result if str(f.get("severity", "")).upper() in ("CRITICA
 assert len(_severe) >= 2, f"Expected at least 2 CRITICAL/HIGH threats, got {len(_severe)}."
 
 for _finding in _result:
-    for _field in ("threat_id", "category", "severity"):
+    # The starter and lesson key each finding by "id"; "threat_id" is accepted too.
+    assert ("id" in _finding) or ("threat_id" in _finding), (
+        f"Finding missing its identifier ('id'): {_finding}"
+    )
+    for _field in ("category", "severity"):
         assert _field in _finding, f"Finding missing field {_field!r}: {_finding}"
 
 _valid_ids = {n.get("id") for n in _graph.get("nodes", []) if isinstance(n, dict)}

@@ -115,7 +115,7 @@ class BlueprintSpec:
 # ── Step 2: Route Extractor ───────────────────────────────────────────────────
 
 def extract_routes(blueprint_content: str) -> list[str]:
-    """TODO: Extract route paths from blueprint Python source.
+    r"""TODO: Extract route paths from blueprint Python source.
 
     Find all @bp.route("...") decorators.
     Pattern: r'@bp\.route\(["\']([^"\']+)["\']'
@@ -130,7 +130,7 @@ def extract_routes(blueprint_content: str) -> list[str]:
 # ── Step 3: Migration Checker ─────────────────────────────────────────────────
 
 def check_migration_sql(sql: str) -> dict:
-    """TODO: Check if a migration SQL string follows ICDEV conventions.
+    r"""TODO: Check if a migration SQL string follows ICDEV conventions.
 
     Checks:
     1. "if_not_exists": True if "IF NOT EXISTS" in sql (case-insensitive)

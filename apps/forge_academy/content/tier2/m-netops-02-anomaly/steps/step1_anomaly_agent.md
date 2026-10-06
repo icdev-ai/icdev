@@ -97,4 +97,4 @@ For `score_severity`, assign each anomaly's `severity` field:
 
 ## Grader Contract
 
-The grader uses `SAMPLE_SNAPSHOT` with 3 anomalous metrics. It tests `classify_anomaly` with specific values, then `AnomalyAgent.run` for the full report. Match field names exactly.
+The grader uses `SAMPLE_SNAPSHOT` with 2 anomalous metrics (`latency_ms` = 620 → critical, `port_util_pct` = 88 → high); `packet_loss_pct` and `bgp_prefix_delta` are within their warning thresholds. It tests `classify_anomaly` with specific values, then `AnomalyAgent.run` for the full report. Match field names exactly.

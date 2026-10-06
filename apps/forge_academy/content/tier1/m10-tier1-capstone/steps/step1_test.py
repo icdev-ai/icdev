@@ -65,11 +65,11 @@ assert any(kw in ans_mfa_lower for kw in ["fedramp", "mfa", "ia-2", "ia-5", "mul
     f"MFA answer not grounded in FedRAMP doc: {ans_mfa[:100]}"
 
 ans_cat1_lower = ans_cat1.lower()
-assert any(kw in ans_cat1_lower for kw in ["30", "cat i", "cat", "remediat", "poam", "stig", "ssh", "finding", "day"]), \
+assert any(kw in ans_cat1_lower for kw in ["30", "cat i", "remediat", "poam", "stig", "ssh", "finding", "day"]), \
     f"CAT I answer not grounded in source docs: {ans_cat1[:150]}"
 
 ans_ssh_lower = ans_ssh.lower()
-assert any(kw in ans_ssh_lower for kw in ["ssh", "permitrootlogin", "stig", "v-220706", "cat"]), \
+assert any(kw in ans_ssh_lower for kw in ["ssh", "permitrootlogin", "stig", "v-220706", "cat i"]), \
     f"SSH answer not grounded: {ans_ssh[:100]}"
 
 assert len(output) > 30, "Print Q&A results in main block"

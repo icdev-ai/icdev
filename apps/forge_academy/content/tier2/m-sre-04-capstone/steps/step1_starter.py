@@ -59,6 +59,20 @@ def compute_slo_health(slo_target_pct: float, window_hours: int,
                        total_requests: int, error_requests: int) -> dict:
     """Re-implement M01 SLO logic: compute error budget and burn rate.
 
+    Formula (budget window = 30 days = 720h):
+        allowed_errors      = total_requests * (1 - slo_target_pct / 100)
+        budget_consumed_pct = error_requests / allowed_errors * 100
+        burn_rate           = (budget_consumed_pct / 100) / (window_hours / 720)
+
+    burn_rate_status:
+        burn_rate < 1       -> "healthy"    -> recommendation "NO_ACTION"
+        1 <= burn_rate < 2  -> "elevated"   -> recommendation "MONITOR"
+        2 <= burn_rate < 5  -> "fast_burn"  -> recommendation "PAGE_ONCALL"
+        burn_rate >= 5      -> "critical"   -> recommendation "PAGE_ONCALL"
+
+    Example: compute_slo_health(99.9, 1, 50000, 120) -> allowed 50 errors,
+    240% of budget consumed, burn_rate 1728.0 -> "critical", "PAGE_ONCALL".
+
     Return format:
         {
             "recommendation": "NO_ACTION" | "MONITOR" | "PAGE_ONCALL",
@@ -76,8 +90,14 @@ def build_incident_brief(service: str, metrics: dict) -> dict:
 
     Synthesize an alert from metrics:
       - alert_type = "error_rate" if error_rate_pct > 1.0, else "latency"
-    Classify severity (SEV1–SEV4) using M02 rules.
-    Select runbook from RUNBOOKS.
+    Classify severity using the M02 rules (first match wins):
+      SEV1: user_facing=True AND error_rate_pct > 10
+      SEV2: user_facing=True AND (1 < error_rate_pct <= 10 OR latency_p99_ms > 2000)
+      SEV3: 500 <= latency_p99_ms <= 2000 (any service)
+      SEV4: everything else
+    page_oncall = True for SEV1 and SEV2 only.
+    Select runbook from RUNBOOKS[(service, alert_type)], falling back to RUNBOOKS["default"].
+    incident_id = f"INC-{service}-{alert_type}"
 
     Return format:
         {
@@ -95,6 +115,9 @@ def schedule_chaos(service: str) -> dict:
     """Design a network_delay chaos experiment for a healthy service.
 
     Use FAILURE_MODES["network_delay"] and SERVICE_DEPENDENCIES.
+      experiment_id = f"exp-{service}-network_delay"
+      risk_level    = FAILURE_MODES["network_delay"]["risk"]
+      safe_to_run   = True unless risk_level == "high"
     Return format:
         {
             "experiment_id": str,

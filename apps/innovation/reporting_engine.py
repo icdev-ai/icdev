@@ -18,7 +18,7 @@ _COMP_CFG_PATH = Path(__file__).resolve().parent.parent.parent / "args" / "acade
 
 def _load_competency_cfg() -> dict:
     try:
-        with open(_COMP_CFG_PATH) as f:
+        with open(_COMP_CFG_PATH, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception:
         return {}

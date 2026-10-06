@@ -28,6 +28,8 @@ def simulate_llm_call(system_prompt: str, user_message: str) -> dict:
 system_prompt = "You are an expert AI engineer teaching fundamentals."
 user_message = "What is a token in the context of language models?"
 
-# TODO: Call simulate_llm_call with system_prompt and user_message
+# TODO: Call simulate_llm_call with system_prompt and user_message, and store the
+#       result in a variable named `response` (the grader reads that name):
+#           response = simulate_llm_call(system_prompt, user_message)
 # TODO: Print the response "content"
 # TODO: Print "input_tokens" and "output_tokens" from usage

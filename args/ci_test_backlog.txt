@@ -1316,7 +1316,6 @@ tests/test_penta_aca_missions2.py
 tests/test_penta_aca_oracle.py
 tests/test_penta_aca_routes.py
 tests/test_penta_aca_routes_prefix.py
-tests/test_penta_aca_sandbox.py
 tests/test_penta_aiify_auth.py
 tests/test_penta_aiify_failclosed.py
 tests/test_penta_aiify_p2.py

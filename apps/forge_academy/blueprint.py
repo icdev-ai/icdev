@@ -375,6 +375,29 @@ def mission_runner(slug):
     )
 
 
+def _skill_nodes_in_pixels(nodes, width=900, height=600, margin=45):
+    """SKILL_NODES positions are GRID units (x 0..14, y -3..5); the template draws
+    them in a 900x600 SVG, which used them as pixels and stacked every node in the
+    top-left corner. Scale the grid's own extent onto the canvas."""
+    placed = [n for n in nodes if n.get("pos")]
+    if not placed:
+        return list(nodes)
+    xs = [n["pos"][0] for n in placed]
+    ys = [n["pos"][1] for n in placed]
+    span_x = (max(xs) - min(xs)) or 1
+    span_y = (max(ys) - min(ys)) or 1
+    out = []
+    for n in nodes:
+        if n.get("pos"):
+            x, y = n["pos"]
+            n = {**n, "pos": (
+                round(margin + (x - min(xs)) * (width - 2 * margin) / span_x),
+                round(margin + (y - min(ys)) * (height - 2 * margin) / span_y),
+            )}
+        out.append(n)
+    return out
+
+
 @bp.route("/academy/skill-tree")
 def skill_tree():
     _ensure_init()
@@ -386,7 +409,7 @@ def skill_tree():
     return render_template(
         "forge_academy/skill_tree.html",
         fa_user=fa_user,
-        skill_nodes=SKILL_NODES,
+        skill_nodes=_skill_nodes_in_pixels(SKILL_NODES),
         user_skills=user_skills,
         level_ctx=_level_ctx(fa_user) if fa_user else {},
     )

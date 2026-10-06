@@ -10,6 +10,13 @@
   --fa-gold:#FFB800; --fa-card:#12192b; --fa-border:rgba(74,144,217,.25);
 }
 .fa-mission-layout { display:grid; grid-template-columns:280px 1fr; min-height:calc(100vh - 60px); }
+/* Phone width: a fixed 280px column left ~110px for the lesson and scrolled the
+   page sideways. Stack the step list above the content instead. */
+@media (max-width: 760px) {
+  .fa-mission-layout { grid-template-columns: 1fr; }
+  .fa-sidebar { position: static; max-height: none; border-right: none;
+                border-bottom: 1px solid var(--fa-border); }
+}
 /* Sidebar */
 .fa-sidebar {
   background:#0d1221; border-right:1px solid var(--fa-border);

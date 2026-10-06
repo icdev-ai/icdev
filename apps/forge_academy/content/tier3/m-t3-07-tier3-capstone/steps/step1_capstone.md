@@ -31,7 +31,7 @@ A `CapstoneApp` that integrates manifest, goal, blueprint, and tool layers:
 app = CapstoneApp(
     manifest=AppManifest(...),
     goal_content="# Goal\n# Tools: ...",
-    blueprint_mock_files={"files": [...]},
+    blueprint_files={"apps/<slug>/blueprint.py", "apps/<slug>/constants.py", ...},  # set of file paths present
 )
 report = app.ship()
 # → {"ready": bool, "score": N/10, "components": {...}, "blockers": [...]}
