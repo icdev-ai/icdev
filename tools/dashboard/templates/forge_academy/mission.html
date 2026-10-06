@@ -195,7 +195,19 @@
       {{ mission.learning_objective }}
     </div>
     {% endif %}
-    {% if tier_locked %}
+    {% if presenter_preview|default(false) %}
+    {# aca-presenter-preview: the org-leadership tier (admin/pm/isso) demoing a
+       locked mission. api_step_submit grades for real and records nothing. #}
+    <div role="status" id="fa-preview-banner"
+         style="background:#0f1a24;border:1px solid #2f5d78;border-left:3px solid var(--fa-cyan);
+                border-radius:8px;padding:1rem 1.2rem;margin-bottom:1.2rem;font-size:.85rem;
+                color:#c9cede;">
+      <strong style="color:var(--fa-cyan);">Presenter preview</strong> &mdash; answers are
+      graded and shown, nothing is recorded and no XP is awarded.
+      <span style="color:var(--text-secondary);">(Tier {{ mission.tier }} is not unlocked
+      for this account.)</span>
+    </div>
+    {% elif tier_locked %}
     {# aca-ux-04: locked-but-readable. The content below is fully readable; the
        server refuses credit (api_step_submit), so state that plainly rather than
        letting a learner work through it and wonder where the XP went. #}
@@ -282,6 +294,9 @@ const STEPS = {{ steps_client | tojson }};
 const MISSION = {id: {{ mission.id | tojson }}, slug: {{ mission.slug | tojson }},
                  tier: {{ mission.tier | tojson }}};
 const FA_USER_ID = {{ fa_user.id if fa_user else 'null' }};
+// aca-presenter-preview: a presenter on a locked tier. The server's
+// status:"preview" response is what each step acts on; this only words the page.
+const FA_PREVIEW = {{ 'true' if presenter_preview|default(false) else 'false' }};
 let currentStep = 0;
 let hintsUsed = 0;
 let startTime = Date.now();
@@ -458,6 +473,12 @@ async function submitStep(stepIdx, submission, chosenOption, answers) {
         setTimeout(() => showXPToast(0, '🎖 Rank Up: ' + d.xp_event.new_level), 1000);
       }
     }
+    // aca-presenter-preview: a graded verdict that was NOT recorded. Callers treat
+    // it like any other verdict (show it, offer Next); this adds the caveat.
+    if (d.status === 'preview') {
+      faPreviewNote(stepIdx);
+      return d;
+    }
     // Only a real pass marks the step done in the sidebar.
     if (d.passed) {
       const navItems = document.querySelectorAll('#step-nav li');
@@ -467,6 +488,25 @@ async function submitStep(stepIdx, submission, chosenOption, answers) {
   } catch(e) {
     return null;
   }
+}
+
+// A small "(preview — not recorded)" beside the step's Next button, once.
+function faPreviewNote(stepIdx) {
+  const id = 'fa-preview-note-' + stepIdx;
+  if (document.getElementById(id)) return;
+  const note = document.createElement('span');
+  note.id = id;
+  note.className = 'fa-preview-note';
+  note.style.cssText = 'font-size:.75rem;color:var(--text-secondary);margin-left:.6rem;';
+  note.textContent = '(preview — not recorded)';
+  const next = document.getElementById('next-btn-' + stepIdx);
+  if (next && next.parentNode) {
+    next.parentNode.insertBefore(note, next.nextSibling);
+  } else {
+    const pane = document.getElementById('step-pane-' + stepIdx);
+    if (pane) pane.appendChild(note);
+  }
+  faAnnounce('Preview: graded, not recorded');
 }
 
 // The server counts the hint (against fa_step_progress) and quotes the real cost.
@@ -514,6 +554,19 @@ function nextStep(idx) {
     goStep(idx + 1);
   } else {
     // Mission complete
+    if (FA_PREVIEW) {
+      // aca-presenter-preview: nothing was recorded, so claim nothing.
+      document.getElementById('step-main').innerHTML = `
+      <div class="fa-complete-banner">
+        <h2>Preview complete</h2>
+        <p>Every step was graded for real. Nothing was recorded and no XP was awarded.</p>
+        <div style="display:flex;gap:.8rem;justify-content:center;margin-top:1rem;">
+          <a href="/academy/missions" class="fa-btn-run" style="text-decoration:none;display:inline-block;padding:.6rem 1.5rem;">Missions</a>
+          <a href="/academy" class="btn" style="font-size:.85rem;">← Hub</a>
+        </div>
+      </div>`;
+      return;
+    }
     document.getElementById('step-main').innerHTML = `
       <div class="fa-complete-banner">
         <div style="font-size:3rem;">🎯</div>

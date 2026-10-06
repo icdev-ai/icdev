@@ -112,7 +112,9 @@ async function submitConfigure(idx) {
     resultPanel.style.display = 'block';
     if (d) {
       resultPanel.style.borderColor = 'var(--fa-green)';
-      resultPanel.textContent = '✓ Configuration recorded.\n\n' + JSON.stringify(config, null, 2);
+      resultPanel.textContent = (d.status === 'preview'
+        ? '✓ Configuration accepted (preview — not recorded).\n\n'
+        : '✓ Configuration recorded.\n\n') + JSON.stringify(config, null, 2);
       document.getElementById('next-btn-' + idx).style.display = 'inline-block';
     } else {
       resultPanel.textContent = 'Could not record your configuration — check your connection and retry.';
