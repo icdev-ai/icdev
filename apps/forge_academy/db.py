@@ -2061,6 +2061,90 @@ def get_leaderboard(period: str = "alltime", role: str = None, limit: int = 20, 
 # Certification system
 # ---------------------------------------------------------------------------
 
+# aicur-fix-01: the GameDay gates counted `ttx_receipts`, a table nothing has ever
+# created; the error was swallowed into 0, so "GameDay >= 1 scenarios" could never
+# be met. Participation is read from the tables GameDay actually writes, along the
+# one link it records back to the Academy: ttx_registrations.academy_username ->
+# the confirmed ttx_formation_plan slot -> the ttx_teams row confirm_formation()
+# created under that team_name -> ttx_scores.
+_GAMEDAY_TABLES = ("ttx_registrations", "ttx_formation_plan", "ttx_teams", "ttx_scores")
+
+
+def _gameday_tables_present(conn) -> bool:
+    from tools.db.storage import table_exists
+
+    return all(table_exists(conn, t) for t in _GAMEDAY_TABLES)
+
+
+def _gameday_participation_rows(conn, username: str) -> list[dict]:
+    """One row per GameDay session the user's team was SCORED in.
+
+    ``{session_id, team_id, team_pts, rank, n_teams}``; rank is 1 + the number of
+    teams in the session with strictly more points, so tied teams share a rank.
+    """
+    teams = conn.execute(
+        "SELECT DISTINCT p.session_id, t.team_id "
+        "FROM ttx_registrations r "
+        "JOIN ttx_formation_plan p ON p.registration_id = r.registration_id "
+        "JOIN ttx_teams t ON t.session_id = p.session_id AND t.team_name = p.team_name "
+        "WHERE r.academy_username = %s AND p.confirmed = 1",
+        (username,),
+    ).fetchall()
+    out = []
+    for row in teams:
+        session_id = int(_cell(row, "session_id", 0))
+        team_id = int(_cell(row, "team_id", 1))
+        standings = conn.execute(
+            "SELECT t.team_id, COALESCE(SUM(s.total_pts), 0) AS pts, "
+            "       COUNT(s.score_id) AS scored "
+            "FROM ttx_teams t LEFT JOIN ttx_scores s ON s.team_id = t.team_id "
+            "WHERE t.session_id = %s GROUP BY t.team_id",
+            (session_id,),
+        ).fetchall()
+        by_team = {
+            int(_cell(s, "team_id", 0)): (int(_cell(s, "pts", 1) or 0),
+                                          int(_cell(s, "scored", 2) or 0))
+            for s in standings
+        }
+        pts, scored = by_team.get(team_id, (0, 0))
+        if not scored:
+            continue
+        rank = 1 + sum(1 for p, _ in by_team.values() if p > pts)
+        out.append({"session_id": session_id, "team_id": team_id, "team_pts": pts,
+                    "rank": rank, "n_teams": len(by_team)})
+    return out
+
+
+def gameday_participation(conn, username: str) -> dict:
+    """``{scenarios, best_percentile, sessions}`` for an Academy username.
+
+    ``best_percentile`` is the best placing as a top-N% figure (rank 1 of 4 ->
+    25), or None when the user has no scored GameDay. Raises if the GameDay
+    tables are unreadable — callers decide how to report that.
+    """
+    sessions = _gameday_participation_rows(conn, username)
+    best = min(
+        (-(-100 * s["rank"] // s["n_teams"]) for s in sessions), default=None
+    )
+    return {"scenarios": len({s["session_id"] for s in sessions}),
+            "best_percentile": best, "sessions": sessions}
+
+
+def _measure_gameday(conn, username: str) -> tuple[dict | None, str]:
+    """(participation, why-unmeasured). Never reads a failure as zero."""
+    try:
+        if not _gameday_tables_present(conn):
+            return None, "GameDay is not installed on this platform (no ttx_* tables)"
+        return gameday_participation(conn, username), ""
+    except Exception as exc:  # noqa: BLE001 — reported on the gate, not swallowed
+        _log.warning("GameDay participation for %r could not be measured: %s", username, exc)
+        try:
+            conn.rollback()  # PG: a failed statement poisons the rest of the gates
+        except Exception:  # noqa: BLE001
+            pass
+        return None, f"GameDay participation could not be measured: {exc}"
+
+
 def check_cert_eligibility(user_id: int, cert_key: str) -> dict:
     """Check whether a user meets the gates for a cert tier.
 
@@ -2195,18 +2279,31 @@ def check_cert_eligibility(user_id: int, cert_key: str) -> dict:
         gates.append({"name": f"AADC Score >= {reqs['aadc_score_min']}", "met": met,
                       "detail": f"Best AADC assessment score: {best}"})
 
-    # Gate: GameDay scenarios
+    gameday, gameday_unmeasured = (None, "")
+    if reqs.get("gameday_scenarios_min") or reqs.get("gameday_top_percentile"):
+        gameday, gameday_unmeasured = _measure_gameday(conn, user.get("username") or "")
+
+    # Gate: GameDay scenarios (a scenario counts once the user's team is scored in it)
     if reqs.get("gameday_scenarios_min"):
-        try:
-            gd = conn.execute(
-                """SELECT COUNT(*) FROM ttx_receipts WHERE player_id=%s AND status='submitted'""",
-                (user_id,),
-            ).fetchone()[0]
-        except Exception:
-            gd = 0
-        met = gd >= reqs["gameday_scenarios_min"]
-        gates.append({"name": f"GameDay >= {reqs['gameday_scenarios_min']} scenarios", "met": met,
-                      "detail": f"GameDay scenarios completed: {gd}"})
+        need = int(reqs["gameday_scenarios_min"])
+        gd = gameday["scenarios"] if gameday else 0
+        gates.append({"name": f"GameDay >= {need} scenarios",
+                      "met": gameday is not None and gd >= need,
+                      "detail": gameday_unmeasured or f"GameDay scenarios completed: {gd}"})
+
+    # Gate: GameDay placing. Declared on the Expert tier and never read before
+    # aicur-fix-01 — the certificate attested to a placing nobody checked.
+    if reqs.get("gameday_top_percentile"):
+        top = int(reqs["gameday_top_percentile"])
+        best = gameday["best_percentile"] if gameday else None
+        gates.append({
+            "name": f"GameDay top {top}%",
+            "met": best is not None and best <= top,
+            "detail": gameday_unmeasured or (
+                f"Best GameDay placing: top {best}%" if best is not None
+                else "No scored GameDay yet"
+            ),
+        })
 
     # Gate: Practitioner cert required
     if reqs.get("practitioner"):
