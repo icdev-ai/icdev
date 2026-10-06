@@ -75,9 +75,11 @@ def test_the_census_is_not_empty(report):
     writers with them: 203 sites in 187 files now, measured. Lowering the floors by exactly
     that much keeps the guard doing its job — it still fails on a scanner that collapses to
     zero or near-zero — while not asserting a population this domain no longer has.
+    aadc-ops-config converted ops_config_generator (tools/ + its icdev/ mirror) to the
+    seeder: 201 sites in 185 files, measured.
     """
     assert report["total_sites"] >= 200, report["total_sites"]
-    assert report["total_files"] >= 187, report["total_files"]
+    assert report["total_files"] >= 185, report["total_files"]
     assert report["registered"] == report["total_sites"]
 
 
