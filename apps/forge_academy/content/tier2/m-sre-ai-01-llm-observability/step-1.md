@@ -20,7 +20,7 @@ cost = (input_tokens / 1000) * price_per_1k_input
      + (output_tokens / 1000) * price_per_1k_output
 ```
 
-Reference prices (2025): `claude-haiku` ~$0.25/M input, `claude-sonnet` ~$3/M input, `qwen3-local` via Ollama = $0.00. Token counts grow silently — a prompt that works at 500 tokens can balloon to 3,000 tokens when conversation history accumulates. Track per-agent, per-function, and per-day.
+Prices change often, so ICDEV does not hard-code them. Each model's `pricing: {input_per_1k, output_per_1k}` lives in `args/llm_config.yaml`, and `token_tracker.estimate_cost()` reads it from there. A local model served by Ollama (such as `qwen3-local`) is priced at $0.00. Token counts grow silently: a prompt that works at 500 tokens can balloon to 3,000 tokens as conversation history accumulates. Track per-agent, per-function, and per-day.
 
 ### 2. Latency (P50 / P95 / P99)
 
@@ -44,52 +44,53 @@ Key functions:
 
 | Function | Description |
 |---|---|
-| `log_usage(agent_id, model, input_tokens, output_tokens, task_id)` | Records a single LLM call |
-| `get_usage_summary(agent_id, period='month')` | Aggregates spend and token counts |
-| `check_budget(agent_id)` | Returns `'allow'`, `'warn'`, or `'block'` |
+| `log_usage(agent_id, project_id, model_id, input_tokens, output_tokens, duration_ms=0, task_id=None, cost_estimate_usd=0.0)` | Records one LLM call in `agent_token_usage` |
+| `get_usage_summary(project_id=None, agent_id=None)` | Aggregates token counts, cost and call count |
+| `check_budget(agent_id)` | Returns a decision dict whose `action` is `'allow'`, `'warn'` or `'block'` |
+
+You rarely call these by hand. `LLMRouter.invoke()` runs `check_budget()` before every call whose `LLMRequest` carries an `agent_id`, and raises `BudgetExceededError` on `block`. The Bedrock client calls `log_usage()` for you. The pattern below shows what that wiring does, so you can reproduce it around a provider the router does not cover.
 
 ## Wrapping an LLM Call with Token Tracking
 
 ```python
-from tools.agent.token_tracker import log_usage, check_budget
 import time
+import requests
+from tools.agent.token_tracker import log_usage, check_budget, estimate_cost
 
-def invoke_llm(agent_id: str, model: str, prompt: str, task_id: str) -> str:
+def invoke_llm(agent_id: str, project_id: str, model: str, prompt: str, task_id: str):
     # Gate: enforce budget before the call
-    status = check_budget(agent_id)
-    if status == 'block':
-        raise RuntimeError(f"Agent {agent_id} has exceeded its token budget.")
-    if status == 'warn':
-        print(f"[WARN] Agent {agent_id} approaching token budget limit.")
+    budget = check_budget(agent_id)
+    if budget["action"] == "block":
+        raise RuntimeError(budget["message"])
+    if budget["action"] == "warn":
+        print(f"[WARN] {budget['message']}")
 
     t0 = time.perf_counter()
-
-    # LLM call (Ollama example)
-    import requests
-    resp = requests.post(
+    resp = requests.post(                       # Ollama example
         "http://localhost:11434/api/chat",
         json={"model": model, "messages": [{"role": "user", "content": prompt}], "stream": False},
         timeout=120,
     )
     resp.raise_for_status()
     data = resp.json()
-
-    latency_ms = (time.perf_counter() - t0) * 1000
+    latency_ms = int((time.perf_counter() - t0) * 1000)
     input_tokens = data.get("prompt_eval_count", 0)
     output_tokens = data.get("eval_count", 0)
 
     # Record usage after the call
     log_usage(
         agent_id=agent_id,
-        model=model,
+        project_id=project_id,
+        model_id=model,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
+        duration_ms=latency_ms,
         task_id=task_id,
+        cost_estimate_usd=estimate_cost(model, input_tokens, output_tokens),
     )
-
     return data["message"]["content"], latency_ms
 ```
 
-This pattern ensures every LLM call is budget-gated before execution and fully recorded after. The `log_usage()` call writes to the `agent_token_usage` table in `data/icdev.db`, making all usage auditable under NIST AU-2.
+This pattern gates every LLM call on budget before it runs and records it in full afterwards. `log_usage()` writes to the `agent_token_usage` table in the ICDEV database (PostgreSQL by default, SQLite as the fallback). Separately, `LLMRouter` writes a hashed record of every call to the append-only `ai_telemetry` table, which is what makes usage auditable under NIST AU-2.
 
 **Your task:** In the next step, instrument your own agent.

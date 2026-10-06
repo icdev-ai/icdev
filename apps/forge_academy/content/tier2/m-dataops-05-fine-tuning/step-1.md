@@ -22,31 +22,35 @@ Fine-tuning is **not** warranted for: tasks where you lack ground-truth data, ta
 ## The 4-stage pipeline
 
 ```
-generate pairs → train → evaluate → promote
+build dataset → train → evaluate → promote
 ```
 
-Each stage is a discrete, reversible step. A failure at any stage does not require restarting from the beginning.
+Each stage is a separate, re-runnable step with its own record in the ICDEV database, so a failure at one stage does not force you to start over. All of it lives in `tools/finetune/` and is configured by `args/finetune_config.yaml`.
 
 | Stage | Tool | Output |
 |---|---|---|
-| Generate pairs | `pair_generator.py` | JSONL training file |
-| Train | `training_engine.py` | Model checkpoint |
-| Evaluate | `evaluator.py` | Metric report |
-| Promote | `promotion_manager.py` | Registry entry + deployment |
+| Build dataset | `dataset_manager.py`, `pair_generator.py`, `labeler.py` | Approved examples, exported as JSONL |
+| Train | `training_engine.py` | Training job, then a model version (`mv-...`) |
+| Evaluate | `evaluator.py` (and `ab_evaluator.py`) | BLEU / ROUGE-L / perplexity report |
+| Promote | `promotion_manager.py` + `model_registry.py` | The active model for a function |
 
-`model_registry.py` underpins the last two stages — it stores checkpoint paths, metrics, versioning metadata, and the lineage chain from base model to fine-tuned variant.
+`model_registry.py` underpins the last two stages. It stores each model version and its eval scores, and records which version is active for which function, with an append-only promotion history.
 
 ## Tools in the ICDEV stack
 
-**`pair_generator.py`** — Produces input/output pairs from templates, variation seeds, and optional LLM-assisted augmentation. Outputs JSONL. Supports CUI-redacted output for IL4+ datasets.
+**`dataset_manager.py`**: creates datasets, adds examples, and exports **approved** examples as chat-format JSONL.
 
-**`training_engine.py`** — Wraps the provider's fine-tuning API (Anthropic, Azure OpenAI, Vertex AI) or a local LoRA trainer (for Ollama-served models). Accepts a config YAML for hyperparameters.
+**`pair_generator.py`**: generates question/answer pairs from document chunks or RAG content using the local `qwen3` model. Generated pairs land as **unapproved** examples, so a human must review them before they can be trained on.
 
-**`evaluator.py`** — Runs ROUGE-L, win-rate (via LLM judge), and task-specific accuracy metrics on a held-out test set. Outputs a structured JSON report.
+**`labeler.py`**: the human review step. It scores quality, compliance and relevance, and can batch-approve or batch-reject by quality score.
 
-**`promotion_manager.py`** — Gates promotion based on minimum metric thresholds and regression guards against the current production model.
+**`training_engine.py`**: runs the full pipeline (dataset export → provider training → GGUF export → Ollama registration → evaluation). Providers are pluggable through `provider_factory.py`: local LoRA with `unsloth_local`, plus `openai`, `bedrock` and `azure_openai`.
 
-**`model_registry.py`** — Stores model metadata in `icdev.db`. Every checkpoint is versioned with `major.minor.patch` semver semantics.
+**`evaluator.py`**: scores a model version on a held-out test set with BLEU, ROUGE-L and a perplexity estimate. An LLM-as-judge is optional (`llm_judge_enabled` in config, off by default). **`ab_evaluator.py`** compares two versions on the same test set with a paired t-test.
+
+**`promotion_manager.py`**: auto-promotes a version that clears every threshold in `args/finetune_config.yaml`, or force-promotes it with an audited reason.
+
+**`model_registry.py`**: model versions (`mv-...` ids), the active model per function, and promotion/demotion history.
 
 ## Dataset quality principles
 
