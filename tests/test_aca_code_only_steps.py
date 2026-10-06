@@ -61,6 +61,16 @@ def test_code_only_step_is_detected_and_warned(tmp_path, monkeypatch, caplog):
     (authored / "step1_starter.py").write_text("", encoding="utf-8")
     (authored / "helper.py").write_text("", encoding="utf-8")
 
+    # Loaded through a BUILTIN_STEPS entry (lesson elsewhere), like m11-multimodal.
+    declared = _make_step_dir(tmp_path, "m-x-03-declared")
+    (declared / "step2_starter.py").write_text("", encoding="utf-8")
+    (declared / "step2_test.py").write_text("", encoding="utf-8")
+    monkeypatch.setitem(content_loader.BUILTIN_STEPS, "m-x-03-declared", [{
+        "step_num": 2,
+        "starter_code_path": "tier9/m-x-03-declared/steps/step2_starter.py",
+        "test_code_path": "tier9/m-x-03-declared/steps/step2_test.py",
+    }])
+
     monkeypatch.setattr(content_loader, "CONTENT_ROOT", tmp_path)
     assert content_loader.code_only_steps() == ["tier9/m-x-01-orphan/steps/step1"]
 
