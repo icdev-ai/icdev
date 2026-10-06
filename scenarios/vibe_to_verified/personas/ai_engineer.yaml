@@ -1,0 +1,25 @@
+# CUI // SP-CTI
+label: "AI Engineer / Harness Owner"
+description: "Owns the team's coding-assistant harness and the verification gates AI-written code must pass before merge."
+
+attributes:
+  - organization (government agency or defense contractor)
+  - coding assistants used daily (IDE agent, CLI agent, or both)
+  - verification habits (red-first tests, mutation testing, CI gates)
+  - primary language (Python, TypeScript, Java, or multi-language)
+  - clearance level
+
+prompt_hint: >
+  Generate a realistic AI Engineer persona for a DoD software team that adopted
+  AI coding assistants recently. They are the team's authority on making
+  AI-written code verifiable: they insist a test goes RED on the bug before the
+  fix turns it GREEN, and they know a test that cannot fail is worthless.
+  Include a role_brief explaining that their FORGE Academy coding-harness and
+  verification-harness training means they write the discriminating test in
+  the red-first sprint, where an untrained engineer writes `assert result is
+  not None` and calls it covered.
+
+academy_relevant_missions:
+  - m-aie-01-coding-harnesses
+  - m-aie-02-verification-harnesses
+  - m-aie-03-vibe-vs-engineering

@@ -1,0 +1,91 @@
+# CUI // SP-CTI
+id: v2v-inject-01-ai-pr-review
+title: "Review: The AI-Generated Pull Request"
+
+body_md: |
+  ## PR #4127 — "Add resilient fetch for the source-document sync"
+
+  **Classification:** CUI // SP-CTI
+  **Author:** coding assistant (agent mode), approved by one tired human
+  **CI:** all green — 12 tests, 100% line coverage on the changed file
+
+  The PR description reads well, the code is idiomatic, and CI is green.
+  Review it **as an adversary**. Three defects are planted in the diff, and a
+  green CI run proves none of them absent.
+
+  ### The diff
+
+  ```python
+  # requirements.txt
+  +requests==2.32.3
+  +requests-retry-plus==1.4.0
+
+  # sync/fetch.py
+  import logging
+  import requests
+  from requests_retry_plus import RetrySession
+
+  log = logging.getLogger(__name__)
+  _session = RetrySession(retries=5, backoff="exponential")
+
+
+  def fetch_sources(urls: list[str]) -> list[dict]:
+      """Fetch every source document. Never raises."""
+      docs = []
+      for url in urls:
+          try:
+              resp = _session.get(url, timeout=10)
+              resp.raise_for_status()
+              docs.append(resp.json())
+          except Exception:
+              pass
+      return docs
+
+
+  # tests/test_fetch.py
+  from unittest.mock import patch
+  from sync import fetch
+
+
+  @patch("sync.fetch.fetch_sources", return_value=[{"id": 1}])
+  def test_fetch_sources_returns_documents(mock_fetch):
+      result = fetch.fetch_sources(["https://example.invalid/a"])
+      assert result is not None
+      assert len(result) >= 0
+  ```
+
+  ### Your task
+
+  1. **Find all three defects.** For each: quote the line, name the defect
+     class, and state the concrete production failure it causes.
+  2. **Write the review comment** you would actually post: blocking or not,
+     and what the author must change before you re-review.
+  3. **Name the guardrail** that would have caught each defect *before* a
+     human looked at it (a CI step, a hook, a policy — be specific).
+
+  **Context (as of October 2026):** "package hallucination" is a measured
+  failure mode, not a hypothetical. Spracklen et al. (*We Have a Package for
+  You!*, USENIX Security 2025) found that roughly one in five packages
+  recommended by the code-generating LLMs they tested did not exist, and an
+  attacker who registers such a name ("slopsquatting") gets code execution at
+  `pip install` time.
+
+context_note: >
+  ANSWER KEY. (1) HALLUCINATED dependency: `requests-retry-plus` /
+  `requests_retry_plus.RetrySession` does not exist on PyPI; the assistant
+  invented it. Risk is slopsquatting: anyone can register the name and gain
+  install-time code execution. Fix: use a real, pinned library (urllib3
+  `Retry` mounted via `requests.adapters.HTTPAdapter`) and gate new
+  dependencies with an allowlist / lockfile hash check / registry-existence
+  check in CI. (2) SWALLOWED exception: `except Exception: pass` turns every
+  401, 404, 500, timeout and JSON decode error into a silently shorter list;
+  "Never raises" is the bug, not a feature, and downstream the index silently
+  loses sources. Fix: catch the specific request exceptions, log with the URL,
+  return or raise a typed partial-failure result, and count failures. (3)
+  NON-DISCRIMINATING test: it patches the very function under test, so the
+  real code never runs; `result is not None` and `len(result) >= 0` are true
+  for any list, so 100% coverage is meaningless. Fix: mock the HTTP layer (not
+  the unit), assert exact output, add a failure-path test, and require
+  red-first evidence (the test must fail against the pre-change tree).
+  Guardrails: dependency existence/allowlist check; a lint or review rule
+  against bare `except Exception: pass`; a red-first or mutation-testing gate.
