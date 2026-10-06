@@ -720,6 +720,17 @@ BUILTIN_MISSIONS = [
         "difficulty": "beginner", "estimated_minutes": 35,
         "prereqs": ["m10-tier1-capstone"],
     },
+    # ── TIER 1: Benchmarks & Evals (aicur-fun-03 — M13) ─────────────────────
+    {
+        "slug": "m13-benchmarks-evals",
+        "title": "Reading Benchmarks and Building Your Own Evals",
+        "tagline": "What a leaderboard score measures, what it hides, and how to build the eval that answers your question.",
+        "tier": 1, "topic": "ai_foundations", "role_filter": "all",
+        "mission_type": "coding",
+        "xp_reward": 300, "order_idx": 13,
+        "difficulty": "beginner", "estimated_minutes": 40,
+        "prereqs": ["m01-llm-fundamentals"],
+    },
     # ── TIER 2: NetOps — PNA Predictors ──────────────────────────────────────
     {
         "slug": "m-netops-pna-01",
