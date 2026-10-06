@@ -27,9 +27,6 @@ icdev/tools/agent/bedrock_client.py::<module>::botocore
 # tree_sitter_languages -> distribution 'tree_sitter_languages'
 icdev/tools/ai_augmentation/pattern_classifier.py::_cs_detect_file::tree_sitter_languages
 
-# markdown -> distribution 'markdown'
-icdev/tools/aiify/blueprint.py::api_generate_prd::markdown
-
 # tree_sitter_languages -> distribution 'tree_sitter_languages'
 icdev/tools/aiify/pattern_classifier.py::_cs_detect_file::tree_sitter_languages
 
@@ -76,11 +73,6 @@ icdev/tools/compliance/dependency_resolver.py::<module>::tomli
 # slugify -> distribution 'python_slugify'
 icdev/tools/dashboard/api/pulse.py::api_pulse_update_post::slugify
 
-# markdown -> distribution 'markdown'
-icdev/tools/dashboard/app.py::create_app.intake_prd_view::markdown
-icdev/tools/dashboard/ux_helpers.py::_md_inline_to_html::markdown
-icdev/tools/dashboard/ux_helpers.py::_md_to_html::markdown
-
 # flask_socketio -> distribution 'flask_socketio'
 icdev/tools/dashboard/websocket.py::init_socketio._do_import::flask_socketio
 
@@ -106,9 +98,6 @@ icdev/tools/docgen/context_builder.py::_extract_image_text::pytesseract
 
 # pdfminer -> distribution 'pdfminer'
 icdev/tools/docgen/context_builder.py::_extract_text_from_file::pdfminer
-
-# markdown -> distribution 'markdown'
-icdev/tools/docgen/workflow.py::_try_export_html::markdown
 
 # pytesseract -> distribution 'pytesseract'
 icdev/tools/document_intelligence/extractors.py::_ocr_image::pytesseract
@@ -253,9 +242,6 @@ tools/agent/bedrock_client.py::<module>::botocore
 # tree_sitter_languages -> distribution 'tree_sitter_languages'
 tools/ai_augmentation/pattern_classifier.py::_cs_detect_file::tree_sitter_languages
 
-# markdown -> distribution 'markdown'
-tools/aiify/blueprint.py::api_generate_prd::markdown
-
 # tree_sitter_languages -> distribution 'tree_sitter_languages'
 tools/aiify/pattern_classifier.py::_cs_detect_file::tree_sitter_languages
 
@@ -305,11 +291,6 @@ tools/compliance/dependency_resolver.py::<module>::tomli
 # slugify -> distribution 'python_slugify'
 tools/dashboard/api/pulse.py::api_pulse_update_post::slugify
 
-# markdown -> distribution 'markdown'
-tools/dashboard/app.py::create_app.intake_prd_view::markdown
-tools/dashboard/ux_helpers.py::_md_inline_to_html::markdown
-tools/dashboard/ux_helpers.py::_md_to_html::markdown
-
 # flask_socketio -> distribution 'flask_socketio'
 tools/dashboard/websocket.py::init_socketio._do_import::flask_socketio
 
@@ -335,9 +316,6 @@ tools/docgen/context_builder.py::_extract_image_text::pytesseract
 
 # pdfminer -> distribution 'pdfminer'
 tools/docgen/context_builder.py::_extract_text_from_file::pdfminer
-
-# markdown -> distribution 'markdown'
-tools/docgen/workflow.py::_try_export_html::markdown
 
 # pytesseract -> distribution 'pytesseract'
 tools/document_intelligence/extractors.py::_ocr_image::pytesseract

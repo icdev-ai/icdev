@@ -1,0 +1,22 @@
+# CUI // SP-CTI
+label: "Joint CISO / Security Architect"
+description: "Owns the security architecture for the cross-domain bridge, validates zero-trust controls, and drives incident containment."
+attributes:
+  - home agency (civilian or DoD) and current task-force role
+  - certifications (CISSP, CISM, or equivalent)
+  - experience with cross-domain solutions and data-boundary design
+  - zero-trust implementation experience
+  - clearance level
+
+prompt_hint: >
+  Generate a realistic joint CISO who must approve the emergency DHS-DIA bridge
+  under time pressure and is accountable if it leaks U.S.-person data or intelligence
+  sources and methods. They push for indicator-only transfer, per-record handling
+  markings, and an audit log both agencies can read. Explain why Academy training in
+  zero trust and incident response lets them specify a boundary filter the judge
+  will score highly, where an untrained lead would approve a bridge that merely works.
+
+academy_relevant_missions:
+  - cyber-defense
+  - zero-trust
+  - incident-response

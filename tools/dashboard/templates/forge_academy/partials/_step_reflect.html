@@ -50,6 +50,13 @@
     </button>
     {% else %}
     <p style="color:var(--text-secondary);font-size:.82rem;">Reflect on what you've learned, then continue.</p>
+    {# No authored questions: offer one optional notes box so the reflection the
+       lesson asks for has somewhere to go. Saved with the acknowledgement. #}
+    <form id="reflect-form-{{ sidx }}" onsubmit="return false;">
+      <label for="refl-{{ sidx }}-notes" style="font-size:.8rem;color:var(--text-secondary);display:block;margin-bottom:.3rem;">Your notes (optional)</label>
+      <textarea name="notes" id="refl-{{ sidx }}-notes" rows="3"
+                style="width:100%;background:var(--fa-bg-0d1221);border:1px solid var(--fa-border);color:var(--text-primary);border-radius:6px;padding:.5rem .8rem;font-size:.85rem;resize:vertical;margin-bottom:.8rem;"></textarea>
+    </form>
     <button onclick="autoPassReflect({{ sidx }})"
             style="background:linear-gradient(135deg,#9b59b6,#7d3c98);color:#fff;border:none;border-radius:6px;padding:.55rem 1.4rem;font-size:.82rem;font-weight:700;cursor:pointer;">
       ◆ I Understand → Continue

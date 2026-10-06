@@ -1,6 +1,7 @@
 ---
 ontology_id: icdev:mission:m-gov-03-intake:step:1
 step_class: icdev:Lesson
+title: AI Governance Intake: the 7th RICOAS Readiness Dimension
 ---
 # AI Governance Intake: the 7th RICOAS Readiness Dimension
 

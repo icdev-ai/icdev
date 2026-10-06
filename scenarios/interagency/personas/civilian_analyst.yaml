@@ -1,0 +1,23 @@
+# CUI // SP-CTI
+label: "DHS Civilian Analyst"
+description: "Domestic threat analyst who tracks the disinformation network's domestic impact, coordinates with CISA, and produces public-facing risk assessments."
+attributes:
+  - component (DHS I&A, CISA, or a fusion center)
+  - analytic specialty (influence operations, critical infrastructure, or public health)
+  - experience with intelligence-oversight rules for U.S.-person information
+  - working relationships with state and local partners
+  - clearance level
+
+prompt_hint: >
+  Generate a realistic DHS civilian analyst who sees the domestic half of the
+  campaign — real, unwitting people amplifying fabricated water-contamination reports
+  — and is wary of any response that treats those people as adversaries. They know the
+  rules for handling U.S.-person information cold and will be the voice that stops the
+  task force from acting on a merged list too early. Explain why Academy training in
+  threat modeling and data analysis helps them diagnose why the two agencies' AI
+  pipelines disagree.
+
+academy_relevant_missions:
+  - threat-modeling
+  - data-analysis
+  - intel-assessment

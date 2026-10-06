@@ -1,0 +1,248 @@
+# CUI // SP-CTI
+#
+# Item bank for m13-benchmarks-evals (aicur-fun-03).
+# Spec: docs/features/forge-academy-aca-trn-01-assessment-model.md
+#
+# Step 3 is a lab with an authored step3_test.py and is graded by the coding path.
+# Steps 1 and 2 are lessons; these banks are what grade them. Every item is
+# answerable from the lesson markdown it assesses, and several deliberately ask
+# "what does this score NOT tell you" -- the habit the mission exists to build.
+#
+# AUTHORING RULES (enforced by assessment.validate_item_bank, called by the seeder):
+#   * >= 5 items per step; `correct` indexes `options` AS AUTHORED (the learner sees
+#     a per-attempt permutation); `key` is stable and unique per step.
+
+mission: m13-benchmarks-evals
+
+steps:
+
+  # -------------------------------------------------------------------------
+  # Step 1 -- Reading Benchmarks (steps/step1_reading_benchmarks.md)
+  # -------------------------------------------------------------------------
+  - step: 1
+    items:
+      - key: bm-passk-rises
+        prompt: >-
+          A model solves a coding problem in 1 of 5 samples. Which is true of its
+          pass@1 and pass@5 on that problem?
+        options:
+          - "pass@1 = 0.2 and pass@5 = 0.2"
+          - "pass@1 = 1.0 and pass@5 = 0.2"
+          - "pass@1 = 0.2 and pass@5 = 1.0"
+          - "Both are undefined without a leaderboard"
+        correct: 2
+        explanation: >-
+          pass@1 is c/n = 0.2. With k = n = 5, every draw includes the passing
+          sample, so pass@5 = 1.0. pass@k rises with k -- always check which k a
+          score is reported at.
+        difficulty: core
+
+      - key: bm-livecodebench
+        prompt: >-
+          How does LiveCodeBench guard against contamination?
+        options:
+          - "It keeps its problems secret and never publishes them"
+          - "It tags problems with their release date so a model can be scored only on problems published after its training cutoff"
+          - "It uses multiple-choice questions instead of code"
+          - "It asks human voters which answer they prefer"
+        correct: 1
+        explanation: >-
+          LiveCodeBench collects contest problems continuously and dates them, so
+          you can evaluate only on problems newer than the model's cutoff.
+        difficulty: core
+
+      - key: bm-arena-not-tell
+        prompt: >-
+          A model tops Chatbot Arena (LMArena). What does that score NOT tell you?
+        options:
+          - "Whether human voters preferred its answers"
+          - "Whether its answers are actually correct"
+          - "How it ranks against the other models on that leaderboard"
+          - "That the rating comes from pairwise comparisons"
+        correct: 1
+        explanation: >-
+          Arena measures what voters prefer -- style, length and formatting sway
+          votes. A high Elo says voters liked the answers, not that they were right.
+        difficulty: core
+
+      - key: bm-harness
+        prompt: >-
+          Two vendors report SWE-bench Verified scores for their models but name no
+          agent harness. Why can't you compare the numbers directly?
+        options:
+          - "SWE-bench Verified is multiple choice, so scores are always close"
+          - "For agentic benchmarks the score belongs to model plus scaffold -- tools, retries, context management and time limits can move it more than the model does"
+          - "SWE-bench Verified only covers JavaScript"
+          - "Vendor scores are always identical to independent ones"
+        correct: 1
+        explanation: >-
+          Agentic scores measure model + harness. A score with no harness named is
+          not comparable to anything.
+        difficulty: core
+
+      - key: bm-saturation
+        prompt: >-
+          What does it mean that a benchmark such as MMLU or HumanEval is "saturated"?
+        options:
+          - "Every frontier model scores near the ceiling, so the remaining gap is mostly noise and answer-key errors and it can no longer separate models"
+          - "It has too many questions to run cheaply"
+          - "It is protected against contamination"
+          - "Its questions were rewritten every month"
+        correct: 0
+        explanation: >-
+          Near the ceiling, differences between models fall inside noise and
+          answer-key errors, so the benchmark stops discriminating.
+        difficulty: core
+
+      - key: bm-vendor-claim
+        prompt: >-
+          How should you treat a score from a model vendor's own launch table?
+        options:
+          - "As ground truth, because the vendor knows the model best"
+          - "As a claim: it was run with the vendor's prompt and settings, and possibly a tuned variant; prefer a score you or a third party reproduced"
+          - "As meaningless, because vendors never run benchmarks"
+          - "As equivalent to a Chatbot Arena rating"
+        correct: 1
+        explanation: >-
+          Independent evaluators often get different numbers. Treat a vendor number
+          as a claim until it is reproduced.
+        difficulty: core
+
+      - key: bm-gpqa-not-tell
+        prompt: >-
+          A model scores well on GPQA Diamond. What does that score NOT tell you
+          about deploying it to extract fields from your contract PDFs?
+        options:
+          - "Anything about graduate-level science questions"
+          - "Whether it does your task well, what it costs, how long it takes, or how its failures look"
+          - "That GPQA is a multiple-choice benchmark"
+          - "That GPQA Diamond is a small set"
+        correct: 1
+        explanation: >-
+          A score on someone else's task says nothing about your task, your cost or
+          latency, the run-to-run variance, or whether failures are refusals or
+          confident fabrications.
+        difficulty: stretch
+
+  # -------------------------------------------------------------------------
+  # Step 2 -- Why Your Own Eval Beats a Leaderboard (steps/step2_your_own_evals.md)
+  # -------------------------------------------------------------------------
+  - step: 2
+    items:
+      - key: ev-golden-source
+        prompt: >-
+          Where should the cases in a golden set come from?
+        options:
+          - "Scraped from a public benchmark, the bigger the better"
+          - "Invented by the model you are evaluating"
+          - "Your real workload -- real tickets, documents and questions, including awkward ones -- each with a human-approved expected result"
+          - "Whatever cases the current prompt already passes"
+        correct: 2
+        explanation: >-
+          A golden set is drawn from production and signed off by a human. Small and
+          curated beats large and unread.
+        difficulty: core
+
+      - key: ev-self-contamination
+        prompt: >-
+          A teammate copies three golden-set cases into the prompt as few-shot
+          examples and the eval score jumps. What happened?
+        options:
+          - "The prompt genuinely improved on all inputs"
+          - "They contaminated their own benchmark -- the score now partly measures memory of those cases"
+          - "The judge model became less biased"
+          - "Nothing; few-shot examples never affect evals"
+        correct: 1
+        explanation: >-
+          Keep the golden set out of prompts and fine-tuning data. Copying cases in
+          is the same defect as a leaked public benchmark, created by you.
+        difficulty: core
+
+      - key: ev-position-bias
+        prompt: >-
+          An LLM judge doing pairwise comparison tends to favour whichever answer is
+          shown first. What is the standard mitigation?
+        options:
+          - "Always show your preferred answer first"
+          - "Use a longer rubric"
+          - "Run both orders and count a win only if it holds in both"
+          - "Use the same model family as the candidates for the judge"
+        correct: 2
+        explanation: >-
+          That is position bias. Swapping the order and requiring agreement removes
+          it from the verdict.
+        difficulty: core
+
+      - key: ev-self-preference
+        prompt: >-
+          Why should the judge model come from a different family than the models
+          being judged?
+        options:
+          - "Judges rate outputs from their own model family higher (self-preference bias)"
+          - "Different families are always cheaper"
+          - "Same-family judges cannot read the rubric"
+          - "It removes the need to calibrate against human labels"
+        correct: 0
+        explanation: >-
+          Self-preference is a known judge bias. And a different family does not
+          remove the need to calibrate the judge against human labels.
+        difficulty: core
+
+      - key: ev-regression-ci
+        prompt: >-
+          What makes a regression eval in CI meaningful rather than noise?
+        options:
+          - "Running it once with an unpinned model so it picks up improvements"
+          - "Pinning model version, temperature, prompt version and golden-set version, failing the build below a threshold, and checking run-to-run spread"
+          - "Only running it after a release"
+          - "Letting each developer choose their own golden set"
+        correct: 1
+        explanation: >-
+          An unpinned eval measures drift in its inputs, not your change, and a drop
+          inside run-to-run noise is not a regression.
+        difficulty: core
+
+      - key: ev-cost-per-correct
+        prompt: >-
+          Model A costs $0.012 for 6 cases and gets 4 right. Using cost per correct
+          answer, what is its figure?
+        options:
+          - "$0.002"
+          - "$0.003"
+          - "$0.012"
+          - "$0.048"
+        correct: 1
+        explanation: >-
+          Cost per correct answer = total cost / correct outputs = 0.012 / 4 =
+          $0.003. A model that is wrong cheaply is not actually cheap.
+        difficulty: core
+
+      - key: ev-own-eval-not-tell
+        prompt: >-
+          Your model scores well on your own golden set. What does that score NOT
+          tell you?
+        options:
+          - "How it performs on the cases in the golden set"
+          - "Whether it handles inputs outside the golden set's distribution, or questions your users start asking after the set was built"
+          - "Whether your last prompt change kept accuracy above the bar"
+          - "The accuracy on the versioned set"
+        correct: 1
+        explanation: >-
+          A golden set covers only the cases you included and ages as usage changes.
+          Refresh it from production failures and keep monitoring after release.
+        difficulty: stretch
+
+      - key: ev-latency-percentile
+        prompt: >-
+          Why does the lesson recommend reporting latency as a percentile such as
+          p95, not only the mean?
+        options:
+          - "Percentiles are cheaper to compute"
+          - "The mean is always larger than p95"
+          - "Users feel the slow tail, which a mean can hide"
+          - "Providers only publish percentiles"
+        correct: 2
+        explanation: >-
+          A few very slow answers barely move the mean but dominate how users
+          experience the system.
+        difficulty: core

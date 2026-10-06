@@ -5,7 +5,9 @@
 #
 # Fields per entry:
 #   tool_path   : Python module path relative to project root
-#   cli_command : CLI invocation example for the Kanban task instructions
+#   cli_command : (optional) CLI invocation example for the Kanban task instructions.
+#                 Must name a real script/function and real flags — pinned by
+#                 tests/test_aadc_ops_config.py. Omit it when no CLI exists.
 #   config_key  : key in the generated ops_config YAML for this tool's settings
 #   description : human-readable description of what the tool does at runtime
 #   task_title  : title of the Kanban task generated for this tool
@@ -16,7 +18,7 @@ node_tool_map:
   # ── Monitoring / Observability ──────────────────────────────────────────────
   drift-detector:
     tool_path: tools/llm/model_monitor.py
-    cli_command: "python tools/llm/model_monitor.py --model <model_id> --function <fn> --check"
+    cli_command: "python tools/llm/model_monitor.py --detect-drift --model <model_id> --function <fn>"
     config_key: drift_detector
     description: Detects quality/latency/token drift against a rolling baseline. Fires model_drift_events on threshold breach.
     task_title: "Wire drift-detector node → model_monitor.py"
@@ -32,7 +34,6 @@ node_tool_map:
 
   trace-collector:
     tool_path: tools/observability/otel_tracer.py
-    cli_command: "python tools/observability/otel_tracer.py --endpoint http://localhost:4317"
     config_key: trace_collector
     description: OpenTelemetry trace exporter. Sends span data to configured OTLP endpoint. Wires into every LLM call.
     task_title: "Wire trace-collector node → otel_tracer.py"
@@ -40,7 +41,6 @@ node_tool_map:
 
   span-recorder:
     tool_path: tools/observability/sqlite_tracer.py
-    cli_command: "python tools/observability/sqlite_tracer.py --db data/icdev.db"
     config_key: span_recorder
     description: SQLite-backed span recorder for air-gap environments without OTLP infrastructure.
     task_title: "Wire span-recorder node → sqlite_tracer.py"
@@ -48,7 +48,7 @@ node_tool_map:
 
   token-budget:
     tool_path: tools/agent/token_tracker.py
-    cli_command: "python tools/agent/token_tracker.py --set-budget <agent_id> <monthly_usd>"
+    cli_command: "python tools/agent/token_tracker.py --action check-budget --agent-id <agent_id>"
     config_key: token_budget
     description: Per-agent monthly token budget enforcement. check_budget() returns allow/warn/block before each LLM invoke.
     task_title: "Wire token-budget node → token_tracker.py"
@@ -65,7 +65,7 @@ node_tool_map:
 
   guardrail:
     tool_path: tools/security/ai_telemetry_logger.py
-    cli_command: "python -c \"from tools.security.ai_telemetry_logger import log_security_event; ...\""
+    cli_command: "python tools/security/ai_telemetry_logger.py --anomalies --json"
     config_key: guardrail
     description: Input/output safety filter. Logs all guardrail events to ai_telemetry_log. Wires injection detector and output sanitizer.
     task_title: "Wire guardrail node → ai_telemetry_logger.py"
@@ -73,7 +73,7 @@ node_tool_map:
 
   circuit-breaker:
     tool_path: tools/agentic_ai_canvas/safety_layer.py
-    cli_command: "python -c \"from tools.agentic_ai_canvas.safety_layer import check_safety; ...\""
+    cli_command: "python -c \"from tools.agentic_ai_canvas.safety_layer import get_status; print(get_status('<design_id>'))\""
     config_key: circuit_breaker
     description: Emergency stop for runaway agents. Trips on consecutive failures, budget exhaustion, or manual override.
     task_title: "Wire circuit-breaker node → safety_layer.py"
@@ -81,7 +81,7 @@ node_tool_map:
 
   input-sanitizer:
     tool_path: tools/security/ai_telemetry_logger.py
-    cli_command: "python -c \"from tools.security.ai_telemetry_logger import log_security_event; ...\""
+    cli_command: "python tools/security/ai_telemetry_logger.py --summary --json"
     config_key: input_sanitizer
     description: Strips PII/CUI and known injection patterns before prompt reaches LLM.
     task_title: "Wire input-sanitizer node → ai_telemetry_logger.py (sanitize mode)"
@@ -90,7 +90,6 @@ node_tool_map:
   # ── Governance / Compliance ──────────────────────────────────────────────────
   audit-logger:
     tool_path: tools/compliance/classification_manager.py
-    cli_command: "python -c \"from tools.compliance.classification_manager import get_manager; m=get_manager(); ...\""
     config_key: audit_logger
     description: Append-only audit trail for all LLM interactions. NIST AU-2/AU-9 compliant. Writes to icdev.db audit tables.
     task_title: "Wire audit-logger node → classification_manager.py (audit mode)"
@@ -107,7 +106,7 @@ node_tool_map:
   # ── Model Lifecycle ──────────────────────────────────────────────────────────
   retrain-trigger:
     tool_path: tools/finetune/retrain_trigger.py
-    cli_command: "python tools/finetune/retrain_trigger.py --model <model_id> --reason drift"
+    cli_command: "python tools/finetune/retrain_trigger.py --check --json"
     config_key: retrain_trigger
     description: Fires a retraining job when drift events or quality gates breach thresholds. Integrates with AIMC training pipeline.
     task_title: "Wire retrain-trigger node → retrain_trigger.py"
@@ -124,7 +123,6 @@ node_tool_map:
   # ── Compliance / Reporting ───────────────────────────────────────────────────
   compliance-reporter:
     tool_path: tools/compliance/classification_manager.py
-    cli_command: "python -c \"from tools.compliance.classification_manager import get_manager; get_manager().generate_report()\""
     config_key: compliance_reporter
     description: Generates CUI-marked compliance reports from audit trail data. FedRAMP AU control evidence export.
     task_title: "Wire compliance-reporter node → classification_manager.py (report mode)"
