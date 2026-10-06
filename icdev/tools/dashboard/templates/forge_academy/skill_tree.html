@@ -83,10 +83,12 @@
       {% endif %}
       {% endfor %}
 
-      <!-- Tier labels -->
-      <text x="15" y="100" font-size="9" fill="rgba(74,144,217,.5)" font-weight="600" transform="rotate(-90,15,100)">TIER 1</text>
-      <text x="15" y="350" font-size="9" fill="rgba(255,107,53,.5)" font-weight="600" transform="rotate(-90,15,350)">TIER 2</text>
-      <text x="15" y="550" font-size="9" fill="rgba(255,45,85,.5)" font-weight="600" transform="rotate(-90,15,550)">TIER 3</text>
+      <!-- Tier legend (tiers run left to right, so a colour key, not row labels) -->
+      <g font-size="9" font-weight="600">
+        <circle cx="20" cy="588" r="4" fill="#4a90d9"/><text x="28" y="591" fill="rgba(74,144,217,.8)">TIER 1</text>
+        <circle cx="80" cy="588" r="4" fill="#FF6B35"/><text x="88" y="591" fill="rgba(255,107,53,.8)">TIER 2</text>
+        <circle cx="140" cy="588" r="4" fill="#FF2D55"/><text x="148" y="591" fill="rgba(255,45,85,.8)">TIER 3</text>
+      </g>
     </svg>
   </div>
 

@@ -63,7 +63,7 @@ Tools without proper tools/ prefix paths.
 # ── Step 1: Field Parser ──────────────────────────────────────────────────────
 
 def parse_goal_fields(content: str) -> dict:
-    """TODO: Extract header fields from a goal file.
+    r"""TODO: Extract header fields from a goal file.
 
     Extract:
     1. tools: all paths matching r'tools/[\w/]+\.py' found anywhere in content
@@ -84,7 +84,7 @@ def parse_goal_fields(content: str) -> dict:
 # ── Step 2: Step Parser ───────────────────────────────────────────────────────
 
 def parse_steps(content: str) -> list[str]:
-    """TODO: Extract numbered steps from a goal file.
+    r"""TODO: Extract numbered steps from a goal file.
 
     Find lines that look like numbered steps: start with a digit, period, space.
     Pattern: r'^\s*\d+\.\s+(.+)$' (multiline)
@@ -99,7 +99,7 @@ def parse_steps(content: str) -> list[str]:
 # ── Step 3: Tool Validator ────────────────────────────────────────────────────
 
 def validate_tools(tool_paths: list[str]) -> list[str]:
-    """TODO: Validate that tool paths follow the FORGE convention.
+    r"""TODO: Validate that tool paths follow the FORGE convention.
 
     A valid tool path matches: r'^tools/[\w]+/[\w]+\.py$'
     (tools/category/name.py — exactly two path segments under tools/)

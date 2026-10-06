@@ -74,8 +74,8 @@ services = [
         {
             "service": "cache-service",
             "slo_health": {
-                "recommendation": "NO_ACTION",
-                "burn_rate_status": "healthy"
+                "recommendation": "MONITOR",       # burn_rate 1.2 -> elevated
+                "burn_rate_status": "elevated"
             },
             "action": "chaos_scheduled",
             "chaos": {
@@ -85,7 +85,7 @@ services = [
             }
         }
     ],
-    "overall_status": "DEGRADED"   # "HEALTHY" | "DEGRADED" | "CRITICAL"
+    "overall_status": "CRITICAL"   # auth-service paged -> CRITICAL ("HEALTHY" | "DEGRADED" | "CRITICAL")
 }
 ```
 
@@ -96,7 +96,16 @@ services = [
 
 ## Implementation Notes
 
-You must inline all M01–M03 logic (no imports). The starter provides all constants: `SLO_THRESHOLDS` (for burn rate), `RUNBOOKS`, `FAILURE_MODES`, `SERVICE_DEPENDENCIES`.
+You must inline all M01–M03 logic (no imports). The starter provides the constants `RUNBOOKS`, `FAILURE_MODES` and `SERVICE_DEPENDENCIES`; the burn-rate formula and thresholds are in the `compute_slo_health` docstring:
+
+```python
+allowed_errors      = total_requests * (1 - slo_target_pct / 100)
+budget_consumed_pct = error_requests / allowed_errors * 100
+burn_rate           = (budget_consumed_pct / 100) / (window_hours / 720)
+# < 1 healthy (NO_ACTION) | < 2 elevated (MONITOR) | < 5 fast_burn | >= 5 critical (both PAGE_ONCALL)
+```
+
+Severity for the incident brief uses the M02 rules: SEV1 = user-facing and error rate > 10%; SEV2 = user-facing and (error rate 1-10% or P99 > 2000ms); SEV3 = P99 500-2000ms (any service); SEV4 = everything else. `page_oncall` is true for SEV1/SEV2 only.
 
 For chaos experiments on healthy services: use `"network_delay"` as the default failure mode.
 
@@ -104,4 +113,4 @@ For incident generation: synthesize an alert from the service metrics dict (set 
 
 ## Grader Contract
 
-The grader uses `SAMPLE_SERVICES` (auth-service: critical burn, cache-service: healthy). Expected: `paged=1`, `monitored_with_chaos=1`, `overall_status="CRITICAL"`.
+The grader uses `SAMPLE_SERVICES` (auth-service: critical burn, cache-service: elevated burn 1.2 -> MONITOR). Expected: `paged=1`, `monitored_with_chaos=1`, `overall_status="CRITICAL"`.

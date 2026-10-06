@@ -11,18 +11,21 @@
     <form id="configure-form-{{ sidx }}">
       {% if schema.fields %}
       {% for field in schema.fields %}
+      {# Authored content keys its fields by `id`; an input rendered with an empty
+         name is dropped by FormData, so the learner's answers never left the page. #}
+      {% set fname = field.name or field.id %}
       <div class="fa-form-group" style="margin-bottom:.9rem;">
         {# aca-trn-06: this label sits BESIDE its control rather than wrapping it, so
            without `for` it named nothing — select, textarea and text inputs were all
            reaching the a11y tree unlabelled. The checkbox branches below do wrap
            their inputs, so those were already associated. #}
-        <label for="cfg-{{ sidx }}-{{ field.name }}"
+        <label for="cfg-{{ sidx }}-{{ fname }}"
                style="font-size:.75rem;color:var(--text-secondary);display:block;margin-bottom:.3rem;">
-          {{ field.label | default(field.name) }}
+          {{ field.label | default(fname) }}
           {% if field.required %}<span style="color:#ff6b6b">*</span><span class="sr-only"> (required)</span>{% endif %}
         </label>
         {% if field.type == 'select' %}
-        <select name="{{ field.name }}" id="cfg-{{ sidx }}-{{ field.name }}"
+        <select name="{{ fname }}" id="cfg-{{ sidx }}-{{ fname }}"
                 {% if field.required %}required{% endif %}
                 style="width:100%;background:#0d1221;border:1px solid var(--fa-border);color:var(--text-primary);border-radius:6px;padding:.5rem .8rem;font-size:.85rem;">
           {% for opt in field.options | default([]) %}
@@ -31,7 +34,7 @@
         </select>
         {% elif field.type == 'checkbox' %}
         <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;">
-          <input type="checkbox" name="{{ field.name }}" value="1"
+          <input type="checkbox" name="{{ fname }}" value="1"
                  {% if field.default %}checked{% endif %}
                  style="accent-color:var(--fa-orange);">
           <span style="font-size:.82rem;">{{ field.hint | default(field.help | default('')) }}</span>
@@ -40,20 +43,20 @@
         <div style="display:flex;flex-direction:column;gap:.4rem;">
           {% for opt in field.options | default([]) %}
           <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;">
-            <input type="checkbox" name="{{ field.name }}" value="{{ opt }}"
+            <input type="checkbox" name="{{ fname }}" value="{{ opt }}"
                    style="accent-color:var(--fa-orange);">
             <span style="font-size:.82rem;">{{ opt }}</span>
           </label>
           {% endfor %}
         </div>
         {% elif field.type == 'textarea' %}
-        <textarea name="{{ field.name }}" id="cfg-{{ sidx }}-{{ field.name }}" rows="4"
+        <textarea name="{{ fname }}" id="cfg-{{ sidx }}-{{ fname }}" rows="4"
                   placeholder="{{ field.placeholder | default('') }}"
                   {% if field.required %}required{% endif %}
                   style="width:100%;background:#0d1221;border:1px solid var(--fa-border);color:var(--text-primary);border-radius:6px;padding:.5rem .8rem;font-size:.82rem;font-family:monospace;resize:vertical;"></textarea>
         {% else %}
-        <input type="{{ field.type | default('text') }}" name="{{ field.name }}"
-               id="cfg-{{ sidx }}-{{ field.name }}"
+        <input type="{{ field.type | default('text') }}" name="{{ fname }}"
+               id="cfg-{{ sidx }}-{{ fname }}"
                placeholder="{{ field.placeholder | default('') }}"
                {% if field.required %}required{% endif %}
                style="width:100%;background:#0d1221;border:1px solid var(--fa-border);color:var(--text-primary);border-radius:6px;padding:.5rem .8rem;font-size:.85rem;">
@@ -99,10 +102,29 @@ async function submitConfigure(idx) {
     } else { config[k] = v; }
   }
   const step = STEPS[idx];
+  const action = step.config_schema && step.config_schema.action;
+  if (!action) {
+    // No ICDEV action stands behind this step: it is a design exercise, and the
+    // learner's configuration IS the answer. Dispatching the old default
+    // ('deploy_pattern' with an empty config) returned "Pattern not found" and the
+    // step could never be completed.
+    const d = await submitStep(idx, JSON.stringify(config));
+    resultPanel.style.display = 'block';
+    if (d) {
+      resultPanel.style.borderColor = 'var(--fa-green)';
+      resultPanel.textContent = '✓ Configuration recorded.\n\n' + JSON.stringify(config, null, 2);
+      document.getElementById('next-btn-' + idx).style.display = 'inline-block';
+    } else {
+      resultPanel.textContent = 'Could not record your configuration — check your connection and retry.';
+    }
+    btn.disabled = false;
+    btn.textContent = '⚙ Configure →';
+    return;
+  }
   try {
     const resp = await fetch('/api/academy/step/configure', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({action: step.config_schema?.action || 'deploy_pattern', config})
+      body: JSON.stringify({action, config})
     });
     const d = await resp.json();
     resultPanel.style.display = 'block';

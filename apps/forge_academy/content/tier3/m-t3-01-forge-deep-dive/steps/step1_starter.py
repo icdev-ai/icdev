@@ -50,7 +50,7 @@ Uses: memory/memory_write.py to persist. Output stored in memory_entries table.
 # ── Step 1: Goal Parser ───────────────────────────────────────────────────────
 
 def parse_goal_file(goal_content: str) -> dict:
-    """TODO: Extract metadata from a goal file's content.
+    r"""TODO: Extract metadata from a goal file's content.
 
     Look for:
     1. Tool references: lines containing "Tools:" or "tools/" paths

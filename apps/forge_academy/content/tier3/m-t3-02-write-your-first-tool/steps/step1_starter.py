@@ -10,6 +10,8 @@ ICDEV Tool Contract:
   - Deterministic
 """
 
+from datetime import date
+
 
 # ── Evidence Database (simulated) ─────────────────────────────────────────────
 

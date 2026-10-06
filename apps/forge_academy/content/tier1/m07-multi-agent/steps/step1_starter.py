@@ -66,6 +66,8 @@ def run_orchestrator(task: str) -> dict:
     3. Dispatch worker_rag_context("remediation") → context
     4. Dispatch worker_report_writer(findings, context, system_name) → report
     5. Synthesize: return a dict with keys: system, findings, context_docs, report, workers_called
+       where context_docs = the dict returned by worker_rag_context (step 3),
+       e.g. {"docs_found": 3, "top_result": "...", "source": "..."}
 
     Print each dispatch step: "Dispatching <worker_name>..."
     """

@@ -6,9 +6,13 @@ Goal: Build a few-shot prompt that classifies STIG findings by severity.
 
 
 def simulate_classifier(prompt: str, finding: str) -> dict:
-    """Mock few-shot classifier — returns severity based on keyword patterns."""
-    combined = (prompt + finding).lower()
-    if any(w in combined for w in ["root login", "default password", "no auth", "critical"]):
+    """Mock few-shot classifier — returns severity based on keyword patterns.
+
+    Severity is decided from the FINDING text; the prompt only drives confidence
+    (more worked examples -> higher confidence).
+    """
+    combined = finding.lower()
+    if any(w in combined for w in ["root login", "default password", "no auth", "no multi-factor", "critical"]):
         severity = "CAT1"
         risk = "Immediate compromise vector, highest priority remediation."
     elif any(w in combined for w in ["audit", "log", "timeout", "90 days", "patch"]):
@@ -18,7 +22,7 @@ def simulate_classifier(prompt: str, finding: str) -> dict:
         severity = "CAT3"
         risk = "Minor policy deviation, low risk, routine maintenance."
 
-    example_count = prompt.count("EXAMPLE") + prompt.count("example")
+    example_count = prompt.lower().count("example")
     return {
         "severity": severity,
         "risk": risk,

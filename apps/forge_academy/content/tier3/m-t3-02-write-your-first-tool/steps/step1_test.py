@@ -72,8 +72,8 @@ assert len(d1.get("evidence_date", "")) == 10, "evidence_date should be YYYY-MM-
 # ── Test: collect_evidence — key with empty evidence list ────────────────────
 
 r_test = collect_evidence("ICDEV-Test", "IA-2")
-assert r_test["status"] == "ok", \
-    f"ICDEV-Test/IA-2 key exists (empty list) → status='ok', got '{r_test['status']}'"
+assert r_test["status"] == "partial", \
+    f"ICDEV-Test/IA-2 key exists but its evidence list is empty → status='partial', got '{r_test['status']}'"
 assert r_test["data"].get("compliance_status") == "partial", \
     f"Empty evidence list → compliance_status='partial', got '{r_test['data'].get('compliance_status')}'"
 assert r_test["data"].get("evidence_count") == 0, \

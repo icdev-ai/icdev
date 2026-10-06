@@ -40,3 +40,5 @@ response = provider.chat(messages=[
 ```
 
 **Your task:** Run a basic LLM call and observe the output. Focus on the structure — what comes back, how it's formatted, what the token count looks like.
+
+In the exercise the sandbox has no LLM access — call the starter's `simulate_llm_call` and store its result in `response`.

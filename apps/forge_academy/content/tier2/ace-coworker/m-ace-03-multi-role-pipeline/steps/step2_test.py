@@ -26,5 +26,23 @@ for _stage in _stages:
         f"Unknown role {_stage['role']!r}. Valid roles: {sorted(_valid_roles)}"
     )
 
-assert callable(globals().get("run_pipeline")), "run_pipeline() must be defined."
+_run = globals().get("run_pipeline")
+assert callable(_run), "run_pipeline() must be defined."
+
+import io as _io
+import sys as _sys
+
+_buf = _io.StringIO()
+_sys.stdout = _buf
+try:
+    _run()
+finally:
+    _sys.stdout = _sys.__stdout__
+_out = _buf.getvalue()
+for _stage in _stages:
+    _want = "pending_hitl" if _stage.get("hitl_required") else "done"
+    assert any(_stage["role"] in _l and _want in _l for _l in _out.splitlines()), (
+        f"run_pipeline() should print the simulated status of stage {_stage['role']!r} "
+        f"('{_want}'), e.g. 'stage 1 {_stage['role']}: {_want}'"
+    )
 print("PASS: a multi-role pipeline with valid roles and a runner.")

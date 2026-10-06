@@ -366,16 +366,12 @@ def test_hints_are_counted_by_the_server_not_the_request(client):
 # complete.
 _GRADERS_BLOCKED_BY_SANDBOX: set[str] = set()
 
-# A different defect, deliberately NOT hidden in the set above: these two STARTERS
-# import ICDEV modules the sandbox forbids (tools.db.storage,
-# tools.ai_augmentation.agent_readiness.checker). The grader is fine; the exercise
-# itself is designed to run against the real codebase rather than in an isolated
-# sandbox, so no grader rewrite can rescue it. Recorded here because it is a real
-# content-design conflict that needs an authoring decision, not a silent skip.
-_STARTERS_REQUIRING_BLOCKED_IMPORTS = {
-    "m-sre-xai-01",                  # starter: from tools.db.storage import ...
-    "m-readiness-01-eleven-pillars",  # starter: from tools.ai_augmentation... import ...
-}
+# A different defect from a blocked grader: a STARTER that imports ICDEV modules the
+# sandbox forbids (`tools.*`), so the exercise cannot be completed as shipped. The two
+# that used to be listed here (m-sre-xai-01, m-readiness-01-eleven-pillars) now ship
+# self-contained sandbox stubs. The set is empty, and must stay empty: a starter that
+# lands here is an exercise nobody can complete -- ship a stub instead.
+_STARTERS_REQUIRING_BLOCKED_IMPORTS: set[str] = set()
 
 NON_SOLUTION = "# I did not solve this\n"
 
@@ -430,12 +426,12 @@ def test_no_grader_is_rejected_by_the_sandbox_beyond_the_known_set():
     )
 
 
-def test_the_starters_needing_blocked_imports_are_still_the_known_two():
+def test_no_starter_needs_a_blocked_import():
     """A separate defect from a blocked GRADER: a blocked STARTER.
 
-    No grader rewrite can fix these — the exercise is written against the real ICDEV
-    codebase and the sandbox forbids those imports by design (penta-aca-02). Pinned so
-    the list cannot grow silently and so fixing one is noticed.
+    The sandbox forbids `tools.*` imports by design (penta-aca-02), so a starter that
+    needs one is an exercise nobody can complete. `_STARTERS_REQUIRING_BLOCKED_IMPORTS`
+    must stay empty -- ship a self-contained stub in the starter instead.
     """
     from apps.forge_academy.code_runner import _check_code_safety
     from apps.forge_academy.content_loader import CONTENT_ROOT

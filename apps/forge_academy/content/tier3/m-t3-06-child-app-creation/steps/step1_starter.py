@@ -41,7 +41,7 @@ class AppManifest:
         2. app_slug matches SLUG_PATTERN → issue: f"app_slug '{self.app_slug}' is invalid — use lowercase letters, digits, underscores only"
         3. canvas in VALID_CANVASES → issue: f"canvas '{self.canvas}' is not valid — must be one of {sorted(VALID_CANVASES)}"
         4. len(self.routes) >= 1 → issue: "at least one route is required"
-        5. any route starts with "/" → issue: "all routes must start with '/'"
+        5. any route starts with "/" → issue: "at least one route must start with '/'"
            (only add this if routes exist but none start with "/")
         6. len(self.db_tables) >= 1 → issue: "at least one DB table is required"
 

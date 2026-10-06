@@ -94,13 +94,13 @@ class TerraformGenerator:
         2. For each resource in spec["resources"]:
            - If type == "vpc": use generate_vpc_block(name, cidr)
            - If type == "s3_bucket": use generate_s3_block(name, versioning)
-           - If type unknown: add to skipped list (do not crash)
+           - If type unknown: append resource["type"] to the skipped list (do not crash)
         3. Join all blocks with "\n\n"
         4. Return:
         {
             "hcl": full HCL string,
             "resource_count": number of successfully generated resources,
-            "skipped": [list of unknown resource type names],
+            "skipped": [the "type" value of each unsupported resource, e.g. "unknown_type"],
         }
         """
         # YOUR CODE HERE
