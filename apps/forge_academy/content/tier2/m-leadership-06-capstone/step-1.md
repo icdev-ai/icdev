@@ -29,7 +29,7 @@ Transformation fails when technology moves faster than culture. Use Quick Wins a
 
 ## FORGE IGNITE Integration
 
-FORGE IGNITE is the idea-scoring engine built into the platform. Any initiative you identify can be registered as a FORGE IGNITE idea, scored against mission alignment and feasibility, and tracked through the pipeline to funded execution.
+FORGE IGNITE is the idea-scoring engine on the platform's Innovation canvas (`/innovation`). An initiative registered as an idea is scored on six weighted dimensions (business value, strategic alignment, technical feasibility, data readiness, time to value, and risk; weights in `args/innovation_scoring.yaml`) and tracked through the pipeline toward funded execution.
 
 ---
 

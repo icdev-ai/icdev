@@ -7,14 +7,15 @@ Goal: Register a canvas's data as IQE *collections* through an *adapter*, resolv
 IQE lets a user ask any canvas a question from the mini query bar. Each canvas ships an
 adapter under tools/iqe/adapters/<canvas>.py that calls register_collection(name,
 adapter_fn) — binding a named *collection* to an adapter_fn(conn) -> list[dict]. Seed
-queries live in context/iqe/queries/<canvas>/. The dashboard routes a query with
-POST /api/iqe/dispatch (iqe_dispatch in app.py), resolving the canvas via
-_IQE_CANVAS_MAP; the mini-bar regex-matches the URL path against PATH_CANVAS
-(injected from base.html). This exercise models registry + adapter + path resolution +
+queries live in context/iqe/queries/<canvas>/. The mini-bar regex-matches the URL
+path against window.__ICDEV_PATH_CANVAS__ (injected by base.html from the component
+registry), then POSTs to /api/iqe/dispatch (iqe_dispatch in app.py), which resolves the
+canvas via _IQE_CANVAS_MAP. This exercise models registry + adapter + path resolution +
 query dispatch with the stdlib (our collections hold plain record lists, not adapter_fns).
 """
 
-# Maps a URL path prefix to a canvas key (mirrors the mini-bar PATH_CANVAS map).
+# Maps a URL path prefix to a canvas key (a simplified, prefix-based stand-in for the
+# registry-derived window.__ICDEV_PATH_CANVAS__ regex map the mini-bar uses).
 PATH_CANVAS = {
     "/network": "ndc",
     "/security": "sdc",
@@ -51,8 +52,9 @@ class IQERegistry:
 def register_kanban_collections(registry: "IQERegistry") -> None:
     """TODO: Adapter entry point — register the 'tasks' collection.
 
-    Real adapters (tools/iqe/adapters/<canvas>.py) expose a register(registry)
-    function. Register a collection named "tasks" with these records:
+    Real adapters (tools/iqe/adapters/<canvas>.py) call register_collection(...) at
+    import time — e.g. core_kanban.py registers "kanban.tasks". Here the adapter is a
+    function that takes the registry. Register a collection named "tasks" with:
         [
             {"id": "k-1", "status": "done",        "epic": "iqe"},
             {"id": "k-2", "status": "in_progress", "epic": "iqe"},

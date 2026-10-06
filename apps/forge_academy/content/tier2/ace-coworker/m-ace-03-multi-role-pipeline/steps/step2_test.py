@@ -15,9 +15,11 @@ _stages = _req.get("pipeline")
 assert isinstance(_stages, list), "PIPELINE_REQUEST['pipeline'] must be a list."
 assert len(_stages) >= 3, f"A pipeline needs at least 3 stages, found {len(_stages)}."
 
+# Real ACE role ids (args/ace/roles/<id>.yaml). data_engineer and compliance_officer
+# used to be accepted here; neither role exists on the platform.
 _valid_roles = {
     "ai_developer", "agent_developer", "security_analyst",
-    "data_engineer", "devops_engineer", "compliance_officer",
+    "data_analyst", "devops_engineer", "compliance_manager",
 }
 for _stage in _stages:
     assert "role" in _stage, f"Stage missing 'role': {_stage}"

@@ -17,15 +17,15 @@ Three functions define a mature AI governance posture:
 
 ## OMB M-25-21: What It Requires
 
-OMB Memorandum M-25-21 (Responsible Use of AI) establishes federal requirements that apply to your organization:
+OMB Memorandum M-25-21 (April 2025, *Accelerating Federal Use of AI through Innovation, Governance, and Public Trust*) establishes federal requirements that apply to your organization:
 
 - **AI Use Case Inventory** — Agencies must maintain and publish a registry of AI use cases, including risk classification and human oversight level
-- **Responsible AI Statements** — Each AI deployment must include a plain-language description of its intended use, limitations, and safeguards
+- **Minimum practices for high-impact AI** — Pre-deployment testing, an AI impact assessment, ongoing monitoring, human oversight, and a way for affected people to seek remedy or appeal
 - **CAIO Designation** — Agencies must designate a Chief AI Officer responsible for AI governance and OMB reporting
 
 ## DoD AI Ethics Principles
 
-The Department of Defense has adopted six AI Ethics Principles: Responsible, Equitable, Traceable, Reliable, Governable, and — for combat applications — with appropriate human oversight. These are not aspirational — they are audit criteria.
+The Department of Defense adopted five AI Ethical Principles in 2020: Responsible, Equitable, Traceable, Reliable, and Governable. Treat them as review criteria, not aspirations.
 
 ## Why This Matters for CISOs and Chief AI Officers
 

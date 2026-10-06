@@ -3,15 +3,16 @@
 The Academy sandbox cannot import `tools.*`, so `run_readiness_check()` below is a
 sandbox stub that returns a canned result with the same shape as the platform's
 `tools.ai_augmentation.agent_readiness.checker.run_readiness_check`. Use it as-is.
+Like the real checker, each pillar's "percentage" is a fraction from 0.0 to 1.0.
 """
 
 # ── Provided: sandbox stub of the readiness checker ───────────────────────────
 
 SAMPLE_RESULT = {
     "pillar_scores": {
-        "code-quality":    {"passed": 7, "total": 8, "percentage": 87.5},
-        "testing":         {"passed": 2, "total": 6, "percentage": 33.3},
-        "stig-compliance": {"passed": 1, "total": 8, "percentage": 12.5},
+        "code-quality":    {"passed": 7, "total": 8, "percentage": 0.875},
+        "testing":         {"passed": 2, "total": 6, "percentage": 0.3333},
+        "stig-compliance": {"passed": 1, "total": 8, "percentage": 0.125},
     },
     "overall_readiness_score": 0.4443,
     "icdev_checks": {
@@ -49,9 +50,9 @@ def check_and_report(repo_path: str = ".") -> int:
     print(f"{'=' * 60}\n")
 
     for pillar_id, score in pillar_scores.items():
-        pct = score.get("percentage", 0)
-        status = "PASS" if pct >= 70 else "FAIL"
-        # TODO: print formatted line like "[PASS] code-quality: 87%"
+        pct = score.get("percentage", 0.0)   # a fraction: 0.875 means 87.5%
+        status = "PASS" if pct >= 0.7 else "FAIL"
+        # TODO: print formatted line like "[PASS] code-quality: 88%"  (hint: f"{pct:.0%}")
         # TODO: for failed pillars, print the "message" of each criterion in
         #       icdev_checks[pillar_id] whose "passed" is False
 

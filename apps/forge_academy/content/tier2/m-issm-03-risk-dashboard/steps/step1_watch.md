@@ -17,11 +17,7 @@ For a portfolio of 4 systems under ISSM oversight:
 
 3. **Generated** a POAM prediction: 4 of 31 CAT I findings are projected to miss the 30-day deadline based on remediation velocity
 
-4. **Built** an executive risk dashboard with:
-   - Red/Yellow/Green risk heat map by system
-   - Trend line: risk score over the last 90 days (improving or degrading?)
-   - Top 5 "most dangerous" open findings ranked by: severity × age × system criticality
-   - 3 recommended actions with estimated risk reduction per action
+4. **Built** an executive risk dashboard with a Red/Yellow/Green risk heat map by system; a trend line of the risk score over the last 90 days (improving or degrading?); the top 5 "most dangerous" open findings ranked by severity × age × system criticality; and 3 recommended actions with the estimated risk reduction of each
 
 5. **Drafted** the ISSM's quarterly risk memo (plain English, CUI-marked, ready to sign)
 
@@ -29,6 +25,6 @@ For a portfolio of 4 systems under ISSM oversight:
 
 The ISSM's job isn't technical analysis — it's risk judgment and communication. ICDEV does the aggregation and formatting so the ISSM can focus on what only they can do: decide what to accept, transfer, mitigate, or escalate.
 
-## Next step
+## Next mission
 
-Configure the dashboard for your system portfolio.
+This mission is a single walkthrough (the portfolio and its numbers are an illustrative scenario). Click **Understood → Continue** to finish. Then go on to **cATO Monitoring**, where the same findings feed a continuous-authorization posture.

@@ -242,7 +242,13 @@ def hub():
     # user's own role keeps the default view unchanged.
     role_filter = request.args.get("role", "")
     effective_role = role_filter or fa_user.get("role")
-    missions = list_missions(role=effective_role, tier=None)[:6]
+    missions = list_missions(role=effective_role, tier=None)
+    # aca-empty-demo: never spend one of the six hub slots on a mission with no
+    # steps (m-chat-agent-interview for pm/ciso/leadership learners). Guarded as in
+    # missions_browser: if no step count could be read, keep the list unchanged.
+    if any(m.get("is_available", True) for m in missions):
+        missions = [m for m in missions if m.get("is_available", True)]
+    missions = missions[:6]
     level_ctx = _level_ctx(fa_user)
 
     # aca-ux-03: the hub listed the first six missions by order_idx and offered no
@@ -310,12 +316,36 @@ def missions_browser():
     role_filter = request.args.get("role", "")
     # When filtering by type, show all roles so guided missions are visible to any user.
     # Only narrow by user's role when browsing without a type constraint.
-    effective_role = role_filter or (None if mtype else (fa_user.get("role") if fa_user else None))
+    # A topic arrives from a skill-tree node the learner chose on purpose: show
+    # every role's missions for it, as for a type filter, or a node whose missions
+    # target other roles (ATO with AI -> issm/ciso) opens empty for everyone else.
+    effective_role = role_filter or (
+        None if (mtype or topic) else (fa_user.get("role") if fa_user else None)
+    )
     all_missions = list_missions(role=effective_role, tier=tier)
     if topic:
-        all_missions = [m for m in all_missions if m.get("topic") == topic]
+        # Skill-tree node slugs are not mission topics (aca-empty-demo): resolve a
+        # node to the missions that teach it; any other value stays a topic match.
+        from .constants import SKILL_NODE_MISSIONS
+        node_slugs = set(SKILL_NODE_MISSIONS.get(topic, ()))
+        all_missions = [
+            m for m in all_missions
+            if m.get("slug") in node_slugs or m.get("topic") == topic
+        ]
     if mtype:
         all_missions = [m for m in all_missions if m.get("mission_type") == mtype]
+    # aca-empty-demo: a mission with no authored steps is a dead end ("Coming
+    # soon"). Leave it out of the browse grid and say how many were left out.
+    # Only when SOME mission has steps: list_missions marks everything unavailable
+    # when the step count could not be read, and that must not empty the grid.
+    # The listing summary counts what is takeable vs coming soon, so it reads the
+    # list BEFORE the unauthored missions are dropped from the grid.
+    listing = browser_listing_summary(all_missions, effective_role)
+    unauthored_count = 0
+    if any(m.get("is_available", True) for m in all_missions):
+        authored = [m for m in all_missions if m.get("is_available", True)]
+        unauthored_count = len(all_missions) - len(authored)
+        all_missions = authored
     progress_map = {}
     if fa_user:
         for m in all_missions:
@@ -334,7 +364,7 @@ def missions_browser():
         "forge_academy/missions.html",
         fa_user=fa_user,
         missions=all_missions,
-        listing=browser_listing_summary(all_missions, effective_role),
+        listing=listing,
         progress_map=progress_map,
         prereq_state=prereq_state,
         tier_info=tier_info,
@@ -343,6 +373,7 @@ def missions_browser():
         active_tier=tier,
         active_topic=topic,
         active_type=mtype,
+        unauthored_count=unauthored_count,
     )
 
 
@@ -546,8 +577,13 @@ def arena():
     from tools.db.storage import get_connection
     conn = get_connection()
     try:
+        # aca-empty-demo: datetime('now') is SQLite-only; on PostgreSQL it raised
+        # and the except below hid it. ends_at is ISO-8601 TEXT, so compare to an
+        # ISO timestamp bound as a parameter (valid on both backends).
+        from datetime import datetime, timezone
         challenges = [dict(r) for r in conn.execute(
-            "SELECT * FROM fa_challenges WHERE ends_at > datetime('now') ORDER BY starts_at"
+            "SELECT * FROM fa_challenges WHERE ends_at > %s ORDER BY starts_at",
+            (datetime.now(timezone.utc).isoformat(),),
         ).fetchall()]
     except Exception:
         challenges = []
@@ -567,10 +603,18 @@ def workflow_builder_page():
     # Distinguish "no patterns configured" from "pattern source unavailable"
     # so the page cannot present a broken dependency as an empty catalogue.
     pattern_state = patterns_status()
+    # aca-empty-demo: the palette read ONLY the AISG registry (aisg_patterns, empty
+    # until its seeder runs) while /academy/patterns lists the Academy's own eight
+    # injection patterns, so the builder said "No patterns configured yet" beside a
+    # page full of them. The Academy library is the palette's first source; AISG
+    # patterns, when seeded, follow it.
+    from .patterns import INJECTION_PATTERNS
+    palette = [{"id": p["id"], "name": p["title"]} for p in INJECTION_PATTERNS]
+    palette += list(pattern_state["patterns"])
     return render_template(
         "forge_academy/workflow_builder.html",
         fa_user=fa_user,
-        patterns=pattern_state["patterns"],
+        patterns=palette,
         patterns_available=pattern_state["available"],
         patterns_error=pattern_state["error"],
         level_ctx=_level_ctx(fa_user) if fa_user else {},

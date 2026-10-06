@@ -26,7 +26,9 @@ INJECTION_PATTERNS = [
             "Don't pass raw DB query results to the LLM — summarize or paginate first",
             "Session memory accumulates — implement a sliding window or summary strategy",
         ],
-        "missions": ["m02-prompt-engineering", "m03-rag-basics", "m-chat-agent-interview"],
+        # aca-empty-demo: m-chat-agent-interview has no authored steps ("Coming soon");
+        # m05 teaches the first step below (wrap your API with an MCP server).
+        "missions": ["m02-prompt-engineering", "m03-rag-basics", "m05-mcp-protocol"],
         "ops_tools": ["tools/agent/token_tracker.py", "tools/llm/prompt_registry.py"],
         "example": "A legacy HR portal adds 'Ask HR' — employees ask questions about leave policies, benefits, and org chart in plain English. The LLM queries the existing HR database via existing REST APIs.",
         "steps": [

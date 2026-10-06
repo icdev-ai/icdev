@@ -19,6 +19,7 @@ Use the model you built in Step 2. State the numbers. Acknowledge your largest a
 Choose one leading indicator that signals early momentum — not final ROI, which may take 18 months to materialize.
 
 **Strong 90-day KPIs look like:**
+
 - Processing time per document reduced by X%
 - Number of manual review hours eliminated per week
 - Analyst reports produced per sprint (volume increase)
@@ -31,6 +32,7 @@ Choose one leading indicator that signals early momentum — not final ROI, whic
 ## Reflection Prompt
 
 Write three sentences:
+
 1. The AI investment I would fund first is _______, with a ___-month payback.
 2. The assumption that could invalidate this ROI is _______.
 3. In 90 days, I would know this is working if I see _______.
@@ -38,3 +40,5 @@ Write three sentences:
 ---
 
 **Your task:** Complete the three-sentence reflection above. This becomes the opening of any budget brief you deliver on AI investment. If you cannot complete sentence 3, your initiative is not ready to fund.
+
+**In the form below:** sentences 1 and 2 (the investment, its payback and the assumption that could break it) go in the first box; sentence 3 (your 90-day KPI) goes in the second.

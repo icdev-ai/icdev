@@ -1,0 +1,14 @@
+# CUI // SP-CTI
+# Deterministic rubric — consumed by tools/ttx/ai_scorer.score_red_first, NOT
+# by the LLM judge. The reference fix and the hidden acceptance tests live in
+# fixture_dir on disk; never inline them here, because the rubric travels in
+# the inject's config_json, which the player page receives.
+name: "Red-First Sprint (deterministic)"
+inject_type: red_first_sprint
+description: >
+  The team's test is executed: it must FAIL on the buggy module and PASS on a
+  hidden reference fix (70 pts). The team's fix must pass hidden acceptance
+  tests (30 pts).
+max_score: 100
+fixture_dir: vibe_to_verified/fixtures/red_first
+module_name: chunker

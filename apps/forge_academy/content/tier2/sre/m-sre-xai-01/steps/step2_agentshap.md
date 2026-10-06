@@ -9,7 +9,9 @@ Write a script that runs AgentSHAP attribution on recent agent traces and produc
 
 ## AgentSHAP on the platform
 
-On a live ICDEV install, AgentSHAP lives in `tools/observability/shap/agent_shap.py` (`AgentSHAP.analyze_trace(...)`) and reads spans from the `otel_traces` table. An attribution looks like:
+On a live ICDEV install, AgentSHAP lives in `tools/observability/shap/agent_shap.py`. `AgentSHAP().analyze_trace(trace_id)` reads the trace's `mcp.tool_call` spans from the `otel_spans` table. It returns an `attributions` dict keyed by tool name, with `shapley_value`, `confidence_low`/`confidence_high` and `normalized` for each tool. The CLI form is `python tools/observability/shap/agent_shap.py --trace-id <id> --json`.
+
+The exercise uses a flattened, ranked view of that result:
 
 ```python
 # {

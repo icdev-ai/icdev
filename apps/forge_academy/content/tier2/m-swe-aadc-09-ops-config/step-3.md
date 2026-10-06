@@ -19,44 +19,44 @@ Passing the AADC assessment and generating a config are not the same as being pr
 | `audit-logger` | *(standalone)* | NIST AU-2 compliance requirement; append-only, never omit |
 | `circuit-breaker` | *(required for autonomous agents)* | Any agent with a tool-use loop must have a termination condition outside the agent's own judgment |
 
-The generator surfaces gaps in the `unmatched_nodes` field of the JSON response — but that field only reports nodes present in your graph that have no mapping entry. It cannot tell you about nodes you did not add. The design completeness check is your responsibility, not the generator's.
+The generator surfaces gaps in `unmatched_nodes`, but that field only reports node types present in your graph that have no mapping entry. It cannot tell you about nodes you did not add. The design completeness check is your responsibility, not the generator's.
 
-## Idempotency and Kanban Deduplication
+## Re-running the Generator
 
-Running the generator twice on the same design is safe. The YAML at `args/ops_config_<design_id>.yaml` is overwritten with refreshed defaults on every run. If you have made manual edits to the config file, those edits are lost — treat the generated file as a starting point to copy from, not as your live configuration.
+Re-running on the same design is safe for the YAML: `data/aadc_ops_config/ops_config_<design_id>.yaml` is overwritten with refreshed defaults every time. If you edited that file by hand, those edits are lost, so treat the generated file as a starting point to copy from, not as your live configuration.
 
-Kanban task creation uses a deduplication check: before inserting a new task, the generator queries for any existing backlog task where `design_id` and `node_type` both match. If a match is found, the task is skipped and counted in `tasks_skipped` in the response. This means you can safely re-run after adding new nodes to your design — only new node types produce new tasks.
+It is **not** safe for the board. `create_kanban_tasks()` inserts every task it is given, with no lookup for an existing task on the same design and node type. Each `--create-tasks` run (or each click on the ops-config page, which creates tasks by default) adds another full set. Generate the YAML as often as you like; create tasks once.
 
 ```json
 {
-  "config_path": "args/ops_config_42.yaml",
-  "tasks_created": 2,
-  "tasks_skipped": 3,
-  "unmatched_nodes": ["custom-classifier"],
-  "il_level": "IL4"
+  "config_path": ".../data/aadc_ops_config/ops_config_aadc-1a2b3c4d.yaml",
+  "matched_nodes": ["drift-detector", "guardrail", "token-budget"],
+  "unmatched_nodes": ["orchestrator", "semantic-cache"],
+  "kanban_tasks_count": 3,
+  "created_task_ids": []
 }
 ```
 
-An entry in `unmatched_nodes` is an action item, not an error. Either add the node type to `args/aadc_node_tool_map.yaml` or remove the node from your design if it was added by mistake.
+An entry in `unmatched_nodes` is an action item, not an error. Either add the node type to `args/aadc_node_tool_map.yaml` or accept that it has no runtime tool. Agent nodes such as `orchestrator` are expected there.
 
 ## Integration with FORGE IGNITE
 
-The Ops Config Generator is not only invoked from the CLI. When an idea in FORGE IGNITE reaches the Pilot stage and carries an `aadc_design_id` on its record, the IGNITE scorecard renders a "Generate Ops Config →" button. Clicking it runs the generator in `--create-tasks` mode against the associated design and pre-populates the pilot's monitoring plan section with the resulting config path and task IDs.
-
-This integration closes the loop between ideation and operational readiness: a pilot that reaches Pilot stage without a monitoring plan is now visibly incomplete in the UI, not just in a checklist.
+The generator is also reachable from FORGE IGNITE. On an idea's detail page, when the idea carries an `aadc_design_id` and has a detailed feasibility study, a **Generate Ops Config →** button links to `/agentic-ai/canvas/<aadc_design_id>/ops-config`, the same page the canvas opens. A pilot can go from idea to monitoring plan without hunting for the design.
 
 ## Classification and Source Control
 
-The generated config file lives in `args/` and is included in `.gitignore` for cloud-connected repositories. It is a CUI artifact: it contains operational thresholds, tool paths, and alert routing that reveal system architecture. Do not commit it to a public or unclassified repository.
+The generated file starts with a `# CUI // SP-CTI` header. It is a CUI artifact: operational thresholds, tool paths and alert routing reveal system architecture. Because it is written under `data/` rather than `args/`, it stays out of the source-controlled config directory. Do not copy it into a public or unclassified repository.
 
-For air-gapped environments, the `args/` directory is managed through the classified transfer process documented in `docs/ops/airgap-runbook.md`. The YAML format is human-readable so it can be reviewed during the transfer process without tooling.
+For air-gapped environments, follow the transfer process in `docs/ops/airgap-runbook.md`. The YAML is human-readable so it can be reviewed during transfer without tooling.
 
 ## Reflection Questions
 
-1. Your design has a `drift-detector` but no `baseline-snapshot`. The generator creates a task and writes the config. What does the drift detector actually compare against on first run?
+Answer the fields on this step:
 
-2. A teammate regenerated the ops config after updating the token budget threshold manually in the YAML. Their manual edit is gone. What process change prevents this from happening again?
+1. **What ops/safety nodes are NOT in your design that should be?** Use the minimum-viable table above. Add them to the canvas and regenerate.
+2. **Which Kanban task will you wire up first, and why?**
+3. **Would you add any custom node → tool mappings to `args/aadc_node_tool_map.yaml`?** If so, describe them.
 
-3. The `unmatched_nodes` response field contains `["semantic-cache"]`. You did not add that node type to the map. What are your two options, and when would you choose each?
+To go further: your design has a `drift-detector` but no `baseline-snapshot`, so what does drift detection compare against on its first run? And a teammate's hand edit to the YAML vanished after a regenerate, so what process change prevents that?
 
 **Your task:** Answer the reflection questions to complete this mission.

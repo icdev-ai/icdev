@@ -35,3 +35,5 @@ The most valuable outcome of AI-assisted report generation is not faster reports
 ---
 
 **Your task:** Write your three answers. Then identify the one analytical product your team has always wanted to produce but never had the capacity to. That is your 80% automation dividend.
+
+**In the form below:** question 1 goes in the first box; questions 2 and 3 (time today, and what 80% automation would free up) go in the second.

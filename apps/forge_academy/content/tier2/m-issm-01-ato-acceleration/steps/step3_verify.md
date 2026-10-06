@@ -28,4 +28,4 @@ Review your system's ATO acceleration report.
 - If `critical_gaps > 5`: Escalate to CISO before proceeding — may require architecture change, not just paperwork
 - If `auto_collectable_pct > 70%`: You're in good shape — most of the work is automated
 
-Click **Confirm** to save this report to your evidence folder.
+Click **Understood → Continue** when you've reviewed the report.

@@ -5,11 +5,11 @@ step_class: icdev:Lesson
 
 # Audit Trail Intelligence
 
-Your audit trail holds every privileged action, configuration change, and authentication event across your system boundary. Manually reviewing thousands of daily entries is impossible — ICDEV's NLQ engine lets you ask questions in plain English and get answers in seconds.
+Your audit trail holds every privileged action, configuration change, and authentication event across your system boundary. Manually reviewing thousands of daily entries is impossible. ICDEV's natural-language query (NLQ) page at **`/query`** lets you ask questions in plain English. It turns each question into a read-only SQL query and shows you the result.
 
 ## What You'll See
 
-Watch ICDEV's audit trail intelligence query three real scenarios:
+Three example questions, with illustrative results:
 
 **Query 1: Privileged access after hours**
 ```
@@ -31,4 +31,4 @@ Result: 7 changes identified. 6 within approved windows. 1 unauthorized: firewal
 
 ## What This Means for Your Role
 
-Continuous monitoring means continuous evidence. Every query you run produces a timestamped record automatically added to your audit evidence folder — ready for your next assessment.
+Continuous monitoring means continuous evidence. The NLQ page keeps a history of the queries you have run (`GET /api/nlq/history`), so you can show an assessor what was checked and when. The audit trail itself is append-only (NIST AU-9). Queries read it and never change it.

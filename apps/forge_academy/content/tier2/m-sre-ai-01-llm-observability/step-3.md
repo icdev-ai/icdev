@@ -9,28 +9,30 @@ step_class: icdev:Assessment
 
 Instrumentation is only useful if you know what to do when the signals fire. This step defines the four primary runbook scenarios for LLM observability events, the NIST audit requirement, and how ICDEV handles the audit trail automatically.
 
-## Runbook Scenario 1: `check_budget()` Returns `'block'`
+## Runbook Scenario 1: `check_budget()` Returns `action: 'block'`
 
-**What it means:** The agent has consumed 100% of its monthly token budget.
+**What it means:** The agent has spent its full monthly budget and `hard_stop` is on.
 
-**Response — circuit breaker pattern:**
+**Response: circuit breaker pattern**
 
 ```python
-from tools.agent.token_tracker import check_budget
+from tools.agent.token_tracker import check_budget, BudgetExceededError
 
 def safe_invoke(agent_id, prompt, fallback_response=None):
-    status = check_budget(agent_id)
-    if status == "block":
+    budget = check_budget(agent_id)
+    if budget["action"] == "block":
         # Option A: Return cached last response
-        cached = get_cached_response(prompt)
+        cached = get_cached_response(prompt)          # your cache lookup
         if cached:
             return {"output": cached, "source": "cache", "degraded": True}
-        # Option B: Graceful degradation — return static fallback
+        # Option B: Graceful degradation: return static fallback
         if fallback_response:
             return {"output": fallback_response, "source": "fallback", "degraded": True}
         # Option C: Fail visibly rather than silently drop the request
-        raise BudgetExceededError(f"Agent {agent_id} is over budget. Contact your SRE.")
+        raise BudgetExceededError(agent_id, budget)
 ```
+
+`LLMRouter.invoke()` raises the same `BudgetExceededError` on its own when the request carries an `agent_id`, so callers of the router need only the `except` branch.
 
 Never silently drop requests. Always surface the degraded state to the caller so it can inform the user.
 
@@ -82,30 +84,33 @@ session.mount("http://", HTTPAdapter(max_retries=retry))
 1. Run `detect_drift(model_id, function_name)` from `tools/llm/model_monitor.py` to confirm statistical significance.
 2. Check if a prompt template was changed recently (`git log --oneline -- hardprompts/`).
 3. If drift is confirmed, trigger the drift response protocol (covered in Mission SRE-AI-02).
-4. Set severity: quality drop of 5–15% = `warning`, >30% = `critical`.
+4. Severity comes from `detect_drift()` itself. A quality drop above 10% (and statistically significant, Welch t-test p < 0.05) is `warning`; above 25% it is `critical`.
 
 ## NIST AU-2: LLM Audit Trail Requirement
 
-NIST AU-2 requires that audit-relevant events be identified and logged. For AI systems, every LLM interaction is an audit event. The `ai_telemetry_logger.py` handles this automatically:
+NIST AU-2 requires that audit-relevant events be identified and logged. For AI systems, every LLM interaction is an audit event. ICDEV handles this automatically. `LLMRouter` calls `AITelemetryLogger.log_ai_interaction()` (`tools/security/ai_telemetry_logger.py`) after every invocation:
 
 ```python
-from tools.security.ai_telemetry_logger import AiTelemetryLogger
+from tools.security.ai_telemetry_logger import AITelemetryLogger
 
-logger = AiTelemetryLogger()
-# Automatically called by the instrumented_llm_call() pattern
-# Writes to: ai_telemetry_log (append-only table in data/icdev.db)
-# Fields: session_id, agent_id, model, input_hash, output_hash,
-#         quality_score, latency_ms, token_count, timestamp, classification
+# Called for you by LLMRouter. Shown here to make the record visible.
+AITelemetryLogger().log_ai_interaction(
+    model_id="qwen3-local", provider="ollama",
+    prompt_hash=prompt_hash, response_hash=response_hash,   # SHA-256 digests
+    input_tokens=812, output_tokens=164, latency_ms=1240,
+    agent_id="my-agent", function="summarize", classification="CUI",
+)
+# Writes to: ai_telemetry (append-only; listed in APPEND_ONLY_TABLES)
 ```
 
-The `input_hash` and `output_hash` fields store SHA-256 hashes — not raw content — so CUI-marked prompts are not stored in plaintext in the audit log.
+`prompt_hash` and `response_hash` hold SHA-256 digests, not the raw content, so CUI-marked prompts are never stored in plaintext in the audit log.
 
 ## Quick-Reference Summary
 
 | Signal | Threshold | Action |
 |---|---|---|
-| `check_budget()` = `'warn'` | >80% budget used | Alert SRE; review top callers |
-| `check_budget()` = `'block'` | 100% budget used | Circuit-break; degrade gracefully |
+| `check_budget()` action `'warn'` | ≥80% budget used (`warning_threshold`) | Alert SRE; review top callers |
+| `check_budget()` action `'block'` | 100% budget used, `hard_stop: true` | Circuit-break; degrade gracefully |
 | P99 latency | >2x baseline | Check token inflation; check provider |
 | Error rate | >5% | Triage by error type (table above) |
 | Quality score | <0.7 | Run detect_drift(); check prompt history |

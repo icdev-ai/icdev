@@ -4,24 +4,34 @@ step_class: icdev:configure
 ---
 # Build Your AI Inventory
 
-Use ICDEV's AI Transparency canvas to build and submit your AI inventory.
+ICDEV keeps the inventory in the `ai_use_case_inventory` table. Entries are registered per project; the dashboard and REST API read them.
 
-## Inventory API
+## Registering an entry
 
-```json
-POST /ai-transparency/api/inventory
-{
-  "system_name": "ICDEV Knowledge RAG",
-  "owner": "Platform Team",
-  "purpose": "Retrieve relevant documentation chunks for user queries",
-  "data_classification": "CUI",
-  "risk_tier": "medium",
-  "autonomy_level": "supervised",
-  "frameworks": ["OMB-M-25-21", "NIST-AI-600-1"],
-  "omm_section": "5a"
-}
+From a shell:
+
+```bash
+python tools/compliance/ai_inventory_manager.py --project-id <project-id> --register \
+  --name "ICDEV Knowledge RAG" \
+  --purpose "Retrieve relevant documentation chunks for user queries" \
+  --risk-level minimal_risk \
+  --responsible-official "Platform Team Lead" \
+  --oversight-role "Knowledge base curator" \
+  --appeal-mechanism "Users flag an answer; curator reviews within 5 days" \
+  --json
 ```
+
+`--risk-level` must be one of `minimal_risk`, `high_impact`, `safety_impacting`. The same registration is exposed to AI assistants as the MCP tool `ai_inventory_register`.
+
+## Reading it back
+
+```bash
+python tools/compliance/ai_inventory_manager.py --project-id <project-id> --list --json
+python tools/compliance/ai_inventory_manager.py --project-id <project-id> --export --json   # OMB reporting format
+```
+
+or `GET /api/ai-transparency/inventory?project_id=<project-id>`. The Security canvas page `/security/ai-transparency` shows the same rows.
 
 ## Your task
 
-Submit 3 AI inventory entries for ICDEV systems. For each, use the API above and include all required fields. After submitting all 3, GET `/ai-transparency/api/inventory` and confirm all 3 appear with status `active`.
+For the 3 systems you chose in Step 1, write the `--register` command for each, with every flag filled in. Which of the three did you classify `high_impact`, and what in M-25-21 does that classification oblige you to do next? Press **Configure** to record that you completed the exercise.

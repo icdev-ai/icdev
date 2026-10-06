@@ -45,20 +45,27 @@ class LensStalenesssDetector(BaseLens):
         # Missions older than STALE_DAYS with fewer than MIN completions in the last 90 days
         stale_low_engagement = conn.execute(
             """
-            SELECT m.id, m.slug, m.title, m.tier, m.topic,
-                   m.created_at, m.updated_at, m.status,
-                   COUNT(mp.id) AS recent_completions
-            FROM fa_missions m
-            LEFT JOIN fa_mission_progress mp
-              ON mp.mission_id = m.id
-             AND mp.status = 'completed'
-             AND mp.completed_at >= %s
-            WHERE m.created_at <= %s
-              AND m.is_active = 1
-              AND (m.status IS NULL OR m.status = 'active')
-            GROUP BY m.id
-            HAVING recent_completions < %s
-            ORDER BY m.created_at ASC
+            -- aca-empty-demo: PostgreSQL rejects a SELECT alias in HAVING/ORDER BY
+            -- expressions and an ungrouped joined column, so this lens raised on PG
+            -- every run and the Oracle stayed empty. Filter the aliases in an outer
+            -- query instead (valid on both backends).
+            SELECT * FROM (
+                SELECT m.id, m.slug, m.title, m.tier, m.topic,
+                       m.created_at, m.updated_at, m.status,
+                       COUNT(mp.id) AS recent_completions
+                FROM fa_missions m
+                LEFT JOIN fa_mission_progress mp
+                  ON mp.mission_id = m.id
+                 AND mp.status = 'completed'
+                 AND mp.completed_at >= %s
+                WHERE m.created_at <= %s
+                  AND m.is_active = 1
+                  AND (m.status IS NULL OR m.status = 'active')
+                GROUP BY m.id, m.slug, m.title, m.tier, m.topic,
+                         m.created_at, m.updated_at, m.status
+            ) t
+            WHERE recent_completions < %s
+            ORDER BY created_at ASC
             LIMIT 30
             """,
             (cutoff_recent, cutoff_stale, _RECENT_COMPLETION_MIN),

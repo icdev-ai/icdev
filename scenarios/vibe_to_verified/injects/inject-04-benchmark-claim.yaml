@@ -1,0 +1,56 @@
+# CUI // SP-CTI
+id: v2v-inject-04-benchmark-claim
+title: "The Vendor Says It Beats SWE-bench"
+
+body_md: |
+  ## VENDOR BRIEF — "NEXUS-AGENT RESOLVES 79% OF SWE-BENCH VERIFIED"
+
+  **Classification:** CUI // SP-CTI
+
+  A vendor (fictional, for this exercise) wants a three-year enterprise
+  licence for **Nexus-Agent**, an autonomous coding agent. Their slide:
+
+  > "Nexus-Agent: **79% on SWE-bench Verified**, #1 on the leaderboard.
+  > 2x the resolve rate of your current assistant. Self-reported, March 2026."
+
+  The footnotes, in small print: *best of 5 attempts; custom scaffold with
+  internal retrieval tools; evaluated on 480 of 500 tasks (20 excluded as
+  "environment issues").*
+
+  **Background (as of October 2026):** SWE-bench Verified is a 500-task,
+  human-validated subset of SWE-bench, released by OpenAI in August 2024.
+  Each task is a real GitHub issue from a popular open-source **Python**
+  repository; an agent "resolves" it when the repository's held-out tests
+  pass after its patch. Vendor-reported scores depend heavily on the scaffold
+  (tools, retries, attempts) wrapped around the model.
+
+  ### Your task
+
+  1. **Pick the claim apart.** List every reason the 79% may not transfer to
+     your codebase (a Java/TypeScript monorepo with internal frameworks).
+  2. **Design a counter-eval** you could run in one week: task source, size,
+     what "resolved" means, the baseline you compare against, how you control
+     for attempts and scaffold, cost and latency as axes, and how you prevent
+     contamination.
+  3. **Make the call:** adopt, reject, or pilot-with-conditions, and name the
+     specific number that would change your mind.
+
+context_note: >
+  ANSWER KEY. Problems with the claim: self-reported, not independently
+  reproduced; best-of-5 inflates versus pass@1 (production runs it once);
+  custom scaffold, so the score belongs to model+scaffold, not to what you
+  would deploy; 20 excluded tasks make it a 480-task score that is not
+  comparable to 500 (cherry-pick risk); SWE-bench Verified is Python-only
+  open-source repos, with little transfer to a Java/TS monorepo with internal
+  frameworks; contamination risk (public repos and issues are likely in
+  training data); leaderboard rank is time-sensitive; "2x your current
+  assistant" names no baseline harness. Counter-eval: 50-100 tasks mined from
+  your own closed, recently merged issues/PRs (post-cutoff and private, so no
+  contamination); resolved = your real test suite passes AND a reviewer
+  accepts the patch; pass@1 with a fixed attempt budget; the same harness for
+  the incumbent and Nexus; record cost per resolved task and wall-clock
+  latency; track regressions introduced; blind review. Decision:
+  pilot-with-conditions (or reject) with a pre-registered threshold, e.g.
+  adopt only if pass@1 on the internal set beats the incumbent by at least X
+  points at no more than Y cost per resolved task, with no rise in post-merge
+  defects. "Adopt because 79%" is the wrong answer.

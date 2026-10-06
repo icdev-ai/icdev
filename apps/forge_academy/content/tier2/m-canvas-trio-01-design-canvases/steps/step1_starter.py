@@ -30,8 +30,8 @@ CANVAS_PURPOSE = {
 }
 # Registry `url_prefix` for each canvas.
 CANVAS_ROUTE = {"ndc": "/network", "ddc": "/data", "odc": "/observability"}
-# Tie-break order (registry order of the three).
-CANVAS_ORDER = ("ndc", "ddc", "odc")
+# Tie-break order (the order the three appear in args/component_registry.yaml).
+CANVAS_ORDER = ("ndc", "odc", "ddc")
 
 # Signal keywords per canvas, grounded in each canvas's real capabilities.
 CANVAS_SIGNALS = {

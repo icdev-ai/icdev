@@ -5,11 +5,13 @@ step_class: icdev:Lesson
 
 # Schedule & Cost Intelligence — EVM with AI Prediction
 
-Earned Value Management tells you where you were. AI-augmented EVM tells you where you're going — and flags problems 6 weeks before they appear in your next CDRL. ICDEV's schedule and cost intelligence engine integrates with your existing EVM data to add predictive analytics.
+Earned Value Management tells you where you were. Forecasting on top of EVM tells you where you are going, early enough to act. ICDEV's contract performance tools (CPMP) record EVM periods and add forecasting and CPARS prediction on top.
 
 ## What You'll See
 
-Watch ICDEV analyze EVM data for a $4.2M software development contract:
+> **Illustrative walkthrough.** The $4.2M contract and every figure below are fictional, written to show what the workflow produces. They are not the output of a live run on this platform. The *Run it for real* section names the ICDEV tools that do each part.
+
+An analysis of EVM data for a $4.2M software development contract:
 
 **Current EVM Status (Month 8 of 24)**
 ```
@@ -19,21 +21,35 @@ Earned Value (EV):      $1,512,000
 Actual Cost (AC):       $1,847,000
 Schedule Variance (SV): -$238,000   ⚠ BEHIND
 Cost Variance (CV):     -$335,000   ✗ OVER BUDGET
-CPI (Cost Performance): 0.82        ✗ Poor (threshold: 0.90)
-SPI (Schedule Perf.):   0.86        ⚠ At Risk (threshold: 0.90)
+CPI (Cost Performance): 0.82        ✗ Red    (red below 0.85)
+SPI (Schedule Perf.):   0.86        ⚠ Yellow (yellow below 0.95)
 ```
 
-**AI Prediction (ICDEV)**
-Current trajectory → Estimate at Completion: **$6.8M** (62% over contract ceiling)
-Root cause analysis: Integration testing phase underestimated by 47% (identified from sprint velocity and issue tracker patterns)
+**Forecast**
+Estimate at Completion from the current CPI: BAC ÷ CPI = $4.2M ÷ 0.82 ≈ **$5.1M** (about 22% over budget). A Monte Carlo forecast puts a range around that number instead of a single point.
+Root cause (from the WBS-level periods): integration testing underestimated.
 
-**Early Warning (6 weeks ago, missed)**
-ICDEV flagged: sprint velocity dropped 23% in month 6, integration defect rate rising. If addressed then: EAC would be $5.1M (21% over) — recoverable with replan. Now: requires contract mod.
+**Early warning (missed)**
+In month 6 the integration WBS element's CPI had already crossed the yellow threshold. Addressed then, a replan was cheap; now it is a conversation with the contracting officer.
 
 **Recommended Recovery Plan**
 3 options modeled:
-1. Descope 2 features → EAC $5.3M, on-time delivery (recommended)
-2. Add 2 engineers → EAC $5.8M, on-time delivery
-3. Accept slip → EAC $4.8M, 6-week schedule slip
 
-**CPARS Prediction:** Current trajectory → "Satisfactory" rating. Option 1 → "Very Good."
+1. Descope 2 features → lower EAC, on-time delivery (recommended)
+2. Add 2 engineers → higher EAC, on-time delivery
+3. Accept slip → lowest EAC, 6-week schedule slip
+
+**CPARS prediction:** current trajectory → "Satisfactory"; Option 1 → "Very Good".
+
+## Run it for real
+
+```bash
+python tools/govcon/evm_engine.py --record --contract-id <id> --wbs-id <id> --period-date 2026-08 --pv 1750000 --ev 1512000 --ac 1847000 --json
+python tools/govcon/evm_engine.py --aggregate --contract-id <id> --json
+python tools/govcon/evm_engine.py --forecast --contract-id <id> --iterations 10000 --json   # Monte Carlo EAC
+python tools/govcon/cpars_predictor.py --predict --contract-id <id> --json
+```
+
+The CPI/SPI colour thresholds (yellow below 0.95, red below 0.85) are `cpmp` settings in `args/govcon_config.yaml`. The dashboard view is `/cpmp`.
+
+**Check the math yourself:** recompute SV (EV − PV), CV (EV − AC), CPI (EV ÷ AC) and SPI (EV ÷ PV) from the three dollar figures. Then work out the EAC if the remaining work is done at budget rate instead of at the current CPI: EAC = AC + (BAC − EV). Which forecast would you brief, and why?

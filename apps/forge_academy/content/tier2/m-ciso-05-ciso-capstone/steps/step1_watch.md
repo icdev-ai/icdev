@@ -27,7 +27,7 @@ Systems plotted on risk × impact matrix. Top-right quadrant (high risk, high im
 Auto-generated: 5-page board-level report covering:
 - AI inventory completeness (first time: 100%)
 - Risk posture trend (3-month improvement: 47 → 38 risk score)
-- Regulatory alignment status (FedRAMP, CMMC, OMB M-25-21, EO 14110)
+- Regulatory alignment status (FedRAMP, CMMC, OMB M-25-21, NIST AI RMF)
 - 3 strategic recommendations with cost/benefit analysis
 - Appendix: full system inventory with risk scores
 
@@ -35,3 +35,5 @@ Auto-generated: 5-page board-level report covering:
 Dashboard refreshes every 6 hours. Monthly executive brief auto-generated. Quarterly board report auto-formatted for SECDEF review style.
 
 You now have continuous AI governance visibility that previously required a 3-person team working full-time.
+
+*(The counts above are an illustrative scenario.)*

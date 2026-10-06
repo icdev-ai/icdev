@@ -14,52 +14,53 @@ With the streaming architecture clear, this step builds the complete implementat
 ```typescript
 // app/api/chat/route.ts
 import Anthropic from '@anthropic-ai/sdk';
-import type { MessageParam } from '@anthropic-ai/sdk/resources/messages';
 
-const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+const client = new Anthropic(); // reads ANTHROPIC_API_KEY from the server environment
 
-export const runtime = 'nodejs'; // required: SDK uses Node.js built-ins
+// Tools are defined on the SERVER. Never accept tool definitions from the request body:
+// a browser could then hand your model arbitrary tools.
+const TOOLS: Anthropic.Tool[] = [{
+  name: 'get_document',
+  description: 'Retrieve a document by ID from the internal store',
+  input_schema: {
+    type: 'object',
+    properties: { doc_id: { type: 'string' } },
+    required: ['doc_id'],
+  },
+}];
 
 export async function POST(req: Request): Promise<Response> {
   const body = await req.json();
-  const messages: MessageParam[] = body.messages;
+  const messages: Anthropic.MessageParam[] = body.messages;
 
   if (!messages?.length) {
     return new Response('messages required', { status: 400 });
   }
 
   const stream = client.messages.stream({
-    model: 'claude-sonnet-4-5',
-    max_tokens: 2048,
+    model: 'claude-opus-5-5',
+    max_tokens: 16000,
     system: 'You are a helpful assistant.',
     messages,
-    tools: body.tools ?? [],
-    tool_choice: body.tool_choice ?? { type: 'auto' },
-  });
+    tools: TOOLS,
+  }, { signal: req.signal }); // abort the upstream call if the browser disconnects
 
   const encoder = new TextEncoder();
   const readable = new ReadableStream({
     async start(controller) {
       try {
         for await (const event of stream) {
-          if (
-            event.type === 'content_block_delta' &&
-            event.delta.type === 'text_delta'
-          ) {
+          if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
             controller.enqueue(encoder.encode(event.delta.text));
           }
-          if (event.type === 'message_delta' && event.delta.stop_reason) {
-            // Optionally signal stop reason via a sentinel chunk
-            controller.enqueue(encoder.encode('\x00'));
-          }
         }
-      } catch (err) {
-        controller.error(err);
-      } finally {
         controller.close();
+      } catch (err) {
+        controller.error(err); // error() and close() are mutually exclusive
       }
+    },
+    cancel() {
+      stream.abort();
     },
   });
 
@@ -72,6 +73,8 @@ export async function POST(req: Request): Promise<Response> {
   });
 }
 ```
+
+This route only streams text. If the model stops with `stop_reason: 'tool_use'`, run the tool on the server and call the API again (see below) before you finish the response.
 
 ## Client: manual fetch + ReadableStream
 
@@ -103,7 +106,7 @@ async function sendMessage(userText: string) {
 }
 ```
 
-If you use the `ai` SDK from Vercel, the `useChat` hook wraps this pattern with connection management, optimistic updates, and abort-on-unmount.
+Pass an `AbortController`'s `signal` to `fetch` and abort it in your component's cleanup, so navigating away stops the stream (and, through `req.signal`, the upstream Claude call). If you use the Vercel AI SDK, its `useChat` hook wraps this pattern with connection management and abort-on-unmount.
 
 ## TypeScript types for Message and ContentBlock
 
@@ -127,22 +130,34 @@ function isToolUse(block: ContentBlock): block is ToolUseBlock {
 
 Always use the SDK's exported types rather than redefining them — they stay in sync when you upgrade the package.
 
-## Server-side tool calling with tool_choice
+## Server-side tool calling
 
 ```typescript
-tools: [{
-  name: 'get_document',
-  description: 'Retrieve a classified document by ID',
-  input_schema: {
-    type: 'object' as const,
-    properties: { doc_id: { type: 'string' } },
-    required: ['doc_id'],
-  },
-}],
-tool_choice: { type: 'auto' },
+const response = await client.messages.create({
+  model: 'claude-opus-5-5',
+  max_tokens: 16000,
+  tools: TOOLS,
+  tool_choice: { type: 'auto' },
+  messages,
+});
+
+if (response.stop_reason === 'tool_use') {
+  const toolResults = await Promise.all(
+    response.content
+      .filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')
+      .map(async (b) => ({
+        type: 'tool_result' as const,
+        tool_use_id: b.id,
+        content: JSON.stringify(await runTool(b.name, b.input)),
+      })),
+  );
+  messages.push({ role: 'assistant', content: response.content });
+  messages.push({ role: 'user', content: toolResults }); // all results in ONE user message
+  // ...call the API again until stop_reason is 'end_turn'
+}
 ```
 
-When the model returns a `tool_use` block, execute the function server-side and re-invoke the API with the `tool_result`. Never relay tool calls to the browser for server-side resources.
+Execute tools server-side and send the `tool_result` back. Never relay tool calls for server-side resources to the browser. Keep `tool_choice` on `auto`: forcing a specific tool (`{ type: 'tool' }` or `{ type: 'any' }`) is rejected by the newest models. The SDK's beta `toolRunner` helper can drive this loop for you.
 
 ## Error boundary for AI failures
 
@@ -150,10 +165,13 @@ Wrap your AI UI component in a React `ErrorBoundary`. Network errors, timeouts, 
 
 ## Configuration questions
 
-1. Why is `export const runtime = 'nodejs'` required in the route?
-2. What happens if you import `@anthropic-ai/sdk` in a client component (`'use client'`)?
-3. How would you add an `AbortController` to the `fetch` call so the stream stops when the user navigates away?
-4. Your route needs to call a database to retrieve context before sending to Claude. Where in the route function should this happen, and why?
+Pick an answer for each field on this step:
+
+1. **UI interaction pattern.** Chat interface (multi-turn), single-shot form + result, inline completion, or background job + result page.
+2. **Server-side tool calling needed?** Should the LLM call your API routes, or only generate?
+3. **How will you handle streaming in the UI?** `ReadableStream` + `TextDecoder`, Server-Sent Events, WebSocket, or poll for completion.
+
+Think about these as you choose: what happens if you import `@anthropic-ai/sdk` in a `'use client'` component? And your route must fetch database context before calling Claude: where in the route does that belong, and why?
 
 ---
 

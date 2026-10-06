@@ -25,12 +25,12 @@ The ICDEV Agent Readiness Checker evaluates a repository across 11 pillars, prod
 ## Scoring
 
 - Each pillar reports: `passed`, `total`, `percentage`
-- Overall score = weighted average across pillars
-- Critical pillars (security, IL, NIST, STIG, audit) block deployment if they fail
+- Overall score = weighted average across pillars; the weights live in `args/agent_readiness.yaml` (`pillar_weights`, e.g. `il-classification: 1.5`, `structure: 0.8`)
+- The critical pillars (security, IL classification, NIST controls, STIG compliance, append-only audit) raise a `critical` finding in the result's `anomalies` list when they score below 50%. The checker itself reports; turning that into a deployment block is your job (m-readiness-02 wires it into CI)
 
 ## Your task
 
-Run the readiness checker on a small Python project. Use:
+Run the readiness checker from the root of a Python repository (the ICDEV checkout works). Use:
 
 ```bash
 python -c "from tools.ai_augmentation.agent_readiness.checker import run_readiness_check; import json; print(json.dumps(run_readiness_check('.'), indent=2))"

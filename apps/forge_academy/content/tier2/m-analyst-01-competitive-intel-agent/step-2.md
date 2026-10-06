@@ -13,6 +13,7 @@ Configuring an intelligence agent requires four decisions: who to watch, what da
 Define the scope of your agent. Be specific — a narrowly defined target produces higher-quality intelligence than a broad sweep.
 
 **Examples:**
+
 - "Competitors pursuing OCONUS intelligence support contracts under NAICS 541990"
 - "All contract awards to [named competitor] in the past 24 months"
 - "Leadership changes at the top 5 firms in the C2 modernization market"
