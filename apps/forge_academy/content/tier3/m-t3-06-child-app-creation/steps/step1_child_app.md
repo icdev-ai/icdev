@@ -5,11 +5,35 @@ step_class: icdev:Lesson
 
 # Child App Creation
 
-ICDEV child apps are self-contained Flask blueprints that extend the core platform. Every child app must pass the **forge_validator gate** before it ships. In this mission you'll implement the `AppManifest` builder — the structured spec that child_app_generator.py uses to scaffold a new app.
+"Child app" means two different things in ICDEV, and a Tier 3 engineer needs to know which one they are building:
 
-## Child App Anatomy
+1. **An in-dashboard child app** — a Flask blueprint under `apps/<key>/` (FORGE Academy itself is
+   `apps/forge_academy/`), declared with `kind: child_app` in `args/component_registry.yaml`.
+   Scaffold one from a template with:
 
-A complete child app has these pieces, validated by `forge_validator.py --gate`:
+   ```bash
+   icdev scaffold child-app my_lab --display-name "My Lab" --flavor ai-lab --canvases dic,slides
+   ```
+
+2. **A generated standalone child app** — a mini-ICDEV clone with its own FORGE layers (goals/,
+   tools/, args/, context/, hardprompts/), agents, memory and CI/CD, produced from a blueprint JSON and
+   then gated by the FORGE validator. The repo rule is: always use the generator, then the gate:
+
+   ```bash
+   python tools/builder/child_app_generator.py --blueprint bp.json --project-path <parent_dir> --name my-app --json
+   python tools/builder/forge_validator.py --project-dir <parent_dir>/my-app --gate
+   ```
+
+   `forge_validator.py --gate` exits non-zero if any check fails: the six FORGE layers, CLAUDE.md,
+   memory, DB init, ANVIL workflow, grounding modules, coherence checker, DB patterns, and (FORGE-13)
+   the 8-component completeness gate for every canvas the child declares.
+
+In this mission you'll implement `AppManifest` — a **simplified teaching model** of the structured
+spec that drives scaffolding. It is not a class in the repo; the real generator reads a blueprint
+JSON, and the real scaffold takes `--canvases` as registry keys (lowercase, e.g. `dic`). The
+exercise uses the seven Design Canvas codes from T3-05 (`NDC`, `SDC`, `PDC`, `BDC`, `DDC`, `ODC`, `IDC`).
+
+## Child App Anatomy (exercise model, in-dashboard flavor)
 
 ```
 apps/<app_slug>/
@@ -46,7 +70,8 @@ manifest.to_dict()
 
 ## Validation Rules
 
-Before scaffolding, `AppManifest.validate()` checks:
+Before scaffolding, your `AppManifest.validate()` checks:
+
 1. `app_slug` matches `^[a-z][a-z0-9_]*$` (lowercase, alphanumeric + underscore, starts with letter)
 2. `canvas` is one of the canvas codes in `VALID_CANVASES`
 3. At least one route must start with "/"
@@ -57,7 +82,7 @@ Before scaffolding, `AppManifest.validate()` checks:
 
 - `AppManifest` class with `validate()` and `to_dict()`
 - `generate_file_tree()` — returns list of expected file paths for the app
-- `check_completeness()` — scores the manifest against forge_validator requirements
+- `check_completeness()` — scores the manifest on 5 quality signals
 
 ## Success Criteria
 

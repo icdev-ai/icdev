@@ -39,6 +39,16 @@ Each registered tool has a schema:
 }
 ```
 
+> **On the wire the key is `inputSchema`.** The registry you build here calls the
+> parameter schema `parameters` (the shape most LLM function-calling APIs use). The MCP
+> `tools/list` response names the same JSON Schema object `inputSchema`. ICDEV's own
+> servers all subclass `MCPServer` in `tools/mcp/base_server.py`: `register_tool(name,
+> description, input_schema, handler)` stores a tool, `_handle_tools_list` emits
+> `{"name", "description", "inputSchema"}`, and `_handle_tools_call` wraps the result
+> as MCP content with `"isError": true/false`. That's the same contract as your
+> `{"result", "error"}` envelope. This exercise is a self-contained model of that
+> registry. It has no network, no stdio transport, and no `tools.*` imports.
+
 ## Success Criteria
 
 - `MCPToolRegistry.tool()` decorator registers a function as an MCP tool

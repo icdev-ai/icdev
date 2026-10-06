@@ -23,7 +23,7 @@ into buildable work.
 
 An autonomous factory that re-proposes canvases ICDEV already has is worse than useless.
 `tools/foundry/novelty_gate.py` builds a **catalog** of what the platform already ships —
-active canvases (`canvas_registry`), tool manifests (`tools/manifest/*.md`), and goal
+active canvases (`tools/canvas/canvas_registry.py`), tool manifests (`tools/manifest/*.md`), and goal
 workflows (`goals/manifest.md`) — then scores a concept against it:
 
 ```
@@ -32,9 +32,13 @@ novelty_score = 1 - max_similarity(concept_capability, catalog)
 
 The verdict rules (in order):
 
-- `max_similarity >= duplicate_similarity` (default 0.8) -> **duplicate** (reject)
-- `novelty_score < min_novelty` (default 0.35) -> **low_novelty** (reject)
+- `max_similarity >= duplicate_similarity` (code default 0.85) -> **duplicate** (reject)
+- `novelty_score < min_novelty` (code default 0.35; `args/foundry_config.yaml` raises it to
+  0.6 under `novelty.min_novelty`) -> **low_novelty** (reject)
 - otherwise -> **pass**
+
+(`tools/foundry/novelty_gate.py`: `score_novelty()` computes the score,
+`apply_novelty_gate()` applies the verdict. This lab uses the code defaults.)
 
 The scoring is deterministic (token-frequency cosine blended with Jaccard overlap), so it
 is air-gap safe; an optional LLM embedding pass only re-ranks. Your `novelty_score()` models
@@ -59,11 +63,13 @@ epic shape the SIPA integrity seeder uses — in a fixed order:
 db -> core -> engine -> dash -> mcp -> reflex -> doc -> vv
 ```
 
-Task ids follow `f"{slug}-{epic}-{n:02d}"` with a linear `depends_on` chain, and every
-**build** task (code-generating epics) carries `integrity_gate=True` so the dispatcher runs
+Task ids follow `f"{slug}-{epic}-{n:02d}"` with a linear dependency chain (the real field
+is `depends_on_task_id`; this lab calls it `depends_on`), and every **build** task
+(code-generating epics) carries `integrity_gate=True` so the dispatcher runs
 **SIPA** (`tools/integrity/engine.py --gate`) on the generated code before merge — *ACF cannot
 ship code SIPA quarantines*. Documentation (`doc`) and verification (`vv`) tasks produce no
-shippable code, so they carry no integrity gate. Your `seed_task_graph()` emits that list.
+shippable code, so they carry no integrity gate (the real dict simply omits the key; the
+lab sets it to `False`). Your `seed_task_graph()` emits that list.
 
 Open `step1_starter.py` and implement the four `TODO`s. The handlers are offline and
 deterministic — the real engine harvests from live stores and calls LLMs, but the gate logic

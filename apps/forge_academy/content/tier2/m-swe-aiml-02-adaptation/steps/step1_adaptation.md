@@ -35,15 +35,23 @@ step_class: icdev:Lesson
 
 ## Your Mission
 
-Call the adaptation recommendation API with 3 scenarios and assert the expected strategy.
+Call the adaptation recommendation API (`POST /ai-ml/api/adapt/recommend`, backed by `recommend()` in `tools/aiml_canvas/adaptation_engine.py`) with 3 scenarios and assert the expected strategy. The response carries `recommended`, `recommended_label`, `ranked`, `rationale` and `caveats`; unknown request keys are ignored.
+
+> **Where this runs.** This is a reading step: run the script from your own terminal
+> against your own ICDEV instance (the Academy sandbox has no network). The AIMC canvas
+> is mounted at `/ai-ml` (`tools/aiml_canvas/blueprint.py`). If auth is on, send a
+> dashboard API key as `Authorization: Bearer icdev_dash_...`; the POST routes also
+> require a role allowed to edit AIMC designs.
+
 
 ```python
 import requests
 
 BASE = "http://localhost:5050"
+HEADERS = {}  # e.g. {"Authorization": "Bearer icdev_dash_..."} if auth is on
 
 def recommend(params):
-    r = requests.post(f"{BASE}/ai-ml/api/adapt/recommend", json=params)
+    r = requests.post(f"{BASE}/ai-ml/api/adapt/recommend", json=params, headers=HEADERS)
     return r.json()
 
 # Scenario 1: No corpus, no training data, latency-sensitive

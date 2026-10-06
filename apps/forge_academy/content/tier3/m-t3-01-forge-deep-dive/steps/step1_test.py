@@ -26,9 +26,9 @@ output = captured.getvalue()
 # parse_goal_file tests
 sample_content = """
 # Goal
-# Tools: tools/compliance/scanner.py, tools/db/storage.py
+# Tools: tools/compliance/stig_checker.py, tools/db/storage.py
 # Args: args/compliance_config.yaml
-# Output: DB table audit_findings
+# Output: DB table stig_findings
 """
 parsed = parse_goal_file(sample_content)
 assert parsed is not None, "parse_goal_file() returned None"
@@ -37,7 +37,7 @@ assert "tools" in parsed, "parsed must have 'tools'"
 assert "args_file" in parsed, "parsed must have 'args_file'"
 assert "output_type" in parsed, "parsed must have 'output_type'"
 assert len(parsed["tools"]) >= 1, f"Should find ≥1 tool in sample, got {parsed['tools']}"
-assert any("scanner" in t or "storage" in t or "tools/" in t for t in parsed["tools"]), \
+assert any("stig_checker" in t or "storage" in t or "tools/" in t for t in parsed["tools"]), \
     f"Expected tool paths, got: {parsed['tools']}"
 assert parsed["args_file"] is not None, "Should find args file in sample"
 assert "compliance" in parsed["args_file"] or "args/" in parsed["args_file"], \
@@ -52,7 +52,7 @@ assert file_parsed["output_type"] == "file", \
 
 # resolve_tools tests
 from pathlib import Path
-test_tools = ["tools/compliance/scanner.py", "tools/nonexistent_tool_xyz.py"]
+test_tools = ["tools/compliance/stig_checker.py", "tools/nonexistent_tool_xyz.py"]
 resolved = resolve_tools(test_tools, Path("tools"))
 assert resolved is not None, "resolve_tools() returned None"
 assert isinstance(resolved, list), "resolve_tools() must return list"
