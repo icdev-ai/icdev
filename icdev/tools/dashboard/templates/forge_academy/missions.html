@@ -8,7 +8,7 @@
   --fa-gold:#FFB800; --fa-card:#12192b; --fa-border:rgba(74,144,217,.25);
 }
 .fa-missions-header {
-  background:linear-gradient(135deg,#0a0a14,#12192b);
+  background:linear-gradient(135deg,var(--fa-bg-0a0a14),var(--fa-bg-12192b));
   border-bottom:1px solid var(--fa-border);
   padding:2rem; display:flex; align-items:center; gap:1rem; flex-wrap:wrap;
 }
@@ -19,7 +19,7 @@
   margin:0;
 }
 .fa-filter-bar {
-  background:#12192b; border:1px solid var(--fa-border);
+  background:var(--fa-bg-12192b); border:1px solid var(--fa-border);
   border-radius:8px; padding:1rem 2rem;
   display:flex; gap:.8rem; flex-wrap:wrap; align-items:center;
 }
@@ -33,9 +33,9 @@
   border-color:var(--fa-orange); color:var(--fa-orange);
   background:rgba(255,107,53,.1);
 }
-.fa-filter-btn.t1.active { border-color:#4a90d9; color:#4a90d9; background:rgba(74,144,217,.1); }
+.fa-filter-btn.t1.active { border-color:#4a90d9; color:var(--fa-tx-4a90d9); background:rgba(74,144,217,.1); }
 .fa-filter-btn.t2.active { border-color:var(--fa-orange); }
-.fa-filter-btn.t3.active { border-color:#FF2D55; color:#FF2D55; background:rgba(255,45,85,.1); }
+.fa-filter-btn.t3.active { border-color:#FF2D55; color:var(--fa-tx-ff2d55); background:rgba(255,45,85,.1); }
 .fa-missions-grid {
   display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr));
   gap:1.2rem; padding:1.5rem 2rem;
@@ -61,12 +61,12 @@
   padding:2px 7px; border-radius:4px; white-space:nowrap;
 }
 .fa-type-badge.coding   { background:rgba(0,255,136,.12); color:var(--fa-green); }
-.fa-type-badge.guided   { background:rgba(155,89,182,.12); color:#c39bd3; }
+.fa-type-badge.guided   { background:rgba(155,89,182,.12); color:var(--fa-tx-c39bd3); }
 .fa-type-badge.hybrid   { background:rgba(255,107,53,.12); color:var(--fa-orange); }
 .fa-type-badge.concept  { background:rgba(74,144,217,.12); color:var(--fa-cyan); }
 .fa-type-badge.studio   { background:rgba(0,212,255,.12); color:var(--fa-cyan); }
 .fa-type-badge.chat     { background:rgba(255,184,0,.12); color:var(--fa-gold); }
-.fa-type-badge.design   { background:rgba(10,132,255,.12); color:#58a6ff; }
+.fa-type-badge.design   { background:rgba(10,132,255,.12); color:var(--fa-tx-58a6ff); }
 .fa-card-tag { font-size:.78rem; color:var(--text-secondary); margin-bottom:.8rem; line-height:1.4; }
 /* aca-trn-03: the objective reads as substance, not chrome — a left rule and a
    quieter label, so it separates from the tagline above without competing with
@@ -82,7 +82,7 @@
 .fa-diff { font-size:.6rem; text-transform:uppercase; letter-spacing:.1em; padding:2px 7px; border-radius:4px; }
 .fa-diff.beginner     { background:rgba(0,255,136,.12); color:var(--fa-green); }
 .fa-diff.intermediate { background:rgba(255,184,0,.12); color:var(--fa-gold); }
-.fa-diff.advanced     { background:rgba(255,45,85,.12); color:#ff6b6b; }
+.fa-diff.advanced     { background:rgba(255,45,85,.12); color:var(--fa-tx-ff6b6b); }
 .fa-status { font-size:.65rem; }
 .fa-status.completed  { color:var(--fa-green); }
 .fa-status.in_progress{ color:var(--fa-gold); }
@@ -125,13 +125,13 @@
 
     <span style="font-size:.7rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.1em;margin-left:.5rem;">Type:</span>
     <a href="/academy/missions?type=coding" class="fa-filter-btn {% if active_type=='coding' %}active{% endif %}" style="color:var(--fa-green);">Coding</a>
-    <a href="/academy/missions?type=guided" class="fa-filter-btn {% if active_type=='guided' %}active{% endif %}" style="color:#c39bd3;">Guided</a>
+    <a href="/academy/missions?type=guided" class="fa-filter-btn {% if active_type=='guided' %}active{% endif %}" style="color:var(--fa-tx-c39bd3);">Guided</a>
     <a href="/academy/missions?type=studio" class="fa-filter-btn {% if active_type=='studio' %}active{% endif %}" style="color:var(--fa-cyan);">Studio</a>
     <a href="/academy/missions?type=chat" class="fa-filter-btn {% if active_type=='chat' %}active{% endif %}" style="color:var(--fa-gold);">Chat Lab</a>
   </div>
 
   {% if error %}
-  <div style="padding:1.5rem 2rem;color:#ff6b6b;">⚠ {{ error }}</div>
+  <div style="padding:1.5rem 2rem;color:var(--fa-tx-ff6b6b);">⚠ {{ error }}</div>
   {% endif %}
 
   {% set tiers = missions|map(attribute='tier')|unique|sort|list %}
@@ -155,12 +155,12 @@
            after the click (fga-wire-06). is_available is derived from step
            count in list_missions. #}
         {% if m.is_available is defined and not m.is_available %}
-        <span class="fa-type-badge" style="background:#2a2118;color:#ffce7a;border:1px solid #d98b12;">coming soon</span>
+        <span class="fa-type-badge" style="background:var(--fa-bg-2a2118);color:var(--fa-tx-ffce7a);border:1px solid #d98b12;">coming soon</span>
         {% elif m.is_locked %}
         {# aca-ux-04: locked-but-readable — say so before the click. The card still
            navigates; the mission just cannot earn credit yet. #}
         <span class="fa-type-badge" title="Readable, but earns no XP until this tier unlocks"
-              style="background:#1a1a24;color:#9aa0b5;border:1px solid #4a4a5e;">&#128274; locked</span>
+              style="background:var(--fa-bg-1a1a24);color:var(--fa-tx-9aa0b5);border:1px solid #4a4a5e;">&#128274; locked</span>
         {% else %}
         <span class="fa-type-badge {{ m.mission_type|default('coding') }}">{{ m.mission_type|default('coding') }}</span>
         {% endif %}

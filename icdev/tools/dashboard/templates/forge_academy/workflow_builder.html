@@ -4,11 +4,11 @@
 {% block extra_css %}
 <style>
 :root { --fa-orange:#FF6B35; --fa-cyan:#00D4FF; --fa-green:#00FF88; --fa-gold:#FFB800; --fa-card:#12192b; --fa-border:rgba(74,144,217,.25); }
-.fa-wb-header { background:linear-gradient(135deg,#0a0a14,#12192b); border-bottom:1px solid var(--fa-border); padding:1.5rem 2rem; }
+.fa-wb-header { background:linear-gradient(135deg,var(--fa-bg-0a0a14),var(--fa-bg-12192b)); border-bottom:1px solid var(--fa-border); padding:1.5rem 2rem; }
 .fa-wb-header h1 { font-size:1.6rem; font-weight:900; background:linear-gradient(135deg,var(--fa-cyan),var(--fa-green)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin:0; }
 .fa-wb-layout { display:grid; grid-template-columns:240px 1fr 280px; min-height:500px; gap:0; }
 .fa-palette {
-  background:#0d1221; border-right:1px solid var(--fa-border);
+  background:var(--fa-bg-0d1221); border-right:1px solid var(--fa-border);
   padding:1.2rem; overflow-y:auto;
 }
 .fa-palette-title { font-size:.62rem; text-transform:uppercase; letter-spacing:.15em; color:var(--fa-orange); margin:0 0 .8rem; }
@@ -19,7 +19,7 @@
 }
 .fa-node-chip:hover { border-color:var(--fa-cyan); }
 .fa-canvas-area {
-  background:#060910;
+  background:var(--fa-bg-060910);
   background-image: radial-gradient(rgba(74,144,217,.08) 1px, transparent 1px);
   background-size: 24px 24px;
   position:relative; min-height:480px; overflow:hidden;
@@ -37,22 +37,22 @@
 .fa-canvas-node:hover { border-color:var(--fa-cyan); }
 .fa-canvas-node.selected { border-color:var(--fa-orange); }
 .fa-props-panel {
-  background:#0d1221; border-left:1px solid var(--fa-border);
+  background:var(--fa-bg-0d1221); border-left:1px solid var(--fa-border);
   padding:1.2rem; overflow-y:auto;
 }
 .fa-props-title { font-size:.62rem; text-transform:uppercase; letter-spacing:.15em; color:var(--fa-cyan); margin:0 0 .8rem; }
 .fa-wb-controls {
   display:flex; gap:.6rem; padding:1rem 2rem; border-top:1px solid var(--fa-border);
-  background:#0a0a14; flex-wrap:wrap; align-items:center;
+  background:var(--fa-bg-0a0a14); flex-wrap:wrap; align-items:center;
 }
-.fa-wb-field { width:100%; background:#060910; border:1px solid var(--fa-border); color:var(--text-primary); border-radius:6px; padding:.45rem .7rem; font-size:.82rem; margin-bottom:.5rem; }
+.fa-wb-field { width:100%; background:var(--fa-bg-060910); border:1px solid var(--fa-border); color:var(--text-primary); border-radius:6px; padding:.45rem .7rem; font-size:.82rem; margin-bottom:.5rem; }
 .fa-goal-output {
-  background:#060910; border:1px solid var(--fa-border); border-radius:6px;
+  background:var(--fa-bg-060910); border:1px solid var(--fa-border); border-radius:6px;
   padding:.8rem; font-family:monospace; font-size:.72rem; color:var(--fa-green);
   white-space:pre-wrap; max-height:200px; overflow-y:auto; margin-top:.8rem; display:none;
 }
 .fa-btn-submit {
-  background:linear-gradient(135deg,var(--fa-green),#00b860); color:#0a0a14;
+  background:linear-gradient(135deg,var(--fa-green),var(--fa-bg-00b860)); color:var(--fa-tx-0a0a14);
   border:none; border-radius:6px; padding:.55rem 1.4rem; font-size:.82rem;
   font-weight:700; cursor:pointer; transition:opacity .15s;
 }
@@ -88,7 +88,7 @@
         </div>
         {% else %}
         {% if patterns_available is defined and not patterns_available %}
-        <div style="font-size:.7rem;color:#ffce7a;">
+        <div style="font-size:.7rem;color:var(--fa-tx-ffce7a);">
           Pattern library unavailable &mdash; the builder cannot load its palette.
           This is a configuration problem, not an empty catalogue; an administrator
           should check the Academy logs.
