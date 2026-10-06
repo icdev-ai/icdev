@@ -128,6 +128,7 @@ PREREQ_ONTOLOGY_PATHS = {
     "m-studio-network-canvas": ["network:AWSVPC", "core:Design"],
     "m-chat-agent-interview": ["core:Concept"],
     "m-t1-11-multimodal": ["core:Concept", "data:DataPipeline"],
+    "m12-model-serving": ["core:Concept"],
     "m-swe-aadc-09-ops-config": ["core:Design", "security:Control"],
     "m-swe-sdk-java": ["core:Design"],
     "m-swe-sdk-typescript": ["core:Design"],
