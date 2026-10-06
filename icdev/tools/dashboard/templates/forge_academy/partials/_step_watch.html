@@ -11,10 +11,10 @@
      fabricated example presented to a learner as this step's actual output
      (fga-fix-02). A step with no demo now shows no demo panel. #}
   {% if schema.demo_output or schema.demo_url %}
-  <div style="background:#060910;border:1px solid var(--fa-border);border-radius:10px;padding:1.5rem;margin-bottom:1rem;">
+  <div style="background:var(--fa-bg-060910);border:1px solid var(--fa-border);border-radius:10px;padding:1.5rem;margin-bottom:1rem;">
     <div style="font-size:.65rem;text-transform:uppercase;letter-spacing:.15em;color:var(--fa-cyan);margin-bottom:.8rem;">▶ Demo Output</div>
     {% if schema.demo_output %}
-    <pre style="margin:0;font-size:.78rem;color:#00FF88;white-space:pre-wrap;overflow-x:auto;">{{ schema.demo_output | tojson(indent=2) }}</pre>
+    <pre style="margin:0;font-size:.78rem;color:var(--fa-tx-00ff88);white-space:pre-wrap;overflow-x:auto;">{{ schema.demo_output | tojson(indent=2) }}</pre>
     {% elif schema.demo_url %}
     <div style="text-align:center;padding:1.5rem;">
       <p style="color:var(--text-secondary);font-size:.82rem;">This demo runs against live ICDEV infrastructure.</p>
@@ -28,7 +28,7 @@
   {% endif %}
 
   <button onclick="watchComplete({{ sidx }})"
-          style="background:linear-gradient(135deg,var(--fa-cyan),#008db3);color:#0a0a14;border:none;border-radius:6px;padding:.6rem 1.4rem;font-size:.82rem;font-weight:700;cursor:pointer;">
+          style="background:linear-gradient(135deg,var(--fa-cyan),var(--fa-bg-008db3));color:var(--fa-tx-0a0a14);border:none;border-radius:6px;padding:.6rem 1.4rem;font-size:.82rem;font-weight:700;cursor:pointer;">
     ✓ Understood → Continue
   </button>
   <div class="fa-controls" style="margin-top:.6rem;">
