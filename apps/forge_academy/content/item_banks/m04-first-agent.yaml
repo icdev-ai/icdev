@@ -1,0 +1,218 @@
+# CUI // SP-CTI
+#
+# Item bank for m04-first-agent (aicur-fun-05).
+# Spec: docs/features/forge-academy-aca-trn-01-assessment-model.md
+#
+# Step 1 is a lab with an authored step1_test.py and is graded by the coding path.
+# It deliberately carries NO bank here: grading.grade_step routes any step with an
+# active bank to the item path, so a bank on step 1 would silently replace the
+# lab's test with a quiz. Steps 2 and 3 are lessons and are graded by these banks.
+#
+# AUTHORING RULES are those of m01-llm-fundamentals.yaml (enforced by
+# assessment.validate_item_bank, called by the seeder). Every item is answerable
+# from the lesson markdown it assesses, and only from it.
+
+mission: m04-first-agent
+
+steps:
+
+  # -------------------------------------------------------------------------
+  # Step 2 — Tool Selection (steps/step2_tool_selection.md)
+  # -------------------------------------------------------------------------
+  - step: 2
+    items:
+      - key: tool-what-model-sees
+        prompt: >-
+          When an LLM chooses which tool to call, what information about each tool
+          does it actually have?
+        options:
+          - "The tool's Python source code"
+          - "Its name, description and parameter schema"
+          - "The results of every previous call to it in other sessions"
+          - "Only the tool's name"
+        correct: 1
+        explanation: >-
+          The model never sees your Python. Name, description and parameter schema
+          are the entire basis for its choice.
+        difficulty: core
+
+      - key: tool-description
+        prompt: >-
+          Which is the best guidance for writing a tool description?
+        options:
+          - "Keep it to one word so the model is not distracted"
+          - "Describe the implementation details for future maintainers"
+          - "Say when to use it, when NOT to use it, and what it returns"
+          - "Reuse the same description across similar tools for consistency"
+        correct: 2
+        explanation: >-
+          Write descriptions for the model: when to use it, when not to, and what
+          it returns so the model can tell whether the result answers the task.
+        difficulty: core
+
+      - key: tool-overlap
+        prompt: >-
+          An agent has two tools, "look up a control" and "search controls", with
+          overlapping descriptions. What is the likely effect?
+        options:
+          - "The model must guess between them, and may guess differently on different runs"
+          - "The model always calls both, which is harmless"
+          - "Accuracy improves because there are more options"
+          - "The loop refuses to start"
+        correct: 0
+        explanation: >-
+          Overlapping tools force a guess. Prefer a small set of clearly separated
+          tools; merge or remove overlapping ones.
+        difficulty: core
+
+      - key: tool-unknown-name
+        prompt: >-
+          The model requests a tool name that does not exist. What should the loop
+          do?
+        options:
+          - "Let the KeyError crash the agent so a human notices"
+          - "Silently skip the step and continue"
+          - "Pick the closest-named tool and call it"
+          - "Return an error message to the model as the observation so it can correct itself"
+        correct: 3
+        explanation: >-
+          The tool call is untrusted output. An invented name should become an
+          observation the model can fix on the next turn, not a crash.
+        difficulty: core
+
+      - key: tool-least-privilege
+        prompt: >-
+          An agent answers read-only compliance questions. Why should it not be
+          given a delete tool?
+        options:
+          - "Delete tools are slower than read tools"
+          - "Least privilege: the safest call is the one the agent cannot make"
+          - "The model cannot call more than three tools"
+          - "Delete tools have no parameter schema"
+        correct: 1
+        explanation: >-
+          Give the agent only the tools the task needs. A tool out of reach is a
+          mistake the agent cannot make.
+        difficulty: core
+
+      - key: tool-errors-observations
+        prompt: >-
+          A tool fails with "Control V-999 not found". What should happen to that
+          failure?
+        options:
+          - "Swallow it and return an empty string so the loop continues"
+          - "Retry the identical call until it succeeds"
+          - "Feed it back into the conversation as the tool result so the model can try something else"
+          - "End the agent immediately with no answer"
+        correct: 2
+        explanation: >-
+          Errors are observations. Feeding the failure back is what lets a loop beat
+          a pipeline; swallowing it leaves the model reasoning from nothing.
+        difficulty: stretch
+
+  # -------------------------------------------------------------------------
+  # Step 3 — Stopping Conditions (steps/step3_stopping_conditions.md)
+  # -------------------------------------------------------------------------
+  - step: 3
+    items:
+      - key: stop-normal-exit
+        prompt: >-
+          Which exit is the only one that means the task was actually completed?
+        options:
+          - "The model answers instead of requesting another tool"
+          - "max_steps is reached"
+          - "The token budget runs out"
+          - "The same tool is called twice in a row"
+        correct: 0
+        explanation: >-
+          The agent is finished when the model stops calling tools. Every other
+          exit is a safety exit, meaning the task was not completed.
+        difficulty: core
+
+      - key: stop-max-steps
+        prompt: >-
+          The loop hits max_steps. How should that outcome be treated?
+        options:
+          - "As the final answer, since the model did its best"
+          - "As a failure to report, not an answer to return"
+          - "As a reason to double max_steps and silently continue"
+          - "As proof the task was too easy"
+        correct: 1
+        explanation: >-
+          A step budget stops a confused model from looping forever. Hitting it is
+          a failure to report.
+        difficulty: core
+
+      - key: stop-token-budget
+        prompt: >-
+          Why does an agent need a token or cost budget in addition to a step budget?
+        options:
+          - "Step budgets do not work with tool calls"
+          - "Token budgets make the model answer faster"
+          - "A few long tool results can exhaust the budget long before the step count does"
+          - "It is only needed for agents with no tools"
+        correct: 2
+        explanation: >-
+          Step count and spend are different quantities; a handful of large tool
+          results can cost more than many small turns.
+        difficulty: core
+
+      - key: stop-repetition
+        prompt: >-
+          The agent calls the same tool with the same arguments twice in a row. What
+          does the lesson recommend?
+        options:
+          - "Keep going — the third call may differ"
+          - "Increase max_steps"
+          - "Remove the tool from the agent permanently"
+          - "Stop, or tell the model it is repeating itself, instead of spending the budget on it"
+        correct: 3
+        explanation: >-
+          Same call, same arguments, same answer. Repetition detection stops the
+          loop from burning its remaining budget.
+        difficulty: core
+
+      - key: stop-escalate
+        prompt: >-
+          The agent's next step is an irreversible action outside its authority.
+          What is the correct stop?
+        options:
+          - "Pause and escalate to a human for approval"
+          - "Take the action, then report it"
+          - "Return \"Max steps reached\""
+          - "Retry with a different tool"
+        correct: 0
+        explanation: >-
+          Some steps should not be taken autonomously; the correct stop is to pause
+          and ask for approval.
+        difficulty: core
+
+      - key: stop-report-how
+        prompt: >-
+          Why is returning the plain string "Max steps reached" a problem?
+        options:
+          - "It is too long"
+          - "A caller that just prints the return value cannot tell it from a real answer"
+          - "Strings cannot be returned from an agent loop"
+          - "It reveals the step budget to the user"
+        correct: 1
+        explanation: >-
+          Return the outcome as data — success, or which budget was exhausted — so
+          the caller can retry, escalate, or report the failure honestly.
+        difficulty: core
+
+      - key: stop-result-subtype
+        prompt: >-
+          In ICDEV's agent_loop, what does a result_subtype of error_max_turns tell
+          the caller?
+        options:
+          - "The model ended the turn successfully"
+          - "The cost budget was exceeded"
+          - "The loop hit its iteration limit without the model ending the turn"
+          - "A single tool call timed out"
+        correct: 2
+        explanation: >-
+          success means the model ended the turn; error_max_turns,
+          error_max_budget_tokens, error_max_budget_cost and error_max_wall_clock
+          each name the budget that stopped it.
+        difficulty: stretch
