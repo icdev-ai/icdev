@@ -229,10 +229,10 @@
            next confused learner with nothing. #}
         <div role="status" class="fa-xp-bar-label" style="margin-top:.45rem;display:block;
                     font-size:.7rem;color:var(--text-secondary);line-height:1.45;">
-          Total <strong>{{ level_ctx.total_xp|default(0) }} XP</strong>, of which
-          <strong>{{ level_ctx.attendance_xp }}</strong> is daily-login attendance.
-          Attendance still counts toward your total &mdash; rank is earned from
-          graded work only, so showing up does not buy a promotion.
+          Rank is computed from <strong>{{ level_ctx.earned_xp|default(0) }} XP</strong>
+          earned from graded work. Separately, <strong>{{ level_ctx.attendance_xp }} XP</strong>
+          of daily-login attendance is recorded but not ranked
+          ({{ level_ctx.total_xp|default(0) }} XP combined) &mdash; showing up does not buy a promotion.
         </div>
         {% endif %}
       </div>
@@ -263,9 +263,16 @@
     {% if fa_user %}
     <!-- Stats Row -->
     <div class="fa-stats-row">
+      {# aca-numbers-demo: the headline chip was fa_users.xp — 7635 live, 7385 of it
+         daily logins — beside a "Recruit" badge. The headline is now the figure the
+         rank is computed from; attendance gets its own, labelled chip. #}
       <div class="fa-stat-chip">
-        <div class="val">{{ stats.user.xp|default(0) }}</div>
-        <div class="lbl">Total XP</div>
+        <div class="val">{{ level_ctx.earned_xp|default(0) }}</div>
+        <div class="lbl">Earned XP (rank)</div>
+      </div>
+      <div class="fa-stat-chip">
+        <div class="val">{{ level_ctx.attendance_xp|default(0) }}</div>
+        <div class="lbl">Attendance XP (not ranked)</div>
       </div>
       <div class="fa-stat-chip">
         <div class="val">{{ stats.achievement_count|default(0) }}</div>

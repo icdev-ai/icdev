@@ -114,7 +114,7 @@
         <label for="ic-learner">Learner</label>
         <select id="ic-learner">
           {% for l in learners %}
-          <option value="{{ l.id }}">{{ l.display_name }} ({{ l.role }})</option>
+          <option value="{{ l.id }}">{{ l.display_name }} ({{ roles.get(l.role, {}).get('label', l.role) }})</option>
           {% endfor %}
         </select>
       </div>

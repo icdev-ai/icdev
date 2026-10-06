@@ -28,7 +28,11 @@
 <div>
   <div class="fa-lb-header">
     <h1>⚡ Leaderboard</h1>
-    <p style="color:var(--text-secondary);margin:.3rem 0 0;font-size:.82rem;">Top operatives by XP earned</p>
+    <p style="color:var(--text-secondary);margin:.3rem 0 0;font-size:.82rem;">Top operatives by XP earned &mdash; {{ 'last 7 days' if period == 'weekly' else 'all time' }}</p>
+    {# aca-numbers-demo: the weekly tab used to rank by the all-time running total,
+       attendance included. The score is now the XP that drives rank, for the
+       period named above; say so beside the table. #}
+    <p style="color:var(--text-secondary);margin:.2rem 0 0;font-size:.72rem;">Score: {{ score_basis|default('') }}.</p>
     <a href="/academy" class="btn" style="font-size:.75rem;margin-top:.6rem;">← Hub</a>
   </div>
 
@@ -52,7 +56,7 @@
           <th>Operative</th>
           <th>Rank</th>
           <th>Role</th>
-          <th>XP</th>
+          <th>{{ 'XP (7 days)' if period == 'weekly' else 'XP earned' }}</th>
         </tr>
       </thead>
       <tbody>
@@ -65,7 +69,7 @@
           <td class="fa-level-cell" style="color:{{ row.level_color | default('#6c6c80') }}">
             {{ row.level_label | default('Recruit') }}
           </td>
-          <td style="font-size:.75rem;color:var(--text-secondary);">{{ row.role | default('') | title }}</td>
+          <td style="font-size:.75rem;color:var(--text-secondary);">{{ row.role_label | default(roles.get(row.role, {}).get('label', row.role)) }}</td>
           <td class="fa-xp-cell">{{ row.score | default(0) | int }}</td>
         </tr>
         {% endfor %}
