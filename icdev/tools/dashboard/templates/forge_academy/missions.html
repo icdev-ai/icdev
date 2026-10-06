@@ -106,6 +106,7 @@
       <h1>Mission Browser</h1>
       <p style="margin:.3rem 0 0;color:var(--text-secondary);font-size:.82rem;">
         {{ missions|length }} missions available
+        {% if unauthored_count|default(0) %} · {{ unauthored_count }} catalogued mission{{ 's' if unauthored_count != 1 }} not yet authored (hidden){% endif %}
         {% if fa_user %} · {{ fa_user.role|upper|default('') }} track{% endif %}
       </p>
     </div>

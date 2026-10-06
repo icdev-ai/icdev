@@ -546,6 +546,53 @@ SKILL_NODES = [
     {"slug": "gov-intake",        "title": "Governance Intake",  "tier": 2, "role_filter": "ciso,issm,leadership,pm", "prereqs": ["ai-accountability"],"pos": (11, 5)},
 ]
 
+# Skill node -> the missions that teach it (aca-empty-demo).
+#
+# skill_tree.html links every node to /academy/missions?topic=<node slug>, and the
+# browser filtered on fa_missions.topic — a DIFFERENT vocabulary ('llm', 'compliance',
+# 'ace', ...). Only six node slugs happened to equal a topic, so 27 of 33 nodes,
+# including the very first (llm-basics), opened "0 missions available". Mapping by
+# mission SLUG is exact and survives a topic rename. Every slug listed here must be
+# a catalogued mission WITH authored steps — tests/test_aca_skill_tree_links.py
+# asserts every node resolves to at least one.
+SKILL_NODE_MISSIONS: dict[str, list[str]] = {
+    "llm-basics":        ["m01-llm-fundamentals", "m-t1-11-multimodal"],
+    "prompting":         ["m02-prompt-engineering"],
+    "rag":               ["m03-rag-basics"],
+    "agents":            ["m04-first-agent"],
+    "mcp":               ["m05-mcp-protocol"],
+    "fastmcp":           ["m06-fastmcp"],
+    "multi-agent":       ["m07-multi-agent"],
+    "strands":           ["m08-strands-agents"],
+    "langchain":         ["m09-langchain", "m10-tier1-capstone"],
+    "pipeline-agent":    ["m-devops-01-pipeline-agent", "m-devops-02-iac-generation"],
+    "stig-agent":        ["m-isso-01-stig-triage"],
+    "advanced-rag":      ["m-dataops-01-advanced-rag", "m-dataops-02-chromadb-rag"],
+    "mcp-server":        ["m-swe-02-mcp-server"],
+    "ato-ai":            ["m-issm-01-ato-acceleration", "m-issm-02-aadc-ato-design"],
+    "workflow-build":    ["m-swe-01-multi-agent-dag", "m-kanban-01-governed-pipeline"],
+    "agentic-safety":    ["m-swe-aadc-06-fundamentals", "m-swe-aadc-07-autonomy",
+                          "m-swe-aadc-08-safety-redundancy"],
+    "ai-threat-model":   ["m-secops-05-aadc-threat-model"],
+    "compliance-design": ["m-ciso-02-aadc-governance"],
+    "forge-deep":        ["m-t3-01-forge-deep-dive"],
+    "tool-author":       ["m-t3-02-write-your-first-tool"],
+    "goal-author":       ["m-t3-03-write-a-goal-workflow"],
+    "blueprint":         ["m-t3-04-build-a-blueprint"],
+    "child-app":         ["m-t3-05-canvas-selection", "m-t3-06-child-app-creation",
+                          "m-t3-07-tier3-capstone"],
+    "ace-roles":         ["m-ace-01-roles-delegation"],
+    "ace-patterns":      ["m-ace-02-creator-verifier"],
+    "ace-pipelines":     ["m-ace-03-multi-role-pipeline", "m-ace-capstone"],
+    "docgen-sessions":   ["m-docgen-01-session-lifecycle"],
+    "docgen-portfolio":  ["m-docgen-02-portfolio-artifact"],
+    "readiness-check":   ["m-readiness-01-eleven-pillars", "m-readiness-02-remediation"],
+    "readiness-ci":      ["m-readiness-03-continuous"],
+    "ai-transparency":   ["m-gov-01-transparency"],
+    "ai-accountability": ["m-gov-02-accountability"],
+    "gov-intake":        ["m-gov-03-intake", "m-gov-capstone"],
+}
+
 # ---------------------------------------------------------------------------
 # AI Competency Framework (L1–L5, cross-walked to DoD AI Workforce Framework)
 # ---------------------------------------------------------------------------

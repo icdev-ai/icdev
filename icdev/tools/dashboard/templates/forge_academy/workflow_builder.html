@@ -81,7 +81,7 @@
       <div class="fa-palette-title">Node Types</div>
       <div id="node-palette"></div>
       <div style="margin-top:1.2rem;">
-        <div class="fa-palette-title">AISG Patterns</div>
+        <div class="fa-palette-title">Patterns</div>
         {% for p in patterns %}
         <div class="fa-node-chip" onclick="addPatternNode('{{ p.id }}','{{ p.name | default(p.id) }}')">
           🔷 {{ (p.name | default(p.id))[:22] }}

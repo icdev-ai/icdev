@@ -1043,8 +1043,14 @@
         🧠 <span>Review</span>
       </button>
     </div>
-    <div class="modal fade" id="sbReviewModal" tabindex="-1" aria-hidden="true">
-      <div class="modal-dialog modal-lg">
+    {# aca-empty-demo: no Bootstrap STYLESHEET is loaded (only the JS bundle), so the
+       `.modal { display:none }` rule this markup relied on never existed and the modal
+       rendered on every page as a bottom strip reading "Analysing…" that nothing ever
+       resolved — no request had been made. Hidden and positioned inline; Bootstrap's
+       Modal.show() sets display:block and hide() restores display:none. #}
+    <div class="modal fade" id="sbReviewModal" tabindex="-1" aria-hidden="true"
+         style="display:none;position:fixed;inset:0;z-index:1055;overflow-y:auto;background:rgba(0,0,0,.55)">
+      <div class="modal-dialog modal-lg" style="max-width:800px;margin:4rem auto">
         <div class="modal-content" style="background:#0f172a;border:1px solid rgba(255,255,255,.1)">
           <div class="modal-header" style="border-bottom:1px solid rgba(255,255,255,.07)">
             <h6 class="modal-title fw-semibold mb-0">🧠 Customer &amp; Role Review</h6>

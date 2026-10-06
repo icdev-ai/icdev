@@ -652,8 +652,10 @@ def active_challenge_count() -> int:
     Returns 0 on any error: a nav link is not worth an exception.
     """
     try:
+        # datetime('now') is SQLite-only and raised on PostgreSQL (aca-empty-demo).
         row = get_connection().execute(
-            "SELECT COUNT(*) FROM fa_challenges WHERE ends_at > datetime('now')"
+            "SELECT COUNT(*) FROM fa_challenges WHERE ends_at > %s",
+            (datetime.now(timezone.utc).isoformat(),),
         ).fetchone()
         return int(row[0]) if row else 0
     except Exception as exc:  # noqa: BLE001

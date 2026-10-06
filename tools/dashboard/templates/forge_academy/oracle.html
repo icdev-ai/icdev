@@ -9,7 +9,7 @@
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
   <div>
     <h2 style="margin:0;color:#eaeaea;">🔮 Academy Oracle</h2>
-    <p style="color:#7a8cb0;font-size:13px;margin:4px 0 0;">5-lens AI prediction engine — learner risk · content quality · skill gap · AADC readiness · staleness</p>
+    <p style="color:#7a8cb0;font-size:13px;margin:4px 0 0;">7-lens AI prediction engine — learner risk · content quality · skill gap · AADC readiness · staleness · ACE skill gap · agent readiness</p>
   </div>
   <div style="display:flex;gap:8px;">
     <a href="/academy" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">← Academy</a>
@@ -81,7 +81,18 @@
 </div>
 {% else %}
 <div style="text-align:center;padding:40px;background:#16213e;border:1px solid #1e3a6e;border-radius:8px;color:#7a8cb0;margin-bottom:28px;">
-  No predictions yet — click <strong>Run Oracle</strong> to generate the first batch.
+  {# aca-empty-demo: "click Run Oracle to generate the first batch" promised output
+     the Oracle cannot produce. The seven lenses already run every 6 hours
+     (academy_oracle_reflex) and only predict from learner activity: inactive
+     learners with open missions, repeated failures on a step, steps or missions
+     with at least 5 attempts/starters, missions 180+ days old. With no such
+     activity, an empty list is the correct answer, not a missing run. #}
+  <div style="color:#eaeaea;font-weight:600;margin-bottom:6px;">No risks predicted</div>
+  The Oracle's seven lenses run automatically every 6 hours and read learner activity &mdash;
+  inactivity on open missions, repeated failed attempts, hint overuse, low completion and
+  ageing content. Predictions appear here once learners have generated enough of that
+  activity to read. <strong>Run Oracle</strong> re-checks now.
+  <div style="margin-top:12px;"><a href="/academy/missions" style="color:#00d4ff;">Browse missions &rarr;</a></div>
 </div>
 {% endif %}
 
