@@ -7,19 +7,22 @@ step_class: icdev:Lesson
 
 # Design Your Training Dataset
 
-The dataset is the training run. A poor dataset produces a poor model regardless of how much compute you throw at it. This step covers how `pair_generator.py` works, how to size your dataset correctly, the split strategy, and the JSONL format the pipeline expects.
+The dataset is the training run. A poor dataset produces a poor model regardless of how much compute you throw at it. This step covers how ICDEV builds a dataset, how to size it, the split strategy, and the JSONL format the pipeline expects.
 
-## How pair_generator.py works
+## How ICDEV builds a dataset
 
-`pair_generator.py` operates in three modes, which can be combined:
+There are three ways in, and they can be combined in one dataset:
 
-**Template variation** — You define an input template with `{{slots}}` and a corresponding ideal output template. The generator fills the slots from a seed vocabulary (lists of entities, values, intents). This is the fastest way to generate volume for well-structured tasks.
+**Hand-authored examples.** You add `(user_input, expected_output)` pairs directly:
+`python tools/finetune/dataset_manager.py --add-example --dataset-id ds-xxx --user-input "..." --expected-output "..."`. This is the slowest route, but it gives the highest-quality seed set.
 
-**Templated variation with paraphrase** — Same as above, but an LLM (Ollama locally, or a cloud provider) generates 3–5 surface-form variations of each input. This prevents the model from memorising phrasing instead of learning the underlying task.
+**Generated from documents.** `pair_generator.py --generate --dataset-id ds-xxx --document-id ftdoc-xxx` chunks an ingested document. It asks the local `qwen3` model for `questions_per_chunk` (default 3) Q&A pairs per chunk.
 
-**LLM-assisted augmentation** — For tasks where you have a small set of hand-labelled seed pairs (50–100), the generator prompts an LLM to produce novel inputs that are semantically diverse from the seeds, then generates predicted outputs for human review. This is slower but produces the most realistic distribution coverage.
+**Generated from RAG content.** `pair_generator.py --generate-from-rag --dataset-id ds-xxx --source-table research_signals` does the same over content already in the RAG store.
 
-All three modes output JSONL. The generator strips PII and CUI-sensitive values before writing if `--redact-cui` is passed.
+Generated pairs are stored **unapproved**. Before anything is exported for training, a person reviews them with `labeler.py` (`--unlabeled` to list them, `--label` to score one, or `--batch-approve --min-quality 3`). `dataset_manager.py` rejects exact duplicates (a SHA-256 content hash per example) and tags each example with a `--classification` marking (default `CUI`).
+
+The idea behind template-and-paraphrase generation still applies when you write your own seeds: vary the surface form of the inputs, so the model learns the task rather than memorizing phrasing.
 
 ## Dataset size guidelines
 
@@ -35,7 +38,7 @@ More is better until you hit diminishing returns at roughly the 10 000–20 000 
 
 ## Train/val/test split
 
-Always split **before** any augmentation to prevent data leakage:
+Always split **before** any augmentation, to prevent data leakage. (ICDEV's own `evaluation.test_set_split` defaults to 0.15; the 80/10/10 below is a common hand-built alternative.)
 
 | Split | Ratio | Purpose |
 |---|---|---|
@@ -50,13 +53,16 @@ The test set is the single source of truth for promotion decisions. Reusing test
 | Signal | Cost | Reliability |
 |---|---|---|
 | Human labels | High | Highest |
-| LLM judge (Prometheus-2 or `llm_judge.py`) | Medium | High for relative comparison |
+| LLM judge (`evaluator.py` with `llm_judge_enabled: true`) | Medium | High for relative comparison |
 | Programmatic accuracy | Low | High for constrained outputs (exact match, schema validation) |
 | ROUGE-L | Very low | Moderate — misses semantic equivalence |
 
 For government AI applications, maintain a human-labelled gold set (minimum 200 pairs) that remains fixed across training runs. LLM judge metrics are acceptable for development iterations; the gold set drives production gates.
 
 ## JSONL format
+
+`dataset_manager.py --export` writes this chat format: one object per line, with an optional `system` message first.
+
 
 ```jsonl
 {"messages": [{"role": "user", "content": "Classify the severity of this STIG finding: CAT II finding V-230234 — SSH is enabled on a non-management interface."}, {"role": "assistant", "content": "{\"severity\": \"medium\", \"cat\": \"CAT II\", \"remediation\": \"Disable SSH on non-management interfaces or restrict access via host-based firewall.\"}"}]}
@@ -73,7 +79,7 @@ Key rules:
 
 1. Why is the test set split performed before augmentation, not after?
 2. Your dataset has 2 000 pairs but 1 800 come from a single template. What problem does this create?
-3. You have 50 hand-labelled seed pairs. Which `pair_generator.py` mode produces the most realistic distribution coverage, and why?
+3. You have 50 hand-labelled seed pairs and a 300-page policy manual. How would you combine hand-authored examples with `pair_generator.py --generate`, and what must happen in `labeler.py` before training?
 4. A colleague suggests using ROUGE-L as the sole promotion gate metric. What task type would make this inadequate, and what alternative would you add?
 
 ---

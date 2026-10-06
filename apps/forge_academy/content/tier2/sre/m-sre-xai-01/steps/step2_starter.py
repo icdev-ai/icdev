@@ -5,7 +5,7 @@ starter ships a canned set of recent traces and a stub `explain()` that returns 
 same shape as the platform's AgentSHAP attribution. Use them as-is.
 """
 
-# ── Provided: simulated otel_traces rows (newest last) ────────────────────────
+# ── Provided: simulated traces (summarised from otel_spans; newest last) ──────
 
 SAMPLE_TRACES = [
     {"trace_id": "trace-000", "operation": "agent.loop", "started_at": "2026-10-05T00:00:00Z", "duration_ms": 1200},

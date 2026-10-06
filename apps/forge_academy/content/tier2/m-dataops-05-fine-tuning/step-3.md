@@ -7,96 +7,91 @@ step_class: icdev:Lesson
 
 # Evaluate and Promote
 
-Training a checkpoint is not the same as deploying a model. Promotion is gated — a model must pass a set of quantitative and regression-based checks before it can replace the production version. This step covers `evaluator.py`, `promotion_manager.py`, `model_registry.py`, canary deployment, and drift-based retraining.
+Training a checkpoint is not the same as deploying a model. Promotion is gated — a model must pass quantitative thresholds before it can replace the active version. This step covers `evaluator.py`, `promotion_manager.py`, `model_registry.py`, staged rollout, and automatic retraining.
 
 ## evaluator.py metrics
 
-The evaluator runs three classes of metrics on the held-out test set:
+`tools/finetune/evaluator.py` runs on the held-out test set. All metrics are implemented in pure Python, so they are safe to run air-gapped.
 
-**ROUGE-L (Longest Common Subsequence recall)** — A token-level overlap measure. Fast to compute. Useful for generation tasks where the ideal output has a canonical surface form. Blind to semantic equivalence — two correct but differently-worded summaries score poorly against each other.
+**BLEU**: n-gram precision against the reference output. It is cheap and works well for outputs with a canonical wording.
 
-**Win-rate via LLM judge** — The evaluator submits each (input, candidate output, reference output) triple to `llm_judge.py` and asks which response is better. Aggregated win-rate over the test set is a more reliable quality signal than ROUGE-L for open-ended tasks. Requires an LLM call per test pair — budget accordingly.
+**ROUGE-L (Longest Common Subsequence)**: an overlap measure that is more tolerant of reordering than BLEU. It is still blind to semantic equivalence: two correct but differently worded summaries score poorly against each other.
 
-**Task-specific accuracy** — For constrained output tasks (classification, schema-conformant JSON, exact extraction), programmatic matching provides the cleanest signal. `evaluator.py` supports custom accuracy functions via a `--accuracy-fn` plugin path.
+**Perplexity estimate**: how "surprised" the model is by the reference outputs. Promotion looks for an *improvement* over the base model.
+
+**LLM-as-judge (optional)**: set `evaluation.llm_judge_enabled: true` in `args/finetune_config.yaml` to have `qwen3-local` judge outputs. It costs an LLM call per test pair, but suits open-ended tasks.
+
+To compare two versions head to head, `tools/finetune/ab_evaluator.py --compare --model-a mv-xxx --model-b mv-yyy --test-set test.jsonl` runs both on the same set and reports a paired t-test.
 
 ```bash
-python tools/finetune/evaluator.py \
-    --model-id fine-tune-v1-2-0 \
+python tools/finetune/evaluator.py --evaluate \
+    --model-version-id mv-xxx \
     --test-set data/finetune/test.jsonl \
-    --metrics rouge,winrate,accuracy \
-    --output reports/eval_v1_2_0.json
+    --json
 ```
 
 ## promotion_manager.py gates
 
-Promotion requires:
+The thresholds live under `promotion:` in `args/finetune_config.yaml`, and `require_all_thresholds: true` means every one must pass:
 
-| Gate | Default threshold | Notes |
-|---|---|---|
-| ROUGE-L recall | ≥ 0.72 | Override via `--min-rouge` |
-| Win-rate vs baseline | ≥ 0.55 | Must beat production model, not just tied |
-| Task accuracy | ≥ 0.90 | Task-specific; set in `args/finetune_config.yaml` |
-| Regression guard | ≤ -0.02 delta | Fails if any metric drops >2% vs current prod |
-
-If any gate fails, promotion is blocked and the failure is written to `model_registry.py` with `status = "rejected"`.
+| Gate | Default threshold |
+|---|---|
+| BLEU | ≥ 0.30 (`min_bleu`) |
+| ROUGE-L | ≥ 0.40 (`min_rouge_l`) |
+| Perplexity improvement vs base | ≥ 10% (`min_perplexity_improvement_pct`) |
 
 ```bash
-python tools/finetune/promotion_manager.py \
-    --candidate fine-tune-v1-2-0 \
-    --baseline prod \
-    --eval-report reports/eval_v1_2_0.json \
-    --promote-if-pass
+# Is this version eligible?
+python tools/finetune/promotion_manager.py --check --model-version-id mv-xxx --function code_generation --json
+# Promote it if every threshold passes
+python tools/finetune/promotion_manager.py --auto-promote --model-version-id mv-xxx --function code_generation --json
+# Human override (manual_override_allowed: true); always give a reason
+python tools/finetune/promotion_manager.py --force-promote --model-version-id mv-xxx --function code_generation --reason "..." --json
 ```
+
+Every transition is written to the append-only `ft_promotion_log`. The built-in gate has no "must beat the current production model" rule. If you want one, run `ab_evaluator.py` against the active version first; that is a policy you add.
 
 ## model_registry.py versioning
 
-Model versions follow `major.minor.patch` semver semantics applied to model weights:
-
-| Increment | Meaning |
-|---|---|
-| `patch` | Retrain on the same dataset (hyperparameter tweak, deduplication fix) |
-| `minor` | Dataset update — new pairs added, same task definition |
-| `major` | Task redefinition, base model change, or catastrophic forgetting recovery |
+Each trained model is a **model version** with an `mv-...` id and its eval scores. Promotion is **per function**, and only one version is active per `(function_name, tenant_id, project_id)`:
 
 ```python
-from tools.finetune.model_registry import ModelRegistry
-registry = ModelRegistry()
-registry.register(
-    model_id="fine-tune-v1.2.0",
-    base_model="claude-haiku-4-5",
-    checkpoint_path="data/checkpoints/v1_2_0.bin",
-    metrics=eval_report,
-    status="candidate",
-)
+from tools.finetune.model_registry import get_active_model, promote_model, demote_model
+
+promote_model(model_version_id="mv-xxx", function_name="stig_triage",
+              activated_by="ml-lead", activation_reason="BLEU 0.41 / ROUGE-L 0.52")
+get_active_model("stig_triage")       # {"success": True, "active_model": {...}}
+demote_model("stig_triage", reason="regression in prod")   # back to default routing
 ```
 
-## Canary deployment pattern
+## Staged rollout (canary) pattern
 
-Never flip the full traffic share to a new fine-tuned model immediately. Route 5% of production traffic to the candidate:
+Never switch all traffic to a new fine-tuned model at once. ICDEV has no percentage traffic splitter for fine-tuned models. It does have **scoped promotion**: `promote_model(..., tenant_id=..., project_id=...)` activates a version for one tenant or project only, so you can canary on a single project first:
 
 ```
-10% traffic → fine-tune v1.2.0 (canary)
-90% traffic → fine-tune v1.1.0 (stable)
+project "pilot"   → fine-tune mv-new (canary)
+everyone else     → current active version / default routing
 ```
 
-Monitor error rate, latency percentiles, and user feedback scores for 24–48 hours. Promote to 100% only if canary metrics stay within acceptable bounds. The routing weight is stored in `args/finetune_config.yaml` and read by the LLM router at request time.
+Monitor error rate, latency percentiles and user feedback for 24-48 hours. Widen the promotion only if the canary stays within bounds; otherwise `demote_model()` the canary scope.
 
-## retrain_trigger.py for drift-based retraining
+## retrain_trigger.py: automatic retraining
 
-Production drift (gradual change in the input distribution) degrades model accuracy over time without any code change. `retrain_trigger.py` monitors:
+`tools/finetune/retrain_trigger.py` watches each dataset for new approved examples. When a dataset gains at least `retrain.new_example_threshold` (default 50) new examples since its last training job, and the `cooldown_hours` (default 24) have passed, it queues a new training job. At most `max_concurrent_jobs` (2) run at once. It runs as a heartbeat check or on demand:
 
-- Output length drift — median response length shifts by >15% over a rolling 7-day window
-- Refusal rate increase — model declines to answer more than a configurable baseline
-- Accuracy drop on a continuously-scored canary prompt set
+```bash
+python tools/finetune/retrain_trigger.py --check --json
+python tools/finetune/retrain_trigger.py --trigger --dataset-id ds-xxx --json
+```
 
-When any threshold is crossed, `retrain_trigger.py` creates a Kanban task `status = 'scheduled'` to kick off the pipeline with the latest production data appended to the training set.
+Quality-based triggers live elsewhere. `tools/finetune/quality_monitor.py` watches RAG evaluation metrics (NDCG, MRR, faithfulness) and can generate targeted pairs and trigger retraining. `tools/llm/model_monitor.py` detects production quality, latency and token drift (Mission SRE-AI-02).
 
 ## Configuration questions
 
-1. Win-rate is measured against the current production model, not a static reference. Why does this matter across multiple retraining cycles?
-2. The regression guard blocks if any metric drops >2% vs production. A new fine-tune improves task accuracy by 8% but drops ROUGE-L by 3%. What happens at the gate?
-3. You start canary at 5% traffic. After 12 hours, error rate is identical to stable but P99 latency is 40% higher. Do you promote? What do you investigate?
-4. `retrain_trigger.py` fires a retraining job. The new model is trained on old training data + new production logs. What data hygiene step must happen before adding production logs to the training set?
+1. Suppose you add your own gate: an `ab_evaluator.py` comparison against the **currently active** version, not a static reference. Why does that matter across several retraining cycles?
+2. A new fine-tune scores BLEU 0.34, ROUGE-L 0.38, and improves perplexity by 15%. What does `--auto-promote` do, and when (if ever) is `--force-promote` justified?
+3. You canary the new version on one pilot project. After 12 hours its error rate matches the current model, but P99 latency is 40% higher. Do you widen the promotion? What do you investigate?
+4. `retrain_trigger.py` queues a job because 50 new examples were approved. Some of them came from production logs. What data hygiene step must happen before production logs become training examples?
 
 ---
 

@@ -7,13 +7,13 @@ step_class: icdev:Lesson
 
 # Configure Drift Thresholds with model_monitor.py
 
-Now that you understand the four drift types, this step covers the full `model_monitor.py` API, how to set and retrieve baselines, how to interpret `detect_drift()` output, and how to configure thresholds in `args/llm_config.yaml`.
+Now that you understand the drift types, this step walks the `model_monitor.py` API: recording scores, reading the baseline, interpreting `detect_drift()` output, and choosing your own thresholds.
 
 ## Core API Reference
 
 ### `record_quality_score()`
 
-Called after every LLM response to feed the drift detection pipeline:
+Call it after every LLM response to feed the drift pipeline:
 
 ```python
 from tools.llm.model_monitor import record_quality_score
@@ -21,122 +21,97 @@ from tools.llm.model_monitor import record_quality_score
 record_quality_score(
     model_id="qwen3-local",          # model identifier
     function_name="code_generation", # logical function name
-    score=0.81,                      # 0.0–1.0 quality score from your evaluator
-    response_time_ms=1430.0,         # end-to-end latency
+    score=0.81,                      # 0.0-1.0 quality score from your evaluator
+    response_time_ms=1430,           # end-to-end latency
     token_count=487,                 # output token count
+    method="automated",              # automated | human | judge
 )
 ```
 
-This writes a row to `model_quality_scores`. The table is append-only.
+This writes a row to `model_quality_scores`. Note that this table is **not** append-only: `reset_baseline()` deletes old rows from it, as covered in Step 3.
 
 ### `get_baseline()`
 
-Retrieves the stored performance baseline for a model/function pair:
+Returns the baseline statistics for a model/function pair. The baseline is the first `baseline_days` (default 30) of recorded data:
 
 ```python
 from tools.llm.model_monitor import get_baseline
 
 baseline = get_baseline(model_id="qwen3-local", function_name="code_generation")
-# Returns:
 # {
+#   "status": "ok",
 #   "model_id": "qwen3-local",
 #   "function_name": "code_generation",
-#   "baseline_quality": 0.84,
-#   "baseline_latency_p99_ms": 2100.0,
-#   "baseline_token_count_avg": 412.0,
-#   "baseline_success_rate": 0.997,
-#   "established_at": "2026-04-01T00:00:00Z",
-#   "sample_count": 1200
+#   "sample_count": 1200,
+#   "baseline_cutoff": "2026-05-01T...",
+#   "quality":    {"mean": 0.84, "stdev": 0.05, "p50": 0.85, ...},
+#   "latency_ms": {"mean": 1310.0, "p95": 1980.0, "p99": 2100.0},
+#   "tokens":     {"mean": 412.0, "stdev": 61.0}
 # }
 ```
 
 ### `detect_drift()`
 
-Runs drift detection and returns the full assessment:
-
 ```python
 from tools.llm.model_monitor import detect_drift
 
-result = detect_drift(
-    model_id="qwen3-local",
-    function_name="code_generation",
-)
-# Returns dict: drift_detected, drift_type, baseline_value,
-# current_value, deviation_pct, severity, action_taken, event_id
+events = detect_drift(model_id="qwen3-local", function_name="code_generation",
+                      window_days=7, baseline_days=30)
+# list of drift-event dicts (empty list = no drift)
 ```
 
 ### `trigger_retrain()`
-
-Called automatically for `critical` drift events, or manually:
 
 ```python
 from tools.llm.model_monitor import trigger_retrain
 
 trigger_retrain(
     model_id="qwen3-local",
-    reason="quality_degradation: 31.2% deviation over 24h",
+    function_name="code_generation",
+    reason="quality_degradation: 31.2% below baseline over 7 days",
 )
-# Writes a retraining request to model_retrain_queue
-# For Ollama local models: triggers fine-tune job if configured
+# Records a critical model_drift_events row with action_taken='retrain_triggered'.
+# The fine-tuning pipeline itself is tools/finetune/ (see Mission DataOps-05).
 ```
 
 ### `get_drift_history()`
 
-Retrieve recent drift events for a model:
-
 ```python
 from tools.llm.model_monitor import get_drift_history
 
-history = get_drift_history(model_id="qwen3-local", hours=24)
-# Returns list of drift event dicts, ordered by detected_at DESC
+history = get_drift_history(limit=50, model_id="qwen3-local")
+# newest first, ordered by created_at DESC
 ```
 
 ## CLI Usage
 
 ```bash
-# Check drift status for a specific model/function pair
-python tools/llm/model_monitor.py --model qwen3-local --function summarize --check
+# Drift check for one model/function pair
+python tools/llm/model_monitor.py --detect-drift --model qwen3-local --function summarize --window-days 7 --json
 
-# View drift history (last 48 hours)
-python tools/llm/model_monitor.py --model qwen3-local --history --hours 48
+# Baseline statistics
+python tools/llm/model_monitor.py --baseline --model qwen3-local --function summarize --json
 
-# Manually establish a new baseline (use with caution — see Step 3)
-python tools/llm/model_monitor.py --model qwen3-local --function summarize --set-baseline
+# Recent drift events
+python tools/llm/model_monitor.py --drift-history --model qwen3-local --limit 20 --json
+
+# CI/heartbeat gate: exit 1 if a critical drift event was recorded in the last 24h
+python tools/llm/model_monitor.py --gate
 ```
 
-## Configuring Thresholds in `args/llm_config.yaml`
+## Where the thresholds live
 
-```yaml
-drift_detection:
-  enabled: true
-  window_hours: 24
-  thresholds:
-    info:
-      deviation_pct: 5.0
-    warning:
-      deviation_pct: 15.0
-    critical:
-      deviation_pct: 30.0
-  per_function_overrides:
-    # Tighter threshold for revenue-critical functions
-    payment_extraction:
-      warning_pct: 8.0
-      critical_pct: 15.0
-    # Looser threshold for exploratory functions
-    brainstorm:
-      warning_pct: 25.0
-      critical_pct: 50.0
-```
+Today the thresholds are constants in `detect_drift()`. There is no YAML block for them, so changing them is a code change that goes through review:
 
-## Drift Type → Threshold → Action Reference
+| Drift type | Warning | Critical | Suggested follow-up |
+|---|---|---|---|
+| `quality_degradation` | > 10% mean drop | > 25% mean drop | `trigger_retrain()` or roll back the prompt/model |
+| `latency_increase` | > 25% P95 rise | > 50% P95 rise | Check token inflation, then the provider |
+| `token_inflation` | > 20% mean rise | > 40% mean rise | Audit prompt templates and history handling |
+| `availability_drop` | not computed by `detect_drift()` | — | Track through error-rate SLOs |
 
-| Drift Type | Info Threshold | Warning Threshold | Critical Threshold | Critical Action |
-|---|---|---|---|---|
-| `quality_degradation` | 5% score drop | 15% score drop | 30% score drop | `retrain_triggered` |
-| `latency_increase` | 5% P99 rise | 15% P99 rise | 30% P99 rise | `alert` |
-| `token_inflation` | 5% token avg rise | 15% token avg rise | 30% token avg rise | `alert` |
-| `availability_drop` | 1% success rate drop | 3% drop | 5% drop | `model_swapped` |
+Every finding must also be statistically significant (p < 0.05), so a handful of bad responses will not page anyone.
 
-Availability thresholds are intentionally tighter than quality thresholds — a 5% availability drop can block hundreds of users while a 5% quality drop may be imperceptible.
+In the form, record the thresholds **you** would want for your own model and function. If they differ from the defaults, say why: a revenue-critical extraction function deserves tighter limits than a brainstorming helper.
 
 **Your task:** Answer the configuration questions.

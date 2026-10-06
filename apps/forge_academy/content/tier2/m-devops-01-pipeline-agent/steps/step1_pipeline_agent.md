@@ -30,14 +30,16 @@ PipelineAgent.run(event) → full remediation report
 
 ## The agent's decision logic
 
+The starter's `FAILURE_PATTERNS` list holds the exact regexes. They are checked in order, and the first match wins.
+
 | Log pattern | Category | Fix |
 |-------------|----------|-----|
 | `ImportError`, `ModuleNotFoundError` | `missing_dependency` | `pip install <package>` |
 | `Permission denied`, `EACCES` | `permission_error` | `chmod` or service account fix |
 | `Connection refused`, `timeout` | `network_error` | Check service health, retry |
 | `No such file`, `FileNotFoundError` | `missing_file` | Check path, artifact retention |
-| `Exit code 1` (test failure) | `test_failure` | Run failing tests locally |
-| `Out of memory`, `OOM` | `resource_error` | Increase runner memory |
+| `FAILED`, `AssertionError` (test failure) | `test_failure` | Run failing tests locally |
+| `Out of memory`, `OOM`, `MemoryError`, `Killed` | `resource_error` | Increase runner memory |
 
 ## Success criteria
 
