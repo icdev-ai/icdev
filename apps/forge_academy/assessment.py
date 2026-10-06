@@ -567,13 +567,17 @@ def _close_attempt(attempt_id: int, *, answers: dict, score_pct, passed, reason=
 # Grading an attempt
 # ---------------------------------------------------------------------------
 
-def grade_attempt(user_id: int, step_id: int, answers: dict) -> dict:
+def grade_attempt(user_id: int, step_id: int, answers: dict, *, close: bool = True) -> dict:
     """Score the learner's open attempt. ``answers`` maps item_key -> DISPLAYED index.
 
     The displayed index is mapped back through the recorded permutation before it is
     compared with anything. This is the load-bearing line of the whole model: the
     client's indices are meaningless without ``served_json``, so the option order in
     the DOM tells an attacker nothing.
+
+    ``close=False`` scores the open attempt WITHOUT closing it: the presenter
+    preview (aca-presenter-preview) shows a real verdict while recording nothing,
+    so it must not spend an attempt either.
     """
     step = _load_step(step_id)
     if step is None:
@@ -634,7 +638,8 @@ def grade_attempt(user_id: int, step_id: int, answers: dict) -> dict:
     threshold = pass_threshold_for(step)
     passed = score_pct >= threshold
 
-    _close_attempt(attempt["id"], answers=answers, score_pct=score_pct, passed=passed)
+    if close:
+        _close_attempt(attempt["id"], answers=answers, score_pct=score_pct, passed=passed)
     state = attempt_state(user_id, step_id)
     return {
         "ok": True,

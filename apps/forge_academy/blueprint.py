@@ -7,7 +7,7 @@ import secrets
 
 from flask import Blueprint, g, jsonify, redirect, render_template, request, url_for
 
-from .auth import require_org_intel
+from .auth import is_org_intel_user, require_org_intel
 from .constants import ROLES, TECHNICAL_ROLES, LEVELS, xp_to_next_level
 from .db import (
     migrate, get_or_create_user, get_user, update_user_role, update_user_display_name, list_missions, get_mission_by_id, get_mission_progress, record_mission_attempt, complete_mission,
@@ -380,6 +380,10 @@ def mission_runner(slug):
     tier_state = tier_info.get(mission_tier, {})
     tier_locked = not tier_state.get("unlocked", True)
     gating_tier = tier_state.get("gating_tier")
+    # aca-presenter-preview: the org-leadership tier (the same admin/pm/isso gate as
+    # the Oracle) can demo a locked mission end to end. api_step_submit grades it
+    # for real and records nothing; this flag only changes what the page says.
+    presenter_preview = tier_locked and is_org_intel_user()
 
     # aca-int-02/03: the template serialises this into page JavaScript. The raw step
     # rows carry the grading test and the answer key, so only the sanitised
@@ -404,6 +408,7 @@ def mission_runner(slug):
         fa_user=fa_user,
         mission=mission,
         tier_locked=tier_locked,
+        presenter_preview=presenter_preview,
         tier_state=tier_state,
         gating_state=tier_info.get(gating_tier, {}) if gating_tier else {},
         steps_client=steps_client,
@@ -666,9 +671,23 @@ def api_step_submit():
     # discarding the verdict would let a learner burn attempts to enumerate the item
     # bank, which is exactly what a summative cap exists to prevent.
     from .assessment import attempt_state
+    from .grading import _load_step
+
+    # aca-presenter-preview: decided BEFORE grading. A presenter (admin/pm/isso) on
+    # a tier they have not unlocked gets the real verdict and nothing is written —
+    # not progress, not XP, not even the closing of an item-bank attempt, which is
+    # why grading is told not to record.
+    _row = _load_step(step_id)
+    _row_mission = get_mission_by_id(_row["mission_id"]) if _row else None
+    preview = bool(
+        _row_mission
+        and not is_tier_unlocked(fa_user["id"], int(_row_mission.get("tier") or 1))
+        and is_org_intel_user()
+    )
 
     gate = attempt_state(fa_user["id"], step_id)
-    if not gate["allowed"] and gate["reason"] == "attempts_exhausted":
+    if (not preview and not gate["allowed"]
+            and gate["reason"] == "attempts_exhausted"):
         return jsonify({
             "ok": True,
             "passed": False,
@@ -686,7 +705,8 @@ def api_step_submit():
         })
 
     verdict = grade_step(step_id, submission, chosen_option=chosen_option,
-                         answers=answers, user_id=fa_user["id"])
+                         answers=answers, user_id=fa_user["id"],
+                         record=not preview)
     step = verdict.get("step")
     if step is None:
         return jsonify({"error": "unknown step", "passed": False}), 404
@@ -698,6 +718,26 @@ def api_step_submit():
     # aca-ux-04: the tier gate is enforced HERE, where credit is granted, not only
     # in the template. A locked mission stays readable and runnable; it just cannot
     # pay out or record completion.
+    if preview:
+        resp = {
+            "ok": True,
+            "passed": passed,
+            "assessed": verdict["assessed"],
+            "status": "preview",
+            "recorded": False,
+            "score": verdict.get("score"),
+            "reason": verdict.get("reason", ""),
+            "stdout": verdict.get("stdout", ""),
+            "stderr": verdict.get("stderr", ""),
+            "explanation": verdict.get("explanation", ""),
+            "correct_option": verdict.get("correct_option"),
+        }
+        for key in ("items", "correct", "total", "pass_threshold_pct",
+                    "attempts_used", "attempts_remaining"):
+            if verdict.get(key) is not None:
+                resp[key] = verdict[key]
+        return jsonify(resp)
+
     _m = get_mission_by_id(mission_id)
     if _m and not is_tier_unlocked(fa_user["id"], int(_m.get("tier") or 1)):
         return jsonify({
