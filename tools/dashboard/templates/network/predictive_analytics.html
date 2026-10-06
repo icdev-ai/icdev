@@ -191,14 +191,24 @@
 </style>
 
 <script>
+// Derived from the blueprint's registered routes (url_for), so the canvas
+// prefix (/network) can never be dropped again (ndc-pna-page).
 const PNA_ENDPOINTS = {
-  eol:        '/api/network/predict/eol',
-  bgp:        '/api/network/predict/bgp',
-  compliance: '/api/network/predict/compliance',
-  capacity:   '/api/network/predict/capacity',
-  change:     '/api/network/predict/change',
-  scs:        '/api/network/predict/supply-chain',
+  eol:        {{ url_for('network_canvas.pna_get_eol')|tojson }},
+  bgp:        {{ url_for('network_canvas.pna_get_bgp')|tojson }},
+  compliance: {{ url_for('network_canvas.pna_get_compliance')|tojson }},
+  capacity:   {{ url_for('network_canvas.pna_get_capacity')|tojson }},
+  change:     {{ url_for('network_canvas.pna_get_change')|tojson }},
+  scs:        {{ url_for('network_canvas.pna_get_supply_chain')|tojson }},
 };
+const PNA_RUN_ALL = {{ url_for('network_canvas.pna_predict_all')|tojson }};
+
+function _esc(v) {
+  return String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function _emptyRow(cols, msg) {
+  return `<tr><td colspan="${cols}" style="text-align:center;color:var(--text-dim);">${_esc(msg || 'No predictions yet')}</td></tr>`;
+}
 
 function _badge(tier) {
   const t = (tier || 'unknown').toLowerCase();
@@ -230,9 +240,9 @@ function _countByTier(rows, field) {
 }
 
 // ── EOL ──────────────────────────────────────────────────────────────────
-function pnaRenderEol(rows) {
+function pnaRenderEol(rows, emptyMsg) {
   const tbody = document.getElementById('eol-tbody');
-  if (!rows || !rows.length) { tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--text-dim);">No predictions yet</td></tr>'; return; }
+  if (!rows || !rows.length) { tbody.innerHTML=_emptyRow(6, emptyMsg); return; }
   tbody.innerHTML = rows.map(r => `<tr>
     <td>${r.device_name||'—'}</td>
     <td>${r.vendor||'—'}</td>
@@ -245,29 +255,29 @@ function pnaRenderEol(rows) {
 }
 
 // ── BGP ──────────────────────────────────────────────────────────────────
-function pnaRenderBgp(rows) {
+function pnaRenderBgp(rows, emptyMsg) {
   const tbody = document.getElementById('bgp-tbody');
-  if (!rows || !rows.length) { tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--text-dim);">No predictions yet</td></tr>'; return; }
+  if (!rows || !rows.length) { tbody.innerHTML=_emptyRow(6, emptyMsg); return; }
   tbody.innerHTML = rows.map(r => `<tr>
     <td>${r.device_name||'—'}</td>
     <td>${r.peer_ip||'—'}</td>
-    <td>${r.flaps_24h??'—'}</td>
-    <td>${r.flaps_7d??'—'}</td>
+    <td>${r.flap_count_24h??'—'}</td>
+    <td>${r.flap_count_7d??'—'}</td>
     <td>${_score(r.stability_score)}</td>
-    <td>${_badge(r.risk_tier)}</td>
+    <td>${_badge(r.flap_risk)}</td>
   </tr>`).join('');
-  document.getElementById('bgp-stats').textContent = _countByTier(rows,'risk_tier');
+  document.getElementById('bgp-stats').textContent = _countByTier(rows,'flap_risk');
 }
 
 // ── Compliance ────────────────────────────────────────────────────────────
-function pnaRenderCompliance(rows) {
+function pnaRenderCompliance(rows, emptyMsg) {
   const tbody = document.getElementById('compliance-tbody');
-  if (!rows || !rows.length) { tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--text-dim);">No predictions yet</td></tr>'; return; }
+  if (!rows || !rows.length) { tbody.innerHTML=_emptyRow(6, emptyMsg); return; }
   tbody.innerHTML = rows.map(r => `<tr>
     <td>${r.device_name||'—'}</td>
     <td>${r.framework||'—'}</td>
     <td>${_score(r.current_score)}</td>
-    <td>${r.drift_per_day!=null ? parseFloat(r.drift_per_day).toFixed(4) : '—'}</td>
+    <td>${r.drift_rate_per_day!=null ? parseFloat(r.drift_rate_per_day).toFixed(4) : '—'}</td>
     <td>${_days(r.days_to_failure)}</td>
     <td>${_badge(r.risk_tier)}</td>
   </tr>`).join('');
@@ -275,14 +285,14 @@ function pnaRenderCompliance(rows) {
 }
 
 // ── Capacity ──────────────────────────────────────────────────────────────
-function pnaRenderCapacity(rows) {
+function pnaRenderCapacity(rows, emptyMsg) {
   const tbody = document.getElementById('capacity-tbody');
-  if (!rows || !rows.length) { tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--text-dim);">No predictions yet</td></tr>'; return; }
+  if (!rows || !rows.length) { tbody.innerHTML=_emptyRow(6, emptyMsg); return; }
   tbody.innerHTML = rows.map(r => `<tr>
     <td>${r.device_name||'—'}</td>
     <td>${r.interface_name||'—'}</td>
     <td>${r.current_util_pct!=null ? parseFloat(r.current_util_pct).toFixed(1)+'%' : '—'}</td>
-    <td>${r.trend||'—'}</td>
+    <td>${r.trend_slope!=null ? parseFloat(r.trend_slope).toFixed(2)+'%/d' : '—'}</td>
     <td>${_days(r.days_to_saturation)}</td>
     <td>${_badge(r.risk_tier)}</td>
   </tr>`).join('');
@@ -290,23 +300,23 @@ function pnaRenderCapacity(rows) {
 }
 
 // ── Change ────────────────────────────────────────────────────────────────
-function pnaRenderChange(rows) {
+function pnaRenderChange(rows, emptyMsg) {
   const tbody = document.getElementById('change-tbody');
-  if (!rows || !rows.length) { tbody.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--text-dim);">No predictions yet</td></tr>'; return; }
+  if (!rows || !rows.length) { tbody.innerHTML=_emptyRow(5, emptyMsg); return; }
   tbody.innerHTML = rows.map(r => `<tr>
     <td>${r.device_name||r.change_request_id||'—'}</td>
     <td>${_pct(r.failure_probability)}</td>
     <td>${r.blast_radius_size??'—'}</td>
-    <td>${r.window_compliant!=null ? (r.window_compliant?'<span class="pna-badge pna-badge-ok">Yes</span>':'<span class="pna-badge pna-badge-high">No</span>') : '—'}</td>
+    <td>${r.maintenance_window_compliant!=null ? (r.maintenance_window_compliant?'<span class="pna-badge pna-badge-ok">Yes</span>':'<span class="pna-badge pna-badge-high">No</span>') : '—'}</td>
     <td>${_badge(r.risk_tier)}</td>
   </tr>`).join('');
   document.getElementById('change-stats').textContent = _countByTier(rows,'risk_tier');
 }
 
 // ── Supply Chain ──────────────────────────────────────────────────────────
-function pnaRenderScs(rows) {
+function pnaRenderScs(rows, emptyMsg) {
   const tbody = document.getElementById('scs-tbody');
-  if (!rows || !rows.length) { tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--text-dim);">No predictions yet</td></tr>'; return; }
+  if (!rows || !rows.length) { tbody.innerHTML=_emptyRow(6, emptyMsg); return; }
   tbody.innerHTML = rows.map(r => `<tr>
     <td>${r.vendor||'—'}</td>
     <td>${r.model_count??'—'}</td>
@@ -326,7 +336,8 @@ async function pnaRefresh(key) {
   try {
     const r = await fetch(ep);
     const data = await r.json();
-    _RENDERERS[key](Array.isArray(data) ? data : (data.predictions || data.rows || []));
+    if (!r.ok) { _RENDERERS[key]([], 'Unavailable: ' + (data.error || ('HTTP ' + r.status))); return; }
+    _RENDERERS[key](Array.isArray(data) ? data : (data.predictions || data.rows || []), data.message);
   } catch(e) { _showStatus('Fetch error for '+key+': '+e, true); }
   finally { _spin(key, false); }
 }
@@ -336,9 +347,14 @@ async function pnaRun(key) {
   _spin(key, true);
   _showStatus('Running '+key+' predictor…', false);
   try {
-    await fetch(ep, {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+    const r = await fetch(ep, {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
     await pnaRefresh(key);
-    _showStatus(key+' prediction complete', false);
+    if (!r.ok) {
+      let d = {}; try { d = await r.json(); } catch(_) {}
+      _showStatus(key+' run not completed: '+(d.message || d.error || ('HTTP '+r.status)), true);
+    } else {
+      _showStatus(key+' prediction complete', false);
+    }
   } catch(e) { _showStatus('Run error for '+key+': '+e, true); }
   finally { _spin(key, false); }
 }
@@ -352,15 +368,13 @@ async function pnaRunAll() {
   btn.disabled = true; btn.textContent = 'Running…';
   _showStatus('Running all 6 predictors…', false);
   try {
-    const r = await fetch('/api/network/predict/all', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+    const r = await fetch(PNA_RUN_ALL, {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
     const data = await r.json();
-    if (data.eol) pnaRenderEol(data.eol.predictions || []);
-    if (data.bgp) pnaRenderBgp(data.bgp.predictions || []);
-    if (data.compliance) pnaRenderCompliance(data.compliance.predictions || []);
-    if (data.capacity) pnaRenderCapacity(data.capacity.predictions || []);
-    if (data.change) pnaRenderChange(data.change.predictions || []);
-    if (data.supply_chain) pnaRenderScs(data.supply_chain.vendors || []);
-    _showStatus('All predictions complete', false);
+    // Each predictor returns its own shape; re-read the persisted rows instead.
+    await pnaRefreshAll();
+    const failed = Object.keys(data || {}).filter(k => data[k] && data[k].error);
+    if (failed.length) _showStatus('Completed with errors: ' + failed.join(', '), true);
+    else _showStatus('All predictions complete', false);
   } catch(e) { _showStatus('Run all error: '+e, true); }
   finally { btn.disabled=false; btn.innerHTML='&#9654; Run All Predictions'; }
 }
