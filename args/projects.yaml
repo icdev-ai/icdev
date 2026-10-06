@@ -10292,3 +10292,34 @@ projects:
   - {key: pin, title: "IS THE PINNED ARTIFACT STILL CURRENT", priority: medium}
   - {key: docs, title: "FEATURE DOC AND REGISTRATIONS", priority: low}
   - {key: gate, title: "MANUAL GATE (sentinel only)", priority: low}
+- key: aicur
+  name: "AICUR -- AI Fundamentals + AI-Assisted Engineering curriculum (Academy + GameDay)"
+  description: >-
+    Gap analysis 2026-10-05 of FORGE Academy (apps/forge_academy, ~124 missions) and
+    GameDay (scenarios/* TTX packs + tools/gameday AI League) against a target
+    curriculum: (1) AI fundamentals -- tokens, vLLM / multiple models, benchmarks,
+    agents and RAG, prompt engineering, verification against hallucinations; (2)
+    coding with AI, the balance between vibe coding and engineering -- coding
+    harnesses, code-verification harnesses, best practices and things to avoid.
+    MEASURED: 3 topics covered (tokens graded in m01; agents/RAG m03-m10; hallucination
+    verification m-trust-01, m-dic-01 and the document-integrity / grounding-red-team
+    packs), 3 partial (vLLM only a table row in m-devops-aiml-05; prompt engineering
+    has 2 loading lessons because m02 step4 ships .py with no .md; verification
+    harnesses only a CI-gate step and one pytest inject), 3 absent (benchmarks is one
+    table row; coding harnesses and vibe-vs-engineering have nothing). Only m01 has
+    an item bank, so new missions must ship an item bank or a stepN_test.py -- a
+    mission that is merely acknowledged measures nothing. Also found: db.py queries
+    a ttx_receipts table nothing creates (GameDay credential gate unreachable),
+    award_gameday_xp has no caller, game_master runs only CYBER_SCENARIOS.
+  task_prefix: aicur-
+  default_open: true
+  briefs:
+  - 'fun: refresh m01 tokens; new m12 vLLM + multi-model routing; new m13 benchmarks + evals; repair and extend m02 prompt engineering; item banks for m03/m04 -- aicur-fun-01..05'
+  - 'eng: new AI-Assisted Engineering track -- coding harnesses, verification harnesses (red-first lab), vibe coding vs engineering, capstone -- aicur-eng-01..04'
+  - 'gd: GameDay pack vibe_to_verified (PR review, red-first sprint, routing outage, benchmark claim) and a harness-comparison inject -- aicur-gd-01..02'
+  - 'fix: make Academy-GameDay credit real -- ttx_receipts query, award_gameday_xp caller, loud .py-only step folders, AI-ops League scenarios -- aicur-fix-01..04'
+  epics:
+  - {key: fun, title: "AI FUNDAMENTALS GAPS (1a-1f)", priority: high}
+  - {key: eng, title: "AI-ASSISTED ENGINEERING TRACK (2a-2c)", priority: high}
+  - {key: gd, title: "GAMEDAY EXERCISES FOR THE SAME SKILLS", priority: medium}
+  - {key: fix, title: "ACADEMY-GAMEDAY CREDIT WIRING", priority: medium}
