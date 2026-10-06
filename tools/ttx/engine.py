@@ -18,7 +18,9 @@ from .inject_dispatcher import (
 )
 from .ai_scorer import score_response
 from .persona_generator import generate_persona
-from .leaderboard import compute_leaderboard, get_leaderboard, award_ribbons
+from .leaderboard import (
+    compute_leaderboard, get_leaderboard, award_ribbons, award_academy_xp,
+)
 from .aar_generator import generate_aar
 
 log = get_logger(__name__)
@@ -76,8 +78,11 @@ class TTXEngine:
         return update_session_state(session_id, "paused")
 
     def end_session(self, session_id: int) -> dict[str, Any]:
-        compute_leaderboard(session_id)
-        return update_session_state(session_id, "ended")
+        final = compute_leaderboard(session_id)
+        session = update_session_state(session_id, "ended")
+        # aicur-fix-02: the final ranking is what Academy GameDay XP pays on.
+        award_academy_xp(session_id, final)
+        return session
 
     # ------------------------------------------------------------------
     # Team + player management
