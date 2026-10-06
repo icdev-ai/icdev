@@ -29,7 +29,16 @@ CREATE TABLE fa_users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT,
   display_name TEXT, role TEXT DEFAULT 'swe_arch', xp INTEGER DEFAULT 0,
   level TEXT DEFAULT 'recruit', streak_days INTEGER DEFAULT 0, guild_id INTEGER,
   tier_unlocked INTEGER DEFAULT 1, tenant_id TEXT);
-CREATE TABLE fa_guilds (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT);
+CREATE TABLE fa_guilds (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    description TEXT,
+    invite_code TEXT NOT NULL,
+    created_by INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
+);
 CREATE TABLE fa_xp_ledger (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER,
   xp_delta INTEGER, reason TEXT, source_type TEXT, source_id INTEGER,
   is_attendance INTEGER DEFAULT 0, verified INTEGER DEFAULT 1, note TEXT,
@@ -47,9 +56,32 @@ CREATE TABLE fa_mission_progress (id INTEGER PRIMARY KEY AUTOINCREMENT,
   UNIQUE(user_id, mission_id));
 CREATE TABLE fa_step_progress (id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER, step_id INTEGER, status TEXT, submission TEXT);
-CREATE TABLE fa_instructor_reviews (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER);
-CREATE TABLE fa_certificates (id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id INTEGER, cert_tier TEXT);
+CREATE TABLE fa_instructor_reviews (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    mission_id INTEGER,
+    step_id INTEGER,
+    assignment_id INTEGER,
+    verdict TEXT NOT NULL,
+    override_score INTEGER,
+    prior_score INTEGER,
+    comment TEXT,
+    reviewer TEXT NOT NULL,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE fa_certificates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    cert_tier TEXT NOT NULL,
+    cert_label TEXT NOT NULL,
+    token TEXT NOT NULL,
+    issued_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT,
+    metadata_json TEXT DEFAULT '{}',
+    classification TEXT DEFAULT 'CUI'
+);
 CREATE TABLE fa_skill_nodes (id INTEGER PRIMARY KEY AUTOINCREMENT, slug TEXT, title TEXT);
 CREATE TABLE fa_user_skills (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER,
   skill_id INTEGER);
@@ -216,7 +248,8 @@ def test_certificate_tier_progress_and_health_count_the_same_set(live_shape, mon
 
 def test_tier3_gate_no_longer_counts_retired_missions(live_shape):
     fadb, conn = live_shape
-    conn.execute("INSERT INTO fa_certificates (user_id, cert_tier) VALUES (1, 'practitioner')")
+    conn.execute("INSERT INTO fa_certificates (user_id, cert_tier, cert_label, token) "
+                 "VALUES (1, 'practitioner', 'FORGE AI Practitioner', 'tok-1')")
     conn.commit()
     gates = fadb.check_cert_eligibility(1, "expert")["gates"]
     t3 = next(g for g in gates if g["name"] == "Tier 3 Complete")
