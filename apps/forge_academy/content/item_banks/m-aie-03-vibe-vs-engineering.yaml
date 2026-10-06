@@ -1,0 +1,368 @@
+# CUI // SP-CTI
+#
+# Item bank for m-aie-03-vibe-vs-engineering (aicur-eng-03, topic 2c).
+#
+# Steps 1 and 2 are lessons; step 3 is a Reflect step whose questions name the
+# snippets printed in step3_spot_the_defect.md by letter. The snippets live in the
+# lesson markdown rather than in these prompts because the assessment partial renders
+# a prompt as one text paragraph, which would collapse a multi-line code block.
+#
+# Authoring rules are the ones in m01-llm-fundamentals.yaml (validated by
+# assessment.validate_item_bank at seed time): >= 5 items per step, `correct` indexes
+# `options` as authored, `key` stable and unique per step, and every item answerable
+# from its own step's markdown alone.
+
+mission: m-aie-03-vibe-vs-engineering
+
+steps:
+
+  # -------------------------------------------------------------------------
+  # Step 1 — The Spectrum (steps/step1_the_spectrum.md)
+  # -------------------------------------------------------------------------
+  - step: 1
+    items:
+      - key: spec-deciding-question
+        prompt: >-
+          According to the lesson, what single question decides whether vibe coding
+          is acceptable for a piece of code?
+        options:
+          - "Which model generated it?"
+          - "What does it cost if this code is wrong and nobody notices?"
+          - "How many lines of code is it?"
+          - "Does it run the first time?"
+        correct: 1
+        explanation: >-
+          The lesson frames the whole spectrum around the cost of undetected
+          wrongness. Running once is the vibe-coding standard of proof, not the test.
+        difficulty: core
+
+      - key: spec-fine-case
+        prompt: >-
+          Which of these is a case where vibe coding is fine?
+        options:
+          - "An authorisation check on a production API"
+          - "A database migration on shared infrastructure"
+          - "A spike to find out whether a library can do X, where you keep the answer and discard the code"
+          - "A module in a system seeking an ATO"
+        correct: 2
+        explanation: >-
+          Spikes, throwaway prototypes, personal scripts and learning share two
+          properties: the blast radius is you, and the code has an expiry date.
+        difficulty: core
+
+      - key: spec-spike-promoted
+        prompt: >-
+          A vibe-coded spike starts being imported by another team's service. What
+          does the lesson say has happened?
+        options:
+          - "Nothing; spikes can be reused as-is"
+          - "It has stopped being a spike and must now be engineered"
+          - "It should be rewritten by a different AI model"
+          - "It only needs a code comment explaining it was a spike"
+        correct: 1
+        explanation: >-
+          Once something else depends on it, the code has users and a future, so it
+          leaves the vibe-coding end of the spectrum.
+        difficulty: core
+
+      - key: spec-cui-evidence
+        prompt: >-
+          Why is an unread, vibe-coded diff a particular problem in a regulated or
+          CUI system?
+        options:
+          - "CUI systems forbid the use of Python"
+          - "AI models are not allowed to see CUI-marked code"
+          - "Regulated systems run slower with AI-generated code"
+          - "Under NIST 800-53 and an ATO you must show evidence of who changed what and how it was tested, and a diff nobody read cannot be attested to"
+        correct: 3
+        explanation: >-
+          The lesson's point is evidence: change history, tests and control mapping.
+          A diff nobody reviewed offers none of that.
+        difficulty: core
+
+      - key: spec-principles-timing
+        prompt: >-
+          What do all five Karpathy principles in hardprompts/karpathy_principles.md
+          have in common?
+        options:
+          - "They are all things you do before the AI generates code"
+          - "They are all automated linters"
+          - "They only apply to Python projects"
+          - "They are all run after deployment"
+        correct: 0
+        explanation: >-
+          State assumptions, enumerate interpretations, prefer simpler, bound edit
+          scope and define success criteria are all pre-design steps.
+        difficulty: core
+
+      - key: spec-success-criteria
+        prompt: >-
+          Under the "success criteria first" principle, what does it mean if you
+          cannot write the acceptance check for a change?
+        options:
+          - "The change is too small to need one"
+          - "The AI should write the acceptance check after the code"
+          - "The spec is incomplete and you should stop and clarify"
+          - "You should skip testing and rely on review"
+        correct: 2
+        explanation: >-
+          The principle says to state how you will know the change is done before
+          writing it; if you cannot, the spec is incomplete.
+        difficulty: stretch
+
+      - key: spec-edit-scope
+        prompt: >-
+          While fixing a bug you notice an unrelated bug nearby. What does the "bound
+          your edit scope" principle say to do?
+        options:
+          - "Fix it in the same change, since you are already there"
+          - "File a task for it instead of fixing it inline"
+          - "Ask the AI to refactor the whole module"
+          - "Ignore it permanently"
+        correct: 1
+        explanation: >-
+          Touch only what the task requires; no drive-by refactors. A nearby bug
+          becomes its own task.
+        difficulty: core
+
+  # -------------------------------------------------------------------------
+  # Step 2 — Anti-Patterns (steps/step2_anti_patterns.md)
+  # -------------------------------------------------------------------------
+  - step: 2
+    items:
+      - key: anti-slopsquatting
+        prompt: >-
+          What is slopsquatting?
+        options:
+          - "Registering a package name that AI models tend to hallucinate, so developers who install it get the attacker's code"
+          - "Typing a package name with a deliberate misspelling"
+          - "Letting an AI model squat on a GPU for too long"
+          - "Copying code from Stack Overflow without attribution"
+        correct: 0
+        explanation: >-
+          Hallucinated package names that recur across runs are registrable targets;
+          the next developer to paste the AI's install command runs the attacker's
+          package.
+        difficulty: core
+
+      - key: anti-slop-rate
+        prompt: >-
+          In the USENIX Security 2025 study cited in the lesson, roughly what share of
+          packages recommended in AI-generated code did not exist, on average?
+        options:
+          - "Under 1%"
+          - "About 5%"
+          - "About 20% (19.7%)"
+          - "Over 60%"
+        correct: 2
+        explanation: >-
+          Spracklen et al. generated 576,000 samples across 16 models and found an
+          average of 19.7% of recommended packages were hallucinated.
+        difficulty: stretch
+
+      - key: anti-or-true
+        prompt: >-
+          ICDEV's PreToolUse hook was wired as "pre_tool_use.py || true". What was
+          the effect?
+        options:
+          - "The hook ran twice"
+          - "The checks printed BLOCKED but blocked nothing, because the shell always returned success"
+          - "The hook blocked every tool call"
+          - "It had no effect, because || true only affects logging"
+        correct: 1
+        explanation: >-
+          A hook blocks by exiting with code 2; || true turned every result into 0,
+          so all eleven checks were neutralised while still printing BLOCKED.
+        difficulty: core
+
+      - key: anti-swallowed-insert
+        prompt: >-
+          Why did ICDEV's module_budget_usage table hold 0 rows while the code that
+          wrote it reported success?
+        options:
+          - "The table was truncated nightly"
+          - "The writes went to a different database"
+          - "The INSERT named a column the live table lacked; it raised every time, except Exception: pass swallowed it, and the function still returned ok"
+          - "Budget usage is only recorded on weekends"
+        correct: 2
+        explanation: >-
+          Swallowing the exception removed the only signal, and returning success
+          from a path that did no work made the failure invisible.
+        difficulty: core
+
+      - key: anti-red-first
+        prompt: >-
+          What does ICDEV's red_first_gate.py check about a changed test?
+        options:
+          - "That it runs in under one second"
+          - "That it was written by a human"
+          - "That it has at least three assertions"
+          - "That it fails against the pre-change code and passes against the new code"
+        correct: 3
+        explanation: >-
+          A test that passes on the buggy code is not a test. The gate re-runs the
+          changed test against the merge base and requires it to go RED there.
+        difficulty: core
+
+      - key: anti-hardcoded-model
+        prompt: >-
+          What is ICDEV's rule instead of putting a literal model ID in Python code?
+        options:
+          - "Route by function through LLMRouter, declare the chain in args/llm_config.yaml, and let admins choose models in .env"
+          - "Always use the newest model ID available"
+          - "Put the model ID in a code comment instead"
+          - "Hardcode two model IDs so one can fall back to the other"
+        correct: 0
+        explanation: >-
+          A literal pins one vendor into code and, inside a swallowed exception,
+          makes an air-gapped deployment degrade silently.
+        difficulty: core
+
+      - key: anti-done-evidence
+        prompt: >-
+          An agent reports "implemented and all tests pass". What does the lesson say
+          to do?
+        options:
+          - "Accept it; models do not report false completion"
+          - "Ask for the evidence, not the claim: the test output, the CI run, the merged commit"
+          - "Ask a second model whether the first one is telling the truth"
+          - "Mark the task done and check later if something breaks"
+        correct: 1
+        explanation: >-
+          A model can produce that sentence whether or not it ran anything. ICDEV made
+          done merge-verified for exactly this reason.
+        difficulty: core
+
+      - key: anti-common-thread
+        prompt: >-
+          What does the lesson name as the common thread across all eight
+          anti-patterns?
+        options:
+          - "They all come from one particular AI vendor"
+          - "They all make code slower"
+          - "They all remove a signal: the failing test, the blocking exit code, the surfaced exception, the readable diff"
+          - "They all only occur in JavaScript"
+        correct: 2
+        explanation: >-
+          Engineering with AI is mostly the discipline of keeping those signals alive.
+        difficulty: stretch
+
+  # -------------------------------------------------------------------------
+  # Step 3 — Spot the Defect (steps/step3_spot_the_defect.md)
+  # -------------------------------------------------------------------------
+  - step: 3
+    items:
+      - key: spot-a
+        prompt: >-
+          Snippet A (save_order): what is the defect?
+        options:
+          - "The SQL uses %s placeholders"
+          - "It commits inside the try block"
+          - "It takes a connection as a parameter"
+          - "except Exception: pass swallows any failure and the function returns saved even when nothing was persisted"
+        correct: 3
+        explanation: >-
+          This is the module_budget_usage shape: a failed INSERT is invisible and the
+          caller is told it succeeded.
+        difficulty: core
+
+      - key: spot-b
+        prompt: >-
+          Snippet B (the CI Security scan step): what is the defect?
+        options:
+          - "|| true makes the step succeed whatever bandit finds, so the gate can never fail"
+          - "bandit cannot scan a src/ directory"
+          - "The severity level should be low"
+          - "CI steps must not have a name"
+        correct: 0
+        explanation: >-
+          The neutraliser removes the exit code, which is the only signal the step
+          had. A gate behind || true is unmeasured, not proven.
+        difficulty: core
+
+      - key: spot-c
+        prompt: >-
+          Snippet C (the discount test): what is the defect?
+        options:
+          - "The test name is too long"
+          - "The agent changed the expected value so the test passes, instead of fixing apply_discount"
+          - "Tests should not use assert"
+          - "The discount should be expressed as a percentage"
+        correct: 1
+        explanation: >-
+          The test was the spec. Editing it to match the buggy behaviour turns a
+          failing test that was right into a passing test that proves nothing.
+        difficulty: core
+
+      - key: spot-d
+        prompt: >-
+          Snippet D (pip install requests-retry-session): what should you do before
+          running it?
+        options:
+          - "Run it with sudo so it installs system-wide"
+          - "Nothing; assistants only suggest real packages"
+          - "Verify the package actually exists and is the one you expect on the registry; a hallucinated name may be squatted by an attacker"
+          - "Pin it to the latest version"
+        correct: 2
+        explanation: >-
+          A package name the AI gave you is a claim, not a fact. Unverified
+          hallucinated names are what slopsquatting exploits.
+        difficulty: core
+
+      - key: spot-e
+        prompt: >-
+          Snippet E (summarise): which anti-pattern does it combine with a swallowed
+          exception?
+        options:
+          - "A sprawling diff"
+          - "A hardcoded model ID, so a deployment without that vendor silently returns an empty summary"
+          - "A secret in a prompt"
+          - "An edited test"
+        correct: 1
+        explanation: >-
+          The literal model pins one vendor; the except returning an empty string
+          makes the degradation silent rather than an error.
+        difficulty: core
+
+      - key: spot-f
+        prompt: >-
+          Snippet F (the deploy-help prompt): what is the defect, and what must happen
+          now?
+        options:
+          - "The prompt is too short; add more context"
+          - "The question should have been asked in a different chatbot"
+          - "Nothing is wrong because the chatbot will not store it"
+          - "Production credentials were sent to a third-party service; they cannot be un-sent and must be rotated"
+        correct: 3
+        explanation: >-
+          Secrets belong in .env or a secrets manager, never in a prompt. Once sent
+          they may be logged or retained, so rotation is the only remedy.
+        difficulty: core
+
+      - key: spot-g
+        prompt: >-
+          Snippet G (the paginate fix): what is the defect?
+        options:
+          - "The edit scope is unbounded: a one-function fix arrived with refactors, renames and a major dependency upgrade across 62 files, burying the real change in an unreviewable diff"
+          - "The off-by-one was fixed in the wrong file"
+          - "snake_case field names are not allowed"
+          - "requirements.txt should never change"
+        correct: 0
+        explanation: >-
+          Karpathy principle 4: touch only what the task requires. The nearby work
+          belongs in separate, separately reviewed tasks.
+        difficulty: core
+
+      - key: spot-h
+        prompt: >-
+          Snippet H (Done! all tests pass): what is the defect?
+        options:
+          - "Rate limiting cannot be tested"
+          - "The agent should have used more exclamation marks"
+          - "Completion was claimed with no evidence: no test was run and nothing was pushed or merged"
+          - "Tickets should only be closed by the AI"
+        correct: 2
+        explanation: >-
+          Trusting done without evidence. Ask for the test output, the CI run and the
+          merged commit, which is why ICDEV made done merge-verified.
+        difficulty: core

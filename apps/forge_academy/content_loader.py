@@ -139,6 +139,18 @@ BUILTIN_MISSIONS = [
         "difficulty": "advanced", "estimated_minutes": 60,
         "prereqs": ["m08-strands-agents", "m09-langchain"],
     },
+    # ── TIER 1: AI-Assisted Engineering (aicur) ─────────────────────────────
+    # Prereq is m01 only for now; aicur-eng-04 chains m-aie-01..04 once they exist.
+    {
+        "slug": "m-aie-03-vibe-vs-engineering",
+        "title": "Vibe Coding vs Engineering",
+        "tagline": "Know when \"it seems to work\" is enough — and spot the AI anti-patterns that report success while doing nothing.",
+        "tier": 1, "topic": "ai_assisted_engineering", "role_filter": "all",
+        "mission_type": "watch",
+        "xp_reward": 250, "order_idx": 23,
+        "difficulty": "beginner", "estimated_minutes": 30,
+        "prereqs": ["m01-llm-fundamentals"],
+    },
     # ── TIER 2: Non-technical (ISSO) ─────────────────────────────────────────
     {
         "slug": "m-isso-01-stig-triage",
