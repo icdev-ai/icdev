@@ -1,7 +1,7 @@
 // CUI // SP-CTI
 // E2E Test: Intelligence & Compliance Menus — all submenu pages load
 
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
 const SCREENSHOT_DIR = '.tmp/test_runs/screenshots';
 
@@ -78,6 +78,24 @@ const COMPLIANCE_PAGES = [
   { label: 'XAI',                  path: '/xai' },
 ];
 
+// qa-fail-8aed6d33d56f56c4: sweep qa-1791282956 failed /xai with
+// net::ERR_CONNECTION_RESET -- the socket dropped before any response, while
+// the sibling `HTTP < 400` request for the same path passed and the page
+// rendered 6/6 on re-run. A reset carries no status and no body, so it says
+// nothing about the page. Retry ONCE, and only on a connection-level error;
+// an HTTP error or a traceback still fails on the first load.
+const TRANSIENT_NET = /net::ERR_(CONNECTION_RESET|CONNECTION_REFUSED|CONNECTION_CLOSED|EMPTY_RESPONSE)/;
+
+async function gotoOnceMore(page: Page, path: string) {
+  try {
+    await page.goto(path);
+  } catch (err) {
+    if (!TRANSIENT_NET.test(String(err))) throw err;
+    await page.waitForTimeout(1000);
+    await page.goto(path);
+  }
+}
+
 function noServerError(body: string | null, path: string) {
   const b = body ?? '';
   expect(b.toLowerCase(), `${path} server error`).not.toContain('internal server error');
@@ -92,7 +110,7 @@ test.describe('Intelligence Menu', () => {
     });
 
     test(`${pg.label} (${pg.path}) — no server error`, async ({ page }) => {
-      await page.goto(pg.path);
+      await gotoOnceMore(page, pg.path);
       await page.waitForLoadState('domcontentloaded');
       await page.screenshot({
         path: `${SCREENSHOT_DIR}/intel_${pg.label.toLowerCase().replace(/[^a-z0-9]+/g, '_')}.png`,
@@ -111,7 +129,7 @@ test.describe('Compliance Menu', () => {
     });
 
     test(`${pg.label} (${pg.path}) — no server error`, async ({ page }) => {
-      await page.goto(pg.path);
+      await gotoOnceMore(page, pg.path);
       await page.waitForLoadState('domcontentloaded');
       await page.screenshot({
         path: `${SCREENSHOT_DIR}/compliance_${pg.label.toLowerCase().replace(/[^a-z0-9]+/g, '_')}.png`,
