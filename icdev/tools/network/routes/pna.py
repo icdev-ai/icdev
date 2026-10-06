@@ -16,6 +16,36 @@ from tools.logging.icdev_logger import get_logger
 
 logger = get_logger("icdev.network.routes.pna")
 
+# The seven PNA tables (nc_eol_predictions ... nc_supply_chain_risk) are created
+# on PostgreSQL by the PNA schema migration (ndc-pna-page). Until it has run --
+# or on any database where they are simply absent -- the read routes answer 200
+# with an empty result and say so, instead of a 500 carrying a raw
+# "relation does not exist".
+NO_TABLE_MESSAGE = (
+    "No {label} predictions yet: the predictive-analytics tables have not been "
+    "created on this database. They are created by the PNA schema migration on "
+    "the next dashboard start; then use Run to generate predictions."
+)
+
+
+def _table_absent(exc: Exception) -> bool:
+    """True only for a MISSING TABLE -- never for a missing column or other error.
+
+    PostgreSQL says ``relation "x" does not exist``; SQLite says ``no such table``.
+    A bare "does not exist" is not enough: ``column "x" does not exist`` is a real
+    defect and must stay a 500 rather than be dressed up as "no data yet".
+    """
+    msg = str(exc).lower()
+    return "no such table" in msg or ("relation" in msg and "does not exist" in msg)
+
+
+def _no_table_payload(label: str) -> dict:
+    return {
+        "predictions": [],
+        "status": "no_data",
+        "message": NO_TABLE_MESSAGE.format(label=label),
+    }
+
 
 def register_pna_routes(bp):
     """Register PNA Predictive Network Analytics routes on the NDC blueprint."""
@@ -42,7 +72,7 @@ def register_pna_routes(bp):
             "network/predictive_analytics.html",
             title="Predictive Network Analytics",
             eol_critical=_count("nc_eol_predictions", "risk_tier='critical'"),
-            bgp_high=_count("nc_bgp_predictions", "risk_tier IN ('critical','high')"),
+            bgp_high=_count("nc_bgp_predictions", "flap_risk IN ('critical','high')"),
             compliance_failing=_count("nc_compliance_drift", "days_to_failure IS NOT NULL AND CAST(days_to_failure AS REAL) < 30"),
             capacity_saturating=_count("nc_capacity_predictions", "days_to_saturation IS NOT NULL AND CAST(days_to_saturation AS REAL) < 14"),
             change_high_risk=_count("nc_change_risk", "failure_probability >= 0.70"),
@@ -59,6 +89,9 @@ def register_pna_routes(bp):
             result = predict_eol_risk(network_id=body.get("network_id"))
             return jsonify(result)
         except Exception as exc:
+            # A run cannot persist into an absent table: 503 with the reason, not a raw 500.
+            if _table_absent(exc):
+                return jsonify({"status": "no_table", "message": NO_TABLE_MESSAGE.format(label="end-of-life")}), 503
             logger.error("EOL prediction failed: %s", exc)
             return jsonify({"error": str(exc)}), 500
 
@@ -66,10 +99,12 @@ def register_pna_routes(bp):
     def pna_get_eol():
         try:
             from tools.network.eol_predictor import get_eol_predictions
-            tier = request.args.get("tier")
+            tier = request.args.get("risk_tier") or request.args.get("tier")
             limit = int(request.args.get("limit", 100))
-            return jsonify(get_eol_predictions(tier=tier, limit=limit))
+            return jsonify(get_eol_predictions(risk_tier=tier, limit=limit))
         except Exception as exc:
+            if _table_absent(exc):
+                return jsonify(_no_table_payload("end-of-life"))
             logger.error("EOL fetch failed: %s", exc)
             return jsonify({"error": str(exc)}), 500
 
@@ -79,6 +114,8 @@ def register_pna_routes(bp):
             from tools.network.eol_predictor import get_eol_summary
             return jsonify(get_eol_summary())
         except Exception as exc:
+            if _table_absent(exc):
+                return jsonify({"status": "no_data", "message": NO_TABLE_MESSAGE.format(label="end-of-life")})
             logger.error("EOL summary failed: %s", exc)
             return jsonify({"error": str(exc)}), 500
 
@@ -92,6 +129,9 @@ def register_pna_routes(bp):
             result = predict_bgp_stability(network_id=body.get("network_id"))
             return jsonify(result)
         except Exception as exc:
+            # A run cannot persist into an absent table: 503 with the reason, not a raw 500.
+            if _table_absent(exc):
+                return jsonify({"status": "no_table", "message": NO_TABLE_MESSAGE.format(label="BGP stability")}), 503
             logger.error("BGP prediction failed: %s", exc)
             return jsonify({"error": str(exc)}), 500
 
@@ -99,10 +139,12 @@ def register_pna_routes(bp):
     def pna_get_bgp():
         try:
             from tools.network.bgp_predictor import get_bgp_predictions
-            risk = request.args.get("risk")
+            risk = request.args.get("flap_risk") or request.args.get("risk")
             limit = int(request.args.get("limit", 100))
-            return jsonify(get_bgp_predictions(risk=risk, limit=limit))
+            return jsonify(get_bgp_predictions(flap_risk=risk, limit=limit))
         except Exception as exc:
+            if _table_absent(exc):
+                return jsonify(_no_table_payload("BGP stability"))
             logger.error("BGP fetch failed: %s", exc)
             return jsonify({"error": str(exc)}), 500
 
@@ -112,6 +154,8 @@ def register_pna_routes(bp):
             from tools.network.bgp_predictor import get_bgp_summary
             return jsonify(get_bgp_summary())
         except Exception as exc:
+            if _table_absent(exc):
+                return jsonify({"status": "no_data", "message": NO_TABLE_MESSAGE.format(label="BGP stability")})
             logger.error("BGP summary failed: %s", exc)
             return jsonify({"error": str(exc)}), 500
 
@@ -125,6 +169,9 @@ def register_pna_routes(bp):
             result = predict_compliance_drift(network_id=body.get("network_id"))
             return jsonify(result)
         except Exception as exc:
+            # A run cannot persist into an absent table: 503 with the reason, not a raw 500.
+            if _table_absent(exc):
+                return jsonify({"status": "no_table", "message": NO_TABLE_MESSAGE.format(label="compliance drift")}), 503
             logger.error("Compliance drift prediction failed: %s", exc)
             return jsonify({"error": str(exc)}), 500
 
@@ -137,6 +184,8 @@ def register_pna_routes(bp):
             limit = int(request.args.get("limit", 100))
             return jsonify(get_compliance_drift(device_name=device_name, framework=framework, limit=limit))
         except Exception as exc:
+            if _table_absent(exc):
+                return jsonify(_no_table_payload("compliance drift"))
             logger.error("Compliance drift fetch failed: %s", exc)
             return jsonify({"error": str(exc)}), 500
 
@@ -146,6 +195,8 @@ def register_pna_routes(bp):
             from tools.network.compliance_drift_predictor import get_compliance_summary
             return jsonify(get_compliance_summary())
         except Exception as exc:
+            if _table_absent(exc):
+                return jsonify({"status": "no_data", "message": NO_TABLE_MESSAGE.format(label="compliance drift")})
             logger.error("Compliance summary failed: %s", exc)
             return jsonify({"error": str(exc)}), 500
 
@@ -159,6 +210,9 @@ def register_pna_routes(bp):
             result = predict_capacity_exhaustion(network_id=body.get("network_id"))
             return jsonify(result)
         except Exception as exc:
+            # A run cannot persist into an absent table: 503 with the reason, not a raw 500.
+            if _table_absent(exc):
+                return jsonify({"status": "no_table", "message": NO_TABLE_MESSAGE.format(label="capacity")}), 503
             logger.error("Capacity prediction failed: %s", exc)
             return jsonify({"error": str(exc)}), 500
 
@@ -167,10 +221,17 @@ def register_pna_routes(bp):
         try:
             from tools.network.capacity_predictor import get_capacity_predictions
             device_name = request.args.get("device_name")
+            risk_tier = request.args.get("risk_tier")
             min_risk = float(request.args.get("min_risk", 0.0))
             limit = int(request.args.get("limit", 100))
-            return jsonify(get_capacity_predictions(device_name=device_name, min_risk=min_risk, limit=limit))
+            # get_capacity_predictions takes no min_risk; the threshold is applied here.
+            rows = get_capacity_predictions(device_name=device_name, risk_tier=risk_tier, limit=limit)
+            if min_risk > 0.0:
+                rows = [r for r in rows if float(r.get("risk_score") or 0.0) >= min_risk]
+            return jsonify(rows)
         except Exception as exc:
+            if _table_absent(exc):
+                return jsonify(_no_table_payload("capacity"))
             logger.error("Capacity fetch failed: %s", exc)
             return jsonify({"error": str(exc)}), 500
 
@@ -180,6 +241,8 @@ def register_pna_routes(bp):
             from tools.network.capacity_predictor import get_capacity_summary
             return jsonify(get_capacity_summary())
         except Exception as exc:
+            if _table_absent(exc):
+                return jsonify({"status": "no_data", "message": NO_TABLE_MESSAGE.format(label="capacity")})
             logger.error("Capacity summary failed: %s", exc)
             return jsonify({"error": str(exc)}), 500
 
@@ -193,6 +256,9 @@ def register_pna_routes(bp):
             result = predict_change_failure(plan_id=body.get("plan_id"))
             return jsonify(result)
         except Exception as exc:
+            # A run cannot persist into an absent table: 503 with the reason, not a raw 500.
+            if _table_absent(exc):
+                return jsonify({"status": "no_table", "message": NO_TABLE_MESSAGE.format(label="change failure")}), 503
             logger.error("Change failure prediction failed: %s", exc)
             return jsonify({"error": str(exc)}), 500
 
@@ -202,9 +268,16 @@ def register_pna_routes(bp):
             from tools.network.change_failure_predictor import get_change_risks
             risk_tier = request.args.get("risk_tier")
             plan_id = request.args.get("plan_id")
+            device_name = request.args.get("device_name")
             limit = int(request.args.get("limit", 100))
-            return jsonify(get_change_risks(risk_tier=risk_tier, plan_id=plan_id, limit=limit))
+            rows = get_change_risks(device_name=device_name, risk_tier=risk_tier, limit=limit)
+            if plan_id:
+                # predict_change_failure stores a patch plan's id as change_request_id.
+                rows = [r for r in rows if r.get("change_request_id") == plan_id]
+            return jsonify(rows)
         except Exception as exc:
+            if _table_absent(exc):
+                return jsonify(_no_table_payload("change failure"))
             logger.error("Change risks fetch failed: %s", exc)
             return jsonify({"error": str(exc)}), 500
 
@@ -214,6 +287,8 @@ def register_pna_routes(bp):
             from tools.network.change_failure_predictor import get_change_risk_summary
             return jsonify(get_change_risk_summary())
         except Exception as exc:
+            if _table_absent(exc):
+                return jsonify({"status": "no_data", "message": NO_TABLE_MESSAGE.format(label="change failure")})
             logger.error("Change risk summary failed: %s", exc)
             return jsonify({"error": str(exc)}), 500
 
@@ -227,6 +302,9 @@ def register_pna_routes(bp):
             result = score_supply_chain_risk(network_id=body.get("network_id"))
             return jsonify(result)
         except Exception as exc:
+            # A run cannot persist into an absent table: 503 with the reason, not a raw 500.
+            if _table_absent(exc):
+                return jsonify({"status": "no_table", "message": NO_TABLE_MESSAGE.format(label="supply chain")}), 503
             logger.error("Supply chain scoring failed: %s", exc)
             return jsonify({"error": str(exc)}), 500
 
@@ -239,6 +317,8 @@ def register_pna_routes(bp):
             limit = int(request.args.get("limit", 100))
             return jsonify(get_supply_chain_risks(vendor=vendor, rating=rating, limit=limit))
         except Exception as exc:
+            if _table_absent(exc):
+                return jsonify(_no_table_payload("supply chain"))
             logger.error("Supply chain fetch failed: %s", exc)
             return jsonify({"error": str(exc)}), 500
 
@@ -248,6 +328,8 @@ def register_pna_routes(bp):
             from tools.network.supply_chain_risk_scorer import get_supply_chain_summary
             return jsonify(get_supply_chain_summary())
         except Exception as exc:
+            if _table_absent(exc):
+                return jsonify({"status": "no_data", "message": NO_TABLE_MESSAGE.format(label="supply chain")})
             logger.error("Supply chain summary failed: %s", exc)
             return jsonify({"error": str(exc)}), 500
 

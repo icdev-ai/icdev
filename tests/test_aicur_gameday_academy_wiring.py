@@ -52,7 +52,8 @@ CREATE TABLE ttx_formation_plan (
 );
 CREATE TABLE fa_xp_ledger (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER, xp_delta INTEGER, source_type TEXT, source_id INTEGER
+    user_id INTEGER NOT NULL, xp_delta INTEGER NOT NULL, reason TEXT NOT NULL,
+    source_type TEXT, source_id INTEGER
 );
 """
 
@@ -91,8 +92,8 @@ def awards(monkeypatch):
     def fake_award(user_id, tournament_id, final_rank, total_participants, source_id=None):
         calls.append((user_id, tournament_id, final_rank, total_participants, source_id))
         fadb.get_connection().execute(
-            "INSERT INTO fa_xp_ledger (user_id, xp_delta, source_type, source_id) "
-            "VALUES (%s, 100, 'gameday', %s)", (user_id, source_id),
+            "INSERT INTO fa_xp_ledger (user_id, xp_delta, reason, source_type, source_id) "
+            "VALUES (%s, 100, 'gameday placement', 'gameday', %s)", (user_id, source_id),
         )
         return {"xp_awarded": 100, "achievements_unlocked": [], "gameday_rank": final_rank}
 

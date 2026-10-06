@@ -1,0 +1,254 @@
+# CUI // SP-CTI
+#
+# Item bank for m-aie-02-verification-harnesses (aicur-eng-02).
+# Spec: docs/features/forge-academy-aca-trn-01-assessment-model.md
+#
+# Steps 1 and 3 are lessons; step 2 is a lab graded by its own step2_test.py. Every
+# item below is answerable from the lesson markdown it assesses, and only from it.
+# Authoring rules are enforced by assessment.validate_item_bank (see the m01 bank
+# header for the full list): >= 5 items per step, `correct` indexes `options` as
+# authored, `key` is stable and unique per step.
+
+mission: m-aie-02-verification-harnesses
+
+steps:
+
+  # -------------------------------------------------------------------------
+  # Step 1 — Why AI Code Needs a Verification Harness (steps/step1_why_a_harness.md)
+  # -------------------------------------------------------------------------
+  - step: 1
+    items:
+      - key: vh-done-is-a-claim
+        prompt: >-
+          A coding agent ends its turn with "all tests pass". What is that sentence?
+        options:
+          - "Proof the tests ran, because the agent has a shell"
+          - "Generated text — a claim that a deterministic check still has to confirm"
+          - "A guarantee enforced by the model provider"
+          - "Equivalent to a green required check in CI"
+        correct: 1
+        explanation: >-
+          The agent's "done" is generated output like the code itself. A verification
+          harness replaces the claim with a deterministic check.
+        difficulty: core
+
+      - key: vh-tests-as-spec
+        prompt: >-
+          Why is a test especially valuable when an agent writes the code?
+        options:
+          - "It makes the code run faster"
+          - "It replaces the need for code review"
+          - "It is an executable specification the agent can run and iterate against"
+          - "Agents cannot write code without at least one test file present"
+        correct: 2
+        explanation: >-
+          A test states required behaviour precisely — including boundaries prose
+          leaves ambiguous — and the agent can run it, read the failure and iterate.
+        difficulty: core
+
+      - key: vh-red-step
+        prompt: >-
+          In RED -> GREEN -> REFACTOR, what does watching the new test FAIL first prove?
+        options:
+          - "That the test can detect the missing behaviour"
+          - "That the implementation is correct"
+          - "That the test suite is fast enough"
+          - "Nothing — the RED step is optional"
+        correct: 0
+        explanation: >-
+          The failure proves the test discriminates. A test that was never seen red
+          may pass regardless of the implementation.
+        difficulty: core
+
+      - key: vh-not-a-test
+        prompt: >-
+          A new test passes against the code before the fix and also after it. What
+          does it prove about the fix?
+        options:
+          - "That the fix is correct, twice over"
+          - "Nothing — it asserts current behaviour and could never have gone red"
+          - "That the fix is backward compatible, which is the goal"
+          - "That the fix improved performance"
+        correct: 1
+        explanation: >-
+          A test that passes on the buggy code is not a test. It must fail before the
+          fix and pass after it to discriminate.
+        difficulty: core
+
+      - key: vh-red-first-gate
+        prompt: >-
+          What does ICDEV's tools/ci/red_first_gate.py do with each test file a pull
+          request adds or modifies?
+        options:
+          - "Deletes it if it is slower than one second"
+          - "Runs it only against the branch and records the coverage"
+          - "Applies only that test file onto the merge base and requires it to fail there and pass on the branch"
+          - "Asks the agent whether the test is correct"
+        correct: 2
+        explanation: >-
+          It checks out the merge base, applies only the test file, and requires a
+          failure there and a pass on the branch; the pre-change output is uploaded
+          as the red-first-proof artifact.
+        difficulty: stretch
+
+      - key: vh-static-tools
+        prompt: >-
+          Which pairing of tool and kind is correct?
+        options:
+          - "ruff: type checker; mypy: SAST; bandit: linter"
+          - "ruff: linter; mypy: type checker; bandit: SAST"
+          - "ruff: SAST; mypy: linter; bandit: type checker"
+          - "All three are test runners"
+        correct: 1
+        explanation: >-
+          ruff is a linter (and formatter), mypy a type checker, and bandit a SAST
+          tool that finds security smells such as shell=True.
+        difficulty: core
+
+      - key: vh-hook-bypass
+        prompt: >-
+          Why is a pre-commit hook never the only gate?
+        options:
+          - "Hooks only run on Linux"
+          - "Hooks cannot run linters"
+          - "It is bypassable with git commit --no-verify, so CI and required checks must re-run the checks"
+          - "Hooks slow commits by several minutes"
+        correct: 2
+        explanation: >-
+          A hook is fast feedback but bypassable. CI re-runs the checks on a clean
+          machine and required checks refuse the merge until they are green.
+        difficulty: core
+
+      - key: vh-sandbox
+        prompt: >-
+          Which describes running agent-written tests sandboxed?
+        options:
+          - "Running them on the developer's machine with full network and secrets available"
+          - "An isolated process or container, a clean environment with no secrets, no network unless needed, and a time limit"
+          - "Running them only after the code is deployed"
+          - "Running them inside the model provider's servers"
+        correct: 1
+        explanation: >-
+          Running tests means running code an agent just wrote. Isolate it, scrub the
+          environment, restrict the network and bound the time.
+        difficulty: core
+
+  # -------------------------------------------------------------------------
+  # Step 3 — Wiring the Loop (steps/step3_wiring_the_loop.md)
+  # -------------------------------------------------------------------------
+  - step: 3
+    items:
+      - key: wl-exact-command
+        prompt: >-
+          What should the instruction file give an agent so it can run the tests itself?
+        options:
+          - "A general request to \"run the tests\""
+          - "The exact test command, allowed in its permissions"
+          - "Nothing — agents always discover the right command"
+          - "A screenshot of a passing test run"
+        correct: 1
+        explanation: >-
+          The exact command, permitted so the agent does not stall on approval. The
+          test output is the feedback signal the loop runs on.
+        difficulty: core
+
+      - key: wl-edit-the-test
+        prompt: >-
+          A test fails and the agent changes the expected value to match the code's
+          wrong output. What has happened?
+        options:
+          - "The bug is fixed"
+          - "The test was weakened to make it pass; the suite now reports success and proves nothing"
+          - "The agent followed TDD correctly"
+          - "The test became more precise"
+        correct: 1
+        explanation: >-
+          Loosening an assertion, skipping the test or changing the expected value
+          makes the suite green without fixing anything. Tests define the spec.
+        difficulty: core
+
+      - key: wl-skip-unmeasured
+        prompt: >-
+          How should a skipped test be counted?
+        options:
+          - "As passing, because it did not fail"
+          - "As unmeasured, not passing — it asserted nothing"
+          - "As failing, always"
+          - "Skips do not appear in test results"
+        correct: 1
+        explanation: >-
+          A skipped test asserted nothing. ICDEV's skip_census.py fails CI when a
+          gated file gains an unregistered skip.
+        difficulty: core
+
+      - key: wl-or-true
+        prompt: >-
+          What does `pytest -q || true` do in a CI step?
+        options:
+          - "Runs pytest twice for reliability"
+          - "Makes the step exit 0 whatever pytest returned, so the gate blocks nothing"
+          - "Fails the step only on syntax errors"
+          - "Retries failed tests once"
+        correct: 1
+        explanation: >-
+          `|| true` discards the exit code. ICDEV's security hook was wired this way:
+          every check printed BLOCKED and nothing was blocked.
+        difficulty: core
+
+      - key: wl-swallowed-exception
+        prompt: >-
+          An INSERT is wrapped in `try: ... except Exception: pass` and the INSERT
+          names a column the live table lacks. What happens?
+        options:
+          - "The database adds the column automatically"
+          - "The caller is told about the failure through a log"
+          - "The write fails silently and the feature reports success while persisting nothing"
+          - "Python refuses to run the code"
+        correct: 2
+        explanation: >-
+          A swallowed exception is a gate neutraliser inside code. ICDEV's
+          module_budget_usage held 0 rows for exactly this reason.
+        difficulty: core
+
+      - key: wl-cannot-run
+        prompt: >-
+          A gate cannot run (for example, it cannot find the merge base). What should
+          it report?
+        options:
+          - "Green, since it found nothing wrong"
+          - "Red, or a distinct could-not-run status — never green"
+          - "Nothing at all"
+          - "Whatever the previous run reported"
+        correct: 1
+        explanation: >-
+          A gate that cannot run is not a gate that found nothing. red_first_gate.py
+          exits 2 in that case, and that stays red.
+        difficulty: stretch
+
+      - key: wl-disable-deliberately
+        prompt: >-
+          You must deliberately disable one check for a while. Which is the right way?
+        options:
+          - "Append `|| true` to its command"
+          - "Wrap it in `except Exception: pass`"
+          - "An explicit, auditable switch such as an environment variable or a config entry with a written reason"
+          - "Delete the check and re-add it later"
+        correct: 2
+        explanation: >-
+          An explicit switch is auditable; a shell operator hidden in a command string
+          is not.
+        difficulty: core
+
+      - key: wl-test-the-gate
+        prompt: >-
+          You have only ever seen a gate pass. What should you do before trusting it?
+        options:
+          - "Nothing — passing is evidence it works"
+          - "Feed it something that must fail and confirm it actually blocks"
+          - "Raise its timeout"
+          - "Run it twice more"
+        correct: 1
+        explanation: >-
+          A gate only ever seen passing is unmeasured, not proven — red-first applied
+          to the harness itself.
+        difficulty: core

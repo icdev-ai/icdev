@@ -1,0 +1,64 @@
+# CUI // SP-CTI
+id: inject-01-attribution-crisis
+title: "Attribution Crisis — Who Owns This Threat?"
+
+body_md: |
+  ## JOINT TASK FORCE FLASH — CONFLICTING ATTRIBUTION
+
+  **Classification:** CUI // SP-CTI
+  **Priority:** IMMEDIATE
+  **DTG:** [T+15 minutes]
+
+  ---
+
+  ### SITUATION
+
+  Over the last 72 hours a network of ~1,400 inauthentic accounts has amplified
+  fabricated reports of contaminated municipal water supplies in three U.S. port
+  cities. Posting cadence, phrasing drift and image artifacts indicate the content
+  is machine-generated and re-tuned roughly every 6 hours — an adversary ML
+  pipeline is learning from engagement and adapting.
+
+  Two agencies flagged it at the same time and reached different conclusions:
+
+  | | **DIA (foreign)** | **DHS I&A (domestic)** |
+  |---|---|---|
+  | Attribution | State-directed foreign influence operation | Domestic amplifier networks, foreign seeding *possible* |
+  | Key evidence | Infrastructure overlap with a known foreign content farm; model fingerprint matches a previously observed generator | 61% of the amplifying accounts geolocate domestically; payment trails run through U.S. ad brokers |
+  | Confidence | Moderate | Low–moderate |
+  | Requested lead | DoD / IC | DHS / CISA with FBI |
+
+  Neither agency will release its raw collection to the other: DIA's holdings are
+  foreign-intelligence controlled; DHS's include U.S.-person information under
+  intelligence-oversight rules.
+
+  ---
+
+  ### YOUR TASK
+
+  Produce a **joint attribution assessment** the task force can stand behind.
+
+  1. State the most likely explanation, and the strongest alternative.
+  2. Grade each agency's key evidence for reliability and relevance.
+  3. Separate foreign activity from domestic activity, and say which authorities
+     apply to each — who leads what.
+  4. List the top 3 intelligence gaps and which agency can close each.
+
+  **Deliverable — BLUF assessment (≤ 250 words)** with an explicit confidence level.
+
+  **AI Tools:**
+  - **Strategos Oracle** — generate and stress-test competing attribution hypotheses
+  - **Signals** — prioritise the indicator set and surface the discriminating evidence
+  - **Knowledge Search** — pull the authorities that separate foreign-intelligence and
+    domestic-security responsibility
+
+  ---
+
+  *The adversary's next tuning cycle is expected in under two hours. Attribution
+  decides which chain of command acts first.*
+
+context_note: >
+  Opening inject. There is no single "correct" attribution: the strongest answers
+  treat it as a hybrid (foreign seeding, domestic amplification), split the problem by
+  authority instead of picking a winning agency, and are explicit about confidence and
+  gaps. The judge rewards evidence grading and authority awareness over certainty.

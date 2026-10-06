@@ -33,7 +33,6 @@
 icdev/tools/ace/controller.py::ACEController._create_probationary_card[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
 icdev/tools/ace/coworker_thread.py::CoWorkerThread._create_hitl_kanban_card[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
 icdev/tools/agent_toolkit/_planning.py::write_todos[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
-icdev/tools/agentic_ai_canvas/ops_config_generator.py::create_kanban_tasks[1]  # grandfathered at adoption (rem-hyg-05); shape: mixed; convert to task_factory.create_tasks in rem-hyg-06
 icdev/tools/agentic_ai_canvas/workflow.py::launch_to_kanban[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
 icdev/tools/ai_augmentation/blueprint.py::api_send_to_kanban[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
 icdev/tools/ai_augmentation/blueprint.py::api_send_to_kanban[2]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
@@ -135,7 +134,6 @@ icdev/tools/workflow/self_debug.py::_create_diagnostic_card[1]  # grandfathered 
 tools/ace/controller.py::ACEController._create_probationary_card[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
 tools/ace/coworker_thread.py::CoWorkerThread._create_hitl_kanban_card[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
 tools/agent_toolkit/_planning.py::write_todos[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
-tools/agentic_ai_canvas/ops_config_generator.py::create_kanban_tasks[1]  # grandfathered at adoption (rem-hyg-05); shape: mixed; convert to task_factory.create_tasks in rem-hyg-06
 tools/agentic_ai_canvas/workflow.py::launch_to_kanban[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
 tools/ai_augmentation/blueprint.py::api_send_to_kanban[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
 tools/ai_augmentation/blueprint.py::api_send_to_kanban[2]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06

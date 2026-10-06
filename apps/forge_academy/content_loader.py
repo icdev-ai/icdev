@@ -139,6 +139,29 @@ BUILTIN_MISSIONS = [
         "difficulty": "advanced", "estimated_minutes": 60,
         "prereqs": ["m08-strands-agents", "m09-langchain"],
     },
+    # ── TIER 1: AI-Assisted Engineering (aicur-eng-*) ───────────────────────
+    # Steps are discovered from content/tier1/<slug>/steps/ (fga-wire-01); the
+    # lessons are graded by content/item_banks/<slug>.yaml, the lab by step3_test.py.
+    {
+        "slug": "m-aie-01-coding-harnesses",
+        "title": "Coding Harnesses",
+        "tagline": "Copilot, Cursor, Claude Code, Codex CLI: what a harness adds, and how to drive one.",
+        "tier": 1, "topic": "agents", "role_filter": "all",
+        "mission_type": "coding",
+        "xp_reward": 300, "order_idx": 12,
+        "difficulty": "beginner", "estimated_minutes": 35,
+        "prereqs": ["m05-mcp-protocol"],
+    },
+    {
+        "slug": "m-aie-02-verification-harnesses",
+        "title": "Verification Harnesses",
+        "tagline": "TDD, red-first tests, linters and CI: the harness that decides whether AI code is done.",
+        "tier": 1, "topic": "agents", "role_filter": "all",
+        "mission_type": "coding",
+        "xp_reward": 325, "order_idx": 13,
+        "difficulty": "intermediate", "estimated_minutes": 40,
+        "prereqs": ["m-aie-01-coding-harnesses"],
+    },
     # ── TIER 2: Non-technical (ISSO) ─────────────────────────────────────────
     {
         "slug": "m-isso-01-stig-triage",
@@ -706,6 +729,17 @@ BUILTIN_MISSIONS = [
         "xp_reward": 350, "order_idx": 11,
         "difficulty": "beginner", "estimated_minutes": 35,
         "prereqs": ["m10-tier1-capstone"],
+    },
+    # ── TIER 1: Benchmarks & Evals (aicur-fun-03 — M13) ─────────────────────
+    {
+        "slug": "m13-benchmarks-evals",
+        "title": "Reading Benchmarks and Building Your Own Evals",
+        "tagline": "What a leaderboard score measures, what it hides, and how to build the eval that answers your question.",
+        "tier": 1, "topic": "ai_foundations", "role_filter": "all",
+        "mission_type": "coding",
+        "xp_reward": 300, "order_idx": 13,
+        "difficulty": "beginner", "estimated_minutes": 40,
+        "prereqs": ["m01-llm-fundamentals"],
     },
     # ── TIER 2: NetOps — PNA Predictors ──────────────────────────────────────
     {
@@ -2262,7 +2296,50 @@ def discover_steps() -> dict:
             seen.add(st["step_num"])
             deduped.append(st)
         found[slug] = deduped
+
+    for orphan in code_only_steps():
+        _log.warning(
+            "FORGE Academy: %s has starter/test code but no stepN_*.md lesson — "
+            "discovery scans markdown only, so this step never loads (aicur-fix-03)",
+            orphan,
+        )
     return found
+
+
+_STEP_CODE_RE = re.compile(r"^step(?P<num>\d+)_(?:starter|test)\.py$")
+
+
+def code_only_steps() -> list:
+    """Steps that carry ``stepN_starter.py`` / ``stepN_test.py`` but no ``stepN_*.md``.
+
+    aicur-fix-03: discovery keys a step on its markdown frontmatter, so a folder
+    holding only the Python assets was dropped without a word — 11 such steps across
+    Tier 1 and Tier 2. Code a BUILTIN_STEPS entry declares as its
+    ``starter_code_path`` / ``test_code_path`` is loaded through that entry, not
+    through discovery, so it is not reported (m11-multimodal step 2). Returns sorted
+    ``<dir>/step<N>`` paths relative to CONTENT_ROOT.
+    """
+    if not CONTENT_ROOT.is_dir():
+        return []
+    declared = {
+        st.get(key)
+        for steps in BUILTIN_STEPS.values()
+        for st in steps
+        for key in ("starter_code_path", "test_code_path")
+        if st.get(key)
+    }
+    out: set = set()
+    for path in CONTENT_ROOT.rglob("step*.py"):
+        match = _STEP_CODE_RE.match(path.name)
+        if not match:
+            continue
+        num = match.group("num")
+        if any(path.parent.glob(f"step{num}_*.md")):
+            continue
+        if path.relative_to(CONTENT_ROOT).as_posix() in declared:
+            continue
+        out.add(f"{path.parent.relative_to(CONTENT_ROOT).as_posix()}/step{num}")
+    return sorted(out)
 
 
 # ---------------------------------------------------------------------------

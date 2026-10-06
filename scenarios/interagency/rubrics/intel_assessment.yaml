@@ -1,0 +1,37 @@
+# CUI // SP-CTI
+name: "Joint Attribution Assessment Rubric"
+inject_type: intel_assessment
+description: "Evaluates a joint civil-military attribution assessment produced from conflicting agency evidence."
+max_score: 100
+
+dimensions:
+  - id: hypothesis_quality
+    weight: 0.30
+    prompt: >
+      Did the team state a most-likely explanation AND a credible alternative,
+      grounded in the evidence given (infrastructure overlap, model fingerprint,
+      domestic geolocation share, payment trails)? Reward a hybrid reading
+      (foreign seeding, domestic amplification) that is argued from the evidence;
+      penalise simply adopting one agency's conclusion.
+
+  - id: evidence_grading
+    weight: 0.20
+    prompt: >
+      Did the team grade each agency's key evidence for reliability and relevance,
+      with appropriate confidence language (high/moderate/low)? Is the stated
+      overall confidence consistent with the evidence?
+
+  - id: authority_awareness
+    weight: 0.25
+    prompt: >
+      Did the team separate foreign activity from domestic activity and assign
+      each to the correct lead (DoD/IC for foreign, DHS/CISA/FBI for domestic)?
+      Did they respect the constraint that U.S.-person information and
+      foreign-intelligence collection are not freely exchanged?
+
+  - id: gaps_and_bluf
+    weight: 0.25
+    prompt: >
+      Is there a concise BLUF (≤ 250 words) a commander could act on, and are the
+      top intelligence gaps listed with the agency able to close each? Did AI tool
+      output visibly inform the assessment rather than being merely mentioned?

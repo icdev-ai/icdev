@@ -1,0 +1,33 @@
+# CUI // SP-CTI
+name: "Cross-Domain Bridge Build Sprint Rubric"
+inject_type: ai_build_sprint
+description: "Evaluates the emergency DHS-DIA integration layer built during the sprint."
+max_score: 100
+
+dimensions:
+  - id: boundary_filter
+    weight: 0.35
+    prompt: >
+      Does the bridge pass indicators only — no U.S.-person identifying fields out
+      of the DHS side and no source/method fields out of the DIA side? Do the 3 test
+      records show the filter working? A bridge that leaks either scores 0 here.
+
+  - id: normalisation
+    weight: 0.25
+    prompt: >
+      Are both agencies' records normalised to one schema (shared identifier, UTC
+      timestamps, mapped label), and are the before/after test records correct?
+
+  - id: ai_tool_actually_used
+    weight: 0.25
+    prompt: >
+      Did the team actually use ICDEV AI tools? Score highly for a deployed
+      fine-tuned label-mapping model with a job/model ID (full), working code
+      checked by the code analyzer (partial), or a hand design supported by a
+      search receipt (minimum). Penalise claims without evidence.
+
+  - id: auditability
+    weight: 0.15
+    prompt: >
+      Does every crossing record carry its originating agency and handling marking,
+      and is every transfer logged so either agency can audit what the other received?

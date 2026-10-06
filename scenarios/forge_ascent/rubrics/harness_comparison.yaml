@@ -1,0 +1,64 @@
+# CUI // SP-CTI
+name: "Harness Comparison Rubric"
+inject_type: harness_comparison
+description: "Evaluates a controlled two-harness comparison: correctness of both diffs, raw test evidence, and the quality and honesty of the comparison."
+max_score: 100
+
+dimensions:
+  correctness:
+    weight: 0.35
+    prompt: >
+      Are the submitted diffs correct against the hidden acceptance file
+      (test_normalize_acceptance.py, 4 tests)?
+      The correct normalize_bounded() copies the frame, fills nulls in bounded
+      columns with the median, clips to [lo, hi] BEFORE scaling to [0, 1], and
+      leaves unbounded columns and the input frame untouched.
+      Award 35/35 when the better arm's diff is fully correct AND the team
+      correctly identifies every defect in the weaker arm's diff (for example
+      normalize-before-clip, in-place mutation, or filling unbounded columns).
+      Award 25/35 when one arm is fully correct but the other arm's defects are
+      not identified or are misdiagnosed.
+      Award 12/35 when neither arm is fully correct but the team correctly
+      explains which acceptance tests fail and why.
+      Award 0/35 for no diffs, edited diffs passed off as raw output, or a claim
+      of correctness that the diff contradicts.
+
+  test_evidence:
+    weight: 0.30
+    prompt: >
+      Is the test evidence real and complete for BOTH arms?
+      Award 30/30 for raw pytest output for each arm against the acceptance file
+      (pass/fail counts as printed), first-run and final-run results kept apart,
+      and any tests the harness wrote itself shown and assessed.
+      Award 20/30 for raw output for both arms, but first-run and final-run
+      results are mixed together or the harness-written tests are not shown.
+      Award 10/30 for raw output for only one arm, or a pasted summary
+      ("all green") instead of raw output.
+      Award 0/30 for no test evidence, or evidence that contradicts the diffs.
+      Do NOT award credit for a passing run that hides a failing earlier run.
+
+  comparison_quality:
+    weight: 0.35
+    prompt: >
+      Is the harness comparison a fair, controlled experiment with honest limits?
+      Award 35/35 when the team: (1) declares Design A (two harnesses) or Design B
+      (one harness with and without an instruction file, or with plan mode on and
+      off) up front; (2) holds the starting commit, the task prompt, the model
+      where selectable, and the driver constant, and names anything it could not
+      hold constant; (3) fills the comparison table with measured values
+      (tests passed, first-run pass, prompts or corrections, minutes, out-of-scope
+      files touched, whether the harness ran tests unprompted); (4) ties its
+      verdict to specific table rows; and (5) states that one run per arm cannot
+      separate harness effect from run-to-run variance and proposes the next
+      experiment (repeat runs, swapped arm order, a second task).
+      Award 25/35 for a controlled comparison with a measured table where the
+      limits are missing or generic.
+      Award 12/35 for a comparison that is mostly impressions, or where the arms
+      differ in more than one uncontrolled variable without saying so.
+      Award 0/35 for no comparison, or a verdict with no evidence behind it.
+      Deduct 10 points for any benchmark score or price cited without its date
+      and source.
+      Academy bonus context: engineers who completed 'm-aie-01-coding-harnesses'
+      should describe what each harness adds over the raw model (tools, context,
+      permissions, loop) and use instruction files correctly. Award up to +10 pts
+      where this expertise is evident in how the arms were set up.
