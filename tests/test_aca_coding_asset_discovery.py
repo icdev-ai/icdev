@@ -47,16 +47,14 @@ def _all_steps(discovered):
 # which is not shippable content. This is an authoring gap, deliberately distinct
 # from the discovery bug aca-hon-05 fixed.
 #
-# m02-prompt-engineering has prose for steps 1-2 only; its step4 exercise has no
-# lesson. The ten tier2 directories below contain NO .md file at all — they are
+# (m02-prompt-engineering's step4 exercise was here until aicur-fun-04 authored
+# step4_structured_output.md.) The ten tier2 directories below contain NO .md file at all — they are
 # also exactly the directories that appear to have "no catalog entry", which is
 # explained by this and not by a discovery defect.
 #
 # The set is asserted EXACTLY so a new orphan fails the build instead of quietly
 # joining the pile. Removing an entry (by authoring the lesson) is the fix.
 _ASSETS_AWAITING_PROSE = {
-    "tier1/m02-prompt-engineering/steps/step4_starter.py",
-    "tier1/m02-prompt-engineering/steps/step4_test.py",
     "tier2/m-dataops-03-corrective-rag/steps/step1_starter.py",
     "tier2/m-dataops-03-corrective-rag/steps/step1_test.py",
     "tier2/m-dataops-04-capstone/steps/step1_starter.py",
