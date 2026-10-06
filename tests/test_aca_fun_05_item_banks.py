@@ -23,9 +23,11 @@ MISSIONS = ("m03-rag-basics", "m04-first-agent")
 LESSON_STEPS = {2, 3}
 
 SCHEMA = """
-CREATE TABLE fa_missions (id INTEGER PRIMARY KEY AUTOINCREMENT, slug TEXT UNIQUE);
-CREATE TABLE fa_mission_steps (id INTEGER PRIMARY KEY AUTOINCREMENT, mission_id INTEGER,
-                               step_num INTEGER, step_type TEXT, test_code_path TEXT);
+CREATE TABLE fa_missions (id INTEGER PRIMARY KEY AUTOINCREMENT, slug TEXT NOT NULL UNIQUE,
+                          title TEXT NOT NULL);
+CREATE TABLE fa_mission_steps (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                               mission_id INTEGER NOT NULL, step_num INTEGER NOT NULL,
+                               title TEXT NOT NULL, step_type TEXT, test_code_path TEXT);
 CREATE TABLE fa_assessment_items (id INTEGER PRIMARY KEY AUTOINCREMENT, step_id INTEGER,
                                   item_key TEXT, prompt TEXT,
                                   options_json TEXT DEFAULT '[]',
@@ -48,13 +50,15 @@ def seeded(monkeypatch):
     discovered = loader.discover_steps()
     steps = {}
     for slug in MISSIONS:
-        cur = conn.execute("INSERT INTO fa_missions (slug) VALUES (%s)", (slug,))
+        cur = conn.execute(
+            "INSERT INTO fa_missions (slug, title) VALUES (%s, %s)", (slug, slug))
         mission_id = cur.lastrowid
         for st in discovered[slug]:
             cur = conn.execute(
-                "INSERT INTO fa_mission_steps (mission_id, step_num, step_type, "
-                "test_code_path) VALUES (%s,%s,%s,%s)",
-                (mission_id, st["step_num"], st["step_type"], st["test_code_path"]),
+                "INSERT INTO fa_mission_steps (mission_id, step_num, title, step_type, "
+                "test_code_path) VALUES (%s,%s,%s,%s,%s)",
+                (mission_id, st["step_num"], f"step {st['step_num']}",
+                 st["step_type"], st["test_code_path"]),
             )
             steps[(slug, st["step_num"])] = {
                 "id": cur.lastrowid, "step_type": st["step_type"],
