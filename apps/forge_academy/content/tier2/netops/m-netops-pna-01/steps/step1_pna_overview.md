@@ -1,6 +1,7 @@
 ---
 ontology_id: icdev:mission:m-netops-pna-01:step:1
 step_class: icdev:Lesson
+title: Predictive Network Analytics: 6 Predictors
 ---
 
 # Predictive Network Analytics: 6 Predictors
