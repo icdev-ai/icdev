@@ -205,7 +205,20 @@ def test_a_coding_step_with_no_stored_test_cannot_be_credited(client):
     """`print(1)` exits 0; without a stored test that used to score 100."""
     step_id, _ = _step_of_type("coding", with_test=False)
     if step_id is None:
-        pytest.skip("every coding step now has a stored test")
+        # aca-empty-demo closed the last catalogued coding step without a test
+        # (m-t1-11-multimodal step 2), which turned this into a permanent skip.
+        # The refusal still matters for the next one authored without a test, so
+        # pin it on a synthetic step instead of skipping.
+        from apps.forge_academy.grading import _grade_coding
+
+        verdict = _grade_coding(
+            {"id": 0, "mission_id": 0, "step_num": 1, "step_type": "coding",
+             "test_code_path": "", "xp_partial": 50},
+            "print(1)",
+        )
+        assert verdict.get("passed") is False
+        assert verdict.get("reason") == "ungraded_no_test"
+        return
     before = _xp()
     r = client.post("/api/academy/step/submit", json={
         "step_id": step_id, "submission": "print(1)",
@@ -214,6 +227,17 @@ def test_a_coding_step_with_no_stored_test_cannot_be_credited(client):
     assert body.get("passed") is not True
     assert body.get("reason") in ("ungraded_no_test", "tier_locked", "test_failed"), body
     assert _xp() == before
+
+
+def test_no_catalogued_coding_step_lacks_a_stored_test():
+    """A 'coding' step with no test is one Run can never grade (aca-empty-demo)."""
+    rows = _conn().execute(
+        "SELECT m.slug, s.step_num FROM fa_mission_steps s "
+        "JOIN fa_missions m ON m.id=s.mission_id "
+        "WHERE s.step_type='coding' AND m.is_active=1 "
+        "  AND (s.test_code_path IS NULL OR s.test_code_path='')"
+    ).fetchall()
+    assert not rows, f"coding steps with no grader: {[tuple(r) for r in rows]}"
 
 
 # ---------------------------------------------------------------------------

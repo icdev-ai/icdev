@@ -41,6 +41,18 @@ def _all_steps(discovered):
             yield slug, st
 
 
+def _builtin_declared(key):
+    """Asset paths a BUILTIN_STEPS entry declares — attached to a catalogued step
+    without going through discovery (aca-empty-demo: m-t1-11-multimodal step 2 keeps
+    its assets under steps/ so they do not also attach to the retired, derived
+    m11-multimodal mission its prose frontmatter names)."""
+    from apps.forge_academy.content_loader import BUILTIN_STEPS
+
+    return {
+        st[key] for steps in BUILTIN_STEPS.values() for st in steps if st.get(key)
+    }
+
+
 # Exercises whose starter/test exist but whose PROSE was never authored. Discovery
 # keys on markdown frontmatter, so there is nothing to attach these to — and
 # attaching them anyway would produce a coding step with no problem statement,
@@ -96,7 +108,7 @@ def test_every_authored_test_asset_is_attached_to_a_step(discovered):
         st.get("test_code_path")
         for _, st in _all_steps(discovered)
         if st.get("test_code_path")
-    }
+    } | _builtin_declared("test_code_path")
     orphaned = sorted(on_disk - attached - _ASSETS_AWAITING_PROSE)
     assert not orphaned, (
         f"{len(orphaned)} authored test files are attached to no step, so the "
@@ -113,7 +125,7 @@ def test_every_authored_starter_asset_is_attached_to_a_step(discovered):
         st.get("starter_code_path")
         for _, st in _all_steps(discovered)
         if st.get("starter_code_path")
-    }
+    } | _builtin_declared("starter_code_path")
     orphaned = sorted(on_disk - attached - _ASSETS_AWAITING_PROSE)
     assert not orphaned, f"{len(orphaned)} authored starter files unreachable: {orphaned[:10]}"
 
@@ -132,7 +144,7 @@ def test_the_awaiting_prose_list_is_exact(discovered):
         for _, st in _all_steps(discovered)
         for k in ("test_code_path", "starter_code_path")
         if st.get(k)
-    }
+    } | _builtin_declared("test_code_path") | _builtin_declared("starter_code_path")
     actual = on_disk - attached
     unexpected = sorted(actual - _ASSETS_AWAITING_PROSE)
     stale = sorted(_ASSETS_AWAITING_PROSE - actual)

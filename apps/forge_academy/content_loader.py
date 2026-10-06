@@ -1370,6 +1370,12 @@ BUILTIN_STEPS: dict[str, list] = {
             "title": "Image-in-Prompt: Build a Document Classifier",
             "step_type": "coding",
             "content_path": "tier1/m11-multimodal/step-2.md",
+            # aca-empty-demo: this step was 'coding' with no starter and no test, so
+            # Run always answered "cannot be graded". The assets live under steps/
+            # (not beside the .md) so discover_steps does not ALSO attach them to the
+            # retired, derived m11-multimodal duplicate whose frontmatter names it.
+            "starter_code_path": "tier1/m11-multimodal/steps/step2_starter.py",
+            "test_code_path": "tier1/m11-multimodal/steps/step2_test.py",
             "config_schema": {
                 "fields": [
                     {"id": "document_type", "label": "What type of documents will your classifier handle?", "type": "select",
@@ -1588,6 +1594,7 @@ def seed_mission_catalog() -> None:
         # executed, and Tier 1 stayed ungradeable after a restart. Cheap and
         # idempotent — it only writes to rows whose asset paths are still empty.
         reconcile_all_step_assets(conn, discovered)
+        reconcile_builtin_step_assets(conn)
         # aca-hon-02: refresh the catalogue's user-visible fields on an already-seeded
         # database. The ON CONFLICT upsert below ALREADY sets title/tagline correctly
         # — it just sits after the fast-path return, so on any seeded database it
@@ -2488,6 +2495,50 @@ def reconcile_all_step_assets(conn, discovered: dict | None = None) -> int:
             conn.commit()
         except Exception as exc:
             _log.warning("FORGE Academy: asset reconcile commit failed: %s", exc)
+    return touched
+
+
+def reconcile_builtin_step_assets(conn) -> int:
+    """Attach code assets DECLARED in BUILTIN_STEPS to already-seeded rows.
+
+    ``reconcile_all_step_assets`` only walks what ``discover_steps`` finds, keyed by
+    each file's frontmatter ontology slug. A catalogued step whose assets are declared
+    in BUILTIN_STEPS -- and whose prose names a different slug (m-t1-11-multimodal's
+    content says ``m11-multimodal``) -- is never reached, and ``_seed_steps`` is
+    INSERT OR IGNORE, so adding the paths to the dict is inert on any existing
+    database. Same fill-only rules as the discovered pass; only steps whose declared
+    test file exists on disk are considered, so a typo cannot promote a step to an
+    ungradeable 'coding'. Never raises; commits once. Returns missions touched.
+    """
+    touched = 0
+    for slug, steps in BUILTIN_STEPS.items():
+        declared = [
+            st for st in steps
+            if (st.get("test_code_path") or "")
+            and (CONTENT_ROOT / st["test_code_path"]).is_file()
+        ]
+        if not declared:
+            continue
+        try:
+            row = conn.execute(
+                "SELECT id FROM fa_missions WHERE slug=%s", (slug,)
+            ).fetchone()
+        except Exception as exc:
+            _log.warning("FORGE Academy: builtin asset reconcile could not read missions: %s", exc)
+            return touched
+        if not row:
+            continue
+        mission_id = row["id"] if hasattr(row, "keys") else row[0]
+        try:
+            _reconcile_step_assets(conn, mission_id, slug, declared)
+            touched += 1
+        except Exception as exc:
+            _log.warning("FORGE Academy: builtin asset reconcile failed for %s: %s", slug, exc)
+    if touched:
+        try:
+            conn.commit()
+        except Exception as exc:
+            _log.warning("FORGE Academy: builtin asset reconcile commit failed: %s", exc)
     return touched
 
 

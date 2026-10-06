@@ -242,16 +242,10 @@
       </div>
     </div>
 
-    <div class="fa-intel-feed" style="margin-top:1rem;">
-      <span class="fa-intel-ticker">
-        ◈ INTEL FEED &nbsp;|&nbsp;
-        LLM Token Economics — Complete M01 to unlock &nbsp;|&nbsp;
-        RAG Architecture — Agents that read documents without fine-tuning &nbsp;|&nbsp;
-        MCP Protocol — The universal API layer every agent needs &nbsp;|&nbsp;
-        New Mission Available: Amazon Strands Agents &nbsp;|&nbsp;
-        Guild challenge active — 48 hours remaining &nbsp;|&nbsp;
-      </span>
-    </div>
+    {# aca-empty-demo: the "INTEL FEED" ticker was hardcoded copy with no data source
+       ("Guild challenge active — 48 hours remaining" while no challenge exists), and it
+       rendered as an empty dark box between scroll passes. Removed rather than given a
+       fake feed. #}
     {% else %}
     <p style="color:var(--text-secondary);margin-top:1rem;">Set up your profile to begin your mission.</p>
     <a href="/academy/profile" class="btn" style="margin-top:.5rem;background:var(--fa-orange);border-color:var(--fa-orange);">Begin Mission</a>
@@ -415,7 +409,7 @@
     document.getElementById('ora-conv').textContent  = d.convergence_events ?? '0';
     document.getElementById('ora-last').textContent  = d.last_run_at
       ? 'Last run: ' + d.last_run_at.slice(0,16) + ' UTC'
-      : 'No predictions yet — visit Oracle to run.';
+      : 'No risks predicted — the Oracle re-checks learner activity every 6 hours.';
   }).catch(()=>{});
 })();
 </script>
