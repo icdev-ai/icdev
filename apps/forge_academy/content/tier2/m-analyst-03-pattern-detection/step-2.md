@@ -24,6 +24,7 @@ Name the single metric this detector watches. Be specific: not "spending" but "a
 Define how far from baseline a value must deviate to trigger review.
 
 **Examples:**
+
 - Flag if current value is > 2 standard deviations from 90-day average
 - Flag if week-over-week change exceeds 25%
 - Flag if value enters the top or bottom 5% of historical distribution
@@ -52,3 +53,5 @@ How many false alerts per week is acceptable before you reduce sensitivity?
 ---
 
 **Your task:** Complete the configuration template for the metric you identified in Step 1. A completed template is ready for implementation handoff.
+
+**In the form below:** the panel records four of the five parameters (metric, baseline period, sensitivity, false-positive tolerance). Add your alert criteria (parameter 4) to the metric box so the configuration is complete.

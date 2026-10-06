@@ -24,6 +24,7 @@ In this capstone, you are wiring together the capabilities from Missions 01 thro
 - **Mission 03** — Your anomaly detector is the Detect layer
 - **Mission 04** — Your report generator is the Report layer
 - **Mission 02** — Your RAG pipeline supports both Detect and Report layers
+- **Predict** — New in this capstone: no earlier mission built a forecaster, so you design this layer from scratch in Step 2
 
 Together, they form a continuous intelligence pipeline that runs with minimal manual intervention between collection events and finished products.
 

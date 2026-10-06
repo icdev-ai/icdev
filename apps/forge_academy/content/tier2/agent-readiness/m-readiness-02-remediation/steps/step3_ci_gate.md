@@ -23,4 +23,4 @@ Once your repo scores ≥ 0.7, wire the readiness check as a CI gate so regressi
 
 ## Your task
 
-Write the GitHub Actions step YAML for a readiness gate. Include: the check command, a threshold of 0.7, and a step that prints a summary of failing pillars to the Actions log.
+Write the GitHub Actions step YAML for a readiness gate. Include: the check command, a threshold of 0.7, and a step that prints a summary of failing pillars to the Actions log (each pillar's `percentage` in `result['pillar_scores']` is a fraction, so a failing pillar is one below `0.7`). The job must run from the repository root with the root on `PYTHONPATH` so `tools.` imports resolve. Press **Configure** to record that you completed it.

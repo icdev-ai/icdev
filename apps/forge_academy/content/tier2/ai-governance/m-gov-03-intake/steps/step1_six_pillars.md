@@ -2,31 +2,39 @@
 ontology_id: icdev:mission:m-gov-03-intake:step:1
 step_class: icdev:Lesson
 ---
-# AI Governance Intake: 6-Pillar RICOAS
+# AI Governance Intake: the 7th RICOAS Readiness Dimension
 
-The RICOAS (Requirements-Intake-Classification-Operations-Assurance-Stewardship) framework adds a 7th readiness dimension to standard RICOAS Phase 1: AI Governance Readiness.
+RICOAS (Requirements Intake, COA & Approval System) is ICDEV's conversational requirements intake. Before a session can move on to decomposition, it is scored for **readiness**, and the score must reach `0.7` (`readiness_threshold` in `args/ricoas_config.yaml`).
 
-## The 6 AI Governance Pillars
+## The 7 readiness dimensions
 
-| # | Pillar | What it assesses |
-|---|--------|-----------------|
-| 1 | Requirements Clarity | Are AI system requirements specific and testable? |
-| 2 | Boundary Definition | Is the system boundary clearly defined for ATO? |
-| 3 | Impact Classification | FIPS 199 / SP 800-60 impact levels assigned? |
-| 4 | Control Mapping | NIST 800-53 controls cross-walked to AI risks? |
-| 5 | Supply Chain Risk | Third-party AI model provenance documented? |
-| 6 | Operational Readiness | Monitoring, alerting, and HITL gates in place? |
+| Dimension | Weight |
+|-----------|--------|
+| Completeness | 0.20 |
+| Clarity | 0.20 |
+| Feasibility | 0.16 |
+| Compliance | 0.12 |
+| Testability | 0.12 |
+| DevSecOps readiness | 0.10 |
+| **AI governance readiness** | 0.10 |
 
-## The 7th Dimension: AI Governance
+The weights come from `ricoas.readiness_weights` and sum to 1.0. AI governance readiness was the 7th dimension added (Phase 50, D323).
 
-ICDEV's AI Governance Intake adds a 7th pillar:
-- Is there a CAIO designation?
-- Is the AI inventory submitted to OMB?
-- Are model cards produced for high-impact systems?
-- Is there an oversight plan with shutdown authority?
-- Is there an appeals process for automated decisions?
-- Is there a scheduled ethics review?
+## Inside the AI governance dimension
+
+`tools/requirements/ai_governance_scorer.py` checks six components against the database and returns a weighted 0.0-1.0 score with a gap list (weights from `args/ai_governance_config.yaml`):
+
+| Component | Weight | Satisfied when |
+|-----------|--------|----------------|
+| `inventory_registered` | 0.20 | The AI system is in the use case inventory |
+| `model_cards_present` | 0.15 | Model cards exist for its models |
+| `oversight_plan_exists` | 0.20 | An oversight plan is registered |
+| `impact_assessment_done` | 0.20 | An impact assessment has been recorded |
+| `caio_designated` | 0.10 | A CAIO is designated for the project |
+| `transparency_frameworks_selected` | 0.15 | Transparency frameworks are selected |
+
+The intake also listens for governance language. `args/ai_governance_config.yaml` lists detection keywords per governance pillar (`ai_inventory`, `model_documentation`, `human_oversight`, `impact_assessment`, `transparency`, `accountability`), so mentioning "automated decision" or "chatbot" during intake raises the governance questions automatically.
 
 ## Your task
 
-Score your ICDEV platform deployment on all 7 pillars. Use a 1-5 scale for each. Identify the lowest-scoring pillar and write one specific action that would move its score from N to N+1.
+Score an ICDEV platform deployment on the six governance components (met / partly met / not met) using what you built in m-gov-01 and m-gov-02. Which component is missing, what would it cost the governance score, and what one action closes it?

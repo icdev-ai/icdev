@@ -13,6 +13,7 @@ A RAG pipeline has four configuration decisions. Getting these right determines 
 Choose the document formats you will include in your pipeline. Prioritize sources where you currently spend the most search time.
 
 **Common choices for government analysts:**
+
 - Solicitations and award documents (PDF)
 - Intelligence assessments and SITREPs (PDF, Word)
 - Budget justification documents (PDF)
@@ -32,6 +33,7 @@ Documents are broken into segments before indexing. The right segment size depen
 Be explicit about the questions you expect to ask. This shapes how the system is configured.
 
 **Examples:**
+
 - Factual: "What is the ceiling value of Contract X?"
 - Synthesis: "What are the three most common award patterns for NAICS 541519 in the past year?"
 - Comparison: "How does Solicitation A differ from Solicitation B in scope?"
