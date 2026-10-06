@@ -891,6 +891,73 @@ def role_matches(role_filter: str | None, role: str) -> bool:
     return role in {tok.strip() for tok in text.split(",") if tok.strip()}
 
 
+# ---------------------------------------------------------------------------
+# aca-numbers-demo: ONE definition of "a mission a learner can take".
+#
+# Measured on the live catalogue 2026-10-05, five surfaces gave five numbers for
+# "how many missions are there": /api/academy/health 124 then 122 (is_active=1),
+# the instructor roster 0/122 (is_active=1), the Foundation certificate 0/11
+# (active AND has steps), the browser "45 missions available" (role-filtered,
+# zero-step "coming soon" cards included). Each was a different set, and none
+# said which. 124 catalogued = 122 active + 2 retired; of the 122 active, 9 have
+# no steps on disk and can never be completed. So the number a learner can
+# actually take is 113 (Tier 1: 11, Tier 2: 95, Tier 3: 7).
+#
+# A mission is TAKEABLE when it is catalogued, not retired (is_active=1 — see
+# content_loader.retire_superseded_missions), and has at least one step. Every
+# denominator a learner is measured against uses this predicate; a surface that
+# shows a different set (role-filtered, catalogue size) must label itself.
+# ---------------------------------------------------------------------------
+
+TAKEABLE_MISSION_SQL = (
+    "m.is_active=1 AND EXISTS (SELECT 1 FROM fa_mission_steps s "
+    "WHERE s.mission_id=m.id)"
+)
+
+
+def _cell(row, key: str, idx: int):
+    return row[key] if hasattr(row, "keys") else row[idx]
+
+
+def mission_catalogue_counts(conn=None) -> dict:
+    """The catalogue, split the way every surface needs to label it.
+
+    Returns ``{takeable, by_tier: {tier: takeable}, catalogued, retired,
+    coming_soon}`` where ``catalogued == takeable + retired + coming_soon``.
+    ``coming_soon`` is active-but-stepless (shown on the browser as a card,
+    never counted in a denominator).
+    """
+    conn = conn or get_connection()
+    rows = conn.execute(
+        "SELECT m.tier AS tier, m.is_active AS is_active, "
+        " (SELECT COUNT(*) FROM fa_mission_steps s WHERE s.mission_id=m.id) AS steps "
+        "FROM fa_missions m"
+    ).fetchall()
+    out = {"takeable": 0, "by_tier": {}, "catalogued": 0, "retired": 0,
+           "coming_soon": 0}
+    for r in rows:
+        out["catalogued"] += 1
+        tier = int(_cell(r, "tier", 0) or 1)
+        active = int(_cell(r, "is_active", 1) or 0) == 1
+        steps = int(_cell(r, "steps", 2) or 0)
+        if not active:
+            out["retired"] += 1
+        elif steps <= 0:
+            out["coming_soon"] += 1
+        else:
+            out["takeable"] += 1
+            out["by_tier"][tier] = out["by_tier"].get(tier, 0) + 1
+    return out
+
+
+def takeable_mission_count(conn=None, tier: int | None = None) -> int:
+    """How many missions a learner can take (optionally in one tier)."""
+    counts = mission_catalogue_counts(conn)
+    if tier is None:
+        return counts["takeable"]
+    return int(counts["by_tier"].get(int(tier), 0))
+
+
 def list_missions(tier: int = None, role: str = None,
                   mission_type: str = None, tenant_id: str | None = None) -> list[dict]:
     conn = get_connection()
@@ -1424,9 +1491,12 @@ def user_progress_summary(user_id: int, tenant_id: str | None = None) -> dict:
         ).fetchone()
         if not user_row:
             return {"total_missions": 0, "completed": 0, "steps_completed": 0, "in_progress": None}
-    total = conn.execute("SELECT COUNT(*) FROM fa_missions WHERE is_active=1").fetchone()[0]
+    # aca-numbers-demo: the same denominator every other surface uses.
+    total = takeable_mission_count(conn)
     done = conn.execute(
-        "SELECT COUNT(*) FROM fa_mission_progress WHERE user_id=%s AND status='completed'",
+        "SELECT COUNT(DISTINCT mp.mission_id) FROM fa_mission_progress mp "
+        "JOIN fa_missions m ON m.id=mp.mission_id "
+        "WHERE mp.user_id=%s AND mp.status='completed' AND " + TAKEABLE_MISSION_SQL,
         (user_id,),
     ).fetchone()[0]
     steps_done = conn.execute(
@@ -1689,27 +1759,135 @@ def _leaderboard_cache_fresh(conn, period: str, tenant_id: str | None = None) ->
         return False
 
 
-def refresh_leaderboard_cache(period: str = "weekly", tenant_id: str | None = None) -> int:
-    """Recompute XP rankings and persist them into fa_leaderboard_cache. Returns row count."""
-    conn = get_connection()
-    q = "SELECT id, xp FROM fa_users WHERE role != 'unset'"
+# aca-numbers-demo: the leaderboard says "Top operatives by XP earned", and the
+# weekly tab ranked by fa_users.xp — the ALL-TIME running total, daily-login
+# attendance included (live: 7635, of which 7385 was 107 logins). Both tabs now
+# rank by the XP that drives rank (fa_xp_ledger, is_attendance=0); the weekly tab
+# sums only ledger rows from the last LEADERBOARD_WEEK_DAYS days.
+LEADERBOARD_PERIODS = ("weekly", "alltime")
+LEADERBOARD_WEEK_DAYS = 7
+
+
+def _parse_ledger_ts(value) -> datetime | None:
+    """Ledger created_at is TEXT in both dialects and arrives in several spellings
+    ('2026-10-06 00:18:50.44+00', '2026-10-06T00:18:50', '2026-10-06 00:18:50').
+    Parsed in Python rather than compared as strings, because a space-form and a
+    T-form timestamp on the same day sort on the separator, not the time."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        text = str(value).strip().replace("Z", "+00:00")
+        if text.endswith("+00") or text.endswith("-00"):
+            text += ":00"
+        try:
+            dt = datetime.fromisoformat(text)
+        except ValueError:
+            return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def earned_xp_by_user(conn, user_ids, *, since: datetime | None = None) -> dict:
+    """{user_id: earned XP} from the ledger, optionally only rows at/after ``since``.
+
+    The same basis as earned_xp() (rank), so a leaderboard score and the rank
+    printed beside it are measured in one unit.
+    """
+    ids = [int(u) for u in user_ids]
+    out = {u: 0 for u in ids}
+    if not ids:
+        return out
+    placeholders = ",".join(["%s"] * len(ids))
+    rows = conn.execute(
+        "SELECT user_id, xp_delta, created_at FROM fa_xp_ledger "
+        f"WHERE is_attendance=0 AND user_id IN ({placeholders})",
+        ids,
+    ).fetchall()
+    for r in rows:
+        if since is not None:
+            ts = _parse_ledger_ts(_cell(r, "created_at", 2))
+            if ts is None or ts < since:
+                continue
+        uid = int(_cell(r, "user_id", 0))
+        out[uid] = out.get(uid, 0) + int(_cell(r, "xp_delta", 1) or 0)
+    return out
+
+
+def _period_since(period: str, now: datetime | None = None) -> datetime | None:
+    if period == "weekly":
+        from datetime import timedelta
+        return (now or datetime.now(timezone.utc)) - timedelta(days=LEADERBOARD_WEEK_DAYS)
+    return None
+
+
+def rank_leaderboard(users: list[dict], scores: dict) -> list[dict]:
+    """Pure: attach score + rank_pos, highest score first, ties by name.
+
+    Rank label/colour come from ALL-TIME earned XP (``earned_xp_alltime``), the
+    same basis as the rank on the learner's own hub, never from the period score.
+    """
+    from .constants import ROLES
+
+    out = []
+    for u in users:
+        row = dict(u)
+        row["score"] = int(scores.get(row.get("id"), 0))
+        lvl = xp_to_level(int(row.get("earned_xp_alltime") or 0))
+        row["level_label"] = lvl["label"]
+        row["level_color"] = lvl["color"]
+        role = row.get("role") or ""
+        row["role_label"] = ROLES.get(role, {}).get("label", role)
+        out.append(row)
+    out.sort(key=lambda r: (-r["score"], str(r.get("display_name") or "")))
+    for i, row in enumerate(out, 1):
+        row["rank_pos"] = i
+    return out
+
+
+def _leaderboard_rows(conn, period: str, role: str | None,
+                      tenant_id: str | None) -> list[dict]:
+    q = """SELECT u.id, u.display_name, u.role, u.level, u.xp, u.streak_days,
+                  u.guild_id, g.name AS guild_name
+           FROM fa_users u
+           LEFT JOIN fa_guilds g ON g.id=u.guild_id
+           WHERE u.role != 'unset'"""
     params: list = []
     if tenant_id:
-        q += " AND tenant_id=%s"
+        q += " AND u.tenant_id=%s"
         params.append(tenant_id)
     else:
-        q += " AND (tenant_id IS NULL OR tenant_id='')"
-    q += " ORDER BY xp DESC"
-    users = conn.execute(q, params).fetchall()
+        q += " AND (u.tenant_id IS NULL OR u.tenant_id='')"
+    if role:
+        q += " AND u.role=%s"
+        params.append(role)
+    users = [dict(r) for r in conn.execute(q, params).fetchall()]
+    ids = [u["id"] for u in users]
+    alltime = earned_xp_by_user(conn, ids)
+    for u in users:
+        u["earned_xp_alltime"] = alltime.get(u["id"], 0)
+    since = _period_since(period)
+    scores = alltime if since is None else earned_xp_by_user(conn, ids, since=since)
+    return rank_leaderboard(users, scores)
+
+
+def refresh_leaderboard_cache(period: str = "weekly", tenant_id: str | None = None) -> int:
+    """Recompute rankings and persist them into fa_leaderboard_cache. Returns row count.
+
+    Scores are earned XP for the period (see rank_leaderboard), the same figures
+    get_leaderboard serves, so a cache reader cannot see a different ranking.
+    """
+    conn = get_connection()
+    rows = _leaderboard_rows(conn, period, None, tenant_id)
     now = datetime.now(timezone.utc).isoformat()
     count = 0
-    for rank, u in enumerate(users, 1):
+    for row in rows:
         try:
             conn.execute(
                 """INSERT OR REPLACE INTO fa_leaderboard_cache
                    (user_id, period, score, rank_pos, computed_at, tenant_id)
                    VALUES (%s, %s, %s, %s, %s, %s)""",
-                (u["id"], period, u["xp"], rank, now, tenant_id or ""),
+                (row["id"], period, row["score"], row["rank_pos"], now, tenant_id or ""),
             )
             count += 1
         except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
@@ -1725,56 +1903,22 @@ def refresh_leaderboard_cache(period: str = "weekly", tenant_id: str | None = No
 
 
 def get_leaderboard(period: str = "alltime", role: str = None, limit: int = 20, tenant_id: str | None = None) -> list[dict]:
+    """Rank learners by EARNED XP for ``period`` ('weekly' = last 7 days).
+
+    aca-numbers-demo: computed from the ledger on every read rather than from
+    fa_leaderboard_cache. The cache was keyed only by period and its writer
+    ranked by fa_users.xp, so an older writer's rows (all-time totals, attendance
+    included) were served as "weekly" for the TTL. For a cohort this size the
+    ledger sum is cheaper than the cache round trip it replaced. Nothing in the
+    academy reads fa_leaderboard_cache any more; refresh_leaderboard_cache is kept
+    (writing these same earned figures) so an external reader of that table is
+    not handed attendance-inflated totals. A GET no longer writes to it.
+    """
+    if period not in LEADERBOARD_PERIODS:
+        period = "alltime"
     conn = get_connection()
-    if not _leaderboard_cache_fresh(conn, period, tenant_id):
-        try:
-            refresh_leaderboard_cache(period=period, tenant_id=tenant_id)
-        except Exception:
-            pass
-    # Cache-backed query: returns score + rank_pos from cache
-    try:
-        q = """SELECT u.display_name, u.role, u.level, u.xp, u.streak_days,
-                      u.guild_id, g.name as guild_name,
-                      lc.score, lc.rank_pos
-               FROM fa_leaderboard_cache lc
-               JOIN fa_users u ON u.id=lc.user_id
-               LEFT JOIN fa_guilds g ON g.id=u.guild_id
-               WHERE lc.period=%s AND u.role != 'unset'"""
-        params: list = [period]
-        if tenant_id:
-            q += " AND u.tenant_id=%s"
-            params.append(tenant_id)
-        else:
-            q += " AND (u.tenant_id IS NULL OR u.tenant_id='')"
-        if role:
-            q += " AND u.role=%s"
-            params.append(role)
-        q += " ORDER BY lc.rank_pos LIMIT %s"
-        params.append(limit)
-        rows = conn.execute(q, params).fetchall()
-        if rows:
-            return [dict(r) for r in rows]
-    except Exception:
-        pass
-    # Fallback: direct query when cache is unavailable
-    q = """SELECT u.display_name, u.role, u.level, u.xp, u.xp AS score, u.streak_days,
-                  u.guild_id, g.name as guild_name
-           FROM fa_users u
-           LEFT JOIN fa_guilds g ON g.id=u.guild_id
-           WHERE u.role != 'unset'"""
-    params = []
-    if tenant_id:
-        q += " AND u.tenant_id=%s"
-        params.append(tenant_id)
-    else:
-        q += " AND (u.tenant_id IS NULL OR u.tenant_id='')"
-    if role:
-        q += " AND u.role=%s"
-        params.append(role)
-    q += " ORDER BY u.xp DESC LIMIT %s"
-    params.append(limit)
-    rows = conn.execute(q, params).fetchall()
-    return [dict(r) for r in rows]
+    rows = _leaderboard_rows(conn, period, role, tenant_id)
+    return rows[:limit]
 
 
 # ---------------------------------------------------------------------------
@@ -1806,17 +1950,15 @@ def check_cert_eligibility(user_id: int, cert_key: str) -> dict:
         # "Coming soon" one that can never be completed (fga-wire-06) — so the
         # Foundation certificate was unobtainable by construction. Count only
         # completable missions, matching tier_progress().
-        t1_missions = conn.execute(
-            "SELECT COUNT(*) FROM fa_missions m WHERE m.tier=1 AND m.is_active=1 "
-            "AND (SELECT COUNT(*) FROM fa_mission_steps s WHERE s.mission_id=m.id) > 0"
-        ).fetchone()[0]
+        # aca-numbers-demo: the shared TAKEABLE predicate — the same set the
+        # tier pages and the health endpoint count — so "0/11" here and the
+        # Tier 1 listing cannot disagree about what Tier 1 is.
+        t1_missions = takeable_mission_count(conn, tier=1)
         t1_done = conn.execute(
-            """SELECT COUNT(DISTINCT mp.mission_id)
-               FROM fa_mission_progress mp
-               JOIN fa_missions m ON m.id=mp.mission_id
-               WHERE mp.user_id=%s AND mp.status='completed' AND m.tier=1
-                 AND (SELECT COUNT(*) FROM fa_mission_steps s
-                      WHERE s.mission_id=m.id) > 0""",
+            "SELECT COUNT(DISTINCT mp.mission_id) "
+            "FROM fa_mission_progress mp JOIN fa_missions m ON m.id=mp.mission_id "
+            "WHERE mp.user_id=%s AND mp.status='completed' AND m.tier=1 AND "
+            + TAKEABLE_MISSION_SQL,
             (user_id,),
         ).fetchone()[0]
         met = t1_done >= t1_missions > 0
@@ -1838,9 +1980,7 @@ def check_cert_eligibility(user_id: int, cert_key: str) -> dict:
             # unreachable by construction.
             t2_rows = conn.execute(
                 "SELECT m.id, m.role_filter FROM fa_missions m "
-                "WHERE m.tier=2 AND m.is_active=1 "
-                "  AND (SELECT COUNT(*) FROM fa_mission_steps s "
-                "       WHERE s.mission_id=m.id) > 0"
+                "WHERE m.tier=2 AND " + TAKEABLE_MISSION_SQL
             ).fetchall()
             role_ids = {
                 (r["id"] if hasattr(r, "keys") else r[0])
@@ -1859,7 +1999,8 @@ def check_cert_eligibility(user_id: int, cert_key: str) -> dict:
             t2_done = len(role_ids & done_ids)
             pct = int((t2_done / t2_role * 100) if t2_role else 0)
             met = bool(t2_role) and pct >= reqs["role_tier2_pct"]
-            gates.append({"name": f"Role Tier 2 ({role})", "met": met,
+            from .constants import ROLES as _ROLES  # display name, not the raw key
+            gates.append({"name": f"Role Tier 2 ({_ROLES.get(role, {}).get('label', role)})", "met": met,
                           "detail": (
                               f"{t2_done}/{t2_role} role missions ({pct}%)"
                               if t2_role else
@@ -1942,12 +2083,14 @@ def check_cert_eligibility(user_id: int, cert_key: str) -> dict:
 
     # Gate: Tier 3 complete
     if reqs.get("tier3_complete"):
-        t3_total = conn.execute("SELECT COUNT(*) FROM fa_missions WHERE tier=3").fetchone()[0]
-        t3_done  = conn.execute(
-            """SELECT COUNT(DISTINCT mp.mission_id)
-               FROM fa_mission_progress mp
-               JOIN fa_missions m ON m.id=mp.mission_id
-               WHERE mp.user_id=%s AND mp.status='completed' AND m.tier=3""",
+        # aca-numbers-demo: counted every tier-3 row, retired and stepless
+        # included — an unreachable 100%. Same TAKEABLE set as tier 1.
+        t3_total = takeable_mission_count(conn, tier=3)
+        t3_done = conn.execute(
+            "SELECT COUNT(DISTINCT mp.mission_id) "
+            "FROM fa_mission_progress mp JOIN fa_missions m ON m.id=mp.mission_id "
+            "WHERE mp.user_id=%s AND mp.status='completed' AND m.tier=3 AND "
+            + TAKEABLE_MISSION_SQL,
             (user_id,),
         ).fetchone()[0]
         met = t3_done >= t3_total > 0

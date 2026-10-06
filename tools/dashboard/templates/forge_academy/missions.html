@@ -105,8 +105,14 @@
     <div>
       <h1>Mission Browser</h1>
       <p style="margin:.3rem 0 0;color:var(--text-secondary);font-size:.82rem;">
-        {{ missions|length }} missions available
-        {% if fa_user %} · {{ fa_user.role|upper|default('') }} track{% endif %}
+        {% if listing is defined and listing %}
+        {{ listing.takeable }} mission{{ '' if listing.takeable == 1 else 's' }} you can take
+        {%- if active_tier %} in Tier {{ active_tier }}{% endif %}
+        {%- if listing.track_label %} on the {{ listing.track_label }} track{% else %} across all roles{% endif %}
+        {%- if listing.coming_soon %} · {{ listing.coming_soon }} more coming soon (no steps yet){% endif %}
+        {% else %}
+        {{ missions|length }} missions listed
+        {% endif %}
       </p>
     </div>
     <div style="margin-left:auto;display:flex;gap:.6rem;">

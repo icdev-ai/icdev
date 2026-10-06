@@ -126,7 +126,7 @@
       <div class="ig-kpi-lbl">Avg Score</div>
     </div>
     <div class="ig-kpi">
-      <div class="ig-kpi-val" style="color:{{ readiness.tier_color }};">{{ readiness.score }}</div>
+      <div class="ig-kpi-val" style="color:{{ readiness.tier_color }};">{{ readiness.score_display | default(readiness.score) }}</div>
       <div class="ig-kpi-lbl">AI Readiness</div>
     </div>
   </div>
@@ -183,7 +183,7 @@
       <a href="/academy/org-readiness" style="font-size:.8rem;font-weight:400;color:var(--ig-blue);margin-left:.5rem;">Full View →</a>
       <a href="/academy/instructor" style="font-size:.8rem;font-weight:400;color:var(--ig-blue);margin-left:.5rem;">Instructor Console →</a>
     </div>
-    <div class="ig-readiness-score" style="color:{{ readiness.tier_color }};">{{ readiness.score }}<span style="font-size:1.5rem;color:#8899aa;">/100</span></div>
+    <div class="ig-readiness-score" style="color:{{ readiness.tier_color }};">{{ readiness.score_display | default(readiness.score) }}<span style="font-size:1.5rem;color:#8899aa;">/100</span></div>
     <div class="ig-readiness-guidance">{{ readiness.guidance }}</div>
 
     <div class="ig-readiness-grid">
@@ -191,13 +191,15 @@
       <div>
         <div class="ig-comp-label">
           <span>{{ comp.label }}</span>
-          <span style="color:var(--ig-gold);">{{ comp.value }}%</span>
+          <span style="color:var(--ig-gold);">{% if comp.value is none %}not measured{% else %}{{ comp.value }}%{% endif %}</span>
         </div>
+        {% if comp.value is not none %}
         <div class="ig-bar-bg">
           <div class="ig-bar-fill"
                style="width:{{ comp.value | round(0) | int }}%;background:{% if comp.value >= 80 %}var(--ig-green){% elif comp.value >= 50 %}var(--ig-gold){% else %}var(--ig-red){% endif %};">
           </div>
         </div>
+        {% endif %}
       </div>
       {% endfor %}
     </div>
@@ -300,7 +302,7 @@
 
   <!-- CUI footer -->
   <div style="text-align:center;padding:2rem;font-size:.75rem;color:#555;margin-top:2rem;">
-    CUI // SP-CTI — FORGE IGNITE Innovation Dashboard — {{ readiness.score }}/100 Org AI Readiness
+    CUI // SP-CTI — FORGE IGNITE Innovation Dashboard — {{ readiness.score_display | default(readiness.score) }}/100 Org AI Readiness
   </div>
 
 </div>

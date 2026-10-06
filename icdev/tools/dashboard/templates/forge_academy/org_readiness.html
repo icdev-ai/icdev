@@ -113,15 +113,21 @@
   <!-- Score hero -->
   <div class="or-score-card">
     <div class="or-score-num" style="color:{{ readiness.tier_color }};">
-      {{ readiness.score }}<span class="or-score-denom">/100</span>
+      {{ readiness.score_display | default(readiness.score) }}<span class="or-score-denom">/100</span>
     </div>
     <div>
       <span class="or-tier-badge"
             style="background:{{ readiness.tier_color }}22;color:{{ readiness.tier_color }};border:1px solid {{ readiness.tier_color }}44;">
-        {{ readiness.tier | upper }} READINESS
+        {{ readiness.tier_label | default((readiness.tier | upper) ~ ' READINESS') }}
       </span>
     </div>
     <div class="or-guidance">{{ readiness.guidance }}</div>
+    {% if readiness.coverage_pct is defined and readiness.coverage_pct < 100 %}
+    {# aca-numbers-demo: components with no population are reported, not zeroed. #}
+    <div style="margin-top:.5rem;font-size:.78rem;color:#8899aa;">
+      Measured components cover {{ readiness.coverage_pct }}% of the score weight.
+    </div>
+    {% endif %}
     {% if readiness.phase_guidance %}
     <div style="margin-top:.75rem;font-size:.85rem;color:#8899aa;">{{ readiness.phase_guidance }}</div>
     {% endif %}
@@ -135,15 +141,21 @@
     <div class="or-comp-card">
       <div class="or-comp-label">
         <span>{{ comp.label }}</span>
+        {% if comp.value is none %}
+        <span style="color:#8899aa;">not measured</span>
+        {% else %}
         <span style="color:{% if comp.value >= 80 %}var(--fa-green){% elif comp.value >= 50 %}var(--fa-gold){% else %}var(--fa-red){% endif %};">
           {{ comp.value }}%
         </span>
+        {% endif %}
       </div>
+      {% if comp.value is not none %}
       <div class="or-bar-bg">
         <div class="or-bar-fill"
              style="width:{{ comp.value | round(0) | int }}%;background:{% if comp.value >= 80 %}var(--fa-green){% elif comp.value >= 50 %}var(--fa-gold){% else %}var(--fa-red){% endif %};">
         </div>
       </div>
+      {% endif %}
       {% if comp.note %}
       <div class="or-comp-note">{{ comp.note }}</div>
       {% endif %}
@@ -157,6 +169,9 @@
   {% set cohort = readiness.cohort %}
   <div class="or-cohort-card">
     <div class="or-cohort-title">Team Competency Distribution</div>
+    {% if cohort.basis %}
+    <div style="font-size:.75rem;color:#8899aa;margin:-.6rem 0 .8rem;">Level basis: {{ cohort.basis }}.</div>
+    {% endif %}
 
     {% set levels = [
       ('l1', 'L1 — AI Aware',      '#888888', cohort.l1 | default(0)),
@@ -221,7 +236,12 @@
   {% endif %}
 
   <!-- Phase guidance -->
-  {% if readiness.score < 40 %}
+  {% if readiness.score is none %}
+  <div class="or-phase-card">
+    <div class="or-phase-title">Insufficient data for a recommendation</div>
+    <div class="or-phase-text">{{ readiness.phase_guidance }}</div>
+  </div>
+  {% elif readiness.score < 40 %}
   <div class="or-phase-card">
     <div class="or-phase-title">🔴 Recommended Focus: Foundation Work (Phase 0)</div>
     <div class="or-phase-text">
@@ -270,7 +290,7 @@
   </div>
 
   <div class="or-footer">
-    CUI // SP-CTI — FORGE Academy Org AI Readiness — {{ readiness.score }}/100
+    CUI // SP-CTI — FORGE Academy Org AI Readiness — {{ readiness.score_display | default(readiness.score) }}/100
   </div>
 
 </div>

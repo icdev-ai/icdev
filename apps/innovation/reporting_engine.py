@@ -26,122 +26,211 @@ def _load_competency_cfg() -> dict:
 
 # ---------------------------------------------------------------------------
 # Org AI Readiness Score (used by both innovation dashboard and academy page)
+#
+# aca-numbers-demo, measured live 2026-10-05: the page read "0.0/100 RED
+# READINESS" and placed the only learner at "L4 — AI Expert" — a Recruit with no
+# completed mission. Three defects:
+#   * the cohort level bucketed fa_users.xp, the running total, of which 7385 of
+#     7635 was daily-login attendance — while the learner's RANK is computed from
+#     earned XP (fa_xp_ledger, is_attendance=0). Level and rank now share that basis.
+#   * every completion query matched status='complete'; the academy writes
+#     'completed' (MISSION_STATUS_COMPLETED), so no completion was ever counted.
+#   * components with no population (no AADC scores, no leadership users, no
+#     SRE-AI missions in the catalogue) scored 0 and dragged the composite to 0.0.
+#     They are now reported as unmeasured, and with no completion evidence at all
+#     the score is "insufficient data" instead of a RED verdict.
 # ---------------------------------------------------------------------------
 
+_DEFAULT_LEVELS = [
+    {"id": "L1", "xp_min": 0, "xp_max": 499},
+    {"id": "L2", "xp_min": 500, "xp_max": 1999},
+    {"id": "L3", "xp_min": 2000, "xp_max": 4999},
+    {"id": "L4", "xp_min": 5000, "xp_max": 9999},
+    {"id": "L5", "xp_min": 10000, "xp_max": 999999},
+]
+
+_COMPLETED = "completed"  # apps.forge_academy.constants.MISSION_STATUS_COMPLETED
+
+
+def competency_level(earned_xp: int, missions_completed: int,
+                     levels: list[dict] | None = None) -> str:
+    """Pure: the L-level ('l1'..'l5') a learner's EVIDENCE supports.
+
+    Banded on earned XP — the same figure the rank badge uses, so "L4 — AI Expert"
+    can only appear beside an Architect rank. A learner with no completed mission
+    holds L1 regardless of XP: every level above it is gated on completed work
+    (args/academy_competencies.yaml ``gate``), and XP alone is not that evidence.
+    """
+    levels = levels or _DEFAULT_LEVELS
+    if missions_completed <= 0:
+        return str(levels[0]["id"]).lower()
+    chosen = levels[0]
+    for lvl in levels:
+        if int(earned_xp) >= int(lvl.get("xp_min", 0)):
+            chosen = lvl
+    return str(chosen["id"]).lower()
+
+
+def composite_score(components: dict, evidence_count: int) -> dict:
+    """Pure: weighted score over MEASURED components only.
+
+    Returns ``{score, coverage_pct, insufficient_reason}``. ``score`` is None when
+    there is nothing to score — no measurable component, or no completion/design
+    evidence anywhere in the cohort — because 0.0 would assert "measured, and
+    bad" about an organisation nothing has been measured about.
+    """
+    total_w = sum(float(c.get("weight") or 0) for c in components.values())
+    measured = {k: c for k, c in components.items() if c.get("value") is not None}
+    measured_w = sum(float(c.get("weight") or 0) for c in measured.values())
+    coverage = round(measured_w / total_w * 100, 1) if total_w else 0.0
+    if not measured or measured_w <= 0:
+        return {"score": None, "coverage_pct": coverage,
+                "insufficient_reason": "No readiness component has a population to measure yet."}
+    if evidence_count <= 0:
+        return {"score": None, "coverage_pct": coverage,
+                "insufficient_reason": ("Insufficient data: no learner has completed a mission "
+                                        "or scored an AADC design yet, so there is no evidence to score.")}
+    score = sum(float(c["value"]) * float(c["weight"]) for c in measured.values()) / measured_w
+    return {"score": round(min(100.0, score), 1), "coverage_pct": coverage,
+            "insufficient_reason": None}
+
+
+def _scalar(conn, sql: str, params=()):
+    row = conn.execute(sql, params).fetchone()
+    return row[0] if row else None
+
+
 def compute_org_readiness() -> dict:
-    """Compute the composite Org AI Readiness Score (0-100).
+    """Compute the composite Org AI Readiness Score (0-100), or say it cannot.
 
     Returns:
         {
-          "score": float,
-          "tier": str,         # "red" | "yellow" | "green"
+          "score": float | None,   # None = insufficient data
+          "score_display": str,    # "42.5" or an em dash
+          "tier": str,             # "red" | "yellow" | "green" | "insufficient"
+          "tier_label": str,
           "tier_color": str,
           "guidance": str,
           "phase_guidance": str,
-          "components": {dim: {"value": float, "weight": float, "label": str}},
-          "cohort": {"total_users": int, "l1": int, "l2": int, "l3": int, "l4": int},
+          "coverage_pct": float,   # % of component weight that was measurable
+          "components": {dim: {"value": float|None, "weight": float, "label": str,
+                               "note": str}},
+          "cohort": {"total_users": int, "l1".."l5": int, "basis": str},
           "skill_gaps": [{"skill": str, "unlock_pct": float}],
         }
     """
     cfg = _load_competency_cfg()
-    comp_weights = cfg.get("org_readiness", {}).get("components", {})
+    comp_cfg = cfg.get("org_readiness", {}).get("components", {})
     thresholds = cfg.get("org_readiness", {}).get("thresholds", {"red": 40, "yellow": 65, "green": 80})
+    levels = cfg.get("levels") or _DEFAULT_LEVELS
 
-    components = {}
-    cohort = {"total_users": 0, "l1": 0, "l2": 0, "l3": 0, "l4": 0, "l5": 0}
-    skill_gaps = []
+    def _comp(key: str, default_w: float, label: str, value, note: str = "") -> dict:
+        return {"value": None if value is None else round(float(value), 1),
+                "weight": comp_cfg.get(key, {}).get("weight", default_w),
+                "label": label, "note": note}
+
+    components: dict = {}
+    cohort = {"total_users": 0, "l1": 0, "l2": 0, "l3": 0, "l4": 0, "l5": 0,
+              "basis": "earned XP from graded work, capped at L1 until a mission is completed; "
+                       "daily-login attendance excluded"}
+    skill_gaps: list = []
+    evidence = 0
+
+    try:
+        from apps.forge_academy.db import TAKEABLE_MISSION_SQL, earned_xp_by_user
+    except Exception:  # pragma: no cover - academy app absent
+        TAKEABLE_MISSION_SQL, earned_xp_by_user = "1=1", None
 
     try:
         with get_connection() as conn:
-            # Cohort stats
-            total = conn.execute("SELECT COUNT(*) FROM fa_users").fetchone()[0]
+            users = [dict(r) for r in conn.execute("SELECT id, xp, role FROM fa_users").fetchall()]
+            total = len(users)
             cohort["total_users"] = total
 
-            if total > 0:
-                for level, xp_min, xp_max in [
-                    ("l1", 0, 499), ("l2", 500, 1999),
-                    ("l3", 2000, 4999), ("l4", 5000, 9999), ("l5", 10000, 999999),
-                ]:
-                    row = conn.execute(
-                        "SELECT COUNT(*) FROM fa_users WHERE xp>=? AND xp<=?",
-                        (xp_min, xp_max),
-                    ).fetchone()
-                    cohort[level] = row[0] if row else 0
+            done_by_user: dict = {}
+            for r in conn.execute(
+                "SELECT mp.user_id, COUNT(DISTINCT mp.mission_id) FROM fa_mission_progress mp "
+                "JOIN fa_missions m ON m.id=mp.mission_id "
+                "WHERE mp.status=%s AND " + TAKEABLE_MISSION_SQL + " GROUP BY mp.user_id",
+                (_COMPLETED,),
+            ).fetchall():
+                done_by_user[int(r[0])] = int(r[1])
+            evidence += sum(done_by_user.values())
 
-            # Component 1: Tier 2 completion %
-            t2_pct = 0.0
-            if total > 0:
-                try:
-                    row = conn.execute(
-                        """SELECT COUNT(DISTINCT mp.user_id) FROM fa_mission_progress mp
-                           JOIN fa_missions m ON m.id=mp.mission_id
-                           WHERE m.tier=2 AND mp.status='complete'"""
-                    ).fetchone()
-                    t2_users = row[0] if row else 0
-                    t2_pct = (t2_users / total) * 100
-                except Exception:
-                    pass
-            components["tier2_completion_pct"] = {
-                "value": round(t2_pct, 1),
-                "weight": comp_weights.get("tier2_completion_pct", {}).get("weight", 0.35),
-                "label": "Tier 2 Mission Completion",
-            }
-
-            # Component 2: AADC readiness score average
-            aadc_avg = 0.0
             try:
+                if earned_xp_by_user is None:
+                    raise RuntimeError("academy ledger helper unavailable")
+                earned = earned_xp_by_user(conn, [u["id"] for u in users])
+            except Exception:
+                # Pre-ledger database: rank falls back to the total (blueprint._level_ctx);
+                # the level does the same, and the completed-mission cap still applies.
+                earned = {u["id"]: int(u.get("xp") or 0) for u in users}
+            for u in users:
+                lvl = competency_level(earned.get(u["id"], 0), done_by_user.get(u["id"], 0), levels)
+                cohort[lvl] = cohort.get(lvl, 0) + 1
+
+            # Component 1: share of the cohort with a completed Tier 2 mission.
+            t2_value = None
+            if total > 0:
+                t2_users = _scalar(
+                    conn,
+                    "SELECT COUNT(DISTINCT mp.user_id) FROM fa_mission_progress mp "
+                    "JOIN fa_missions m ON m.id=mp.mission_id "
+                    "WHERE m.tier=2 AND mp.status=%s AND " + TAKEABLE_MISSION_SQL,
+                    (_COMPLETED,)) or 0
+                t2_value = t2_users / total * 100
+            components["tier2_completion_pct"] = _comp(
+                "tier2_completion_pct", 0.35, "Tier 2 Mission Completion", t2_value,
+                "" if t2_value is not None else "No learners yet.")
+
+            # Component 2: AADC design scores — only when designs have been scored.
+            # Probed through the catalogue, not by a failing SELECT: on PostgreSQL
+            # a failed statement aborts the transaction the queries below share.
+            aadc_value, aadc_note = None, "No AADC designs have been scored."
+            if _table_exists(conn, "aadc_design_scores"):
                 row = conn.execute(
-                    "SELECT AVG(current_score) FROM aadc_design_scores"
-                ).fetchone()
-                aadc_avg = float(row[0] or 0)
-            except Exception:
-                pass
-            components["aadc_readiness_score"] = {
-                "value": round(aadc_avg, 1),
-                "weight": comp_weights.get("aadc_readiness_score", {}).get("weight", 0.25),
-                "label": "AADC Design Readiness",
-            }
+                    "SELECT COUNT(*), AVG(current_score) FROM aadc_design_scores").fetchone()
+                if row and int(row[0] or 0) > 0:
+                    aadc_value, aadc_note = float(row[1] or 0), f"{int(row[0])} scored designs."
+                    evidence += int(row[0])
+            else:
+                aadc_note = "AADC scoring is not installed on this deployment."
+            components["aadc_readiness_score"] = _comp(
+                "aadc_readiness_score", 0.25, "AADC Design Readiness", aadc_value, aadc_note)
 
-            # Component 3: Production AI ops coverage (SRE-AI missions)
-            prod_ops_pct = 0.0
-            if total > 0:
-                try:
-                    row = conn.execute(
-                        """SELECT COUNT(DISTINCT mp.user_id) FROM fa_mission_progress mp
-                           JOIN fa_missions m ON m.id=mp.mission_id
-                           WHERE m.topic='sre_ai' AND mp.status='complete'"""
-                    ).fetchone()
-                    sre_users = row[0] if row else 0
-                    prod_ops_pct = (sre_users / total) * 100
-                except Exception:
-                    pass
-            components["production_ai_ops_coverage"] = {
-                "value": round(prod_ops_pct, 1),
-                "weight": comp_weights.get("production_ai_ops_coverage", {}).get("weight", 0.20),
-                "label": "Production AI Ops Coverage",
-            }
+            # Component 3: SRE-AI production ops — measurable only if such missions exist.
+            ops_value = None
+            ops_note = "No Production AI Ops (sre_ai) missions are in the catalogue."
+            sre_missions = _scalar(
+                conn,
+                "SELECT COUNT(*) FROM fa_missions m WHERE m.topic='sre_ai' AND "
+                + TAKEABLE_MISSION_SQL) or 0
+            if sre_missions and total > 0:
+                sre_users = _scalar(
+                    conn,
+                    "SELECT COUNT(DISTINCT mp.user_id) FROM fa_mission_progress mp "
+                    "JOIN fa_missions m ON m.id=mp.mission_id "
+                    "WHERE m.topic='sre_ai' AND mp.status=%s", (_COMPLETED,)) or 0
+                ops_value, ops_note = sre_users / total * 100, ""
+            components["production_ai_ops_coverage"] = _comp(
+                "production_ai_ops_coverage", 0.20, "Production AI Ops Coverage",
+                ops_value, ops_note)
 
-            # Component 4: Leadership track completion
-            leadership_pct = 0.0
-            try:
-                total_leaders = conn.execute(
-                    "SELECT COUNT(*) FROM fa_users WHERE role='leadership'"
-                ).fetchone()[0]
-                if total_leaders > 0:
-                    row = conn.execute(
-                        """SELECT COUNT(DISTINCT mp.user_id) FROM fa_mission_progress mp
-                           JOIN fa_missions m ON m.id=mp.mission_id
-                           JOIN fa_users u ON u.id=mp.user_id
-                           WHERE u.role='leadership' AND m.topic='leadership' AND mp.status='complete'"""
-                    ).fetchone()
-                    leadership_pct = (row[0] / total_leaders) * 100
-            except Exception:
-                pass
-            components["leadership_track_completion"] = {
-                "value": round(leadership_pct, 1),
-                "weight": comp_weights.get("leadership_track_completion", {}).get("weight", 0.20),
-                "label": "Leadership Track Completion",
-            }
+            # Component 4: leadership track — measurable only with leadership users.
+            lead_value, lead_note = None, "No learners hold the leadership role."
+            total_leaders = sum(1 for u in users if u.get("role") == "leadership")
+            if total_leaders > 0:
+                leaders_done = _scalar(
+                    conn,
+                    "SELECT COUNT(DISTINCT mp.user_id) FROM fa_mission_progress mp "
+                    "JOIN fa_missions m ON m.id=mp.mission_id "
+                    "JOIN fa_users u ON u.id=mp.user_id "
+                    "WHERE u.role='leadership' AND m.topic='leadership' AND mp.status=%s",
+                    (_COMPLETED,)) or 0
+                lead_value, lead_note = leaders_done / total_leaders * 100, ""
+            components["leadership_track_completion"] = _comp(
+                "leadership_track_completion", 0.20, "Leadership Track Completion",
+                lead_value, lead_note)
 
             # Skill gaps: skills with <30% unlock rate across cohort
             try:
@@ -163,48 +252,59 @@ def compute_org_readiness() -> dict:
     except Exception as e:
         logger.debug("Org readiness query failed: %s", e)
 
-    # Composite score
-    score = sum(
-        comp["value"] * comp["weight"]
-        for comp in components.values()
-    )
-    score = round(min(100.0, score), 1)
-
-    # Tier
-    if score >= thresholds.get("green", 80):
-        tier, tier_color = "green", "#00FF88"
-    elif score >= thresholds.get("yellow", 65):
-        tier, tier_color = "yellow", "#FFB800"
-    else:
-        tier, tier_color = "red", "#FF4444"
-
-    # Guidance
+    result = composite_score(components, evidence)
+    score = result["score"]
     phase_guidance_map = cfg.get("org_readiness", {}).get("modernization_phase_guidance", {})
-    if score < 40:
-        guidance = "Phase 0 work required — build AI foundations before pilots"
-        phase_key = "below_40"
-    elif score < 65:
-        guidance = "Ready for Phase 1 quick-win AI projects"
-        phase_key = "40_to_65"
-    elif score < 80:
-        guidance = "Ready for Phase 2 AI augmentation initiatives"
-        phase_key = "65_to_80"
-    else:
-        guidance = "Ready for Phase 3+ AI-first transformation"
-        phase_key = "above_80"
 
-    phase_guidance = phase_guidance_map.get(phase_key, guidance)
+    if score is None:
+        tier, tier_color, tier_label = "insufficient", "#8899aa", "INSUFFICIENT DATA"
+        guidance = result["insufficient_reason"]
+        phase_guidance = ("A readiness score appears once learners complete missions. "
+                          "Until then this page reports the cohort, not a verdict.")
+    else:
+        if score >= thresholds.get("green", 80):
+            tier, tier_color = "green", "#00FF88"
+        elif score >= thresholds.get("yellow", 65):
+            tier, tier_color = "yellow", "#FFB800"
+        else:
+            tier, tier_color = "red", "#FF4444"
+        tier_label = f"{tier.upper()} READINESS"
+        if score < 40:
+            guidance, phase_key = "Phase 0 work required — build AI foundations before pilots", "below_40"
+        elif score < 65:
+            guidance, phase_key = "Ready for Phase 1 quick-win AI projects", "40_to_65"
+        elif score < 80:
+            guidance, phase_key = "Ready for Phase 2 AI augmentation initiatives", "65_to_80"
+        else:
+            guidance, phase_key = "Ready for Phase 3+ AI-first transformation", "above_80"
+        phase_guidance = phase_guidance_map.get(phase_key, guidance)
 
     return {
         "score": score,
+        "score_display": "—" if score is None else f"{score}",
         "tier": tier,
+        "tier_label": tier_label,
         "tier_color": tier_color,
         "guidance": guidance,
         "phase_guidance": phase_guidance,
+        "coverage_pct": result["coverage_pct"],
         "components": components,
         "cohort": cohort,
         "skill_gaps": skill_gaps,
     }
+
+
+def _table_exists(conn, name: str) -> bool:
+    """Catalogue probe that never raises inside the caller's transaction."""
+    try:
+        if getattr(conn, "_backend", "") == "postgresql":
+            row = conn.execute("SELECT to_regclass(%s)", (name,)).fetchone()
+            return bool(row and row[0])
+        row = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s", (name,)).fetchone()
+        return bool(row)
+    except Exception:
+        return False
 
 
 def innovation_dashboard_data() -> dict:
