@@ -2262,7 +2262,50 @@ def discover_steps() -> dict:
             seen.add(st["step_num"])
             deduped.append(st)
         found[slug] = deduped
+
+    for orphan in code_only_steps():
+        _log.warning(
+            "FORGE Academy: %s has starter/test code but no stepN_*.md lesson — "
+            "discovery scans markdown only, so this step never loads (aicur-fix-03)",
+            orphan,
+        )
     return found
+
+
+_STEP_CODE_RE = re.compile(r"^step(?P<num>\d+)_(?:starter|test)\.py$")
+
+
+def code_only_steps() -> list:
+    """Steps that carry ``stepN_starter.py`` / ``stepN_test.py`` but no ``stepN_*.md``.
+
+    aicur-fix-03: discovery keys a step on its markdown frontmatter, so a folder
+    holding only the Python assets was dropped without a word — 11 such steps across
+    Tier 1 and Tier 2. Code a BUILTIN_STEPS entry declares as its
+    ``starter_code_path`` / ``test_code_path`` is loaded through that entry, not
+    through discovery, so it is not reported (m11-multimodal step 2). Returns sorted
+    ``<dir>/step<N>`` paths relative to CONTENT_ROOT.
+    """
+    if not CONTENT_ROOT.is_dir():
+        return []
+    declared = {
+        st.get(key)
+        for steps in BUILTIN_STEPS.values()
+        for st in steps
+        for key in ("starter_code_path", "test_code_path")
+        if st.get(key)
+    }
+    out: set = set()
+    for path in CONTENT_ROOT.rglob("step*.py"):
+        match = _STEP_CODE_RE.match(path.name)
+        if not match:
+            continue
+        num = match.group("num")
+        if any(path.parent.glob(f"step{num}_*.md")):
+            continue
+        if path.relative_to(CONTENT_ROOT).as_posix() in declared:
+            continue
+        out.add(f"{path.parent.relative_to(CONTENT_ROOT).as_posix()}/step{num}")
+    return sorted(out)
 
 
 # ---------------------------------------------------------------------------
