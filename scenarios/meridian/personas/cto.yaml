@@ -1,0 +1,21 @@
+# CUI // SP-CTI
+label: "Chief Technology Officer"
+description: "CTO who assesses technical feasibility of MERIDIAN alternatives, evaluates vendor claims, and recommends architectural safeguards for future AI systems."
+attributes:
+  - agency or program office
+  - technical background (software, data, or ML engineering)
+  - experience evaluating vendor AI systems
+  - data provenance and model monitoring experience
+
+prompt_hint: >
+  Generate a realistic CTO who must tell non-technical leadership whether MERIDIAN can
+  be trusted, what a manual fallback costs, and which of the vendor's technical claims
+  hold up. They argue for data-provenance checks and independent model monitoring so
+  the next poisoning is caught in days, not 60. Explain why Academy training in ML
+  fundamentals, fine-tuning and AI governance helps them translate model behaviour into
+  decisions leadership can act on.
+
+academy_relevant_missions:
+  - ml-fundamentals
+  - model-fine-tuning
+  - ai-governance

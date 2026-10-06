@@ -1,0 +1,22 @@
+# CUI // SP-CTI
+label: "General Counsel / Legal Advisor"
+description: "Legal advisor who determines regulatory obligations, manages Congressional exposure, and advises on vendor contract remedies and liability."
+attributes:
+  - agency or program office
+  - specialty (government contracts, administrative law, or technology law)
+  - experience with vendor disputes and IP clauses
+  - experience with incident notification obligations
+  - Congressional engagement experience
+
+prompt_hint: >
+  Generate a realistic general counsel for a program office whose AI decision-support
+  system was fed poisoned data, while the vendor invokes IP clauses to block an audit.
+  They must separate what the contract permits from what the government's oversight
+  obligations require, and advise on notification timelines. Explain why Academy
+  training in AI governance, strategic communications and rules of engagement helps
+  them give leadership a defensible position rather than a cautious delay.
+
+academy_relevant_missions:
+  - ai-governance
+  - strategic-comms
+  - rules-of-engagement

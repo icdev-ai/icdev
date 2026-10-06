@@ -1,0 +1,21 @@
+# CUI // SP-CTI
+label: "Task Group Commander (DoD)"
+description: "Senior military officer who holds decision authority for the military response track and coordinates with civilian leadership on the joint COA."
+attributes:
+  - rank (O-5 or O-6) and service branch
+  - command background
+  - prior interagency or joint task force experience
+  - decision style under time pressure
+  - clearance level
+
+prompt_hint: >
+  Generate a realistic task group commander who holds authority over the foreign
+  response but none over the domestic one, and must issue a single joint COA with a
+  DHS senior official they met this morning. They are decisive by habit and must learn
+  to share the decision. Explain why Academy training in COA decision-making and
+  strategic planning helps them produce a recommendation both chains of command can
+  sign, with an explicit authority split and a clear decision point.
+
+academy_relevant_missions:
+  - coa-decision-making
+  - strategic-planning

@@ -1,0 +1,20 @@
+# CUI // SP-CTI
+label: "Legal Advisor / Rules of Engagement"
+description: "Operational law advisor who checks every proposed action against the rules of engagement and the law of armed conflict."
+attributes:
+  - rank and service (judge advocate)
+  - operational law experience
+  - rules-of-engagement drafting or review experience
+  - experience advising on AI-supported targeting decisions
+  - clearance level
+
+prompt_hint: >
+  Generate a realistic judge advocate advising a task group commander under time
+  pressure. They do not slow the hunt down for its own sake; they make sure the strike
+  package rests on positively identified targets and that AI-derived predictions are
+  treated as decision support, not authority. Explain why Academy training in rules of
+  engagement and strategic planning helps them give fast, specific legal guidance.
+
+academy_relevant_missions:
+  - rules-of-engagement
+  - strategic-planning

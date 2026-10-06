@@ -1,0 +1,55 @@
+# CUI // SP-CTI
+id: inject-04-joint-coa
+title: "Joint COA — One Voice, Two Chains of Command"
+
+body_md: |
+  ## JOINT DECISION BRIEF — ONE RECOMMENDATION FOR TWO LEADERS
+
+  **Classification:** CUI // SP-CTI
+  **Priority:** IMMEDIATE
+  **DTG:** [T+85 minutes]
+
+  ---
+
+  ### SITUATION
+
+  The bridge is live. The reconciled picture shows foreign infrastructure seeding
+  the content and domestic accounts — many of them real, unwitting people —
+  amplifying it. The adversary's pipeline re-tunes on engagement every ~6 hours.
+
+  The Task Group Commander and the DHS senior official must issue **one** joint
+  course of action. Each holds authorities the other lacks.
+
+  ### Courses of Action
+
+  - **COA ALPHA — Foreign disruption first:** DoD/IC act against the foreign
+    infrastructure under their authorities; DHS issues public guidance only.
+  - **COA BRAVO — Synchronised dual track:** foreign disruption and domestic
+    action (platform notification through CISA, public-health messaging with the
+    affected cities) launched in one window so the adversary cannot re-tune between them.
+  - **COA CHARLIE — Expose and inoculate:** no disruption; a coordinated public
+    attribution and pre-bunking campaign, preserving collection on the network.
+
+  ---
+
+  ### YOUR TASK
+
+  Recommend one COA (or a defended hybrid) as a single joint voice:
+
+  1. Which authority executes each action, and who approves it.
+  2. Second- and third-order effects, including on unwitting domestic users.
+  3. The decision point, and the indicator that would make you switch COA.
+
+  **Deliverable — Joint COA Decision Package (≤ 300 words).**
+
+  **AI Tools:**
+  - **COA Wargame** — model second- and third-order consequences of each COA
+  - **Strategos Oracle** — test the recommendation against the adversary's likely adaptation
+  - **OODA Wargame** — time the action against the adversary's re-tuning cycle
+
+context_note: >
+  No COA is scripted as correct. BRAVO is the hardest to execute and the most
+  defensible against an adapting pipeline; ALPHA or CHARLIE score well only when the
+  team names what it gives up. The judge rewards a single recommendation that both
+  chains of command could sign, an explicit authority split, and protection of
+  unwitting domestic users.

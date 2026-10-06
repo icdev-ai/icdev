@@ -1,0 +1,22 @@
+# CUI // SP-CTI
+label: "Security Engineer / STIG Lead"
+description: "Owns threat modeling, STIG compliance validation, container security hardening, and supply chain risk."
+attributes:
+  - organization (government agency or defense contractor)
+  - certifications (CISSP, Security+, or equivalent)
+  - STIG and container hardening experience
+  - supply chain / SBOM tooling experience
+  - clearance level
+
+prompt_hint: >
+  Generate a realistic security engineer on a DoD AI engineering team whose model has
+  silently degraded in production. While others chase the drift, they ask whether the
+  degradation is an attack — a poisoned data source or a compromised dependency — and
+  make sure the fix ships through a hardened, STIG-compliant container. Explain why
+  Academy training in zero trust, cyber defense and threat modeling lets them rule an
+  attack in or out with evidence instead of assumption.
+
+academy_relevant_missions:
+  - zero-trust
+  - cyber-defense
+  - threat-modeling
