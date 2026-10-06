@@ -1650,6 +1650,7 @@ def seed_mission_catalog() -> None:
         # idempotent — it only writes to rows whose asset paths are still empty.
         reconcile_all_step_assets(conn, discovered)
         reconcile_builtin_step_assets(conn)
+        reconcile_missing_steps(conn, discovered)
         # aca-hon-02: refresh the catalogue's user-visible fields on an already-seeded
         # database. The ON CONFLICT upsert below ALREADY sets title/tagline correctly
         # — it just sits after the fast-path return, so on any seeded database it
@@ -2544,6 +2545,56 @@ def _seed_steps(conn, mission_id: int, mission_slug: str, steps: list | None = N
             _log.debug("Step seed %s step %s: %s", mission_slug, step.get("step_num"), exc)
 
     _reconcile_step_assets(conn, mission_id, mission_slug, steps)
+
+
+def reconcile_missing_steps(conn, discovered: dict | None = None) -> int:
+    """Seed steps authored AFTER their mission was catalogued. Returns rows inserted.
+
+    The per-mission seeding loop in ``seed_mission_catalog`` skips any mission that
+    already has a step row, and on a fully-catalogued database it never runs at all
+    (the fast-path return). So a step added to an EXISTING mission never got a row:
+    measured on the live board 2026-10-06, eight authored steps were unreachable —
+    m01 step 6 (a graded lab), m02 steps 3-5, m03 steps 2-3, m04 steps 2-3.
+
+    Conservative, because it runs on every dashboard start: only missions that
+    already have steps are considered (an unseeded mission is the seeding loop's
+    job), only step numbers with no row are inserted, and an existing row is never
+    modified (``_seed_steps`` is INSERT OR IGNORE). Idempotent. Never raises.
+    """
+    if discovered is None:
+        discovered = discover_steps()
+    try:
+        rows = conn.execute(
+            "SELECT m.id, m.slug, s.step_num FROM fa_missions m "
+            "JOIN fa_mission_steps s ON s.mission_id = m.id"
+        ).fetchall()
+    except Exception as exc:
+        _log.warning("FORGE Academy: missing-step reconcile could not read steps: %s", exc)
+        return 0
+    have: dict[str, tuple[int, set]] = {}
+    for row in rows:
+        mid, slug, num = (row["id"], row["slug"], row["step_num"]) if hasattr(row, "keys") else row
+        have.setdefault(slug, (mid, set()))[1].add(num)
+    inserted = 0
+    for slug, (mission_id, nums) in have.items():
+        missing = [s for s in steps_for(slug, discovered) if s["step_num"] not in nums]
+        if not missing:
+            continue
+        try:
+            _seed_steps(conn, mission_id, slug, steps=missing)
+            inserted += len(missing)
+            _log.info(
+                "FORGE Academy: seeded %d new step(s) for %s: %s",
+                len(missing), slug, [s["step_num"] for s in missing],
+            )
+        except Exception as exc:
+            _log.warning("FORGE Academy: missing-step reconcile failed for %s: %s", slug, exc)
+    if inserted:
+        try:
+            conn.commit()
+        except Exception as exc:
+            _log.warning("FORGE Academy: missing-step reconcile commit failed: %s", exc)
+    return inserted
 
 
 def reconcile_all_step_assets(conn, discovered: dict | None = None) -> int:
