@@ -139,6 +139,19 @@ BUILTIN_MISSIONS = [
         "difficulty": "advanced", "estimated_minutes": 60,
         "prereqs": ["m08-strands-agents", "m09-langchain"],
     },
+    # ── TIER 1: AI-Assisted Engineering (aicur-eng-*) ───────────────────────
+    # Steps are discovered from content/tier1/<slug>/steps/ (fga-wire-01); the
+    # lessons are graded by content/item_banks/<slug>.yaml, the lab by step3_test.py.
+    {
+        "slug": "m-aie-01-coding-harnesses",
+        "title": "Coding Harnesses",
+        "tagline": "Copilot, Cursor, Claude Code, Codex CLI: what a harness adds, and how to drive one.",
+        "tier": 1, "topic": "agents", "role_filter": "all",
+        "mission_type": "coding",
+        "xp_reward": 300, "order_idx": 12,
+        "difficulty": "beginner", "estimated_minutes": 35,
+        "prereqs": ["m05-mcp-protocol"],
+    },
     # ── TIER 2: Non-technical (ISSO) ─────────────────────────────────────────
     {
         "slug": "m-isso-01-stig-triage",
