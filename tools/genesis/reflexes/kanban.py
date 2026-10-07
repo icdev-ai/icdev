@@ -11168,12 +11168,23 @@ def _reconcile_pr_opened() -> int:
     moved = 0
     conn = None
     try:
-        branches = _open_pr_head_branches(str(BASE_DIR))
-        if not branches:
-            # Empty means gh was unavailable OR there are genuinely no open PRs.
-            # Both are correctly a no-op: this only ever moves a task FORWARD on
-            # positive evidence that its PR exists.
-            return 0
+        # An empty listing means gh was unavailable OR there are genuinely no open
+        # PRs. Both are correctly a no-op for that repo: this only ever moves a
+        # task FORWARD on positive evidence that its PR exists.
+        #
+        # PER TASK, IN ITS OWN REPO. This used to ask only ICDev's forge, so a task
+        # that builds in an external repo (args/kanban_external_repos.yaml) never
+        # reached pr_opened while dispatch — which DOES resolve the task's repo —
+        # withheld it for having an open PR: a deadlock that held ftl-bz-study-01
+        # (icdev_ft #420) in `scheduled` for 12 days, with its dependents behind it.
+        branches_by_root: dict = {}
+
+        def _branches_for(task_id: str) -> Set[str]:
+            root = str(_task_repo_root(task_id))
+            if root not in branches_by_root:
+                branches_by_root[root] = _open_pr_head_branches(root)
+            return branches_by_root[root]
+
         conn = get_connection()
         placeholders = ",".join(["%s"] * len(eligible))
         rows = conn.execute(
@@ -11184,7 +11195,7 @@ def _reconcile_pr_opened() -> int:
         for row in rows:
             record = dict(row)
             task_id = record.get("id")
-            if not task_id or f"kanban/{task_id}" not in branches:
+            if not task_id or f"kanban/{task_id}" not in _branches_for(task_id):
                 continue
             # Belt as well as braces. The SELECT already filters on `eligible`,
             # but that guard lives in SQL where no unit test can see it and a
