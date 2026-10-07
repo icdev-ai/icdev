@@ -89,10 +89,11 @@ node_tool_map:
 
   # ── Governance / Compliance ──────────────────────────────────────────────────
   audit-logger:
-    tool_path: tools/compliance/classification_manager.py
+    tool_path: tools/audit/audit_logger.py
+    cli_command: "python tools/audit/audit_logger.py --event agent_execution_completed --actor <agent_id> --action '<what the agent did>' --project-id <project_id> --json"
     config_key: audit_logger
-    description: Append-only audit trail for all LLM interactions. NIST AU-2/AU-9 compliant. Writes to icdev.db audit tables.
-    task_title: "Wire audit-logger node → classification_manager.py (audit mode)"
+    description: Append-only audit trail for all LLM interactions. NIST AU-2/AU-9 compliant. audit_logger.log_event() writes hash-chained rows to the audit_trail table (no UPDATE/DELETE).
+    task_title: "Wire audit-logger node → audit_logger.log_event()"
     docs_link: m-sre-ai-04-incident-response
 
   prompt-registry:
@@ -122,8 +123,9 @@ node_tool_map:
 
   # ── Compliance / Reporting ───────────────────────────────────────────────────
   compliance-reporter:
-    tool_path: tools/compliance/classification_manager.py
+    tool_path: tools/compliance/fedramp_report_generator.py
+    cli_command: "python tools/compliance/fedramp_report_generator.py --project-id <project_id> --baseline moderate --json"
     config_key: compliance_reporter
-    description: Generates CUI-marked compliance reports from audit trail data. FedRAMP AU control evidence export.
-    task_title: "Wire compliance-reporter node → classification_manager.py (report mode)"
+    description: Generates CUI-marked FedRAMP assessment reports (control-family scores incl. AU, gap analysis, evidence table) and records each report in the audit trail.
+    task_title: "Wire compliance-reporter node → fedramp_report_generator.generate_fedramp_report()"
     docs_link: m-leadership-04-govern-ai
