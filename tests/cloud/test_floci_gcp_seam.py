@@ -441,7 +441,7 @@ def test_the_compose_image_and_the_seam_image_are_the_same_literal(compose):
     """YAML cannot import a Python constant, so the two are kept in step by
     hand -- and this is the test that makes "by hand" safe."""
     svc = compose["services"]["floci-gcp"]
-    assert svc["image"] == emulator_gcp.IMAGE == "floci/floci-gcp:0.9.0"
+    assert svc["image"] == emulator_gcp.IMAGE == "floci/floci-gcp:0.10.0"
     assert not svc["image"].endswith(":latest")
 
 
@@ -518,7 +518,7 @@ class _FakeConnector(FlociGcpConnector):
 #: The measured health body shape: a services map whose every value is "running".
 _HEALTH_BODY = {
     "services": {n: "running" for n in ("gcs", "pubsub", "firestore", "cloudsql")},
-    "version": "0.9.0",
+    "version": "0.10.0",
 }
 
 
@@ -821,7 +821,7 @@ def test_provenance_is_emulated_and_never_observed():
 
 
 def test_emulator_scoped_tables_are_excluded_from_the_resource_count():
-    """`enabled_services` alone returns 23 rows on an emulator holding NOTHING.
+    """`enabled_services` alone returns 24 rows on an emulator holding NOTHING.
     Counting it would make an empty estate report a populated one -- the
     fabricated-population mirror of a fabricated empty."""
     for table in ("health", "enabled_services", "project"):
