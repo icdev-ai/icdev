@@ -26,9 +26,10 @@ MEASURED SHAPES THIS CONNECTOR HANDLES AND ITS SIBLINGS DO NOT
 * **Two row envelopes on one emulator.** ``queues`` wraps rows in
   ``{"items": [...]}``; the other ten lanes return a bare list. Handled in the
   seam's ``rows_from`` so the rule lives in one place.
-* **An OKE cluster reporting ``ACTIVE`` is not a working cluster.** floci-oci
-  0.4.0 spawns ``rancher/k3s`` without a ``--token``, k3s dies immediately, and
-  the API never re-checks. The ``clusters`` table therefore carries
+* **An OKE cluster reporting ``ACTIVE`` is not a working cluster.** Through
+  0.4.1 floci-oci spawned ``rancher/k3s`` without a ``--token`` and k3s died
+  immediately; 0.4.2 starts it properly, but the API still never re-checks --
+  a stopped k3s keeps reading ``ACTIVE``. The ``clusters`` table therefore carries
   ``lifecycle_is_unverified`` and this connector never promotes
   ``lifecycleState`` to a health verdict.
 * **An empty list IS a real answer here.** ``compartmentId`` is honoured
@@ -389,13 +390,15 @@ class FlociOciConnector(SaaSBaseConnector):
         }
         if service in emulator_oci.FABRICATED_ACTIVE_WITH_DOCKER:
             # An OKE row says a record exists, never that a cluster runs.
-            # Measured: floci-oci 0.4.0 spawns k3s with no --token, k3s exits
-            # immediately, and lifecycleState stays ACTIVE with a dead endpoint.
+            # Measured: lifecycleState is written once at create and never
+            # re-checked -- through 0.4.1 k3s always died (no --token); on
+            # 0.4.2 a stopped k3s still reads ACTIVE with a dead endpoint.
             metadata["lifecycle_is_unverified"] = emulator_oci.OKE_LIFECYCLE_IS_UNVERIFIED
             metadata["note"] = (
-                "lifecycleState on these rows is NOT verified. floci-oci 0.4.0 "
-                "starts k3s without a --token; the container exits immediately "
-                "and the API keeps reporting ACTIVE with an endpoint that has no "
+                "lifecycleState on these rows is NOT verified. floci-oci sets "
+                "ACTIVE once at create and never re-checks it: through 0.4.1 k3s "
+                "started without a --token and exited immediately, and on 0.4.2 a "
+                "stopped k3s still reads ACTIVE with an endpoint that has no "
                 "listener. Treat a row as 'a record exists', never as 'a cluster runs'."
             )
         return ConnectorResponse(

@@ -222,10 +222,11 @@ def test_remote_docker_host_is_left_unset(floci):
 #: `floci-oci` is the OCI emulator (flx-oci-01), where exactly ONE service
 #: spawns a container -- OKE, measured, starting `rancher/k3s:v1.30.1-k3s1`
 #: (version-pinned, unlike the GCP sibling's two `:latest` tags). That grant is
-#: made KNOWING OKE IS BROKEN in 0.4.0: the emulator starts k3s without a
-#: `--token`, the container exits immediately, and the API still reports
-#: `lifecycleState: ACTIVE`. It is granted for shape-parity with the three
-#: siblings and so a later release works with no compose change; a deployment
+#: made KNOWING OKE WAS BROKEN through 0.4.1: the emulator started k3s without
+#: a `--token`, the container exited immediately, and the API still reported
+#: `lifecycleState: ACTIVE`. 0.4.2 fixed the token (k3s runs) but still never
+#: re-checks that state. It is granted for shape-parity with the three
+#: siblings, so 0.4.2's working OKE needed no compose change; a deployment
 #: that wants neither may drop the mount, and OKE then fails honestly with a
 #: 500. See docs/spikes/flx-oci-parity.md §5 and sandbox-coverage Gap 68.
 _SOCKET_GRANTED_SERVICES = {"floci", "floci-az", "floci-gcp", "floci-oci"}

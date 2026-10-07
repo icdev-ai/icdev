@@ -984,6 +984,42 @@ def test_a_snapshot_names_its_unverified_tables_even_when_clean(monkeypatch):
     assert snap["provenance"] == "emulated"
 
 
+def test_every_oke_reason_string_names_the_pinned_release(emulator_on, monkeypatch):
+    """A pin bump must re-state what OKE does ON THE PINNED DIGEST.
+
+    0.4.2 changed OKE (k3s now starts; ACTIVE is still never re-checked) while
+    the connector note, the snapshot reason and the simulate_delta finding all
+    still described 0.4.0's dead k3s as the current behaviour. Each of the
+    three must name the pinned release, so the next bump cannot move the tag
+    and leave a claim nobody observed on it (artifact-fresh-f2a465a983).
+    """
+    tag = emulator_oci.IMAGE_TAG
+    note = _FakeConnector(
+        {"/20180222/clusters": [{"id": "ocid1.cluster.x", "lifecycleState": "ACTIVE"}]}
+    ).read(_request("clusters")).metadata["note"]
+
+    adapter = twin_mod.FlociOciTwinAdapter()
+    monkeypatch.setattr(
+        adapter, "_read_table",
+        lambda *a, **k: type(
+            "O", (), {"ok": True, "connector_status": "ok", "row_count": 1}
+        )(),
+    )
+    monkeypatch.setattr(adapter, "_persist_snapshot", lambda snap: False)
+    reason = adapter.take_snapshot("local")["unverified_reason"]
+
+    finding = [
+        v for v in adapter.simulate_delta("local", {"services": ["oke"]})["violations"]
+        if v.get("rule_id") == "floci-oci-service-fabricates-active"
+    ]
+    assert len(finding) == 1
+    finding_text = " ".join(str(finding[0].get(k, "")) for k in ("title", "recommendation", "detail"))
+
+    for where, text in (("connector note", note), ("snapshot reason", reason),
+                        ("simulate_delta finding", finding_text)):
+        assert tag in text, f"{where} does not name the pinned release {tag}: {text!r}"
+
+
 def test_latest_status_over_nothing_is_unknown_never_pass(monkeypatch):
     """The twin has never looked, which is not a clean bill of health."""
     adapter = twin_mod.FlociOciTwinAdapter()

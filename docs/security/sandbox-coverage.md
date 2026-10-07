@@ -2507,7 +2507,14 @@ that.
   the emulator starts k3s without a `--token`, the container exits immediately
   (`level=fatal msg="--token is required"`), and the API nonetheless reports
   `lifecycleState: ACTIVE` with a `kubernetes` endpoint that has no listener.
-  So on release 0.4.0 the socket buys **no working capability at all**. It is
+  So on release 0.4.0 the socket buys **no working capability at all**.
+  **Re-measured on 0.4.2 (2026-10-06, artifact-fresh-f2a465a983): OKE now
+  WORKS** — k3s starts with a token-auth file and the apiserver answers — which
+  makes the grant LARGER, not smaller: a create now leaves a **privileged**
+  k3s container publishing 6443 on **all** host interfaces (token auth on,
+  anonymous auth off), outside the loopback-only posture of the emulator port.
+  `lifecycleState` is still never re-checked. ICDEV itself never creates an
+  OKE cluster (the seam is read/inventory-only). It is
   granted for two narrow reasons: shape-parity with the three sibling profiles,
   so a later release that fixes OKE needs no compose change; and because the
   ten inventory lanes ICDEV actually reads are unaffected either way (listing

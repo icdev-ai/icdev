@@ -28,6 +28,8 @@ An OKE row is NOT evidence of a running cluster. Measured 2026-09-05 on
 ``floci/floci-oci:0.4.0``: the emulator spawns ``rancher/k3s:v1.30.1-k3s1``
 without a ``--token``, k3s exits immediately, and the API keeps reporting
 ``lifecycleState: ACTIVE`` with a ``kubernetes`` endpoint that has no listener.
+Re-measured 2026-10-06 on ``0.4.2``: k3s now starts and authenticates, but the
+state is still never re-checked -- a stopped k3s keeps reading ``ACTIVE``.
 So ``clusters`` rows are counted as RECORDS and ``unverified_tables`` names them
 on every snapshot -- including a clean one, because a reader who only learns of
 the caveat when something looks wrong will read a clean snapshot as a working
@@ -340,16 +342,18 @@ class FlociOciTwinAdapter(TwinAdapter):
             and all(reads.get(t) == READ_ANSWERED for t in _ESTATE_TABLES),
             # Named on EVERY snapshot, not only when something is wrong. These
             # tables' rows are records whose backing the emulator does not
-            # verify: floci-oci 0.4.0 starts k3s with no --token, the container
-            # exits, and lifecycleState stays ACTIVE. A reader who learns that
+            # verify: lifecycleState is set once at create and never re-checked
+            # (0.4.0/0.4.1 never started k3s at all; on 0.4.2 a stopped k3s
+            # still reads ACTIVE). A reader who learns that
             # only from a failing snapshot will read a clean one as a working
             # cluster.
             "unverified_tables": list(_UNVERIFIED_TABLES),
             "unverified_reason": (
-                "OKE rows are records, not running clusters: floci-oci 0.4.0 "
-                "starts rancher/k3s without a --token, the container exits "
-                "immediately, and the API keeps reporting lifecycleState ACTIVE "
-                "with an endpoint that has no listener (measured 2026-09-05)."
+                "OKE rows are records, not running clusters: floci-oci sets "
+                "lifecycleState ACTIVE once at create and never re-checks it. "
+                "Through 0.4.1 rancher/k3s started without a --token and exited "
+                "immediately; on 0.4.2 k3s starts, but a stopped one still reads "
+                "ACTIVE with an endpoint that has no listener (measured 2026-10-06)."
             )
             if _UNVERIFIED_TABLES
             else "",
@@ -484,13 +488,13 @@ class FlociOciTwinAdapter(TwinAdapter):
         Terraform plan, a list of resource types. THREE independent questions are
         asked and none substitutes for another:
 
-        * **IS THE SERVICE ITSELF BROKEN ON THIS EMULATOR?** ``oke`` is, and
-          this rung has NO analogue on the three sibling twins. It is reported
-          at ``high`` REGARDLESS of the docker socket, because the socket is not
-          the problem: with one, floci-oci 0.4.0 starts k3s without a
-          ``--token``, the container exits, and the API reports ACTIVE anyway.
-          A rehearsal there produces a fabricated success no amount of reading
-          the response will reveal.
+        * **DOES THE SERVICE'S REPORTED STATE MEAN ANYTHING ON THIS EMULATOR?**
+          ``oke``'s does not, and this rung has NO analogue on the three sibling
+          twins. It is reported at ``high`` REGARDLESS of the docker socket:
+          ``lifecycleState: ACTIVE`` is written once at create and never
+          re-checked. Through 0.4.1 k3s never started at all (no ``--token``);
+          0.4.2 starts it, but a stopped k3s still reads ACTIVE, and a created
+          cluster is a privileged k3s publishing 6443 on every host interface.
         * **CAN THIS HOST EXERCISE ITS DATA PLANE?** A container-backed service
           with no docker socket, at ``medium``. Unlike the GCP sibling there is
           no severity escalation for a fabricating service here, because
@@ -518,18 +522,21 @@ class FlociOciTwinAdapter(TwinAdapter):
                     # honestly with a 500, with one it succeeds and lies.
                     "high",
                     "service_parity",
-                    f"'{service}' is BROKEN on this emulator and a rehearsal against it "
-                    f"produces a fabricated success. MEASURED 2026-09-05 on "
-                    f"floci/floci-oci:0.4.0: a create returns HTTP 202, the emulator "
-                    f"spawns rancher/k3s:v1.30.1-k3s1 WITHOUT a --token, the container "
-                    f"exits immediately ('--token is required'), and the API keeps "
-                    f"reporting lifecycleState ACTIVE with a kubernetes endpoint that "
-                    f"has no listener. Mounting a docker socket does not fix this -- "
-                    f"without one the call at least fails loudly with a 500. Rehearse "
+                    f"'{service}' reports a lifecycleState on this emulator that is never "
+                    f"re-checked, so a rehearsal's ACTIVE proves nothing. MEASURED "
+                    f"2026-09-05 on floci/floci-oci:0.4.0 (and again on 0.4.1): the "
+                    f"emulator spawned rancher/k3s:v1.30.1-k3s1 WITHOUT a --token, the "
+                    f"container exited immediately ('--token is required'), and the API "
+                    f"kept reporting ACTIVE. MEASURED 2026-10-06 on 0.4.2: k3s now "
+                    f"starts and authenticates, but stopping it leaves the API reporting "
+                    f"ACTIVE with a kubernetes endpoint that has no listener, and the "
+                    f"cluster is a privileged container publishing 6443 on every host "
+                    f"interface. Without a docker socket the create fails loudly with a "
+                    f"500. Rehearse "
                     f"'{service}' elsewhere and treat any row this twin reports for it "
                     f"as a record, never as a running cluster. This says nothing about "
                     f"the target environment.",
-                    title=f"'{service}' reports ACTIVE on this emulator but never runs",
+                    title=f"'{service}' reports ACTIVE on this emulator whether or not it runs",
                     rule_id="floci-oci-service-fabricates-active",
                     target_csp=TARGET_CSP,
                     source_canvas=self.canvas_key,
