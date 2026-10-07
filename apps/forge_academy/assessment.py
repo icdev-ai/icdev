@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from secrets import SystemRandom
 
@@ -73,6 +74,37 @@ def _conn():
     schema.
     """
     return _fadb.get_connection()
+
+
+@contextmanager
+def _policy_conn():
+    """A connection for ``fa_step_assessment_policy``, row security OFF.
+
+    That table is the one fa_* table with no ``classification`` (or ``tenant_id``)
+    column. Inside a request ``get_connection`` attaches the SecurityContext, and the
+    row-security injector rewrites every SELECT/UPDATE on it to filter on a column
+    that does not exist -- so on the live dashboard every policy read raised
+    ``UndefinedColumn``, ``_policy_row`` fell back to ``{}``, and each step's stored
+    summative cap / threshold was silently ignored. The row is per-STEP course
+    configuration, not learner data, so there is nothing for RLS to scope; this is
+    the canvas-table pattern (``storage.get_canvas_connection``,
+    ``db.get_user_achievements``).
+
+    The context is RESTORED on exit rather than left cleared: inside a request the
+    academy hands one pooled connection to successive helpers, and a policy lookup
+    must not switch row security off for the fa_* queries that follow it.
+    """
+    conn = _conn()
+    setter = getattr(conn, "set_security_context", None)
+    if setter is None:  # a bare DB-API connection carries no row security at all
+        yield conn
+        return
+    prior = getattr(conn, "_security_context", None)
+    setter(None)
+    try:
+        yield conn
+    finally:
+        setter(prior)
 
 
 def _now() -> str:
@@ -223,11 +255,12 @@ def _policy_row(step_id) -> dict:
     except (TypeError, ValueError):
         return {}
     try:
-        row = _conn().execute(
-            "SELECT policy, items_per_attempt, pass_threshold_pct, max_attempts "
-            "FROM fa_step_assessment_policy WHERE step_id=%s",
-            (sid,),
-        ).fetchone()
+        with _policy_conn() as conn:
+            row = conn.execute(
+                "SELECT policy, items_per_attempt, pass_threshold_pct, max_attempts "
+                "FROM fa_step_assessment_policy WHERE step_id=%s",
+                (sid,),
+            ).fetchone()
     except Exception:
         _log.warning("policy table unavailable for step %s", step_id, exc_info=True)
         return {}
@@ -288,26 +321,26 @@ def set_step_policy(step_id: int, policy: str = ATTEMPT_POLICY_PRACTICE, *,
             f"step {step_id} has nothing to grade, so it cannot be summative — "
             "author an item bank or a verification test first"
         )
-    conn = _conn()
-    existing = conn.execute(
-        "SELECT id FROM fa_step_assessment_policy WHERE step_id=%s", (int(step_id),)
-    ).fetchone()
-    if existing:
-        conn.execute(
-            "UPDATE fa_step_assessment_policy SET policy=%s, items_per_attempt=%s, "
-            "pass_threshold_pct=%s, max_attempts=%s, updated_at=%s WHERE step_id=%s",
-            (policy, items_per_attempt, pass_threshold_pct, max_attempts, _now(),
-             int(step_id)),
-        )
-    else:
-        conn.execute(
-            "INSERT INTO fa_step_assessment_policy "
-            "(step_id, policy, items_per_attempt, pass_threshold_pct, max_attempts, "
-            " updated_at) VALUES (%s,%s,%s,%s,%s,%s)",
-            (int(step_id), policy, items_per_attempt, pass_threshold_pct,
-             max_attempts, _now()),
-        )
-    conn.commit()
+    with _policy_conn() as conn:
+        existing = conn.execute(
+            "SELECT id FROM fa_step_assessment_policy WHERE step_id=%s", (int(step_id),)
+        ).fetchone()
+        if existing:
+            conn.execute(
+                "UPDATE fa_step_assessment_policy SET policy=%s, items_per_attempt=%s, "
+                "pass_threshold_pct=%s, max_attempts=%s, updated_at=%s WHERE step_id=%s",
+                (policy, items_per_attempt, pass_threshold_pct, max_attempts, _now(),
+                 int(step_id)),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO fa_step_assessment_policy "
+                "(step_id, policy, items_per_attempt, pass_threshold_pct, max_attempts, "
+                " updated_at) VALUES (%s,%s,%s,%s,%s,%s)",
+                (int(step_id), policy, items_per_attempt, pass_threshold_pct,
+                 max_attempts, _now()),
+            )
+        conn.commit()
     return True
 
 
