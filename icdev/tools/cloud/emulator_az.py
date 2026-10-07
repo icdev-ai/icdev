@@ -107,14 +107,21 @@ MODE = "floci-az"
 # past that health check. See docs/spikes/flx-az-parity.md §9 for what else
 # changed (new postgres/mysql/mariadb/containerapps ARM lanes, Event Hubs now
 # docker-backed instead of mocked) -- none of it is designed against yet.
+#
+# Moved 0.13.0 -> 0.14.0 on 2026-10-07 (artifact-fresh-6de1bfe08c) after driving
+# 0.13.0 and 0.14.0 side by side: every connector table returns the same rows
+# from the same seeded estate, the ARM provider table and the subscription-scope
+# trap reproduce unchanged. One measured change IS consumed here: the health
+# body now carries the real release, so HEALTH_REPORTS_REAL_VERSION flips to
+# True. See docs/spikes/flx-az-parity.md §10.
 IMAGE_REPOSITORY = "floci/floci-az"
-IMAGE_TAG = "0.13.0"
+IMAGE_TAG = "0.14.0"
 IMAGE = f"{IMAGE_REPOSITORY}:{IMAGE_TAG}"
 
-#: Digest MEASURED from the pulled image on 2026-09-15. Recorded so an air-gap
+#: Digest MEASURED from the pulled image on 2026-10-07. Recorded so an air-gap
 #: bundle can be verified by digest rather than by tag -- a tag-only check reads
 #: a `docker load`ed bundle as absent (see the flx-airgap-01 discipline).
-IMAGE_DIGEST = "sha256:3a71953fbc0940aa33bbc1c5e88211a320b66812c0840831a9f8558d3d3521c5"
+IMAGE_DIGEST = "sha256:a35e74dfca9a5e811090d8ae98876044fc8990a8874ee525231f524ca56679db"
 
 #: Port floci-az serves the Azure API edge on, INSIDE the container. The
 #: host-side port is a deployment's choice; this one is the emulator's.
@@ -147,10 +154,11 @@ HEALTH_PATH = "/_floci/health"
 #: different finding from "no services are running".
 HEALTH_HAS_SERVICE_MAP = False
 
-#: MEASURED: ``/_floci/health`` reports ``"version":"dev"`` while the image's
-#: own ``FLOCI_AZ_VERSION`` env var carries ``0.12.0``. Do not source a version
-#: claim from the health body.
-HEALTH_REPORTS_REAL_VERSION = False
+#: MEASURED on 0.14.0: ``/_floci/health`` reports ``"version":"0.14.0"``,
+#: matching the image's own ``FLOCI_AZ_VERSION`` env var. Through 0.13.0 it
+#: reported ``"dev"`` (parity spike §3, §9), which is why this was False --
+#: it is a property of the PINNED image, so re-measure it on every bump.
+HEALTH_REPORTS_REAL_VERSION = True
 
 #: ICDEV has no Azure IaC executor. See the module docstring.
 IAC_EXECUTION_SUPPORTED = False
@@ -546,9 +554,9 @@ def health(env: Optional[Mapping[str, str]] = None, *, timeout: float = 2.0) -> 
     :func:`status`, which is what says which.
 
     MEASURED shape: ``{"status": "UP", "edition": "floci-az-always-free",
-    "version": "dev"}``. There is NO ``services`` key
-    (:data:`HEALTH_HAS_SERVICE_MAP` is False) and ``version`` does not carry the
-    real release (:data:`HEALTH_REPORTS_REAL_VERSION` is False).
+    "version": "0.14.0"}``. There is NO ``services`` key
+    (:data:`HEALTH_HAS_SERVICE_MAP` is False); since 0.14.0 ``version`` carries
+    the real release (:data:`HEALTH_REPORTS_REAL_VERSION` is True).
     """
     url, req = _health_request(env)
     try:
