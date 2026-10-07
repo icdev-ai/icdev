@@ -8,7 +8,8 @@ A SIBLING OF ``emulator.py`` AND ``emulator_az.py``, NOT A SECOND COPY
 modules rather than one parameterised module because **almost nothing about
 them is shared**, and every difference below was MEASURED against
 ``floci/floci-gcp:0.8.0`` on 2026-09-05, and re-confirmed against ``0.9.0`` on
-2026-09-17 (artifact-fresh-6a0d68cce8, no behavioural change) -- see
+2026-09-17 (artifact-fresh-6a0d68cce8, no behavioural change) and ``0.10.0`` on
+2026-10-07 (artifact-fresh-6ba99af4d5, one new control-plane-only service) -- see
 ``docs/spikes/flx-gcp-parity.md``:
 
   * a third health path. floci keeps ``/_localstack/health``, floci-az answers
@@ -42,8 +43,8 @@ unconsumed defect this platform ships most, and it is refused here explicitly.
 
 THE MEASURED TRAPS THIS SEAM EXISTS TO STATE ONCE
 -------------------------------------------------
-1. :data:`HEALTH_SERVICE_MAP_IS_ENABLEMENT_ONLY`. ``/health`` publishes 23
-   services, every one reading ``"running"``. Measured on two containers -- one
+1. :data:`HEALTH_SERVICE_MAP_IS_ENABLEMENT_ONLY`. ``/health`` publishes 24
+   services (23 through ``0.9.0``; ``0.10.0`` added ``compute``), every one reading ``"running"``. Measured on two containers -- one
    with the host socket mounted, one with ``FLOCI_GCP_DOCKER_DOCKER_HOST``
    pointed at a provably absent path -- **the two bodies are byte-identical**,
    and the socket-absent deployment cannot start a container at all. The map is
@@ -119,14 +120,19 @@ MODE = "floci-gcp"
 # map, the Firestore/Datastore gRPC-only split, the GKE/Kafka path collision
 # and the fabricated Cloud Run success without a docker socket all reproduce
 # byte-for-byte. See docs/spikes/flx-gcp-parity.md for the full delta.
+#
+# Moved 0.9.0 -> 0.10.0 on 2026-10-07 (artifact-fresh-6ba99af4d5) on the same
+# evidence, re-driven live. The one delta is a 24th service, ``compute``, which
+# is CONTROL-PLANE ONLY -- an instance reads RUNNING and no container starts,
+# with or without a docker socket -- so CONTAINER_BACKED_SERVICES is unchanged.
 IMAGE_REPOSITORY = "floci/floci-gcp"
-IMAGE_TAG = "0.9.0"
+IMAGE_TAG = "0.10.0"
 IMAGE = f"{IMAGE_REPOSITORY}:{IMAGE_TAG}"
 
-#: Digest MEASURED from the pulled image on 2026-09-17. Recorded so an air-gap
+#: Digest MEASURED from the pulled image on 2026-10-07. Recorded so an air-gap
 #: bundle can be verified by digest rather than by tag -- a tag-only check reads
 #: a `docker load`ed bundle as absent (see the flx-airgap-01 discipline).
-IMAGE_DIGEST = "sha256:ea29a53b34d04ba05240cdc6833608e43ae2b0a67849e5b97f01a7224e1138ea"
+IMAGE_DIGEST = "sha256:405c128b685afbc461276820f2286defcc3a6fa478755067d3e3f740c5503c07"
 
 #: Port floci-gcp serves on, INSIDE the container. The host-side port is a
 #: deployment's choice; this one is the emulator's. MEASURED: it is the ONLY
@@ -163,7 +169,7 @@ HEALTH_HAS_SERVICE_MAP = True
 HEALTH_SERVICE_MAP_IS_ENABLEMENT_ONLY = True
 
 #: MEASURED: ``/health`` reports the real release (``"0.8.0"``, then
-#: ``"0.9.0"`` after the 2026-09-17 bump), matching the image's own
+#: ``"0.9.0"`` after the 2026-09-17 bump, ``"0.10.0"`` after 2026-10-07), matching the image's own
 #: ``FLOCI_GCP_VERSION``. The one constant that inverts in the helpful
 #: direction relative to floci-az (which reports ``"dev"``) -- recorded for
 #: symmetry, and load-bearing for nothing.
@@ -717,7 +723,7 @@ def health(env: Optional[Mapping[str, str]] = None, *, timeout: float = 2.0) -> 
     ``{}`` here means "not read", never "no services" -- read it beside
     :func:`status`, which is what says which.
 
-    MEASURED shape: ``{"services": {<23 names>: "running"}, "version": "0.9.0"}``.
+    MEASURED shape: ``{"services": {<24 names>: "running"}, "version": "0.10.0"}``.
     The version IS the real release. The services map IS NOT A HEALTH SIGNAL --
     see :data:`HEALTH_SERVICE_MAP_IS_ENABLEMENT_ONLY` and :func:`health_services`.
     """

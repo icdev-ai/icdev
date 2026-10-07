@@ -520,3 +520,48 @@ seam or connector change needed; see
 `docs/audits/artifact-fresh-6a0d68cce8-floci-gcp-pin.md` for the decision
 record and `python -m tools.airgap.artifact_freshness --artifact floci-gcp
 --json`, which now reports `current`.
+
+## 11. Re-measured against `0.10.0` (artifact-fresh-6ba99af4d5, 2026-10-07)
+
+The reflex found the pin behind again (`0.10.0` published, `0.9.0` pinned).
+Re-derived on the same host (Windows 11, Docker Desktop 28.5.1,
+`linux/amd64`), with a `0.9.0` container running beside it as a live
+reference so every probe was answered by both releases in the same minute:
+
+```
+floci/floci-gcp:0.10.0
+sha256:405c128b685afbc461276820f2286defcc3a6fa478755067d3e3f740c5503c07
+64.4 MB · native (Quarkus 3.39.5) · edition banner "GCP Local Emulator · Always Free"
+```
+
+| Fact (section) | 0.9.0 | 0.10.0 |
+|---|---|---|
+| Health path / siblings 404 (§2) | `/health` 200, `/_floci/health` and `/_localstack/health` 404 | unchanged |
+| Service map all `"running"`, byte-identical with/without docker socket (§2) | 23 names | **24 names** — the same 23 in the same order, plus `compute` appended; still all `"running"`, still byte-identical socket vs no socket |
+| `version` field reports the real release (§2) | `"0.9.0"` | `"0.10.0"` |
+| `GET /v1/projects/floci-local` returns a real project (§3) | 200 | unchanged |
+| Firestore/Datastore REST 404, gRPC-only (§1) | `/documents/...` and `:runQuery` 404 | unchanged (415 only when the request omits `content-type`, identically on both releases) |
+| GKE/Kafka path collision (§4) | `/v1/.../clusters` → Managed Kafka (`RedpandaManager`), real GKE at `/container/v1` | unchanged |
+| Container-backed spawns (§5) | cloudsql → `postgres:15.18-alpine`, kafka → `redpandadata/redpanda:latest` | unchanged (cloudsql spawn re-observed with a socket) |
+| No socket: cloudsql/kafka 500 (dockerjava), Cloud Run fabricated 200 (§5) | confirmed | unchanged |
+| `FLOCI_GCP_STORAGE_MODE=persistent` → banner `Storage: persistent` (§7) | confirmed | unchanged |
+| GCS bucket create → list round-trip (§6) | confirmed | unchanged |
+
+**The one delta: a 24th service, `compute`.** Probed directly. It is a
+control-plane catalog (6 zones, 5 machine types, an EMPTY public image
+catalog — `debian-cloud` image families 404), it validates (`Missing or
+invalid subnetwork`, `A boot disk is required`), and after a network +
+subnetwork it accepts an `instances.insert` whose instance reads
+**`RUNNING` with a `networkIP` while no container starts** — identically
+on a socket-mounted container and on one pointed at a nonexistent docker
+host. So `compute` is state-only, like GCS, and is NOT container-backed:
+`CONTAINER_BACKED_SERVICES` and `FABRICATED_SUCCESS_WITHOUT_DOCKER` stay as
+they are. Its `RUNNING` is a metadata claim, never a VM — the same caveat
+§2 states for the service map. Nothing in this platform composes the
+`compute` lane today, so the delta changes no seam behaviour.
+
+New, unread here: a startup WARN that IAM authorization is DISABLED by
+default (supported only for `gcs` and `resourcemanager`). The seam is
+read/inventory-only and never relied on IAM enforcement.
+
+Decision record: `docs/audits/artifact-fresh-6ba99af4d5-floci-gcp-pin.md`.

@@ -330,7 +330,7 @@ class FlociGcpConnector(SaaSBaseConnector):
         """The service map, as ENABLEMENT -- deliberately not called ``services``.
 
         This is the one table whose NAME is doing safety work. floci-gcp
-        publishes 23 services, every one reading ``"running"``, and the map is
+        publishes 24 services (``0.10.0``), every one reading ``"running"``, and the map is
         byte-identical on an emulator that provably cannot start a container. It
         reports what is compiled in, never what works.
 

@@ -334,7 +334,7 @@ artifacts:
   - name: floci-gcp
     kind: image
     ref: floci/floci-gcp
-    pinned: "0.9.0"
+    pinned: "0.10.0"
     pin_source: "compose:floci-gcp"
     upstream: dockerhub
     note: >-
@@ -344,7 +344,10 @@ artifacts:
       GKE/Kafka path collision and the fabricated Cloud Run success without a
       docker socket all reproduce unchanged. See
       docs/audits/artifact-fresh-6a0d68cce8-floci-gcp-pin.md and
-      docs/spikes/flx-gcp-parity.md.
+      docs/spikes/flx-gcp-parity.md. Bumped again to 0.10.0 on 2026-10-07
+      (artifact-fresh-6ba99af4d5) after re-driving the same probes live --
+      all reproduce; the one delta is a 24th, control-plane-only `compute`
+      service. See docs/audits/artifact-fresh-6ba99af4d5-floci-gcp-pin.md.
 
   - name: floci-oci
     kind: image
