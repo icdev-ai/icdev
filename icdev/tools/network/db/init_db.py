@@ -14635,16 +14635,14 @@ def init_db():
     conn = get_connection()
     try:
         if _NC_BACKEND == "postgresql":
-            # PostgreSQL: execute each statement individually
-            # ICDEV's StorageConnection translates SQL automatically
-            for stmt in SCHEMA.split(";"):
-                stmt = stmt.strip()
-                if stmt and not stmt.startswith("--"):
-                    try:
-                        conn.execute(stmt)
-                    except Exception:
-                        pass  # table/index already exists
-            conn.commit()
+            # PostgreSQL: StorageConnection.executescript strips `--` comments
+            # BEFORE splitting on ';' and runs each statement in its own
+            # SAVEPOINT (and commits). The old hand-rolled loop skipped every
+            # chunk that STARTED with a comment -- i.e. the comment and the
+            # CREATE TABLE beneath it (100 of 144 tables); a ';' inside a
+            # comment turned the next chunk into a syntax error; and with no
+            # rollback that first error aborted the rest of the transaction.
+            conn.executescript(SCHEMA)
             # PG audit immutability triggers (PL/pgSQL syntax)
             try:
                 conn.execute("""

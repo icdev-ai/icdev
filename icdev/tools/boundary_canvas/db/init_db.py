@@ -1624,14 +1624,11 @@ def init_db():
     conn = get_connection()
     try:
         if _BDC_BACKEND == "postgresql":
-            for stmt in SCHEMA.split(";"):
-                stmt = stmt.strip()
-                if stmt and not stmt.startswith("--"):
-                    try:
-                        conn.execute(stmt)
-                    except Exception:
-                        pass  # table/index already exists
-            conn.commit()
+            # executescript strips `--` comments before splitting on ';' and
+            # SAVEPOINT-isolates each statement (then commits). The old loop
+            # skipped any chunk that began with a comment -- the CREATE under
+            # it included -- and one unrolled-back error aborted the rest.
+            conn.executescript(SCHEMA)
             # PG audit immutability triggers (PL/pgSQL syntax)
             try:
                 conn.execute("""

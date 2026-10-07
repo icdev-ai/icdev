@@ -1642,15 +1642,12 @@ def init_db():
     conn = get_connection()
     try:
         if _SC_BACKEND == "postgresql":
-            # PostgreSQL: execute each statement individually
-            for stmt in SCHEMA.split(";"):
-                stmt = stmt.strip()
-                if stmt and not stmt.startswith("--"):
-                    try:
-                        conn.execute(stmt)
-                    except Exception:
-                        pass  # table/index already exists
-            conn.commit()
+            # PostgreSQL: executescript strips `--` comments before splitting on
+            # ';' and SAVEPOINT-isolates each statement (then commits). The old
+            # loop skipped any chunk that began with a comment, dropping the
+            # CREATE TABLE under it (zig_pillars), and never rolled back a
+            # failure, so one error aborted every later statement.
+            conn.executescript(SCHEMA)
             # PG audit immutability triggers (PL/pgSQL syntax)
             try:
                 conn.execute("""
