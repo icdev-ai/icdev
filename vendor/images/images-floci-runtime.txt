@@ -104,7 +104,10 @@ opensearchproject/opensearch@sha256:4ee82ecb35d837a6186c81aaa64c8a5bce71aa956edb
 #   Re-measured 2026-09-18: the `latest` tag rebuilt (rpk v26.2.2 -> v26.2.3,
 #   a patch release under the same tag), digest moved off sha256:468bd13a...
 #   See docs/audits/artifact-fresh-5e94142e90-kafka-redpanda-pin.md.
-redpandadata/redpanda@sha256:9e83cfa99278f30d0133271c26bf670cd69c94ffa6ba0b42830dd0c3bd9dcfd9
+#   Re-measured 2026-10-07 (artifact-fresh-e30db43367): rebuilt again, rpk
+#   v26.2.3 -> v26.2.4, digest moved off sha256:9e83cfa9... See
+#   docs/audits/artifact-fresh-e30db43367-kafka-redpanda-pin.md.
+redpandadata/redpanda@sha256:c98c2f04a751e6646012cc701bac5183252cee44c88ba1dfa412e4c7124f2e89
 
 # ec2 -- public.ecr.aws/amazonlinux/amazonlinux:2023   # ROLLING TAG upstream -- re-measure, never assume
 #   The tag is floci's OWN default: `defaultDockerImage` in its embedded AMI
