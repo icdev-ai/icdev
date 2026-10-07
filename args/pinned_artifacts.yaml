@@ -316,6 +316,12 @@ artifacts:
       measurements was taken against; moving it needs the same drive-and-observe
       re-measurement those cards each did, not a tag edit. See
       docs/audits/artifact-fresh-1f206ea0ad-floci-pin.md.
+      KEPT AGAIN past 2.2.0 (artifact-fresh-145e1b11e9, 2026-10-07): a
+      744-entry release whose notes add single-node Redis on CreateCacheCluster
+      (#3634) -- falsifying the "floci REFUSES Engine=redis on
+      CreateCacheCluster" line args/floci_runtime_images.yaml records as
+      measured -- and RDS SQL Server (#3752), an image class the air-gap bundle
+      does not hold. See docs/audits/artifact-fresh-145e1b11e9-floci-pin.md.
 
   # -- The three sibling emulators. Compose-tagged, NOT digest-pinned: no
   # vendor/images topic exists for them, so `digest_drift` is unmeasurable and
