@@ -157,8 +157,12 @@ CREATE INDEX IF NOT EXISTS idx_aisg_exec_roadmap ON aisg_executive_summaries(roa
 CREATE INDEX IF NOT EXISTS idx_aisg_handoff_roadmap ON aisg_knowledge_handoffs(roadmap_id);
 CREATE INDEX IF NOT EXISTS idx_aisg_roi_roadmap ON aisg_roi_tracking(roadmap_id);
 CREATE INDEX IF NOT EXISTS idx_aisg_audit_roadmap ON aisg_audit(roadmap_id);
+"""
 
--- Immutability triggers (SQLite)
+# Immutability triggers in SQLite dialect (BEGIN ... RAISE(ABORT) ... END).
+# Kept OUT of SCHEMA: on PostgreSQL they are a syntax error, and the ';' split
+# turns each trailing `END` into a bare COMMIT.
+_SQLITE_TRIGGERS = """
 CREATE TRIGGER IF NOT EXISTS aisg_audit_no_update
     BEFORE UPDATE ON aisg_audit
     BEGIN
@@ -176,16 +180,16 @@ CREATE TRIGGER IF NOT EXISTS aisg_audit_no_delete
 def init_db() -> None:
     conn = get_connection()
     try:
-        if _AISG_BACKEND == "postgresql":
-            for stmt in SCHEMA.split(";"):
-                stmt = stmt.strip()
-                if stmt and not stmt.startswith("--"):
-                    try:
-                        conn.execute(stmt)
-                    except Exception:
-                        pass
-        else:
-            conn.executescript(SCHEMA)
+        # Both backends: on PostgreSQL StorageConnection.executescript strips
+        # `--` comments before splitting on ';' and SAVEPOINT-isolates each
+        # statement. The old PG loop skipped any chunk that began with a
+        # comment (the CREATE under it included) and never rolled back, so one
+        # failure aborted every later one.
+        conn.executescript(SCHEMA)
+        # Decide on the connection actually returned: get_connection() falls
+        # back to SQLite when the PG connection cannot be made.
+        if getattr(conn, "_backend", "sqlite") != "postgresql":
+            conn.executescript(_SQLITE_TRIGGERS)
         conn.commit()
         print(f"[init_db] AISG schema ready ({_AISG_BACKEND})", file=sys.stderr)
     finally:
