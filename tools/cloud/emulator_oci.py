@@ -75,7 +75,12 @@ THE MEASURED TRAPS THIS SEAM EXISTS TO STATE ONCE
    spawns ``rancher/k3s:v1.30.1-k3s1``, k3s dies immediately
    (``--token is required`` -- floci-oci never passes one), and the API keeps
    reporting ``lifecycleState: ACTIVE`` with a ``kubernetes`` endpoint that has
-   no listener. OKE cannot work at all in 0.4.0.
+   no listener. OKE cannot work at all in 0.4.0 or 0.4.1. **0.4.2 fixed the
+   token** (k3s now starts with a ``token-auth-file``, the apiserver answers,
+   and the kubeconfig lane hands out a working token) -- but ``ACTIVE`` is
+   still written once at create and never re-checked: stop the k3s container
+   and the API keeps reporting ``ACTIVE`` against a dead endpoint. The set
+   stays ``{"oke"}`` because the field is still not evidence.
    :data:`OKE_LIFECYCLE_IS_UNVERIFIED` is why no consumer may promote that
    field to a health verdict.
 
@@ -126,6 +131,13 @@ MODE = "floci-oci"
 
 # ── Image identity ─────────────────────────────────────────────────────────
 #
+# Moved 0.4.1 -> 0.4.2 on 2026-10-06 (artifact-fresh-f2a465a983) after driving
+# a live 0.4.2 container: every inventory lane, the health shape, the
+# container-local endpoint quirk and storage-mode honouring reproduce
+# unchanged, but OKE CHANGED -- k3s now starts and authenticates, while
+# `lifecycleState` is still never re-checked. See docs/spikes/flx-oci-parity.md
+# §10.
+#
 # Moved 0.4.0 -> 0.4.1 on 2026-09-16 (artifact-fresh-3d8a95dede) after driving
 # a live 0.4.1 container: startup banner, `/health` (still 7 services in the
 # log / 8 at `/health`, `functions` still the discrepancy), storage-mode
@@ -134,13 +146,13 @@ MODE = "floci-oci"
 # docs/spikes/flx-oci-parity.md §9 for the full delta (there is none of
 # substance -- a Quarkus point bump, nothing else).
 IMAGE_REPOSITORY = "floci/floci-oci"
-IMAGE_TAG = "0.4.1"
+IMAGE_TAG = "0.4.2"
 IMAGE = f"{IMAGE_REPOSITORY}:{IMAGE_TAG}"
 
-#: Digest MEASURED from the pulled image on 2026-09-16. Recorded so an air-gap
+#: Digest MEASURED from the pulled image on 2026-10-06. Recorded so an air-gap
 #: bundle can be verified by digest rather than by tag -- a tag-only check
 #: reads a `docker load`ed bundle as absent (see the flx-airgap-01 discipline).
-IMAGE_DIGEST = "sha256:58b4b17069508b30e48bdf5888fd2759a52c23de082bd758484e3b8e2592b1cb"
+IMAGE_DIGEST = "sha256:98ba24585a582ed0b1f482aa4ac11fcd65f39effec51c3ada8a3182b30bcad3b"
 
 # ── Network ────────────────────────────────────────────────────────────────
 CONTAINER_PORT = 4599
@@ -247,8 +259,10 @@ CONTAINER_BACKED_IMAGES: dict[str, str] = {"oke": "rancher/k3s:v1.30.1-k3s1"}
 FABRICATED_SUCCESS_WITHOUT_DOCKER: frozenset[str] = frozenset()
 
 #: The fabrication floci-oci DOES have, and it is the mirror of the above: WITH
-#: a socket, OKE spawns k3s, k3s dies (``--token is required``), and the API
-#: still reports ``lifecycleState: ACTIVE`` with a dead endpoint.
+#: a socket, the API reports ``lifecycleState: ACTIVE`` whether or not k3s is
+#: alive. Through 0.4.1 k3s always died (``--token is required``); from 0.4.2
+#: it starts, but the state is written once at create and never re-checked --
+#: a stopped k3s container still reads ``ACTIVE`` (measured 2026-10-06).
 FABRICATED_ACTIVE_WITH_DOCKER = frozenset({"oke"})
 
 #: So an OKE row is never evidence of a working cluster, whatever it says.
@@ -607,8 +621,8 @@ def data_plane_supported(service: str, env: Optional[Mapping[str, str]] = None) 
     nothing, so an inventory reader must not consult this.
 
     AND NOT A CLAIM THAT OKE WORKS. ``True`` here means "no proven reason to
-    refuse". Measured, a create with a socket present still yields a cluster
-    whose k3s container is dead (:data:`FABRICATED_ACTIVE_WITH_DOCKER`), so a
+    refuse". Measured, the API reports ``ACTIVE`` whether or not the cluster's
+    k3s container is alive (:data:`FABRICATED_ACTIVE_WITH_DOCKER`), so a
     caller must consult :data:`OKE_LIFECYCLE_IS_UNVERIFIED` before believing
     any resulting ``ACTIVE``.
     """
@@ -713,8 +727,8 @@ def status(
                               lanes are unaffected.
       ``enabled``             switched on, answering, socket present or unproven.
 
-    NOTE what ``enabled`` does NOT mean: OKE is broken in 0.4.0 whatever the
-    socket says (:data:`FABRICATED_ACTIVE_WITH_DOCKER`). This vocabulary
+    NOTE what ``enabled`` does NOT mean: that an OKE ``ACTIVE`` is true
+    (:data:`FABRICATED_ACTIVE_WITH_DOCKER`). This vocabulary
     describes THIS DEPLOYMENT's ability to reach the emulator, never the
     emulator's own correctness.
 

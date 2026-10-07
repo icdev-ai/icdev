@@ -1257,9 +1257,9 @@ services:
     profiles: ["floci-oci"]
     # PINNED, never `:latest`. Kept in step with emulator_oci.IMAGE by hand —
     # YAML cannot import a Python constant — and a test pins them equal.
-    # Digest measured 2026-09-16 (artifact-fresh-3d8a95dede, bumped from 0.4.0):
-    #   sha256:58b4b17069508b30e48bdf5888fd2759a52c23de082bd758484e3b8e2592b1cb
-    image: floci/floci-oci:0.4.1
+    # Digest measured 2026-10-06 (artifact-fresh-f2a465a983, bumped from 0.4.1):
+    #   sha256:98ba24585a582ed0b1f482aa4ac11fcd65f39effec51c3ada8a3182b30bcad3b
+    image: floci/floci-oci:0.4.2
     container_name: icdev-floci-oci
     ports:
       # Loopback-only: an emulator holding the host docker socket must not be
@@ -1302,13 +1302,21 @@ services:
       # actually started: rancher/k3s:v1.30.1-k3s1 (version-pinned, unlike the
       # GCP sibling's two `:latest` tags).
       #
-      # THE SOCKET IS MOUNTED KNOWING OKE IS BROKEN: the emulator starts k3s
-      # without a `--token`, the container exits immediately, and the API
-      # still reports lifecycleState ACTIVE. RE-CONFIRMED unchanged in 0.4.1
-      # (artifact-fresh-3d8a95dede, 2026-09-16) — same fatal log line, same
-      # k3s tag. Mounting it keeps this profile identical in shape to its
-      # three siblings and lets a later release work with no compose change;
+      # THROUGH 0.4.1 OKE WAS BROKEN: the emulator started k3s without a
+      # `--token`, the container exited immediately, and the API still
+      # reported lifecycleState ACTIVE. 0.4.2 (artifact-fresh-f2a465a983,
+      # 2026-10-06) FIXED the token — k3s comes up and authenticates — but the
+      # API still never re-checks: a stopped k3s still reads ACTIVE. Mounting
+      # the socket keeps this profile identical in shape to its three siblings;
       # nothing in ICDEV depends on OKE.
+      #
+      # NEW IN 0.4.2, AND OUTSIDE THIS FILE'S CONTROL: a created cluster is a
+      # PRIVILEGED k3s container that publishes 6443 on ALL host interfaces
+      # (0.0.0.0, not the loopback the port above is held to). Token auth is
+      # on and anonymous auth off, but a host where off-host reach to 6443
+      # matters must not create OKE clusters on this profile. One cluster per
+      # host: a second create collides on 6443 and fails honestly (500,
+      # nothing recorded).
       # Without the socket, OKE fails honestly with a 500 — which is the more
       # informative failure, so a deployment that wants neither may drop this
       # line safely.

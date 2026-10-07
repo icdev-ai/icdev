@@ -1,6 +1,6 @@
 # CUI // SP-CTI
 
-# flx-oci-parity — what floci-oci ACTUALLY answers (0.4.0, re-measured on 0.4.1 in §9), and what ICDEV can actually do with it
+# flx-oci-parity — what floci-oci ACTUALLY answers (0.4.0, re-measured on 0.4.1 in §9 and on 0.4.2 in §10), and what ICDEV can actually do with it
 
 **Measured 2026-09-05** on this host (Windows 11, Docker Desktop 28.5.1,
 `linux/amd64`), against:
@@ -431,3 +431,64 @@ here — the emulator gained nothing observable this pass.
 None of the findings in §§1–8 needed rewriting: the "ICDEV's OCI provider
 layer is the actual gap" conclusion, the OKE hazard, and the configuration
 table all hold for 0.4.1 exactly as measured for 0.4.0.
+
+## 10. Re-measured against 0.4.2 (2026-10-06, artifact-fresh-f2a465a983) — OKE CHANGED
+
+The pin moved 0.4.1 → 0.4.2 (`artifact_freshness` / xrv-pin-01). Unlike §9,
+**this is not a patch-shaped release.** Driven live (Docker Desktop 28.5.1,
+`linux/amd64`), 0.4.1 and 0.4.2 side by side, with ONE probe script issuing
+identical requests to both:
+
+```
+floci/floci-oci:0.4.2
+sha256:98ba24585a582ed0b1f482aa4ac11fcd65f39effec51c3ada8a3182b30bcad3b
+native (Quarkus 3.39.5) · image created 2026-10-06
+```
+
+### Unchanged — the inventory contract ICDEV reads
+
+| probe | 0.4.1 | 0.4.2 |
+|---|---|---|
+| startup log, `ServiceRegistry` | 7 services (no `functions`) | identical |
+| `GET /health` → `services` | 8 (+ `functions`), all `"running"` | identical (key ORDER differs; content identical) |
+| `GET /n/` | `"floci-local"` | identical |
+| bucket / compartment / vault / queue / stream create | 200 / 200 / 200 / **202** / 200 | identical |
+| `compartmentId` omitted: vaults / buckets / streams | 400 / 400 / 200 | identical |
+| vaults under a bogus compartment | 0 rows | identical |
+| queue list envelope | `{"items": [...]}` | identical |
+| vault `cryptoEndpoint` / `managementEndpoint` | container-local `http://localhost:4599` | identical |
+| controls (`/20990101/nonsense`, Compute, VCN, streamPools, GenAI) | 404 | identical |
+| `FLOCI_OCI_STORAGE_MODE=persistent` | banner `Storage: persistent` | identical |
+
+### CHANGED — OKE now works, and its state is still never re-checked
+
+With the docker socket mounted, `POST /20180222/clusters` → 202 on both. Then:
+
+| probe | 0.4.1 | 0.4.2 |
+|---|---|---|
+| sidecar `rancher/k3s:v1.30.1-k3s1` | exits: `fatal msg="--token is required"` | **Up**; started with `--kube-apiserver-arg=token-auth-file=…`, `k3s is up and running` |
+| `GET https://127.0.0.1:6443/version` unauthenticated | `000` (nothing listening) | **401** (real apiserver, `--anonymous-auth=false`) |
+| same, with the cluster's token | — | **200**, `v1.30.1+k3s1`; `/api/v1/nodes` 200 |
+| `POST …/clusters/{id}/kubeconfig/content` | — | **200**, a kubeconfig carrying that bearer token (`insecure-skip-tls-verify: true`, server `https://127.0.0.1:6443`) |
+| `lifecycleState` after `docker stop` of the sidecar | (never ran) | **still `ACTIVE`**, `:6443` → `000` |
+| sidecar host port binding | — | `0.0.0.0:6443` **and** `[::]:6443`, **privileged** container |
+| a second cluster while one holds 6443 | — | **500**, `port is already allocated`, nothing recorded (honest) |
+| `kubernetesVersion` | echo of the request (`v1.29.1`) | still an echo (`v1.29.1` vs a `v1.30.1+k3s1` server) |
+
+What that does to the seam's constants:
+
+* `FABRICATED_ACTIVE_WITH_DOCKER` **stays `{"oke"}`** and
+  `OKE_LIFECYCLE_IS_UNVERIFIED` stays `True` — `ACTIVE` is written once at
+  create and never re-checked, so it is still not evidence. Only the stated
+  REASON changed, and every reason string now says so.
+* `FABRICATED_SUCCESS_WITHOUT_DOCKER` stays **measured empty** — no socket,
+  still an honest 500.
+* `CONTAINER_BACKED_IMAGES` is unchanged — same k3s tag.
+
+**New hazard, outside compose's control:** the emulator port is held to
+loopback, but a created OKE cluster is a privileged k3s publishing 6443 on
+every host interface. Token auth is on and anonymous auth off, and ICDEV never
+creates a cluster (the seam is read/inventory-only), but an operator who
+creates one has exposed an apiserver off-host. Recorded in `docker-compose.yml`
+and sandbox-coverage; not mitigated here, because the bind is chosen by the
+emulator, not by anything this repository passes it.

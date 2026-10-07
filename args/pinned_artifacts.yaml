@@ -362,10 +362,18 @@ artifacts:
   - name: floci-oci
     kind: image
     ref: floci/floci-oci
-    pinned: "0.4.1"
+    pinned: "0.4.2"
     pin_source: "compose:floci-oci"
     upstream: dockerhub
     note: >-
+      Bumped from 0.4.1 on 2026-10-06 (artifact-fresh-f2a465a983) after
+      driving live 0.4.1 and 0.4.2 containers side by side. Every inventory
+      lane, the health shape and the container-local endpoint quirk reproduce
+      unchanged, but OKE CHANGED: k3s now starts and authenticates, while
+      lifecycleState is still never re-checked, and a created cluster
+      publishes 6443 on all host interfaces. See
+      docs/spikes/flx-oci-parity.md section 10 and
+      docs/audits/artifact-fresh-f2a465a983-floci-oci-pin.md.
       Bumped from 0.4.0 on 2026-09-16 (artifact-fresh-3d8a95dede) after
       driving a live 0.4.1 container -- every measured fact in
       docs/spikes/flx-oci-parity.md (services, health shape, OKE's `--token`
