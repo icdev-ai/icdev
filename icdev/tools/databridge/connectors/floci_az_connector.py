@@ -270,10 +270,10 @@ class FlociAzConnector(SaaSBaseConnector):
                 "status": "healthy",
                 "connector": self._connector_name,
                 "endpoint": self._endpoint,
-                # MEASURED: the health body reports "dev", not the release. The
-                # real version is in the image's FLOCI_AZ_VERSION env var, which
-                # is not readable over HTTP -- so this is reported under a name
-                # that says what it is rather than as `emulator_version`.
+                # MEASURED: through 0.13.0 the health body reported "dev", not the
+                # release; since 0.14.0 it carries the real one. Reported under a
+                # name that says where it came from, beside `version_is_real`,
+                # rather than as `emulator_version`.
                 "health_reported_version": data.get("version", "unknown"),
                 "version_is_real": emulator_az.HEALTH_REPORTS_REAL_VERSION,
                 "edition": data.get("edition", "unknown"),

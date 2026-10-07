@@ -1,6 +1,6 @@
 # CUI // SP-CTI
 
-# flx-az-parity — what floci-az ACTUALLY answers (0.12.0, re-measured on 0.13.0 in §9)
+# flx-az-parity — what floci-az ACTUALLY answers (0.12.0, re-measured on 0.13.0 in §9 and 0.14.0 in §10)
 
 **Measured 2026-09-05** on this host (Windows 11, Docker Desktop 28.5.1,
 `linux/amd64`), against:
@@ -342,3 +342,57 @@ None of this is consumed by `tools/cloud/emulator_az.py`,
 seam is read/inventory-only and none of the new surfaces are on its
 resource-list paths. Recorded here so the next parity pass does not have to
 re-discover it, per the same rule that made §7 necessary the first time.
+
+---
+
+## 10. Re-measured against 0.14.0 (2026-10-07, artifact-fresh-6de1bfe08c)
+
+The pin moved 0.13.0 → 0.14.0 (`artifact_freshness` / xrv-pin-01). Unlike §9
+this was not a spot check: both digests were run side by side on this host
+(no docker socket mounted, `FLOCI_AZ_DEFAULT_REGION=usgovvirginia`), the §1
+estate (one resource group holding a vnet, an NSG, a storage account, a key
+vault and a user-assigned identity) was written to each with identical PUTs,
+and the SHIPPED `FlociAzConnector` read every table in `TABLES` from each.
+
+```
+floci/floci-az:0.14.0
+sha256:a35e74dfca9a5e811090d8ae98876044fc8990a8874ee525231f524ca56679db
+native · Quarkus 3.39.2 → 3.40.1 · edition "floci-az-always-free"
+```
+
+| probe | 0.13.0 | 0.14.0 |
+|---|---|---|
+| `GET /_floci/health` | `{"version":"dev",…,"status":"UP"}` | **`{"version":"0.14.0",…,"status":"UP"}`** |
+| `GET /_localstack/health` | 501 | 501 |
+| connector `health`, `subscriptions`, `resource_groups` | ok, 1 / 1 / 1 | ok, 1 / 1 / 1 |
+| connector `resources` (per-RG) | ok, 5 | ok, 5 |
+| connector `virtual_networks`, `network_security_groups`, `storage_accounts`, `key_vaults`, `managed_identities` | ok, 1 each | ok, 1 each |
+| subscription-scoped `…/providers/Microsoft.Network/virtualNetworks` and `…/networkSecurityGroups` | **200 `{"value":[]}`** for a populated RG | **200 `{"value":[]}`** — §1 trap unchanged |
+| §4 provider table (22 types + 2 controls) | as §4/§9 | identical, type for type |
+| banner `ARM provider lane` / routing tables | 4 namespaces; 11 host, 23 suffix, 12 ARM | identical |
+
+**What changed, and what this seam does about it:**
+
+* **The health body now carries the real release.** §3 item 3 and §7 ("reports
+  `dev`") held through 0.13.0 and do NOT hold on 0.14.0.
+  `emulator_az.HEALTH_REPORTS_REAL_VERSION` moves False → True with the pin;
+  it is surfaced by `FlociAzConnector.health_check()` as `version_is_real`,
+  which would otherwise have told a reader that a correct version string was
+  untrustworthy.
+* **`GET /subscriptions` returns a fuller body** — `authorizationSource`,
+  `managedByTenants`, `subscriptionPolicies` added, field order changed. A
+  superset: every key 0.13.0 returned (`id`, `subscriptionId`, `tenantId`,
+  `displayName`, `state`) is still present with the same value.
+* **The banner's `arm` line now echoes the seeded subscription id.** Cosmetic;
+  §2 still applies — the banner is not a health signal.
+
+**Correction to §1, observed on BOTH 0.13.0 and 0.14.0 (so not a 0.14.0
+change):** the subscription-scoped emptiness is per resource TYPE, not
+universal. `Microsoft.Network/*` lists at subscription scope still return
+empty, but `Microsoft.Storage/storageAccounts`, `Microsoft.KeyVault/vaults`,
+`Microsoft.ManagedIdentity/userAssignedIdentities` and the generic
+`/subscriptions/{sub}/resources` list all returned the populated estate. The
+per-RG fan-out remains correct and is still required (a reader that trusted
+subscription scope would still report zero vnets), so
+`SUBSCRIPTION_SCOPED_LIST_IS_EMPTY` is unchanged; recorded so the next pass
+does not re-derive §1 row 7 as if it still held.

@@ -66,9 +66,13 @@ def test_health_body_carries_no_service_map():
     assert "services" not in TABLES
 
 
-def test_health_version_is_not_the_release():
-    """MEASURED: ``/_floci/health`` reports ``"dev"``; the release is in the image env."""
-    assert emulator_az.HEALTH_REPORTS_REAL_VERSION is False
+def test_health_version_is_the_release():
+    """MEASURED on 0.14.0: ``/_floci/health`` reports the release, not ``"dev"``.
+
+    Through 0.13.0 it said ``"dev"``; the constant is a property of the pinned
+    image (parity spike §10), so it moves with the pin.
+    """
+    assert emulator_az.HEALTH_REPORTS_REAL_VERSION is True
 
 
 def test_no_iac_execution_is_claimed():
