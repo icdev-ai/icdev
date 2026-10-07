@@ -139,49 +139,6 @@ BUILTIN_MISSIONS = [
         "difficulty": "advanced", "estimated_minutes": 60,
         "prereqs": ["m08-strands-agents", "m09-langchain"],
     },
-    # ── TIER 1: AI-Assisted Engineering (aicur-eng-*) ───────────────────────
-    # Steps are discovered from content/tier1/<slug>/steps/ (fga-wire-01); the
-    # lessons are graded by content/item_banks/<slug>.yaml, the lab by step3_test.py.
-    {
-        "slug": "m-aie-01-coding-harnesses",
-        "title": "Coding Harnesses",
-        "tagline": "Copilot, Cursor, Claude Code, Codex CLI: what a harness adds, and how to drive one.",
-        "tier": 1, "topic": "agents", "role_filter": "all",
-        "mission_type": "coding",
-        "xp_reward": 300, "order_idx": 12,
-        "difficulty": "beginner", "estimated_minutes": 35,
-        "prereqs": ["m05-mcp-protocol"],
-    },
-    {
-        "slug": "m-aie-02-verification-harnesses",
-        "title": "Verification Harnesses",
-        "tagline": "TDD, red-first tests, linters and CI: the harness that decides whether AI code is done.",
-        "tier": 1, "topic": "agents", "role_filter": "all",
-        "mission_type": "coding",
-        "xp_reward": 325, "order_idx": 13,
-        "difficulty": "intermediate", "estimated_minutes": 40,
-        "prereqs": ["m-aie-01-coding-harnesses"],
-    },
-    {
-        "slug": "m-aie-03-vibe-vs-engineering",
-        "title": "Vibe Coding vs Engineering",
-        "tagline": "Know when \"it seems to work\" is enough — and spot the AI anti-patterns that report success while doing nothing.",
-        "tier": 1, "topic": "agents", "role_filter": "all",
-        "mission_type": "watch",
-        "xp_reward": 250, "order_idx": 14,
-        "difficulty": "beginner", "estimated_minutes": 30,
-        "prereqs": ["m-aie-02-verification-harnesses"],
-    },
-    {
-        "slug": "m-aie-04-capstone",
-        "title": "AI-Assisted Engineering Capstone",
-        "tagline": "Take a vibe-coded module to production grade: kill the mutants, fix the defects, write the instruction file.",
-        "tier": 1, "topic": "capstone", "role_filter": "all",
-        "mission_type": "coding",
-        "xp_reward": 500, "order_idx": 15,
-        "difficulty": "intermediate", "estimated_minutes": 50,
-        "prereqs": ["m-aie-03-vibe-vs-engineering"],
-    },
     # ── TIER 2: Non-technical (ISSO) ─────────────────────────────────────────
     {
         "slug": "m-isso-01-stig-triage",
@@ -750,28 +707,6 @@ BUILTIN_MISSIONS = [
         "difficulty": "beginner", "estimated_minutes": 35,
         "prereqs": ["m10-tier1-capstone"],
     },
-    # ── TIER 1: Model serving (aicur-fun-02 — M12) ──────────────────────────
-    {
-        "slug": "m12-model-serving",
-        "title": "Serving Many Models",
-        "tagline": "Prefill, KV cache, PagedAttention, vLLM — then route across your own inference servers.",
-        "tier": 1, "topic": "llm", "role_filter": "all",
-        "mission_type": "coding",
-        "xp_reward": 350, "order_idx": 12,
-        "difficulty": "intermediate", "estimated_minutes": 45,
-        "prereqs": ["m01-llm-fundamentals"],
-    },
-    # ── TIER 1: Benchmarks & Evals (aicur-fun-03 — M13) ─────────────────────
-    {
-        "slug": "m13-benchmarks-evals",
-        "title": "Reading Benchmarks and Building Your Own Evals",
-        "tagline": "What a leaderboard score measures, what it hides, and how to build the eval that answers your question.",
-        "tier": 1, "topic": "ai_foundations", "role_filter": "all",
-        "mission_type": "coding",
-        "xp_reward": 300, "order_idx": 13,
-        "difficulty": "beginner", "estimated_minutes": 40,
-        "prereqs": ["m01-llm-fundamentals"],
-    },
     # ── TIER 2: NetOps — PNA Predictors ──────────────────────────────────────
     {
         "slug": "m-netops-pna-01",
@@ -1035,6 +970,61 @@ BUILTIN_MISSIONS = [
         "prereqs": ["m10-tier1-capstone"],
     },
 ]
+
+
+# ---------------------------------------------------------------------------
+# Per-mission catalogue fragments: content/<tier>/<slug>/mission.json
+# ---------------------------------------------------------------------------
+# Every mission card used to append its dict to the list above, so two sibling
+# cards always edited the same lines: 21 `pr_watcher.union_refused` rows named
+# this file in 30 days, and the union survey showed declaring it `merge=union`
+# would DROP a line that landed (task-det-06d08d9b92). A new mission now ships
+# its catalogue entry as its own file beside its steps, and two cards adding
+# two missions write two different files that cannot collide. Entries already
+# in the list stay there; the duplicate-slug check in seed_mission_catalog()
+# sees both sources because the fragments are folded into BUILTIN_MISSIONS.
+
+#: Keys a fragment must carry; the rest default exactly as the seeder does.
+_MISSION_REQUIRED_KEYS = ("slug", "title", "tier")
+
+
+def load_mission_fragments(root: Path | None = None) -> list:
+    """Catalogue entries read from every ``mission.json`` under ``root``.
+
+    A fragment that does not parse, is not an object, lacks a required key or
+    names a slug other than its own folder is skipped and logged at ERROR, so a
+    bad file costs its own mission rather than the whole catalogue. Sorted by
+    (tier, order_idx, slug) so the catalogue order does not depend on the
+    filesystem.
+    """
+    root = CONTENT_ROOT if root is None else root
+    out: list = []
+    if not root.is_dir():
+        return out
+    for path in sorted(root.rglob("mission.json")):
+        try:
+            entry = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            _log.error("FORGE Academy: mission fragment %s is not parseable", path,
+                       exc_info=True)
+            continue
+        if not isinstance(entry, dict):
+            _log.error("FORGE Academy: mission fragment %s is not an object", path)
+            continue
+        missing = [k for k in _MISSION_REQUIRED_KEYS if not entry.get(k)]
+        if missing:
+            _log.error("FORGE Academy: mission fragment %s lacks %s", path, missing)
+            continue
+        if entry["slug"] != path.parent.name:
+            _log.error("FORGE Academy: mission fragment %s declares slug %r, "
+                       "not its folder name", path, entry["slug"])
+            continue
+        out.append(entry)
+    out.sort(key=lambda m: (m.get("tier", 1), m.get("order_idx", 0), m["slug"]))
+    return out
+
+
+BUILTIN_MISSIONS.extend(load_mission_fragments())
 
 # ---------------------------------------------------------------------------
 # Step definitions for Phase 1 missions (guided — configure + reflect)

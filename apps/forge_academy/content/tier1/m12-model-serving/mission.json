@@ -1,0 +1,16 @@
+{
+  "slug": "m12-model-serving",
+  "title": "Serving Many Models",
+  "tagline": "Prefill, KV cache, PagedAttention, vLLM — then route across your own inference servers.",
+  "tier": 1,
+  "topic": "llm",
+  "role_filter": "all",
+  "mission_type": "coding",
+  "xp_reward": 350,
+  "order_idx": 12,
+  "difficulty": "intermediate",
+  "estimated_minutes": 45,
+  "prereqs": [
+    "m01-llm-fundamentals"
+  ]
+}

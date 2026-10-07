@@ -1,0 +1,16 @@
+{
+  "slug": "m-aie-02-verification-harnesses",
+  "title": "Verification Harnesses",
+  "tagline": "TDD, red-first tests, linters and CI: the harness that decides whether AI code is done.",
+  "tier": 1,
+  "topic": "agents",
+  "role_filter": "all",
+  "mission_type": "coding",
+  "xp_reward": 325,
+  "order_idx": 13,
+  "difficulty": "intermediate",
+  "estimated_minutes": 40,
+  "prereqs": [
+    "m-aie-01-coding-harnesses"
+  ]
+}
