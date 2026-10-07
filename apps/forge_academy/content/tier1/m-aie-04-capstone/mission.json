@@ -1,0 +1,16 @@
+{
+  "slug": "m-aie-04-capstone",
+  "title": "AI-Assisted Engineering Capstone",
+  "tagline": "Take a vibe-coded module to production grade: kill the mutants, fix the defects, write the instruction file.",
+  "tier": 1,
+  "topic": "capstone",
+  "role_filter": "all",
+  "mission_type": "coding",
+  "xp_reward": 500,
+  "order_idx": 15,
+  "difficulty": "intermediate",
+  "estimated_minutes": 50,
+  "prereqs": [
+    "m-aie-03-vibe-vs-engineering"
+  ]
+}
