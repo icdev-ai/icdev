@@ -162,3 +162,42 @@ def test_a_database_failure_never_wedges_the_cycle(monkeypatch):
 def test_nothing_is_committed_when_nothing_moved(monkeypatch):
     _moved, conn = _run(monkeypatch, [{"id": "t-6", "status": "scheduled"}], ["kanban/zzz"])
     assert conn.committed is False
+
+
+# --------------------------------------------------------------------------- #
+# 4. A task is matched against the open PRs of ITS OWN repo
+# --------------------------------------------------------------------------- #
+def _run_multi_repo(monkeypatch, rows, branches_by_root, root_of):
+    conn = _Conn(rows)
+    monkeypatch.setattr(k, "_open_pr_head_branches",
+                        lambda root: set(branches_by_root.get(root, ())))
+    monkeypatch.setattr(k, "_task_repo_root", lambda tid: Path(root_of(tid)))
+    monkeypatch.setattr(k, "get_connection", lambda *a, **kw: conn)
+    return k._reconcile_pr_opened(), conn
+
+
+def test_an_external_repo_task_with_an_open_pr_moves(monkeypatch):
+    """ftl-bz-study-01 builds in icdev_ft. Its PR (#420) was open for 12 days while
+    the task sat in `scheduled`: dispatch withheld it for having an open PR, and
+    this reconciler only asked ICDev's forge — a deadlock, with its dependents
+    stuck in backlog behind it."""
+    ft, icdev = str(Path("C:/ft")), str(Path("C:/icdev"))
+    moved, conn = _run_multi_repo(
+        monkeypatch,
+        [{"id": "ftl-bz-study-01", "status": "scheduled"}],
+        {ft: ["kanban/ftl-bz-study-01"], icdev: []},
+        lambda tid: ft if tid.startswith("ftl-") else icdev,
+    )
+    assert moved == 1 and conn.committed
+
+
+def test_a_pr_in_another_repo_does_not_move_a_task(monkeypatch):
+    """Same branch name, wrong repo: only the task's own forge counts."""
+    ft, icdev = str(Path("C:/ft")), str(Path("C:/icdev"))
+    moved, conn = _run_multi_repo(
+        monkeypatch,
+        [{"id": "rem-hyg-99", "status": "scheduled"}],
+        {ft: ["kanban/rem-hyg-99"], icdev: []},
+        lambda tid: ft if tid.startswith("ftl-") else icdev,
+    )
+    assert moved == 0 and conn.updates == []
