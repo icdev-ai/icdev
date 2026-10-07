@@ -221,3 +221,52 @@ def test_task_description_omits_cli_block_when_no_cli_command():
     task = gen._make_kanban_task("d1", "Demo", "span-recorder", {"tool_path": "t.py"})
     assert "CLI reference" not in task["description"]
     assert "```bash\n\n```" not in task["description"]
+
+
+# ---------------------------------------------------------------------------
+# (4) Governance nodes point at tools that do the job they name
+# ---------------------------------------------------------------------------
+# Both nodes once mapped to classification_manager.py, which only applies
+# classification markings: it neither writes the audit trail nor generates a
+# compliance report. Each node now names a module whose own docstring states
+# that purpose, and the entry point its task tells a worker to wire.
+
+_GOVERNANCE_NODES = {
+    # ntype: (expected tool_path, entry-point function, docstring keywords)
+    "audit-logger": ("tools/audit/audit_logger.py", "log_event", ("append-only", "audit trail")),
+    "compliance-reporter": (
+        "tools/compliance/fedramp_report_generator.py",
+        "generate_fedramp_report",
+        ("report", "cui"),
+    ),
+}
+
+
+@pytest.mark.parametrize("ntype", sorted(_GOVERNANCE_NODES))
+def test_governance_node_not_mapped_to_classification_manager(ntype):
+    entry = _node_map()[ntype]
+    assert "classification_manager" not in entry["tool_path"]
+    assert "classification_manager" not in entry.get("task_title", "")
+
+
+@pytest.mark.parametrize("ntype", sorted(_GOVERNANCE_NODES))
+def test_governance_node_tool_purpose_matches(ntype):
+    expected_path, func, keywords = _GOVERNANCE_NODES[ntype]
+    entry = _node_map()[ntype]
+    assert entry["tool_path"] == expected_path
+
+    path = REPO_ROOT / expected_path
+    doc = (ast.get_docstring(ast.parse(path.read_text(encoding="utf-8"))) or "").lower()
+    for kw in keywords:
+        assert kw in doc, f"{ntype}: {expected_path} docstring does not mention {kw!r}"
+
+    assert func in _top_level_names(path), f"{ntype}: {expected_path} defines no {func}"
+    assert func in entry["task_title"], f"{ntype}: task_title does not name {func}"
+    assert entry.get("cli_command"), f"{ntype}: no cli_command to verify"
+
+
+def test_governance_node_map_mirror_is_identical():
+    mirror = REPO_ROOT / "icdev" / "data" / "args" / "aadc_node_tool_map.yaml"
+    assert yaml.safe_load(mirror.read_text(encoding="utf-8")) == yaml.safe_load(
+        NODE_MAP.read_text(encoding="utf-8")
+    )
