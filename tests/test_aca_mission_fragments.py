@@ -22,6 +22,7 @@ MIGRATED = {
     "m-aie-04-capstone",
     "m12-model-serving",
     "m13-benchmarks-evals",
+    "m-canvas-trio-01-design-canvases",
 }
 
 
@@ -36,6 +37,20 @@ def test_every_shipped_fragment_is_valid():
     paths = sorted(CONTENT_ROOT.rglob("mission.json"))
     assert len(paths) == len(load_mission_fragments()), (
         "a shipped mission.json was skipped as malformed -- see the ERROR log")
+
+
+#: Entries still written inline in the BUILTIN_MISSIONS literal. May only go
+#: DOWN: the first fix held only for the six missions it moved, and a new card
+#: appending to the literal again reopens the collision the union rung refused
+#: 21 times (task-det-06d08d9b92-r2). Ship a mission.json instead.
+INLINE_MISSIONS_MAX = 88
+
+
+def test_new_missions_ship_as_fragments_not_inline_entries():
+    inline = len(BUILTIN_MISSIONS) - len(load_mission_fragments())
+    assert inline <= INLINE_MISSIONS_MAX, (
+        f"{inline} inline BUILTIN_MISSIONS entries (max {INLINE_MISSIONS_MAX}): add "
+        "the new mission as content/<tier>/<slug>/mission.json, not to the list")
 
 
 def test_catalogue_has_no_duplicate_slugs():

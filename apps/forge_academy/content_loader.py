@@ -959,16 +959,6 @@ BUILTIN_MISSIONS = [
         "difficulty": "intermediate", "estimated_minutes": 35,
         "prereqs": ["m03-rag-basics"],
     },
-    {
-        "slug": "m-canvas-trio-01-design-canvases",
-        "title": "The Design Canvas Trio — DDC, ODC, NDC",
-        "tagline": "Route a design need to the right canvas — or return None. Registry-driven, no forced fits.",
-        "tier": 2, "topic": "canvas", "role_filter": "swe,swe_arch,devops,pm",
-        "mission_type": "coding",
-        "xp_reward": 400, "order_idx": 1,
-        "difficulty": "intermediate", "estimated_minutes": 30,
-        "prereqs": ["m10-tier1-capstone"],
-    },
 ]
 
 
