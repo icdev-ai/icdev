@@ -22,6 +22,7 @@ MIGRATED = {
     "m-aie-04-capstone",
     "m12-model-serving",
     "m13-benchmarks-evals",
+    "m-canvas-trio-01-design-canvases",
 }
 
 
@@ -42,7 +43,7 @@ def test_every_shipped_fragment_is_valid():
 #: DOWN: the first fix held only for the six missions it moved, and a new card
 #: appending to the literal again reopens the collision the union rung refused
 #: 21 times (task-det-06d08d9b92-r2). Ship a mission.json instead.
-INLINE_MISSIONS_MAX = 89
+INLINE_MISSIONS_MAX = 88
 
 
 def test_new_missions_ship_as_fragments_not_inline_entries():
