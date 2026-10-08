@@ -90,3 +90,11 @@ tests/pg_tier/test_cortex_rls_index_plan.py
 # backend because the connector opens its OWN connection from a DSN reference;
 # the file skips clean without ICDEV_PYTEST_PG and a live server.
 tests/pg_tier/test_local_database_connector_pg.py
+
+# aisg-audit-pg-immutable. aisg_audit (AI Strategy Canvas audit trail, NIST AU)
+# was immutable on SQLite only; PR #2376 stopped sending the SQLite triggers to
+# PG and nothing replaced them. Proves on a live server that init_db and
+# migration 20261008003850 make INSERT work and UPDATE/DELETE raise. Each test
+# works in its own throwaway schema (search_path) and drops it CASCADE -- audit
+# rows cannot be deleted, so public.aisg_audit is never touched.
+tests/pg_tier/test_aisg_audit_immutable_pg.py
