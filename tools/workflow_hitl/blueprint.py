@@ -44,14 +44,24 @@ _WF_APPROVAL_ROLES = ("admin", "pm", "isso", "co", "cor", "reviewer")
 # ── Feature-flag guard ────────────────────────────────────────────────────────
 
 def _hitl_enabled() -> bool:
-    # Force re-read from .env so toggling the flag takes effect without a full restart.
+    # Re-read the flag from .env so toggling it takes effect without a full
+    # restart -- but READ ONLY THIS KEY. This used to call
+    # load_dotenv(.env, override=True), which rewrote EVERY key in the running
+    # dashboard on each HITL request, ICDEV_DATABASE_URL included: an isolated
+    # E2E server on a throwaway database switched to the canonical board the
+    # moment /workflow/ was loaded, and every later spec wrote its fixtures
+    # there. The .env value still wins over the process environment for this
+    # one flag, as before.
+    value = None
     try:
-        from dotenv import load_dotenv as _ld
+        import dotenv as _dotenv
         from pathlib import Path as _P
-        _ld(_P(__file__).resolve().parents[2] / ".env", override=True)
+        value = _dotenv.dotenv_values(_P(__file__).resolve().parents[2] / ".env").get("ICDEV_HITL_ENABLED")
     except Exception:
-        pass
-    return os.getenv("ICDEV_HITL_ENABLED", "false").lower() in ("true", "1", "yes")
+        value = None
+    if value is None:
+        value = os.getenv("ICDEV_HITL_ENABLED", "false")
+    return str(value).lower() in ("true", "1", "yes")
 
 
 def _disabled_response():
