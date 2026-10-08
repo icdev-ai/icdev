@@ -1135,6 +1135,14 @@ def union_candidate_findings(report: Mapping[str, Any]) -> List[Finding]:
         proposes = recommend == RECOMMEND_DECLARE
         refusals = int(entry.get("refusals") or 0)
         shape = str(entry.get("shape"))
+        # The newest refusal row naming this file is `last_refused_at`; the
+        # window keeps it (and so this candidate) until last + window_hours,
+        # whatever anybody does upstream. A LIFETIME window (None) never ages
+        # a row out, so it has no such instant and keeps the plain rule.
+        last_refused = parse_utc_timestamp(entry.get("last_refused_at"))
+        earliest_clear_at = (
+            last_refused + timedelta(hours=int(window))
+            if last_refused and window else None)
         shape_note = (
             "every observed conflict hunk is a PURE INSERTION on both sides "
             "(the base region is empty) -- the shape `keep_both_blocks` is for"
@@ -1190,6 +1198,7 @@ def union_candidate_findings(report: Mapping[str, Any]) -> List[Finding]:
             derivation=(f"python -m tools.kanban.union_candidates "
                         f"--window-hours {window} --json"),
             advice=advice,
+            earliest_clear_at=earliest_clear_at,
         ))
     return out
 
