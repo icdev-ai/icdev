@@ -54,7 +54,14 @@ selenium>=4.15.0
 # EXCLUDED from the merge gate in args/test_gating_gate.yaml, and it guards the
 # import with pytest.importorskip — so a deployment that skips this line loses
 # the docker suite and nothing else.
-testcontainers-floci>=0.1.1
+#
+# Floor raised 0.1.1 -> 0.2.0 on 2026-10-07 (artifact-fresh-8af83a800b). 0.2.0 is
+# additive for this consumer: new service configs, access/secret-key and log-level
+# setters, and container port exposure split out of apply_to(). FlociContainer(image=),
+# with_region, get_endpoint and get_region are unchanged, and DEFAULT_TAG is still
+# `latest`, so the explicit seam.IMAGE pin still decides the image and no runtime
+# digest moved. Verified by running that docker suite against 0.2.0 (9 passed).
+testcontainers-floci>=0.2.0
 
 # === Compliance ===
 # cyclonedx-bom>=4.0     # SBOM generation (install when needed)

@@ -591,11 +591,11 @@ artifacts:
   - name: testcontainers-floci
     kind: package
     ref: testcontainers-floci
-    pinned: "0.1.1"
+    pinned: "0.2.0"
     pin_source: "requirements.txt"
     upstream: pypi
     note: >-
-      requirements.txt declares `>=0.1.1`, a FLOOR rather than a pin, so
+      requirements.txt declares `>=0.2.0`, a FLOOR rather than a pin, so
       `behind` here means "a newer release exists than the floor we wrote" --
       a weaker statement than it is for a digest-pinned image. Carried on the
       result as `pin_strength: floor`.
