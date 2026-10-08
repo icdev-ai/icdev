@@ -199,7 +199,7 @@ images:
       finer, exactly as RDS states for EngineVersion.
 
   - ref: "redpandadata/redpanda:latest"
-    digest: "sha256:9e83cfa99278f30d0133271c26bf670cd69c94ffa6ba0b42830dd0c3bd9dcfd9"
+    digest: "sha256:c98c2f04a751e6646012cc701bac5183252cee44c88ba1dfa412e4c7124f2e89"
     service: kafka
     variant: null
     mutable_tag: true
@@ -209,7 +209,9 @@ images:
       date; it can move under the same tag without notice, so a re-vendor must
       re-measure rather than assume. Re-measured 2026-09-18 (rpk v26.2.2 ->
       v26.2.3, a patch rebuild under the same tag); see
-      docs/audits/artifact-fresh-5e94142e90-kafka-redpanda-pin.md.
+      docs/audits/artifact-fresh-5e94142e90-kafka-redpanda-pin.md. Re-measured
+      2026-10-07 (rpk v26.2.3 -> v26.2.4, same tag); see
+      docs/audits/artifact-fresh-e30db43367-kafka-redpanda-pin.md.
 
   - ref: "public.ecr.aws/amazonlinux/amazonlinux:2023"
     digest: "sha256:12052e9b5d3fd85769abbdd863dd038e1890c9ace31d5fdbe1afa78eda97d061"
