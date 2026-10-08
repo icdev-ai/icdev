@@ -51,16 +51,20 @@ _PID_FILE = os.path.join(ROOT, ".tmp", "genesis", "launcher.pid")
 
 
 def _acquire_pid_lock() -> bool:
-    """Return True if this process is now the sole launcher. False = another is running."""
-    from tools.compat.platform_utils import pid_exists
+    """Return True if this process is now the sole launcher. False = another is running.
+
+    "Another is running" means the lock's pid is alive AND runs launch.py -- one
+    rule, read through supervisor_status. A bare pid_exists() let a REUSED pid
+    (svchost.exe, after a reboot) keep every service down until a human looked.
+    """
     if os.path.exists(_PID_FILE):
         try:
-            with open(_PID_FILE) as f:
-                existing_pid = int(f.read().strip())
-            if pid_exists(existing_pid):
+            from pathlib import Path
+            from tools.genesis.supervisor_status import supervisor
+            if supervisor(Path(_PID_FILE))["state"] == "up":
                 return False  # another launcher is alive
         except Exception:
-            pass  # stale or unreadable PID file — take the lock
+            pass  # stale, reused or unreadable PID file — take the lock
     with open(_PID_FILE, "w") as f:
         f.write(str(os.getpid()))
     return True
