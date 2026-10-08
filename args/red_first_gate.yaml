@@ -168,6 +168,25 @@ exemptions:
       ANALYZE estimates of the same plan). Every number is in the file's own
       docstring. Scoped to this one file; it runs in Test (PostgreSQL) via
       tests/pg_tier_allowlist.txt.
+  - pattern: "tests/pg_tier/test_aisg_audit_immutable_pg.py"
+    reason: >-
+      THE GATE CANNOT SEE THIS FILE: a module-level `skipif` on ICDEV_PYTEST_PG,
+      which the gate does not set, so both runs are "4 skipped". THE RED WAS
+      TAKEN BY HAND AGAINST A LIVE POSTGRESQL AND IS RECORDED (2026-10-07,
+      throwaway database icdev_scratch_aisg_imm, never the live icdev db): with
+      tools/aisg/db/init_db.py restored to its merge-base content,
+      test_fresh_init_db_makes_aisg_audit_append_only FAILED with
+      `assert (1, False, False) == (1, True, True)` -- the INSERT landed and
+      PostgreSQL accepted both the UPDATE and the DELETE of an audit row; with
+      this branch's init_db all 4 tests pass. The three migration tests cannot
+      run at the merge base at all (the migration directory does not exist
+      there), and test_migration_closes_the_gap carries its own in-file
+      negative control: the legacy-shaped table is asserted MUTABLE before the
+      migration and immutable after it. The discriminating proof the gate CAN
+      see is the gated sibling tests/test_aisg_audit_pg_immutability.py.
+      Scoped to this one file; it runs in Test (PostgreSQL) via
+      tests/pg_tier_allowlist.txt and is excluded from CI gating for the reason
+      written in args/test_gating_gate.yaml.
   - pattern: "tests/llm/test_role_invoke_redaction.py"
     reason: >-
       A CONSUMER SWEEP OVER A SEAM ANOTHER PR CLOSED FIRST, so nothing here can

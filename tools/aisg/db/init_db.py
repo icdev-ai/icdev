@@ -176,6 +176,44 @@ CREATE TRIGGER IF NOT EXISTS aisg_audit_no_delete
     END;
 """
 
+# The PostgreSQL half of the same guarantee (NIST AU-9). Until this existed,
+# aisg_audit on PostgreSQL -- the primary backend -- accepted UPDATE and DELETE:
+# the SQLite triggers above were the only enforcement, and they never ran there.
+# Same shape as sc_audit / nc_audit / bd_audit: one PL/pgSQL function that
+# RAISEs, wired BEFORE UPDATE and BEFORE DELETE, FOR EACH ROW. Trigger names
+# match the SQLite ones so "is aisg_audit immutable?" has one answer per name.
+#
+# Separate statements, executed one at a time with conn.execute -- NOT through
+# executescript, whose ';' split would cut the $$-quoted function body in two.
+# Every statement is idempotent (CREATE OR REPLACE / DROP ... IF EXISTS), so
+# init_db and migration 20261008003850 can both run it, in either order.
+PG_AUDIT_TRIGGER_STATEMENTS = (
+    """CREATE OR REPLACE FUNCTION aisg_audit_immutable()
+RETURNS TRIGGER AS $$
+BEGIN
+    RAISE EXCEPTION 'Audit records are immutable — NIST AU-6';
+END;
+$$ LANGUAGE plpgsql""",
+    "DROP TRIGGER IF EXISTS aisg_audit_no_update ON aisg_audit",
+    """CREATE TRIGGER aisg_audit_no_update
+    BEFORE UPDATE ON aisg_audit
+    FOR EACH ROW EXECUTE FUNCTION aisg_audit_immutable()""",
+    "DROP TRIGGER IF EXISTS aisg_audit_no_delete ON aisg_audit",
+    """CREATE TRIGGER aisg_audit_no_delete
+    BEFORE DELETE ON aisg_audit
+    FOR EACH ROW EXECUTE FUNCTION aisg_audit_immutable()""",
+)
+
+
+def install_pg_audit_triggers(conn) -> None:
+    """Make aisg_audit append-only on PostgreSQL. Caller commits.
+
+    Raises on failure: whether to tolerate that is the caller's decision
+    (init_db logs it; the migration lets it fail the run).
+    """
+    for stmt in PG_AUDIT_TRIGGER_STATEMENTS:
+        conn.execute(stmt)
+
 
 def init_db() -> None:
     conn = get_connection()
@@ -190,6 +228,16 @@ def init_db() -> None:
         # back to SQLite when the PG connection cannot be made.
         if getattr(conn, "_backend", "sqlite") != "postgresql":
             conn.executescript(_SQLITE_TRIGGERS)
+        else:
+            try:
+                install_pg_audit_triggers(conn)
+            except Exception as exc:  # noqa: BLE001 — never block canvas start
+                conn.rollback()
+                print(
+                    f"[init_db] WARNING: aisg_audit immutability triggers NOT "
+                    f"installed on PostgreSQL: {exc}",
+                    file=sys.stderr,
+                )
         conn.commit()
         print(f"[init_db] AISG schema ready ({_AISG_BACKEND})", file=sys.stderr)
     finally:

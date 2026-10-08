@@ -124,6 +124,21 @@ exclusions:
       it is ever gated, delete the skips first.
     review: dic-bridge-01
 
+  - pattern: "tests/pg_tier/test_aisg_audit_immutable_pg.py"
+    reason: >-
+      Needs a LIVE PostgreSQL. It proves aisg_audit is append-only ON THE
+      SERVER: INSERT accepted, UPDATE and DELETE refused by the PL/pgSQL
+      triggers that tools/aisg/db/init_db.py and migration
+      20261008003850_aisg_audit_pg_immutability install, with a negative
+      control showing the pre-migration table is mutable. No SQLite run can
+      reach that: SQLite has its own trigger dialect, and the gated sibling
+      tests/test_aisg_audit_pg_immutability.py can only pin the DDL text that
+      is sent. Runs in Test (PostgreSQL) via tests/pg_tier_allowlist.txt.
+      Excluded rather than gated for the same reason as the local_database
+      entry above: its module-level skipif would put a skip into a CI-gated
+      file, and skip_census is closed.
+    review: aisg-audit-pg-immutable
+
 # --------------------------------------------------------------------------- #
 # BACKLOG — the grandfathered census
 # --------------------------------------------------------------------------- #

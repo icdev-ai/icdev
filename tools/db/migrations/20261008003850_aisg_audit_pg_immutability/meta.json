@@ -1,0 +1,7 @@
+{
+  "description": "aisg_audit_pg_immutability",
+  "date": "2026-10-08",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}
