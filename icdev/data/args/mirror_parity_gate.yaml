@@ -74,7 +74,10 @@ extensions:
 # and this gate cannot disagree about what a shim is. One reconciliation is in
 # the drop too: `icdev/tools/slides/constants.py` had been missing the
 # PALETTE_CORPORATE_STATUS its twin carried since #2007.
-budget: 9
+#
+# 9 -> 0 on 2026-10-09 (release 1.2.43). The full icdev/ sync for the release
+# (the first since July) reconciled every remaining drifted pair. Measured: 0.
+budget: 0
 
 # Not counted, with the reason. A gate that fires on a difference which is
 # correct gets switched off, so exclusions are declared rather than discovered.
