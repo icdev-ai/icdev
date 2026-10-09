@@ -248,9 +248,6 @@ tools/aiify/pattern_classifier.py::_cs_detect_file::tree_sitter_languages
 # pdf2image -> distribution 'pdf2image'
 tools/airgap/pdf_fallback.py::LocalPDFProvider._render_page_to_base64::pdf2image
 
-# pytesseract -> distribution 'pytesseract'
-tools/bom/forensics.py::_ocr::pytesseract
-
 # ibm_cloud_sdk_core -> distribution 'ibm_cloud_sdk_core'
 tools/cloud/iam_provider.py::<module>::ibm_cloud_sdk_core
 
