@@ -10,7 +10,6 @@
 | Auto-added schedule_fathomdesk_news_plan.py | tools/scripts/schedule_fathomdesk_news_plan.py | (auto-added by remediation; update description) | --json | stdout |
 | Auto-added sr.py | tools/trading/ta/sr.py | (auto-added by remediation; update description) | --json | stdout |
 | Auto-added package_registry.py | tools/installer/package_registry.py | (auto-added by remediation; update description) | --json | stdout |
-| Auto-added package_registry.py | tools/installer/package_registry.py | (auto-added by remediation; update description) | --json | stdout |
 | Auto-added frontline_importer.py | tools/frontline_importer.py | (auto-added by remediation; update description) | --json | stdout |
 | Auto-added war_endurance.py | tools/simulation/war_endurance.py | (auto-added by remediation; update description) | --json | stdout |
 | Auto-added seed_wex_kanban.py | tools/studio/seed_wex_kanban.py | (auto-added by remediation; update description) | --json | stdout |
@@ -19,3 +18,4 @@
 | Auto-added constants.py | tools/infra_canvas/constants.py | (auto-added by remediation; update description) | --json | stdout |
 | Auto-added digest_service.py | tools/notification_service/digest_service.py | (auto-added by remediation; update description) | --json | stdout |
 | Auto-added controller.py | tools/ace/controller.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added prebuild_bootstrap.py | tools/installer/prebuild_bootstrap.py | (auto-added by remediation; update description) | --json | stdout |

@@ -4,7 +4,8 @@
 
 Cortex is ICDEV's single, governed facade over every AI capability on the
 platform: the LLM router, the four retrieval backends (RAG / GraphRAG / Document
-Intelligence / Keyword), IQE ask-your-data, and the multi-agent runtime — all
+Intelligence / Keyword) plus one ADVISORY backend (ACE SME), IQE ask-your-data,
+and the multi-agent runtime — all
 behind one import surface, one TRUST governance chain, and one row-level-security
 model. It is the Snowflake-Intelligence / Palo-Alto-Cortex analogue for the
 ICDEV stack: callers ask for an *outcome* (search, ask, complete, reason,
@@ -33,7 +34,7 @@ wrapping (enforced by `tests/cortex/test_api_governed.py`).
 
 | Facade | Purpose | Returns |
 |--------|---------|---------|
-| `search(query, top_k, strategy, ctx)` | Unified retrieval with agentic strategy routing + CRAG corrective loop across rag/graph/dic/kb | `list[CortexSearchResult]` |
+| `search(query, top_k, strategy, ctx)` | Unified retrieval with agentic strategy routing + CRAG corrective loop across rag/graph/dic/kb. `strategy='sme'` instead returns an ACE domain expert's ADVISORY opinion — opt-in only, never selected by `auto`/`all`, `metadata.advisory=True`, RRF weight 0.0, and never a verdict (see [Advisory vs evidentiary](#advisory-vs-evidentiary-backends)) | `list[CortexSearchResult]` |
 | `ask(question, mode, ctx)` | Ask-your-data — IQE primary, NL→SQL fallback, TRUST-labelled | `CortexResult` (rows + executed IQE/SQL + citations) |
 | `complete(prompt, ctx)` | Free-form completion via the config-routed LLM chain | `CortexResult` |
 | `reason(prompt, mode, ctx)` | Multi-step reasoning — `cot` / `debate` / `council` over the router's chain orchestration, governed | `CortexResult` (`metadata.reason_mode`) |
@@ -46,6 +47,50 @@ wrapping (enforced by `tests/cortex/test_api_governed.py`).
 `fail_closed`. Identity fields are **always derived server-side** on the exposed
 surfaces (REST / MCP) — never from the client body — so a caller can only narrow
 (`domain`), never widen, access.
+
+### Advisory vs evidentiary backends
+
+`CORTEX_BACKENDS` splits in two (`tools/cortex/schemas.py`):
+
+| | Backends | What a hit IS |
+|---|---|---|
+| `EVIDENTIARY_BACKENDS` | `rag`, `graph`, `dic`, `kb` | A row that existed **before** the query and can be re-read |
+| `ADVISORY_BACKENDS` | `sme` | An **opinion** a model authored **at** query time |
+
+Both normalize into the same `CortexSearchResult`, so nothing downstream can
+tell them apart from the dataclass alone — the split is what tells them apart.
+It exists because base_pack TRUST rule 1 requires a verdict to derive from
+deterministic evidence and never from an LLM.
+
+The `sme` backend (`search_sme`, cef-bck-03) resolves a domain to an ACE persona
+via `sme_registry.ensure_sme` — reusing one of the ~90 catalog roles when one
+covers the domain, minting a new `advisory`-bundled role (trust_tier `red`, empty
+`folder_access` and `icdev_tools`, so it can neither write nor execute) only when
+none does — then asks that role the question through `persona_query.query_persona`.
+One expert, one opinion; `top_k` is deliberately unused.
+
+Five mechanisms keep that opinion out of a verdict, and none of them is a comment:
+
+1. **Never automatic.** `strategy="all"`, `search_all()`'s default,
+   `ROUTE_LABEL_BACKENDS` and `search.fan_out.backends` all resolve to
+   `EVIDENTIARY_BACKENDS`. A caller reaches `sme` only by naming it.
+2. **Marked.** Every result carries `metadata.advisory = True` and
+   `metadata.verdict_eligible = False`.
+3. **Outranked.** `search.strategy_weights.sme` is `0.0`, so its RRF
+   contribution is `0.0` and it sorts below *every* evidentiary hit — including
+   a bad one. This is a policy floor, not a tuning knob.
+4. **Excluded from CRAG.** An opinion is evidence of neither retrieval success
+   nor retrieval failure, so `_corrective_pass` ignores advisory results when
+   evaluating `crag_threshold`. (An *empty* result set still corrects — that is
+   the strongest reason there is to rewrite a query.)
+5. **Never fabricated.** With no provider available the backend returns
+   `BackendResults([], errors=[...])` with the failing stage (`input` /
+   `ensure_sme` / `persona_query`), not an empty-string opinion.
+
+`is_advisory(result)` is the predicate any verdict-forming consumer must call.
+It reads both the `metadata` flag and `result.backend`, because metadata is a
+plain dict that consumers rewrite and a dropped key must not be able to promote
+an opinion into a verdict.
 
 ## 3. The TRUST governance chain
 
@@ -67,6 +112,43 @@ Non-retrieval calls skip only the grounding gates (recorded as `skip` in the
 `GovernanceReport`, not silently). Gate errors fail *open* (warn) unless
 `CortexContext.fail_closed`. Every governed call therefore leaves an auditable
 `GovernanceReport` (`gates_run`, `outcomes`, `blocked`).
+
+### 3.1 What the chain costs (ctx-obs-02)
+
+`CortexResult.latency_ms` is the **LLM call only** — it comes from
+`LLMResponse.duration_ms`, or the `perf_counter` around the router invoke. For a
+long time nothing timed the chain *around* it, so the question that decides
+whether the seven gates are worth their cost — and whether perf work should
+target the gates or the model call — had no answer.
+
+`wrap()` now times itself and records three fields on the `GovernanceReport`:
+
+| Field | Meaning |
+|---|---|
+| `total_ms` | the whole governed call (gates + operation) |
+| `operation_ms` | the wrapped operation alone |
+| `gate_ms` | per-gate wall time, keyed like `outcomes` |
+| `governance_ms` *(derived)* | `total_ms - operation_ms` — the chain's own cost |
+
+Per-gate timing extends `gates_json`, which already carried the per-gate
+outcomes, so there is no schema migration. Two deliberate properties:
+
+- **`total_ms` excludes the audit write.** A write cannot be inside the
+  measurement it persists, so the split is taken before it — which also makes
+  `sum(gate_ms) == total_ms` on a call that ran the chain to completion. A call
+  blocked mid-gate sums to less: the interrupted segment is never closed.
+- **`0.0` means *not measured*, never *free*.** Rows written before ctx-obs-02,
+  and cache hits (which never enter the pipeline), carry no timing.
+  `/cortex/metrics` therefore averages over `summary.timed_calls`, not
+  `summary.calls`, and says on the panel when the two differ. The timing fields
+  ride the same `gates_json` blob as the spend accounting, so they inherit its
+  `_DETAIL_ROW_LIMIT` sampling cap and its `detail.truncated` flag — adding a
+  field is not a reason to widen the cap.
+
+The panel surfaces **Avg latency** (LLM only), **Avg governance**, **Avg wall
+time** and a **By gate** table, so "governance is 40% of the call" can be
+narrowed to "…and it is one gate". Pinned by
+`tests/cortex/test_governance_timing.py`.
 
 ## 4. Persistence & row-level security
 
@@ -112,7 +194,26 @@ only. Error envelopes are stable: 401 unauthenticated, 400 validation,
 `cortex_complete`, `cortex_reason`, `cortex_classify`, `cortex_extract`, `cortex_govern`,
 `cortex_agent_launch`. Handlers are thin calls into `tools/cortex`; the gateway
 `security_chain` (D284) wraps traffic, so there is no per-server auth to
-maintain. Run standalone over stdio with `python tools/mcp/cortex_server.py`.
+maintain.
+
+**Two entry points, one tool set (ctx-reach-03).** `.mcp.json` configures only
+`icdev-unified` (`tools/mcp/unified_server.py`), which registers all eight
+`cortex_*` tools from `TOOL_REGISTRY` — that is how they are reached in this
+repo. `python tools/mcp/cortex_server.py` runs the same handlers standalone over
+stdio and is kept deliberately, as a **bounded** surface for an external or
+air-gapped MCP client that must see only the Cortex family rather than the full
+unified registry. The risk of two entry points is drift, so it is gated: every
+tool in `CORTEX_TOOLS` must also be in `TOOL_REGISTRY`
+(`tests/cortex/test_cortex_reach_decisions.py`), or it would be reachable only
+via the server nobody launches.
+
+Neither `cortex_govern` nor `cortex_agent_launch` has an ungoverned fallback.
+Both shipped ahead of the ctx-govern-04 facades behind a
+`getattr(cortex_api, ..., None)` probe with a standalone
+`GovernancePipeline` / `ACEController` + `run_agent_loop` branch behind it; the
+facades landed, so the probe could never fail, and the branch it guarded was
+deleted in ctx-reach-03. See
+[phase-ctx-reach-03-cortex-reach-decisions.md](phase-ctx-reach-03-cortex-reach-decisions.md).
 
 ## 6. Domain lenses (ctx-canvas-04)
 
@@ -159,6 +260,41 @@ tier, so the whole facade is air-gap safe. `assert_airgap_ready()` raises
 
 Everything under `tools/cortex/`, `tools/mcp/cortex_server.py`, and the IQE
 adapter is mirrored to `icdev/tools/…`.
+
+### Import namespace (cxo-doc-02)
+
+Most imports inside `tools/cortex/` are spelled `tools.*`, but three are spelled
+`icdev.tools.*` — `api.py::_run_single_agent` (`llm.agent_loop`, twice) and
+`blueprint.py::_propose_roles` (`ace.problem_classifier`). That is **not** drift
+to be normalised away; the canonical spelling is `icdev.tools.*` and those three
+sites are the ones that are already right.
+
+The two roots are not interchangeable, and which one you get depends on how
+ICDEV was installed:
+
+| Environment | Resolution | Effect |
+|-------------|-----------|--------|
+| Wheel / `pip install icdev` | `icdev/__init__.py::_alias_tools_namespace()` binds `sys.modules["tools"] = icdev.tools` | `tools.X` **is** `icdev.tools.X` — one object |
+| Source checkout (this repo) | A real top-level `tools/` package exists, so the alias deliberately stands down | `tools.X` and `icdev.tools.X` are **separate module objects** with separate state |
+
+That second row is the whole point. In a source checkout `tools.iqe.executor`,
+`tools.db.storage` and `tools.ace.problem_classifier` each load a second time
+under the `tools.` name, producing distinct classes and distinct module-level
+caches. `icdev.tools.*` is therefore the only spelling that binds the same
+object in both environments — which is exactly why CLAUDE.md names it canonical.
+
+Consequences for the two call sites:
+
+- **`ace.problem_classifier`** — load-bearing. ACE's own modules (`tools/ace/controller.py`, `problem_classifier.py`, …) import through `icdev.tools.*`. Spelling this one `tools.*` would hand Cortex a *different* `ProblemClassifierLens` class with its own role-loader state.
+- **`llm.agent_loop`** — identity happens to survive either spelling today, because `tools/llm/agent_loop.py` was collapsed into a pure re-export shim (`dba8d4b59`) after the physical copy it replaced drifted out of sync and silently served a stale loop. That is a property of one file, not of the namespace, so the canonical spelling still stands.
+
+What was explicitly **not** done: converting the rest of `tools/cortex/` to
+`icdev.tools.*`. Cortex is hosted by the Flask dashboard, which reaches it
+through `tools.*`; flipping ~100 sibling imports would have Cortex binding a
+different `db.storage` (and therefore a different connection pool and RLS
+predicate state) from its own host. The mixed spelling is the safe state, and
+`tests/cortex/test_import_namespace.py` pins it so the three canonical sites are
+not "tidied" back.
 
 ## 9. Verification
 

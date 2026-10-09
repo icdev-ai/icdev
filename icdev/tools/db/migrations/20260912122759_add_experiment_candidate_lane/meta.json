@@ -1,0 +1,7 @@
+{
+  "description": "add experiment candidate lane",
+  "date": "2026-09-12",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

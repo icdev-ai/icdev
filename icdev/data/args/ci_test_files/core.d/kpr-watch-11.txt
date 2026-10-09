@@ -1,0 +1,5 @@
+# kpr-watch-11 — a status oscillation detector. Gated because both properties
+# that make it useful rather than noise can regress silently: a RETURN must stay
+# a PAIR (or normal progression starts firing), and CONTESTED must stay
+# "2+ writers" (or 31 benign retry loops bury the 3 real fights).
+tests/kanban/test_status_churn.py

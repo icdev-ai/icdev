@@ -4,6 +4,24 @@
 # Seconds between polls in --daemon mode
 poll_interval_seconds: 30
 
+# kpr-watch-17 -- CEILING for the idle backoff, in seconds.
+#
+# `poll_interval_seconds` above is the FLOOR and is unchanged: a board with
+# anything on it is polled exactly as before. When an iteration finds NOTHING --
+# no action taken and no task in a PR-bearing status -- the sleep grows
+# geometrically toward this ceiling, and any action, any PR-bearing task, or any
+# error resets it to the floor immediately.
+#
+# WHY IT IS DECLARED HERE rather than living in code: a watcher that has quietly
+# stopped looking is indistinguishable from one with nothing to see, which is
+# this repo's signature defect. The bound belongs where a reader finds it, and
+# every backed-off iteration logs the interval it chose.
+#
+# 480s = 8 minutes. A PR opened into an idle board is therefore picked up within
+# 8 minutes rather than 30 seconds; that is the cost, and it is paid only while
+# the board is empty. Lower it if that is too slow for your queue.
+idle_backoff_max_seconds: 480
+
 # Hard cap on resume cycles per task — prevents infinite CI-failed loops
 max_resume_cycles_per_task: 5
 
@@ -212,6 +230,17 @@ landed_check_on_poll: true
 #
 # Set superseded_close false to audit without closing. Set superseded_check
 # false to skip the merged listing entirely.
+#
+# ASKED ON BOTH PATHS (mfx-mrg-06). The linked poll asks it of every task it
+# services; the unlinked sweep asks it of every open PR the poll CANNOT see --
+# above all a PR opened after its task went terminal, which is what all
+# fifteen hand-closed duplicates of 2026-09-05/06 were
+# (docs/audits/mfx-mrg-05-superseded-population-survey.md). Same predicate,
+# same close, same `superseded_close` switch; on the sweep a fire is NEVER
+# merged even in report-only mode, and a fire with no task row is HELD and
+# audited once as `superseded_hold`, never closed. Surveyed over the whole
+# open population before arming: 3 PRs, 0 fires
+# (docs/audits/mfx-mrg-06-superseded-sweep-rung.md).
 superseded_check: true
 superseded_close: true
 
@@ -517,3 +546,65 @@ union_resolver:
     # Feature docs carrying a per-card coverage table.
     - path: docs/features/*.md
       rules: [table_rows, keep_both_blocks, adjacent_edits]
+    # THE SINGLE LARGEST REFUSAL CAUSE (kpr-watch-14): 35 of the 63 lifetime
+    # `undeclared:` union refusals named CLAUDE.md, 55.6%. Every card appends
+    # its own block, so main and the card insert at the same point -- the
+    # `keep_both_blocks` shape exactly. SURVEYED before arming, over all 11
+    # merges in this file's history where git ITSELF conflicted: the union
+    # loses NOTHING in 11 of 11, reproduces the human resolution byte for byte
+    # in 7, and differs from the other 4 only by one or two BLANK LINES at a
+    # block seam. Re-derive with tools/kanban/claude_md_union_survey.py.
+    - path: CLAUDE.md
+      rules: [keep_both_blocks, adjacent_edits]
+    # THE ARTIFACT-PIN PAIR (kpr-watch-20). Every artifact-freshness card
+    # appends one measurement comment block to the manifest and one pinning
+    # test function to the suite, so four cards in one epic collided with every
+    # sibling that landed first: 24 `union_refused` rows across
+    # #2267/#2269/#2270, all `undeclared: args/pinned_artifacts.yaml`, all
+    # resolved by a human. SURVEYED PER HUNK before arming, over the 6 hunks
+    # git itself conflicted on -- `python -m tools.kanban.artifact_pin_union_survey`:
+    #   1 exact, 3 union_kept_more, 1 human_also_edited, 1 refused,
+    #   and union_lost_content = 0.
+    # The 3 `union_kept_more` are the reason to declare rather than a blemish:
+    # each hand resolution DROPPED two `assert entry["decided_by"] ...` /
+    # `assert entry["consumer"] ...` lines, and three of the five
+    # `test_the_shipped_*_pin_is_decided_by_floci` tests sit on main today
+    # asserting nothing of the kind. The union kept all six.
+    # The 1 `refused` is CORRECT and stays refused: on that merge both sides
+    # REWROTE the same "NOT CONVERTED HERE" enumeration paragraph, so base_seg
+    # is non-empty and `keep_both_blocks` declines it -- a human decides which
+    # enumeration is true. Declaring this pair does not claim otherwise.
+    - path: args/pinned_artifacts.yaml
+      rules: [keep_both_blocks, adjacent_edits]
+    - path: tests/airgap/test_artifact_freshness.py
+      rules: [keep_both_blocks, adjacent_edits]
+      tests: ["tests/airgap/test_artifact_freshness.py"]
+    # d42b032ea51b8d17 (kpr-watch-22): 6 refusals, all `undeclared:
+    # args/red_first_gate.yaml`. SURVEYED PER HUNK before arming --
+    # `python -m tools.kanban.artifact_pin_union_survey --file
+    # args/red_first_gate.yaml`: 1 decisive hunk, shape append_shaped
+    # (base_seg empty on both sides), 0 lost_content -- the union never
+    # drops content that landed.
+    - path: args/red_first_gate.yaml
+      rules: [keep_both_blocks, adjacent_edits]
+    # NOT DECLARED, AND MEASURED RATHER THAN JUDGED (kpr-watch-20):
+    # `icdev/data/args/floci_runtime_images.yaml` conflicted on #2269 and is a
+    # candidate by proximity only. Its one conflict is an ADD/ADD of the SAME
+    # `note:` key under the SAME entry -- both branches re-added a note the
+    # wheel mirror had never received -- and a `keep_both_blocks` union there
+    # emits a DUPLICATE YAML mapping key that `yaml.safe_load` accepts
+    # silently, so the rung's YAML verifier PASSES and ships a declaration of
+    # record carrying two contradictory notes. It is also not append-shaped at
+    # all: `tools/installer/sync_package_tree.py` regenerates it from
+    # args/floci_runtime_images.yaml, which merged CLEAN in 4 of 4. Nor is
+    # `derived_from` the answer -- the source was NOT in any conflict set, the
+    # one shape kpr-watch-14 records the derivation rung refusing to repair.
+    # The real gap is that `mirror_parity` only watches tools/ <-> icdev/tools/,
+    # so args/ -> icdev/data/args/ drifts unobserved; that is its own card.
+    # NOT unioned -- DERIVED. mfx-ci-04 requires this payload to be regenerated
+    # whenever CLAUDE.md changes, and `prebuild_bootstrap.SOURCES` regenerates
+    # it with a bare `shutil.copy2`, so copying the resolved CLAUDE.md IS the
+    # regeneration. It carried a conflict in all 35 of those refusals, so
+    # declaring CLAUDE.md alone would have resolved none of them.
+    - path: icdev/data/claude_bootstrap/CLAUDE.md
+      derived_from: CLAUDE.md

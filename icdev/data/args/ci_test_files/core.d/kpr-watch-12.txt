@@ -1,0 +1,4 @@
+# kpr-watch-12 -- an empty check rollup is not a workflow that never fired.
+# Gated in the PR that makes it pass: the predicate narrowing it guards is
+# what stops a close/reopen cancelling a healthy queued run.
+tests/ci/test_pr_watcher_ci_never_fired.py

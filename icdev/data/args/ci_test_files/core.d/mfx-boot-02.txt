@@ -1,0 +1,4 @@
+# mfx-boot-02 -- ci_runner_health reflex: re-registers a crash-looping
+# self-hosted CI runner (FT and RT) with a fresh token; recovered by hand on
+# 2026-09-03 and twice before while every job queued with no red anywhere.
+tests/test_ci_runner_health_reflex.py

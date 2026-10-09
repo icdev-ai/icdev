@@ -1,0 +1,5 @@
+# autonomy-dep-03 — can this deployment still update itself, and if not WHY?
+# Pins that `blocked` (behind AND refusing) stays apart from `updatable` (a
+# normal window between poll cycles), and that an unmeasurable distance never
+# raises a false freeze alarm — a bug this module actually shipped.
+tests/genesis/test_deployment_freshness.py

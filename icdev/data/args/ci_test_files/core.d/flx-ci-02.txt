@@ -1,0 +1,2 @@
+# flx-ci-02 -- ONE pre-apply gate: the standing guard against a second one.
+tests/infra_canvas/test_one_preapply_gate.py

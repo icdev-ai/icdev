@@ -1,0 +1,37 @@
+# CUI // SP-CTI
+# Monitor-only. See args/agent_rules/README.md before changing `enforce`.
+id: persistence.startup_file_write
+version: "1"
+title: Write to a shell profile or autostart location
+severity: medium
+tags:
+  - T1546.004
+  - T1547
+  - persistence
+enabled: true
+enforce: false
+deny_message: >-
+  Writing to a shell profile or autostart location is blocked. Code that runs on
+  every future shell is outside the scope of any single task.
+expr:
+  event_type:
+    - file.write
+    - file.delete
+  file_path_glob:
+    - "**/.bashrc"
+    - "**/.bash_profile"
+    - "**/.bash_login"
+    - "**/.profile"
+    - "**/.zshrc"
+    - "**/.zshenv"
+    - "**/.zprofile"
+    - "**/.config/fish/config.fish"
+    - "**/.config/autostart/*"
+    - "**/.config/systemd/user/*"
+    - "**/Library/LaunchAgents/*"
+    - "**/etc/cron.d/*"
+    - "**/etc/profile.d/*"
+    # Windows: the PowerShell profile is the same idea under another name.
+    - "**/WindowsPowerShell/Microsoft.PowerShell_profile.ps1"
+    - "**/PowerShell/Microsoft.PowerShell_profile.ps1"
+    - "**/Start Menu/Programs/Startup/*"

@@ -1,0 +1,72 @@
+# CUI // SP-CTI
+# IDP Gap Seeder — turn a failing scorecard rule into a kanban task.
+#
+# Consumed by tools/idp/gap_seeder.py. Everything here is configuration; the
+# caps in particular exist because 66 components x 11 rules is a seeding storm,
+# and this repo has already been burned by an unbounded seeder that produced
+# 353 branches in one pass. Change the numbers here, not the Python.
+#
+# Safety posture, in the order the seeder checks it:
+#   1. `enabled: false` — a write is refused outright until an operator flips
+#      this (or passes --force for a one-off). Dry runs always work.
+#   2. `status: suggested` — the scheduler only dispatches backlog/scheduled.
+#   3. `gate_task_id` — every seeded task carries depends_on_task_id pointing
+#      at a *-gate-00 sentinel held in_progress. That dependency edge is the
+#      only hold that is enforced in code (promote_backlog_to_scheduled
+#      ::_deps_satisfied); the `suggested` status alone is not, because the
+#      deadlock-breaker can promote a suggested card out of it.
+
+# Master switch. False means --seed refuses to write and tells you so.
+# Prove the caps with a dry run, then flip this.
+enabled: false
+
+# --- Caps ------------------------------------------------------------------
+# Hard ceiling on tasks created by ONE run, across every scorecard and
+# component. Truncation is not silent: it is logged at WARNING and reported as
+# `truncated.by_run_cap` in the JSON.
+max_tasks_per_run: 10
+
+# Hard ceiling per component per run, applied BEFORE the run cap so one badly
+# scoring component cannot eat the whole budget. A component failing eight
+# rules therefore surfaces its two most urgent gaps this run and the rest on a
+# later run, once those are closed.
+max_tasks_per_component: 2
+
+# --- Selection -------------------------------------------------------------
+# When true, only rules that gate a ladder level are seeded; un-levelled rules
+# score but never block, so they are usually not worth a card.
+only_gating_rules: false
+
+# Rule identifiers to never seed (e.g. a rule the platform has decided to
+# accept). Exemptions in the scorecard itself are the preferred mechanism —
+# this is the escape hatch for "seed nothing" without changing the grade.
+exclude_rules: []
+
+# When non-empty, ONLY these rule identifiers are seeded.
+include_rules: []
+
+# --- Task shape ------------------------------------------------------------
+task_type: fix
+
+# Every seeded task depends on this sentinel. It is created (held
+# `in_progress`) on the first real seed if it does not exist. Its id must end
+# in `-gate-00` so tools/kanban/gates.py::is_manual_gate recognises it and no
+# sweep promotes, dispatches or reaps it.
+gate_task_id: idpgap-gate-00
+
+# Board status for seeded tasks. `suggested` keeps them off the scheduler's
+# dispatch query and in front of a human first.
+status: suggested
+
+# Priority by the ladder level the failing rule gates. `critical` is
+# deliberately absent and is clamped to `high` in code: a critical card is
+# auto-promoted out of `suggested` by the kanban deadlock-breaker, which would
+# defeat the whole point of seeding these for confirmation.
+priority_by_level:
+  Bronze: high
+  Silver: medium
+  Gold: medium
+  Platinum: low
+
+# Used for rules that gate no level, and for level names not listed above.
+default_priority: low

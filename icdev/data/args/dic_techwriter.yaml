@@ -1,0 +1,52 @@
+# CUI // SP-CTI
+# DIC Tech Writer configuration — tools/document_intelligence/tech_writing_assist.py
+#
+# Read by `_techwriter_config()`. An unreadable or absent file means every
+# block below takes its documented default, which is the pre-migration
+# behaviour — this file can be deleted and the surface still works.
+
+# ── Governed retrieval through cortex.resolve() (cef-di-02) ──────────────────
+# research_and_draft() hand-wires its own retrieval today: RAGRetriever.search()
+# plus knowledge_graph.graph_rag.retrieve(), two subsystems it has to know the
+# names of, neither of them governed. With `enabled: true` the retrieval half
+# runs through the ONE governed seam instead — `cortex.resolve(entity,
+# question, ctx)` — which fans out over the registered backends under the
+# 8-gate TRUST chain, writes a `cortex_audit` row, registers a
+# `source_citation_registry` row for the evidence set, and returns a
+# deterministic currency verdict for the subject alongside the evidence.
+#
+# DEFAULT OFF, and off means the seam is never consulted: the legacy chain is
+# restored by flipping this flag rather than by reverting a merge (the epic's
+# migration rule). The DRAFT half is unaffected either way — it has routed
+# through the governed `cortex.complete()` facade since the adoption pilot.
+#
+# Two things the migrated path does NOT do, on purpose:
+#   * it does not fall back to the legacy chain when Cortex refuses or fails.
+#     A governance chain you can route around by failing is decoration. A
+#     refusal is reported on `ResearchResult.warnings` and the draft proceeds
+#     with whatever evidence survived — which may be none.
+#   * it does not widen egress. The `document_intelligence` lens (cef-bck-04)
+#     intersects resolve's rung set down to [rag, dic], so the `external` rung
+#     — the only one that opens a socket — cannot be selected, and the
+#     caller's air-gap verdict is threaded onto the context as well.
+cortex:
+  enabled: false          # master toggle — DEFAULT OFF (never remove)
+
+  # Evidence hits requested per Cortex backend. resolve() asks each rung
+  # separately and fuses, so this is not the number of sources the draft sees.
+  top_k: 8
+
+  # Multiplier applied to `top_k` when a collection scope is active.
+  #
+  # The Cortex fan-out has no collection filter — scoping happens at the
+  # consuming surface (see `_in_collection` in tech_writing_assist.py) — so a
+  # tenant-wide top_k spent on another collection's chunks comes back and is
+  # thrown away. Over-fetching gives the post-filter something to keep. It is a
+  # RECALL knob and never a scope knob: raising it cannot let another
+  # collection's chunk through, and lowering it to 1 cannot let one through
+  # either. Set to 1 to disable over-fetching.
+  scope_overfetch: 4
+
+  # Hard ceiling on the over-fetched per-backend top_k, so a large `top_k` and
+  # a large `scope_overfetch` cannot multiply into a fan-out nobody sized.
+  max_top_k: 40

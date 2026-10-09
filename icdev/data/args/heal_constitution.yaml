@@ -11,6 +11,28 @@
 
 version: 1
 
+# Rate limits for the knowledge-layer self-healer (tools/knowledge/self_heal_analyzer.py
+# and the MCP self_heal fallback in tools/mcp/knowledge_server.py). Added by ahx-heal-01.
+#
+# These two limits were previously hardcoded in two modules with no shared
+# definition — 3/hour in the analyzer, 5/hour in the MCP fallback — which read as
+# a contradiction. It is not one: the scopes differ. The analyzer's limit is
+# per-pattern, the MCP fallback's is global across all patterns. Both are real and
+# they compose. They are recorded here so the two numbers have one home and the
+# difference in scope is stated rather than inferred.
+#
+# VALUES UNCHANGED from the hardcoded originals — this is a consolidation, not a
+# loosening or tightening of the safety posture. Changing either number changes
+# how often the system may modify itself unattended; do that deliberately.
+rate_limits:
+  # Auto-heal only at or above this confidence; always escalate below the floor.
+  confidence_threshold: 0.7
+  escalation_threshold: 0.3
+  # Max auto-heal attempts per hour FOR A SINGLE PATTERN.
+  max_heal_attempts_per_pattern_per_hour: 3
+  # Max auto-heal attempts per hour ACROSS ALL PATTERNS.
+  max_heal_attempts_global_per_hour: 5
+
 blocked_types:
   - deploy
   - build

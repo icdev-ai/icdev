@@ -17,7 +17,22 @@ from icdev.core.paths import repo_root
 logger = get_logger("icdev.core_profile")
 
 BASE_DIR = repo_root(__file__)
-DEFAULT_PATH = BASE_DIR / "args" / "core_profiles.yaml"
+
+
+def _default_path(base: Path) -> Path:
+    """``<base>/args/`` in a checkout or initialized project; ``<base>/data/args/``
+    in an installed wheel, where repo_root() is the ``icdev`` package dir and the
+    FORGE data ships as package data. Without the second probe `icdev init
+    --profile air-gap` reported "Valid profiles: none" on every pip install
+    (same two-layout probe as component_registry._find_repo_root)."""
+    for rel in (("args",), ("data", "args")):
+        candidate = base.joinpath(*rel, "core_profiles.yaml")
+        if candidate.is_file():
+            return candidate
+    return base / "args" / "core_profiles.yaml"
+
+
+DEFAULT_PATH = _default_path(BASE_DIR)
 
 
 def _import_yaml() -> Any:

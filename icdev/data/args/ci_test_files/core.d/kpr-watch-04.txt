@@ -1,0 +1,11 @@
+# kpr-watch-04 — `_NO_AUTOMERGE_LABELS` was referenced at exactly ONE site (the
+# unlinked sweep), and the task-linked auto-merge path could not have honoured a
+# hold label even in principle because `_GH_JSON_FIELDS` never requested
+# `labels`. So the documented escape hatch did not cover the door that does most
+# of the merging, and it failed in the dangerous direction: a human labelling a
+# `kanban/<id>` PR `do-not-merge` got no warning and no effect. Gated because
+# only a test states the three fragile parts — the label must be FETCHED, the
+# refusal must precede the un-draft (un-drafting is visible and hard to walk
+# back), and the blocking must stay strictly ADDITIVE so an unlabelled green PR
+# still merges.
+tests/ci/test_pr_watcher_hold_label.py

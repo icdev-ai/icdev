@@ -1,0 +1,2 @@
+tests/awareness/test_claim_verifier_reflex.py
+tests/awareness/test_verified_claim_consumption.py

@@ -1,0 +1,93 @@
+# CUI // SP-CTI
+# Genesis-enabled sibling systems (xit-gen-01).
+#
+# Read by tools/genesis/apps_registry.py::load_genesis_apps, which feeds the
+# /genesis dashboard and its /api/genesis/* routes. This table used to be a
+# Python dict in tools/dashboard/app.py that located every sibling at
+# `Path(BASE_DIR).parent / <name>` and ran its daemon with that directory as
+# cwd and no existence check -- a FileNotFoundError from a machine that did not
+# happen to have a sibling checked out beside this one.
+#
+# SAME SHAPE AS args/kanban_external_repos.yaml: an app's on-disk root comes
+# from an environment variable (`root_env`) so this committed file stays
+# environment-agnostic, with `root_fallback` (relative to THIS repo's parent
+# directory) preserving the sibling-directory convention for a machine that
+# has one. `db` and `daemon`/`promoter` are relative to the app's root. An app
+# whose root does not exist is listed with `available: false` and every route
+# answers {"error": "root_missing"} instead of raising.
+
+apps:
+  icdev:
+    name: "ICDEV™"
+    root_env: ICDEV_PROJECT_ROOT
+    root_fallback: "."            # "." = this repository itself
+    daemon: tools/genesis/daemon.py
+    promoter: tools/genesis/promoter.py
+    env_var: ICDEV_GENESIS_ENABLED
+    db: data/icdev.db
+
+  govchain:
+    name: GovChain
+    root_env: GOVCHAIN_ROOT
+    root_fallback: govchain
+    daemon: tools/genesis/daemon.py
+    promoter: null
+    env_var: GOVCHAIN_GENESIS_ENABLED
+    db: data/govchain.db
+
+  govproposal:
+    name: GovProposal
+    root_env: GOVPROPOSAL_ROOT
+    root_fallback: GovProposal
+    daemon: tools/genesis/daemon.py
+    promoter: null
+    env_var: GOVPROPOSAL_GENESIS_ENABLED
+    db: data/govproposal.db
+
+  trading-engine:
+    name: Trading Engine
+    root_env: TRADING_ENGINE_ROOT
+    root_fallback: trading-engine
+    daemon: tools/genesis/daemon.py
+    promoter: null
+    env_var: TRADING_GENESIS_ENABLED
+    db: data/trading-engine.db
+
+  trading-strategy:
+    name: Trading Strategy
+    root_env: TRADING_STRATEGY_ROOT
+    root_fallback: Trading_Strategy
+    daemon: tools/genesis/daemon.py
+    promoter: tools/genesis/promoter.py
+    env_var: TRADING_GENESIS_ENABLED
+    db: data/trading_strategy.db
+
+  ninjaflow:
+    name: NinjaFlow
+    root_env: NINJAFLOW_ROOT
+    root_fallback: ninjaflow-ai/ninjaflow-ai
+    daemon: tools/genesis/daemon.py
+    promoter: null
+    env_var: NINJAFLOW_GENESIS_ENABLED
+    db: data/ninjaflow-ai.db
+
+  signalforge:
+    name: SignalForge
+    root_env: SIGNALFORGE_ROOT
+    root_fallback: signalforge
+    daemon: tools/genesis/daemon.py
+    promoter: null
+    env_var: SIGNALFORGE_GENESIS_ENABLED
+    db: data/signalforge.db
+
+  # The second ICDEV parent (docs/programmes/icdev-domain-split.md). Private
+  # repository; does not exist on most machines, which is exactly the case the
+  # root_missing answer is for. FIN_ is ICDEV[FT]'s env prefix.
+  icdev-ft:
+    name: "ICDEV[FT]"
+    root_env: ICDEV_FT_ROOT
+    root_fallback: icdev_ft
+    daemon: tools/genesis/daemon.py
+    promoter: null
+    env_var: FIN_GENESIS_ENABLED
+    db: data/icdev_ft.db

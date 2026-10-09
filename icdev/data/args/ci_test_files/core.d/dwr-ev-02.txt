@@ -1,0 +1,5 @@
+# dwr-ev-02 -- a review comment is an INSTRUCTION until a human explicitly
+# promotes it to an attributed SME assertion: the per-comment promotion, the
+# attribution and the two clocks, the citation typed `sme_assertion`, and the
+# proof that an unpromoted comment reaches no evidence seam at all.
+tests/test_dic_sme_assertion_promotion.py

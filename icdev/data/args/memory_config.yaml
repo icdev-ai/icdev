@@ -42,6 +42,13 @@ auto_capture:
   buffer_flush_threshold: 100   # Flush when buffer exceeds this count
   default_importance: 3         # Importance for auto-captured entries
   max_content_length: 2000      # Truncate captured content to this length
+  # xrv-mem-02: the PostToolUse / UserPromptSubmit hooks capture deterministic
+  # observations (edited path, commit subject, pytest summary, `decision:` turn)
+  # through auto_capture.capture; at most this many rows per session, then the
+  # hook skips silently. Counted in .tmp/memory_capture/<session>.json, NOT in
+  # memory_buffer, which auto-flushes at buffer_flush_threshold and so could
+  # never reach 200.
+  max_per_session: 200
 
 # Maintenance pipeline settings (D179-D182)
 maintenance:

@@ -1,0 +1,3865 @@
+{
+  "task": "tsr-doc-01-d1",
+  "root": "C:/AI/ICDev/.tmp/worktrees/tsr-doc-d1-clean",
+  "test_files_scanned": 2036,
+  "regex": "(?<![\\w.])(?:icdev\\.)?tools\\.(?:document_intelligence|doc_modernization|writing|dic|quality|wg|pulse\\.writeguard)(?![\\w])",
+  "totals": {
+    "files_with_any_mention": 166,
+    "files_with_real_import": 159,
+    "files_static_import": 99,
+    "files_dynamic_import_only": 60,
+    "files_loading_doc_code": 162,
+    "files_reference_only": 4,
+    "files_exclusive": 68,
+    "parse_errors": 0
+  },
+  "by_package": {
+    "document_intelligence": {
+      "mentioned_in": 125,
+      "imported_in": 122,
+      "static_in": 69,
+      "dynamic_in": 57
+    },
+    "doc_modernization": {
+      "mentioned_in": 20,
+      "imported_in": 20,
+      "static_in": 19,
+      "dynamic_in": 1
+    },
+    "writing": {
+      "mentioned_in": 2,
+      "imported_in": 2,
+      "static_in": 1,
+      "dynamic_in": 1
+    },
+    "dic": {
+      "mentioned_in": 0,
+      "imported_in": 0,
+      "static_in": 0,
+      "dynamic_in": 0
+    },
+    "quality": {
+      "mentioned_in": 30,
+      "imported_in": 26,
+      "static_in": 20,
+      "dynamic_in": 6
+    },
+    "wg": {
+      "mentioned_in": 0,
+      "imported_in": 0,
+      "static_in": 0,
+      "dynamic_in": 0
+    },
+    "pulse.writeguard": {
+      "mentioned_in": 3,
+      "imported_in": 1,
+      "static_in": 1,
+      "dynamic_in": 0
+    }
+  },
+  "files": [
+    {
+      "path": "tests/browser/test_scope.py",
+      "mentioned_packages": [
+        "doc_modernization"
+      ],
+      "imported_packages": [
+        "doc_modernization"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "doc_modernization"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "audit",
+        "browser",
+        "http"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/cortex/test_analyst_citations.py",
+      "mentioned_packages": [
+        "quality"
+      ],
+      "imported_packages": [
+        "quality"
+      ],
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "cortex",
+        "dashboard",
+        "iqe",
+        "llm"
+      ],
+      "exclusive": false,
+      "mention_count": 2,
+      "parse_error": null
+    },
+    {
+      "path": "tests/cortex/test_governance_pipeline.py",
+      "mentioned_packages": [
+        "quality"
+      ],
+      "imported_packages": [
+        "quality"
+      ],
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "cortex"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/cortex/test_search_adapters.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "cortex",
+        "knowledge_graph",
+        "mcp",
+        "rag"
+      ],
+      "exclusive": false,
+      "mention_count": 2,
+      "parse_error": null
+    },
+    {
+      "path": "tests/docmod/test_architecture_patterns_pack.py",
+      "mentioned_packages": [
+        "doc_modernization"
+      ],
+      "imported_packages": [
+        "doc_modernization"
+      ],
+      "static_import_packages": [
+        "doc_modernization"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 6,
+      "parse_error": null
+    },
+    {
+      "path": "tests/docmod/test_bridge_persist.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "docgen"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/docmod/test_change_control_pack.py",
+      "mentioned_packages": [
+        "doc_modernization"
+      ],
+      "imported_packages": [
+        "doc_modernization"
+      ],
+      "static_import_packages": [
+        "doc_modernization"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 3,
+      "parse_error": null
+    },
+    {
+      "path": "tests/docmod/test_claim_extractor.py",
+      "mentioned_packages": [
+        "doc_modernization"
+      ],
+      "imported_packages": [
+        "doc_modernization"
+      ],
+      "static_import_packages": [
+        "doc_modernization"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 2,
+      "parse_error": null
+    },
+    {
+      "path": "tests/docmod/test_claim_lifecycle.py",
+      "mentioned_packages": [
+        "doc_modernization",
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "doc_modernization",
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "doc_modernization",
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 11,
+      "parse_error": null
+    },
+    {
+      "path": "tests/docmod/test_core_engine.py",
+      "mentioned_packages": [
+        "doc_modernization"
+      ],
+      "imported_packages": [
+        "doc_modernization"
+      ],
+      "static_import_packages": [
+        "doc_modernization"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 17,
+      "parse_error": null
+    },
+    {
+      "path": "tests/docmod/test_cross_reference_tracker.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/docmod/test_domain_packs.py",
+      "mentioned_packages": [
+        "doc_modernization"
+      ],
+      "imported_packages": [
+        "doc_modernization"
+      ],
+      "static_import_packages": [
+        "doc_modernization"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db",
+        "knowledge_graph",
+        "mcp"
+      ],
+      "exclusive": false,
+      "mention_count": 14,
+      "parse_error": null
+    },
+    {
+      "path": "tests/docmod/test_evidence_currency_pack.py",
+      "mentioned_packages": [
+        "doc_modernization"
+      ],
+      "imported_packages": [
+        "doc_modernization"
+      ],
+      "static_import_packages": [
+        "doc_modernization"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 3,
+      "parse_error": null
+    },
+    {
+      "path": "tests/docmod/test_feed_wiring.py",
+      "mentioned_packages": [
+        "doc_modernization",
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "doc_modernization",
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "doc_modernization",
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 17,
+      "parse_error": null
+    },
+    {
+      "path": "tests/docmod/test_hitl_surfaces.py",
+      "mentioned_packages": [
+        "doc_modernization",
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "doc_modernization",
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "doc_modernization",
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 13,
+      "parse_error": null
+    },
+    {
+      "path": "tests/docmod/test_import_from_docgen.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 4,
+      "parse_error": null
+    },
+    {
+      "path": "tests/docmod/test_link_check.py",
+      "mentioned_packages": [
+        "doc_modernization"
+      ],
+      "imported_packages": [
+        "doc_modernization"
+      ],
+      "static_import_packages": [
+        "doc_modernization"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 2,
+      "parse_error": null
+    },
+    {
+      "path": "tests/docmod/test_modernization_ui.py",
+      "mentioned_packages": [
+        "doc_modernization",
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "doc_modernization",
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "doc_modernization",
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db",
+        "iqe",
+        "llm"
+      ],
+      "exclusive": false,
+      "mention_count": 8,
+      "parse_error": null
+    },
+    {
+      "path": "tests/docmod/test_pack_generator.py",
+      "mentioned_packages": [
+        "doc_modernization"
+      ],
+      "imported_packages": [
+        "doc_modernization"
+      ],
+      "static_import_packages": [
+        "doc_modernization"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "cli"
+      ],
+      "exclusive": false,
+      "mention_count": 2,
+      "parse_error": null
+    },
+    {
+      "path": "tests/docmod/test_pg_fixes_and_flow.py",
+      "mentioned_packages": [
+        "doc_modernization",
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "doc_modernization",
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "doc_modernization",
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 16,
+      "parse_error": null
+    },
+    {
+      "path": "tests/docmod/test_regen_quality_gate.py",
+      "mentioned_packages": [
+        "doc_modernization",
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "doc_modernization",
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "doc_modernization",
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 9,
+      "parse_error": null
+    },
+    {
+      "path": "tests/docmod/test_reverse_bridge.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db",
+        "docgen"
+      ],
+      "exclusive": false,
+      "mention_count": 2,
+      "parse_error": null
+    },
+    {
+      "path": "tests/docmod/test_sop_workflows_pack.py",
+      "mentioned_packages": [
+        "doc_modernization"
+      ],
+      "imported_packages": [
+        "doc_modernization"
+      ],
+      "static_import_packages": [
+        "doc_modernization"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 6,
+      "parse_error": null
+    },
+    {
+      "path": "tests/docmod/test_standards_catalog.py",
+      "mentioned_packages": [
+        "doc_modernization"
+      ],
+      "imported_packages": [
+        "doc_modernization"
+      ],
+      "static_import_packages": [
+        "doc_modernization"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "config",
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/docmod/test_temporal_validity.py",
+      "mentioned_packages": [
+        "doc_modernization"
+      ],
+      "imported_packages": [
+        "doc_modernization"
+      ],
+      "static_import_packages": [
+        "doc_modernization"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 7,
+      "parse_error": null
+    },
+    {
+      "path": "tests/document_intelligence/test_chunk_repair.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/document_intelligence/test_freshness_notifier.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 2,
+      "parse_error": null
+    },
+    {
+      "path": "tests/document_intelligence/test_table_extract.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 7,
+      "parse_error": null
+    },
+    {
+      "path": "tests/genesis_auto/test_extractors.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 18,
+      "parse_error": null
+    },
+    {
+      "path": "tests/genesis_auto/test_ingest_orchestrator.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 8,
+      "parse_error": null
+    },
+    {
+      "path": "tests/govcon/test_past_performance_suggester.py",
+      "mentioned_packages": [
+        "quality"
+      ],
+      "imported_packages": [
+        "quality"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "quality"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db",
+        "govcon"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/http/test_egress_guard.py",
+      "mentioned_packages": [
+        "doc_modernization"
+      ],
+      "imported_packages": [
+        "doc_modernization"
+      ],
+      "static_import_packages": [
+        "doc_modernization"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "http"
+      ],
+      "exclusive": false,
+      "mention_count": 2,
+      "parse_error": null
+    },
+    {
+      "path": "tests/http/test_fetch_extract_retrofit.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "chat_router",
+        "creative",
+        "http",
+        "research"
+      ],
+      "exclusive": false,
+      "mention_count": 4,
+      "parse_error": null
+    },
+    {
+      "path": "tests/quality/test_rigor_gates.py",
+      "mentioned_packages": [
+        "quality"
+      ],
+      "imported_packages": [
+        "quality"
+      ],
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_acoic_hitl_audit.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 9,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_capture_strategy.py",
+      "mentioned_packages": [
+        "quality"
+      ],
+      "imported_packages": [
+        "quality"
+      ],
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "govcon"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_categorical_scoring.py",
+      "mentioned_packages": [
+        "quality"
+      ],
+      "imported_packages": [
+        "quality"
+      ],
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 2,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_citation_grounding.py",
+      "mentioned_packages": [
+        "quality"
+      ],
+      "imported_packages": [
+        "quality"
+      ],
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_claim_grounding.py",
+      "mentioned_packages": [
+        "quality"
+      ],
+      "imported_packages": [
+        "quality"
+      ],
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 2,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_clx_control_loop.py",
+      "mentioned_packages": [
+        "quality"
+      ],
+      "imported_packages": [
+        "quality"
+      ],
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "agent_runtime",
+        "db",
+        "kanban"
+      ],
+      "exclusive": false,
+      "mention_count": 3,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_cnr_docgen.py",
+      "mentioned_packages": [
+        "pulse.writeguard"
+      ],
+      "imported_packages": [],
+      "static_import_packages": [],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": false,
+      "loads_doc_code": false,
+      "reference_only": true,
+      "other_tools_packages": [
+        "db",
+        "docgen"
+      ],
+      "exclusive": false,
+      "mention_count": 2,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_cnr_mission_canvas.py",
+      "mentioned_packages": [
+        "quality"
+      ],
+      "imported_packages": [],
+      "static_import_packages": [],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": false,
+      "loads_doc_code": false,
+      "reference_only": true,
+      "other_tools_packages": [
+        "airgap",
+        "dashboard",
+        "iqe",
+        "mission_canvas",
+        "studio"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_completion_auditor.py",
+      "mentioned_packages": [
+        "quality"
+      ],
+      "imported_packages": [
+        "quality"
+      ],
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_component_registry.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [],
+      "static_import_packages": [],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": false,
+      "loads_doc_code": false,
+      "reference_only": true,
+      "other_tools_packages": [
+        "cli",
+        "config",
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_constitutional_ai.py",
+      "mentioned_packages": [
+        "quality"
+      ],
+      "imported_packages": [
+        "quality"
+      ],
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 5,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_content_grounding.py",
+      "mentioned_packages": [
+        "quality"
+      ],
+      "imported_packages": [
+        "quality"
+      ],
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "govcon"
+      ],
+      "exclusive": false,
+      "mention_count": 2,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_context_budget.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "llm"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_cove_architecture.py",
+      "mentioned_packages": [
+        "quality"
+      ],
+      "imported_packages": [
+        "quality"
+      ],
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "llm"
+      ],
+      "exclusive": false,
+      "mention_count": 2,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_crx_kg_blast_radius.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 13,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_derivation_disclosure.py",
+      "mentioned_packages": [
+        "quality"
+      ],
+      "imported_packages": [
+        "quality"
+      ],
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_acoic_ux.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db",
+        "docgen",
+        "genesis"
+      ],
+      "exclusive": false,
+      "mention_count": 9,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_aiassist_retry.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "llm"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_analytics_kg_linkage.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_analytics_provenance.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db",
+        "rag"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_anomaly_severity.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "llm"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_batch_ingest_anomaly.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_bulk_edit_anomaly_detection.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_chat_cortex_adoption.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "cortex"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_chat_memory.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 5,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_chat_memory_schema.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_citation_publish_gate.py",
+      "mentioned_packages": [
+        "document_intelligence",
+        "quality"
+      ],
+      "imported_packages": [
+        "document_intelligence",
+        "quality"
+      ],
+      "static_import_packages": [
+        "document_intelligence",
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 2,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_claim_grounding_wiring.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 2,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_collection_listing_anomaly.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "llm"
+      ],
+      "exclusive": false,
+      "mention_count": 2,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_collection_registry.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_collection_scoping.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_confabulation.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "security"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_consumer_file_anomaly.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_consumer_pipeline_health_anomaly.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_cove_gate.py",
+      "mentioned_packages": [
+        "document_intelligence",
+        "quality"
+      ],
+      "imported_packages": [
+        "document_intelligence",
+        "quality"
+      ],
+      "static_import_packages": [
+        "document_intelligence",
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 10,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_cross_canvas_context.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_dead_surfaces_removed.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 6,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_derivation_all_paths.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_derivation_wiring.py",
+      "mentioned_packages": [
+        "document_intelligence",
+        "quality"
+      ],
+      "imported_packages": [
+        "document_intelligence",
+        "quality"
+      ],
+      "static_import_packages": [
+        "document_intelligence",
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 5,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_document_model_anomaly_detection.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_document_routing_anomaly_detection.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_extraction_quality.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_field_validation_anomaly_detection.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_filters.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_freshness_engine.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_graphrag_chat.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_inbox.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "document_intelligence"
+      ],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 24,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_inbox_sweep_reflex.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "genesis"
+      ],
+      "exclusive": false,
+      "mention_count": 2,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_ingest_ai_summary.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "llm"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_ingest_anomaly_detection.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_ingest_classify.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "llm"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_ingest_consumer_outcome_anomaly.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_ingest_correspondence.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "llm"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_ingest_duplex_anomaly.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "llm"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_ingest_email_anomaly.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "llm"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_ingest_identifiers.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "llm"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_ingest_import_validation.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_ingest_job_anomaly_detection.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_ingest_label_match_criteria.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "llm"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_ingest_metadata.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "llm"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_ingest_near_duplicate.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_ingest_ocr_cleanup.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "llm"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_ingest_orchestrator.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 12,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_ingest_routing_metadata.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "llm"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_ingest_throughput_anomaly.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_ingest_workflow_action_params.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "llm"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_ingest_workflow_mutations.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db",
+        "llm",
+        "rag"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_layout_probe.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_lifecycle_assignment_anomaly.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_nav_consistency.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_output_export_anomaly_detection.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_publish_gate.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "document_intelligence"
+      ],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 12,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_re_enrich_metadata.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db",
+        "llm"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_reasoning_scrub.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_route_dedup.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 2,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_search_access.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db",
+        "llm"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_search_anomaly.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_search_answer.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "llm"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_search_expand.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "llm"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_search_filter_coverage_anomaly.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_search_filter_query.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db",
+        "llm"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_search_intent.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "llm"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_search_keyword.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_search_query_intent.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "llm"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_search_result_summary.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_search_snippet.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "llm"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_style_engine.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_techwriter.py",
+      "mentioned_packages": [
+        "document_intelligence",
+        "writing"
+      ],
+      "imported_packages": [
+        "document_intelligence",
+        "writing"
+      ],
+      "static_import_packages": [
+        "document_intelligence",
+        "writing"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 30,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_techwriter_citations.py",
+      "mentioned_packages": [
+        "document_intelligence",
+        "quality"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 3,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_template_chunking.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "rag"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_text_parse_quality.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dic_view_anomaly_detection.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_divergence_critic.py",
+      "mentioned_packages": [
+        "quality"
+      ],
+      "imported_packages": [
+        "quality"
+      ],
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 7,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_doc_generator_confidence_bands.py",
+      "mentioned_packages": [
+        "document_intelligence",
+        "quality"
+      ],
+      "imported_packages": [
+        "document_intelligence",
+        "quality"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence",
+        "quality"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 2,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_docdrift_rename.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 4,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_docgen.py",
+      "mentioned_packages": [
+        "document_intelligence",
+        "pulse.writeguard"
+      ],
+      "imported_packages": [],
+      "static_import_packages": [],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "pulse.writeguard"
+      ],
+      "real_import": false,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db",
+        "docgen"
+      ],
+      "exclusive": false,
+      "mention_count": 22,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_docgen_bridge_scrub.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 2,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_docmod_drift_bridge.py",
+      "mentioned_packages": [
+        "doc_modernization",
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "doc_modernization",
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "doc_modernization",
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "doc_modernization"
+      ],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 14,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dsyn_canvas_adapter.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 21,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dsyn_consistency.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 27,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dsyn_dic_integration_reflex.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [],
+      "static_import_packages": [],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "document_intelligence"
+      ],
+      "real_import": false,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "genesis"
+      ],
+      "exclusive": false,
+      "mention_count": 2,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dsyn_patch_mode.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 33,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dsyn_suggest.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 28,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dsyn_suggestion_api.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "document_intelligence"
+      ],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 7,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dsyn_suggestion_store.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 20,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dsyn_vv_smoke.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "aiify",
+        "cloudforge",
+        "compliance",
+        "devsecops",
+        "genesis",
+        "integrity",
+        "ndc",
+        "network",
+        "security"
+      ],
+      "exclusive": false,
+      "mention_count": 8,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dvg_benchmark.py",
+      "mentioned_packages": [
+        "quality"
+      ],
+      "imported_packages": [
+        "quality"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "quality"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "creative"
+      ],
+      "exclusive": false,
+      "mention_count": 2,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dvg_wire04_mcp.py",
+      "mentioned_packages": [
+        "quality"
+      ],
+      "imported_packages": [],
+      "static_import_packages": [],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "quality"
+      ],
+      "real_import": false,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "mcp",
+        "skills"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dvg_wire_creative_branch.py",
+      "mentioned_packages": [
+        "quality"
+      ],
+      "imported_packages": [
+        "quality"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "quality"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "creative"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_dvg_wire_solution_divergence.py",
+      "mentioned_packages": [
+        "quality"
+      ],
+      "imported_packages": [
+        "quality"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "quality"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "innovation"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_idr_multi_source.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "document_intelligence"
+      ],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "docgen"
+      ],
+      "exclusive": false,
+      "mention_count": 15,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_markitdown_adapter.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 11,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_mcp_writeguard_tool.py",
+      "mentioned_packages": [
+        "pulse.writeguard"
+      ],
+      "imported_packages": [
+        "pulse.writeguard"
+      ],
+      "static_import_packages": [
+        "pulse.writeguard"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "pulse.writeguard"
+      ],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 4,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_nav_intel_09_d5_judge_publish_integration.py",
+      "mentioned_packages": [
+        "writing"
+      ],
+      "imported_packages": [
+        "writing"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "writing"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "dashboard",
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 4,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_network_doc_lifecycle.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "document_intelligence"
+      ],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "ace",
+        "db",
+        "network"
+      ],
+      "exclusive": false,
+      "mention_count": 10,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_penta_aiify_trust.py",
+      "mentioned_packages": [
+        "quality"
+      ],
+      "imported_packages": [
+        "quality"
+      ],
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "aiify",
+        "db",
+        "llm"
+      ],
+      "exclusive": false,
+      "mention_count": 3,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_placeholder_promote_gate.py",
+      "mentioned_packages": [
+        "quality"
+      ],
+      "imported_packages": [
+        "quality"
+      ],
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "dashboard",
+        "govcon",
+        "security"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_publish_gates.py",
+      "mentioned_packages": [
+        "quality"
+      ],
+      "imported_packages": [
+        "quality"
+      ],
+      "static_import_packages": [
+        "quality"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "db"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_release_orchestrator.py",
+      "mentioned_packages": [
+        "quality"
+      ],
+      "imported_packages": [],
+      "static_import_packages": [],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": false,
+      "loads_doc_code": false,
+      "reference_only": true,
+      "other_tools_packages": [
+        "dx",
+        "installer"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_review_loop.py",
+      "mentioned_packages": [
+        "quality"
+      ],
+      "imported_packages": [
+        "quality"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "quality"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_rted_conflict_detector.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_rted_history_api.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "document_intelligence"
+      ],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 3,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_rted_history_recorder.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "document_intelligence"
+      ],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 6,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_rted_history_ui.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "document_intelligence"
+      ],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 3,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_rted_lock_manager.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "document_intelligence"
+      ],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 5,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_rted_presence_api.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "document_intelligence"
+      ],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 6,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_rted_presence_registry.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "document_intelligence"
+      ],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 2,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_rted_vv_smoke.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [
+        "document_intelligence"
+      ],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 9,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_tech_writing_assist.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "cortex"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_tw_standards_validation.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [],
+      "dynamic_import_packages": [
+        "document_intelligence"
+      ],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "cortex"
+      ],
+      "exclusive": false,
+      "mention_count": 1,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_verifier_contract.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [],
+      "exclusive": true,
+      "mention_count": 2,
+      "parse_error": null
+    },
+    {
+      "path": "tests/test_wiki_integrations.py",
+      "mentioned_packages": [
+        "document_intelligence"
+      ],
+      "imported_packages": [
+        "document_intelligence"
+      ],
+      "static_import_packages": [
+        "document_intelligence"
+      ],
+      "dynamic_import_packages": [],
+      "patch_target_packages": [],
+      "real_import": true,
+      "loads_doc_code": true,
+      "reference_only": false,
+      "other_tools_packages": [
+        "ace",
+        "anvil",
+        "memory"
+      ],
+      "exclusive": false,
+      "mention_count": 8,
+      "parse_error": null
+    }
+  ],
+  "tiers": {
+    "A_exclusive": 68,
+    "B_mixed": 94,
+    "C_reference_only": 4
+  },
+  "supersedes": {
+    "note": "Replaces the first tsr-doc-01-d1 inventory. That run classified imports with '^\\s*(?:from|import)\\s+tools\\.<pkg>', which cannot match importlib.import_module('tools.<pkg>') or a mock.patch string target. 63 files it filed as tier C 'mention only' do load DOC code.",
+    "previous_tiers": {
+      "A": 54,
+      "B": 45,
+      "C": 67
+    },
+    "previous_slice_lines": 54
+  }
+}

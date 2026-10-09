@@ -1,0 +1,16 @@
+# dic-name-01 -- ingest_file is TOLD the name the content arrived under, rather
+# than being repaired by each caller afterwards.
+#
+# Gated because the failure is invisible from every route that causes it. The
+# URL, YouTube and canvas-push paths all RETURN a title in their response while
+# storing the temp stem, so the response looks right and the database is wrong;
+# nothing goes red, nothing logs, and the only symptom is a document list full
+# of `tmpqsnpbru9`. Measured on the live board 2026-09-08: 21 such documents,
+# 20 of them beyond recovery because the temp name is in the filename column
+# too.
+#
+# The source assertions are the point of the gate: a fifth caller that spools
+# to a temp file and forgets the parameter reintroduces the defect silently,
+# and the three fallback chains reverting to `extraction.title` would restore
+# it in a way no route-level test would notice.
+tests/document_intelligence/test_ingest_knows_the_filename.py

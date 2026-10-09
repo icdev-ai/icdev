@@ -423,6 +423,7 @@ def _self_importing_modules(names, read) -> list:
     is a cheap, decisive, offline check for a defect that otherwise only shows up
     when a user imports the module.
     """
+    import ast as _ast
     import re as _re
 
     bad = []
@@ -436,7 +437,19 @@ def _self_importing_modules(names, read) -> list:
             text = read(name).decode("utf-8", "replace")
         except Exception:  # noqa: BLE001 - unreadable member is not this check's job
             continue
-        if _re.search(rf"^\s*from\s+{_re.escape(module)}\s+import\b", text, _re.M):
+        if not _re.search(rf"^\s*from\s+{_re.escape(module)}\s+import\b", text, _re.M):
+            continue
+        # The regex is only a cheap prefilter. A docstring "Usage:" example
+        # (`    from icdev.tools.audit.row_hash import ...`) matches it too, and
+        # flagged 14 healthy modules in 1.2.43 -- so confirm against REAL import
+        # statements. Unparseable source keeps the regex verdict (fail closed).
+        try:
+            tree = _ast.parse(text)
+        except SyntaxError:
+            bad.append(name)
+            continue
+        if any(isinstance(n, _ast.ImportFrom) and n.level == 0 and n.module == module
+               for n in _ast.walk(tree)):
             bad.append(name)
     return bad
 
@@ -560,6 +573,15 @@ def step_verify_payload(version: str) -> dict:
         ("icdev/tools/cli/setup_wizard.py", "guided setup wizard"),
         ("icdev/tools/cli/setup.py", "component setup TUI"),
         ("icdev/tools/cli/provision_db.py", "database + vector-store provisioner"),
+        # The wizard provisions by running this in a CHILD process. Absent from
+        # the wheel, `icdev setup --provision-db` and `icdev-init-db` both fail
+        # at the step that creates every table.
+        ("icdev/tools/db/init_icdev_db.py", "platform schema initialiser"),
+        # Resolves `tools.x` → `icdev.tools.x` for `-m` targets. The tools alias
+        # is a sys.modules entry in the PARENT, so without this a child process
+        # dies with ModuleNotFoundError and provisioning reports a generic
+        # failure — the 1.2.42 pip-install bug.
+        ("icdev/tools/compat/subprocess_utils.py", "child-process module resolver"),
     ):
         if mod not in names:
             problems.append(f"wheel carries no {label} ({mod})")

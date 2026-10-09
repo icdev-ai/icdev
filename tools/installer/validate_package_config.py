@@ -455,6 +455,7 @@ def check_bootstrap_freshness() -> dict:
             BOOTSTRAP_DIR,
             OPTIONAL_SOURCES,
             SOURCES,
+            _settings_template_text,
             _should_exclude,
         )
     except Exception as exc:  # pragma: no cover - import failure
@@ -469,6 +470,11 @@ def check_bootstrap_freshness() -> dict:
     changed: list[str] = []    # present both sides, content differs
     missing_sources: list[str] = []
 
+    # A "file" entry may land INSIDE a "dir" entry's destination (exa-bench-10 ships
+    # tools/hooks/shared_checks.py into claude/hooks/). The dir comparison would call
+    # it stale; it is expected, because prebuild wrote it on purpose.
+    file_dsts = {d for s, d, k in SOURCES if k == "file" and (REPO_ROOT / s).exists()}
+
     for rel_src, rel_dst, kind in SOURCES:
         src = REPO_ROOT / rel_src
         dst = BOOTSTRAP_DIR / rel_dst
@@ -478,9 +484,15 @@ def check_bootstrap_freshness() -> dict:
             continue
 
         if kind == "file":
+            # Compare against what prebuild's _copy_file WRITES, not the raw source:
+            # settings.json.template is deliberately rewritten (exa-bench-05-b).
+            if dst.name == "settings.json.template":
+                expected = _settings_template_text(src.read_text(encoding="utf-8")).encode("utf-8")
+            else:
+                expected = src.read_bytes()
             if not dst.is_file():
                 added.append(rel_dst)
-            elif src.read_bytes() != dst.read_bytes():
+            elif expected != dst.read_bytes():
                 changed.append(rel_dst)
             continue
 
@@ -489,7 +501,8 @@ def check_bootstrap_freshness() -> dict:
         snap = _tree_file_bytes(dst, _should_exclude)
         live_keys, snap_keys = set(live), set(snap)
         added += [f"{rel_dst}/{k}" for k in sorted(live_keys - snap_keys)]
-        removed += [f"{rel_dst}/{k}" for k in sorted(snap_keys - live_keys)]
+        removed += [f"{rel_dst}/{k}" for k in sorted(snap_keys - live_keys)
+                    if f"{rel_dst}/{k}" not in file_dsts]
         changed += [
             f"{rel_dst}/{k}" for k in sorted(live_keys & snap_keys)
             if live[k] != snap[k]

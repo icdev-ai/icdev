@@ -1,0 +1,157 @@
+# CUI // SP-CTI
+# kpr-watch-02 — alarm on eligible-but-unmerged.
+# Consumed by tools/ci/merge_stall.py.
+#
+# THE STATE WORTH PAGING ON. A PR that `tools/ci/merge_readiness.py` calls `ready`
+# — green, MERGEABLE, not a draft, no hold label, correct base, not behind — and
+# that is STILL open on the next poll means the actor should have merged it and did
+# not. Every gate in the pipeline answers "is this PR finished?". None of them
+# answered "is the thing that merges finished PRs still working?", and those are
+# different questions with different repairs.
+#
+# ═══════════════════════════════════════════════════════════════════════════════
+# THE SURVEY (2026-08-19), because CLAUDE.md requires one before a check is armed
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Population: the last 150 MERGED PRs on this repo. For each, the moment it became
+# merge-eligible was estimated as `max(statusCheckRollup[].completedAt <= mergedAt)`
+# — the last check to report before the merge — and the latency measured as
+# `mergedAt - that`. Checks completing AFTER the merge are excluded: `E2E
+# (Playwright)` and `Two-Tier LLM Build` are `needs:`-gated jobs whose check runs do
+# not exist yet when the merger polls, so counting them dated 57 of 150 PRs as
+# merged before they were green.
+#
+#   RAW latency, all 150:   p50 0.83  p90 10.65  p95 19.98  p99 68.72  max 116.37 min
+#
+# Then every PR was ATTRIBUTED against `audit_trail` (actor='pr_watcher'), which
+# holds 104,319 rows including 42,742 `wait` rows each carrying the refusal's own
+# reason text: a wait is attributed when the watcher itself recorded a matching hold
+# for that PR between the moment it went green and the moment it merged. Splitting
+# the population on that attribution — this is the whole finding:
+#
+#   POPULATION       n     p50     p90     p95     p99     max
+#   raw            150    0.83   10.65   19.98   68.72  116.37
+#   attributed      30    7.37   58.00   68.72  116.37  116.37
+#   unattributed   120    0.65    8.27    9.97   13.37   13.98
+#
+# THE ENTIRE TAIL BELONGS TO HOLDS THAT ARE WORKING AS DESIGNED — 17 to the
+# enforced done-gate, 12 to the sibling-conflict hold, 1 to a forge outage. The
+# unattributed population tapers smoothly and STOPS: 10.12, 10.28, 10.65, 12.10,
+# 13.37, 13.98, and nothing above. So the would-fire rate over the whole
+# population, for an alarm that ignores cause against one that attributes it first:
+#
+#         threshold      5      10      15      20      30      45      60     120
+#         RAW age    28.00%  12.00%   6.67%   4.67%   4.00%   3.33%   2.00%   0.00%
+#         ATTRIBUTED 16.00%   4.00%   0.00%   0.00%   0.00%   0.00%   0.00%   0.00%
+#
+# CLAUDE.md already calls a 1.63% fire rate on routine work grounds for standing a
+# check down. A raw-age alarm at 15 minutes fires on 6.67% — four times that — and
+# would be ignored inside a week, which is precisely the failure the card names.
+# Attributing the cause first takes the same threshold to 0.00%. Distinguishing the
+# causes is not a presentation nicety here; it is the difference between an alarm
+# and noise, and the numbers above are the evidence.
+#
+# LIVE SNAPSHOT the same day: 2 open PRs, 0 in any eligible state (#1814 owned by
+# the task path, #1817 awaiting CI). A 2-PR snapshot can support no threshold at
+# all, which is why the number comes from the 150-PR retrospective. Re-measure with
+# `python -m tools.ci.merge_stall --survey` before changing anything below.
+
+# ── Thresholds ────────────────────────────────────────────────────────────────
+
+# Minutes a PR may sit ELIGIBLE and UNMERGED with NO attributable cause before it
+# is an alarm.
+#
+# WHY 20 AND NOT 15. Both fire on 0.00% of the 150, so the fire rate cannot choose
+# between them and something else has to. The unattributed population's observed
+# maximum is 13.98 min, which leaves 15 with ONE MINUTE of headroom — a threshold
+# set that close to the top of its own sample is one unlucky CI queue away from
+# firing on a merge that was always going to happen, and the first such flap is
+# what earns a check a `|| true`. 20 gives ~43% headroom, matching the precedent
+# `max_behind_commits` already set in args/pr_watcher_config.yaml (a limit of 10
+# against an observed maximum of 8). It costs 6 minutes of detection latency on a
+# real stall, against a 30s poll interval — still ~40 missed merge opportunities,
+# still minutes rather than hours, which is what the card asks for.
+#
+# 15 is also the pr_watcher heartbeat's staleness window, and the coincidence is
+# worth naming precisely so nobody adopts it as a reason: that number answers "has
+# the daemon stopped", this one answers "did a healthy daemon fail to act", and
+# they are only equal by accident.
+#
+# Do NOT raise this to quieten an alarm: an alarm here means the merger stopped,
+# and the repair is to the merger.
+stall_after_minutes: 20
+
+# Minutes a PR may sit eligible behind a hold that is WORKING AS DESIGNED before it
+# is reported anyway. The card names this case explicitly: "the sibling-conflict
+# hold serialising a merge indefinitely". Serialisation is correct; serialisation
+# with no end is a stall wearing a design's clothes, and a category that can never
+# escalate is a category people stop reading. 180 is ~1.5x the slowest attributed
+# merge observed (116.37, a done-gate hold on #1753) and fires on 0 of the 150.
+by_design_stall_after_minutes: 180
+
+# How stale the pr_watcher liveness heartbeat may be before an eligible-but-open PR
+# is attributed to the daemon rather than to itself. Kept equal to
+# `tools.kanban.metrics.DEFAULT_WATCHER_STALE_AFTER_MINUTES` so two surfaces cannot
+# disagree about whether the same watcher is alive.
+watcher_stale_after_minutes: 15
+
+# ── Recording ─────────────────────────────────────────────────────────────────
+
+# Append an observation row to `pr_merge_eligibility_events` when a PR's
+# (state, head_sha) changes. This is what gives an alarm an exact AGE instead of
+# the CI-completion estimate. Off means the report still runs and every age falls
+# back to `ci_estimate` — labelled as such, never presented as a recorded fact.
+record_observations: true
+
+# Whether pr_watcher records an observation at the end of each completed poll.
+# One extra `gh pr list` per poll interval (~120/hour against a 5,000/hour limit).
+# Best-effort in the watcher: a recording failure must never stop the watch loop.
+record_from_pr_watcher: true
+
+# ── Cause attribution ─────────────────────────────────────────────────────────
+#
+# Substring -> cause, matched case-insensitively against the `reason` of a
+# `pr_watcher` audit row written while this PR was eligible. Data, not code, so a
+# new refusal reason is a config line. FIRST MATCH WINS, in the order written here.
+#
+# Every pattern below was taken from live rows, not invented — the counts are the
+# 7 days to 2026-08-19: `held: sibling file conflict` 1,239, `enforced gate:
+# awaiting ICDEV done-verification` 1,050, `fetch failed: ... HTTP 503` 361,
+# `enforced gate: ... result=failed` 12. An invented pattern that matches nothing
+# is indistinguishable from a cause that never occurs, which is how an attribution
+# table quietly stops attributing.
+hold_patterns:
+  - pattern: "sibling file conflict"
+    cause: sibling_hold
+  - pattern: "shares source file(s) with open PR"
+    cause: sibling_hold
+  - pattern: "enforced gate:"
+    cause: done_gate
+  - pattern: "already on main"
+    cause: landed_hold
+  - pattern: "already landed"
+    cause: landed_hold
+  - pattern: "protected path"
+    cause: protected_path
+  - pattern: "approval required"
+    cause: approval_required
+  # `ci_running` looks like a contradiction and is not: the rollup this report
+  # reads says green while the watcher's own newest observation of the same PR
+  # says CI was still running. They are minutes apart and a `needs:`-gated job
+  # that had not yet been created when the watcher looked is enough to produce
+  # it. The watcher's word wins, so the PR is held rather than alarmed on.
+  - pattern: "CI still running"
+    cause: ci_running
+  - pattern: "awaiting CI results"
+    cause: ci_running
+  # A forge that will not answer is an OUTAGE, not a hold. Kept last so a refusal
+  # that merely mentions an HTTP error still classifies on its own terms first.
+  - pattern: "fetch failed"
+    cause: forge_unreachable
+  - pattern: "error connecting to api.github.com"
+    cause: forge_unreachable
+
+# How far back to read `audit_trail` for attribution when a PR's eligibility start
+# is unknown. Bounded so the query cannot degrade into a full-table scan of 112k
+# rows on a board with a long history.
+attribution_lookback_hours: 24

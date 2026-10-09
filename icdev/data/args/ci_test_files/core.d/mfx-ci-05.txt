@@ -1,0 +1,2 @@
+# mfx-ci-05 — migration 326's existence probe must ask the catalogue, not the relation.
+tests/db/test_migration_326_probe_asks_the_catalogue.py

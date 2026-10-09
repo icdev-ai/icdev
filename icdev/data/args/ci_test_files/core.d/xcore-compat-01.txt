@@ -1,0 +1,2 @@
+# xcore-compat-01 -- the core-compat tier, the declared suite and the local runner.
+tests/workflow/test_core_compat.py

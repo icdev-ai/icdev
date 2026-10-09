@@ -228,7 +228,22 @@ signal_scout:
 
 executor:
   # Ordered list of execution backends tried in sequence.
-  # Supported values: 'claude_cli', 'gitlab', 'github_actions', 'ollama_local'
+  # Supported values:
+  #   'claude_cli'      Claude Code CLI  (AgentAdapter — tools/agents/adapters/claude_cli.py)
+  #   'local_agent'     ICDEV's own rubric-gated agent loop
+  #                     (AgentAdapter — tools/agents/adapters/local_agent.py).
+  #                     Serves a task when the CLI is absent, e.g. air-gapped.
+  #   'gitlab'          GitLab CI pipeline
+  #   'github_actions'  GitHub Actions workflow_dispatch
+  #   'ollama_local'    local Ollama, single-shot
+  #
+  # The two AgentAdapter tiers are resolved through
+  # tools/agents/registry.pick_default(), so ICDEV_AGENT_ADAPTER overrides this
+  # chain for a single run without editing config.
+  #
+  # DEFAULT ORDER IS DELIBERATE: claude_cli stays primary. 'local_agent' is a
+  # legal chain entry but is NOT in the default chain — it moves ahead of
+  # gitlab only once hgx-exec-04's parity numbers say it should.
   fallback_chain:
     - claude_cli
     - gitlab

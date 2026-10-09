@@ -1,0 +1,1023 @@
+{
+  "metadata": {
+    "task": "mvs-audit-03-d3",
+    "scope": "the first 20 rows of docs/audits/mvs-audit-03-d1-shadowed-migrations.json",
+    "migrations_dir": "C:\\AI\\ICDev\\.tmp\\worktrees\\mvs-audit-03-d3\\tools\\db\\migrations",
+    "tool": "tools/db/shadowed_migration_replay.py (mvs-audit-03-d2)",
+    "command": "python tools/db/shadowed_migration_replay.py --sample 20 --baseline-db <path outside the repo> --json",
+    "measured": "2026-08-07",
+    "baseline": {
+      "db_path": "C:\\Users\\schuo\\AppData\\Local\\Temp\\mvs_d3_baseline3.db",
+      "migrations_dir": "C:\\AI\\ICDev\\.tmp\\worktrees\\mvs-audit-03-d3\\tools\\db\\migrations",
+      "mode": "migrations_only",
+      "init_db": null,
+      "applied_total": 256,
+      "remaining_failures": 57,
+      "note": "remaining_failures are migrations SQLite cannot apply (mostly PostgreSQL-only DDL). Objects they would create are absent from this baseline, so a gap verdict resting on such an object is weak.",
+      "reused": false,
+      "objects": 2539
+    },
+    "oracles": [
+      "1. SQLite replay \u2014 every migration the runner actually applies, then the shadowed entry against a throwaway copy, diffing normalised sqlite_master DDL.",
+      "2. Live PostgreSQL \u2014 information_schema.tables/columns + pg_indexes on the local icdev database (read-only).",
+      "3. tools/db/schema/pg_consolidated.sql \u2014 what bootstrap_pg.py loads on a FRESH PostgreSQL database. This, not the chain, is how a new PG deployment gets its schema, so it is the oracle that decides whether a chain gap is deployable harm.",
+      "4. Declaring-source scan \u2014 grep for CREATE TABLE/INDEX over tools/ outside tools/db/migrations, to find canvases and reflexes that create tables at app startup and so cover a chain gap on SQLite too."
+    ],
+    "tool_defect_found_and_fixed": {
+      "what": "build_baseline() did not pin ICDEV_DB_PATH while the migration chain ran.",
+      "why_it_matters": "A migration whose up() does `conn = get_connection()` discards the connection MigrationRunner hands it and resolves the environment instead. 61 tables \u2014 sg_conflict_events among them \u2014 were written to the repo's data/icdev.db instead of the baseline, so the baseline was short of schema the chain really does create and a shadowed entry declaring the same table scored a gap it is not. _apply_py already guarded the replay half; the baseline half was unguarded, and the baseline is the oracle every verdict is measured against.",
+      "effect_on_this_audit": "baseline 2371 -> 2539 objects, applied 254 -> 256. 055_sg_conflict_events_cyber_op dropped from 'new table sg_conflict_events + 5 indexes' to '4 columns + 1 index'. Verdict totals were unchanged at 17/3, but one verdict rested on wrong evidence.",
+      "fix": "tools/db/shadowed_migration_replay.py::build_baseline now runs the chain inside _pinned_db_path(db_path); mirrored to icdev/. Regression test: tests/db/test_shadowed_migration_replay.py::test_baseline_captures_a_migration_that_opens_its_own_connection"
+    },
+    "limits": [
+      "remaining_failures=57 \u2014 migrations SQLite cannot apply. A gap verdict resting on an object one of those would have created is weak; none of the 20 rests on one (checked: every declared table was traced to its declaring migrations).",
+      "Audited tools/db/migrations. icdev/tools/db/migrations is a separate tree with 78 shadowed entries; all 20 audited entries exist in both.",
+      "PostgreSQL CHECK-constraint widening is invisible to a SQLite replay (019 skips its PG branch outright). Both widening entries here were checked directly against pg_constraint and the snapshot instead."
+    ]
+  },
+  "summary": {
+    "audited": 20,
+    "benign": 3,
+    "gap_sqlite_chain_only": 17,
+    "gap_on_postgresql": 0,
+    "tables_a_chain_built_sqlite_db_would_lack_with_no_other_creator": [
+      "ad_options_coach_events",
+      "compliance_snapshots",
+      "nc_topologies",
+      "sg_information_scores",
+      "sg_information_signals",
+      "sg_sigint_events",
+      "sg_socmint_signals",
+      "telegram_inbox"
+    ],
+    "indexes_nothing_in_the_tree_creates": [
+      "idx_ad_coach_position_created",
+      "idx_ad_coach_position_trap_dedup",
+      "idx_ad_coach_user_created",
+      "idx_cs_control_status",
+      "idx_cs_project_framework",
+      "idx_cs_taken_at",
+      "idx_iir_classification",
+      "idx_iir_csp_region",
+      "idx_iis_snapshot_id",
+      "idx_kanban_tasks_dispatch_source",
+      "idx_kanban_verifications_dispatch_source",
+      "idx_me_fingerprint",
+      "idx_nc_topologies_updated_at",
+      "idx_nts_project_id",
+      "idx_sg_ce_technique_ids",
+      "idx_sg_eo_signals_aoi_tag",
+      "idx_sg_eo_signals_scene_id",
+      "idx_sg_eo_signals_sensing_date",
+      "idx_sg_eo_signals_status",
+      "idx_sg_info_scores_created",
+      "idx_sg_info_scores_scenario",
+      "idx_sg_info_signals_scenario",
+      "idx_sg_info_signals_ts",
+      "idx_sg_info_signals_type",
+      "idx_sg_pri_raw_id",
+      "idx_sg_pri_run_at",
+      "idx_sg_pri_score",
+      "idx_sg_raw_signals_date",
+      "idx_sg_raw_signals_tier",
+      "idx_sg_sigint_events_beacon_hash",
+      "idx_sg_sigint_events_detected_at",
+      "idx_sg_socmint_signals_channel_id",
+      "idx_sg_socmint_signals_platform",
+      "idx_sg_socmint_signals_posted_at",
+      "idx_sg_socmint_signals_status",
+      "idx_telegram_inbox_created_at",
+      "idx_telegram_inbox_processed_at"
+    ]
+  },
+  "results": [
+    {
+      "migration": "010_network_intelligence_schema",
+      "version": "10",
+      "shadowed_by": "010_kanban_executor_schema",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "replay_verdict": "schema_gap_detected",
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "declares": {
+        "tables": [
+          "ni_analyses",
+          "ni_devices",
+          "ni_state_snapshots",
+          "topologies"
+        ],
+        "indexes": [],
+        "columns": [],
+        "changed_ddl": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql": "all_present",
+        "pg_consolidated_snapshot": "all_present",
+        "non_migration_creators": {
+          "ni_analyses": [
+            "tools/network/db/init_db.py"
+          ],
+          "ni_devices": [
+            "tools/network/db/init_db.py"
+          ],
+          "ni_state_snapshots": [
+            "tools/network/db/init_db.py"
+          ],
+          "topologies": [
+            "tools/demo/canvas_seeders.py",
+            "tools/network/db/init_db.py"
+          ]
+        }
+      },
+      "sqlite_exposure": {
+        "tables_nothing_creates": [],
+        "indexes_nothing_creates": []
+      },
+      "evidence": {
+        "execution": {
+          "statements_executed": 1,
+          "benign_skips": 0,
+          "hard_errors": [],
+          "hard_error_count": 0
+        },
+        "changed_ddl": []
+      }
+    },
+    {
+      "migration": "018_reflex_observations.py",
+      "version": "18",
+      "shadowed_by": "018_memory_db_consolidation",
+      "kind": "py",
+      "classification": "benign",
+      "replay_verdict": "schema_already_exists",
+      "rationale": "replay against the chain-built baseline changed nothing \u2014 every object the entry declares is already produced by a migration that does run",
+      "declares": {
+        "tables": [],
+        "indexes": [],
+        "columns": [],
+        "changed_ddl": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "present",
+        "live_postgresql": "all_present",
+        "pg_consolidated_snapshot": "all_present",
+        "non_migration_creators": {}
+      },
+      "sqlite_exposure": {
+        "tables_nothing_creates": [],
+        "indexes_nothing_creates": []
+      },
+      "evidence": {
+        "execution": {
+          "statements_executed": 1,
+          "benign_skips": 0,
+          "hard_errors": [],
+          "hard_error_count": 0,
+          "bypasses_passed_connection": true
+        },
+        "changed_ddl": []
+      }
+    },
+    {
+      "migration": "019_kanban_verifications",
+      "version": "19",
+      "shadowed_by": "019_backlog_task_reassign.py",
+      "kind": "py",
+      "classification": "benign",
+      "replay_verdict": "schema_already_exists",
+      "rationale": "replay against the chain-built baseline changed nothing \u2014 every object the entry declares is already produced by a migration that does run",
+      "declares": {
+        "tables": [],
+        "indexes": [],
+        "columns": [],
+        "changed_ddl": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "present",
+        "live_postgresql": "all_present",
+        "pg_consolidated_snapshot": "all_present",
+        "non_migration_creators": {}
+      },
+      "sqlite_exposure": {
+        "tables_nothing_creates": [],
+        "indexes_nothing_creates": []
+      },
+      "evidence": {
+        "execution": {
+          "statements_executed": 1,
+          "benign_skips": 0,
+          "hard_errors": [],
+          "hard_error_count": 0
+        },
+        "changed_ddl": []
+      }
+    },
+    {
+      "migration": "020_nc_topologies_schema.py",
+      "version": "20",
+      "shadowed_by": "020_kanban_failure_count",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "replay_verdict": "schema_gap_detected",
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "declares": {
+        "tables": [
+          "nc_topologies"
+        ],
+        "indexes": [
+          "idx_nc_topologies_updated_at"
+        ],
+        "columns": [],
+        "changed_ddl": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql": "all_present",
+        "pg_consolidated_snapshot": "all_present",
+        "non_migration_creators": {}
+      },
+      "sqlite_exposure": {
+        "tables_nothing_creates": [
+          "nc_topologies"
+        ],
+        "indexes_nothing_creates": [
+          "idx_nc_topologies_updated_at"
+        ]
+      },
+      "evidence": {
+        "execution": {
+          "statements_executed": 1,
+          "benign_skips": 0,
+          "hard_errors": [],
+          "hard_error_count": 0,
+          "bypasses_passed_connection": true
+        },
+        "changed_ddl": []
+      }
+    },
+    {
+      "migration": "020_options_coach_events",
+      "version": "20",
+      "shadowed_by": "020_kanban_failure_count",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "replay_verdict": "schema_gap_detected",
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "declares": {
+        "tables": [
+          "ad_options_coach_events"
+        ],
+        "indexes": [
+          "idx_ad_coach_position_created",
+          "idx_ad_coach_position_trap_dedup",
+          "idx_ad_coach_user_created"
+        ],
+        "columns": [],
+        "changed_ddl": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql": "all_present",
+        "pg_consolidated_snapshot": "all_present",
+        "non_migration_creators": {}
+      },
+      "sqlite_exposure": {
+        "tables_nothing_creates": [
+          "ad_options_coach_events"
+        ],
+        "indexes_nothing_creates": [
+          "idx_ad_coach_position_created",
+          "idx_ad_coach_position_trap_dedup",
+          "idx_ad_coach_user_created"
+        ]
+      },
+      "evidence": {
+        "execution": {
+          "statements_executed": 1,
+          "benign_skips": 0,
+          "hard_errors": [],
+          "hard_error_count": 0
+        },
+        "changed_ddl": []
+      }
+    },
+    {
+      "migration": "021_dispatch_source",
+      "version": "21",
+      "shadowed_by": "021_ad_macro_regimes",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "replay_verdict": "schema_gap_detected",
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "declares": {
+        "tables": [],
+        "indexes": [
+          "idx_kanban_tasks_dispatch_source",
+          "idx_kanban_verifications_dispatch_source"
+        ],
+        "columns": [
+          "kanban_tasks.dispatch_source",
+          "kanban_verifications.dispatch_source"
+        ],
+        "changed_ddl": [
+          "kanban_tasks",
+          "kanban_verifications"
+        ]
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql": "all_present",
+        "pg_consolidated_snapshot": "all_present",
+        "non_migration_creators": {}
+      },
+      "sqlite_exposure": {
+        "tables_nothing_creates": [],
+        "indexes_nothing_creates": [
+          "idx_kanban_tasks_dispatch_source",
+          "idx_kanban_verifications_dispatch_source"
+        ]
+      },
+      "evidence": {
+        "execution": {
+          "statements_executed": 1,
+          "benign_skips": 0,
+          "hard_errors": [],
+          "hard_error_count": 0
+        },
+        "changed_ddl": [
+          {
+            "name": "kanban_tasks",
+            "baseline_ddl": "CREATE TABLE kanban_tasks ( id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT, task_type TEXT DEFAULT 'build', priority TEXT DEFAULT 'high', status TEXT DEFAULT 'backlog', scheduled_at TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP, completed_at TEXT, executor_type TEXT DEFAULT 'claude_cli', execution_id TEXT, executor_url TEXT , depends_on_task_id TEXT, source_prediction_id TEXT, failure_count INTEGER DEFAULT 0, last_failure_reason TEXT, last_failure_at TEXT, dispatch_attempt_id TEXT, completed_via_bypass INTEGER NOT NULL DEFAULT 0, branch_name TEXT, commit_summary TEXT, trace_id TEXT, span_id TEXT, execution_seconds REAL)",
+            "replayed_ddl": "CREATE TABLE kanban_tasks ( id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT, task_type TEXT DEFAULT 'build', priority TEXT DEFAULT 'high', status TEXT DEFAULT 'backlog', scheduled_at TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP, completed_at TEXT, executor_type TEXT DEFAULT 'claude_cli', execution_id TEXT, executor_url TEXT , depends_on_task_id TEXT, source_prediction_id TEXT, failure_count INTEGER DEFAULT 0, last_failure_reason TEXT, last_failure_at TEXT, dispatch_attempt_id TEXT, completed_via_bypass INTEGER NOT NULL DEFAULT 0, branch_name TEXT, commit_summary TEXT, trace_id TEXT, span_id TEXT, execution_seconds REAL, dispatch_source TEXT DEFAULT 'unknown')"
+          },
+          {
+            "name": "kanban_verifications",
+            "baseline_ddl": "CREATE TABLE kanban_verifications ( id TEXT PRIMARY KEY, task_id TEXT NOT NULL, verified_at TEXT NOT NULL, result TEXT NOT NULL, reason TEXT, output_length INTEGER DEFAULT 0, fail_markers_found TEXT, claimed_paths INTEGER DEFAULT 0, existing_paths INTEGER DEFAULT 0, phantom_ratio REAL DEFAULT 0, git_commits INTEGER DEFAULT 0, specific_checks TEXT, codelens_passed INTEGER, ruff_issues INTEGER, bandit_issues INTEGER, pytest_passed INTEGER, failed_tests TEXT, coherence_passed INTEGER, coherence_violations TEXT, e2e_ran INTEGER, e2e_passed INTEGER, e2e_errors TEXT, companion_synced INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP , review_passed INTEGER, review_findings TEXT, pytest_ran INTEGER DEFAULT 0)",
+            "replayed_ddl": "CREATE TABLE kanban_verifications ( id TEXT PRIMARY KEY, task_id TEXT NOT NULL, verified_at TEXT NOT NULL, result TEXT NOT NULL, reason TEXT, output_length INTEGER DEFAULT 0, fail_markers_found TEXT, claimed_paths INTEGER DEFAULT 0, existing_paths INTEGER DEFAULT 0, phantom_ratio REAL DEFAULT 0, git_commits INTEGER DEFAULT 0, specific_checks TEXT, codelens_passed INTEGER, ruff_issues INTEGER, bandit_issues INTEGER, pytest_passed INTEGER, failed_tests TEXT, coherence_passed INTEGER, coherence_violations TEXT, e2e_ran INTEGER, e2e_passed INTEGER, e2e_errors TEXT, companion_synced INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP , review_passed INTEGER, review_findings TEXT, pytest_ran INTEGER DEFAULT 0, dispatch_source TEXT DEFAULT 'unknown')"
+          }
+        ]
+      }
+    },
+    {
+      "migration": "021_sg_sigint_events.py",
+      "version": "21",
+      "shadowed_by": "021_ad_macro_regimes",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "replay_verdict": "schema_gap_detected",
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "declares": {
+        "tables": [
+          "sg_sigint_events"
+        ],
+        "indexes": [
+          "idx_sg_sigint_events_beacon_hash",
+          "idx_sg_sigint_events_detected_at"
+        ],
+        "columns": [],
+        "changed_ddl": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql": "all_present",
+        "pg_consolidated_snapshot": "all_present",
+        "non_migration_creators": {}
+      },
+      "sqlite_exposure": {
+        "tables_nothing_creates": [
+          "sg_sigint_events"
+        ],
+        "indexes_nothing_creates": [
+          "idx_sg_sigint_events_beacon_hash",
+          "idx_sg_sigint_events_detected_at"
+        ]
+      },
+      "evidence": {
+        "execution": {
+          "statements_executed": 1,
+          "benign_skips": 0,
+          "hard_errors": [],
+          "hard_error_count": 0,
+          "bypasses_passed_connection": true
+        },
+        "changed_ddl": []
+      }
+    },
+    {
+      "migration": "022_sg_eo_signals.py",
+      "version": "22",
+      "shadowed_by": "022_ad_event_stack_tables",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "replay_verdict": "schema_gap_detected",
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "declares": {
+        "tables": [],
+        "indexes": [
+          "idx_sg_eo_signals_aoi_tag",
+          "idx_sg_eo_signals_scene_id",
+          "idx_sg_eo_signals_sensing_date",
+          "idx_sg_eo_signals_status"
+        ],
+        "columns": [],
+        "changed_ddl": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql": "all_present",
+        "pg_consolidated_snapshot": "all_present",
+        "non_migration_creators": {}
+      },
+      "sqlite_exposure": {
+        "tables_nothing_creates": [],
+        "indexes_nothing_creates": [
+          "idx_sg_eo_signals_aoi_tag",
+          "idx_sg_eo_signals_scene_id",
+          "idx_sg_eo_signals_sensing_date",
+          "idx_sg_eo_signals_status"
+        ]
+      },
+      "evidence": {
+        "execution": {
+          "statements_executed": 1,
+          "benign_skips": 0,
+          "hard_errors": [],
+          "hard_error_count": 0,
+          "bypasses_passed_connection": true
+        },
+        "changed_ddl": []
+      }
+    },
+    {
+      "migration": "023_sg_socmint_signals.py",
+      "version": "23",
+      "shadowed_by": "023_ad_news_patterns",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "replay_verdict": "schema_gap_detected",
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "declares": {
+        "tables": [
+          "sg_socmint_signals"
+        ],
+        "indexes": [
+          "idx_sg_socmint_signals_channel_id",
+          "idx_sg_socmint_signals_platform",
+          "idx_sg_socmint_signals_posted_at",
+          "idx_sg_socmint_signals_status"
+        ],
+        "columns": [],
+        "changed_ddl": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql": "all_present",
+        "pg_consolidated_snapshot": "all_present",
+        "non_migration_creators": {}
+      },
+      "sqlite_exposure": {
+        "tables_nothing_creates": [
+          "sg_socmint_signals"
+        ],
+        "indexes_nothing_creates": [
+          "idx_sg_socmint_signals_channel_id",
+          "idx_sg_socmint_signals_platform",
+          "idx_sg_socmint_signals_posted_at",
+          "idx_sg_socmint_signals_status"
+        ]
+      },
+      "evidence": {
+        "execution": {
+          "statements_executed": 1,
+          "benign_skips": 0,
+          "hard_errors": [],
+          "hard_error_count": 0,
+          "bypasses_passed_connection": true
+        },
+        "changed_ddl": []
+      }
+    },
+    {
+      "migration": "024_telegram_inbox.py",
+      "version": "24",
+      "shadowed_by": "024_ad_news_catalysts",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "replay_verdict": "schema_gap_detected",
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "declares": {
+        "tables": [
+          "telegram_inbox"
+        ],
+        "indexes": [
+          "idx_telegram_inbox_created_at",
+          "idx_telegram_inbox_processed_at"
+        ],
+        "columns": [],
+        "changed_ddl": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql": "all_present",
+        "pg_consolidated_snapshot": "all_present",
+        "non_migration_creators": {}
+      },
+      "sqlite_exposure": {
+        "tables_nothing_creates": [
+          "telegram_inbox"
+        ],
+        "indexes_nothing_creates": [
+          "idx_telegram_inbox_created_at",
+          "idx_telegram_inbox_processed_at"
+        ]
+      },
+      "evidence": {
+        "execution": {
+          "statements_executed": 1,
+          "benign_skips": 0,
+          "hard_errors": [],
+          "hard_error_count": 0,
+          "bypasses_passed_connection": true
+        },
+        "changed_ddl": []
+      }
+    },
+    {
+      "migration": "027_compliance_snapshots",
+      "version": "27",
+      "shadowed_by": "027_ad_coach_alerts",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "replay_verdict": "schema_gap_detected",
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "declares": {
+        "tables": [
+          "compliance_snapshots"
+        ],
+        "indexes": [
+          "idx_cs_control_status",
+          "idx_cs_project_framework",
+          "idx_cs_taken_at"
+        ],
+        "columns": [],
+        "changed_ddl": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql": "all_present",
+        "pg_consolidated_snapshot": "all_present",
+        "non_migration_creators": {}
+      },
+      "sqlite_exposure": {
+        "tables_nothing_creates": [
+          "compliance_snapshots"
+        ],
+        "indexes_nothing_creates": [
+          "idx_cs_control_status",
+          "idx_cs_project_framework",
+          "idx_cs_taken_at"
+        ]
+      },
+      "evidence": {
+        "execution": {
+          "statements_executed": 1,
+          "benign_skips": 0,
+          "hard_errors": [],
+          "hard_error_count": 0
+        },
+        "changed_ddl": []
+      }
+    },
+    {
+      "migration": "028_idc_infra_tables",
+      "version": "28",
+      "shadowed_by": "028_attack_graph",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "replay_verdict": "schema_gap_detected",
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "declares": {
+        "tables": [
+          "idc_infra_resources",
+          "idc_infra_snapshots"
+        ],
+        "indexes": [
+          "idx_iir_classification",
+          "idx_iir_csp_region",
+          "idx_iis_snapshot_id"
+        ],
+        "columns": [],
+        "changed_ddl": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql": "all_present",
+        "pg_consolidated_snapshot": "all_present",
+        "non_migration_creators": {
+          "idc_infra_resources": [
+            "tools/infra_canvas/db/init_db.py"
+          ],
+          "idc_infra_snapshots": [
+            "tools/infra_canvas/db/init_db.py"
+          ]
+        }
+      },
+      "sqlite_exposure": {
+        "tables_nothing_creates": [],
+        "indexes_nothing_creates": [
+          "idx_iir_classification",
+          "idx_iir_csp_region",
+          "idx_iis_snapshot_id"
+        ]
+      },
+      "evidence": {
+        "execution": {
+          "statements_executed": 1,
+          "benign_skips": 0,
+          "hard_errors": [],
+          "hard_error_count": 0
+        },
+        "changed_ddl": []
+      }
+    },
+    {
+      "migration": "031_network_twin_snapshots",
+      "version": "31",
+      "shadowed_by": "031_ddc_twin_tables",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "replay_verdict": "schema_gap_detected",
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "declares": {
+        "tables": [
+          "network_twin_snapshots"
+        ],
+        "indexes": [
+          "idx_nts_project_id"
+        ],
+        "columns": [],
+        "changed_ddl": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql": "all_present",
+        "pg_consolidated_snapshot": "all_present",
+        "non_migration_creators": {
+          "network_twin_snapshots": [
+            "tools/network/twin.py"
+          ]
+        }
+      },
+      "sqlite_exposure": {
+        "tables_nothing_creates": [],
+        "indexes_nothing_creates": [
+          "idx_nts_project_id"
+        ]
+      },
+      "evidence": {
+        "execution": {
+          "statements_executed": 1,
+          "benign_skips": 0,
+          "hard_errors": [],
+          "hard_error_count": 0,
+          "bypasses_passed_connection": true
+        },
+        "changed_ddl": []
+      }
+    },
+    {
+      "migration": "043_memory_fingerprint",
+      "version": "43",
+      "shadowed_by": "043_memory_entity_relationships",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "replay_verdict": "schema_gap_detected",
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "declares": {
+        "tables": [],
+        "indexes": [
+          "idx_me_fingerprint"
+        ],
+        "columns": [
+          "memory_entries.content_fingerprint"
+        ],
+        "changed_ddl": [
+          "memory_entries"
+        ]
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql": "all_present",
+        "pg_consolidated_snapshot": "all_present",
+        "non_migration_creators": {}
+      },
+      "sqlite_exposure": {
+        "tables_nothing_creates": [],
+        "indexes_nothing_creates": [
+          "idx_me_fingerprint"
+        ]
+      },
+      "evidence": {
+        "execution": {
+          "statements_executed": 1,
+          "benign_skips": 0,
+          "hard_errors": [],
+          "hard_error_count": 0,
+          "bypasses_passed_connection": true
+        },
+        "changed_ddl": [
+          {
+            "name": "memory_entries",
+            "baseline_ddl": "CREATE TABLE memory_entries ( id INTEGER PRIMARY KEY AUTOINCREMENT, content TEXT NOT NULL, type TEXT DEFAULT 'event', importance INTEGER DEFAULT 5, embedding BLOB, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')), content_hash TEXT, user_id TEXT, tenant_id TEXT, source TEXT DEFAULT 'manual', decay_weight REAL DEFAULT 1.0, classification TEXT DEFAULT 'CUI', compartment TEXT DEFAULT '', tags TEXT, -- The live column is `topics` \u2014 see db/schema/pg_consolidated.sql. This SQLite -- init path still only declared the legacy `tags`, so a fresh SQLite database -- lacked the column every memory writer actually names (swp-scan-01). -- Keep `);` out of DDL comments: regex schema readers capture the table body -- non-greedily up to the first one and would truncate the column list here. topics TEXT, metadata TEXT )",
+            "replayed_ddl": "CREATE TABLE memory_entries ( id INTEGER PRIMARY KEY AUTOINCREMENT, content TEXT NOT NULL, type TEXT DEFAULT 'event', importance INTEGER DEFAULT 5, embedding BLOB, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')), content_hash TEXT, user_id TEXT, tenant_id TEXT, source TEXT DEFAULT 'manual', decay_weight REAL DEFAULT 1.0, classification TEXT DEFAULT 'CUI', compartment TEXT DEFAULT '', tags TEXT, -- The live column is `topics` \u2014 see db/schema/pg_consolidated.sql. This SQLite -- init path still only declared the legacy `tags`, so a fresh SQLite database -- lacked the column every memory writer actually names (swp-scan-01). -- Keep `);` out of DDL comments: regex schema readers capture the table body -- non-greedily up to the first one and would truncate the column list here. topics TEXT, metadata TEXT , content_fingerprint TEXT)"
+          }
+        ]
+      }
+    },
+    {
+      "migration": "050_theater_supply_chain",
+      "version": "50",
+      "shadowed_by": "050_sg_sio_assessments",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "replay_verdict": "schema_gap_detected",
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "declares": {
+        "tables": [],
+        "indexes": [],
+        "columns": [],
+        "changed_ddl": [
+          "supply_chain_vendors"
+        ]
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql": "all_present",
+        "pg_consolidated_snapshot": "all_present",
+        "non_migration_creators": {}
+      },
+      "sqlite_exposure": {
+        "tables_nothing_creates": [],
+        "indexes_nothing_creates": []
+      },
+      "evidence": {
+        "execution": {
+          "statements_executed": 1,
+          "benign_skips": 0,
+          "hard_errors": [],
+          "hard_error_count": 0,
+          "bypasses_passed_connection": true
+        },
+        "changed_ddl": [
+          {
+            "name": "supply_chain_vendors",
+            "baseline_ddl": "CREATE TABLE supply_chain_vendors ( id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), vendor_name TEXT NOT NULL, vendor_type TEXT CHECK(vendor_type IN ('cots', 'gots', 'oss', 'saas', 'paas', 'iaas', 'contractor', 'subcontractor')), country_of_origin TEXT, scrm_risk_tier TEXT CHECK(scrm_risk_tier IN ('low', 'moderate', 'high', 'critical')), section_889_status TEXT CHECK(section_889_status IN ('compliant', 'under_review', 'prohibited', 'exempt')), dod_approved INTEGER DEFAULT 0, contact_info TEXT, isa_required INTEGER DEFAULT 0, last_assessed TEXT, classification TEXT DEFAULT 'CUI', created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')), UNIQUE(project_id, vendor_name) )",
+            "replayed_ddl": "CREATE TABLE \"supply_chain_vendors\" ( id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), vendor_name TEXT NOT NULL, vendor_type TEXT CHECK(vendor_type IN ('cots', 'gots', 'oss', 'saas', 'paas', 'iaas', 'contractor', 'subcontractor', 'defense_contractor')), country_of_origin TEXT, scrm_risk_tier TEXT CHECK(scrm_risk_tier IN ('low', 'moderate', 'high', 'critical')), section_889_status TEXT CHECK(section_889_status IN ('compliant', 'under_review', 'prohibited', 'exempt')), dod_approved INTEGER DEFAULT 0, contact_info TEXT, isa_required INTEGER DEFAULT 0, last_assessed TEXT, classification TEXT DEFAULT 'CUI', created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')), UNIQUE(project_id, vendor_name) )"
+          }
+        ]
+      }
+    },
+    {
+      "migration": "052_sg_raw_signals",
+      "version": "52",
+      "shadowed_by": "052_sg_conflict_events",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "replay_verdict": "schema_gap_detected",
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "declares": {
+        "tables": [
+          "sg_raw_signals",
+          "sg_raw_signals_audit"
+        ],
+        "indexes": [
+          "idx_sg_raw_signals_date",
+          "idx_sg_raw_signals_tier"
+        ],
+        "columns": [],
+        "changed_ddl": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql": "all_present",
+        "pg_consolidated_snapshot": "all_present",
+        "non_migration_creators": {
+          "sg_raw_signals": [
+            "tools/db/seeds/seed_strategos_events.py",
+            "tools/genesis/reflexes/strategos/osint_harvester.py"
+          ],
+          "sg_raw_signals_audit": [
+            "tools/genesis/reflexes/strategos/osint_harvester.py"
+          ]
+        }
+      },
+      "sqlite_exposure": {
+        "tables_nothing_creates": [],
+        "indexes_nothing_creates": [
+          "idx_sg_raw_signals_date",
+          "idx_sg_raw_signals_tier"
+        ]
+      },
+      "evidence": {
+        "execution": {
+          "statements_executed": 1,
+          "benign_skips": 0,
+          "hard_errors": [],
+          "hard_error_count": 0,
+          "bypasses_passed_connection": true
+        },
+        "changed_ddl": []
+      }
+    },
+    {
+      "migration": "055_sg_conflict_events_cyber_op",
+      "version": "55",
+      "shadowed_by": "055_cta_scores_cache.sql",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "replay_verdict": "schema_gap_detected",
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "declares": {
+        "tables": [],
+        "indexes": [
+          "idx_sg_ce_technique_ids"
+        ],
+        "columns": [
+          "sg_conflict_events.confidence",
+          "sg_conflict_events.malware_family",
+          "sg_conflict_events.technique_ids",
+          "sg_conflict_events.threat_actor"
+        ],
+        "changed_ddl": [
+          "sg_conflict_events"
+        ]
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql": "all_present",
+        "pg_consolidated_snapshot": "all_present",
+        "non_migration_creators": {}
+      },
+      "sqlite_exposure": {
+        "tables_nothing_creates": [],
+        "indexes_nothing_creates": [
+          "idx_sg_ce_technique_ids"
+        ]
+      },
+      "evidence": {
+        "execution": {
+          "statements_executed": 1,
+          "benign_skips": 0,
+          "hard_errors": [],
+          "hard_error_count": 0,
+          "bypasses_passed_connection": true
+        },
+        "changed_ddl": [
+          {
+            "name": "sg_conflict_events",
+            "baseline_ddl": "CREATE TABLE sg_conflict_events ( id TEXT NOT NULL PRIMARY KEY, event_type TEXT NOT NULL CHECK(event_type IN ('frontline_position', 'narrative_event', 'cyber_op', 'kinetic', 'humanitarian', 'diplomatic', 'logistics')), geometry TEXT, event_date TEXT, source TEXT, metadata TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL , actor1 TEXT, actor2 TEXT, event_code TEXT, goldstein_scale REAL, lat REAL, lon REAL, aoi TEXT, avg_tone REAL, num_mentions INTEGER, source_url TEXT)",
+            "replayed_ddl": "CREATE TABLE sg_conflict_events ( id TEXT NOT NULL PRIMARY KEY, event_type TEXT NOT NULL CHECK(event_type IN ('frontline_position', 'narrative_event', 'cyber_op', 'kinetic', 'humanitarian', 'diplomatic', 'logistics')), geometry TEXT, event_date TEXT, source TEXT, metadata TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL , actor1 TEXT, actor2 TEXT, event_code TEXT, goldstein_scale REAL, lat REAL, lon REAL, aoi TEXT, avg_tone REAL, num_mentions INTEGER, source_url TEXT, technique_ids TEXT, threat_actor TEXT, malware_family TEXT, confidence INTEGER)"
+          }
+        ]
+      }
+    },
+    {
+      "migration": "055_sg_information_signals",
+      "version": "55",
+      "shadowed_by": "055_cta_scores_cache.sql",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "replay_verdict": "schema_gap_detected",
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "declares": {
+        "tables": [
+          "sg_information_scores",
+          "sg_information_signals"
+        ],
+        "indexes": [
+          "idx_sg_info_scores_created",
+          "idx_sg_info_scores_scenario",
+          "idx_sg_info_signals_scenario",
+          "idx_sg_info_signals_ts",
+          "idx_sg_info_signals_type"
+        ],
+        "columns": [],
+        "changed_ddl": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql": "all_present",
+        "pg_consolidated_snapshot": "all_present",
+        "non_migration_creators": {}
+      },
+      "sqlite_exposure": {
+        "tables_nothing_creates": [
+          "sg_information_scores",
+          "sg_information_signals"
+        ],
+        "indexes_nothing_creates": [
+          "idx_sg_info_scores_created",
+          "idx_sg_info_scores_scenario",
+          "idx_sg_info_signals_scenario",
+          "idx_sg_info_signals_ts",
+          "idx_sg_info_signals_type"
+        ]
+      },
+      "evidence": {
+        "execution": {
+          "statements_executed": 1,
+          "benign_skips": 0,
+          "hard_errors": [],
+          "hard_error_count": 0,
+          "bypasses_passed_connection": true
+        },
+        "changed_ddl": []
+      }
+    },
+    {
+      "migration": "056_sg_prioritized_signals",
+      "version": "56",
+      "shadowed_by": "056_historical_cases",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "replay_verdict": "schema_gap_detected",
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "declares": {
+        "tables": [
+          "sg_prioritized_signals"
+        ],
+        "indexes": [
+          "idx_sg_pri_raw_id",
+          "idx_sg_pri_run_at",
+          "idx_sg_pri_score"
+        ],
+        "columns": [],
+        "changed_ddl": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql": "all_present",
+        "pg_consolidated_snapshot": "all_present",
+        "non_migration_creators": {
+          "sg_prioritized_signals": [
+            "tools/db/seeds/seed_strategos_events.py",
+            "tools/genesis/reflexes/strategos/signal_scout.py"
+          ]
+        }
+      },
+      "sqlite_exposure": {
+        "tables_nothing_creates": [],
+        "indexes_nothing_creates": [
+          "idx_sg_pri_raw_id",
+          "idx_sg_pri_run_at",
+          "idx_sg_pri_score"
+        ]
+      },
+      "evidence": {
+        "execution": {
+          "statements_executed": 1,
+          "benign_skips": 0,
+          "hard_errors": [],
+          "hard_error_count": 0,
+          "bypasses_passed_connection": true
+        },
+        "changed_ddl": []
+      }
+    },
+    {
+      "migration": "056_win_loss_analysis_tables.sql",
+      "version": "56",
+      "shadowed_by": "056_historical_cases",
+      "kind": "sql",
+      "classification": "benign",
+      "replay_verdict": "schema_already_exists",
+      "rationale": "replay against the chain-built baseline changed nothing \u2014 every object the entry declares is already produced by a migration that does run",
+      "declares": {
+        "tables": [],
+        "indexes": [],
+        "columns": [],
+        "changed_ddl": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "present",
+        "live_postgresql": "all_present",
+        "pg_consolidated_snapshot": "all_present",
+        "non_migration_creators": {}
+      },
+      "sqlite_exposure": {
+        "tables_nothing_creates": [],
+        "indexes_nothing_creates": []
+      },
+      "evidence": {
+        "execution": {
+          "statements_executed": 3,
+          "benign_skips": 0,
+          "hard_errors": [],
+          "hard_error_count": 0
+        },
+        "changed_ddl": []
+      }
+    }
+  ]
+}

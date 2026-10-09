@@ -79,11 +79,27 @@ rag:
     complex_top_k: 10             # widened single-pass fallback when no decompose_fn injected
   # Self-RAG per-document reflective reranking (agx-rag-02). Scores each
   # candidate along separate RELEVANT/SUPPORTS/USEFUL enum axes and composes the
-  # ordering in Python, instead of one blended rerank score. Default DISABLED =
-  # current behavior. Bounded to the post-vector candidate set + cheap-tier.
+  # ordering in Python, instead of one blended rerank score.
+  #
+  # ADOPTED for chat_rag only (trust-self-02). `surfaces` is the trust_gate
+  # profile vocabulary (args/trust_gate.yaml) and is what keeps this scoped: the
+  # cost is one cheap-tier LLM call PER DOCUMENT, so turning it on globally
+  # would charge every drafting, compliance and ingest-side retrieval for a
+  # behaviour only the chat surface asked for. An empty/absent `surfaces` means
+  # every surface (pre-scoping semantics); a caller that states no surface at
+  # all never fires it.
+  #
+  # Latency, stated rather than discovered: reflection runs AFTER the
+  # final_top_k truncation, so the ceiling is final_top_k (5) sequential calls
+  # on an interactive path. max_candidates is set to that ceiling rather than
+  # the old nominal 20, which could never be reached from step 5b anyway. If the
+  # model is unreachable the reranker gives up after 2 consecutive failures and
+  # returns the incoming order (DEGRADE_BAILOUT).
   reflective_rerank:
-    enabled: false
-    max_candidates: 20            # bound per-document LLM calls (cost control)
+    enabled: true
+    max_candidates: 5             # bound per-document LLM calls (cost control)
+    surfaces:                     # trust_gate profile names; [] = all surfaces
+      - chat_rag
   auto_indexer:
     cui_boundary_enforcement: true
     enabled: false

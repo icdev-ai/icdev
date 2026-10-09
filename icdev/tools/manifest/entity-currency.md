@@ -1,0 +1,41 @@
+# Entity Currency Store
+
+Classification: CUI // SP-CTI
+
+One domain-agnostic answer to "is this thing still current, who says so, and
+when did they last look?" (cef-fnd-04). Currency evidence used to live in three
+domain-narrow tables — a software-release feed, a hardware EOL feed and the
+curated catalog — each readable only by the subsystem that owned it, none able
+to describe an entity the others had never heard of, and no place at all for a
+fourth provider to write.
+
+`tools/currency/entity_currency.py` names no table, no column, no vendor, no
+product and no domain: every source is declared in `args/entity_currency.yaml`,
+so adding a provider is a config entry. Two sources that disagree keep two rows;
+`resolve()` picks a winner at read time under the declared policy and hands back
+the losers next to it. Curated sources are `authoritative` and win outright —
+ahead of confidence, ahead of recency — because a tie-break that can be
+overturned by bumping a prior is not authority.
+
+`confidence` is a DECLARED PRIOR from the YAML, not a measurement.
+
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Entity Currency Store | tools/currency/entity_currency.py | Source-agnostic currency assertions in `entity_currency`: `upsert()`, `query()`, `resolve()` (authority → confidence → as_of, reporting disagreement), `stats()`, `backfill()` from every declared source; `derive_verdict_from_dates()` | `--backfill` / `--stats` / `--resolve <entity>` | dict / JSON |
+| Currency Package API | tools/currency/__init__.py | Re-exports VERDICTS, CurrencyAssertion, backfill, resolve, stats, upsert, normalize_key | import | Python API |
+| Source declarations | args/entity_currency.yaml | Per-source table, column mapping, entity_type (literal or data-driven), kind, authoritative flag, declared confidence, verdict strategy (`dates` \| `value_map`), and the read-time resolution order | YAML | config |
+| Author-supplied source | args/entity_currency.yaml (`dic_author_assertions`) + tools/document_intelligence/author_evidence.py | dwr-ev-01. The fifth declared source: what an AUTHOR stated at DIC upload about an entity's currency, kind `author_supplied`, `precedence: 0`. `precedence` is a new OPTIONAL per-source integer applied FIRST in `resolution.order` (lower wins; a source declaring none gets `DEFAULT_PRECEDENCE` 100, so the four earlier sources tie and `authoritative` decides exactly as before). `order_by` declares which row the upsert keeps when a table holds several per identity. `resolve()`/`search()` views now carry `source_kind`, `precedence` and, on every `others` entry, its `rank` — carried by the Cortex currency rung and the docmod evidence lane, never re-derived. | `--resolve <entity>` | view with `others[].rank` |
+| SME-attributed source | args/entity_currency.yaml (`dic_sme_assertions`) + tools/document_intelligence/sme_evidence.py | dwr-ev-02. The sixth declared source: a review comment a human explicitly PROMOTED, kind `sme_attributed`, `precedence: 0` — BESIDE the author source and not above it, because two humans stating facts about this estate are the same class of evidence, so the pair ties on precedence AND on confidence and the later `as_of` decides with the earlier preserved under `others`. The resolved view's `provenance` now carries a `fields` map (the winner's declared `extra_columns`, decoded) — this file always said they were carried "so it is preserved rather than lost" and until now nothing could read them back, which an attributed citation needs to name the human. `cortex/search_service.py` maps the source KIND onto the citation `source_type` `sme_assertion`, so a person's statement never wears a feed's badge; every other kind keeps `currency_assertion`. | `--resolve <entity>` | view whose `provenance.fields.asserted_by` names the SME |
+
+## Wiring
+
+- **Refreshed by** the nightly `doc_modernization_sweep` Genesis reflex, right
+  after the EOL syncs it reads — a substrate nothing refreshes goes stale
+  silently.
+- **Consumed by** `tools/doc_modernization/packs/network_hardware.py`, which
+  calls `resolve()` only when the curated catalog and the hardware EOL feed both
+  come back empty. It is the seam for a provider neither of them knows about,
+  and it can never overrule the catalog.
+- **Declared** in `args/capability_consumption.yaml` `substrates:` so
+  `capability_consumption.py --probe-substrate entity_currency` and
+  `coherence_checker.py --check substrate_liveness` can see an empty one.

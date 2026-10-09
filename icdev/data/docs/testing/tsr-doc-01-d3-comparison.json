@@ -1,0 +1,54 @@
+{
+  "task": "tsr-doc-01-d3",
+  "d2_totals": {
+    "files": 162,
+    "files_clean": 154,
+    "files_failing": 8,
+    "total_passed": 2539,
+    "total_failed": 16,
+    "total_error": 1,
+    "total_skipped": 10
+  },
+  "d3_totals": {
+    "files": 162,
+    "files_clean": 153,
+    "files_failing": 9,
+    "total_passed": 2534,
+    "total_failed": 17,
+    "total_error": 9,
+    "total_skipped": 10
+  },
+  "totals_delta": {
+    "files": 0,
+    "files_clean": -1,
+    "files_failing": 1,
+    "total_passed": -5,
+    "total_failed": 1,
+    "total_error": 8,
+    "total_skipped": 0
+  },
+  "identical_selection": true,
+  "only_in_d2": [],
+  "only_in_d3": [],
+  "status_changes": [
+    {
+      "file": "tests/govcon/test_past_performance_suggester.py",
+      "d2": "clean",
+      "d3": "fail",
+      "direction": "REGRESSED (clean->fail)",
+      "d2_counts": {
+        "passed": 5,
+        "failed": 0,
+        "error": 0,
+        "skipped": 0
+      },
+      "d3_counts": {
+        "passed": 0,
+        "failed": 1,
+        "error": 8,
+        "skipped": 0
+      }
+    }
+  ],
+  "count_changes_same_status": []
+}

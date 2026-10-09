@@ -1,0 +1,2 @@
+# cch-obs-05 -- knowledge_patterns.use_count, the column knowledge_server always wrote.
+tests/test_knowledge_patterns_use_count.py

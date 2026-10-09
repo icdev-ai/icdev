@@ -1,0 +1,1119 @@
+{
+ "task": "tsr-net-01-d1",
+ "root": "C:\\AI\\ICDev\\.tmp\\worktrees\\tsr-net-01-d1",
+ "regex": "(?<![\\w.])(?:icdev\\.)?tools\\.(?:pipeline|network|ops_hub|infra|cloud|sre|ci)(?![\\w])",
+ "packages_named_by_task": [
+  "net",
+  "pipeline",
+  "ci",
+  "deploy",
+  "infra",
+  "cloud",
+  "sre",
+  "ops_hub"
+ ],
+ "packages_in_scope": [
+  "network",
+  "pipeline",
+  "ci",
+  "infra",
+  "cloud",
+  "sre",
+  "ops_hub"
+ ],
+ "packages_named_but_absent": {
+  "net": "no tools/net; resolved to tools/network (0 tests reference tools.net)",
+  "deploy": "no tools/deploy and 0 tests reference tools.deploy; dropped, not substituted"
+ },
+ "counts": {
+  "files_matching": 131,
+  "files_real_import": 123,
+  "files_patch_string_only": 8
+ },
+ "per_package": {
+  "network": {
+   "matching": 72,
+   "real_import": 67
+  },
+  "pipeline": {
+   "matching": 27,
+   "real_import": 23
+  },
+  "ci": {
+   "matching": 22,
+   "real_import": 21
+  },
+  "infra": {
+   "matching": 6,
+   "real_import": 6
+  },
+  "cloud": {
+   "matching": 5,
+   "real_import": 5
+  },
+  "sre": {
+   "matching": 0,
+   "real_import": 0
+  },
+  "ops_hub": {
+   "matching": 4,
+   "real_import": 2
+  }
+ },
+ "patch_string_only_files": [
+  "tests/test_canvas_cards_pg.py",
+  "tests/test_cnr_ops_cache_lookingglass.py",
+  "tests/test_component_registry.py",
+  "tests/test_kanban_scheduled_and_pr_opened.py",
+  "tests/test_system_graph_ndc.py",
+  "tests/test_twin_airgap_rules.py",
+  "tests/test_twin_core.py",
+  "tests/test_twin_core_event_bridge.py"
+ ],
+ "files": {
+  "tests/ci/modules/test_agent.py": {
+   "imports": [
+    "ci"
+   ],
+   "referenced": [
+    "ci"
+   ]
+  },
+  "tests/ci/modules/test_git_ops.py": {
+   "imports": [
+    "ci"
+   ],
+   "referenced": [
+    "ci"
+   ]
+  },
+  "tests/ci/modules/test_state.py": {
+   "imports": [
+    "ci"
+   ],
+   "referenced": [
+    "ci"
+   ]
+  },
+  "tests/ci/modules/test_vcs.py": {
+   "imports": [
+    "ci"
+   ],
+   "referenced": [
+    "ci"
+   ]
+  },
+  "tests/ci/modules/test_workflow_ops.py": {
+   "imports": [
+    "ci"
+   ],
+   "referenced": [
+    "ci"
+   ]
+  },
+  "tests/ci/test_error_classifier.py": {
+   "imports": [
+    "ci"
+   ],
+   "referenced": [
+    "ci"
+   ]
+  },
+  "tests/ci/test_pr_watcher.py": {
+   "imports": [
+    "ci"
+   ],
+   "referenced": [
+    "ci"
+   ]
+  },
+  "tests/ci/test_pr_watcher_dotenv.py": {
+   "imports": [
+    "ci"
+   ],
+   "referenced": [
+    "ci"
+   ]
+  },
+  "tests/ci/test_pr_watcher_enforced_gate.py": {
+   "imports": [
+    "ci"
+   ],
+   "referenced": [
+    "ci"
+   ]
+  },
+  "tests/ci/test_pr_watcher_sibling.py": {
+   "imports": [
+    "ci"
+   ],
+   "referenced": [
+    "ci"
+   ]
+  },
+  "tests/ci/workflows/test_icdev_build.py": {
+   "imports": [
+    "ci"
+   ],
+   "referenced": [
+    "ci"
+   ]
+  },
+  "tests/ci/workflows/test_icdev_document.py": {
+   "imports": [
+    "ci"
+   ],
+   "referenced": [
+    "ci"
+   ]
+  },
+  "tests/ci/workflows/test_icdev_patch.py": {
+   "imports": [
+    "ci"
+   ],
+   "referenced": [
+    "ci"
+   ]
+  },
+  "tests/ci/workflows/test_icdev_plan.py": {
+   "imports": [
+    "ci"
+   ],
+   "referenced": [
+    "ci"
+   ]
+  },
+  "tests/ci/workflows/test_icdev_review.py": {
+   "imports": [
+    "ci"
+   ],
+   "referenced": [
+    "ci"
+   ]
+  },
+  "tests/ci/workflows/test_icdev_sdlc.py": {
+   "imports": [
+    "ci"
+   ],
+   "referenced": [
+    "ci"
+   ]
+  },
+  "tests/ci/workflows/test_icdev_test.py": {
+   "imports": [
+    "ci"
+   ],
+   "referenced": [
+    "ci"
+   ]
+  },
+  "tests/e2e_devops_twin.py": {
+   "imports": [
+    "pipeline"
+   ],
+   "referenced": [
+    "pipeline"
+   ]
+  },
+  "tests/e2e_dual_track_lifecycle.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/e2e_full_lifecycle_complex.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/e2e_ndc_full_lifecycle.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/e2e_network_nl_query.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/genesis_auto/test_ato_generator.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/genesis_auto/test_cloud_architecture.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/genesis_auto/test_compliance.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/genesis_auto/test_constants.py": {
+   "imports": [
+    "pipeline"
+   ],
+   "referenced": [
+    "pipeline"
+   ]
+  },
+  "tests/genesis_auto/test_seed_sops.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/genesis_auto/test_terraform_generator_azure.py": {
+   "imports": [
+    "infra"
+   ],
+   "referenced": [
+    "infra"
+   ]
+  },
+  "tests/genesis_auto/test_terraform_generator_gcp.py": {
+   "imports": [
+    "infra"
+   ],
+   "referenced": [
+    "infra"
+   ]
+  },
+  "tests/genesis_auto/test_terraform_generator_oci.py": {
+   "imports": [
+    "infra"
+   ],
+   "referenced": [
+    "infra"
+   ]
+  },
+  "tests/kanban/test_pipeline.py": {
+   "imports": [
+    "ci"
+   ],
+   "referenced": [
+    "ci"
+   ]
+  },
+  "tests/test_advisory.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_ahx_harness_truth.py": {
+   "imports": [
+    "ci"
+   ],
+   "referenced": [
+    "ci"
+   ]
+  },
+  "tests/test_attack_surface_mapper.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_bgp_predictor.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_canvas_cards_pg.py": {
+   "imports": [],
+   "referenced": [
+    "pipeline"
+   ]
+  },
+  "tests/test_capacity_predictor.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_change_failure_predictor.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_cloud_monitoring_iam.py": {
+   "imports": [
+    "cloud"
+   ],
+   "referenced": [
+    "cloud"
+   ]
+  },
+  "tests/test_cloud_providers.py": {
+   "imports": [
+    "cloud"
+   ],
+   "referenced": [
+    "cloud"
+   ]
+  },
+  "tests/test_cnr_ops_cache_lookingglass.py": {
+   "imports": [],
+   "referenced": [
+    "ops_hub"
+   ]
+  },
+  "tests/test_cnr_ops_mutation_auth.py": {
+   "imports": [
+    "ops_hub"
+   ],
+   "referenced": [
+    "ops_hub"
+   ]
+  },
+  "tests/test_compliance_drift_predictor.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_component_registry.py": {
+   "imports": [],
+   "referenced": [
+    "network",
+    "ops_hub",
+    "pipeline"
+   ]
+  },
+  "tests/test_csp_monitor.py": {
+   "imports": [
+    "cloud"
+   ],
+   "referenced": [
+    "cloud"
+   ]
+  },
+  "tests/test_cvx_sql_03_canvas_init_rls.py": {
+   "imports": [
+    "network",
+    "pipeline"
+   ],
+   "referenced": [
+    "network",
+    "pipeline"
+   ]
+  },
+  "tests/test_devops_twin_route.py": {
+   "imports": [
+    "pipeline"
+   ],
+   "referenced": [
+    "pipeline"
+   ]
+  },
+  "tests/test_diagram_analysis.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_dsyn_emit_ndc.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_dsyn_emit_network.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_dsyn_vv_smoke.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_eol_predictor.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_event_envelope.py": {
+   "imports": [
+    "ci"
+   ],
+   "referenced": [
+    "ci"
+   ]
+  },
+  "tests/test_evolutionary_intelligence.py": {
+   "imports": [
+    "infra"
+   ],
+   "referenced": [
+    "infra"
+   ]
+  },
+  "tests/test_federal_peering_request.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_guardrails.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_history.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_ibm_providers.py": {
+   "imports": [
+    "cloud"
+   ],
+   "referenced": [
+    "cloud"
+   ]
+  },
+  "tests/test_intent_validator.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_ip_address_space.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_iqe_nl_to_iqe.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_ironbank_generator.py": {
+   "imports": [
+    "infra"
+   ],
+   "referenced": [
+    "infra"
+   ]
+  },
+  "tests/test_juniper_filter_parsing.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_kanban_scheduled_and_pr_opened.py": {
+   "imports": [],
+   "referenced": [
+    "ci"
+   ]
+  },
+  "tests/test_ndc_backend_helpers.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_ndc_blueprint_route_parity.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_ndc_bus_subscriber.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_ndc_demo_runner.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_ndc_enclave_scanner.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_ndc_failclosed_gates.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_ndc_graph_cache.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_ndc_migration_phases.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_ndc_narrative_cache.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_ndc_narrative_egress.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_ndc_pdf_export.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_ndc_pptx_export.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_ndc_sdc_idc_templates.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_ndc_stencil_importer.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_ndc_topology_validator.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_ndc_traffic_flow_schema_reconcile.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_ndc_update_routes.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_ndc_visio_export.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_network_check_constants.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_network_compliance_rname.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_network_config_review.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_network_doc_lifecycle.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_network_ingester_e2e.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_network_intelligence.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_network_layout_and_config.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_nqe_client.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_ocr_fallback.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_oracle_lens_network.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_patch_planner.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_path_analyzer.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_pdc_routes_engine.py": {
+   "imports": [
+    "pipeline"
+   ],
+   "referenced": [
+    "pipeline"
+   ]
+  },
+  "tests/test_pdc_routes_misc.py": {
+   "imports": [
+    "pipeline"
+   ],
+   "referenced": [
+    "pipeline"
+   ]
+  },
+  "tests/test_pdc_routes_sops_runbooks.py": {
+   "imports": [
+    "pipeline"
+   ],
+   "referenced": [
+    "pipeline"
+   ]
+  },
+  "tests/test_pdc_sqlite_fallback.py": {
+   "imports": [
+    "pipeline"
+   ],
+   "referenced": [
+    "pipeline"
+   ]
+  },
+  "tests/test_pdc_studio_steps.py": {
+   "imports": [
+    "pipeline"
+   ],
+   "referenced": [
+    "pipeline"
+   ]
+  },
+  "tests/test_pdf_import.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_pdf_stitch_multi.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_pdx_ops_reflex_registration.py": {
+   "imports": [
+    "pipeline"
+   ],
+   "referenced": [
+    "pipeline"
+   ]
+  },
+  "tests/test_pdx_sec_06_output_integrity.py": {
+   "imports": [
+    "pipeline"
+   ],
+   "referenced": [
+    "pipeline"
+   ]
+  },
+  "tests/test_pipeline_audit_coverage.py": {
+   "imports": [
+    "pipeline"
+   ],
+   "referenced": [
+    "pipeline"
+   ]
+  },
+  "tests/test_pipeline_config_generator.py": {
+   "imports": [
+    "ci"
+   ],
+   "referenced": [
+    "ci"
+   ]
+  },
+  "tests/test_pipeline_delete_cascade.py": {
+   "imports": [
+    "pipeline"
+   ],
+   "referenced": [
+    "pipeline"
+   ]
+  },
+  "tests/test_pipeline_delta.py": {
+   "imports": [
+    "pipeline"
+   ],
+   "referenced": [
+    "pipeline"
+   ]
+  },
+  "tests/test_pipeline_graph_json_xss.py": {
+   "imports": [
+    "pipeline"
+   ],
+   "referenced": [
+    "pipeline"
+   ]
+  },
+  "tests/test_pipeline_perf_hooks.py": {
+   "imports": [
+    "pipeline"
+   ],
+   "referenced": [
+    "pipeline"
+   ]
+  },
+  "tests/test_pipeline_put_partial.py": {
+   "imports": [
+    "pipeline"
+   ],
+   "referenced": [
+    "pipeline"
+   ]
+  },
+  "tests/test_pipeline_rbac_sod.py": {
+   "imports": [
+    "pipeline"
+   ],
+   "referenced": [
+    "pipeline"
+   ]
+  },
+  "tests/test_pipeline_snapshot_db.py": {
+   "imports": [
+    "pipeline"
+   ],
+   "referenced": [
+    "pipeline"
+   ]
+  },
+  "tests/test_pipeline_snapshot_hook.py": {
+   "imports": [
+    "pipeline"
+   ],
+   "referenced": [
+    "pipeline"
+   ]
+  },
+  "tests/test_pipeline_truthful_scoring.py": {
+   "imports": [
+    "pipeline"
+   ],
+   "referenced": [
+    "pipeline"
+   ]
+  },
+  "tests/test_pipeline_validator_correctness.py": {
+   "imports": [
+    "pipeline"
+   ],
+   "referenced": [
+    "pipeline"
+   ]
+  },
+  "tests/test_premerge_runner.py": {
+   "imports": [
+    "pipeline"
+   ],
+   "referenced": [
+    "pipeline"
+   ]
+  },
+  "tests/test_region_validator.py": {
+   "imports": [
+    "cloud"
+   ],
+   "referenced": [
+    "cloud"
+   ]
+  },
+  "tests/test_remediation_simulator.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_supply_chain_risk_scorer.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_system_graph_ndc.py": {
+   "imports": [],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_terraform_generator.py": {
+   "imports": [
+    "infra"
+   ],
+   "referenced": [
+    "infra"
+   ]
+  },
+  "tests/test_tfw_narrator.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_tfw_personas.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_traffic_flow_walkthrough.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_twin_airgap_rules.py": {
+   "imports": [],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_twin_core.py": {
+   "imports": [],
+   "referenced": [
+    "network",
+    "pipeline"
+   ]
+  },
+  "tests/test_twin_core_event_bridge.py": {
+   "imports": [],
+   "referenced": [
+    "network",
+    "pipeline"
+   ]
+  },
+  "tests/test_vsdx_import.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_vuln_predictor.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/test_vuln_triage_engine.py": {
+   "imports": [
+    "network"
+   ],
+   "referenced": [
+    "network"
+   ]
+  },
+  "tests/tools/ops_hub/test_reasoned_codegen_engine.py": {
+   "imports": [
+    "ops_hub"
+   ],
+   "referenced": [
+    "ops_hub"
+   ]
+  }
+ },
+ "overlap_with_canv_slice": {
+  "canv_slice_files": 274,
+  "shared": 78,
+  "net_exclusive": 53,
+  "net_exclusive_list": "docs/testing/tsr-net-01-exclusive.txt"
+ }
+}

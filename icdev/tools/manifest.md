@@ -9,6 +9,7 @@
 - [LLM Chain Orchestration (CoT / CoD)](manifest/llm-chain-orchestration.md)
 - [AIS Vessel Data Importer](manifest/ais-importer.md)
 - [Network Design Canvas + IQE (ICDEV Query Engine)](manifest/network-iqe.md)
+- [Asset Discovery Adapters](manifest/asset-discovery.md)
 - [Memory System](manifest/memory-system.md)
 - [Database](manifest/database.md)
 - [Resilience (D146-D149)](manifest/resilience.md)
@@ -32,6 +33,7 @@
 - [eMASS Integration](manifest/emass-integration.md)
 - [Builder (TDD)](manifest/builder.md)
 - [Security Scanning](manifest/security-scanning.md)
+- [Analyzer / Responder Contract (ANZ)](manifest/analyzer-contract.md)
 - [Showcase](manifest/showcase.md)
 - [Deploy](manifest/deploy.md)
 - [Infrastructure](manifest/infrastructure.md)
@@ -157,12 +159,14 @@
 - [IDC IaC Twin (Phase IDC-1)](manifest/idc-twin.md)
 - [Twin Core — Cross-Canvas Digital-Twin Unification (TWX)](manifest/twin-core.md)
 - [Agent Adapters (OPT-71)](manifest/agent-adapters.md)
+- [Agent Governance — Detection (AGOV / DET)](manifest/agent-governance-detection.md)
 - [Skill Invocation (OPT-41, 2026-04-12)](manifest/skill-invocation.md)
 - [ANVIL Headless Commands (OPT-42, 2026-04-12)](manifest/anvil-headless-commands.md)
 - [Dashboard UX Enhancements (OPT-68, 2026-04-12)](manifest/dashboard-ux-enhancements.md)
 - [Manifest Gap Fill (2026-04-12)](manifest/manifest-gap-fill.md)
 - [AISG — AI Strategy Guide Tools](manifest/aisg.md)
 - [IQE — Internal Query Engine](manifest/iqe-query-engine.md)
+- [IDP — Scorecard-as-Code (idp-score)](manifest/idp-scorecards.md)
 - [Kanban System](manifest/kanban.md)
 - [Regulatory Foresight Engine (D352 — pint-regfore)](manifest/regulatory-foresight-engine.md)
 - [Voice-of-Customer (VOC) Signal Capture (pint-voc)](manifest/voc.md)
@@ -176,6 +180,9 @@
 - [IC IE Data Fabric — Multi-Agency Data Sharing](manifest/ic-ie-data-fabric.md)
 - [AI Augmentation Canvas (AAC)](manifest/ai-augmentation-canvas.md)
 - [Document Modernization Engine (docmod)](manifest/doc-modernization.md)
+- [FORGE Academy](manifest/forge-academy.md) — learner platform: server-authoritative grading, XP provenance ledger, tier gating (`apps/forge_academy/`)
+- [GeoSIGINT Indo-Pacific Analyzer](manifest/geosigint.md) — 6 OSINT analyzers, 7 pages, 23 APIs (`apps/geosigint/`)
+- [Entity Currency Store](manifest/entity-currency.md) — one domain-agnostic "is it still current", source-agnostic, disagreement preserved (`tools/currency/`)
 
 
 ## Auto-Registered (Coherence Fix)
@@ -696,13 +703,6 @@
 ## Auto-Registered (Coherence Fix)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| Module Budget Tracker | tools\budget\module_budget_tracker.py | Auto-registered: budget/module_budget_tracker.py | --json | JSON |
-| Osint Privacy Sanitizer | tools\strategos\osint_privacy_sanitizer.py | Auto-registered: strategos/osint_privacy_sanitizer.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Data Validator | tools\data_validator.py | Auto-registered: tools/data_validator.py | --json | JSON |
 | Predictive Analysis | tools\strategos\predictive_analysis.py | Auto-registered: strategos/predictive_analysis.py | --json | JSON |
 | Osint Normalizer | tools\threat_analysis\osint_normalizer.py | Auto-registered: threat_analysis/osint_normalizer.py | --json | JSON |
@@ -1047,6 +1047,7 @@
 | Firewall Config Review | tools\security\firewall_config_review.py | Auto-registered: security/firewall_config_review.py | --json | JSON |
 
 - [Workflow Forms Canvas (WFC)](manifest/workflow-forms-canvas.md)
+- [Agent Detection (AGOV / DET)](manifest/agent-detection.md)
 - [AGOV CASE — Agent-Session Forensics](manifest/agent-case-forensics.md)
 
 
@@ -1218,4 +1219,36 @@
 | Topology Ops | tools\network\routes\topology_ops.py | Auto-registered: routes/topology_ops.py | --json | JSON |
 | Twin Migration | tools\network\routes\twin_migration.py | Auto-registered: routes/twin_migration.py | --json | JSON |
 | Bgp Hijack Monitor | tools\genesis\reflexes\bgp_hijack_monitor.py | Auto-registered: reflexes/bgp_hijack_monitor.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Sme Gap Detector | tools\ace\sme_gap_detector.py | Auto-registered: ace/sme_gap_detector.py | --json | JSON |
+| Seed Cdp Kanban | tools\kanban\seed_cdp_kanban.py | Auto-registered: kanban/seed_cdp_kanban.py | --json | JSON |
+| Seed Dwo Kanban | tools\kanban\seed_dwo_kanban.py | Auto-registered: kanban/seed_dwo_kanban.py | --json | JSON |
+| Seed Fga Kanban | tools\kanban\seed_fga_kanban.py | Auto-registered: kanban/seed_fga_kanban.py | --json | JSON |
+| Seed Oss02 Kanban | tools\kanban\seed_oss02_kanban.py | Auto-registered: kanban/seed_oss02_kanban.py | --json | JSON |
+| App Red Team | tools\security\app_red_team.py | Auto-registered: security/app_red_team.py | --json | JSON |
+| Redteam Scope | tools\security\redteam_scope.py | Auto-registered: security/redteam_scope.py | --json | JSON |
+| Dic Inbox Sweep | tools\genesis\reflexes\dic_inbox_sweep.py | Auto-registered: reflexes/dic_inbox_sweep.py | --json | JSON |
+| Memory Maintenance Reflex | tools\genesis\reflexes\memory_maintenance_reflex.py | Auto-registered: reflexes/memory_maintenance_reflex.py | --json | JSON |
+| Observability Retention | tools\genesis\reflexes\observability_retention.py | Auto-registered: reflexes/observability_retention.py | --json | JSON |
+| Odc Coverage Refresh | tools\genesis\reflexes\odc_coverage_refresh.py | Auto-registered: reflexes/odc_coverage_refresh.py | --json | JSON |
+| Change Control | tools\doc_modernization\packs\change_control.py | Auto-registered: packs/change_control.py | --json | JSON |
+| Evidence Currency | tools\doc_modernization\packs\evidence_currency.py | Auto-registered: packs/evidence_currency.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Credibility | tools\bom\credibility.py | Auto-registered: bom/credibility.py | --json | JSON |
+| Derivative | tools\bom\derivative.py | Auto-registered: bom/derivative.py | --json | JSON |
+| Export Categorized | tools\bom\export_categorized.py | Auto-registered: bom/export_categorized.py | --json | JSON |
+| Export Xlsx | tools\bom\export_xlsx.py | Auto-registered: bom/export_xlsx.py | --json | JSON |
+| Extract Grid | tools\bom\extract_grid.py | Auto-registered: bom/extract_grid.py | --json | JSON |
+| Forensics | tools\bom\forensics.py | Auto-registered: bom/forensics.py | --json | JSON |
+| Formula Graph | tools\bom\formula_graph.py | Auto-registered: bom/formula_graph.py | --json | JSON |
+| Seed Bom Concord | tools\kanban\seed_bom_concord.py | Auto-registered: kanban/seed_bom_concord.py | --json | JSON |
+| Brand Deck | tools\slides\brand_deck.py | Auto-registered: slides/brand_deck.py | --json | JSON |
 - [Agent Detection (AGOV / DET)](manifest/agent-detection.md)

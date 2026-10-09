@@ -1,0 +1,3 @@
+foreach s in delta_review.settlements
+  where s.review_state == "pending"
+  select s.delta_id, s.artifact_id, s.stage, s.actor, s.has_ask, s.created_at

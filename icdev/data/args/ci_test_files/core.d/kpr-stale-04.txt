@@ -1,0 +1,3 @@
+# kpr-stale-04 -- lease litter sweep reflex: feeds the frozen restore act
+# reap_dead_lease hourly; 20 leaked leases were cleared by hand on 2026-09-02.
+tests/test_lease_litter_reflex.py

@@ -540,6 +540,28 @@ def test_detects_a_module_importing_from_itself(tmp_path):
     assert hollow == ["icdev/tools/llm/agent_loop.py"]
 
 
+def test_a_docstring_usage_example_is_not_flagged(tmp_path):
+    """1.2.43: 14 healthy modules carried `Usage:` examples importing from
+    themselves inside a docstring; the line regex blocked the release on them."""
+    healthy = _scan(tmp_path, {
+        "icdev/tools/audit/row_hash.py": (
+            b'"""Recipe.\n\nUsage:\n'
+            b'    from icdev.tools.audit.row_hash import compute_audit_row_hash\n"""\n\n'
+            b"def compute_audit_row_hash():\n    return 1\n"
+        ),
+    })
+    assert healthy == []
+
+
+def test_a_shim_import_inside_a_function_is_still_flagged(tmp_path):
+    hollow = _scan(tmp_path, {
+        "icdev/tools/llm/agent_loop.py": (
+            b"def run():\n    from icdev.tools.llm.agent_loop import DONE\n    return DONE\n"
+        ),
+    })
+    assert hollow == ["icdev/tools/llm/agent_loop.py"]
+
+
 def test_a_healthy_module_is_not_flagged(tmp_path):
     hollow = _scan(tmp_path, {
         "icdev/tools/llm/router.py": b"DONE = 1\n\n\ndef go():\n    return DONE\n",

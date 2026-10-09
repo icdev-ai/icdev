@@ -1,0 +1,59 @@
+# CUI // SP-CTI
+#
+# "Redraft with my comments" (dwr-ev-03) — the per-change action a HUMAN
+# presses on an AI-drafted redline.
+#
+# Read by tools/document_intelligence/redraft.py (a library, no CLI; the route
+# is POST /document-intelligence/api/suggestions/<id>/redraft).
+#
+# THERE IS NO `enabled` TOGGLE HERE, ON PURPOSE. Its four sibling seams
+# (cef-di-01/03/04/05) each MIGRATED a working retrieval path, so `false`
+# restores a chain that already existed. This one has no legacy path: nothing
+# has ever redrafted a change from its comment thread. The toggle that governs
+# whether a governed resolution is spent already exists and is respected —
+# `cortex.enabled` in args/docmod/docmod_config.yaml. Off there means the seam
+# is NEVER consulted, and a redraft then reports `not_consulted` for its
+# evidence rather than a clean "no author evidence found".
+
+redraft:
+  # Outbound governed resolutions ONE redraft may spend.
+  #
+  # A run is ONE button press. A redraft resolves the finding's own entity and
+  # then each DISTINCT entity a promoted assertion names, so this bounds the
+  # FAN-OUT of a single human action — not a sweep. It is small because a
+  # resolution costs 10-12s against five backends (measured 2026-08-18,
+  # cef-di-03) and this action is synchronous: at 3 the worst case is ~36s,
+  # already at the edge of a request. Entities are memoised per run, so this
+  # bounds DISTINCT entities and not mentions.
+  #
+  # Asks refused by the cap are COUNTED in run_stats() and returned BY NAME in
+  # `evidence.deferred`. A bound that truncates silently reports its successes
+  # as full coverage, which is the defect this epic keeps closing.
+  max_resolves_per_run: 3
+
+  # Evidence hits requested per Cortex backend. Matches docmod's own
+  # `cortex.top_k` so a redraft and a scan ask for the same amount.
+  top_k: 5
+
+  # How many comments from the thread are handed to the drafter, newest LAST
+  # (the reviewer's latest instruction is the one that should read as final).
+  #
+  # A thread is a conversation and a prompt is not: forty comments would bury
+  # the deterministic evidence the gates score against, and the confidence
+  # band would fall on wording rather than on grounding. What is DROPPED is
+  # returned in `thread.deferred` by name, never trimmed silently.
+  max_instructions: 8
+
+  # Per-comment character cap. A comment longer than this is TRUNCATED and the
+  # result says so per comment (`truncated: true`) — an instruction silently
+  # cut in half changes what the reviewer asked for.
+  instruction_char_cap: 1200
+
+  # Refuse a redraft whose thread is EMPTY.
+  #
+  # TRUE, and it is the point of the action's name. "Redraft with my comments"
+  # over zero comments is a second roll of the same dice at LLM cost, and it
+  # would return a new suggestion a reviewer would read as responding to
+  # feedback nobody gave. Set false only on a deployment that deliberately
+  # wants a bare re-roll; the refusal is named `empty_thread` either way.
+  require_thread: true

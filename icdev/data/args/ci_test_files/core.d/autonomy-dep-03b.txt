@@ -1,0 +1,5 @@
+# autonomy-dep-03 (root cause) — the sync writer must not rewrite what it did
+# not change. A whole-document yaml.dump reflowed the file even when NOTHING
+# changed (+2,174/-1,599 measured), and because args/projects.yaml is tracked
+# that churn clashed with every incoming merge and froze the deployment.
+tests/project/test_projects_yaml_minimal_write.py

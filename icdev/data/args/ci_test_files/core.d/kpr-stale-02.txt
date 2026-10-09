@@ -1,0 +1,7 @@
+# kpr-stale-02 — a green PR far behind main can merge and silently revert main.
+#
+# `mergeable` is MERGEABLE for a branch arbitrarily far behind main so long as
+# nothing collides TEXTUALLY, so the CONFLICTING interlock only ever caught the
+# colliding subset. These tests pin the reverse direction: a green, MERGEABLE,
+# stale PR must NOT classify `ready`.
+tests/test_pr_behind_main_guard.py

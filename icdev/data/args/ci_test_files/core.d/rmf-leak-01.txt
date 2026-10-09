@@ -1,0 +1,4 @@
+# rmf-leak-01 — pursuit-sensitive bid data removed from tracked GovCon source.
+# Guards the section-prompt loader (config-driven, private overlay) and asserts
+# no ROM / cost-share / labor figures live in the shipped templates.
+tests/test_govcon_section_prompts.py

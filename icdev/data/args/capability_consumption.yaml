@@ -1,0 +1,535 @@
+# CUI // SP-CTI
+#
+# Capability consumption measurement (#exa-live-01).
+#
+# ICDEV's signature defect is a *registered* capability with *zero*
+# consumption: the audit chain columns (schema, verifier, bundle format and
+# dashboard all shipped, writer never wired), MCPToolAuthorizer (counted as
+# compliance evidence on file existence alone), prompt_registry (0 rows, 0
+# importers), GEPA (dispatched every 24h, selection predicate can never match),
+# and three separate reflex incidents (xbm-wake-01, xbm-wake-02, hgx-obs-02)
+# where `enabled: true` + a working module + a catalogue entry produced zero
+# executions. In every case nothing went red, because nothing counted.
+#
+# This file configures the counting half. Each class names a DECLARATION source
+# (what the platform says it can do) and a CONSUMPTION source (an EXISTING
+# telemetry table that records it actually happening). No new telemetry tables
+# are introduced here — if a capability's use is not already recorded somewhere,
+# that is itself the finding, and the class reports
+# `telemetry_available: false` rather than a misleading zero.
+
+classification: CUI // SP-CTI
+
+# Default lookback for --json runs. Override per-invocation with --window-days.
+window_days: 30
+
+# A declared capability unit counts as INERT when its consumption event count
+# over the window is <= this value. 0 means "never consumed at all".
+inert_threshold: 0
+
+# Cap on how many inert unit names are enumerated per class in the JSON payload.
+# The count is always exact; only the name list is truncated.
+max_listed_units: 40
+
+classes:
+  reflex:
+    enabled: true
+    description: >-
+      Genesis reflexes that are both listed in tools.genesis.daemon.REFLEX_NAMES
+      (the only list the dispatcher iterates) and enabled in
+      args/genesis_config.yaml. Consumption is a recorded run.
+  mcp_dispatch_tool:
+    enabled: true
+    description: >-
+      MCP tools in tools.mcp.tool_registry.TOOL_REGISTRY. Consumption is a
+      gated dispatch attempt recorded by the Studio MCP tool gate.
+  agent_approval_rule:
+    enabled: true
+    description: >-
+      Tools enumerated in args/agent_approval_policy.yaml under a tier listed in
+      require_approval_tiers. Consumption is an approval-gate decision (approve
+      OR deny) on that tool, identified by the row's `tier`. Tools in the other
+      tiers are auto-allowed without a row by design and are reported under
+      extra.not_measurable_by_design rather than counted inert (rem-cap-05).
+  mcp_tool_authorization:
+    enabled: true
+    description: >-
+      D261 per-tool RBAC roles declared in tools/mcp/tool_registry.py (ROLES).
+      Consumption is an MCPToolAuthorizer verdict recorded by the MCP HTTP
+      surface. The declaration moved out of args/owasp_agentic_config.yaml in
+      exa-policy-07; reading the retired matrix would now report zero declared
+      roles and therefore a falsely clean board.
+  prompt_template:
+    enabled: true
+    description: >-
+      Hard-prompt templates on disk under hardprompts/. Consumption is a
+      registered, non-draft prompt_versions row for that template.
+  audit_chain:
+    enabled: true
+    description: >-
+      The migration-149 hash chain on audit_trail (hash, previous_hash,
+      signature). Consumption is an audit row actually written with a chain
+      hash.
+  skill_optimizer:
+    enabled: true
+    description: >-
+      Skills queued for GEPA optimization as agent_improvement_artifacts.
+      Consumption is a GEPA DECISION recorded against an artifact — applied or
+      declined (rem-cap-01). Counting applies alone made "GEPA ran and correctly
+      declined everything" indistinguishable from "GEPA never ran"; the two
+      neighbouring classes already count the same way, mcp_tool_authorization
+      counting a verdict rather than a denial and audit_chain a chained row
+      rather than a tamper finding. applied vs declined stay separate in
+      `extra`.
+  extension_hook_point:
+    enabled: true
+    description: >-
+      Extension hook points present in both the ExtensionPoint enum and an
+      enabled args/extension_config.yaml hook_points block. Consumption is a
+      recorded ExtensionManager.dispatch on the 'extension' surface of
+      runtime_invocations. Ten declared; before hcx-live-02 nothing counted a
+      dispatch at all, so a point with no call site read exactly like a point on
+      the chat hot path.
+  cortex_backend:
+    enabled: true
+    description: >-
+      Cortex retrieval rungs declared in CORTEX_BACKENDS (tools/cortex/
+      schemas.py). Consumption is a governed call whose append-only cortex_audit
+      row records the rung under gates_json.backends.used — a rung that actually
+      RETURNED A HIT. Never `consulted`: that list is a read of
+      resolve.backends in args/cortex_config.yaml, so counting it would report
+      every declared rung live on a deployment where not one of them ever
+      answered. `sme` counts on the same terms as the rest — its hits are
+      excluded from citations and can never move a verdict, which is a statement
+      about citability, not about whether the rung was reached.
+  cortex_facade:
+    enabled: true
+    description: >-
+      Governed Cortex verbs declared in CORTEX_FACADES (tools/cortex/api.py).
+      Consumption is a cortex_audit row with function = 'cortex.<verb>', written
+      by the @_governed_facade wrapper every verb runs through — so the
+      declaration and the telemetry are the same seam read from both ends. A
+      BLOCKED call still counts: the verb was invoked and the TRUST chain
+      refused it, and that is consumption, reported separately under
+      extra.blocked_events.
+  verified_claim:
+    enabled: true
+    description: >-
+      Claims registered in tools.awareness.claims.REGISTRY (rem-hyg-17), each a
+      surface assertion paired with an INDEPENDENT derivation of the same fact.
+      Consumption is a claim that produced a MEASURED verdict (agrees or
+      disagrees) on a daemon-dispatched claim_verifier_reflex run, read from
+      the per-claim `verdicts` map the reflex leaves in genesis_audit.details
+      (autonomy-act-01). An `unmeasurable` verdict is attempted-and-measured-
+      nothing and is reported under extra.unmeasurable_events, never counted:
+      a verifier that runs every six hours and measures nothing is inert, not
+      busy. A human running the CLI records nothing, on purpose - this class
+      measures the AUTONOMOUS consumption that was missing for the verifier's
+      whole first day, when it was the one immune-system component the immune
+      system did not cover.
+
+# ---------------------------------------------------------------------------
+# Substrate probing (#trust-disc-04)
+# ---------------------------------------------------------------------------
+# A capability is something the platform says it can DO. A substrate is what a
+# capability is designed AGAINST: a table, a column, a config block. An approved
+# plan described kg_ontology as a working SHACL-lite supplying declared
+# (subject_type, predicate, object_type) legality; on the live board kg_nodes
+# held 8,869 rows, kg_edges 16,493, and kg_ontology, ontology_subclass_closure
+# and kg_nodes.ontology_id held nothing at all. The validator built on the empty
+# half would have answered "unknown" forever while looking like it worked. One
+# SELECT COUNT(*) would have caught it and nothing asked for one.
+substrate_probe:
+  # Proof the database being probed has actually been RUN. ANY satisfied witness
+  # is enough. Below every threshold the probe reports table substrates as
+  # UNMEASURABLE instead of empty — 1,320 of 1,775 tables on the live board hold
+  # zero rows, so a probe that cannot tell "this platform has never run" from
+  # "this writer was never wired" invents findings by the thousand, and the
+  # first place it would do that is a fresh worktree or an ephemeral CI database.
+  history_witnesses:
+    - table: audit_trail
+      min_rows: 1000
+    - table: kg_nodes
+      min_rows: 100
+    - table: kanban_tasks
+      min_rows: 100
+
+  # Table names never read as a substrate reference in prose. A bare word is
+  # already required to carry an underscore (which is what keeps `tasks`,
+  # `users`, `documents`, `groups`, `agents` and `order` — all real tables here —
+  # out of every English sentence), so this list is for the underscore-carrying
+  # names that still read as ordinary words in a design document.
+  ignore_names: []
+
+# Substrates the platform DECLARES as load-bearing: something shipped is
+# designed against each of these, so a zero here is a shipped feature answering
+# from an empty half. Probed by `--substrates`. This list is CURATED, not a
+# schema dump — the value of the probe is that every entry is a claim somebody
+# made, and a claim can be wrong in a way a table count cannot.
+substrates:
+  - ref: dic_page_words
+    note: >-
+      dwr-fid-02. One row per PDF word, with its box. A positioned-text view of
+      a document renders from this and NOTHING else, so an empty table is a
+      blank left pane -- and it is empty for a document ingested before the
+      card, one whose source file is gone, or one nobody backfilled. Check
+      dic_document_geometry.status before reading a zero here as "the pages are
+      blank": that column exists precisely because an empty word list is seven
+      different things.
+  - ref: dic_document_geometry
+    note: >-
+      dwr-fid-02. ONE row per document saying which fidelity story it got and
+      why it got nothing. THIS table being empty is the honest signal that
+      geometry has never run on this deployment; dic_page_words being empty
+      while this has rows is a statement about the documents.
+  - ref: dic_doc_runs
+    note: >-
+      dwr-fid-02. DOCX paragraph/run structure. Expected to be empty on a board
+      with no DOCX uploads -- this deployment's 55 documents include none
+      (2026-09-08), so an empty read here is `no DOCX has been ingested`, not a
+      broken writer.
+  - ref: kg_ontology
+    note: >-
+      Declared (subject_type, predicate, object_type) legality — the SHACL-lite
+      half of the KG. tools/quality/kg_grounding.py degrades to OBSERVED
+      signatures while this is empty, and upgrades to DECLARED the moment it
+      gains rows.
+  - ref: ontology_subclass_closure
+    note: >-
+      The transitive subclass closure that ontology/federation.py writes and
+      knowledge_graph/ingester.py::_populate_kg_ontology reads to build
+      kg_ontology. Empty upstream is why kg_ontology is empty downstream.
+  - ref: kg_nodes.ontology_id
+    note: >-
+      The per-node link into the ontology. 8,869 nodes, none of them linked —
+      the column exists, the migration ran, nothing populates it.
+  - ref: prompt_versions
+    note: >-
+      The prompt registry's only table. LLMRouter reads it as a supplemental
+      prompt layer, so an unseeded registry is a silently inert read path.
+  - ref: experiment_programs
+    note: >-
+      xrv-lab-01. The autoresearch loop's declared experiment programs. Created
+      in BOTH schemas (tools/db/init_icdev_db.py and
+      tools/db/schema/pg_consolidated.sql, with a UNIQUE(domain) and an
+      objective_direction CHECK) and read and written by NOTHING: every program
+      load in the tree resolves to args/experiment_programs/<domain>.yaml
+      (experiment_engine._load_program, hypothesis_generator, marketplace_exporter).
+      So it is not "a writer has not run yet" — there is no writer and no reader,
+      and this probe reporting it `empty` is the point. Listed rather than
+      dropped: deleting a table declared in two schemas and named in
+      context/agentic/capability_registry.yaml is its own decision with its own
+      migration, and an undeclared empty table is exactly what this section
+      exists to stop being invisible.
+  - ref: agent_approval_log
+    note: >-
+      Every approval-gate decision. A gate whose decision log is empty has never
+      gated anything — see grandfathered.agent_approval_rule in
+      args/liveness_gate.yaml.
+  - ref: hook_events
+    note: >-
+      PreToolUse hook telemetry. Populated, but it stores tool-input KEY NAMES
+      and never the operand, which is why a fire-rate survey has to be driven
+      from the Claude Code transcripts instead. Listed so that "it has rows"
+      never gets read as "it can answer the question".
+  - ref: agent_session_events
+    note: >-
+      The append-only agent event log (hcx-evt-01, migration
+      20260816122036). It exists because agent_loop_sessions.messages_json is
+      UPSERT-overwritten every turn, so fork and replay have no data to read.
+      Declared here BEFORE a writer is wired, deliberately: hcx-evt-02..05 add
+      the append() call sites, and until one of them lands this table is the
+      textbook shape this probe exists to name — a substrate something is
+      designed against that holds nothing. tools/agent_runtime/event_log.py
+      already READS it via read_session()/next_seq(), so a change to that module
+      is exactly the commit substrate_liveness should warn on.
+  - ref: entity_currency
+    note: >-
+      The domain-agnostic entity-currency store (cef-fnd-04, migration
+      20260817010533). Load-bearing on a READ path — the network-hardware docmod
+      pack consults resolve() when the curated catalog and the hardware EOL feed
+      both come back empty — so an empty table here is a pack that silently
+      reports 'unknown' rather than a table nobody touches. It is backfilled from
+      docmod_eol_products, mc_net_eol_data and docmod_catalog_entries on the
+      nightly docmod sweep and by
+      `python -m tools.currency.entity_currency --backfill`; 230 rows on the live
+      board at declaration time. Listed because the failure mode is silent: every
+      caller degrades to "no answer", which is indistinguishable from "nothing to
+      report".
+  - ref: dic_author_assertions
+    note: >-
+      Author-supplied currency statements recorded at DIC ingest (dwr-ev-01,
+      migration 20260908003920) and declared as the `dic_author_assertions`
+      source in args/entity_currency.yaml, ranked TOP by `precedence`. Listed
+      the day it was created, before it can hold anything: a row here only
+      exists when an upload carried the `author_assertions` field, so a
+      deployment whose authors never state a fact keeps it empty and every
+      resolve() answers from the feeds and the catalog exactly as before.
+      Empty is therefore "no author has asserted anything", never a fault —
+      but a reader designing a drafter against author evidence must be told.
+  - ref: dic_sme_assertions
+    note: >-
+      Review comments a human explicitly PROMOTED to attributed SME assertions
+      (dwr-ev-02, migration 20260908071149), declared as the
+      `dic_sme_assertions` source in args/entity_currency.yaml beside the author
+      source. Listed the day it was created, before it can hold anything: a row
+      exists only where a named human pressed "mark as SME assertion" on one
+      comment, so empty means "nobody has promoted a comment" and NEVER "the
+      comments hold nothing worth citing". That distinction is the card: an
+      unpromoted comment is an instruction and is cited by nothing, which is a
+      designed absence and not a gap to fill.
+  - ref: cortex_audit
+    note: >-
+      The append-only governed-call ledger (one row per Cortex verb invocation,
+      written by GovernancePipeline._audit). Declared here because cef-ci-01
+      made it a MEASUREMENT substrate as well as a compliance one: both the
+      cortex_facade and cortex_backend capability classes count through it, so
+      an empty cortex_audit does not mean "Cortex is idle" — it means the
+      liveness gate covering the whole federation layer is blind. 306 rows on
+      the live board at declaration time.
+  - ref: cortex_entity_findings
+    note: >-
+      The cross-source conflicts and gaps a resolution DETECTED (cef-ui-02,
+      migration 20260819030255), projected out of the request that produced them
+      so a human can adjudicate them on the Explorer. Load-bearing on a READ
+      path: the surface renders from this table alone and an empty one is
+      rendered as `unmeasured`, never as a clean bill of health. `absent` here
+      means the migration has not run on this deployment, which is a different
+      fix from `empty` (resolve.persist_findings off, or no resolution yet).
+  - ref: cortex_finding_runs
+    note: >-
+      The DENOMINATOR for the table above — one upserted row per tenant, bumped
+      on EVERY resolution including the clean ones. It is what makes "your
+      sources agree" distinguishable from "nothing ever looked", so a zero here
+      turns every finding count on the Explorer into an unanswerable question
+      rather than a low number.
+  - ref: databridge_agent_access_log
+    note: >-
+      Every DataBridge broker call, allowed or denied (cef-fnd-03, migration
+      20260817010532). The `external` Cortex rung reaches an authorized outside
+      source through that broker and nowhere else, so this table is the only
+      record that an outbound fetch happened at all. Empty means no agent has
+      ever fetched — which for the one rung that leaves the boundary is a
+      security-relevant fact, not a quiet default.
+  - ref: db_connections
+    note: >-
+      The ENDPOINT rows the broker resolves a connector against (seeded from
+      args/databridge_connections.yaml by tools/databridge/seed_connections.py).
+      Declared apart from the access log because the failure modes are
+      different and both were live: a grant with no connection row is authorized
+      and unreachable, and a connection row whose auth_secret_ref does not
+      resolve is reachable and unusable. Empty here is why the `external` rung
+      answers nothing while every config file reads correct.
+  - ref: docmod_defacto_standards
+    note: >-
+      Learned de-facto standards. THE case cef-fnd-04 was opened for: 0 rows, and
+      not because the writer never ran — defacto_learner.recompute() runs on the
+      nightly sweep and read ni_devices, which itself holds 0 rows. `empty`
+      pointing at an EMPTY UPSTREAM is a different fix from `absent`, and merging
+      the two is what made this look like a missing migration for months. Fixed
+      by making the learner's input a declaration
+      (args/docmod/inventory_feeds.yaml) instead of one hardcoded table; it now
+      holds 32 rows derived from the topology feed. If it returns to 0, check
+      whether every declared feed is empty before suspecting the writer.
+  - ref: asset_identity
+    note: >-
+      The canonical asset identity (rmf-ident-01, migration
+      20260902205902). Load-bearing on a READ path and therefore silent when
+      empty: tools/security_canvas/device_pillar_orchestrator.resolve_fleet()
+      asks it for the managed fleet and falls back to the six-hostname
+      DEFAULT_FLEET fixture on an empty answer, so an empty table does not
+      break the ZIG device pillar — it makes its maturity score describe six
+      machines that do not exist, which is exactly what it did before this
+      table existed. tools/assets/identity.py::asset_posture() is the other
+      reader: it is the ONLY path from a discovered device to a ZT decision to
+      an attack-surface row to an enclave, and with no rows it answers
+      "no asset with that id" for every real machine on the estate.
+      Populated by `python -m tools.assets.identity --ingest` from
+      ni_devices, zig_device_registry and nc_vuln_hosts. Note that ni_devices
+      is ITSELF a declared substrate that has read 0 rows (see
+      docmod_defacto_standards above), so an empty asset_identity here may be
+      an empty UPSTREAM rather than a writer that never ran — `--ingest`
+      reports each source's row count separately for that reason.
+  - ref: rmf_workflow_stages
+    note: >-
+      The RMF step ledger both cycle-time clocks are read from (rmf-cyc-01,
+      migration 20260902233931): automation_time spans started_at ->
+      submitted_at, decision_latency spans submitted_at -> completed_at.
+      Load-bearing on a READ path and silent when empty -- the ATO dashboard
+      (tools/ato_compliance/dashboard.py::get_rmf_stages) hands back six
+      synthetic not_started stages for a project with no rows, so an estate
+      nobody has assessed renders identically to one at the start of its
+      lifecycle. rmf-rail-01 made get_posture_score ask this table directly
+      and report rmf_pct None over no rows. 0 rows on the live board at
+      declaration time; the writers are the five artifact producers routed
+      through tools/compliance/rmf_stage_recorder.py, none of which has run
+      here yet.
+  - ref: asset_visibility_snapshots
+    note: >-
+      What each asset-visibility measurement SAID at the time it was taken
+      (rmf-vis-01, migration 20260902223458), one row per (fabric, run). It
+      is the only record from which a visibility trend can be drawn, and the
+      trend surface reads nothing else, so an empty table here is a trend
+      that cannot be drawn rather than a flat one. Every persisted row carries
+      the state (unmeasurable | not_assessed | assessed) beside the pct, and
+      pct is NULL under the first two -- a reader that COALESCEs it to 0 or
+      100 reintroduces the defect the table was built to refuse. 0 rows on
+      the live board at declaration time.
+  - ref: cato_evidence
+    note: >-
+      The per-control cATO evidence rows that every readiness figure divides
+      by: tools/compliance/cato_monitor.py::compute_cato_readiness (readiness
+      and automation percentages), tools/compliance/ato_packager.py (the
+      "evidence fresh" step and checklist item) and the cross-fabric roll-up
+      in tools/fabric/posture.py. Load-bearing on a READ path: with no rows
+      the readiness percentages were 0.0 -- indistinguishable from a measured
+      failure -- until rmf-rail-01 made them None, and the roll-up reports
+      not_assessed. 0 rows on the live board at declaration time; the writer
+      is cato_monitor.collect_evidence, which nothing on this deployment has
+      invoked.
+  - ref: project_controls
+    note: >-
+      The denominator of the ATO posture percentage
+      (tools/ato_compliance/dashboard.py::get_control_summary), of the
+      crosswalk coverage, and of the packager's "controls >= 80% implemented"
+      step. Old table, listed now because the failure was silent: over 0 rows
+      posture_pct read 0.0 and the composite ATO score graded the project F
+      with 55 artifact points awarded for the ABSENCE of POAM items and STIG
+      findings. rmf-rail-01 made every one of those None. 0 rows on the live
+      board at declaration time -- nothing here has assigned a control to a
+      project.
+  - ref: floci_twin_snapshots
+    note: >-
+      Every snapshot the floci twin adapter freezes of the LOCAL AWS emulator
+      (flx-twin-01, migration 20260905070028). Listed the day it was created,
+      before it can hold anything, because its emptiness is the interesting
+      state: the emulator ships OFF (FLOCI_ENABLED, default false) and a
+      deployment that never turns it on will never write a row here, so a
+      reader designing against this table must be told it is empty rather than
+      discovering it. Every row carries provenance `emulated` -- an emulated
+      estate is NOT evidence about a real one, and a non-zero count here says
+      nothing about any deployed fleet.
+  - ref: floci_oci_twin_snapshots
+    note: >-
+      Every snapshot the floci-oci twin adapter freezes of the LOCAL Oracle
+      Cloud emulator (flx-oci-01, migration 20260905115811). Listed the day it
+      was created, for the same reason as floci_twin_snapshots above: the
+      emulator ships OFF (FLOCI_OCI_ENABLED, default false), so a deployment
+      that never turns it on will never write a row and a reader designing
+      against this table must be TOLD it is empty rather than discover it.
+      Every row carries provenance `emulated`. TWO CAVEATS BEYOND ITS SIBLINGS.
+      A non-zero count here says nothing about any deployed fleet AND nothing
+      about ICDEV's OCI support: the emulator's only ICDEV consumers are the
+      DataBridge connector and this twin, because the OCI provider layer is
+      stubbed (docs/spikes/flx-oci-parity.md §1). And rows counted from the
+      `clusters` lane are RECORDS, not running clusters -- floci-oci 0.4.0
+      reports OKE `lifecycleState: ACTIVE` for clusters whose k3s container
+      died on start, which is why every snapshot names `unverified_tables`.
+      NOTE the two sibling tables `floci_az_twin_snapshots` and
+      `floci_gcp_twin_snapshots` are the same shape and are NOT registered
+      here; their absence from this list is an omission, not a claim that they
+      hold rows.
+  - ref: sbom_components
+    note: >-
+      The per-component inventory `sbom_generator._persist_components` writes,
+      one row per finished CycloneDX component. Registered by xrv-bin-03, which
+      added a SECOND kind of row to it: a component OBSERVED in a compiled
+      artifact's strings rather than DECLARED in a manifest. That kind exists
+      only where an operator passed `--binary`, so on a deployment that never
+      does, this table holds exactly what it always held -- an empty read here
+      is "no SBOM has been generated", NEVER "the artifacts contain nothing".
+      Its own history is the reason it is listed: the column `license` sat dead
+      from migration 209 until sbx-fld-04, because the canonical generator had
+      never written the table at all, and nothing said so.
+  - ref: sbom_records
+    note: >-
+      One row per generated SBOM. The DENOMINATOR for the table above, and the
+      distinction xrv-bin-03 needs: `sbom_components` empty WITH rows here is a
+      writer problem, and both empty is a deployment that has generated no SBOM.
+      It is also the only place a generated document's path is recorded, which
+      is what a corroboration (`tools/devsecops/artifact_corroboration.py`) is
+      pointed at when an operator does not name an SBOM file by hand.
+
+# The five incidents this measurement was built for. Each is asserted to be
+# measurable — `--gate` fails when a case's class cannot be measured at all,
+# because an unmeasurable capability is exactly the state that let these ship.
+# A NON-zero count here is not a failure: it means the wiring landed.
+#
+# `metric` picks what answers the case:
+#   events      — "this capability was never used at all"; still_inert when the
+#                 class recorded no consumption events in the window.
+#   inert_units — "some declared units in this class were never used"; a busy
+#                 class hides those behind a healthy total, so still_inert when
+#                 ANY declared unit sat at zero.
+known_inert_cases:
+  - id: audit_chain_writer
+    capability_class: audit_chain
+    metric: events
+    note: >-
+      Chain columns, verifier, bundle format and dashboard all shipped; the
+      audit writer never populated hash/previous_hash.
+  - id: mcp_tool_authorizer
+    capability_class: mcp_tool_authorization
+    metric: events
+    note: >-
+      Zero call sites for most of its life, while fedramp_ksi_generator counted
+      the file's existence as satisfied evidence. Wired onto the MCP HTTP
+      surface by exa-policy-05 in monitor mode.
+  - id: prompt_registry
+    capability_class: prompt_template
+    metric: events
+    note: >-
+      0 rows in prompt_versions and 0 importers of tools/llm/prompt_registry.py.
+      Wired into LLMRouter by exa-refine-01 as the SUPPLEMENTAL prompt-layer read
+      path (`_apply_prompt_layers`, reserved `layer/` namespace, base prompt
+      immutable), then given rows by exa-refine-02: `--import-hardprompts` seeds
+      hardprompts/, `--seed-call-sites` seeds the `call_site/` bodies, and three
+      call sites (gepa_optimizer, reflexion_agent, nova/skill_generator) read
+      their prompt through `render_prompt` instead of an f-string literal. Stays
+      listed rather than declared done, because the thing worth counting is
+      whether rows and reads exist on a given INSTALL — a wired read path with an
+      unseeded registry is still a no-op, and that is exactly the state this
+      entry is here to make visible.
+  - id: gepa_optimizer
+    capability_class: skill_optimizer
+    metric: events
+    note: >-
+      Dispatched every 24h and running — genesis_reflex_state showed 7 runs, 7
+      successes, last_metric_value 0.0 every time — while recording nothing.
+      The original note here blamed the >= 0.05 delta filter against artifacts
+      with composite_score == baseline_score; exa-refine-03 fixed the WRITERS
+      (reflexion_agent now scores the candidate independently of the baseline
+      and resolves skill_used from the traces) but could not fix the 132 rows
+      already in the queue, whose scores are immutable because nothing rescores
+      an artifact after insert. rem-cap-01 found the reason that backlog was
+      permanent: GEPA could only ever write status='applied', so an artifact it
+      declined stayed 'pending' forever. GEPA now records a decision — applied
+      or declined, terminal or retryable — against every artifact it evaluates,
+      which both drains the immortal queue and makes a correct decline
+      measurable. Stays listed rather than declared done because the thing
+      worth counting is whether a given INSTALL's GEPA is deciding anything: a
+      wired optimizer with no artifacts to judge is still a no-op, and that is
+      exactly the state this entry makes visible.
+  - id: inert_reflexes
+    capability_class: reflex
+    metric: inert_units
+    note: >-
+      xbm-wake-01 (latched circuit breaker), xbm-wake-02 (eight enabled
+      reflexes absent from REFLEX_NAMES) and hgx-obs-02 — enabled, importable,
+      catalogued, never executed. Counted per-reflex: a class total stays
+      healthy while individual reflexes sit at zero.
+  - id: claim_verifier_unconsumed
+    capability_class: verified_claim
+    metric: events
+    note: >-
+      tools/awareness/claim_verifier.py (rem-hyg-17) is the verified-fact
+      learner this platform needs and for its first day it was consumed by
+      NOBODY: no reflex, no scheduler, no daemon imported it (measured across
+      tools/genesis/, tools/ci/, tools/kanban/ on 2026-08-20), it held 4 claims
+      and ran only when a human typed the command — and it was not registered
+      here, the gate that exists to catch exactly that. The immune system was
+      not covered by the immune system. autonomy-act-01 scheduled it as the
+      claim_verifier_reflex and registered this class. Stays listed because the
+      thing worth counting is whether a given INSTALL's daemon is verifying
+      anything: a registered reflex on a daemon that was never restarted is
+      still a no-op, and that is the state this entry makes visible.

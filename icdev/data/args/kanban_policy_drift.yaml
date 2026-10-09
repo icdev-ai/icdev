@@ -1,0 +1,63 @@
+# CUI // SP-CTI
+# Legacy policy phrasings that should become card-linked policy blocks.
+#
+# Read by tools/kanban/policy_drift.py. See
+# docs/features/kax-merge-02-policy-drift.md for the decision record.
+#
+# WHAT BELONGS HERE, AND WHAT DOES NOT
+# ------------------------------------
+# This file describes what is STALE. It never carries the replacement text —
+# that always comes from `policy:` on the project entry in args/projects.yaml,
+# so correcting a card is the only edit a policy change needs. A rule here is
+# a ONE-TIME migration: it converts a row that carries policy as unmarked free
+# text into a row that carries a delimited `<!-- icdev:policy <key> -->` block.
+# After that the row tracks the card by itself and the rule never fires for it
+# again.
+#
+# Every rule is validated at load (tools/kanban/policy_drift.py::load_rules)
+# and a violation raises rather than narrowing silently:
+#   * applies_to.task_id_prefix is REQUIRED and non-empty
+#   * every prefix must start with the project's own task_prefix
+#   * the project must exist and must have a `policy:` field
+#   * the project must not be in exempt_projects
+#   * legacy_pattern must compile
+#   * `why` is required
+#
+# tests/test_kanban_policy_drift.py additionally asserts that no rule's
+# legacy_pattern matches its own card's CURRENT policy text — otherwise a fixed
+# row would re-match forever and the checker would rewrite the board on a loop.
+
+version: 1
+
+# Cards whose embedded policy is DELIBERATE and must never be "corrected".
+# This veto outranks everything, including a `policy:` field on the card: a row
+# belonging to an exempt project is skipped by the block path and by every
+# rule, and load_rules() refuses a rules file that names one.
+exempt_projects:
+  agov: >-
+    AGOV is MANUAL-ONLY. It touches .claude/hooks/pre_tool_use.py and the
+    approval gate, and tools/ci/pr_watcher.py auto-merges any CI-green kanban/*
+    branch, so its 19 rows legitimately instruct `gh pr create --draft` — the
+    draft flag is the second lock behind agov-gate-00, not a stale copy of an
+    old rule. Do not add a `policy:` to the agov card expecting this file to
+    manage it.
+
+rules:
+  - id: hgx-preamble-gate-00
+    project: hgx
+    applies_to:
+      task_id_prefix:
+        - hgx-
+    why: >-
+      The HGX rows carry a preamble stating the card is "gated on hgx-gate-00".
+      That gate was released and superseded by hgx-gate-02 on 2026-08-08, so a
+      session reading its description was told to wait on a hold that no longer
+      exists and to ignore the one that does. The same preamble is where the
+      "--draft" instruction lived before it was corrected in place on 35 rows;
+      converting it to a card-linked block is what stops the next correction
+      from needing 35 hand edits. Matching the whole preamble rather than the
+      one stale clause is deliberate — a clause-level rule leaves the
+      surrounding sentence describing a policy that no longer applies.
+    legacy_pattern: >-
+      Card: HGX — Harness Agent Parity and Graph Runtime\. MANUAL-ONLY, gated
+      on\s+hgx-gate-00\..*?not the draft flag\.

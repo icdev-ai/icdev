@@ -1,48 +1,40 @@
 # CUI // SP-CTI
 # ICDEV™ Capability Domain: Harness Engineering
 # Auto-generated from icdev_capability_catalog.json + CLAUDE.md
-# Last refreshed: 2026-03-13
+# Last refreshed: 2026-07-27
+#
+# 2026-07-27 (ahx-doc-01): this file previously advertised three capabilities —
+# maturity-assessor, trace-analyzer and exit-criteria — carrying five CLI
+# examples under tools/harness/. None of the three tools existed anywhere in the
+# repository; tools/harness/ holds only cli_generator.py and
+# mcp_wrapper_generator.py. The claims were aspirational documentation that
+# survived because args/doc_command_gate.yaml only scanned CLAUDE.md and
+# docs/reference/commands.md, never context/capabilities/*.yaml.
+#
+# That mattered beyond tidiness: tools/pulse/engine/capability_scanner.py reads
+# every file in this directory and feeds `article_hooks` into generated content,
+# so "6-dimension maturity scoring (Level 0-4)" was a publishable claim about
+# software that was never written. (The GovCon proposal catalog at
+# context/govcon/icdev_capability_catalog.json was checked and does NOT carry
+# these claims, so proposal content was unaffected.)
+#
+# Replaced with the one harness capability that is real and measurable. Do not
+# re-add a capability here before its CLI resolves to a committed file — the
+# doc-command gate now covers this directory.
 
 domain: harness
-description: "AI agent maturity assessment, exit criteria evaluation, loop detection, and trace analysis"
+description: "Continuous evaluation of autonomous reflex decision quality — calibration, precision/recall, and adaptive gate thresholds"
 capabilities:
-  - slug: maturity-assessor
-    name: "AI Agent Maturity Assessment"
-    description: "6-dimension maturity scoring (Level 0-4) for AI agent harness quality: loop detection, exit criteria, trace analysis, scaffolding"
+  - slug: continuous-eval-harness
+    name: "Genesis Continuous Evaluation Harness"
+    description: "Records every gated reflex decision with its confidence score, pairs it with the outcome that actually occurred, and computes precision, recall, Expected Calibration Error and false-heal rate over the result. Reports whether a stated confidence predicts correctness, per rule rather than per confidence band."
     cli_examples:
-      - "python tools/harness/maturity_assessor.py --project-dir . --detailed --json"
-    related_controls: ["SA-11", "SI-4"]
+      - "python -m tools.genesis.harness.calibration_report --json"
+    related_controls: ["SA-11", "SI-4", "AU-6"]
     article_hooks:
-      - "6-dimension maturity assessment measures how well your AI agents are harnessed -- from ad hoc (Level 0) to self-improving (Level 4)"
-      - "Read-only, advisory-only -- the assessor measures but never modifies, ensuring safe evaluation"
+      - "A reflex that says it is 95% confident should be right about 95% of the time — the calibration report is what checks, and it reports per rule, because a band's number is one rule's number with a rounding error attached"
+      - "Reporting only: the harness never moves a threshold on its own. A gate that retunes itself from a small, biased sample can silently widen"
+      - "Unmeasured is reported as unmeasured — a point estimate off three samples is noise wearing a decimal point, so the report withholds it rather than manufacturing certainty"
     frameworks: []
-    keywords: ["harness", "maturity", "AI agent", "loop detection", "exit criteria", "agent quality"]
-    source_catalog_id: "cap-harness"
-
-  - slug: trace-analyzer
-    name: "Agent Trace Analysis"
-    description: "Scanner-tier trace pattern analysis: loop detection, tool usage patterns, recommendation generation for improving agent behavior"
-    cli_examples:
-      - "python tools/harness/trace_analyzer.py --last-n 5 --json"
-      - "python tools/harness/trace_analyzer.py --recommendations --limit 20 --json"
-    related_controls: ["AU-6", "SI-4"]
-    article_hooks:
-      - "Trace analysis detects agent behavioral patterns -- are your agents looping, diverging, or converging on solutions?"
-      - "Scanner-tier analysis with zero Claude tokens -- recommendations generated from pattern matching, not LLM inference"
-    frameworks: []
-    keywords: ["trace analysis", "agent behavior", "loop detection", "recommendations", "pattern analysis"]
-    source_catalog_id: "cap-harness"
-
-  - slug: exit-criteria
-    name: "Workflow Exit Criteria"
-    description: "Declarative YAML exit criteria for build, test, deploy, and compliance workflows with state-based evaluation"
-    cli_examples:
-      - "python tools/harness/exit_criteria_evaluator.py --list --json"
-      - "python tools/harness/exit_criteria_evaluator.py --workflow build --json"
-    related_controls: ["SA-11", "CM-3"]
-    article_hooks:
-      - "Exit criteria prevent workflows from running forever -- declarative conditions that must be met before proceeding"
-      - "State-based evaluation checks actual system state against required conditions, not just time elapsed"
-    frameworks: []
-    keywords: ["exit criteria", "workflow control", "build gate", "test gate", "deploy gate"]
+    keywords: ["harness", "calibration", "ECE", "precision", "recall", "reflex quality", "agent quality", "confidence"]
     source_catalog_id: "cap-harness"

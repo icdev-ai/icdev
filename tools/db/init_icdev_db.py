@@ -5631,7 +5631,7 @@ CREATE INDEX IF NOT EXISTS idx_prop_dep_depends ON proposal_section_dependencies
 -- L/M/N compliance matrix: links RFP requirements to proposal sections.
 -- THE ONE compliance matrix (rmf-rfp-01): pg_compliance_matrix was folded into
 -- it by migration 20260903185253. Both CHECKs derive from
--- tools/govcon/compliance_matrix_schema.py (placeholders substituted below).
+-- tools/db/compliance_matrix_schema.py (placeholders substituted below).
 CREATE TABLE IF NOT EXISTS proposal_compliance_matrix (
     id TEXT PRIMARY KEY,
     opportunity_id TEXT NOT NULL REFERENCES proposal_opportunities(id),
@@ -11310,7 +11310,7 @@ SCHEMA_SQL = SCHEMA_SQL.replace("@@HOOK_EVENT_TYPES@@", "        " + _hook_type_
 
 # rmf-rfp-01: the ONE compliance matrix's two CHECKs derive from the tuples the
 # builder, the migration and the API share, so the vocabulary cannot drift.
-from tools.govcon.compliance_matrix_schema import (  # noqa: E402
+from tools.db.compliance_matrix_schema import (  # noqa: E402
     COMPLIANCE_STATUSES as _CMX_STATUSES,
     REQUIREMENT_TYPES as _CMX_TYPES,
     sql_in_list as _cmx_sql_in_list,

@@ -251,19 +251,18 @@ pyelftools>=0.31          # ELF dynamic symbols (public domain) — tools/analyz
 # `icdev.core.paths`, `.domain`, `.context` and `.sensitivity` come from this
 # distribution, and `assert_identity` runs at the start of the dashboard, the genesis
 # daemon, migrate.py and kanban/cli.py -- so this is a hard runtime dependency, not an
-# optional extra. Pinned to a TAG, never a branch: a floating `main` makes the parent's
-# core-API gate describe whatever happened to be installed.
+# optional extra. Pinned EXACTLY, and it must equal `pinned_version` in
+# args/core_api.yaml: a floating core makes the parent's core-API gate describe whatever
+# happened to be installed.
 #
-# THE CONCRETE URL BELONGS HERE AND NOT IN pyproject.toml, which declares the ABSTRACT
+# THE EXACT PIN BELONGS HERE AND NOT IN pyproject.toml, which declares the ABSTRACT
 # requirement `icdev-core>=0.2.0`. A distribution states what it needs; an environment
-# states where to get it. Keeping the VCS URL out of the package metadata is also what
-# lets the air-gap path below work at all -- a `@ git+https` in an installed wheel's
-# metadata would be re-resolved over the network on every reinstall.
+# states exactly what it runs.
 #
-# AIR-GAPPED INSTALLS: icdev-core is not on PyPI, so this line needs GitHub. On a
-# restricted host, mirror the release wheel into the local wheelhouse and install with
-# `pip install --no-index --find-links <wheelhouse> icdev-core==0.2.0` BEFORE running
-# `pip install -r requirements.txt`; pip then treats the requirement as satisfied. Do
-# NOT drop the pin to make an air-gapped install succeed -- an unpinned core is what
+# FROM PyPI SINCE 0.2.1 (it was a `git+https` URL before icdev-core was published), so
+# `pip install icdev` resolves it with no GitHub access. AIR-GAPPED INSTALLS: build the
+# wheelhouse with `pip download -r requirements.txt` (or `pip download icdev`) -- icdev-core
+# is included -- then `pip install --no-index --find-links <wheelhouse> -r requirements.txt`.
+# Do NOT drop the pin to make an air-gapped install succeed -- an unpinned core is what
 # args/core_api.yaml exists to refuse.
-icdev-core @ git+https://github.com/icdev-ai/icdev-core@v0.2.0
+icdev-core==0.2.1

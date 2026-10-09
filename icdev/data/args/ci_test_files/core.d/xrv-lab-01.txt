@@ -1,0 +1,5 @@
+# xrv-lab-01 — the experiment and foundry reflexes stop reporting a measurement
+# they did not make. Gated in the PR that makes them pass.
+tests/genesis/test_experiment_reflex_honesty.py
+tests/foundry/test_stages_missing.py
+tests/awareness/test_claim_experiment_loop.py

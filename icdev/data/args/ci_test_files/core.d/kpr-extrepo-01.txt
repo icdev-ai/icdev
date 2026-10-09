@@ -1,0 +1,2 @@
+# kpr-extrepo-01 -- task-scoped git must run in the TASK's repo, not always in ICDev.
+tests/kanban/test_external_repo_verification.py

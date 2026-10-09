@@ -1,0 +1,3 @@
+# xit-decl-04 - schema ownership manifests, the sensitivity seam, and the RLS catalog exemption by name.
+tests/db/test_schema_ownership.py
+tests/core/test_sensitivity.py

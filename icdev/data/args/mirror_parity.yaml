@@ -14,3 +14,6 @@ mirrored_roots:
   - tools/quality
   - tools/iqe/adapters
   - tools/mcp/cortex_server.py
+  # anz-con-01: the analyzer/responder contract loader. Mirrored so a generated
+  # child app can declare analyzers in config the same way the platform does.
+  - tools/analyzers

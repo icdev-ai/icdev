@@ -5,12 +5,44 @@ default_adapter: auto  # 'auto', 'claude_cli', 'local_llm_router', ...
 enabled_adapters:
   - claude_cli
   - local_llm_router
-  # - codex_cli     # stub — uncomment when wired
+  # hgx-exec-02 — the OWNED build path: the rubric-gated agent loop with the
+  # worktree toolset, graded by the real delivery gates. Unlike
+  # local_llm_router it edits files. Enabled but deliberately absent from
+  # fallback_order below, so selection stays byte-unchanged for existing
+  # consumers until one opts in via ICDEV_AGENT_ADAPTER=local_agent or a
+  # per_task_type_preference entry.
+  - local_agent
+  # exa-bench-01 — the OpenAI Codex CLI shellout, implemented against the same
+  # Protocol as claude_cli. Enabled so it is reachable via
+  # ICDEV_AGENT_ADAPTER=codex_cli, but deliberately absent from fallback_order
+  # and per_task_type_preference below: the exa-bench-03 capability probe has
+  # not measured it yet, so nothing routes to it by default.
+  - codex_cli
   # - copilot_cli   # stub — uncomment when wired
+  # exa-bench-02 — copilot_cli is no longer a stub (its available() was
+  # `False and shutil.which("gh")`, which short-circuits) and goose_cli is new.
+  # Both are enabled so they are reachable via ICDEV_AGENT_ADAPTER=<name>, and
+  # both are deliberately absent from fallback_order and per_task_type_preference
+  # below: the exa-bench-03 capability probe has not measured them yet, so
+  # nothing routes to them by default.
+  #
+  # The stale `# - copilot_cli` line above is left in place ON PURPOSE. This
+  # file is NOT union-merged — it is YAML, where taking the superset of two
+  # branches produces duplicate keys — so two branches editing ADJACENT lines
+  # conflict here even though the manifest shard and the CI allowlists in the
+  # same commit merge cleanly. exa-bench-01 rewrites the codex_cli line
+  # immediately above, and rewriting this one too would make these two
+  # same-epic PRs siblings that cannot co-merge, costing a rebase and a HITL
+  # escalation to buy one line of tidying. Delete it in any later commit that
+  # already has to touch this block.
+  - copilot_cli
+  - goose_cli
 
 # Prefer claude_cli for anything that actually needs to edit files; use
 # local_llm_router for research/plan tasks that only need a written
-# output.
+# output. local_agent is the air-gap alternative to claude_cli for
+# file-editing work (it degrades to prose when the provider can't do
+# native tool use).
 per_task_type_preference:
   build: claude_cli
   fix: claude_cli

@@ -1,0 +1,2 @@
+# kpr-watch-21 — the done-gate refusal names the command that clears it
+tests/ci/test_done_gate_names_its_remedy.py

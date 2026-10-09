@@ -1,0 +1,5 @@
+# task-det-ccb52986c1 - born-red fix (rem-hyg-14 finding ccb52986c16ec8b7).
+# The file was red from birth because it seeded and DROPPED tables in the
+# ambient data/icdev.db; it now runs on its own tmp_path SQLite file. Gated
+# here so it can never be born red again.
+tests/govcon/test_past_performance_suggester.py

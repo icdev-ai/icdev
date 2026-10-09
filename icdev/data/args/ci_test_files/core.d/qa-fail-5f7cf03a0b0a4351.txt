@@ -1,0 +1,6 @@
+# qa-fail-5f7cf03a0b0a4351 -- GET /coworker/<id> answered 200 application/json for every
+# existing instance: instance.html asked for resume_token, the running route never passed
+# it, and the except Exception around render_template turned a TypeError into a JSON 200.
+# Pins the HTML render + resume_token pass-through AND that every ace_bp page route
+# answers a template failure with 500 text/html, behaviourally and over the AST.
+tests/test_ace_instance_page_render.py

@@ -1,0 +1,1473 @@
+{
+  "task": "tsr-doc-01-d3",
+  "checkout": "C:\\AI\\ICDev",
+  "files_run": 162,
+  "files_clean": 153,
+  "files_failing": 9,
+  "files_zero_tests": 0,
+  "total_passed": 2534,
+  "total_failed": 17,
+  "total_error": 9,
+  "total_skipped": 10,
+  "wall_seconds": 632.0,
+  "results": [
+    {
+      "file": "tests/browser/test_scope.py",
+      "rc": 1,
+      "seconds": 2.9,
+      "passed": 51,
+      "failed": 1,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/cortex/test_analyst_citations.py",
+      "rc": 0,
+      "seconds": 2.9,
+      "passed": 12,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/cortex/test_governance_pipeline.py",
+      "rc": 0,
+      "seconds": 2.7,
+      "passed": 32,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/cortex/test_search_adapters.py",
+      "rc": 0,
+      "seconds": 4.5,
+      "passed": 20,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/docmod/test_architecture_patterns_pack.py",
+      "rc": 0,
+      "seconds": 2.6,
+      "passed": 30,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/docmod/test_bridge_persist.py",
+      "rc": 0,
+      "seconds": 2.8,
+      "passed": 1,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/docmod/test_change_control_pack.py",
+      "rc": 0,
+      "seconds": 2.8,
+      "passed": 16,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/docmod/test_claim_extractor.py",
+      "rc": 0,
+      "seconds": 2.8,
+      "passed": 18,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/docmod/test_claim_lifecycle.py",
+      "rc": 0,
+      "seconds": 3.0,
+      "passed": 18,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/docmod/test_core_engine.py",
+      "rc": 0,
+      "seconds": 2.8,
+      "passed": 10,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/docmod/test_cross_reference_tracker.py",
+      "rc": 0,
+      "seconds": 2.9,
+      "passed": 11,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/docmod/test_domain_packs.py",
+      "rc": 0,
+      "seconds": 3.0,
+      "passed": 12,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/docmod/test_evidence_currency_pack.py",
+      "rc": 0,
+      "seconds": 2.5,
+      "passed": 17,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/docmod/test_feed_wiring.py",
+      "rc": 0,
+      "seconds": 2.8,
+      "passed": 14,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/docmod/test_hitl_surfaces.py",
+      "rc": 0,
+      "seconds": 2.9,
+      "passed": 10,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/docmod/test_import_from_docgen.py",
+      "rc": 0,
+      "seconds": 3.1,
+      "passed": 9,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/docmod/test_link_check.py",
+      "rc": 0,
+      "seconds": 14.3,
+      "passed": 37,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/docmod/test_modernization_ui.py",
+      "rc": 0,
+      "seconds": 4.9,
+      "passed": 12,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/docmod/test_pack_generator.py",
+      "rc": 0,
+      "seconds": 3.1,
+      "passed": 20,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/docmod/test_pg_fixes_and_flow.py",
+      "rc": 0,
+      "seconds": 3.2,
+      "passed": 12,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/docmod/test_regen_quality_gate.py",
+      "rc": 1,
+      "seconds": 3.1,
+      "passed": 8,
+      "failed": 2,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/docmod/test_reverse_bridge.py",
+      "rc": 0,
+      "seconds": 3.0,
+      "passed": 6,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/docmod/test_sop_workflows_pack.py",
+      "rc": 0,
+      "seconds": 2.7,
+      "passed": 39,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/docmod/test_standards_catalog.py",
+      "rc": 0,
+      "seconds": 3.2,
+      "passed": 8,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/docmod/test_temporal_validity.py",
+      "rc": 0,
+      "seconds": 2.7,
+      "passed": 18,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/document_intelligence/test_chunk_repair.py",
+      "rc": 0,
+      "seconds": 3.0,
+      "passed": 14,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/document_intelligence/test_freshness_notifier.py",
+      "rc": 0,
+      "seconds": 12.7,
+      "passed": 11,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/document_intelligence/test_table_extract.py",
+      "rc": 0,
+      "seconds": 3.2,
+      "passed": 22,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/genesis_auto/test_extractors.py",
+      "rc": 1,
+      "seconds": 3.0,
+      "passed": 6,
+      "failed": 1,
+      "error": 0,
+      "skipped": 10
+    },
+    {
+      "file": "tests/genesis_auto/test_ingest_orchestrator.py",
+      "rc": 0,
+      "seconds": 2.7,
+      "passed": 7,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/govcon/test_past_performance_suggester.py",
+      "rc": 1,
+      "seconds": 3.1,
+      "passed": 0,
+      "failed": 1,
+      "error": 8,
+      "skipped": 0
+    },
+    {
+      "file": "tests/http/test_egress_guard.py",
+      "rc": 0,
+      "seconds": 2.7,
+      "passed": 27,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/http/test_fetch_extract_retrofit.py",
+      "rc": 0,
+      "seconds": 4.7,
+      "passed": 29,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/quality/test_rigor_gates.py",
+      "rc": 0,
+      "seconds": 3.3,
+      "passed": 7,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_acoic_hitl_audit.py",
+      "rc": 0,
+      "seconds": 3.1,
+      "passed": 9,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_capture_strategy.py",
+      "rc": 0,
+      "seconds": 3.1,
+      "passed": 31,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_categorical_scoring.py",
+      "rc": 0,
+      "seconds": 3.0,
+      "passed": 22,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_citation_grounding.py",
+      "rc": 0,
+      "seconds": 2.7,
+      "passed": 30,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_claim_grounding.py",
+      "rc": 0,
+      "seconds": 2.7,
+      "passed": 39,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_clx_control_loop.py",
+      "rc": 0,
+      "seconds": 2.7,
+      "passed": 34,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_completion_auditor.py",
+      "rc": 0,
+      "seconds": 2.8,
+      "passed": 13,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_constitutional_ai.py",
+      "rc": 0,
+      "seconds": 3.1,
+      "passed": 13,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_content_grounding.py",
+      "rc": 0,
+      "seconds": 2.8,
+      "passed": 22,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_context_budget.py",
+      "rc": 0,
+      "seconds": 8.1,
+      "passed": 18,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_cove_architecture.py",
+      "rc": 0,
+      "seconds": 2.8,
+      "passed": 13,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_crx_kg_blast_radius.py",
+      "rc": 0,
+      "seconds": 2.7,
+      "passed": 9,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_derivation_disclosure.py",
+      "rc": 0,
+      "seconds": 2.6,
+      "passed": 31,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_acoic_ux.py",
+      "rc": 0,
+      "seconds": 3.3,
+      "passed": 17,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_aiassist_retry.py",
+      "rc": 0,
+      "seconds": 2.6,
+      "passed": 3,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_analytics_kg_linkage.py",
+      "rc": 0,
+      "seconds": 7.9,
+      "passed": 6,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_analytics_provenance.py",
+      "rc": 0,
+      "seconds": 3.5,
+      "passed": 1,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_anomaly_severity.py",
+      "rc": 0,
+      "seconds": 2.7,
+      "passed": 15,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_batch_ingest_anomaly.py",
+      "rc": 0,
+      "seconds": 2.7,
+      "passed": 11,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_bulk_edit_anomaly_detection.py",
+      "rc": 0,
+      "seconds": 2.8,
+      "passed": 20,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_chat_cortex_adoption.py",
+      "rc": 0,
+      "seconds": 4.9,
+      "passed": 3,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_chat_memory.py",
+      "rc": 0,
+      "seconds": 3.8,
+      "passed": 20,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_chat_memory_schema.py",
+      "rc": 0,
+      "seconds": 2.7,
+      "passed": 10,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_citation_publish_gate.py",
+      "rc": 0,
+      "seconds": 2.5,
+      "passed": 15,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_claim_grounding_wiring.py",
+      "rc": 0,
+      "seconds": 2.9,
+      "passed": 11,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_collection_listing_anomaly.py",
+      "rc": 0,
+      "seconds": 2.6,
+      "passed": 22,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_collection_registry.py",
+      "rc": 0,
+      "seconds": 12.3,
+      "passed": 14,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_collection_scoping.py",
+      "rc": 0,
+      "seconds": 2.6,
+      "passed": 9,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_confabulation.py",
+      "rc": 0,
+      "seconds": 2.6,
+      "passed": 4,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_consumer_file_anomaly.py",
+      "rc": 0,
+      "seconds": 2.7,
+      "passed": 14,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_consumer_pipeline_health_anomaly.py",
+      "rc": 0,
+      "seconds": 2.6,
+      "passed": 13,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_cove_gate.py",
+      "rc": 0,
+      "seconds": 3.0,
+      "passed": 19,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_cross_canvas_context.py",
+      "rc": 0,
+      "seconds": 2.6,
+      "passed": 8,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_dead_surfaces_removed.py",
+      "rc": 0,
+      "seconds": 2.9,
+      "passed": 12,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_derivation_all_paths.py",
+      "rc": 0,
+      "seconds": 3.0,
+      "passed": 5,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_derivation_wiring.py",
+      "rc": 0,
+      "seconds": 3.1,
+      "passed": 9,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_document_model_anomaly_detection.py",
+      "rc": 0,
+      "seconds": 3.7,
+      "passed": 17,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_document_routing_anomaly_detection.py",
+      "rc": 0,
+      "seconds": 3.3,
+      "passed": 10,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_extraction_quality.py",
+      "rc": 0,
+      "seconds": 2.8,
+      "passed": 13,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_field_validation_anomaly_detection.py",
+      "rc": 0,
+      "seconds": 3.6,
+      "passed": 19,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_filters.py",
+      "rc": 0,
+      "seconds": 2.7,
+      "passed": 18,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_freshness_engine.py",
+      "rc": 0,
+      "seconds": 3.2,
+      "passed": 13,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_graphrag_chat.py",
+      "rc": 0,
+      "seconds": 4.5,
+      "passed": 13,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_inbox.py",
+      "rc": 0,
+      "seconds": 2.9,
+      "passed": 13,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_inbox_sweep_reflex.py",
+      "rc": 0,
+      "seconds": 15.6,
+      "passed": 13,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_ingest_ai_summary.py",
+      "rc": 0,
+      "seconds": 2.6,
+      "passed": 10,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_ingest_anomaly_detection.py",
+      "rc": 0,
+      "seconds": 3.1,
+      "passed": 14,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_ingest_classify.py",
+      "rc": 0,
+      "seconds": 3.1,
+      "passed": 30,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_ingest_consumer_outcome_anomaly.py",
+      "rc": 0,
+      "seconds": 2.6,
+      "passed": 16,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_ingest_correspondence.py",
+      "rc": 0,
+      "seconds": 2.7,
+      "passed": 19,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_ingest_duplex_anomaly.py",
+      "rc": 0,
+      "seconds": 2.7,
+      "passed": 11,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_ingest_email_anomaly.py",
+      "rc": 0,
+      "seconds": 2.6,
+      "passed": 23,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_ingest_identifiers.py",
+      "rc": 0,
+      "seconds": 2.7,
+      "passed": 28,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_ingest_import_validation.py",
+      "rc": 0,
+      "seconds": 2.7,
+      "passed": 9,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_ingest_job_anomaly_detection.py",
+      "rc": 0,
+      "seconds": 14.7,
+      "passed": 18,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_ingest_label_match_criteria.py",
+      "rc": 0,
+      "seconds": 2.8,
+      "passed": 13,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_ingest_metadata.py",
+      "rc": 0,
+      "seconds": 2.9,
+      "passed": 24,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_ingest_near_duplicate.py",
+      "rc": 0,
+      "seconds": 2.9,
+      "passed": 10,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_ingest_ocr_cleanup.py",
+      "rc": 0,
+      "seconds": 2.8,
+      "passed": 12,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_ingest_orchestrator.py",
+      "rc": 0,
+      "seconds": 18.3,
+      "passed": 11,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_ingest_routing_metadata.py",
+      "rc": 0,
+      "seconds": 2.7,
+      "passed": 15,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_ingest_throughput_anomaly.py",
+      "rc": 0,
+      "seconds": 4.2,
+      "passed": 14,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_ingest_workflow_action_params.py",
+      "rc": 0,
+      "seconds": 2.8,
+      "passed": 19,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_ingest_workflow_mutations.py",
+      "rc": 0,
+      "seconds": 3.0,
+      "passed": 32,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_layout_probe.py",
+      "rc": 0,
+      "seconds": 2.6,
+      "passed": 6,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_lifecycle_assignment_anomaly.py",
+      "rc": 0,
+      "seconds": 2.6,
+      "passed": 20,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_nav_consistency.py",
+      "rc": 0,
+      "seconds": 2.7,
+      "passed": 5,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_output_export_anomaly_detection.py",
+      "rc": 0,
+      "seconds": 3.0,
+      "passed": 12,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_publish_gate.py",
+      "rc": 0,
+      "seconds": 3.6,
+      "passed": 12,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_re_enrich_metadata.py",
+      "rc": 0,
+      "seconds": 3.0,
+      "passed": 5,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_reasoning_scrub.py",
+      "rc": 0,
+      "seconds": 2.7,
+      "passed": 9,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_route_dedup.py",
+      "rc": 0,
+      "seconds": 2.8,
+      "passed": 7,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_search_access.py",
+      "rc": 0,
+      "seconds": 3.1,
+      "passed": 12,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_search_anomaly.py",
+      "rc": 0,
+      "seconds": 2.8,
+      "passed": 15,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_search_answer.py",
+      "rc": 0,
+      "seconds": 2.7,
+      "passed": 11,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_search_expand.py",
+      "rc": 0,
+      "seconds": 2.7,
+      "passed": 12,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_search_filter_coverage_anomaly.py",
+      "rc": 0,
+      "seconds": 2.7,
+      "passed": 16,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_search_filter_query.py",
+      "rc": 0,
+      "seconds": 2.9,
+      "passed": 22,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_search_intent.py",
+      "rc": 0,
+      "seconds": 3.0,
+      "passed": 16,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_search_keyword.py",
+      "rc": 0,
+      "seconds": 2.8,
+      "passed": 8,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_search_query_intent.py",
+      "rc": 0,
+      "seconds": 2.7,
+      "passed": 19,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_search_result_summary.py",
+      "rc": 0,
+      "seconds": 2.8,
+      "passed": 9,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_search_snippet.py",
+      "rc": 0,
+      "seconds": 2.8,
+      "passed": 14,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_style_engine.py",
+      "rc": 0,
+      "seconds": 2.8,
+      "passed": 11,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_techwriter.py",
+      "rc": 1,
+      "seconds": 19.2,
+      "passed": 28,
+      "failed": 0,
+      "error": 1,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_techwriter_citations.py",
+      "rc": 0,
+      "seconds": 3.1,
+      "passed": 10,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_template_chunking.py",
+      "rc": 0,
+      "seconds": 2.9,
+      "passed": 6,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_text_parse_quality.py",
+      "rc": 0,
+      "seconds": 3.0,
+      "passed": 14,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dic_view_anomaly_detection.py",
+      "rc": 0,
+      "seconds": 5.7,
+      "passed": 13,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_divergence_critic.py",
+      "rc": 0,
+      "seconds": 2.8,
+      "passed": 21,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_doc_generator_confidence_bands.py",
+      "rc": 0,
+      "seconds": 2.6,
+      "passed": 3,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_docdrift_rename.py",
+      "rc": 0,
+      "seconds": 2.9,
+      "passed": 12,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_docgen.py",
+      "rc": 0,
+      "seconds": 28.5,
+      "passed": 133,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_docgen_bridge_scrub.py",
+      "rc": 0,
+      "seconds": 4.7,
+      "passed": 8,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_docmod_drift_bridge.py",
+      "rc": 0,
+      "seconds": 3.1,
+      "passed": 16,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dsyn_canvas_adapter.py",
+      "rc": 0,
+      "seconds": 3.3,
+      "passed": 20,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dsyn_consistency.py",
+      "rc": 1,
+      "seconds": 3.6,
+      "passed": 15,
+      "failed": 1,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dsyn_dic_integration_reflex.py",
+      "rc": 0,
+      "seconds": 3.4,
+      "passed": 11,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dsyn_patch_mode.py",
+      "rc": 1,
+      "seconds": 3.2,
+      "passed": 20,
+      "failed": 3,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dsyn_suggest.py",
+      "rc": 0,
+      "seconds": 3.3,
+      "passed": 11,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dsyn_suggestion_api.py",
+      "rc": 0,
+      "seconds": 5.1,
+      "passed": 22,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dsyn_suggestion_store.py",
+      "rc": 0,
+      "seconds": 3.1,
+      "passed": 19,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dsyn_vv_smoke.py",
+      "rc": 0,
+      "seconds": 3.0,
+      "passed": 19,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dvg_benchmark.py",
+      "rc": 0,
+      "seconds": 2.9,
+      "passed": 8,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dvg_wire04_mcp.py",
+      "rc": 0,
+      "seconds": 3.2,
+      "passed": 5,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dvg_wire_creative_branch.py",
+      "rc": 0,
+      "seconds": 3.4,
+      "passed": 10,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_dvg_wire_solution_divergence.py",
+      "rc": 0,
+      "seconds": 2.9,
+      "passed": 7,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_idr_multi_source.py",
+      "rc": 1,
+      "seconds": 3.3,
+      "passed": 18,
+      "failed": 1,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_markitdown_adapter.py",
+      "rc": 0,
+      "seconds": 2.8,
+      "passed": 9,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_mcp_writeguard_tool.py",
+      "rc": 0,
+      "seconds": 3.2,
+      "passed": 4,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_nav_intel_09_d5_judge_publish_integration.py",
+      "rc": 0,
+      "seconds": 3.7,
+      "passed": 9,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_network_doc_lifecycle.py",
+      "rc": 0,
+      "seconds": 4.9,
+      "passed": 33,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_penta_aiify_trust.py",
+      "rc": 0,
+      "seconds": 4.0,
+      "passed": 11,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_placeholder_promote_gate.py",
+      "rc": 0,
+      "seconds": 3.3,
+      "passed": 19,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_publish_gates.py",
+      "rc": 0,
+      "seconds": 2.8,
+      "passed": 9,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_review_loop.py",
+      "rc": 0,
+      "seconds": 3.0,
+      "passed": 26,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_rted_conflict_detector.py",
+      "rc": 1,
+      "seconds": 3.4,
+      "passed": 4,
+      "failed": 7,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_rted_history_api.py",
+      "rc": 0,
+      "seconds": 3.2,
+      "passed": 8,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_rted_history_recorder.py",
+      "rc": 0,
+      "seconds": 2.8,
+      "passed": 12,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_rted_history_ui.py",
+      "rc": 0,
+      "seconds": 3.3,
+      "passed": 17,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_rted_lock_manager.py",
+      "rc": 0,
+      "seconds": 2.8,
+      "passed": 14,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_rted_presence_api.py",
+      "rc": 0,
+      "seconds": 3.3,
+      "passed": 11,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_rted_presence_registry.py",
+      "rc": 0,
+      "seconds": 2.7,
+      "passed": 13,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_rted_vv_smoke.py",
+      "rc": 0,
+      "seconds": 4.1,
+      "passed": 18,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_tech_writing_assist.py",
+      "rc": 0,
+      "seconds": 3.0,
+      "passed": 13,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_tw_standards_validation.py",
+      "rc": 0,
+      "seconds": 2.8,
+      "passed": 17,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_verifier_contract.py",
+      "rc": 0,
+      "seconds": 13.9,
+      "passed": 12,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/test_wiki_integrations.py",
+      "rc": 0,
+      "seconds": 5.7,
+      "passed": 19,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    }
+  ]
+}

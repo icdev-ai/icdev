@@ -1,0 +1,5 @@
+# A scheduler restart must not turn correct work into a phantom completion.
+# `_worktrees` is in-memory and code_reload re-execs the scheduler routinely, so
+# the old `or str(BASE_DIR)` fallback checked the agent's claimed files against a
+# tree they were never written to.
+tests/kanban/test_work_dir_recovery.py

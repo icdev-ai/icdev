@@ -1,0 +1,3 @@
+# qa-fail-de9fc92555a3c906: RLS must not rewrite a table-less SELECT ("SELECT 1"),
+# which made /api/health report db:false on every request.
+tests/test_rls_tableless_select_guard.py

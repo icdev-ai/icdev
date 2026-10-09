@@ -1,0 +1,2 @@
+# invoke_for_role had no redaction gate: every CoD/CoT/council role call egressed raw (2026-09-03).
+tests/test_invoke_for_role_redaction.py
