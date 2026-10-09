@@ -1,0 +1,3 @@
+# mfx-mrg-06 - the unlinked sweep asks the superseded question of a PR whose task
+# went terminal, BEFORE classify_merge_readiness; the close stays on the predicate.
+tests/ci/test_pr_watcher_sweep_superseded.py

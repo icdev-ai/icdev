@@ -1,0 +1,42 @@
+# CUI // SP-CTI
+# Monitor-only. See args/agent_rules/README.md before changing `enforce`.
+id: chains.guardrails_off_then_egress
+version: "1"
+title: A safety control was switched off, then data left the host
+severity: critical
+tags:
+  - T1562.001
+  - T1041
+  - defense-evasion
+enabled: true
+enforce: false
+# Ordering carries the signal. Disabling a control is noisy on its own —
+# --no-verify shows up in ordinary hurry — and egress on its own is routine. The
+# two in that order, inside one session, is a different claim.
+deny_message: >-
+  A safety control was disabled and data then left this host in the same
+  session. Blocked pending review.
+sequence:
+  within: 1h
+  within_events: 400
+  max_matches: 1
+  steps:
+    - command_matches:
+        - "ICDEV_WORKTREE_GUARD\\s*=\\s*0"
+        - "ICDEV_REVIEW_LOOP_PRECOMMIT\\s*=\\s*0"
+        - "ICDEV_AGENT_APPROVAL_MODE\\s*=\\s*(off|none|disabled)"
+        - "KANBAN_REQUIRE_MERGE_FOR_DONE\\s*=\\s*0"
+        - "(?<![\\w-])--no-verify(?![\\w-])"
+        - "(?<![\\w-])--dangerously-skip-permissions(?![\\w-])"
+    - command_name:
+        - curl
+        - wget
+        - httpie
+        - http
+        - nc
+        - ncat
+        - socat
+        - scp
+        - rclone
+      not_url_matches:
+        - "^https?://(localhost|127\\.0\\.0\\.1|\\[::1\\])(:|/|$)"

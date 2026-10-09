@@ -1,0 +1,19 @@
+# dic-bridge-01 — the four connectors that reach the operator's own content:
+# SharePoint, Confluence, Jira and an operator-owned SQL database.
+#
+# Gated because every behaviour worth having here is a REFUSAL, and a refusal
+# that stops refusing is silent. If `mode=ro` is dropped from the sqlite open,
+# reads keep working. If the unexposed-filter check becomes a silent skip, the
+# response still says `ok` and simply returns more rows. If the empty-allowlist
+# guard is relaxed, `local_database` connects and exposes the whole database.
+# None of those shows up as a failure anywhere else -- they show up as a
+# connector that appears to be working better than before.
+#
+# The `None` assertions are gated for the same reason one step removed: a
+# Confluence body that starts coming back as "" instead of None, or a .docx
+# that starts decoding to noise instead of reporting `needs_extractor`, feeds a
+# redraft evidence that reads like content and is not.
+#
+# No network: every HTTP path is driven through an injected fake, and the
+# database tests build a real sqlite file in tmp_path.
+tests/databridge/test_content_connectors.py

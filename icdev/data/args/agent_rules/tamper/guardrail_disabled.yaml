@@ -1,0 +1,30 @@
+# CUI // SP-CTI
+# Monitor-only. See args/agent_rules/README.md before changing `enforce`.
+id: tamper.guardrail_disabled
+version: "1"
+title: A safety control was switched off for this invocation
+severity: high
+tags:
+  - T1562.001
+  - defense-evasion
+enabled: true
+enforce: false
+deny_message: >-
+  Turning off a safety control is blocked. If a guardrail is wrong, fix the
+  guardrail — an escape hatch used once becomes the default path.
+expr:
+  event_type:
+    - command.exec
+  # Every one of these is a real switch in this repo or in the harness. They are
+  # matched against the parsed command, so the environment-assignment form
+  # (`ICDEV_WORKTREE_GUARD=0 git worktree add ...`) and the flag form both land.
+  command_matches:
+    - "ICDEV_WORKTREE_GUARD\\s*=\\s*0"
+    - "ICDEV_REVIEW_LOOP_PRECOMMIT\\s*=\\s*0"
+    - "ICDEV_AGENT_APPROVAL_MODE\\s*=\\s*(off|none|disabled)"
+    - "ICDEV_PG_NO_FALLBACK\\s*=\\s*0"
+    - "KANBAN_REQUIRE_MERGE_FOR_DONE\\s*=\\s*0"
+    - "(?<![\\w-])--no-verify(?![\\w-])"
+    - "(?<![\\w-])--dangerously-skip-permissions(?![\\w-])"
+    - "(?<![\\w-])--no-gpg-sign(?![\\w-])"
+    - "(?<![\\w-])--force-done(?![\\w-])"

@@ -1,0 +1,2 @@
+tests/test_aicur_gd_01_vibe_to_verified.py
+tests/test_fga_gd03_scenario_distinctness.py

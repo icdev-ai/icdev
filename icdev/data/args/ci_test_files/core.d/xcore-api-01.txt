@@ -1,0 +1,2 @@
+# xcore-api-01 -- the shared-core API manifest and the parent gate that reads it.
+tests/workflow/test_core_api_manifest.py

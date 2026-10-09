@@ -520,7 +520,7 @@ def _run_undeclared_import_census(root: Path = BASE_DIR) -> bool:
     for site in unregistered[:20]:
         print(f"  {site.get('file')}:{site.get('line')}  imports {site.get('module')!r}")
     if result.stderr and result.stderr.strip():
-        print(result.stderr.strip())
+        _print_safe(result.stderr.strip())
     return False
 
 

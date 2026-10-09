@@ -1,0 +1,9 @@
+# rmf-ident-01 — ONE canonical asset identity across the three ZT/asset stacks.
+# Pins the invariants that fail GREEN if broken: the fabric-key preference order
+# (a renameable hostname must not outrank a burned-in MAC), that corroboration
+# counts DISTINCT sources and never rows, that a NULL classification_method is
+# its own state, that an unreadable stack reports `readable: false` and never
+# `ingested: 0`, that the ZIG fingerprint rule has exactly ONE definition, and
+# that the device-pillar orchestrator LABELS whether its fleet came from the
+# inventory or from the six-hostname fixture.
+tests/test_asset_identity.py

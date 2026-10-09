@@ -1,0 +1,6 @@
+# kpr-dup-07 — seeding and claiming were two separate acts with a window
+# between them, and nothing pointed a seeder at the second one. Four
+# duplicate PRs in two days. Gated because the safety property is the
+# fragile part: a refused claim must NOT undo an insert that succeeded, and
+# only a test says so.
+tests/kanban/test_seed_and_claim.py

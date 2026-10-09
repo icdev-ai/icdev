@@ -1,0 +1,2 @@
+# shutdown_dashboard.py -- the documented stop procedure as a script (2026-09-03).
+tests/test_shutdown_dashboard.py

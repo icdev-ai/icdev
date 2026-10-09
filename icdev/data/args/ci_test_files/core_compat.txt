@@ -1,0 +1,189 @@
+# The core-compat suite (xcore-compat-01) -- "would a change to icdev-core break ICDEV[IT]?"
+#
+# Read by tools/dev/core_compat_local.py and by the compat matrix in the icdev-core repository,
+# which installs core from a PR SHA and runs THIS list against this parent.
+#
+# DERIVED FROM IMPORTS, NOT FROM FILENAMES. A module named test_kanban_* may not touch core at
+# all, and one named test_widget may sit squarely on it. A GATED test module is listed when it
+# imports, at module level, either:
+#
+#   * `icdev.core.*` directly (2 modules), or
+#   * a subsystem that sits DIRECTLY on core -- tools.db.storage, tools.kanban.*, tools.llm.*,
+#     tools.genesis.* -- whose own module bodies resolve paths, assert identity or read the
+#     sensitivity ladder through icdev.core (163 modules).
+#
+# ONLY GATED MODULES ARE ELIGIBLE. An ungated module has never gated a merge, so a core change
+# breaking it is indistinguishable from it having been broken already (rem-hyg-14). Of 515
+# gated modules, 165 qualify and 350 are excluded.
+#
+# COST, measured against args/ci_test_timings/: ~5.9 min serial (132 entries with a recorded
+# duration summing to 350s, plus 33 unmeasured weighted at the median, the same convention
+# crx-test-07 uses). Acceptable for a check that runs only on a core release.
+#
+# Regenerate after a large change to the gated set; do NOT hand-add a module to make a core PR
+# green. If a module belongs here, it belongs because of what it imports.
+tests/agent_runtime/test_context_events.py
+tests/agent_runtime/test_context_events_live_turn.py
+tests/agent_runtime/test_event_recorder.py
+tests/agent_runtime/test_fork.py
+tests/awareness/test_autonomy_loop.py
+tests/awareness/test_claim_verifier_reflex.py
+tests/awareness/test_incident_claims.py
+tests/awareness/test_restore_auto_managed_file.py
+tests/awareness/test_verified_claim_consumption.py
+tests/bi_dashboard/test_end_to_end_flow.py
+tests/ci/test_error_classifier.py
+tests/ci/test_pr_watcher_landed.py
+tests/coordination/test_code_identity.py
+tests/core/test_domain_declaration.py
+tests/core/test_sensitivity.py
+tests/cortex/test_accounting_capture.py
+tests/cortex/test_chat_turn_connections.py
+tests/cortex/test_extract_validation.py
+tests/cortex/test_iqe_query_security_context.py
+tests/cortex/test_iqe_row_cap_truncation.py
+tests/cortex/test_resolve_trust_loop.py
+tests/cortex/test_search_crag.py
+tests/currency/test_entity_currency.py
+tests/docmod/test_cortex_evidence_seam.py
+tests/docmod/test_feed_wiring.py
+tests/docmod/test_hitl_decision_wiring.py
+tests/docmod/test_regen_quality_gate.py
+tests/genesis/test_code_reload.py
+tests/genesis/test_deployment_freshness.py
+tests/genesis/test_genesis_apps_registry.py
+tests/genesis/test_rubric_build_tools.py
+tests/genesis/test_supervisor_status.py
+tests/genesis_auto/test_reflexion_agent.py
+tests/govcon/test_past_performance_suggester.py
+tests/innovation/test_innovation_kanban_promoter.py
+tests/kanban/test_cli_done_gate.py
+tests/kanban/test_cli_done_releases_lease.py
+tests/kanban/test_cli_merge_landing.py
+tests/kanban/test_completed_work_is_not_rewritten.py
+tests/kanban/test_dep_supersede.py
+tests/kanban/test_dep_supersede_consumers.py
+tests/kanban/test_dependency_gate_precedence.py
+tests/kanban/test_detector_deployment_freshness.py
+tests/kanban/test_detector_findings.py
+tests/kanban/test_detector_migration_drift.py
+tests/kanban/test_dispatch_admission.py
+tests/kanban/test_exhaustion_triggers_decomposition.py
+tests/kanban/test_identity_check_arming.py
+tests/kanban/test_landed_check.py
+tests/kanban/test_landed_check_wiring.py
+tests/kanban/test_landed_dispatch_survey.py
+tests/kanban/test_lane_conflicts.py
+tests/kanban/test_lease_liveness.py
+tests/kanban/test_pr_linker.py
+tests/kanban/test_reflex_board_writers.py
+tests/kanban/test_release_reclaims_a_dead_claim.py
+tests/kanban/test_repo_registry.py
+tests/kanban/test_reverify.py
+tests/kanban/test_reverify_roundtrip.py
+tests/kanban/test_reverify_selfheal.py
+tests/kanban/test_seed_and_claim.py
+tests/kanban/test_seed_ctx_kanban.py
+tests/kanban/test_seed_parent_split.py
+tests/kanban/test_status_churn.py
+tests/kanban/test_stranded_audit_gate_parity.py
+tests/kanban/test_task_identity.py
+tests/kanban/test_timeout_no_redispatch.py
+tests/kanban/test_transition_log_gap.py
+tests/kanban/test_uncomplete_guard.py
+tests/kanban/test_work_dir_recovery.py
+tests/kanban/test_worktree_dispatch_isolation.py
+tests/noc_canvas/test_mop_llm_timeout.py
+tests/pg_tier/test_cortex_rls_index_plan.py
+tests/provenance/test_trust_validation_anchor.py
+tests/rag/test_provenance_ledger_retrieval.py
+tests/slides/test_blueprint.py
+tests/studio/test_agent_tool_gate.py
+tests/test_aca_configurator_honesty.py
+tests/test_aca_pg_native_placeholders.py
+tests/test_ace_instance_page_render.py
+tests/test_acoic_cortex_evidence.py
+tests/test_agent_approval_gate.py
+tests/test_agent_mailbox_placeholders.py
+tests/test_agent_wake_tick.py
+tests/test_agov_events.py
+tests/test_ai_telemetry_cache_tokens.py
+tests/test_approval_gate_arming.py
+tests/test_audit_chain_writer.py
+tests/test_blockchain_transports.py
+tests/test_cache_effectiveness_by_provider.py
+tests/test_cache_regression.py
+tests/test_cache_savings_state.py
+tests/test_canvas_dedicated_pg_database.py
+tests/test_canvas_reassess_reflex.py
+tests/test_capability_consumption.py
+tests/test_capability_consumption_approval_tiers.py
+tests/test_component_registry.py
+tests/test_context_budget.py
+tests/test_cost_budget_downgrade.py
+tests/test_cpmp_overdue_deliverable_state.py
+tests/test_cpmp_overdue_sweep_is_driven.py
+tests/test_cxo_adopt_04_mcp_cortex_adapters.py
+tests/test_daemon_self_reload.py
+tests/test_dcpr_ai_mapper_llm.py
+tests/test_dic_chat_memory_schema.py
+tests/test_dispatch_lease_starvation.py
+tests/test_dwo_bus_subscriber.py
+tests/test_eval_harness_anomaly_detection.py
+tests/test_event_bus_security.py
+tests/test_exa_policy_05_saas_mcp_authz.py
+tests/test_extension_dispatch_governance.py
+tests/test_gemini_managed_object_cache.py
+tests/test_genesis_reflex_cpmp_monitor.py
+tests/test_genesis_reflex_cpmp_monitor_card_identity.py
+tests/test_genesis_reflex_cpmp_monitor_subcon_pass.py
+tests/test_genesis_test_reflex_policy.py
+tests/test_gepa_decision_recording.py
+tests/test_govcon_overdue_deliverable_marking.py
+tests/test_heartbeat_kanban_wakeup.py
+tests/test_identity_survey.py
+tests/test_inbox_adapters.py
+tests/test_intake_api.py
+tests/test_integrity_monitor_reflex.py
+tests/test_integrity_persistence_allowlist.py
+tests/test_kanban_adapter_routing.py
+tests/test_kanban_gate_sentinel_seeding.py
+tests/test_kanban_policy_drift.py
+tests/test_kanban_pr_flow_confirmation.py
+tests/test_kanban_pr_opens_as_draft.py
+tests/test_kanban_reaper_pr_opened.py
+tests/test_kanban_startup_recovery.py
+tests/test_kanban_suggested_decay.py
+tests/test_kanban_throughput_stall.py
+tests/test_llm_cost_basis.py
+tests/test_local_agent_adapter.py
+tests/test_memory_maintenance_reflex.py
+tests/test_merge_readiness_surface.py
+tests/test_merge_stall.py
+tests/test_mitre_coverage_db.py
+tests/test_move_endpoint_gate.py
+tests/test_namespace_identity.py
+tests/test_network_intelligence.py
+tests/test_no_undeclared_dateutil.py
+tests/test_ollama_prefix_latency.py
+tests/test_pipeline_delta.py
+tests/test_pma_igap_api.py
+tests/test_pr_opened_reconciler.py
+tests/test_prefix_cache_capability.py
+tests/test_project_card_coverage.py
+tests/test_prompt_registry_call_site_prompts.py
+tests/test_prompt_registry_supplemental_layers.py
+tests/test_proposals_ptw_blackhat_api.py
+tests/test_qa_agent_runner.py
+tests/test_reflex_finding_scope.py
+tests/test_reflex_registry_integrity.py
+tests/test_remediation_simulator.py
+tests/test_sbom_component_license.py
+tests/test_sbom_dependency_graph.py
+tests/test_sbom_distribution.py
+tests/test_sbom_metadata_2026.py
+tests/test_sbom_revision_2026.py
+tests/test_scheduled_dispatch_reclaim.py
+tests/test_ski_roles_lifecycle.py
+tests/test_substrate_probe.py
+tests/test_toolset_portability.py

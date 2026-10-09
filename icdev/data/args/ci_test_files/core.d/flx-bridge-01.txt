@@ -1,0 +1,4 @@
+# flx-bridge-01 — the emulator connector answers by the name `floci`, and a
+# container-backed table on a socket-less host says unsupported_without_docker
+# rather than returning an empty list.
+tests/databridge/test_floci_connector.py

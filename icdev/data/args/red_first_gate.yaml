@@ -1,0 +1,720 @@
+# CUI // SP-CTI
+# Red-First Proof Gate (trust-disc-01)
+#
+# THE POLICY THIS ENCODES
+# -----------------------
+# ANVIL mandates RED -> GREEN and nothing anywhere records the RED. A process
+# instruction whose evidence is never captured is the `|| true` failure of D394
+# in a second form: the rule is stated, the artifact proving it fired is absent,
+# and no reader can distinguish a check that ran from one that did not.
+#
+# So the gate re-derives the RED instead of trusting that it happened. For every
+# test file this PR adds or modifies it checks out the merge base, applies ONLY
+# that test file on top, and runs it. The test must FAIL there and PASS here.
+#
+#   fails before + passes after  -> discriminating. The RED is recorded.
+#   passes before                -> it asserts CURRENT behaviour, not required
+#                                   behaviour. It could never have gone red.
+#   fails after too              -> it is broken, not red-first.
+#
+# The decision table is shared with tools/security/reproduction_validator.py
+# (decide_discrimination) — the same question in a different domain, answered by
+# one primitive so two gates cannot drift apart on it.
+#
+# Consumed by: tools/ci/red_first_gate.py :: load_config
+# Gate source: python tools/ci/red_first_gate.py --gate   (the `test` job)
+# Feature doc: docs/features/phase-trust-disc-01-red-first-proof.md
+version: 1
+
+# enforce | advisory.
+#
+# `advisory` runs everything, prints everything and always exits 0. It exists so
+# the gate can be MEASURED on a tree before it is armed — the pre_tool_use
+# lesson (D394): a check that is nominally enforcing behind something that
+# discards its verdict is unmeasured, not proven, and a check armed without a
+# fire-rate measurement refuses routine work. Do NOT reach for `advisory` to get
+# one commit through; add an exemption with a reason instead.
+mode: enforce
+
+# --------------------------------------------------------------------------- #
+# SCOPE — which changed files the gate considers a "test file"
+# --------------------------------------------------------------------------- #
+# Deliberately identical to args/test_gating_gate.yaml -> scope, which is itself
+# identical to what pytest collects (pyproject.toml testpaths + python_files).
+# Three different answers to "what is a test file" is two too many.
+scope:
+  roots:
+    - tests/
+  patterns:
+    - "test_*.py"
+    - "*_test.py"
+
+# --------------------------------------------------------------------------- #
+# APPLICABILITY — a change with no new assertion has no RED to record
+# --------------------------------------------------------------------------- #
+# Without this the gate fails a docstring fix, an import reorder, or a rename
+# inside a test file: those legitimately behave identically before and after, so
+# they land in `never_established` and read as "you wrote a worthless test". An
+# applicability check with no gate is 100% false positives, and a gate that
+# cries wolf gets a `|| true` bolted onto it.
+#
+# The rule is deliberately crude and readable: the diff for this file must ADD at
+# least one line that looks like test logic. It is a floor, not a classifier —
+# it decides whether to ASK the question, never what the answer is.
+applicability:
+  require_added_test_logic: true
+  # Substrings; a diff line counts if it is an addition (+) containing any one.
+  #
+  # Matched against CODE ONLY. The file is tokenised and every COMMENT and
+  # STRING (docstrings and f-string literal text included) is blanked out before
+  # a marker is compared, so prose never makes a file applicable. Without that,
+  # a fixture docstring reading "the tests below assert the identity's tenant"
+  # counted as an added assertion — the file was asked a red-first question it
+  # had not claimed to answer, passed against the merge base because it added no
+  # test logic at all, and was reported as a worthless test. That is the false
+  # positive this whole applicability section exists to prevent, reappearing
+  # inside it. Real code is untouched: `pytest.raises`, `self.assertEqual`,
+  # `@pytest.mark.parametrize` and `def test_` all still match.
+  markers:
+    - "assert"
+    - "pytest.raises"
+    - "def test_"
+    - "@pytest.mark"
+    - "self.assert"
+    - "self.fail"
+
+# --------------------------------------------------------------------------- #
+# RUN — how each proof is executed
+# --------------------------------------------------------------------------- #
+run:
+  # Per pytest invocation. Two invocations per file (before + after). A test
+  # module that cannot finish in this budget is reported `timeout` -> INDECISIVE,
+  # which is neither a pass nor a block: we learned nothing, and saying so is the
+  # whole point of this task.
+  timeout_seconds: 600
+  pytest_args:
+    - "-q"
+    - "--no-header"
+    # The merge-base worktree is disposable; a .pytest_cache in it is litter and
+    # a cache carried between the two runs would make them not independent.
+    - "-p"
+    - "no:cacheprovider"
+  # A PR touching more than this many test files is proven up to the cap and the
+  # remainder is named in the report and printed as a ::warning::. It is NEVER
+  # silently truncated — a cap you cannot see reads as "covered everything".
+  max_files: 25
+  # Lines of pytest output retained per run in the JSON proof. This IS the
+  # recorded RED, so it must be enough to read; it is bounded because ICDEV is a
+  # public repo and an unbounded dump is exposure, not evidence.
+  captured_lines: 40
+
+# --------------------------------------------------------------------------- #
+# EXEMPTIONS — a written reason next to the pattern, never a bare count
+# --------------------------------------------------------------------------- #
+# An exemption says "a red-first proof is not the right question for this file".
+# It does NOT say "this file is allowed to be a bad test". Every entry carries
+# its reason inline, and `--gate` reports an exemption matching nothing in the
+# tree as STALE — a pattern that has quietly stopped matching is how a gate
+# shrinks without anyone deciding to shrink it.
+#
+# There is deliberately no numeric budget here. A count can be held constant
+# while the set churns, which is exactly how a gap regrows behind a green gate
+# (see args/ci_test_backlog.txt, which is enumerated for the same reason).
+exemptions:
+  - pattern: "tests/pg_tier/test_local_database_connector_pg.py"
+    reason: >-
+      THE GATE CANNOT SEE THIS FILE, AND THERE IS NO DEFECT AT THE MERGE BASE
+      FOR IT TO DISCRIMINATE AGAINST. It is a module-level `skipif` on
+      ICDEV_PYTEST_PG, which the gate does not set, so both runs are "18
+      skipped" -- the gate is comparing two skips and correctly reports that it
+      learned nothing. Under the tier it is not a fix either: the
+      `local_database` connector's postgres branch was CORRECT and UNTESTED,
+      its 66 siblings in tests/databridge/test_content_connectors.py all being
+      SQLite, so nothing here goes red on main by construction.
+      THE EQUIVALENT PROOF WAS DONE BY MUTATION AND IS RECORDED, because
+      "covers behaviour that already works" must not become a way to ship a
+      test that asserts nothing. Against a live PostgreSQL: removing
+      `set_session(readonly=True)` from local_database_connector.py turns
+      test_the_postgres_session_itself_refuses_a_write RED (1 failed, 17
+      passed), and making `_placeholder()` emit SQLite's `?` turns four RED
+      (4 failed, 14 passed) -- including the one asserting that an injection in
+      a filter VALUE matches zero rows rather than both. Each of the four
+      behaviours this file covers is unreachable from SQLite (RealDictCursor
+      row shape, the `%s` placeholder, schema-qualified names, and the
+      read-only session), which is why they had no coverage to begin with.
+      Scoped to this one file. It runs in Test (PostgreSQL) via
+      tests/pg_tier_allowlist.txt, and is excluded from CI gating for the
+      reason written in args/test_gating_gate.yaml.
+  - pattern: "tests/pg_tier/test_cortex_rls_index_plan.py"
+    reason: >-
+      THE GATE CANNOT SEE THIS FILE: a module-level `skipif` on ICDEV_PYTEST_PG,
+      which the gate does not set, so both runs are "2 skipped" and it correctly
+      reports that it learned nothing. THE RED IS A FLIP RATE, NOT A FAILING
+      ASSERTION, AND IT WAS MEASURED (qa-fail-55f53c3df846c1a0): the seed
+      stamped created_at from NOW() against a window fixed at 2026-08-07, so the
+      window's share of the tenant slice grew every calendar day after the test
+      landed (10% on 2026-08-14, 52% on 2026-09-11) until the composite and the
+      single-column bitmap cost within 0.46-1.29% of each other -- inside what
+      ANALYZE's random sample moves the estimates by. On 2026-09-11 against a
+      live PostgreSQL 16.13 the merge-base file ran ten times: 6 passed, 4
+      FAILED (CI: 1 failed on the docs-only #2226). The fix pins the seed's
+      clock (SEED_CLOCK) so the window is 7 of 90 days forever, 24-31% margin,
+      and adds a geometry guard; the fixed file ran ten times: 10 passed. THE
+      EQUIVALENT PROOF WAS DONE BY MUTATION, because a file that is only
+      "greener" must not become a way to ship a test asserting nothing: with
+      the composite CREATE INDEX removed, ten runs: the plan test 10 of 10 RED,
+      and the cost test 10 of 10 RED once it demands a 10% margin (under the
+      original bare `after < before` it PASSED the mutation, comparing two
+      ANALYZE estimates of the same plan). Every number is in the file's own
+      docstring. Scoped to this one file; it runs in Test (PostgreSQL) via
+      tests/pg_tier_allowlist.txt.
+  - pattern: "tests/pg_tier/test_aisg_audit_immutable_pg.py"
+    reason: >-
+      THE GATE CANNOT SEE THIS FILE: a module-level `skipif` on ICDEV_PYTEST_PG,
+      which the gate does not set, so both runs are "4 skipped". THE RED WAS
+      TAKEN BY HAND AGAINST A LIVE POSTGRESQL AND IS RECORDED (2026-10-07,
+      throwaway database icdev_scratch_aisg_imm, never the live icdev db): with
+      tools/aisg/db/init_db.py restored to its merge-base content,
+      test_fresh_init_db_makes_aisg_audit_append_only FAILED with
+      `assert (1, False, False) == (1, True, True)` -- the INSERT landed and
+      PostgreSQL accepted both the UPDATE and the DELETE of an audit row; with
+      this branch's init_db all 4 tests pass. The three migration tests cannot
+      run at the merge base at all (the migration directory does not exist
+      there), and test_migration_closes_the_gap carries its own in-file
+      negative control: the legacy-shaped table is asserted MUTABLE before the
+      migration and immutable after it. The discriminating proof the gate CAN
+      see is the gated sibling tests/test_aisg_audit_pg_immutability.py.
+      Scoped to this one file; it runs in Test (PostgreSQL) via
+      tests/pg_tier_allowlist.txt and is excluded from CI gating for the reason
+      written in args/test_gating_gate.yaml.
+  - pattern: "tests/llm/test_role_invoke_redaction.py"
+    reason: >-
+      A CONSUMER SWEEP OVER A SEAM ANOTHER PR CLOSED FIRST, so nothing here can
+      go red against main. rmf-wp-02 diagnosed invoke_for_role as the door that
+      egressed CoD/CoT proposal prose unredacted and built the same fix; #2028
+      landed it on main while the card was in flight (its
+      tests/test_invoke_for_role_redaction.py is the discriminating proof for
+      the router doors, 5 failed at its merge base). This file pins what #2028
+      does not: that rfi_workbench and doc_generator -- the two modules the
+      card names -- dispatch only through redacting doors, by AST, plus a
+      structural belt on invoke_for_role's pre/post pair. Both hold on main by
+      construction, so a red-first proof is not the right question. Scoped to
+      this one file; GATED by args/ci_test_files/core.d/rmf-wp-02.txt.
+  - pattern: "tests/test_ai_telemetry_cache_tokens.py"
+    reason: >-
+      THE EDIT GIVES A TEST DOUBLE THE ATTRIBUTE THE METHOD NOW READS AND
+      ASSERTS NOTHING NEW. _invoke_model_direct became a redaction door
+      (feat/sanitizer-egress-pin), so a bare `LLMRouter.__new__` stub built to
+      exercise only its telemetry write must declare `_config` with redaction
+      off, or the gate raises AttributeError before the ledger is reached. The
+      assertions -- one ai_telemetry row per real two-tier provider call, with
+      cache token counts -- are unchanged, so there is no behaviour for a
+      red-first proof to discriminate against. The guard for the door itself
+      is tests/test_invoke_for_role_redaction.py in the same PR, which is
+      `discriminating` (5 failed at the merge base, 8 pass here).
+  - pattern: "tests/test_rfi_grounding.py"
+    reason: >-
+      THE EDIT REPLACES PURSUIT-SENSITIVE FIXTURE DATA AND ASSERTS NOTHING NEW,
+      so there is no behaviour for a red-first proof to discriminate against.
+      rmf-leak-01 removed a live solicitation's identifiers and bid figures from
+      tracked source in this PUBLIC repository; in this file that means the
+      `_PARSED` fixture's real `rfi_number` and `title` become the synthetic
+      `RFI-99-00001` / "Synthetic Test Solicitation", and
+      `test_fixes_mangled_rfi_number` follows its own fixture from
+      "RFI-26-[TASK_ORDER]" to "RFI-99-[TASK_ORDER]".
+      `substitute_profile_facts` is NOT changed by this PR and is not changed
+      here. The property under test -- that a mangled RFI number is repaired
+      from the parsed data -- is identical before and after; only the datum it
+      is exercised with differs. A test whose fixture and whose assertion move
+      together necessarily passes against the merge base, which is exactly what
+      the gate reports, and the applicability check cannot see it as a
+      no-new-assertion edit because the assertion literal did change.
+      The sibling file in the same PR, tests/test_govcon_rfi_parser.py, is the
+      same kind of edit and the gate correctly classifies it `not_applicable`
+      without an exemption -- only this one needs the entry, because only this
+      one has a literal inside an `assert`.
+      NOT exempted: tests/test_govcon_section_prompts.py, the actual guard this
+      PR adds, which is `discriminating` (5 failed + 4 errors at the merge base,
+      10 passed here).
+  - pattern: "tests/test_cost_budget_downgrade.py"
+    reason: >-
+      THE TEST WAS THE DEFECT AND THE CODE IT GUARDS WAS ALWAYS CORRECT, so
+      there is no production change for a red-first proof to discriminate
+      against. `test_period_start_survives_both_timestamp_spellings` compared
+      the LITERALS '2026-08-01 10:00:00' and '2026-07-31 23:59:59' against
+      `cost_budget.period_start("monthly")`, which is THIS month's start. The
+      assertion held for the whole of August and inverted at midnight on
+      2026-09-01 -- `assert '2026-08-01 10:00:00' >= '2026-09-01'` -- taking
+      Test, Test (Windows), Test (PostgreSQL) and Test Shard 3 of 4 red on
+      every open PR in the repository, none of which touched the file.
+      `period_start` itself never changed and is not changed here.
+      THE RED IS RECORDED, and by something stronger than a synthetic
+      merge-base run: it is failing on `main` RIGHT NOW. `python -m pytest
+      tests/test_cost_budget_downgrade.py -k period_start` reproduces it on any
+      checkout, on any day that is not in August 2026, and the four red jobs on
+      unrelated PRs are its live history.
+      Narrowing the assertion's input -- the usual repair when a test fails to
+      discriminate -- is exactly what the fix DOES: both samples are now derived
+      from the boundary rather than pinned to a month, so the property under
+      test (a space-separated timestamp and a full-ISO one both sort correctly
+      against a 10-character date prefix, because ' ' sorts below 'T') is
+      asserted without also asserting which month it is. A repaired test that
+      asserts the same always-correct behaviour necessarily passes against the
+      merge base, which is precisely what the gate reports.
+  - pattern: "tests/test_aca_xp_ledger.py"
+    reason: >-
+      THE TEST WAS THE DEFECT, AND THE CODE IT GUARDS WAS ALWAYS CORRECT
+      (kpr-extrepo-03), so there is no production change for a red-first proof to
+      discriminate against. `test_the_ledger_is_registered_append_only` did
+      `block = hook[hook.index("APPEND_ONLY_TABLES"):]` and then
+      `assert '"fa_xp_ledger"' in block[:8000]`. `hook.index` returns the FIRST
+      TEXTUAL occurrence of the name, which is the module docstring's "See
+      APPEND_ONLY_TABLES list in is_append_only_table_modification()" at char
+      446; `"fa_xp_ledger"` sits at char 11,656. The gap is 11,210 against an
+      8,000-character window, so the assertion measured the distance between a
+      sentence and a list and would have failed for any table far enough down it
+      WHETHER OR NOT that table was registered. `fa_xp_ledger` is registered, at
+      .claude/hooks/pre_tool_use.py:223, and always was -- so the repaired test
+      necessarily passes against the merge-base tree too, which is exactly what
+      the gate reports.
+      THE RED IS RECORDED, just not by this gate: born_red_survey (rem-hyg-14)
+      reported the file 21 times from 2026-08-22, its baseline row carries
+      first_status=fail / ever_passed=0, and the failure reproduces by hand on
+      the main checkout as "1 failed, 14 passed" -> "16 passed", matching the
+      detector's own recorded last_detail exactly. That is a stronger artifact
+      than a synthetic merge-base run, because it is the defect's real history.
+      Narrowing the assertion's input is not available here (the usual repair
+      when a test fails to discriminate): the fix removes a WINDOW rather than
+      changing what is asserted, and the assertion's subject -- is this table
+      registered -- has one true answer on both trees. A second test added
+      alongside pins the property the window destroyed: it fails if every entry
+      ever fits within 8,000 characters, so the guard cannot silently become
+      vacuous. Scoped to this ONE file.
+  - pattern: "tests/ci/test_self_root_census.py"
+    reason: >-
+      A TEST THAT FAILED BECAUSE THE WORK SUCCEEDED, repaired so it cannot do so
+      again (xcore-cut-02). `test_known_shapes_in_the_tree` asserted that
+      `tools/config/core_profile.py::<module>::BASE_DIR` was PRESENT in the
+      census -- a positive control that the scanner detects that shape. This PR
+      migrates that exact site onto repo_root(__file__), which is the census's
+      entire PURPOSE, so the test failed on success. Every name in the census is
+      somebody's future fix; pinning one guarantees a failure each time the
+      census drains. The control is now the SHAPE (some entry ends
+      `::<module>::BASE_DIR`, some entry contains `::inline-`), which is true on
+      BOTH trees by construction and therefore passes at the merge base -- it
+      asserts a property of the SCANNER, not a snapshot of the tree. The NEGATIVE
+      control is deliberately left exact and unexempted in spirit: storage.py's
+      `parents[2]` is the sys.path bootstrap idiom and must never be counted,
+      which is a claim about one named file. There is no RED to record because no
+      defect was repaired -- six self-root sites were migrated, and the evidence
+      for that is the census itself going 1329 -> 1323 with its ceiling lowered
+      to match. Scoped to this ONE file.
+  - pattern: "tests/db/test_export_ft_data.py"
+    reason: >-
+      A REMOVAL, NOT A FIX — there is no RED to record because no defect was
+      repaired (xit-rm-02). `excluded_shared` was the set of tables declared by
+      BOTH a FathomDesk source AND the core, and the exporter subtracted it so a
+      cutover could not carry the shared knowledge graph into ICDEV[FT]. This PR
+      deletes tools/fathomdesk and tools/trading, so no FathomDesk source is left
+      to co-declare kg_nodes/kg_edges/kg_graphs/trading_daemon_audit and the set
+      is empty STRUCTURALLY rather than by measurement. Asserting the four old
+      names would assert that the removal never happened. The replacement asserts
+      the invariant those exclusions existed to SERVE — nothing outside the ad_
+      namespace can reach the export set — which is true both before and after,
+      and therefore passes at the merge base BY CONSTRUCTION. The production
+      change under test is the deletion itself, whose evidence is the domain leak
+      gate flipping to `paths: enforce` with 0 denied paths present across 20,719
+      files; a per-file RED cannot exist for code that was removed rather than
+      corrected. Scoped to this ONE file.
+  - pattern: "tests/test_raw_insert_census.py"
+    reason: >-
+      A CENSUS FLOOR TRACKING A POPULATION THAT REALLY SHRANK (xit-rm-02), not a
+      weakened assertion. `test_the_census_is_not_empty` guards against a scanner
+      whose scope quietly broke and reports a perfectly clean board, by requiring
+      the scan still SEE the bypassers. This PR removes the trading and FathomDesk
+      trees, which carried real raw-INSERT writers with them: 187 files now hold
+      one, measured, against a floor of 190 written when they were still present.
+      Lowering the floor to exactly the measured value keeps the guard doing its
+      job — it still fails on a scan that collapses to zero or near-zero — while
+      no longer asserting a population this domain does not have. It passes at the
+      merge base by construction: at that tree the files still exist, so the old
+      floor was satisfied too. `raw_insert_max` moved 205 -> 203 in the same
+      change and only ever moves DOWN. Scoped to this ONE file.
+  - pattern: "tests/test_aca_configurator_honesty.py"
+    reason: >-
+      PURE TEST REPAIR — NO PRODUCTION BEHAVIOUR CHANGED, so nothing here can go
+      red (task-det-2f16251ac7, born_red_survey finding 2f16251ac7401913).
+      `test_the_specific_invented_fields_are_marked[ai_inventory]` asserted
+      `simulated is True` whenever the field NAME `systems_found` was present.
+      But `_handle_ai_inventory` (apps/forge_academy/configurator.py) reads the
+      real `ai_use_case_inventory` table and returns that field with
+      `simulated=False` and `source='ai_use_case_inventory'` — the honest REAL
+      branch aca-hon-01 introduced, which the file's own docstring calls the
+      contract ("either real or say that it is not"). So the case passed only
+      where the table was unreachable (an empty worktree or CI database, where
+      the handler falls back to the marked simulation) and failed on any host
+      whose board holds inventory rows — the live board's runner, where the
+      born_red reflex observes: reproduced 2026-08-23 from C:/AI/ICDev as
+      "1 failed, 17 passed", `systems_found: 8`, while the SAME tree in an empty
+      worktree passes 18/18. It measured the observer's database, not the
+      handler. THE RED IS RECORDED in detector_findings and it is environmental,
+      not a code defect. The repair asserts the contract (marked simulation OR
+      named real source) and pins BOTH ai_inventory branches deterministically
+      with a patched get_connection, so the file no longer depends on the
+      ambient board. The handler is untouched, so the file passes at the merge
+      base and is reported `not_discriminating` by construction. Scoped to this
+      ONE file; a test-only repair is not mechanically distinguishable from a
+      test weakened to match broken code, so this is not the pattern for the
+      next one. GATED by the same change
+      (args/ci_test_files/core.d/task-det-2f16251ac7.txt).
+  - pattern: "tests/airgap/test_hook_compat_git_blocklist.py"
+    reason: >-
+      PURE TEST REPAIR — NO PRODUCTION BEHAVIOUR CHANGED, so nothing here can go
+      red (task-det-ea73602df5, born_red_survey finding ea73602df5798228).
+      `test_force_push_force_with_lease_blocked` pinned the verdict the guard
+      gave BEFORE exa-bench-05 (4678ce460, 2026-08-12), which deliberately
+      exempted `git push --force-with-lease` with a measured reason recorded
+      beside `_GIT_FORCE_WITH_LEASE_RE` in tools/hooks/shared_checks.py: 127 of
+      the 30-day corpus's 389 git_danger fires were that form on the session's
+      own kanban/* branch, i.e. the prescribed workflow. The file was ungated,
+      so the flip went unobserved; `born_red_survey --confirm 1` reports
+      `passed_at_birth` (green at ea51f30dd, 2026-05-25, broke later). THE RED
+      IS RECORDED in detector_findings. The repair asserts the current,
+      documented policy (lease push allowed; bare --force still refused, and
+      still refused when chained after a lease push in a second segment). The
+      guard code is untouched, so the file passes at the merge base and is
+      reported `not_discriminating` by construction.
+  - pattern: "tests/dashboard/test_home_tile_gating.py"
+    reason: >-
+      PURE TEST REPAIR — NO PRODUCTION BEHAVIOUR CHANGED, so nothing here can go
+      red (task-det-87e60dc7d5, born_red_survey finding 87e60dc7d52e4104).
+      `test_cortex_is_disabled_by_default` claimed "the component ships off" —
+      a statement about `default_enabled: false` in args/component_registry.yaml
+      — and asserted it through `ComponentRegistry()`, which reads os.environ.
+      So it measured whoever ran the suite, not the registry: on any host
+      exporting ICDEV_CORTEX_ENABLED=true (the live board's runner, where the
+      born_red reflex observes) it failed on every observation since it landed
+      (faafbd679113, 2026-08-02), and `env -u ICDEV_CORTEX_ENABLED pytest` on
+      the SAME tree passes 7/7. THE RED IS RECORDED in detector_findings and it
+      is environmental, not a code defect. The repair asks the registry with an
+      explicit empty env (`ComponentRegistry(env={})`), which is the question
+      the docstring always posed, and adds a sibling pinning that the flag is
+      what switches it on. The registry code is untouched, so the file passes
+      at the merge base and is reported `not_discriminating` by construction.
+      The `pytest.skip` on the icdev mirror was replaced by an assertion so the
+      file can be gated without a skip-census entry. Scoped to this ONE file; a
+      test-only repair is not mechanically distinguishable from a test weakened
+      to match broken code, so this is not the pattern for the next one. GATED
+      by the same change (args/ci_test_files/core.d/task-det-87e60dc7d5.txt).
+  - pattern: "tests/test_aac_llm_http_auth.py"
+    reason: >-
+      PURE TEST REPAIR — NO PRODUCTION BEHAVIOUR CHANGED, so nothing here can go
+      red (task-det-f5d3034b04, born_red_survey finding f5d3034b04b9f404).
+      `test_returns_llm_suggestion_when_available` mocked a router exposing
+      `complete(req)` returning `.text` — the API the implementation used when
+      both landed together (cd69e9055, 2026-06-20). nav-llm-01 (a21873760,
+      2026-07-18) replaced the dead `router.complete()` with the real
+      `invoke(function_name, LLMRequest)` returning `.content` at 10 call
+      sites, including tools/ai_augmentation/implementations/llm_http_auth.py,
+      but this ungated test's mock was not updated: `invoke` was missing on the
+      fake, the AttributeError was swallowed by the advisor's fallback, and the
+      test got 1 where it asserted 2 on every observation since. So the file is
+      the passed_at_birth shape wearing a born_red label — a silent regression
+      of the TEST when the implementation was corrected to the real API. THE
+      RED IS RECORDED in detector_findings. The repair updates both fake
+      routers in TestAdviseRetryThreshold to the real seam (`invoke` /
+      `.content`), which is the claim the test always intended; the
+      implementation and the router are untouched, so the file passes at the
+      merge base and is reported `not_discriminating` by construction. Scoped
+      to this ONE file — a test-only repair is not mechanically
+      distinguishable from a test weakened to match broken code, so this is
+      not the pattern for the next one. GATED by the same change
+      (args/ci_test_files/core.d/task-det-f5d3034b04.txt).
+  - pattern: "tests/test_proposals_ptw_blackhat_api.py"
+    reason: >-
+      PURE TEST REPAIR — NO PRODUCTION BEHAVIOUR CHANGED, so nothing here can go
+      red. Ten of this file's twenty tests have returned 401 UNAUTHORIZED since
+      the day they were written: 90d7b0ecf added
+      `@require_role("admin","capture_mgr","pm")` to the proposals write
+      endpoints at 19:53, and 146cbb77d added this file at 20:56 the same
+      evening on a PARALLEL branch, against a tree that did not yet carry it.
+      `git merge-base --is-ancestor` confirms neither is an ancestor of the
+      other. Each was green alone; they were jointly broken on merge, and the
+      file sits in args/ci_test_backlog.txt so CI has never run it.
+      THE RED IS RECORDED, and it is the strongest kind — the file itself,
+      unmodified, against main: `pytest tests/test_proposals_ptw_blackhat_api.py`
+      on a clean checkout of d4aba1d85 gives "10 failed, 10 passed". The gate
+      cannot re-derive that because the FIX is the `g.current_user` fixture,
+      which lives IN this test file: applying the file to the merge base applies
+      the fix along with it, so it passes there and is reported
+      `not_discriminating`.
+      The 401s were a REAL GUARD DOING ITS JOB, so the repair authenticates
+      rather than relaxing the routes — and seven NEW tests in this file pin the
+      guard itself (anonymous -> 401, role=viewer -> 403, GET stays open) so
+      that a future "fix" by deleting the decorator turns them red instead of
+      green. Those seven assert behaviour main already has, which is the other
+      reason this file cannot discriminate.
+      Scoped to this ONE file. "A test-only repair" also describes a test
+      quietly weakened to match code that broke, and the two are not
+      mechanically distinguishable — so this must not become the pattern for the
+      next 401 somebody meets in this suite. The file is GATED by the same
+      change, so its next regression fails CI within the hour rather than in six
+      weeks.
+  - pattern: "tests/test_extension_dispatch_governance.py"
+    reason: >-
+      FORCED FIXTURE RENAME, and the proof lives in a different file rather
+      than being absent. hcx-live-gate-01 removed four members from the public
+      ExtensionPoint enum. Every use of those four IN THIS FILE was an
+      ARBITRARY fixture — the max_handlers bound, the permissive default for an
+      undeclared point, the empty-dispatch inventory row, and enabled/disabled
+      drop-in loading. None of them is about memory or compliance semantics, so
+      each moves to a live point (AGENT_START / AGENT_END) and asserts exactly
+      what it asserted before.
+      The file therefore CANNOT go red: the swapped version passes against the
+      merge base too, because the live points it now names existed there as
+      well. It also cannot be left alone — it references removed members, so
+      without the rename it fails at collection. A mechanical adaptation that
+      is required for the file to run and that changes no claim has no new RED
+      to record, which is the same situation the gate already reports as
+      `not_applicable` for a docstring-only diff; this diff edits assertion
+      ARGUMENTS rather than assertions, so it lands in `not_discriminating`
+      instead.
+      THE REMOVAL ITSELF IS PROVED, just not here. The RED for this change is
+      recorded by tests/test_extension_point_removal_is_contained.py — 8 failed
+      / 1 passed against the merge base — which asserts the property that made
+      the removal safe: a site-local drop-in naming a removed point is SKIPPED
+      with a log line rather than killing the platform at import.
+      Scoped to this ONE file, deliberately. "A test-only rename" also
+      describes a test quietly weakened to match code that broke, and the two
+      are not mechanically distinguishable, so this must not become a pattern
+      for the enum's next change.
+  - pattern: "tests/test_cpmp_overdue_deliverable_state.py"
+    reason: >-
+      DETERMINISM FIX, and the proof is structurally impossible rather than
+      merely absent. This file took _TODAY as a snapshot at module import while
+      production recomputes the date per call, so it went red whenever a run
+      straddled midnight UTC — it failed PR #1712 at 00:01:47Z on a change that
+      touched nothing in CPMP. The fix freezes the clock, and it lives ENTIRELY
+      inside this test file. The gate applies only the changed test file on top
+      of the merge base, so applying it also applies the fix: both runs are
+      identical by construction, 20 passed either side. No production code
+      changed, so there is no pre-change tree in which a correct version of this
+      test could fail.
+      This exemption does NOT license a vacuous test here. That distinction is
+      why it is scoped to this ONE file rather than to test-only changes in
+      general: "a test-only PR" also describes a new test that merely asserts
+      current behaviour, which is precisely what this gate exists to catch, and
+      the two are not mechanically distinguishable. The determinism claim is
+      instead proved by a test IN the file — advance the frozen clock one day
+      and days_overdue must move 44 -> 45, so a freeze production never reads
+      cannot pass.
+
+  - pattern: "tests/e2e_selenium/**"
+    reason: >-
+      Requires a live dashboard and a Selenium driver, and the module's autouse
+      fixture SKIPS the whole file when the port does not answer. Both runs
+      would therefore measure the absence of a server rather than the absence
+      of a fix, and a skipped module exits 0 — which would read as "passes
+      against the merge base", i.e. a fabricated finding. Already excluded from
+      the CI gating census for the same reason (args/test_gating_gate.yaml).
+
+  - pattern: "tests/genesis_auto/**"
+    reason: >-
+      Generated, not hand-written. The file set is controlled by the generator,
+      so "did the author write a red-first test" is not a question about this
+      PR's author. The right gate for generated tests is a gate on the
+      generator, per the same exclusion in args/test_gating_gate.yaml.
+
+  - pattern: "tests/*test_*_smoke.py"
+    reason: >-
+      A smoke test asserts that something still imports and still answers. That
+      is CURRENT behaviour ON PURPOSE, so passing against the merge base is the
+      correct outcome for a smoke test, not a defect in it. (`*` crosses `/` in
+      this matcher, as in args/test_gating_gate.yaml, so this covers
+      tests/test_x_smoke.py and tests/security/test_x_smoke.py alike.)
+
+  - pattern: "tests/cortex/test_search_router.py"
+    reason: >-
+      DETERMINISM FIX (tsg-iso-02), same shape as the CPMP entry above and
+      scoped per-file for the same reason. The fan-out timeout test asserted
+      `elapsed < 1.5` after a backend that slept 2.0s: a wall-clock budget that
+      tests the RUNNER, not the router. It failed PR #1773 twice on shared CI
+      (1.6727s, 1.7075s) while passing three of three locally, and blocked an
+      unrelated PR for hours. The fix replaces the clock with a state check —
+      the slow backend blocks on a threading.Event the router can never satisfy
+      and the test asserts the worker was still inside the adapter when
+      search() returned — and it lives ENTIRELY inside this test file. The gate
+      applies only the changed test file on top of the merge base, so applying
+      it also applies the fix: both runs are identical by construction. No
+      production code changed, so there is no pre-change tree in which a
+      correct version of this test could fail.
+      This does NOT license a vacuous test here, and the file proves that
+      itself: test_abandonment_probe_is_not_vacuous drives the SAME
+      instrumented backend under a budget it finishes inside, where the router
+      awaits it and `finished` IS set at return — so the timeout test's
+      `assert not finished_at_return` is discriminating rather than trivially
+      true. Measured directly too: patching _run_backends to await the future
+      and then drop the late result fails both timeout tests, while the real
+      router passes them. Remove this exemption the moment this file is edited
+      for anything but that determinism fix.
+
+  - pattern: "tests/cortex/test_search_golden.py"
+    reason: >-
+      The same determinism fix (tsg-iso-02) applied to the golden suite's copy
+      of the fan-out timeout branch — identical `elapsed < 1.5` assertion,
+      identical replacement by an abandoned-worker state check, identical
+      absence of any production change for a pre-change tree to fail against.
+      Non-vacuity is proved by test_abandonment_probe_is_not_vacuous in
+      tests/cortex/test_search_router.py, which exercises the same probe
+      against a backend the router awaits to completion. Remove this exemption
+      the moment this file is edited for anything but that determinism fix.
+
+  - pattern: "tests/kanban/test_external_repo_verification.py"
+    reason: >-
+      PURE ASSERTION REPAIR — NO PRODUCTION BEHAVIOUR CHANGED, so there is no
+      new RED for a pre-change tree to record (kpr-rvfy-04). The test asserted
+      on `seen[0]`, meaning "whichever git command ran first". Whether the first
+      call is the commit probe or a `git symbolic-ref` from `_task_base_branch`
+      depends on ICDEV_KANBAN_REPO_FT being exported in the AMBIENT environment:
+      with it set the test passed, with it unset (CI) it failed, and the
+      behaviour under test — the commit check running git in the TASK'S repo —
+      was identical and correct in both. The change makes the assertion find the
+      `git log` probe BY NAME, so it measures the code rather than the runner.
+      Verified by reproducing the CI condition locally: `env -u
+      ICDEV_KANBAN_REPO_FT` failed before the change and passes after, while the
+      merge-base tree passes either way — which is exactly why red-first
+      correctly reports it non-discriminating. Remove this exemption the moment
+      this file is edited for anything but that assertion repair.
+
+  - pattern: "tests/test_aca_cert_evidence.py"
+    reason: >-
+      PURE TEST REPAIR — NO PRODUCTION BEHAVIOUR CHANGED, so nothing here can go
+      red (task-det-b7acdb6a2f, born_red_survey finding b7acdb6a2f7a694f).
+      `test_the_table_is_registered_append_only` anchored on the FIRST mention
+      of `APPEND_ONLY_TABLES` in .claude/hooks/pre_tool_use.py — a module
+      DOCSTRING cross-reference at line 13, present since 9aa22358a — and
+      asserted the `"fa_certificate_evidence"` entry appeared within 8,000
+      chars of it. At the landing commit (e5ea7cb67, 2026-07-30) the entry sat
+      3,246 chars past that anchor; the docstring and the list grew, and by
+      2026-08-23 it sat 11,435 chars past it, so the test went red with the
+      table still registered (it is, and always was). The list literal is
+      ~37,000 chars over 370+ UNORDERED entries, so no fixed window is an
+      honest membership check — the passed_at_birth shape wearing a born_red
+      label, re-derived from the two trees directly because `--confirm` ranks
+      by red_days and this file was not in the top slot. THE RED IS RECORDED
+      in detector_findings. The repair reads the list's literal elements with
+      `ast` (never an import — the hook runs wiring at module level) and
+      asserts membership, with a floor on the list size so an empty read
+      cannot pass. The hook is untouched, so the file passes at the merge base
+      and is reported `not_discriminating` by construction. Scoped to this ONE
+      file — a test-only repair is not mechanically distinguishable from a test
+      weakened to match broken code, so this is not the pattern for the next
+      one. GATED by the same change
+      (args/ci_test_files/core.d/task-det-b7acdb6a2f.txt).
+  - pattern: "tests/cloud/test_floci_container_docker.py"
+    reason: >-
+      A LIVE CHARACTERIZATION OF AN EXTERNAL ARTIFACT, and the merge base has
+      the same one, so a red-first proof cannot be produced by construction.
+      This file's subject is not code this PR changes: it starts the pinned
+      floci/floci container and asserts the seam's ALREADY-SHIPPED constants are
+      RIGHT -- that emulator.IMAGE's tag actually resolves and runs, that
+      HEALTH_PATH (/_localstack/health, the drop-in-compat alias) is a route
+      floci really serves, that us-gov-west-1 is accepted where the
+      testcontainers module defaults to us-east-1, that a governed broker.fetch
+      returns the emulator's own rows, and that a twin resource_count counts
+      something real. Those constants landed in flx-seam-01/flx-bridge-02/
+      flx-twin-01 and are unchanged here, and the emulator is the same image at
+      both trees, so the file passes at the merge base for the same reason it
+      passes here -- it is measuring the world, not a diff. Its value is
+      FORWARD-looking and cannot be back-dated: it goes red the day a pinned tag
+      stops resolving, a health route is renamed, the region is rejected, or the
+      governed read stops returning rows -- none of which any stubbed test in
+      the tree can see, which is the whole reason the file exists.
+      NOT A PRECEDENT FOR A TEST-ONLY REPAIR. The discriminating proof for what
+      this PR actually CHANGES is tests/cloud/test_floci_docker_split_is_lawful.py
+      in the same change (9 failed at the merge base, 44 pass here), which is
+      what pins the exclusion, the declared dependency, the CI job, the refusal
+      of a skipped run, and the standing guard that the gated half stays
+      Docker-free. Scoped to this ONE file, which is deliberately EXCLUDED from
+      the merge gate in args/test_gating_gate.yaml and runs only in the
+      docker-suite job of .github/workflows/floci-iac-gate.yml.
+
+  - pattern: "tests/docmod/test_standards_catalog.py"
+    reason: >-
+      PURE ASSERTION REPAIR OF A TEST THAT IS RED ON MAIN — NO PRODUCTION
+      BEHAVIOUR CHANGED, so there is no new RED for a pre-change tree to record
+      (dwr-collab-01; the escalation record is
+      docs/audits/task-det-21a987e887-needed-a-human-resolution.md).
+      `test_pages_line_updated` asserted the hand-written token
+      "`/standards-catalog`" appeared in .claude/commands/start.md. That line is
+      no longer hand-written: mfx-sib-02 made the `Pages:` block DERIVED from
+      the live Flask url_map by tools/dashboard/nav_paths.py, and the canonical
+      rule for this blueprint carries a TRAILING SLASH — `docmod_bp` is
+      constructed with url_prefix="/standards-catalog" and its index is
+      @docmod_bp.route("/"), so the rule is `/standards-catalog/` and a request
+      to `/standards-catalog` answers 308. The generator therefore writes
+      "`/standards-catalog/`", which does not contain the token the old
+      assertion looked for, and the test has been red on main since that
+      generator landed — MEASURED 2026-09-09 on origin/main at 0f16cfb7d: 1
+      failed of 8, AssertionError on that exact line. The repair pins the
+      CANONICAL rule instead, which is STRICTER than the substring it replaces,
+      not weaker: a route that changed shape, lost its trailing slash or
+      vanished from the derived block would still fail it. All 8 pass on this
+      branch. Because the repaired assertion is true of the merge-base tree as
+      well (start.md there already carries the derived token), red-first
+      correctly reports the file non-discriminating — the defect was in the
+      TEST, never in the tree, so there is no commit at which the new assertion
+      would have been red.
+      The RED that IS recorded for what this PR actually CHANGES is
+      tests/docmod/test_collab_poll.py and tests/docmod/test_suggestion_accept_anchor.py
+      in the same change, both reported `discriminating` by the gate.
+      Scoped to this ONE file. A test-only repair is not mechanically
+      distinguishable from a test weakened to match broken code, so this is NOT
+      the pattern for the next one — the same caveat the
+      tests/test_aca_cert_evidence.py entry above carries. Deliberately NOT
+      gated here: the file stays in args/ci_test_backlog.txt because promoting
+      it needs the green-alone AND green-in-suite proof gate_promoter runs, and
+      widening the gated set is not this PR's subject. Remove this exemption the
+      moment this file is edited for anything but that assertion repair.
+
+  - pattern: "tests/cloud/test_floci_oci_seam.py"
+    reason: >-
+      task-det-963d36bf54 (NEEDED-A-HUMAN escalation on
+      artifact-fresh-3d8a95dede, PR #2289). Same shape as the floci-az
+      exemption for tests/cloud/test_floci_az_seam.py (task-det-d38246c003,
+      commit 21b1f4073; retired by artifact-fresh-6de1bfe08c): the only change to this file
+      is one new test, test_pinned_artifacts_manifest_agrees_with_the_seam,
+      asserting that args/pinned_artifacts.yaml's floci-oci `pinned:` field
+      equals emulator_oci.IMAGE_TAG. Both sides were bumped 0.4.0 -> 0.4.1
+      TOGETHER in this same PR (args/pinned_artifacts.yaml and
+      tools/cloud/emulator_oci.py), so the assertion agrees at the merge base
+      (both 0.4.0) exactly as it agrees here (both 0.4.1) -- it is
+      FORWARD-looking (it guards the pin and the manifest from drifting apart
+      on some FUTURE change that updates one without the other), not a
+      regression test for this pin bump, and cannot be back-dated onto the
+      commit that moves both values in lockstep. MEASURED: merge-base
+      02c4d89537e3 runs this file's 86 tests and they pass; this branch's 86
+      (same count, one added) also pass -- red_first_gate's own output for
+      this file.
+      NOT A PRECEDENT FOR A TEST-ONLY REPAIR: no production behaviour here was
+      previously broken, and no other test in this PR's diff needed this
+      exemption. Scoped to this ONE file. Remove this exemption if a future
+      change to this file adds a test that is not a cross-file consistency
+      guard of this shape.
+
+  - pattern: "tests/cloud/test_floci_gcp_seam.py"
+    reason: >-
+      artifact-fresh-6a0d68cce8, the floci-gcp sibling of the floci-az bump
+      (task-det-d38246c003 / PR #2287). The only change to this file is
+      one new test, test_pinned_artifacts_manifest_agrees_with_the_seam, which
+      asserts that args/pinned_artifacts.yaml's floci-gcp `pinned:` field
+      equals emulator_gcp.IMAGE_TAG. Both sides of that comparison were bumped
+      0.8.0 -> 0.9.0 TOGETHER in this same PR (args/pinned_artifacts.yaml and
+      tools/cloud/emulator_gcp.py), so the assertion agrees at the merge base
+      (both 0.8.0) exactly as it agrees here (both 0.9.0) -- a forward-looking
+      drift guard between the manifest and the seam, not a regression test for
+      this pin bump, and it cannot be back-dated onto the commit that moves
+      both values in lockstep. Same reasoning as the floci-oci entry
+      above; scoped to this ONE file. Remove this exemption if a future change
+      to this file adds a test that is not a cross-file consistency guard of
+      this shape.

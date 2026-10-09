@@ -33,6 +33,36 @@ drift:
   consecutive_fails_for_regression: 2  # N consecutive fail snapshots = regression
   baseline_window_days: 7              # Rolling window for stable baseline
 
+# --------------------------------------------------------------------------
+# Relationship derivation (idp-cat-02) — read by tools/awareness/edge_deriver.py
+# --------------------------------------------------------------------------
+# The graph shipped with 2,432 nodes and 0 edges, so it could not answer
+# "what breaks if this changes". These derivations read evidence that is
+# already on disk. All are MECHANICAL (an import statement is a fact) except
+# title_keyword_match, which is a similarity guess — it is weighted 0.4 and
+# tagged `mechanical: false` on every edge it produces, so consumers can drop
+# it without dropping the real dependency graph.
+edges:
+  enabled: true
+  derivations:
+    python_import_ast:             true   # AST imports        -> imports
+    documented_command:            true   # goal/skill md      -> invokes
+    ddl_create_table:              true   # migration/init DDL -> creates_table
+    sql_table_reference:           true   # SQL in a module    -> uses_table
+    flask_route_decorator:         true   # @bp.route(...)     -> serves_route
+    component_registry_iqe:        true   # registry iqe block -> provides_collection
+    component_registry_module:     true   # registry module    -> implemented_by
+    component_registry_depends_on: true   # registry depends_on-> depends_on
+    title_keyword_match:           true   # NOT mechanical     -> referenced_by_goal
+  # Per-source fan-out caps. A single pathological file (a 6,000-line app.py,
+  # a generated module importing everything) must not be able to flood the
+  # graph. Truncation is logged, never silent.
+  limits:
+    max_imports_per_module:    60
+    max_tables_per_module:     15
+    max_routes_per_module:     80
+    max_commands_per_document: 40
+
 gaps:
   # Seven rules default-ON per user sign-off 2026-04-11
   route_not_listed:

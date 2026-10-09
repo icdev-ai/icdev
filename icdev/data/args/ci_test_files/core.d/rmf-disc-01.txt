@@ -1,0 +1,7 @@
+# rmf-disc-01 — discovery adapter interface + characterization harness.
+#
+# Exercises all five adapters (csv, netbox, snmp, ssh, gns3) against mock
+# targets: a temp CSV, two loopback HTTP servers, and a substituted SNMP/SSH
+# transport. Nothing here touches a network outside 127.0.0.1 or a database
+# outside tmp_path, so it is safe on every runner.
+tests/assets/test_discovery_adapters.py

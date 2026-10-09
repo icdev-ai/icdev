@@ -1,0 +1,7 @@
+# kpr-dup-09 — every guard in _move_task protected the transition TO done;
+# nothing protected the transition FROM it, so a stale writer could overwrite a
+# completion (95 flips in 5.5h, measured). Gated because the guard must NARROW
+# and not disarm: a task whose work never landed must still roll back, a human
+# must stay exempt, and an unanswerable check must refuse rather than destroy
+# the record.
+tests/kanban/test_uncomplete_guard.py

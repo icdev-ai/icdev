@@ -22,6 +22,16 @@ round:
   orchestrator_time_budget_minutes: 6
   model_train_trigger_pairs: 20   # LoRA fine-tune fires when this many pairs accumulate
 
+scenario_selection:
+  # Packs the autonomous League (tools/gameday/game_master.py) plays: `all`, or a
+  # list of names from tools/gameday/scenarios.ALL_SCENARIO_PACKS — cyber_adversarial,
+  # ace_showdown, readiness_gauntlet, governance_challenge, docgen_race,
+  # cortex_gauntlet, dic_document_sprint, ndc_topology_challenge,
+  # observability_fire_drill, foundry_zero_to_one, graphrag_hunt.
+  # Rounds rotate round-robin across the selected packs. An unknown name aborts
+  # the tournament rather than silently playing nothing.
+  packs: all
+
 teams:
 
   red:

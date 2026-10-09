@@ -1,0 +1,2 @@
+tests/docmod/test_collab_poll.py
+tests/docmod/test_standards_catalog.py

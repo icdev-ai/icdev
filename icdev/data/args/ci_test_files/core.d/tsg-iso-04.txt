@@ -1,0 +1,2 @@
+# tsg-iso-04 -- the fixture-shape census: a NEW site must fail by name.
+tests/ci/test_fixture_shape_census.py

@@ -1,0 +1,4 @@
+# autonomy-act-08 — a land.py merge records its landing on the merge ledger at
+# MERGE TIME, instead of waiting up to 96h for the 6-hourly reflex backfill.
+tests/test_landing_at_merge_time.py
+tests/kanban/test_cli_records_the_landing.py

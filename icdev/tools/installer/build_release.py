@@ -77,10 +77,24 @@ def _step(num: int, total: int, name: str) -> None:
 
 
 def _run(cmd: list[str], cwd: Path = REPO_ROOT, timeout: int = 300) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        cmd, cwd=str(cwd), capture_output=True, text=True,
-        encoding="utf-8", errors="replace", timeout=timeout,
-    )
+    """Run a command, reporting a missing executable as a failed result.
+
+    ``subprocess.run`` raises ``FileNotFoundError`` when the program does not
+    exist, which aborted the entire release with a bare traceback instead of
+    naming the step that failed — and skipped the fallbacks callers already
+    have for exactly that case (``icdev init`` retries via ``python -m`` when
+    the entry-point shim is absent). Returning a non-zero result keeps the
+    failure inside the reporting the caller already does.
+    """
+    try:
+        return subprocess.run(
+            cmd, cwd=str(cwd), capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=timeout,
+        )
+    except FileNotFoundError as exc:
+        return subprocess.CompletedProcess(
+            cmd, returncode=127, stdout="",
+            stderr=f"No such executable: {cmd[0]} ({exc})")
 
 
 # ---------------------------------------------------------------------------
@@ -360,6 +374,33 @@ _SUBSYSTEM_IMPORT_PROBE = (
     "print('SUBSYSTEM_IMPORTS_OK (%d)' % len(mods))\n"
 ).format(mods=list(_SMOKE_SUBSYSTEMS))
 
+#: Minimum tables a provisioned platform database must carry. The initialiser
+#: creates ~520; a low bar still separates "schema created" from "file touched"
+#: without pinning a count that legitimately moves every release.
+_MIN_PROVISIONED_TABLES = 100
+
+#: Drive the real provisioning entry point the wizard uses, then count tables.
+#: Run with cwd = the scaffolded project so the relative data/icdev.db path is
+#: the one a user would get.
+_DB_PROVISION_PROBE = (
+    "import sqlite3, sys\n"
+    "from pathlib import Path\n"
+    "from icdev.tools.cli.provision_db import provision_sqlite\n"
+    "db = Path('data/icdev.db')\n"
+    "res = provision_sqlite(db)\n"
+    "if not db.is_file():\n"
+    "    print('FAILED: provision_sqlite created no database at %s' % db)\n"
+    "    print('  result: %r' % (res,))\n"
+    "    sys.exit(1)\n"
+    "n = sqlite3.connect(str(db)).execute(\n"
+    "    \"SELECT count(1) FROM sqlite_master WHERE type='table'\").fetchone()[0]\n"
+    "print('DB_TABLES=%d ok=%s' % (n, res.get('ok')))\n"
+    "if n < {minimum}:\n"
+    "    print('FAILED: only %d tables — schema did not initialise' % n)\n"
+    "    print('  result: %r' % (res,))\n"
+    "    sys.exit(1)\n"
+).format(minimum=_MIN_PROVISIONED_TABLES)
+
 _COLUMN_POLICY_PROBE = (
     "import sys\n"
     "from icdev.tools.security import column_security as cs\n"
@@ -472,12 +513,30 @@ def step_smoke_test() -> dict:
         result["column_policies_ok"] = (r.returncode == 0)
         result["column_policies_info"] = (r.stdout or r.stderr or "").strip()[-300:]
 
+        # Test: the wizard actually PROVISIONS a database, in the project
+        # `icdev init` just made.
+        #
+        # Both halves of this were broken in 1.2.42 and neither was visible
+        # from a source checkout. The SQLite branch called check_sqlite() and
+        # stopped, so it printed "database ready : False (missing: schema)" and
+        # created nothing; and the schema initialiser it should have called
+        # shells out to `-m tools.db.init_icdev_db`, which cannot resolve in an
+        # installed wheel because the tools→icdev.tools alias lives in the
+        # parent's sys.modules and a child process never sees it.
+        #
+        # Asserting on the table count rather than the exit status: the old
+        # SQLite path returned ok and left an empty directory.
+        r = _run([str(py), "-c", _DB_PROVISION_PROBE], cwd=proj_dir, timeout=900)
+        result["db_provision_ok"] = (r.returncode == 0)
+        result["db_provision_info"] = (r.stdout or r.stderr or "").strip()[-400:]
+
         result["ok"] = all((result.get("install_ok"),
                             result.get("import_ok"),
                             result.get("init_ok"),
                             result.get("registry_load_ok"),
                             result.get("subsystem_imports_ok"),
-                            result.get("column_policies_ok")))
+                            result.get("column_policies_ok"),
+                            result.get("db_provision_ok")))
     return result
 
 
@@ -522,6 +581,12 @@ def _forbidden_airgap_packages(pip_list_json: str) -> list[str]:
 
 def _airgap_expected_count(profile: str = _AIRGAP_PROFILE) -> int:
     """Component count the given core profile enables (from core_profiles.yaml)."""
+    # Run as a script (release.py / build_release.py), sys.path[0] is
+    # tools/installer/, not the repo root, so `import tools...` raised and this
+    # returned -1 -- failing the air-gap step on a correct wheel. Same fix
+    # release.py applies before its own in-process `tools` imports.
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
     try:
         from tools.config.core_profile import get_profile
         p = get_profile(profile) or {}

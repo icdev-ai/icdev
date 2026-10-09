@@ -1,0 +1,3061 @@
+{
+ "generated_for": "tsr-core-01-d2",
+ "source_commit": "5766e4748",
+ "regex": "(?<![\\w.])(?:icdev\\.)?tools\\.(?:db|saas|testing|installer|cli|config|compat|project|dx|billing|auth)(?![\\w])",
+ "import_regex": "^\\s*(?:from|import)\\s+(?:icdev\\.)?tools\\.(db|saas|testing|installer|cli|config|compat|project|dx|billing|auth)(?![\\w])",
+ "powershell": "Get-ChildItem -Path tests -Recurse -Filter *.py -File | Select-String -Pattern '(?<![\\w.])(?:icdev\\.)?tools\\.(?:db|saas|testing|installer|cli|config|compat|project|dx|billing|auth)(?![\\w])' -List",
+ "packages": [
+  "db",
+  "saas",
+  "testing",
+  "installer",
+  "cli",
+  "config",
+  "compat",
+  "project",
+  "dx",
+  "billing",
+  "auth"
+ ],
+ "totals": {
+  "tests_py_files": 1988,
+  "regex_matches": 476,
+  "tier_a": 138,
+  "tier_a_runnable": 134,
+  "tier_b": 249,
+  "tier_c": 89
+ },
+ "tier_a_runnable": [
+  "tests/api/test_contract.py",
+  "tests/cli/test_icdev_enable.py",
+  "tests/cortex/test_audit_selfheal.py",
+  "tests/cortex/test_service_keys.py",
+  "tests/e2e/test_lpx_vv02_key_abstraction_e2e.py",
+  "tests/e2e_data_lineage.py",
+  "tests/e2e_govcon_proposals_cpmp.py",
+  "tests/e2e_kanban_bulk_promote.py",
+  "tests/e2e_kanban_depends_on.py",
+  "tests/e2e_prop_vv02_role_and_new_surfaces.py",
+  "tests/e2e_route_coverage_gaps.py",
+  "tests/genesis_auto/test_project_scaffold.py",
+  "tests/genesis_auto/test_storage.py",
+  "tests/govcon/test_past_performance_suggester.py",
+  "tests/pg_tier/test_pg_backend_sentinel.py",
+  "tests/security/test_dast_gate_fail_closed.py",
+  "tests/test_aca_pg_native_placeholders.py",
+  "tests/test_aca_vv_integrity_refusal.py",
+  "tests/test_aca_xp_ledger.py",
+  "tests/test_acceptance_validator.py",
+  "tests/test_ace_session_smoke.py",
+  "tests/test_api_gateway.py",
+  "tests/test_api_key_scopes.py",
+  "tests/test_backend_guard.py",
+  "tests/test_backup_manager.py",
+  "tests/test_bdt_cato_monitor.py",
+  "tests/test_bm25_translation.py",
+  "tests/test_cac_revocation.py",
+  "tests/test_canvas_cards_pg.py",
+  "tests/test_claude_dir_validator.py",
+  "tests/test_companion.py",
+  "tests/test_component_registry.py",
+  "tests/test_core_profile.py",
+  "tests/test_cvx_sql_placeholders.py",
+  "tests/test_db_utils.py",
+  "tests/test_dic_bulk_edit_anomaly_detection.py",
+  "tests/test_dic_document_model_anomaly_detection.py",
+  "tests/test_dic_document_routing_anomaly_detection.py",
+  "tests/test_dic_field_validation_anomaly_detection.py",
+  "tests/test_dic_ingest_anomaly_detection.py",
+  "tests/test_dic_ingest_job_anomaly_detection.py",
+  "tests/test_dic_ingest_near_duplicate.py",
+  "tests/test_dic_ingest_throughput_anomaly.py",
+  "tests/test_dic_output_export_anomaly_detection.py",
+  "tests/test_dic_view_anomaly_detection.py",
+  "tests/test_ecr_bill.py",
+  "tests/test_ecr_onb.py",
+  "tests/test_env_generator.py",
+  "tests/test_forge_academy_gameday_xp.py",
+  "tests/test_helm_chart.py",
+  "tests/test_ideation_frames.py",
+  "tests/test_init_goals_and_selective.py",
+  "tests/test_init_icdev_db.py",
+  "tests/test_installer.py",
+  "tests/test_instruction_generator.py",
+  "tests/test_kanban_gate_integrity.py",
+  "tests/test_kanban_scheduled_and_pr_opened.py",
+  "tests/test_kg_empty_graph_counts_migration.py",
+  "tests/test_lpx_proxy_budgets.py",
+  "tests/test_lpx_proxy_keys.py",
+  "tests/test_lpx_proxy_metrics.py",
+  "tests/test_lpx_proxy_reconcile.py",
+  "tests/test_lpx_team_limits.py",
+  "tests/test_lpx_team_spend.py",
+  "tests/test_manifest_loader.py",
+  "tests/test_mcp_config_generator.py",
+  "tests/test_mcp_http_e2e.py",
+  "tests/test_mcp_oauth.py",
+  "tests/test_metrics.py",
+  "tests/test_metrics_mlflow_hygiene.py",
+  "tests/test_mfa.py",
+  "tests/test_migration_engine_detection.py",
+  "tests/test_migration_runner.py",
+  "tests/test_migration_version_uniqueness.py",
+  "tests/test_mirror_drift_baseline.py",
+  "tests/test_nav_bld_01_aisg_real_data.py",
+  "tests/test_no_utf8_bom_in_sources.py",
+  "tests/test_observability_pg_correctness.py",
+  "tests/test_odc_compliance_card.py",
+  "tests/test_odc_twin_snapshots.py",
+  "tests/test_openapi_spec.py",
+  "tests/test_output_formatter.py",
+  "tests/test_penta_aadc_initdb.py",
+  "tests/test_penta_aca_certs.py",
+  "tests/test_penta_aca_content_seed.py",
+  "tests/test_penta_aca_missions1.py",
+  "tests/test_penta_aca_missions2.py",
+  "tests/test_penta_aca_routes_prefix.py",
+  "tests/test_pg_placeholder_portability.py",
+  "tests/test_pkg_bootstrap_map.py",
+  "tests/test_pkg_db_provisioning.py",
+  "tests/test_pkg_docs01_status_hint.py",
+  "tests/test_pkg_init_profile.py",
+  "tests/test_pkg_rel01_smoke_assertions.py",
+  "tests/test_pkg_rel03_airgap_install.py",
+  "tests/test_pkg_setup02_advisories.py",
+  "tests/test_pkg_setup_tui.py",
+  "tests/test_pkg_subprocess_namespace.py",
+  "tests/test_platform_db.py",
+  "tests/test_production_audit.py",
+  "tests/test_production_remediate.py",
+  "tests/test_project_create.py",
+  "tests/test_project_prefix_scope.py",
+  "tests/test_provision_db.py",
+  "tests/test_proxy_detect.py",
+  "tests/test_qa_agent_runner.py",
+  "tests/test_query_health.py",
+  "tests/test_rate_limiter.py",
+  "tests/test_rbac.py",
+  "tests/test_release_orchestrator.py",
+  "tests/test_rest_api.py",
+  "tests/test_rest_api_agents.py",
+  "tests/test_rest_api_expansion.py",
+  "tests/test_saas_llm_keys.py",
+  "tests/test_saas_portal.py",
+  "tests/test_saml_auth.py",
+  "tests/test_selector_healer.py",
+  "tests/test_session_context_builder.py",
+  "tests/test_setup_wizard.py",
+  "tests/test_skill_translator.py",
+  "tests/test_storage_executescript_savepoint.py",
+  "tests/test_storage_introspection_helpers.py",
+  "tests/test_swagger_ui.py",
+  "tests/test_tool_detector.py",
+  "tests/test_tools_shim_submodule_import.py",
+  "tests/test_traces_api_rls.py",
+  "tests/test_translate_sql_rule14.py",
+  "tests/testing/test_data_types.py",
+  "tests/testing/test_e2e_runner.py",
+  "tests/testing/test_health_check.py",
+  "tests/testing/test_test_agent_models.py",
+  "tests/testing/test_test_orchestrator.py",
+  "tests/testing/test_theater_detector.py",
+  "tests/testing/test_utils.py"
+ ],
+ "tier_a_support": [
+  "tests/_academy_conn.py",
+  "tests/_sql_compat.py",
+  "tests/api/conftest.py",
+  "tests/docmod/conftest.py"
+ ],
+ "tier_b": [
+  {
+   "file": "tests/bi_dashboard/test_end_to_end_flow.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "bi_dashboard"
+   ]
+  },
+  {
+   "file": "tests/bi_dashboard/test_routes_auth.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "bi_dashboard"
+   ]
+  },
+  {
+   "file": "tests/browser/cdp/test_vv_driverless.py",
+   "core": [
+    "testing"
+   ],
+   "other": [
+    "browser"
+   ]
+  },
+  {
+   "file": "tests/ci/modules/test_agent.py",
+   "core": [
+    "testing"
+   ],
+   "other": [
+    "ci"
+   ]
+  },
+  {
+   "file": "tests/cortex/test_audit_persistence.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "cortex",
+    "security"
+   ]
+  },
+  {
+   "file": "tests/cortex/test_blueprint_routes.py",
+   "core": [
+    "config"
+   ],
+   "other": [
+    "cortex",
+    "dashboard"
+   ]
+  },
+  {
+   "file": "tests/cortex/test_iqe_adapter.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "cortex",
+    "iqe"
+   ]
+  },
+  {
+   "file": "tests/databridge/test_icdev_cpmp_connector.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "databridge"
+   ]
+  },
+  {
+   "file": "tests/db/test_pg_bootstrap_baseline.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "studio"
+   ]
+  },
+  {
+   "file": "tests/docmod/test_claim_extractor.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "doc_modernization"
+   ]
+  },
+  {
+   "file": "tests/docmod/test_claim_lifecycle.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "doc_modernization",
+    "document_intelligence"
+   ]
+  },
+  {
+   "file": "tests/docmod/test_core_engine.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "doc_modernization"
+   ]
+  },
+  {
+   "file": "tests/docmod/test_cross_reference_tracker.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "document_intelligence"
+   ]
+  },
+  {
+   "file": "tests/docmod/test_domain_packs.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "doc_modernization",
+    "knowledge_graph",
+    "mcp"
+   ]
+  },
+  {
+   "file": "tests/docmod/test_feed_wiring.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "doc_modernization",
+    "document_intelligence"
+   ]
+  },
+  {
+   "file": "tests/docmod/test_hitl_surfaces.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "doc_modernization",
+    "document_intelligence"
+   ]
+  },
+  {
+   "file": "tests/docmod/test_import_from_docgen.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "document_intelligence"
+   ]
+  },
+  {
+   "file": "tests/docmod/test_link_check.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "doc_modernization"
+   ]
+  },
+  {
+   "file": "tests/docmod/test_mcp_tools.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "mcp"
+   ]
+  },
+  {
+   "file": "tests/docmod/test_modernization_ui.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "doc_modernization",
+    "document_intelligence",
+    "iqe",
+    "llm"
+   ]
+  },
+  {
+   "file": "tests/docmod/test_pack_generator.py",
+   "core": [
+    "cli"
+   ],
+   "other": [
+    "doc_modernization"
+   ]
+  },
+  {
+   "file": "tests/docmod/test_pg_fixes_and_flow.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "doc_modernization",
+    "document_intelligence"
+   ]
+  },
+  {
+   "file": "tests/docmod/test_regen_quality_gate.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "doc_modernization",
+    "document_intelligence"
+   ]
+  },
+  {
+   "file": "tests/docmod/test_reverse_bridge.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "docgen"
+   ]
+  },
+  {
+   "file": "tests/docmod/test_standards_catalog.py",
+   "core": [
+    "config",
+    "db"
+   ],
+   "other": [
+    "doc_modernization"
+   ]
+  },
+  {
+   "file": "tests/document_intelligence/test_freshness_notifier.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "document_intelligence"
+   ]
+  },
+  {
+   "file": "tests/e2e_canvas_orchestration.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "boundary_canvas",
+    "browser",
+    "canvas",
+    "security_canvas"
+   ]
+  },
+  {
+   "file": "tests/e2e_chat_hitl_kanban_lifecycle.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "chat",
+    "requirements",
+    "workflow_hitl"
+   ]
+  },
+  {
+   "file": "tests/e2e_kanban_depends_on_full_lifecycle.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "browser",
+    "genesis"
+   ]
+  },
+  {
+   "file": "tests/e2e_ndc_full_lifecycle.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "canvas",
+    "network",
+    "rag"
+   ]
+  },
+  {
+   "file": "tests/foundry/test_spec_generator.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "foundry"
+   ]
+  },
+  {
+   "file": "tests/genesis/test_kanban_orphan_cleanup.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "genesis"
+   ]
+  },
+  {
+   "file": "tests/genesis_auto/test_nova_e2e.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "ace",
+    "workflow"
+   ]
+  },
+  {
+   "file": "tests/genesis_auto/test_reflexion_agent.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "workflow"
+   ]
+  },
+  {
+   "file": "tests/genesis_auto/test_soul_manager.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "ace"
+   ]
+  },
+  {
+   "file": "tests/genesis_auto/test_trace_logger.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "workflow"
+   ]
+  },
+  {
+   "file": "tests/genesis_auto/test_trust_calibrator.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "ace"
+   ]
+  },
+  {
+   "file": "tests/kanban/test_auto_close_parent.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "genesis"
+   ]
+  },
+  {
+   "file": "tests/kanban/test_cross_agency_transfer_logger.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "audit"
+   ]
+  },
+  {
+   "file": "tests/kanban/test_des_audit_logger.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "kanban"
+   ]
+  },
+  {
+   "file": "tests/kanban/test_done_verification.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "coordination",
+    "genesis",
+    "kanban"
+   ]
+  },
+  {
+   "file": "tests/kanban/test_manual_gate_api_guard.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "dashboard",
+    "genesis",
+    "kanban"
+   ]
+  },
+  {
+   "file": "tests/kanban/test_scheduler_hardened.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "genesis",
+    "kanban",
+    "workflow"
+   ]
+  },
+  {
+   "file": "tests/llm/test_harness_decision_recording.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "genesis",
+    "llm"
+   ]
+  },
+  {
+   "file": "tests/studio/test_mcp_executor_approval.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "mcp",
+    "studio"
+   ]
+  },
+  {
+   "file": "tests/studio/test_mcp_executor_audit.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "compliance",
+    "mcp",
+    "studio"
+   ]
+  },
+  {
+   "file": "tests/studio/test_mcp_executor_rbac.py",
+   "core": [
+    "config"
+   ],
+   "other": [
+    "mcp",
+    "security",
+    "studio"
+   ]
+  },
+  {
+   "file": "tests/test_ace_behavioral_monitor.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "ace",
+    "integrity"
+   ]
+  },
+  {
+   "file": "tests/test_ace_chat_trigger.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "ace",
+    "dashboard"
+   ]
+  },
+  {
+   "file": "tests/test_ace_foundation.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "ace",
+    "daemon"
+   ]
+  },
+  {
+   "file": "tests/test_ace_hitl_resolve_endpoint.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "ace"
+   ]
+  },
+  {
+   "file": "tests/test_ace_memory_persistence.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "ace"
+   ]
+  },
+  {
+   "file": "tests/test_ace_qa_workflow.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "ace"
+   ]
+  },
+  {
+   "file": "tests/test_ace_runtime.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "ace"
+   ]
+  },
+  {
+   "file": "tests/test_ace_step_executor.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "ace"
+   ]
+  },
+  {
+   "file": "tests/test_ace_webhook_delivery.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "ace"
+   ]
+  },
+  {
+   "file": "tests/test_acoic_hitl_audit.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "document_intelligence"
+   ]
+  },
+  {
+   "file": "tests/test_adversarial_validator.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "strategos"
+   ]
+  },
+  {
+   "file": "tests/test_agent_mailbox_placeholders.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "agent"
+   ]
+  },
+  {
+   "file": "tests/test_ahx_harness_truth.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "ci",
+    "genesis",
+    "knowledge",
+    "memory"
+   ]
+  },
+  {
+   "file": "tests/test_ai_platform_coverage.py",
+   "core": [
+    "cli",
+    "dx",
+    "installer"
+   ],
+   "other": [
+    "workflow"
+   ]
+  },
+  {
+   "file": "tests/test_aiml_twin.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "aiml_canvas",
+    "twin_core"
+   ]
+  },
+  {
+   "file": "tests/test_api_surface_extractor.py",
+   "core": [
+    "testing"
+   ],
+   "other": [
+    "rag"
+   ]
+  },
+  {
+   "file": "tests/test_ato_compliance_dashboard.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "ato_compliance",
+    "dashboard"
+   ]
+  },
+  {
+   "file": "tests/test_attack_graph_db.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "security_canvas"
+   ]
+  },
+  {
+   "file": "tests/test_auto_resolver_heartbeat.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "monitor"
+   ]
+  },
+  {
+   "file": "tests/test_awareness_reflex.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "genesis"
+   ]
+  },
+  {
+   "file": "tests/test_bdc_cato_readiness.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "boundary_canvas"
+   ]
+  },
+  {
+   "file": "tests/test_bdc_impact_panel.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "boundary_canvas",
+    "requirements"
+   ]
+  },
+  {
+   "file": "tests/test_bdc_init_db_sqlite_fallback.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "boundary_canvas"
+   ]
+  },
+  {
+   "file": "tests/test_bdc_isa_expiry.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "boundary_canvas",
+    "genesis"
+   ]
+  },
+  {
+   "file": "tests/test_bdc_oscal_exporter.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "boundary_canvas"
+   ]
+  },
+  {
+   "file": "tests/test_bdc_poam_generator_fk.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "boundary_canvas"
+   ]
+  },
+  {
+   "file": "tests/test_bdc_twin_honesty.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "boundary_canvas"
+   ]
+  },
+  {
+   "file": "tests/test_bdr_vv_suite.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "boundary_canvas",
+    "requirements"
+   ]
+  },
+  {
+   "file": "tests/test_bdt_iqe_migration.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "genesis",
+    "iqe"
+   ]
+  },
+  {
+   "file": "tests/test_bdt_twin_evidence.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "genesis"
+   ]
+  },
+  {
+   "file": "tests/test_bid_pricing.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "govcon"
+   ]
+  },
+  {
+   "file": "tests/test_bom_generator.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "govcon"
+   ]
+  },
+  {
+   "file": "tests/test_cato_twin.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "boundary_canvas",
+    "genesis"
+   ]
+  },
+  {
+   "file": "tests/test_chat_cli_bridge_coworker.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "ace"
+   ]
+  },
+  {
+   "file": "tests/test_chat_intake_hitl.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "chat",
+    "workflow_hitl"
+   ]
+  },
+  {
+   "file": "tests/test_chat_manager_v2.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "chat"
+   ]
+  },
+  {
+   "file": "tests/test_cli_skills.py",
+   "core": [
+    "cli"
+   ],
+   "other": [
+    "marketplace",
+    "skills"
+   ]
+  },
+  {
+   "file": "tests/test_cnr_docgen.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "docgen"
+   ]
+  },
+  {
+   "file": "tests/test_cnr_migration_intel.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "migration_intelligence"
+   ]
+  },
+  {
+   "file": "tests/test_competitor_profiler.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "govcon"
+   ]
+  },
+  {
+   "file": "tests/test_cost_volume_intake.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "govcon"
+   ]
+  },
+  {
+   "file": "tests/test_cross_agency_transfer_logger.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "audit"
+   ]
+  },
+  {
+   "file": "tests/test_crx_insider_risk.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "security"
+   ]
+  },
+  {
+   "file": "tests/test_crx_soar_lite.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "security_canvas"
+   ]
+  },
+  {
+   "file": "tests/test_cvx_sql06_datacanvas_placeholders.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "data_canvas"
+   ]
+  },
+  {
+   "file": "tests/test_cvx_sql07_datacanvas_pct_s.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "data_canvas"
+   ]
+  },
+  {
+   "file": "tests/test_dashboard_auth.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "dashboard"
+   ]
+  },
+  {
+   "file": "tests/test_dashboard_introspection_sweep.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "dashboard"
+   ]
+  },
+  {
+   "file": "tests/test_dcpr_profiler_pii.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "data_canvas"
+   ]
+  },
+  {
+   "file": "tests/test_dcpr_twin.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "data_canvas"
+   ]
+  },
+  {
+   "file": "tests/test_dic_acoic_ux.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "docgen",
+    "document_intelligence",
+    "genesis"
+   ]
+  },
+  {
+   "file": "tests/test_dic_analytics_kg_linkage.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "document_intelligence"
+   ]
+  },
+  {
+   "file": "tests/test_dic_analytics_provenance.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "document_intelligence",
+    "rag"
+   ]
+  },
+  {
+   "file": "tests/test_dic_chat_memory.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "document_intelligence"
+   ]
+  },
+  {
+   "file": "tests/test_dic_chat_memory_schema.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "document_intelligence"
+   ]
+  },
+  {
+   "file": "tests/test_dic_collection_registry.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "document_intelligence"
+   ]
+  },
+  {
+   "file": "tests/test_dic_cross_canvas_context.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "document_intelligence"
+   ]
+  },
+  {
+   "file": "tests/test_dic_freshness_engine.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "document_intelligence"
+   ]
+  },
+  {
+   "file": "tests/test_dic_ingest_orchestrator.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "document_intelligence"
+   ]
+  },
+  {
+   "file": "tests/test_dic_re_enrich_metadata.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "llm"
+   ]
+  },
+  {
+   "file": "tests/test_docgen.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "docgen"
+   ]
+  },
+  {
+   "file": "tests/test_docmod_drift_bridge.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "doc_modernization",
+    "document_intelligence"
+   ]
+  },
+  {
+   "file": "tests/test_dvg_frames_migration.py",
+   "core": [
+    "config"
+   ],
+   "other": [
+    "llm"
+   ]
+  },
+  {
+   "file": "tests/test_dwo_bus_subscriber.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "studio"
+   ]
+  },
+  {
+   "file": "tests/test_dwo_canvas_resolution.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "studio"
+   ]
+  },
+  {
+   "file": "tests/test_dwo_event_source_matching.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "studio"
+   ]
+  },
+  {
+   "file": "tests/test_dwo_evt_02_gateway_dispatch.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "studio"
+   ]
+  },
+  {
+   "file": "tests/test_dwo_executor_run_memory.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "studio"
+   ]
+  },
+  {
+   "file": "tests/test_dwo_gate_bridge.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "notifications",
+    "studio",
+    "workflow_hitl"
+   ]
+  },
+  {
+   "file": "tests/test_dwo_gate_durability.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "studio"
+   ]
+  },
+  {
+   "file": "tests/test_dwo_run_inputs_column.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "studio"
+   ]
+  },
+  {
+   "file": "tests/test_dwo_triggers_panel.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "dashboard",
+    "studio"
+   ]
+  },
+  {
+   "file": "tests/test_dwo_vv_durability.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "studio"
+   ]
+  },
+  {
+   "file": "tests/test_dwo_vv_mcp_dispatch.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "studio"
+   ]
+  },
+  {
+   "file": "tests/test_ecr_api.py",
+   "core": [
+    "auth"
+   ],
+   "other": [
+    "admin",
+    "api"
+   ]
+  },
+  {
+   "file": "tests/test_ecr_cl.py",
+   "core": [
+    "auth",
+    "db"
+   ],
+   "other": [
+    "dashboard"
+   ]
+  },
+  {
+   "file": "tests/test_ecr_demo.py",
+   "core": [
+    "cli"
+   ],
+   "other": [
+    "demo",
+    "showcase"
+   ]
+  },
+  {
+   "file": "tests/test_ecr_dres.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "admin",
+    "compliance"
+   ]
+  },
+  {
+   "file": "tests/test_ecr_soc2.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "admin",
+    "compliance"
+   ]
+  },
+  {
+   "file": "tests/test_ecr_sso.py",
+   "core": [
+    "auth",
+    "db"
+   ],
+   "other": [
+    "admin"
+   ]
+  },
+  {
+   "file": "tests/test_ecr_tier.py",
+   "core": [
+    "billing",
+    "config"
+   ],
+   "other": [
+    "security"
+   ]
+  },
+  {
+   "file": "tests/test_event_bus_security.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "canvas"
+   ]
+  },
+  {
+   "file": "tests/test_gcpl_ctr_02_cpmp_obligation_periods.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "dashboard",
+    "govcon"
+   ]
+  },
+  {
+   "file": "tests/test_genesis_reflex_cato_monitor.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "genesis"
+   ]
+  },
+  {
+   "file": "tests/test_govcon_pwin_api.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "dashboard"
+   ]
+  },
+  {
+   "file": "tests/test_govcon_rbac.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "dashboard"
+   ]
+  },
+  {
+   "file": "tests/test_gsd_adaptations.py",
+   "core": [
+    "testing"
+   ],
+   "other": [
+    "agent",
+    "knowledge"
+   ]
+  },
+  {
+   "file": "tests/test_heartbeat_kanban_wakeup.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "monitor"
+   ]
+  },
+  {
+   "file": "tests/test_il5_ingestion.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "il5"
+   ]
+  },
+  {
+   "file": "tests/test_initiative_allocator.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "budget"
+   ]
+  },
+  {
+   "file": "tests/test_integrity_capabilities.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "integrity"
+   ]
+  },
+  {
+   "file": "tests/test_integrity_engine.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "integrity"
+   ]
+  },
+  {
+   "file": "tests/test_integrity_ingest.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "integrity"
+   ]
+  },
+  {
+   "file": "tests/test_integrity_ingest_git.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "integrity"
+   ]
+  },
+  {
+   "file": "tests/test_integrity_monitor_reflex.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "genesis",
+    "integrity"
+   ]
+  },
+  {
+   "file": "tests/test_integrity_pr_gates.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "integrity"
+   ]
+  },
+  {
+   "file": "tests/test_integrity_provenance.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "integrity"
+   ]
+  },
+  {
+   "file": "tests/test_integrity_scanners.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "integrity"
+   ]
+  },
+  {
+   "file": "tests/test_integrity_tamper.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "integrity"
+   ]
+  },
+  {
+   "file": "tests/test_iqe_bi_dashboard_adapter.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "iqe"
+   ]
+  },
+  {
+   "file": "tests/test_iqe_ext_governance.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "databridge",
+    "iqe"
+   ]
+  },
+  {
+   "file": "tests/test_iqe_ext_lineage.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "data_canvas",
+    "databridge",
+    "iqe"
+   ]
+  },
+  {
+   "file": "tests/test_iqe_nl_to_iqe.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "network"
+   ]
+  },
+  {
+   "file": "tests/test_kanban_auto_revive.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "genesis"
+   ]
+  },
+  {
+   "file": "tests/test_kanban_cascade_rollback.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "genesis"
+   ]
+  },
+  {
+   "file": "tests/test_kanban_cli_manual_transition.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "kanban"
+   ]
+  },
+  {
+   "file": "tests/test_kanban_depends_on.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "dashboard",
+    "genesis"
+   ]
+  },
+  {
+   "file": "tests/test_kanban_manual_gate_exemption.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "genesis",
+    "kanban"
+   ]
+  },
+  {
+   "file": "tests/test_kanban_move_task_scheduled.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "genesis"
+   ]
+  },
+  {
+   "file": "tests/test_kanban_silent_cleanup.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "genesis"
+   ]
+  },
+  {
+   "file": "tests/test_kanban_sla_metrics.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "kanban"
+   ]
+  },
+  {
+   "file": "tests/test_kanban_stale_reaper_manual_actor.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "genesis"
+   ]
+  },
+  {
+   "file": "tests/test_kanban_startup_recovery.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "notifications",
+    "workflow"
+   ]
+  },
+  {
+   "file": "tests/test_key_personnel.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "govcon"
+   ]
+  },
+  {
+   "file": "tests/test_knowledge_graph.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "knowledge_graph"
+   ]
+  },
+  {
+   "file": "tests/test_mitre_coverage_db.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "observability_canvas"
+   ]
+  },
+  {
+   "file": "tests/test_mitre_coverage_twin.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "observability_canvas"
+   ]
+  },
+  {
+   "file": "tests/test_nav_bld_02_aisg_views.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "aisg"
+   ]
+  },
+  {
+   "file": "tests/test_nav_bld_03_aisg_honesty.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "aisg"
+   ]
+  },
+  {
+   "file": "tests/test_nav_comp_03_api_authenticity.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "dashboard"
+   ]
+  },
+  {
+   "file": "tests/test_nav_comp_05_sre.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "dashboard"
+   ]
+  },
+  {
+   "file": "tests/test_nav_intel_09_d5_judge_publish_integration.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "dashboard"
+   ]
+  },
+  {
+   "file": "tests/test_nav_intel_09_pulse_judge_gate.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "dashboard",
+    "pulse"
+   ]
+  },
+  {
+   "file": "tests/test_nav_misc_01_release_badge.py",
+   "core": [
+    "auth",
+    "db"
+   ],
+   "other": [
+    "dashboard"
+   ]
+  },
+  {
+   "file": "tests/test_nav_sec_09_usage_attribution.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "agent",
+    "dashboard"
+   ]
+  },
+  {
+   "file": "tests/test_nav_strat_01_intsum_grounding.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "strategos"
+   ]
+  },
+  {
+   "file": "tests/test_ndc_backend_helpers.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "network"
+   ]
+  },
+  {
+   "file": "tests/test_ndc_demo_runner.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "ndc",
+    "network"
+   ]
+  },
+  {
+   "file": "tests/test_ndc_enclave_scanner.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "network"
+   ]
+  },
+  {
+   "file": "tests/test_ndc_migration_phases.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "network"
+   ]
+  },
+  {
+   "file": "tests/test_ndc_stencil_importer.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "network"
+   ]
+  },
+  {
+   "file": "tests/test_ndc_topology_validator.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "network"
+   ]
+  },
+  {
+   "file": "tests/test_network_doc_lifecycle.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "ace",
+    "document_intelligence",
+    "network"
+   ]
+  },
+  {
+   "file": "tests/test_network_intelligence.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "network"
+   ]
+  },
+  {
+   "file": "tests/test_nova_reflexion_trigger.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "ace"
+   ]
+  },
+  {
+   "file": "tests/test_odc_api_hygiene.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "observability_canvas"
+   ]
+  },
+  {
+   "file": "tests/test_odc_bus_subscriber.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "observability_canvas"
+   ]
+  },
+  {
+   "file": "tests/test_odc_sops_runbooks.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "observability_canvas"
+   ]
+  },
+  {
+   "file": "tests/test_odc_twin.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "observability_canvas"
+   ]
+  },
+  {
+   "file": "tests/test_oracle_lens_network.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "network",
+    "oracle"
+   ]
+  },
+  {
+   "file": "tests/test_pdc_routes_engine.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "pipeline"
+   ]
+  },
+  {
+   "file": "tests/test_pdc_routes_misc.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "pipeline"
+   ]
+  },
+  {
+   "file": "tests/test_pdc_routes_sops_runbooks.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "pipeline"
+   ]
+  },
+  {
+   "file": "tests/test_pdc_studio_steps.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "pipeline"
+   ]
+  },
+  {
+   "file": "tests/test_penta_aadc_compliance.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "aadc",
+    "agentic_ai_canvas"
+   ]
+  },
+  {
+   "file": "tests/test_penta_aiify_failclosed.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "aiify"
+   ]
+  },
+  {
+   "file": "tests/test_penta_aiify_p2.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "aiify"
+   ]
+  },
+  {
+   "file": "tests/test_penta_aiify_routes.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "aiify",
+    "innovation",
+    "iqe"
+   ]
+  },
+  {
+   "file": "tests/test_penta_aiify_scan.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "aiify"
+   ]
+  },
+  {
+   "file": "tests/test_penta_aiify_trust.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "aiify",
+    "quality"
+   ]
+  },
+  {
+   "file": "tests/test_penta_aimc_scanner.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "aimc"
+   ]
+  },
+  {
+   "file": "tests/test_penta_gd_auth.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "ttx"
+   ]
+  },
+  {
+   "file": "tests/test_penta_gd_league.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "gameday"
+   ]
+  },
+  {
+   "file": "tests/test_penta_gd_schema.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "ttx"
+   ]
+  },
+  {
+   "file": "tests/test_penta_gd_scorer_math.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "ttx"
+   ]
+  },
+  {
+   "file": "tests/test_penta_gd_scoring.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "ttx"
+   ]
+  },
+  {
+   "file": "tests/test_pipeline_delete_cascade.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "pipeline"
+   ]
+  },
+  {
+   "file": "tests/test_pipeline_delta.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "pipeline"
+   ]
+  },
+  {
+   "file": "tests/test_pipeline_perf_hooks.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "pipeline"
+   ]
+  },
+  {
+   "file": "tests/test_pipeline_snapshot_db.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "pipeline"
+   ]
+  },
+  {
+   "file": "tests/test_pir_alert_generator.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "intelligence",
+    "threat_analysis"
+   ]
+  },
+  {
+   "file": "tests/test_pir_threshold_integration.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "intelligence",
+    "threat_analysis"
+   ]
+  },
+  {
+   "file": "tests/test_pkg_reg02_reachability.py",
+   "core": [
+    "cli"
+   ],
+   "other": [
+    "workflow"
+   ]
+  },
+  {
+   "file": "tests/test_pma_credential_reflex.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "genesis",
+    "govcon",
+    "pma"
+   ]
+  },
+  {
+   "file": "tests/test_pma_e2e_vv.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "dashboard",
+    "genesis",
+    "pma"
+   ]
+  },
+  {
+   "file": "tests/test_pma_igap_reflex.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "genesis",
+    "govcon",
+    "pma"
+   ]
+  },
+  {
+   "file": "tests/test_procurement_quote_compare.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "govcon"
+   ]
+  },
+  {
+   "file": "tests/test_procurement_vehicles.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "govcon"
+   ]
+  },
+  {
+   "file": "tests/test_proposal_genesis.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "dashboard",
+    "proposal_genesis"
+   ]
+  },
+  {
+   "file": "tests/test_proposals_ptw_blackhat_api.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "dashboard",
+    "govcon",
+    "security"
+   ]
+  },
+  {
+   "file": "tests/test_publish_gates.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "quality"
+   ]
+  },
+  {
+   "file": "tests/test_pwin_model.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "govcon"
+   ]
+  },
+  {
+   "file": "tests/test_rag_kg_graph_per_project.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "rag"
+   ]
+  },
+  {
+   "file": "tests/test_reflex_connection_scope.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "genesis"
+   ]
+  },
+  {
+   "file": "tests/test_reflex_health.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "genesis"
+   ]
+  },
+  {
+   "file": "tests/test_review_board.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "review_board"
+   ]
+  },
+  {
+   "file": "tests/test_rfi_demand.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "govcon",
+    "kanban"
+   ]
+  },
+  {
+   "file": "tests/test_rls_integration.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "security"
+   ]
+  },
+  {
+   "file": "tests/test_sc_posture_summary.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "security_canvas"
+   ]
+  },
+  {
+   "file": "tests/test_sdc_demo_runner.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "sdc",
+    "security_canvas"
+   ]
+  },
+  {
+   "file": "tests/test_second_brain.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "ace",
+    "second_brain"
+   ]
+  },
+  {
+   "file": "tests/test_security_integration.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "security"
+   ]
+  },
+  {
+   "file": "tests/test_seed_canvas_artifacts.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "dashboard"
+   ]
+  },
+  {
+   "file": "tests/test_ski_roles_lifecycle.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "ace",
+    "cpmp",
+    "govcon",
+    "nova"
+   ]
+  },
+  {
+   "file": "tests/test_template_engine.py",
+   "core": [
+    "cli"
+   ],
+   "other": [
+    "builder"
+   ]
+  },
+  {
+   "file": "tests/test_tenant_isolation.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "dashboard",
+    "ttx"
+   ]
+  },
+  {
+   "file": "tests/test_tenant_request_guard.py",
+   "core": [
+    "config"
+   ],
+   "other": [
+    "security"
+   ]
+  },
+  {
+   "file": "tests/test_tfw_narrator.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "network"
+   ]
+  },
+  {
+   "file": "tests/test_tfw_personas.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "network"
+   ]
+  },
+  {
+   "file": "tests/test_threat_analysis_service.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "intelligence",
+    "threat_analysis"
+   ]
+  },
+  {
+   "file": "tests/test_twx_cov_twins.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "agentic_ai_canvas",
+    "qdc_canvas",
+    "twin_core"
+   ]
+  },
+  {
+   "file": "tests/test_usage_tracking.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "dashboard"
+   ]
+  },
+  {
+   "file": "tests/test_vehicle_identifier.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "govcon"
+   ]
+  },
+  {
+   "file": "tests/test_watchcon_tiers.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "monitor"
+   ]
+  },
+  {
+   "file": "tests/test_wfc_canvas_hardening.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "cortex",
+    "studio",
+    "workflow_canvas"
+   ]
+  },
+  {
+   "file": "tests/test_workflow_hitl_engine.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "workflow_hitl"
+   ]
+  },
+  {
+   "file": "tests/test_workflow_hitl_report.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "workflow_hitl"
+   ]
+  },
+  {
+   "file": "tests/test_workflow_runner.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "studio"
+   ]
+  },
+  {
+   "file": "tests/test_zt_fail_closed_sweep.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "security",
+    "security_canvas"
+   ]
+  },
+  {
+   "file": "tests/test_zt_stub_gate.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "security",
+    "security_canvas"
+   ]
+  },
+  {
+   "file": "tests/tools/llm/chain_orchestrator_test.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "budget",
+    "llm"
+   ]
+  },
+  {
+   "file": "tests/trading/test_get_signals_ranked.py",
+   "core": [
+    "db"
+   ],
+   "other": [
+    "trading"
+   ]
+  }
+ ],
+ "tier_c": [
+  {
+   "file": "tests/agent_runtime/test_cron.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/agent_runtime/test_profile_memory.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/agent_runtime/test_profiles.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/builder/test_child_app_connection.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/ci/modules/test_state.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/ci/modules/test_workflow_ops.py",
+   "core_ref": [
+    "testing"
+   ]
+  },
+  {
+   "file": "tests/ci/test_pr_watcher.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/ci/workflows/test_icdev_test.py",
+   "core_ref": [
+    "testing"
+   ]
+  },
+  {
+   "file": "tests/cortex/test_search_router.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/databridge/test_connection_manager.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/e2e/test_a11y_section508.py",
+   "core_ref": [
+    "testing"
+   ]
+  },
+  {
+   "file": "tests/e2e/test_integrity_backdoor_quarantine.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/foundry/test_blueprint.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/foundry/test_engine.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/genesis/test_heal_anomaly_detection.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/genesis/test_rag_anomaly.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/genesis/test_report_query_classifier_anomaly.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/genesis_auto/test_blueprint.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/genesis_auto/test_classification_manager.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/genesis_auto/test_compliance_matrix_builder.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/genesis_auto/test_db_init_generator.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/genesis_auto/test_engine.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/genesis_auto/test_eval_builder.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/genesis_auto/test_gap_handlers.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/genesis_auto/test_pain_extractor.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/genesis_auto/test_skill_router.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/genesis_auto/test_workflow_editor.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/kanban/test_pipeline.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/kanban/test_state_machine.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/perf/test_perf_benchmark.py",
+   "core_ref": [
+    "testing"
+   ]
+  },
+  {
+   "file": "tests/rag/test_sqlite_store_hermetic.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/regulatory_foresight/test_regfore.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/tech_radar/test_tech_radar.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_ace_chat_endpoint.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_ace_chat_integration.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_ace_evidence_report.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_ace_nova_state_endpoint.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_ace_skill_promoter.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_ace_tool_runner.py",
+   "core_ref": [
+    "compat"
+   ]
+  },
+  {
+   "file": "tests/test_aggregation_guard.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_ccir_trigger.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_chat_chain_activate_no_intake.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_chat_import_overwrite_false.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_clx_control_loop.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_coherence_ace.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_community_refresh_reflex.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_confidence_sampler.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_dcpr_blueprint_hygiene.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_dcpr_conn_sweep.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_dic_ingest_workflow_mutations.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_dic_search_access.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_dic_search_filter_query.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_divergence_critic.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_dsyn_emit_ndc.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_dsyn_hitl_task.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_event_bus_canvas_rls.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_foundry_mcp.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_genesis_convergence_anomaly.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_genesis_convergence_gate.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_guardrails.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_idr_multi_source.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_integrity_blueprint.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_integrity_event_emitter.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_integrity_mcp.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_iqe_route.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_kanban_mcp_delete_task.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_logs_query_and_blueprint.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_loop_engineering.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_memory_wiring.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_nav_misc_04_cli_repo_resolution.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_nav_misc_05_evidence_page.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_nav_strat_02_opord_grounding.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_nav_strat_04_iw_no_sqlite_fallback.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_nova_sela_evolution.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_odc_ndc_check.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_packaged_tools_imports.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_penta_aimc_p2.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_pg_portability_sweep_guard.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_pgrt_evidence_chain_pg.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_pkg_rel02_bootstrap_freshness.py",
+   "core_ref": [
+    "installer"
+   ]
+  },
+  {
+   "file": "tests/test_qa_agent_reflex.py",
+   "core_ref": [
+    "testing"
+   ]
+  },
+  {
+   "file": "tests/test_rag_reindex_contextual.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_rls_system_catalog_guard.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_step_executor.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_twin_core_event_bridge.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_wargame_advisor.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/test_zig_sql_placeholders.py",
+   "core_ref": [
+    "db"
+   ]
+  },
+  {
+   "file": "tests/testing/test_conformance_reviewer.py",
+   "core_ref": [
+    "testing"
+   ]
+  },
+  {
+   "file": "tests/workflow/test_playwright_gate.py",
+   "core_ref": [
+    "testing"
+   ]
+  }
+ ]
+}

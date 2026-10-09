@@ -1,0 +1,89 @@
+# CUI // SP-CTI
+# ICDEV Fabric Registry -- SCHEMA + SYNTHETIC FIXTURE (rmf-fab-01)
+#
+# A FABRIC is an enclave instance that HAS a classification. It is not itself a
+# classification level: two fabrics may both be `cui`, and one `cui` fabric may
+# hold a NetBox while the other is inventoried from a CSV export. The posture
+# roll-up (tools/fabric/posture.py, rmf-fab-02) walks whatever this registry
+# declares and never blends across them.
+#
+# THIS FILE NAMES NO REAL FABRIC. The repository is public, and an enclave's name
+# is a fact about a deployment. Every entry here is a fixture (`fixture:
+# synthetic` below marks the whole document, and every key is `fx-*`), and the
+# loader REFUSES an in-repo registry that drops that marker. Real fabrics live in
+# a PRIVATE overlay outside the repository, named by ICDEV_FABRIC_REGISTRY_PATH;
+# an overlay entry whose `key` matches a fixture entry REPLACES it whole, an
+# overlay entry with a new key is added, and `drop:` removes fixture keys. The
+# loader refuses an overlay path that resolves INSIDE the repository, because
+# an in-tree overlay is one `git add` away from publishing the fleet.
+#
+# Synthetic fabrics are NEVER handed to the posture seam by default
+# (tools.fabric.registry.load_registry excludes them, and says how many it
+# excluded): a fixture that lights up a dashboard is fabricated coverage, the
+# same rule rmf-disc-02 applies to `ni_devices.source = synthetic`.
+#
+# FIELDS, per fabric
+#   key                          stable identifier; `fx-*` is reserved for fixtures
+#   display_name                 human label
+#   classification               a LABEL -- one of the `profiles:` keys in
+#                                args/classification_profiles.yaml (public, fouo,
+#                                cui, cui_sp_cti, secret, itar). NEVER the banner:
+#                                "CUI // SP-CTI" is REFUSED with the label it
+#                                should have been. The banner is derived at read
+#                                time from the profile; nothing stores it.
+#   impact_level                 one of the domain's declared levels
+#                                (icdev_domain.yaml sensitivity.levels: IL2 IL4
+#                                IL5 IL6) AND one the profile admits -- `public`
+#                                cannot be IL5.
+#   authoritative_inventory_source
+#                                netbox | csv | discovery | null. What the
+#                                estate is READ from. `synthetic` and
+#                                `topology_ingest` are refused here: a fixture and
+#                                a drawing are never authoritative (rmf-disc-02).
+#   discovery_adapters           ping | snmp | ssh | netbox | csv (the methods
+#                                tools/genesis/reflexes/asset_discovery.py and the
+#                                network ingesters actually implement).
+#
+# CROSS-FABRIC TRAVERSAL is declared SEPARATELY under `traversals:`, never on a
+# fabric: a path between two enclaves belongs to neither of them. Direction is
+# DERIVED at read time from icdev.core.sensitivity (public < ... < cui < ... <
+# secret); a DOWNWARD traversal (higher label to lower) must name a `guard`, or
+# it is refused -- an unguarded high-to-low path is the finding an assessor
+# writes first. A label the sensitivity order does not rank (fouo, cui_sp_cti,
+# itar today) yields `unranked`, reported and never guessed.
+
+schema_version: 1
+fixture: synthetic
+
+fabrics:
+  - key: fx-alpha
+    display_name: "Fixture Fabric Alpha (unclassified dev enclave)"
+    classification: public
+    impact_level: IL2
+    authoritative_inventory_source: null
+    discovery_adapters: [ping]
+
+  - key: fx-bravo
+    display_name: "Fixture Fabric Bravo (CUI mission enclave)"
+    classification: cui
+    impact_level: IL5
+    authoritative_inventory_source: netbox
+    discovery_adapters: [netbox, ping, snmp]
+
+  - key: fx-charlie
+    display_name: "Fixture Fabric Charlie (classified enclave)"
+    classification: secret
+    impact_level: IL6
+    authoritative_inventory_source: csv
+    discovery_adapters: [csv]
+
+traversals:
+  # Low to high: data may move up without a guard. Direction is derived.
+  - from: fx-bravo
+    to: fx-charlie
+    kind: cross_domain_solution
+  # High to low: a downward path MUST name its guard, or the loader refuses it.
+  - from: fx-charlie
+    to: fx-bravo
+    kind: cross_domain_solution
+    guard: "fixture-cds-01 (synthetic)"

@@ -1,0 +1,3 @@
+# cef-rsv-01 — cortex.resolve(), the governed evidence-resolution facade.
+# Gated in the PR that makes it pass, per docs/ci/test-gating-policy.md.
+tests/cortex/test_resolve_facade.py

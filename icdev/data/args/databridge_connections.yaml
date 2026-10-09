@@ -1,0 +1,459 @@
+# CUI // SP-CTI
+# Connection RECORDS for the connectors granted in databridge_agent_access.yaml.
+#
+# Seeded into db_connections by:
+#     python -m tools.databridge.seed_connections --seed --json
+#
+# ---------------------------------------------------------------------------
+# Two files, on purpose. databridge_agent_access.yaml answers "MAY this agent
+# read this connector and table"; this file answers "WHERE does that connector
+# read from, and how does it authenticate". They are separate because they have
+# different reviewers and different change cadences: a grant is a security
+# decision, an endpoint is an operations one, and merging them would mean every
+# endpoint edit reopened the authorization review.
+#
+# The link between them is `id` here == `connection_id` in the grant. A grant
+# pointing at an id with no row is a configuration error; the seeder's
+# --verify reports it.
+#
+# ---------------------------------------------------------------------------
+# NO SECRET VALUE MAY APPEAR IN THIS FILE.
+#
+# `auth_secret_ref` holds a REFERENCE resolved at use time by
+# tools/databridge/connection_manager.py::resolve_secret, and the seeder REFUSES
+# any value that is not one:
+#
+#     env:VAR_NAME          environment variable
+#     vault:path#field      HashiCorp Vault KV
+#     aws:name[#key]        AWS Secrets Manager (GovCloud)
+#     file:secret_id        controlled path, air-gap fallback
+#
+# The refusal is not advisory. A literal here would be committed to a public
+# repository, would survive every later rotation, and would be indistinguishable
+# from a reference to anything reading the column. `auth_method: none` must
+# carry no ref at all.
+
+version: databridge-connections-1.0
+
+connections:
+  # -------------------------------------------------------------------------
+  # Federal Register — NIST documents. No credential exists for this source: the
+  # feed is world-readable, so auth_method is `none` and there is no secret to
+  # resolve — the strongest possible form of "no secret literal in YAML".
+  #
+  # classification is the LABEL `UNCLASSIFIED`, never the banner
+  # 'CUI // SP-CTI' the column defaults to. get_connection() injects
+  # `classification IN (<labels the caller's clearance dominates>)` into every
+  # SELECT, and that set is drawn from the label vocabulary — a row labelled
+  # with a banner string matches no member of it at any clearance and would be
+  # written, retained and invisible.
+  - id: federal-register-nist
+    name: Federal Register - NIST Documents
+    connector_name: rss
+    connector_type: saas_api
+    auth_method: none
+    sync_direction: read
+    status: configured
+    classification: UNCLASSIFIED
+    impact_level: IL2
+    config:
+      feed_url: https://www.federalregister.gov/api/v1/documents.rss?conditions%5Bagencies%5D%5B%5D=national-institute-of-standards-and-technology
+      feed_id: federal_register_nist
+      # Passed to tools/http/egress_guard.py by the connector, which the broker
+      # now reaches by loading this row and calling connect() with it — before
+      # that, this key would have been declared and never enforced. It is a
+      # second, independent restriction on top of the grant's exact-URL
+      # allowlist: the grant says which URL an agent may name, this says which
+      # host a socket may open to. Note what it does NOT cover — feedparser
+      # follows redirects itself, so only the first hop is checked.
+      egress_allowlist:
+        - www.federalregister.gov
+      egress_denylist: []
+
+  # -------------------------------------------------------------------------
+  # floci AWS service emulator (flx-bridge-02) — the LOCAL emulated estate.
+  #
+  # auth_method IS `none`, AND THAT IS THE MEASURED ANSWER, not a convenience.
+  # tools/cloud/emulator.py::credentials() is hard-wired to return the dummy
+  # pair ("test", "test") and DELIBERATELY does not read the ambient AWS
+  # environment — its docstring says why: those values are handed to
+  # `docker run -e` and into a Terraform provider block, so honouring a real
+  # AWS_ACCESS_KEY_ID would give live GovCloud keys to a container talking to
+  # localhost. There is therefore no credential to reference, and declaring
+  # `auth_secret_ref: env:FLOCI_ACCESS_KEY_ID` would be three separate defects
+  # at once: the seeder refuses a ref under auth_method `none`; under any other
+  # auth_method the broker resolves it and injects it under `api_key`, a key
+  # this connector never reads (declared and never consumed); and
+  # resolve_secret() raises on an unset variable, so a shipped grant would
+  # refuse EVERY call on any deployment that had not exported it.
+  #
+  # That also keeps tests/test_databridge_first_grant.py's standing rule intact
+  # without weakening it: no shipped grant reaches a credentialed system.
+  #
+  # `endpoint` is deliberately NOT pinned here. flx-seam-01 made
+  # tools/cloud/emulator.py the ONE emulator switch, and a second copy in this
+  # row would be a second switch. The seam decides WHERE; this row decides the
+  # CEILING on where — which is exactly what egress_allowlist below is.
+  - id: floci-emulator-local
+    name: floci AWS Emulator (local)
+    connector_name: floci
+    connector_type: saas_api
+    auth_method: none
+    sync_direction: read
+    status: configured
+    classification: UNCLASSIFIED
+    impact_level: IL2
+    config:
+      # THE ENDPOINT HOST, AND NOTHING ELSE. Enforced by
+      # FlociConnector._assert_endpoint_allowed at the point the destination is
+      # decided, so it covers the boto3 tables too — five of the seven never
+      # pass through urllib, so a per-URL guard would have covered two.
+      #
+      # NOT enforced by saas_base._guard_egress, and the reason is measured
+      # (2026-09-05): egress_guard is an INTERNET SSRF gate and refuses this
+      # connector's own default endpoint twice over —
+      # `http://localhost:4566/_localstack/health` -> scheme_not_https, and the
+      # https spelling -> denied_ip_range. A loopback emulator reached over
+      # plain http is precisely the destination that guard exists to refuse. The
+      # applicable half of its rule (which HOST) is applied from its own
+      # `host_allowed`; the inapplicable half (https-only, resolve-then-range-
+      # check) is named rather than quietly dropped. This is a HOST allowlist,
+      # not an SSRF gate, and it performs no DNS resolution.
+      #
+      # Three entries because they are three spellings of ONE destination —
+      # this machine's emulator. A deployment running floci on another host must
+      # add that host here, which is the review this list exists to force.
+      # Matching is egress_guard's suffix rule, so `localhost` also covers
+      # `*.localhost`; every such name resolves to loopback anyway.
+      egress_allowlist:
+        - localhost
+        - 127.0.0.1
+        - "::1"
+      egress_denylist: []
+
+  # floci-az Azure service emulator (flx-az-01) — the LOCAL emulated estate.
+  #
+  # A SECOND CONNECTION, not a second config on the floci row. The two are
+  # different emulators on different ports with different health paths, and a
+  # deployment may legitimately run one, both or neither.
+  #
+  # `endpoint` is deliberately NOT pinned here, for the same reason as the floci
+  # row above: tools/cloud/emulator_az.py is the ONE Azure emulator switch and a
+  # second copy in this row would be a second switch. The seam decides WHERE;
+  # this row decides the CEILING on where.
+  #
+  # READ ONLY, and the connector enforces it rather than relying on this line:
+  # FlociAzConnector.capabilities.supports_write is False and write() returns an
+  # `unsupported` refusal naming the absent Azure IaC executor. sync_direction
+  # below records the same fact where an operator reads it.
+  - id: floci-az-emulator-local
+    name: floci-az Azure Emulator (local)
+    connector_name: floci_az
+    connector_type: saas_api
+    auth_method: none
+    sync_direction: read
+    status: configured
+    classification: UNCLASSIFIED
+    impact_level: IL2
+    config:
+      # THE ENDPOINT HOST, AND NOTHING ELSE. Enforced by
+      # FlociAzConnector._assert_endpoint_allowed at the point the destination
+      # is decided, so it covers every ARM fan-out call rather than only the
+      # ones routed through one helper.
+      #
+      # NOT enforced by saas_base._guard_egress, and the reason is the same one
+      # measured for the AWS emulator on 2026-09-05: egress_guard is an INTERNET
+      # SSRF gate and refuses this connector's own default endpoint twice over —
+      # `http://localhost:4577` is scheme_not_https, and the https spelling is
+      # denied_ip_range. A loopback emulator over plain http is precisely the
+      # destination that guard exists to refuse. The applicable half of its rule
+      # (which HOST) is applied from its own `host_allowed`; the inapplicable
+      # half is named rather than quietly dropped. This is a HOST allowlist, not
+      # an SSRF gate, and it performs no DNS resolution.
+      #
+      # IT MATTERS MORE HERE THAN FOR THE AWS EMULATOR. floci-az serves an IMDS
+      # token endpoint of its own at /metadata/identity/oauth2/token — measured
+      # 2026-09-05, it issues a real signed JWT. A seam mis-set toward the real
+      # link-local 169.254.169.254 must be refused, not dialled.
+      #
+      # Three entries because they are three spellings of ONE destination: this
+      # machine's emulator. A deployment running floci-az on another host must
+      # add that host here, which is the review this list exists to force.
+      egress_allowlist:
+        - localhost
+        - 127.0.0.1
+        - "::1"
+      egress_denylist: []
+
+  # floci-gcp GCP service emulator (flx-gcp-01) — the LOCAL emulated estate.
+  #
+  # A THIRD CONNECTION. Three emulators, three ports, three health paths, and a
+  # deployment may run any subset.
+  #
+  # `endpoint` is deliberately NOT pinned here, for the same reason as the two
+  # rows above: tools/cloud/emulator_gcp.py is the ONE GCP emulator switch and a
+  # second copy in this row would be a second switch. The seam decides WHERE;
+  # this row decides the CEILING on where.
+  #
+  # READ ONLY, and the connector enforces it rather than relying on this line:
+  # FlociGcpConnector.capabilities.supports_write is False and write() returns
+  # an `unsupported` refusal naming the absent GCP IaC executor. sync_direction
+  # below records the same fact where an operator reads it.
+  - id: floci-gcp-emulator-local
+    name: floci-gcp GCP Emulator (local)
+    connector_name: floci_gcp
+    connector_type: saas_api
+    auth_method: none
+    sync_direction: read
+    status: configured
+    classification: UNCLASSIFIED
+    impact_level: IL2
+    config:
+      # THE ENDPOINT HOST, AND NOTHING ELSE. Enforced by
+      # FlociGcpConnector._assert_endpoint_allowed at the point the destination
+      # is decided, so it covers every table read rather than only the ones
+      # routed through one helper.
+      #
+      # NOT enforced by saas_base._guard_egress, for the reason measured on both
+      # sibling emulators: egress_guard is an INTERNET SSRF gate and refuses this
+      # connector's own default endpoint twice over — `http://localhost:4588` is
+      # scheme_not_https, and the https spelling is denied_ip_range. A loopback
+      # emulator over plain http is precisely the destination that guard exists
+      # to refuse. This is a HOST allowlist, not an SSRF gate, and it performs no
+      # DNS resolution.
+      #
+      # THE METADATA HAZARD IS SMALLER HERE THAN ON THE AZURE ROW, and the
+      # allowlist is kept anyway. Measured 2026-09-05: floci-gcp serves NO
+      # /computeMetadata surface (404), so there is no emulator token endpoint to
+      # confuse with the real link-local 169.254.169.254. What this list bounds
+      # is where the SEAM may point — a question about ICDEV's own configuration,
+      # not about this emulator's surface area.
+      #
+      # Three entries because they are three spellings of ONE destination: this
+      # machine's emulator. A deployment running floci-gcp on another host must
+      # add that host here, which is the review this list exists to force.
+      egress_allowlist:
+        - localhost
+        - 127.0.0.1
+        - "::1"
+      egress_denylist: []
+
+  # floci-oci OCI service emulator (flx-oci-01) — the LOCAL emulated estate.
+  #
+  # A FOURTH CONNECTION. Four emulators, four ports, and a deployment may run
+  # any subset. floci-oci answers /health (like floci-gcp) but is NOT a
+  # LocalStack drop-in — /_localstack/health 404s.
+  #
+  # `endpoint` is deliberately NOT pinned here, for the same reason as the three
+  # rows above: tools/cloud/emulator_oci.py is the ONE OCI emulator switch and a
+  # second copy in this row would be a second switch. The seam decides WHERE;
+  # this row decides the CEILING on where.
+  #
+  # READ ONLY, and the connector enforces it rather than relying on this line:
+  # FlociOciConnector.capabilities.supports_write is False and write() returns
+  # an `unsupported` refusal naming TWO reasons — the absent OCI IaC executor
+  # AND the stubbed OCI provider layer (docs/spikes/flx-oci-parity.md §1).
+  - id: floci-oci-emulator-local
+    name: floci-oci OCI Emulator (local)
+    connector_name: floci_oci
+    connector_type: saas_api
+    auth_method: none
+    sync_direction: read
+    status: configured
+    classification: UNCLASSIFIED
+    impact_level: IL2
+    config:
+      # THE ENDPOINT HOST, AND NOTHING ELSE. Enforced by
+      # FlociOciConnector._assert_endpoint_allowed at the point the destination
+      # is decided, so it covers every table read rather than only the ones
+      # routed through one helper.
+      #
+      # NOT enforced by saas_base._guard_egress, for the reason measured on all
+      # three sibling emulators: egress_guard is an INTERNET SSRF gate and
+      # refuses this connector's own default endpoint twice over —
+      # `http://localhost:4599` is scheme_not_https, and the https spelling is
+      # denied_ip_range. A loopback emulator over plain http is precisely the
+      # destination that guard exists to refuse. This is a HOST allowlist, not
+      # an SSRF gate, and it performs no DNS resolution.
+      #
+      # THE METADATA HAZARD: measured 2026-09-05, floci-oci serves no instance
+      # metadata surface — /opc/v2 and friends were not among the eight services
+      # it answers. As on the GCP row, what this list bounds is where the SEAM
+      # may point, which is a question about ICDEV's own configuration rather
+      # than about this emulator's surface area.
+      #
+      # Three entries because they are three spellings of ONE destination: this
+      # machine's emulator. A deployment running floci-oci on another host must
+      # add that host here, which is the review this list exists to force.
+      egress_allowlist:
+        - localhost
+        - 127.0.0.1
+        - "::1"
+      egress_denylist: []
+
+  # Author-supplied currency statements (dwr-ev-01) — the LOCAL DIC table
+  # dic_author_assertions, read by tools/databridge/connectors/
+  # icdev_author_evidence_connector.py.
+  #
+  # NO ENDPOINT, NO CREDENTIAL, NO SOCKET: the connector reads the platform's
+  # own database through the ordinary RLS-scoped connection, the icdev_demand
+  # shape. The loopback-only egress_allowlist below is declared because that is
+  # the vocabulary the shipped-grant tests derive "off-box" from
+  # (tests/databridge/test_floci_grant.py::_loopback_only_connection_ids) and
+  # an EMPTY allowlist there reads as "unrestricted"; nothing this connector
+  # does can leave the box whatever the list says.
+  - id: dic-author-evidence-local
+    name: DIC Author Evidence (local database)
+    connector_name: icdev_author_evidence
+    connector_type: database
+    auth_method: none
+    sync_direction: read
+    status: configured
+    classification: CUI
+    impact_level: IL4
+    config:
+      egress_allowlist:
+        - localhost
+        - 127.0.0.1
+        - "::1"
+      egress_denylist: []
+
+  # ═════════════════════════════════════════════════════════════════════════
+  # THE OPERATOR'S OWN CONTENT (dic-bridge-01)
+  #
+  # Four records, all `status: disabled`, all TEMPLATES. They exist so an
+  # operator edits a reviewed shape rather than inventing one, and so the
+  # connectors below have a documented configuration surface. Nothing here is
+  # reachable until a human fills in the site and sets the environment
+  # variable the ref names, and NONE of the four is granted to an agent in
+  # databridge_agent_access.yaml -- every one carries a credential, and that
+  # file's rule (enforced by tests/test_databridge_first_grant.py) is that a
+  # credentialed system is a per-deployment decision, never a shipped grant.
+  #
+  # Why these four and not more: they are where the CURRENT version of a
+  # document actually lives. A modernization run that wants to say "this
+  # paragraph is stale" needs the operative text to compare against, and until
+  # now DataBridge could reach 37 vendor APIs and not one of the places an
+  # organisation keeps its own policies.
+  # ═════════════════════════════════════════════════════════════════════════
+
+  # SharePoint Online, through Microsoft Graph, APP-ONLY.
+  #
+  # `auth_method: oauth2` because this is a client-credentials grant against an
+  # Entra ID app registration -- not a user's delegated token. The application
+  # permissions it needs are Sites.Read.All and Files.Read.All, and READ is the
+  # whole of it: the connector constructs no write anywhere.
+  #
+  # The egress allowlist names BOTH hosts on purpose. login.microsoftonline.com
+  # is where the token comes from and graph.microsoft.com is where the content
+  # comes from; a list holding only the second would refuse the token fetch,
+  # which is exactly the failure a reviewer should be able to see coming from
+  # reading this block. A sovereign-cloud tenant replaces both.
+  - id: sharepoint-operator
+    name: SharePoint Online (operator tenant)
+    connector_name: sharepoint
+    connector_type: saas_api
+    auth_method: oauth2
+    auth_secret_ref: env:SHAREPOINT_CLIENT_SECRET
+    sync_direction: read
+    status: disabled
+    classification: CUI
+    impact_level: IL4
+    config:
+      base_url: https://graph.microsoft.com/v1.0
+      # tenant_id and client_id are NOT secrets and NOT references: they are
+      # directory identifiers that appear in every request URL. Fill them in.
+      tenant_id: ""
+      client_id: ""
+      egress_allowlist:
+        - login.microsoftonline.com
+        - graph.microsoft.com
+      egress_denylist: []
+
+  # Confluence Cloud. HTTP Basic over an account email plus an API token, which
+  # is what Atlassian issues -- `auth_method: pat` is the closest member of the
+  # vocabulary and is what the Atlassian docs call it.
+  #
+  # base_url is EMPTY and must stay empty in the committed file: an Atlassian
+  # site is operator-specific, and a default here would be a guess that either
+  # refuses at connect or, worse, resolves to somebody else's tenant.
+  - id: confluence-operator
+    name: Confluence Cloud (operator site)
+    connector_name: confluence
+    connector_type: saas_api
+    auth_method: pat
+    auth_secret_ref: env:CONFLUENCE_API_TOKEN
+    sync_direction: read
+    status: disabled
+    classification: CUI
+    impact_level: IL4
+    config:
+      base_url: ""          # https://<site>.atlassian.net
+      email: ""             # the account the token belongs to
+      egress_allowlist: []  # add <site>.atlassian.net when the site is set
+      egress_denylist: []
+
+  # Jira Cloud. The same credential pair as Confluence and usually the same
+  # site, but a SEPARATE record: the two products carry different scopes, and
+  # sharing one connection record would mean revoking Jira access to revoke
+  # Confluence access.
+  - id: jira-operator
+    name: Jira Cloud (operator site)
+    connector_name: jira
+    connector_type: saas_api
+    auth_method: pat
+    auth_secret_ref: env:JIRA_API_TOKEN
+    sync_direction: read
+    status: disabled
+    classification: CUI
+    impact_level: IL4
+    config:
+      base_url: ""          # https://<site>.atlassian.net
+      email: ""             # the account the token belongs to
+      egress_allowlist: []  # add <site>.atlassian.net when the site is set
+      egress_denylist: []
+
+  # An operator-owned SQL database: the SharePoint of organisations that never
+  # bought SharePoint.
+  #
+  # `tables:` IS THE ACCESS CONTROL. It is empty here, and empty means the
+  # connector exposes NOTHING and refuses to connect -- not "expose the
+  # database". There is no arbitrary-SQL surface to widen; the connector emits
+  # one statement shape over declared tables with bound parameters, and adding
+  # a query surface is a different security decision, not a config change.
+  #
+  # `auth_method: connection_string` and the DSN is a REFERENCE, because a DSN
+  # carries the password. The connector refuses a literal one even when passed
+  # programmatically, so the YAML rule and the code rule are the same rule.
+  #
+  # Loopback-only egress is declared in the vocabulary the shipped-grant tests
+  # read, the icdev_demand shape: nothing this connector does opens a socket
+  # off-box, and an EMPTY list there reads as "unrestricted".
+  - id: local-content-database
+    name: Operator content database (read-only)
+    connector_name: local_database
+    connector_type: database
+    auth_method: connection_string
+    auth_secret_ref: env:LOCAL_CONTENT_DB_DSN
+    sync_direction: read
+    status: disabled
+    classification: CUI
+    impact_level: IL4
+    config:
+      driver: postgresql        # postgresql | sqlite
+      # database_path: ./data/policy.db     # sqlite only, instead of the DSN
+      #
+      # Declare each table the operator intends an agent to be able to read,
+      # and the columns within it. A table with no `columns` exposes every
+      # column it has, which is rarely what was meant.
+      #
+      # tables:
+      #   - name: policy_register
+      #     columns: [policy_id, title, body, effective_date, owner]
+      #     order_by: effective_date
+      tables: []
+      egress_allowlist:
+        - localhost
+        - 127.0.0.1
+        - "::1"
+      egress_denylist: []

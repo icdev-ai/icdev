@@ -1,0 +1,1 @@
+tests/fabric/test_registry.py

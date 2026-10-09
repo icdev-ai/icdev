@@ -581,6 +581,12 @@ def _forbidden_airgap_packages(pip_list_json: str) -> list[str]:
 
 def _airgap_expected_count(profile: str = _AIRGAP_PROFILE) -> int:
     """Component count the given core profile enables (from core_profiles.yaml)."""
+    # Run as a script (release.py / build_release.py), sys.path[0] is
+    # tools/installer/, not the repo root, so `import tools...` raised and this
+    # returned -1 -- failing the air-gap step on a correct wheel. Same fix
+    # release.py applies before its own in-process `tools` imports.
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
     try:
         from tools.config.core_profile import get_profile
         p = get_profile(profile) or {}

@@ -30,11 +30,34 @@ search:
   # re-orders the fused list. A backend with no entry here weighs 1.0
   # (neutral); a negative or non-numeric entry is clamped to 0.0, which
   # demotes that backend rather than inverting the ordering.
+  #
+  # sme is 0.0 ON PURPOSE and is not a tuning knob. It is the advisory backend
+  # (ADVISORY_BACKENDS in tools/cortex/schemas.py): it returns an ACE persona's
+  # OPINION, authored by an LLM at query time, not a row that existed before the
+  # query. Weight 0.0 means its RRF contribution is 0.0, so it always sorts
+  # BELOW every evidentiary hit and can never carry a fused ranking. Raising it
+  # would let an opinion outrank evidence, which base_pack TRUST rule 1 forbids.
   strategy_weights:
     rag: 1.0
     graph: 0.8
     dic: 0.9
     kb: 0.6
+    # currency (cef-bck-01) is EVIDENCE about an entity's lifecycle rather than
+    # prose about a topic, so it is weighted below rag/dic in the fused list:
+    # it should corroborate an answer, not displace the passage that answers
+    # the question. Raise it for a deployment whose queries are mostly "is this
+    # still current?".
+    currency: 0.7
+    # external (cef-bck-02) is the lowest weight of any EVIDENTIARY backend,
+    # and structurally so: it is the only one whose evidence was not retrieved
+    # by a measured similarity — an external feed returns what it published, in
+    # publication order, with no relevance score of its own
+    # (raw_scores.native_score is None, never 0.0). It is also the only evidence
+    # that came from outside the boundary. Corroboration, never the passage an
+    # answer is built on. (sme below is 0.0, but that is an advisory floor
+    # rather than a ranking — a different axis.)
+    external: 0.5
+    sme: 0.0
 
   # Reciprocal Rank Fusion constant: fused = weight / (rrf_k + rank).
   rrf_k: 60
@@ -48,17 +71,65 @@ search:
   # timeout is abandoned and the router returns partial results from the
   # backends that finished. "default" applies to any backend without an
   # explicit entry.
+  # sme is far larger than the rest because it can pay for TWO LLM calls on a
+  # cold domain — minting the persona, then asking it — where a retrieval
+  # backend does one DB/vector round trip.
   timeouts:
     default: 10.0
     rag: 10.0
     graph: 8.0
     dic: 10.0
     kb: 5.0
+    # Two indexed LIKE reads over entity_currency + docmod_defacto_standards.
+    # No embedding call, no model call — a 10s budget here would only ever be
+    # spent waiting on a database that is already unhealthy.
+    currency: 5.0
+    # The only backend that opens a socket to a host ICDEV does not run: DNS,
+    # TLS handshake and a third-party parse. Longer than every local backend
+    # and still bounded, because a slow external source must not hold a whole
+    # fan-out open.
+    external: 15.0
+    sme: 60.0
 
   fan_out:
-    # Backends queried in parallel when a query is ambiguous (2-3 recommended).
-    backends: [rag, graph, dic]
+    # Backends queried in parallel when a query is ambiguous (2-4 recommended).
+    #
+    # currency IS here: it retrieves rows that existed before the query.
+    # sme is absent and must stay absent: fan-out is the AUTOMATIC path, and an
+    # advisory backend is reached only when a caller names it. Adding it here
+    # would put an LLM opinion into the result set of every ambiguous query.
+    # external is absent too, for a DIFFERENT reason — it is evidentiary, so the
+    # sme argument does not apply to it. Fan-out is where an UNCLASSIFIABLE
+    # query lands, so listing the external rung here would make "Cortex could
+    # not tell what you meant" the trigger for an outbound call to a third
+    # party. Adding it is a deployment decision with an egress consequence, not
+    # a tuning knob — the rung is otherwise reached by strategy="external" or
+    # strategy="all".
+    backends: [rag, graph, dic, currency]
     max_workers: 4
+
+  # The `external` backend (cef-bck-02) — authorized external sources reached
+  # through the DataBridge agent broker. There is NO source list here on
+  # purpose: the (connector, table) pairs come from
+  # broker.list_available(<agent_id>), i.e. from args/databridge_agent_access.yaml
+  # read through the same authorization it enforces. A second list in this file
+  # would be a copy of an authorization boundary, and a copy of an
+  # authorization boundary drifts in exactly one direction.
+  external:
+    # The ROLE Cortex presents to the broker. It must appear in the grant's
+    # `agents:` list for anything to be reachable, so this value and that list
+    # are reviewed together. NOT CortexContext.agent_id, which is the LLM
+    # router's budget-attribution key — spending tokens and reading a
+    # customer's system are different claims and must not share an identity.
+    agent_id: cortex_analyst
+    # Authorized (connector, table) pairs fetched in one search. Bounds latency
+    # and outbound volume, never authorization. A pair dropped by this cap is
+    # REPORTED on BackendResults.errors (stage "cap") — a silent truncation
+    # would read as "we searched everything you granted".
+    max_sources: 2
+    # Rows requested per source. The broker clamps to its own 200/1000 caps
+    # regardless; this is the retrieval-shaped number and is well below either.
+    row_limit: 25
 
   # Domain lenses (ctx-canvas-04). When ctx.domain matches a key here the
   # Cortex layer applies that lens as a configuration profile over the
@@ -93,11 +164,26 @@ search:
         retrieved evidence; if the data does not support a conclusion, say so
         explicitly.
 
-    # Document-intelligence lens (DIC chat / docgen / tech-writer). sources is
-    # left empty: row-level source scoping is opt-in and needs exact table
-    # prefixes; backends + persona + intents deliver the lens without risking
-    # dropping legitimate hits. Add sources once the doc table prefixes are
-    # confirmed. triage:false (no bespoke formatter — only security has one).
+    # ── `sources:` is EMPTY on purpose for document / proposal / network /
+    # compliance (ctx-reach-03) ────────────────────────────────────────────────
+    # Row-level source scoping (search_service._route_and_run ->
+    # domains.filter_by_sources) DROPS every hit whose source table/id does not
+    # start with one of these prefixes. `security` populates it because its four
+    # backing table families are known exactly (pvm_/dsoc_/incident_/cve...).
+    # For the other four lenses the corpora are federated (RAG collections, KG
+    # nodes, DIC documents, KB entries) and their source ids are not a closed
+    # prefix set, so a guessed list would silently delete legitimate evidence —
+    # a retrieval lens that quietly returns less is strictly worse than one that
+    # does not row-scope at all. `filter_by_sources` is a documented no-op on an
+    # empty list, so these lenses deliver via backends + collections + persona +
+    # intents and scope at the BACKEND level instead. This is a deliberate
+    # standing decision, not a TODO: populate a lens's `sources` only once its
+    # table prefixes are enumerated from the live schema, and confirm the
+    # `filtered_out` count in the search metadata stays 0 for known-good queries.
+
+    # Broad documents lens (docgen, tech-writer, general document QA). Spans a
+    # federated corpus and so stays un-row-scoped; the DIC-corpus-only view is
+    # the `document_intelligence` lens below.
     document:
       display_name: "Documents"
       backends: [rag, dic, graph]
@@ -114,6 +200,62 @@ search:
         gaps. Prefer precise, quotable language over paraphrase. Structure any
         summary as: (1) What the documents say, (2) Gaps / unresolved items,
         (3) Required actions.
+
+    # ── Document Intelligence lens (cef-bck-04) ─────────────────────────────────
+    # The DIC canvas's OWN corpus, and the first lens after `security` to populate
+    # `sources:`. It is a separate key from `document` above on purpose: that lens
+    # is the BROAD documents view (docgen, tech-writer, general document QA over a
+    # federated corpus, deliberately un-row-scoped per the standing decision); this
+    # one answers "what does the Document Intelligence corpus say", which is a
+    # narrower question and a closed set of tables.
+    #
+    # The standing decision above permits `sources` only once the prefixes are
+    # ENUMERATED FROM THE LIVE SCHEMA. They were, on 2026-08-18:
+    #   SELECT source_table, COUNT(*) FROM rag_chunks GROUP BY source_table
+    #     -> rag_compliance_corpus  3552
+    #        dic_documents           559
+    # rag_chunks is SHARED across canvases, so 86% of what the rag backend can
+    # return for a DI query is compliance-corpus prose that no DI question asked
+    # for. `dic_` keeps the 559 and drops the 3,552 — which is the whole reason
+    # this lens exists rather than reusing `document`.
+    #
+    # Every token filter_by_sources inspects is covered by the one prefix:
+    #   dic backend  citation.source_table='dic_documents', source_type='dic_document'
+    #   rag backend  citation.source_table=rag_chunks.source_table, which is
+    #                'dic_documents' for a DI chunk, and metadata.source_type
+    #                ('dic_document' vs 'compliance_reference') agrees with it.
+    # A second prefix that matches no live token would be decoration, so there is
+    # exactly one. Widen it only after re-running the query above.
+    #
+    # backends is [rag, dic] and NOT [rag, dic, graph, kb]: graph hits carry
+    # source_table='kg_nodes'/source_type='kg_node' and kb hits carry
+    # 'knowledge_patterns'/'kb_entry', so a `dic_` row scope deletes 100% of both.
+    # Declaring a backend whose every hit the row filter then drops buys a fan-out
+    # round trip and an inflated `filtered_out`, not evidence — backend scope and
+    # row scope have to agree. Reach the graph through the `document` lens, which
+    # does not row-scope. currency/external/sme are out for the reasons stated at
+    # the top of this file (evidence about lifecycles, an egress decision, and an
+    # LLM opinion respectively — none of them a DI corpus row).
+    document_intelligence:
+      display_name: "Document Intelligence (DIC)"
+      backends: [rag, dic]
+      collections: [dic_documents, dic_collections]
+      sources: [dic_]
+      intents: [summarize, extract_requirements, cite_sources, collection_coverage]
+      triage: true
+      persona: >
+        You are a senior records analyst working ONLY over the Document
+        Intelligence corpus — the ingested collections, their documents, and
+        their extracted sections. Ground every statement in a retrieved DIC
+        document and cite its document id/title and section or page for each
+        claim; if the retrieved set does not answer the question, say that the
+        corpus does not cover it rather than reaching outside it. Report
+        collection coverage explicitly: which collections the evidence came
+        from, and whether any part of the question went unanswered. Flag
+        unresolved placeholders, missing required sections, and
+        classification/marking gaps. Prefer precise, quotable language over
+        paraphrase. Structure any summary as: (1) What the corpus says (cited),
+        (2) Collection coverage and gaps, (3) Required actions.
 
     # Proposal / capture lens (RFI workbench, proposal drafting).
     proposal:
@@ -152,6 +294,98 @@ search:
         radius, (2) Risks (migration, availability, drift), (3) Recommended
         actions. Never speculate beyond the retrieved topology.
 
+    # Compliance lens (ctx-reach-03). The lens was DECLARED in
+    # tools/cortex/constants.py::CORTEX_DOMAIN_LENSES from the start — the
+    # canvas offered "📋 Compliance — NIST 800-53, FedRAMP, CMMC, STIG controls
+    # and crosswalks" in the picker — but there was no `search.domains.compliance`
+    # block, so load_domain_profile("compliance") returned None and selecting it
+    # changed NOTHING: no backend narrowing, no persona, no intents. It only
+    # tagged ctx.domain in the audit row. That is the platform's signature
+    # declared-but-unconsumed defect, and the picker entry made it worse than
+    # inert — it advertised scoping that did not happen. This block is the
+    # consumer. triage:false — no bespoke formatter (only `security` has one),
+    # and summarize() returns None safely for a triage lens without one.
+    compliance:
+      display_name: "Compliance"
+      backends: [rag, graph, kb]
+      collections: [nist_controls, control_mappings, crosswalk_entries, stig_findings]
+      sources: []
+      intents: [control_lookup, crosswalk, gap_analysis, evidence_trace]
+      triage: false
+      persona: >
+        You are a senior compliance analyst working across NIST SP 800-53,
+        FedRAMP, CMMC, and DISA STIG. Answer in control terms: name the control
+        identifier (e.g. AC-2, SC-13, V-xxxxx) for every claim and cite the
+        catalog, baseline, or crosswalk row it came from. Distinguish what is
+        IMPLEMENTED from what is merely DOCUMENTED — a control with a policy
+        reference and no evidence is a gap, and you must say so. Never assert a
+        control is satisfied, never map one framework onto another, and never
+        state an impact level or baseline that the retrieved evidence does not
+        support. Structure any summary as: (1) Controls in scope, (2) Evidence
+        found per control, (3) Gaps and required actions.
+
+# ── cortex.resolve — the governed evidence-resolution verb (cef-rsv-01) ──────
+# resolve(entity, question, ctx) answers "is this entity still current?" with a
+# DETERMINISTIC verdict from DomainPack.evaluate() plus the evidence behind it.
+resolve:
+  # Rungs consulted for EVIDENCE. The verdict never comes from here — it comes
+  # from the domain packs — so this list decides what a resolution can CITE, not
+  # what it can conclude.
+  #
+  # `external` is absent for the same reason it is absent from
+  # search.fan_out.backends: it opens a socket to a host ICDEV does not run, and
+  # a currency question arriving from an automated document sweep must not be
+  # the trigger for an outbound call to a third party. Adding it is a deployment
+  # decision with an egress consequence, not a tuning knob.
+  #
+  # `sme` is absent for the OTHER reason: it is ADVISORY. An opinion an LLM
+  # authored at query time cannot be evidence for a verdict that base_pack TRUST
+  # rule 1 requires to be deterministic. Adding it here would put the opinion in
+  # the result — resolver still excludes advisory hits from citations and from
+  # the verdict, and surfaces them under metadata.advisory instead.
+  #
+  # An unknown name here is DROPPED with a warning rather than raising: an
+  # operator typo in a YAML list must not take the verb offline.
+  backends: [currency, rag, dic, graph, kb]
+
+  # Cross-backend entity resolution (cef-rsv-02): may a DOCUMENT's prose make a
+  # currency claim that gets compared against the curated catalog's?
+  #
+  # This is the only lane that can express what a retrieved chunk merely STATES
+  # — structured claims come from typed fields, and no RAG/DIC/KB hit has any.
+  # Turning it off leaves conflict detection running over the structured and
+  # pack lanes alone, which means a document contradicting the catalog goes back
+  # to being invisible. That is exactly the defect this card exists to fix, so
+  # the shipped default is on.
+  #
+  # Turn it OFF for a corpus whose prose the declared patterns misread. The
+  # patterns are entity-ANCHORED and directional (tools/cortex/
+  # entity_resolution.py::TEXT_CLAIM_RULES) so "TLS 1.2 supersedes TLS 1.1"
+  # cannot claim TLS 1.2 is superseded, and every claim this lane produces is
+  # stamped extraction="text_pattern" on the claim and on every conflict side —
+  # a reader can discount it per side without the detector having discounted it
+  # first. Prefer narrowing a rule to disabling the lane.
+  text_claims: true
+
+  # Persist the conflicts and gaps a resolution DETECTED (cef-ui-02), so they
+  # outlive the request that produced them and a human can browse them on
+  # /document-intelligence/explorer.
+  #
+  # cef-rsv-02 made a cross-source disagreement computable and cef-rsv-03 cited
+  # it, and both travel on the CortexResolution the caller holds and nowhere
+  # else — so the only reader of a finding was the code that happened to trigger
+  # the resolution. A conflict is a finding a HUMAN adjudicates and a gap is a
+  # data-quality ticket; neither is actionable if it dies with the request.
+  #
+  # ON by default, because the surface renders nothing without it and an empty
+  # Explorer that LOOKS like a clean bill of health is the defect this card
+  # exists to prevent. Turning it off stays honest rather than silent: the read
+  # side reports state="disabled" and leaves the counts NULL, never 0.
+  #
+  # The write is one upsert per finding plus one per resolution (the
+  # denominator), is exception-isolated, and can never fail a resolution.
+  persist_findings: true
+
 governance:
   # Platform-wide fail-closed default for Cortex calls that DON'T set an explicit
   # CortexContext.fail_closed (i.e. ctx.fail_closed is None). Resolved by
@@ -183,6 +417,100 @@ governance:
   # with no evidence set is never certified, only checked.
   skip_grounding_for_plain_complete: true
 
+  # -- Governance profiles (hgx-gov-01) ---------------------------------------
+  # A profile names the SUBSET of the gate chain a caller runs. Studio agent
+  # nodes name one with `governance_profile:`; Cortex callers pass
+  # GovernancePipeline(profile=...) or wrap(..., profile=...).
+  #
+  # Gate vocabulary (tools/cortex/governance.py::GATE_ORDER, in chain order):
+  #   pre_check           injection / PII / rate / cost screen on the prompt
+  #   input_redaction     PII masked out of the prompt before any provider
+  #   operation           the wrapped call itself
+  #   citation_grounding  [source: N] tags validated against injected sources
+  #   content_grounding   semantic claim-vs-context grounding of the output
+  #   kg_grounding        claims validated against GRAPH FACTS       (OPT-IN)
+  #   output_redaction    PII/secrets masked out of the response  (MANDATORY)
+  #   provenance          registry row + append-only cortex_audit row (MANDATORY)
+  #
+  # NON-NEGOTIABLE: every profile must list operation, output_redaction AND
+  # provenance. output_redaction is the egress guarantee; provenance is the
+  # NIST-AU audit row. A profile that dropped either would turn a latency
+  # optimisation into a compliance hole, so omitting one raises
+  # GovernanceProfileError when the profile is resolved — at load, loudly, once.
+  #
+  # OPT-IN (governance.OPT_IN_GATES): every gate above except kg_grounding is
+  # opt-OUT — `default` runs it and a profile narrows. kg_grounding is the other
+  # way round: it is in the vocabulary but NOT in `default`, so a profile must
+  # name it to get it. It needs a live knowledge-graph connection and builds a
+  # lexicon of that graph's node labels once per call, and — because kg_ontology
+  # ships EMPTY — the schema it validates against is OBSERVED, which may warn but
+  # can never refuse. Putting a DB round-trip on every Cortex caller's
+  # interactive path for a check that cannot currently refuse is not a governance
+  # improvement, so callers ask for it by name.
+  #
+  # `default` is NOT declared here: it is built into code as the full chain minus
+  # the opt-in gates, and is what every caller that names no profile gets, so a
+  # missing or unreadable config can never silently narrow governance.
+  # Redefining it here is an error.
+  profiles:
+    # Internal diligence: a node reasoning over first-party data already inside
+    # the tenant boundary, whose output feeds another node rather than a person.
+    # Drops the injection screen (the input is not untrusted user text) and both
+    # grounding gates (there is no evidence set to attest against). Egress
+    # masking and the audit row still run.
+    internal_diligence:
+      gates: [input_redaction, operation, output_redaction, provenance]
+
+    # Free-form generation from UNTRUSTED input: keeps the full input screen
+    # (injection / rate / cost) and drops only the two grounding gates, which
+    # have nothing to attest against when no evidence set is injected. This is
+    # the profile for a node taking user text and drafting from it.
+    screened_generation:
+      gates: [pre_check, input_redaction, operation, output_redaction, provenance]
+
+    # Trusted first-party ingestion (docgen reading a document already inside the
+    # boundary). Mirrors what ctx.trusted_content already does per call, as a
+    # named profile a workflow node can declare.
+    trusted_ingest:
+      gates: [operation, citation_grounding, content_grounding, output_redaction, provenance]
+
+    # The only shipped profile that declares kg_grounding (trust-kg-03): the
+    # full default chain PLUS graph attestation, for a caller emitting an
+    # artifact whose factual claims are about entities the graph indexes
+    # (compliance narratives, agent output about the platform itself — the
+    # surfaces args/trust_gate.yaml gives kg_guard to). Everything else keeps
+    # the default chain and is byte-for-byte unaffected by this card.
+    kg_attested:
+      gates: [pre_check, input_redaction, operation, citation_grounding,
+              content_grounding, kg_grounding, output_redaction, provenance]
+
+  # KG-grounding gate (gate 6) knobs — trust-kg-03. Consumed by
+  # governance._kg_grounding_cfg; the gate itself is
+  # tools/quality/kg_grounding.kg_ground_claims + kg_gate, the SAME pair
+  # trust_gate.py's kg_guard runs, so the "which verdict is worth a finding"
+  # policy has one home and cannot drift between the two callers.
+  #
+  # FAIL-OPEN, STATED EXPLICITLY (the card required this said out loud): this
+  # gate lands behind the same `governance.fail_closed: false` above as every
+  # other non-mandatory gate. A KG finding therefore WARNS and does not refuse
+  # unless a caller sets CortexContext.fail_closed or that key is flipped. That
+  # default is what let citation_type='cortex' raise for the provenance gate's
+  # entire lifetime with 0 of 285 registry rows written and nothing go red, so
+  # the one silence it must not reproduce is closed by construction instead: a
+  # profile that DECLARES kg_grounding and then cannot measure — no graph
+  # connection, or a graph with no nodes — records `fail` and logs at ERROR,
+  # never `warn` and never `pass`. Declared-and-inert is the loudest outcome
+  # this gate has, even though it still does not block.
+  kg_grounding:
+    # Scope validation to one graph. null = every graph in kg_nodes/kg_edges.
+    graph_id: null
+    # Opt into the `unknown_entity` finding — a proper noun in the output that
+    # the graph does not know. OFF by default for the reason kg_gate documents:
+    # the graph indexes a fraction of the world, so an unrecognised name is far
+    # more often out-of-scope than fabricated, and a gate that flags every one
+    # of them gets switched off wholesale.
+    flag_unknown_entities: false
+
   # Content-grounding gate (gate 5) knobs. The gate runs semantic
   # claim-vs-context grounding (tools/quality/content_grounding.ground_content)
   # when a retrieval call injects snippet text, and falls back to the
@@ -212,8 +540,7 @@ analyst:
   nlq_fallback_enabled: true
 
 cache:
-  # In-process LRU + TTL response cache over the governed facades. OFF by
-  # default — enable knowingly.
+  # In-process LRU + TTL response cache over the governed facades.
   #
   # Security model: the cache key folds tenant_id + classification + domain +
   # air_gap, so a cached result can NEVER be served across any of those
@@ -221,15 +548,48 @@ cache:
   # hit never bypasses egress governance. Every hit still writes a cortex_audit
   # row (cache_hit=true, zero incremental cost) so the NIST-AU trail and
   # /cortex/metrics stay complete.
-  enabled: false
+  #
+  # Entries are copied in and out (deepcopy), so a caller mutating a served
+  # result cannot rewrite the answer every later hit gets — see the ctx-perf-06
+  # note in tools/cortex/cache.py.
+  enabled: true
+  # Read ONCE, when the cache singleton is built on first use. Changing it in a
+  # running process does nothing until cache.reset() — i.e. restart the service.
   max_entries: 512
   # Which governed operations may be cached. complete = free-form drafting (best
   # hit rate at temperature 0). search = retrieval fan-out (corpus drifts -> keep
-  # TTL short). ask = LIVE analyst NL->SQL answers over changing DB state -> very
-  # short TTL, and the riskiest to cache; drop it from this list to disable.
-  operations: [cortex.complete, cortex.search, cortex.ask]
+  # TTL short; the RAG ingestion path calls cache.invalidate() so an in-process
+  # corpus change purges immediately rather than waiting out the TTL).
+  #
+  # cortex.ask is deliberately NOT in this list. It is live NL->SQL over the
+  # operational DB, so its invalidation trigger is "any write to any table the
+  # generated SQL touched" — authored by every subsystem, and mostly by OTHER
+  # processes (kanban runner, reflex daemons, ingestion workers, an operator at
+  # psql). An in-process cache cannot observe those, so hooking it would promise
+  # a freshness guarantee it cannot keep; a partial invalidation hook is worse
+  # than none. Its 30s ttl_seconds entry is kept below so an operator who adds it
+  # back knowingly gets the short bound instead of inheriting default: 300.
+  #
+  # classify + extract are the most deterministic and highest-repeat operations:
+  # both are pure functions of (text, labels|schema, function) with no DB or
+  # corpus state behind them, and callers drive them in batch loops over the same
+  # inputs (tools/bom/taxonomy.py::classify_lines re-issues an identical
+  # extract(prompt, ASSIGN_SCHEMA, ctx) for every batch of a re-uploaded
+  # workbook). Their non-boundary args are folded into the key by the facade
+  # decorator — a different label list or a different JSON schema is a different
+  # entry, never a shared one.
+  operations: [cortex.complete, cortex.search, cortex.classify, cortex.extract]
   ttl_seconds:
     default: 300
     cortex.complete: 900
     cortex.search: 120
+    # Not in `operations` — see the note above. Kept so re-adding it is bounded.
     cortex.ask: 30
+    # classify DEGRADES rather than raising: when the router is unavailable it
+    # returns a query_classifier heuristic label (provider="deterministic"), and
+    # that result is not blocked, so it IS cacheable. The shorter TTL bounds how
+    # long a transient outage can pin a degraded label.
+    cortex.classify: 600
+    # extract lets router errors propagate, so only genuine model output is ever
+    # stored — same class as complete.
+    cortex.extract: 900

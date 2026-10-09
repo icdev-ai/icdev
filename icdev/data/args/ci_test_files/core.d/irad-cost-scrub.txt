@@ -1,0 +1,2 @@
+# docs/irad carried real IR&D cost lines in a public repo; scrubbed + path-scoped leak rule (2026-09-03).
+tests/test_irad_cost_line_rule.py

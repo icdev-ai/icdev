@@ -1,0 +1,3 @@
+# flx-sim-01 — dry_run starts nothing, and the executing modes start what they
+# declare. Also pins the canvas emulator port allocation against collisions.
+tests/studio/test_gns3_sim_dry_run_starts_nothing.py

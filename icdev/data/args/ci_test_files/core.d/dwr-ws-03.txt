@@ -1,0 +1,2 @@
+tests/document_intelligence/test_workspace_decisions.py
+tests/security/test_rls_no_row_scope.py

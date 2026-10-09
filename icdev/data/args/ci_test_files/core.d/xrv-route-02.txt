@@ -1,0 +1,3 @@
+# xrv-route-02 -- routing regression corpus + skill prerequisites
+tests/routing/test_routing_corpus.py
+tests/skills/test_prerequisites.py

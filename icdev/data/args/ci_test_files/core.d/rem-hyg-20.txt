@@ -1,0 +1,2 @@
+# rem-hyg-20 -- two coherence checks must not report a defect for an HONEST REFUSAL.
+tests/test_coherence_honest_refusal.py

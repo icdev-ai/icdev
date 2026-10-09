@@ -1,0 +1,1 @@
+tests/cloud/test_floci_component_registration.py

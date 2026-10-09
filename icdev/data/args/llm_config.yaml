@@ -720,6 +720,15 @@ routing:
     chain: [kimi-cloud, qwen3-local, claude-opus, o3, gemini-2.5-pro, gpt-4o]
     effort: high
 
+  # Summarises a finished ACE co-worker team's artifacts for the chat reader
+  # who asked (tools/ace/chat_result.py). Deliberately a SEPARATE function from
+  # the workers': the team members can run on a cheap/local chain while the one
+  # synthesis call that a human actually reads runs on a stronger model. Change
+  # the split here, not in code — no model IDs are hardcoded anywhere.
+  ace_result_synthesis:
+    chain: [claude-sonnet, kimi-cloud, gpt-4o, qwen3-local, gemini-2.5-flash]
+    effort: medium
+
   collaboration:
     chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: medium
@@ -1345,6 +1354,19 @@ routing:
   gepa_skill_patch:
     chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.0-flash, llama-local]
     effort: low
+
+  # TRUST self-correction (tools/quality/self_correct.py, trust-self-01) — the
+  # targeted revision call inside the bounded monotone revise-and-recheck loop.
+  # The input is a CUI drafting artifact plus the source evidence it cites, so
+  # this is local-first with a local tail: an air-gapped deployment must be able
+  # to run the whole loop, and an UNDECLARED function silently falls through to
+  # the cloud-first `routing.default` — that is an egress violation, not a
+  # preference. Medium effort: rewriting a named span faithfully while leaving
+  # the rest of the document byte-identical is instruction-following work, and
+  # the loop's monotone check discards a round that gets it wrong anyway.
+  trust_self_correct:
+    chain: [qwen3-local, claude-sonnet, kimi-cloud, gpt-4o-mini, gemini-2.0-flash, llama-local]
+    effort: medium
 agent_effort_defaults:
   orchestrator-agent: high
   architect-agent: max
@@ -1607,6 +1629,32 @@ rag:
       - ui_verification
 
 # -----------------------------------------------------------------------
+# Supplemental Prompt Layers (exa-refine-01)
+# -----------------------------------------------------------------------
+# The LLM router reads ACTIVE supplemental prompt layers from
+# `prompt_versions` (tools/llm/prompt_registry.py) and APPENDS them after the
+# base system prompt the call site supplied.
+#
+# The base system prompt is IMMUTABLE. The registry has no write path to it
+# (the reserved `base/` namespace is refused) and no read path from it (the
+# router only ever selects the `layer/` namespace). Self-modification can add
+# governed, versioned, rollback-able layers on top; it can never rewrite the
+# base. There is no toggle for that invariant — only for the feature.
+#
+# Registering a layer:
+#   python tools/llm/prompt_registry.py --register --name "layer/house-style" \
+#       --function code_generation --template-file hardprompts/house_style.md --json
+#   python tools/llm/prompt_registry.py --activate --name "layer/house-style" --version 1 --json
+#   python tools/llm/prompt_registry.py --layers --function code_generation --json
+#
+# A layer registered against function `*` applies to every llm_function.
+# With no layers registered (the default) this hook is a no-op.
+prompt_registry:
+  enabled: true
+  layer_separator: "\n\n"     # placed between the base prompt and each layer
+  max_layer_chars: 8000       # skip (and warn on) any single oversized layer; 0 = no cap
+
+# -----------------------------------------------------------------------
 # Token Budget Enforcement (Paperclip-inspired per-agent hard-stops)
 # -----------------------------------------------------------------------
 # Per-agent monthly USD caps. Warning fires at threshold; hard_stop blocks.
@@ -1664,6 +1712,37 @@ module_budgets:
   warning_threshold: 0.8
   hard_stop: true
 
+  # Which module a function is charged to. DATA, not a hardcoded name in the router.
+  #
+  # THE DEFECT THIS CLOSES. `router.invoke` charged EVERY call to
+  # `generative_intelligence`, so one monthly pool covered the whole platform and a
+  # "module budget" was a global cap wearing a module's name. Measured 2026-08-28 on the
+  # ICDEV[FT] board, 407,934 of 400,000 tokens spent and EVERY ROW at $0.00:
+  #
+  #     cortex_complete             165,111   40%
+  #     intaas_multiperspectivity   108,404   27%
+  #     fin_claim_extraction         50,429   12%
+  #     fin_idea_to_spec             37,653    9%
+  #     summarization                29,749    7%
+  #     judge_challenge               9,937
+  #     fin_research                  3,882
+  #     ace_persona_query             2,769
+  #
+  # The research/knowledge pipeline is 23% of that and was refused because two unrelated
+  # workloads had spent 67% of a pool it shared with them. Every LLM call in the parent
+  # was refused, including `code_generation` -- a block with no relationship to the
+  # workload that caused it.
+  #
+  # An unmapped function falls to `default_module`, so a deployment that declares nothing
+  # behaves exactly as it did before. A call is charged to exactly ONE module.
+  default_module: generative_intelligence
+  function_modules:
+    # The research -> knowledge -> strategy-draft pipeline (ICDEV[FT]).
+    fin_claim_extraction: research_knowledge
+    fin_idea_to_spec: research_knowledge
+    fin_intake: research_knowledge
+    fin_research: research_knowledge
+
   per_module:
     generative_intelligence:
       monthly_usd: 150.00         # LLM calls, embeddings, chain orchestration
@@ -1673,6 +1752,72 @@ module_budgets:
       monthly_usd: 50.00          # simulation runs, Monte Carlo, COA generation
       monthly_tokens: 100000       # LLM use inside simulations
       monthly_operations: 500      # simulation scenario runs
+    research_knowledge:
+      # Sized from the MEASURED workload above -- 91,964 tokens across the four functions
+      # in the month that filled the shared pool -- with headroom, not from a round number.
+      monthly_usd: 25.00
+      monthly_tokens: 150000
+      monthly_operations: 0
+
+# -----------------------------------------------------------------------
+# Cost Budget — the DOWNGRADE gate (exa-policy-04)
+# -----------------------------------------------------------------------
+# The four budget layers above all BLOCK: token_budgets (per agent),
+# module_budgets (per module), chain_orchestration.cost_cap_usd (per chain run)
+# and proxy budgets (per virtual key). A hard stop is the wrong shape for a long
+# autonomous run — hitting a ceiling unattended kills the run.
+#
+# This layer instead ASKs at soft thresholds and DOWNGRADES at the hard limit:
+# the expensive model is demoted to the tail of the function's declared chain
+# and work continues on the cheap tier. Enforced by tools/llm/cost_budget.py,
+# consumed in tools/llm/router.py::invoke.
+#
+# There is no model id anywhere in that module. The downgrade is computed from
+# routing.<function>.chain and the pricing: block declared on each model above,
+# which is what makes it air-gap correct: local Ollama models declare
+# input_per_1k/output_per_1k 0.0, so they sort under any ceiling and
+# prefer_local puts them ahead of an equally-priced cloud model.
+cost_budget:
+  enabled: true
+
+  # global = one budget across every function (matches how an autonomous run
+  # actually overspends). function = each function gets its own limit_usd.
+  scope: global
+  period: monthly               # monthly | daily
+  limit_usd: 200.00
+
+  # Fractions of limit_usd. Crossing one raises an ASK — once per threshold per
+  # period, deduped through agent_approval_log, NOT once per call.
+  soft_thresholds: [0.50, 0.80, 0.95]
+
+  # What reaching limit_usd does. 'downgrade' is the point of this layer;
+  # 'block' exists for operators who genuinely want the old hard stop.
+  hard_action: downgrade
+
+  downgrade:
+    # A model whose declared input_per_1k + output_per_1k exceeds this is
+    # demoted to the tail of the chain — never dropped, so a budget event can
+    # never become an outage when the cheap tier is down. 0.0 means "free and
+    # local tiers only" while the budget is exhausted.
+    max_blended_per_1k: 0.0
+    # Tie-break equally-priced models local-first. This is what guarantees the
+    # downgrade lands on Ollama rather than on a zero-priced cloud entry.
+    prefer_local: true
+
+  ask:
+    # record  — log + append to agent_approval_log, keep working (autonomous default)
+    # console — prompt the operator; denies on EOF
+    # deny    — fail closed; combine with on_denied to downgrade early
+    approver: record
+    # What a DENIED soft ASK does: downgrade early, or block.
+    on_denied: downgrade
+
+  # Optional per-function overrides; keys merge over the block above.
+  #   per_function:
+  #     code_generation:
+  #       limit_usd: 50.00
+  #       downgrade: { max_blended_per_1k: 0.005 }
+  per_function: {}
 
 # -----------------------------------------------------------------------
 # Chain Orchestration (CoT / CoD)
@@ -1859,6 +2004,38 @@ architectures:
 # (PostgreSQL-native with SQLite fallback); context_cache = provider-level
 # KV prefix reuse (cache_control: ephemeral on system prompt + last user msg).
 # -----------------------------------------------------------------------
+# -----------------------------------------------------------------------
+# CLI bridge — routing ICDEV's own LLM calls through the locally authenticated
+# Claude Code CLI, so they pass through LLMRouter and are MEASURED.
+# -----------------------------------------------------------------------
+# WHY THIS KEY EXISTS (cch-obs-06). `activate.should_enable()` is
+# `is_airgap() or not _has_cloud_key()` -- the bridge is a FALLBACK for a
+# keyless or air-gapped host, and there was no way to PREFER it. On a machine
+# holding any of the nine CLOUD_KEY_ENV_VARS the bridge is off, full stop, and
+# the only overrides were unsetting the key (which kills that provider's
+# routing) or a context-scoped per-request call. Neither is an operator
+# decision that survives a restart.
+#
+# Measured on this deployment 2026-08-27: OLLAMA_API_KEY is set, so
+# _has_cloud_key() is True, should_enable() is False, and every one of the last
+# 90 router calls went to ollama_cloud. `anthropic` has ZERO rows in 13,166
+# lifetime ai_telemetry rows and `claude-cli` last appeared 2026-07-09.
+#
+# `prefer` OVERRIDES the auto-detection; it does not disable it. `auto` (the
+# default) is exactly today's behaviour, so an absent key is a complete no-op.
+#
+#   auto    fallback only -- air-gapped, or no cloud key present (default)
+#   prefer  use the Claude CLI even when a cloud key exists
+#   never   never bridge, even air-gapped and keyless
+#
+# THIS BUYS TOKEN STATISTICS, NOT DOLLARS. The CLI is the SUBSCRIPTION path and
+# args/cache_effectiveness.yaml declares it `usd_basis: unpriced` -- there is no
+# per-token bill to save against, and pricing it at the API rate card would
+# invent spend that never happened. What it does buy is real prompt-cache
+# counters (cch-obs-04) and a real hit rate on the provider you actually use.
+cli_bridge:
+  mode: auto
+
 response_cache:
   enabled: true
   backend: postgresql
@@ -1947,6 +2124,50 @@ response_cache:
     ddc:
       ttl_seconds: 7200
       context_cache: true
+
+# ---------------------------------------------------------------------------
+# Managed-object prefix cache (cch-prov-02)
+# The third caching shape, alongside response_cache (ICDEV's own KV store) and
+# context_cache above (provider-level prefix reuse). Consumed by providers that
+# DECLARE PrefixCacheCapability(support="managed_object") — today Gemini's
+# cachedContents, via tools/llm/managed_cache.py.
+#
+# DEFAULT OFF, and that is the economics, not caution. A stored cache object is
+# billed per token PER HOUR of storage whether or not anything reads it, so an
+# object created for a prefix used once is strictly worse than no caching at
+# all. Measured on this platform (docs/research/prefix-caching-assessment.md
+# section 3), 95.5% of calls sit below even the 1024-token floor at which any
+# vendor's prefix cache can fire.
+#
+# Break-even, so it can be re-derived when vendor prices move: a cached read
+# costs ~0.25x normal input (saving ~0.75x), storage costs S per token-hour, so
+# over a TTL of h hours with R reads storing pays when
+#   (R - 1) > S * h / (0.75 * P).
+# At Gemini 2.5 Flash's published order of magnitude (P ~ $0.30/1M input,
+# S ~ $1.00/1M/hour) that is (R - 1) > 4.4 * h: ~6 reads inside an hour, but
+# only 2 inside five minutes. Hence ttl_seconds 300 paired with min_sightings 2
+# — the short TTL is what makes a twice-used prefix profitable, and it also
+# bounds the rent on an orphan left by a process that exits.
+#
+# Which surfaces participate is the existing per_canvas / per_function
+# `context_cache` list above: those are the surfaces that assert the neutral
+# `cache_prefix` intent. Size and repetition are then MEASURED per prefix at
+# runtime rather than declared, which is strictly stronger than a second list.
+# ---------------------------------------------------------------------------
+managed_object_cache:
+  enabled: false          # master switch; a standing per-hour cost is opted into
+  ttl_seconds: 300        # vendor TTL AND the width of the repetition window
+  min_prefix_tokens: 4096 # keep at or above the model's own floor (Gemini 2.5
+                          # Flash 1024 / Pro 2048); the floor is where the API
+                          # ACCEPTS the object, not where it pays for itself
+  min_sightings: 2        # never store a prefix seen only once — the one case
+                          # guaranteed to lose money
+  max_objects: 32         # ceiling on live objects per process; each is renting
+  chars_per_token: 4.0    # local size estimate; the exact count is a network
+                          # call, and paying for a call to decide whether to pay
+                          # for a cache is backwards
+  failure_cooldown_seconds: 600   # suppress a prefix whose create failed, so it
+                                  # cannot storm the API on every call
 
 # ---------------------------------------------------------------------------
 # Speculative Decoding (Ollama path only — auto-detected)

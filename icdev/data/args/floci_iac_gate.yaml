@@ -1,0 +1,85 @@
+# CUI // SP-CTI
+#
+# The opt-in floci IaC gate (flx-ci-01) -- twx-spk-01's pattern 1.
+# Read by tools/ci/floci_iac_gate.py; run by .github/workflows/floci-iac-gate.yml.
+#
+# WHAT THIS JOB ANSWERS, and it is a question nothing else in the tree asks:
+# does the pre-apply compliance gate's verdict on a Terraform plan match what a
+# real AWS API surface actually ACCEPTS? The gate has always been checked
+# against fixtures it was written beside. floci is an independent derivation --
+# 1,925 AWS SDK compatibility tests' worth of API surface that has never read
+# our IQE queries.
+#
+# NEVER ONE OF THE FOUR REQUIRED CHECKS (Lint, Test, Security Scan, Helm Lint).
+# GitHub-hosted runners on this account are near-serial, so a job that stood up
+# an emulator on every PR would put itself in front of every merge on the
+# board. That is how a gate earns itself a bypass.
+#
+# NEVER SOURCE A PERFORMANCE, COST OR CAPACITY CLAIM FROM ANYTHING THIS JOB
+# MEASURES. An emulator reproduces the AWS API CONTRACT, not its performance
+# characteristics -- the standing guard from
+# docs/spikes/twx-spk-01-localstack-go-no-go.md, which this project supersedes
+# on the air-gap question ONLY (floci carries no auth-token image).
+
+# ── The emulator ───────────────────────────────────────────────────────────
+#
+# MEASURED against Docker Hub 2026-09-05: `floci/floci:2.0.1`, published
+# 2026-09-01, digest sha256:4e451c39c7bb88e3cd4f87e8fc0c25d5b47695a51185d521e2241fa00486e8eb.
+#
+# PINNED, never `latest` and never `nightly`: this job's whole output is a
+# comparison against an API surface, and an unpinned surface makes a
+# disagreement unattributable -- did the gate change, or did the emulator?
+#
+# NOT the `-compat` variant. That tag adds Python 3, the AWS CLI and boto3 for
+# init scripts; it is a LARGER image and changes nothing about the API. The
+# LocalStack compatibility this seam relies on -- `/_localstack/health` -- is
+# served by the PLAIN image (floci.io/floci/configuration/docker-images/,
+# read 2026-09-05).
+#
+# An EMPTY `image` is a legitimate operator stand-down and reports
+# `not_configured`. That is NOT a clean gate and the driver says so in words.
+image: "floci/floci:2.0.1"
+image_digest: "sha256:4e451c39c7bb88e3cd4f87e8fc0c25d5b47695a51185d521e2241fa00486e8eb"
+
+# The emulator's single port. floci serves all 85 services on it, as LocalStack did.
+port: 4566
+container_name: "icdev-floci-iac-gate"
+
+# HOW LONG TO WAIT ON /_localstack/health BEFORE CALLING IT could_not_run.
+# A WAIT, never a fixed sleep. floci boots in ~24ms natively, but a cold
+# `docker pull` of a ~90 MB image plus container start on a shared runner is
+# not bounded by that, and a sleep long enough to be safe is a sleep wasted on
+# every healthy run.
+health_timeout_seconds: 120
+health_poll_seconds: 2
+
+# The Terraform image the Studio executors already use. Named here so this job
+# and tools/studio/executors/* cannot drift onto two Terraform versions and
+# produce two different plan JSON shapes for one fixture.
+terraform_image: "hashicorp/terraform:1.9"
+terraform_timeout_seconds: 300
+
+# ── The fixture canvases ───────────────────────────────────────────────────
+#
+# TWO, and the second is what makes the first mean anything. A run over the
+# compliant fixture alone is green whether the gate discriminates or has
+# silently stopped evaluating (see the violating fixture's header).
+#
+# `expect_gate` and `expect_api` are DECLARED, and a mismatch on either is a
+# finding -- that is the "did the check actually fire" half. `agreement` is
+# MEASURED and is a different question; only `gate_missed_rejection` fails on
+# that axis.
+fixtures:
+  - canvas: "flocigate_ok"
+    source: "tests/fixtures/floci_iac/flocigate_ok"
+    expect_gate: "pass"
+    expect_api: "accepted"
+    note: "Compliant: tagged UNCLASSIFIED with Project/Environment tags."
+
+  - canvas: "flocigate_violating"
+    source: "tests/fixtures/floci_iac/flocigate_violating"
+    expect_gate: "fail"
+    expect_api: "accepted"
+    note: >-
+      Untagged bucket. The gate refuses it; AWS and floci build it. That
+      disagreement is `gate_stricter_than_api` and is NEVER a finding.

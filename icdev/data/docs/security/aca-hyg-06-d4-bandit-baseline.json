@@ -1,0 +1,102 @@
+{
+  "task": "aca-hyg-06-d4-d1",
+  "branch": "kanban/aca-hyg-06-d4-d1",
+  "commit": "1453f378b351d3de03e26f51c3482eed021dc33c",
+  "at_origin_main": true,
+  "generated_at": "2026-07-31T22:45:05Z",
+  "bandit_version": "1.9.3",
+  "note": "Counts only. Exact file:line locations are deliberately omitted \u2014 this repo is public and enumerating findings would publish a vuln map. Regenerate locally with the commands in the companion .md to get full detail.",
+  "scans": {
+    "raw_full_repo": {
+      "command": "python -m bandit -r . -f json -o <out>.json -q",
+      "config_applied": false,
+      "note": "No -c bandit.yaml, so repo skips and exclude_dirs (.tmp, projects, playwright, node_modules) do NOT apply. Inflated; kept for literal-command traceability only.",
+      "total": 69931,
+      "by_severity": {
+        "LOW": 67028,
+        "MEDIUM": 2883,
+        "HIGH": 20
+      },
+      "medium_plus": 2903
+    },
+    "policy_medium_plus": {
+      "command": "python -m bandit -r . -c bandit.yaml --severity-level medium -f json -o <out>.json -q",
+      "config_applied": true,
+      "note": "Authoritative repo-policy baseline for MEDIUM+ comparison.",
+      "total_medium_plus": 394,
+      "by_severity": {
+        "MEDIUM": 374,
+        "HIGH": 20
+      },
+      "by_test": {
+        "B310": 280,
+        "B108": 60,
+        "B314": 21,
+        "B104": 8,
+        "B701": 8,
+        "B411": 6,
+        "B501": 5,
+        "B704": 2,
+        "B102": 2,
+        "B615": 1,
+        "B324": 1
+      },
+      "by_scope": {
+        "tests": 129,
+        "icdev/tools (mirror)": 123,
+        "tools": 119,
+        "data (generated artifacts)": 9,
+        "apps": 5,
+        "src": 5,
+        "docs": 3,
+        "other": 1
+      },
+      "high_by_scope": {
+        "tests": 9,
+        "data (generated artifacts)": 8,
+        "docs": 3
+      },
+      "scope_test_matrix": {
+        "icdev/tools (mirror)|B310": 117,
+        "tools|B310": 114,
+        "tests|B108": 60,
+        "tests|B310": 39,
+        "tests|B314": 13,
+        "tests|B701": 8,
+        "tests|B104": 6,
+        "data (generated artifacts)|B501": 5,
+        "src|B310": 5,
+        "icdev/tools (mirror)|B314": 4,
+        "tools|B314": 4,
+        "apps|B310": 3,
+        "docs|B411": 3,
+        "data (generated artifacts)|B411": 3,
+        "apps|B104": 2,
+        "tests|B102": 2,
+        "other|B310": 1,
+        "data (generated artifacts)|B310": 1,
+        "icdev/tools (mirror)|B704": 1,
+        "icdev/tools (mirror)|B615": 1,
+        "tests|B324": 1,
+        "tools|B704": 1
+      }
+    },
+    "ci_gate": {
+      "command": "bandit -r tools/ -q --severity-level high --confidence-level high",
+      "source": ".github/workflows/icdev-ci.yml",
+      "findings": 0,
+      "exit_code": 0,
+      "result": "PASS"
+    }
+  },
+  "verdict": {
+    "medium_plus_total": 394,
+    "high_total": 20,
+    "high_in_platform_runtime": 0,
+    "runtime_scopes_checked": [
+      "tools/",
+      "icdev/tools/"
+    ],
+    "summary": "394 MEDIUM+ repo-wide under repo policy (374 MEDIUM / 20 HIGH). Zero HIGH in platform runtime (tools/, icdev/tools/); all 20 HIGH sit in tests, generated demo artifacts under data/, and the WordPress site-publishing scripts. CI SAST gate passes."
+  }
+}

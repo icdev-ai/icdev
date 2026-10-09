@@ -1,0 +1,119 @@
+{
+  "task": "aca-hyg-06-d1",
+  "branch": "kanban/aca-hyg-06-d1",
+  "bandit_version": "2026-07-31T14:39:02Z",
+  "scans": {
+    "tools_medium_plus": {
+      "command": "python -m bandit -r tools/ --severity-level medium",
+      "total": 1367,
+      "by_severity": {
+        "MEDIUM": 1367
+      },
+      "by_confidence": {
+        "MEDIUM": 1109,
+        "LOW": 139,
+        "HIGH": 119
+      },
+      "by_test_id": {
+        "B608": 1248,
+        "B310": 113,
+        "B314": 5,
+        "B704": 1
+      },
+      "top_files": {
+        "tools/network/routes/pages.py": 56,
+        "tools/network/routes/crud.py": 53,
+        "tools/network/routes/topology_ops.py": 48,
+        "tools/network/routes/import_io.py": 44,
+        "tools/network/routes/topology.py": 41,
+        "tools/network/routes/misc.py": 38,
+        "tools/workflow_canvas/blueprint.py": 36,
+        "tools/network/routes/peering_inventory.py": 33,
+        "tools/network/routes/twin_migration.py": 32,
+        "tools/network/routes/analytics.py": 30,
+        "tools/aiml_canvas/aiml_engine.py": 23,
+        "tools/document_intelligence/analytics_engine.py": 22,
+        "tools/second_brain/notes.py": 20,
+        "tools/slides/blueprint.py": 19,
+        "tools/network/routes/collab_capture.py": 17
+      }
+    },
+    "forge_academy_all_severities": {
+      "command": "python -m bandit -r apps/forge_academy",
+      "total": 1620,
+      "by_severity": {
+        "LOW": 1615,
+        "MEDIUM": 5
+      },
+      "by_test_id": {
+        "B101": 1577,
+        "B110": 27,
+        "B311": 8,
+        "B608": 5,
+        "B404": 1,
+        "B603": 1,
+        "B105": 1
+      },
+      "medium_plus": [
+        {
+          "test_id": "B608",
+          "severity": "MEDIUM",
+          "confidence": "MEDIUM",
+          "file": "apps/forge_academy/content_loader.py",
+          "line": 1642,
+          "issue": "Possible SQL injection vector through string-based query construction."
+        },
+        {
+          "test_id": "B608",
+          "severity": "MEDIUM",
+          "confidence": "MEDIUM",
+          "file": "apps/forge_academy/content_loader.py",
+          "line": 2284,
+          "issue": "Possible SQL injection vector through string-based query construction."
+        },
+        {
+          "test_id": "B608",
+          "severity": "MEDIUM",
+          "confidence": "MEDIUM",
+          "file": "apps/forge_academy/db.py",
+          "line": 1086,
+          "issue": "Possible SQL injection vector through string-based query construction."
+        },
+        {
+          "test_id": "B608",
+          "severity": "MEDIUM",
+          "confidence": "MEDIUM",
+          "file": "apps/forge_academy/db.py",
+          "line": 1094,
+          "issue": "Possible SQL injection vector through string-based query construction."
+        },
+        {
+          "test_id": "B608",
+          "severity": "MEDIUM",
+          "confidence": "MEDIUM",
+          "file": "apps/forge_academy/oracle/db.py",
+          "line": 106,
+          "issue": "Possible SQL injection vector through string-based query construction."
+        }
+      ]
+    },
+    "aca_hyg_06_changed_files": {
+      "command": "python -m bandit <5 files changed on kanban/aca-hyg-06>",
+      "files": [
+        "tests/_aadc_canvas.py",
+        "tests/test_aadc_model_layer.py",
+        "tests/test_penta_aadc_compliance.py",
+        "tests/test_penta_aadc_p2.py",
+        "tests/test_penta_aadc_routes.py"
+      ],
+      "total": 66,
+      "by_severity": {
+        "LOW": 66
+      },
+      "by_test_id": {
+        "B101": 66
+      },
+      "medium_plus_count": 0
+    }
+  }
+}

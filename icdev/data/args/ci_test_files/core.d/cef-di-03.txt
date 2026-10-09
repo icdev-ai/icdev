@@ -1,0 +1,2 @@
+# cef-di-03 — acoic SSP evidence through the governed cortex.resolve() seam.
+tests/test_acoic_cortex_evidence.py

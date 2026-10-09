@@ -1,0 +1,2 @@
+# xrv-mem-03 -- progressive-disclosure retrieval: index -> timeline -> detail by id.
+tests/memory/test_progressive_disclosure.py

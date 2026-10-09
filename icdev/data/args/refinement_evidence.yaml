@@ -1,0 +1,40 @@
+# CUI // SP-CTI
+# Lesson-backed evidence for proposed refinements (exa-refine-04).
+#
+# Consumed by tools/workflow/refinement_evidence.py, which is called by every
+# writer of agent_improvement_artifacts that proposes a REFINEMENT:
+#   - tools/workflow/reflexion_agent.py   (Reflexion / ECHO)
+#   - tools/genesis/reflexes/evolution.py (NOVA SELA mutation)
+#
+# The bundle is always attached. `require_evidence` controls whether a proposal
+# with no supporting lesson_learned rows is rejected before a human sees it.
+
+# Look-back window for lesson rows and for the recurrence score, in days.
+# Matches lesson_learned's own 7-day recurrence window.
+window_days: 7
+
+# THE GATE. When true, a proposal whose trajectory produced fewer than
+# `min_lessons` lesson_learned rows is written with `rejected_status` instead of
+# 'pending' — so it can never be selected by GEPA nor shown in a review queue.
+#
+# Set to false only on a deployment with no lesson history yet (a fresh
+# install): the bundle is still attached and the verdict still recorded, the
+# proposal just is not blocked. Turning it off is a decision, not a default.
+require_evidence: true
+
+# Minimum number of lesson_learned rows that must back a proposal.
+min_lessons: 1
+
+# Minimum recurrence score. lesson_learned computes recurrence as
+# similar_lessons / total_lessons_in_window, so on a busy board a genuinely
+# recurring pattern still scores low in absolute terms. 0.0 means "the lesson
+# rows themselves are the evidence"; raise it only with a measured floor in
+# hand, or every proposal is rejected.
+min_recurrence_score: 0.0
+
+# Status written for a rejected proposal. Must NOT be 'pending' — 'pending' is
+# what GEPA and the review queues select on.
+rejected_status: rejected_no_evidence
+
+# Cap on lesson rows embedded in the bundle (evidence_traces is a TEXT column).
+max_lessons: 25

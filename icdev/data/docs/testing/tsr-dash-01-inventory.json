@@ -1,0 +1,3686 @@
+{
+  "task": "tsr-dash-01-d1",
+  "epic": "DASH",
+  "packages": [
+    "dashboard",
+    "browser",
+    "iqe",
+    "viz",
+    "slides"
+  ],
+  "nav_note": "tools/nav does not exist; NAV files are selected by filename",
+  "tests_py_total": 1988,
+  "matched_total": 291,
+  "tier_counts": {
+    "A": 165,
+    "B": 76,
+    "C": 26,
+    "NAV": 24
+  },
+  "per_package_any_reference": {
+    "dashboard": 161,
+    "browser": 49,
+    "iqe": 47,
+    "viz": 11,
+    "slides": 10
+  },
+  "per_package_real_import": {
+    "dashboard": 147,
+    "browser": 46,
+    "iqe": 41,
+    "viz": 9,
+    "slides": 8
+  },
+  "files": [
+    {
+      "file": "tests/bi_dashboard/test_echarts_adapter.py",
+      "tier": "B",
+      "dash_imports": [
+        "viz"
+      ],
+      "dash_refs": [
+        "viz"
+      ],
+      "other_imports": [
+        "bi_dashboard"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/bi_dashboard/test_spec_generator.py",
+      "tier": "B",
+      "dash_imports": [
+        "viz"
+      ],
+      "dash_refs": [
+        "viz"
+      ],
+      "other_imports": [
+        "bi_dashboard"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/browser/cdp/test_driver.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/browser/cdp/test_launcher.py",
+      "tier": "C",
+      "dash_imports": [],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/browser/cdp/test_preflight.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/browser/cdp/test_session.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/browser/cdp/test_vv_driverless.py",
+      "tier": "B",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [
+        "testing"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/browser/cdp/test_webdriver.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/browser/cdp/test_ws_client.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/browser/test_backend.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/browser/test_browser_locator.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/browser/test_driver_manager_airgap.py",
+      "tier": "C",
+      "dash_imports": [],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/browser/test_driver_staleness.py",
+      "tier": "C",
+      "dash_imports": [],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/browser/test_get_driver_backend.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/browser/test_page_vv.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/browser/test_scope.py",
+      "tier": "B",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [
+        "audit"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/cortex/test_analyst_citations.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard",
+        "iqe"
+      ],
+      "dash_refs": [
+        "dashboard",
+        "iqe"
+      ],
+      "other_imports": [
+        "cortex",
+        "llm",
+        "quality"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/cortex/test_analyst_e2e.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard",
+        "iqe"
+      ],
+      "dash_refs": [
+        "dashboard",
+        "iqe"
+      ],
+      "other_imports": [
+        "cortex",
+        "llm"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/cortex/test_analyst_fallback.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard",
+        "iqe"
+      ],
+      "dash_refs": [
+        "dashboard",
+        "iqe"
+      ],
+      "other_imports": [
+        "cortex",
+        "llm"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/cortex/test_analyst_iqe.py",
+      "tier": "B",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [
+        "cortex"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/cortex/test_blueprint_routes.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "config",
+        "cortex"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/cortex/test_chat_routing.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "cortex"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/cortex/test_iqe_adapter.py",
+      "tier": "B",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [
+        "cortex",
+        "db"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/cortex/test_rest_slides.py",
+      "tier": "C",
+      "dash_imports": [],
+      "dash_refs": [
+        "slides"
+      ],
+      "other_imports": [
+        "cortex"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/dashboard/test_api_blueprint_registration.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/dashboard/test_canvas_aggregator.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/dashboard/test_cli_bridge_api.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "llm"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/dashboard/test_cortex_service_key_auth.py",
+      "tier": "C",
+      "dash_imports": [],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "cortex"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/dashboard/test_crud_resource.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/dashboard/test_databridge_feeds.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "cortex"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/dashboard/test_lazy_canvas_loader.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/dashboard/test_nav_misc_03_route_extraction.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": true
+    },
+    {
+      "file": "tests/dashboard/test_oracle_api.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/databridge/test_icdev_cpmp_connector.py",
+      "tier": "C",
+      "dash_imports": [],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "databridge",
+        "db"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/databridge/test_icdev_demand_connector.py",
+      "tier": "C",
+      "dash_imports": [],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "databridge"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/docmod/test_modernization_ui.py",
+      "tier": "B",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [
+        "db",
+        "doc_modernization",
+        "document_intelligence",
+        "llm"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e/e2e_govlift_lifecycle.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_canvas_orchestration.py",
+      "tier": "B",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [
+        "boundary_canvas",
+        "canvas",
+        "db",
+        "security_canvas"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_election_phase_widget.py",
+      "tier": "B",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [
+        "trading"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_fathomdesk_modal.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_infra_emit.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_infra_twin.py",
+      "tier": "B",
+      "dash_imports": [
+        "browser",
+        "dashboard"
+      ],
+      "dash_refs": [
+        "browser",
+        "dashboard"
+      ],
+      "other_imports": [
+        "infra_canvas"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_kanban_depends_on_full_lifecycle.py",
+      "tier": "B",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [
+        "db",
+        "genesis"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_network_canvas.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_selenium/test_activity_usage.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_selenium/test_ad711_news_2.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_selenium/test_ad76_ai_options_assist.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_selenium/test_ad77_probability_compare.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_selenium/test_ad78_greeks_share.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_selenium/test_ad79_ta_foundation.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_selenium/test_agents_monitoring.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_selenium/test_canvas_ask_fanout.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_selenium/test_chat.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_selenium/test_clawhub.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_selenium/test_compliance_artifacts.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_selenium/test_dashboard_health.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_selenium/test_fathomdesk_78_share.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_selenium/test_filesync.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_selenium/test_finetune.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_selenium/test_genesis.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_selenium/test_knowledge_search.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_selenium/test_ndc_ask_graphrag.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_selenium/test_ndc_canvas_tooltips.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_selenium/test_pipeline_canvas_orphan_edges.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_selenium/test_proposal_genesis.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_selenium/test_research.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_selenium/test_saas_portal.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_selenium/test_sdc_ask_graphrag.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_selenium/test_security_scan_results.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_selenium/test_skillhub.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/e2e_zta_lac_deny_assertions.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/foundry/test_blueprint.py",
+      "tier": "C",
+      "dash_imports": [],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [
+        "foundry"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/genesis/test_kanban_message_injection.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "airgap",
+        "genesis",
+        "llm"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/genesis_auto/test_app.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/kanban/test_external_landing_gate.py",
+      "tier": "C",
+      "dash_imports": [],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/kanban/test_manual_gate_api_guard.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "db",
+        "genesis",
+        "kanban"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/llm/test_cli_backends.py",
+      "tier": "C",
+      "dash_imports": [],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/llm/test_cli_subprocess_backend.py",
+      "tier": "C",
+      "dash_imports": [],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/pulse/test_image_generator.py",
+      "tier": "C",
+      "dash_imports": [],
+      "dash_refs": [
+        "viz"
+      ],
+      "other_imports": [
+        "pulse"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/security/test_sandbox_smoke.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "maintenance"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/slides/test_blueprint.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard",
+        "slides"
+      ],
+      "dash_refs": [
+        "dashboard",
+        "slides"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/slides/test_slides_engine.py",
+      "tier": "A",
+      "dash_imports": [
+        "slides",
+        "viz"
+      ],
+      "dash_refs": [
+        "slides",
+        "viz"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/slides/test_template_fill.py",
+      "tier": "A",
+      "dash_imports": [
+        "slides"
+      ],
+      "dash_refs": [
+        "slides"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_ace_chat_endpoint.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "ace"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_ace_chat_integration.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "ace",
+        "chat"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_ace_chat_trigger.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "ace",
+        "db"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_activity_feed.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_admin_creation_anomaly.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_agent_browser.py",
+      "tier": "A",
+      "dash_imports": [
+        "browser"
+      ],
+      "dash_refs": [
+        "browser"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_aisg_wizard.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "aisg"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_app.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_ato_compliance_dashboard.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "ato_compliance",
+        "db"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_bdt_cato_monitor.py",
+      "tier": "C",
+      "dash_imports": [],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [
+        "db"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_bdt_iqe_migration.py",
+      "tier": "B",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [
+        "db",
+        "genesis"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_brand_config.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_byok.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_chat_chain_activate_no_intake.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_chat_chains_merged_requirements.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_chat_import_overwrite_false.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_chat_manager.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "llm"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_chat_merge_chain_requirements.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_chat_use_cases.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_citation_promote_gate.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "security"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_cnr_mission_canvas.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard",
+        "iqe"
+      ],
+      "dash_refs": [
+        "dashboard",
+        "iqe"
+      ],
+      "other_imports": [
+        "airgap",
+        "mission_canvas",
+        "studio"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_cnr_plat.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "security"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_component_registry.py",
+      "tier": "C",
+      "dash_imports": [],
+      "dash_refs": [
+        "iqe",
+        "slides"
+      ],
+      "other_imports": [
+        "cli",
+        "config",
+        "db"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_cpmp_portfolio_smoke.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_cross_agency_transfer_abac.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_cross_agency_transfer_api.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "audit"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_dashboard_auth.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "db"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_dashboard_introspection_sweep.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "db"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_dashboard_kanban.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_dic_nav_consistency.py",
+      "tier": "NAV",
+      "dash_imports": [],
+      "dash_refs": [],
+      "other_imports": [
+        "document_intelligence"
+      ],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_dwo_dur_03_resume_surface.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_dwo_triggers_panel.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "db",
+        "studio"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_ecr_cl.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "auth",
+        "db"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_ecr_demo.py",
+      "tier": "C",
+      "dash_imports": [],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "cli",
+        "demo",
+        "showcase"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_forge_validator_grounding.py",
+      "tier": "C",
+      "dash_imports": [],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gameday_viz_reporter.py",
+      "tier": "C",
+      "dash_imports": [],
+      "dash_refs": [
+        "viz"
+      ],
+      "other_imports": [
+        "gameday"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_cdrl_03_cpmp_cdrl_generation_record_schema.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_cdrl_12_cpmp_sam_awards_search.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_cor_03_cpmp_cor_gov_badge_visible.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_cor_06_cpmp_cor_get_contract_hidden_fields.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_cor_07_cpmp_cor_subcontractor_pricing_hidden.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_cor_08_cpmp_cor_deliverables_status_dates.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_cor_09_cpmp_cor_evm_cpi_spi_no_ac_breakdown.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_cor_10_cpmp_cor_get_cpars_ratings.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_cor_12_cpmp_cor_access_log.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_cor_13_cpmp_cor_unmatched_email_empty_array.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_cset_05_cpmp_contract_table_status_badges.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_cset_11_cpmp_contract_status_transitions.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_cset_12_cpmp_contract_invalid_state.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_cset_13_cpmp_clin_create_labor_250k.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_cset_14_cpmp_clin_update_billed_50k.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_cset_15_cpmp_clin_list.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_cset_16_cpmp_wbs_create_500k.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_cset_18_cpmp_wbs_update_pct_complete.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_cset_19_cpmp_deliverable_create_cdrl.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_cset_20_cpmp_deliverable_list.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_cset_21_cpmp_deliverable_status_transition.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_ctr_01_cpmp_contract_mods_workflow.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "govcon"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_ctr_02_cpmp_obligation_periods.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "db",
+        "govcon"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_evm_01_cpmp_post_evm_period.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_evm_02_cpmp_get_evm_aggregate.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_evm_05_eac_positive_cpi_overrun.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_evm_07_monte_carlo_pert_ordering.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "govcon"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_evm_08_cpmp_get_evm_scurve_ordered_arrays.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_perf_02_cpmp_subcontractor_list.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_perf_04_cpmp_small_business_plan.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_perf_05_cpmp_sb_compliance.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_perf_06_cpmp_cpars_predict.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_perf_09_cpmp_cpars_create.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_perf_10_cpmp_cpars_trend.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_perf_11_cpmp_negative_event_create.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_perf_12_cpmp_negative_event_list.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_perf_13_cpmp_negative_event_auto_detect.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_perf_14_cpmp_ndaa_thresholds.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_gcpl_perf_18_health_recommendations.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "govcon"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_govcon_auto_compliance_api.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_govcon_bid_recommendation_api.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_govcon_capabilities.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "govcon"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_govcon_pwin_api.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "db"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_govcon_rbac.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "db"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_idc_emit_page.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_infra_twin_route.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_intake_api.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_iqe_adapter_govcon_requirements.py",
+      "tier": "A",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_iqe_adapter_proposals.py",
+      "tier": "A",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_iqe_bi_dashboard_adapter.py",
+      "tier": "B",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [
+        "db"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_iqe_cli.py",
+      "tier": "A",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_iqe_compliance_adapter.py",
+      "tier": "A",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_iqe_compliance_seeds.py",
+      "tier": "A",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_iqe_data_adapter.py",
+      "tier": "A",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_iqe_data_seeds.py",
+      "tier": "A",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_iqe_executor.py",
+      "tier": "A",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_iqe_executor_fanout.py",
+      "tier": "A",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_iqe_ext_databridge.py",
+      "tier": "B",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [
+        "databridge"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_iqe_ext_governance.py",
+      "tier": "B",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [
+        "databridge",
+        "db"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_iqe_ext_lineage.py",
+      "tier": "B",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [
+        "data_canvas",
+        "databridge",
+        "db"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_iqe_infra_adapter.py",
+      "tier": "A",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_iqe_infra_seeds.py",
+      "tier": "A",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_iqe_network_adapters.py",
+      "tier": "A",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_iqe_nl_to_iqe_extract.py",
+      "tier": "A",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_iqe_nl_to_iqe_ip.py",
+      "tier": "A",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_iqe_nl_to_iqe_temporal.py",
+      "tier": "A",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_iqe_observability_adapter.py",
+      "tier": "A",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_iqe_observability_seeds.py",
+      "tier": "A",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_iqe_parser.py",
+      "tier": "A",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_iqe_pipeline_adapter.py",
+      "tier": "A",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_iqe_pipeline_seeds.py",
+      "tier": "A",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_iqe_route.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_iqe_security_adapter.py",
+      "tier": "A",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_iqe_security_seeds.py",
+      "tier": "A",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_iqe_seed_queries.py",
+      "tier": "A",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_jise_api.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_kanban_depends_on.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "db",
+        "genesis"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_knowledge_search_route.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_logs_query_and_blueprint.py",
+      "tier": "B",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [
+        "logging"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_migration_247.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_move_endpoint_gate.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_nav_bld_01_aisg_real_data.py",
+      "tier": "NAV",
+      "dash_imports": [],
+      "dash_refs": [],
+      "other_imports": [
+        "db"
+      ],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_bld_02_aisg_views.py",
+      "tier": "NAV",
+      "dash_imports": [],
+      "dash_refs": [],
+      "other_imports": [
+        "aisg",
+        "db"
+      ],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_bld_03_aisg_honesty.py",
+      "tier": "NAV",
+      "dash_imports": [],
+      "dash_refs": [],
+      "other_imports": [
+        "aisg",
+        "db"
+      ],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_bld_04_fail_loud.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_comp_01_fedramp_scope.py",
+      "tier": "NAV",
+      "dash_imports": [],
+      "dash_refs": [],
+      "other_imports": [],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_comp_02_admin_burst.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_comp_03_api_authenticity.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "db"
+      ],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_comp_05_sre.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "db"
+      ],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_comp_06_attribution_scoring.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "integrity"
+      ],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_intel_01_menu_audit.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "marketplace",
+        "ontology",
+        "pulse"
+      ],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_intel_02_slides_translations.py",
+      "tier": "B",
+      "dash_imports": [
+        "slides"
+      ],
+      "dash_refs": [
+        "slides"
+      ],
+      "other_imports": [
+        "translation"
+      ],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_intel_03_translation_gates.py",
+      "tier": "NAV",
+      "dash_imports": [],
+      "dash_refs": [],
+      "other_imports": [],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_intel_04_slides_honesty.py",
+      "tier": "A",
+      "dash_imports": [
+        "slides"
+      ],
+      "dash_refs": [
+        "slides"
+      ],
+      "other_imports": [],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_intel_05_repair_and_mock.py",
+      "tier": "NAV",
+      "dash_imports": [],
+      "dash_refs": [],
+      "other_imports": [],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_intel_06_residual_gates.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_intel_07_stub_honesty.py",
+      "tier": "NAV",
+      "dash_imports": [],
+      "dash_refs": [],
+      "other_imports": [
+        "autoresearch",
+        "mcp",
+        "ontology"
+      ],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_intel_09_d2_scheduler_publish_gate.py",
+      "tier": "NAV",
+      "dash_imports": [],
+      "dash_refs": [],
+      "other_imports": [],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_intel_09_d5_judge_publish_integration.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "db"
+      ],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_intel_09_pulse_judge_gate.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "db",
+        "pulse"
+      ],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_llm_01_router_invoke.py",
+      "tier": "NAV",
+      "dash_imports": [],
+      "dash_refs": [],
+      "other_imports": [
+        "llm"
+      ],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_llm_02_coherence_rule.py",
+      "tier": "NAV",
+      "dash_imports": [],
+      "dash_refs": [],
+      "other_imports": [
+        "workflow"
+      ],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_misc_01_release_badge.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "auth",
+        "db"
+      ],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_misc_02_fail_loud_pass.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_misc_04_cli_repo_resolution.py",
+      "tier": "NAV",
+      "dash_imports": [],
+      "dash_refs": [],
+      "other_imports": [
+        "kanban"
+      ],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_misc_05_evidence_page.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "compliance"
+      ],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_plat_01_simulated_data.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_plat_02_broker_guard.py",
+      "tier": "NAV",
+      "dash_imports": [],
+      "dash_refs": [],
+      "other_imports": [
+        "fathomdesk"
+      ],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_plat_03_geosigint_provenance.py",
+      "tier": "NAV",
+      "dash_imports": [],
+      "dash_refs": [],
+      "other_imports": [],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_plat_04_macro_fail.py",
+      "tier": "NAV",
+      "dash_imports": [],
+      "dash_refs": [],
+      "other_imports": [
+        "fathomdesk"
+      ],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_plat_05_gkp_geosigint.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_sec_02_admin_rbac.py",
+      "tier": "NAV",
+      "dash_imports": [],
+      "dash_refs": [],
+      "other_imports": [
+        "admin"
+      ],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_sec_04_hitl_rbac.py",
+      "tier": "NAV",
+      "dash_imports": [],
+      "dash_refs": [],
+      "other_imports": [
+        "workflow_hitl"
+      ],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_sec_05_strategos_rbac.py",
+      "tier": "NAV",
+      "dash_imports": [],
+      "dash_refs": [],
+      "other_imports": [
+        "security_canvas"
+      ],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_sec_06_mutation_rbac.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "aisg",
+        "foundry",
+        "kanban"
+      ],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_sec_07_xss.py",
+      "tier": "NAV",
+      "dash_imports": [],
+      "dash_refs": [],
+      "other_imports": [
+        "docgen"
+      ],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_sec_08_xss_sweep.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "docgen"
+      ],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_sec_09_usage_attribution.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "agent",
+        "db"
+      ],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_strat_01_intsum_grounding.py",
+      "tier": "NAV",
+      "dash_imports": [],
+      "dash_refs": [],
+      "other_imports": [
+        "db",
+        "strategos"
+      ],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_strat_02_opord_grounding.py",
+      "tier": "NAV",
+      "dash_imports": [],
+      "dash_refs": [],
+      "other_imports": [],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_strat_03_oracle_degraded.py",
+      "tier": "NAV",
+      "dash_imports": [],
+      "dash_refs": [],
+      "other_imports": [],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_strat_04_iw_no_sqlite_fallback.py",
+      "tier": "NAV",
+      "dash_imports": [],
+      "dash_refs": [],
+      "other_imports": [],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_nav_strat_05_no_legacy_blueprint.py",
+      "tier": "NAV",
+      "dash_imports": [],
+      "dash_refs": [],
+      "other_imports": [],
+      "nav_named": true
+    },
+    {
+      "file": "tests/test_ndc_sdc_idc_templates.py",
+      "tier": "B",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [
+        "infra_canvas",
+        "network",
+        "security_canvas"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_network_config_review.py",
+      "tier": "B",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [
+        "network"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_observability_mitre_route.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_openapi_generator.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_pdc_routes_misc.py",
+      "tier": "C",
+      "dash_imports": [],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [
+        "db",
+        "pipeline"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_penta_aadc_auth.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "agentic_ai_canvas",
+        "llm"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_penta_aadc_routes.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "agentic_ai_canvas"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_penta_aadc_xss.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_penta_aiify_routes.py",
+      "tier": "B",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [
+        "aiify",
+        "db",
+        "innovation"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_penta_aiify_scan.py",
+      "tier": "C",
+      "dash_imports": [],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [
+        "aiify",
+        "db"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_penta_aimc_nodes.py",
+      "tier": "B",
+      "dash_imports": [
+        "iqe"
+      ],
+      "dash_refs": [
+        "iqe"
+      ],
+      "other_imports": [
+        "aiml_canvas",
+        "genesis"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_pgp_tx02_json_portability.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_placeholder_promote_gate.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "quality",
+        "security"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_pma_e2e_vv.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "db",
+        "genesis",
+        "pma"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_pma_igap_api.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_pma_personnel_api.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_prop_ctr_02_d4_portfolio_detail.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_prop_fix_12_rls_reads.py",
+      "tier": "C",
+      "dash_imports": [],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "security"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_proposal_genesis.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "db",
+        "proposal_genesis"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_proposal_genesis_winloss_mac.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "security"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_proposals_annotations.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_proposals_detail_action_bar.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_proposals_detail_ai_drafts_tab.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_proposals_detail_extract_requirements.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_proposals_detail_map_capabilities.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_proposals_iqe_query_api.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard",
+        "iqe"
+      ],
+      "dash_refs": [
+        "dashboard",
+        "iqe"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_proposals_list_cui_banner.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_proposals_ptw_blackhat_api.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "db",
+        "govcon",
+        "security"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_rag_eval_api.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_release_orchestrator.py",
+      "tier": "C",
+      "dash_imports": [],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "dx",
+        "installer"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_second_brain.py",
+      "tier": "C",
+      "dash_imports": [],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "ace",
+        "db",
+        "second_brain"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_security_context.py",
+      "tier": "C",
+      "dash_imports": [],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "security"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_seed_canvas_artifacts.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "db"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_slides_pptx_builder_emu.py",
+      "tier": "A",
+      "dash_imports": [
+        "slides"
+      ],
+      "dash_refs": [
+        "slides"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_state_tracker.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_strategos_chat_api.py",
+      "tier": "C",
+      "dash_imports": [],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "strategos"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_tenant_isolation.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "db",
+        "ttx"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_traces_api_rls.py",
+      "tier": "C",
+      "dash_imports": [],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "db"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_uc_load_all_tenant_filter.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_usage_tracking.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "db"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/test_value_scorer_and_bulk_move.py",
+      "tier": "B",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "awareness"
+      ],
+      "nav_named": false
+    },
+    {
+      "file": "tests/tools/dashboard/chat_reasoned_test.py",
+      "tier": "A",
+      "dash_imports": [
+        "dashboard"
+      ],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/viz/test_asset_generator.py",
+      "tier": "A",
+      "dash_imports": [
+        "viz"
+      ],
+      "dash_refs": [
+        "viz"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/viz/test_dataset_story.py",
+      "tier": "A",
+      "dash_imports": [
+        "viz"
+      ],
+      "dash_refs": [
+        "viz"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/viz/test_deck_model.py",
+      "tier": "A",
+      "dash_imports": [
+        "viz"
+      ],
+      "dash_refs": [
+        "viz"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/viz/test_elements.py",
+      "tier": "A",
+      "dash_imports": [
+        "slides",
+        "viz"
+      ],
+      "dash_refs": [
+        "slides",
+        "viz"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/viz/test_svg_to_pptx.py",
+      "tier": "A",
+      "dash_imports": [
+        "slides",
+        "viz"
+      ],
+      "dash_refs": [
+        "slides",
+        "viz"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/viz/test_viz_kernel.py",
+      "tier": "A",
+      "dash_imports": [
+        "viz"
+      ],
+      "dash_refs": [
+        "viz"
+      ],
+      "other_imports": [],
+      "nav_named": false
+    },
+    {
+      "file": "tests/workflow/test_kph_coherence_checks.py",
+      "tier": "C",
+      "dash_imports": [],
+      "dash_refs": [
+        "dashboard"
+      ],
+      "other_imports": [
+        "workflow"
+      ],
+      "nav_named": false
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+# The two flags raised at the end of Phase 5.
+# transition_log_gap pins that a REFUSED_* move is NOT a departure (counting it
+# inflated the first draft), that a task with no transitions at all is not the
+# finding, and that unmeasurable never reads as a complete log.
+tests/kanban/test_transition_log_gap.py

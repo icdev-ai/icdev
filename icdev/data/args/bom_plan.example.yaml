@@ -1,0 +1,124 @@
+# Durations, horizons, and the scope nobody priced.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# THIS IS THE EXAMPLE. Copy it to `args/bom_plan.yaml` and edit.
+#
+# `args/bom_plan.yaml` is gitignored ON PURPOSE. A real one names real people,
+# real committed dates, and a real task list — that is customer material, and
+# ICDEV is a public repository. The schema belongs in the open; the plan does not.
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# This file is the GOAL. It is meant to be argued with and edited — every number
+# in it is a decision somebody made, not a fact, and the schedule regenerates from
+# it in seconds. That is the point: a plan you cannot adjust is a prediction, and
+# predictions about programmes are worthless.
+
+# Where the schedule starts counting.
+anchor: "2026-01-05"
+
+# ── Ranges ───────────────────────────────────────────────────────────────────
+#
+# When somebody says "4 to 6 weeks" they have told you two different things: what
+# they hope for, and what they will not be surprised by. A baseline built on the
+# hopeful end is a date that slips, and a slipped date costs more credibility than
+# a longer one ever costs goodwill.
+#
+# So the baseline commits to `late`, and the `early` figure is carried as upside —
+# stated out loud rather than quietly banked.
+plan_to: late                 # late | early
+
+ranges:
+  procurement:
+    early_weeks: 4
+    late_weeks: 6
+    note: "Requisition and purchase-order execution."
+
+  installation:
+    early_weeks: 2
+    late_weeks: 4
+    note: "Rack, stack, power on, firmware, burn-in."
+
+# ── Fixed dates ──────────────────────────────────────────────────────────────
+#
+# Commitments already made to people. These are not estimates, and the scheduler
+# does not get to move them: a computed date is a projection, but a promise made
+# to somebody in a meeting is not.
+fixed:
+  "2.3":
+    due: "2026-01-07"
+    note: "Present the plan to the approver. Committed date."
+  "2.4":
+    due: "2026-01-09"
+    note: "Approval by COB that week."
+
+# ── Task durations, in working days ──────────────────────────────────────────
+#
+# Matched against the task NAME, longest key first. A task that matches nothing
+# gets `default`, and that is REPORTED rather than silent — an unestimated task is
+# a question, not a five-day task, and letting it wear a number it never earned is
+# how a plan acquires a precision it does not have.
+durations:
+  default: 5
+
+  by_name:
+    "requisition & procurement": null   # null => take it from ranges.procurement
+    "rack & stack hardware": null       # null => take it from ranges.installation
+
+# Which range a null-duration task draws from. Keyed to `ranges` above.
+range_tasks:
+  "requisition & procurement": procurement
+  "rack & stack hardware": installation
+
+# ── Horizons ─────────────────────────────────────────────────────────────────
+#
+# A horizon is a date the plan is CHECKED against, not a date it is forced into.
+# If the schedule lands work past its horizon, that is a finding. A planner that
+# silently compresses a schedule to hit a date somebody wanted has not made the
+# date achievable — it has only moved the moment you find out, from now to month
+# nine, when it is expensive.
+#
+# Every task belongs to the FIRST horizon whose `covers` matches it; anything
+# unmatched falls to `default_horizon`.
+default_horizon: build
+
+horizons:
+  build:
+    label: "Delivered and in use"
+    must_finish_by: "2026-12-31"
+    covers: "*"
+
+  wave_two:
+    label: "Second wave"
+    must_finish_by: "2027-12-31"
+    covers: "phase:Phase 9"
+
+# ── Scope that is on no BOM ──────────────────────────────────────────────────
+#
+# Work nobody has priced is the most expensive work there is, because by the time
+# somebody notices, the money has been allocated somewhere else. Putting it on the
+# schedule with no dollar figure is not an oversight — it is the finding, made
+# visible.
+#
+# The engine will not invent a price for it. It puts the scope in front of the
+# people who can get a quote, in time for them to get one.
+digital_twin:
+  unfunded_note: >-
+    Not present in any BOM and not on any baseline drawing. Scope is real;
+    the price is not yet known. Carry a reserve or get a quote before the ask.
+
+  waves:
+    - phase: "Phase 8: Second Wave (year one)"
+      horizon: build
+      after: "final security audit"     # the task this wave hangs off, by name
+      tasks:
+        - name: "Example capability"
+          description: "Replace with the real thing."
+          duration_days: 15
+
+    - phase: "Phase 9: Second Wave (year two)"
+      horizon: wave_two
+      after: "example capability"
+      tasks:
+        - name: "Example follow-on capability"
+          description: "Replace with the real thing."
+          duration_days: 20

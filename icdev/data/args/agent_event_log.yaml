@@ -1,0 +1,80 @@
+# CUI // SP-CTI
+# Agent session event log — payload retention policy (hcx-evt-01)
+#
+# WHAT THIS DECIDES, AND WHAT IT DOES NOT
+#
+# `agent_session_events.payload_hash` is NOT NULL and is written for EVERY event.
+# Nothing in this file can turn that off, because the hash is what makes the log
+# an audit record rather than a cache: it proves what the model saw even to a
+# reader who is not cleared to see it.
+#
+# What this file decides is whether the VERBATIM document goes into
+# `payload_json` beside the hash. Retaining raw model input at rest is a
+# classification decision, so it is configuration and not a constant in the
+# writer.
+#
+# A NULL `payload_json` beside a NOT NULL `payload_hash` means WITHHELD BY
+# POLICY. `event_log.read_session()` reports that explicitly as
+# `payload_withheld: true` rather than returning an empty payload, because an
+# empty payload and a suppressed one are different facts and a replay built on
+# the first would be wrong.
+#
+# Consumed by: tools/agent_runtime/event_log.py :: load_policy
+version: 1
+
+payload_retention:
+  # Master switch. `false` is HASH-ONLY MODE: every event is still recorded, in
+  # order, with its digest, and no payload is ever stored. This is the setting
+  # for a deployment that logs agent activity for audit and does not want the
+  # transcript at rest at all.
+  #
+  # Env override: ICDEV_AGENT_EVENT_PAYLOAD_RETENTION=0 / =1. The env wins, so an
+  # operator can stand retention down without editing a file — visible in the
+  # process environment rather than buried in a diff.
+  enabled: true
+
+  # The ceiling. A payload is stored only when the event's own `classification`
+  # is at or BELOW this label on the ladder in
+  # tools/compliance/classification_manager.py::get_clearance_order:
+  #
+  #   PUBLIC = UNCLASSIFIED < CUI < ECI < SECRET < TOP SECRET < TOP SECRET//SCI
+  #
+  # Default CUI: an ordinary agent turn is retained in full; an event an
+  # operator has explicitly marked ECI or above is recorded hash-only. The
+  # comparison is ORDER-based, not string equality, so a label this file has
+  # never heard of resolves through the same ladder as everything else.
+  #
+  # Raising this to SECRET or above means SECRET-classified transcripts sit in
+  # `agent_session_events.payload_json` in the main database. That is a real
+  # decision about the deployment's impact level, not a tuning knob.
+  max_classification: CUI
+
+  # Event types whose payload is NEVER stored, whatever the two settings above
+  # say. Empty by default: the vocabulary is deliberately small and no member of
+  # it is inherently more sensitive than the others, so blanket-excluding one
+  # would be a guess. It exists so a deployment that finds, say,
+  # `request_context` too large or too sensitive to retain can drop that one
+  # without dropping the log.
+  #
+  # One member is worth naming before you add it here. `permission_posture`
+  # (hcx-post-02) is the only type that records an OPERATOR's act rather than
+  # something the model saw, and its payload IS the record — the posture, the
+  # actor, the resolved knobs. Suppressing it leaves the hash, which proves a
+  # posture decision happened and cannot say who made it or what it was, which
+  # is the exact question the event was added to answer.
+  #
+  # `session_fork` (hcx-evt-05) is worth naming for the opposite reason: its
+  # payload holds no model-visible text at all — a parent session id, a boundary
+  # seq, a seed length and a digest — so suppressing it buys no confidentiality
+  # and costs a forked session the record of where it came from. It is also the
+  # type most affected by the two settings ABOVE: a fork PROJECTS turn_start,
+  # assistant_message and tool_result back into a message list, so hash-only
+  # mode (or a ceiling that withholds them) makes a session unforkable. That is
+  # deliberate — `fork.py` refuses rather than seeding a new session with
+  # messages the model never saw — but it means turning retention off turns
+  # forking off with it.
+  #
+  # Names are validated against EVENT_TYPES in event_log.py — an entry that
+  # matches no event type is a typo that would silently retain everything, so it
+  # is reported rather than ignored.
+  never_store: []

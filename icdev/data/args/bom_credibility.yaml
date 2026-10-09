@@ -1,0 +1,144 @@
+# CUI // SP-CTI
+#
+# How much a document's word is worth.
+#
+# Users already encode this — by renaming files, by folder, by tone in a covering
+# email. That judgement is real and load-bearing, and today it lives nowhere the
+# software can see. The job here is to CAPTURE it as data, not to guess it from a
+# filename in Python.
+#
+# Which is why the vocabulary lives in this file and not in a regex. Every
+# customer marks their drafts differently. Add your words here; do not touch the
+# code.
+#
+# Nothing in this file is binding. The engine PROPOSES a tier with a rationale
+# and a confidence; only a human's designation is authoritative
+# (bom_sources.credibility_set_by). Silence is never confirmation: a source
+# nobody has ruled on stays 'unknown', and unknown never outranks anything.
+
+# Score thresholds. A source's signals are summed and the tier is the first band
+# whose floor it clears. Deliberately coarse — this is a proposal for a human to
+# accept or overrule, not a measurement.
+tiers:
+  authoritative: 6.0
+  corroborated: 3.0
+  working: 1.0
+  draft: -2.0
+  # below draft, and with nothing else to go on, a source stays 'unknown'
+
+# ── Status vocabulary ────────────────────────────────────────────────────────
+# Matched against the filename, the sheet headers and the first rows of content.
+# Word-boundary matched, case-insensitive.
+#
+# The upgrades are the interesting half: they are how a human tells you which
+# copy they actually trust, and until now nobody was listening.
+vocabulary:
+  upgrade:
+    solid: 3.0          # the customer's own marker for "this one is real"
+    final: 3.0
+    approved: 3.0
+    signed: 3.0
+    executed: 3.0
+    quote: 2.5          # a vendor put a number in writing
+    quotation: 2.5
+    contract: 2.5
+    baseline: 2.0
+    issued: 2.0
+    released: 2.0
+    confirmed: 2.0
+    actual: 1.5
+    verified: 1.5
+
+  downgrade:
+    wip: -3.0
+    draft: -3.0
+    rough: -2.5
+    rom: -2.5           # rough order of magnitude — somebody's estimate
+    scratch: -2.5
+    proposed: -1.5
+    tentative: -1.5
+    preliminary: -1.5
+    placeholder: -2.0
+    tbd: -1.5
+    notional: -2.0
+    sample: -2.0
+    example: -2.0
+    template: -2.5
+    old: -2.0
+    obsolete: -3.0
+    superseded: -3.0
+    # A version marker below 1.0 is a document saying so itself.
+    "v0": -2.0
+    "0.1": -2.0
+    "0.2": -2.0
+
+# ── Structural signals ───────────────────────────────────────────────────────
+# Facts about the document, not words in it. These are computed, not matched, and
+# they are the reason the engine can propose a tier for a file with a completely
+# uninformative name.
+signals:
+  # Live formulas mean the arithmetic is reproducible and somebody can be argued
+  # with. A flat sheet of numbers is an assertion.
+  has_formulas: 2.0
+
+  # Part numbers mean somebody has actually specified a thing that can be bought,
+  # rather than described a category.
+  has_part_numbers: 2.0
+
+  # A named human with a revision history has been through review.
+  named_author: 1.5
+  many_revisions: 1.0        # revision >= 5
+
+  # Written by a script. Not a scandal — but a generated estimate is a different
+  # kind of evidence from one a person authored, and pretending otherwise is how
+  # a machine's guess acquires the authority of a human's judgement.
+  machine_generated: -2.5
+
+  # It says so itself.
+  self_declared_ai: -3.0
+
+  # Unfinished values in a document that is being costed.
+  has_placeholders: -1.5
+  many_placeholders: -1.0    # more than 5
+
+  # A re-representation of another source in the corpus (a PDF print of a
+  # workbook). Capped at 'derived' regardless of anything else — it cannot be
+  # more authoritative than the thing it is a copy of, and it has lost the
+  # formulas along the way.
+  is_derivative: -99.0
+
+# ── Role signatures ──────────────────────────────────────────────────────────
+# What a document IS, which governs what may be concluded from it.
+roles:
+  # The distinction that matters most in the whole engine:
+  #   a BOM CLAIMS things.
+  #   an inventory IDENTIFIES INDIVIDUAL PHYSICAL UNITS.
+  #
+  # Serial numbers are the signature of the second. That is how ground truth is
+  # recognised without hardcoding a filename — and it generalises to any corpus,
+  # in any industry.
+  #
+  # NOTE that a serial proves a machine EXISTS. Its ABSENCE proves NOTHING:
+  # inventories go stale, and a rack of real hardware can be missing from a
+  # spreadsheet. This proposal never licenses the conclusion that kit is
+  # fictional. See asset_count_disputed.
+  inventory_truth:
+    # Two of three, and it is proposed (never imposed) as ground truth.
+    unique_column_ratio: 0.8      # a column that is ~all distinct values
+    header_keywords: [serial, service tag, asset tag, asset id, hostname, warranty, eol, end of life]
+    no_price_columns: true
+
+  quote:
+    header_keywords: [quote, quotation, valid until, expires, vendor ref, offer]
+
+  baseline_architecture:
+    # A diagram nobody has designated is just a diagram. Designating it as the
+    # AGREED design turns it into the yardstick the BOM is measured against.
+    extensions: [.drawio, .vsdx, .xml]
+
+# Price-column detection, used by the inventory signature and by price_basis
+# resolution. Header text, matched case-insensitively.
+price_headers: [price, cost, unit, msrp, list, ext, extended, total, amount, rate, usd, "$"]
+
+# Words that identify a column as a part number / SKU.
+part_number_headers: [part, part number, sku, model, mfr part, manufacturer part, catalog, item number]

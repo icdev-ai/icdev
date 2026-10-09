@@ -1,0 +1,72 @@
+# CUI // SP-CTI
+# ---------------------------------------------------------------------------
+# External-only surfaces  (ctx-reach-02)
+# ---------------------------------------------------------------------------
+# Consumed by: tools/workflow/coherence_checker.py :: check_external_only_surfaces
+# Decision records: the `decision` key on each entry below.
+#
+# WHAT THIS FILE IS FOR
+#   A module with zero in-repo consumers is normally ICDEV's signature defect —
+#   declared, importable, catalogued, and called by nothing, while nothing goes
+#   red (see args/liveness_gate.yaml). A very small number of modules have zero
+#   in-repo consumers ON PURPOSE: they are SDK surfaces whose only callers live
+#   in other git repositories, and giving them an in-repo caller would mean
+#   manufacturing one.
+#
+#   Those two states are indistinguishable by inspection, and that is the whole
+#   problem. This file is the third state made explicit: intentional, reasoned,
+#   and — crucially — carrying obligations a gate can check.
+#
+# THIS IS NOT A SUPPRESSION LIST, AND IT HAS NO BUDGET
+#   There is no count here to raise. Every key below only ADDS an obligation:
+#   the decision doc must exist, the module must point a reader at it, the
+#   external contract must be pinned, and the behaviour must be covered by a
+#   test CI actually runs. Declaring a module external-only is strictly more
+#   work than deleting it and strictly more work than wiring it up. That is
+#   deliberate — the easy path must never be "declare it and move on".
+#
+# THE DECLARATION IS BIDIRECTIONAL
+#   `max_in_repo_importers: 0` is checked in BOTH directions. If a production
+#   importer appears, the check FAILS and the fix is to DELETE the entry — the
+#   module became an ordinary in-repo capability and should be governed as one,
+#   by capability_liveness and by its callers. An external-only declaration that
+#   has quietly become false is the same defect in a new costume.
+#
+# ADDING AN ENTRY
+#   Needs no code change. It needs a written decision doc explaining why an
+#   in-repo consumer would be manufactured rather than real, and it needs the
+#   obligations below to already be satisfied.
+
+classification: CUI // SP-CTI
+
+surfaces:
+  - path: tools/cortex/client.py
+    decision: docs/design/ctx-reach-02-cortex-client-external-only.md
+    summary: >-
+      Cortex service client SDK. The only ICDEV host that could call it IS the
+      Cortex server, and it reaches the same seven operations in-process through
+      tools/cortex/api.py. An in-repo consumer would be a loopback HTTP round
+      trip to the process already holding the callee — a caller manufactured to
+      satisfy a metric, adding a service key, an auth hop and latency while
+      adding no coverage the REST tests do not already have.
+
+    # The module docstring must contain this path, so a reader who opens
+    # client.py to ask "why does nothing call this?" gets the answer there
+    # rather than having to find this file.
+    docstring_must_reference: docs/design/ctx-reach-02-cortex-client-external-only.md
+
+    # Zero PRODUCTION importers in this repo. Tests are excluded: they are the
+    # evidence the surface works, not consumers of it.
+    max_in_repo_importers: 0
+
+    # The external contract must be pinned by args/vendor_api_manifest.json via
+    # args/vendor_parity.yaml. Without this, "external-only" is an assertion
+    # about repos ICDEV CI never checks out, i.e. unfalsifiable.
+    must_be_vendor_parity_source: true
+
+    # Behaviour must be exercised by a test in args/ci_test_files/core.txt. An
+    # external-only surface with only UNGATED tests is a 542-line module no
+    # merge has ever verified — which is exactly what this one was until this
+    # entry landed (tests/cortex/test_client.py sat in args/ci_test_backlog.txt).
+    gated_tests:
+      - tests/cortex/test_client.py

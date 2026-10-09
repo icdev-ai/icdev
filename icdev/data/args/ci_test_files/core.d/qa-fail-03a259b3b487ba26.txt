@@ -1,0 +1,4 @@
+# qa-fail-03a259b3b487ba26 — route_smoke must not spend its wall clock failing
+# to connect over IPv6. Pins both halves of the fix: the loopback-literal
+# defaults, and resolve_base() for callers that spell `localhost` explicitly.
+tests/testing/test_route_smoke_base_resolution.py
