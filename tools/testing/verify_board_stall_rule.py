@@ -81,13 +81,20 @@ def _seed_done(conn, tid: str, at: datetime) -> None:
 
 
 def _seed_task(conn, tid: str, status: str) -> None:
-    conn.execute(
-        "INSERT INTO kanban_tasks (id, title, description, task_type, priority, status, created_at) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-        (f"{MARK}-{tid}", f"{MARK} {tid}", "board stall verification", "build",
-         "high", status, _now().isoformat()),
-    )
-    conn.commit()
+    # Through the canonical seeder, not a raw INSERT (rem-hyg-06). It opens its
+    # own get_connection() on the same ambient backend and commits, so the rows
+    # are visible to ``conn``; ``conn`` is unused here and kept for call symmetry.
+    from tools.kanban.task_factory import create_tasks
+
+    create_tasks([{
+        "id": f"{MARK}-{tid}",
+        "title": f"{MARK} {tid}",
+        "description": "board stall verification",
+        "task_type": "build",
+        "priority": "high",
+        "status": status,
+        "acceptance_criteria": "fixture row for the board stall rule verification; deleted by _cleanup",
+    }])
 
 
 def _cleanup(conn) -> None:

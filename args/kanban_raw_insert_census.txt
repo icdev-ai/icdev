@@ -226,7 +226,6 @@ tools/testing/api_contract_tester.py::file_failure_tasks[1]  # grandfathered at 
 tools/testing/dep_health.py::_file_kanban_task[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
 tools/testing/flaky_tracker.py::_file_kanban_task[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
 tools/testing/seed_gcpl_kanban.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
-tools/testing/verify_board_stall_rule.py::_seed_task[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
 tools/testing/visual_regression.py::file_regression_tasks[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
 tools/twin_core/event_bridge.py::create_twin_drift_card[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
 tools/workflow/failure_triage.py::_create_diagnostic_card_with_patch[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06

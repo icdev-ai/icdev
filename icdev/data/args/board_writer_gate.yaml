@@ -74,7 +74,7 @@ raw_insert_census:
   # create_kanban_tasks now seeds through task_factory.create_tasks with a
   # deterministic id + idempotency key (it duplicated the set on every click).
   # 1 site mirrored to 2 entries. 203 -> 201.
-  raw_insert_max: 201
+  raw_insert_max: 200
 
   # A reason shorter than this is not a reason. Applies to census entries and to
   # the exclusions below.
