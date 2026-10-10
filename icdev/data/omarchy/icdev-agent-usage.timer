@@ -1,0 +1,13 @@
+# CUI // SP-CTI
+# Refresh the ICDEV(tm) agents-panel record every five minutes (omx-panel-01).
+
+[Unit]
+Description=Refresh the ICDEV(tm) record for the Omarchy agents panel
+
+[Timer]
+OnActiveSec=5s
+OnUnitActiveSec=5min
+Unit=icdev-agent-usage.service
+
+[Install]
+WantedBy=timers.target

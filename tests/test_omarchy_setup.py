@@ -29,8 +29,12 @@ class FakeWorld:
         self.pg_ready = pg_ready
         self.pg_running = pg_ready
         self.mcp = set()
-        self.timer_on = False
+        self.timers: set = set()
         self.calls: list[list[str]] = []
+
+    @property
+    def timer_on(self):
+        return omarchy.GENESIS_TIMER in self.timers
 
     def which(self, name):
         return f"/usr/bin/{name}" if name in self.bins else None
@@ -64,11 +68,11 @@ class FakeWorld:
             return Result(0)
         if argv[:2] == ["systemctl", "--user"]:
             if argv[2] in ("is-enabled", "is-active"):
-                return Result(0 if self.timer_on else 1)
+                return Result(0 if argv[-1] in self.timers else 1)
             if argv[2:4] == ["enable", "--now"]:
-                self.timer_on = True
+                self.timers.add(argv[-1])
             if argv[2:4] == ["disable", "--now"]:
-                self.timer_on = False
+                self.timers.discard(argv[-1])
             return Result(0)
         return Result(0)  # sudo -u postgres psql/createdb, icdev-init-db
 
@@ -80,10 +84,13 @@ def make_host(tmp_path, monkeypatch):
     home.mkdir()
     # The checkout pieces the steps read: unit templates, llm config.
     for rel in ("scripts/systemd/icdev-genesis.service", "scripts/systemd/icdev-genesis.timer",
-                "args/llm_config.yaml"):
+                "args/llm_config.yaml", "icdev/data/bin/omarchy-agent-usage-icdev",
+                *(f"icdev/data/omarchy/{n}" for n in (*omarchy.PANEL_UNITS, *omarchy.PANEL_MARKS))):
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         (root / rel).write_bytes((REPO / rel).read_bytes())
     environ = {"XDG_CONFIG_HOME": str(home / ".config"),
+               "XDG_STATE_HOME": str(home / ".local" / "state"),
+               "OMARCHY_PATH": str(home / ".local" / "share" / "omarchy"),
                "PI_CODING_AGENT_DIR": str(home / ".pi" / "agent")}
     # plugin_dir() (the guard installer) reads the process environment.
     for k, v in environ.items():
@@ -118,6 +125,7 @@ def test_dry_run_plan_for_each_omarchy_pg_combination(make_host, omarchy_on, pg_
     assert states["postgres"] == ("skipped" if pg_ready else "planned")
     for step in ("env", "mcp", "skill", "guard", "systemd"):
         assert states[step] == "planned", step
+    assert states["panel"] == ("planned" if omarchy_on else "n/a")
     pg = report["steps"][0]
     if not pg_ready:
         cmds = "\n".join(pg["commands"])
@@ -218,3 +226,53 @@ def test_cli_dispatch_and_json(make_host, capsys):
     rc = omarchy.main(["setup", "--dry-run", "--json"], host=make_host(world))
     out = json.loads(capsys.readouterr().out)
     assert rc == 0 and out["mode"] == "dry-run" and out["omarchy"] is True
+
+
+# --------------------------------------------------------------------------- #
+# Step 8 -- the agents-panel collector (omx-panel-01)
+# --------------------------------------------------------------------------- #
+
+def _assets(host):
+    return host.home / ".local" / "share" / "omarchy" / "shell" / "plugins" / "agents" / "assets"
+
+
+def test_panel_installs_collector_mark_and_timer(make_host):
+    world = FakeWorld(omarchy_on=True, pg_ready=True)
+    host = make_host(world)
+    _assets(host).mkdir(parents=True)  # the agents plugin is installed
+    report = omarchy.run("setup", host)
+    assert _states(report)["panel"] == "done", report
+
+    collector = host.home / ".local" / "bin" / omarchy.PANEL_BIN
+    raw = collector.read_bytes()
+    assert raw.startswith(b"#!/usr/bin/python3\n") and b"\r\n" not in raw
+    assert f'_INSTALLED_ROOT = "{host.root.as_posix()}"'.encode() in raw
+    assert (_assets(host) / "icdev.svg").is_file() and (_assets(host) / "icdev-light.svg").is_file()
+    assert (host.home / ".config" / "systemd" / "user" / omarchy.PANEL_TIMER).is_file()
+    # Enabled without --start: it only reads.
+    assert omarchy.PANEL_TIMER in world.timers and not world.timer_on
+
+    assert _states(omarchy.run("setup", host))["panel"] == "skipped"
+
+    record = host.home / ".local" / "state" / "omarchy" / "agents" / "usage" / "icdev.json"
+    record.parent.mkdir(parents=True)
+    record.write_text("{}", encoding="utf-8")
+    assert _states(omarchy.run("uninstall", host))["panel"] == "done"
+    assert not collector.exists() and not record.exists()
+    assert not (_assets(host) / "icdev.svg").exists()
+    assert omarchy.PANEL_TIMER not in world.timers
+
+
+def test_panel_without_agents_plugin_skips_the_mark(make_host):
+    world = FakeWorld(omarchy_on=True, pg_ready=True)
+    host = make_host(world)
+    omarchy.run("setup", host)
+    assert (host.home / ".local" / "bin" / omarchy.PANEL_BIN).is_file()
+    assert not _assets(host).exists()
+
+
+def test_panel_is_not_applicable_off_omarchy(make_host):
+    world = FakeWorld(omarchy_on=False, pg_ready=True)
+    host = make_host(world)
+    assert _states(omarchy.run("setup", host))["panel"] == "n/a"
+    assert not (host.home / ".local" / "bin" / omarchy.PANEL_BIN).exists()
