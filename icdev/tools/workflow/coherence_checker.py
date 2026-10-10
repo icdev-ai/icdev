@@ -4808,6 +4808,57 @@ def check_architecture_agnosticism() -> CoherenceCheck:
 
 
 # ---------------------------------------------------------------------------
+# Check: Provider locality declarations (omx-vllm-01)
+# ---------------------------------------------------------------------------
+
+
+def check_provider_locality() -> CoherenceCheck:
+    """omx-vllm-01 — a `locality: local` declaration must not launder a public endpoint.
+
+    `_is_local_only_provider` (the CUI egress boundary) reads each provider's declared
+    `locality` in args/llm_config.yaml. At run time a `local` provider whose host is not
+    loopback/RFC1918/link-local already fails closed; this check makes the contradiction
+    VISIBLE. A contradiction in the committed defaults FAILS. One that appears only
+    under this process's environment (e.g. VLLM_BASE_URL pointed at a public host)
+    WARNS: it is a fact about the host running the check, not about the diff.
+    """
+    import yaml
+
+    from tools.llm.cli_bridge.activate import locality_findings
+
+    check_id = "provider_locality"
+    check_name = "Provider locality declarations (omx-vllm-01)"
+    expected = ["every `locality: local` provider's base_url host is loopback/RFC1918/link-local"]
+    cfg_path = PROJECT_ROOT / "args" / "llm_config.yaml"
+    try:
+        providers = (yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}).get("providers") or {}
+    except (OSError, yaml.YAMLError) as exc:
+        return CoherenceCheck(
+            check_id=check_id, check_name=check_name, status="warn",
+            expected=expected, actual=[f"cannot read {cfg_path.name}: {exc}"], missing=[], extra=[],
+            message="llm_config.yaml unreadable — provider locality not measured",
+        )
+
+    declared = locality_findings(providers, env={})
+    ambient = [f for f in locality_findings(providers) if f not in declared]
+    if declared or ambient:
+        return CoherenceCheck(
+            check_id=check_id, check_name=check_name, status="fail" if declared else "warn",
+            expected=expected, actual=declared + [f"(environment) {f}" for f in ambient],
+            missing=[], extra=declared + ambient,
+            message=(
+                f"{len(declared)} declared / {len(ambient)} environment-only locality "
+                "contradiction(s) — declare the provider `private` or `cloud`, or point it at a local host"
+            ),
+        )
+    return CoherenceCheck(
+        check_id=check_id, check_name=check_name, status="pass",
+        expected=expected, actual=[f"{len(providers)} provider(s) checked, 0 contradictions"],
+        missing=[], extra=[], message="Provider locality declarations are consistent with their hosts",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check: Dead LLMRouter API — .complete()/.chat() (nav-llm-02)
 # ---------------------------------------------------------------------------
 
@@ -11149,6 +11200,7 @@ CHECK_REGISTRY = {
     "direct_anthropic_import": check_direct_anthropic_import,
     "provider_bypass": check_provider_bypass,
     "architecture_agnosticism": check_architecture_agnosticism,
+    "provider_locality": check_provider_locality,
     "llm_router_api": check_llm_router_api,
     "karpathy_sync": check_karpathy_sync,
     "openapi_parity": check_openapi_parity,
@@ -11460,6 +11512,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "claude_md_budget": "skip",  # which prose is a RULE and which a RECORD is human judgment
     "agent_config_shield": "skip",  # a config-surface finding needs a human to read it
     "direct_anthropic_import": "skip",  # violations require code routing fix
+    "provider_locality": "skip",  # re-declare the provider or move its host — the declaration is the decision
     "llm_router_api": "skip",  # dead-API call sites require routing fix to invoke(fn, req)
     "karpathy_sync": "skip",  # add section to CLAUDE.md + companion sync, then re-run
     "openapi_parity": "skip",  # route drift requires human fix (add/remove route or update spec)
