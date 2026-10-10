@@ -4236,6 +4236,10 @@ icdev harness install-guard opencode --project .     # writes ./.opencode/plugin
 icdev harness install-guard opencode --global        # writes $XDG_CONFIG_HOME/opencode/plugin/ (default ~/.config)
 python -m tools.hooks.harness_guard --harness opencode < call.json   # stdin {"tool","args"}, stdout JSON verdict
 # Same kill switches as the hook; fails open (logged) on a broken bridge.
+# omx-guard-03 — the same bridge inside Pi (tool_call extension)
+icdev harness install-guard pi --project .           # writes ./.pi/extensions/icdev-guard.ts
+icdev harness install-guard pi --global              # writes $PI_CODING_AGENT_DIR/extensions/ (default ~/.pi/agent)
+python -m tools.hooks.harness_guard --harness pi < call.json         # Pi spelling: path, edits[], powershell
 
 # MCP servers (stdio transport)
 python tools/mcp/unified_server.py                   # Start unified MCP gateway (251 tools, recommended)

@@ -81,7 +81,6 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -92,8 +91,7 @@ from tools.agents.adapter_base import (
     NotInstalledError,
 )
 from tools.agents.adapters.codex_cli import _pathext_candidates
-from tools.hooks.harness_guard import BASE_DIR as GUARD_ROOT  # repo_root()
-from tools.hooks.harness_guard import guard_module, install_guard, render_plugin
+from tools.hooks.harness_guard import install_guard, live_probe
 
 
 _EXECUTABLE_NAME = "opencode"
@@ -431,28 +429,7 @@ class OpencodeCliAdapter:
         from a file existing (omx-spike-01: ``--pure`` drops a plugin that is
         right there on disk; ``build_argv`` refuses it).
         """
-        try:
-            render_plugin("opencode")
-        except Exception as exc:  # noqa: BLE001
-            return {"wired": False,
-                    "reason": f"guard plugin source unavailable: {exc}"}
-        request = {"tool": "bash", "args": {"command": _KNOWN_BAD_COMMAND}}
-        try:
-            proc = subprocess.run(
-                [sys.executable, "-m", guard_module(), "--harness", "opencode"],
-                input=json.dumps(request), capture_output=True, text=True,
-                encoding="utf-8", errors="replace", cwd=str(GUARD_ROOT),
-                timeout=120, shell=False,
-            )
-            verdict = json.loads((proc.stdout or "").strip().splitlines()[-1])
-        except Exception as exc:  # noqa: BLE001
-            return {"wired": False,
-                    "reason": f"guard bridge did not answer: {type(exc).__name__}: {exc}"}
-        if verdict.get("allowed") is False:
-            return {"wired": True,
-                    "reason": f"bridge refused a known-bad bash call: {verdict.get('reason')}"}
-        return {"wired": False,
-                "reason": f"bridge ALLOWED a known-bad bash call: {verdict.get('reason')}"}
+        return live_probe("opencode", "bash", {"command": _KNOWN_BAD_COMMAND})
 
     # ── protocol tail ────────────────────────────────────────────────────────
     def detect_completion(self, output: str) -> bool:

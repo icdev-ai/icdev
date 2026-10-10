@@ -41,14 +41,21 @@ What the spike measured, and how this adapter uses it
 * **``--no-extensions`` does not remove an explicit ``-e``** (measured: the
   victim survived), so unlike opencode's ``--pure`` there is no flag to refuse;
   a guard is always passed as ``-e <path>`` rather than left to discovery.
+* **The guard is wired (omx-guard-03).** ``invoke()`` installs ICDEV's
+  ``tool_call`` extension into the run's project directory
+  (``.pi/extensions/icdev-guard.ts``, idempotent), passes it with an explicit
+  ``-e`` — project extensions load only in a trusted project, an explicit
+  ``-e`` always — and refuses to run if it cannot. The extension calls
+  ``tools.hooks.harness_guard --harness pi`` ->
+  ``tools.airgap.hook_compat.run_pre_tool_check``. ``verify_guard()`` proves it
+  live: it runs that bridge on a known-bad call and requires a refusal.
 
 What this adapter deliberately does NOT do
 ------------------------------------------
-* No guard wiring. Shipping the ``tool_call`` extension that calls
-  ``tools.airgap.hook_compat.run_pre_tool_check`` is the guard task; until it
-  lands ``guard_wired`` is declared ``false`` and ``verify_guard()`` says so.
-  Pi's Windows ``powershell`` tool is also not covered by the POSIX rm check
-  (spike gap 7) — that check belongs in ``shared_checks.py``, written once.
+* Pi's Windows ``powershell`` tool is mapped to ``Bash`` so every shell check
+  sees it, but the rm check parses POSIX syntax only, so a PowerShell-dialect
+  delete is not caught (spike gap 7) — that check belongs in
+  ``shared_checks.py``, written once, after a fire-rate survey.
 * No ``spawn()``, sandbox or turn/token budget flag: ``pi --mode json`` has
   none, and an execution mode with no consumer would invent a capability the
   capability matrix is supposed to MEASURE.
@@ -96,11 +103,16 @@ from tools.agents.adapter_base import (
     NotInstalledError,
 )
 from tools.agents.adapters.codex_cli import _pathext_candidates
+from tools.hooks.harness_guard import install_guard, live_probe
 
 
 _EXECUTABLE_NAME = "pi"
 _ENV_EXECUTABLE = "ICDEV_PI_CLI"
 _ENV_MODEL = "ICDEV_PI_MODEL"
+
+# The guard self-test's known-bad call (verify_guard). Spelled in two pieces so
+# no scanner reading this source mistakes it for a command.
+_KNOWN_BAD_COMMAND = "rm -rf " + "/"
 
 _COMPLETION_MARKERS = ("[DONE]", "Task completed", "done.")
 
@@ -305,8 +317,13 @@ class PiCliAdapter:
             return session.prompt
         return f"{session.system_prompt}\n\n{session.prompt}"
 
-    def build_argv(self, session: AgentSession) -> List[str]:
-        """The command line, ending in the prompt."""
+    def build_argv(self, session: AgentSession,
+                   guard_extension: Optional[str] = None) -> List[str]:
+        """The command line, ending in the prompt.
+
+        ``guard_extension`` is ICDEV's guard, passed as one more explicit
+        ``-e`` after any caller-supplied extension (``invoke()`` supplies it).
+        """
         meta = session.metadata or {}
         argv = [self.resolve(), "--mode", "json"]
         if meta.get("offline", True):
@@ -318,6 +335,8 @@ class PiCliAdapter:
             argv.append("--approve")
         for extension in meta.get("extensions") or []:
             argv += ["-e", str(Path(extension))]
+        if guard_extension:
+            argv += ["-e", str(Path(guard_extension))]
         argv += [str(arg) for arg in (meta.get("extra_args") or [])]
         argv.append(self.prepare_prompt(session))
         return argv
@@ -346,9 +365,6 @@ class PiCliAdapter:
                 aborted run, a timeout, an argv the OS refused — is
                 ``completed=False`` with a reason.
         """
-        argv = self.build_argv(session)
-        env = self.build_env(session)
-
         t0 = time.time()
 
         def _failed(exit_code: int, error: str) -> AgentResult:
@@ -362,6 +378,15 @@ class PiCliAdapter:
                 duration_ms=int((time.time() - t0) * 1000),
                 structured={},
             )
+
+        try:
+            guard = install_guard("pi", project=Path(session.working_dir or Path.cwd()))
+        except Exception as exc:  # noqa: BLE001 -- refuse, never run unguarded
+            return _failed(-1, f"pi_cli refuses to run unguarded: ICDEV guard "
+                               f"extension could not be installed: "
+                               f"{type(exc).__name__}: {exc}")
+        argv = self.build_argv(session, guard_extension=guard["path"])
+        env = self.build_env(session)
 
         try:
             proc = subprocess.run(
@@ -412,17 +437,14 @@ class PiCliAdapter:
 
     # ── guard self-report (consumed by capability_matrix: guard_wired) ───────
     def verify_guard(self) -> Dict[str, Any]:
-        """Whether ICDEV's guard sees this adapter's tool calls.
+        """Whether ICDEV's guard sees this adapter's tool calls -- measured LIVE.
 
-        Not yet: the ``tool_call`` extension passed with ``-e`` is the guard
-        task. This returns the honest answer rather than being absent so the
-        capability matrix measures ``absent`` instead of ``unconfirmed``.
+        Runs the exact process the installed extension spawns
+        (``python -m tools.hooks.harness_guard --harness pi``) on a known-bad
+        call in Pi's own spelling and requires a refusal, and checks the
+        packaged extension source renders.
         """
-        return {
-            "wired": False,
-            "reason": "no ICDEV guard extension is passed by this adapter "
-                      "(Pi guard task)",
-        }
+        return live_probe("pi", "bash", {"command": _KNOWN_BAD_COMMAND})
 
     # ── protocol tail ────────────────────────────────────────────────────────
     def detect_completion(self, output: str) -> bool:

@@ -50,9 +50,10 @@ Subcommands:
   cron create|list|pause|resume|remove|run|runs
                            Schedule standalone-agent prompts or allowlisted
                            scripts (interval or 5-field cron).
-  harness install-guard opencode [--project DIR|--global]
+  harness install-guard opencode|pi [--project DIR|--global]
                            Install ICDEV's PreToolUse guard as an opencode
-                           plugin (same checks as the Claude Code hook).
+                           plugin or a Pi extension (same checks as the
+                           Claude Code hook).
   audit export             Export SOC 2 (and future framework) evidence reports.
   audit tail [--follow]    Tail the audit feed (audit_trail + hook_events), or
                            --source runtime_invocations for invocation rows.
