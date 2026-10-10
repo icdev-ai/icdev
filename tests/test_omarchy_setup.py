@@ -199,6 +199,22 @@ def test_systemd_not_applicable_off_linux(make_host):
     assert states["systemd"] == "n/a"
 
 
+def test_systemd_not_applicable_on_a_package_install(make_host):
+    """The wheel/AUR root has no scripts/systemd: n/a, not failed (omx-ci-01)."""
+    world = FakeWorld(omarchy_on=False, pg_ready=True)
+    host = make_host(world)
+    for unit in (host.root / "scripts" / "systemd").iterdir():
+        unit.unlink()
+    (host.root / "scripts" / "systemd").rmdir()
+    report = omarchy.run("setup", host, yes=True)
+    step = next(s for s in report["steps"] if s["step"] == "systemd")
+    assert step["state"] == "n/a" and "source checkout" in step["detail"]
+    assert report["exit"] == 0
+    # --start asked for something that cannot happen here: that IS a failure.
+    started = omarchy.run("setup", host, yes=True, start=True)
+    assert _states(started)["systemd"] == "failed" and started["exit"] == 1
+
+
 def test_uninstall_reverses_4_to_7_and_never_the_database(make_host):
     world = FakeWorld(omarchy_on=True, pg_ready=False)
     host = make_host(world)

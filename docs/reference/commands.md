@@ -7339,6 +7339,10 @@ python tools/installer/release.py --bump patch --json
 # Re-render the AUR package (deploy/aur/PKGBUILD + .SRCINFO) from a built wheel (omx-dist-01).
 # A full release run renders these automatically after the wheel verifies.
 python tools/installer/release.py --aur-from-wheel dist/icdev-1.2.43-py3-none-any.whl
+
+# Arch Linux package smoke, one phase at a time, INSIDE an archlinux container (omx-ci-01).
+# CI runs it as the non-required `Arch Package Smoke` job; phases: deps wheel package setup agents.
+bash tools/ci/arch_package_smoke.sh package
 ```
 
 Credentials are read from `.env` (`TWINE_USERNAME`/`TWINE_PASSWORD`, or
