@@ -7332,6 +7332,10 @@ python tools/installer/release.py --version 1.2.43 --bump-only
 
 # Machine-readable report
 python tools/installer/release.py --bump patch --json
+
+# Re-render the AUR package (deploy/aur/PKGBUILD + .SRCINFO) from a built wheel (omx-dist-01).
+# A full release run renders these automatically after the wheel verifies.
+python tools/installer/release.py --aur-from-wheel dist/icdev-1.2.43-py3-none-any.whl
 ```
 
 Credentials are read from `.env` (`TWINE_USERNAME`/`TWINE_PASSWORD`, or
