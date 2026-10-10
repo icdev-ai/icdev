@@ -3559,12 +3559,24 @@ def prefix_cache_capability_for_provider(provider_name: str) -> PrefixCacheCapab
     Fails SAFE: an unknown name, a missing SDK, or any construction error yields
     UNDECLARED (reported as ``none``, ``verified=False``), never an exception on
     a page render, and never a guess.
+
+    The CLI bridge is held OFF for this construction. Left to auto-detect it runs
+    ``is_airgap()``, which TCP-probes nine local-LLM endpoints and the cloud APIs
+    -- measured 10.2s of socket connects on the first call in a process, which put
+    the first ``GET /cache-savings`` past the E2E suite's 10s request timeout. The
+    bridge only rewrites ``routing`` chains and ``_get_provider`` reads only
+    ``providers``, so the answer is the same either way.
     """
+    from tools.llm.cli_bridge.activate import cli_bridge_override, reset_cli_bridge_override
+
+    token = cli_bridge_override(False)
     try:
         provider = LLMRouter()._get_provider(provider_name)
     except Exception as exc:  # noqa: BLE001 - a dashboard must not 500 on this
         logger.debug("prefix-cache capability lookup failed for %r: %s", provider_name, exc)
         return UNDECLARED_PREFIX_CACHE
+    finally:
+        reset_cli_bridge_override(token)
     if provider is None:
         return UNDECLARED_PREFIX_CACHE
     return resolve_prefix_cache_capability(provider)

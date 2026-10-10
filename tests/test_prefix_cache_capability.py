@@ -525,3 +525,26 @@ def test_oci_no_usage_anywhere_leaves_the_counters_untouched():
     resp = LLMResponse(provider="oci_genai")
     _read_usage_into(chat_response, result, resp)
     assert (resp.input_tokens, resp.output_tokens, resp.cache_read_input_tokens) == (0, 0, 0)
+
+
+def test_name_lookup_never_runs_the_airgap_probe(monkeypatch):
+    """The cache-savings page asks for capabilities by NAME on every render.
+
+    Left to auto-detect, the router's CLI-bridge hook calls ``should_enable()``,
+    whose ``is_airgap()`` TCP-probes the local-LLM ports and the cloud APIs --
+    10.2s on the first call in a process, which timed out the first
+    ``GET /cache-savings`` in the E2E suite. The lookup reads ``providers`` only,
+    so it must not pay for a probe whose answer it never uses.
+    """
+    from tools.llm import router as router_mod
+    from tools.llm.cli_bridge import activate
+
+    calls = []
+    monkeypatch.setattr(activate, "configured_mode", lambda: activate.MODE_AUTO)
+    monkeypatch.setattr(activate, "should_enable", lambda: calls.append(1) or False)
+
+    cap = router_mod.prefix_cache_capability_for_provider("anthropic")
+
+    assert calls == [], "capability lookup ran the air-gap/cloud-key auto-detect"
+    assert cap.support == "explicit"
+    assert activate.get_cli_bridge_override() is None, "override leaked past the lookup"
