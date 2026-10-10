@@ -301,7 +301,8 @@ def test_a_clean_mergeable_pr_costs_no_extra_forge_listing():
     w._pr_list_runner = counting
     _Trace(w)
     w.poll_once()
-    index_calls = [c for c in listings if "url,files,mergeable,isDraft" in c]
+    index_calls = [c for c in listings
+                   if any(str(a).startswith("url,files,mergeable,isDraft") for a in c)]
     assert len(index_calls) == 2, (
         "expected the sibling map plus `_auto_merge`'s own chokepoint and "
         "NOTHING from the moved rung — got %d: %r" % (len(index_calls),

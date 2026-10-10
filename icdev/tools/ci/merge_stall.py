@@ -101,11 +101,13 @@ import sys
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, FrozenSet, Iterable, List, NamedTuple, Optional, Tuple
 
+from tools.ci import error_classifier as ec
 from tools.ci.merge_readiness import (  # the ONE ladder — never re-transcribed
     _GH_FIELDS,
     DEFAULT_MAX_BEHIND_COMMITS,
     READY,
     classify_merge_readiness,
+    protected_hits,
 )
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -227,6 +229,7 @@ def classify_stall(
     hold_cause: Optional[str] = None,
     merger_enabled: bool = True,
     ineligible_reason: str = "",
+    blocked_holders: Iterable[str] = (),
 ) -> StallVerdict:
     """Is this eligible-but-open PR a stall, and whose problem is it?
 
@@ -244,6 +247,14 @@ def classify_stall(
     is the same posture ``merge_readiness`` takes for ``behind_by``: an unmeasured
     branch and a branch measured level with main are different facts and only one
     of them is evidence.
+
+    ``blocked_holders`` (kpr-watch-23): lower-numbered siblings sharing a file
+    with this PR whose REQUIRED checks are red or which touch a protected path.
+    A ``sibling_hold`` behind one of those is not serialisation — the holder
+    cannot merge, so the queue position never comes free — and it alarms on the
+    unattributed threshold instead of waiting out the by-design ceiling.
+    MEASURED 2026-10-10: #2400/#2402 sat 81-138 min behind a holder red ~5h and
+    this table called it ``by_design``.
     """
     if not eligible:
         return StallVerdict(
@@ -288,6 +299,21 @@ def classify_stall(
             SEV_OUTAGE, hold_cause,
             "the watcher could not reach the forge for this PR (%.1f min eligible)"
             % age_minutes)
+
+    holders = sorted(set(blocked_holders or ()))
+    if hold_cause == CAUSE_SIBLING_HOLD and holders:
+        if age_minutes > stall_after_minutes:
+            return StallVerdict(
+                SEV_ALARM, hold_cause,
+                "held by %s for %.1f min behind %s, which cannot merge (required "
+                "CI red or a protected path) -- a queue position that never comes "
+                "free, not serialisation" % (hold_cause, age_minutes,
+                                             ", ".join(holders)))
+        return StallVerdict(
+            SEV_BY_DESIGN, hold_cause,
+            "held by %s for %.1f min behind %s, which cannot merge -- alarms past "
+            "%.0f min" % (hold_cause, age_minutes, ", ".join(holders),
+                          stall_after_minutes))
 
     if hold_cause in BY_DESIGN_CAUSES:
         if age_minutes > by_design_after_minutes:
@@ -750,27 +776,37 @@ def eligibility_rows(
     protected_paths: Iterable[str] = (),
     behind_by_url: Optional[Dict[str, Optional[int]]] = None,
     max_behind_commits: int = DEFAULT_MAX_BEHIND_COMMITS,
+    required_checks: Optional[Iterable[str]] = None,
 ) -> List[Dict[str, Any]]:
     """Classify every PR with the ``linked`` rung SKIPPED, carrying the door apart.
 
     ``linked_urls`` is used ONLY to label ``door``; it is never handed to the
     ladder. See the module docstring: ownership says who merges, not whether the
     PR is finished, and the task path is where most stalls live.
+
+    ``files`` / ``required_ci_failed`` / ``protected`` are carried so
+    ``build_stall_report`` can tell whether a sibling hold's HOLDER can merge at
+    all (kpr-watch-23). ``required_checks`` None reads every check — the same
+    fail-safe the watcher applies when the required set is unresolved.
     """
     linked = {(u or "").strip() for u in linked_urls}
+    required = frozenset(
+        str(n).strip() for n in (required_checks or ()) if str(n).strip()) or None
+    guarded = [str(x) for x in (protected_paths or ()) if str(x or "").strip()]
     behind = dict(behind_by_url or {})
     out: List[Dict[str, Any]] = []
     for pr in prs:
         url = (pr.get("url") or "").strip()
         files = pr.get("files")
+        paths = ([f.get("path") for f in files if f.get("path")]
+                 if files is not None else None)
         verdict = classify_merge_readiness(
             pr, default_branch=default_branch,
             linked_urls=(),                       # <- the point
             behind_by=behind.get(url),
             max_behind_commits=max_behind_commits,
-            changed_files=([f.get("path") for f in files if f.get("path")]
-                           if files is not None else None),
-            protected_paths=protected_paths,
+            changed_files=paths,
+            protected_paths=guarded,
         )
         green = ci_green_at(pr)
         out.append({
@@ -784,7 +820,34 @@ def eligibility_rows(
             "eligible": verdict.state == READY,
             "door": DOOR_LINKED if url in linked else DOOR_UNLINKED,
             "ci_green_at": green.isoformat() if green else None,
+            "files": sorted(paths) if paths is not None else None,
+            "required_ci_failed": bool(ec.is_ci_failed(pr, required=required)),
+            "protected": bool(guarded and paths is not None
+                              and protected_hits(paths, guarded)),
         })
+    return out
+
+
+def _blocked_holders(row: Dict[str, Any], rows: List[Dict[str, Any]]) -> List[str]:
+    """Lower-numbered PRs sharing a file with ``row`` that CANNOT merge.
+
+    The watcher's tie-break lets the lowest-numbered sibling go first; a holder
+    whose required CI is red or which touches a protected path will not go, so a
+    hold behind it is a stall (kpr-watch-23). A row with no file list or no
+    number names no holder — unmeasured is never evidence.
+    """
+    mine = set(row.get("files") or ())
+    number = row.get("number")
+    if not mine or not isinstance(number, int):
+        return []
+    out = []
+    for other in rows:
+        n = other.get("number")
+        if (not isinstance(n, int) or n >= number
+                or not (other.get("required_ci_failed") or other.get("protected"))):
+            continue
+        if mine & set(other.get("files") or ()):
+            out.append("#%d" % n)
     return out
 
 
@@ -848,6 +911,8 @@ def build_stall_report(
             hold_cause=hold.get("cause"),
             merger_enabled=doors.get(row.get("door"), True),
             ineligible_reason=row.get("reason") or "",
+            blocked_holders=(_blocked_holders(row, rows)
+                             if hold.get("cause") == CAUSE_SIBLING_HOLD else ()),
         )
         counts[verdict.severity] = counts.get(verdict.severity, 0) + 1
         cause_counts[verdict.cause] = cause_counts.get(verdict.cause, 0) + 1
@@ -1169,11 +1234,20 @@ def _run_report(args, config: Dict[str, Any], now: datetime) -> int:
               % exc, file=sys.stderr)
 
     wcfg = watcher_config()
+    required = None
+    if wcfg.get("required_checks_only", True) and not args.from_json:
+        try:
+            from tools.ci.merge_readiness import fetch_required_checks  # noqa: PLC0415
+
+            required = fetch_required_checks(default_branch)
+        except Exception:  # noqa: BLE001 — unresolved: every check counts
+            required = None
     rows = eligibility_rows(
         prs, default_branch=default_branch, linked_urls=linked,
         protected_paths=wcfg.get("protected_paths") or [],
         max_behind_commits=int(wcfg.get("max_behind_commits",
-                                        DEFAULT_MAX_BEHIND_COMMITS)))
+                                        DEFAULT_MAX_BEHIND_COMMITS)),
+        required_checks=required)
 
     # RECORD BEFORE READING. A PR that just became eligible then reads back at
     # age 0, which is what "first seen ready" means — the clock starts when
