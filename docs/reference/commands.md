@@ -43,6 +43,12 @@ python -c "from tools.llm.router import LLMRouter; r = LLMRouter(); print(r.get_
 # Set OLLAMA_BASE_URL=http://localhost:11434/v1 for local model support
 # Set prefer_local: true in llm_config.yaml for air-gapped environments
 
+# vLLM (optional local/LAN provider, omx-vllm-02) — discovery + status
+icdev llm doctor --json                                          # reachability, served models, max_model_len, tool support
+python tools/llm/vllm_discovery.py --status --json               # same report, no `icdev` entry point needed
+# Router auto-registers each served model as vllm:<served-name> when VLLM_BASE_URL is set;
+# VLLM_MODEL names the model behind the stable `vllm-local` alias (unset = skipped in every chain).
+
 # Ollama prefix cache — measured in LATENCY, never dollars (cch-prov-03)
 python tools/llm/ollama_prefix_latency.py --json                  # cold vs warm prompt-eval
 python tools/llm/ollama_prefix_latency.py --model qwen3:4b --repeats 7

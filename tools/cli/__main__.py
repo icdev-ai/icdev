@@ -57,6 +57,8 @@ Subcommands:
                            with error counts and avg/max duration.
   runtime trace <corr-id>  Show every span of one agent run, joined by the run's
                            correlation id (AgentLoopResult.trace_id).
+  llm doctor [--json]      vLLM endpoint status: reachability, served models,
+                           max_model_len, probed tool-call support.
   demo seed --tenant <slug> [--canvases <c1,c2,...>]
                            Provision a demo tenant with synthetic data and
                            ICDEV_DEMO_MODE enabled (read-only banner).
@@ -142,6 +144,13 @@ def main(argv: list[str] | None = None) -> int:
     if sub == "runtime":
         from tools.cli.runtime import main as runtime_main
         return runtime_main(rest)
+
+    if sub == "llm":
+        if rest[:1] == ["doctor"]:
+            from tools.llm.vllm_discovery import main as doctor_main
+            return doctor_main(rest[1:])
+        print("Usage: icdev llm doctor [--json] [--timeout SECONDS]", file=sys.stderr)
+        return 2
 
     if sub == "demo":
         return _demo_main(rest)

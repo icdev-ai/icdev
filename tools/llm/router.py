@@ -390,6 +390,8 @@ class LLMRouter:
                 len(self._config.get("routing", {})),
             )
             self._register_discovered_models()
+            self._resolve_templated_model_ids()
+            self._register_discovered_vllm_models()
             self._apply_profile_defaults()
         except Exception as exc:
             logger.error("Failed to load LLM config: %s", exc)
@@ -860,7 +862,7 @@ class LLMRouter:
             return self._availability_cache[model_name]
 
         model_cfg = self._get_model_config(model_name)
-        if not model_cfg:
+        if not model_cfg or model_cfg.get("_model_id_unset"):
             self._availability_cache[model_name] = False
             return False
 
@@ -2208,7 +2210,9 @@ class LLMRouter:
 
         for model_name in chain:
             model_cfg = self._get_model_config(model_name)
-            if not model_cfg:
+            if not model_cfg or model_cfg.get("_model_id_unset"):
+                # An alias whose ${VAR:-} model_id expanded to nothing (vllm-local
+                # with VLLM_MODEL unset) is skipped, not invoked with model="".
                 continue
             provider_name = model_cfg.get("provider", "")
             provider = self._get_provider(provider_name)
@@ -2940,7 +2944,9 @@ class LLMRouter:
 
         for model_name in chain:
             model_cfg = self._get_model_config(model_name)
-            if not model_cfg:
+            if not model_cfg or model_cfg.get("_model_id_unset"):
+                # An alias whose ${VAR:-} model_id expanded to nothing (vllm-local
+                # with VLLM_MODEL unset) is skipped, not invoked with model="".
                 continue
             provider_name = model_cfg.get("provider", "")
             provider = self._get_provider(provider_name)
@@ -3497,6 +3503,97 @@ class LLMRouter:
                 "Auto-registered Ollama model: %s → logical '%s' (caps: %s)",
                 raw_name, logical, default_caps,
             )
+
+    def _resolve_templated_model_ids(self) -> None:
+        """Expand ``${VAR:-default}`` in every model_id, once, at load.
+
+        Nothing expanded these before, so ``model_id: "${OPENAI_MODEL:-gpt-4o}"``
+        reached the provider as that literal string. An id that expands to EMPTY
+        (``vllm-local`` with ``VLLM_MODEL`` unset) is flagged ``_model_id_unset``:
+        the model is unavailable and every chain falls through it.
+        """
+        for cfg in (self._config.get("models", {}) or {}).values():
+            raw = cfg.get("model_id") if isinstance(cfg, dict) else None
+            if not isinstance(raw, str) or "${" not in raw:
+                continue
+            expanded = _expand_env(raw).strip()
+            cfg["model_id"] = expanded
+            if not expanded:
+                cfg["_model_id_unset"] = True
+
+    # -------------------------------------------------------------------
+    # vLLM discovery (omx-vllm-02) -- /v1/models + a probed tool-call flag
+    # -------------------------------------------------------------------
+    def _register_discovered_vllm_models(self) -> None:
+        """Register every model a vLLM server serves as ``<provider>:<served-name>``.
+
+        ``context_window`` comes from the server's ``max_model_len`` and
+        ``supports_tools`` from a cached one-shot tools probe -- never assumed.
+        A static alias pointing at a served model (``vllm-local``) is enriched
+        with the same two facts. In-memory only; an unreachable server is a
+        debug line, never an error, because vLLM is optional.
+        """
+        disc_cfg = self._config.get("settings", {}).get("vllm_discovery", {}) or {}
+        if not disc_cfg.get("enabled", False):
+            return
+        gate_env = disc_cfg.get("probe_only_if_env", "")
+        if gate_env and not os.environ.get(gate_env, "").strip():
+            return
+
+        from tools.llm import vllm_discovery
+
+        default_caps = list(disc_cfg.get("default_capabilities", ["summarization", "writing"]))
+        timeout = float(disc_cfg.get("timeout_seconds", 3))
+        max_age = float(disc_cfg.get("refresh_interval_seconds", 3600))
+        models = self._config.setdefault("models", {})
+        providers = self._config.get("providers", {}) or {}
+
+        for pname in disc_cfg.get("probe_providers", ["vllm"]) or []:
+            pcfg = providers.get(pname) or {}
+            base_url = _expand_env(pcfg.get("base_url", "")).rstrip("/")
+            if not base_url:
+                continue
+            api_key_env = pcfg.get("api_key_env", "")
+            api_key = os.environ.get(api_key_env, "") if api_key_env else ""
+            try:
+                served = vllm_discovery.discover(
+                    base_url, api_key, timeout=timeout,
+                    probe_tools=bool(disc_cfg.get("probe_tools", True)), max_age=max_age,
+                )
+            except Exception as exc:  # noqa: BLE001 - optional provider
+                logger.debug("vLLM discovery probe failed for %s at %s: %s", pname, base_url, exc)
+                continue
+
+            for m in served:
+                supports_tools = m["tool_call"] == vllm_discovery.TOOL_SUPPORTED
+                facts = {"supports_tools": supports_tools, "tool_call_probe": m["tool_call"]}
+                if m["max_model_len"]:
+                    facts["context_window"] = m["max_model_len"]
+                logical = f"{pname}:{m['id']}"
+                if logical not in models:
+                    out_cap = min(4096, m["max_model_len"] or 4096)
+                    models[logical] = {
+                        "provider": pname,
+                        "model_id": m["id"],
+                        "max_output_tokens": out_cap,
+                        "supports_thinking": False,
+                        "supports_structured_output": False,
+                        "_auto_discovered": True,
+                        "_default_capabilities": default_caps + (["tool_use"] if supports_tools else []),
+                        "pricing": {"input_per_1k": 0.0, "output_per_1k": 0.0},
+                        **facts,
+                    }
+                    logger.info("Auto-registered vLLM model: %s (context=%s, tools=%s)",
+                                logical, m["max_model_len"], m["tool_call"])
+                # A static alias pointing at this served model (vllm-local) takes
+                # the served facts too -- its YAML values are placeholders.
+                for cfg in models.values():
+                    if (isinstance(cfg, dict) and not cfg.get("_auto_discovered")
+                            and cfg.get("provider") == pname and cfg.get("model_id") == m["id"]):
+                        cfg.update(facts)
+                        if m["max_model_len"]:
+                            cfg["max_output_tokens"] = min(int(cfg.get("max_output_tokens", 4096)),
+                                                           m["max_model_len"])
 
     def _apply_profile_defaults(self) -> None:
         """Adjust the default routing chain from active core profile.
