@@ -44,6 +44,9 @@ Subcommands:
                            List / export (JSONL) / full-text search conversations.
   skills list|search|install|update
                            Manage skills via the local registry + marketplace.
+  skill install|uninstall|status [--dirs auto|claude,codex,...]
+                           Install the ONE cross-harness ICDEV skill into
+                           ~/.agents/skills and link it into each harness.
   cron create|list|pause|resume|remove|run|runs
                            Schedule standalone-agent prompts or allowlisted
                            scripts (interval or 5-field cron).
@@ -123,6 +126,10 @@ def main(argv: list[str] | None = None) -> int:
     if sub == "skills":
         from tools.cli.skills import main as skills_main
         return skills_main(rest)
+
+    if sub == "skill":
+        from icdev.tools.dx.skill_install import main as skill_main
+        return skill_main(rest)
 
     if sub == "cron":
         from tools.agent_runtime.cron import cron_main

@@ -173,6 +173,9 @@ icdev profile list                 # List available profiles
 icdev profile show [<name>]        # Show profile details (active profile by default)
 icdev profile apply <name>         # Append profile env overrides to .env
 icdev profile apply <name> --dry-run  # Preview overrides
+icdev skill install [--dirs auto|claude,codex,pi,gemini,hermes,opencode]  # ONE ICDEV skill -> ~/.agents/skills, linked into each existing harness skill dir (omx-dx-02)
+icdev skill uninstall              # Remove exactly what install created (manifest: ~/.icdev/skill-install-manifest.json)
+icdev skill status [--json]        # What install created, and whether it is still there
 
 # Scaffolding
 icdev scaffold canvas <key> --display-name "Name" [--flavor <flavor>] [--template <dir>] [--out <dir>]   # Generate a new canvas

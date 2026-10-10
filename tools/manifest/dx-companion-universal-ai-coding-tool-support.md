@@ -11,6 +11,7 @@
 | MCP Config Generator | tools/dx/mcp_config_generator.py | Translate .mcp.json to tool-specific MCP config formats (D196) | --platform, --all, --write, --json | Config file content + paths |
 | Skill Translator | tools/dx/skill_translator.py | Translate Claude Code skills to Codex/Copilot/Cursor formats (D198) | --platform, --all, --skills, --write, --json | Translated skill content + paths |
 | Companion Registry | args/companion_registry.yaml | Declarative registry of 10 supported AI coding tools (D194) | (data) | Tool definitions |
+| Cross-harness Skill Installer | tools/dx/skill_install.py | `icdev skill install`: copies the ONE source skill `icdev/data/skills/icdev/SKILL.md` to `~/.agents/skills/icdev` and links it into each EXISTING harness skill dir (claude, codex, pi, gemini, hermes, opencode); copy fallback where symlinks are refused (Windows); every path it creates is recorded in `~/.icdev/skill-install-manifest.json` and `uninstall` removes exactly those (omx-dx-02) | install [--dirs auto\|claude,codex,...], uninstall, status, --json | Per-target status + mode (symlink/copy) |
 | Mirror Parity Auditor | tools/dx/mirror_parity.py | Byte-level (SHA256) parity audit of tools/<path> vs icdev/tools/<path>; reconciles drift by copying tools/→icdev/ (never deletes icdev-only) | --paths, --fix, --gate, --json | Per-subtree drift report |
 
 
