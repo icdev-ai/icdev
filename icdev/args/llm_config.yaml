@@ -7,18 +7,29 @@
 # Provider Definitions
 # -----------------------------------------------------------------------
 providers:
+  # locality (omx-vllm-01) -- THE input to the CUI egress boundary
+  # (tools/llm/cli_bridge/activate.py::_is_local_only_provider):
+  #   local   -- runs on this machine; base_url must be loopback/RFC1918/link-local
+  #              (coherence_checker --check provider_locality flags one that is not).
+  #   private -- an on-prem/LAN server you control; counted as local ONLY when
+  #              ICDEV_PRIVATE_IS_LOCAL=1.
+  #   cloud   -- leaves your network.
+  # Undeclared fails closed (only an ollama-type provider with no api_key_env is local).
   bedrock:
     type: bedrock
+    locality: cloud
     region: ${AWS_DEFAULT_REGION:-us-gov-west-1}
     # Uses boto3 credentials (IAM role, env vars, or ~/.aws/credentials)
 
   anthropic:
     type: anthropic
+    locality: cloud
     api_key_env: ANTHROPIC_API_KEY
     base_url: https://api.anthropic.com
 
   openai:
     type: openai_compatible
+    locality: cloud
     api_key_env: OPENAI_API_KEY
     base_url: https://api.openai.com/v1
 
@@ -34,6 +45,7 @@ providers:
   # with virtual keys. This is THEIR infrastructure, and ICDEV is just a client.
   gateway:
     type: openai_compatible
+    locality: cloud
     # No default on purpose. A corporate gateway URL is site-specific, and any
     # value invented here would be wrong everywhere — :4000 in particular is
     # ICDEV's OWN LiteLLM proxy, a different service entirely. Unset means
@@ -44,14 +56,17 @@ providers:
 
   ollama:
     type: ollama
+    locality: local
     base_url: ${OLLAMA_BASE_URL:-http://localhost:11434}
 
   gemini:
     type: gemini
+    locality: cloud
     api_key_env: GOOGLE_API_KEY
 
   vllm:
     type: openai_compatible
+    locality: local
     base_url: ${VLLM_BASE_URL:-http://localhost:8000/v1}
     api_key_env: VLLM_API_KEY
 
@@ -61,11 +76,13 @@ providers:
   # selectable, not just probe-detectable.
   localai:
     type: openai_compatible
+    locality: local
     base_url: ${LOCALAI_BASE_URL:-http://localhost:8080/v1}
     api_key_env: LOCALAI_API_KEY
 
   ibm_watsonx:
     type: ibm_watsonx
+    locality: cloud
     api_key_env: IBM_CLOUD_API_KEY
     project_id: ${IBM_WATSONX_PROJECT_ID:-}
     url: ${IBM_WATSONX_URL:-https://us-south.ml.cloud.ibm.com}
@@ -75,6 +92,7 @@ providers:
   # Air-gapped: self-host via vLLM (see mistral_vllm provider below)
   mistral:
     type: openai_compatible
+    locality: cloud
     api_key_env: MISTRAL_API_KEY
     base_url: ${MISTRAL_BASE_URL:-https://api.mistral.ai/v1}
 
@@ -84,12 +102,14 @@ providers:
   #   --attention-backend FLASH_ATTN_MLA --tool-call-parser mistral
   mistral_vllm:
     type: openai_compatible
+    locality: local
     base_url: ${MISTRAL_VLLM_BASE_URL:-http://localhost:8100/v1}
     api_key_env: MISTRAL_VLLM_API_KEY
 
   # Ollama cloud endpoint — authenticated, falls back to local ollama
   ollama_cloud:
     type: ollama
+    locality: cloud
     base_url: ${OLLAMA_CLOUD_BASE_URL:-https://ollama.com}
     api_key_env: OLLAMA_API_KEY
 
@@ -97,6 +117,7 @@ providers:
   # session. Used when ANTHROPIC_API_KEY is absent (this environment).
   claude-cli:
     type: cli
+    locality: cloud
     cli_binary: claude
     backend: auto
     soft_wait_seconds: 360
@@ -110,6 +131,7 @@ providers:
   # Requires `claude` on PATH (installed via Claude Code).
   cli:
     type: cli
+    locality: cloud
     cli_binary: ${CLAUDE_CLI_BINARY:-claude}
 models:
   # -- Anthropic Claude --

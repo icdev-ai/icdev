@@ -872,9 +872,9 @@ class LLMRouter:
 
         prefer_local = self._config.get("settings", {}).get("prefer_local", False)
         if prefer_local:
-            ptype = self._config.get("providers", {}).get(provider_name, {}).get("type", "")
-            if ptype not in ("openai_compatible",) and provider_name not in ("ollama", "vllm"):
-                # In prefer_local mode, skip cloud providers
+            # In prefer_local mode, skip every provider that is not local -- by THE
+            # egress definition (omx-vllm-01), never an inline type check.
+            if not _provider_is_local_only(provider_name, self._config.get("providers", {})):
                 self._availability_cache[model_name] = False
                 return False
 
