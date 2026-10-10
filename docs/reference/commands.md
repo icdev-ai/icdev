@@ -7944,6 +7944,20 @@ python tools/agents/capability_matrix.py --capability sandbox_passthrough
 python tools/agents/capability_matrix.py --gate
 ```
 
+### Guard parity gate (omx-guard-02)
+
+The kanban runner refuses to AUTONOMOUSLY spawn an adapter whose PreToolUse
+guard is not verified (`claude_cli`: an un-neutralised all-tools hook in
+`.claude/settings.json`; every other adapter: `guard_wired` measured `present`).
+`ICDEV_GUARD_PARITY_GATE=enforce` (default) falls back to the next guarded
+adapter and records the refusal in `last_failure_reason`; `=report` logs only.
+Interactive use is unaffected.
+
+```bash
+python -m tools.agents.guard_parity --survey
+python -m tools.agents.guard_parity --survey --json
+```
+
 Each cell reports `declared` (the hand-written claim in
 `args/agent_capabilities.yaml`) next to `actual`, which is one of three values
 and never two:

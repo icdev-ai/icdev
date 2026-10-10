@@ -5792,6 +5792,59 @@ def _pick_chain_adapter(chain: list, task_type: Optional[str] = None):
         return None
 
 
+def _guard_parity_screen(adapter, chain: list, task_id: str,
+                         tier_outcomes: List[str]):
+    """Screen the chain adapter through ``tools.agents.guard_parity`` (omx-guard-02).
+
+    ``enforce`` swaps an unguarded adapter for the next guarded one in the
+    chain's ``fallback_order``, or returns None so the adapter tiers are skipped
+    and the existing no-executor path parks the task. ``report`` returns the
+    adapter unchanged. Either way a refusal is recorded on the task in
+    ``last_failure_reason`` and in ``tier_outcomes``.
+
+    Fails CLOSED in enforce: if the gate itself cannot run, an adapter other
+    than claude_cli is not spawned — an unverifiable guard is an unverified one.
+    """
+    if adapter is None:
+        return None
+    names = [_ADAPTER_TIERS[t] for t in chain if t in _ADAPTER_TIERS]
+    try:
+        from tools.agents import guard_parity as _gp  # noqa: PLC0415
+        from tools.agents import registry as _agent_registry  # noqa: PLC0415
+
+        decision = _gp.gate(adapter.name, names)
+        note = decision.note
+        if note:
+            logger.warning("kanban: %s — %s", task_id, note)
+            tier_outcomes.append(note)
+            try:
+                with get_connection() as _conn:
+                    _conn.execute(
+                        "UPDATE kanban_tasks SET last_failure_reason = %s, "
+                        "updated_at = %s WHERE id = %s",
+                        (note, _utcnow_iso(), task_id),
+                    )
+            except Exception as exc:  # noqa: BLE001 — recording must not wedge dispatch
+                logger.warning("kanban: could not record guard refusal for %s: %s",
+                               task_id, exc)
+        if decision.adapter is None:
+            return None
+        if decision.adapter == adapter.name:
+            return adapter
+        return _agent_registry.get_adapter(decision.adapter)
+    except Exception as exc:  # noqa: BLE001
+        import os as _os  # noqa: PLC0415
+
+        report_only = _os.environ.get("ICDEV_GUARD_PARITY_GATE", "").strip().lower() == "report"
+        if report_only or getattr(adapter, "name", "") == "claude_cli":
+            logger.warning("kanban: guard parity gate unavailable (%s)", exc)
+            return adapter
+        logger.error("kanban: guard parity gate unavailable for %s (%s) — not "
+                     "spawning %s", task_id, exc, getattr(adapter, "name", "?"))
+        tier_outcomes.append(f"guard parity gate unavailable: {exc}")
+        return None
+
+
 # Track running task handles. Claude path stores subprocess.Popen, LLMRouter
 # path stores _LLMTaskHandle — both expose .poll() / .kill() / .wait() / .pid /
 # .returncode so the rest of the reflex (timeout sweeper, completion checker)
@@ -7780,6 +7833,11 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
     # executor degrade (2 tasks) — produced the identical sentence and each
     # needed its own investigation. A constant cannot discriminate causes.
     tier_outcomes: List[str] = []
+
+    # omx-guard-02: never AUTONOMOUSLY spawn an adapter whose guard is not
+    # verified — it would run with no ICDEV control over its tool calls.
+    chain_adapter = _guard_parity_screen(chain_adapter, effective_chain,
+                                         task_id, tier_outcomes)
     for tier in effective_chain:
         if tier in _ADAPTER_TIERS:
             if chain_adapter is None:
