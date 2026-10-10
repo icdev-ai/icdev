@@ -10323,3 +10323,45 @@ projects:
   - {key: eng, title: "AI-ASSISTED ENGINEERING TRACK (2a-2c)", priority: high}
   - {key: gd, title: "GAMEDAY EXERCISES FOR THE SAME SKILLS", priority: medium}
   - {key: fix, title: "ACADEMY-GAMEDAY CREDIT WIRING", priority: medium}
+- key: omx
+  name: "OMX -- ICDEV on Omarchy: harness-agnostic executors, opencode as the OSS default"
+  description: >-
+    Make open-source ICDEV a first-class citizen on Omarchy (DHH's Arch/Hyprland distro,
+    v4.0.4) while staying harness- and LLM-agnostic. ICDEV is the governed control plane
+    (kanban, compliance, MCP tools, LLM routing, guard layer); harnesses are interchangeable
+    executors. Surveyed 2026-10-10: icdev-core and the LLM router are already agnostic; the
+    HARNESS layer is Claude-centric -- claude_cli is the hard default (args/agent_adapters.yaml,
+    tools/agents/registry.py pick_default), the PreToolUse guard is wired only through
+    .claude/settings.json, and there is no opencode or pi adapter. Omarchy ships 13 agent
+    CLIs as mise stubs, a default-agent setting (`omarchy default agent`), cross-harness
+    skill dirs (~/.agents/skills etc.) and an agents-panel collector contract. Decisions
+    (operator, 2026-10-10): the default must be OSS -> opencode (Pi is the fallback if the
+    spike fails); on Omarchy ICDEV FOLLOWS `omarchy default agent`; cloud models are fine;
+    guard parity gates AUTONOMOUS dispatch only; PostgreSQL stays required; ship an AUR
+    package; design everything PR-ready for upstream Omarchy; the Omarchy box on the LAN
+    becomes the acceptance environment and later a second executor (manual, behind gate-00).
+  task_prefix: omx-
+  default_open: true
+  briefs:
+  - 'spike: prove opencode plugin tool.execute.before can BLOCK and capture `opencode run --format json` -- go/no-go for the default -- omx-spike-01'
+  - 'adapt: opencode_cli and pi_cli AgentAdapters + capability entries, probe-verified -- omx-adapt-01..02'
+  - 'guard: opencode plugin calling tools/airgap/hook_compat.run_pre_tool_check (no second copy of the checks), fire-rate surveyed; runner refuses autonomous dispatch to an adapter whose guard_wired is not verified -- omx-guard-01..02'
+  - 'select: pick_default follows `omarchy default agent`; opencode_cli first in fallback_order -- omx-select-01'
+  - 'dx: opencode + pi in companion_registry; AGENTS.md primary in icdev init; one cross-harness ICDEV SKILL.md symlinked into every harness skill dir -- omx-dx-01..02'
+  - 'linux: Linux equivalents for /start /stop and the genesis Task Scheduler scripts; case-sensitive path guards -- omx-linux-01'
+  - 'setup/panel/dist/ci: `icdev omarchy setup` (pacman postgresql+pgvector, MCP registration, systemd --user), agents-panel collector, AUR PKGBUILD, archlinux CI job -- omx-setup-01, omx-panel-01, omx-dist-01, omx-ci-01'
+  - 'up/host (MANUAL, behind omx-gate-00): upstream Omarchy PR; Omarchy box as a second LAN executor on the shared board -- omx-up-01, omx-host-01'
+  epics:
+  - {key: spike, title: "CAN OPENCODE CARRY THE GUARD", priority: critical}
+  - {key: adapt, title: "OSS HARNESS ADAPTERS", priority: high}
+  - {key: guard, title: "GUARD PARITY GATES AUTONOMOUS DISPATCH", priority: critical}
+  - {key: select, title: "FOLLOW THE DESKTOP'S DEFAULT AGENT", priority: high}
+  - {key: dx, title: "ONE SKILL, EVERY HARNESS", priority: medium}
+  - {key: linux, title: "LINUX IS A FIRST-CLASS HOST", priority: medium}
+  - {key: setup, title: "ICDEV OMARCHY SETUP", priority: high}
+  - {key: panel, title: "AGENTS-PANEL RECORD", priority: low}
+  - {key: dist, title: "AUR PACKAGE", priority: medium}
+  - {key: ci, title: "ARCH LINUX CI", priority: medium}
+  - {key: up, title: "UPSTREAM OMARCHY PR (manual)", priority: low}
+  - {key: host, title: "OMARCHY BOX AS SECOND EXECUTOR (manual)", priority: low}
+  - {key: gate, title: "MANUAL GATE (sentinel only)", priority: low}
