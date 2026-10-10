@@ -23,10 +23,14 @@ ONE command for the steps an operator otherwise runs by hand (omx-setup-01):
                  (omx-guard-01 / omx-guard-03) for each one installed.
   7. systemd  -- the omx-linux-01 ``--user`` units for ``tools/genesis/launch.py``;
                  enabled + started only with ``--start``.
+  8. panel    -- Omarchy only (omx-panel-01): the ``omarchy-agent-usage-icdev``
+                 collector into ``~/.local/bin``, the ``icdev.svg`` mark into the
+                 agents plugin's ``assets/``, and a ``systemd --user`` timer that
+                 refreshes the record. Read-only, so enabled without ``--start``.
 
 Every step probes first and reports ``skipped`` when already in place, so a
 second run changes nothing. ``--dry-run`` prints the plan and writes nothing.
-``status`` probes only. ``uninstall`` reverses 4-7 and NEVER touches the
+``status`` probes only. ``uninstall`` reverses 4-8 and NEVER touches the
 database or ``.env``.
 
 Every external command goes through one injectable runner (``Host``), which is
@@ -442,11 +446,109 @@ def plan_systemd(host: Host, start: bool = False, remove: bool = False) -> Plan:
 
 
 # --------------------------------------------------------------------------- #
+# Step 8 -- the Omarchy agents-panel record (omx-panel-01)
+# --------------------------------------------------------------------------- #
+
+PANEL_BIN = "omarchy-agent-usage-icdev"
+PANEL_TIMER = "icdev-agent-usage.timer"
+PANEL_UNITS = ("icdev-agent-usage.service", PANEL_TIMER)
+PANEL_MARKS = ("icdev.svg", "icdev-light.svg")
+
+
+def _data_file(host: Host, rel: str) -> Path:
+    """A packaged ``icdev/data`` file, in a checkout or the wheel."""
+    for data in (host.root / "icdev" / "data", host.root / "data"):
+        if (data / rel).is_file():
+            return data / rel
+    raise FileNotFoundError(f"packaged {rel} not found under {host.root}")
+
+
+def render_collector(host: Host) -> str:
+    """The collector with this interpreter and checkout root filled in."""
+    text = _data_file(host, f"bin/{PANEL_BIN}").read_text(encoding="utf-8")
+    # A shebang cannot carry whitespace; fall back to PATH's python3 then.
+    shebang = f"#!{host.python}" if not any(c.isspace() for c in host.python) else "#!/usr/bin/env python3"
+    _, _, rest = text.partition("\n")
+    return (shebang + "\n" + rest).replace(
+        '_INSTALLED_ROOT = ""', f"_INSTALLED_ROOT = {json.dumps(host.root.as_posix())}", 1)
+
+
+def panel_assets_dir(host: Host) -> Path:
+    base = host.environ.get("OMARCHY_PATH") or host.home / ".local" / "share" / "omarchy"
+    return Path(base) / "shell" / "plugins" / "agents" / "assets"
+
+
+def panel_usage_record(host: Host) -> Path:
+    from tools.cli.omarchy_panel import AGENT_ID, usage_dir
+    return usage_dir(host.environ, host.home) / f"{AGENT_ID}.json"
+
+
+def _panel_files(host: Host) -> List[tuple]:
+    """(target, content, executable) for everything the panel step writes."""
+    files = [(host.home / ".local" / "bin" / PANEL_BIN, render_collector(host), True)]
+    assets = panel_assets_dir(host)
+    if assets.is_dir():  # the mark is optional: no agents plugin, no mark
+        files += [(assets / m, _data_file(host, f"omarchy/{m}").read_text(encoding="utf-8"), False)
+                  for m in PANEL_MARKS]
+    if host.platform == "linux":
+        files += [(host.unit_dir() / u, _data_file(host, f"omarchy/{u}").read_text(encoding="utf-8"), False)
+                  for u in PANEL_UNITS]
+    return files
+
+
+def plan_panel(host: Host, det: Detected, remove: bool = False) -> Plan:
+    if not det.omarchy:
+        return Plan(done=True, state="n/a", detail="not on Omarchy: no agents panel")
+    systemctl = host.platform == "linux" and bool(host.which("systemctl"))
+    actions: List[Action] = []
+    if remove:
+        targets = [host.home / ".local" / "bin" / PANEL_BIN, panel_usage_record(host)]
+        targets += [panel_assets_dir(host) / m for m in PANEL_MARKS]
+        targets += [host.unit_dir() / u for u in PANEL_UNITS]
+        present = [p for p in targets if p.is_file()]
+        units_present = any(p.parent == host.unit_dir() for p in present)
+        if units_present and systemctl:
+            actions.append(Action(f"disable {PANEL_TIMER}",
+                                  ["systemctl", "--user", "disable", "--now", PANEL_TIMER]))
+        actions += [Action(f"remove {p}", fn=p.unlink) for p in present]
+        if units_present and systemctl:
+            actions.append(Action("systemctl --user daemon-reload", ["systemctl", "--user", "daemon-reload"]))
+        return Plan(done=not actions, actions=actions)
+
+    units_changed = False
+    for path, content, executable in _panel_files(host):
+        if path.is_file() and path.read_text(encoding="utf-8") == content:
+            continue
+        units_changed = units_changed or path.parent == host.unit_dir()
+
+        def _write(path=path, content=content, executable=executable):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            # newline="\n": a shebang / unit file with CRLF does not run on Linux.
+            with open(path, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write(content)
+            if executable:
+                path.chmod(0o755)
+        actions.append(Action(f"write {path}", fn=_write))
+    if units_changed and systemctl:
+        actions.append(Action("systemctl --user daemon-reload", ["systemctl", "--user", "daemon-reload"]))
+    # Enabled without --start, unlike genesis: the timer only READS the board
+    # and the ledger, and a record nothing refreshes is a frozen panel.
+    if systemctl and not (host.ok(["systemctl", "--user", "is-enabled", "--quiet", PANEL_TIMER])
+                          and host.ok(["systemctl", "--user", "is-active", "--quiet", PANEL_TIMER])):
+        actions.append(Action(f"enable + start {PANEL_TIMER}",
+                              ["systemctl", "--user", "enable", "--now", PANEL_TIMER]))
+    detail = f"record: {panel_usage_record(host)}"
+    if not systemctl:
+        detail += f"; no systemd --user: run `{PANEL_BIN} --write` to refresh it"
+    return Plan(done=not actions, actions=actions, detail=detail)
+
+
+# --------------------------------------------------------------------------- #
 # Orchestration
 # --------------------------------------------------------------------------- #
 
-STEPS = ("postgres", "env", "mcp", "skill", "guard", "systemd")
-REVERSIBLE = ("mcp", "skill", "guard", "systemd")
+STEPS = ("postgres", "env", "mcp", "skill", "guard", "systemd", "panel")
+REVERSIBLE = ("mcp", "skill", "guard", "systemd", "panel")
 
 
 def _plans(host: Host, det: Detected, *, start: bool = False, remove: bool = False) -> Dict[str, Callable[[], Plan]]:
@@ -455,6 +557,7 @@ def _plans(host: Host, det: Detected, *, start: bool = False, remove: bool = Fal
         "skill": lambda: plan_skill(host, det, remove),
         "guard": lambda: plan_guard(host, det, remove),
         "systemd": lambda: plan_systemd(host, start, remove),
+        "panel": lambda: plan_panel(host, det, remove),
     }
     if not remove:
         plans = {"postgres": lambda: plan_postgres(host), "env": lambda: plan_env(host), **plans}
@@ -540,7 +643,7 @@ def main(argv: Optional[List[str]] = None, host: Optional[Host] = None) -> int:
     sp.add_argument("--json", action="store_true")
     st = sub.add_parser("status", help="Report each step's state.")
     st.add_argument("--json", action="store_true")
-    up = sub.add_parser("uninstall", help="Reverse steps 4-7 (never drops the database).")
+    up = sub.add_parser("uninstall", help="Reverse steps 4-8 (never drops the database).")
     up.add_argument("--dry-run", action="store_true")
     up.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)

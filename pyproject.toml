@@ -295,6 +295,8 @@ exclude = [
     "claude_bootstrap/**/*",
     # Harness guard plugins (omx-guard-01): `icdev harness install-guard`.
     "harness_plugins/**/*.ts",
+    # Omarchy agents-panel collector, its mark and its refresh timer (omx-panel-01).
+    "bin/*", "omarchy/*",
 ]
 "icdev.tools.dashboard" = [
     "templates/**/*.html",
