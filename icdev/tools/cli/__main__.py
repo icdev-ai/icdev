@@ -47,6 +47,9 @@ Subcommands:
   cron create|list|pause|resume|remove|run|runs
                            Schedule standalone-agent prompts or allowlisted
                            scripts (interval or 5-field cron).
+  harness install-guard opencode [--project DIR|--global]
+                           Install ICDEV's PreToolUse guard as an opencode
+                           plugin (same checks as the Claude Code hook).
   audit export             Export SOC 2 (and future framework) evidence reports.
   audit tail [--follow]    Tail the audit feed (audit_trail + hook_events), or
                            --source runtime_invocations for invocation rows.
@@ -127,6 +130,10 @@ def main(argv: list[str] | None = None) -> int:
     if sub == "cron":
         from tools.agent_runtime.cron import cron_main
         return cron_main(rest)
+
+    if sub == "harness":
+        from tools.cli.harness import main as harness_main
+        return harness_main(rest)
 
     if sub == "audit":
         from tools.cli.audit import main as audit_main
