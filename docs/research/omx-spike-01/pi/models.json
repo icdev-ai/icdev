@@ -1,0 +1,14 @@
+{
+  "providers": {
+    "ollama": {
+      "api": "openai-completions",
+      "apiKey": "ollama",
+      "baseUrl": "http://127.0.0.1:11434/v1",
+      "compat": { "supportsDeveloperRole": false, "supportsReasoningEffort": false },
+      "models": [
+        { "id": "kimi-k3:cloud", "contextWindow": 262144, "input": ["text"] },
+        { "id": "qwen3.5" }
+      ]
+    }
+  }
+}
