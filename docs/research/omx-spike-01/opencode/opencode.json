@@ -1,0 +1,17 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "ollama": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Ollama (OpenAI-compatible; same shape as a vLLM endpoint)",
+      "options": { "baseURL": "http://127.0.0.1:11434/v1" },
+      "models": {
+        "kimi-k3:cloud": { "name": "kimi-k3 (ollama cloud)" },
+        "qwen3.5": { "name": "qwen3.5 (local)" }
+      }
+    }
+  },
+  "permission": { "bash": "allow", "edit": "allow", "external_directory": "allow" },
+  "autoupdate": false,
+  "share": "disabled"
+}

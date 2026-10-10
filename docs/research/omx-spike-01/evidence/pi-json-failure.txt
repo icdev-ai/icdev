@@ -1,0 +1,3 @@
+# pi failure (unknown model id on a known provider) exit=0
+# pi failure (unknown provider) exit=1
+Error: Model "nosuchprovider/x" not found. Use --list-models to see available models.
