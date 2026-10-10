@@ -283,6 +283,8 @@ exclude = [
     "hardprompts/**/*.md",
     "features/**/*.feature", "features/**/*.py",
     "docs/**/*.md",
+    # The cross-harness ICDEV skill `icdev skill install` links into every harness (omx-dx-02).
+    "skills/**/*.md",
     # Claude bootstrap (CLAUDE.md, .claude/commands/, .claude/hooks/, .mcp.json)
     # Populated by tools/installer/prebuild_bootstrap.py before `python -m build`.
     "claude_bootstrap/**/*.md",
