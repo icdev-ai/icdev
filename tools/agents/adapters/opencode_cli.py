@@ -69,6 +69,8 @@ never swallowed.
 Session metadata keys this adapter understands (all optional):
 
     model_id         str  -> ``--model``
+    llm_function     str  -> with neither model set and ICDEV_HARNESS_LLM=vllm,
+                            the router's vLLM choice (omx-vllm-04)
     auto_approve     bool -> ``--auto`` (auto-approve permissions not denied)
     print_logs       bool -> default True; False drops ``--print-logs``
     extra_args       list -> appended before the prompt (``--pure`` refused)
@@ -92,6 +94,7 @@ from tools.agents.adapter_base import (
     NotInstalledError,
 )
 from tools.agents.adapters.codex_cli import _pathext_candidates
+from tools.llm.harness_llm_config import routed_model_argv
 from tools.hooks.harness_guard import BASE_DIR as GUARD_ROOT  # repo_root()
 from tools.hooks.harness_guard import guard_module, install_guard, render_plugin
 
@@ -313,6 +316,9 @@ class OpencodeCliAdapter:
         model_id = meta.get("model_id") or os.environ.get(_ENV_MODEL)
         if model_id:
             argv += ["--model", str(model_id)]
+        else:
+            # omx-vllm-04: the router's vLLM choice for the task's llm_function.
+            argv += routed_model_argv("opencode", meta)
         if session.working_dir:
             argv += ["--dir", str(session.working_dir)]
         if meta.get("auto_approve"):

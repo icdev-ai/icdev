@@ -6307,6 +6307,9 @@ def _agent_session(task: dict, instruction: str, work_dir: str,
         "temp_dir": str(BASE_DIR / ".tmp"),
         "project_id": str(task.get("project_id") or ""),
         "task_type": str(task.get("task_type") or ""),
+        # omx-vllm-04: opencode/pi/codex pass the router's choice for this
+        # function when it is a vLLM model (opt-in: ICDEV_HARNESS_LLM=vllm).
+        "llm_function": "code_generation",
     }
     _model = _selected_model()
     if _model and _model.get("cli_capable") and _model.get("model_id"):

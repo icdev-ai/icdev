@@ -60,6 +60,8 @@ handle so a prompt's bytes survive unchanged on both line-ending conventions,
 Session metadata keys this adapter understands (all optional):
 
     model_id                 str  -> appended as ``--model``
+    llm_function             str  -> with neither model set and ICDEV_HARNESS_LLM=vllm,
+                                    the router's vLLM choice + ``-c model_provider``
     sandbox                  str  -> ``--sandbox`` mode; "" disables the flag
     skip_git_repo_check      bool -> appends ``--skip-git-repo-check``
     extra_args               list -> appended verbatim before the prompt arg
@@ -83,6 +85,7 @@ from tools.agents.adapter_base import (
     AgentSession,
     NotInstalledError,
 )
+from tools.llm.harness_llm_config import routed_model_argv
 
 
 # The Rust rewrite ships as ``codex``; ``openai-codex`` is kept as a secondary
@@ -451,6 +454,9 @@ class CodexCliAdapter:
         model_id = meta.get("model_id") or os.environ.get(_ENV_MODEL)
         if model_id:
             argv += ["--model", str(model_id)]
+        else:
+            # omx-vllm-04: the router's vLLM choice for the task's llm_function.
+            argv += routed_model_argv("codex", meta)
 
         argv += [str(arg) for arg in (meta.get("extra_args") or [])]
         argv.append("-")

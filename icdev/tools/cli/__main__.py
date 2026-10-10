@@ -59,6 +59,9 @@ Subcommands:
                            correlation id (AgentLoopResult.trace_id).
   llm doctor [--json]      vLLM endpoint status: reachability, served models,
                            max_model_len, probed tool-call support.
+  llm harnesses [--llm auto|vllm|none] [--write] [--project DIR] [--json]
+                           Point opencode, Pi and Codex at the same vLLM
+                           endpoint (VLLM_BASE_URL); dry run without --write.
   demo seed --tenant <slug> [--canvases <c1,c2,...>]
                            Provision a demo tenant with synthetic data and
                            ICDEV_DEMO_MODE enabled (read-only banner).
@@ -149,7 +152,12 @@ def main(argv: list[str] | None = None) -> int:
         if rest[:1] == ["doctor"]:
             from tools.llm.vllm_discovery import main as doctor_main
             return doctor_main(rest[1:])
-        print("Usage: icdev llm doctor [--json] [--timeout SECONDS]", file=sys.stderr)
+        if rest[:1] == ["harnesses"]:
+            from tools.llm.harness_llm_config import main as harnesses_main
+            return harnesses_main(rest[1:])
+        print("Usage: icdev llm doctor [--json] [--timeout SECONDS]\n"
+              "       icdev llm harnesses [--llm auto|vllm|none] [--write] [--project DIR] [--json]",
+              file=sys.stderr)
         return 2
 
     if sub == "demo":

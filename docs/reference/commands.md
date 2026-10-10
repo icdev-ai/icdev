@@ -49,6 +49,12 @@ python tools/llm/vllm_discovery.py --status --json               # same report, 
 # Router auto-registers each served model as vllm:<served-name> when VLLM_BASE_URL is set;
 # VLLM_MODEL names the model behind the stable `vllm-local` alias (unset = skipped in every chain).
 
+# Harnesses on the SAME vLLM endpoint (omx-vllm-04) — opencode / Pi / Codex configs from VLLM_BASE_URL
+icdev llm harnesses --llm vllm                                   # dry run: which files, which served models, tool-call warnings
+python tools/llm/harness_llm_config.py --llm vllm --write        # write opencode.json provider, ~/.pi/agent/models.json, ~/.codex/config.toml block
+python tools/dx/companion.py --sync --write --llm auto           # same, opencode in the PROJECT opencode.json; auto = only when reachable
+# ICDEV_HARNESS_LLM=vllm (opt-in) makes opencode_cli/pi_cli/codex_cli pass the router's vLLM choice as --model.
+
 # Ollama prefix cache — measured in LATENCY, never dollars (cch-prov-03)
 python tools/llm/ollama_prefix_latency.py --json                  # cold vs warm prompt-eval
 python tools/llm/ollama_prefix_latency.py --model qwen3:4b --repeats 7

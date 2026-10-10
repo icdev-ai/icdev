@@ -72,6 +72,8 @@ result, never swallowed.
 Session metadata keys this adapter understands (all optional):
 
     model_id         str  -> ``--model``
+    llm_function     str  -> with neither model set and ICDEV_HARNESS_LLM=vllm,
+                            the router's vLLM choice (omx-vllm-04)
     offline          bool -> default True: ``--offline`` (no start-up network)
     approve          bool -> ``--approve`` (trust the project: .pi/mcp.json)
     extensions       list -> one ``-e <path>`` each
@@ -96,6 +98,7 @@ from tools.agents.adapter_base import (
     NotInstalledError,
 )
 from tools.agents.adapters.codex_cli import _pathext_candidates
+from tools.llm.harness_llm_config import routed_model_argv
 
 
 _EXECUTABLE_NAME = "pi"
@@ -314,6 +317,9 @@ class PiCliAdapter:
         model_id = meta.get("model_id") or os.environ.get(_ENV_MODEL)
         if model_id:
             argv += ["--model", str(model_id)]
+        else:
+            # omx-vllm-04: the router's vLLM choice for the task's llm_function.
+            argv += routed_model_argv("pi", meta)
         if meta.get("approve"):
             argv.append("--approve")
         for extension in meta.get("extensions") or []:
