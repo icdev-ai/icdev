@@ -37,12 +37,15 @@ What the spike measured, and how this adapter uses it
   deleted). ICDEV owns this argv and refuses to emit it — ``build_argv`` raises
   on a caller-supplied ``--pure`` rather than dropping it quietly.
 
+* **The guard is wired (omx-guard-01).** ``invoke()`` installs ICDEV's
+  ``tool.execute.before`` plugin into the run's project directory
+  (``.opencode/plugin/icdev-guard.ts``, idempotent) and refuses to run if it
+  cannot; the plugin calls ``tools.hooks.harness_guard`` ->
+  ``tools.airgap.hook_compat.run_pre_tool_check``. ``verify_guard()`` proves it
+  live: it runs that bridge on a known-bad call and requires a refusal.
+
 What this adapter deliberately does NOT do
 ------------------------------------------
-* No guard wiring. Installing the ``tool.execute.before`` plugin that calls
-  ``tools.airgap.hook_compat.run_pre_tool_check`` is omx-guard-01; until it
-  lands ``guard_wired`` is declared ``false`` and ``verify_guard()`` reports the
-  guard as not wired.
 * No ``spawn()``, no sandbox flag, no turn/token budget flag: opencode's ``run``
   has none of them, and adding an execution mode with no consumer would be
   inventing a capability the capability matrix is supposed to MEASURE.
@@ -78,6 +81,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -88,6 +92,8 @@ from tools.agents.adapter_base import (
     NotInstalledError,
 )
 from tools.agents.adapters.codex_cli import _pathext_candidates
+from tools.hooks.harness_guard import BASE_DIR as GUARD_ROOT  # repo_root()
+from tools.hooks.harness_guard import guard_module, install_guard, render_plugin
 
 
 _EXECUTABLE_NAME = "opencode"
@@ -98,6 +104,10 @@ _ENV_MODEL = "ICDEV_OPENCODE_MODEL"
 # ``--pure``; refused rather than stripped, so a caller learns their argv was
 # never going to run as written.
 _GUARD_DISABLING_FLAGS = ("--pure",)
+
+# The guard self-test's known-bad call (verify_guard). Spelled in two pieces so
+# no scanner reading this source mistakes it for a command.
+_KNOWN_BAD_COMMAND = "rm -rf " + "/"
 
 _COMPLETION_MARKERS = ("[DONE]", "Task completed", "done.")
 
@@ -338,6 +348,16 @@ class OpencodeCliAdapter:
         env = self.build_env(session)
 
         t0 = time.time()
+        try:
+            install_guard("opencode", project=Path(session.working_dir or Path.cwd()))
+        except Exception as exc:  # noqa: BLE001 -- refuse, never run unguarded
+            return AgentResult(
+                task_id=session.task_id, adapter_name=self.name, completed=False,
+                exit_code=-1, output="",
+                error=f"opencode_cli refuses to run unguarded: ICDEV guard plugin "
+                      f"could not be installed: {type(exc).__name__}: {exc}",
+                duration_ms=int((time.time() - t0) * 1000), structured={},
+            )
 
         def _failed(exit_code: int, error: str, **structured: Any) -> AgentResult:
             return AgentResult(
@@ -402,18 +422,37 @@ class OpencodeCliAdapter:
 
     # ── guard self-report (consumed by capability_matrix: guard_wired) ───────
     def verify_guard(self) -> Dict[str, Any]:
-        """Whether ICDEV's guard sees this adapter's tool calls.
+        """Whether ICDEV's guard sees this adapter's tool calls -- measured LIVE.
 
-        Not yet: the ``tool.execute.before`` plugin is omx-guard-01. This
-        returns the honest answer rather than being absent so the capability
-        matrix measures ``absent`` instead of ``unconfirmed``; omx-guard-01
-        replaces the body with a live call through the bridge.
+        Runs the exact process the installed plugin spawns
+        (``python -m tools.hooks.harness_guard --harness opencode``) on a
+        known-bad call in opencode's own spelling and requires a refusal, and
+        checks the packaged plugin source renders. ``wired`` is never inferred
+        from a file existing (omx-spike-01: ``--pure`` drops a plugin that is
+        right there on disk; ``build_argv`` refuses it).
         """
-        return {
-            "wired": False,
-            "reason": "no ICDEV guard plugin is installed by this adapter "
-                      "(omx-guard-01)",
-        }
+        try:
+            render_plugin("opencode")
+        except Exception as exc:  # noqa: BLE001
+            return {"wired": False,
+                    "reason": f"guard plugin source unavailable: {exc}"}
+        request = {"tool": "bash", "args": {"command": _KNOWN_BAD_COMMAND}}
+        try:
+            proc = subprocess.run(
+                [sys.executable, "-m", guard_module(), "--harness", "opencode"],
+                input=json.dumps(request), capture_output=True, text=True,
+                encoding="utf-8", errors="replace", cwd=str(GUARD_ROOT),
+                timeout=120, shell=False,
+            )
+            verdict = json.loads((proc.stdout or "").strip().splitlines()[-1])
+        except Exception as exc:  # noqa: BLE001
+            return {"wired": False,
+                    "reason": f"guard bridge did not answer: {type(exc).__name__}: {exc}"}
+        if verdict.get("allowed") is False:
+            return {"wired": True,
+                    "reason": f"bridge refused a known-bad bash call: {verdict.get('reason')}"}
+        return {"wired": False,
+                "reason": f"bridge ALLOWED a known-bad bash call: {verdict.get('reason')}"}
 
     # ── protocol tail ────────────────────────────────────────────────────────
     def detect_completion(self, output: str) -> bool:

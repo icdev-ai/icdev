@@ -4222,6 +4222,12 @@ python tools/hooks/fire_rate_survey.py --gate --max-fire-rate 0.01   # exit 1 ab
 #   ICDEV_PRETOOLUSE_ENFORCE=0   all nine checks report but never refuse
 #   ICDEV_<CHECK>_GUARD=0        skip one check — see CHECK_KILL_SWITCHES
 
+# Harness guard (omx-guard-01) — ICDEV's PreToolUse checks inside opencode
+icdev harness install-guard opencode --project .     # writes ./.opencode/plugin/icdev-guard.ts
+icdev harness install-guard opencode --global        # writes $XDG_CONFIG_HOME/opencode/plugin/ (default ~/.config)
+python -m tools.hooks.harness_guard --harness opencode < call.json   # stdin {"tool","args"}, stdout JSON verdict
+# Same kill switches as the hook; fails open (logged) on a broken bridge.
+
 # MCP servers (stdio transport)
 python tools/mcp/unified_server.py                   # Start unified MCP gateway (251 tools, recommended)
 python tools/mcp/core_server.py                     # Start core MCP server

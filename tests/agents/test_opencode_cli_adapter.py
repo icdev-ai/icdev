@@ -351,8 +351,52 @@ def test_capability_matrix_confirms_every_declaration():
     assert verdicts["tool_calling"] == cm.CONFIRMED
     assert verdicts["structured_output"] == cm.CONFIRMED
     guard = entry["capabilities"]["guard_wired"]
-    assert guard["declared"] is False and guard["declared_explicitly"] is True
-    assert guard["actual"] == cm.ABSENT        # measured, not merely undeclared
+    assert guard["declared"] is True and guard["declared_explicitly"] is True
+    # omx-guard-01: measured LIVE through the bridge the plugin spawns.
+    assert guard["actual"] == cm.PRESENT
+    assert verdicts["guard_wired"] == cm.CONFIRMED
+
+
+def test_verify_guard_is_a_live_refusal_through_the_bridge():
+    report = oc.ADAPTER.verify_guard()
+    assert report["wired"] is True, report["reason"]
+    assert "BLOCKED" in report["reason"]
+
+
+def test_verify_guard_reports_a_bridge_that_allows(monkeypatch):
+    """A bridge that waves the known-bad call through is NOT wired."""
+    def _run(argv, **kwargs):
+        return subprocess.CompletedProcess(
+            argv, 0, stdout='{"allowed": true, "reason": "passed"}', stderr="")
+
+    monkeypatch.setattr(oc.subprocess, "run", _run)
+    assert oc.ADAPTER.verify_guard()["wired"] is False
+
+
+def test_invoke_installs_the_guard_plugin_into_the_run_dir(monkeypatch, tmp_path):
+    monkeypatch.setattr(oc, "resolve_opencode_cli", lambda: "opencode")
+    monkeypatch.setattr(oc.subprocess, "run", lambda argv, **kw:
+                        subprocess.CompletedProcess(argv, 0, stdout=_SUCCESS_STREAM,
+                                                    stderr=""))
+    session = _session(tmp_path)
+    oc.ADAPTER.invoke(session)
+    plugin = Path(session.working_dir) / ".opencode" / "plugin" / "icdev-guard.ts"
+    text = plugin.read_text(encoding="utf-8")
+    assert "tool.execute.before" in text and "harness_guard" in text
+    assert "__ICDEV_ROOT__" not in text and "__ICDEV_PYTHON__" not in text
+
+
+def test_invoke_refuses_to_run_unguarded(monkeypatch, tmp_path):
+    def _boom(*a, **k):
+        raise PermissionError("read-only project")
+
+    ran = []
+    monkeypatch.setattr(oc, "resolve_opencode_cli", lambda: "opencode")
+    monkeypatch.setattr(oc, "install_guard", _boom)
+    monkeypatch.setattr(oc.subprocess, "run", lambda *a, **k: ran.append(a))
+    result = oc.ADAPTER.invoke(_session(tmp_path))
+    assert result.completed is False and not ran
+    assert "unguarded" in result.error
 
 
 def test_gate_passes_with_opencode_included(capsys):

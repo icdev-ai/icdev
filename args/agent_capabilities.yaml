@@ -112,7 +112,7 @@ declared:
     sandbox_passthrough: false # opencode run takes no sandbox flag
     context_budget: false      # ...nor a turn/token budget
     structured_output: true    # tokens, cost, stop reason, session id
-    guard_wired: false         # plugin not installed yet -- omx-guard-01
+    guard_wired: true          # icdev-guard.ts plugin -> harness_guard bridge, live-probed (omx-guard-01)
 
   # omx-adapt-02. Only what omx-spike-01 measured for Pi (findings.md, "Pi"):
   # `pi --mode json` emits JSONL whose tool_execution_* records and per-message

@@ -291,6 +291,8 @@ exclude = [
     "claude_bootstrap/**/*.yaml",
     "claude_bootstrap/**/*.yml",
     "claude_bootstrap/**/*",
+    # Harness guard plugins (omx-guard-01): `icdev harness install-guard`.
+    "harness_plugins/**/*.ts",
 ]
 "icdev.tools.dashboard" = [
     "templates/**/*.html",
