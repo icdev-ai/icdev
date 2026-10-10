@@ -54,6 +54,10 @@ Subcommands:
                            Install ICDEV's PreToolUse guard as an opencode
                            plugin or a Pi extension (same checks as the
                            Claude Code hook).
+  omarchy setup|status|uninstall [--dry-run] [--yes] [--start]
+                           Fresh Omarchy / Arch host to a running ICDEV:
+                           PostgreSQL+pgvector, .env, MCP, skill, guards,
+                           systemd --user units. Idempotent.
   audit export             Export SOC 2 (and future framework) evidence reports.
   audit tail [--follow]    Tail the audit feed (audit_trail + hook_events), or
                            --source runtime_invocations for invocation rows.
@@ -144,6 +148,10 @@ def main(argv: list[str] | None = None) -> int:
     if sub == "harness":
         from tools.cli.harness import main as harness_main
         return harness_main(rest)
+
+    if sub == "omarchy":
+        from tools.cli.omarchy import main as omarchy_main
+        return omarchy_main(rest)
 
     if sub == "audit":
         from tools.cli.audit import main as audit_main
