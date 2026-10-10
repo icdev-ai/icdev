@@ -1,0 +1,4 @@
+# rmf-rfp-01 -- the RFP shredder is wired (POST /rfp/upload, Section L seeds the
+# workbench, the batch route populates the matrix) and there is ONE compliance
+# matrix (pg_compliance_matrix folded into proposal_compliance_matrix).
+tests/govcon/test_rmf_rfp_one_matrix.py

@@ -1,0 +1,5 @@
+# A registered process must keep saying it is alive. register() runs once at
+# boot and list_active() filters on a 900s TTL, so a daemon that never
+# heartbeats disappears from the fleet code-identity view while still running —
+# the longer it runs, the more certain it is to vanish.
+tests/coordination/test_identity_heartbeat.py

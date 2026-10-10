@@ -1,0 +1,174 @@
+# CUI // SP-CTI
+#
+# What the columns of a bill of materials MEAN.
+#
+# Every organisation names them differently and every one of them is confident
+# their names are the obvious ones. "QTY" / "Quantity" / "Ea" / "Count". "Unit
+# MSRP" / "List" / "Each" / "Rate". So the vocabulary lives here, where a customer
+# adds a word, and not in a regex, where they would need a release.
+#
+# This matters more than it sounds. Without knowing which column is the quantity
+# and which is the price, an engine is reduced to guessing from where numbers
+# happen to sit in a row — and a guess produces confident accusations about
+# arithmetic that was perfectly correct. Column meaning is what lets the
+# arithmetic checks be true instead of merely plausible.
+#
+# Matching is by CONTAINMENT on the normalized header text, longest synonym first,
+# so "unit price" beats "price" and "extended price" beats "price".
+
+# Header rows rarely sit at the top. Real workbooks put a title, a logo and a
+# revision block above them.
+max_header_scan_rows: 12
+
+# A row has to look enough like a header to be treated as one. Below this the
+# sheet has no recognisable header and its rows are not turned into line items —
+# silence is better than inventing a schema.
+min_header_score: 2
+
+columns:
+  # The name of the thing. Almost always the leftmost text column.
+  description:
+    - product / description
+    - item description
+    - description
+    - product
+    - item name
+    - item
+    - component
+    - equipment
+    - material
+    - line item
+    - name
+
+  part_number:
+    - manufacturer part number
+    - mfr part number
+    - cisco part number
+    - vendor part number
+    - part number
+    - part no
+    - part #
+    - catalog number
+    - model number
+    - sku
+    - mpn
+    - p/n
+    - part
+    - model
+
+  manufacturer:
+    - manufacturer
+    - vendor / source
+    - vendor
+    - source
+    - brand
+    - make
+    - oem
+    - supplier
+
+  quantity:
+    - quantity
+    - qty
+    - count
+    - units
+    - ea
+    - no. of units
+  # NOTE there is deliberately no bare "#" here. A column headed "#" is almost
+  # always the line NUMBER, and mapping it to quantity steals the role from the
+  # real QTY column beside it — which then goes unmapped, and every arithmetic
+  # check downstream compares a row number against a price. "part #" still
+  # resolves, because the longest matching synonym wins.
+
+  unit_of_measure:
+    - unit of measure
+    - uom
+    - unit
+    - per
+    - basis
+
+  unit_price:
+    - unit msrp
+    - unit cost
+    - unit price
+    - cost / unit
+    - price each
+    - each
+    - unit list
+    - msrp
+    - list price
+    - list
+    - rate
+    - unit
+    - cost
+    - price
+
+  extended_price:
+    - extended price
+    - ext. price
+    - ext price
+    - extended cost
+    - ext. cost
+    - ext msrp
+    - ext. msrp
+    - line total
+    - total cost
+    - total price
+    - amount
+    - extended
+    - total
+    - subtotal
+
+  # A discounted or negotiated figure sitting alongside list price. Its presence
+  # is what tells us the neighbouring column is MSRP rather than street.
+  street_price:
+    - est. street
+    - street price
+    - street
+    - net price
+    - discounted
+    - negotiated
+    - your price
+    - sale price
+
+  notes:
+    - notes / purpose
+    - notes
+    - note
+    - purpose
+    - comment
+    - comments
+    - remarks
+    - justification
+
+  # A term, in years or months. A three-year licence is a single purchase that
+  # happens to cover three years — knowing the term is what stops it being
+  # mistaken for a recurring charge.
+  term:
+    - term
+    - duration
+    - years
+    - period
+    - contract length
+
+  license_type:
+    - license type
+    - licence type
+    - licensing
+    - subscription type
+
+# ── Price basis ──────────────────────────────────────────────────────────────
+# Which figure a price column actually IS. Getting this wrong means averaging a
+# list price against somebody's rough estimate and producing a number that is not
+# so much wrong as meaningless.
+#
+# Resolution order (the LLM never participates in this):
+#   1. what the human declared at upload
+#   2. FORMULA EVIDENCE — a column computed as "=F4*0.6" under a "street" header
+#      proves its input column is a list price. The workbook is telling you.
+#   3. these header keywords
+#   4. otherwise 'unknown', and that is a FINDING, not a default
+price_basis_headers:
+  msrp: [msrp, list, list price, retail, unit msrp, ext. msrp]
+  street: [street, est. street, net, discounted, negotiated, your price]
+  quoted: [quote, quoted, quotation, firm, contracted]
+  rom: [rom, estimate, est, budgetary, ballpark, approx, rough]

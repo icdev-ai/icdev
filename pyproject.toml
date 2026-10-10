@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "icdev"
-version = "1.2.42"
+version = "1.2.43"
 description = "ICDEV™ — Intelligent Certified Development Platform. AI-powered SDLC with NIST 800-53 RMF compliance, multi-agent orchestration, FORGE framework, and ANVIL build workflow."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -283,6 +283,8 @@ exclude = [
     "hardprompts/**/*.md",
     "features/**/*.feature", "features/**/*.py",
     "docs/**/*.md",
+    # The cross-harness ICDEV skill `icdev skill install` links into every harness (omx-dx-02).
+    "skills/**/*.md",
     # Claude bootstrap (CLAUDE.md, .claude/commands/, .claude/hooks/, .mcp.json)
     # Populated by tools/installer/prebuild_bootstrap.py before `python -m build`.
     "claude_bootstrap/**/*.md",
@@ -291,6 +293,8 @@ exclude = [
     "claude_bootstrap/**/*.yaml",
     "claude_bootstrap/**/*.yml",
     "claude_bootstrap/**/*",
+    # Harness guard plugins (omx-guard-01): `icdev harness install-guard`.
+    "harness_plugins/**/*.ts",
 ]
 "icdev.tools.dashboard" = [
     "templates/**/*.html",

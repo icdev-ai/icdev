@@ -1,0 +1,2 @@
+# xrv-run-01 -- should_run: ONE pre-dispatch verdict, with the budget rung nothing consulted.
+tests/kanban/test_should_run.py

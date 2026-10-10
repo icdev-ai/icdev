@@ -1,0 +1,123 @@
+# CUI // SP-CTI
+# DIC AI-Assisted Document Generator (doc_generator.py) — governed evidence seam.
+#
+# `generate_document` and `regenerate_section` are what the two blueprint routes
+# POST /api/generate and POST /api/generate/section call. Their retrieval half
+# was a bare `DICSearchEngine.search(...)`: chunks, ranked, with a DIC citation
+# pack — better provenance than acoic's (cef-di-03) had, but reaching exactly
+# ONE rung. The currency store, the KG and the KB all hold evidence bearing on a
+# drafted document and none of them were asked.
+#
+# cef-di-05 routes that half through ONE call — `cortex.resolve(query)` — which
+# fans out over those rungs under the 8-gate TRUST chain, writes a `cortex_audit`
+# row and registers a `source_citation_registry` row for the evidence set.
+#
+# WHAT DOES NOT CHANGE
+# --------------------
+# * The Chain-of-Debate paths (`_cot_generate`, `_cod_compress`, both via
+#   `ChainOrchestrator`) are untouched. They consume an evidence STRING and do
+#   not care which chain produced it, so they work identically either way, and
+#   they stay behind their own pre-existing `ICDEV_DIC_COT_ENABLED` env toggle.
+# * The prompts, the verifier, the confidence bands, the placeholder and
+#   confabulation gates, and the persistence half all run unchanged. The seam
+#   hands back real `DICSearchResult` objects, so every consumer DOWNSTREAM of
+#   retrieval sees the shape it always saw.
+#
+# `cortex.resolve` makes no model call of its own (it passes corrective=False, so
+# even the CRAG rewrite does not run), so turning this on does not put an LLM
+# anywhere one was not already.
+cortex:
+  # Master toggle — DEFAULT OFF (never remove).
+  #
+  # Off means the seam is NEVER consulted: both entry points run the original
+  # `DICSearchEngine.search` and doc_generator behaves exactly as before the
+  # migration. That is the rollback — flip this flag, do not revert a merge.
+  enabled: false
+
+  # Evidence citations requested per Cortex backend.
+  #
+  # 10 matches the legacy `engine.search(query, top_k=10)` in `generate_document`;
+  # `regenerate_section` asks for 8 and passes that explicitly, so both paths are
+  # asked for the same amount of evidence and a before/after comparison is
+  # like-for-like. Note both then TRUNCATE to 8 when rendering the evidence block
+  # and to 3 (generate) / 5 (regenerate) when persisting citations — that
+  # truncation is pre-existing and unchanged.
+  top_k: 10
+
+  # Outbound resolutions per drafting run. Each one is a five-backend fan-out.
+  # `generate_document` resolves ONCE for the whole document (the outline and
+  # every section draft share one evidence pool, exactly as the legacy path
+  # shared one `search_results` list), so the budget is only reached by the
+  # currency screen below, which resolves once per drafted section.
+  #
+  # Queries are memoised per run, so this bounds DISTINCT resolutions, not
+  # mentions. Asks refused by the cap are counted and reported
+  # (`docgen_evidence.run_stats`), never silently dropped.
+  max_resolves_per_run: 50
+
+  # Fall back to the legacy retrieval when the governed resolution produced no
+  # usable evidence at all. DEFAULT TRUE. Cases: a governance refusal, a fan-out
+  # where every rung failed, or a corpus that genuinely matched nothing.
+  #
+  # It does NOT catch a THIN answer. On this deployment a COLD Cortex process
+  # abandons the `rag`, `dic` and `graph` rungs at the 10.0/10.0/8.0s budgets in
+  # args/cortex_config.yaml and answers from `currency` alone — thin, not empty,
+  # so this flag does not fire for it (measured for cef-di-03; the timeouts are
+  # global and shared by every Cortex consumer, so the same split applies here).
+  # What covers the thin case instead is `citation_report.evidence_detail`,
+  # persisted on every section: an abandoned backend stays legible as an
+  # infrastructure event rather than becoming a statement about the corpus.
+  #
+  # Do NOT "fix" the cold case by raising the global Cortex timeouts.
+  fallback_on_empty: true
+
+# Currency guard (the acceptance criterion this card exists for).
+#
+# The point of routing drafting through `cortex.resolve` rather than through a
+# second RAG call is that the CURRENCY rung comes with it. `resolve` runs the
+# registered `DomainPack`s over its entity string and returns their
+# DETERMINISTIC assessments — so passing a DRAFTED SECTION back through the same
+# seam answers "did this draft just recommend something the catalog says is
+# dead?" with a pack verdict, not with a model's opinion.
+#
+# That is the network-SOP case in the card: a draft grounded in a 2019 runbook
+# happily reintroduces TLS 1.1 or a Catalyst 6500, and nothing downstream
+# noticed, because the verifier only asks whether a claim is SUPPORTED by the
+# retrieved evidence — and the 2019 runbook does support it.
+#
+# TRUST rule 1 is unchanged: the pack derives the verdict from typed catalog /
+# EOL / rulebook fields. No LLM decides what is deprecated, and the guard never
+# rewrites a claim — it annotates, cites and flags for the human who was always
+# going to review this draft (every version lands `pending_review`).
+currency_guard:
+  # DEFAULT TRUE, but gated by `cortex.enabled` above — with the master toggle
+  # off this block is never reached, so the shipped default is still "off".
+  enabled: true
+
+  # What to do with a section that names a deprecated or superseded entity.
+  #
+  #   annotate  (default) append a cited currency advisory naming the verdict
+  #             and the successor, record the verdict in the section's
+  #             citations, clear `verified`, and flag for HITL. The draft is
+  #             never silently published as current.
+  #   abstain   replace the section body outright. Stricter, and lossier — a
+  #             reviewer loses the prose they were going to correct.
+  #
+  # `annotate` is the default because this is a HITL pipeline: a flagged,
+  # advisory-carrying, unverified section cannot reach a reader without a human
+  # approving it, and it gives that human the verdict AND the text.
+  on_deprecated: annotate
+
+  # Verdicts that trip the guard. `superseded` is `deprecated` plus a known
+  # successor, so both trip it; `current` and `unknown` never do. An `unknown`
+  # verdict means no pack recognised the entity — that is a GAP, not a finding,
+  # and treating it as one would flag every draft on the board.
+  verdicts:
+    - deprecated
+    - superseded
+
+  # Characters of drafted text handed to the screening resolution. The packs'
+  # extractors run over the whole string, so this bounds the ask rather than the
+  # recall of any one entity; a section longer than this is screened on its
+  # opening, which is where a recommendation is made.
+  max_screen_chars: 6000

@@ -142,6 +142,34 @@ tests/test_init_goals_and_selective.py
 # instead of a 40 KB byte-compare that reads like CRLF drift. <1s, no DB/network.
 tests/test_bootstrap_parity.py
 
+# test_bootstrap_hook_payload.py arrived with exa-bench-10 (#1582) and was
+# gated by nothing — the census in this PR is what caught it. It is the test
+# that proves `icdev init` ships the module its PreToolUse hook exec_module()s,
+# i.e. the very defect exa-bench-10 fixed, so leaving it ungated would let that
+# defect return with nothing going red. 9 tests, <4s, pure filesystem.
+tests/test_bootstrap_hook_payload.py
+
+# test_scheduled_dispatch_reclaim.py: startup_recovery sweeps only
+# in_progress, so a dispatch that dies BEFORE the row moves there leaves it
+# in `scheduled` holding a dead pid that nothing looks at — neither running
+# nor reclaimable, and its slot never used. exa-bench-10 sat that way for 71
+# minutes with two of three slots free. <2s, fakes the connection, no DB.
+tests/test_scheduled_dispatch_reclaim.py
+
+# test_kanban_gate_sentinel_seeding.py arrived with kax-exec-04 (#1598) and was
+# gated by nothing, which turned main red on the census. It pins that create_tasks
+# refuses WORK carrying a '-gate-' sentinel id while still accepting a genuine
+# gate — the bug that made tsg-gate-01 permanently undispatchable while the board
+# idled with free slots. Ungated it could regress in silence, which is the exact
+# shape it exists to prevent. 46 tests, ~3s, no DB/network.
+tests/test_kanban_gate_sentinel_seeding.py
+
+# test_ndc_graph_json_type_guard.py arrived with #1599 and was gated by nothing —
+# the third such file in three hours, which is why tsg-policy-02 moves this check
+# to pre-commit. It pins that one malformed graph_json row cannot 500 /network/,
+# a route the E2E smoke suite does not cover. 14 tests, <1s, no DB/network.
+tests/test_ndc_graph_json_type_guard.py
+
 # test_mirror_parity_gate.py: tools/ and icdev/tools/ are separate module
 # objects, so a fix landed in one while the other runs is only half live and
 # the stale half fails SILENTLY. #1542 shipped that way and two tasks were
@@ -160,6 +188,12 @@ tests/test_awareness_edge_deriver.py
 tests/test_benchmark_compare.py
 tests/test_benchmark_report.py
 tests/workflow/test_vendor_parity.py
+# ctx-enf-01: the half of the vendor gate a CI runner can actually run. The
+# consumer repos (compass, idea_lab) are separate PRIVATE repositories the runner
+# never checks out, so test_vendor_parity.py above can only ever exercise the
+# SKIP path here; this file compares tools/cortex/client.py against a committed
+# API manifest, which needs no external checkout.
+tests/workflow/test_vendor_api_manifest.py
 tests/quality/test_run_component_scoring.py
 tests/slides/test_blueprint.py
 tests/integration/test_runtime_cli.py
@@ -461,17 +495,6 @@ tests/test_sbom_dependency_graph.py
 # migration's own up.sql, no DB service/LLM/network (agov-wake-02).
 tests/test_agent_wake_tools.py
 
-# SIPA integrity_monitor reflex. Gated by task-1b49742e56: its two _rel_path
-# tests read ICDEV_SIPA_RELPATH_DIRS from the ambient environment, so they
-# asserted a "flag defaults OFF" the shipped .env contradicts and were red on
-# any configured machine. Pinned with delenv and green (13 passed, 3s).
-tests/test_integrity_monitor_reflex.py
-
-# Regression for task-1b49742e56: proves known_safe_persistence_modules is
-# actually consulted. The allowlist existed for 16 days with zero call sites,
-# so an ungated test for it would have been the same defect one layer up.
-# Pure (no scanner shell-out, no optional third-party tool) — gateable as-is.
-tests/test_integrity_persistence_allowlist.py
 # agov-case-03 — case-bundle verification. Guards the three forensic layers and,
 # more importantly, the honest-degradation rule: an unset/default/rotated HMAC
 # secret must report NOT VERIFIED, never "passed". Also pins the HMAC recipe to
@@ -623,6 +646,27 @@ tests/test_agent_policy_composition.py
 # same table. Seeded temp SQLite only -- no DB service, LLM or network, ~3s.
 tests/test_capability_consumption.py
 
+# rem-cap-05 -- the two narrowings on probe_agent_approval_rule. Gated because
+# both failure modes are silent and point in opposite directions: counting all
+# four policy tiers as declared pinned the liveness budget at >= 37 forever (the
+# 37 auto-allowed tools can never produce a row, so a wired gate and an absent
+# one measure identically), and counting agent_approval_log without the `tier`
+# discriminator would report FALSE consumption the first time hitl_delta's
+# record_decision() reuse picked a tool name the policy enumerates. The headline
+# test is a review-tier row on a declared tool name. Seeded temp SQLite, no DB
+# service, LLM or network, <1s.
+tests/test_capability_consumption_approval_tiers.py
+
+# rem-cap-01 -- GEPA decision recording, the last known-inert capability. The
+# defect was invisible to every existing test because GEPA's cycle SUCCEEDED
+# while recording nothing: the only outcome it could write was status='applied',
+# so a declined artifact stayed 'pending' forever and 132 permanently
+# unselectable rows held the queue-full/zero-selectable alarm on for good. These
+# assert the RECORDED DECISION and what the consumption probe counts, never mere
+# execution -- a test asserting run() returns a dict passed against the whole
+# thing. Temp SQLite via production NOVA DDL; LLM patched out. ~2s.
+tests/test_gepa_decision_recording.py
+
 # exa-refine-01 -- prompt registry as the router's SUPPLEMENTAL read path. Earns a
 # required slot because it pins a governance invariant, not a feature: the base
 # system prompt is immutable, so a regression here means self-modification can
@@ -744,3 +788,1630 @@ tests/test_agent_policy_builtins.py
 tests/test_copilot_cli_adapter.py
 tests/test_goose_cli_adapter.py
 tests/test_agent_adapter_no_inert_stubs.py
+
+# tsg-stale-01 -- the two SKI ACE roles (product_manager, software_craftsperson).
+# Ungated, it rotted three ways at once and nothing went red: RoleLoader started
+# returning structured RoleStep objects instead of bare strings (ace-qa-04), the
+# craftsperson's listen_topics were narrowed to bootstrap-only task.assigned to
+# break a circular-deadlock loop in the ACE event dispatcher, and 33 declared
+# skill packs plus 4 persona sources turned out never to have been committed at
+# all. The listen_topics narrowing is the one worth a gate: the role emits
+# task.completed and pr.ready, so re-subscribing reactively re-triggers its own
+# sessions, and the invariant is otherwise only prose in two other role YAMLs.
+# Skips are per-pack and name the missing path, so an unvendored library reads as
+# unvendored rather than as covered. Pure YAML/file parsing plus a tmp_path
+# SQLite ACE db; ~13s, no LLM or network.
+tests/test_ski_roles_lifecycle.py
+# tsg-dead-02: the NDC remediation simulator. Was 17/18 red since the commit that
+# added it (36d611a31) — the fixture handed the module a raw sqlite3.Connection,
+# but tools/network/db/init_db.get_connection ALWAYS returns a StorageConnection,
+# which is what translates the module's PG-native %s placeholders on the SQLite
+# path. Gated here so it cannot rot again. ~1s, in-memory SQLite, no LLM or network.
+tests/test_remediation_simulator.py
+# tsg-dead-01: remediation_simulator's NQE layer (Layer 2) imported two symbols
+# from tools.network.advisory that have never existed there. The ImportError was
+# swallowed by a bare `except Exception` and returned {"verdict": "skipped"} --
+# which is ALSO the correct answer when the Forward Networks API is genuinely
+# unreachable, so a layer that had never once executed was indistinguishable from
+# normal degraded operation. It stayed that way for six weeks because the only
+# suite covering the simulator mocks _run_nqe_layer out entirely.
+# test_remediation_nqe_layer.py pins the fix from both sides: pass/warn are
+# reachable (the layer really runs), and a wiring defect -- missing symbol, wrong
+# signature -- RAISES instead of being laundered back into "skipped". Every
+# "skipped" now carries a reason, so a dead layer is legible again.
+# test_advisory.py was 24-failing since the commit that created it; it specified
+# an advisory module that was never built, against the migration-220 nc_advisories
+# shape rather than the init_db.py one the live code writes. It now specifies the
+# module that actually ships. Both are pure-Python: no DB, LLM or network.
+tests/test_remediation_nqe_layer.py
+tests/test_advisory.py
+# tsg-stale-04 -- the three suites that went stale against changes they never
+# learned about. All three now pin the change instead of merely tolerating it.
+#
+# The two proposals/detail.html suites each carried a hand-listed `opp` dict and
+# an un-authenticated Flask app. When PROPOSALS_ALTER_SQL added the capture
+# columns (win_probability, ptw_low/high, ...) and the template read them, both
+# went red on UndefinedError; when @require_role(*GOVCON_WRITE_ROLES) landed on
+# the write endpoints (prop-fix-09), every API assertion in both answered 401 and
+# read as a broken endpoint. The stub is now derived from the
+# proposal_opportunities schema the route actually queries, so a new column
+# cannot re-stale it, and each suite asserts the RBAC gate directly --
+# unauthenticated 401, non-write role 403, every write role 200 -- so the gate
+# cannot be removed to turn the success path green again.
+#
+# test_mfa.py's fixture replaced get_connection() with a bare sqlite3 connection,
+# which dropped the %s -> ? translation the real StorageConnection performs, so
+# every statement in the module under test raised `near "%": syntax error`. It
+# now goes through tests/_sql_compat (the same translate_sql the runtime uses)
+# and asserts mfa.py's SQL stays PG-native in the first place.
+#
+# ~3s combined, pure Python: no DB service, no LLM, no network. pyotp is an
+# optional dependency and test_mfa skips cleanly without it.
+tests/test_proposals_detail_extract_requirements.py
+tests/test_proposals_detail_map_capabilities.py
+tests/test_mfa.py
+# tsg-stale-02 -- two Flask API suites that had rotted to 53 failures against a
+# single shared cause: dashboard SQL is authored PG-natively (`%s` placeholders,
+# PG is the primary backend) and depends on StorageConnection/StorageCursor to
+# translate for SQLite, but both files handed the routes a bare sqlite3
+# connection. Every statement raised `near "%": syntax error` -- in test_intake
+# from auth's before_request hook, so all 22 tests failed identically and the
+# real assertions never ran. Gated here because a placeholder migration is
+# exactly the kind of change that leaves an ungated suite silently red:
+# test_pma_igap covers the 8 INT coverage/collection-requirement endpoints
+# end-to-end through a real StorageConnection, so the next such migration fails
+# in CI instead of in a stale-test sweep. ~26s combined, SQLite only, LLM
+# disabled (_HAS_LLM patched False), no network.
+tests/test_pma_igap_api.py
+tests/test_intake_api.py
+# tsg-stale-03 -- two route suites that had rotted into 41 red tests, restored and
+# gated so they cannot rot again. Both went red because a DELIBERATE change to the
+# code was never taught to the test, which is precisely the failure an ungated
+# suite cannot report:
+#   * test_zig_routes.py -- nav-sec-05 put @require_role(*_ZIG_MUTATION_ROLES) on
+#     the two ZIG mutation endpoints; the fixture only set ICDEV_AUTH_BYPASS, which
+#     clears sc_login_required but not require_role, so every write 401'd. The
+#     fixture now supplies g.current_user AND section 5 asserts the gate directly
+#     (anonymous 401, wrong-role 403, every declared role accepted) -- satisfying a
+#     gate is not evidence it exists, so removing @require_role now goes red.
+#   * test_move_endpoint_gate.py -- guards the move-to-done verification gate
+#     (guard-22). Its fixture pasted a private 15-column kanban_tasks DDL and
+#     stubbed get_connection with a bare sqlite3 connection; production had since
+#     grown start_date/target_date and the %s placeholders never got translated.
+#     It now builds on conftest's MINIMAL_ICDEV_SCHEMA via the icdev_db fixture and
+#     returns a real StorageConnection, so schema drift can no longer hide here.
+# Both are pure Flask test clients over a temp SQLite DB -- no LLM, no network, no
+# DB service. test_zig_routes ~8s; test_move_endpoint_gate ~25s (it rebuilds the
+# canonical schema per test, which is the point -- a cheaper private copy is what
+# broke it).
+tests/test_zig_routes.py
+tests/test_move_endpoint_gate.py
+
+# --- tsg-stale-05: six files from the STALE long tail, each verified alone AND
+# in one shared pytest process (111 tests). In every case the code had moved and
+# the test was never told; where the code was actually wrong it was FIXED, not
+# asserted around.
+#   * test_threat_level_thresholds.py -- indicator_baselines / sg_pir_requirements
+#     were never added to conftest's MINIMAL_ICDEV_SCHEMA (the 8-point checklist
+#     step everyone skips), so 16 of 19 died on "no such table". Both DDLs are now
+#     copied from their migrations. The last 3 failed because only HALF the flow
+#     takes a db_path: pir_manager.create_pir takes none and resolves
+#     ICDEV_DB_PATH, so the PIR write was landing in the real data/icdev.db while
+#     the baseline was read from tmp. The fixture now redirects the default too.
+#   * test_mitre_coverage_db.py -- loaded its migration by hardcoded NUMBER, and
+#     028_odc_mitre_coverage was renumbered to 336 to clear a duplicate-028
+#     collision. It now resolves the migration by SLUG and fails loudly if that
+#     is ever ambiguous, so the next renumber cannot silently rot it.
+#   * test_event_bus_security.py -- ran against whatever get_connection() resolved
+#     to and DELETEd its own rows back out of it, including from append-only
+#     audit_trail; a fresh worktree has no canvas_events at all, so all 12 errored
+#     at setup. Now on a temp DB (canvas_events added to MINIMAL_ICDEV_SCHEMA).
+#     That exposed a REAL bug: _downgrade_payload stamped _security_context onto
+#     the result and then recursed into every dict value -- including the one it
+#     had just written -- so every SECRET->CUI downgrade raised RecursionError and
+#     no payload was ever actually scrubbed. Fixed in tools/canvas/event_bus.py;
+#     a new test walks 25 levels to prove it terminates and still strips.
+#   * test_metrics.py -- built a MetricsCollector per test, which only ever worked
+#     because prometheus_client was absent and every collector took the stdlib
+#     fallback. Once the dep landed, 13 collided on the process-global REGISTRY.
+#     MetricsCollector now accepts an explicit registry (None = the global default,
+#     i.e. production is unchanged) and the tests isolate.
+#   * test_nc_simulation_schema.py -- its entire purpose is to assert the three
+#     nc_simulation_* tables are reachable via icdev_db; they had never been added.
+#   * test_xai_assessor.py -- 8 checks called a bare get_connection(), ignoring the
+#     self.db_path its own BaseAssessor stores, so XAIAssessor(db_path=X) assessed
+#     a DIFFERENT database than X and returned 'not_assessed' for all 10 checks
+#     wherever otel_spans was missing -- a compliance assessor silently grading the
+#     wrong DB. Rerouted through BaseAssessor._get_connection(); the except was
+#     widened to OSError so a missing DB still degrades to 'not_assessed' instead
+#     of crashing the other 9 checks.
+# All six are pure SQLite/in-process -- no LLM, no network, no DB service.
+# Combined ~50s.
+tests/test_threat_level_thresholds.py
+tests/test_mitre_coverage_db.py
+tests/test_event_bus_security.py
+tests/test_metrics.py
+tests/test_nc_simulation_schema.py
+tests/test_xai_assessor.py
+# tsg-gen-01: the two tests/genesis_auto/ files whose failures were real behaviour
+# the generated tests never learned about, now repaired and asserting that
+# behaviour on purpose.
+#   test_reflexion_agent.py — the exa-refine-04 evidence gate. A refinement with
+#     no lesson_learned rows behind it is written 'rejected_no_evidence', never
+#     'pending'; the generated test still asserted 'pending' and a second one
+#     asserted get_latest_improvement() returned text for it. Both now seed
+#     supporting evidence for the accepted path, and a NEW test pins the
+#     rejection: unsupported proposals stay out of the queue GEPA selects on.
+#   test_pain_extractor.py — main() reports a DB failure as exit 1. The generated
+#     test patched tools.db.storage.get_connection, which the module never looks
+#     at (it binds the name at import), and its tolerate-the-error fallback could
+#     not catch SystemExit anyway. Now asserts the exit code both ways.
+# ~3s combined, SQLite only, LLM calls patched, no network.
+tests/genesis_auto/test_reflexion_agent.py
+tests/genesis_auto/test_pain_extractor.py
+# tsg-gen-02: the generated-test policy gate. tsg-gen-01 removed 96 private-constant
+# assertions from tests/genesis_auto/, but the Genesis Test Reflex that emitted them
+# was still free to re-add all 96 on its next run. This generates FRESH output from
+# tools/genesis/reflexes/test.py and asserts no `hasattr(mod, "_` appears in it, so
+# the cleanup cannot be undone silently. Unlisted here the pin never runs in CI,
+# which is the declared-but-unconsumed failure mode it exists to prevent.
+# ~1s, no DB, no network, no LLM.
+tests/test_genesis_test_reflex_policy.py
+
+# tsg-policy-01 -- the test-gating RATCHET's own regression pin. It asserts the
+# live tree has zero test files gated by nothing, that a new ungated file goes
+# RED naming the file, that the backlog census only shrinks, and that the census
+# step is actually wired into this job. A gate whose own test is ungated is the
+# joke this task exists to stop, so it goes here in the same commit that adds it
+# -- which is also the policy it enforces, demonstrated.
+tests/ci/test_test_gating_census.py
+
+# CPMP deliverable cancellation (cpmp-49654d62b3). Gates the 'cancelled'
+# terminal state: that it requires a reason, that the reason is persisted to the
+# append-only cpmp_status_history, that compute_overdue_deliverables does not
+# sweep a cancelled CDRL back to 'overdue', and that the YAML transition map --
+# which OVERRIDES the Python default at import -- stays in sync with it. That
+# last one is the reason this is gated rather than trusted: a fix applied to
+# only one of the two copies is silently inert.
+tests/test_cpmp_deliverable_cancellation.py
+
+# Landed ungated by #1598 and #1599 respectively — both pass (60 tests), they
+# were simply never appended here, so the census was failing every PR opened
+# after them, including this one. Gated rather than excluded because both guard
+# live regressions: seeding work under a gate sentinel's id, and one bad
+# graph_json row 500-ing /network/.
+# CPMP monitor card identity (cpmp-a7642ba5d9). The reflex's card TITLE is what
+# a human uses to tell one finding from another, and it regressed twice: first
+# to "[CPMP] :" (blank contract_number), then to "[CPMP] Untitled Contract:"
+# (create_contract's placeholder default) -- four different active contracts
+# carried one identical title on the live board, two dispatched at once. Both
+# files pass today and pin the number -> title -> id fallback, so they gate the
+# fix rather than documenting it. Moved out of the backlog census, not new.
+tests/test_genesis_reflex_cpmp_monitor.py
+tests/test_genesis_reflex_cpmp_monitor_card_identity.py
+
+# CPMP monitor pass 3 is actually live (cpmp-f3acda96eb). The reflex read
+# detect_noncompliance()["noncompliance"]; that function returns "findings", so
+# the subcontractor pass filed zero cards for every contract since it was
+# written -- no exception, no error entry, subcon_alerts steady at 0. The two
+# files above could not catch it because they stubbed the dependency with
+# {"noncompliance": []}, i.e. the fake encoded the caller's misreading. This one
+# runs the REAL detect_noncompliance against an in-memory board, so renaming the
+# key on either side fails here. New file, passes (9 tests), gated in the same
+# PR that adds it per docs/ci/test-gating-policy.md.
+tests/test_genesis_reflex_cpmp_monitor_subcon_pass.py
+
+# The /network/ graph_json type guard (#1599) shipped to main WITHOUT being
+# gated, so the census check failed on main -- exactly the "a test file that CI
+# never runs has never gated a merge" case this policy exists to catch. It pins
+# that one unparseable graph_json row cannot 500 the whole page. Passes (14
+# tests), so it is gated here rather than added to the closed census.
+# (test_kanban_gate_sentinel_seeding.py was the same gap; #1601 gated it above
+# while this branch was in flight, so it is deliberately not repeated here.)
+# tsg-policy-02 -- the census at COMMIT time. tsg-policy-01's CI step caught two
+# unregistered test files within two hours, but in the wrong place: each turned
+# main RED (blocking every open PR) for a one-line fix. The same census now runs
+# from .githooks/pre-commit when a commit ADDS or RENAMES a test file. This pins
+# both halves against a real throwaway git repo with a real staged index: the add
+# case is refused naming the file, the touch-nothing case never loads the census,
+# and the hook never edits this file itself.
+# ~4s, no DB, no network, no LLM.
+tests/ci/test_precommit_test_gating.py
+
+# test_ndc_graph_json_type_guard.py arrived with #1599 and was gated by nothing,
+# which is the second time in two days the census caught a new test file only
+# after it had already turned main red -- the observation that motivated
+# tsg-policy-02. It pins that one malformed graph_json row cannot 500 /network/.
+# 14 tests, ~1s, no DB/network. Registered here in the PR that makes the same
+# mistake harder to repeat.
+
+# Guards the other half of the write path that #1520 closed: create rejects a
+# nameless subcontractor, update blanked the name right back. Gated in the PR
+# that makes it pass, per docs/ci/test-gating-policy.md.
+tests/test_cpmp_update_subcontractor_requires_name.py
+
+# Same two write paths, next door (cpmp-3022d4da44): create coerced the 0/1
+# compliance flags to int, update passed the JSON boolean through raw, and PG
+# refuses a boolean for an INTEGER column — so recording "flow-down is now
+# complete" 500'd on the primary backend. Unfindable by the rest of the suite,
+# which runs on SQLite where a bool IS an int. Asserts on the params handed to
+# execute, so it holds regardless of backend. 58 tests, <1s, no DB/network.
+tests/test_cpmp_subcontractor_flag_coercion.py
+# (test_ndc_graph_json_type_guard.py was registered here by #1604 and, in the
+# same window, higher up this file by #1606. core.txt is merge=union, so both
+# appends landed and the row became an exact duplicate -- which --check rejects.
+# The #1606 block above is kept; this one is removed rather than both, so the
+# file still gates the test exactly once.)
+
+# Overdue-CDRL marking. compute_overdue_deliverables() is the only writer of
+# cpmp_deliverables.status='overdue' and days_overdue, and it had no caller but
+# its own --compute-overdue CLI flag: on 2026-08-13 the live board held 26
+# past-due deliverables, none marked, all with days_overdue=0, while cpmp_monitor
+# kept filing "N CDRL(s) past due" cards off date arithmetic. Gated because the
+# regression is silent by construction -- the board looks correct while
+# negative_event_tracker's delinquent-delivery arm (days_overdue > 0) can never
+# fire. New file, passes (21 tests), 9 of which fail against the old code.
+tests/test_govcon_overdue_deliverable_marking.py
+# cpmp_monitor returned `status: "ok"` plus a top-level `cards_created`, but the
+# Genesis daemon scores a reflex from `success`/`metric_value`/`details`. It read
+# neither, so every completed sweep was filed as
+# `reflex_reported_failure: cards_created=0.0` -- a failure naming a metric that
+# satisfies its own `gte 0` threshold -- and 11 consecutive such "failures" opened
+# the reflex's circuit breaker, decaying 3-hourly CPMP surveillance to a half-open
+# probe per doubling cooldown. Gated here because the return contract is invisible
+# to every other test: the reflex "works", and only the daemon disagrees.
+
+# Landed ungated in #1599 (267e1c057), which left the census RED for every branch
+# opened after it -- the same way 49da5d8d5 had to gate #1600's file. Passes 14/14
+# here; gated so the type guard it pins (one bad graph_json row 500ing /network/)
+# cannot regress unnoticed.
+# that one unparseable graph_json row cannot 500 the whole page.
+#
+# The entry itself now lives ~770 lines above, added by #1605 concurrently with
+# this block. Both branches were racing the same red census and both appended,
+# which `gated_test_list.py --check --list core` rejects outright:
+#   ##[error]CI test allowlist (core): listed more than once
+# Note that `--check-coverage` -- the command CLAUDE.md tells you to run -- does
+# NOT catch a duplicate, only an unlisted file, so this passed locally on both
+# branches and failed in the required `test` job on every branch opened after
+# them. Deduped here rather than left for the next PR to trip over.
+
+# Nothing called contract_manager.compute_overdue_deliverables() outside its own
+# argparse block, so no CDRL had ever reached status 'overdue' and days_overdue
+# was 0 on every row -- while four consumers key on exactly that state and read a
+# permanent zero (contract page overdue_count, portfolio_manager x2,
+# cpars_predictor, negative_event_tracker). pmo_ai_advisor derives overdue live
+# from due_date, which is how a "5 CDRL(s) are past due" card sits next to a
+# contract page reporting 0. Gated because a behavioural test of the sweep cannot
+# catch this -- the sweep was always correct, it was simply never called -- so
+# these tests assert the CALL, and an ungated test of a call site is exactly the
+# thing that silently reverts to zero callers in the next refactor.
+tests/test_cpmp_overdue_sweep_is_driven.py
+
+# SIPA integrity_monitor reflex. Gated by task-1b49742e56: its two _rel_path
+# tests read ICDEV_SIPA_RELPATH_DIRS from the ambient environment, so they
+# asserted a "flag defaults OFF" the shipped .env contradicts and were red on
+# any configured machine. Pinned with delenv and green (13 passed, 3s).
+tests/test_integrity_monitor_reflex.py
+
+# Regression for task-1b49742e56: proves known_safe_persistence_modules is
+# actually consulted. The allowlist existed for 16 days with zero call sites,
+# so an ungated test for it would have been the same defect one layer up.
+# Pure (no scanner shell-out, no optional third-party tool) — gateable as-is.
+tests/test_integrity_persistence_allowlist.py
+
+# cpmp-d70a553747. cpmp_deliverables.status='overdue' and days_overdue have five
+# readers (contract health, CPARS schedule dimension, portfolio rollup, portfolio
+# summary, negative_event_tracker) and one writer, and the writer had no caller
+# but its own CLI flag -- so on the live board 26 CDRLs were 44 days past due
+# with 0 rows marked overdue and green health everywhere, while the reflex filed
+# high-priority cards off pmo_ai_advisor's separate date-based count. Pins that
+# the reflex runs the sweep, that both counts share one predicate, that
+# days_overdue is refreshed rather than frozen at 1, and that one unparseable
+# due_date cannot silently undo the sweep. 18 tests, ~1s, in-memory sqlite, no
+# network/LLM. Gated in the PR that makes it pass.
+tests/test_cpmp_overdue_deliverable_state.py
+
+# test_ungated_test_drift.py gates the reflex that watches the ~1,823 test
+# modules CI never runs. Listing it is not ceremony: a drift detector that
+# silently stopped detecting would leave the blind spot it exists to cover
+# looking permanently clean, which is strictly worse than not having one. The
+# tests pin the four properties that keep it trustworthy rather than noisy -
+# transitions only, silent seeding on a database with no baseline, a
+# deterministic card id, and an unrunnable file never overwriting a real
+# verdict. Hermetic: temp SQLite, subprocess calls stubbed, no network.
+tests/test_ungated_test_drift.py
+
+# test_govcon_bid_recommendation_api.py was red from 2026-05-30 to 2026-08-13:
+# prop-fix-09 put @require_role(*GOVCON_WRITE_ROLES) on the endpoint and the
+# suite, written ten days earlier, never learned about it — so all 15 assertions
+# answered 401 and get_json() returned None. Nothing went red because the file
+# was in the backlog census. The fix authenticates through the gate via
+# tests/_govcon_api_app.py rather than stripping the decorator, and adds the
+# 401/403 deny cases as first-class assertions. Hermetic: get_summary patched,
+# no DB, no network. Gated in the PR that makes it pass.
+tests/test_govcon_bid_recommendation_api.py
+# tsg-drift-cdaac178ae -- the third GovCon API suite with the same cause the two
+# proposals/detail.html suites above had: the file builds a bare Flask app with
+# no g.current_user, and when @require_role(*GOVCON_WRITE_ROLES) landed on the
+# write endpoints (prop-fix-09, 2026-05-30) every one of its 22 assertions began
+# answering 401 -- ten days after the suite was written, and unseen for eleven
+# weeks because nothing in CI ran it. It now authenticates through the shared
+# tests/_govcon_api_app helper and asserts the gate as behaviour in its own
+# right: unauthenticated 401, non-write role 403, every write role 200, and a
+# denied caller reaching neither populate_compliance_matrix nor _get_db -- so
+# the decorator cannot be stripped to turn the success path green again.
+# 27 tests, ~1s, fully mocked: no DB service, no LLM, no network.
+tests/test_govcon_auto_compliance_api.py
+# tsg-drift-bf36818e8b — govcon proposal capability API surface: drafts list,
+# quality scoring, approve/reject review decisions and their section-status
+# transitions, Q&A records, question status, knowledge base. Gated after fixing
+# 33 tests that had been red since prop-sec-01 (2026-07-07) put an ABAC
+# separation-of-duties gate on draft approve/reject and never taught the test
+# about it — TestDraftReviewAbacGate now asserts that gate directly, so a
+# future silent removal of @abac_protect fails here. 630 tests, ~25s,
+# in-memory/tmp sqlite, no network/LLM. Gated in the PR that makes it pass.
+tests/test_govcon_capabilities.py
+# cpmp_monitor satisfied neither half of the GenesisDaemon reflex contract and
+# nothing went red for it. run() returned its bare results dict with no `success`
+# key, so daemon.py's `result.get("success", False)` scored EVERY run a failure --
+# including a clean sweep -- and read metric_value as 0.0 rather than
+# cards_created. The state row reached 11 runs / 0 successes with the circuit
+# breaker open: the reflex was switched off entirely, silently. The success_metric
+# is `cards_created >= 0`, which 0 satisfies, so this was never a threshold miss.
+# Gated here in the PR that fixes it: a contract bug BETWEEN two modules is the
+# shape that re-breaks on the next rename with no exception to notice it by.
+# 9 tests, <1s, fully mocked: no DB service, no LLM, no network.
+tests/test_cpmp_monitor_reflex_contract.py
+# The "no ISR/SSR filed" check in detect_noncompliance was gated on nothing: any
+# contract without a cpmp_small_business_plan row produced a HIGH finding. Its
+# three sibling checks are all scoped (flow-down/cyber filter status='active',
+# CMMC also filters on value) and that asymmetry was the defect. On the live
+# board all 7 active contracts had ZERO active subcontractors, so #1-#3
+# correctly found nothing while #4 fired HIGH on every one; cpmp_monitor filed a
+# card each and 2 were dispatched to sessions told to file an ISR/SSR in eSRS
+# for a $0 contract with no subcontractors. The pass had never produced a true
+# positive and could not. Gated in the PR that fixes it, because the failure
+# mode is a check that looks busy while being 100% false positives -- nothing
+# goes red for that. Pins BOTH directions: an obligated contract still flags,
+# and the staleness branch stays ungated. 25 tests, <1s, fully mocked.
+tests/test_cpmp_isr_ssr_applicability.py
+# The CTX card is MANUAL-ONLY, and "manual" here rests entirely on a scalar
+# column: promote_backlog_to_scheduled reads depends_on_task_id, NOT the status
+# of the gate sentinel. A held ctx-gate-00 with one ungated task means the runner
+# starts building a card whose whole premise is that a human drives it -- and the
+# card touches governance enforcement, the air-gap guarantee and the CI test gate.
+# Also pins the kax-exec-04 shape (a `-gate-<n>` id on a WORK task is filtered out
+# forever and nothing reports it stuck), the live task_type CHECK constraint, and
+# the projects.yaml prefix/epic rules the Home progress card renders from.
+# 10 tests, ~1s, no DB service, no LLM, no network.
+tests/kanban/test_seed_ctx_kanban.py
+# One REST call ran the TRUST chain TWICE. rest_v1 imports the GOVERNED facades
+# from .api (deliberately -- importing the raw impls would bypass governance
+# entirely), then re-wrapped four of them in a second GovernancePipeline: two
+# gateway screens, two redaction passes, two source_citation_registry rows, two
+# cortex_audit rows, ~2x gate latency, and /cortex/metrics double-counting every
+# REST-origin complete/reason/classify/extract. The codebase documented the bug
+# in its own comment at rest_v1.py:378 while explaining why api_v1_agent avoids
+# it. Counts pipeline CONSTRUCTIONS, not audit rows, so it stays a unit test --
+# and patches GovernancePipeline in BOTH modules, because patching only the REST
+# reference counts the outer wrapper and misses the facade's own, which is the
+# one that made the total two. api_v1_govern is asserted to STAY single-pipeline:
+# it passes an identity lambda, so its one pipeline IS the operation.
+# 6 tests, <1s, fully mocked: no DB service, no LLM, no network.
+tests/cortex/test_rest_single_governance.py
+# cortex.ask(summarize=True) reached for the CLOUD tier under air-gap, and the
+# guard could not see it. analyst._llm_summarize called
+# LLMRouter().invoke("summarization"), a name declared only under
+# `task_categories:` and never under `routing:` -- LLMRouter resolves
+# routing.get(fn, routing.get("default")), so it silently took routing.default,
+# chain kimi-cloud first. No exclude_model_ids was passed, and the name was
+# absent from CORTEX_ROUTING_FUNCTIONS so assert_airgap_ready() never validated
+# it either: the one unguarded Cortex LLM call was also the one the guard was
+# blind to. The failure then degraded to a row dump labelled
+# grounding="rows_by_construction" / confidence_score 1.0 -- a STRONGER label
+# than the summarized path earns. Asserts behaviour (resolved function, kwargs
+# reaching the router, result metadata), never that a config key parses.
+# 12 tests, <1s, fully mocked: no DB service, no LLM, no network.
+tests/cortex/test_summarize_routing_airgap.py
+# Two per-call costs on the Cortex hot path, asserted with CALL COUNTERS rather
+# than timings (a timing assertion on a shared runner is a flake, and the defect
+# is "how many times", not "how slow"). Measured pre-fix: the parent-directory
+# walk for args/llm_config.yaml ran 12 times for 12 resolutions -- and one
+# governed call reaches load_cortex_config 8-12 times, so it multiplied straight
+# into per-call syscalls; and _allowed_tables() ran 5 times for one validation of
+# a 5-table query, loading the component registry each time, because it sat in a
+# comprehension's CONDITION. Both are 1 after. The memo keys on BOTH env
+# overrides -- ICDEV_CORTEX_CONFIG and ICDEV_LLM_CONFIG -- because
+# cortex_config.yaml is resolved RELATIVE to the llm config, and a memo that
+# shadowed an override would be worse than the cost it saves.
+# 7 tests, <1s, no DB service, no LLM, no network.
+tests/cortex/test_hot_path_cost.py
+# The IQE Cortex adapters closed a connection they did not open. Executor
+# _fetch_union/_fetch_join fetch several collections IN PARALLEL over ONE
+# caller-supplied connection (analyst._ask_iqe opens it), so adapter #1's
+# unconditional finally-close pulled it out from under adapter #2 mid-query; #2
+# raised, a bare `except Exception: return []` swallowed it with no log, and the
+# union returned HALF ITS ROWS looking like a complete answer -- on the very
+# collections used to audit Cortex itself. Pins both halves: ownership (a
+# caller-supplied connection survives, a self-opened one is still closed) and
+# honesty (a failure raises and logs; a genuinely empty collection still
+# returns []). Also pins the row-cap report at the adapter boundary: the +1
+# detection row never leaks into the result set, exactly-cap is NOT truncated,
+# and a cap that bit is carried on the RowSet rather than only logged.
+# 21 tests, <1s, fully mocked: no DB service, no LLM, no network.
+tests/cortex/test_iqe_adapter_connection_ownership.py
+# ctx-enf-02, 1 of 10. tests/cortex/ holds 50 modules and, until this PR, exactly
+# ZERO of them gated a merge -- on the component that enforces tenant isolation,
+# Bell-LaPadula read-down, egress redaction and an append-only NIST-AU trail. The
+# ten security-critical ones are being gated ONE PER PR, in the PR that proves the
+# file green; bulk-widening 50 files at once is what turns main red and gets the
+# gate switched off. Highest blast radius first: this file pins the ctx-expose-03
+# fix, where the NLQ fallback executed the analyst's generated SQL through the
+# dashboard's context-free execute_safely -- no tenant_id, no classification, so
+# the RLS predicate had nothing to filter on and one tenant's question could read
+# another tenant's rows. Pins all three directions: the caller's tenant +
+# classification ARE threaded onto the connection, an unscopable connection RAISES
+# under fail_closed instead of running unscoped, and the fail-open default at least
+# WARNS rather than swallowing. The live PostgreSQL leakage proof in the same file
+# skips cleanly under the SQLite-forced conftest (RLS predicates only exist on PG)
+# and is run separately with CORTEX_ISOLATION_PG=1 -- it is not counted as CI
+# signal here, and it never passes vacuously.
+# 7 tests (6 + 1 PG skip), <1s, fully stubbed: no DB service, no LLM, no network.
+tests/cortex/test_tenant_isolation.py
+tests/test_trust_gate.py
+# ctx-enf-03: three cortex_config.yaml keys that were read by NOBODY —
+# search.strategy_weights, analyst.nlq_fallback_enabled and
+# governance.skip_grounding_for_plain_complete. They survived because the
+# existing tests asserted the keys LOAD, never that they change anything.
+# Every test here writes TWO configs differing only in the key under test
+# and asserts the OBSERVABLE outcome differs (fused ordering, raise-vs-
+# return, skip-vs-fail gate outcome). All 13 fail against the pre-fix tree.
+# 13 tests, <1s, fully mocked: no DB service, no LLM, no network.
+tests/cortex/test_config_keys_enforced.py
+tests/test_project_card_coverage.py
+# The IQE Cortex adapters capped at 500 rows BEFORE the executor applied the
+# query's where clauses -- which it does in PYTHON, after the fetch. So
+# cortex.ask("how many blocked calls in the last 30 days?") counted inside the
+# newest 500 audit rows and analyst._label_rows_result stamped the undercount
+# grounding="rows_by_construction" / confidence="include" /
+# confidence_score 1.0. Not a crash: a confident falsehood on the exact surface
+# an operator uses to audit Cortex itself. Runs against a REAL seeded
+# cortex_audit holding 700 rows (600 matching, hidden behind 100 newer
+# non-matching ones, so the cap is load-bearing) through the real adapter, real
+# SQL and real executor -- nothing mocked, because mocking the executor is
+# precisely how a cap-vs-filter ORDERING bug hides. Pins: the uncapped scan
+# returns the correct 600; a capped scan reports itself incomplete and is
+# labelled "flag", never confidence_score 1.0; the caveat reaches the answer
+# TEXT, not just metadata; exactly-cap is not truncated (a warning that fires
+# on correct answers is one nobody reads); the unregistered-collection
+# fallback is bounded (it was an unbounded SELECT * into Python memory); and a
+# union that lost a collection is incomplete rather than silently short.
+# 12 tests, ~1s, SQLite via tmp_path ICDEV_DB_PATH: no DB service, no LLM,
+# no network.
+tests/cortex/test_iqe_row_cap_truncation.py
+# POST /cortex/api/iqe-query executed execute_query(ast, conn=None), which makes
+# every IQE adapter open its OWN connection: tenant scope and Bell-LaPadula
+# read-down then held only as far as get_connection() happened to find a usable
+# flask.g.security_context. It does not always -- the dashboard sets a dict for
+# a Cortex service-key binding, whose .tenant_id attribute the RLS injector
+# reads as None -- so the route returned EVERY tenant's rows and answered 200.
+# The route now threads an explicit CortexContext through the analyst's
+# _apply_security_context and bounds the response at IQE_MAX_ROWS. The DENY case
+# is the acceptance proof: two tenants' rows in one table, tenant-b's ABSENT
+# from tenant-a's answer, asserted over a real StorageConnection so predicate
+# injection actually runs (it leaks 5 rows on the unfixed route).
+# 13 tests, ~1s, temp SQLite DB: no DB service, no LLM, no network.
+tests/cortex/test_iqe_query_security_context.py
+# The Cortex response cache shipped correct, wired and `enabled: false`, and
+# nobody ever flipped it -- because flipping it would have handed every hit the
+# SAME CortexResult instance (cache.py stored the live object, api.py returned it
+# verbatim), so one caller doing `result.text = trim(...)` would silently rewrite
+# the answer every later hit got for the whole TTL, with nothing in the audit
+# trail to show it. Entries are now deep-copied IN and OUT -- copy-on-read alone
+# is not enough, since the producing caller holds the object that was stored.
+# The other precondition was invalidation: there is none beyond TTL/LRU, and for
+# cortex.ask none can be built (live NL->SQL whose invalidating writes come from
+# other processes an in-process cache cannot observe), so ask is out of the
+# default operations list; cortex.search keeps caching because the RAG ingestion
+# path IS an in-process choke point and now calls cache.invalidate(). Pins the
+# mutation case end-to-end, both ingest entry points calling the invalidator, and
+# that a hit on the SHIPPED enabled config still writes its cortex_audit row.
+# 37 tests, ~1s, fully mocked: no DB service, no LLM, no network.
+tests/cortex/test_response_cache.py
+
+# ctx-perf-05 -- the Cortex tables must be indexed for the query the DATABASE
+# runs, not the one the call site writes. get_connection() attaches the security
+# context and StorageCursor._inject_rls rewrites every read to carry
+# "AND tenant_id = ? AND classification IN (...)", so metrics._scan's
+# "WHERE created_at >= ?" is really tenant_id + created_at -- a shape the
+# separate single-column indexes from 262/263 can only half serve. Pins: the
+# migration is idempotent and applies to a database bootstrapped by 262/263;
+# down.sql restores the pre-migration index set exactly (it must not drop the
+# single-column indexes it never created); tenant_id LEADS each composite,
+# because (created_at, tenant_id) would satisfy a naive "is there a composite?"
+# check while serving the equality not at all; discover_migrations still orders
+# 262/263 BEFORE this 14-digit timestamp, since running out of order fails on a
+# FRESH database only; and both init_db.py copies declare the same composites,
+# because fresh deployments run init_db directly and never see the migration.
+# 7 tests, ~1s, in-process SQLite: no DB service, no LLM, no network. The 8th
+# EXPLAINs the real query shape against a seeded 200k-row PostgreSQL schema it
+# creates and drops itself, and skips outright when no PG is reachable.
+tests/cortex/test_rls_index_coverage.py
+
+# ctx-perf-05 (PG tier): the companion plan assertion for the composite indexes
+# above. Gated here for the census; it SKIPS unless ICDEV_PYTEST_PG=1, and the
+# job that actually runs it is Test (PostgreSQL) via tests/pg_tier_allowlist.txt.
+# Splitting it out is the point: left in the SQLite suite it would skip every
+# run, and a test that always skips proves nothing while looking green.
+# 2 tests: one asserts the composite replaces the BitmapAnd of the two
+# single-column indexes (with the pre-index plan as the negative control), the
+# other that it actually LOWERS the estimated cost -- "the index name appears"
+# would still pass on a worse plan.
+tests/pg_tier/test_cortex_rls_index_plan.py
+tests/test_kg_grounding.py
+# A code-level reflex finding files ONE card, not one per affected row
+# (ctx-perf-07). cpmp_monitor pass 3 filed a [SUBCON] ISR/SSR card PER CONTRACT:
+# seven cards for ONE defect -- detect_noncompliance check #4 had no FAR
+# 19.702(a) applicability gate, so it fired HIGH on all seven active contracts
+# while its three siblings, which all scope to active subcontractors, correctly
+# found nothing. All 7 were false positives. Four sessions then fixed the same
+# bug independently: #1628 landed, #1629/#1633/#1635 were closed as redundant,
+# and two of those three had created the SAME test file path so they conflicted
+# with each other as well as with main. The cost of six extra cards was six
+# branches, six PRs and work a human had to adjudicate.
+#
+# Gates BOTH directions, because either alone is easy and useless: a code-level
+# finding is one card carrying every affected row as evidence, and a data-level
+# finding is still one card per row -- including at FULL saturation, when seven
+# of seven contracts have flow-down gaps naming seven different subcontractors.
+# Also gates the mechanism: identity is a deterministic key and never a title
+# (title dedup already shipped here and DROPS distinct findings, PR #1504), the
+# code-level key holds no subject so a shrinking population is still one card,
+# aggregating carries every input finding onto some output card rather than
+# discarding it, and the icdev/ mirror resolves the SAME args/finding_scope.yaml
+# -- a repo-root-relative path there lands in icdev/args/ (19 of 309 files) and
+# the mirror would quietly file seven cards while the root copy filed one.
+# The measured case is replayed end-to-end through the real reflex, the real
+# detect_noncompliance and a real in-memory board; the premise itself is pinned
+# (test_the_check_really_does_fire_on_all_seven), so a fixture that stopped
+# reproducing the defect fails loudly instead of asserting 1 card against 1
+# finding. 38 tests, <1s, in-memory SQLite: no DB service, no LLM, no network.
+tests/test_reflex_finding_scope.py
+# The 7-gate governance chain never measured its own cost. CortexResult
+# latency_ms is set from LLMResponse.duration_ms (or the perf_counter around
+# the router invoke) -- the LLM call ONLY -- and no timer wrapped
+# GovernancePipeline.wrap, so "how much of a Cortex call is governance?" had no
+# answer and neither did "should perf work target the gates or the model call?".
+# Pins that a governed call records total wall time AND the wrapped-operation
+# time (report, audit payload, and per gate), that a slow GATE moves
+# governance_ms while leaving operation_ms alone and a slow OPERATION does the
+# converse -- the assertion a stopwatch wired around the wrong span fails --
+# and that a blocked or failed call is still timed. Also pins the metrics
+# honesty: an untimed row (pre-ctx-obs-02, or a cache hit that never entered the
+# pipeline) is EXCLUDED from the averages rather than counted as zero, and the
+# _DETAIL_ROW_LIMIT sampling cap the timing fields inherit is not widened.
+# 14 tests, ~1s, gate seams patched: no DB service, no LLM, no network.
+tests/cortex/test_governance_timing.py
+tests/cortex/test_chat_routing.py
+# One POST /cortex/api/chat opened FOUR connections for one turn:
+# chat_session.ensure_session, chat_session.record_turn twice, and the
+# blueprint's cortex_search_history insert, each opening/committing/closing its
+# own -- on top of the governance audit's, which record_governed_call had
+# already collapsed for the audit pair (cxo-perf-03). The chat store never got
+# the same treatment. Counted with a CONNECTION COUNTER, not a timing assertion:
+# the defect is "how many", and a timing assertion on a shared runner is a
+# flake. The counter wraps get_connection on BOTH module aliases, which are
+# distinct objects -- patching one silently misses the copy the running
+# blueprint imported, and reports 0 opens as if the path were free. Every cost
+# assertion is paired with a read-back through the real GET
+# /cortex/api/session/<id>, because these writes are swallowed at debug: a
+# collapse that also collapsed the ROWS would look identical from outside.
+# Also pins the bool that was being bound to the INTEGER `grounded` column --
+# psycopg2 adapts it to a PG boolean, which PostgreSQL (the primary backend)
+# refuses, so the search-history row vanished on PG while SQLite accepted it and
+# kept the suite green -- and the ownership convention (a borrowed connection is
+# never closed by the borrower, a self-opened one always is) plus the rollback
+# that keeps a failed session write from taking the conversation rows down with
+# it inside the now-shared transaction.
+# 11 tests, ~25s (Flask app import dominates), SQLite via the conftest icdev_db
+# fixture: no DB service, no LLM, no network.
+tests/cortex/test_chat_turn_connections.py
+# Every cortex.search on the rag backend re-read AND re-parsed args/rag_config.yaml
+# from disk: retriever_common builds a fresh RAGRetriever per search and __init__
+# called an unmemoized _load_rag_config(), while cortex/config.py next door has
+# memoized its own file per path+mtime since ctx-perf-01. Now mtime-keyed the same
+# way -- the stat() stays, because it is the invalidation signal, and an edited
+# config must still be picked up without a restart. Two adjacent defects on the
+# same hot path are pinned here too: the fallback embedding path hardcoded
+# model="nomic-embed-text" (one vendor pinned into code on a path whose callers
+# swallow exceptions), and an embedding failure returned [] -- byte-identical to
+# "the corpus matched nothing", which is how a DEAD EMBEDDING PROVIDER reached the
+# chat user as "No matching results were found across the Cortex backends". The
+# failure now raises EmbeddingUnavailableError, is logged at ERROR, is carried on
+# BackendResults.errors through the fan-out, and gets a different answer than a
+# genuine zero-result. Pins both directions: a real empty set must KEEP the old
+# "no matching results" wording, and one failing backend must not turn a partial
+# answer into an error.
+# 17 tests, ~1.5s, tmp_path configs + stub providers: no DB service, no LLM,
+# no network.
+tests/rag/test_retriever_config_and_embedding.py
+# ctx-reach-02. tools/cortex/client.py is 542 lines and 23 public methods with
+# ZERO in-repo consumers -- deliberately, because the only ICDEV process that
+# could call it IS the Cortex server it talks to (see
+# docs/design/ctx-reach-02-cortex-client-external-only.md). The decision was to
+# declare it external-only rather than manufacture a loopback caller, and an
+# external-only surface has to be MORE verified than an ordinary one, not less:
+# it is the half of a contract whose other half lives in repos ICDEV CI never
+# checks out. This file was the only behavioural coverage it had and it sat in
+# args/ci_test_backlog.txt, so no merge had ever run it. Moved out of the
+# backlog (the census shrinks by one) and required by
+# check_external_only_surfaces, which fails if it is ever removed from here.
+# 9 tests, ~5s, stub HTTP server on a loopback port: no DB service, no LLM,
+# no outbound network.
+tests/cortex/test_client.py
+# ctx-reach-02, 2 of 2. The gate itself. Pins check_external_only_surfaces in
+# BOTH directions -- that a satisfied declaration passes, and that each
+# obligation independently fails: a missing decision doc, a docstring that stops
+# naming it, a production importer appearing (the stale-declaration case, whose
+# fix is to DELETE the entry rather than widen it), a surface that is not a
+# vendor_parity source, and a gated test that falls out of core.txt or is listed
+# in both lists. Also asserts the config carries no numeric budget, because a
+# suppression list with a count is how the backlog this check exists to prevent
+# would grow, and parametrises every import spelling -- `from pkg import module`
+# leaves ast.ImportFrom.node.module one segment short and was genuinely missed
+# by the first cut of the scan.
+# 25 tests, ~5s, tmp_path fixtures: no DB service, no LLM, no network. Two tests
+# scan the real tree; the check itself measures 2.3s (a text prefilter keeps the
+# AST walk off the ~99% of files that cannot import the surface), which is why
+# it is NOT in HEAVY_CHECKS and runs in both tiers.
+tests/workflow/test_external_only_surfaces.py
+# trust-self-02. rag.reflective_rerank shipped WIRED and enabled:false, i.e.
+# reachable and consumed by nothing. These gate the adoption: the toggle fires
+# for chat_rag and for no other surface (an unattributed caller does not inherit
+# a per-document LLM bill), a degraded reflection is distinguishable from a
+# genuine "partial", and the toggle harness reports adoption separately from
+# reachability. The two files that were already green are promoted off the
+# ungated census at the same time — they cover the composition truth table and
+# the reachability probe this card builds on.
+# 70 tests, ~6s, tmp_path configs + stub routers: no DB service, no LLM, no
+# network.
+tests/rag/test_reflective_surface_scoping.py
+tests/rag/test_toggle_harness.py
+tests/test_reflective_reranker.py
+# ctx-reach-03. cortex.govern / cortex.agent were flagged as zero-consumer
+# facades, with args/projects.yaml recording "cortex.agent mode graph. Note the
+# latent bug - mode is unvalidated." The membership check turned out to already
+# be in place (hgx-cx-01/02) -- but the SECOND implementation was not:
+# cortex_server._agent_launch_fallback still reached ACEController /
+# run_agent_loop directly, with no TRUST chain, dispatching off the pre-hgx
+# `use_team` boolean that made an unrecognised mode silently run a real, billed
+# single agent. It sat behind `getattr(cortex_api, "agent", None)`, a probe that
+# could never fail once the facade landed. Deleted here, and kept deleted.
+# Also pins the reach decisions themselves: agent() ADOPTED (canvas chat,
+# MCP tool, REST v1 -- each asserted to genuinely reach the facade, with
+# cortex:agent still out of DEFAULT_SCOPES) and govern() EXTERNAL-ONLY (its one
+# MCP entry point asserted live; api_v1_govern asserted NOT to call it, since a
+# GovernanceReport has no field for the governed text that response returns).
+# Plus the swept surfaces: the compliance domain lens now resolves to a profile
+# instead of being a picker entry that scoped nothing, empty `sources:` is
+# asserted to be the documented no-op it claims to be, the standalone cortex
+# stdio server cannot host a tool the unified registry lacks, and the four
+# ignored cot/cod schema params are echoed rather than silently dropped.
+# 25 tests, ~12s, fully stubbed governance sinks: no DB service, no LLM,
+# no network.
+tests/cortex/test_cortex_reach_decisions.py
+tests/cortex/test_blueprint_routes.py
+tests/test_cnr_mission_canvas.py
+
+# ctx-reach-04. Pins an invariant that lives in an ABSENCE: `tools/cortex` appears
+# ZERO times in tools/builder/child_app_generator.py, whose DIRECTORY_TREE is an
+# ALLOWLIST — so no generated descendant inherits Cortex, which is a parent-hosted
+# governed service reached over REST with an icdev_ctx_ service key. An absence is
+# undone by a one-line addition with nothing going red, so assert it. Also pins the
+# client's stdlib-only vendoring contract (zero first-party imports), the `None`
+# half of the degradation contract against a refused port, and the doc pointers in
+# client.py + its icdev/ mirror + phase-19. No DB, no LLM, no network egress.
+tests/cortex/test_child_app_access_pattern.py
+tests/cortex/test_accounting_capture.py
+tests/test_app.py
+# ctx-perf-01 part 2. Part 1 memoized the config PATH; the calls themselves were
+# left alone and its own docstring said so. Measured here, not eyeballed: one
+# governed cortex.complete loaded args/cortex_config.yaml SIX times and a
+# retrieval-backed one seven-to-eight -- cache.is_enabled, cache.cacheable,
+# cache._get_cache, cache._ttl_for, both grounding decisions, the grounding floor
+# twice and the fail-closed posture, none of them aware another had read the same
+# file microseconds earlier. Each of those stat()s the file before its mtime memo
+# can answer, so it was paid per gate on every Cortex call whether or not the
+# response cache was even on. One snapshot is now taken per governed call and
+# threaded through the cache decision and every gate: the budget is 1, asserted
+# as a CEILING for both the cheap path and the retrieval path. Two of the five
+# tests exist to stop the collapse eating the invalidation: an edited config must
+# still win on the next load, and a snapshot must never outlive its call (one
+# that did would make an operator's edit invisible until restart).
+# 5 tests, <1s, stubbed gates + stubbed provider: no DB service, no LLM, no network.
+tests/cortex/test_config_load_budget.py
+tests/test_cache_savings_state.py
+tests/workflow/test_playwright_gate.py
+
+# ── trust-struct-02: required-section outline contracts ──────────────────────
+# tools/quality/outline_contract.py validates a draft against the section
+# skeleton its artifact type already declares (docgen ATO_DOC_TYPES, DIC
+# TEMPLATE_SECTIONS, the RFI workbench floor) and emits missing_section /
+# unknown_section / section_out_of_order in the shared {item_number, issue,
+# detail} shape. Two invariants worth the gate: an unknown artifact type
+# resolves to None (unmeasured) rather than a fabricated skeleton, and the DIC
+# blueprint and the contract read the SAME object — a required-section contract
+# that is a copy of what instantiation creates is one that goes stale silently.
+# 53 tests, <1s, pure regex/dict: no DB, no LLM, no network.
+tests/test_outline_contract.py
+tests/test_llm_cost_basis.py
+# trust-struct-01 — the one contract validator for LLM output. Covers the
+# JSON-schema subset (construction-time keyword rejection, reject vs coerce,
+# fail-closed sentinels, the bounded single repair) AND that the three surfaces
+# whose hand-rolled extractors it replaced still degrade exactly as before:
+# content_grounding falls back to the heuristic floor, critique_rule fails
+# closed per severity, reflect_document lands on neutral. Those three fallbacks
+# were the reason to consolidate; a regression in one is invisible otherwise.
+# 44 tests, <1s, pure stdlib + stub routers: no DB, no LLM, no network.
+tests/test_structured_output.py
+
+# trust-struct-03 — cortex.extract stops degrading silently. Pins the posture
+# change end to end: a non-conforming payload now RAISES CortexSchemaError
+# instead of handing the raw completion back as result.text with a flag in
+# metadata that one of the two in-repo callers never read; the repair is bounded
+# at exactly one re-prompt and that retry carries the caller's tenant and
+# classification rather than egressing bare; and "unmeasured" (no schema, or no
+# jsonschema installed) reports schema_valid=None, never True -- the case where
+# an air-gapped deployment validated nothing and said everything conformed.
+# 21 tests, <2s, stub router only: no DB, no LLM, no network.
+tests/cortex/test_extract_validation.py
+
+# trust-struct-03 — the HTTP contract for a schema refusal. extract now raises
+# CortexSchemaError, and without an explicit handler it falls to the generic
+# `except Exception` and returns 500 "internal error": the caller pages an
+# operator about a healthy server and loses the one thing they can act on. This
+# file also covers the other five v1 endpoints' governance envelopes, auth
+# rejection and server-side tenant derivation, all of which the 422 handler sits
+# beside.
+# 25 tests, <1s, monkeypatched facades + Flask test client: no DB, no LLM, no network.
+tests/cortex/test_rest_api.py
+# The bounded MONOTONE revise-and-recheck loop (trust-self-01). Gated because
+# the invariant is load-bearing and silent when broken: a loop that accepts a
+# round which did NOT strictly reduce findings degenerates into optimising for
+# the checker, and nothing downstream would notice -- the report still says
+# "improved". Five mutants were run against this suite and all five died:
+# strict "<" relaxed to "<=", the retention floor removed, a rejected round
+# adopting its candidate anyway, and the two fail-closed paths (initial
+# validation raised / no validators supplied) reporting blocked=False.
+# The retention floor gets its own test because the finding count has a trivial
+# global optimum -- an empty document scores clean -- so the monotone check
+# alone cannot tell "deleted the unsupportable sentence" from "deleted the
+# document".
+# 31 tests, <1s, injected validators + a fake router: no DB, no LLM, no network.
+tests/test_self_correct.py
+# trust-self-03. AdaptiveRetriever wraps RAGRetriever, so only a CALLER can adopt
+# it — tools/rag/toggle_harness.py called it WRAPPER-UNADOPTED and nothing had.
+# The Cortex rag adapter is now that caller. Gates the three properties an
+# "is the import there?" check cannot see: the skip route stays unavailable on a
+# citation surface, tenant scoping survives the wrapper, and complex_top_k
+# actually widens a caller that already passed top_k (it never used to).
+# 9 tests, ~1s, fake retriever + heuristic classifier: no DB service, no LLM.
+tests/test_adaptive_routing_adoption.py
+tests/kanban/test_timeout_no_redispatch.py
+
+# ── trust-kg-03: kg_grounding in the Cortex governance chain ─────────────────
+# The first OPT-IN gate GATE_ORDER has had: in the vocabulary, out of `default`,
+# so a profile must name it. Three things worth the gate. (1) Every caller that
+# predates it is byte-for-byte unchanged — the gate records `skip` and its seams
+# are never touched; a regression here would put a DB round-trip and a lexicon
+# build on every Cortex caller's interactive path. (2) A profile that DECLARES
+# it and cannot measure records `fail`, never `warn` and never `pass` — the
+# cxo-trust-01 lesson, where a misconfiguration and a transient outage were
+# recorded identically and provenance wrote 0 of 285 rows for its whole
+# lifetime while looking merely flaky. (3) `fail` still does not block:
+# governance.fail_closed ships false and stays the single platform-wide switch.
+# 21 tests, <1s. Every seam is monkeypatched: no DB, no graph, no LLM.
+tests/cortex/test_governance_kg_gate.py
+
+# kph/stranded — the audit and the merge-verify GATE must decide "is this work
+# landed?" the same way. They did not: the gate compares by patch-id (git cherry)
+# and skips branches whose PR already merged; the audit compared by ANCESTRY and
+# never asked about the PR, so every squash-merge read as stranded. Measured on
+# the live board: 184 of 506 reported strandings (36%) had all-closed/merged PRs,
+# including 6 of the 8 tasks landed that day. Also pins the accelerators added to
+# bring the run back inside the reflex watchdog (bulk PR prime, merged-ref set,
+# per-ref memoisation) as pure accelerators that cannot change an answer, and
+# that an unmeasurable run reports its posture instead of reading clean.
+# 16 tests, <2s, all git/PR facts injected: no DB, no network, no gh.
+tests/kanban/test_stranded_audit_gate_parity.py
+
+# trust-anchor-01 — the D-GC-1 peer-CLI anchor transport. args/blockchain_config.yaml
+# declared `fabric.cli_path: peer` under "Fabric CLI via subprocess" since GovChain
+# shipped, and there was zero subprocess usage in tools/blockchain/; meanwhile hfc is
+# in neither requirements.txt nor pyproject.toml, so HAS_FABRIC was permanently False
+# and every anchor on the platform reached NoOpFabricClient. Gates the transport ABC,
+# the peer-CLI/fabric-sdk/no-op backends, priority-ordered failover, and the acceptance
+# path that had never once run: all transports unhealthy -> a pending row + {'status':
+# 'queued','tx_id':None} (never a silent drop) -> flip one healthy -> flush drains it.
+# Also pins flush_pending's UPDATE to migration 149's real submitted_at column (it wrote
+# a non-existent updated_at, so every UPDATE raised, was swallowed, and nothing drained).
+# 42 tests, <1s. No Fabric peer, no hfc, no network: which/subprocess are patched.
+tests/test_blockchain_transports.py
+# ── trust-hitl-01: the delta is the reviewable unit ───────────────────────────
+# tools/quality/hitl_delta.py turns a force_* override from "someone bypassed a
+# gate" into "this text became that text, and here is what it did to the
+# findings". Gated because three properties are load-bearing and all three are
+# silent when they break: (1) the diff is CLAIM-anchored, so the tests pin the
+# upstream decompose_claims/trailing-citation mismatch AND the local
+# re-anchoring that compensates for it — when citation_grounding is fixed, two
+# of them fail and the compensation can be deleted; (2) trust_deltas is
+# EVIDENCE and approval_items is STATE, so settling issues no UPDATE against
+# the evidence table and a correction leaves its predecessor byte-identical;
+# (3) a delta whose approval-inbox enqueue FAILED still reads pending — the one
+# path where a dropped ask could silently present as an approval. Also asserts
+# no artifact TEXT reaches the chat-mirrored approval_items row. 43 tests, ~1s,
+# sqlite tmp_path + the real migration DDL: no LLM, no network, no live board.
+tests/test_hitl_delta.py
+
+# trust-disc-04 — the substrate half of capability_consumption.py. Headline test probes a
+# PLAN (not finished code) and must report kg_ontology/ontology_subclass_closure empty and
+# kg_nodes.ontology_id 100% NULL beside a populated kg_nodes/kg_edges. Its twin pins the
+# rule that keeps the measurement honest: a database with no operating history reports
+# UNMEASURABLE, never a fabricated finding — 1,320 of 1,775 tables on the live board are
+# empty. Also pins the noise controls (write-only refs, prose nouns, superseded columns).
+# 16 tests, <1s. Seeded SQLite via get_connection; never touches the live board.
+tests/test_substrate_probe.py
+
+# trust-disc-04 — the consumer half: coherence_checker::check_substrate_liveness. Pins the
+# measured scope (declared substrates READ by a changed .py module = 1.7% fire rate over 60
+# commits, vs 68% for every table mentioned in a changed file), that it warns rather than
+# fails, and that a fresh database suppresses the finding instead of fabricating it.
+# 9 tests, <1s. get_connection patched to a seeded temp SQLite board.
+tests/test_coherence_substrate_liveness.py
+# trust-disc-06 — the inverse question ("under what condition does this check PASS
+# while the system is BROKEN?") on every review surface. Guards the WIRED half: the
+# question is appended to every ANVIL critic prompt at runtime, so a prose-only
+# regression (someone deletes the config key, or the prompt builder stops reading it)
+# is caught rather than assumed. Prose surfaces + their packaged copies are asserted
+# too, since `icdev init` scaffolds the packaged ones.
+# 14 tests, <1s. No LLM, no network: _call_agent is patched; DB is a tmp_path sqlite.
+tests/test_adversarial_review_question.py
+
+# trust-anchor-02 — a TRUST gate verdict, Merkle-anchored. The leaf is
+# sha256(artifact_hash|findings_hash|delta_chain_hash|approver); the components
+# ride in source_doc so ChainAnchor RE-DERIVES the leaf at anchor time and
+# refuses a row that disagrees with itself — anchoring an unverified value wraps
+# tamper-evidence around a lie and reads as proof. Every test writes to a real
+# SQLite database and asserts a row count moved, because a mocked
+# register_citation proves the caller was reached and nothing about whether
+# anything landed: that is how citation_type='cortex' recorded 0 of 285 rows and
+# 'asset_token' never anchored once, both with coverage. The fixture pins
+# get_connection on BOTH module namespaces (tools.* and icdev.tools.* are
+# distinct objects), and test_every_alias_is_pinned asserts the redirect took —
+# otherwise the suite writes to the live board and still passes. Also pins the
+# card's own constraint: no second reflex, these ride the existing 30-minute
+# govchain_anchor sweep.
+# 33 tests, ~1s. No network, no Fabric: the noop transport queues.
+tests/provenance/test_trust_validation_anchor.py
+# trust-disc-03 — the skip census. `--check-coverage` above answers "does CI run
+# this file?" and nothing else; a gated file can be green on every PR and assert
+# nothing, because it skipped. tests/test_app.py's overview test has been doing
+# exactly that ("SQLite test DB lacks platform schema ... no such column:
+# classification" — the column the RLS predicate in get_connection() filters on,
+# so every read of kanban_tasks raised) for an unknown length of time.
+# Gates both halves of tools/ci/skip_census.py: the static AST census that fails
+# on an unregistered skip site, and the JUnit-XML runtime half that catches a
+# skip raised from a conftest fixture the static scan cannot see. Most of these
+# assert the gate goes RED — a gate only ever observed green is indistinguishable
+# from one that cannot fire (`|| true`). 34 tests, ~6s. No DB, no network.
+tests/test_skip_census.py
+# trust-disc/01 — the red-first proof gate. ANVIL mandates RED -> GREEN and
+# nothing anywhere recorded the RED; this gate re-derives it by checking out the
+# merge base, applying ONLY the changed test file on top, and asserting it does
+# not pass there. The acceptance criterion is empirical, so the suite builds
+# throwaway git repos and runs the real gate over them: `assert True` and an
+# assertion that holds pre-fix must FAIL the gate, a genuine red-first test must
+# clear it. Also pins the decision table shared with
+# tools/security/reproduction_validator.py so the two gates cannot drift apart.
+# ~20 tests, ~40s (it spawns nested pytest runs): no DB, no network, no LLM.
+tests/test_red_first_gate.py
+
+# Token exhaustion is the only ground-truth measurement of task SIZE the board
+# produces, and the give-up path threw it away: it sent the task to `backlog`
+# and cleared the only counter, so the identical task re-entered the identical
+# cycle with no memory it had been round before. Measured: tsr-dash-01-d3 went
+# round 46 times, 29 tasks exhausted 3+ times (298 events), 240 dispatches were
+# re-runs of a task already measured too big, and only 5 of the 29 were ever
+# flagged for decomposition. Also pins WHY the pre-dispatch _complexity_score
+# cannot substitute -- it scores description verbosity and was anti-correlated
+# with outcome on this sample (exhausted tasks scored 2/1/0, the success 5).
+# 16 tests, <1s, count and board writes injected: no DB, no LLM, no network.
+tests/kanban/test_exhaustion_triggers_decomposition.py
+# trust-disc-02. Gates tools/ci/isolation_run.py, which runs every test file the
+# PR changed ALONE — the half of "both alone and in-suite" that this pipeline
+# never had. Builds a throwaway git repo carrying a real order-dependent pair
+# (the follower passes only when the leader was collected into the same process,
+# the reduced form of the shared tools.dashboard.app blueprint defect) and asserts
+# the runner turns red on it when the file is gated and warns when it is not.
+# Also asserts the workflow actually calls the tool, without `|| true`, on a
+# fetch-depth: 0 checkout — an unmounted gate is decoration.
+tests/test_ci_isolation_run.py
+
+# A merged fix must reach the process that runs it. Every long-lived process
+# imports its modules once and runs for days, so a fix is inert until someone
+# restarts it -- and a daemon serving hours-old code looks exactly like a daemon
+# whose fix did not work. kanban_scheduler and pr_watcher already re-exec via
+# code_reload; DaemonBase.run_forever (SEVEN subclasses), poll_trigger and the
+# dashboard did not, which cost two manual bounces on 2026-08-15. Config rides
+# along: DaemonBase reads self.config once, so a changed args/*.yaml arrives
+# because the process re-execs. Pins the ordering (reload AFTER the cycle's work,
+# never mid-claim), the dashboard's idle gate standing in for a daemon's
+# between-cycles gap, and that the dashboard default is ON.
+# 19 tests, ~14s, source inspection + injected clocks: no daemon started, no
+# re-exec, no network.
+tests/test_daemon_self_reload.py
+# trust-disc-05: the board tracked task -> PR and nothing checked task -> main, so two of five
+# cards in pr_opened had already-merged work and their open PRs could only land as reverts
+# (#1651 was -38/+26 on rest_v1.py). Gated in the PR that adds them. test_landed_check.py builds
+# a REAL git repo per case — the defect class is "what git says vs what the board believes", so
+# stubbing git would test the belief. It pins the two directions that matter: a subject/merge-ref
+# mention IS a landing, and a body-only citation is NOT. test_landed_check_wiring.py pins the
+# three consumers (seed / dispatch prompt / PR body) so the check cannot become a computed answer
+# nobody acts on. 38 tests, ~4s. No network, no gh, no board.
+tests/kanban/test_landed_check.py
+tests/kanban/test_landed_check_wiring.py
+
+# trust-hitl-02 — the Delta Review canvas. The side-by-side HITL panel over the
+# trust-hitl-01 delta store: findings anchored to spans by item_number, the
+# reworded-but-still-flagged case the monotone invariant cannot see, review state
+# derived from approval_items (trust_deltas has no disposition column), the
+# mandatory-rationale settle route, and no drafted CUI leaving the IQE seam.
+# Also parses and EXECUTES the seed queries, which the 8-point completeness gate
+# only counts. 72 tests, ~3s. In-memory sqlite off the real migrations; no
+# network, no live board.
+tests/test_delta_review.py
+# An E2E run must not leave a dashboard holding the port. Measured 2026-08-15:
+# three dashboards from .tmp/worktrees/task-e2e-27e596dc were alive 6+ hours
+# later and one held port 5050 -- the MAIN dashboard's port -- serving a commit
+# eight hours stale, so restarting the real dashboard by hand changed nothing
+# visible. Two leaks: main() stopped it in straight-line code after the
+# try/except (any raise, or a token-exhausted session, skipped teardown), and
+# start_dashboard sent ONE terminate() on the slow-start path then discarded the
+# handle. Pins the terminate->wait->kill escalation, the finally, the atexit, and
+# that we never tear down a dashboard we did not start.
+# 12 tests, <1s, every process is a fake: nothing spawned, nothing killed.
+tests/ci/test_e2e_dashboard_teardown.py
+
+# The Cortex machine surface shares a Blueprint with the Cortex web canvas
+# (register_rest_v1, deliberately), and the canvas-access guard is attached
+# blueprint-wide -- so it applied a HUMAN grant model to a MACHINE principal.
+# auth.py gives every service-key caller role="service" + the key's tenant, and
+# check_access() is False for that principal on every tenant (canvas_access_grants
+# holds ZERO rows), with enforcement fail-closed BY DEFAULT. Every external call
+# to /cortex/api/v1/* therefore got a bare HTML 403 from a before_request --
+# never reaching its scope check, never producing the JSON envelope client.py
+# parses. Pins that the exemption keys on the BINDING (not a URL prefix), that
+# it does not weaken the no-binding path, that unauthenticated still fails
+# closed, that the tier gate still precedes it, and that _scope_denied still
+# enforces cortex:<operation> -- which is the only reason dropping the grant
+# check for this principal is safe.
+# 10 tests, <1s, binding and grant lookup injected: no DB, no network.
+tests/security/test_canvas_guard_service_key.py
+
+# The Cortex REST surface. 105 of these failed for as long as the canvas guard
+# has applied a human grant model to machine principals, and NOTHING RAN THEM:
+# not one was gated, so neither Test nor Test (PostgreSQL) ever saw it, and they
+# pass in isolation because the guard only attaches once the dashboard is
+# imported. Gating them is the half of the fix that keeps it fixed.
+tests/cortex/test_rest_agent.py
+tests/cortex/test_rest_award.py
+tests/cortex/test_rest_cost_volume.py
+tests/cortex/test_rest_dashboard.py
+tests/cortex/test_rest_intake.py
+tests/cortex/test_rest_scopes.py
+tests/cortex/test_rest_slides.py
+tests/cortex/test_rest_staffing_matrix.py
+tests/cortex/test_rest_win_themes.py
+# A tenant seeded with ZERO canvas grants must not look like success.
+# canvas_access_grants being empty is CORRECT here -- grants are per-tenant and
+# there are none -- but seed_tenant_defaults skips any canvas with no
+# default_roles, and 21 of 38 registered canvases declare none. It returned None
+# and logged one success line whatever happened, and tenant_manager swallowed the
+# call into a warning, so a tenant whose users could open NOTHING was reported as
+# fine and surfaced days later as "I cannot open ACE". Reported, never enforced:
+# failing tenant creation over a grant gap is worse than the lockout it warns of.
+# 11 tests, <1s, registry and grant write injected: no DB, no network.
+tests/security/test_tenant_canvas_seed.py
+tests/genesis/test_code_reload.py
+tests/test_route_smoke.py
+tests/genesis/test_ingestion_manager_anomaly.py
+tests/test_project_prefix_scope.py
+tests/test_canvas_dedicated_pg_database.py
+
+# hcx-live-02 — args/extension_config.yaml declared a hook_points: block with
+# per-point enabled/allow_modification/max_handlers/timeout_ms for all ten
+# points, and ExtensionManager.dispatch() read NONE of them: the only working
+# kill switch was the global one, which also stops the nine chat handlers in
+# use. Nothing counted a dispatch either, so capability_consumption could not
+# tell a consumed hook point from one never called in the platform's history.
+# The first dispatch under the new telemetry found 081_build_kanban_sync
+# raising TypeError on EVERY chat message since it landed — registered,
+# enabled, and structurally incapable of running, swallowed by
+# catch_handler_exceptions. 23 tests, <1s: isolated managers, no builtins
+# loaded except in the one signature test, SQLite temp file for the telemetry.
+tests/test_extension_dispatch_governance.py
+# hcx-live-01 pins TOOL_EXECUTE_BEFORE to a production dispatcher. The hook
+# point had ten declared siblings and no caller outside tests -- the GATING
+# point, and the whole reason the behavioral tier exists. The seven ordering
+# tests are the reason this is gated rather than merely written: dispatching
+# after the safety gate, or reading tool_name/read_only back out of a context
+# an extension controls, turns a drop-in extension file into a permission
+# bypass. 13 tests, <1s, gate and tool injected: no DB, no network.
+tests/agent_runtime/test_dispatch_extension_point.py
+tests/test_kanban_suggested_decay.py
+
+# hcx-live-03 — AGENT_START/AGENT_END are dispatched from AgentRuntime.run_turn,
+# and the four points that still cannot fire are named with evidence. Gated for
+# two reasons. (1) The observational contract is enforced at the call site, not
+# in YAML: test_agent_start_cannot_alter_the_turn / _cannot_block_the_turn fail
+# the moment somebody feeds a handler's return value back into the turn, which
+# would turn a reviewed-as-observational point into an unreviewed gating one.
+# (2) test_extension_point_members_unchanged is the guard that a later PR does
+# not quietly delete a public str-Enum member — an AttributeError at import for
+# any site-local drop-in naming it. 12 tests, ~3s, no DB and no network: the
+# agent loop is monkeypatched and the tree scan is static.
+tests/test_extension_point_liveness.py
+# hcx-evt-01 -- the append-only agent event log (agent_session_events). Added in
+# the PR that makes it pass, per the test-gating policy. 39 tests, ~1s, no DB and
+# no network: the fixture builds the table from the migration's own up.sql behind
+# tests/_sql_compat.translating, so a column added to one and not the other fails
+# here rather than at runtime inside somebody's except.
+tests/test_agent_event_log.py
+
+# rem-hyg-02: the seed-time task-identity validator. Gated in the PR that adds
+# it, per the CI test-gating policy. It is the producer rem-hyg-03..06 build on,
+# and the properties it pins are the ones that go wrong quietly: nesting resolving
+# to the parent card, a gate sentinel counted as an orphan, an unreadable registry
+# fabricating a finding against every id, and the wiring refusing instead of
+# reporting. 26 tests, ~1s, registry injected in every case except one deliberate
+# end-to-end read of args/projects.yaml — no board, no network, no LLM.
+tests/kanban/test_task_identity.py
+# hcx-evt-02 -- the CONSUMPTION proof for that log: run_turn wires it through the
+# four lifecycle hooks run_agent_loop already exposes. Asserts the gate's block
+# still wins through the loop's own _compose_pre_tool_hooks, that an unwritable
+# log degrades to a warning instead of ending the turn, and that a gate-blocked
+# call (whose pre-hook never runs) still gets a tool_call event. 38 tests, ~25s,
+# same migration-derived fixture; the two end-to-end cases drive the REAL loop
+# with a scripted provider -- no DB, no network, no LLM.
+tests/agent_runtime/test_event_recorder.py
+# hcx-post-01 — permission postures. Gated because the two properties it holds
+# are precedence properties, and a precedence regression is silent: a posture
+# that started overruling an exported ICDEV_SAG_APPROVAL_MODE, or a config file
+# that could name danger-full-access, would keep every other test green.
+# 30 tests, <1s, tmp_path YAML + monkeypatched env: no DB, no network.
+tests/agent_runtime/test_permission_postures.py
+
+# kpr-watch-01. Gates the merge-eligibility decision table that pr_watcher's
+# unlinked sweep and `python -m tools.ci.merge_readiness` BOTH read. The point
+# of the extraction is that the report can never describe a merge policy the
+# merger does not have, and only a test can hold that: the parity case
+# transcribes the pre-extraction `continue` ladder verbatim and asserts
+# `state == "ready"` agrees with it across 2,880 combinations of the seven
+# signals it read (verified live the same day against all 9 open PRs, 0
+# mismatches). Also pins the two distinctions the table refuses to blur --
+# no_checks (empty rollup, nothing ever reported) vs awaiting_ci (checks
+# running), and mergeable=UNKNOWN (GitHub still computing) vs CONFLICTING (go
+# rebase) -- and the read-only property of the CLI, by AST: exactly one
+# subprocess reference and exactly one argv, which must be `gh pr list`. Pure
+# functions and tmp_path JSON: no DB, no network, no gh. 26 tests, <1s.
+tests/test_merge_readiness.py
+# hcx-vv-02 — coherence check_log_standard_compliance, narrowed to allow the
+# prefer-get_logger-then-fall-back shape. The gate failed on
+# 20260815191145_seed_canvas_grants_for_existing_tenants/up.py, which prefers
+# get_logger() and drops to stdlib logging only when that import fails — correct
+# for a migration that may run before tools.logging is importable. Three of the
+# nine tests are the guard rather than the coverage: a bare fallback that never
+# tried get_logger, and a raw call sitting OUTSIDE the handler in a module that
+# merely imports get_logger, must both still fail. Pre-existing file, moved off
+# the backlog census in the PR that makes it gate. 9 tests, ~2.5s, tmp_path
+# only: no DB, no network.
+tests/test_coherence_log_standard.py
+# cch-tel-01: prompt-cache tokens are recorded durably, per call. LLMResponse
+# has carried cache_creation_input_tokens/cache_read_input_tokens since
+# D-CACHE-10 and four adapters populate them, but nothing durable recorded them,
+# so every caching claim on this platform was unfalsifiable. Gated because the
+# load-bearing assertion is a NEGATIVE one that no other test makes: a call
+# reporting ZERO cached tokens must record a row holding 0, never be skipped and
+# never write NULL — otherwise a provider that stopped caching is indistinguish-
+# able from one that was never asked, which is exactly how Azure discarded the
+# count for its entire life. Also holds INSERT/live-schema parity, which is the
+# failure mode that kept module_budget_usage at 0 rows while reporting success.
+# Also covers the two-tier path, which made real provider calls and recorded
+# nothing at all: two_tier.enabled is true and code_generation is a worker
+# function, so router.invoke() returned before ever reaching the telemetry seam.
+# 16 tests, <1s: temp SQLite files only, no network, no shared board.
+tests/test_ai_telemetry_cache_tokens.py
+tests/test_raw_insert_census.py
+# rem-hyg-03: the fire-rate survey that must run BEFORE rem-hyg-04 arms the
+# identity check. Guards the three properties that fail while looking like
+# success — an unmeasurable survey reporting a 0% rate, a gate sentinel counted
+# as an orphan, and the narrowed rate laundering opaque machine ids into
+# findings. 22 tests, <1s, synthetic rows and an injected registry: no board, no
+# network, no LLM.
+tests/test_identity_survey.py
+
+# cch-obs-01 -- per-provider prompt-cache effectiveness, and the four zeroes the
+# single aggregate hit rate merged into one. A provider nobody called, a
+# provider whose transport reports no cache counters, a provider that genuinely
+# cached nothing, and a provider that is not billed at all ALL rendered as
+# "0% / $0.00" on the old card; only the third is a defect. The first three
+# tests are the acceptance criteria (no_data vs a measured zero must differ in
+# status AND in cached_share_pct -- None vs 0.0); the rest hold the rules that
+# keep those states honest against the real provider mix: an unreported
+# transport is never 0%, a local provider shows latency and no dollars,
+# evidence overrides the declared claim, and inclusive vs disjoint token
+# accounting are never summed (doing so double-counts every OpenAI cached
+# token). Also pins that a database with no history reports UNMEASURABLE
+# rather than a wall of fabricated findings, that the route and the home tile
+# preserve the null share instead of coercing it to 0, and that all four states
+# RENDER distinctly -- `no_cache_hits` was absent from the live 7d window the
+# day this shipped, so that branch is proven by a stubbed-parent Jinja render
+# rather than by waiting for a real cache miss. 22 tests, <1s, in-memory sqlite
+# through the real translate_sql: no board, no network, no LLM.
+tests/test_cache_effectiveness_by_provider.py
+tests/ci/test_pr_watcher_budgets.py
+# rem-hyg-04: arming that check behind KANBAN_IDENTITY_CHECK. Gated in the PR
+# that adds it. Every property here fails while looking correct: a kill switch
+# nothing reads (the inert hook_points: block in args/extension_config.yaml), a
+# typo like KANBAN_IDENTITY_CHECK=enforced resolving silently to the default so
+# an operator believes it is armed, the survey's NARROWED column and the seeder's
+# refusal drifting into two different populations, and a refusal raised after the
+# first insert half-landing a batch. 35 tests, <1s, registry injected and every
+# get_connection alias stubbed: no board, no network, no LLM.
+tests/kanban/test_identity_check_arming.py
+# hcx-post-02 — posture selection recorded as operator intent. Gated because
+# every property it holds fails SILENTLY: a selection that stopped appending an
+# event, one that appended after applying instead of before, one that started
+# overwriting the per-knob env vars an operator exported, or one that widened to
+# danger-full-access with the audit log down -- all four leave the knobs reading
+# exactly right and every other test green. 27 tests, ~2s; the appender is
+# injected and the environment is a dict, so no DB, no network, and no write to
+# os.environ (the snapshot fixture explains why that one matters in-suite).
+tests/agent_runtime/test_posture_selection.py
+
+# rem-hyg-07: sibling file contention detected at SEED time, not after the PR.
+# pr_watcher's guard runs on OPEN PRs, which is after both sessions have built —
+# #1684 dispatched a producer and its consumer together and 1,058 lines of the
+# loser's branch were discarded. Pins the two dependency mechanisms (scalar AND
+# junction, because _deps_satisfied ANDs them), the live/latent ranking, and the
+# six prose suppressions — including the three found by running the check
+# against the live board, where every string asserted is real text from a real
+# row. Also pins the residual hole, so a reader sees the edge of the heuristic
+# instead of assuming prose parsing is solved. 44 tests, ~1s, synthetic rows and
+# a stub git runner: no board, no network, no LLM.
+tests/kanban/test_lane_conflicts.py
+# cch-cap-01: providers DECLARE prefix-cache support (none | automatic |
+# explicit | managed_object | local) and the router consults the declaration
+# instead of stamping Anthropic's cache_control on a provider-neutral request.
+# No SDK, key, network or DB — pure declaration + translation.
+tests/test_prefix_cache_capability.py
+# rem-cap-04: the approval gate is ARMED by configuration, not only by an env
+# var. Gated because the defect it pins was invisible for the gate's entire
+# life: `_resolve_approval_gate` read ICDEV_AGENT_APPROVAL_MODE straight out of
+# os.environ and returned None -- no gate at all -- whenever it was unset, so
+# args/agent_runtime.yaml could say `enforce`, resolve_mode() could agree, and
+# all eleven default call sites still ran ungated. Every existing test passed
+# throughout; the gate had evaluated ZERO tool calls against 3,214 dispatched
+# builds. The property is a JOIN between two modules that were not talking, so
+# nothing that tests either one alone can see it. Also pins the escape hatch
+# (env `off` beats a config that enforces), the asymmetry when the gate module
+# is unimportable (an explicit `True` denies everything, an unasked-for default
+# does not), and the SHIPPED value in BOTH copies -- if only args/ said dry_run,
+# a wheel resolving icdev/data/args/ would fall through to the posture's
+# `enforce` and refuse 81% of tool calls in the deployment nobody tests locally.
+# 15 tests, <1s, tmp_path YAML and an injected import failure: no board, no
+# network, no LLM.
+tests/test_approval_gate_arming.py
+# hcx-evt-05 — forking a session at a seq. Gated because the refusals are the
+# feature: a fork boundary that started rounding into an open turn, or a
+# projection that stopped ordering an assistant tool_use ahead of the
+# tool_result answering it, produces a seeded session that looks right until the
+# next provider call rejects it -- and a seed linked as a resume_session_id
+# without being read back produces one that looks continued and remembers
+# nothing. 21 tests, ~1s; the table is built from the migration's own DDL into a
+# tmp sqlite file and the chat manager, saver and loader are injected, so no
+# board, no canvas DB, no network, no LLM.
+tests/agent_runtime/test_fork.py
+
+# cch-prov-02: Gemini explicit caching as the managed_object capability —
+# create / reuse / expire a cachedContents object, and the economics gate in
+# front of it (default OFF, size floor, never on a prefix's first sighting).
+# Fake SDK: no vendor package, key, network or DB.
+tests/test_gemini_managed_object_cache.py
+# cch-prov-03: Ollama's prefix cache pays in LATENCY, so the savings card must
+# report "not applicable" for a local provider rather than a dollar figure — it
+# was reporting a fabricated NON-ZERO one ($0.0040 against Anthropic's rate card
+# for inference nobody was billed for). Also pins prompt_eval_ms as None-when-
+# absent. No Ollama process, no network, no DB.
+tests/test_ollama_prefix_latency.py
+# trust-disc-05 (extended to the merge path): pr_watcher must not auto-merge a
+# PR whose work is ALREADY on main under a different number — that merge is a
+# REVERT wearing a feature's clothes (#1651 was -38/+26 on rest_v1.py) and every
+# gate on the board reports green, because every gate asks about the PR.
+# The suite is behavioural: `not merge_calls` under enforce is what proves the
+# check runs BEFORE _auto_merge, and the checked:False/landed:True case is what
+# proves fail-open is read rather than incidental. Regressed three ways
+# (call site deleted / checked ignored / mode ignored); each is caught by a
+# different test. No network, no git, no DB.
+tests/ci/test_pr_watcher_landed.py
+# kax-conflict-11: the union-merge guard for .gitattributes. It was RED on main
+# from the moment trust-disc-03 landed `args/ci_skip_census.txt merge=union`
+# without registering it in _UNION_SAFE_PATHS, and nothing reported that for as
+# long as it sat in args/ci_test_backlog.txt — a guard that gates nothing is the
+# declared-but-unconsumed defect in its purest form. Gated here so it can fail.
+# Runs real git against throwaway repos (no network, no DB); 18 tests, ~9s.
+tests/git/test_manifest_merge_rehearsal.py
+
+# cef-bck-03: the Cortex `sme` ADVISORY backend, and the proof that ACE's
+# ensure_sme can actually mint a role (before this card, no file in
+# args/ace/roles/ carried the generated_at stamp and _generated_smes.json
+# existed nowhere — i.e. the generation path had never once completed).
+# The advisory/evidentiary split is the load-bearing part: these pin that an
+# opinion is never selected automatically, never outranks evidence in RRF,
+# never triggers CRAG, and degrades with .errors instead of fabricating.
+# Only the MODEL is stubbed, at the LLMRouter seam; role_policy, the shipped
+# capability bundles, and the YAML/index writes are all real, against a
+# redirected project root. No network, no LLM, no DB.
+tests/cortex/test_search_sme.py
+# cef-bck-03, gated because this PR modified them: adding `sme` to
+# CORTEX_BACKENDS changes the constants these assert, and the CRAG suite is
+# what caught the regression where excluding advisory results from the CRAG
+# trigger also disabled correction for an EMPTY first pass. Moved out of
+# args/ci_test_backlog.txt (census 1791 -> 1787), verified green alone and
+# in-suite. No network, no LLM, no DB.
+tests/cortex/test_schemas.py
+tests/cortex/test_search_adapters.py
+tests/cortex/test_search_crag.py
+tests/cortex/test_search_router.py
+# rem-tst-02 — first promotion batch off the ungated census (rem-tst-01).
+#
+# docs/testing/ungated_test_census.json measured all 1,792 grandfathered modules
+# one process each: 1,691 pass ALONE. That number is not a licence to bulk-add —
+# green alone and green in-suite are different questions, and this batch answers
+# both for 25 of them rather than the first for all 1,691.
+#
+# Selection, in order: (a) census status `passed` with a non-zero test count, so a
+# module that collects nothing cannot be promoted as if it were coverage;
+# (b) fastest first — every one of these is under 1s alone, 93s of pytest for the
+# batch; (c) ZERO static skip sites, because a gated file that skips is unmeasured
+# and registering a new site would breach skip_census.skip_max, which only goes
+# down. Re-measured on this branch on 2026-08-16, not trusted from the census
+# file: 25/25 green ALONE (one pytest process each, per-file ICDEV_DB_PATH, 456
+# tests, zero skipped) and green IN-SUITE appended after the existing list in one
+# process, which is the order-dependence half CLAUDE.md requires and the census
+# explicitly does not cover.
+#
+# args/test_gating_gate.yaml's backlog_max falls 1810 -> 1766, which is 44, NOT
+# the 25 moved. The census itself falls by exactly 25 (1,791 -> 1,766); the other
+# 19 is pre-existing HEADROOM being surrendered at the same time. main's ceiling
+# sat 19 above its effective backlog, and that gap is room for the gap to regrow
+# unobserved — the exact thing the "no headroom, deliberately" note in that file
+# says the number is not for. It is re-pinned to EQUAL the effective backlog, as
+# that note specifies, and per the ratchet may only go down from here. Nothing a
+# PR is allowed to do can push the effective count back up: the census only ever
+# shrinks, and a new test file has to be gated here rather than appended to it.
+tests/agent_runtime/test_skills_lifecycle.py
+tests/agent_runtime/test_standing_goals.py
+tests/agent_runtime/test_profile_memory.py
+tests/agent_runtime/test_profiles.py
+tests/agent_runtime/test_safety.py
+tests/agent_toolkit/test_composer.py
+tests/agent_toolkit/test_fs.py
+tests/bi_dashboard/test_db_init.py
+tests/bi_dashboard/test_echarts_adapter.py
+tests/bi_dashboard/test_spec_generator.py
+tests/bi_dashboard/test_end_to_end_flow.py
+tests/bom/test_categorize.py
+tests/bom/test_conformance.py
+tests/test_hook_session_correlation.py
+tests/test_iac_cli.py
+tests/test_idr_conflict_gate.py
+tests/test_kg_entity_resolution.py
+tests/test_kg_llm_relationship_extractor.py
+tests/test_kg_pair_generator.py
+tests/test_kg_themes_by_collection.py
+tests/test_lens_migration_anomaly.py
+tests/test_lens_quality.py
+tests/test_lens_quality_anomaly.py
+tests/test_lens_workflow_patterns_anomaly.py
+tests/test_lesson_learned_kph.py
+
+# rem-tst-03 — second promotion batch off the ungated census (rem-tst-01).
+#
+# Same procedure as rem-tst-02, on the next 25. The census is the shortlist and
+# never the evidence: it answers "green ALONE" for all 1,792 grandfathered
+# modules and says nothing about order-dependence, so both halves were
+# re-measured on this branch on 2026-08-16 rather than read off the file.
+#
+# Selection, in order: (a) census status `passed` with a non-zero test count, so
+# a module that collects nothing cannot be promoted as if it were coverage;
+# (b) fastest first — every one is under 4s alone, ~16s of pytest for the batch;
+# (c) ZERO static skip sites, because a gated file that skips is UNMEASURED, not
+# passing, and registering a new site would breach skip_census.skip_max, which
+# only goes down.
+#
+# Measured: 25/25 green ALONE (one pytest process each, per-file ICDEV_DB_PATH)
+# and 25/25 green IN-SUITE in one process in this list's order — the two
+# directions are different defects and neither run substitutes for the other.
+#
+# args/test_gating_gate.yaml's backlog_max falls by the same 25.
+tests/test_agent_mailbox_placeholders.py
+tests/test_integrity_event_emitter.py
+tests/test_lens_workflow_patterns.py
+tests/test_icdev_logger.py
+tests/test_instrumentation.py
+tests/test_integrity_claim_parser.py
+tests/test_news_stream_fetcher.py
+tests/browser/test_get_driver_backend.py
+tests/chat_router/test_url_analyzer_query_wiring.py
+tests/test_iqe_infra_adapter.py
+tests/test_lens_trajectory_confidence.py
+tests/test_network_intelligence.py
+tests/browser/test_page_vv.py
+tests/chat_router/test_intent_classifier_cortex_adoption.py
+tests/ci/test_pr_watcher_enforced_gate.py
+tests/test_evidence_corpus.py
+tests/test_icdev_client.py
+tests/test_iqe_data_adapter.py
+tests/test_iqe_executor.py
+tests/browser/cdp/test_launcher.py
+tests/ci/modules/test_agent.py
+tests/ci/modules/test_state.py
+tests/perf/test_perf_benchmark.py
+tests/test_agent_shap.py
+tests/test_aggregation_guard.py
+# cef-fnd-01: the DataBridge agent broker's audit trail. Promoted OUT of
+# args/ci_test_backlog.txt in the PR that made it pass — the whole point of this
+# change is that an unrecorded access decision must go red, and a test that has
+# never gated a merge cannot do that. Covers: the table's PG-native migration,
+# the SQLite init DDL kept in step with it, and an audit-write failure surfacing
+# instead of being swallowed. No network, no live DB (conftest forces SQLite).
+tests/test_databridge_broker.py
+
+# cef-fnd-02: the docmod NIST publication cache. Gated because the live pull it
+# guards had NEVER landed a row — the CSRC RSS feed it shipped against is retired
+# (HTTP 404) and _fetch_feed reported that as "offline?", so a dead URL and an
+# air-gap were the same observable. These tests pin the four fetch outcomes apart,
+# hold drafts and unrevised publications out of the supersession cache, and keep
+# the offline flag a clean no-op. No network, no live DB (conftest forces SQLite).
+tests/docmod/test_feed_wiring.py
+# rem-tst-04 — third promotion batch off the ungated census (rem-tst-01).
+#
+# Same procedure as rem-tst-02 and rem-tst-03, on the next 25. The census is the
+# shortlist and never the evidence: it answers "green ALONE" for all 1,792
+# grandfathered modules and says nothing about order-dependence, so both halves
+# were re-measured on this branch on 2026-08-17 rather than read off the file.
+#
+# Selection, in order: (a) census status `passed` with a non-zero test count, so
+# a module that collects nothing cannot be promoted as if it were coverage;
+# (b) fastest first — every one under 4.5s alone, 292 tests for the batch;
+# (c) ZERO static skip sites, because a gated file that skips is UNMEASURED, not
+# passing, and registering a new site would breach skip_census.skip_max, which
+# only goes down.
+#
+# Measured: 25/25 green ALONE (one pytest process each, per-file ICDEV_DB_PATH)
+# and 25/25 green IN-SUITE in one process in this list's order — the two
+# directions are different defects and neither run substitutes for the other.
+#
+# args/test_gating_gate.yaml's backlog_max falls by the same 25.
+tests/test_iqe_data_seeds.py
+tests/test_dcpr_anomaly_detector.py
+tests/test_heartbeat_kanban_wakeup.py
+tests/test_iqe_infra_seeds.py
+tests/test_eval_suggestions.py
+tests/test_dic_filters.py
+tests/test_eval_harness_anomaly_detection.py
+tests/test_dcpr_append_only_tables.py
+tests/test_iqe_compliance_seeds.py
+tests/test_govcon_rfi_parser.py
+tests/test_dcpr_ai_mapper_llm.py
+tests/test_iqe_compliance_adapter.py
+tests/test_dic_layout_probe.py
+tests/quality/test_rigor_gates.py
+tests/test_embedding_feasibility.py
+tests/test_pipeline_delta.py
+tests/test_atlas_red_team.py
+tests/test_helm_emitter.py
+tests/test_ingestion_pipeline.py
+tests/ci/test_pr_watcher_unlinked_sweep.py
+tests/test_dwo_mcp_node_type.py
+tests/rag/test_retriever_common.py
+tests/test_alert_service_ai_narrative.py
+tests/test_dwo_event_tables.py
+tests/test_ideation_frames.py
+
+# rem-tst-04, the tool half. Gated in the PR that adds it, per the test-gating
+# policy — the red report is only worth reading if its arithmetic is checked, and
+# a check that never runs in CI cannot do that. Covers the failure-shape
+# classifier (including the two lines that made it wrong: a driver name quoted
+# inside an assertion message, and a table named before the word "table"), the
+# refusal to bucket a line with no usable signature, and the committed
+# docs/testing/ungated_red_modules.md agreeing with the committed census.
+tests/ci/test_ungated_red_report.py
+tests/test_databridge_first_grant.py
+tests/rag/test_provenance_ledger_retrieval.py
+
+# kpr-watch-07. GitHub does not apply `.gitattributes` merge drivers, so a PR
+# that appends to a union-merged path — which CLAUDE.md requires of every PR
+# adding a test file, via this very list — goes DIRTY while merging clean under
+# git. pr_watcher called that whole class a stale forge cache, spent a one-shot
+# budget on it and then went silent: nine of ten open PRs stuck, hcx-evt-03 with
+# 499 escalate rows and AWAITING MERGE never draining. This pins the three-way
+# classification (real / union_only / phantom), that a probe which could not RUN
+# is not read as a conflict, that only the union lines are stripped from the
+# comparison tree, and that the rebase budget is counted per base era.
+tests/ci/test_pr_watcher_union_conflict.py
+
+# Modified by kpr-watch-07, green alone and in-suite, and it carries the
+# structural guards that keep a stale conflict routed to the REBASE rather
+# than to the merge the forge refuses — deletable, until now, without anything
+# going red. Its `importorskip` on a first-party module went with it: that
+# guard could only ever turn a real breakage into a green skip.
+#
+# tests/ci/test_pr_watcher_rebase.py is deliberately NOT gated here. It is
+# green too, but it carries two legitimate environment guards (git absent;
+# suite pinned to SQLite), and registering them would need skip_max raised —
+# which may only go DOWN. Gating it belongs with whatever removes those two.
+tests/ci/test_pr_watcher_stale_conflict_recovery.py
+# cef-fnd-04: the domain-agnostic entity-currency store, and the reason
+# docmod_defacto_standards held 0 rows — its ONLY input, ni_devices, held 0 rows,
+# so the writer ran nightly and had nothing to learn from. Pins the shape, not
+# any vendor: sources are read from config, curated evidence keeps its authority
+# over a fresher feed, disagreement survives to the caller, and inventory vs
+# design evidence is never pooled into one percentage. Temp SQLite DB, no
+# network.
+tests/currency/test_entity_currency.py
+# cch-obs-02: caching that stops working goes red instead of quiet. cch-tel-01
+# made the per-call cache count exist; nothing watched it CHANGE, and a provider
+# that was caching and stops renders identically to one never enabled — both are
+# zero. Gated because the load-bearing half is the NEGATIVE direction: the
+# thresholds were fitted against 79 historical window pairs out of this ledger
+# (0.00% false-fire at 0.7 relative drop; 8.86% at 0.5), and a signal that fires
+# on normal variation is muted within a week, so the "does not fire" cases are
+# what keep it alive — ordinary movement, a swing on traffic too thin to judge, a
+# `local` mechanism that bills nothing back, an undeclared provider, and the
+# BACKFILLED pre-instrumentation zeros that would otherwise indict all 8
+# providers on the live board's 13,073 rows on the first run. Also pins that an
+# empty or unmigrated ledger reports `unmeasurable` rather than a clean bill, and
+# that the reflex is actually dispatched by the daemon rather than merely written
+# — declared-but-unconsumed being the defect this platform ships most.
+# 28 tests, ~1s: temp SQLite files only, no network, no shared board.
+tests/test_cache_regression.py
+
+# kpr-dup-04. Two background writers rewrite the record of a COMPLETED task,
+# and both end as a REVERT PR: the orphan sweep rolled a `done` task back to
+# backlog whenever its dependency parent was unfinished (80 firings, 100% of
+# them done->backlog, and 20 of the 61 tasks were already ON MAIN), and
+# pr_linker repointed a task away from a MERGED PR because it only knew
+# "not open". Both are NARROWED here, not disarmed, so the tests that matter
+# most are the negative ones: the 41 genuine orphans still roll back, and a
+# genuinely CLOSED-unmerged link is still repaired. Also pins the fail-safe
+# direction — an unverifiable landed check holds instead of rolling back.
+tests/kanban/test_completed_work_is_not_rewritten.py
+# kpr-watch-08. The survey that decides whether hold_on_sibling_conflict may
+# be widened to the union-merged paths, and the tie-break narrowing it found.
+# Gated because the survey's whole value is being trustworthy in ONE direction
+# — it must not under-report how much serialization widening would cause — and
+# that rests on details a refactor would quietly break: `*` not crossing `/`,
+# union patterns read from .gitattributes rather than hardcoded, and an
+# unavailable corpus exiting 2 instead of printing a clean report.
+tests/ci/test_sibling_hold_survey.py
+# hcx-evt-03 -- every context injection is recorded as a request_context event.
+# Before this, project_context / goal_context / profile_memory all put text in
+# front of the model and NONE of them left a trace, so the log's coverage claim
+# was only as good as its least-covered injector. Added in the PR that makes it
+# pass. 36 tests, ~6s, no DB and no network: same migration-sourced fixture as
+# test_agent_event_log.py, and the injectors are exercised against a tmp_path
+# repo root rather than the real checkout.
+tests/agent_runtime/test_context_events.py
+# kpr-dup-03: the stale-reaper recorded a FAILURE against a task that had
+# already opened its PR (kpr-watch-01, 2026-08-16: heartbeat 16:24:36Z, PR #1744
+# 16:27:16Z, reap 16:35:00Z) -- failure_count incremented, last_failure_reason
+# fabricated, status=backlog with an open PR. Gated because the reverse-direction
+# case is the one that regresses silently: a task with an open PR and a stale
+# heartbeat must NOT be reaped, and nothing else asserts that. Also pins the
+# over-correction guard -- a genuinely silent dispatch with no PR is still
+# reaped and still counted. 8 tests, ~1s, sqlite fixture, no network (`gh` is
+# monkeypatched out).
+tests/test_kanban_reaper_pr_opened.py
+
+# hcx-vv-01 -- the reverse-direction acceptance test for the request_context
+# event. One live turn through the REAL run_agent_loop with all four injectors
+# genuinely active, then: every block that reached the provider must be named
+# by an event, and the event's body_sha256 must be that block's digest.
+# "Some rows exist" is the assertion that HIDES a partially-covered log, so
+# this one starts from the system prompt and works backwards. It is what found
+# agent_loop's own retrieved-memory injector, uninstrumented while the other
+# three were covered. 17 tests, ~35s: no network, no LLM, the migration's own
+# up.sql for the events table and the injector modules' own _ensure_schema for
+# theirs. Added in the PR that makes it pass; no skips (args/ci_skip_census.txt
+# names none for this file, and none exist).
+tests/agent_runtime/test_context_events_live_turn.py
+
+# kpr-dup-06. `_has_open_pr` returns False on ANY error, which is correct for
+# the respawn guard it was written for (False = 'dispatch', cost of being
+# wrong = one extra dispatch) and WRONG for the post-push confirmation that
+# reused it, where False = 'throw the pushed branch back to backlog'. That one
+# reuse was 66 of the 126 backwards transitions on the board — more than
+# orphan_sweep, the stale reaper and auto-revive combined. Gated because the
+# defect is invisible in behaviour: both callers keep working either way, and
+# only the two structural tests here catch a revert to the boolean.
+tests/test_kanban_pr_flow_confirmation.py
+# rem-hyg-06 batch 1: the six Genesis reflex board writers in the `scheduled_at`
+# cohort now seed through tools/kanban/task_factory.py::create_tasks instead of
+# a raw INSERT. Pins the defect the conversion surfaced -- three of the six sent
+# task_type='bug', a value kanban_tasks_task_type_check forbids, so those three
+# could never have filed a card on PostgreSQL. That is a LATENT blocker, proved
+# from the constraint definition; it is NOT proved by the board holding 0 'bug'
+# rows, because all four of these reflexes are circuit-broken and so may never
+# have reached the INSERT at all -- see
+# reflex-missing-success-key-is-scored-a-failure-forever. SQLite does not
+# enforce CHECK constraints, so the assertion is against VALID_TASK_TYPES
+# directly rather than a round-trip. Also pins scheduled_at, which the seeder
+# grew to take these callers without silently parking their cards in backlog.
+# 27 tests, ~3s, sqlite fixture, no network.
+tests/kanban/test_reflex_board_writers.py
+
+# hcx-vv-03 -- the extension manager's own regression test, promoted out of the
+# backlog rather than added to it. hcx-live-01/02/03 rewrote dispatch(): they
+# added the TOOL_EXECUTE_BEFORE and AGENT_START/AGENT_END dispatchers, made the
+# ten hook_points config blocks load-bearing, started counting every dispatch,
+# and stopped swallowing a handler exception silently. Three NEW gated files
+# cover that new behaviour -- and the behaviour those changes had to keep intact
+# had no gated coverage at all: registration and unregister, priority ordering,
+# behavioural-vs-observational dispatch, loading handlers from a directory,
+# list_handlers filtering, and the ExtensionPoint enum's ten members (the exact
+# surface hcx-live-03 handed to a human to decide). Gating it SHRINKS the census
+# by one; backlog_max drops 1713 -> 1711 in the same commit. 18 tests, ~1s, no
+# DB, no network, no LLM: a fresh ExtensionManager() per test and tempfile dirs
+# for the file-loading cases. No skips -- args/ci_skip_census.txt names none for
+# this file and the source declares none. Verified in its own process, and
+# in-suite in BOTH orders against the gated extension files (last, after
+# test_dispatch_extension_point / test_extension_dispatch_governance /
+# test_extension_point_liveness / test_event_recorder / test_context_events /
+# test_agent_event_log -- 186 passed; and first, to prove it pollutes none of
+# them -- 69 passed). The full gated in-suite run is CI's step: red_first_gate
+# and isolation_run both scope to CHANGED TEST FILES and this PR changes none,
+# so neither of them can speak to a promotion out of the backlog.
+tests/test_extension_manager.py
+# cef-bck-01: the Cortex `currency` backend. Gated in the PR that adds it,
+# per the test-gating policy. The assertion that has to stay green is the
+# error one: a dead entity_currency / docmod_defacto_standards table must
+# produce BackendResults carrying .errors, never an empty success — the two
+# are byte-identical to every caller that only reads the list, which is the
+# defect ctx-perf-04 added the annotation for. Also pins the authority
+# ordering (curated catalog above feed above learner), which is banded in
+# code precisely so it cannot be overturned by a bumped confidence prior.
+tests/cortex/test_search_currency_backend.py
+
+# cef-bck-02: the Cortex `external` rung, the only backend whose evidence comes
+# from outside the boundary. Gated because the assertions that matter here are
+# refusals: that the rung pins fail_closed=True regardless of the platform's
+# `governance.fail_closed: false` default, that air-gap returns BackendResults
+# with a populated .errors and contacts nothing, that a missing
+# `databridge:<connector>:read` scope denies AND writes the refusal to
+# databridge_agent_access_log, and that an unaudited fetch drops its rows even
+# when they arrived. A regression in any of those is silent by construction --
+# it looks exactly like an empty corpus -- so an ungated file would not catch it.
+tests/cortex/test_search_external_backend.py
+# cef-bck-04. The `document_intelligence` lens is the first after `security` to
+# populate `sources:`, and a wrong prefix list is SILENT: filter_by_sources drops
+# hits before the caller ever sees them, so an over-broad prefix returns the
+# compliance corpus for a DI question and an over-narrow one returns nothing at
+# all -- both read as "the corpus does not cover it". Measured on the live board,
+# rag_chunks holds 559 dic_documents rows against 3552 rag_compliance_corpus
+# rows in the SAME table, so this lens is the only thing standing between a DI
+# query and 86% unrelated evidence. Gated so a config edit that widens, narrows
+# or empties the prefix list fails here instead of degrading retrieval quietly.
+tests/cortex/test_document_intelligence_lens.py

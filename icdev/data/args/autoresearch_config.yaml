@@ -87,6 +87,34 @@ git:
   # Date-based branch naming (Karpathy pattern)
   branch_naming: "{prefix}{domain}/{date}"
 
+# ── Real Mutation (xrv-lab-02) ────────────────────────────────────
+
+# The SECOND gate. `enabled: false` above stops the loop entirely; this stops
+# only the path that actually MUTATES code, so a deployment can run the loop's
+# selection and reporting while refusing to let an LLM write into a worktree.
+# DEFAULT FALSE, and off means the real path is NEVER taken -- code_quality
+# falls back to today's identity-baseline path and keeps reporting
+# `placeholder_metrics: true`. The rollback is a flag flip, not a merge revert.
+real_mutation:
+  enabled: false
+  env_override: ICDEV_AUTORESEARCH_REAL_MUTATION
+  # ADVISORY, and it can only NARROW. The authoritative list is
+  # tools/autoresearch/real_mutation.py::REAL_MUTATION_DOMAINS and the
+  # intersection is taken -- widening autonomous code mutation to a domain
+  # nobody vetted must not be a YAML edit.
+  domains:
+    - code_quality
+  # Per-RUN ceiling across every candidate. A loop that has spent it stops
+  # starting candidates and says so (`wall_clock_spent`) rather than running on.
+  wall_clock_seconds: 1800
+  # Per-CANDIDATE adapter budget. On expiry the whole process tree is killed
+  # and the candidate is `unmeasurable` -- never a quietly short result.
+  patch_timeout_seconds: 900
+  # Commit + push + `gh pr create`. There is no merge verb anywhere in the
+  # module; a kept candidate waits for a human.
+  open_pr: true
+  base_ref: origin/main
+
 # ── Circuit Breaker ──────────────────────────────────────────────────────────
 
 circuit_breaker:

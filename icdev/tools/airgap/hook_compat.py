@@ -37,7 +37,7 @@ import json
 import os
 import uuid
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterable, Optional
 
 from tools.db.storage import get_connection
 from tools.hooks import shared_checks
@@ -275,6 +275,7 @@ _CHECK_EXTRA_ARGS = {
 def run_pre_tool_check(
     tool_name: str,
     tool_input: Optional[Dict[str, Any]] = None,
+    skip: Iterable[str] = (),
 ) -> Dict[str, Any]:
     """Run the pre-tool-use safety checks — the SAME ones the Claude Code hook
     runs, from the same implementation in tools/hooks/shared_checks.py.
@@ -285,9 +286,14 @@ def run_pre_tool_check(
     list, which made the headless path — the one used unattended — the WEAKER of
     the two.
 
+    ``skip`` names ``HEADLESS_CHECKS`` entries a caller's operator switched off
+    with the hook's own per-check kill switch (``tools/hooks/harness_guard.py``
+    resolves them). Default: run every check.
+
     Returns:
         {"allowed": True/False, "reason": str}
     """
+    skip = frozenset(skip)
     if not tool_input:
         return {"allowed": True, "reason": "no input to check"}
 
@@ -299,6 +305,8 @@ def run_pre_tool_check(
     # check decides for itself which tools it applies to — that judgement belongs
     # with the check, not with a list here that nobody updates.
     for check in HEADLESS_CHECKS:
+        if check in skip:
+            continue
         try:
             extra = _CHECK_EXTRA_ARGS.get(check)
             reason = getattr(shared_checks, check)(

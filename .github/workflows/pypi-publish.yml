@@ -78,6 +78,10 @@ jobs:
           name: dist
           path: dist/
 
+      # Resolves every dependency from PyPI ALONE -- no git URLs, no wheelhouse -- which is
+      # exactly what `pip install icdev` does in an environment that can run nothing else.
+      # So `icdev-core` (a hard dependency since xcore-cut-02) must already be on PyPI, or
+      # this step fails and nothing publishes. Release icdev-core FIRST.
       - name: Install wheel
         run: pip install dist/*.whl
         shell: bash
@@ -86,6 +90,13 @@ jobs:
         run: |
           python -c "import icdev; print(f'icdev {icdev.__version__}')"
           python -c "from icdev._paths import get_project_root; print(get_project_root())"
+
+      # The two distributions share the `icdev` namespace; this proves the merge works from
+      # INSTALLED wheels (parent's __init__ runs, icdev.core comes from icdev-core).
+      - name: Verify icdev.core resolves from the icdev-core distribution
+        run: |
+          python -c "from importlib.metadata import version; print('icdev-core', version('icdev-core'))"
+          python -c "from icdev.core.paths import repo_root; from icdev.core.context import assert_identity; print('icdev.core OK')"
 
       - name: Verify excluded modules absent
         run: |

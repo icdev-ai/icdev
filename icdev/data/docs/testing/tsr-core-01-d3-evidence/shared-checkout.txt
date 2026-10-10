@@ -1,0 +1,126 @@
+..................................................................FF...F [ 56%]
+F....EEEE...............................................                 [100%]
+============================== warnings summary ===============================
+icdev\tools\testing\qa_agent_runner.py:42
+  C:\AI\ICDev\icdev\tools\testing\qa_agent_runner.py:42: PytestCollectionWarning: cannot collect test class 'TestFailure' because it has a __init__ constructor (from: tests/test_qa_agent_runner.py)
+    @dataclass
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_ecr_bill.py::test_usage_api_returns_data - AssertionError: ...
+FAILED tests/test_ecr_bill.py::test_usage_overview_api - AssertionError: Expe...
+FAILED tests/test_ecr_bill.py::test_rollup_reflex_run - assert False is True
+FAILED tests/test_lpx_proxy_metrics.py::test_ledger_spend_aggregates_by_key_and_scope
+ERROR tests/test_nav_bld_01_aisg_real_data.py::test_roi_summary_empty_state
+ERROR tests/test_nav_bld_01_aisg_real_data.py::test_executive_data_empty_state
+ERROR tests/test_nav_bld_01_aisg_real_data.py::test_roi_summary_computed_aggregates
+ERROR tests/test_nav_bld_01_aisg_real_data.py::test_executive_data_computed_aggregates
+4 failed, 120 passed, 1 warning, 4 errors in 46.19s
+........................................................................ [ 54%]
+...........................................................              [100%]
+131 passed in 45.61s
+EEEEEEEEEEEEEEEE........................................................ [ 30%]
+........................................................................ [ 61%]
+........................................................................ [ 92%]
+.................                                                        [100%]
+============================== warnings summary ===============================
+tests\e2e_govcon_proposals_cpmp.py:54
+  C:\AI\ICDev\tests\e2e_govcon_proposals_cpmp.py:54: PytestCollectionWarning: cannot collect test class 'TestResult' because it has a __init__ constructor (from: tests/e2e_govcon_proposals_cpmp.py)
+    class TestResult:
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+ERROR tests/e2e_govcon_proposals_cpmp.py::test_template_source_banners
+ERROR tests/e2e_govcon_proposals_cpmp.py::test_template_source_cui_level
+ERROR tests/e2e_govcon_proposals_cpmp.py::test_live_banner_govcon
+ERROR tests/e2e_govcon_proposals_cpmp.py::test_live_banner_proposals
+ERROR tests/e2e_govcon_proposals_cpmp.py::test_live_banner_cpmp
+ERROR tests/e2e_govcon_proposals_cpmp.py::test_live_banner_cpmp_deliverables
+ERROR tests/e2e_govcon_proposals_cpmp.py::test_live_banner_cpmp_reports
+ERROR tests/e2e_govcon_proposals_cpmp.py::test_role_scoped_govcon_page
+ERROR tests/e2e_govcon_proposals_cpmp.py::test_role_scoped_write_ops
+ERROR tests/e2e_govcon_proposals_cpmp.py::test_govcon_browser
+ERROR tests/e2e_govcon_proposals_cpmp.py::test_proposals_browser
+ERROR tests/e2e_govcon_proposals_cpmp.py::test_cpmp_browser
+ERROR tests/e2e_govcon_proposals_cpmp.py::test_pwin_ptw_browser
+ERROR tests/e2e_govcon_proposals_cpmp.py::test_cpmp_deliverables_browser
+ERROR tests/e2e_govcon_proposals_cpmp.py::test_cpmp_reports_browser
+ERROR tests/e2e_govcon_proposals_cpmp.py::test_proposals_language_browser
+217 passed, 1 warning, 16 errors in 54.88s
+EEEEE................................................................... [ 42%]
+.......+++++++++++++++++++++++++++++++++++ Timeout +++++++++++++++++++++++++++++++++++
+~~~~~~~~~~~~~~~~~~~~~~~~~ Stack of MainThread (9956) ~~~~~~~~~~~~~~~~~~~~~~~~~~
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\pytest\__main__.py", line 9, in <module>
+    raise SystemExit(pytest.console_main())
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\_pytest\config\__init__.py", line 221, in console_main
+    code = main()
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\_pytest\config\__init__.py", line 197, in main
+    ret: ExitCode | int = config.hook.pytest_cmdline_main(config=config)
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\_pytest\main.py", line 365, in pytest_cmdline_main
+    return wrap_session(config, _main)
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\_pytest\main.py", line 318, in wrap_session
+    session.exitstatus = doit(config, session) or 0
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\_pytest\main.py", line 372, in _main
+    config.hook.pytest_runtestloop(session=session)
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\_pytest\main.py", line 396, in pytest_runtestloop
+    item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\_pytest\runner.py", line 118, in pytest_runtest_protocol
+    runtestprotocol(item, nextitem=nextitem)
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\_pytest\runner.py", line 137, in runtestprotocol
+    reports.append(call_and_report(item, "call", log))
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\_pytest\runner.py", line 244, in call_and_report
+    call = CallInfo.from_call(
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\_pytest\runner.py", line 353, in from_call
+    result: TResult | None = func()
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\_pytest\runner.py", line 245, in <lambda>
+    lambda: runtest_hook(item=item, **kwds),
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\_pytest\runner.py", line 179, in pytest_runtest_call
+    item.runtest()
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\_pytest\python.py", line 1720, in runtest
+    self.ihook.pytest_pyfunc_call(pyfuncitem=self)
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\pluggy\_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\pluggy\_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\pluggy\_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\_pytest\python.py", line 166, in pytest_pyfunc_call
+    result = testfunction(**testargs)
+  File "C:\AI\ICDev\tests\test_production_audit.py", line 208, in test_cui_markings
+    result = check_cui_markings()
+  File "C:\AI\ICDev\tools\testing\production_audit.py", line 550, in check_cui_markings
+    head = py.read_text(encoding="utf-8")[:200]
+  File "C:\Python314\Lib\pathlib\__init__.py", line 792, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors, newline=newline) as f:
+  File "C:\Python314\Lib\pathlib\__init__.py", line 776, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
++++++++++++++++++++++++++++++++++++ Timeout +++++++++++++++++++++++++++++++++++
+........................................................................ [ 51%]
+...................................................................      [100%]
+139 passed in 33.25s

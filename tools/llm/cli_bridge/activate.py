@@ -21,9 +21,12 @@ existing cloud/local models — they remain as fallbacks).
 """
 
 import copy
+import ipaddress
 import os
+import re
 from contextvars import ContextVar
-from typing import Optional
+from typing import List, Mapping, Optional
+from urllib.parse import urlsplit
 
 from tools.logging.icdev_logger import get_logger
 
@@ -224,14 +227,137 @@ def cli_bridge_enabled() -> bool:
     return should_enable()
 
 
+# omx-vllm-01: the DECLARED locality of a provider (`locality:` in args/llm_config.yaml).
+#   local   -- runs on this machine; its base_url must be loopback/RFC1918/link-local.
+#   private -- an on-prem / LAN server the operator controls. Counted as local for the
+#              egress boundary ONLY when ICDEV_PRIVATE_IS_LOCAL=1.
+#   cloud   -- leaves the operator's network.
+LOCALITY_LOCAL = "local"
+LOCALITY_PRIVATE = "private"
+LOCALITY_CLOUD = "cloud"
+LOCALITIES = (LOCALITY_LOCAL, LOCALITY_PRIVATE, LOCALITY_CLOUD)
+PRIVATE_IS_LOCAL_ENV = "ICDEV_PRIVATE_IS_LOCAL"
+
+# The host a provider talks to when its spec names no base_url. Only Ollama has a
+# local default (the router falls back to localhost:11434); every other type's SDK
+# default is a vendor cloud endpoint, so "no base_url" proves nothing and fails closed.
+_DEFAULT_BASE_URL = {"ollama": "http://localhost:11434"}
+
+
+def _expand_env_ref(value: str, env: Optional[Mapping[str, str]] = None) -> str:
+    """Expand ``${VAR:-default}`` the way the router does, so a check sees the URL in use.
+
+    *env* defaults to the process environment; ``{}`` yields the DECLARED defaults.
+    """
+    env = os.environ if env is None else env
+
+    def replacer(match):
+        expr = match.group(1)
+        if ":-" in expr:
+            var, default = expr.split(":-", 1)
+            return env.get(var, default)
+        return env.get(expr, "")
+
+    return re.sub(r"\$\{([^}]+)\}", replacer, value or "")
+
+
+def provider_base_host(spec: dict, env: Optional[Mapping[str, str]] = None) -> str:
+    """Hostname the provider sends bytes to (lower-case), or "" when none is known."""
+    url = _expand_env_ref(str(spec.get("base_url") or _DEFAULT_BASE_URL.get(spec.get("type", ""), "")), env)
+    if not url.strip():
+        return ""
+    if "://" not in url:
+        url = "http://" + url
+    try:
+        return (urlsplit(url).hostname or "").lower()
+    except ValueError:
+        return ""
+
+
+def host_is_local(host: str) -> bool:
+    """True when *host* is provably on this machine or its private network.
+
+    `localhost`, or an IP literal that is loopback, RFC1918/ULA private or link-local.
+    Any other DNS name is unproven -- it may resolve anywhere -- and fails closed.
+    """
+    if not host:
+        return False
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    try:
+        ip = ipaddress.ip_address(host.strip("[]"))
+    except ValueError:
+        return False
+    return ip.is_loopback or ip.is_link_local or ip.is_private
+
+
+def provider_locality(spec: dict) -> Optional[str]:
+    """The declared `locality` of a provider spec, normalised, or None when undeclared."""
+    value = (spec or {}).get("locality")
+    if value is None:
+        return None
+    return str(value).strip().lower()
+
+
 def _is_local_only_provider(provider_name: str, providers: dict) -> bool:
     """True for a provider that never leaves the machine.
 
-    `ollama` and `ollama_cloud` share `type: ollama`, so the type alone cannot
-    distinguish them. The cloud endpoint is the one carrying an `api_key_env`.
+    THE one definition (omx-vllm-01). A provider DECLARES its `locality`:
+      * ``local``   -> local, but only while its base_url host is local-shaped
+        (see :func:`host_is_local`) -- a declaration cannot launder a public endpoint,
+        including one swapped in through ``VLLM_BASE_URL`` at run time;
+      * ``private`` -> local only when ``ICDEV_PRIVATE_IS_LOCAL=1`` (operator vouches);
+      * ``cloud`` or any unrecognised value -> not local.
+
+    Undeclared keeps the historical rule: `ollama` and `ollama_cloud` share
+    `type: ollama`, and the cloud endpoint is the one carrying an `api_key_env`.
+    Every other undeclared provider -- notably an `openai_compatible` one, which may
+    be vLLM or api.mistral.ai -- fails closed.
     """
     spec = providers.get(provider_name) or {}
-    return spec.get("type") == "ollama" and not spec.get("api_key_env")
+    locality = provider_locality(spec)
+    if locality is None:
+        return spec.get("type") == "ollama" and not spec.get("api_key_env")
+    if locality == LOCALITY_LOCAL:
+        return host_is_local(provider_base_host(spec))
+    if locality == LOCALITY_PRIVATE:
+        return os.environ.get(PRIVATE_IS_LOCAL_ENV, "").strip() == "1"
+    return False
+
+
+def locality_findings(providers: dict, env: Optional[Mapping[str, str]] = None) -> List[str]:
+    """Provider declarations that contradict themselves -- for coherence_checker.
+
+    *env* as for :func:`_expand_env_ref`: ``{}`` judges the committed defaults,
+    None judges the URLs this process would actually use.
+
+    * an unrecognised `locality` value;
+    * `local` whose base_url host is not loopback/RFC1918/link-local;
+    * `private` whose host is a PUBLIC IP literal (a DNS name is the operator's call).
+    """
+    findings: List[str] = []
+    for name in sorted(providers or {}):
+        spec = providers.get(name) or {}
+        locality = provider_locality(spec)
+        if locality is None:
+            continue
+        if locality not in LOCALITIES:
+            findings.append(f"{name}: locality '{locality}' is not one of {'/'.join(LOCALITIES)}")
+            continue
+        host = provider_base_host(spec, env)
+        if locality == LOCALITY_LOCAL and not host_is_local(host):
+            findings.append(
+                f"{name}: declared locality 'local' but base_url host '{host or '<none>'}' "
+                "is not loopback/RFC1918/link-local"
+            )
+        elif locality == LOCALITY_PRIVATE and host:
+            try:
+                ip = ipaddress.ip_address(host.strip("[]"))
+            except ValueError:
+                continue
+            if ip.is_global:
+                findings.append(f"{name}: declared locality 'private' but base_url host '{host}' is a public IP")
+    return findings
 
 
 def is_local_only_model(model_name: str, models: dict, providers: dict) -> bool:

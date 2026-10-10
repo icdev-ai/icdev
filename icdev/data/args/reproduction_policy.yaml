@@ -1,0 +1,48 @@
+# CUI // SP-CTI
+# Reproduce-or-drop policy for DYNAMIC security findings (oss-poc-01).
+#
+# Consumed by tools/security/reproduction_validator.py. The rule this file
+# parameterises: a dynamic finding that cannot be replayed from a stored
+# reproduction is `unconfirmed`, is never promoted to `finding`, and never
+# blocks a gate.
+#
+# Thresholds live here, not in Python — change behaviour without editing code.
+
+# --- Scope lock -------------------------------------------------------------
+# Replay makes real requests. Default-deny: only these hosts may be replayed
+# against, ever. Own targets only — never a third-party host. Override with
+# ICDEV_REPRO_TARGET_ALLOWLIST (comma-separated) for a self-hosted staging box.
+target_allowlist:
+  - localhost
+  - 127.0.0.1
+  - '::1'
+
+# --- Replay execution -------------------------------------------------------
+replay:
+  # Per-request timeout in seconds.
+  timeout_seconds: 10
+  # A reproduction longer than this is rejected at validation time. Multi-step
+  # exists for session setup (authenticate, then access), not for crawling.
+  max_steps: 8
+  # Response bodies are truncated to this many bytes before predicate
+  # evaluation and before any observation is persisted.
+  max_body_bytes: 65536
+  # Observed status codes must be literal — a 302 to a login page IS the authz
+  # signal, so redirects are not followed unless a step opts in.
+  allow_redirects: false
+
+# --- Predicate hygiene ------------------------------------------------------
+predicate:
+  # A `status_in` listing this many codes or more is treated as trivially true
+  # and rejected: it would "reproduce" against any target.
+  max_status_codes: 8
+
+# --- Gate behaviour ---------------------------------------------------------
+gate:
+  # Only findings at these severities may block, and only when confirmed.
+  blocking_severities:
+    - critical
+    - high
+  # The rule itself. Flipping this to true re-admits unreproduced findings as
+  # gate blocks and defeats the entire point of this module.
+  block_on_unconfirmed: false

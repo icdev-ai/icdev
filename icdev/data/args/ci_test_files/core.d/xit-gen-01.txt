@@ -1,0 +1,2 @@
+# xit-gen-01 - GENESIS_APPS from args/genesis_apps.yaml; root_missing instead of a raise.
+tests/genesis/test_genesis_apps_registry.py

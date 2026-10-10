@@ -1,0 +1,2 @@
+# mfx-ci-02 -- ICDEV CI declares one concurrency group per ref with cancel-in-progress.
+tests/ci/test_ci_concurrency.py

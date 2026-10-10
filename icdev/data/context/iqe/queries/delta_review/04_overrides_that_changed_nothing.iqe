@@ -1,0 +1,3 @@
+foreach d in delta_review.deltas
+  where d.is_no_op == true
+  select d.delta_id, d.artifact_id, d.stage, d.actor, d.rationale, d.created_at

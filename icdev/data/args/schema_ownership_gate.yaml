@@ -1,0 +1,12 @@
+# CUI // SP-CTI
+# Schema Ownership Gate (xit-decl-04)
+#
+# Consumed by tools/db/schema_ownership.py --check and
+# coherence_checker.check_schema_ownership. The owners a migration or DDL site
+# in THIS repository may touch. `ft` is here because FathomDesk still lives in
+# this tree; the removal PR (xit-rm-*) DROPS it, and from then on an ad_*
+# table cannot come back through a migration. Never ADD an owner to get a
+# commit through -- a table that needs a new owner needs a rule in
+# args/schema_ownership_rules.yaml and a --regenerate, which the diff shows.
+schema_ownership:
+  allowed_owners_here: [core, it, ft]

@@ -72,7 +72,7 @@ This project has 2 MCP servers available. Configure them in your tool to get ful
 | `playwright` | `python tools/mcp/playwright_server.py` |
 
 
-See `.mcp.json` for full server definitions. Use `python tools/dx/mcp_config_generator.py --platform codex --json` to generate Codex-compatible MCP config.
+See `.mcp.json` for full server definitions. Generate your harness's own MCP config with `python tools/dx/mcp_config_generator.py --platform <codex|opencode|pi> --write` (Codex: `.codex/`, opencode: `opencode.json`, Pi: `.pi/mcp.json`).
 
 ## Coding Standards
 

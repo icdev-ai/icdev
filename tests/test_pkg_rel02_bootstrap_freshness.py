@@ -100,6 +100,44 @@ def test_skills_source_of_truth_is_agents_not_claude(tmp_path, monkeypatch):
     )
 
 
+def test_file_entry_inside_a_dir_entry_is_not_stale(tmp_path, monkeypatch):
+    """exa-bench-10 ships tools/hooks/shared_checks.py INTO claude/hooks/. The dir
+    comparison for .claude/hooks must not call that file stale -- it blocked the
+    1.2.43 release with drift `prebuild_bootstrap.py --clean` could never clear."""
+    sources = [(".claude/hooks", "claude/hooks", "dir"),
+               ("tools/hooks/shared_checks.py", "claude/hooks/shared_checks.py", "file")]
+    repo, boot = _setup(tmp_path, monkeypatch, sources)
+    _write(repo / ".claude/hooks/pre_tool_use.py", "hook")
+    _write(boot / "claude/hooks/pre_tool_use.py", "hook")
+    _write(repo / "tools/hooks/shared_checks.py", "checks")
+    _write(boot / "claude/hooks/shared_checks.py", "checks")
+
+    r = vpc.check_bootstrap_freshness()
+    assert r["removed_stale_in_snapshot"] == []
+    assert r["ok"] is True, r
+
+
+def test_settings_template_compared_after_its_deliberate_rewrite(tmp_path, monkeypatch):
+    """settings.json.template is written through _settings_template_text (the
+    scaffold keeps `|| true`), so comparing raw source bytes is permanent drift."""
+    sources = [(".claude/settings.json", "claude/settings.json.template", "file")]
+    repo, boot = _setup(tmp_path, monkeypatch, sources)
+    live = '{"command": "%s"}\n' % pbb._PRETOOLUSE_REPO
+    _write(repo / ".claude/settings.json", live)
+    # Bytes, as prebuild's _copy_file writes them (newline="": no CRLF on Windows).
+    snap = boot / "claude/settings.json.template"
+    snap.parent.mkdir(parents=True, exist_ok=True)
+    snap.write_bytes(pbb._settings_template_text(live).encode("utf-8"))
+
+    r = vpc.check_bootstrap_freshness()
+    assert r["changed_content"] == []
+    assert r["ok"] is True, r
+
+    # A real change to the live settings is still reported.
+    _write(repo / ".claude/settings.json", live.replace("command", "cmd"))
+    assert "claude/settings.json.template" in vpc.check_bootstrap_freshness()["changed_content"]
+
+
 def test_missing_required_source_reported(tmp_path, monkeypatch):
     sources = [(".claude/commands", "claude/commands", "dir")]
     repo, boot = _setup(tmp_path, monkeypatch, sources)

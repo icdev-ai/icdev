@@ -1,0 +1,6 @@
+# autonomy-dep-01 — is this deployment running the schema that MERGED?
+# Pins the sort trap (schema_migrations holds legacy NNN and 14-digit
+# timestamps; '343' > '20260821...' lexicographically, so a max-based
+# comparison is confidently wrong) and that `unmeasurable` never becomes
+# `current`.
+tests/db/test_migration_drift.py

@@ -1,0 +1,66 @@
+# CUI // SP-CTI
+#
+# DocDrift currency panel (cef-ui-01) — what /document-intelligence/docdrift
+# renders per finding from `cortex.resolve()`.
+#
+# Read by tools/document_intelligence/docdrift_evidence.py (a library, no CLI).
+
+cortex:
+  # UNLIKE its sibling seams (cef-di-01/03/04/05) this ships ON.
+  #
+  # Those four MIGRATED a working legacy retrieval path, so `false` restores a
+  # chain that already existed. This one has no legacy path to fall back to:
+  # nothing on the DocDrift page has ever shown a verdict, a citation or a
+  # reason, so shipping it off would declare a capability nothing consumes —
+  # the defect CLAUDE.md calls this platform's signature bug.
+  #
+  # It is additive and read-only: a resolution is computed only when a
+  # human asks for one, and `false` here makes every finding render
+  # `not_resolved` — "we have not checked", explicitly NOT a clean bill of
+  # health.
+  enabled: true
+
+  # Framing passed to resolve(). Shapes the evidence QUERY and nothing else —
+  # resolver.resolve never feeds `question` to a pack extractor, so no wording
+  # here can move the verdict onto a different entity.
+  question_template: "Is {entity} still current, and what is the evidence?"
+
+  # Evidence hits requested per backend. Matches cef-di-03's DEFAULT_TOP_K so a
+  # DocDrift resolution and an SSP resolution ask for the same amount.
+  top_k: 5
+
+  # Upper bound on resolutions per batch request. The live board holds 72
+  # findings and one resolution costs 10-12s against five backends, so an
+  # uncapped "resolve all" is an outage, not a slow pass. What was SKIPPED is
+  # returned in the response and reported by run_stats() — never silent.
+  max_resolves_per_batch: 8
+
+  # A persisted resolution older than this is rendered STALE rather than
+  # current. It is still shown with its verdict — a stale answer is not an
+  # unknown one — but it is visibly dated so nobody reads a month-old
+  # `current` as today's.
+  stale_after_hours: 24
+
+advisory:
+  # The `sme` rung: an OPINION an LLM authors at query time. Never evidence,
+  # never a verdict input (tools/cortex/schemas.py ADVISORY_BACKENDS), and
+  # deliberately absent from `resolve.backends` in args/cortex_config.yaml.
+  #
+  # DEFAULT OFF because it is the one part of this page that costs an LLM call.
+  # Off renders `not_consulted`, which the template states as "not asked" — it
+  # must never read as "the expert had no concerns".
+  enabled: false
+
+  # May a REQUEST turn the rung on when `enabled` above is false?
+  #
+  # TRUE, because `enabled` is a DEFAULT ("do not spend an LLM call unless
+  # somebody asks") and the page's checkbox is somebody asking. Set this false
+  # on a deployment that must guarantee no model call reaches this page at all
+  # — an air-gapped install, where the guarantee has to hold regardless of what
+  # a request body says. The page then reports `not_consulted` and names the
+  # refusal, so a disabled control still explains itself.
+  allow_request_override: true
+
+  # One expert gives one opinion. search_sme ignores top_k for exactly this
+  # reason; carried for adapter-signature parity.
+  top_k: 1

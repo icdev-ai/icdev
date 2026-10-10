@@ -3,10 +3,11 @@
 """`icdev init` — Scaffold a new ICDEV™ project from the installed package.
 
 Copies the FORGE orchestration layer from the installed icdev package into
-the user's project directory so Claude Code (and humans) have everything
-needed to drive ICDEV™:
+the user's project directory so any AI coding harness (and humans) have
+everything needed to drive ICDEV™:
 
     my-project/
+    ├── AGENTS.md            (PRIMARY, harness-neutral instructions: opencode, Pi, Codex, ...)
     ├── CLAUDE.md            (master instructions for Claude Code)
     ├── .mcp.json            (MCP server configuration)
     ├── .env.template        (env var template — copy to .env and edit)
@@ -22,13 +23,16 @@ needed to drive ICDEV™:
     ├── data/                (sqlite dbs, project-local)
     └── docs/                (project-local documentation)
 
-After `icdev init`, users open the project in Claude Code and it "just works".
+After `icdev init`, users open the project in their harness and it "just works".
+ICDEV orchestrates harnesses; it is not one — so AGENTS.md, the file opencode,
+Pi and Codex all read, is the primary instruction file, and CLAUDE.md stays
+alongside it for Claude Code.
 
 Usage:
     icdev init                        # scaffold in cwd (prompts before overwrite)
     icdev init my-project             # scaffold into ./my-project/
     icdev init --force                # overwrite existing files
-    icdev init --minimal              # CLAUDE.md + .claude/ only (skip FORGE data)
+    icdev init --minimal              # AGENTS.md + CLAUDE.md + .claude/ only (skip FORGE data)
     icdev init --list                 # just show what would be copied
     icdev init --profile local-dev    # non-interactive: apply an install profile
     icdev init --profile none         # skip the profile prompt (registry defaults)
@@ -88,8 +92,17 @@ def _list_files(root: Path) -> list[Path]:
     return out
 
 
+#: The PRIMARY instruction file of a scaffolded project (omx-dx-01). Every
+#: harness ICDEV drives except Claude Code reads AGENTS.md, so it is REQUIRED —
+#: never optional like the other platform files below. Its packaged source is
+#: the flattened platform copy, which args/bootstrap_parity.yaml pins
+#: byte-identical to this repo's AGENTS.md.
+PRIMARY_INSTRUCTION_FILE = "AGENTS.md"
+PRIMARY_INSTRUCTION_SOURCE = "data/claude_bootstrap/platforms/AGENTS.md"
+
 # Mapping: bootstrap-source → project-target
 BOOTSTRAP_MAP: list[tuple[str, str]] = [
+    (PRIMARY_INSTRUCTION_SOURCE, PRIMARY_INSTRUCTION_FILE),
     ("data/claude_bootstrap/CLAUDE.md", "CLAUDE.md"),
     ("data/claude_bootstrap/mcp.json", ".mcp.json"),
     ("data/claude_bootstrap/.env.template", ".env.template"),
@@ -111,6 +124,7 @@ try:
     BOOTSTRAP_MAP.extend(
         (f"data/claude_bootstrap/{bootstrap_name(rel)}", rel)
         for _platform, rel in AI_PLATFORM_FILES
+        if rel != PRIMARY_INSTRUCTION_FILE  # already mapped above, as required
     )
 except Exception:  # noqa: BLE001 - a missing platform list must not break init
     AI_PLATFORM_FILES = ()
@@ -131,6 +145,7 @@ try:
 
     OPTIONAL_SOURCES.update(
         f"data/claude_bootstrap/{_bn(rel)}" for _p, rel in AI_PLATFORM_FILES
+        if rel != PRIMARY_INSTRUCTION_FILE
     )
 except Exception:  # noqa: BLE001
     pass
@@ -455,7 +470,8 @@ def _next_steps(target: Path) -> str:
         f"  2. Edit .env to add your API keys (ANTHROPIC_API_KEY, etc.)\n"
         f"  3. icdev-init-db                 # initialize databases\n"
         f"  4. icdev-dashboard               # start dashboard on :5050\n"
-        f"  5. Open the project in Claude Code — CLAUDE.md will guide the agent.\n"
+        f"  5. Open the project in your AI coding agent — AGENTS.md guides any\n"
+        f"     harness (opencode, Pi, Codex, ...); CLAUDE.md guides Claude Code.\n"
         f"\n"
         f"Canvases (Tech Writer, Notebook, BI Dashboard, etc.) are opt-in —\n"
         f"run 'icdev list' to see them, 'icdev enable <name>' to turn one on.\n"

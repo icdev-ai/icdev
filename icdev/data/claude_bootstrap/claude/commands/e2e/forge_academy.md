@@ -53,6 +53,8 @@ The single most important assertion in this file. Before the integrity work, 42 
   step's `test_code_path` — the client never supplies a test.
 - XP on `/academy/profile` is **unchanged**. Observed: `1615` → `1615`.
 - The sidebar item is **not** marked `done`.
+- `#submit-btn-<idx>` is **not** visible — Run is advisory and a failing Run
+  offers nothing to submit.
 
 ## Scenario 2 — a real solution passes and is credited
 
@@ -61,7 +63,12 @@ The single most important assertion in this file. Before the integrity work, 42 
    the list of three dicts. Set it through the CodeMirror instance
    (`window.editors[<idx>].setValue(...)`) — writing to the hidden textarea does
    not reach the editor.
-7. Click `#run-btn-<idx>` again and wait for the verdict.
+7. Click `#run-btn-<idx>` again and wait for the verdict. Run is ADVISORY: it
+   grades read-only via `/api/academy/code/run` and records nothing.
+   Assert `#output-<idx>` carries class `passed`, XP is still unchanged, and
+   `#submit-btn-<idx>` ("✓ Submit for credit") is now visible.
+7b. Click `#submit-btn-<idx>` — the only action that records the attempt; the
+    server re-grades the editor's contents.
 
 **Assert:**
 - `#output-<idx>` carries class `passed` and ends with the test's own
@@ -137,6 +144,44 @@ Regressions this catches, each of which shipped as a real defect:
   `aria-current="step"` at any time.
 - The CodeMirror input carries an `aria-label` — `fromTextArea` hides the labelled
   textarea and types into a private one, so the `<label for>` alone is not enough.
+
+## Scenario 7 — the AI-Assisted Engineering capstone kills its mutants
+
+`m-aie-04-capstone` (aicur-eng-04) hands the learner a vibe-coded `charge()` with
+three planted defects. Its step 2 grader checks the learner's fix against the spec,
+then runs the learner's tests against a hidden reference and against three mutants
+(one planted defect each). This journey proves a fix alone, or tests alone, is not
+enough.
+
+12. `GET /api/academy/learning-path?limit=10` for a learner who has completed
+    `m-aie-03-vibe-vs-engineering`.
+13. Open `/academy/mission/m-aie-04-capstone`, select step 2 ("Lab: Kill the
+    Mutants, Then Fix the Module"), and click `#run-btn-<idx>` with the starter
+    exactly as shipped.
+14. Replace the editor contents (via `window.editors[<idx>].setValue(...)`) with
+    the starter whose `charge` body is fixed — check the limit on the NEW total
+    with `>`, write only after the check, no `try/except` — but keep the agent's
+    single `test_charge`. Run.
+15. Keep the fix and replace `test_charge` with tests for: accumulation, a charge
+    landing exactly on the limit, a charge one token over that asserts the ledger
+    is unchanged, and `tokens=0` raising `ValueError`. Run, then click
+    `#submit-btn-<idx>`.
+
+**Assert:**
+- Step 12: `m-aie-04-capstone` is in `recommendations`, ahead of any mission whose
+  prereqs are not completed; no recommended mission has zero steps.
+- Step 13: `#output-<idx>` is `failed` and shows `Your charge() does not meet the
+  spec yet`. XP unchanged; `#submit-btn-<idx>` hidden.
+- Step 14: `failed` with `These mutants SURVIVED` naming at least
+  `boundary (a charge landing exactly on the limit is refused)`. A fix with a
+  suite that cannot catch the defect is not production grade.
+- Step 15: `passed`, ending `all 3 mutants killed.`; after Submit, XP increases
+  and the sidebar item is `done`.
+- Screenshot → `playwright/screenshots/aca-e2e-7-capstone-mutants-killed.png`.
+
+> Unlike Scenarios 1-6, no live figures are recorded here yet: the assertions
+> mirror the sandbox-level proofs in `tests/test_aca_aie04_capstone.py`. Record
+> observed XP deltas on the first live run.
 
 ---
 

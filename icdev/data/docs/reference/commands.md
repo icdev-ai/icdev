@@ -13,12 +13,19 @@ Complete CLI command reference for all ICDEV™ modules. See [CLAUDE.md](../../C
 
 # Memory system
 python tools/memory/memory_read.py --format markdown          # Load all memory
+python -m tools.hooks.session_context --json                # The SessionStart hook's block + measurement (xrv-mem-01); injected automatically on session start
+python -m tools.hooks.observation_capture --survey --since-days 7 --json   # xrv-mem-02: rows the PostToolUse capture yields per day, replayed over transcripts
+python -m tools.hooks.observation_capture --status --json   # what the auto_capture buffer holds, by source and session (the hook fills it; the reflex flushes it)
+python -m tools.hooks.observation_capture --procedural --dry-run --json    # pattern_detector's scored chains as procedural memories; --dry-run writes nothing
 python tools/memory/memory_write.py --content "text" --type event  # Write to daily log + DB
 python tools/memory/memory_write.py --content "text" --type fact --importance 7  # Store a fact
 python tools/memory/memory_write.py --update-memory --content "text" --section user_preferences  # Update MEMORY.md
 python tools/memory/memory_db.py --action search --query "keyword"   # Keyword search
 python tools/memory/semantic_search.py --query "concept"             # Semantic search (requires OpenAI key)
 python tools/memory/hybrid_search.py --query "query"                 # Best: combined keyword + semantic
+python tools/memory/hybrid_search.py --query "query" --layer index --json      # xrv-mem-03: {id, ts, type, headline, score} + approx_tokens (~40 tokens a row)
+python tools/memory/hybrid_search.py --layer timeline --since 2026-09-11T00:00:00 --json   # index rows in a window, chronological, interleaved with the session activity feed
+python tools/memory/hybrid_search.py --layer detail --ids 28184,28183 --json   # full rows for those ids only; missing_ids named
 python tools/memory/embed_memory.py --all                            # Generate embeddings for all entries
 
 # Agentic generation (Phase 19)
@@ -35,6 +42,23 @@ python -c "from tools.llm.router import LLMRouter; r = LLMRouter(); print(r.get_
 # Config: args/llm_config.yaml — providers, models, routing, embeddings
 # Set OLLAMA_BASE_URL=http://localhost:11434/v1 for local model support
 # Set prefer_local: true in llm_config.yaml for air-gapped environments
+
+# Ollama prefix cache — measured in LATENCY, never dollars (cch-prov-03)
+python tools/llm/ollama_prefix_latency.py --json                  # cold vs warm prompt-eval
+python tools/llm/ollama_prefix_latency.py --model qwen3:4b --repeats 7
+python tools/llm/ollama_prefix_latency.py --base-url http://gpu-box:11434
+# A local model has no per-token price, so cache_read_input_tokens stays 0 however
+# well caching works. The honest metric is server-side prompt-eval (prefill) time.
+# Measured 2026-08-16, ~1.9k-token prefix, 3 consecutive runs of n=5:
+#   qwen3:4b   440-471 -> 20-21 ms  (21.8-22.7x)
+#   qwen3:0.6b 103-278 -> 16-23 ms  (4.6-16.8x; noisier, short prefill, GPU load)
+# The cold seed is a per-run NONCE: Ollama's KV cache outlives the process, so a
+# fixed seed measures correctly once and then compares warm against warm.
+# prompt_eval_count is NOT the hit signal — it reports full prompt length on every
+# call, cached or not (constant at 1,914 across one cold and four warm). Only the
+# duration moves. Reports status=unmeasurable, never a number, when Ollama is down.
+# The /cache-savings card reads the DECLARED capability and shows "not applicable"
+# for a local provider instead of a dollar figure.
 
 # Semantic loop detection for the agent loop (ars-loop-01)
 # Library: tools/llm/loop_detector.py — detect_semantic_loop(records, config=) -> LoopDetection
@@ -171,15 +195,121 @@ python tools/builder/forge_validator.py --gate               # FORGE gate for ch
 
 ---
 
+## Fabric Registry (rmf-fab-01)
+```bash
+python -m tools.fabric.registry                        # real fabrics only (fixtures excluded, count stated)
+python -m tools.fabric.registry --include-synthetic    # the in-repo synthetic fixture too
+python -m tools.fabric.registry --json --fabric <key>
+python -m tools.fabric.registry --check                # validate base + overlay; exit 1 on a refusal
+python -m tools.fabric.registry --overlay /private/path/fabrics.yaml   # same as ICDEV_FABRIC_REGISTRY_PATH
+```
+A FABRIC is an enclave instance that HAS a classification; it is not itself a
+classification level. `args/fabric_registry.yaml` is schema + SYNTHETIC fixture
+(`fixture: synthetic`, every key `fx-*`) and names no real fabric -- the repository
+is public. Real fabrics live in a private overlay OUTSIDE the repo named by
+`ICDEV_FABRIC_REGISTRY_PATH`; an overlay entry with a fixture's key replaces it
+whole, a new key is added, `drop:` removes fixture keys, and a path that resolves
+inside the repo is refused. `classification` is a LABEL from
+`args/classification_profiles.yaml` (public, fouo, cui, cui_sp_cti, secret, itar);
+a BANNER (`CUI // SP-CTI`, `SECRET // NOFORN`, even bare `CUI`) is refused with the
+label it should have been, and the banner is derived from the profile at read time.
+`impact_level` must be one the domain declares AND the profile admits. Rank, egress
+restriction and traversal direction come from `icdev.core.sensitivity`; traversal is
+declared separately from any fabric, and a DOWNWARD path without a named `guard` is
+refused. `load_registry()` -- the seam `tools/fabric/posture.py` probes -- EXCLUDES
+synthetic fabrics unless asked and reports `synthetic_excluded` beside a reason, so a
+default deployment's posture panel reads "no fabrics declared (3 fixtures excluded)"
+rather than a fabricated fleet. `required_controls(fabric)` reuses
+`crosswalk_engine.get_controls_for_impact_level`; IL2 reads `count: None`, never 0.
+Found on the way: `crosswalk_engine.IL_KEYS` named `il4`/`il5`/`il6` while the data
+carries `il4_required`/..., so that function had returned `[]` for every level since
+it was written (IL4 now answers 114, IL5/IL6 117), and its own bootstrap DDL for
+`project_framework_status` disagreed with the live schema, so the coverage INSERT
+raised on any database it created itself. Both fixed here.
+
+## Cross-Fabric Posture Roll-Up (rmf-fab-02)
+```bash
+python -m tools.fabric.posture                    # human report, all declared fabrics
+python -m tools.fabric.posture --json
+python -m tools.fabric.posture --fabric <key>     # one fabric
+```
+UI: `/boundary/cato` -> "Cross-Fabric Posture"   API: `GET /boundary/api/fabric-posture`
+
+FIVE MEASURES per fabric, each stated beside ITS OWN denominator, because the
+denominators genuinely differ: `control_coverage` over the SCORED controls in the
+latest compliance snapshot, `evidence_freshness` over the controls that HAVE a
+cATO evidence item (never the full catalogue -- that would report three fresh
+controls against a 300-control baseline as 1% fresh when what is true is that 297
+were never collected), `open_cat1` over the CAT I findings RECORDED,
+`poam_age` over the OPEN POA&M items, `isa_expiry` over the live ISAs.
+
+TWO cATO SOURCES, LABELLED BY SCOPE AND NEVER BLENDED. `compliance/cato_monitor.py`
+is SYSTEM scope -- one registered project is one authorization boundary, counted in
+controls and evidence items. `security_canvas/continuous_authorization.py` is
+APPLICATION scope -- one row per deployed application, each a weighted blend of six
+live signals. An average of "62% of this boundary's controls carry fresh evidence"
+and "this application's six signals weight to 0.89" is a number with no denominator,
+and a number with no denominator cannot be wrong. So there is NO composite anywhere
+in the output: not the BDC scorer's 0-100 `readiness_score`/`band`/`weights` (its
+per-component detail is taken, its composite discarded) and not the stored
+`posture_score` (the recorded `ato_state` is carried instead).
+`assert_no_blended_score` walks the whole payload for those keys and the API route
+calls it BEFORE serialising -- a rule stated only as a comment is one nobody
+re-derives.
+
+THREE STATES PER MEASURE, NEVER MERGED. `measured` (the numbers were read -- and a
+measured 0 open CAT I findings is a REAL answer, which is why it is kept apart from
+the next one), `not_assessed` (source reachable, nothing recorded: `value` is None,
+NEVER 0 and NEVER 100), `source_unavailable` (the table or module could not be
+reached at all -- a migration that never ran and a writer that never ran send you to
+different fixes). Conflating the first two is how a project nobody scanned passes a
+STIG gate whose pass condition is literally `cat1_open == 0`.
+
+READ-ONLY BY CONSTRUCTION. `evaluate_authorization` INSERTs a `zig_continuous_ato`
+row on every call and `check_evidence_freshness` UPDATEs evidence status; a roll-up
+calling either would report evidence it had just manufactured. Neither name appears
+in the module and a test reads its AST to prove it, because a behavioural test still
+passes when a future edit puts the call behind a branch it does not take. The API
+route is GET with no POST sibling.
+
+Fabrics come from `tools.fabric.registry` (rmf-fab-01). Until that lands the roll-up
+reports `unmeasurable` and the panel says so in words -- an empty section is
+indistinguishable from a clean board, which is the defect this card exists to refuse.
+
+MEASURED on this deployment 2026-09-02, and the numbers are the finding: EVERY
+measure reads `not_assessed` or `source_unavailable` for every fabric.
+`compliance_twin_snapshots`, `poam_items`, `cato_evidence` and `stig_findings` all
+hold 0 rows, and `zig_continuous_ato` does not exist at all -- it is created lazily
+by `evaluate_authorization`, which has never been called. Note also that
+`cato_monitor._get_connection` demands a SQLite FILE be present before it opens
+anything, whatever `ICDEV_STORAGE_BACKEND` says, so from a worktree or a PostgreSQL
+deployment with no local `data/icdev.db` the system source reports
+`source_unavailable` carrying that reason VERBATIM. That is a pre-existing defect in
+`cato_monitor`, reported rather than papered over; `system_db_path` lets a caller
+that knows where its evidence lives point at it.
+
 ## Compliance Commands
 ```bash
 python tools/compliance/ssp_generator.py --project-id "sparkpilot"
 python tools/compliance/poam_generator.py --project-id "sparkpilot"
 python tools/compliance/stig_checker.py --project-id "sparkpilot"
+
+# ATO package — the ONE packager (rmf-inert-01). POST /api/ato-package/generate answered
+# 501 because it imported a module that did not exist; AADC's working accreditation
+# builder was GENERALISED to take any system rather than a second packager forking.
+# accred_package.build_accred_zip now delegates to build_package_zip, and the evidence
+# collectors MOVED out of the dashboard route module, so the package and /status cannot
+# disagree. readiness_pct is None — never 100.0 — over an empty denominator.
+python -m tools.compliance.ato_packager --project-id "sparkpilot" --json
+python -m tools.compliance.ato_packager --project-id "sparkpilot" --package-type cato --output-dir /tmp/pkg
+# UI: /ato-package   API: POST /api/ato-package/generate {"project_id": ..., "package_type": initial|renewal|cato}
+# Library: from tools.compliance.ato_packager import build_package_zip, PackageArtifact, generate_package
+
 python tools/compliance/sbom_generator.py --project-id "sparkpilot"                                # CycloneDX (default spec 1.7)
 python tools/compliance/sbom_generator.py --project-id "sparkpilot" --format spdx                  # SPDX 2.3 — the other format the 2026 standard names
 python tools/compliance/sbom_generator.py --project-id "sparkpilot" --spec-version 1.6             # 1.4-1.7 selectable for lagging consumers
 python tools/compliance/sbom_generator.py --project-id "sparkpilot" --python-env /path/to/.venv   # resolve Python from the installed environment
+python tools/compliance/sbom_generator.py --project-id "sparkpilot" --author "Defense Information Systems Agency"  # SBOM Author: the entity, not the tool ($ICDEV_SBOM_AUTHOR)
 python tools/compliance/spdx_writer.py --convert "/path/to/sbom.cdx.json" --output "/path/to/sbom.spdx.json"
 python tools/compliance/spdx_writer.py --validate "/path/to/sbom.spdx.json" --json                # against the official SPDX 2.3 schema, offline
 python tools/compliance/spdx_writer.py --compare "/path/to/sbom.cdx.json" "/path/to/sbom.spdx.json" --json  # do both formats carry the same elements?
@@ -188,6 +318,9 @@ python tools/compliance/component_producer.py --purl "pkg:golang/k8s.io/client-g
 python tools/compliance/component_producer.py --name flask --version 3.0.0 --ecosystem python --project-dir "/path/to/project" --json
 python tools/compliance/component_producer.py --validate "/path/to/sbom.cdx.json" --json          # every component states a producer or unknown provenance
 python tools/compliance/component_producer.py --registry --json                                    # the namespace -> organization registry in force
+python tools/compliance/component_hasher.py --registry --json                                      # the IANA Hash Function Textual Names, and which are emittable
+python tools/compliance/component_hasher.py --validate "/path/to/sbom.cdx.json" --json             # every component states a digest or an explicit unknown, with an IANA-registered algorithm
+python tools/compliance/component_hasher.py --file "/path/to/artifact.jar" --json                  # sha-256 of one artifact, the way recomputation does it
 python tools/compliance/sbom_conformance_gate.py --sbom "/path/to/sbom.cdx.json" --json            # gate on the 2026 minimum elements, not on presence
 python tools/compliance/sbom_conformance_gate.py --sbom "/path/to/sbom.cdx.json" --gate swft       # deployment_gates | swft | devsecops; exit 1 when it blocks
 
@@ -209,6 +342,27 @@ python tools/compliance/sbom_signer.py --verify "compliance/sbom.cdx.json" --exp
 python tools/compliance/unknown_information.py --validate "/path/to/sbom.cdx.json" --json         # unknown vs withheld conformance; withheld is never counted as unknown
 python tools/compliance/unknown_information.py --policy --json                                     # the disclosure policy: enquiry route + declared withholdings (exit 1 on dropped rules)
 python tools/compliance/unknown_information.py --vocabulary --json                                 # the 17 fields and the two disjoint reason vocabularies
+
+# SBOM 2026 Minimum Elements conformance — grades ICDEV output AND vendor-supplied SBOMs
+python tools/compliance/sbom_minimum_elements_validator.py --sbom compliance/sbom.cdx.json
+python tools/compliance/sbom_minimum_elements_validator.py --sbom vendor.spdx.json --json         # CycloneDX 1.x or SPDX 2.2/2.3
+python tools/compliance/sbom_minimum_elements_validator.py --sbom sbom.cdx.json --min-score 80    # exit 1 below threshold, 2 if unreadable
+python tools/compliance/sbom_minimum_elements_validator.py --sbom sbom.cdx.json --require-conformant
+python tools/compliance/sbom_minimum_elements_validator.py --sbom sbom.cdx.json --record --project-id "sparkpilot"
+python tools/compliance/sbom_identifiers.py --validate "/path/to/sbom.cdx.json" --json           # Component Identifiers conformance; exit 1 on a component with none, or a malformed one
+python tools/compliance/sbom_identifiers.py --component "pkg:pypi/flask@3.0.0" --json             # every identifier derivable for one component, CPE included
+python tools/compliance/component_names.py --validate "/path/to/sbom.cdx.json" --json            # Component Name conformance; exit 1 on an alternate that repeats the primary or carries an unknown kind
+python tools/compliance/component_names.py --name core --group "@babel" --purl "pkg:npm/%40babel%2Fcore@7.23.9" --json   # every name one component is known by
+python tools/compliance/dependency_graph.py --validate "/path/to/sbom.cdx.json" --json           # Component Dependency Relationship; exit 1 on a flat list, a dangling dependsOn, an unrooted graph or a declared cycle count that disagrees
+
+# SBOM Distribution and Delivery (2026 Minimum Elements) — version-specific retrieval.
+# Served over HTTP at $ICDEV_BASE_URL/api/supply_chain/sbom/<project_id>/<version>,
+# with /record/<id> as a permalink and /versions/<project_id> as the index. RBAC and
+# classification are enforced on every one of them.
+python tools/compliance/sbom_distribution.py --list --json                                         # every SBOM record + its retrieval URL
+python tools/compliance/sbom_distribution.py --list --project-id "sparkpilot"                      # one project's versions
+python tools/compliance/sbom_distribution.py --project-id "sparkpilot" --version 2.0 --json        # resolve one version: sha256, markings, conformance
+python tools/compliance/sbom_distribution.py --record-id 7 --out "./sbom.cdx.json"                 # the artifact's exact bytes, unmodified
 python tools/compliance/cui_marker.py --file "/path/to/file" --marking "CUI // SP-CTI"
 python tools/compliance/nist_lookup.py --control "AC-2"
 python tools/compliance/control_mapper.py --activity "code.commit" --project-id "sparkpilot"
@@ -290,6 +444,11 @@ python tools/security/dependency_auditor.py --project-dir "/path"
 python tools/security/secret_detector.py --project-dir "/path"
 python tools/security/container_scanner.py --image "sparkpilot:latest"
 
+# ATO boundary tier tagging of scan findings (GREEN/YELLOW/ORANGE/RED)
+python tools/security/boundary_tagger.py --report .tmp/security-reports/scan.json --json
+python tools/security/boundary_tagger.py --report scan.json --project-id <id> --system-id <sys-id> --create-assessments --json
+python tools/security/boundary_tagger.py --report scan.json --gate --json   # exit 1 on any RED finding
+
 # Security Framework (Phase 74 — sec-fnd)
 python tools/security/security_context.py --whoami --json
 python tools/security/abac_engine.py --review --json
@@ -301,6 +460,14 @@ python tools/security/encryption_at_rest.py --rotate --classification TS --json
 python tools/security/mtls_integration.py --verify --json
 python tools/security/security_middleware.py --init-app --json
 python tools/security/audit_posture.py --json
+
+# Network-egress fire rate (exa-bench-08) — measure before enforcing
+# shared_checks.check_network_egress ships MONITOR-ONLY. Measure, then flip
+# agent_egress.enforce in args/agent_egress_policy.yaml. Baseline: 0.093% of
+# 78,903 real Bash calls (docs/security/agent-vendor-permission-bypass.md §4a).
+python tools/security/egress_fire_rate.py --json                        # what the hook has recorded
+python tools/security/egress_fire_rate.py --corpus --json               # replay ~/.claude/projects transcripts
+python tools/security/egress_fire_rate.py --corpus <dir> --top 30       # replay a specific corpus
 
 # SIPA Software Integrity PR gate (eqo-sipa) — assess only the *.py files changed on a branch
 python tools/integrity/pr_gates.py --base origin/main --json            # preview verdict over branch diff
@@ -342,7 +509,102 @@ python tools/analyzers/dispatch.py --type cve --value CVE-2024-3094 \
     --context '{"project_id":"p1","component":"xz","cvss_score":10.0,"severity":"critical","description":"backdoor"}'
 python tools/analyzers/dispatch.py --type vendor --value Acme --json      # machine-readable reports
 python tools/analyzers/dispatch.py --type ip --value 1.2.3.4 --analyzer threat_intel_match
+
+# Binary triage -- a compiled artifact is an observable (xrv-bin-01)
+python -m tools.analyzers.binary_triage <path> --json          # format, sha256, sections+entropy, imports, strings
+python -m tools.analyzers.binary_triage <path>                 # human report
+python -m tools.analyzers.binary_triage <path> --max-bytes 1048576 --max-strings 50
+python tools/analyzers/dispatch.py --type binary --value <path>   # through the contract fan-out
+# `sections`/`imports` are None -- never [] -- when nothing looked, with the reason named
+# (library_unavailable | library_failed | format_unsupported | truncated | malformed_header).
+# ICDEV_BINARY_MAX_BYTES (64 MiB) / ICDEV_BINARY_MAX_STRINGS (500) bound the read; over the byte
+# cap the status is `truncated` and sha256_scope reads `prefix`, never the artifact's identity.
+
+# Ghidra headless decompilation -- an OPTIONAL backend that reports its absence (xrv-bin-02)
+python -m tools.analyzers.ghidra_headless <path> --json         # functions, imports, strings, entry C
+python -m tools.analyzers.ghidra_headless <path>                # human report
+python -m tools.analyzers.ghidra_headless <path> --timeout 900 --max-cpu 4
+python -m tools.analyzers.ghidra_headless <path> --ghidra-home /opt/ghidra_11.1.2_PUBLIC
+python -m tools.dx.tool_index --name analyzeHeadless --json     # is Ghidra on this host at all?
+# ON A DEFAULT INSTALL THIS REPORTS `unavailable`, and that IS the correct reading.
+# Ghidra needs a JDK 21+ and a ~400 MB install, so it is deliberately NOT in
+# requirements.txt. Point ICDEV_GHIDRA_HOME at the install (the launcher is
+# <home>/support/analyzeHeadless[.bat]) or put it on PATH. ICDEV_GHIDRA_ENABLED=0
+# switches the backend off, and off is REPORTED (`reason: disabled_by_env`).
+# `functions`/`imports`/`strings` are None -- NEVER [] -- when nothing looked, with
+# the reason named (ghidra_unavailable | disabled_by_env | run_timeout | run_failed |
+# export_absent | export_malformed | script_error). An [] there would read as "Ghidra
+# looked at this binary and found no functions" -- a claim about the ARTIFACT from a
+# run that never opened it.
+# FIVE statuses: ok | truncated | unavailable | timeout | error. Bounds:
+# ICDEV_GHIDRA_TIMEOUT (600s wall) / _MAX_CPU (2) / _MAX_FUNCTIONS (2000) / _MAX_STRINGS
+# (500); a hit bound is `truncated` with `truncation` naming which, never a short list.
+# Ghidra's own -analysisTimeoutPerFile is set BELOW the wall budget, so an over-running
+# analysis yields a PARTIAL export this module can label rather than a killed process
+# with no export at all. On the wall budget the whole PROCESS TREE is killed (the
+# launcher is a .bat/sh wrapping a JVM), and `kill_method` says how.
+# `unmeasurable` from tool_index for this binary is EXPECTED on a host that HAS it:
+# analyzeHeadless has no version flag. The version is read from
+# <home>/Ghidra/application.properties and is on every report.
 python tools/analyzers/dispatch.py --type ip --value 1.2.3.4 --responders # responders ACT — opt-in
+```
+
+### The two consumers of that triage (xrv-bin-03)
+
+```bash
+# 1. SBOM HINTS. sbom_generator discovers components from DECLARED manifests only;
+#    this adds what the artifact itself appears to contain.
+python -m tools.compliance.binary_components <artifact> --json     # the hinted components, standalone
+python -m tools.compliance.binary_components <artifact>            # human report, skips included
+python tools/compliance/sbom_generator.py --project-id "sparkpilot" --binary /opt/app/bin/app
+python tools/compliance/sbom_generator.py --project-id "sparkpilot" --binary a.so --binary b.so
+# EVERY hinted component is labelled one, in its CycloneDX properties:
+#   icdev:sbom:binary-hint:evidence        binary_strings
+#   icdev:sbom:binary-hint:confidence      unasserted   <- there is no second value
+#   icdev:sbom:binary-hint:evidence-string the RAW string, so the reader can check
+#   icdev:sbom:binary-hint:version-token   what binary_triage returned
+#   icdev:sbom:binary-hint:version-basis   triage_token | triage_token_extended_in_string
+# THE TOKEN IS NOT THE VERSION. `_VERSION_TOKEN` ends at a word boundary, so the seam's
+# hint for `OpenSSL 1.1.1k` is **1.1** -- a WRONG version, not a vague one, and a CVE
+# lookup against it answers about a release the artifact does not contain. The token is
+# extended over the version characters that FOLLOW IT IN THE SAME STRING, bounded at 40
+# chars, and both values ride on the component. Measured residual, and it belongs to
+# binary_triage: that same `\b` means `v1.1.1k` yields NO hint at all, and this module
+# reports the zero rather than running a second regex the triage would disagree with.
+# A hint with NO identifier beside it is SKIPPED BY NAME (`no_name_adjacent`) with the
+# string it came from -- binaries are full of version-shaped numbers, and a component
+# named after nothing buries the real entries. No purl is ever invented: a purl asserts
+# an ecosystem and a namespace, and a string in a binary names neither.
+# Five statuses: ok | no_hints (READ, carries none -- a MEASURED zero) | unmeasurable
+# (could not be read -- NOTHING is known) | unsupported_format | truncated.
+
+# 2. CORROBORATION. attestation_verify and slsa_verify check METADATA about an artifact
+#    and have never opened it -- the "the binary does not match the SBOM" rebuttal.
+python -m tools.devsecops.artifact_corroboration --artifact app.exe \
+    --attestation provenance.json --sbom sbom.cdx.json --json
+python tools/devsecops/attestation_manager.py --project-id p1 --verify --image reg/app:v1 \
+    --artifact app.exe --attestation provenance.json --sbom sbom.cdx.json --json
+python tools/compliance/slsa_attestation_generator.py --project-id p1 --verify \
+    --artifact app.exe --sbom sbom.cdx.json --json
+# MCP: attestation_verify / slsa_verify both take artifact / attestation / sbom.
+# TWO AXES, NEVER MERGED, each agrees | disagrees | unmeasurable:
+#   digest  the artifact's own SHA-256 vs the attestation SUBJECT's. The strong one:
+#           a mismatch means the statement is about a DIFFERENT FILE. A PREFIX digest
+#           (the byte cap was hit) is `unmeasurable`, never `disagrees` -- accusing a
+#           correct attestation because of OUR bound is a fabricated finding.
+#   sbom    what the triage OBSERVED vs what the SBOM DECLARES. CycloneDX and SPDX are
+#           both read, because the generator emits both from one build.
+# REPORTED BESIDE THE SIGNATURE VERDICT AND NEVER FOLDED INTO IT. `attach()` returns a
+# NEW mapping with every existing key unchanged and REFUSES to overwrite -- so a triage
+# that cannot load pefile can never downgrade a cryptographically sound verification,
+# and an adversary who can make the triage unmeasurable cannot move the verdict.
+# THE SBOM AXIS IS DELIBERATELY ASYMMETRIC: only a VERSION CONTRADICTION on a name BOTH
+# sides carry reaches `disagrees`. A component the binary never mentions (static linking
+# leaves no trace) and a string the SBOM never declares (a protocol, a file format,
+# somebody else's requirement) are carried as CONTEXT -- `declared_not_observed` and
+# `observed_not_declared`, counted and named. An `unknown` declared version cannot
+# contradict anything: the generator's honest unknown marker must not become a finding.
+# Report only, no --gate: exit 0 even on `disagrees` (kpr-fix-03).
 ```
 
 ### Rate limits and sandbox posture (anz-rate-01)
@@ -417,6 +679,96 @@ finally:
 
 ---
 
+## SAG Runtime Configuration (hgx-cfg-01)
+
+`args/agent_runtime.yaml` collects the standalone agent runtime's settings in one
+documented file. It is a **layer beneath** the existing environment variables,
+not a replacement: resolution is
+
+```
+explicit argument
+  >  environment variable
+  >  args/agent_runtime.yaml
+  >  args/permission_postures.yaml (the selected posture)
+  >  built-in default
+```
+
+so every env var that worked before still works and still wins. Both files are
+optional — deleting them changes nothing about how the agent runs.
+
+```bash
+# Resolved configuration: posture, how it was selected, and the env vars
+# currently overriding the files
+python -m tools.agent_runtime.config
+
+# Machine-readable (config_path, postures_path, env_overrides, resolved)
+python -m tools.agent_runtime.config --json
+
+# Resolve against a site-local file instead of args/agent_runtime.yaml
+python -m tools.agent_runtime.config --config /etc/icdev/agent_runtime.yaml --json
+```
+
+Point the loader at a different file for a whole process with
+`ICDEV_AGENT_RUNTIME_CONFIG=/path/to/file.yaml`.
+
+### Permission postures (hcx-post-01)
+
+`args/permission_postures.yaml` names a **combination** of the safety knobs —
+sandbox confinement, approval mode, command-approval mode, mutation gate — so one
+selector moves them together and a run can say which posture it was under. Two
+ship:
+
+| Posture | Sandbox | Approval | Command gate | Mutation |
+|---|---|---|---|---|
+| `workspace-write` (default) | `workspace-write` | `manual` | `enforce` | denied |
+| `danger-full-access` | `danger-full-access` | `off` | `off` | allowed |
+
+```bash
+# Select a posture for one run
+ICDEV_PERMISSION_POSTURE=workspace-write python -m tools.agent_runtime.config
+
+# Which posture is in force, and what chose it (argument|env|file|builtin)?
+python -m tools.agent_runtime.config --json | python -c "import json,sys; print(json.load(sys.stdin)['resolved']['posture'])"
+```
+
+Two rules the loader enforces:
+
+- **A posture never overrules a higher layer.** It supplies a value only where no
+  environment variable and no explicit `agent_runtime.yaml` key already did. The
+  four posture-governed keys therefore ship *commented out* in
+  `args/agent_runtime.yaml` — uncomment one to pin that knob regardless of posture.
+- **`danger-full-access` takes an explicit human act.** It is reachable from an
+  explicit call argument or `ICDEV_PERMISSION_POSTURE`, and never from the file's
+  own `default:` key — including by re-declaring the posture without its
+  `requires_explicit_selection` flag.
+
+The `pre_tool_use` hook switches (`ICDEV_PRETOOLUSE_ENFORCE`, the per-check
+`ICDEV_<CHECK>_GUARD` set), `args/file_access_tiers.yaml` and
+`args/sandbox_config.yaml` are deliberately **not** posture keys: they are read by
+a standalone hook subprocess and by the container sandbox executor, neither of
+which loads this config layer. A key here with no reader would claim a reach the
+file does not have.
+
+The runtime is registered as the `sag` component, so the toggle is reachable from
+the normal component surfaces:
+
+```bash
+icdev list                 # sag — Standalone Agent Runtime  (flags: ICDEV_SAG_ENABLED)
+icdev status --json        # current on/off state read from .env
+icdev disable sag          # `icdev chat` then refuses to start
+icdev enable sag
+```
+
+`enabled:` in the YAML and `ICDEV_SAG_ENABLED` are the same switch, so the CLI
+toggle and the config file cannot disagree. There is deliberately **no `model:`
+key** — only `llm_function`, a routing function resolved through `LLMRouter`
+against `args/llm_config.yaml`. Per-subsystem toggles (project context, standing
+goals, profile memory, skill proposals, approval mode, mutation gate, delegation,
+toolset bundles) and the env var that overrides each are documented inline in the
+file and tabulated in `tools/manifest/standalone-agent-runtime.md`.
+
+---
+
 ## SAG Project Context — Instruction Loading at Session Start (hgx-sess-01)
 
 Loads `CLAUDE.md`, `AGENTS.md`, `memory/MEMORY.md` and the
@@ -484,6 +836,62 @@ model on the very next turn. `ICDEV_SAG_GOALS=0` disables injection entirely.
 
 ---
 
+## Refinement Cycles — Snapshot & Rollback of Supplemental State (exa-refine-05)
+
+A *refinement cycle* is a unit of self-modification of the supplemental harness
+state — the prompt layers (`prompt_versions`), auto-generated skills
+(`sag_skill_registry` + `.agents/skills/icdev-auto-*`) and learned goals
+(`genesis_generated_goals` + `data/genesis/suggested_goals`) that ICDEV rewrites
+about itself. Snapshot before, roll the whole thing back after.
+
+```bash
+# Snapshot the supplemental state and open a cycle
+python tools/agent_runtime/refinement_cycle.py open --label "gepa pass"
+
+# Only some stores
+python tools/agent_runtime/refinement_cycle.py open --providers prompts,skills
+
+# Cycles newest first, with derived status and refinement count
+python tools/agent_runtime/refinement_cycle.py list --limit 10
+
+# What a rollback WOULD do (drifted providers, file changes, added files)
+python tools/agent_runtime/refinement_cycle.py show <cycle-id>
+
+# Roll it back. Without --yes this is a preview, same as `show`.
+python tools/agent_runtime/refinement_cycle.py rollback <cycle-id> --yes
+
+# Re-verify every chained audit row the cycle wrote
+python tools/agent_runtime/refinement_cycle.py verify <cycle-id>
+```
+
+The **file half** of a snapshot is `tools/agent_runtime/checkpoints.py` — the
+same checkpoints `/snapshot` and `/rollback` drive — so there is one checkpoint
+system, not two. The **row half** lives in the append-only
+`supplemental_state_snapshots` / `supplemental_refinements` tables (migration
+`20260812074403`).
+
+A rollback opens an *undo* cycle first, so it is itself reversible: roll the
+`undo_cycle_id` back to reinstate the refinement. That is also what makes
+removing a file that appeared mid-cycle safe — it is deleted only once the undo
+checkpoint is confirmed to hold recoverable bytes, and anything unrecoverable is
+reported under `files_not_removed` rather than dropped.
+
+Every snapshot, applied refinement and rollback writes a **chained** `audit_trail`
+row (`event_type='supplemental_state'`), so `verify` recomputes each digest and
+its link through `provenance_verifier.verify_audit_integrity`. A row whose audit
+write failed reports `unaudited` — it never reads as verified.
+
+Record a change inside a cycle from Python:
+
+```python
+from icdev.tools.agent_runtime.refinement_cycle import open_cycle, record_refinement
+
+cycle = open_cycle("nightly gepa pass", actor="gepa_optimizer")
+record_refinement(cycle["cycle_id"], "prompts", "activated", target="layer/codegen")
+```
+
+---
+
 ## Agent Approval Gate — Irreversible Action Confirmation (ars-appr-01)
 
 Classifies an agent tool call by **reversibility** and halts the irreversible
@@ -522,6 +930,903 @@ Every approval **and** denial is appended to `agent_approval_log` (migration
 stored** — only argument key names and a SHA-256 of the input, because tool
 arguments can carry CUI. `dry_run` and `off` still write the audit row.
 
+### Policy chain — ALLOW / DENY / ASK (exa-policy-01)
+
+A layer **above** the reversibility gate. A policy is a function
+`PolicyEvent -> PolicyDecision` returning one of three effects plus a reason.
+`classify()` becomes one policy in the chain (`reversibility`) with its verdict
+unchanged; a **DENY short-circuits** the chain and is never offered to the
+approver.
+
+```bash
+python tools/agent_runtime/policy_engine.py --list-policies --json
+python tools/agent_runtime/policy_engine.py --evaluate git_push --json
+python tools/agent_runtime/policy_engine.py --evaluate run_command \
+    --input '{"command": "git push --force"}' --json
+```
+
+```python
+from tools.agent_runtime.policy_engine import build_policy_hook
+
+run_agent_loop(..., approval_gate=build_policy_hook())   # drop-in for the gate hook
+```
+
+Config: `args/agent_policy_chain.yaml` (`on_policy_error`, `chain`, per-event
+`floors`, `audit.log_allow`). Decisions land in the same append-only
+`agent_approval_log` through `approval_gate.record_decision()`, so the
+no-argument-values property is inherited rather than re-implemented.
+
+### Three-level composition + session state (exa-policy-02)
+
+Policies resolve **session** (end user) → **agent** (agent author) → **server**
+(admin baseline). A DENY at any level short-circuits the whole composition.
+Levels are **additive, never overriding**: the answer is the strictest effect any
+level returned, so a session can only ever ADD a deny — which is what makes
+evaluating the least-trusted level first safe.
+
+```bash
+python tools/agent_runtime/policy_composition.py --levels --json
+python tools/agent_runtime/policy_composition.py --evaluate git_push --json
+python tools/agent_runtime/policy_composition.py --evaluate git_push \
+    --session-policy '{"chain": [{"name": "reversibility"}]}' --json
+python tools/agent_runtime/policy_composition.py --state <session-id> --json
+python tools/agent_runtime/policy_composition.py --reset-state <session-id> --json
+```
+
+```python
+from tools.agent_runtime.policy_composition import build_composed_policy_hook
+
+run_agent_loop(..., approval_gate=build_composed_policy_hook(
+    session_id=session_id,
+    session_policy={"chain": [{"name": "max_tool_calls"}]},   # user tightening
+))
+```
+
+A stateful policy returns `state_updates` — omnigent's mechanism — and
+`SessionState` applies them as each policy returns, so a later policy reads what
+an earlier one wrote:
+
+```python
+PolicyDecision(
+    ALLOW, "under the limit", policy="max_calls",
+    state_updates=({"key": "call_count", "action": "increment", "value": 1},),
+)
+```
+
+Actions: `increment`, `decrement`, `set`, `append`, `delete`. State is keyed by
+`session_id` and persisted to `agent_session_policy_state` (migration
+`20260812054330`) so a counter is not reset by a process restart mid-session. A
+malformed update raises and resolves to DENY — a counter that silently fails to
+increment is a limit that silently never fires.
+
+Config: the top-level `chain` in `args/agent_policy_chain.yaml` is the **server**
+level; its `agent:` block is the in-repo agent default, overridden by
+`<profile_dir>/policy_chain.yaml` or `$ICDEV_AGENT_POLICY_CHAIN_AGENT`. The
+session level comes from the runtime or `$ICDEV_AGENT_POLICY_CHAIN_SESSION`.
+`audit` is server-only, and `on_policy_error: allow` is refused at every level.
+
+---
+
+## Builtin Agent Policies (exa-policy-03)
+
+The three policies that actually *use* the chain and the session state above.
+Each is a **factory**: a chain entry carries `params:` and the factory builds one
+configured instance (omnigent's `factory_params` shape), so an instance is
+configured rather than copied — and configured per level for free.
+
+```bash
+python tools/agent_runtime/policy_builtins.py --list --json
+python tools/agent_runtime/policy_builtins.py --describe risk_score --json
+python tools/agent_runtime/policy_builtins.py --check max_tool_calls_per_session \
+    --params '{"limit": 500}' --json
+```
+
+| Policy | What it holds that a regex cannot | Required params |
+|--------|-----------------------------------|-----------------|
+| `max_tool_calls_per_session` | How many calls this session has already made | `limit` |
+| `git_write_allowlist` | Which **branch** in which **repo** a push may write | `allow_branches` and/or `deny_branches` |
+| `risk_score` | Risk accrued across a long chain of individually benign calls | `ask_at`, `deny_at` |
+
+```yaml
+# args/agent_policy_chain.yaml
+chain:
+  - name: git_write_allowlist
+    enabled: true            # <- how one is switched off, per level
+    params:
+      repos: ["*"]
+      deny_branches: [main, master, "release/*"]   # checked first, case-INSENSITIVE
+      allow_branches: ["feat/*", "kanban/*"]       # allowlist, case-SENSITIVE
+      on_violation: deny
+      on_unknown: ask        # a bare `git push` does not name its branch
+```
+
+**No threshold has a Python default.** A missing `limit` / `ask_at` / `deny_at`
+is a config error that resolves to a DENY naming it — never a number nobody
+chose. An unknown param key, and `params` given to a policy that cannot take
+them, are errors for the same reason: accepted-and-ignored is a rule the operator
+believes is in force and which is not.
+
+A call a policy **refuses** does not accrue — it never ran. The stateful two
+require a `session_id` (`require_session: true`), because without one there is no
+session to count against and a per-session limit would silently become no limit.
+
+---
+
+## Normalized Agent Event View (agov-det-01)
+
+A **read-only** projection of the agent activity ICDEV already stores into one
+`AgentEvent` shape. Creates no table and issues no write. Sources:
+`hook_events`, `agent_executions`, `ai_telemetry`, `audit_trail`,
+`ace_audit_log`.
+
+```bash
+python tools/agent_detect/events.py --json --limit 20
+python tools/agent_detect/events.py --session <session_id> --json
+python tools/agent_detect/events.py --source hook_events --event-type command.exec --json
+python tools/agent_detect/events.py --summary --json
+python -m tools.agent_detect.events --since 2026-08-01 --until 2026-08-09 --json
+```
+
+Event types are **mutually exclusive** — one source row yields at most one
+event: `command.exec`, `file.read`, `file.write`, `file.delete`,
+`network.indicator`, `tool.call`. A recognized shell request is `command.exec`
+and never additionally `tool.call`; an unrecognized tool (including every MCP
+tool, whose input schema ICDEV does not own) stays `tool.call` with
+`mcp_server` and `mcp_tool` preserved.
+
+Two invariants are enforced in code:
+
+- **Classification never reads free text.** `_structured()` raises on any key in
+  `FREE_TEXT_KEYS` (`output_summary`, `message`, `details`, `content`,
+  `stdout`, …). There is no regex over any payload string anywhere in the
+  module, so a command quoted in tool OUTPUT can never be read as evidence that
+  the command ran.
+- **A promoted event carries the operand that justified it.**
+  `AgentEvent.__post_init__` rejects `command.exec` without a `command`,
+  `file.*` without a `file_path` and `network.indicator` without a `url`, so an
+  ambiguous payload stays `tool.call` rather than being promoted by loose
+  pattern matching.
+
+Every mapping carries a `confidence` naming how directly the source supports
+it: `direct` (the tool's own documented input field), `derived` (recognized via
+the shared `command_tools` list in `args/agent_approval_policy.yaml`) or
+`declared` (the row names a tool and nothing more). Order them with
+`CONFIDENCE_RANK`.
+
+Library use:
+
+```python
+from tools.agent_detect.events import classify, fetch_events, summarize
+
+events = fetch_events(session_id="sess-1", event_types=["command.exec"])
+summarize(events)                      # counts by type / source / confidence
+classify("Bash", {"tool_input": {"command": "git push"}})
+# → ("command.exec", "direct", {"command": "git push"})
+```
+
+---
+
+## Agent Detection Operator CLI (agov-det-07)
+
+The operator surface over the declarative rule pack in `args/agent_rules/`.
+Four verbs, all with `--json`.
+
+```bash
+python tools/agent_detect/cli.py --list --json
+python tools/agent_detect/cli.py --check --json
+python tools/agent_detect/cli.py --check --rules-dir args/agent_rules_enforce --json
+python tools/agent_detect/cli.py --test --json
+python tools/agent_detect/cli.py --scan --session <session_id> --json
+python tools/agent_detect/cli.py --scan --session <session_id> --record --json
+python -m tools.agent_detect.cli --list --json
+```
+
+| Verb | What it does |
+|------|--------------|
+| `--list` | Catalog the loaded rules — id, severity, kind, enforce, source path — plus any files skipped and why |
+| `--check` | Validate a rule directory. **Exits non-zero on any invalid rule.** Run it before copying a rule into `args/agent_rules_enforce/` |
+| `--test` | Evaluate the rules against the fixture events in `context/agent_detect/fixtures/`. Exits non-zero on a mismatch, and on zero cases |
+| `--scan` | Evaluate the rules against the events already stored for one session. Read-only unless `--record` |
+
+**Exit codes:** `0` completed and every check passed · `1` a check failed
+(invalid rule, fixture mismatch) · `2` usage error or the verb could not run.
+
+`--check` exists because an invalid rule is **inert, not match-all** — it is
+skipped into `RuleSet.errors` rather than degraded into a partial matcher. The
+exit code is therefore the only signal an operator ever gets that an enforcement
+directory is not doing what its author thinks it is.
+
+`--scan` is read-only by default so an operator can re-run it while tuning rules
+without accumulating rows in an append-only table they cannot delete. With
+`--record`, matches are appended to `agent_findings` as `decision="observed"`,
+`enforced=False` — the CLI runs after the fact and has nothing left to deny.
+
+> **A finding is a RULE MATCH AND NOT PROOF OF EXECUTION.** What the detector
+> sees, what it does not, and the measured per-source fidelity are in
+> [docs/features/agov-det-coverage-and-limits.md](../features/agov-det-coverage-and-limits.md).
+> Read it before reporting a clean `--scan` as evidence.
+
+---
+
+## Agent Wake Store — Agent-Scheduled Resumption (agov-wake-01)
+
+Lets an agent suspend itself and be resumed when a condition it named is met.
+Every other scheduler in ICDEV is external to the agent — Genesis reflexes,
+`agent_cron_jobs` (operator-declared and recurring), the kanban scheduler — and
+none of them can say "stop here, resume me when PR #1342 goes CI-green".
+
+**Library, no CLI.** Table `agent_wakes`, migration `20260809221051`.
+
+```python
+from tools.agent_runtime.wake import (
+    add_timer, add_timer_in, add_completion, add_event,   # suspend
+    due, complete_job, fire_event,                        # signal + collect
+    mark_fired, cancel, pending, get,                     # resolve + inspect
+)
+
+add_timer_in("sess-1", 900, note="retry the flaky check")     # sleep_for
+add_timer("sess-1", "2026-08-10T09:00:00+00:00")              # sleep_until
+add_completion("sess-1", "job-42")                            # wake_on(job)
+add_event("sess-1", "pr:1342:ci_green")                       # wake_on_event(key)
+
+fire_event("pr:1342:ci_green")        # -> ids promoted pending -> due
+for wake in due():                    # promotes elapsed timers, then returns due
+    if mark_fired(wake.wake_id):      # True only for the caller that won
+        resume(wake.session_id)
+```
+
+The state machine is one-directional — `pending -> due -> fired`, or
+`-> cancelled` from either live state. Every transition is a conditional
+`UPDATE` on the current state, so `mark_fired` is idempotent **and**
+exactly-once: two overlapping ticks cannot both resume one suspension. A
+`pending` wake cannot be fired directly, because promotion is what evaluates the
+condition. Writes raise `WakeStoreUnavailable` rather than drop a wake silently;
+reads degrade to empty so a failure cannot wedge the reflex tick.
+
+Agent tools (`sleep_for` / `sleep_until` / `wake_on` / `wake_on_event`) land in
+agov-wake-02; the tick and the event emitters in agov-wake-03.
+## Approval Inbox — Pending-Approval Store (agov-inbox-01)
+
+`console_approver` denies on EOF, so a headless overnight run refuses every
+irreversible action. The inbox is the durable destination for the ask instead —
+it changes **where** the question is delivered, never **what** the agent may do.
+
+```bash
+python tools/agent_runtime/approval_inbox.py --list --json
+python tools/agent_runtime/approval_inbox.py --list --state pending --inbox ops
+python tools/agent_runtime/approval_inbox.py --show <item_id> --json
+python tools/agent_runtime/approval_inbox.py --resolve <item_id> --approve \
+    --reason "authorised" --json
+python tools/agent_runtime/approval_inbox.py --resolve <item_id> --deny --json
+python tools/agent_runtime/approval_inbox.py --expire-due --json
+```
+
+Backed by `approval_items` (migration `20260809203855`), which is **mutable and
+deliberately NOT append-only**: an item is created `pending` and then moves
+exactly once to `resolved` / `expired` / `cancelled`, and that transition is an
+UPDATE. The permanent record stays `agent_approval_log` — every transition to a
+terminal state writes one row through the gate's existing `record_decision()`,
+so there is no second decision log.
+
+**Expiry and cancellation record `denied`.** A timeout is never an approval; a
+store that treated one as approval would silently become an auto-approver.
+
+Argument **values are never stored or delivered**. Rows are mirrored out to
+Slack/Teams/Telegram/email, so `render_summary()` — tier, rule, policy prose and
+argument key **names** — is the only sanctioned way to build a deliverable body.
+`ApprovalRequest.summary()` is **not** safe for this: it previews the
+`command` / `path` / `file_path` value.
+
+---
+
+## HITL Trust Deltas — the Delta is the Reviewable Unit (trust-hitl-01)
+
+A `force_*` override records THAT a human bypassed a TRUST gate and never WHAT
+CHANGED. `approve_draft` writes "promoted despite 3 citation defect(s)" and the
+draft text — the thing actually approved — appears nowhere. A reviewer cannot
+review a count.
+
+```bash
+python tools/quality/hitl_delta.py --pending --json
+python tools/quality/hitl_delta.py --pending --artifact-id draft-42
+python tools/quality/hitl_delta.py --show <delta_id> --json
+python tools/quality/hitl_delta.py --show <delta_id> --with-text
+python tools/quality/hitl_delta.py --settle <delta_id> --approve \
+    --reason "verified against the source PDF" --json
+python tools/quality/hitl_delta.py --chain <delta_id> --json
+```
+
+The diff is **claim-anchored, not textual**: `compute_delta` runs over
+`citation_grounding` claim offsets, so each changed span carries a start/end into
+its own text plus the `verify_claim` verdict on both sides. A claim that could
+not be checked is `unknown` — never `supported`.
+
+**Same storage split as the approval inbox above.** `trust_deltas` (migration
+`20260815063941`) is append-only EVIDENCE and is in `APPEND_ONLY_TABLES`; the
+human's disposition is mutable STATE and lands in the existing `approval_items`.
+`settle_delta` issues no UPDATE against `trust_deltas` — it resolves through
+`approval_inbox.resolve()`, which writes the permanent `agent_approval_log` row.
+A correction **appends** a successor through `supersedes_delta_id` and never
+edits its predecessor, the rule `sbom_revision.apply_correction` already follows;
+`revision_chain()` derives supersession at read time.
+
+Artifact **text is never delivered**. It lives in `trust_deltas` behind the RLS
+predicate; `render_delta_summary()` builds the inbox body from counts, hashes and
+the delta id, because those rows are mirrored to Slack.
+
+**A delta whose enqueue failed still reads pending.** Evidence is written before
+the ask, so a dropped ask surfaces as unanswered rather than as an approval.
+
+Consumers: the side-by-side panel is trust-hitl-02, the `force_*` call sites are
+trust-hitl-03. Until those land the CLI above is the operable surface.
+
+---
+
+## Agent Session Event Log — Model-Visible Means Logged (hcx-evt-01)
+
+`agent_loop_session.save_session` writes an agent run as ONE `messages_json`
+blob, UPSERT-overwritten every turn. That is enough to RESUME and nothing else:
+once turn N+1 is written, turn N no longer exists, so fork and replay are not
+merely unimplemented — the data they need is already gone. `llm_gateway_audit`
+does not cover it either; it stores hashes only and is imported by
+`tools/cortex/*` and `ops_hub/llmops_engine.py`, neither on the agent-runtime
+path, so SAG's own LLM calls are unaudited.
+
+`agent_session_events` (migration `20260816122036`) is one immutable row per
+model-visible event.
+
+```bash
+python tools/agent_runtime/event_log.py --session <session_id> --json
+python tools/agent_runtime/event_log.py --session <session_id> --with-payload
+python tools/agent_runtime/event_log.py --session <session_id> --type tool_call
+python tools/agent_runtime/event_log.py --policy --json
+```
+
+**The vocabulary is deliberately smaller than DSH's**: `turn_start`,
+`request_context`, `assistant_message`, `tool_call`, `tool_result`, `turn_end`.
+There is no per-chunk event — ICDEV's loop does not stream into the log, so a
+chunk row would record the transport's framing rather than anything the model
+saw, at one row per token.
+
+**Ordering is `seq`, not the clock.** Several events inside one turn routinely
+share a millisecond. `seq` is monotonic per session and UNIQUE over
+`(session_id, seq)`, which is what makes optimistic allocation safe: `next_seq()`
+reads the current maximum, and `append()` retries the constraint violation a lost
+race produces rather than writing a duplicate position.
+
+**This one is in the MAIN db, not the canvas db** — deliberately, and against the
+grain of CLAUDE.md's canvas rule, because `tenant_id`/`classification` make it
+RLS-eligible (these rows can hold verbatim model input) and because
+`agent_case/session_timeline.py` joins `hook_events` and `audit_trail`, both of
+which are in the main db. hcx-evt-04 collected on that: the log is a fourth
+source in that timeline, which a canvas-resident table could never have been.
+
+**`payload_hash` is always written; `payload_json` is not.** The hash comes from
+`tools/audit/row_hash.py::compute_payload_hash` — the same module, algorithm and
+encoding constants as the migration-149 audit chain, so this codebase has one
+hashing recipe and not two. Whether the document itself is retained is a
+classification decision in `args/agent_event_log.yaml`
+(`ICDEV_AGENT_EVENT_PAYLOAD_RETENTION=0` forces hash-only). A config file that
+exists but cannot be parsed fails **closed** to hash-only; an absent one uses the
+documented defaults. A NULL `payload_json` therefore means WITHHELD BY POLICY and
+nothing else — a retained `None` is stored as the JSON literal `null`, so
+"suppressed" and "empty" never collapse into one value.
+
+Append-only: registered in `APPEND_ONLY_TABLES`, and the module exposes
+`append()`, `read_session()` and `next_seq()` and no mutating verb at all. A
+correction is a new event. The INSERT is not wrapped in a bare `except` — a
+swallowed INSERT is how `module_budget_usage` held zero rows.
+
+Consumers: hcx-evt-02 (below) and hcx-evt-04 (the timeline join — the log is a
+fourth source in `tools/agent_case/session_timeline.py` and a member of every
+case bundle, minus `payload_json`; see the AGOV CASE section), then hcx-evt-03,
+05 and 06 (context injection, fork, the gate registrations).
+
+### Wiring it to a real turn (hcx-evt-02)
+
+`tools/agent_runtime/event_recorder.py` is a library — no CLI, so import it
+rather than invoking it:
+
+```python
+from tools.agent_runtime.event_recorder import TurnRecorder
+
+recorder = TurnRecorder.for_turn(chat_context_id)
+recorder.turn_start(user_input)
+result = run_agent_loop(
+    router,
+    ...,
+    on_turn=recorder.on_turn,                  # -> assistant_message
+    on_pre_tool_use=recorder.on_pre_tool_use,  # -> tool_call
+    on_post_tool_use=recorder.on_post_tool_use,  # -> tool_result
+    on_stop=recorder.on_stop,                  # -> turn_end
+    correlation_id=recorder.correlation_id,
+)
+```
+
+`AgentRuntime.run_turn` already does this, so every `icdev chat` turn is
+recorded. Read one back with the CLI above, using the **chat context id**:
+
+```bash
+python tools/agent_runtime/event_log.py --session <ctx-id> --json
+python tools/agent_runtime/event_log.py --session <ctx-id> --type tool_call --with-payload
+ICDEV_AGENT_EVENT_RECORDING=0 icdev chat      # stand recording down for a run
+```
+
+**No new hook machinery was added to the agent loop**, because none was needed —
+those four hooks already existed. `turn_start` is emitted by `run_turn` itself
+rather than by `on_turn`, which fires only *after* a model response and so could
+never carry the user's own input.
+
+**The recorder cannot change what a tool call is allowed to do.**
+`on_pre_tool_use` returns `None` on every path, including the paths where the
+log is unreachable; `run_agent_loop` composes the caller's hook *after* the
+approval gate and the first non-empty block message wins, so it can neither deny
+a call nor rescue one the gate denied. An audit outage must not silently become
+a refusal.
+
+**The recorder cannot end a turn.** `event_log.append` still raises — a writer
+that swallows its own INSERT is the defect that card exists to prevent — so the
+swallow lives in the recorder, once, with a `failures` count you can read back.
+
+**A gate-blocked or unregistered call still gets a `tool_call` event.**
+`on_post_tool_use` fires for every entry in `tool_calls`; `on_pre_tool_use` does
+not (skipped when no handler is registered, short-circuited when the gate blocks
+first), which would leave exactly the denied calls with no record of being
+called. The missing event is reconstructed from the post-hook's own arguments and
+tagged `observed: post_tool_use`, so it is never mistaken for one the pre-hook
+saw dispatched.
+
+**`session_id` is the chat context id**, not `AgentLoopResult.session_id` — that
+one is a fresh UUID on every call even when resuming, which would make each user
+message its own one-turn "session" and leave hcx-evt-05 nothing multi-turn to
+fork. The loop's per-run identity moves to the `correlation_id` column, which is
+also `AgentLoopResult.trace_id` and the `agent.turn` OTel span.
+
+**ADDITIVE.** `agent_loop_sessions.messages_json` remains the resume path: it
+works and it is tested. This is the audit / fork / replay path running beside it.
+
+---
+
+## Forking a Session at a `seq` (hcx-evt-05)
+
+The branching primitive ICDEV did not have. `parent_session_id` on
+`run_agent_loop` records sub-agent *lineage*; this is "this session is that one
+up to turn N, and then something else".
+
+```bash
+icdev chat --fork <ctx-id>                  # survey: the legal boundaries, creates nothing
+icdev chat --fork <ctx-id> --at 12          # branch here, then drop into the REPL
+icdev chat --fork <ctx-id> --at 12 -q "try the other approach"
+
+python -m tools.agent_runtime.fork --session <ctx-id> --boundaries
+python -m tools.agent_runtime.fork --session <ctx-id> --at 12 --dry-run --json
+python -m tools.agent_runtime.fork --session <ctx-id> --at 12 --title "branch B"
+```
+
+In the chat REPL:
+
+```
+/fork                    # the seqs this session may be forked at
+/fork 12                 # fork here and switch into the branch
+/fork 12 | branch B      # …with a title
+```
+
+**The boundary is resolved against the log, never against `messages_json`.**
+`--at` names a `seq` in `agent_session_events`, which is monotonic per session
+under a UNIQUE `(session_id, seq)` index. A number naming no event is refused
+rather than clamped: an operator who mistypes a boundary and silently gets a
+different fork has been handed a wrong answer that looks like a right one.
+
+**A boundary inside an open turn is REFUSED, not rounded.** Borrowed from DSH
+rather than rediscovered. A prefix ending mid-turn is not a shorter conversation,
+it is an illegal one — an assistant `tool_use` block with no matching
+`tool_result`, which the next provider call rejects (a constraint `agent_loop`
+already states at the budget check it placed *before* appending the assistant
+message). A legal boundary is one where no turn is open, every announced tool
+call has been answered, no `tool_result` is left over, and no projected payload
+is withheld. Every refusal names the legal boundaries either side, so the correct
+fork is one re-run away and never a guess.
+
+**A withheld payload cannot be forked, and says so.** `payload_json IS NULL`
+beside a NOT NULL `payload_hash` means WITHHELD BY POLICY
+(`args/agent_event_log.yaml`), which is not the same as empty. Projecting one
+would seed the branch with a message the model never saw, carrying a
+correct-looking digest. A hash-only deployment gets a refusal naming the policy,
+not a fork with holes in it.
+
+**The event order is not the message order.** `run_agent_loop` fires `on_turn`
+after the post-tool hooks, so a tool-using iteration lands in the log as
+`tool_call, tool_result, …, assistant_message` — the assistant message carrying
+the `tool_use` blocks arrives *after* the results answering them. The projection
+buffers a result until the message that announced its call lands, so both that
+order and the reverse project to the same legal message list. `tool_call` events
+are not projected: they carry no `tool_use` id, so the assistant message is the
+authoritative source for the blocks, and a result whose name matches no
+outstanding call is left orphaned rather than attached to a different tool.
+
+**What a fork writes:** a new `agent_loop_sessions` row holding the projected
+messages (read back before it is trusted — a `resume_session_id` pointing at a
+row that was never written produces a session that looks continued and remembers
+nothing), a new `chat_contexts` row whose `context_config.fork` carries the
+parent id, the boundary seq, the seed length and a digest over the seeded
+events' hashes, one `session_fork` event at `seq` 1 of the new session's own log,
+and the projected user/assistant turns replayed into `chat_messages`. The prefix
+events themselves are **not** copied: the digest proves which prefix was seeded
+without duplicating a byte of it, and copying would have needed a second write
+verb on a module whose surface is deliberately `append` / `read_session` /
+`next_seq`.
+
+**One inherited limitation.** The forked session's next turn behaves exactly as
+`--resume`'s does, including that `run_agent_loop` does not append a new
+`user_prompt` to a transcript loaded from `resume_session_id`
+(`tests/test_agent_loop.py::test_resume_loads_prior_messages` passes
+`user_prompt="ignored"`). That is a pre-existing property of the resume seam, not
+of forking, and fixing it belongs to `AgentRuntime.run_turn`.
+
+---
+
+## Permission Posture Selection — Operator Intent, Separately From the Knobs (hcx-post-02)
+
+hcx-post-01 named the combination of safety knobs. This is the half that records
+a *choice* of one.
+
+```bash
+python -m tools.agent_runtime.posture_selection --json            # what is in force
+python -m tools.agent_runtime.posture_selection --list            # selectable postures
+python -m tools.agent_runtime.posture_selection \
+    --select workspace-write --session <ctx-id> --actor <who>
+```
+
+In the chat REPL:
+
+```
+/posture                 # the posture in force, its source, and its four knobs
+/posture list            # selectable postures
+/posture <name>          # select it — records the decision
+/usage                   # token/cost stats, and the posture in force
+```
+
+**Why a separate event.** The resolved knobs say what the posture *is*; they can
+never say who decided it, or when, or what it was before. `approval_mode == "off"`
+read out of a running process does not distinguish a deployment default nobody
+looked at from something a named operator turned off eleven minutes ago — and
+those call for different responses. So selection appends a `permission_posture`
+event to `agent_session_events` carrying the posture, the actor and the resolved
+knob values, in the same `seq` ordering as the turns it governs. "The posture
+widened, and then these four tool calls happened" is one `ORDER BY seq`.
+
+**The event is log-only, and it is written first.** Nothing reads it back to
+decide a knob; deleting every row would change no behaviour. It is appended
+*before* anything is applied, so an intent survives a crash during the act, and a
+reader who finds an intent with no following change learns the apply failed.
+
+**Re-selecting the effective posture appends nothing.** Same name and no knob
+delta is a look, not a decision.
+
+**It writes one variable and never the four per-knob ones.** Selection sets
+`ICDEV_PERMISSION_POSTURE`; the knobs follow through hcx-post-01's chain
+(`argument > env > agent_runtime.yaml > posture > built-in`). A knob already
+pinned by `ICDEV_SAG_APPROVAL_MODE` or an explicit config key therefore does
+**not** move — including when the operator is tightening. That is reported, not
+worked around:
+
+```
+Posture: workspace-write -> danger-full-access (actor: alice)
+  sandbox: 'workspace-write' -> 'danger-full-access'
+  NOT MOVED  approval_mode stays 'manual'; the posture asks for 'off' but
+             ICDEV_SAG_APPROVAL_MODE pins it. Unset it to let the posture govern.
+```
+
+Having the selection overwrite those variables was rejected: it reverses an
+intent stated at a layer hcx-post-01 put *above* this one, and it would do so
+invisibly. Under-delivering loudly is recoverable; over-delivering silently is
+not.
+
+**An unwritable log refuses to widen, and only to widen.** A posture flagged
+`requires_explicit_selection` is refused when the event cannot be appended —
+there is no unaudited `danger-full-access`. Any other posture is applied with
+`logged: false` and a warning, because refusing in the tightening direction too
+would strand an operator in the *looser* posture whenever the database is
+unreachable.
+
+### Context injections — the `request_context` writer (hcx-evt-03)
+
+Nothing recorded a context injection anywhere. Three modules put text into the
+system prompt at session start and none of them left a trace:
+`tools/agent_runtime/project_context.py` (CLAUDE.md / AGENTS.md / MEMORY.md plus
+the `session_context_builder` summary), `goal_context.py` (standing goals) and
+`profile_memory.py` (durable facts, preferences, hybrid-memory hits). A tree-wide
+grep for `context_injection|injected_context|prompt_snapshot|rendered_prompt`
+returned three unrelated files. So the log's invariant — "anything that reaches a
+model request must be reconstructable from the log" — was a lie by omission, and
+its `request_context` event type was declared and never emitted.
+
+```bash
+python tools/agent_runtime/context_events.py --session <context_id> --json
+python tools/agent_runtime/context_events.py --session <context_id> --with-body
+python tools/agent_runtime/context_events.py --sources
+```
+
+`record_injection(session_id, source, text, detail=…)` writes one event **naming
+the source**. It is the one seam in this subsystem allowed to swallow:
+`event_log.append` raises on a failed INSERT by design, and that rule is wrong
+here — each injector is deliberately best-effort so a missing subsystem never
+blocks a turn, and recording must not become a new way for injection to fail.
+
+**Swallowed is not unmeasured.** Every call lands in exactly one `stats()`
+counter — `recorded`, `skipped_empty`, `skipped_no_session`, `failed` (plus
+`last_error`) — and a failure logs at WARNING. The counters are process-local on
+purpose: a durable failure counter would itself be a database write on the path
+that must not fail. The durable signal is the events, via `coverage()`.
+
+**The envelope is always stored; only the body is policy-gated.** A row whose
+payload the retention policy suppressed could not say which injector produced it,
+which is the one thing this card requires it to say — so `source`, the two sizes,
+`body_sha256` and the injector's budget accounting are always kept, while
+`args/agent_event_log.yaml` still governs the injected text (including
+`never_store: [request_context]`, which that file names as the setting's intended
+use). `payload_withheld` describes the envelope and `body_stored` describes the
+text; they are two flags because merging them would make "retention is off"
+read identically to "no context was injected".
+
+**`session_id` here is the chat `context_id`, not `AgentLoopResult.session_id`.**
+The loop id does not exist until the first turn *completes*, and injection happens
+before the first turn *starts* — keying on it would leave turn one unrecorded,
+which is the gap this card closes. The loop id is passed as `correlation_id` and
+is legitimately empty on turn one rather than back-filled.
+
+An injector that produced no text injected nothing, so there is no event: a
+disabled subsystem, an absent `AGENTS.md` or an operator with no goals reach the
+model with nothing, and a row saying so would be fabricated coverage rather than
+measured absence. There is no `--stats` flag for the same reason — a fresh CLI
+process could only ever print zeros, which reads as a clean bill of health.
+
+---
+
+## Approval Inbox — Channel Delivery and Reply Resolution (agov-inbox-03)
+
+Mirrors a pending item to a messaging channel and turns the human's reply back
+into a resolution, over the connectors ICDEV already has — every gateway adapter
+exposes the same `send_message(channel_user_id, text, thread_id)`, so there is
+**no new HTTP client**.
+
+```bash
+python tools/agent_runtime/inbox_channel.py --route --json
+python tools/agent_runtime/inbox_channel.py --route --persona overnight --json
+python tools/agent_runtime/inbox_channel.py --deliver <item_id> --json
+python tools/agent_runtime/inbox_channel.py --deliver-pending --inbox ops --json
+python tools/agent_runtime/inbox_channel.py --parse "approve [icdev:ai-1234]" --json
+```
+
+Wire it into the gate with the deliverer seam agov-inbox-02 already provides:
+
+```python
+from tools.agent_runtime.approval_gate import build_approval_hook
+from tools.agent_runtime.inbox_approver import make_inbox_approver
+from tools.agent_runtime.inbox_channel import make_channel_deliverer
+
+hook = build_approval_hook(
+    approver=make_inbox_approver(deliver=make_channel_deliverer(persona="overnight")),
+)
+```
+
+**The correlation token is the whole design.** A delivered message carries
+`[icdev:<item_id>]`; a reply resolves the item that token names and nothing else.
+A reply with **no** token — or with two different tokens — is **ignored**. It is
+never applied to the most recent or the only pending item: guessing which
+approval a bare "yes" meant is how the wrong irreversible action gets approved.
+
+**A delivery failure never loses or resolves the item.** In-app is the store of
+record and a channel is a mirror, so a raising adapter, a failed send, a missing
+route or an unbuildable channel all leave the item `pending` and answerable.
+
+**Outbound goes through the IL response filter**, then truncation, and *only
+then* the token footer — so redacting a CUI marking on an IL4 channel can never
+destroy the tag that makes the reply correlatable.
+
+**Inbound still traverses all eight gates.** A reply carrying a token is
+normalised to the allowlisted `icdev-approve` command before
+`run_security_chain` runs (the same synthetic-command shape agent-mode uses), and
+`resolve_from_reply()` refuses to settle anything unless every gate is recorded
+as passed. A free-text reply is an *answer*, never an approval: the item stays
+pending and still expires to `denied` on its own clock.
+
+Routing lives in `args/approval_inbox_routing.yaml` and resolves **per-session
+override → persona default → global default**, merged key by key. Its
+`approvers:` list is empty by default — parity with the console approver it
+replaces, which trusts whoever holds the terminal — and is enforced fail-closed
+once set.
+
+---
+
+## Unattended Sessions — Routing, Not Autonomy (agov-inbox-04)
+
+`unattended` decides **where** an approval ask is delivered. It does **not**
+change what the agent may do.
+
+```bash
+# Enable for a session (persisted — `--resume` keeps it)
+icdev chat --unattended --unattended-reason "overnight backlog run"
+icdev chat --resume <ctx-id> --attended     # explicitly route back to this console
+
+# A cron job carries its own flag, because a cron tick has no console at all
+icdev cron create nightly --mode agent --payload "..." --interval 1h --unattended
+icdev cron unattended <job-id> --on
+icdev cron unattended <job-id> --off
+
+# Inspect and set it directly
+python tools/agent_runtime/unattended.py --list --json
+python tools/agent_runtime/unattended.py --show <session_id> --json
+python tools/agent_runtime/unattended.py --set <session_id> --on \
+    --reason "overnight backlog run" --json
+python tools/agent_runtime/unattended.py --set <session_id> --off --json
+python tools/agent_runtime/unattended.py --clear <session_id> --json
+
+# The invariant, printed: what currently requires approval
+python tools/agent_runtime/unattended.py --surface --json
+```
+
+**What it does not do.** It does not widen the toolset, downgrade any tier,
+remove a tier from `require_approval_tiers`, change `default_tier` (still
+`unknown`), change the gate's `enforce` / `dry_run` / `off` mode, or approve
+anything. An irreversible call still halts — it now **suspends** on a pending
+`approval_items` row a human will answer, instead of being denied on EOF by a
+console prompt that could not be shown.
+
+`--surface` prints exactly that claim in comparable form (policy tiers,
+per-tool classification, resolved gate mode). Its output is asserted
+byte-identical with the flag on and off by `tests/test_unattended_flag.py`.
+
+**Never inferred from a missing TTY.** Enabling it is an explicit human act — a
+CLI flag, a cron job field, or `ICDEV_UNATTENDED` exported by an operator (a
+tri-state: `ICDEV_UNATTENDED=0` is a statement, not an absence). "No TTY" is
+true of a CI runner, a cron tick, a Docker `exec` and a pytest run, so an
+inference would silently re-route exactly the contexts nobody is watching.
+
+Stored in `agent_unattended_sessions` (migration `20260809213046`) and in
+`agent_cron_jobs.unattended`, so a restart resumes with the same routing rather
+than reverting mid-run to an approver that denies everything. A read that fails
+resolves to *attended* — the stricter path — while `set_unattended` raises
+rather than leave an operator with a session that refuses everything for no
+visible reason.
+
+---
+
+## AGOV CASE — Portable Case Bundle (agov-case-02)
+
+Exports one agent session as a directory that can be carried to a machine that
+never had the source database and verified there. Not a third bundler: SWFT
+(`tools/compliance/swft_evidence_bundler.py`) and `prov_recorder` both bundle
+software supply-chain evidence per PROJECT, and neither is keyed by
+`session_id` — this adds that axis on the same machinery and carries the
+`export_prov_json` document verbatim.
+
+```bash
+# Whole session
+python tools/agent_case/case_bundler.py --session sess-abc123 --out out/case-abc123
+
+# A window of it, as JSON, replacing an existing bundle
+python tools/agent_case/case_bundler.py --session sess-abc123 --out out/case-abc123 \
+    --since 2026-08-09T10:00:00Z --until 2026-08-09T11:00:00Z --force --json
+```
+
+```python
+from tools.agent_case.case_bundler import build_case_bundle
+result = build_case_bundle("sess-abc123", "out/case-abc123")
+result["bundle_digest"]   # time-free identity: same data -> same digest
+```
+
+Members: `manifest.json` (SHA-256 of every other file), `context.json`
+(endpoint/context header + classification), `timeline.json`, `records/` for
+`hook_events`, `audit_trail`, `agent_findings` and `agent_approval_log`,
+`artifacts.json`, and `provenance/prov.json`.
+
+Three properties hold by construction. **No member carries export wall-clock** —
+it lives only in `manifest.created_at` — so identical input produces a
+byte-identical manifest and `bundle_digest` is stable across export times.
+**No transcript table is ever read**, so the bundle cannot leak a prompt;
+`TRANSCRIPT_SOURCES` names the excluded tables in the header. **The
+classification marking is resolved** through
+`tools/compliance/classification_manager.py` from the markings on the session's
+own records, most restrictive wins — a session with a SECRET audit row produces
+a SECRET banner with no code change.
+
+Signed values (`hook_events.payload`, `audit_trail.hash`) are exported verbatim
+because the HMAC and the migration-149 chain are computed over them; redaction
+applies to operator free text (`agent_approval_log.reason`/`.detail`) via
+`tools/llm/output_redactor.py`. Verification that names WHICH records failed is
+agov-case-03; the operator CLI is agov-case-04.
+## Normalized Agent Event View (agov-det-01)
+
+A **read-only** projection of the agent activity ICDEV already stores into one
+`AgentEvent` shape. Creates no table and issues no write. Sources:
+`hook_events`, `agent_executions`, `ai_telemetry`, `audit_trail`,
+`ace_audit_log`.
+
+```bash
+python tools/agent_detect/events.py --json --limit 20
+python tools/agent_detect/events.py --session <session_id> --json
+python tools/agent_detect/events.py --source hook_events --event-type command.exec --json
+python tools/agent_detect/events.py --summary --json
+python -m tools.agent_detect.events --since 2026-08-01 --until 2026-08-09 --json
+```
+
+Event types are **mutually exclusive** — one source row yields at most one
+event: `command.exec`, `file.read`, `file.write`, `file.delete`,
+`network.indicator`, `tool.call`. A recognized shell request is `command.exec`
+and never additionally `tool.call`; an unrecognized tool (including every MCP
+tool, whose input schema ICDEV does not own) stays `tool.call` with
+`mcp_server` and `mcp_tool` preserved.
+
+Two invariants are enforced in code:
+
+- **Classification never reads free text.** `_structured()` raises on any key in
+  `FREE_TEXT_KEYS` (`output_summary`, `message`, `details`, `content`,
+  `stdout`, …). There is no regex over any payload string anywhere in the
+  module, so a command quoted in tool OUTPUT can never be read as evidence that
+  the command ran.
+- **A promoted event carries the operand that justified it.**
+  `AgentEvent.__post_init__` rejects `command.exec` without a `command`,
+  `file.*` without a `file_path` and `network.indicator` without a `url`, so an
+  ambiguous payload stays `tool.call` rather than being promoted by loose
+  pattern matching.
+
+Every mapping carries a `confidence` naming how directly the source supports
+it: `direct` (the tool's own documented input field), `derived` (recognized via
+the shared `command_tools` list in `args/agent_approval_policy.yaml`) or
+`declared` (the row names a tool and nothing more). Order them with
+`CONFIDENCE_RANK`.
+
+Library use:
+
+```python
+from tools.agent_detect.events import classify, fetch_events, summarize
+
+events = fetch_events(session_id="sess-1", event_types=["command.exec"])
+summarize(events)                      # counts by type / source / confidence
+classify("Bash", {"tool_input": {"command": "git push"}})
+# → ("command.exec", "direct", {"command": "git push"})
+```
+---
+
+## Agent Wake Tick + Event Keys (agov-wake-03)
+
+What ends a suspension. **No daemon** — the tick rides the Genesis cadence that
+already drains `agent_cron_jobs`, because ICDEV already runs three long-lived
+processes and a fourth is a fourth thing that can die unnoticed.
+
+**Libraries, no CLI.** Ticked by `tools/genesis/reflexes/agent_cron_reflex.py`
+(`every 1m` in `args/genesis_config.yaml`).
+
+```python
+from tools.agent_runtime.wake_tick import run_due_wakes
+from tools.agent_runtime.wake_signals import emit_pr_state, emit_task_status
+
+run_due_wakes()                       # fire every due wake, resume its session
+run_due_wakes(resumer=my_delivery)    # swap the delivery channel, not the gate
+```
+
+The tick **claims before it delivers** — `mark_fired` first, deliver only if it
+returned `True` — so two overlapping ticks cannot resume one suspension twice.
+The cost is stated: a delivery that fails after the claim is not retried
+(at most once, never twice) and is counted as `failed` in the tick result.
+
+Event keys are `<subject>:<id>:<event>`, emitted by `tools/ci/pr_watcher.py`
+(after each PR classification) and by the kanban state machine plus
+`pr_watcher._set_task_status` (on every applied task transition):
+
+| Key | Fired when |
+|-----|-----------|
+| `pr:<n>:ci_green` | CI passed and the PR is mergeable |
+| `pr:<n>:ci_failed` / `:merge_conflict` / `:changes_requested` | the matching PR verdict |
+| `pr:<n>:merged` / `pr:<n>:closed` | the PR left the open set |
+| `task:<id>:<status>` | a kanban task reached that status (`done`, `ci_failed`, …) |
+
+Re-emission is free: `fire_event` only promotes wakes that are still `pending`,
+so a poll loop firing `pr:1342:ci_green` every 30s promotes nothing after the
+first. Emitting never raises — a PR merge or a task transition is not allowed to
+break because a wake could not be promoted.
+
 ---
 
 ## Security Canvas (SDC) — Demo Runner
@@ -544,6 +1849,99 @@ python tools/db/seeds/seed_sdc_demo.py --all
 
 # Dashboard route: http://localhost:5050/security/demo
 ```
+
+---
+
+## GovChain Anchor Transports (trust-anchor-01, D-GC-1)
+
+`args/blockchain_config.yaml` declared `fabric.cli_path: peer` under the comment
+"Fabric CLI via subprocess" since GovChain shipped, and there was zero subprocess
+usage anywhere in `tools/blockchain/`. Separately, `hfc`/fabric-sdk-py is in
+neither `requirements.txt` nor `pyproject.toml`, so `blockchain_config.HAS_FABRIC`
+was permanently `False` and every anchor on the platform reached
+`NoOpFabricClient`. Anchoring is now routed by a transport registry.
+
+```bash
+# Which backend is carrying anchors right now, and why the others are not
+python tools/blockchain/transport_registry.py --doctor --json
+python tools/blockchain/blockchain_config.py --doctor          # same report via config
+python tools/blockchain/blockchain_config.py --test --json     # adds active_transport
+
+# The queue is the fall-through, not a failure: with no healthy transport every
+# anchor lands in govchain_pending_operations and is replayed later.
+python tools/blockchain/chain_anchor.py --anchor-provenance scr-001 --json
+python tools/blockchain/chain_anchor.py --flush-pending --json
+```
+
+Transports are tried in ascending `priority` and the first HEALTHY one wins
+(`fabric_sdk` 10 -> `peer_cli` 20 -> `noop` 90). Registering one `peer_cli`
+entry per endpoint under `fabric.transports.peer_cli.peers` is how peer failover
+works. Health is cached for `fabric.transport_health_ttl_seconds` (60s) because
+`is_enabled()` is on the dashboard render path.
+
+| Status | Healthy? | Meaning |
+|---|---|---|
+| `ok` | yes | backend answered and is worth using |
+| `degraded` | yes | answered, but something is missing (e.g. no orderer -> invokes will fail) |
+| `unreachable` | no | configured but did not answer |
+| `unavailable` | no | not installed / not configured (e.g. `hfc` absent, `peer` not on PATH) |
+
+- `hfc` remains an **undeclared dependency**. Nothing in `tools/blockchain/transports/`
+  imports it at module scope; absent, `FabricSdkTransport` reports `unavailable`
+  and the registry skips it.
+- The no-op is **unhealthy by default** — it is the absence of a backend, and
+  saying so is what makes the queue fall-through fire. `ICDEV_BLOCKCHAIN_NOOP_HEALTHY=1`
+  turns it into a simulation sink whose `noop-` tx ids are **not** chain
+  commitments.
+- A transport reports failure by RETURNING `status: failed`, not by raising.
+  `ChainAnchor` queues on anything that is not `anchored`, and `flush_pending()`
+  drains a row only on `anchored`.
+
+## Asset Discovery Adapters (rmf-disc-01)
+
+Five sources — csv, netbox, snmp, ssh, gns3 — behind one two-method contract,
+so `ni_devices` is populated by WHICHEVER adapters report healthy. Declaration:
+`args/discovery_adapters.yaml`. Every adapter ships **disabled** on this
+deployment, and snmp/ssh are disabled for a second reason: they touch live gear.
+
+```bash
+# Health per fabric. Discovers nothing, writes nothing.
+python -m tools.assets.discovery_adapters.runner --health --json
+# Discover, and write NOTHING — inspect a live fabric before any row lands.
+python -m tools.assets.discovery_adapters.runner --dry-run
+# Discover and upsert ni_devices.
+python -m tools.assets.discovery_adapters.runner --run --fabric enterprise
+python -m tools.assets.discovery_adapters.runner --list
+
+# Exercise every adapter against a MOCK target. No live probing: a temp CSV,
+# two loopback HTTP servers, and a substituted SNMP/SSH transport.
+python -m tools.assets.discovery_adapters.harness --json
+python -m tools.assets.discovery_adapters.harness --adapter snmp
+```
+
+FOUR FABRIC STATES and two of them mean "no inventory": `unmeasured` (no source
+on this fabric said anything about itself — NOT a clean bill of health),
+`blind` (sources WERE asked and not one can discover), `partial`, `covered`.
+NO PERCENTAGES: a discovery sweep has no authoritative denominator, so
+`device_count` is None — never 0 — when nothing was discovered.
+
+SEVEN HEALTH STATES, never merged. `unavailable` (a python dependency is
+absent — an install) is not `unreachable` (the network did not answer — a
+firewall); `disabled` says nothing whatever about the source. Only `healthy`
+and `degraded` discover, and a skipped adapter reports the state it was
+skipped on, so "0 devices" always carries its reason.
+
+CREDENTIALS ARE REFERENCES. `token`/`password`/`community`/`enable_secret` must
+be `env:VAR` or `file:/path`; a literal is REFUSED (not warned about — this
+repository is public) and disables only its own adapter instance.
+
+`ni_devices.source` carries the EVIDENCE CLASS in rmf-disc-02's vocabulary —
+`csv` / `netbox` / `discovery` / `topology_ingest` — because
+`doc_modernization/defacto_learner` excludes the last one by name. A GNS3 lab
+is real inventory OF THE LAB; labelling it `discovery` would route a drawing
+into the platform's strongest claim about what hardware is fielded. NULL when
+unattributed, never a guess. The adapter INSTANCE and the fabric ride in
+`properties_json`, which exists on both the migrated and the DDL schema shapes.
 
 ---
 
@@ -635,6 +2033,125 @@ python tools/devsecops/zta_maturity_scorer.py --project-id "sparkpilot" --all --
 python tools/compliance/nist_800_207_assessor.py --project-id "sparkpilot" --json
 python tools/devsecops/service_mesh_generator.py --project-id "sparkpilot" --mesh istio --json
 ```
+
+### Canonical asset identity — ONE key across the three stacks (rmf-ident-01)
+```bash
+python -m tools.assets.identity --ingest --json     # populate from ni_devices / zig_device_registry / nc_vuln_hosts
+python -m tools.assets.identity --stats --json      # coverage PER RESOLVER, never one 'linked' number
+python -m tools.assets.identity --list --limit 50 --json
+python -m tools.assets.identity --posture <asset-id-or-hostname> --json
+python -m tools.assets.identity --fleet --json      # what the ZIG device pillar deploys against
+```
+Three stacks describe the same machines and none could be joined to another:
+7-pillar ZTA keys on `project_id`, NSA ZIG on `sha256(hostname)[:16]`, NDC/PVM on
+`ni_devices.id`. `asset_identity` (migration `20260902205902`) is one row per
+asset carrying a NULLABLE resolver onto each — NULL means "that stack has never
+seen this asset", which is a finding, not a resolution failure. `--posture` is
+the only path from a discovered device to a ZT decision to an attack-surface row
+to an enclave, and it names WHICH stacks answered (`joined`) so "no attack-surface
+row" cannot be read over a PVM stack that was unreadable.
+
+The join is done in **Python, not SQL**: on PostgreSQL all three stacks share the
+`icdev` database, but on SQLite each canvas has its own file, so a SQL JOIN would
+work on PG and silently return nothing on SQLite.
+
+`corroboration_tier` counts DISTINCT sources, never rows — the ZIG scanner
+re-registers a device on every sweep, and repetition is not corroboration.
+`classification_method` (`rule|oui|model|human_confirmed`) records how the
+classification LABEL was arrived at; NULL is a fourth state meaning nothing has
+classified it, and must never be read as `rule`.
+
+`tools/security_canvas/device_pillar_orchestrator.resolve_fleet()` reads its
+fleet from here and falls back to the six-hostname `DEFAULT_FLEET` fixture,
+**returning which it used** — `asset_identity` | `fixture_inventory_empty` |
+`fixture_inventory_unreadable` | `caller`. Before this, the ZIG device-pillar
+maturity score described six machines that do not exist and nothing said so.
+
+MEASURED on the live board 2026-09-02: all three upstreams are empty or absent
+(`ni_devices` 0 rows, `nc_vuln_hosts` 0 rows, `zig_device_registry` does not
+exist on PostgreSQL at all — the ZIG scanners create it lazily on first run, so
+the device pillar has never been run against this database). `--ingest` reports
+each source separately for exactly this reason: `readable: false` is never
+folded into `ingested: 0`.
+
+`tools/assets/identity.py::zig_device_id()` is the ONE definition of the ZIG
+fingerprint rule; it was written out by hand at five sites in
+`tools/security_canvas/` and all five now delegate. A resolver that
+re-implemented it a sixth time could drift from the key it claims to resolve onto.
+
+### Asset visibility that cannot fabricate a percentage (rmf-vis-01)
+```bash
+python -m tools.assets.visibility --measure --json        # per fabric; never blends fabrics
+python -m tools.assets.visibility --measure --fabric enterprise
+python -m tools.assets.visibility --measure --record      # append to asset_visibility_snapshots
+python -m tools.assets.visibility --denominators          # the ranked declaration
+python -m tools.assets.visibility --history --limit 20 --json
+```
+TWO NUMBERS, AND ONLY ONE OF THEM NEEDS A DENOMINATOR.
+
+**Corroboration depth** is distinct `(asset, source)` PAIRS over distinct assets.
+It needs nothing declared, so it is a real measurement on every deployment —
+including one with no CMDB at all — and it is the number the report leads with.
+PAIRS, NEVER ROWS: `odc_gap_scores` holds 91 rows carrying ONE distinct value for
+ONE subject, a single stuck writer that any row-counting confidence model rates as
+extremely well corroborated, and the same trap is live here because the ZIG scanner
+re-registers a device on every sweep. Depth is `None` — never 0.0 — over an empty
+asset set.
+
+**`visibility_pct`** needs an authoritative denominator registered in
+`args/asset_denominators.yaml`. Without one it is `None` and every renderer prints
+the words **"not assessed"** — never 0 (which reads as "we see nothing") and never
+100 (which reads as "we see everything"). Both would be claims about an estate
+nobody has sized, and `args/perfect_score_gate.yaml` is ratcheted to 0 for exactly
+that shape. `_rate()` is the ONE place a percentage is computed here, and
+`tests/assets/test_visibility.py` asks the real `perfect_score_census.scan_source`
+predicate about this module rather than writing a second copy of the rule.
+
+FOUR RANKED KINDS, and the losers are REPORTED, never averaged in:
+
+| kind | rank | confidence | unit | what a wrong number does |
+|------|------|------------|------|--------------------------|
+| `approved_cmdb` | 0 | high | assets | the only kind where a human committed to "this is the estate" |
+| `ip_allocation_plan` | 1 | medium | addresses | over-states the estate, so it UNDER-states visibility |
+| `dhcp_scope` | 2 | low | leases | blind to every statically addressed device, so it OVER-states visibility |
+| `derived_if_mib` | 3 | inferred | ports | derived from the IF-MIB tables discovery already walks; counts PORTS, not assets |
+
+`denominator_source`, `denominator_confidence` and `denominator_unit` are persisted
+and rendered beside the number, because "43% against an approved CMDB" and "43% of
+a switch's own port count" are different claims and a reader who cannot tell them
+apart has been misled by an arithmetically correct number. `denominator_as_of` is
+the denominator's OWN clock, kept apart from `measured_at`.
+
+A NUMERATOR OVER ITS DENOMINATOR IS NOT CLAMPED TO 100 — that means the denominator
+is wrong or stale, which is the one fact worth acting on, and
+`numerator_exceeds_denominator` says so.
+
+A `source='synthetic'` row is NOT an observation: the live board's 24 `ni_devices`
+rows all carry "Synthetic demo device — fabricated, not an observed asset" in their
+own notes column. They are excluded BY NAME, COUNTED under `excluded`, and never
+silently dropped. A row whose evidence class is NULL is a different fact
+(`unattributed_source`) and gets its own bucket.
+
+Fabric attribution is DERIVED and its absence is a finding: `asset_identity` carries
+no fabric column, so the fabric and evidence class are recovered by joining back on
+`ni_device_id` and reading `properties_json.discovery.fabric` (the rmf-disc-01 sink
+writes it there for this reason). An asset no fabric claims lands in `(unattributed)`
+— its own bucket, never folded into a declared fabric.
+
+MEASURED on the live board 2026-09-02: `asset_identity` holds 0 rows, so `--measure`
+reports UNMEASURABLE and **exits 2** — a measurement that could not be produced is
+never the same as one that found nothing. Ingesting the real 24 board rows into a
+THROWAWAY database (the live board untouched) excludes all 24 as synthetic and every
+fabric reports `not assessed`. Relabelled to a real evidence class in that throwaway,
+the same 24 rows give: no denominator -> `not_assessed`/`None` with depth 1.0
+measured; `approved_cmdb=40` -> 60.0% with `dhcp_scope=12` reported as an alternate
+and never averaged; `derived_if_mib` -> 33.3% of 72 **ports** with the unit caveat
+attached; a stale `approved_cmdb=10` -> **240.0%**, unclamped, flagged.
+
+Snapshots are APPEND-ONLY (`asset_visibility_snapshots`, migration `20260902223458`,
+registered in `APPEND_ONLY_TABLES`). A correction is a new snapshot: an RMF/cATO
+package's coverage history IS this series, and re-running the measurement tomorrow
+answers a different question.
 
 ---
 
@@ -795,7 +2312,9 @@ python tools/ontology/schema_extractor.py --dry-run --json
 python tools/ontology/ontology_catalog.py --validate --json
 
 # Build ontology federation
-python tools/ontology/federation.py --build --json
+python tools/ontology/federation.py --build-federation --json
+python tools/ontology/federation.py --build-federation --no-builtin --json          # only <parent>/args/ontology/*.ttl (ICDEV[FT])
+python tools/ontology/federation.py --build-federation --ttl-dir path/to/ttl --json
 
 # Query ontology
 python tools/ontology/ontology_catalog.py --query "AWS VPC" --json
@@ -949,6 +2468,17 @@ python tools/genesis/daemon.py --once --json                  # Single pass (run
 python tools/genesis/daemon.py --status --json                # Show status of all 14 reflexes
 python tools/genesis/daemon.py --reflex research --json       # Run one reflex immediately
 python tools/genesis/daemon.py --reflex scout --json          # GitHub competitor intel
+# Stop the ICDEV service stack in the one order that does not fight itself
+python tools/genesis/shutdown_dashboard.py --dry-run      # plan; touch nothing
+python tools/genesis/shutdown_dashboard.py                # supervisor, then its children, then ICDEV[FT] and ICDEV[RT]
+python tools/genesis/shutdown_dashboard.py --pause        # also set Manual Build for the next start
+python tools/genesis/shutdown_dashboard.py --keep-ft --keep-rt --json   # leave an external stack serving
+# The supervisor's pid comes from .tmp/genesis/launcher.pid and its command line is
+# verified (a reused pid is refused). Children are stopped by pid RECORDED from the
+# tree before anything is touched, never by name -- start.md: a name filter is what
+# produced three concurrent pr_watchers. Agent workers (grandchildren) are reported
+# and left running unless --include-workers. Exit 0 stopped/already down, 1 a
+# survivor or listener on 5050/5200/5300 remains, 2 the tree could not be measured.
 python tools/genesis/daemon.py --reflex audit --json          # Self-scan (code quality + SAST)
 python tools/genesis/daemon.py --reflex comply --json         # cATO evidence + crosswalk + SbD
 python tools/genesis/daemon.py --reflex ingest --json         # RSS → innovation_signals
@@ -963,6 +2493,223 @@ python tools/genesis/daemon.py --reflex report --json         # Weekly status re
 python tools/genesis/daemon.py --enable research              # Enable a reflex
 python tools/genesis/daemon.py --disable evolve               # Disable a reflex
 python tools/genesis/daemon.py --reset heal --json            # Reset circuit breaker
+
+# The research loop stops reporting a measurement it did not make (xrv-lab-01)
+python tools/genesis/daemon.py --reflex experiment --json      # disabled | unmeasurable, metric_value null
+python tools/genesis/daemon.py --reflex foundry_cycle --json   # names details.stages_missing
+python tools/awareness/claim_verifier.py --claim experiment_loop_measures_a_change
+python tools/awareness/capability_consumption.py --probe-substrate experiment_programs   # `empty`
+python -c "from tools.autoresearch.experiment_engine import autoresearch_enabled as f; print(f())"
+python -c "from tools.foundry.engine import stage_availability as f; print(f())"
+# THE MASTER SWITCH WAS DECLARED AND READ BY NOTHING. args/autoresearch_config.yaml
+# has shipped `enabled: false` plus `env_override: ICDEV_AUTORESEARCH_ENABLED`
+# since the engine landed, and the nightly `experiment` reflex ran the loop
+# anyway. `autoresearch_enabled()` is the ONE reading of it; the env override
+# outranks the config in BOTH directions, and an unreadable config is
+# FAIL-CLOSED (`basis: config_unreadable`, `config_enabled: None` -- "declared
+# off" and "could not tell" are different answers).
+# AND THE LOOP MEASURES AN IDENTITY BASELINE. run_loop evaluates the domain,
+# creates an experiment, runs it, evaluates AGAIN with nothing changed and
+# decides keep/discard on that delta -- which is why every result it returns
+# carries `placeholder_metrics: True` and a note saying so. The reflex published
+# an `acceptance_rate` off those deltas regardless. Now: any placeholder domain
+# makes the WHOLE run `unmeasurable` -- metric_value None, total_kept /
+# total_discarded / acceptance_rate None, NO GKP export, the engine's own note
+# carried through -- because a total summed across a measured and an unmeasured
+# domain is not a total. A placeholder domain's keep count rides as
+# `kept_unmeasured`, never `kept`. Proven end to end against the REAL engine on
+# 2026-09-12: status unmeasurable, reason placeholder_metrics, zero GKP files.
+# TWO MORE EMPTY DENOMINATORS, both previously a confident 0.0: a loop that ran
+# NO experiments (`kept / max(run, 1)` = 0/1) and a run where every domain
+# errored. Both are `unmeasurable` with reasons `no_experiments_run` /
+# `no_measured_domain`. A MEASURED 0.0 over real experiments still reports 0.0.
+# THE 0.0 WAS DELETING ITS OWN RECORD. Measured on the live board 2026-09-12:
+# genesis_reflex_state said 73 runs / 73 successes / last_metric_value 0.0, and
+# genesis_audit held 73 `reflex.started` rows and NOT ONE `reflex.completed` --
+# base.run_reflex suppresses the completed row when `metric_value == 0 and not
+# details.get("tasks")`. So the fabricated rate silently discarded the only
+# record of how it was reached. `None == 0` is False, so the row is written now.
+# TWO DAEMON SEAMS coerced the refusal back to a number and both are fixed:
+# `evaluate_metric(cfg, None)` returns True (an unmeasured run must not be
+# scored a threshold miss -- three of those trip its circuit breaker, and the
+# gap would then hide behind a disabled reflex), and the ORANGE proposal path no
+# longer does `float(metric or 0.0)` nor stages a pending_review GKP for a run
+# that did not run (`GenesisDaemon._NO_PROPOSAL_STATUSES`).
+# THE FOUNDRY HAS NO STAGE THAT COULD EMIT. `run_cycle` degrades an absent stage
+# module to a clean no-op; measured 2026-09-12, 4 of its 8 stages have no module
+# in the tree -- synthesizer, scorer, deliberator and SEEDER, the only writer of
+# a kanban row. So `tasks_emitted: 0` was never the gate verdict it reads as.
+# `stages_missing` / `stages_present` say which modules IMPORT; `stages_ran`
+# says which were actually INVOKED (a present stage still does not run when the
+# circuit breaker or the active-project rate limit short-circuits the cycle).
+# With EMIT_STAGE missing the reflex reports `unmeasurable` with metric_value
+# None and names the absent stages; `success` stays True. EMIT_STAGE is declared
+# once in the engine and IMPORTED by the reflex -- two spellings of "which stage
+# writes the board" is how the pair comes to disagree about a pipeline neither
+# of them changed.
+# STANDING CLAIM (autonomy-lrn-01): `experiment_loop_measures_a_change`.
+# Reported = the newest experiment reflex run's `total_kept`, off
+# genesis_audit.details (looking through the ORANGE wrapper's `reflex_result`
+# nesting). Derived, sharing no code = DISTINCT experiment ids in
+# `experiment_results` whose pre_metric != post_metric. A keep the results table
+# cannot account for is the defect; keeping FEWER than moved is just `discard`.
+# Both sides are None -- never 0 -- over no recorded run / no rows, so an empty
+# board is `unmeasurable`. Live verdict 2026-09-12: reported None (see the
+# suppression above), derived 0 over 9 rows, NONE of which moved a metric.
+# `experiment_programs` is created in BOTH schemas and read and written by
+# NOTHING -- every program load resolves to args/experiment_programs/<domain>.yaml
+# -- so it is registered under `substrates:` in args/capability_consumption.yaml
+# and probes `empty`, 0 rows. Dropping a table two schemas declare is its own
+# decision with its own migration; it is named here rather than removed.
+# STILL PLACEHOLDER for SEVEN of the eight domains, and deliberately so. The
+# eighth, `code_quality`, is xrv-lab-02 below -- and it too is behind a gate
+# that ships CLOSED, so until both switches open every run is honestly
+# unmeasurable.
+
+# ONE domain mutates for real, in a worktree, with evidence lanes (xrv-lab-02)
+python -m tools.autoresearch.real_mutation --gate --json     # both switches, with a NAMED basis
+python -m tools.autoresearch.real_mutation --plan --json     # what a run would do; ACTS ON NOTHING
+python -m tools.autoresearch.real_mutation --lanes --json    # candidate census by lane
+python tools/db/migrate.py --up                              # 20260912122759: experiment_candidates.lane
+python tools/autoresearch/experiment_engine.py --loop --domain code_quality --json
+# xrv-lab-01 left the loop saying honestly that it measures NOTHING: run_loop
+# evaluated the domain, created a candidate, ran it, evaluated AGAIN WITH
+# NOTHING CHANGED, and decided keep/discard on that delta. This makes ONE domain
+# measure something real, bounded and reversible. The shape is adapted from
+# PRAXIST (candidates -> task-owned evaluator -> evidence lanes); PRAXIST is
+# Fair Source 1.0, so the SHAPE is adapted and NONE of its code is vendored.
+# ONE DOMAIN, AND THE LIST IS IN PYTHON. `REAL_MUTATION_DOMAINS` is a frozen
+# tuple holding exactly `code_quality`; `real_mutation.domains` in
+# args/autoresearch_config.yaml can only NARROW it (the INTERSECTION is taken,
+# never the union), because widening autonomous code mutation to a domain nobody
+# vetted must not be a YAML edit. The other seven are untouched.
+# TWO GATES AND BOTH SHIP CLOSED: the master switch (ICDEV_AUTORESEARCH_ENABLED,
+# unchanged) plus `real_mutation.enabled` / ICDEV_AUTORESEARCH_REAL_MUTATION.
+# Off means the real path is NEVER taken and code_quality falls back to today's
+# identity-baseline path -- so the rollback is a flag flip, not a merge revert.
+# FOUR CLOSED VERDICTS, never merged, because each sends a reader somewhere
+# different: `domain_not_enabled` (a list), `disabled_by_config` (a config
+# value), `disabled_by_env` (an env var), `config_unreadable` (a broken file,
+# FAIL-CLOSED -- "we could not read the switch" is not consent).
+# THE RUN: worktree on `autoresearch/<candidate>` under the ALREADY-DECLARED
+# git.worktree_base -> BEFORE on the base -> the claude_cli adapter patches it
+# -> AFTER on the patched tree -> `experiment_engine.decide`, UNCHANGED, on two
+# real numbers. Both are persisted on experiment_results and
+# `placeholder_metrics` is False ONLY here -- and only when at least one
+# candidate produced BOTH sides. A real path that was open and measured nothing
+# is still `placeholder_metrics: True`, because `measured, nothing improved` and
+# `nothing was measured` are the two things xrv-lab-01 exists to keep apart.
+# THE TREE-WIDE READING CANNOT DETECT THE CHANGE IT MEASURES, and this was
+# MEASURED on this checkout 2026-09-12, not anticipated. `code_quality`
+# averages maintainability over EVERY file under `tools/` -- ~1,700 of them --
+# while the evolve declaration this loop obeys sets `max_files_per_cycle: 1`. A
+# deliberately awful 29-line module moved its OWN directory 0.988 -> 0.824 and
+# moved the tree-wide average 0.9312 -> 0.9312: identical at the reported
+# precision, four orders of magnitude below the 0.005 keep threshold. Fed that
+# number the loop would discard every hypothesis forever at delta 0.0 --
+# functionally the identity baseline xrv-lab-01 exposed, wearing a real
+# measurement's clothes.
+# SO THE DECISION IS FED THE SCOPED PAIR: the directory the patch touched,
+# before and after, SAME evaluator and SAME metric -- only the extent narrows.
+# The BEFORE is reconstructed from `HEAD` with `git ls-tree` + `git show`
+# (read-only) rather than measured earlier, because the scope is not knowable
+# until the patch exists; a file the patch ADDED is absent from it, correctly.
+# `patch_scope` returns None -- and the run falls back to the tree pair with
+# the dilution NAMED (`decision_basis: tree_wide_diluted`, and its own
+# `REAL_METRICS_DILUTED_NOTE`, never REAL_METRICS_NOTE) -- for a patch spanning
+# two directories, and for one whose directory IS `tools/`, where a "scoped"
+# reading is the tree reading and giving one number two names is how a diluted
+# delta comes to be believed. BOTH PAIRS RIDE ON EVERY RESULT
+# (`scoped_before/after`, `tree_before/after`) so the choice hides nothing.
+# PROVEN END TO END 2026-09-12 against a SCRATCH SQLite database -- real
+# worktree off origin/main, REAL code_analyzer on both trees, real
+# `experiment_engine.decide`, real lane write, real removal; the ONLY stub was
+# the adapter, because opening the gate for a live LLM dispatch is the decision
+# this card leaves to a human. One run, 106s:
+#   decision_basis scoped   scope tools/autoresearch
+#   scoped 0.9357 -> 0.9315   delta -0.0042   ->  discard
+#   tree   0.9312 -> 0.9312   (the dilution, in the same run)
+#   placeholder_metrics False; lane incubator -> archive; worktree removed;
+#   branch deleted; one experiment_results row with pre != post.
+# The two measurements cost ~106s per candidate on this host (a full
+# `code_analyzer` pass over tools/ is 64.5s and the scoped pair is seconds), and
+# `fitness_evaluator._run_tool` allows 120s -- so a loaded host can push the
+# tree-wide leg over its own timeout, which correctly reports
+# `base_unmeasurable` rather than a fabricated number. Do NOT raise that
+# timeout to make a run succeed.
+# A FAILED MEASUREMENT IS NEVER 0.0. `fitness_evaluator.evaluate` reports a
+# failed tool as `metric_value: 0.0, success: False` -- the SAME number a
+# genuinely zero-scoring tree gives. `measure()` reads `success` FIRST and
+# returns `metric: None`, so a broken analyzer can never read as "this tree
+# scored zero" and can never move a posterior. A MEASURED 0.0 still survives.
+# `unmeasurable` IS ITS OWN OUTCOME and never folds into `discarded`: nothing
+# judged that hypothesis, so it moves no posterior, joins no acceptance rate,
+# and the candidate STAYS in `incubator` with its reason named.
+# THE BOUNDS ARE THE EVOLVE REFLEX'S OWN. allowed_directories /
+# forbidden_files are READ from args/genesis_config.yaml -> reflexes.evolve,
+# never respelled here -- two spellings of "what may an autonomous writer touch"
+# is how one of them comes to permit what the other refuses. A HALF-READ
+# declaration (an empty forbidden list) is `readable: False` and REFUSES rather
+# than defaulting permissive. Forbidden wins over allowed, so
+# `tools/db/storage.py` is refused although it sits under `tools/`.
+# IT NEVER MERGES. Keep = commit, push, `gh pr create` titled
+# `autoresearch(<domain>): <hypothesis>`; a human merges it or nobody does.
+# There is no merge verb in real_mutation.py OR experiment_engine.py and
+# tests/autoresearch/test_real_mutation.py reads BOTH ASTs -- string literals
+# and argv LISTS -- to keep it that way. A behavioural test over today's callers
+# would still pass the day somebody threads an auto-merge through.
+# THE REMOVAL IS PROVEN, NOT BLUNT. `git worktree remove` is the door, never
+# shutil.rmtree (real_mutation imports no shutil, AST-pinned). The plain remove
+# is ALWAYS tried first -- and it is not enough, which was measured rather than
+# reasoned: EVERY discard is dirty by construction, so the plain remove refused
+# on every one and left a full checkout per rejected hypothesis. So the discard
+# path re-derives that the tree holds NO COMMIT beyond its base ref and only
+# then forces; `_holds_no_commits` returning None (cannot tell) REFUSES. The
+# branch goes with it through `git branch -d`, never `-D`: git's refusal to
+# delete an unmerged branch IS the proof there was nothing on it. A KEPT
+# candidate's branch SURVIVES -- the PR points at it.
+# BOUNDED, AND EVERY BOUND REPORTED: max_experiments_per_run (unchanged),
+# `wall_clock_seconds` per run (a spent budget stops STARTING candidates and
+# says `wall_clock_spent`) and `patch_timeout_seconds` per candidate, on whose
+# expiry the WHOLE process tree is killed -- a subprocess timeout kills only the
+# parent while children keep the inherited log handle open
+# (kph-repark-mfx-ci-04 measured a 115s block on that shape).
+# COST rides xrv-cost-02's `record_task_cost` with task_id = the CANDIDATE id.
+# `spawn` is used rather than `invoke` on purpose: spawn writes the CLI's RAW
+# --output-format json envelope to a log file, which is exactly what that reader
+# parses; invoke returns it already transformed.
+# THREE LANES, and the migration's CHECK is DERIVED from `real_mutation.LANES`:
+#   incubator  no real measurement exists -- new, or the before/after could not
+#              be made. NOT a failure.
+#   frontier   kept: measured better than its base, PR open, awaiting a human.
+#   archive    discarded, or superseded.
+# The column's DEFAULT backfills every pre-migration candidate to `incubator`,
+# and that is a measurement rather than a convenient default: all of them were
+# decided against an IDENTITY BASELINE, so no real measurement exists for any.
+# Laning a historically `discarded` one `archive` would assert something judged
+# it; laning a `completed` one `frontier` would assert it beat a base it was
+# never compared against. `lane_census` reports UNMEASURABLE -- never three
+# zeroes -- on a board that has not run the migration.
+# MEASURED 2026-09-12: the migration applies on SQLite (add, backfill, CHECK,
+# DEFAULT, idempotent re-run, down) and its DDL was exercised on PostgreSQL
+# against a throwaway table in `icdev_e2e` -- never the live board. On this
+# checkout `--lanes` reads `lane_column_absent` until migrate.py runs, which is
+# the tool's own distinction between "a migration never ran" and "a writer
+# never ran".
+# FOUND ON THE WAY, and fixed: run_loop's `kept / max(kept + discarded, 1)`
+# returned a confident 0.0 for a loop that judged NOTHING -- now None over an
+# empty denominator. And two ungated tests in
+# tests/test_genesis_reflex_experiment.py asserted the adaptive-threshold
+# branch while xrv-lab-01's early return meant `run()` never reached it: one was
+# red on main, the OTHER WAS GREEN FOR THE WRONG REASON, asserting "the helper
+# was not called" against a run that never got near the call. Both now open the
+# master switch through its documented env override.
+
+# CI runner health (mfx-boot-02) -- re-register a crash-looping self-hosted runner (FT and RT)
+python tools/genesis/daemon.py --reflex ci_runner_health --json   # one cycle through the daemon (acts)
+python tools/genesis/reflexes/ci_runner_health.py                 # hand-run: DRY RUN, proves and acts on nothing
+python tools/genesis/reflexes/ci_runner_health.py --apply         # hand-run, acting
+# Fleet declaration (repo, compose dir, container/runner/project names, NO token): args/ci_runners.yaml
 
 # Knowledge Bridge (Promoter)
 python tools/genesis/promoter.py --list --json                                      # List all GKPs
@@ -1011,9 +2758,51 @@ ICDEV_STORAGE_BACKEND=postgresql ICDEV_PG_NO_FALLBACK=1 \
 
 Config lives in `args/genesis_config.yaml` under `self_monitor.board_throughput`
 (`enabled`, `window_hours`, `min_active_tasks`, `cooldown_hours`, `severity`).
+
+### Regenerating the PostgreSQL schema snapshot (2026-08-21)
+
+`tools/db/schema/pg_consolidated.sql` is what `bootstrap_pg.py` loads into a FRESH
+database, and bootstrap MARKS every migration `<= through_version` applied without
+running it -- so a column a marked migration adds exists on a fresh database only
+if the snapshot carries it. Four weeks stale it was short 173 columns across 102
+tables, and nothing in CI could see it (the CI database is built by init_db and
+only marked). Runbook: `docs/database/pg-snapshot-regeneration.md`.
+
+```bash
+python tools/db/regen_pg_snapshot.py dump --out .tmp/canonical.sql                     # schema-only, native or docker exec
+python tools/db/regen_pg_snapshot.py diff --reference <dsn> --candidate <dsn>          # read-only; exit 1 unless superset
+python tools/db/regen_pg_snapshot.py diff --reference <dsn> --candidate <dsn> --emit-alters .tmp/carry.sql
+python tools/db/regen_pg_snapshot.py compose --dump .tmp/scratch.sql --previous tools/db/schema/pg_consolidated.sql     --carry-columns .tmp/carry.sql --out tools/db/schema/pg_consolidated.sql --generated 2026-08-21
+pytest tests/db/test_pg_bootstrap_baseline.py tests/db/test_regen_pg_snapshot.py -q
+```
 Env overrides win over YAML: `ICDEV_BOARD_STALL_ENABLED`,
 `ICDEV_BOARD_STALL_WINDOW_HOURS`, `ICDEV_BOARD_STALL_MIN_ACTIVE`,
 `ICDEV_BOARD_STALL_COOLDOWN_HOURS`, `ICDEV_BOARD_STALL_SEVERITY`.
+
+### PR watcher liveness probe (kax-obs-02)
+
+"Is the PR watcher actually polling?" answered without the log file. Each
+COMPLETED poll appends one row to the existing `heartbeat_checks` table
+(`check_type = 'pr_watcher_poll'`, `items_found` = tasks checked,
+`details.actions_taken` = actions taken). No new daemon, no new log file — the
+launcher already restarts a *dead* watcher, so what this detects is a
+**live-but-not-progressing** one, which a process-exists check cannot see.
+
+```bash
+python tools/kanban/metrics.py --watcher      # {state, last_poll_at, minutes_since_last_poll, tasks_checked, actions_taken}
+python tools/kanban/metrics.py --stall        # same signal joined onto the stall check as `watcher` + `stall_attribution`
+python tools/monitor/heartbeat_daemon.py --status   # pr_watcher_poll listed alongside every other check
+curl -s localhost:5050/api/live-check | python -m json.tool   # dashboard Live Activity -> `pr_watcher`
+```
+
+`stall_attribution` is what makes a flatline actionable — the two situations
+that used to look identical:
+
+| value | meaning |
+|-------|---------|
+| `throughput_present` | tasks are completing; not a stall |
+| `watcher_not_polling` | last poll is older than `stale_after_minutes` (default 15) — broken pipe |
+| `watcher_polling_nothing_mergeable` | watcher is alive and took zero actions — look at executors / done-gate / CI |
 
 ---
 
@@ -1027,6 +2816,21 @@ python tools/genesis/reflexes/gepa_optimizer.py --dry-run    # Same via genesis 
 # Genesis daemon — GEPA reflex (24 h interval, registered in daemon.py REFLEX_NAMES)
 python tools/genesis/daemon.py --reflex gepa --json          # Run GEPA reflex immediately
 
+# Refinement evidence — WHY was this refinement proposed? (exa-refine-04)
+python tools/workflow/refinement_evidence.py --task-type build --json     # Collect evidence for a task_type's traces
+python tools/workflow/refinement_evidence.py --task-type build --skill icdev-build --window-days 14
+python tools/workflow/refinement_evidence.py --artifact-id <artifact-id>  # Show evidence stored on an existing proposal
+# Joins each trace's task_id to its `lesson_learned` row in memory_entries and adds the
+# per-pattern recurrence score from lesson_learned.get_recurrence, producing a
+# `refinement_evidence/v1` bundle that is written whole into
+# agent_improvement_artifacts.evidence_traces by reflexion_agent and NOVA SELA.
+# THE GATE: a proposal with no supporting lesson rows is persisted with
+# status='rejected_no_evidence' — never 'pending' — so GEPA and the review queues
+# (which select on 'pending') cannot surface it to a human.
+# Config: args/refinement_evidence.yaml (require_evidence, min_lessons,
+# min_recurrence_score, window_days). Legacy bare trace-id lists and NOVA provenance
+# dicts still read via parse_evidence() and report zero lesson evidence honestly.
+
 # Kanban — clear a stale done-gate block without re-dispatching (kpr-rvfy-02)
 python tools/kanban/cli.py --reverify <task-id> --dry-run     # Compute the verdict, write nothing
 python tools/kanban/cli.py --reverify <task-id> --json        # Append a fresh verification row
@@ -1036,6 +2840,183 @@ python tools/kanban/cli.py --reverify <task-id> --json        # Append a fresh v
 # This recomputes the verdict from the branch's real state (remote refs only, so it does not
 # depend on the dispatching process still being alive) and appends it. It does not weaken the
 # gate: a branch with no work still fails.
+
+# Kanban — LAND a task's PR instead of being refused by the done-gate (kax-merge-01)
+python tools/kanban/cli.py --set-status <task-id> done --merge --dry-run   # Preflight only, merges nothing
+python tools/kanban/cli.py --set-status <task-id> done --merge --json      # Merge, confirm, then mark done
+# `--set-status done` only ever GATED on merge: it refuses while a branch carrying the task id
+# has commits not on origin/<default>, and offered --force-done as the audited bypass. Neither
+# lands the work. --merge is the way to SATISFY the gate, and it is strictly HARDER than the
+# refusal: an OPEN PR based on the default branch, not CONFLICTING, no requested changes, green
+# CI (an empty check rollup is unknown, not green), the enforced done-gate
+# (pr_watcher._enforced_done_ok — reused, not re-derived), the sibling-file-conflict guard when
+# hold_on_sibling_conflict is set, and finally `state == MERGED` read back from GitHub before
+# 'done' is written (gh pr merge --auto exits 0 while the merge is still queued). Fail-closed on
+# every unknown, and it never reads KANBAN_REQUIRE_MERGE_FOR_DONE — that switch disables the
+# local git heuristic, not a landing check. One task id per invocation; not combinable with
+# --force-done. Marking done records the same actor='manual' audit transition --force-done does.
+
+# Kanban — LAND a PROTECTED-PATH PR through the door, with an audited reason (mfx-mrg-04)
+python tools/kanban/cli.py --set-status <task-id> done --merge --protected-ok --reason '<why>'
+python tools/kanban/cli.py --set-status <task-id> done --merge --protected-ok --reason '<why>' --dry-run
+# pr_watcher REFUSES to merge a PR touching `protected_paths` — the guard that stops the merge
+# ladder auto-merging a change to ITSELF (kpr-watch-05). That refusal is correct and stays; the
+# problem was the only available override. Measured 2026-09-05/06 the sole way through was
+# ICDEV_GH_PR_MERGE_GUARD=0 plus a raw `gh pr merge`, which stands the PreToolUse guard down for
+# EVERY kanban PR in that shell and runs NONE of the thirteen checks above — including ci_green,
+# which is stricter than branch protection (it refuses a failed check, a check STILL RUNNING, and
+# an EMPTY rollup). --protected-ok overrides EXACTLY ONE rung, `_refuse_protected` at the top of
+# pr_watcher._auto_merge, and nothing else: every check above still runs, the hold label still
+# refuses, and 'done' is still written only once GitHub reports MERGED.
+# --reason is REQUIRED and non-empty (a usage error, never a default string), and the override is
+# AUDITED BEFORE THE MERGE, fail-closed — event type `kanban.protected_merge_override`, written
+# with raise_on_error=True, naming the paths the PR ACTUALLY hit (re-derived from the open-PR
+# listing at the moment of the decision) and the reason VERBATIM. No row, no merge. Run
+# `python tools/db/migrate.py --up` on a PG board first: an unmigrated CHECK refuses the event
+# type and therefore refuses every override, which is the correct reading rather than an obstacle.
+# `protected_ok` is keyword-only, defaults False and is threaded only from this CLI through
+# tools/kanban/land.py — the poll loop and the unlinked sweep can never set it, pinned by an AST
+# test in tests/kanban/test_protected_merge_override.py.
+# Kanban — is this task id ALREADY on main? task -> main, not task -> PR (trust-disc-05)
+python -m tools.kanban.landed_check --task <task-id> --json
+python -m tools.kanban.landed_check --all --json              # every non-terminal task
+python -m tools.kanban.landed_check --all --status done --no-prs --json   # the fire-rate survey
+python -m tools.kanban.landed_check --task <task-id> --gate    # exit 1 if it is already on main
+# The board tracks task -> PR and NOTHING checked task -> main. On 2026-08-15 two of the five
+# cards in pr_opened had their work already merged under a different PR number — ctx-perf-02
+# landed as #1641 and ctx-trust-02 as #1638 — while #1646 and #1651 stayed open against them.
+# Both conflicted, because both re-apply changes already present against files that have since
+# moved on: #1651's diff was -38/+26 on rest_v1.py, i.e. merging it would DELETE 38 lines main
+# has. A revert wearing a feature's clothes, and every gate said green because every gate asked
+# about the PR. Evidence is tiered — `merge_ref` (a merge commit naming the task's branch) and
+# `subject` (the id in the commit subject) block; `body` NEVER does, because a body mention is a
+# citation at least as often as a landing. Matching is on a name boundary, so ctx-perf-02 does
+# not match ctx-perf-021 and a parent id does not match its decomposed children's commits.
+# FAIL-OPEN: no git, no origin ref, or a non-id-shaped id all report `checked: false` — an
+# unavailable check can never read as a clean one. Second half: rival PRs. ctx-enf-01 had #1640
+# and #1647 open at once and only the kanban/<task_id> branch can settle the card.
+# Wired at three seams (seed / dispatch / PR-open) and ADVISORY by default; KANBAN_LANDED_CHECK
+# =enforce makes it refuse, =off disables it. Survey it before ever defaulting to enforce.
+
+# Kanban — what would the identity check REFUSE on the real board? (rem-hyg-03)
+python -m tools.kanban.identity_survey --json           # machine-readable, includes every id
+python -m tools.kanban.identity_survey                  # per-card table + headline rates
+python -m tools.kanban.identity_survey --card pgrt --ids
+python -m tools.kanban.identity_survey --status backlog --status scheduled
+python -m tools.kanban.identity_survey --env-file /path/to/.env --json   # run from a worktree
+# The fire-rate survey that must exist BEFORE rem-hyg-04 arms task_identity (rem-hyg-02). The
+# rule is CLAUDE.md's, learned from the PreToolUse hook: eight of twelve checks were refusing
+# routine work over 96,818 real calls, and the worst had shipped as a hard block with its rate
+# never once observed. A check nominally enforcing but never measured is UNMEASURED, not proven.
+# Measured 2026-08-16 on the live PG board (3,243 rows / 163 cards): 2,041 claimed, 53 gate
+# sentinels, 22 no_epic (all pgrt-), 1,127 no_card => a 35.43% fire rate if armed naively.
+# The narrowing IS the finding: 789 of those 1,127 are OPAQUE machine ids — task-<hex> from the
+# dashboard's own create-task API and awareness/suggested_card_writer, plus mc-reflex-<hex> and
+# cpmp-<hex> — which were never card work, so refusing them is the same defect the PreToolUse
+# checks had. Exempting them: 11.10% lifetime, 4.23% over the last 7 days, against 17 genuinely
+# unregistered card prefixes (prem- 72, cnr- 46, shx- 33, docmod- 32, ...).
+# classify_shape is a NAMED heuristic over id text and never decides whether an id is claimed;
+# -d<N> decomposition suffixes are stripped first, so mvs-audit-03-d1 counts as card work.
+# Scope caveat for rem-hyg-04: 95 modules INSERT INTO kanban_tasks directly and never reach the
+# create_tasks seam, so arming there cannot see most of the opaque population.
+# Two zeroes that are NEVER a clean bill of health — both report measured:false, never 0%:
+# an unreadable args/projects.yaml (no_registry) and an empty board (empty_board, the worktree
+# trap where a missing .env silently reads a throwaway SQLite DB — use --env-file).
+# REPORT ONLY: no --gate, no writes, one SELECT. This module never refuses anything.
+
+# Kanban — the armed identity check and its kill switch (rem-hyg-04)
+KANBAN_IDENTITY_CHECK=report    # DEFAULT — log every unclaimed id, seed anyway
+KANBAN_IDENTITY_CHECK=enforce   # refuse the NARROWED population, before any insert
+KANBAN_IDENTITY_CHECK=off       # do not run the check at all
+# Read by tools/kanban/task_identity.py::mode (accepts the KANBAN_LANDED_CHECK spellings:
+# 1/true/yes => enforce, 0/false/no/none => off, warn => report). An UNRECOGNISED value
+# resolves to `report` and LOGS that it did — KANBAN_IDENTITY_CHECK=enforced is one keystroke
+# from enforce and must not read as armed. Consulted by task_factory.create_tasks BEFORE the
+# first INSERT, so a refusal can never half-land a batch; a broken check leaves seeding
+# exactly as it was. The refusal names each id, the id it should have carried
+# (`<prefix><epic>-<N>`), args/projects.yaml, and the way to stand it down.
+# WHY THE DEFAULT IS report: the rem-hyg-03 survey above. Refuse-everything = 35.17%;
+# narrowed (exempt opaque machine ids) = 10.85% lifetime but 15.81% over the last 30 days,
+# ten times the rate CLAUDE.md already calls refusing routine work. Both the survey's
+# NARROWED column and the seeder's refusal call ONE predicate, task_identity.is_enforceable,
+# so the measured rate is the enforced rate. Re-survey before changing the default; never
+# widen an exemption list to compensate, and never drop no_card — that is the HCX case.
+python -m tools.kanban.identity_survey --json | python -c "import json,sys; print(json.load(sys.stdin)['enforcement'])"
+
+# Kanban — will two tasks fight over the same file? Asked at SEED time (rem-hyg-07)
+python -m tools.kanban.lane_conflicts --json
+python -m tools.kanban.lane_conflicts                  # table grouped by shared file
+python -m tools.kanban.lane_conflicts --live-only      # only pairs BOTH dispatchable now
+python -m tools.kanban.lane_conflicts --from-branches  # exact paths, where a branch exists
+python -m tools.kanban.lane_conflicts --task <task-id>
+# pr_watcher's hold_on_sibling_conflict already asks this — about OPEN PRs, which is after both
+# sessions have BUILT. #1684 dispatched a producer and its consumer together, the loser's PR was
+# unlandable, and 1,058 lines were discarded. Measured 2026-08-16 across 44 non-terminal tasks:
+# 54 pairs shared a file with NO dependency path between them, 16 dispatchable simultaneously.
+# Reads BOTH dependency mechanisms (scalar depends_on_task_id AND the kanban_task_deps junction)
+# because _deps_satisfied ANDs them — either alone serializes, so consulting one would report a
+# hand-serialized pair as a live race. Ranks live vs latent: a task whose dependency is
+# unsatisfied cannot race today, and reporting the two identically buries the real finding.
+# Gate sentinels are excluded (gates.is_manual_gate) — a path in a RISK: description is not work.
+# TWO EVIDENCE GRADES, never merged: prose (seed-time, the only time it helps, and a heuristic)
+# and branch (git diff origin/main...kanban/<id>, exact but late). Where a branch exists its
+# paths REPLACE the prose guess. Each branch is compared to origin/main and NEVER to another
+# branch: merge-tree between two task tips reports conflicts the forge never sees, since the
+# forge merges each into main in sequence (hcx-live-02 vs hcx-live-03 said CONFLICT while
+# against main hcx-live-03 was CLEAN). Six suppressions, every one found by RUNNING it: command
+# (a path inside `python tools/...` is a tool to run), evidence (a specimen in a caps-led
+# MEASURED paragraph — deliberately NOT rescued by a write verb, since such a paragraph narrates
+# writes that already happened), precedent ("Follow args/ci_test_backlog.txt"), citation ("see X"
+# or a docs/ path with no write verb), negated ("Do NOT change ..."), coordination (the shared
+# list in tools/git/coordination_paths.py, which pr_watcher's merge-time guard also imports —
+# a second divergent copy is worse than none). Those took the board from 3 live findings of
+# which 0 were real to 0 live / 8 latent. REPORT ONLY at the create_tasks seam; arming it needs
+# a fire-rate survey first, exactly as rem-hyg-03/04 do for the identity check.
+
+# Kanban — refuse to dispatch a card while an in-flight SIBLING owns a file it declares (mfx-sib-01)
+python -m tools.kanban.sibling_overlap --survey                    # replay recorded dispatches
+python -m tools.kanban.sibling_overlap --survey --window-days 30 --json
+python -m tools.kanban.sibling_overlap --holds                     # what would be held NOW
+
+# ONE pre-dispatch verdict, with the BUDGET rung nothing consulted (xrv-run-01)
+python -m tools.kanban.should_run --task <id> --json                # proceed|wait|ask|refuse|unmeasurable, every check named
+python -m tools.kanban.should_run --task <id> --env-file C:/AI/ICDev/.env   # from a worktree: read the LIVE board's ledgers
+python -m tools.kanban.should_run --survey [--window-days 30] [--json]      # replay recorded dispatches through the SAME fold
+# KANBAN_SHOULD_RUN=report (default: logs, changes no outcome) | enforce (parks a wait/refuse) | off
+# Survey: docs/audits/xrv-run-01-should-run-survey.md -- re-survey before arming enforce
+# lane_conflicts (above) REPORTS a seed-time race; this one REFUSES a dispatch-time one, and it
+# is armed. The MERGE door has serialized siblings since hold_on_sibling_conflict; DISPATCH did
+# not. Ten rmf-ui-* cards -- one route per card, by design -- each appended to the same lines of
+# the same canvas blueprint.py, the same nav dropdown and the same feature doc on 2026-09-03/04.
+# Four were built concurrently and three of the four were GUARANTEED to conflict: whichever
+# landed first made every open sibling CONFLICTING, classify_conflict read `real`, the
+# --force-with-lease rebase aborted four times per card, five LLM resumes burned, then
+# pr_watcher.escalate and a human unioned the hunks by hand. Ten times, ~6 hours.
+# A HOLD IS A WAIT, NOT A PARK: the card stays `scheduled` and yields its selection slot (dropped
+# BEFORE the slot truncation, for the same reason _drop_respawn_guarded is -- a task that keeps
+# its place occupies a slot it can never use and starves everything behind it), and is
+# re-evaluated next cycle. When the sibling reaches `done` the hold evaporates with no action.
+# The reason is written ONCE PER EPISODE on a `scheduled -> scheduled` row (actor
+# `sibling-serializer`), never once per 60s cycle, and the count is reported as `sibling_holds`.
+# NEVER A SECOND COPY OF EITHER INPUT: declared paths come from
+# artifact_evidence.declared_artifacts, and "safe to co-edit" from
+# coordination_paths.is_coordination_path -- which IS pr_watcher._is_additive_path, so the
+# dispatch door and the merge door cannot disagree about what a collision is. The predicate the
+# admission calls and the predicate the survey replays are the SAME function.
+# `scheduled` is deliberately NOT an in-flight status: two waiting cards holding each other is a
+# deadlock, not serialization.
+# SURVEYED BEFORE ARMING over 1,977 recorded dispatches (30 days to 2026-09-04): 451 had an
+# in-flight same-epic sibling, 21 would have been HELD (1.06% -- below the 1.63% CLAUDE.md calls
+# refusing routine work, and under the card's 2% ceiling), and 18 of the 21 (85.71%) went on to
+# record a real merge conflict. It fires on exactly the ten rmf-ui cards. The cost is three NAMED
+# holds -- cef-bck-01, rmf-ui-14, rmf-ui-15, 0.15% of dispatches -- delayed one cycle for a
+# collision that would not have happened.
+# declared_artifacts reads PROSE and UNDER-approximates, so a card naming no path is never held:
+# the honest failure direction, since an unheld pair costs a rebase while a held one costs
+# throughput on work that may never collide. UNMEASURABLE, never a clean zero, over a window with
+# no dispatches. Do NOT widen the additive-path list to quieten a hold -- that list is shared
+# with the merge door. Stand it down with `serialize_overlapping_siblings: false` in
+# args/genesis_config.yaml or KANBAN_SERIALIZE_SIBLINGS=0, never a shell neutraliser.
 
 # Kanban — re-queue a task for a clean rebuild without faking a failure (kax-recover-02)
 python tools/kanban/cli.py --requeue <task-id> --reason "closing stale PR; rebuild on main"
@@ -1048,6 +3029,19 @@ python tools/kanban/cli.py --requeue <id1> <id2> --requeue-status scheduled --js
 # PRESERVES failure_count (the recovery guard's budget). It also works on a task parked in
 # a pipeline-owned status like pr_opened, which --set-status cannot write. Exit 1 if any
 # task was refused; a manual-mode gate sentinel needs --force.
+
+# Kanban — is restarting the scheduler safe right now? (kax-recover-04)
+python -m tools.kanban.startup_recovery --dry-run --json      # Classify only; changes nothing
+python -m tools.kanban.startup_recovery --dry-run --force     # Same, even while the daemon owns the runner
+python -m tools.kanban.startup_recovery --json                # Perform the sweep (what a restart does)
+# Ask BEFORE restarting. Both restart sweeps (the kanban_scheduler.py entrypoint and the
+# reflex's cycle-1 sweep) route through recover_interrupted_tasks, which HOLDS any in_progress
+# task with provable liveness — an in-process handle, a fresh agent_sessions heartbeat in the
+# task worktree, a live kanban:task:<id> lease holder, or an OS process naming the task — and
+# resets only genuinely orphaned rows. --dry-run reports, per task, whether its commits survive
+# on kanban/<id> or whether a reset discards its work, so a restart is no longer a guess.
+# Without --force it no-ops while another live scheduler owns the runner; --once bypasses the
+# entrypoint lockfile check, so that guard is what keeps a one-shot run off the live board.
 
 # Kanban — rebase a DIRTY PR branch before it burns its resume budget (kax-conflict-01)
 python tools/kanban/rebase_recovery.py --task <task-id> --dry-run --json  # Probe locally, never push
@@ -1096,6 +3090,62 @@ python -m tools.kanban.cli --set-status oss-gate-00 done      # RELEASE the card
 # routing: `prem-vfy` prefix in args/kanban_external_repos.yaml.
 python -m tools.kanban.seed_compass_dispatch_probe --dry-run --json   # Validate routing, write nothing
 python -m tools.kanban.seed_compass_dispatch_probe --json             # Seed onto the board
+
+# --- Was this task ever judged against a requirement? (wire-req-01) ---
+# THE DEFECT, measured on the live board 2026-08-27 over 3,571 tasks: acceptance_criteria
+# populated on 7.5%, 38% completed via bypass, and judged_pass = 1. Exactly ONE task in the
+# whole history was judged against a criterion and passed. conformance_reviewer returns
+# review_passed=None for an EMPTY criterion and pr_watcher._enforced_done_ok reads None as
+# ALLOWED, so 92.5% of tasks cleared that rung vacuously.
+python -m tools.kanban.bypass_survey                    # what the gate WOULD have refused
+python -m tools.kanban.bypass_survey --json
+
+# --- Did the capability THIS card added ever RUN? (wire-run-01) ---
+# capability_liveness compares a whole-class count against a grandfathered budget, so a unit
+# added by the card under review disappears into a backlog of 510 units that are ALLOWED to be
+# inert -- the author cannot tell their own omission from the backlog. This names the unit.
+python tools/awareness/capability_consumption.py --new-units --since origin/main
+python tools/awareness/capability_consumption.py --new-units --since <base> --head <branch> --json
+# Exit 0 clean / 1 a new unit has never run / 2 COULD NOT MEASURE -- and 2 stays non-zero,
+# because a check that could not run is not a check that found nothing.
+# FOUR ways of not knowing, none of them a clean bill: no class scanned (a worktree with no .env
+# silently reads an empty SQLite DB -- this printed `0 findings` and exit 0 on its first live
+# run), telemetry unavailable, git could not diff, inert-unit list truncated for display.
+# 9 of 11 classes map to a declaring file; `audit_chain` (declared by a MIGRATION) and
+# `skill_optimizer` (declared by a TABLE) are UNDIFFABLE BY NAME -- reporting them clean would
+# be the fabrication the whole programme refuses.
+# THE REMEDY IS TO RUN IT ONCE (`daemon.py --reflex <n>` for a reflex, the analogous first call
+# otherwise). NEVER raise a budget in args/liveness_gate.yaml. A unit with no consumer BY DESIGN
+# goes in args/external_only_surfaces.yaml, which ADDS an obligation rather than an exemption.
+KANBAN_NEW_UNIT_GATE=off|report|enforce      # the done-gate rung (default: report)
+# A SECOND rung beside the merge check, deliberately not folded into it: `_refuses_done` asks
+# whether the work LANDED, `_unwired_units` asks whether what landed is WIRED. Both fail-open.
+# The range is the task's own branch against its merge base (falling back to commits carrying
+# the id) -- NEVER origin/main...HEAD, which is empty by done-time and would report every task
+# clean, the shape of a V&V card dispatched after its subject landed.
+# A FINDING speaks in both modes; NON-MEASUREMENT speaks only under `enforce`.
+# BOTH RUNGS SHIP `report` AND THE SURVEY IS WHY. Done gate: 96.7% refusal (wrong rate 78.8%),
+# against CLAUDE.md's 1.63% stand-down threshold. Seed admission LOOKED armable -- its 91.5% is
+# a fact about history, not a forward cost -- until measuring showed 46 of 57 create_tasks
+# callers never mention acceptance_criteria, five of them LIVE reflexes seeding `fix` cards on a
+# 6-hour cadence (claim_verifier, coherence_to_kanban, qa_agent, ungated_test_drift,
+# route_perf). Arming would take the autonomous loop down within hours.
+# THE PATH TO ARMING IS NAMED: drain args/kanban_seeder_criteria_census.txt (13 entries,
+# shrink-only, registered in tools/ci/census_growth.py), then flip SEED_DEFAULT_MODE.
+KANBAN_REQUIRE_ACCEPTANCE_CRITERIA=enforce   # seed admission (default: report)
+KANBAN_REQUIREMENT_GATE=enforce              # the done rung  (default: report)
+# The predicates live in tools/kanban/requirement_gate.py and are consumed by task_factory,
+# pr_watcher and the survey -- one decision table, never a second copy, so the survey cannot
+# measure a gate that does not exist.
+python -m tools.kanban.seed_compass_dispatch_probe --seed-file args/kanban_seed_ft_dispatch.yaml --dry-run
+python -m tools.kanban.seed_compass_dispatch_probe --seed-file args/kanban_seed_ft_dispatch.yaml
+# NOT compass-specific despite the module name (xit-rm-04): `--seed-file` seeds any dispatch
+# probe. The name stays because renaming touches 11 files across both mirror trees including
+# args/self_root_census.txt. What matters is the routing cross-check -- it refuses to seed unless
+# repo_registry INDEPENDENTLY agrees the id routes where the YAML claims. An unregistered prefix
+# resolves to ICDev, and for a PRIVATE sibling that is not merely wrong: this repo is PUBLIC.
+# The FT probe uses `xft-`, never `ftl-`/`fdx-` -- those are the TRADING streams, held behind
+# their own gate-00 sentinels, because live-trading code is never built unattended.
 # Refuses to seed if the id's prefix does not resolve to the repo the YAML claims
 # (an unregistered prefix defaults to ICDev — that would build a compass task in ICDev).
 # The external repo root must be set where the scheduler runs, else dispatch SKIPs it:
@@ -1130,6 +3180,34 @@ python tools/autoresearch/hypothesis_generator.py --domain compliance --max 5 --
 
 ---
 
+## DataBridge Agent Access Commands
+```bash
+# Seed db_connections from args/databridge_connections.yaml (cef-fnd-03)
+python -m tools.databridge.seed_connections --seed --json
+python -m tools.databridge.seed_connections --dry-run --json    # validate, write nothing
+python -m tools.databridge.seed_connections --verify --json     # row present? credential resolves?
+python -m tools.databridge.seed_connections --list --json
+# REFUSES a literal secret: auth_secret_ref must be an env:/vault:/aws:/file: reference.
+# REFUSES the banner 'CUI // SP-CTI' as a classification -- that column feeds the RLS
+# predicate, which is drawn from the LABEL vocabulary, so a banner-labelled row is
+# written, retained and invisible to every reader at every clearance.
+# All-or-nothing: one bad descriptor writes none of them, because a half-wired
+# grant is harder to diagnose than an unseeded one.
+
+# What may this agent reach, and what happens when it reaches?
+python -c "from icdev.tools.databridge import broker; print(broker.list_available('doc_reviewer'))"
+python -c "from icdev.tools.databridge import broker; print(broker.fetch('doc_reviewer','rss','<granted feed url>',limit=5).to_dict())"
+# Grants: args/databridge_agent_access.yaml   Endpoints: args/databridge_connections.yaml
+# Every call -- allowed or denied -- writes one row to databridge_agent_access_log.
+# MCP surface: databridge_sources (discover) then databridge_fetch (read).
+
+# One RSS/Atom feed, standalone. Module form only: the file uses package-relative
+# imports so the mirrored icdev/ copy registers into the right connector registry.
+python -m tools.databridge.connectors.rss_connector --url URL --limit 10 --json
+```
+
+---
+
 ## Connector Forge Commands
 ```bash
 # Generate connector from OpenAPI spec (template-only, no LLM)
@@ -1153,6 +3231,26 @@ python tools/ci/triggers/webhook_server.py           # Start webhook server
 python tools/ci/triggers/poll_trigger.py             # Start issue polling
 python tools/ci/workflows/icdev_sdlc.py 123          # Run full SDLC pipeline
 ```
+
+---
+
+## Derived Nav Surfaces (mfx-sib-02)
+
+The Compliance dropdown's `request.path in [...]` active-path list in
+`base.html` and the `- Pages:` line in `.claude/commands/start.md` are
+GENERATED between markers. Do not hand-edit either — a route-migration card
+adds its menu link and its 301 redirect, then regenerates.
+
+```bash
+python tools/dashboard/nav_paths.py --write               # regenerate both blocks
+python tools/dashboard/nav_paths.py --check               # exit 1 on drift
+python tools/dashboard/nav_paths.py --check --nav-only    # static half (no Flask, ms)
+python tools/dashboard/nav_paths.py --check --pages-only  # url_map half (~16s)
+python tools/dashboard/nav_paths.py --json
+```
+
+Exit codes: `0` clean · `1` drift · `2` the derivation could not be produced
+(never reported as clean). Config: `args/nav_paths.yaml`.
 
 ---
 
@@ -1298,6 +3396,43 @@ python -c "from tools.studio.executors.mcp_executor import query_dispatch_audit 
 
 ---
 
+## Studio Headless Run Control
+```bash
+# Start / inspect / resume a durable graph run WITHOUT the dashboard (hgx-cx-03).
+# Same engine the Studio UI drives — workflow_runner's public API, not a second runtime.
+python tools/studio/workflow_runner.py --start "wf-xxx" --json            # prints run_id
+python tools/studio/workflow_runner.py --start "wf-xxx" --project-id "proj-123" \
+  --inputs '{"target":"tools/foo.py"}' --json
+python tools/studio/workflow_runner.py --status "run-xxx" --json          # run + steps + step_run_ids
+python tools/studio/workflow_runner.py --resume "run-xxx" --json          # re-attach to a run left mid-flight
+
+# WAITING IS THE DEFAULT: the worker is a daemon thread in THIS process, so returning
+# immediately would kill it mid-step and strand the run at `running`. --timeout bounds
+# the wait (default 600s); --no-wait is fire-and-forget and only correct when something
+# else will --resume the run.
+python tools/studio/workflow_runner.py --start "wf-xxx" --timeout 1800 --json
+python tools/studio/workflow_runner.py --start "wf-xxx" --no-wait --json
+
+# Exit codes — a cron caller has to tell "parked on a human gate" from "broken":
+#   0 = run finished successfully (or --status read OK)
+#   1 = the run failed, or the command errored (unknown workflow/run, bad --inputs,
+#       run not resumable)
+#   2 = the run did not finish — parked at awaiting_approval, or still running at
+#       --timeout. Clear a gate with workflow_runner.approve_step(step_run_id) — the
+#       --status report carries every step_run_id — then --resume.
+
+# Same three operations over MCP (gate MCP-WF-001 authorizes them: studio_run_status is
+# allowlisted read-only; studio_run_start/_resume are `requires_approval` because a step
+# that spawns another run executes it under this run's authority and can recurse).
+python tools/studio/executors/mcp_executor.py --tool studio_run_status --params '{"run_id":"run-xxx"}'
+python tools/studio/executors/mcp_executor.py --tool studio_run_start \
+  --params '{"workflow_id":"wf-xxx","wait_seconds":60}' --run-id "run-xxx" --approval-wait 3600
+# wait_seconds (0 = return as soon as the run row exists) is clamped to 900s so a gate's
+# 24h window can never hold an MCP call open.
+```
+
+---
+
 ## Workflow Discipline Engine Commands
 ```bash
 # PLAN-APPLY-UNIFY Lifecycle (Phase 66, D-WF-1 through D-WF-7)
@@ -1329,6 +3464,96 @@ python tools/workflow/coherence_checker.py --tier fast --gate                   
 python tools/workflow/coherence_checker.py --tier full --gate                                       # Every check (nightly sweep / post-merge)
 python tools/workflow/coherence_checker.py --tier fast --list-tier                                  # Print the check ids a tier would run
 python tools/genesis/reflexes/coherence_sweep.py                                                    # Full-tier sweep on main + refresh the gate's baseline
+python tools/workflow/coherence_checker.py --check capability_liveness --gate                       # Declared-but-never-consumed capabilities (exa-live-02)
+
+# --- Did the NEW tool in this diff actually get registered? (wire-reg-01) ---
+python tools/workflow/coherence_checker.py --check new_module_registration
+python tools/workflow/coherence_checker.py --tier fast --changed-files "tools/foo/bar.py"
+# CLAUDE.md's 8-point checklist has 3 real gates and 2 that run in the WRONG DIRECTION:
+# check_doc_command_paths asks whether a DOCUMENTED command RESOLVES, never whether a new tool
+# GOT documented; check_mcp_security asserts gap_handlers.py EXISTS, never that a new tool was
+# registered. Both are fully satisfied by a tree in which nothing was ever documented.
+# SCOPED TO WHAT THIS DIFF *ADDS* (git diff --diff-filter=A), never the tree: 105 historical
+# modules lack a docs entry, and re-reporting them to every session is how a check gets ignored.
+# A module with no `__main__` and no ArgumentParser is a LIBRARY and is asked for no command --
+# demanding one would invert CLAUDE.md's "never document a command whose file does not exist".
+# SURVEYED BEFORE ARMING over the 389 new tools/ CLI modules in the last 600 commits:
+#   tools/manifest/ row            284/389  73.0%  -> a gate fires on 27.0%   ENFORCEABLE
+#   commands.md / CLAUDE.md entry  163/389  41.9%  -> a gate fires on 58.1%   ENFORCEABLE
+#   tools/mcp/tool_registry.py      76/389  19.5%  -> a gate fires on 80.5%   report-only
+#   args/security_gates.yaml        73/389  18.8%  -> a gate fires on 81.2%   report-only
+# CLAUDE.md stands a check down at 1.63%, so NOTHING ships armed. The bottom two can never be
+# armed AS WRITTEN -- four fifths of tools are legitimately not MCP verbs and carry no gate --
+# so they, plus conftest MINIMAL_ICDEV_SCHEMA (#6) and companion sync (#7), are report-only
+# PERMANENTLY and never enter `missing`.
+ICDEV_NEW_MODULE_GATE=off|report|enforce     # default: report
+# Arming waits on those two rates coming down. Add the manifest row and the commands.md entry --
+# never set this back to `report` to get a commit through.
+# git could not diff (a shallow clone, no origin) reports `warn: not a clean bill`, NEVER pass.
+
+# Capability Liveness gate (exa-live-02) — a capability that is registered, enabled and
+# catalogued but has ZERO consumption over the telemetry's LIFETIME fails the gate.
+# Measured through tools/awareness/capability_consumption.py using existing telemetry only.
+# Per-class backlog counts live in args/liveness_gate.yaml and ratchet DOWN only.
+# Deliberately not findings: a unit consumed once and idle inside the recent window
+# (low cadence is not death), and a database with no operating history (a fresh worktree
+# or ephemeral CI database makes everything look inert — the check warns instead).
+# Runs in BOTH tiers (exa-live-03): ~0.75s of GROUP BY counts, so it is a per-task gate
+# on every commit, not a nightly-only sweep — a capability declared in a task's own diff
+# and wired to nothing is what the per-task gate should catch. A DRAINED class leaves
+# args/liveness_gate.yaml entirely rather than sitting at 0; an absent class is already
+# budgeted at 0, and a leftover zero is just a number for a future session to edit upward.
+
+python tools/workflow/coherence_checker.py --check substrate_liveness --json                         # Reads a declared substrate that holds nothing (trust-disc-04)
+
+# Substrate Liveness (trust-disc-04) — the same defect one layer down: not a declared
+# capability nobody calls, but a declared SUBSTRATE code is designed AGAINST that holds
+# nothing. An approved plan described kg_ontology as a working SHACL-lite supplying
+# declared (subject_type, predicate, object_type) legality; on the live board kg_nodes
+# held 8,869 rows, kg_edges 16,493, and kg_ontology, ontology_subclass_closure and
+# kg_nodes.ontology_id held nothing at all. One SELECT COUNT(*) would have caught it.
+# WARN, never fail — an empty substrate is a fact about the DATABASE in front of the
+# checker, so failing a per-task code gate on it would block unrelated commits.
+# Scope was measured, not guessed (40-60 commits on main): every table mentioned in a
+# changed file fires on 68% of commits, every table in the added lines 22%, declared
+# substrates mentioned anywhere 30%, and declared substrates READ by a changed .py
+# module 1.7% — the last is what it does. A write-only reference is the FIX for an
+# empty substrate, so `INSERT INTO x` is recorded and not counted.
+
+# Substrate probe (trust-disc-04) — run BEFORE designing against a table/column/config
+python tools/awareness/capability_consumption.py --substrates                                        # Curated declared substrates: which hold rows
+python tools/awareness/capability_consumption.py --probe-substrate kg_ontology                       # One table
+python tools/awareness/capability_consumption.py --probe-substrate kg_nodes.ontology_id              # One column (rows vs non-NULL)
+python tools/awareness/capability_consumption.py --probe-substrate args/llm_config.yaml::routing     # One config block
+python tools/awareness/capability_consumption.py --probe-plan docs/plan.md --substrate-gate          # Every substrate a PLAN names; exit 1 if one is empty
+python tools/awareness/capability_consumption.py --probe-diff origin/main --json                     # Substrates the branch's added lines read
+# `empty` (writer never ran) / `absent` (migration never ran) / `column_unpopulated`
+# (rows exist, column 100% NULL) are never merged — they send you to different fixes.
+# On a database with no operating history the probe reports UNMEASURABLE and the gate
+# exits 0: 1,320 of 1,775 tables on the live board are empty, so a prober that cannot
+# tell a fresh worktree from an unwired writer fabricates findings by the thousand.
+
+# Restore tier, enumerated (autonomy-act-03) — claim_verifier's `restore` tier is a CLOSED
+# set of three mechanical, individually verifiable, reversible acts. Every act runs
+# prove -> audit -> apply -> confirm: the `awareness.restore_act` intent row is written
+# to audit_trail BEFORE the act (raise_on_error=True; no row, no act), and an effect that
+# cannot be re-read is `applied_unconfirmed`, never `applied`. No act edits a claim.
+python tools/awareness/restore_acts.py --list                                                      # The three acts and how each is undone
+python tools/awareness/restore_acts.py --plan [--json]                                             # Re-prove every candidate; ACTS NOTHING; states what it measured
+python tools/awareness/restore_acts.py --apply reap_dead_lease --target <task-id>                  # Holder pid PROVABLY dead AND task not heartbeating; cannot-tell is alive
+python tools/awareness/restore_acts.py --apply prune_gone_census_entry --target <census entry>     # One line, one enumerated census, only when the named file is gone
+python tools/awareness/restore_acts.py --apply restart_stale_daemon --target tools.genesis.daemon  # Terminate one stale supervised child; supervisor must be UP to restart it
+python tools/awareness/restore_acts.py --apply restore_auto_managed_file --target args/projects.yaml --root <checkout>  # autonomy-dep-04: checkout ONE regenerable auto-managed file the update guard is blocked on, pull through the guard, re-run the writer; a human edit refuses
+python tools/awareness/restore_acts.py --apply <act> --target <t> --dry-run [--root <checkout>]    # Prove only: no audit row, no act
+
+# Gate Sentinel Shape (kax-exec-04) — a task whose id is `<card>-gate-<n>` is filtered
+# out of promote_backlog_to_scheduled by tools/kanban/gates.py::is_manual_gate, so work
+# wearing that id is UNDISPATCHABLE and nothing goes red (tsg-gate-01 sat in backlog
+# while the board idled). task_factory.create_tasks now REFUSES to seed that shape unless
+# the task also declares itself a gate — 'MANUAL-MODE GATE' in the title, or a 'RISK:'
+# line. This check is the other half: rows already on the board, or written around the
+# factory. WARN, never fail — the finding is board data, not the diff under review.
+python tools/workflow/coherence_checker.py --check gate_sentinel_shape --json                        # Sentinel-shaped ids that are neither held nor depended upon
 
 # Documented Command Paths gate (oss-fix-02) — every `python tools/...` command in
 # CLAUDE.md and this file must resolve to a real file. Pre-existing breakage is
@@ -1355,6 +3580,79 @@ python tools/workflow/coherence_checker.py --check insert_schema_parity --gate  
 python tools/workflow/coherence_checker.py --check vendor_parity --json                             # Report copies lagging canonical
 python tools/workflow/coherence_checker.py --check vendor_parity --changed-files "tools/cortex/client.py" --gate   # Fail when a changed source outruns a copy
 
+# Vendored-source API manifest (ctx-enf-01) — the half of the gate above that a CI runner can
+# actually run. compass and idea_lab are separate PRIVATE repos ICDEV CI never checks out, so
+# every consumer SKIPs there (correctly) and the check can never block, however far the copies
+# lag. Root cause is repo TOPOLOGY, not the OS: /srv/standalone skips exactly as C:/AI/standalone
+# did. args/vendor_api_manifest.json is a COMMITTED snapshot of each declared source's public API,
+# generated from the same _public_api() the check compares with, so the two cannot disagree.
+# Changing a source's public API without regenerating it FAILS in both coherence tiers and fails
+# tests/workflow/test_vendor_api_manifest.py — which makes re-vendoring a deliberate step.
+python tools/workflow/vendor_api_manifest.py                                                        # Verify; exit 1 when the manifest is stale
+python tools/workflow/vendor_api_manifest.py --write                                                # Regenerate after changing a vendored source
+python tools/workflow/vendor_api_manifest.py --json                                                 # Machine-readable drift report
+
+# --- Shared core API: is this parent calling something the PINNED core exports? (xcore-api-01) ---
+# icdev-core is a SEPARATE repo (icdev-ai/icdev-core). A tree-vs-tree comparison would need it
+# checked out, and ICDEV CI never checks it out -- so it would SKIP forever and report clean
+# however far the two drifted. That is exactly how check_vendor_parity failed (ctx-enf-01), and
+# this is the same remedy: a COMMITTED manifest a runner can check with nothing else present.
+# `exports` in args/core_api.yaml is the authority, NOT a directory listing, and since
+# xcore-cut-02 it is resolved through importlib against the INSTALLED distribution -- this
+# parent no longer ships icdev/core/*.py at all. A declared module that cannot be located
+# fails; a module the installed package provides that the declaration names nowhere fails too.
+python tools/workflow/core_api_manifest.py                    # Verify; exit 1 stale, exit 2 could-not-run
+python tools/workflow/core_api_manifest.py --write            # Regenerate, then publish and bump pinned_version
+python tools/workflow/core_api_manifest.py --json
+python tools/workflow/core_api_manifest.py --verify-upstream  # Network; compares against the published tag
+python tools/workflow/core_api_manifest.py --verify-upstream --ref main
+python tools/workflow/coherence_checker.py --check core_api   # The parent gate
+# THREE findings, THREE repairs, never merged: the manifest is STALE (regenerate + republish);
+# an import names a symbol the pinned core does NOT export (stop calling it, or ship it); an
+# import names a `parent_local` module -- resolves from THIS checkout and not from the installed
+# wheel, so it is REPORTED and never failed.
+# `warn`, never `pass`, when the manifest or declaration cannot be read, and when a TREE scan
+# finds zero icdev.core imports -- a scan with nothing to check has verified nothing.
+# Constants are part of the surface: `_public_api` reports callables only, so `from
+# icdev.core.domain import BUILTIN_DEFAULT` would be refused without `_module_constants`.
+# A BRANCH is not a legal pin: `pinned_version: main` is refused outright.
+
+# --- Would a change to icdev-core break a PARENT? (xcore-compat-01) ---
+# The core's own suite proves the core is internally consistent. It cannot prove a parent still
+# works: since xcore-cut-02 the parents carry no copy of that code, so a core change reaches them
+# on the next release with nothing in between. Each parent declares its OWN answer -- the tools
+# below encode no parent internals.
+export ICDEV_CORE_PARENTS="/c/AI/ICDev;/c/ai/icdev_ft"   # ';' — a Windows path contains a colon
+python tools/dev/core_compat_local.py                    # install the core, run every parent
+python tools/dev/core_compat_local.py --core ../icdev-core --json
+python tools/dev/core_compat_local.py --no-install       # core already installed
+python tools/dev/core_compat_local.py --parent /c/AI/ICDev
+python tools/workflow/coherence_checker.py --tier core --gate   # the parent's half, alone
+# `core` is an ENUMERATED tier (CORE_TIER_CHECKS), not a subtraction like `fast`: it is asked
+# from ANOTHER repository where there is no diff against this parent, so a subtractive definition
+# would grow silently every time a check is registered here.
+# args/ci_test_files/core_compat.txt is DERIVED FROM IMPORTS, never filenames: a gated module
+# qualifies when it imports icdev.core directly (2) or a subsystem sitting on it -- db.storage,
+# kanban, llm, genesis (163). 165 of 515 gated modules; ~5.9 min serial by the recorded timings.
+# `undeclared` and `unreachable` are NOT passes, and a report over ZERO parents exits 2. A
+# matrix green over a parent it never exercised retires the question it was built to ask.
+
+# Bootstrap parity — what `icdev init` scaffolds must be what this repo runs on. Two rules:
+#   1. must_match pairs (args/bootstrap_parity.yaml) are byte-identical, both directions.
+#   2. payload completeness (exa-bench-10) — every module a PACKAGED HOOK loads by path
+#      ships beside it and is not stale. Derived from each hook's own PAYLOAD_MODULES
+#      tuple, not from a list in the YAML, so there is nothing to keep in sync.
+# The packaged pre_tool_use.py exec_module'd tools/hooks/shared_checks.py, which the
+# payload did not ship — so the hook raised on EVERY tool call in EVERY generated
+# project, silenced by the `|| true` in the generated settings.json.
+python tools/workflow/coherence_checker.py --check bootstrap_parity --json
+python tools/workflow/coherence_checker.py --check bootstrap_parity --gate
+python tools/installer/prebuild_bootstrap.py                          # Regenerate the whole payload (the sanctioned fix)
+# Which checks can actually run where the hook is installed, and why the rest cannot.
+# Run it from a scaffolded project: 8 of 11 checks are active there; the 3 that need
+# ICDEV's own tools/ modules are NAMED rather than silently failing open.
+python .claude/hooks/pre_tool_use.py --self-test
+
 # Completion Auditor — per-canvas 8-component completeness scorecard (TCH)
 python tools/quality/completion_auditor.py                                                           # Human table to stdout
 python tools/quality/completion_auditor.py --json                                                   # Machine-readable scorecard
@@ -1363,7 +3661,43 @@ python tools/quality/completion_auditor.py --md                                 
 python tools/quality/review_loop.py --json                            # Working-tree mode: ruff + coherence + SIPA, autofix, iterate
 python tools/quality/review_loop.py --base origin/main --max 3 --gate # Branch diff vs base; exit 0=green / 1=not green
 python tools/quality/review_loop.py --no-autofix --json               # Report only (no edits); emit fix_brief for the agent
+
+# Outline contracts — does a draft have every required section, in order, with none invented? (trust-struct-02)
+python tools/quality/outline_contract.py --list --json                       # 32 artifact types with a declared skeleton
+python tools/quality/outline_contract.py --artifact-type ato_ssp             # Show that type's required sections + their source
+python tools/quality/outline_contract.py --artifact-type SOP --json
+# Validate a list_sections payload (a JSON list, or {"sections": [...]})
+python tools/quality/outline_contract.py --artifact-type ato_ssp --sections-file draft.json --json
+python tools/quality/outline_contract.py --artifact-type RUNBOOK --sections-file draft.json --gate   # exit 1 on findings
+# Findings are missing_section | unknown_section | section_out_of_order, in the shared
+# {item_number, issue, detail} shape citation_gate / placeholder_findings / kg_gate use.
+# The skeletons are NOT declared in this module — it reads docgen ATO_DOC_TYPES, DIC
+# TEMPLATE_SECTIONS and the RFI workbench floor. An artifact type with no declared
+# skeleton resolves to None = UNMEASURED; it never fabricates one to fill the gap.
+# RFI questionnaire parts are per-solicitation: use contract_from_sections() on the
+# session's own sections rather than expecting a static skeleton to fit.
 ```
+
+---
+
+## Sensitive-Path Inventory — one credential list, three consumers (#exa-bench-09)
+```bash
+python tools/security/sensitive_paths.py --list --json                          # the whole inventory + which config file it came from
+python tools/security/sensitive_paths.py --check ~/.aws/credentials --json      # classify one path (exit 1 when sensitive)
+python tools/security/sensitive_paths.py --check-command "cat ~/.netrc" --json  # classify a shell command (exit 1 when it discloses)
+```
+Patterns live in `args/sensitive_paths.yaml`. It is consumed by three surfaces that
+each previously had their own credential list or none at all: the `zero_access` tier
+in `args/file_access_tiers.yaml` (`inherits: sensitive_paths`, resolved by
+`tools/hooks/shared_checks.py`), the `confidentiality` rule in
+`tools/agent_runtime/approval_gate.py`, and `check_path_allowed()` in
+`tools/studio/executors/agent_tool_gate.py`. Add a credential glob to the inventory,
+never to a consumer — three copies is three lists that drift, and the drift is silent.
+
+Read verbs only: `cat ~/.aws/credentials` discloses, `touch ~/.ssh/authorized_keys`
+writes and is deliberately NOT matched (that is exa-bench-07's worktree-containment
+gap). Complements `tools/security/secret_detector.py`, which detects credential
+CONTENT inside files rather than naming the paths.
 
 ---
 
@@ -1458,6 +3792,36 @@ python -c "from tools.ace.trust_calibrator import run_weekly_recalibration; impo
 python -c "from tools.evolution.artifact_evolver import evolve_artifact; import json; print(json.dumps(evolve_artifact('icdev-status', 'skill', dry_run=True), indent=2))"
 python -c "from tools.evolution.artifact_evolver import evolve_all_skills; import json; print(json.dumps(evolve_all_skills(dry_run=True, limit=3), indent=2))"
 python -c "from tools.evolution.eval_builder import build_dataset; ds = build_dataset('icdev-build', '', min_examples=3); print(f'train={len(ds.train)} val={len(ds.val)}')"
+
+# Pattern confidence — is a learned pattern CORROBORATED, or just frequent? (xrv-shield-02)
+python tools/nova/skill_generator.py --analyze --json          # every pattern carries confidence 0..1
+python tools/nova/skill_generator.py --analyze --min-count 1   # include once-seen patterns
+python tools/nova/skill_generator.py --analyze --no-injection-scan --json   # reports injection_scanned=false, NOT a clean scan
+python -c "from tools.nova.skill_generator import pattern_confidence; print(pattern_confidence(count=5, distinct_sessions=5, last_seen='2026-09-10T00:00:00+00:00'))"
+python -c "from tools.nova.skill_generator import score_candidate; print(score_candidate('python tools/memory/hybrid_search.py --query x'))"
+python -c "from tools.agent_runtime.skills_lifecycle import screen_candidates; print(screen_candidates(['icdev status']))"
+# ONE formula, in `pattern_confidence()`, weights DECLARED in args/nova_config.yaml:
+# occurrence count (saturating at 8), DISTINCT memory_entries.session_ref values
+# (saturating at 4), recency on args/memory_config.yaml's own half-lives, then
+# learning_collector's injection rule verbatim — a hit at block_confidence (0.7)
+# REJECTS to 0.0, a hit at demote_confidence (0.5) CAPS at 0.5. A detector that did
+# not RUN never demotes and reports injection_scanned=false, which is not a clean scan.
+# REPETITION IS NOT CORROBORATION: a pattern measured in exactly ONE session is capped
+# at 0.65, below the propose bar, however often it recurred — 40 hits in one session
+# are one observation, not forty.
+# confidence is None — NEVER 0.0 — when nothing could be measured; `sessions` is None,
+# never 0, when memory_entries carries no session_ref (migration 226) or none is
+# populated. mean_confidence / above_propose_threshold are null over an empty
+# denominator (args/perfect_score_gate.yaml).
+# maybe_propose_from_session now REFUSES below propose.min_confidence (0.7 — the bar
+# learning_collector blocks at) and reports `refused` plus every refusal's own count,
+# session spread, confidence and basis. A candidate history holds no evidence for is
+# refused as `unmeasurable`, never proposed.
+# MEASURED on the live board 2026-09-11: memory_entries holds 28,158 rows and ZERO
+# with `type LIKE 'session_%'`, so --analyze returns 0 patterns and every rate is
+# null. UNMEASURABLE, not clean — nothing has ever driven this analyser. The writer,
+# session_indexer.index_session_turn, now records `session_ref` (it had the session id
+# and dropped it), so attribution is measurable for turns indexed from here on.
 ```
 
 ---
@@ -1600,7 +3964,8 @@ pytest tests/test_behavioral_drift.py -v             # Behavioral drift detectio
 pytest tests/test_tool_chain_validator.py -v          # Tool chain validator tests (22 tests)
 pytest tests/test_agent_output_validator.py -v        # Agent output validator tests (22 tests)
 pytest tests/test_agent_trust_scorer.py -v            # Agent trust scorer tests (22 tests)
-pytest tests/test_mcp_tool_authorizer.py -v           # MCP tool authorizer tests (28 tests)
+pytest tests/test_mcp_tool_authorizer.py -v           # MCP tool authorizer tests (23 tests)
+pytest tests/test_exa_policy_07_registry_authorization.py -v  # Per-tool min_il/required_roles declarations (111 tests)
 pytest tests/test_behavioral_red_team.py -v           # Behavioral red teaming tests (13 tests)
 pytest tests/test_owasp_agentic_assessor.py -v        # OWASP Agentic assessor tests (16 tests)
 pytest tests/test_schemas.py -v                      # Shared schema enforcement tests (29 tests)
@@ -1674,6 +4039,20 @@ pytest tests/test_autoresearch.py -v                     # Bayesian Autoresearch
 python tools/testing/claude_dir_validator.py --json   # Validate .claude config alignment (exit 0 = pass)
 python tools/testing/claude_dir_validator.py --human   # Human-readable terminal output
 python tools/testing/claude_dir_validator.py --check append-only --json  # Single check
+
+# Agent config shield (xrv-shield-01) — the three existing scanners pointed at
+# .claude/ .agents/ .cursor/ CLAUDE.md, the 10 companion files and every MCP config
+python -m tools.security.agent_config_shield                 # human report (exit 1 on a critical)
+python -m tools.security.agent_config_shield --json
+python -m tools.security.agent_config_shield --surface       # the declared surface, scans nothing
+python -m tools.security.agent_config_shield --check mcp-config --json
+python tools/testing/claude_dir_validator.py --check config-injection --json  # prompt injection
+python tools/testing/claude_dir_validator.py --check config-secrets --json    # secrets
+python tools/testing/claude_dir_validator.py --check mcp-config --json        # MCP servers
+python tools/testing/claude_dir_validator.py --check hook-commands --json     # what a hook EXECUTES
+python tools/workflow/coherence_checker.py --check agent_config_shield --json # warn, full tier
+# Verdicts are pass | warn | fail | unmeasurable; unmeasurable NEVER folds into pass.
+# Survey: docs/audits/xrv-shield-01-agent-config-survey.md
 
 # Health check
 python tools/testing/health_check.py                 # Full system health check
@@ -1814,6 +4193,35 @@ python tools/audit/audit_logger.py --event-type "code.commit" --actor "builder-a
 python tools/audit/audit_query.py --project "proj-123" --format json
 python tools/audit/decision_recorder.py --project-id "proj-123" --decision "Use PostgreSQL" --rationale "RDS requirement" --actor "architect-agent"
 
+# Audit hash-chain integrity sweep (exa-audit-04) — whole table, not one row at a time.
+# Buckets every row: verified / pre-cutover (unverifiable, NOT tampered) /
+# unchained (post-cutover, writer bypassed) / BROKEN (the tamper signal).
+python tools/audit/chain_sweep.py                      # human-readable summary
+python tools/audit/chain_sweep.py --json               # full report incl. broken samples + links
+python tools/audit/chain_sweep.py --gate               # exit 1 if any link is broken
+python tools/audit/chain_sweep.py --verify-signatures  # also verify each signature (slower)
+python tools/audit/chain_sweep.py --db-path /path/to/evidence.db   # sweep an evidence copy
+# Same data on the dashboard: /provenance -> "Audit Chain Integrity",
+# API: GET /api/govchain-provenance/chain-health
+# Scheduled: rides the genesis `audit` reflex (args/genesis_config.yaml -> reflexes.audit.checks)
+
+# PreToolUse hook — per-check fire-rate survey (exa-bench-05)
+# Replays the tool calls of recent sessions through every check in
+# .claude/hooks/pre_tool_use.py and counts what each one would refuse. Run this
+# BEFORE changing a check or its enforcement posture — a check enabled without a
+# measurement is how nine of them stayed advisory behind `|| true`.
+python tools/hooks/fire_rate_survey.py --json
+python tools/hooks/fire_rate_survey.py --markdown --since-days 30 --project ICDev
+python tools/hooks/fire_rate_survey.py --check env_file_access --samples 25
+python tools/hooks/fire_rate_survey.py --live-git          # evaluate branch_deletion for real
+python tools/hooks/fire_rate_survey.py --gate --max-fire-rate 0.01   # exit 1 above 1%
+# Corpus is the Claude Code transcripts (~/.claude/projects/**/*.jsonl) — the only
+# source that carries the OPERANDS. hook_events persists tool-input key names
+# only, and is reported unusable rather than contributing a misleading zero.
+# Enforcement switches (read by the hook, not by this tool):
+#   ICDEV_PRETOOLUSE_ENFORCE=0   all nine checks report but never refuse
+#   ICDEV_<CHECK>_GUARD=0        skip one check — see CHECK_KILL_SWITCHES
+
 # MCP servers (stdio transport)
 python tools/mcp/unified_server.py                   # Start unified MCP gateway (251 tools, recommended)
 python tools/mcp/core_server.py                     # Start core MCP server
@@ -1926,6 +4334,15 @@ python tools/ci/modules/worktree.py --list --json                               
 python tools/ci/modules/worktree.py --cleanup --worktree-name icdev-test-123                # Cleanup worktree
 python tools/ci/modules/worktree.py --status --worktree-name icdev-test-123                 # Worktree status
 
+# Manifest merge rehearsal (kax-conflict-03) — measures which tools/manifest/ layout survives
+# two unrelated tasks each registering a new tool under the same topic
+python tools/git/manifest_merge_rehearsal.py                              # all layouts, both merge paths
+python tools/git/manifest_merge_rehearsal.py --json                       # machine-readable
+python tools/git/manifest_merge_rehearsal.py --layout union --branches 5  # one layout, 5 concurrent branches
+python tools/git/manifest_merge_rehearsal.py --mode merge-tree            # bare, forge-style server-side merge only
+python tools/git/manifest_merge_rehearsal.py --repo .                     # rehearse against a CLONE of this repo + the real shard
+python tools/git/manifest_merge_rehearsal.py --repo . --shard tools/manifest/browser.md
+
 # GitLab Task Board Monitor (Phase 41)
 python tools/ci/triggers/gitlab_task_monitor.py                    # Start monitor (polls every 20s)
 python tools/ci/triggers/gitlab_task_monitor.py --dry-run          # Preview without spawning
@@ -1987,7 +4404,19 @@ python tools/compliance/fedramp_report_generator.py --project-id "proj-123"     
 python tools/compliance/cmmc_assessor.py --project-id "proj-123" --level 2              # CMMC assessment
 python tools/compliance/cmmc_report_generator.py --project-id "proj-123"                # CMMC report
 python tools/compliance/oscal_generator.py --project-id "proj-123" --artifact ssp       # OSCAL generation
+python tools/compliance/oscal_generator.py --project-id "proj-123" --artifact assessment_plan  # Assessment Plan (rmf-oscal-01)
+python tools/compliance/oscal_generator.py --project-id "proj-123" --artifact all --json  # All five models
 python tools/compliance/oscal_generator.py --project-id "proj-123" --deep-validate /path/to/ssp.oscal.json --json  # Deep validation (D302-D305)
+python tools/compliance/oscal_generator.py --validate /path/to/assessment-plan.oscal.json --json  # Structural validation only
+
+# DISA STIG checklist EMITTER -- .ckl (STIG Viewer 2 XML) and .cklb (v3 JSON) (rmf-oscal-01)
+python tools/compliance/stig_ckl_writer.py --project-id "proj-123" --format both --json
+python tools/compliance/stig_ckl_writer.py --project-id "proj-123" --format ckl --host-name web01
+python tools/compliance/stig_ckl_writer.py --project-id "proj-123" --format cklb --output-dir ./out
+# The severity/status tables are INVERTED from tools/network/stig_import.py's
+# parser at import time, never restated, so a written .ckl round-trips through
+# the reader the repo already had. Import it as a library for in-memory use:
+#   from tools.compliance.stig_ckl_writer import build_ckl, build_cklb
 
 # OSCAL Ecosystem Tools (D302-D306)
 python tools/compliance/oscal_tools.py --detect --json                                  # Check oscal-cli, oscal-pydantic, NIST catalog availability
@@ -2005,6 +4434,62 @@ python tools/compliance/emass/emass_export.py --project-id "proj-123" --type con
 python tools/compliance/cato_monitor.py --project-id "proj-123" --check-freshness       # cATO monitoring
 python tools/compliance/cato_scheduler.py --project-id "proj-123" --run-due             # cATO scheduling
 python tools/compliance/pi_compliance_tracker.py --project-id "proj-123" --velocity     # PI tracking
+
+# RMF cycle time — TWO clocks that are never merged (rmf-cyc-01)
+python -m tools.compliance.rmf_cycle_time                       # human report
+python -m tools.compliance.rmf_cycle_time --json --window-days 30
+python -m tools.compliance.rmf_cycle_time --project-id "proj-123"
+# automation_time is OURS (the 72h claim); decision_latency is the AUTHORIZING
+# OFFICIAL's queue. They are never added: halve the automation and a single
+# end-to-end figure can get WORSE because an AO took leave, so a change in it
+# attributes to neither party. Each carries its own denominator and each is
+# None -- never 0.0, which would read as "instant" -- when unmeasured.
+#
+# THE WRITES ARE A CONSEQUENCE OF AN ARTIFACT, never a step anyone remembers.
+# rmf_workflow_stages held ZERO rows on the live board (measured 2026-09-02,
+# alongside ssp_documents, poam_items, stig_findings, oscal_artifacts and
+# cato_evidence -- all empty) because it was a hand-maintained board, and
+# hand-maintained boards do not get maintained. Five producers now write it
+# through tools/compliance/rmf_stage_recorder.py, the ONE writer:
+#   ssp_generator      -> select      (SP 800-37r2 S-4/S-5, the security plan)
+#   poam_generator     -> assess      (Task A-6)
+#   stig_checker       -> assess      (Task A-4, assessment reports)
+#   oscal_generator    -> select / implement / assess, by WHAT the artifact IS
+#   cato_monitor.collect_evidence -> monitor  (Step 7, Task M-2)
+# `categorize` and `authorize` have NO automated producer here and are named on
+# every run under stages_without_producer -- a clock that silently began at
+# whichever step happened to be wired measures a shorter job than the one
+# claimed. started_at is stamped ONCE: an SSP regenerated on day 3 must not
+# reset the clock to day 3.
+#
+# A LOWER BOUND CANNOT MEET A TARGET. A package with no recorded submission is
+# bounded by its latest artifact, so its span can only GROW -- two artifacts
+# produced 16ms apart give 0.0 hours, and scoring that against 72h returns True
+# for a package nobody finished assembling. `meets_target` is therefore judged
+# on SUBMITTED packages only and is None otherwise; `is_lower_bound` says when
+# the headline median is a floor rather than a duration.
+#
+# Record the two human events the producers cannot observe:
+python -m tools.compliance.rmf_stage_recorder --project-id "proj-123" --actor human:pm --submit --evidence pkg:v1
+python -m tools.compliance.rmf_stage_recorder --project-id "proj-123" --actor human:ao --decision authorized
+# A RESUBMISSION overwrites submitted_at and CLEARS the recorded decision, so
+# decision_latency measures the most recent submit->decide pair and never sums
+# across rework -- the time between a rejection and a resubmission is OURS. A
+# decision recorded with no submission is UNMEASURABLE, never zero. `denied` is
+# `blocked`, never `complete`.
+#
+# baseline_source carries TWO derivations that share no code and are never
+# merged: the DECLARED baseline in args/rmf_cycle_baseline.yaml (with its
+# `kind` -- a `claimed` figure is never presented as evidence) and a
+# `measured_here` one re-derived from this deployment's own human:* stage rows,
+# which withholds its median below `min_projects` because one project is an
+# anecdote wearing a statistic's name. THE SHIPPED BASELINE REFUSES ITS OWN
+# COMPARISON, twice: `baseline_unquantified` ("months" has no number, no scope,
+# no source, no date) and `baseline_includes_decision_latency` -- an anecdotal
+# ATO duration is wall-clock to the signed authorization and so CONTAINS the
+# AO's queue, and dividing it by an automation-only clock is the blend wearing
+# a percentage. Fill in a quantified, AO-queue-free figure before publishing
+# any "months -> 72h" ratio; do NOT flip the refusal off in the config.
 
 # FIPS 199/200 Security Categorization (Phase 20)
 python tools/compliance/fips199_categorizer.py --list-catalog                                          # Browse SP 800-60 types
@@ -2101,6 +4586,43 @@ python tools/dx/mcp_config_generator.py --all --write --json              # Gene
 python tools/dx/skill_translator.py --all --write --json                  # Translate skills to all platforms
 python tools/dx/skill_translator.py --list                                # List available Claude Code skills
 
+# External tool index — the binaries ICDEV shells to, probed on PATH (xrv-route-01)
+python -m tools.dx.tool_index --refresh --json                            # Every declared tool: present | absent | unmeasurable
+python -m tools.dx.tool_index --refresh                                   # Human table + the declared absences and why
+python -m tools.dx.tool_index --name git --json                           # One tool
+python -m tools.dx.tool_index --validate                                  # Validate the DECLARATION (exit 1 on a problem)
+python -m tools.dx.tool_index --call-sites git                            # Re-derive consumers from the tree with ast
+# `which(name)` in that module is the ONE lookup new code calls instead of a
+# bare shutil.which — it refuses an undeclared name, and an EXCLUDED name
+# raises carrying the reason (bandit is `python -m`, cosign is generated
+# config, playwright comes from node_modules/.bin — see args/tool_index.yaml).
+# `present` requires the binary to ANSWER its version_cmd; `unmeasurable` (on
+# PATH, would not answer) is its own verdict and never folds into either other.
+# Consumed by: python tools/testing/health_check.py --json -> checks.external_tools
+
+# Skill prerequisites — the external binaries a skill needs, named up front (xrv-route-02)
+python tools/skills/invoke.py --dry-run icdev-secure                      # prerequisite verdicts BEFORE step 1
+python tools/skills/invoke.py --dry-run icdev-secure --json               # .prerequisites: verdict + per-tool status
+python tools/skills/invoke.py --show icdev-secure                         # the declared list
+python tools/skills/registry.py --get icdev-secure --json                 # parsed `prerequisites:` frontmatter
+# Declared in SKILL.md frontmatter by args/tool_index.yaml NAME, probed through
+# tools/dx/tool_index.py (never a second shutil.which). present | absent |
+# unmeasurable | undeclared, and `not_declared` is NOT `satisfied`. Reports
+# only — an absent optional tool never refuses the steps that do work.
+
+# Routing regression corpus — 195 cases over the FOUR deterministic routers (xrv-route-02)
+python -m tools.routing.corpus_survey --json                              # agreement per router, every disagreement by name
+python -m tools.routing.corpus_survey                                     # human report
+python -m tools.routing.corpus_survey --router cortex_facade --json       # one router
+python -m tools.routing.corpus_survey --list-routers                      # the four, with each one's question and default
+python -m tools.routing.corpus_survey --validate                          # check the corpus DECLARATION (exit 1)
+python -m pytest tests/routing -q                                         # the gate
+# Corpus: tests/routing/corpus.yaml. Run the survey BEFORE landing a router
+# change. Adds no fifth router — read the boundary note atop
+# tools/cortex/intent_router.py first. Agreement is None, never 0.0 or 100.0,
+# over an empty denominator; a router with no case reads `never_asked`, not
+# clean. Report only, no --gate (kpr-fix-03); exit 2 = no report produced.
+
 # Maintenance Audit
 python tools/maintenance/dependency_scanner.py --project-id "proj-123"           # Scan all deps
 python tools/maintenance/vulnerability_checker.py --project-id "proj-123"        # Check CVEs
@@ -2187,11 +4709,20 @@ python tools/skills/gepa_optimizer.py --json                             # Run o
 python tools/skills/gepa_optimizer.py --dry-run --json                   # Scan without applying writes
 # MCP tool: gepa_optimizer
 #   Parameters: dry_run (bool, default false) — when true, scan runs but no DB writes are committed.
-#   Returns:    {applied: [{capability_id, action, fitness, dry_run}],
-#                skipped: [{capability_id, reason, fitness}],
-#                errors:  [str]}
+#   Returns:    {applied:  [{capability_id, action, fitness, dry_run}],
+#                declined: [{artifact_id, decision}],
+#                skipped:  [{capability_id, reason, fitness}],
+#                errors:   [str]}
 #   Handler:    tools/mcp/gap_handlers.py::get_gepa_optimizer_handler
 #   Skill:      tools/skills/gepa_optimizer.py::run()
+# rem-cap-01 — GEPA records a decision against EVERY artifact it evaluates, in
+# agent_improvement_artifacts.gepa_decision / gepa_decided_at (migration
+# 20260816125047_gepa_decision_columns). Terminal, so the artifact leaves the
+# queue: declined_no_delta, declined_low_score, declined_unmappable_skill.
+# Retried next cycle: declined_skill_file_missing, declined_rubric,
+# declined_empty_patch. `capability_consumption`'s skill_optimizer class counts
+# a recorded decision — applied OR declined — because counting applies alone
+# made a correct decline indistinguishable from never having run.
 # Genesis daemon 24h trigger — GEPA reflex fires daily via the genesis daemon loop:
 #   Config:     args/genesis_config.yaml — add a "gepa_optimizer" entry with interval_seconds: 86400
 #   Interval:   86400 s (24 h); controlled by interval_seconds / interval_hours in genesis_config.yaml
@@ -2335,7 +4866,10 @@ python tools/security/agent_trust_scorer.py --all --json                        
 python tools/security/agent_trust_scorer.py --gate --project-id "proj-123" --json                     # Trust scoring gate
 python tools/security/mcp_tool_authorizer.py --check --role developer --tool scaffold --json          # Check tool authorization
 python tools/security/mcp_tool_authorizer.py --list --role pm --json                                  # List role permissions
-python tools/security/mcp_tool_authorizer.py --validate --json                                        # Validate RBAC config
+python tools/security/mcp_tool_authorizer.py --validate --json                                        # Validate RBAC config (registry-declared since exa-policy-07)
+python tools/security/mcp_authz_evidence.py --json                                                    # Is per-tool MCP authz ENFORCED? (behavioural, not file existence)
+python tools/security/mcp_authz_evidence.py --gate                                                    # Exit 1 unless a denial actually binds
+python tools/security/mcp_authz_evidence.py --gate --allow-monitor                                    # Accept monitor mode as passing
 python tools/security/atlas_red_team.py --behavioral --json                                           # Run behavioral red team tests
 python tools/security/atlas_red_team.py --behavioral --brt-technique BRT-001 --json                   # Test specific technique
 python tools/compliance/owasp_agentic_assessor.py --project-id "proj-123" --json                      # OWASP Agentic assessment
@@ -2509,6 +5043,16 @@ python tools/devsecops/attestation_manager.py --project-id "proj-123" --generate
 python tools/devsecops/zta_maturity_scorer.py --project-id "proj-123" --all --json                             # Score all 7 ZTA pillars
 python tools/devsecops/zta_maturity_scorer.py --project-id "proj-123" --pillar user_identity --json            # Score individual pillar
 python tools/devsecops/zta_maturity_scorer.py --project-id "proj-123" --trend --json                           # Maturity trend
+python tools/devsecops/zta_maturity_scorer.py --project-id "proj-123" --all --human                            # Two numbers: evidence-backed vs self-attested
+# A pillar whose zta_posture_evidence rows carry no evidence_data reports UNMEASURED (score null),
+# never a ratio over a checkbox list (rmf-zt-02). The self-attested figure is reported BESIDE it and
+# is never merged in. UI: /security/zig/assessment -> "DoD 7-Pillar ZTA Posture".
+python -m tools.devsecops.zta_zig_backfill --survey --json                                                     # What can ZIG supply as ZTA evidence?
+python -m tools.devsecops.zta_zig_backfill --backfill --project-id "proj-123" --dry-run                        # Plan only; writes nothing
+python -m tools.devsecops.zta_zig_backfill --backfill --project-id "proj-123" --write                          # Carry orchestrator notes across
+# Writes a row ONLY for a ZIG completion carrying a real evidence_note. MEASURED 2026-09-02: all 91
+# completions are 'complete' by seed-script with NO note, so it writes nothing and says so — run the
+# seven tools/security_canvas/*_pillar_orchestrator.py first.
 python tools/compliance/nist_800_207_assessor.py --project-id "proj-123" --json                                # NIST 800-207 assessment
 python tools/compliance/nist_800_207_assessor.py --project-id "proj-123" --gate                                # NIST 800-207 gate
 python tools/devsecops/service_mesh_generator.py --project-id "proj-123" --mesh istio --json                   # Generate Istio service mesh
@@ -2518,6 +5062,18 @@ python tools/devsecops/network_segmentation_generator.py --project-path /path --
 python tools/devsecops/zta_terraform_generator.py --project-path /path --modules all --json                    # ZTA Terraform modules
 python tools/devsecops/pdp_config_generator.py --project-id "proj-123" --pdp-type disa_icam --json             # PDP config
 python tools/devsecops/pdp_config_generator.py --project-id "proj-123" --pdp-type zscaler --mesh istio --json  # PEP config
+
+# ZT device compliance — three verdicts, and the flip survey behind them (rmf-zt-01)
+SC_STORAGE_BACKEND=sqlite python -m tools.security_canvas.zt_verdict_survey                # flip survey (report only)
+SC_STORAGE_BACKEND=sqlite python -m tools.security_canvas.zt_verdict_survey --json
+python -c "from tools.security.stub_gate import stub_status; print(stub_status())"          # is device posture stubbed?
+# scan_device() returns pass|fail|unknown per check; an absent probe is `unknown`
+# and is excluded from BOTH sides of every ratio. compliance_score/overall_pass/
+# health_score are None (never 0.0, never 1.0) when nothing was measured.
+# ICDEV_ZT_ALLOW_STUB writes a `zt.stub_gate` audit row on BOTH legs, and a
+# standing banner appears on every /security page while it is honored.
+# Survey measured 2026-09-02: 96 of 108 recorded checks flip (88.89%).
+# docs/audits/rmf-zt-01-zt-check-verdict-flip-survey.md
 
 # DoD MOSA (Phase 26 — Modular Open Systems Approach)
 python tools/compliance/mosa_assessor.py --project-id "proj-123" --json                                        # MOSA assessment
@@ -2805,41 +5361,6 @@ python tools/research/research_engine.py --daemon --json
 
 ---
 
-## FathomDeskNews Pipeline — ADN News Intelligence (Phase ADN)
-```bash
-# Ingest RSS feeds once (all configured feeds in args/news_feeds.yaml)
-python tools/trading/news/rss_ingestor.py --run-once --json
-
-# Continuous poller daemon (respects poll_interval_seconds from args/news_feeds.yaml)
-python tools/trading/news/rss_ingestor.py --daemon --json
-
-# Classify pending news items (rule-based, no LLM required)
-python tools/trading/news/classifier.py --run --json
-
-# Match classified items to macro scenarios (meta_scenarios.yaml)
-python tools/trading/news/scenario_matcher.py --run --json
-
-# Aggregate and promote clusters to the dashboard
-python tools/trading/news/aggregator.py --run --json
-
-# LLM-backed reasoning over top clusters (requires LLM provider)
-python tools/trading/news/news_reasoner.py --run --json
-
-# Database migrations and health
-python tools/trading/news/db.py --migrate --json
-python tools/trading/news/db.py --health --json
-
-# Perspective scoring (bearish/bullish net_direction wiring)
-python tools/trading/news/perspective_scorer.py --score --json
-```
-
----
-
-## FathomDesk — OpenBB Gateway
-```bash
-python tools/fathomdesk/openbb_gateway.py --ticker AAPL --method get_price --json
-```
-
 ---
 
 ## Marketplace — Federated FORGE Asset Registry (Phase 22)
@@ -2925,6 +5446,44 @@ python tools/databridge/connectors/clawhub_connector.py --health --json
 ## LLM Tools — Gateway, Prompt Registry, Cost Intelligence, Model Monitor
 
 ```bash
+# Per-provider prompt-cache effectiveness -- NOT one aggregate number (cch-obs-01)
+python tools/cache_savings/by_provider.py --json                     # every provider, configured window
+python tools/cache_savings/by_provider.py --window-days 30
+python tools/cache_savings/by_provider.py --provider anthropic --json
+# Reads ai_telemetry (cch-tel-01's per-call ledger), NOT llm_response_cache -- that table
+# answers "was an LLM call avoided outright" and holds a row only for response-cached
+# results, so it can never describe cached INPUT tokens on a call that still happened.
+# Four states, never merged into one 0%: no_data (nobody called it) | unreported (the
+# transport returns no counters -- claude-cli carried 626 such calls) | no_cache_hits (a
+# real measured 0%, the only defect of the four) | caching. cached_share_pct is None, not
+# 0.0, for the first two. A provider with usd_basis: local (Ollama and friends) has no
+# bill, so usd_saved is None and its latency is reported instead -- $0.00 there reads as
+# "caching failed" for a cache that works fine and simply is not billed.
+# Token accounting is per provider and is NEVER summed across shapes: Anthropic/Bedrock
+# report input_tokens DISJOINT from cache tokens, OpenAI/Azure report cached tokens as a
+# SUBSET. Identical raw numbers give 28.57% vs 40.00%; averaging them double-counts every
+# OpenAI cached token, which is what the single aggregate did. Emits no blended hit rate.
+# A database with no operating history reports UNMEASURABLE, never a wall of no_data.
+# Claims (provider-keyed, never model-keyed): args/cache_effectiveness.yaml
+# UI: /cache-savings -> "Prefix Cache by Provider"   API: /api/cache-savings/by-provider
+# IQE: cache.by_provider (alongside cache.stats / cache.entries)
+
+# Cost budget — the DOWNGRADE gate on the LLMRouter chain (exa-policy-04)
+python tools/llm/cost_budget.py --status --json                                         # Current spend vs limit, and what the router would do
+python tools/llm/cost_budget.py --function code_generation --json                       # Evaluate one function's budget
+python tools/llm/cost_budget.py --explain code_generation --json                        # Declared chain + per-model price + what it downgrades to
+python tools/llm/cost_budget.py --gate                                                  # Exit 1 only when hard_action is 'block' and the limit is reached
+# The other four budget layers all BLOCK (token_tracker per agent, module_budget_tracker
+# per module, chain_orchestration per run, proxy_budgets per key). This one ASKs at a soft
+# threshold — ONCE per threshold per period, deduped via the append-only agent_approval_log —
+# and at the hard limit DOWNGRADES: the function's declared routing.<fn>.chain is reordered
+# so the affordable tier leads and the expensive model is demoted to the tail (never dropped),
+# so a long autonomous run keeps working instead of dying at 02:00.
+# Air-gap: local models declare pricing 0.0 and downgrade.prefer_local breaks price ties
+# local-first, so the downgrade lands on Ollama. No model id in Python — the order comes from
+# the chain and the pricing: block in args/llm_config.yaml (cost_budget:).
+# Spend reads ai_telemetry; an absent table reports `unmeasurable`, never a misleading zero.
+
 # AGX reasoning-architecture benchmark + leaderboard (agx-bench-01/02)
 python tools/llm/architectures/benchmark.py --dry-run --json                            # List task suite + registered architectures (no model calls)
 python tools/llm/architectures/benchmark.py --run --json                                # Run the bench (live models if reachable) -> data/agx/benchmark_latest.json
@@ -2988,12 +5547,15 @@ python tools/llm/gateway.py --gate                                              
 
 # Prompt Registry
 python tools/llm/prompt_registry.py --list --json                                      # List all registered prompts
-python tools/llm/prompt_registry.py --register --name "prompt_name" --template "template text" --json  # Register new prompt
-python tools/llm/prompt_registry.py --activate --name "prompt_name" --version 2 --json # Activate specific version
-python tools/llm/prompt_registry.py --rollback --name "prompt_name" --version 1 --json # Rollback to previous version
-python tools/llm/prompt_registry.py --diff --name "prompt_name" --v1 1 --v2 2 --json   # Diff two prompt versions
+python tools/llm/prompt_registry.py --register --name "layer/house-style" --template-text "text" --function code_generation --json  # Register new version
+python tools/llm/prompt_registry.py --register --name "layer/house-style" --template-file hardprompts/house_style.md --function code_generation --json  # ...from a file
+python tools/llm/prompt_registry.py --activate --name "layer/house-style" --version 2 --json  # Activate specific version
+python tools/llm/prompt_registry.py --rollback --name "layer/house-style" --to-version 1 --json  # Rollback to previous version
+python tools/llm/prompt_registry.py --diff --name "layer/house-style" --v1 1 --v2 2 --json  # Diff two prompt versions
+python tools/llm/prompt_registry.py --layers --function code_generation --json         # Active supplemental layers the LLM router will apply (exa-refine-01)
 python tools/llm/prompt_registry.py --import-hardprompts --json                        # Import from hardprompts/ directory
-python tools/llm/prompt_registry.py --start-ab --name "prompt_name" --version-a 1 --version-b 2 --json  # Start A/B test
+python tools/llm/prompt_registry.py --seed-call-sites --json                           # Register + activate the call-site prompt bodies at their current module text (exa-refine-02)
+python tools/llm/prompt_registry.py --start-ab --name "layer/house-style" --va 1 --vb 2 --split 0.5 --json  # Start A/B test
 python tools/llm/prompt_registry.py --gate                                             # Gate check (CI/CD)
 
 # Cost Intelligence
@@ -3004,6 +5566,39 @@ python tools/llm/cost_intelligence.py --recommend --json                        
 python tools/llm/cost_intelligence.py --edge-vs-cloud --function code_generation --json # Edge vs cloud cost comparison
 python tools/llm/cost_intelligence.py --alerts --json                                  # Active cost alerts
 python tools/llm/cost_intelligence.py --gate                                           # Gate check (CI/CD)
+
+# Transcript Cost Reader (xrv-cost-01) -- the spend the router ledgers cannot see
+# Claude Code sessions bypass router.invoke, so their usage lives ONLY in the
+# transcripts. Prices input+output tokens from args/llm_config.yaml; an unknown
+# model is `unpriced` (cost_usd None, never $0); cache tokens are reported raw.
+python -m tools.cost.session_cost --survey --since-days 7 --project ICDev --json   # per-session USD by model and task type
+python -m tools.cost.session_cost --survey --since-days 30                          # human table, every project
+python -m tools.cost.session_cost --session <session-id> --json                     # one transcript; exit 2 if not found
+python -m tools.cost.session_cost --task <task-id> --json                          # xrv-cost-02: agent_token_usage rows for one kanban task + verdict shipped|abandoned|reverted|in_flight|unmeasurable
+python -m tools.cost.session_cost --task <task-id> --no-forge                      # same, without the gh PR-state call
+python -m tools.cost.session_cost --survey --by-verdict --json                     # spend that shipped: cost per verdict; a board with no attributed rows is unmeasurable, never $0
+python -m tools.cost.session_cost --survey --by-verdict --window-days 7 --forge    # rows in the last 7 days, PR state consulted per task
+
+# Spend panel on the EXISTING /cache-savings page (xrv-cost-04)
+python -m tools.cache_savings.spend --json                                         # the panel's exact payload: spend by card and by outcome
+python -m tools.cache_savings.spend --window-days 30                               # human table over a wider window
+python -m tools.cache_savings.spend --no-cache --json                              # bypass the 120s panel cache
+# UI: /cache-savings -> "Spend by Card"   API: GET /api/cache-savings/spend?window_days=N
+# Computes no cost of its own -- one task_attribution.survey_by_verdict call, forge NOT
+# consulted. Four empty states and none of them is $0.00: unavailable | ledger_unreadable |
+# no_attributed_rows ("no attributed dispatches in the window" -- an absence of ATTRIBUTION,
+# not of spending) | measured. All five verdict rows always render, because a verdict missing
+# from the table is indistinguishable from one that measured zero. `unpriced` is counted apart
+# from every verdict: a dispatch that reported no dollars still shipped or was still abandoned.
+# Exit 2 = the panel could not be produced, which is never the same as a panel measuring nothing.
+
+# Waste Survey -- behavioural, not billing (xrv-cost-03)
+python -m tools.cost.waste_survey --json                                           # one-shot rate, re-reads, ghost definitions, CLAUDE.md tokens/day, MCP usage
+python -m tools.cost.waste_survey --since-days 30 --project ICDev                  # human report over this repo's sessions
+python -m tools.cost.waste_survey --no-studio --json                               # skip the Studio-side MCP figure (no database read)
+python -m tools.cost.waste_survey --reread-threshold 5 --max-listed 50 --json      # widen the re-read bar, name more offenders
+# A RETRY is the same file Edited again after a Bash call in between. Report only, no --gate;
+# exit 2 = the survey could not be produced, which is never a clean survey.
 
 # Model Monitor
 python tools/llm/model_monitor.py --record --model qwen3-local --function code_generation --score 0.85 --json  # Record quality score
@@ -3017,7 +5612,7 @@ python tools/llm/model_monitor.py --gate                                        
 ## ICDEV Cortex — Unified AI Facade (ctx-*)
 
 Cortex is a Python **API facade** (`tools/cortex/`, mirrored to `icdev/tools/cortex/`) over
-LLMRouter, the four retrieval backends (RAG / GraphRAG / DIC / KB), IQE, and the enforced
+LLMRouter, the four retrieval backends (RAG / GraphRAG / DIC / KB), the advisory SME backend, IQE, and the enforced
 TRUST governance chain. There is no standalone argparse CLI — call it in-process or via
 `python -c`. Routing is config-driven (`cortex_*` chains in `args/llm_config.yaml`); behavior
 tuning lives in `args/cortex_config.yaml` (`$ICDEV_CORTEX_CONFIG` overrides). All chains keep a
@@ -3040,6 +5635,13 @@ python -c "from tools.cortex import search; [print(h.backend, round(h.score,3), 
 
 # Force a specific backend or full fan-out (bypass classification): rag|graph|dic|kb|all
 python -c "from tools.cortex import search; print(len(search('quarterly revenue trend', strategy='all')))"
+
+# ADVISORY rung (cef-bck-03): ask an ACE domain-expert persona instead of the corpus.
+# Opt-in ONLY — 'auto' and 'all' never select it. The result is an OPINION, not
+# evidence: metadata.advisory is True, RRF weight is 0.0, and it must never become
+# a deterministic verdict. With no provider available it returns [] with .errors,
+# never a fabricated opinion.
+python -c "from tools.cortex import search, is_advisory; rs = search('how is hull risk priced', strategy='sme'); print([(r.metadata['role_id'], is_advisory(r)) for r in rs], getattr(rs,'errors',[]))"
 
 # Inspect the routing decision without running backends
 python -c "from tools.cortex import classify_route; print(classify_route('list all vendors linked to CVE-2024-1234'))"
@@ -3066,21 +5668,113 @@ python -c "from tools.cortex import assert_airgap_ready; assert_airgap_ready(); 
 # Load the security (XSIAM-style) lens; scope search to threat/vuln/incident sources
 python -c "from tools.cortex import load_domain_profile, list_domain_names; print(list_domain_names()); print(load_domain_profile('security').sources)"
 
-# --- MCP server (cortex_server.py: 8 cortex_* tools, ctx-expose-01) ---
-# Start the Cortex MCP server over stdio (cortex_search/ask/complete/reason/classify/extract/govern/agent_launch)
+# --- MCP server (cortex_server.py: 9 cortex_* tools, ctx-expose-01) ---
+# Start the Cortex MCP server over stdio (cortex_search/ask/resolve/complete/reason/classify/extract/govern/agent_launch)
+# NOTE (ctx-reach-03): .mcp.json launches ONLY icdev-unified, which serves all 9
+# of these from TOOL_REGISTRY — that is how they are reached in this repo. This
+# standalone command is the BOUNDED alternative for an external / air-gapped MCP
+# client that must see only the Cortex family. Both serve the same handlers.
 python tools/mcp/cortex_server.py
 
 # --- REST API v1 (rest_v1.py folded onto the /cortex blueprint, ctx-expose-02) ---
 # POST JSON to the versioned surface (identity derived server-side; only `domain` is caller-supplied):
 #   POST /cortex/api/v1/search   {"query": "...", "top_k": 5, "strategy": "auto", "domain": "security"}
 #   POST /cortex/api/v1/ask      {"question": "...", "mode": "auto", "summarize": true}
+#   POST /cortex/api/v1/resolve  {"entity": "TLS 1.1", "question": "still approved?", "top_k": 5}
+#     -> {verdict: current|deprecated|superseded|unknown, verdict_source, citations[],
+#         gaps[], conflicts[], backend_errors[], assessments[]}   (cef-rsv-01)
+#     The verdict is DETERMINISTIC — from the docmod domain packs' evaluate(), never a model;
+#     this is the one Cortex verb that makes no LLM call at all. `unknown` always carries a
+#     gaps entry naming why (no_pack_matched / no_evidence / backends_failed / packs_failed,
+#     never merged). An unresolvable [source: id] tag returns 403, it does not degrade.
+#     There is NO `backends`/`strategy` param: the rung set is `resolve.backends` in
+#     args/cortex_config.yaml, because it decides whether the `external` rung is reachable.
+#     `conflicts[]` is populated by cross-backend entity resolution (cef-rsv-02, below).
+
+# --- Cross-backend entity resolution (cef-rsv-02) ---
+# A LIBRARY, not a CLI. `resolve()` calls it; import it to run the comparison over
+# any hit set (a document sweep, a batch currency check) without the facade.
+python -c "from tools.cortex.entity_resolution import resolve_entities; print(resolve_entities([], entities=['TLS 1.1'], backends=['currency','rag'])['gaps'])"
+# Resolves hits from DIFFERENT backends onto the same real-world entity and compares what
+# each one CLAIMED — the thing RRF fusion never did, which is why a RAG chunk contradicting
+# the curated catalog was invisible. Returns
+#   {entities[], claims[], conflicts[], gaps[], unresolved[], backends_consulted,
+#    backends_failed, text_claims}
+# Four outcomes that used to render identically, and stay apart on purpose:
+#   AGREEMENT      no conflict, and the entity reads answered:<status>.
+#   CONFLICT       one EntityConflict per (entity, kind ∈ status|superseded_by|eol_date),
+#                  carrying EVERY side with its own provenance. There is no `winner`, no
+#                  `resolved_value` and no averaged field on the shape — a currency
+#                  disagreement is a finding a human acts on, and the verdict stays the
+#                  domain packs'. `deprecated` vs `superseded` is NOT a conflict (same
+#                  finding plus a successor); `unknown` vs anything is NOT a conflict.
+#   GAP            nothing answered. `no_evidence` (nothing mentioned it — an ingestion
+#                  problem) is kept apart from `no_claim` (documents mention it and none
+#                  states its currency — a content one).
+#   DEAD BACKEND   never a gap. A `backend_error` plus an `unresolved` record, because a
+#                  gap is a statement about the corpus and an outage is not. A PARTIAL
+#                  outage still yields a real gap, with the failures on the gap's own
+#                  `backends_failed` field rather than in its reasons.
+# Identity is search_service.fusion_ident — the SAME predicate RRF uses — so one document
+# retrieved by rag AND dic is ONE claim and cannot corroborate itself; the entity join key
+# is tools/currency/entity_currency.normalize_key. Three claim lanes, stamped on every
+# claim and every conflict side: structured (typed currency metadata, incl. each source the
+# store carried under `others`), pack_evaluate (each DomainPack assessment — this is what
+# makes reduce_assessments' winner-pick auditable), text_pattern (declared, entity-ANCHORED,
+# DIRECTIONAL rules over prose, so "TLS 1.2 supersedes TLS 1.1" cannot claim TLS 1.2 is
+# superseded). Disable the prose lane with `resolve.text_claims: false` in
+# args/cortex_config.yaml — prefer narrowing a rule to disabling the lane.
 #   POST /cortex/api/v1/complete {"prompt": "...", "system_prompt": "..."}
 #   POST /cortex/api/v1/reason   {"prompt": "...", "mode": "cot"}   # mode: cot | debate | council
 #   POST /cortex/api/v1/classify {"text": "...", "labels": ["a", "b"]}
 #   POST /cortex/api/v1/extract  {"text": "...", "schema": {"type": "object"}}
 #   POST /cortex/api/v1/govern   {"text": "...", "retrieval": false}
+#   POST /cortex/api/v1/agent    {"goal": "...", "mode": "auto"}   # mode: auto | team | single | graph
+#     team:   {"mode": "team", "roles": ["ai_developer"]}          -> data.instance_id, poll /coworker/<id>
+#     graph:  {"mode": "graph", "graph": {"workflow_id": "full_sdlc", "inputs": {...}}} -> data.run_id
+#     Scope cortex:agent — NEVER in the default grant (it is the one op that makes the platform ACT).
+#     Read `launched` FIRST: a provider that cannot serve native tool-use returns 200 +
+#     {"launched": false, "degraded": true, "reason": ...} rather than a 5xx.
+#     `tools`/`tool_handlers`/`rubric`/`webhook_url` are NOT accepted from the wire —
+#     tool-bearing work belongs in graph mode, where Studio authorizes tools per node.
 # Governed ops return 403 + serialized GovernanceReport on a TRUST block; 400 on validation; 422 unanswerable.
 #   GET  /cortex/api/v1/health   (unauthenticated liveness — status only)
+
+# --- Finding store: browse what a resolution DETECTED (cef-ui-02) ---
+# A LIBRARY, not a CLI. `resolver.resolve` calls `record_findings` after
+# `register_resolution`; the read side is what /document-intelligence/explorer renders.
+python -c "from tools.cortex.finding_store import list_findings, finding_stats; print(finding_stats('default')); print(len(list_findings('default', finding_type='conflict')))"
+python -c "from tools.cortex.finding_store import list_findings; print([f['entity_label'] for f in list_findings('default', finding_type='gap', reason='no_claim')])"
+#   GET /document-intelligence/api/explorer/cortex-findings?type=gap&entity=&reason=&backend=&cross_backend=1
+# cef-rsv-02 made a disagreement computable and cef-rsv-03 cited it, and both then
+# travelled on the CortexResolution the caller held and NOWHERE ELSE — so the only reader
+# of a finding was whatever triggered the resolution. A conflict is adjudicated by a HUMAN
+# and a gap is a data-quality ticket; neither is actionable if it dies with the request.
+# A PROJECTION, not an audit table: one upserted row per (tenant, entity, finding), so a
+# conflict seen on forty resolutions is ONE disagreement with seen_count=40 rather than
+# forty findings. A conflict whose claimed VALUES change is a NEW finding — what a human
+# adjudicated is no longer what is on the table.
+# IT STORES NO WINNER. No resolved_value / consensus / score column exists, every side is
+# kept whole with its own backend, source, source_id, source_table, as_of, authoritative,
+# confidence and extraction lane, and TestNoSilentWinner asserts that against
+# FINDING_COLUMNS rather than one payload. Authority is RECORDED on the sides, never
+# APPLIED — entity_currency.resolve() answers "what is the best available answer", which
+# is a different question from "do my sources agree".
+# A gap's `backends_failed` stays its own column and NEVER becomes a reason; the page
+# renders it as a red `outage:` badge beside the blue reason badges, because a partial
+# outage is CONTEXT for a gap and not its cause.
+# `finding_stats` names WHICH of the four causes an empty list has, and only one of them
+# is a statement about the data:
+#   disabled     resolve.persist_findings is off — nothing was recorded
+#   unmeasured   recording on, no resolution recorded on this deployment yet
+#   clean        resolutions ran and every claim was compatible   <- the only measurement
+#   findings     rows exist
+# `conflicts`/`gaps` are None — never 0 — for the first two, so a template physically
+# cannot print a reassuring zero for a surface that never looked. An unreachable or
+# unmigrated store degrades to the SAME unmeasured shape, never to "your sources agree".
+# Exception-isolated end to end: the projection can never fail a resolution, and its
+# outcome lands on result.metadata["finding_store"]. Toggle `resolve.persist_findings`
+# in args/cortex_config.yaml (default true). Migration 20260819030255.
 
 # --- Service keys (service_keys.py: external-caller auth, ctx-expose-02) ---
 # Issue a scoped, tenant-bound icdev_ctx_ key for an external consumer (raw key shown ONCE)
@@ -3092,6 +5786,9 @@ python -m tools.cortex.service_keys revoke --key-id <id> --json
 
 # --- Client SDK (client.py — vendored into compass/idea_lab, ctx-expose-06) ---
 python -c "from tools.cortex.client import CortexClient; c = CortexClient('http://localhost:5050', 'icdev_ctx_...'); print(c.is_available())"
+# .reason() and .agent() (hgx-cx-02) — reason had an endpoint but no client method:
+python -c "from tools.cortex.client import CortexClient; c = CortexClient('http://localhost:5050', 'icdev_ctx_...'); print(c.reason('is this design sound?', mode='debate'))"
+python -c "from tools.cortex.client import CortexClient; c = CortexClient('http://localhost:5050', 'icdev_ctx_...'); print(c.agent('run the SDLC', mode='graph', workflow_id='full_sdlc'))"
 
 # --- DataBridge feeds (ctx-expose-05) ---
 #   GET  /api/databridge/v1/icdev_demand/capability_gaps  (scope databridge:icdev_demand:read)
@@ -3121,6 +5818,55 @@ python tools/rag/rag_benchmark.py --toggle rerank --json
 # Control arm + one isolated arm per wired toggle, with per-metric deltas
 python tools/rag/rag_benchmark.py --sweep
 python tools/rag/rag_benchmark.py --sweep --only rerank,binary_prefilter --json
+
+# A/B the served ordering against reflective reranking over the SAME candidates
+# (trust-self-02). One retrieval per query, both arms rank that one list, so the
+# delta is the reordering and nothing else. Records the number; asserts nothing.
+python tools/rag/rag_benchmark.py --reflective-ab --limit 12 --json
+python tools/rag/rag_benchmark.py --reflective-ab --max-candidates 3
+```
+
+```
+# --probe also reports ADOPTION, which is orthogonal to the verdict: WIRED says
+# flipping the toggle COULD change retrieval, not that the committed config ever
+# flips it. reflective_rerank sat at WIRED while enabled:false made it inert on
+# every surface. UNADOPTED / ADOPTED-GLOBAL / ADOPTED [surfaces], read from
+# args/rag_config.yaml on disk — never through $ICDEV_RAG_CONFIG, so a sweep arm
+# cannot report itself as shipped-on.
+#
+# --reflective-ab reports `unmeasurable_reflection_degraded` when the reflection
+# model was never actually reached. That run's 0.0 delta is not evidence of "no
+# benefit", and recording it as one is a DROP decision on evidence that does not
+# exist.
+```
+
+### Adaptive complexity pre-routing measurement (agx-rag-01 / trust-self-03)
+
+```bash
+# Score the skip/single_pass/decompose decision against the committed golden
+# query mix (args/rag/golden_query_set.yaml). Heuristic-only by default, so the
+# numbers are reproducible offline and identical run to run.
+python tools/rag/adaptive_router.py --measure
+python tools/rag/adaptive_router.py --measure --json
+
+# Same mix through the live cheap-tier classifier (rag_complexity_classify)
+python tools/rag/adaptive_router.py --measure --llm
+
+# Measure as a surface that does NOT require citations, so the skip route is
+# available. Cortex is the citation-required case and can never skip.
+python tools/rag/adaptive_router.py --measure --no-citations
+```
+
+```
+# `classifier_sources` in the output reports where each decision ACTUALLY came
+# from, not what --llm asked for: classify_complexity falls back to the keyword
+# heuristic on any LLM failure and says so only in a debug log, so without that
+# tally a fallback run reports heuristic numbers under an LLM label.
+#
+# The consumer is tools/cortex/search_service.py::search_rag, gated on
+# rag.adaptive_routing.enabled (default off = the unchanged single pass). That
+# adoption is what moved the toggle from WRAPPER-UNADOPTED to WIRED — the
+# wrapper sits ABOVE RAGRetriever, so only a caller could ever reach it.
 ```
 
 ```
@@ -3135,6 +5881,14 @@ python tools/rag/rag_benchmark.py --sweep --only rerank,binary_prefilter --json
 #   NOT-WIRED reflective_rerank (agx-rag-02), adaptive_routing (agx-rag-01),
 #             auto_indexer — 0 non-test import sites; auto_indexer is also
 #             ingest-side, so it cannot move a retrieval metric even once wired.
+#
+# Both have since been given callers, so re-run the probe rather than reading
+# the line above as current state:
+#   reflective_rerank  WIRED by oss-meas-01 inside retriever.search() step 5b
+#   adaptive_routing   WIRED by trust-self-03 at tools/cortex/search_service.py
+#                      ::search_rag. It is WRAPPER-shaped, so the probe answers
+#                      "has a caller adopted it?", not "is it in the closure?"
+#   auto_indexer       still CLI-UNSCHEDULED, and correctly so — it is a CLI.
 #
 # Isolation never writes args/rag_config.yaml. It writes a temp config and sets
 # ICDEV_RAG_CONFIG (tools/rag/config_path.py), because this checkout is shared
@@ -3919,6 +6673,107 @@ ICDEV_ACE_ENABLED=true        # .env — master toggle for ACE canvas + co-worke
 # Mode info (air-gap vs online, available capabilities)
 # GET /document-intelligence/api/mode
 
+# Retained ORIGINALS -- which uploads still have their file? (dwr-fid-01)
+python -m tools.document_intelligence.originals --survey            # verdict per document, counted
+python -m tools.document_intelligence.originals --survey --json --verify   # re-hash every retained file
+python -m tools.document_intelligence.originals --root              # retention root + files/bytes on disk
+# /api/ingest used to delete its temp upload while dic_documents.filepath still
+# pointed at it (44 of 55 documents with no original, 2026-09-07). Uploads are
+# now kept content-addressed under ICDEV_DIC_ORIGINALS_DIR (default
+# data/document_intelligence/originals, git-ignored); ICDEV_DIC_RETAIN_ORIGINALS=0
+# switches it off and the ingest result SAYS so. Verdicts: retained |
+# retained_missing | retained_mismatch | source_on_disk | absent | no_source.
+# Existing databases: python tools/db/migrate.py --up   (20260908003311)
+
+# Which documents render DEGRADED, and why? (dwr-fid-03)
+python -m tools.document_intelligence.reading_pane --survey            # every document's render basis, counted
+python -m tools.document_intelligence.reading_pane --survey --json
+python -m tools.document_intelligence.reading_pane --doc <doc_id>      # one pane + its stated limits
+python -m tools.document_intelligence.reading_pane --doc <doc_id> --json
+# FIVE bases, none folded into another: sections (the FULL render owns it) |
+# chunks (text reassembled from rag_chunks -- the degraded reading pane) |
+# chunks_missing (chunk links exist and EVERY one dangles: it WAS chunked and
+# the chunks are gone) | no_text (never chunked) | unmeasurable (a read failed
+# -- NOT a clean bill of health). Live board 2026-09-08: 55 documents ->
+# 16 / 19 / 9 / 11 / 0. `text_source` records which derivation answered
+# (chunk_links | rag_source_id), so a stale link table is visible rather than
+# silently fallen back from.
+
+# Is this upload allowed to be extracted on THIS host? (dwr-fid-03, sandbox Gap 69)
+python -c "from tools.document_intelligence.ingest_guard import evaluate_upload as f; print(f('report.pdf', strict=True))"
+python -c "from tools.document_intelligence.ingest_guard import parser_class as f; print(f('.zip'), f('.txt'), f('.foo'))"
+python tools/workflow/coherence_checker.py --check sandbox_coverage --json
+# POST /document-intelligence/api/ingest has NO extension allowlist and NO
+# per-route size cap. Posture: sandboxed-on-demand. Under ICDEV_STRICT_SANDBOX=1
+# a format that reaches a native parser is REFUSED (415) rather than parsed
+# unisolated -- a refusal, not isolation, and reported as one. Unset by default,
+# so nothing is refused today.
+# WORD GEOMETRY -- where on the page did each word sit? (dwr-fid-02)
+python -m tools.document_intelligence.page_geometry --survey            # per-status counts, board-wide
+python -m tools.document_intelligence.page_geometry --survey --json
+python -m tools.document_intelligence.page_geometry --doc <doc_id>      # one document's record
+python -m tools.document_intelligence.page_geometry --doc <doc_id> --page 1   # that page's word boxes
+python -m tools.document_intelligence.page_geometry --backfill --limit 5      # documents ingested before this
+python -m tools.document_intelligence.page_geometry --limits            # the bounds in force
+python tools/db/migrate.py --up                                          # 20260908091858
+# UI: /document-intelligence/doc/<doc_id> -> "Page Layer"
+# API: GET /api/documents/<id>/geometry | /pages/<n>/words | /runs  (GET only, no POST sibling)
+# extractors._extract_pdf_text ends every pass in extract_text() -- a string and
+# a page COUNT -- so nothing recorded WHERE a word sat and a positioned-text
+# view had no coordinate space. Captured at INGEST, while the upload's temp file
+# is still on disk.
+# TWO STORIES, NEVER MERGED, because a DOCX has no pages until something renders
+# it: dic_page_words (PDF, one box per word) and dic_doc_runs (DOCX, paragraph/
+# run order and styles, and NO page column -- a NULL page there would read as a
+# box we failed to measure rather than one that cannot exist).
+# pdfplumber, NEVER pymupdf: requirements.txt:218-220 refuses to declare it
+# (AGPL/commercial) and it IS installed on this host, so a pymupdf version would
+# look perfect locally and produce nothing on a clean install. Pinned by AST test.
+# use_text_flow=True, MEASURED not reasoned -- constitution.pdf is two-column and
+# the default visual sort interleaves the columns while every text extractor
+# reads the stream column by column: 14.5% -> 100.0% of words placed, identical
+# word count and identical boxes. Better on two live PDFs, identical on the
+# third, worse on none.
+# char_start/char_end index the DOCUMENT'S OWN stored text or are NULL -- never
+# 0, which would point every unplaceable word at the first character. basis:
+# document_text | text_changed (a backfill re-extracted something whose sha256
+# is not the recorded content_sha256 -- offsets withheld, BOXES kept) |
+# unaligned | not_attempted. The rate is None, never 0.0, when alignment never
+# RAN, and 3346/3347 reads 99.9 rather than rounding up to a perfect score.
+# AN EMPTY WORD LIST IS SEVEN DIFFERENT THINGS and only one is about the
+# document: extracted | truncated | no_text_layer (MEASURED zero -- a scanned
+# page) | unsupported_format | disabled_by_env | library_unavailable |
+# source_unreadable | failed. A document with no geometry still gets a ROW, so
+# "nothing looked" never reads as "the pages are blank".
+# COST IS REAL AND BOUNDED: measured 2026-09-08, ~0.05s and 100-500 rows PER
+# PAGE (constitution 19p/9,178 words/1.27s; ArtOfWar 130p/22,808/6.24s).
+# ICDEV_DIC_GEOMETRY_MAX_PAGES (50) / _MAX_WORDS (50,000) / _MAX_RUNS (20,000);
+# ICDEV_DIC_WORD_GEOMETRY=0 switches it off and the result SAYS disabled_by_env.
+# A hit bound is `truncated` with pages_extracted/pages_total on the row.
+# Backfill reach is dwr-fid-01's: measured 2026-09-08, 4 of 13 PDFs still had a
+# readable source (the other 9 are deleted temp files), and all four read
+# `text_changed` because they were ingested 2026-06-17 before the `+tables`
+# append existed -- the guard refusing to claim offsets it cannot prove.
+# Retire the suggestions drafted against a TOKEN instead of a passage (dwr-anchor-06)
+python -m tools.document_intelligence.suggestion_redraft --census        # by status x anchor_basis
+python -m tools.document_intelligence.suggestion_redraft --plan          # probe every target; ACTS ON NOTHING
+python -m tools.document_intelligence.suggestion_redraft --plan --json
+python -m tools.document_intelligence.suggestion_redraft --apply --limit 5   # THE ONLY FLAG THAT WRITES
+# `draft_redline` prompted with `finding["entity_label"]` and stored
+# `section_id=""` / `anchor_basis="unanchored"` — 58 such rows on the live board
+# 2026-09-08, none of them appliable. They are SUPERSEDED (through
+# suggestion_store.supersede_suggestion, dwr-anchor-05) and re-drafted through
+# the UNCHANGED TRUST gate chain; back-filling an anchor is refused, because the
+# prose was never fitted to the span it would be pinned to.
+# It PROVES before it acts. Five refusals, each naming a different repair:
+# drafter_does_not_anchor (merge dwr-anchor-04) | origin_unresolved |
+# origin_not_open | finding_has_no_span (RE-SCAN) | doc_has_no_sections
+# (section_deriver). Confirm is a RE-READ of the stored row, never the drafter's
+# claim; a replacement that is itself unanchored is `redrafted_unanchored`.
+# Bounded by max_redrafts_per_run (args/docmod/docmod_config.yaml, 10); deferred
+# items are NAMED. Exit 2 = the survey could not be produced.
+# Survey: docs/audits/dwr-anchor-06-unanchored-suggestion-survey.md
+
 # Python — generate outputs directly
 python -c "from tools.document_intelligence.output_generators import generate_study_guide; import json; print(json.dumps(generate_study_guide('my-collection', 'default'), indent=2))"
 python -c "from tools.document_intelligence.output_generators import generate_faq; import json; print(json.dumps(generate_faq('my-collection', 'default', n=10), indent=2))"
@@ -3940,9 +6795,223 @@ python -c "from tools.innovation.innovation_manager import stage_discover; print
 
 # Weekly DIC digest reflex (manual trigger)
 python -c "from tools.genesis.reflexes.dic_digest import run; print(run({}, None))"
+
+# Export a .docx whose tracked changes are REAL Word revisions (dwr-word-01)
+python -c "from tools.document_intelligence.exporter import export_version as f; print(f('<version_id>', 'docx_tracked')['gate']['render'])"
+python -m tools.document_intelligence.docx_word_probe <file.docx>          # open it in WORD and count
+python -m tools.document_intelligence.docx_word_probe <file.docx> --json
+python tools/db/migrate.py --up                                            # 20260909004511
+# Route: GET /document-intelligence/api/versions/<id>/export/docx_tracked
+# python-docx 1.2.0 exposes NO revision API, so w:ins / w:del / w:comment are
+# direct OOXML over its XML tree plus two package parts it does not know about
+# (comments.xml, commentsExtended.xml). The format goes through the EXISTING
+# gated export_version, so placeholder -> citation -> WriteGuard still runs in
+# order, still fails closed, and still records one dic_artifacts row.
+# WHAT WORD CALLS A REVISION IS AN *UNDECIDED* PROPOSAL, and that is the whole
+# mapping. Only a `pending` suggestion becomes a w:ins/w:del. An `accepted` one
+# is ALREADY spliced into dic_sections.content by record_application, so
+# re-proposing it would offer a Word reviewer a Reject button over a decision
+# already on the append-only dic_suggestion_decisions chain -- and rejecting it
+# in Word would silently revert an accepted change with nothing written back.
+# It is reported in the appendix as PROVENANCE instead. Both halves of
+# "accepted-and-pending" travel; they do not travel IDENTICALLY, because they
+# do not mean the same thing to Word.
+# POSITIONS ARE review_rail's AND ARE NEVER RE-DERIVED. Only a verified anchor
+# is placed. An item with no position is NOT drawn at offset 0 and is NOT
+# dropped: it goes to a labelled appendix carrying its reason
+# (no_verified_anchor | not_pending | anchor_spans_paragraphs | anchor_overlap |
+# anchor_text_mismatch | diff_not_round_trip | unplaced). On the live board
+# 2026-09-08 that is 58 of 58 suggestions -- an exporter that placed them would
+# have put 58 fabricated revisions into a Word document on day one.
+# Revisions are WORD-level via word_diff.diff_words: FIPS 140-2 -> FIPS 140-3
+# deletes `2` and inserts `3`, not the clause. A diff that fails its round trip
+# is deferred, never rendered lossily.
+# This format does NOT re-render markdown, on purpose: an anchor offset indexes
+# dic_sections.content, and markdown_to_docx reflows `## Heading` and moves
+# every character after it. Offset fidelity and reflow cannot both be had, and
+# a revision on the wrong clause is worse than a literal `##`.
+# tracked_changes / comments are None -- NEVER 0 -- for an `unmeasurable` rail.
+# VERIFY BY OPENING IT IN WORD, never by asserting the XML is well-formed. The
+# probe reports verified | refused | unmeasurable and prints Revisions.Count,
+# Comments.Count and which comments are REPLIES (Comment.Ancestor, the only
+# proof commentsExtended linked). MEASURED 2026-09-08 on a gated export: 2
+# revisions (delete `2`, insert `3`, author "docmod redline") and 2 comments,
+# 1 of them a real threaded reply.
+# THE FIRST BUILD OF THIS MODULE WAS WELL-FORMED AND WORD REFUSED IT OUTRIGHT
+# ("The file appears to be corrupted") because commentsExtended declared w15 as
+# .../office/2012/wordml instead of .../office/word/2012/wordml. No XML test in
+# this repo would ever have found that. Document.Repaired is not exposed by
+# Word 16.0, so `repaired` is None with repaired_basis
+# not_exposed_by_object_model -- "cannot tell", never "was not repaired"; the
+# silent-repair signature is a `verified` probe reporting ZERO against a build
+# that placed revisions, so read the two reports together.
+# pywin32 is deliberately NOT in requirements.txt (Windows-only against an
+# OS-agnostic platform); its absence is logged and reports unmeasurable.
+# Migration 20260909004511 rebuilds dic_artifacts.format's CHECK from
+# EXPORT_FORMATS. Without it a SQLite database that ran 20260903194350 refuses
+# every tracked export on the INSERT -- an artifact on disk the record does not
+# know about. The extension is `docx`, never the format name: `document
+# .docx_tracked` is a file Word will not open.
+
+# Read a reviewer's Word revisions back in, and RECONCILE them (dwr-word-02)
+python -m tools.document_intelligence.docx_review_import --file review.docx --version <version_id>
+python -m tools.document_intelligence.docx_review_import --file review.docx --version <version_id> --json
+python -m tools.document_intelligence.docx_review_import --file review.docx --parse-only
+# The return leg of dwr-word-01. Library + CLI, no route: an operator who
+# receives a marked-up copy by email has a FILE, and the canvas's own idiom for
+# that is `python -m` (originals, page_geometry, suggestion_redraft).
+# THE HARD PART IS NOT PARSING, IT IS RECONCILIATION, BECAUSE BOTH SIDES MOVE.
+# While the reviewer was reading, a docmod sweep could draft a redline over the
+# same sentence, a human could accept one, supersede_suggestion could retire
+# one whose anchor drifted, and a section could be regenerated. So a revision
+# that arrives back is not a proposal about the document -- it is a proposal
+# about a document that may no longer exist.
+# THREE VERDICTS AND NO FOURTH:
+#   matched      located to exactly ONE span of exactly one section, and
+#                nothing on the ICDEV side contests it. `origin` says WHICH
+#                thing it is -- own_proposal (one of our own exported redlines,
+#                back undecided) or reviewer_edit (their own new writing).
+#                Both are matched; they are not the same and are never merged.
+#   conflicting  it located AND the ICDEV side also changed that span. BOTH
+#                sides carried whole, never auto-merged, never won by one side.
+#                base_paragraph_changed | competing_proposal |
+#                decided_since_export.
+#   unmatched    it could not be located. REPORTED BY NAME with its reason,
+#                never dropped -- a dropped revision is a reviewer's edit that
+#                silently ceased to exist. paragraph_not_found |
+#                paragraph_ambiguous | empty_paragraph_text | anchor_ambiguous |
+#                insertion_point_unlocatable | paragraph_mark_revision |
+#                heading_not_anchorable | comment_range_spans_paragraphs |
+#                comment_range_unlocatable | comment_body_absent.
+# NOTHING HERE DECIDES AND NOTHING HERE WRITES -- no INSERT/UPDATE/DELETE and
+# no store writer, pinned by an AST test, because the failure mode is a later
+# edit threading a "just apply the matched ones" flag through and a behavioural
+# test over today's callers would still pass the day it happens. `matched` says
+# WHERE a revision goes, never that it may go there: the accept door
+# (cef-ui-03) is the only writer of dic_sections.content and a human decides
+# at it.
+# ABSENCE IS NOT A DECISION, and it is the one inference this refuses to make.
+# An exported redline that does NOT come back is consistent with the reviewer
+# ACCEPTING it (Word then writes the text plain), REJECTING it (the text is
+# simply gone), never reaching it, deleting the whole paragraph, or the upload
+# being a different document. One observation, five causes, four of them not
+# decisions -- so it lands under `absent_from_upload`, a labelled ABSENCE.
+# LOCATION IS AGAINST THE PARAGRAPH THE REVIEWER RECEIVED: `before` is equal +
+# delete, the paragraph with every revision REJECTED, which is what was in the
+# .docx when it left here. Looked up through docx_revisions.paragraph_spans --
+# dwr-word-01's partition, IMPORTED. Exactly one match locates; an ambiguous
+# match is never resolved by picking one. Located by SPAN but not by PARAGRAPH
+# is a CONFLICT (base_paragraph_changed), never a match: both sides moved.
+# A COMMENT IS NOT AN EDIT, so a comment is never `conflicting`. One anchored to
+# a span a pending redline proposes to replace is the NORMAL case -- a reviewer
+# asking about a proposal -- and flagging it would bury the real findings. The
+# contest is carried as `contested_by` CONTEXT, never as the verdict.
+# COUNTS ARE None AND NEVER 0 when nothing was measured. An `unmeasurable` rail
+# makes the WHOLE report unmeasurable, not merely the contest half: `matched`
+# asserts "nothing contests this span", which is a claim about the rail.
+# UNTRUSTED INPUT IS BOUNDED BEFORE IT IS PARSED (sandbox-coverage Gap 70): a
+# declared DOCTYPE is REFUSED unparsed, a part over
+# ICDEV_DOCX_IMPORT_MAX_PART_BYTES (64 MiB) is refused on its DECLARED
+# uncompressed size BEFORE decompression, only word/document.xml,
+# word/comments.xml and word/commentsExtended.xml are ever read, and a hit
+# bound reports `truncated` (ICDEV_DOCX_IMPORT_MAX_REVISIONS, 5000) rather than
+# a quietly short list.
+# THE ROUND TRIP IS MEASURED, THROUGH WORD ITSELF -- export, open in Word 16.0
+# over COM with track changes on, edit, save BY WORD, reconcile. It found THREE
+# defects the unit suite structurally could not, because that suite reads back
+# XML this repo wrote:
+#   1. The exporter emits a WORD-LEVEL diff (FIPS 140-2 -> 140-3 leaves as del
+#      `2` / ins `3`), so comparing a returned revision against a suggestion's
+#      OWN anchor_text/suggested_content columns matched nothing and THREE OF
+#      THREE of our own redlines came back reported as rivals to themselves.
+#      The expectation is now re-derived through word_diff.diff_words, the
+#      exporter's own function, imported.
+#   2. Threads were searched for ROOTS ONLY, so our own author's reply came
+#      back as a stranger's new remark. And structurally: dwr-word-01
+#      highlights a thread ONCE with one w:commentReference per reply inside
+#      that single range, while Word 16.0 saving the same file writes a range
+#      PER COMMENT. Both are legal; `thread_range` resolves a comment to its
+#      own range or its nearest thread ancestor's.
+#   3. An item named only as a CONTESTER was ALSO reported absent -- telling a
+#      reader the same proposal both came back and did not.
+# A COM GOTCHA THAT PRODUCED A GREEN LOG OVER AN UNEDITED FILE: late-bound
+# Find.Execute(Replace=wdReplaceAll) returns a truthy hit and SILENTLY DOES NOT
+# REPLACE. Call Execute POSITIONALLY.
+# NOT BUILT, and named: no route and no page (an upload endpoint owes CSRF,
+# RBAC and its own sandbox entry, and a report surface owes the 8-point page
+# gate); nothing turns a matched reviewer edit into a dic_suggestions row --
+# that is a WRITE and a separate act with its own door; and a revision on the
+# section HEADING is unmatched by name, because a heading is its own column and
+# carries no anchors. Exit 0 = a report was produced, whatever it says. Exit 2
+# = it could not be, which is never the same as a clean round trip.
+# Round trip in full: docs/audits/dwr-word-02-round-trip.md
 ```
 
 ---
+
+## Network Canvas — Auto-Discovery (rmf-disc-02)
+
+The scan engine, its persistence, and the page that drives it.
+
+```bash
+# The engine — scan a live network and diff it against a design (library + CLI;
+# persists nothing on its own)
+python tools/network/discovery.py --target 10.0.0.0/24 --method snmp --community public --json
+python tools/network/discovery.py --target 10.0.0.1 --method ssh --username admin --json
+python tools/network/discovery.py --target 10.0.0.0/24 --method ping --json
+python tools/network/discovery.py --diff --discovered disc.json --designed topo.json --json
+
+# The store — scan history, and the ONE writer of ni_devices on the discovery path
+python -m tools.network.discovery_store                       # inventory by provenance + scan summary
+python -m tools.network.discovery_store --list-scans
+python -m tools.network.discovery_store --scan <scan_id>
+python -m tools.network.discovery_store --delete-scan <scan_id>   # cascades to nc_discovery_diffs
+
+# Seed a DEMO inventory. The rows are FABRICATED and are labelled
+# ni_devices.source='synthetic', which args/docmod/inventory_feeds.yaml excludes
+# BY NAME from the de-facto standard learner's `inventory` feed. Without that
+# label these would outrank every real design topology as evidence of what
+# hardware is fielded. Defaults to a topology of its own so a fabricated fleet
+# never lands inside somebody's real diagram.
+python -m tools.network.discovery_store --seed-synthetic --count 24
+python -m tools.network.discovery_store --seed-synthetic --topology-id <id> --count 50 --seed 7
+
+# The reflex — passive asset discovery, 24h. Ships with NO targets and reports
+# `unmeasured`/`no_targets_declared` rather than a clean run it did not make.
+# `snmp`/`ssh` need `allow_active_scan: true` in args/genesis_config.yaml: a
+# credentialed sweep of live infrastructure on a schedule with no human present
+# is an operator decision, not a default.
+python -m tools.genesis.reflexes.asset_discovery
+python tools/genesis/daemon.py --reflex asset_discovery --json
+
+# UI:  http://localhost:5050/network/discovery
+# API: POST   /network/api/discovery/scan
+#      GET    /network/api/discovery/scans
+#      GET    /network/api/discovery/scans/<scan_id>
+#      DELETE /network/api/discovery/scans/<scan_id>
+#      POST   /network/api/discovery/scans/<scan_id>/import/<topology_id>   {"mode":"merge"|"replace"}
+#      POST   /network/api/discovery/diff                                   {"scan_id":..,"topology_id":..}
+#      GET    /network/api/discovery/inventory
+```
+
+Notes that will save a debugging session:
+
+- A scan that reaches nothing is `completed` with `devices_discovered: 0`, never
+  `failed`. "The targets did not answer" and "the scanner broke" are different
+  facts with opposite repairs.
+- A `ping` sweep finds live HOSTS and produces NO device records — nothing on the
+  wire tells an ICMP echo what answered it. `targets_scanned` is the measurement
+  there, not `devices_discovered`.
+- A scan is SYNCHRONOUS. `POST /api/discovery/scan` refuses a target set
+  expanding past 1024 addresses, WHOLE and naming the count, rather than
+  truncating it — a sweep that quietly scanned a prefix would report a partial
+  estate as a complete one.
+- SNMP community strings and SSH passwords are stripped before the scan config
+  is persisted (that config is read back and rendered). The scan still records
+  THAT it authenticated.
+- `GET /api/discovery/inventory` reports `measurable: false` rather than a zero
+  when `ni_devices` cannot be read: "nothing is deployed" and "I could not look"
+  justify opposite decisions.
 
 ## Network Canvas — PVM (Predictive Vulnerability Management)
 
@@ -3993,8 +7062,16 @@ python -m tools.doc_modernization.eol_products_sync --seed --json
 python -m tools.doc_modernization.eol_products_sync --sync --json
 python -m tools.doc_modernization.eol_products_sync --import bundle.yaml --json
 
-# De facto deployment standards from ni_devices (recency-weighted)
+# De facto standards from the declared inventory feeds (recency-weighted)
 python -c "from tools.doc_modernization.defacto_learner import recompute; print(recompute())"
+python -c "from tools.doc_modernization.defacto_learner import load_feeds; print(load_feeds())"
+# cef-fnd-04: the input is args/docmod/inventory_feeds.yaml, not one hardcoded
+# table. docmod_defacto_standards held 0 rows for months because its only input,
+# ni_devices, held 0 rows — the writer ran nightly and had nothing to learn from.
+# Each row records source_feed + evidence_kind, share_pct is a share WITHIN one
+# feed, and get_recommended() answers from the best-precedence feed alone:
+# an observed estate beats a drawing of one, and no quantity of drawings adds up
+# to an observation.
 
 # Nightly sweep reflex (standalone)
 python -m tools.genesis.reflexes.doc_modernization_sweep --dry-run --json
@@ -4004,6 +7081,99 @@ python -m tools.genesis.reflexes.doc_modernization_sweep --dry-run --json
 # Config: args/docmod/docmod_config.yaml + args/docmod/packs/*.yaml + rulebooks
 # MCP tools: docmod_scan, docmod_findings, docmod_redline
 ```
+
+## Entity Currency Store — one domain-agnostic "is it still current" (cef-fnd-04)
+
+```bash
+python -m tools.currency.entity_currency --backfill --json
+python -m tools.currency.entity_currency --backfill --source docmod_eol_products
+python -m tools.currency.entity_currency --stats --json
+python -m tools.currency.entity_currency --resolve "<entity>" --entity-type hardware_model
+```
+
+Currency evidence used to live in three domain-narrow tables — a software-release
+feed (`docmod_eol_products`), a hardware EOL feed (`mc_net_eol_data`) and the
+curated catalog (`docmod_catalog_entries`) — each answering in its own shape, none
+able to describe an entity the others had never heard of, and no place for a
+fourth provider to write. `entity_currency` is one row per **(source, entity,
+version) assertion**.
+
+- **Sources are config**, not code: `args/entity_currency.yaml` supplies every
+  table, column mapping, entity type and verdict rule. `tools/currency/` names no
+  table, column, vendor, product or domain.
+- **Disagreement is preserved.** Two sources that disagree keep two rows;
+  `resolve()` picks a winner at read time and returns the losers under `others`
+  with `conflict: true`.
+- **Curated evidence is authoritative** — ahead of confidence, ahead of recency.
+- **`confidence` is a declared prior, not a measurement.**
+- `as_of` (the source's clock) is kept apart from `observed_at` (ours), so stale
+  evidence stays distinguishable from fresh evidence.
+- **An author's upload is the fifth source, ranked top (dwr-ev-01).** A DIC
+  upload may carry an `author_assertions` JSON field (multipart, on
+  `POST /document-intelligence/api/ingest`); each entry is written to
+  `dic_author_assertions` in the document's own transaction and into the store
+  under source `dic_author_assertions` (kind `author_supplied`, `precedence: 0`).
+  `precedence` is applied FIRST in `resolution.order`; sources declaring none
+  tie on the default and rank exactly as before. The catalog it contradicts is
+  kept under `others` with `conflict: true`. A library — import it:
+
+  ```python
+  from tools.document_intelligence.author_evidence import parse_assertions, record_assertions
+  ```
+- Refreshed on the nightly `doc_modernization_sweep` reflex; read by the docmod
+  network-hardware pack only when the catalog and the hardware feed are both
+  silent. Declared in `args/capability_consumption.yaml` `substrates:`.
+- **Redraft with my comments — a button a human presses (dwr-ev-03).** A
+  per-change action that re-runs the UNCHANGED TRUST gate chain with the
+  change's comment thread as editing INSTRUCTIONS and the governed author/SME
+  currency evidence in the bundle, and SUPERSEDES the change it replaces.
+  Commenting records evidence and fires nothing; the redraft is explicit,
+  because a governed resolution costs 10-12s against five backends. A library —
+  import it:
+
+  ```python
+  from tools.document_intelligence.redraft import redraft_change, run_stats
+  result = redraft_change("sug_abc123", actor="alice")
+  ```
+
+  Route `POST /document-intelligence/api/suggestions/<id>/redraft` (editor
+  role), surfaced as a button in the existing ⚡ suggestions panel on
+  `/document-intelligence/documents/<doc_id>`. Instructions reach the model in
+  the prompt and NEVER `allowed_ids`, so a comment citing a made-up source
+  hard-blocks at TRUST gate 1; `extra_evidence` is the separate parameter that
+  is citable and comes only from `doc_modernization.evidence.resolve_evidence`.
+  `evidence_basis` keeps `not_consulted` (the seam was never asked —
+  `cortex.enabled` is off by default, so this is what this deployment reports)
+  apart from `capped`, `blocked`, `no_evidence` and `resolved`. Every bound is
+  reported by name (`max_resolves_per_run`, one run = one press) and every
+  refusal is a key in `redraft.REFUSALS` returned with 409, never a 200 over a
+  no-op. Retirement goes through dwr-anchor-05's `supersede_suggestion` on its
+  terms (`decision='superseded'`, `decided_by` names the mechanism, so it can
+  never read as a human verdict) plus a `successor_suggestion_id` a reader can
+  follow. Config `args/dic_redraft_config.yaml`; audit `dic.redraft` with the
+  `.intent` leg fail-closed (migration 20260908071433).
+- **A promoted review comment is the sixth source, beside the author (dwr-ev-02).**
+  A comment is an INSTRUCTION by default and is cited by nothing:
+  `dic_section_annotations` is declared as a source nowhere and read by no
+  evidence seam, so an unpromoted comment is ABSENT from the chain rather than
+  weakly weighted. One deliberate act promotes ONE comment --
+  `POST /document-intelligence/api/annotations/<ann_id>/promote` with
+  `{"promoted_by": ..., "claim": {...}}`, audited fail-closed as a
+  `dic.hitl_decision` BEFORE the write, 409 on a second promotion, no bulk door.
+  The CLAIM is typed by the promoting human and the comment prose is never
+  parsed; `asserted_by` and `as_of` come from the COMMENT (`as_of_basis:
+  sme_stated | comment_time`) and `promoted_by`/`promoted_at` are ours. Written
+  to `dic_sme_assertions` and into the store under source `dic_sme_assertions`
+  (kind `sme_attributed`, `precedence: 0` and confidence 0.9 -- identical to the
+  author source, so the two tie and the later human clock decides). Its citation
+  carries `source_type: sme_assertion`, derived from the source KIND, so a
+  person's statement never wears a machine feed's badge. A library -- import it:
+
+  ```python
+  from tools.document_intelligence.sme_evidence import promote_comment, promotions_for
+  ```
+- The resolved view's `provenance` carries a `fields` map (the winner's declared
+  `extra_columns`, decoded), which is how an attributed citation names the human.
 
 ## Twin Core — Cross-Canvas Digital-Twin Unification (TWX)
 
@@ -4650,7 +7820,27 @@ python tools/idp/delivery_events.py --sync --dry-run --json
 # Emit (incremental and idempotent; re-running adds only new changes)
 python tools/idp/delivery_events.py --sync --json
 python tools/idp/delivery_events.py --sync --days 90 --json   # cold-install backfill
+
+# Record ONE landed task's ledger row NOW — what the --merge door calls
+python tools/idp/delivery_events.py --landing <task-id> --json
+
+# How late were the rows in the window actually written? (autonomy-act-08)
+python tools/idp/delivery_events.py --landing-latency --days 30 --json
 ```
+
+**The sweep is a backfill, and a backfill has a latency.** The ledger is also
+the door-agnostic record `tools/kanban/detector_findings.ledger_landing` reads
+to decide whether a recovery escalation has since been answered — the only door
+through which a `land.py` merge is visible to that rule. Measured over the 625
+landings of the 30 days to 2026-09-12 the row arrived **p50 4.0h / p95 9.2h /
+max 96.8h** after the landing it describes (6h is the reflex *cadence*, not the
+lag), and on 2026-09-03 `rmf-ui-13` landed at 18:43, had its detector card
+promoted at 20:11 and got its ledger row at 22:40. `cli.py --set-status <id>
+done --merge` now calls `emit_landing` itself, deduped against the sweep through
+the same `emitted_task_ids` set. `--landing-latency` is the estimator that
+measured it: a ledger row is stamped at the *landing*, so it cannot time its own
+insertion — the first non-ledger `audit_trail` id after it bounds that from
+above. Survey: [autonomy-act-08-ledger-latency.md](../audits/autonomy-act-08-ledger-latency.md).
 
 The mapping: one `done` task = one `deployment_initiated` event stamped at the
 moment the change landed (not at backfill time); a change whose *most recent*
@@ -4670,3 +7860,1922 @@ The scheduled writer is the Genesis reflex `idp_delivery_events` (6h, GREEN
 tier — `args/genesis_config.yaml`). It exists because the endpoint reads a
 *rolling* 30-day window: without a writer, a one-off backfill ages out and the
 endpoint returns to `metrics_assessed: 0` with nobody having changed a line.
+
+## Executor Parity Benchmark (hgx-exec-04)
+
+A/B replay of a fixed corpus of already-merged kanban tasks through two
+AgentAdapters — `claude_cli` (primary) and `local_agent` (the owned,
+file-editing rubric loop). Each pair gets a disposable detached worktree at the
+task's pre-fix parent commit, the identical `AgentSession`, and one grader:
+`tools/workflow/pipeline_grader.make_pipeline_grader`.
+
+Measurement only. It changes no default: `KANBAN_RUBRIC_LOOP` is on the `.env`
+import denylist so the benchmark cannot flip it even by accident, and
+`args/strategos_config.yaml` is never read or written.
+
+```bash
+# What is in the corpus (task ids, base commits, prompt size)
+python -m tools.workflow.executor_parity --list
+
+# Resolve corpus + adapters + base commits without building anything
+python -m tools.workflow.executor_parity --dry-run
+
+# Full benchmark: 10 tasks x 2 executors, JSON + markdown out
+python -m tools.workflow.executor_parity --run \
+  --out .tmp/parity.json --report .tmp/parity.md
+
+# One task, one executor (a smoke check before spending the full run)
+python -m tools.workflow.executor_parity --run \
+  --tasks cxo-doc-01 --executors claude_cli --timeout 300
+
+# Keep the worktrees to inspect what an executor actually produced
+python -m tools.workflow.executor_parity --run --limit 1 --keep-worktrees
+```
+
+Two rates are reported per executor and they are deliberately not the same
+number: `gate_pass_rate` is the harness's own verdict on the tree,
+`self_report_rate` is what the executor claimed about itself. The gap is the
+result — measured numbers live in
+[docs/features/hgx-executor-parity.md](../features/hgx-executor-parity.md).
+
+Corpus: `args/executor_parity_corpus.yaml`. Treat it as a frozen baseline —
+adding an entry is fine, rewording one changes what is being measured and
+requires re-running both executors.
+
+## Adapter Capability Matrix (exa-bench-03)
+
+A different question from the parity benchmark above, and the two must not be
+merged. `executor_parity` measures **outcome parity** — can an executor finish a
+job? — by replaying a corpus in worktrees and grading the trees. This probe
+measures **capability parity** — can an executor be handed a job that needs
+streaming, a sandbox mode or a cancel button at all? It runs offline in
+milliseconds: no subprocess, no socket, no model call, no corpus.
+
+```bash
+# Full matrix: every registered adapter x seven capabilities
+python tools/agents/capability_matrix.py
+python tools/agents/capability_matrix.py --json
+
+# Narrow it
+python tools/agents/capability_matrix.py --adapter claude_cli --json
+python tools/agents/capability_matrix.py --capability sandbox_passthrough
+
+# Exit 1 when a capability is DECLARED but measured absent (opt-in; wired to
+# no pipeline — it is a report you can run, not a gate that runs itself)
+python tools/agents/capability_matrix.py --gate
+```
+
+Each cell reports `declared` (the hand-written claim in
+`args/agent_capabilities.yaml`) next to `actual`, which is one of three values
+and never two:
+
+| `actual` | meaning |
+|---|---|
+| `present` | the probe observed the capability at the adapter seam |
+| `absent` | the probe observed its absence |
+| `unconfirmed` | the probe could not determine it — **not** a synonym for either |
+
+Only `behavioral` probes (adapter code executed, return value inspected) and
+`interface` probes (the live object inspected) may assert present or absent. A
+`source_evidence` probe — the module source documents a contract only a live run
+could exercise — may only ever produce `unconfirmed`.
+
+Routing consults the measurement:
+
+```python
+from tools.agents import pick_default, adapters_with
+
+adapter = pick_default("build", require=["sandbox_passthrough"])
+adapters_with("interruption")     # names measured present, nothing else
+```
+
+`require` is fail-closed: a capability that is merely declared, or that the
+probe could not confirm, does not satisfy it. Leaving `require` unset preserves
+the previous selection behaviour exactly.
+
+Claims live in `args/agent_capabilities.yaml`. When a row comes back
+`overclaimed`, fix the adapter or fix the claim — editing the claim to make the
+probe agree rebuilds the hand-written parity table this replaced.
+
+# CI test allowlist (kax-conflict-07) — the list icdev-ci.yml's `test` job runs
+python tools/ci/gated_test_list.py --check --list core       # validate: empty/short/missing/dup -> exit 1
+python tools/ci/gated_test_list.py --print --list windows    # resolved targets, one per line
+python tools/ci/gated_test_list.py --list core --json        # full report (count, floor, missing, duplicates)
+python tools/ci/gated_test_list.py --extract-workflow .github/workflows/icdev-ci.yml --job test --min-targets 2
+
+# E2E promotion survey (crx-test-06) — is `E2E (Playwright)` fit to be REQUIRED?
+# Answer today: NOT YET. Report only, no --gate; exit 2 = could not be produced.
+python tools/ci/e2e_flake_survey.py                          # human table, both populations
+python tools/ci/e2e_flake_survey.py --json                   # machine-readable + verdict
+python tools/ci/e2e_flake_survey.py --limit 100              # runs to examine
+python tools/ci/e2e_flake_survey.py --from-json runs.json    # offline replay of a saved payload
+# The 25/25 green was selection bias: pre-crx-test-05 E2E declared `needs: [test]`
+# and was SKIPPED whenever the unit suite failed (10 of 40 runs, measured
+# 2026-08-19), so the failures were missing from the DENOMINATOR. Population is
+# split structurally on the presence of an `E2E Shard k of N` job; success /
+# failure / cancelled / skipped / in_progress are never merged; flake_rate is
+# None (never 0.0) when nothing was exercised. Claims: args/e2e_promotion.yaml.
+python tools/git/ci_test_list_merge_rehearsal.py             # inline vs external vs external-union, both merge paths
+python tools/git/ci_test_list_merge_rehearsal.py --branches 5 --gate
+python tools/git/ci_test_list_merge_rehearsal.py --repo .    # rehearse against a CLONE of this repo + the real list
+
+# Command-reference union merge (kax-conflict-11) — THIS file. The registration
+# checklist sends every new tool here, so 18 of 40 recent branches appended to it
+# and it was the largest collision surface still unprotected. 14 of 14 branches
+# whose own diff touched it were pure additions; none edited an existing line.
+python tools/git/commands_doc_merge_rehearsal.py                  # 3 scenarios x both merge paths
+python tools/git/commands_doc_merge_rehearsal.py --branches 5     # 5 concurrent branches
+python tools/git/commands_doc_merge_rehearsal.py --gate --json    # exit 1 if the observed pattern is not clean
+python tools/git/commands_doc_merge_rehearsal.py --without-union  # CONTROL: must conflict, else the rehearsal is vacuous
+
+# CI test gating ratchet (tsg-policy-01) — the gap cannot silently REGROW.
+# --check above proves the allowlist did not shrink; this proves no test file is
+# gated by nothing. Every collectible module under tests/ must be in an allowlist,
+# in a documented exclusion (args/test_gating_gate.yaml), or in the grandfathered
+# census (args/ci_test_backlog.txt, shrink-only). Anything else fails the `test` job.
+# Policy: docs/ci/test-gating-policy.md
+python tools/ci/gated_test_list.py --check-coverage          # exit 1 on an ungated new test file
+python tools/ci/gated_test_list.py --check-coverage --json   # total/gated/excluded/backlog/unlisted
+python tools/ci/gated_test_list.py --prune-backlog           # drop census lines now gated or gone
+
+# Changed-test isolation run (trust-disc-02) — every changed test file ALONE.
+# The gated suite run above is the IN-SUITE half: all 239 modules in one process,
+# in one fixed order (the order of core.txt). This is the ALONE half. Nothing else
+# in the pipeline randomises or isolates test order — not icdev-ci.yml, not
+# pytest.ini (absent), not pyproject.toml — so an order-dependent pass is invisible
+# until an unrelated allowlist edit reshuffles the run and it surfaces as a failure
+# in whatever PR happened to move the list.
+# Needs full history (`fetch-depth: 0`); a shallow clone has no merge base and the
+# tool exits 2 rather than resolving to "no files changed".
+python tools/ci/isolation_run.py --list                      # which files would run
+python tools/ci/isolation_run.py --json                      # resolution only, no pytest
+python tools/ci/isolation_run.py --run                       # run them; 0 clean / 1 gated failure / 2 unresolvable
+python tools/ci/isolation_run.py --run --base origin/main --timeout 1200
+python tools/ci/isolation_run.py --run -- -x                 # extra args forwarded to each pytest
+# Red-first proof (trust-disc-01) — the two above prove a changed test is RUN;
+# this proves it DISCRIMINATES. For every test file the branch adds or modifies:
+# check out the merge base, apply ONLY that test file on top, and assert it does
+# NOT pass there while it does pass here. A changed test that still passes against
+# the pre-change tree is either asserting current behaviour rather than required
+# behaviour, or is not discriminating at all — ANVIL mandates RED -> GREEN and
+# nothing anywhere recorded the RED. The captured merge-base pytest output in the
+# JSON proof IS the recorded RED; CI uploads it as the `red-first-proof` artifact.
+# Exit codes: 0 clean, 1 a non-discriminating test, 2 the gate COULD NOT RUN
+# (usually a shallow checkout — a gate that cannot run is not one that found
+# nothing). Exemptions need a written reason: args/red_first_gate.yaml.
+python tools/ci/red_first_gate.py                            # report over the PR diff, always exit 0
+python tools/ci/red_first_gate.py --gate                     # the merge gate
+python tools/ci/red_first_gate.py --files tests/test_x.py --gate   # prove one file
+python tools/ci/red_first_gate.py --base origin/main --json --out red-first-proof.json
+
+# UNGATED TESTS THAT ARE RED FROM BIRTH (rem-hyg-14) — not only the ones that regressed.
+# tools/genesis/reflexes/ungated_test_drift.py reports TRANSITIONS
+# (`was == 'pass' and now 'fail'`), so a file whose FIRST observation is a failure
+# takes the `was is None` branch, seeds a 'fail' baseline and is never mentioned
+# again: a test broken since the day it was written is structurally invisible to
+# the one reflex watching the ungated backlog. Measured —
+# tests/test_proposals_ptw_blackhat_api.py was 10/20 red from the day it landed
+# (2026-07-07) and stayed red for six weeks. gate_promoter (rem-tst-06) drains the
+# GREEN half of the backlog weekly; this measures the RED half.
+python tools/ci/born_red_survey.py                           # human table
+python tools/ci/born_red_survey.py --json
+python tools/ci/born_red_survey.py --limit 40
+python tools/ci/born_red_survey.py --run 25                  # measure never-observed files now
+python tools/ci/born_red_survey.py --confirm 5               # run the top N at their landing commit
+python tools/ci/born_red_survey.py --out .tmp/born-red.json
+
+# WHO READS THE icdev/ MIRROR FROM DISK -- and who merely imports it? (mfx-own-07)
+# `icdev/tools/` is 5,409 tracked files and 88.8 MB: 27% of the files and 30% of
+# the bytes every `git worktree add` writes under a 30s budget that may not rise
+# and may not be retried. CLAUDE.md (xit-decl-02) says the two spellings are ONE
+# module object in a source checkout -- "the physical file is the one under
+# tools/" -- which reads as a licence to sparse-checkout the mirror away. This
+# enumerates who would break. THE WHOLE TOOL TURNS ON ONE DISCRIMINATION: a
+# reference carrying a PATH SEPARATOR (`icdev/tools`, `icdev\tools`,
+# `Path(...) / "icdev" / "tools"`) is a disk_read; a DOTTED `icdev.tools.x` --
+# an import, an import_module, a patch target -- is an import_reference and is
+# reported under its OWN kind, so "nothing reads the mirror from disk" can never
+# be produced by a scanner that simply did not look at imports.
+python tools/ci/mirror_disk_readers.py                       # human report
+python tools/ci/mirror_disk_readers.py --json
+python tools/ci/mirror_disk_readers.py --kind disk_read
+python tools/ci/mirror_disk_readers.py --imports             # the import blockers
+# FIVE KINDS. `prose_mention` is split out because the naive net read 1,077
+# findings against 717 real ones and this module's own docstring names the path
+# five times. `import_blocker` is the case the separator rule structurally CANNOT
+# see: a module the finder cannot alias because there is no `tools/<rest>` twin
+# to alias ONTO -- 68 mirror-ONLY Python modules (34 migrations, two genesis
+# reflexes, `llm/agent_loop_session.py` which 15 files import, the whole
+# strategos/ and ai_augmentation/ trees, and three package __init__.py files) and
+# 5 back-compat SHIMS. The shim set comes from IMPORTING
+# `icdev._shim.is_backcompat_shim` -- the one statement of what a shim is -- and
+# a failed import reports UNMEASURABLE, never an empty shim list.
+# MEASURED 2026-09-12: 717 disk reads across 216 files -- 168 test files, 190
+# census ENTRIES naming mirror paths by name, 17 runtime modules (three censuses
+# declare `icdev/tools` a scan root), and the wheel-build chain.
+# THE VERDICT IS DO-NOT-SKIP, and the deciding finding is that absence is NOT
+# fail-closed: with `icdev/tools` gone, `import icdev.tools.llm.agent_loop_session`
+# SUCCEEDED and bound `C:\AI\new\FathomDesk\icdev\tools\...` -- a DIFFERENT
+# repository -- because two editable installs both map the top-level name `icdev`
+# and `icdev/__init__.py` calls pkgutil.extend_path. On a host with only the ICDEV
+# install it would bind the MAIN checkout at whatever commit main is on, not the
+# branch under test, while every gate still read green. The gated suite does not
+# collect at all in a sparse worktree (22 errors, 0 tests; paired control with the
+# mirror restored: rc 0, all 706 collect), and the gates do not refuse -- they go
+# QUIET: mirror_parity reports `not_mirrored` and passes, undeclared_import sees
+# 91 of 179 sites, and raw_insert_census PRINTS an instruction to `--prune` 102
+# real entries and ratchet a one-way ceiling from 203 to 101.
+# Report only, no --gate (kpr-fix-03). Exit 2 = the report could not be produced,
+# which is never the same as "nothing reads the mirror".
+# Survey: docs/audits/mfx-own-07-icdev-mirror-sparse-checkout-survey.md
+# FIVE states, never merged: born_red (every observation has been a failure — the
+# finding) | regressed (observed passing once; the drift reflex's half, not
+# re-reported here) | history_unknown (failing, no recorded first verdict) |
+# passing (gate_promoter's half) | unobserved — NOBODY HAS EVER RUN IT. The reflex
+# samples 40 files per 6h, so a sweep of the ~1,700-file backlog takes over ten
+# days; measured 2026-08-20 only 209 of the 1,701 had been observed at all, and
+# folding the other 1,492 into "no findings" is the exact reassurance this refuses.
+# born_red_count is None, NEVER 0, on a deployment that has recorded nothing.
+# TWO DURATIONS, never merged: observed_red_days is PROVEN (seen failing then, not
+# seen passing since); file_age_days is an UPPER BOUND. red_days_basis says which
+# the rank used: confirmed_at_birth | file_age_upper_bound | observed_only |
+# refuted_at_birth.
+# --confirm runs the file at the commit that landed it on the default branch
+# (--first-parent: the ADD commit sits on a feature branch whose tree lacks
+# whatever else merged that day, which is exactly how the measured example was
+# green alone and red on main). THREE outcomes and the middle one is its own
+# finding: confirmed_born_red | passed_at_birth (it worked at landing and broke
+# later, SILENTLY — a regression the drift reflex missed because it never observed
+# the pass) | birth_unrunnable (pytest exit 2/3/4/5 on the old tree: a statement
+# about that checkout's dependencies, counted as neither).
+# Measured on the live board 2026-08-20 with --confirm 3: 2 CONFIRMED born red
+# (tests/govcon/test_past_performance_suggester.py since 2026-07-25,
+# tests/dashboard/test_home_tile_gating.py since 2026-08-02) and 1 passed_at_birth
+# (tests/airgap/test_hook_compat_git_blocklist.py). Re-deriving the card's own
+# example at a3741bb11 returns "10 failed, 10 passed" — the 10/20 claim, measured.
+# WRITES NOTHING: the reflex stays the only writer of ungated_test_baseline, whose
+# first_status / ever_passed columns (migration 20260820231102) are the evidence.
+# ever_passed is a LATCH — a later failure never clears it, because that is what
+# separates a regression from a file that has never worked.
+# Report only, deliberately no --gate (kpr-fix-03). Exit 2 = the survey could not
+# be produced, which is never the same as a clean survey.
+
+# Consume the detectors nobody runs — and file each finding ONCE, with its evidence (autonomy-act-02)
+python -m tools.kanban.detector_findings --json          # run status_churn + born_red_survey + recovery_summary, seed cards
+python -m tools.kanban.detector_findings --dry-run       # run the detectors; write NOTHING (no rows, no cards)
+python -m tools.kanban.detector_findings --list          # browse the projection (--detector, --status active|cleared)
+python -m tools.kanban.detector_findings --stats         # per-detector denominator: never_ran | unmeasurable | clean | findings
+python tools/genesis/daemon.py --reflex detector_findings_reflex   # the 6h reflex, once, through the daemon
+
+# Which UNDECLARED file is costing union_refused rows, and would a union have been RIGHT? (kpr-watch-22)
+python -m tools.kanban.union_candidates                  # 30 days, every candidate, with its per-hunk survey
+python -m tools.kanban.union_candidates --json
+python -m tools.kanban.union_candidates --window-hours 12   # tonight only
+python -m tools.kanban.union_candidates --attribute-only    # split the corpus; no git, no survey
+# NOTHING CONSUMED `pr_watcher.union_refused`: the rung had resolved TWO conflicts
+# in its lifetime against 37 refusals in twelve hours, and that action name had
+# exactly ONE mention outside its writer -- a docstring -- so an undeclared
+# append-shaped file was only ever found by a human reading audit rows by hand.
+# ATTRIBUTION IS TO THE UNDECLARED MEMBER: a refusal names the WHOLE conflict set
+# and one undeclared file refuses the set, so CLAUDE.md (declared since
+# kpr-watch-14) is named in 51 of the 30-day rows and caused none of them.
+# Candidacy is re-asked of the shipped `match_declaration` per file, so a declared
+# file can never be proposed. A hunk that was `refused` or `unanchorable` COMPARED
+# NOTHING, so `lost_content` is None -- never 0 -- and a file with no decisive hunk
+# is `unmeasurable` and files NO card. The SHAPE is reported with its count and is
+# not a veto: CLAUDE.md (1 of 15 hunks rewrite base) and args/pinned_artifacts.yaml
+# (1 of 2) were BOTH correctly declared by hand. Consumed as the sixth detector on
+# detector_findings_reflex; the card PROPOSES the one-line declaration and a human
+# adds it -- nothing writes `union_resolver.files`, pinned by an AST test.
+
+# Is that detector card still WORK, at the moment it is promoted? (autonomy-act-07)
+python -m tools.kanban.promotion_gate --check task-det-04931fe8de   # re-derive one card's verdict
+python -m tools.kanban.promotion_gate --records --json              # every OPEN detector card's verdict
+python -m tools.kanban.promotion_gate --survey --json               # replay: what it would have withheld, and the control
+# card_disposition decides CARD-or-RECORD ONCE, AT SEEDING, and nothing asks again.
+# MEASURED 2026-09-12: three artifact-freshness cards were RIGHT when seeded at
+# ~17:00; two of their subjects merged at 20:58 and 21:22; all three were promoted
+# and dispatched at 21:34 and force-closed by hand at 21:35. Three worker sessions
+# that could not go RED.
+# This RE-DERIVES the disposition at the promotion, from the same primary rows and
+# through the same functions (merge_after_escalation / ledger_landing /
+# card_disposition), never from a stored verdict — an ordering verdict goes stale
+# the moment either row's successor is written. Asked at three doors: the dashboard
+# `promote-all` move out of `suggested`, promote_backlog_to_scheduled, and
+# _get_due_tasks (the last stop before a token is spent).
+# THE DETECTOR IS UNTOUCHED: no threshold, no window, no _upsert_finding, no
+# seen_count, no _clear_missing. A withheld card's finding is KEPT and still shows
+# in `detector_findings --records`.
+# EVERY UNKNOWN DISPATCHES — unreadable order, subject off the board, subject in
+# flight, unreadable board, absent projection, any raised exception.
+# REPLAYED before arming over all 40 promoted detector cards, point-in-time: 18
+# card->record (the new withholds), 13 record->record, 9 card->card; control — 18/18
+# of those 18 subjects independently confirmed on origin/main, 0 withheld wrongly.
+# ICDEV_PROMOTION_GATE=report records the verdict and withholds nothing; =off skips it.
+# THE DEFECT. status_churn (kpr-watch-11), born_red_survey (rem-hyg-14) and
+# recovery_summary (rem-hyg-16) were each built because a human found the defect
+# BY HAND, and each then sat imported by NOBODY on any runtime path — the
+# declared-but-unconsumed defect reaching the self-observation layer. This builds
+# NO detector; it runs the three that exist on the Genesis cadence.
+# A CARD CARRIES ITS DERIVATION: the detector's own row verbatim, the exact
+# command that re-derives it, and what "fixed" looks like. Never a bare alert.
+# DEDUPE ON THE FINDING, NOT THE RUN: one `detector_findings` row per
+# (detector, subject, fingerprint), upserted with `seen_count` — the cef-ui-02
+# projection shape. A card is seeded on FIRST sight and again only if the finding
+# RECURS after its card closed (`-r2`, `card_count`); `idempotency_key` on the
+# spec is the second lock inside create_tasks. Cards land in `suggested` (HITL
+# quarantine) by default — `seed_status` in args/genesis_config.yaml.
+# UNMEASURABLE CLEARS NOTHING: an idle board, an unmigrated baseline, an empty
+# audit window each report that they could not measure, and only a MEASURABLE
+# run that no longer reports a finding marks it `cleared`. `detector_runs` is
+# the denominator keeping never_ran / unmeasurable / clean apart.
+# Bounded per run (`max_cards_per_run`, default 6, worst-first) and the bound is
+# REPORTED as `cards_deferred`, never silent. Measured on the live board
+# 2026-08-21: 0 oscillating, 3 born-red, 3 needed_a_human -> 6 cards.
+# Migration 20260821050135. Seeds through task_factory.create_tasks, never a raw INSERT.
+
+# CLOSED-CENSUS growth (cef-ci-02) — a closed census may LOSE names, never GAIN one.
+# The ratchet above enforces args/ci_test_backlog.txt by a COUNT, and a count is exactly
+# what an ENUMERATED census exists to distrust. Nothing compared a census against its
+# previous self, so the ceiling's slack was the whole guard: measured on main at 42f7ea894
+# it was 8 slots (backlog_max 1711 vs 1703 entries; skip_max was 81 vs 81) — enough to
+# un-gate eight CEF suites (test_resolve_facade.py, test_resolve_trust_loop.py among them)
+# with --check-coverage still reporting "0 unlisted" and exiting 0. backlog_max is now 1703.
+# Catches the SWAP a ceiling structurally cannot: one line out, one in, count unchanged.
+# NOT a tighter ceiling — "ceiling == count" red-lights main when two concurrent PRs each
+# gate a backlogged file and each lower it by one (deletions land ~5x/day here).
+# Surveyed before arming: 35 post-adoption commits on the backlog census, ALL +0.
+# The skip census has no post-adoption commit, so its rate reports UNMEASURABLE, not zero.
+# Exit 2 = could not compare (needs fetch-depth: 0) and stays red.
+python tools/ci/census_growth.py --check                     # exit 1 when a census gained a name
+python tools/ci/census_growth.py --json
+python tools/ci/census_growth.py --base origin/main --root .
+# CI SKIP census (trust-disc-03) — a gated test that SKIPS is UNMEASURED, not passing.
+# The ratchet above answers "does CI run this file?" and nothing else. tests/test_app.py's
+# overview test is gated, green on every PR, and has been skipping ("SQLite test DB lacks
+# platform schema ... no such column: classification" — the column the RLS predicate in
+# get_connection() filters on, so every read of kanban_tasks raised).
+# Two halves: the static AST census is the gate you run before committing; the JUnit-XML
+# half sees a skip raised from a conftest fixture that the static scan cannot.
+# Census is ENUMERATED by name in args/ci_skip_census.txt; skip_census.skip_max in
+# args/test_gating_gate.yaml may only go DOWN. Policy: docs/ci/test-gating-policy.md
+python tools/ci/skip_census.py --check                       # exit 1 on an unregistered skip site
+python tools/ci/skip_census.py --json                        # per-file + per-kind site census
+python tools/ci/skip_census.py --check --staged              # pre-commit fast path (staged gated files)
+python tools/ci/skip_census.py --check --changed tests/test_app.py
+python tools/ci/skip_census.py --from-report .tmp/ci-junit.xml --check   # what the run ACTUALLY skipped
+python tools/ci/skip_census.py --prune                       # drop entries whose site is gone
+python tools/ci/skip_census.py --seed                        # adoption only; refuses to overwrite
+
+# UNDECLARED third-party import that fails SILENTLY (tsg-iso-03)
+# The finding is a CONJUNCTION, never the undeclared import on its own: an
+# UNDECLARED third-party package imported inside a handler that SWALLOWS --
+# returns/passes/continues without logging, raising, or otherwise recording that
+# it fired. Only that combination is indistinguishable from working code, so a
+# site leaves by fixing EITHER half. A genuinely optional dependency behind a
+# handler that NAMES the missing package is CORRECT and passes --
+# tools/blockchain/transports/__init__.py does it properly.
+# `python-dateutil` had the bad shape at two sites and was declared in neither
+# requirements.txt nor pyproject.toml: the stale reaper skipped EVERY task and
+# had never once run on CI, and every notification duration rendered "unknown".
+# It passed on Windows, where dateutil arrives transitively as somebody else's
+# dependency, and failed on the CI runner and on any air-gapped install -- the
+# deployment this project targets. Both sites are now stdlib
+# (tools.common.helpers.parse_utc_timestamp); dateutil was DELETED rather than
+# declared, and tests/test_no_undeclared_dateutil.py bans it outright.
+# Import name is mapped to DISTRIBUTION name (`yaml` -> `pyyaml`) from a curated
+# table, NOT from packages_distributions(), which only knows what is INSTALLED
+# and so reports nothing on the very runner where a package is missing.
+# 210 sites grandfathered BY NAME in args/undeclared_import_census.txt --
+# enumerated, not counted; `undeclared_max` in args/undeclared_import_gate.yaml
+# may only go DOWN.
+python tools/ci/undeclared_import_census.py --check           # the gate; exit 1 on a NEW site
+python tools/ci/undeclared_import_census.py --json            # full report
+python tools/ci/undeclared_import_census.py --changed tools/foo.py --check
+python tools/ci/undeclared_import_census.py --staged          # only what this commit touches
+python tools/ci/undeclared_import_census.py --prune           # drop entries whose site is gone
+
+# An UNPINNED CI supply-chain reference -- one that does not name the bytes it
+# resolves to (xrv-route-03)
+#
+# FOUR KINDS, never merged, because each sends a reader to a different repair:
+#   unpinned_install   a pip / `npm install -g` package literal with no `==`.
+#                      .gitlab-ci.yml:148 installs `llm-sandbox docker pyyaml`
+#                      unversioned -- the shape reverse-skill fails CI on.
+#   tag_pinned_action  a `uses:` pinned to a mutable git TAG. Of 70 `uses:` lines
+#                      in .github/workflows, 69 are third party and ZERO are
+#                      sha-pinned; whoever owns the action repository can move
+#                      `v4` to any commit.
+#   undigested_image   a compose `image:` whose repo has no MEASURED digest line
+#                      in vendor/images/*.txt -- three of the four floci/*
+#                      siblings, while the AWS one has had a digest since flx-ci-01.
+#   unpinned_script    `curl … | sh`, unpinned by construction.
+# FOUR PREDICATES keep it high-signal, each RE-DERIVED every run rather than kept
+# as an exemption list: `pip install -r requirements.txt` / `-e .` / `dist/*.whl`
+# names no package literal; `npm ci` and a bare `npm install` resolve through
+# package-lock.json, which IS the pin; a compose service carrying `build:` is
+# BUILT here and never pulled, so a registry digest cannot describe it (21 of the
+# 29 services in docker-compose.yml -- the difference between 8 real sites and 29
+# mostly-noise ones); and `uses: ./...` is a path into this repo.
+# tools/airgap/image_vendor.parse_pin is IMPORTED for the digest half, never
+# re-spelled, so the vendor and the gate cannot disagree about a fact neither
+# changed.
+# KEY: <file>::<kind>::<subject> -- no line number (churn) and NO REF, because
+# `@v4 -> @v5` is a routine bump and the SAME unpinned decision.
+# SURVEYED, NOT GATED: requirements.txt's 45 `>=` ranges and its one git-tag
+# direct reference ride under `surveyed_not_gated` with the reason. The
+# install-time pin is the vendored wheel set, and refusing 45 ranges would refuse
+# routine work.
+# UNMEASURABLE is its own verdict: an unparseable compose file or an absent
+# vendor/images makes `ok` False rather than reading as clean, and --prune REFUSES
+# against an unmeasurable scan -- that is the direction that deletes a live entry.
+# 69 sites grandfathered BY NAME in args/pin_census.txt (34 action, 26 install,
+# 7 image, 2 script); `pin_max` in args/pin_gate.yaml may only go DOWN.
+python tools/ci/pin_census.py --check                         # the gate; exit 1 on a NEW site
+python tools/ci/pin_census.py --json                          # full report, by kind
+python tools/ci/pin_census.py --changed .gitlab-ci.yml --check
+python tools/ci/pin_census.py --staged                        # only what this commit touches
+python tools/ci/pin_census.py --prune                         # drop entries whose site is gone
+python tools/ci/pin_census.py --seed                          # re-derive the census; writes nothing
+python tools/workflow/coherence_checker.py --check pin_census --json   # WARN tier
+
+# A PERFECT SCORE returned when the denominator is empty (rem-hyg-13)
+#
+#     pct = round(within / total_relevant * 100, 1) if total_relevant > 0 else 100.0
+#
+# Nothing was scanned, nothing was assessed, and the page draws a full green bar
+# at 100%. Strictly worse than a missing number: a missing number prompts
+# somebody to go and measure, and a perfect one closes the question. Three of
+# the four defects fixed on 2026-08-20 were this same shape -- rem-hyg-08 (a
+# project card over rows no epic claimed), cch-obs-03/ctx-obs-03 (cache and
+# governance rates nobody had measured), rem-hyg-09 (canvases nobody had
+# assessed).
+#
+# THE FINDING IS A CONJUNCTION: a 100.0 fallback arm AND a body that computes a
+# RATIO. Requiring the ratio is what keeps it high-signal -- `else 100.0` greps
+# to 15 sites and TWO of them are not scores at all
+# (tools/trading/data/fixture_provider.py a synthetic bar price;
+# tools/trading/data/macro_data.py the US Dollar Index, whose BASE IS 100 by
+# definition), and both are excluded by the PREDICATE rather than by a written
+# excuse -- an exemption list is a claim a reviewer must check and a predicate
+# is one the scanner re-derives every run. Parsing to an AST disposes of the
+# third grep hit for free: tools/canvas_compliance/posture.py:260 is a COMMENT
+# inside the rem-hyg-09 fix explaining this very defect.
+# The constant is the FLOAT 100.0 and NEVER the bare int, measured: widening
+# adds ZERO true positives and adds one legitimate site needing an excuse
+# (tools/trading/dashboard/app.py's RSI, which IS 100 with no down moves).
+# The broader `if X else 0` shape is deliberately NOT gated -- 1,167
+# occurrences across 566 files, mostly ordinary counters, and refusing those
+# refuses routine work.
+#
+# THE FIX is the convention already in the tree,
+# tools/quality/component_scorer.py::NOT_ASSESSED -- return None, never a
+# number, and let the renderer say "not assessed". Templates here already tell
+# None from 0.0 (network/compare.html, network/enterprise.html), and a MEASURED
+# 0% must keep rendering as a real red bar.
+#
+# ZERO GRANDFATHERED: all 12 ratio sites were FIXED in the adopting change, so
+# args/perfect_score_census.txt is EMPTY, `perfect_score_max` in
+# args/perfect_score_gate.yaml is 0, and any entry breaches it. That is a
+# stronger posture than the raw-INSERT (219) and undeclared-import (210)
+# censuses could take, and only because the set was small enough to drain.
+python tools/ci/perfect_score_census.py --check               # the gate; exit 1 on a NEW site
+python tools/ci/perfect_score_census.py --json                # full report
+python tools/ci/perfect_score_census.py --changed tools/foo.py --check
+python tools/ci/perfect_score_census.py --staged              # only what this commit touches
+python tools/ci/perfect_score_census.py --prune               # drop entries whose site is gone
+
+# UNGATED test census (rem-tst-01) — which of the backlog modules are GREEN today?
+# The ratchet above stops the ungated census GROWING and the drift reflex watches for
+# regressions inside it, but a promotion batch has to start from a different question:
+# of the 1,794 modules in args/ci_test_backlog.txt, which already pass? They cannot be
+# bulk-added — an unknown fraction are red, a red file turns main red, and a red main
+# gets the gate disabled, which is strictly worse than the debt. So MEASURE FIRST.
+# Runs each backlog module ALONE via isolation_run.run_one (same execution path, so
+# "alone" cannot mean two things), each child pinned to its own scratch ICDEV_DB_PATH
+# and a root-only PYTHONPATH. no-tests (pytest exit 5) is NOT counted as passed, and
+# collection-error is NOT merged into failed — they are different promotion jobs.
+# MEASURES ONLY: edits no allowlist and exits 0 whatever it finds.
+python tools/ci/ungated_test_census.py                       # backlog size + cost estimate
+python tools/ci/ungated_test_census.py --run --out docs/testing/ungated_test_census.json --md docs/testing/ungated_test_census.md
+python tools/ci/ungated_test_census.py --run --limit 50 --workers 4    # sample the prefix
+python tools/ci/ungated_test_census.py --run --deadline-s 3600 --timeout 240   # unstarted -> not-reached
+python tools/ci/ungated_test_census.py --verify docs/testing/ungated_test_census.json  # measured + not-reached + out-of-scope == backlog
+python tools/ci/ungated_test_census.py --summarize docs/testing/ungated_test_census.json --md docs/testing/ungated_test_census.md
+python tools/ci/ungated_test_census.py --red-report docs/testing/ungated_test_census.json   # group the FAILING modules by failure shape
+python tools/ci/ungated_test_census.py --red-report docs/testing/ungated_test_census.json --red-md docs/testing/ungated_red_modules.md
+
+# RAW BOARD-WRITER census (rem-hyg-05) — a kanban INSERT that bypasses the canonical seeder.
+# tools/kanban/task_factory.py opens with "Canonical task seeder — never use raw INSERT
+# directly" and nothing had ever checked it. Measured 2026-08-16 over tools/ + the
+# icdev/tools/ mirror: 231 raw board INSERT sites in 209 files, 219 of them debt once the
+# seeder and db/migrations/** are excluded — roughly seven writers in ten bypass it, and 42
+# of those sites are the autonomous path (tools/genesis/reflexes/*). The bypass skips
+# VALID_TASK_TYPES (enforced by PG, silently ignored by SQLite), the _assert_real_board
+# refusal that stops a seed landing in a throwaway worktree database, the gate-id/risk-marker
+# checks and the dedupe — and reports success anyway. A gate INSIDE create_tasks only ever
+# sees the 30% that already call it, which is why this is a separate census.
+# Per SITE (<file>::<qualname>[<n>]), not per file, so a grandfathered module cannot grow a
+# second writer unobserved. ENUMERATED by name in args/kanban_raw_insert_census.txt;
+# raw_insert_max in args/board_writer_gate.yaml may only go DOWN. The fix is
+# `from tools.kanban.task_factory import create_tasks`. Converting the 219 is rem-hyg-06.
+python tools/kanban/raw_insert_census.py --check             # exit 1 on an unregistered raw INSERT
+python tools/kanban/raw_insert_census.py --json              # per-file site census
+python tools/kanban/raw_insert_census.py --check --staged    # pre-commit fast path
+python tools/kanban/raw_insert_census.py --check --changed tools/foo.py
+python tools/kanban/raw_insert_census.py --prune             # drop entries whose site is gone
+python tools/kanban/raw_insert_census.py --seed              # adoption only; refuses to overwrite
+python tools/workflow/coherence_checker.py --check board_writer_census --gate
+
+# MERGE READINESS (kpr-watch-01) — which open PRs are awaiting merge, and WHY is
+# each one not merging? `pr_watcher._sweep_unlinked_prs` decided eligibility as a
+# ladder of bare `continue` statements: every refusal SILENT except the hold
+# label, and the whole sweep returning immediately under --dry-run. The actor
+# existed; the observer did not. The ladder now lives in one PURE function,
+# `classify_merge_readiness(pr, *, default_branch, linked_urls) -> (state,
+# reason)`, and the sweep CONSUMES it — one table, two consumers, so the report
+# can never describe a merge policy the merger does not have (the same shape
+# CLAUDE.md mandates for `decide_discrimination`). Do NOT write a second copy.
+# States: merged | linked | draft | held_label | wrong_base | conflicting |
+# no_checks | ci_failed | awaiting_ci | changes_requested | behind_main | ready
+# (+ unknown).
+# `no_checks` (empty rollup, nothing ever reported) is NOT `awaiting_ci` (checks
+# running), and mergeable=UNKNOWN carries a different REASON from CONFLICTING so
+# nobody rebases a branch that has no conflict.
+# READ-ONLY, proven by AST in tests/test_merge_readiness.py: every subprocess
+# argv is a read (`gh pr list` and `gh api .../compare`, the latter asserted to
+# carry no -X/--method/-f write flag). It never merges, pushes, un-drafts or
+# closes. Exit 0 = reported, 2 = COULD NOT BE PRODUCED (an unreadable
+# `gh pr list` must not print the same empty table as a quiet repo).
+#
+# `behind_main` (kpr-stale-02) — THE SAFETY HOLE. `mergeable` answers only
+# "does this collide TEXTUALLY", so GitHub reports MERGEABLE for a branch
+# arbitrarily far behind main and the CONFLICTING interlock caught only the
+# colliding subset; the rest merged CLEANLY and re-applied their diff over a
+# tree that had moved on (#1651: -38/+26 on rest_v1.py, 36 behind).
+# `mergeStateStatus == BEHIND` alone is NOT the check — it appears only where
+# the base branch has `required_status_checks.strict`, false on this repo, so
+# it reads CLEAN at 217 commits behind. `measure_behind_by(base, head_sha)`
+# reads the forge /compare endpoint (a local `git rev-list` understates
+# staleness whenever origin/main is itself stale, the one direction that fails
+# silently) and returns None for UNMEASURED, never 0. Threshold
+# `max_behind_commits` in args/pr_watcher_config.yaml, default 10 — surveyed
+# over 120 merged PRs whose routine population tops out at 8 behind at merge.
+# Measured LAST and only for otherwise-`ready` PRs: it is the one rung that
+# costs a forge round-trip.
+python -m tools.ci.merge_readiness                           # human table
+python -m tools.ci.merge_readiness --json
+python -m tools.ci.merge_readiness --state awaiting_ci --state conflicting
+python -m tools.ci.merge_readiness --state behind_main       # only the stale ones
+python -m tools.ci.merge_readiness --max-behind 5            # override the threshold
+python -m tools.ci.merge_readiness --no-measure-behind       # skip the /compare calls
+python -m tools.ci.merge_readiness --from-json prs.json --default-branch main
+
+# A PROTECTED-PATH PR ON THE CONFLICT ARM — refused before the resume ladder,
+# and the survey that decided how far the refusal goes (mfx-mrg-03)
+python -m tools.ci.protected_conflict_survey                 # human table
+python -m tools.ci.protected_conflict_survey --json
+python -m tools.ci.protected_conflict_survey --window-days 30
+python -m tools.ci.protected_conflict_survey --no-forge      # every episode unmeasurable
+python -m tools.ci.protected_conflict_survey --facts-cache .tmp/facts.json
+# `_refuse_protected` was called in ONE place on the task-linked path -- inside
+# the MERGEABLE arm, immediately before the un-draft and `_auto_merge` -- while
+# `_maybe_rebase` and the resume ladder live in the `MERGE_CONFLICT` arm. Not
+# "later in one ladder": a DIFFERENT BRANCH of it. A PR conflicting from the
+# moment it opened could never reach the rung that would refuse it, and the rung
+# fired only once the PR was mergeable -- exactly when it is no longer needed to
+# prevent wasted work. MEASURED on #2064 (mfx-mrg-01), which changed
+# tools/ci/pr_watcher.py, the FIRST entry in `protected_paths`: 63
+# `rebase_failed`, 5 `resume`, an `escalate` -- and 0 of its 165 `pr_watcher.*`
+# audit rows mention `protected`. The ledger, the panel and the escalation all
+# named something else ("resume cap reached"), which was never the reason.
+#
+# NOW: the question is asked and `protected_path_hold` is audited BEFORE any
+# `_maybe_rebase` call, and the PR is held with a `wait` naming the paths
+# instead of entering the resume ladder. In the mergeable arm the refusal moved
+# back ahead of the UN-DRAFT -- where kpr-watch-05 put it, before a later fix
+# moved the un-draft up and silently overtook it -- and so also ahead of the
+# behind-main `_maybe_rebase`.
+#
+# WHAT IT DELIBERATELY DOES NOT SUPPRESS IS THE SURVEY'S FINDING, NOT A TASTE.
+# Replaying all 210 recorded conflict-ladder episodes through the SHIPPED
+# predicate (`merge_readiness.protected_hits`, never a second copy):
+#   catches            32 of 210 (15.24%)
+#   holding one rung earlier (ahead of `_maybe_rebase`) would have taken a
+#                      SUCCESSFUL rebase from 11 of those 32 -- 8 of them a
+#                      single pushed rebase and NOTHING ELSE before the PR
+#                      merged (#1724 #1734 #1751 #1789 #1821 #1682 #1686 #1695).
+#                      3.81% of the population, above the 1.63% this file
+#                      already calls refusing routine work.
+#   as shipped         0 false positives, 13 rebases preserved, 74 resumes and
+#                      21 escalated episodes saved.
+# So the bounded rebase STAYS and `max_rebase_attempts_per_task` is UNCHANGED.
+# Do NOT "tidy" the hold up one rung to match the card's suggested shape --
+# re-run the survey first; a control that stops work it was never meant to stop
+# gets switched off.
+#
+# TWO OPPOSITE DEFAULTS, on purpose. `_protected_hits` (the MERGE refusal) is
+# FAIL-CLOSED: an unreadable file list reads as protected, because a merge gate
+# that opens when it cannot see is not a gate. `_protected_hits_seen` (this
+# hold) is FAIL-OPEN and returns None for an unmeasured PR, which takes the
+# unchanged ladder -- stopping the watcher spending resumes is not merging, and
+# stopping on an unreadable listing would hold work the ladder would
+# legitimately have repaired. It reads ONLY the open-PR index the poll already
+# fetched for the sibling map, so it costs no extra `gh` call.
+# `unmeasurable` in the survey is never folded into either side.
+# REST, never GraphQL: the outage behind this card refused every `gh pr view`
+# while `gh api repos/.../pulls/N` answered normally.
+# Report only, deliberately no --gate (kpr-fix-03). Exit 2 = the survey could
+# not be produced, which is never the same as a clean survey.
+# Method and every number: docs/audits/mfx-mrg-03-protected-conflict-divert-survey.md
+
+# SURFACED (kpr-watch-03) — the same classification where somebody will see it.
+# A report nobody opens is not observability, and for two cards the only place
+# this answer existed was a CLI you had to think to run.
+python -m tools.ci.merge_readiness --group                   # bucketed by state
+python tools/kanban/cli.py --awaiting-merge                  # same view, board CLI
+python tools/kanban/cli.py --awaiting-merge --json
+python tools/kanban/cli.py --awaiting-merge --merge-state behind_main
+python tools/kanban/cli.py --awaiting-merge --no-measure-behind
+# UI: Home (/) -> "Awaiting Merge", a section inside
+# tools/dashboard/templates/_autonomy_status.html — a PANEL on an existing page,
+# NOT a new page, so the 8-point completeness gate does not apply.
+# API: GET /api/merge-readiness. READ ONLY BY CONSTRUCTION — no merge button, no
+# un-draft, and no POST sibling on that path (asserted by AST in
+# tests/test_merge_readiness_surface.py). Cached 120s server-side and the cache
+# AGE is rendered, so a stale answer is never presented as a live one.
+# All three surfaces read `collect_report` — one ladder, one gatherer.
+# Per PR: number, branch, whether a task points at it (`task_id`), the state,
+# the reason, and the age in state.
+# TWO VERDICTS, ONE TABLE: `state` is the merger's verdict; `pipeline_state` is
+# the same function called with `linked_urls=()`, because `state` short-circuits
+# at the `linked` rung for every kanban PR and grouping on it collapsed the
+# whole board into "a task owns it". Identical for an unlinked PR, by test.
+# AGE IS A LOWER BOUND from the NEWEST event on the PR, not from `updatedAt` —
+# which does not bump when a check completes (measured 2026-08-19: #1817's
+# updatedAt was 45s OLDER than its own check's completedAt). Unmeasured prints
+# "?", never 0. Groups are in ATTENTION order (`ready`, `behind_main` first),
+# which is presentation only and never reorders the ladder.
+# MERGE STALL ALARM — eligible-but-unmerged, the signal the MERGER stalled
+# (kpr-watch-02). `merge_readiness` above explains every rung the ladder REFUSES
+# on. This answers the one case where it refuses NOTHING: a PR classified `ready`
+# that is STILL open on the next poll. Nothing is wrong with that PR — the actor
+# should have merged it and did not, and that is an automation-liveness problem
+# with a completely different repair.
+#
+# Eligibility is asked by calling the SAME `classify_merge_readiness` with
+# `linked_urls=()`, so the `linked` short-circuit cannot hide the task path —
+# where 3 of the 4 previously-observed causes live — and ownership is carried
+# apart as `door`. There is NO second copy of the ladder; do not write one.
+#
+# SEVERITY, not one "stuck" bucket, because the causes need different responses:
+#   alarm       eligible, aged past the threshold, and NOTHING explains it
+#   outage      the daemon is not polling, or the forge refused this host's
+#               credentials. Reported with NO threshold (a down merger does not
+#               become more down with time) and attributed ONCE to the fleet
+#               rather than N times to N innocent PRs.
+#   by_design   sibling hold, enforced done-gate, landed hold, protected path,
+#               auto-merge disabled, CI-still-running. Escalates to `alarm` only
+#               past `by_design_stall_after_minutes` — a hold that can never
+#               escalate is a category people stop reading.
+#   unmeasured  eligible, but nothing knows for how long. Never a reassuring zero.
+#   ok          not eligible, or eligible and young.
+#
+# AGE has TWO sources that are never merged and are BOTH always printed:
+#   recorded      `pr_merge_eligibility_events` (migration 20260819011454,
+#                 append-only), written per TRANSITION of (state, head_sha) — so
+#                 the newest row IS first-seen-ready: one indexed read, no
+#                 aggregation, a handful of rows a day rather than ~29,000.
+#   ci_estimate   max(statusCheckRollup[].completedAt). A labelled PROXY: a PR
+#                 whose hold cleared AFTER it went green reads as instantly hours
+#                 old, so it would alarm on first sight.
+# A recorded row for a DIFFERENT head sha is refused — a force-push is a new merge
+# opportunity whose clock restarts. Neither source available prints "?", never 0.
+#
+# CAUSE ATTRIBUTION reuses `audit_trail`, which already held 104,319 pr_watcher
+# rows including 42,742 `wait` rows carrying each refusal's own reason text. No
+# new writer and no new instrumentation — the existing record simply read, which
+# is what nothing was doing. Patterns are DATA in args/merge_stall.yaml and every
+# one was taken from a live row. FAIL-OPEN to `unattributed`: excusing a PR on
+# missing evidence is how an alarm goes quiet, so never add a catch-all pattern.
+#
+# SURVEYED BEFORE ARMING, per CLAUDE.md, over the last 150 merged PRs. The ENTIRE
+# tail is attributed (n=30, max 116.37 min — 17 done-gate, 12 sibling hold, 1
+# forge outage) while the unattributed population (n=120) stops at 13.98 min:
+#     threshold      5      10      15      20      30      60     120
+#     RAW age    28.00%  12.00%   6.67%   4.67%   4.00%   2.00%   0.00%
+#     ATTRIBUTED 16.00%   4.00%   0.00%   0.00%   0.00%   0.00%   0.00%
+# CLAUDE.md already calls a 1.63% fire rate grounds for standing a check down, so
+# that gap IS the design. `stall_after_minutes: 20` rather than 15 — both fire on
+# 0.00%, and 15 leaves ONE minute of headroom above its own observed maximum.
+# Re-measure with --survey; never raise a threshold to quieten an alarm, because
+# an alarm here means the MERGER stopped and the repair is to the merger.
+#
+# READ-ONLY against the forge — only `gh pr list` and `gh auth status`, proven by
+# AST in tests/test_merge_stall.py — and it writes exactly one table.
+# `pr_watcher.poll_once` records an observation beside its heartbeat: the
+# heartbeat proves the WATCHER ran, this proves what it was looking at.
+python -m tools.ci.merge_stall                               # human table
+python -m tools.ci.merge_stall --json
+python -m tools.ci.merge_stall --gate                        # exit 1 on `alarm` ONLY
+python -m tools.ci.merge_stall --survey                      # re-derive the threshold
+python -m tools.ci.merge_stall --survey --survey-limit 300 --json
+python -m tools.ci.merge_stall --stall-after 30              # one-run override
+python -m tools.ci.merge_stall --no-record                   # every age -> ci_estimate
+python -m tools.ci.merge_stall --from-json prs.json --default-branch main
+# Did that resume REACH anything, or was a line just written? (kpr-watch-13)
+python -m tools.ci.resume_delivery --survey
+python -m tools.ci.resume_delivery --survey --json
+python -m tools.ci.resume_delivery --task kpr-dup-03            # one task's verdict
+python -m tools.ci.resume_delivery --task kpr-dup-03 --json
+# Run it from the checkout pr_watcher runs in: the queue is PER-CHECKOUT
+# (hook_compat resolves it from its own file), so a worktree reads its own empty
+# .tmp and correctly reports `unmeasured` rather than a clean zero.
+#
+# `pr_watcher._send_resume` calls `hook_compat.queue_message`, which APPENDS ONE
+# JSONL LINE to `.tmp/kanban/messages/<task-id>.jsonl` and returns. The audit row
+# said `injected resume context` -- a sentence about a file write phrased as a
+# sentence about an agent. MEASURED 2026-09-06 02:59 UTC on the live checkout and
+# the live PG board:
+#   187 queue files / 186 holding UNDRAINED `sender: pr_watcher` lines
+#   852 undrained pr_watcher messages
+#   850 lifetime `pr_watcher.resume` audit rows (2026-08-01 -> 2026-09-06)
+# A drain DELETES the file, so a drain is traceless and cannot be counted -- but
+# the count ON DISK MEETS OR EXCEEDS the count EVER RECORDED, so no recorded
+# resume has been drained. Both sides move on a live board (186/849/847 six hours
+# earlier); the INEQUALITY carries the argument. Quote a reading with its instant.
+# The only drain, `check_message_queue`, has one runtime call site --
+# tools/genesis/reflexes/kanban.py, inside `_dispatch_via_llm_router`'s
+# per-iteration loop -- which runs only WHILE A DISPATCH IS IN FLIGHT (by
+# definition not the state of a task whose PR is open and whose worker exited,
+# the only state a resume is sent in) and is the LLM-ROUTER FALLBACK; the primary
+# `claude_cli` adapter never calls it at all.
+#
+# SO `max_resume_cycles_per_task: 5` WAS SPENDING FIVE ATTEMPTS THAT WERE NEVER
+# MADE, and `RESUME_COOLDOWN_SECONDS = 600` was spacing a write to a dead file.
+# Corroborated on fni-api-01 (icdev_ft#340): the branch head sha did not move
+# once across resumes 1-5; it moved at 16:48:29Z, 17m01s after the FIFTH resume
+# and 15m49s AFTER the escalation.
+#
+# THREE VERDICTS, and `unmeasured` is NEVER folded into either other:
+#   undelivered  a `sender: pr_watcher` line for this task is STILL IN THE QUEUE.
+#                Proven unread. THE FINDING.
+#   delivered    a DRAIN RECEIPT records it. `check_message_queue` now appends one
+#                line to `.tmp/kanban/message_receipts/<task-id>.jsonl` naming what
+#                it drained, who drained it and when -- so from this change forward
+#                a drain STOPS being traceless. Best-effort: a receipt that cannot
+#                be written must never break the drain a running agent depends on.
+#   unmeasured   the FIRST injection for a task (nothing prior to judge); or the
+#                queue file is gone with NO receipt -- a pre-receipt reader, a
+#                `.tmp` sweep and a worktree's own empty `.tmp` are
+#                indistinguishable. NOT a clean bill of health.
+# `.tmp` is disposable BY DESIGN, so every way the evidence can go missing lands in
+# `unmeasured`. A sweep can make this say "I cannot tell"; it can never make it say
+# "delivered". `never_drained` is None -- NEVER False -- on a shortfall alone,
+# because "fewer on disk than recorded" is exactly what a sweep produces.
+# The verdict is re-derived from the FILESYSTEM and shares NO CODE with
+# `queue_message`, whose `{"queued": True}` only ever meant `write()` did not raise
+# -- one computation trusted twice is the defect, not the fix.
+#
+# WHAT THE AUDIT ROW SAYS NOW. A `resume` row carries `delivery` /
+# `delivery_detail` and reads `resume enqueued; prior injections: undelivered (N
+# pr_watcher message(s) still unread in the queue)`. It never says `injected
+# resume context` again. The ESCALATION -- the one place the whole budget is
+# knowable, and the one place it is quoted to a human -- reads `resume cap reached
+# (5/5) - manual intervention required; NONE of the 5 injection(s) were ever read`.
+# `unaccounted` (pre-receipt residue) is reported BESIDE `delivered`, never inside
+# it. The HITL alert keeps the `resume cap reached (n/m) after <cause>.` prefix
+# tools/kanban/hitl_alert_view.py parses; the clause is appended AFTER it.
+#
+# NO ACTUATOR, ON PURPOSE, and pinned by an AST test. Nothing here re-dispatches a
+# worker, promotes a wake, deletes a message, or reads
+# `max_resume_cycles_per_task` / `RESUME_COOLDOWN_SECONDS`. MORE UNDELIVERED
+# MESSAGES IS NOT MORE ATTEMPTS, and a delivery path that re-dispatches on every
+# resume is a dispatch-rate change owing its own fire-rate survey -- on this board
+# it would fire on 100% of resumes on day one. The 852 messages already on disk
+# are NOT deleted: they are the evidence.
+# `_emit_wake_events` is a SECOND, INDEPENDENT channel and stays unmeasured: its
+# own docstring says "an empty `promoted` is the normal case -- most events have no
+# listener". Measure `promoted` before relying on it.
+#
+# SURVEYED BEFORE WIRING, over the WHOLE resume corpus replayed through the
+# SHIPPED predicate (never a second copy): 850 rows, 850 `undelivered`, 100.00%.
+# That is the MEASUREMENT, not a threshold -- it is total because the finding is
+# true of every message on the board, and it is why nothing here REFUSES anything.
+# Cost: 0.112 ms per probe (mean over 850) and 0.367 ms per receipt (mean over
+# 200), against a ~45 s poll.
+#
+# THE FIFTH ATTEMPT'S ONE-POLL GRACE IS A DECISION, NOT AN ACCIDENT OF BRANCH
+# ORDER. The cooldown spaces injections 1->5 and does NOT protect the fifth: the
+# escalate branch fires on the first poll where `cycle >= max_cycles`. Replaying
+# all 153 lifetime cap escalations (150 with a preceding resume row), FINAL resume
+# -> escalate: min 32.0s p50 40.9s p90 60.0s max 715.1s, 148/150 (98.7%) within
+# 180s and 149/150 (99.3%) within the 600s cooldown -- inside the very interval
+# that constant was written to rule out. Its cost is BOUNDED, NOT PROVEN: 109/153
+# (71.2%) have a later `pr_watcher.merge`, median 238.2 min, so most are not a
+# fifth resume finishing late -- but 24 (15.7%) merge within an hour and 4 within
+# 30 min. KEPT AS IS: holding the escalation for a full cooldown delays EVERY HITL
+# alert ~10 minutes to rescue an attempt that was never delivered at all, and
+# moving a threshold to quieten a symptom is forbidden. The repair is DELIVERY.
+# The cost is now RECORDED on every escalation as `final_attempt_grace_seconds`
+# instead of argued about once, so the next card re-derives it from a live series.
+# Report only, no --gate (kpr-fix-03). Exit 2 = the survey could not be produced,
+# which is never the same as a clean survey.
+# Survey: docs/audits/kpr-watch-13-resume-delivery-survey.md
+# Is the draft -> ready -> merged round trip turning over? (kpr-watch-06)
+# The runner now opens every kanban PR with `gh pr create --draft`, so the hold
+# on unattended work is a ROW rather than an external poller racing the 30s
+# cycle: `pr_watcher._mark_ready` promotes a draft only once CI is green, the
+# task is not a manual-gate sentinel, and `tools.kanban.deps.blocking_deps` is
+# empty -- the same interlock `promote_backlog_to_scheduled` reads. The ABSENCE
+# of a decision now leaves work HELD rather than merged.
+# THE NEW FAILURE MODE, and why this survey exists: a draft nobody promotes is a
+# stalled pipeline, and a stalled pipeline is QUIET. `stuck` is the signal;
+# `opened_per_hour` is the CONTROL and does not move when promotion regresses,
+# because the runner keeps opening PRs either way.
+python -m tools.ci.draft_promotion_survey --json
+python -m tools.ci.draft_promotion_survey --window-hours 24
+python -m tools.ci.draft_promotion_survey --stuck-hours 6
+# promotions = `pr_watcher.auto_ready` audit rows (SUCCESS only, one per PR, so
+# it counts promotions and never polls). An unreachable `gh` or a window holding
+# no kanban PR reports UNMEASURABLE, and `promotions` is None -- never 0 -- when
+# audit_trail cannot be read. Report only, no --gate.
+# Stand the inversion down with ICDEV_KANBAN_PR_DRAFT=0. Do NOT also set
+# `auto_ready_draft_prs: false` -- that combination is the one state strictly
+# worse than the old default: every kanban PR draft forever, nothing left in the
+# loop able to clear it.
+
+# AGOV CASE — agent-session forensics CLI (agov-case-04)
+# CLI-only by design. There is deliberately NO dashboard page: one would require
+# all 8 completeness-gate components from CLAUDE.md (template + icdev/ mirrored
+# template + blueprint route + backing module + constants + migration + nav link
+# + full IQE wiring), and that is a separate card.
+python tools/agent_case/cli.py timeline --session <session_id>                  # ordered timeline, human-readable
+python tools/agent_case/cli.py timeline --session <session_id> --json           # machine-readable
+python tools/agent_case/cli.py timeline --session <id> --since <iso> --until <iso> --limit 500
+python tools/agent_case/cli.py timeline --session <id> --no-redact                 # unmasked; do not disclose as rendered
+python tools/agent_case/cli.py build --session <session_id> --out <dir>         # write a portable case bundle
+python tools/agent_case/cli.py build --session <id> --out <dir> --force --json  # replace an existing bundle
+python tools/agent_case/cli.py verify --bundle <dir>                            # all three layers
+python tools/agent_case/cli.py verify --bundle <dir> --layer hmac --json        # one layer (repeatable)
+python tools/agent_case/cli.py verify --bundle <dir> --secret <key>             # key instead of $ICDEV_HOOK_HMAC_SECRET
+
+# The three subcommands are also runnable directly as their own modules:
+python tools/agent_case/session_timeline.py --session <session_id> --json
+python tools/agent_case/case_bundler.py --session <session_id> --out <dir> --json
+python tools/agent_case/bundle_verifier.py --bundle <dir> --json
+
+# Exit codes (identical across all three subcommands so callers can branch
+# uniformly): 0 ok / 1 a verification layer FAILED or the command errored /
+# 2 nothing failed but something could not be verified / 3 bundle unreadable.
+# An empty session exits 0 — "no records for this session" is a finding to
+# report, not an error to raise.
+# tools/agent_case/bundle_format.py is a library (no CLI) — import build_manifest,
+# write_manifest, compute_event_hmac, compute_audit_row_hash.
+#
+# FOUR joinable sources since hcx-evt-04, not three: hook_events, audit_trail,
+# agent_session_events (the append-only event log) and agent_findings. The event
+# log joins because hcx-evt-01 gave it a session_id by construction — which is
+# what the still-accurate `limits` block says agent_executions / ai_telemetry /
+# ace_audit_log would need. Events sharing one occurred_at are ordered by `seq`,
+# never by the uuid in event_id.
+# agent_session_events.payload_json is NOT read: it can hold verbatim model input
+# and a case bundle carries no transcript by construction. payload_hash IS
+# carried on every event, so a holder of the payload re-verifies with
+# tools/audit/row_hash.py::compute_payload_hash; the omission is declared in the
+# timeline's `limits` and in context.json -> sources.excluded_columns. Read the
+# documents from the log itself:
+python tools/agent_runtime/event_log.py --session <session_id> --with-payload
+
+## Unified Approval Inbox — ACE + workflow_hitl adapters (agov-inbox-05)
+
+ICDEV has four approval gates asking a human the same question through four
+unrelated stores. These adapters give three of them one queue **without
+rewriting any of them**.
+
+```bash
+python tools/agent_runtime/inbox_adapters.py --list --json
+python tools/agent_runtime/inbox_adapters.py --list --origin ace
+python tools/agent_runtime/inbox_adapters.py --resolve <item_id> --approve \
+    --actor ops-oncall --reason "reviewed" --json
+python tools/agent_runtime/inbox_adapters.py --resolve <item_id> --deny \
+    --reason "not authorised" --json
+```
+
+**Use this `--resolve`, not `approval_inbox.py --resolve`, for a mirrored item.**
+The store settles the row; only the adapter knows how to release what was
+waiting on it — INSERTing the ACE `hitl_resolved` row that wakes a parked
+`CoWorkerThread`, or calling `submit_feedback` to advance a workflow stage.
+
+Each gate keeps its own store as the source of truth for its own waiter, and
+`approval_items` is a **mirror** of those:
+
+| Origin | Pending state | Released by |
+|--------|---------------|-------------|
+| `ace` | `ace_audit_log` row, `action='hitl_pending'` | INSERTing a matching `hitl_resolved` row |
+| `workflow_hitl` | `wf_approvals` row, `status='pending'` | `feedback.submit_feedback` |
+
+**Mirroring is best-effort; resolution is bidirectional.** An unmigrated or
+unreachable inbox leaves the originating gate holding exactly as it does today —
+failing the ACE gate closed on a mirror error would make an optional delivery
+channel load-bearing, and failing it open would turn a missing table into an
+approval. Answering in the ACE UI (`POST /api/ace/<id>/hitl`) settles the
+mirrored item; answering in the inbox releases the ACE thread.
+
+`ace_audit_log` stays **append-only**: a resolution INSERTs a new row, and
+nothing in this path UPDATEs an ACE row. The mutable state lives only in
+`approval_items` (migration `20260809203855`).
+
+**`tools/integration/approval_manager.py` is deliberately out of scope.**
+Document-, COA- and boundary-level approval with multi-reviewer lists has a
+different lifetime and audience from a mid-run tool-call gate, and its reviewer
+semantics do not survive being flattened into one item with one `resolved_by`.
+# tools/agent_case/timeline_redaction.py is a library (no CLI) — import
+# TimelineRedactor / impact_level_for. The timeline redacts by default; --no-redact
+# is the opt-out and says so in the output and in the result's `limits`.
+#
+# Redaction masks the DISPLAY projection only. entry["record"] stays byte-exact,
+# which is what lets `verify` re-compute the hook_events HMACs and the
+# migration-149 audit hash chain over a bundle built from the same timeline.
+# Findings are placed at their LAST contributing event, not at their own
+# created_at, and list every event id they cite; an id belonging to another
+# session is reported under `unresolved_event_ids` and never pulls that event in.
+# Two runs over the same rows are byte-identical — import canonical_timeline /
+# canonical_json / timeline_digest from session_timeline to check that yourself.
+
+---
+
+## Extension Point Liveness (hcx-live-03)
+
+`ExtensionPoint` declares ten hook points. Declaring one costs a line;
+*consuming* one costs a dispatcher on a real code path and a handler registered
+against it. This measures the gap.
+
+```bash
+python tools/extensions/liveness.py            # human report, all ten points
+python tools/extensions/liveness.py --json
+python tools/extensions/liveness.py --dead     # only the points that cannot fire
+python tools/extensions/liveness.py --gate     # exit 1 on a dead point not in the census
+python tools/extensions/liveness.py --root /path/to/checkout
+```
+
+Two independent pieces of evidence per point:
+
+| evidence | how | why it matters |
+|---|---|---|
+| **dispatchers** | static: a file that both names the point (`ExtensionPoint.P` or the bare string `"p"`) and calls `dispatch`/`dispatch_async` | a point with **no dispatcher cannot fire**, whatever registers against it |
+| **handlers** | static (`EXTENSION_HOOKS` keys, `register(...)` args) + live (`ExtensionManager.handler_count`) | the live half sees site-local drop-ins this checkout does not contain |
+
+Status is one of `live`, `dispatcher_only`, `handlers_only`, `dead`.
+`dispatcher_only` (fires, nobody listening) and `dead` (cannot fire) are
+different defects and are never merged.
+
+This does **not** count dispatches — that is runtime telemetry and belongs
+inside `ExtensionManager.dispatch`. A point reported `live` here is *wired*, not
+necessarily *exercised*.
+
+Dead points are enumerated by name with a written reason and a follow-up card in
+`args/extension_liveness.yaml`; the census only ever shrinks. A member of
+`ExtensionPoint` is never removed to clear a finding without a human decision —
+it is a public `str`-Enum and extensions are auto-discovered drop-ins from a
+project-root `extensions/` directory outside this repository, so a removal is an
+`AttributeError` at import for any site-local file naming it.
+
+```bash
+pytest tests/test_extension_point_liveness.py -v   # AGENT_START/END wiring + the census (12 tests)
+```
+
+---
+
+## Prompt-Cache Regression Signal (cch-obs-02)
+
+`cch-tel-01` made the per-call cache counts exist; nothing watched them CHANGE.
+A provider that was serving cached tokens and stops renders identically to one
+that was never enabled — both are zero — which is how Azure discarded its
+cached-token count for its entire life with nothing going red.
+
+```bash
+python -m tools.cache_savings.regression                       # per-provider table + verdicts
+python -m tools.cache_savings.regression --json
+python -m tools.cache_savings.regression --window-end 2026-08-01T00:00:00+00:00   # replay a past window
+python -m tools.cache_savings.regression --gate                # 0 clean / 1 regression / 2 unmeasurable
+python -m tools.genesis.reflexes.cache_regression_reflex --dry-run   # detect, file no cards
+```
+
+Three rungs: `stopped` (cache reads across the baseline window, exactly zero
+across the recent one), `collapsed` (share fell past `collapse_drop_ratio`) and
+`never_cached` (a mechanism that bills cached tokens, a real sample, never one
+read). The comparative rungs ignore the mechanism declaration — a provider that
+DID report cache reads was caching whatever any config claims.
+
+Every non-finding is NAMED, because a zero here has four meanings:
+`mechanism_no_billing` (Ollama's KV reuse bills nothing back — a permanent zero
+is correct), `pre_instrumentation_unknown`, `mechanism_unknown`,
+`insufficient_calls`, `no_traffic`. Rows predating `instrumented_since` hold a
+BACKFILLED zero and are excluded from the `never_cached` rung; an empty or
+unmigrated ledger reports `unmeasurable`, never a clean bill.
+
+`collapse_drop_ratio: 0.7` was fitted against 79 historical window pairs out of
+this ledger — 0.00% false-fire, against 8.86% at 0.5 and 29.27% at 0.3. **Never
+widen a threshold to silence a finding**; re-measure and say what you measured.
+Thresholds and the mechanism map: `args/cache_regression.yaml`. The genesis
+reflex `cache_regression_reflex` runs it every 6h and files one card per finding
+with an id deterministic in (rung, provider).
+
+```bash
+pytest tests/test_cache_regression.py -v   # both directions: fires, and does not (28 tests)
+```
+
+```bash
+# Sibling-conflict hold — survey BEFORE widening it (#kpr-watch-08)
+python tools/ci/sibling_hold_survey.py --json
+python tools/ci/sibling_hold_survey.py --limit 120
+python tools/ci/sibling_hold_survey.py --open-only
+# GitHub does NOT apply .gitattributes merge drivers, so the union-merged paths
+# coordination_paths.py excludes from the sibling check DO conflict on the forge.
+# Widening the check anyway is the change GENERATED_PATH_MARKERS records being
+# burned by. Measured 2026-08-17 over 120 merged PRs:
+#   current  35/120 held at their own merge moment (29.2%), max clique 5
+#   widened  78/120 (65.0%), max clique 13
+# so it is NOT armed. Union patterns are parsed from .gitattributes rather than
+# hardcoded. `moments_with_nobody_free` can only ever read 0 — the replay samples
+# only instants where a merge HAPPENED — so read `held_by_unmergeable` instead:
+# that is what found #1769 waiting on #1744 and #1781 on #1773 under the CURRENT
+# posture, each behind a sibling the forge would refuse to merge.
+# An unavailable corpus exits 2; a survey nobody could run is not a clean survey.
+```
+
+## Shard timing snapshot — bin-pack the gated run by MEASURED duration (crx-test-07)
+
+```bash
+python tools/ci/gated_test_list.py --print --list core --shard 2/4   # this shard's targets
+python tools/ci/gated_test_list.py --check --list core --shard 2/4   # validate, then narrow
+python tools/ci/gated_test_list.py --check --list core --shard 2/4 --no-timings  # round-robin baseline
+python tools/ci/shard_timings.py --show                              # what the loader merges
+python tools/ci/shard_timings.py --balance --shards 4                # the partition it produces
+python tools/ci/shard_timings.py --balance --shards 4 --no-timings   # the crx-test-05 baseline
+python tools/ci/shard_timings.py --from-junit '.tmp/junit/shard*/*.xml' --source github-run-N --write
+```
+
+crx-test-05 partitioned ROUND-ROBIN, which balances FILE COUNT (111/111/110/110)
+and says NOTHING about runtime. Measured on the first merged sharded pipeline
+(run 32352491214, 2026-08-20): shard 1 **17m01s**, shard 2 5m59s, shard 3 5m43s,
+shard 4 6m36s. `Test` cost 17 minutes to do ~7 minutes of work and three runners
+idled for ten of them, because shard 1 drew the repo-wide scanners whose cost is
+superlinear in tree size. `partition()` now does greedy longest-first bin packing
+over `args/ci_test_timings/`.
+
+READ FROM THE JUNIT XML, not `--durations`. That flag prints a truncated top-25
+of CALL time; pytest's default `junit_duration_report` is `total`, so setup is
+included — and the four worst offenders on shard 1 spent 82.6s, 33.3s, 32.5s and
+26.8s in SETUP alone.
+
+TWO PROPERTIES ASSERTED, because violating either reports GREEN. `partition()`
+computes the WHOLE partition and checks multiset equality before returning one
+shard, so a dropped file is caught on the runner that would otherwise silently
+skip it; and nothing anywhere uses builtin `hash()`, because PYTHONHASHSEED is
+randomised per process, so a hash partition puts a file in shard 2 on one runner
+and shard 4 on another. The floor, duplicate and existence checks still read the
+FULL list.
+
+A FILE ABSENT FROM THE SNAPSHOT IS NEVER DROPPED — it is weighted at the MEDIAN
+of the measured entries. Median rather than zero (zero declares a new test free
+and lets any number pile onto one shard); median rather than mean (the mean is
+dragged by the very scanners that caused the imbalance). With nothing measured
+it degrades to round-robin, and a malformed snapshot degrades the same way with
+a `::warning::` — this directory governs how FAST the gate runs, never what it
+COVERS, so it may not turn `Test` red.
+
+DO NOT RESPOND TO A SLOW SHARD BY RAISING N. `--balance` reports
+`lower_bound_seconds`, the heaviest single INDIVISIBLE unit; a partition can
+never finish faster than that. Measured 2026-08-20 it is **699.2s of a 1791.2s
+suite** — `tests/cortex/test_chat_routing.py`, 39% of the whole gated run in
+four tests (278.8s + 141.4s + 139.5s + 139.4s). The busiest shard is already AT
+that floor, so a 5th and 6th runner would idle exactly the way three do today.
+Splitting that file is `crx-test-08`, not more shards.
+
+`snapshot.json` is owned by the weekly `.github/workflows/shard-timings.yml`,
+which reads the newest SUCCESSFUL `ICDEV CI` run on the default branch (a failed
+run's shards abort at `-x`, so its JUnit is a partial measurement) and opens a
+PR. A task correcting one file's weight writes its own
+`args/ci_test_timings/<task-id>.json` instead; snapshots merge
+newest-`generated_at`-wins per path, the same collision-free discipline `core.d/`
+gave `core.txt`.
+
+## RFP shredder + the ONE compliance matrix (rmf-rfp-01)
+
+```bash
+python tools/govcon/compliance_matrix_builder.py --opportunity-id "opp-xxx" --ingest solicitation.pdf --json  # parse + store L/M/C rows
+python tools/govcon/compliance_matrix_builder.py --opportunity-id "opp-xxx" --coverage --json
+python tools/govcon/compliance_matrix_builder.py --opportunity-id "opp-xxx" --gate --json
+python tools/govcon/solicitation_parser.py --input solicitation.pdf --json                  # the parse the routes consume
+# Routes (the matrix is populated by a ROUTE, not only this CLI):
+#   POST /rfp/upload                      multipart rfp_file [+ profile, opportunity_id] -> workbench session seeded
+#                                         from Section L; with opportunity_id, the L/M/C matrix is built too
+#   POST /api/proposals/opportunities/<id>/compliance/batch
+#        {"items": [...]}                 hand-built rows (unchanged)
+#        {"parsed": {...}, "section_text": {"L": "...", "M": "...", "C": "..."}}
+#                                         solicitation_parser output and/or raw section bodies
+# ONE TABLE: proposal_compliance_matrix. pg_compliance_matrix was folded in and
+# dropped by migration 20260903185253; vocabulary in tools/govcon/compliance_matrix_schema.py.
+```
+
+### Union rung for declared append-shaped files (mfx-sib-03)
+
+```bash
+# A REAL rebase conflict on a DECLARED sibling-append file has ONE resolution: the union.
+# Rules are chosen BY FILE (args/pr_watcher_config.yaml -> union_resolver.files), never by content.
+python -m tools.kanban.union_resolver --list-rules                       # the rules and the declared table
+python -m tools.kanban.union_resolver --worktree <path> --dry-run --json # resolve in memory, write nothing
+python -m tools.kanban.union_resolver --worktree <path> --mode merge     # a `git merge main` from the card's branch
+# Runs inside rebase_recovery.rebase_and_push after the doc-only resolver declines and before the abort,
+# under the same per-base-era rebase budget; pr_watcher audits union_resolved / union_refused with the rules.
+python tools/kanban/rebase_recovery.py --task <id> --dry-run --json      # the whole rebase, rung included
+```
+### Branch matcher: a REPARK id is a different card's (mfx-own-05)
+```bash
+# `_branches_for_task` now requires the task id to START a path segment: kanban/<id> or kanban/<id>-<suffix>,
+# never kanban/<something>-<id>. A repark card (kph-repark-<id>) is its own row, branch and PR.
+python -m tools.kanban.branch_match_survey --env-file C:/AI/ICDev/.env                     # legacy vs shipped rule, every drop NAMED
+python -m tools.kanban.branch_match_survey --env-file C:/AI/ICDev/.env --json
+python -m tools.kanban.branch_match_survey --env-file C:/AI/ICDev/.env --include-terminal  # every id, done tasks too
+# UNMEASURABLE (exit 2), never a clean zero, from a worktree with no .env. Report only, no --gate.
+```
+### Interactive claim keeper (mfx-own-02)
+```bash
+python tools/kanban/cli.py --claim <task-id> [--intent "what you are doing"] [--ttl 7200]   # hold a task from a plain shell
+python tools/kanban/cli.py --claim <task-id>            # again: RENEWS the running keeper's TTL
+python tools/kanban/cli.py --release <task-id>          # end the keeper session, free the lease
+python -m tools.kanban.interactive_claim --status <task-id> [--json]   # what holds it: keeper pid, expiry, intent, log
+python tools/awareness/restore_acts.py --plan           # reports the lease as held by a running process
+```
+
+### Union rung for declared append-shaped files (mfx-sib-03)
+
+```bash
+# A REAL rebase conflict on a DECLARED sibling-append file has ONE resolution: the union.
+# Rules are chosen BY FILE (args/pr_watcher_config.yaml -> union_resolver.files), never by content.
+python -m tools.kanban.union_resolver --list-rules                       # the rules and the declared table
+python -m tools.kanban.union_resolver --worktree <path> --dry-run --json # resolve in memory, write nothing
+python -m tools.kanban.union_resolver --worktree <path> --mode merge     # a `git merge main` from the card's branch
+# Runs inside rebase_recovery.rebase_and_push after the doc-only resolver declines and before the abort,
+# under the same per-base-era rebase budget; pr_watcher audits union_resolved / union_refused with the rules.
+python tools/kanban/rebase_recovery.py --task <id> --dry-run --json      # the whole rebase, rung included
+```
+
+### AWS emulator seam — the ONE floci switch (flx-seam-01, flx-seam-02)
+`tools/cloud/emulator.py` is a LIBRARY: it has no argparse and no `__main__`, so
+there is no CLI to document. Import it.
+
+```python
+from tools.cloud import emulator
+
+if emulator.enabled():
+    client = boto3.client("s3", endpoint_url=emulator.endpoint(),
+                          region_name=emulator.region())
+
+# A container-backed service with no docker socket must say so, never return [].
+if not emulator.service_supported("lambda"):
+    return {"status": emulator.UNSUPPORTED_WITHOUT_DOCKER}
+```
+
+```bash
+# What is this deployment's verdict right now? (no network with probe=False)
+python -c "from tools.cloud import emulator; print(emulator.status(probe=False))"
+python -c "from tools.cloud import emulator; print(emulator.status())"   # costs one HTTP GET
+python -c "from tools.cloud import emulator; print(emulator.docker_backed(), emulator.docker_basis())"
+```
+
+`status()` returns `disabled | unreachable | degraded_no_docker | enabled`, in
+that severity order. `degraded_no_docker` is load-bearing: the emulator is up but
+the docker socket is PROVEN absent, so Lambda/RDS/ElastiCache/OpenSearch/MSK/
+ECS/EC2/EKS cannot be served — a caller answering for one of those reports
+`unsupported_without_docker`, NEVER an empty list. `docker_backed()` is TRI-STATE
+and `None` is not `False`: a Windows named pipe is not reliably stat-able
+(measured 2026-09-04, Docker Desktop 28.5.1 running, `os.path.exists` on the pipe
+returned False), so an unproven socket permits the call and lets the emulator's
+own error be the evidence.
+
+Configuration is `FLOCI_ENABLED` (default **false**, air-gap-safe),
+`FLOCI_ENDPOINT`, `FLOCI_REGION`, `FLOCI_ACCOUNT_ID` and `FLOCI_DOCKER_SOCKET` —
+all documented with their defaults in `.env.example`. `LOCALSTACK_ENABLED`,
+`LOCALSTACK_ENDPOINT` and `LOCALSTACK_REGION` are DEPRECATED ALIASES (deprecated
+2026-09-04), still read, each logging one warning per alias per process.
+There is deliberately no credential setting: `credentials()` always returns the
+dummy `("test", "test")` pair, because these values reach `docker run -e` and a
+Terraform provider block aimed at localhost.
+
+### floci runtime base images — what the emulator PULLS at run time (flx-airgap-02)
+
+```bash
+python -m tools.cloud.runtime_images --list                    # the measured table
+python -m tools.cloud.runtime_images --check                   # probe the local cache
+python -m tools.cloud.runtime_images --check --json
+python -m tools.cloud.runtime_images --check --services lambda,rds --variants python3.12,postgres
+python -m tools.cloud.runtime_images --measure-help            # how the table was measured
+python tools/airgap/image_vendor.py --save --topic floci-runtime --json   # low side
+python tools/airgap/image_vendor.py --verify --topic floci-runtime --no-daemon-probe --json
+python tools/airgap/image_vendor.py --load --topic floci-runtime --json   # high side
+```
+
+Having `floci/floci:2.0.1` cached is NECESSARY AND NOT SUFFICIENT. floci does
+not carry its container-backed runtimes inside its own image — Lambda, RDS,
+ElastiCache, OpenSearch, MSK and ECS/EC2/EKS each start a SEPARATE container
+from a base image floci resolves FROM THE PUBLIC INTERNET on first use of that
+service, which on a disconnected high side fails at exactly the moment a demo
+runs.
+
+MEASURED, never read off a README: `docker events --filter type=image` recorded
+while a live floci 2.0.1 was driven through every container-backed service with
+boto3 (2026-09-05, Docker 28.5.1). Eleven images, declared with digests and
+per-service attribution in `args/floci_runtime_images.yaml`; the vendor pins are
+`vendor/images/images-floci-runtime.txt` and a test asserts the two agree.
+
+THE IMAGE SET IS A FUNCTION OF DECLARED CONFIGURATION, NOT OF THE SERVICE, and
+that is why a bare per-service list is wrong. A `python3.12` Lambda pulls
+`public.ecr.aws/lambda/python:3.12` and a `nodejs20.x` one pulls
+`public.ecr.aws/lambda/nodejs:20`; RDS `postgres` pulls `postgres:16.3-alpine`
+and `mysql` pulls `mysql:8.0.36`; ElastiCache splits by API AND engine — Redis
+goes through CreateReplicationGroup and pulls `valkey/valkey:8` (floci REFUSES
+`Engine=redis` on CreateCacheCluster), memcached pulls `memcached:1.6`. MSK is
+`redpandadata/redpanda:latest` and EKS is `rancher/k3s:latest` — MUTABLE TAGS,
+flagged as such, so a re-vendor must re-measure rather than assume.
+
+`alpine:3.19` was pulled during the same measured run and is DELIBERATELY ABSENT
+from the table: it was named by the probe's own ECS task definition. That is a
+WORKLOAD image, not a floci runtime base — an ECS/EKS deployment must mirror its
+own workload images too, and no table here can enumerate them for it.
+
+PRESENCE IS A THREE-RUNG LADDER, and checking the tag alone is a FABRICATED
+BLOCKER. Measured 2026-09-05: `docker save repo@sha256:…` then `docker load` —
+which is exactly how `image_vendor` delivers to the high side — produces an
+image with `RepoTags=[]` AND `RepoDigests=[]` that does not appear in
+`docker image ls` and resolves by IMAGE ID alone. So the check tries
+`present_tagged` (ref resolves, RepoDigest matches), `present_by_digest`, then
+`present_by_id`, and REPORTS WHICH ANSWERED. `digest_mismatch` (present under
+the tag, different image) is kept apart from `absent` because the repair differs
+— re-vendor, don't re-mirror.
+
+FOUR VERDICTS, NEVER MERGED: `satisfied` (nothing will pull) | `blocked` (a
+required image is PROVEN absent) | `indeterminate` (a service is declared whose
+VARIANT could not be resolved — a Lambda naming no runtime; guessing fabricates
+either a blocker or a clean bill) | `unmeasured` (the daemon could not be asked
+— NEVER a clean bill of health). Exit 0/1/1/2.
+
+NOTHING IN THIS PATH CAN PULL. Every docker call goes through `image_vendor`'s
+one allowlisted door, whose command set is `version|image|save|load` — so a
+`--check` on a disconnected host cannot fabricate the green cache it is
+measuring. There is no second subprocess site.
+
+THE GATE: `airgap-emulator-runtime-images` in `args/twin_airgap_rules.yaml`
+makes a configuration that would need an external pull at run time a
+`deployment_blocker`. It is the ONLY rule in that file that is not
+deny-by-match over strings the design CONTAINS — a floci config declaring a
+Lambda contains no image reference at all, so a string matcher is structurally
+blind to it; this one derives the requirement and checks the cache. `unmeasured`
+is emitted at `medium` under a `-unmeasured` rule id and is deliberately NOT a
+blocker: a host whose daemon cannot be asked has proven nothing, and refusing
+every CI runner is how a gate earns itself a `|| true`.
+
+MEASURED end to end 2026-09-05: the full set vendors to 1.91 GB across 11 tars
+(all `verified`, `manifest_digest_verified: true`, 0 failures) — well under the
+~6.3 GB `docker image ls` reports, because `docker save` writes each shared
+layer once — and re-verifies with NO daemon in 2.8 s.
+
+Operator procedure (what to vendor, how to load, how to verify by digest, and
+how to tell a mirrored miss from a real outage): §12 of
+[docs/ops/airgap-runbook.md](../ops/airgap-runbook.md).
+
+### floci pulls from an INTERNAL REGISTRY (flx-airgap-03)
+
+```bash
+python -m tools.cloud.floci_registry --show                    # the declared posture
+python -m tools.cloud.floci_registry --check                   # refuse an unusable declaration
+python -m tools.cloud.floci_registry --origins --json          # per image: internal or EXTERNAL
+python -m tools.cloud.runtime_images --check --json            # the verdict, with its `basis`
+```
+
+A registry-mandating site cannot pre-seed each host's cache — its images must be
+SERVED. ONE RULE, ONE QUESTION: `airgap-emulator-runtime-images` has always asked
+*would this need an EXTERNAL pull at run time*, and that question now has two
+ways to answer no. A cached image pulls nothing; an uncached image redirected to
+an INTERNAL mirror pulls internally. There is deliberately NO second rule — two
+rules could disagree about what a run-time pull is, and a reviewer would have two
+verdicts and no way to choose.
+
+INTERNAL MEANS WHAT THE AIR-GAP RULES ALREADY SAY IT MEANS: the mirror host is
+judged against `allowlist.internal_host_suffixes` in `args/twin_airgap_rules.yaml`
+— the same list `airgap-internal-registry` uses. So declaring a mirror does NOT
+silence the finding: `mirror.gcr.io` is still an external pull, and that negative
+direction is asserted beside the positive one.
+
+THE THREE `FLOCI_DOCKER_*` NAMES ARE THREE DIFFERENT THINGS, and confusing them
+makes a working service report a fabricated refusal. `FLOCI_DOCKER_SOCKET` is how
+the ICDEV HOST PYTHON PROCESS reaches a daemon (`emulator.docker_basis()`);
+`FLOCI_DOCKER_SOCKET_MOUNT` is the compose bind-mount SOURCE; and
+`FLOCI_DOCKER_DOCKER_HOST` — this card's — is the daemon FLOCI ITSELF starts
+service containers on, becoming `DOCKER_HOST` in the container. It defaults to
+`unix:///var/run/docker.sock`, exactly where compose mounts the socket, so unset
+reproduces the operator decision of 2026-09-05 rather than clearing `DOCKER_HOST`
+to an empty string. A test pins the compose default to the module constant.
+
+`mechanism` IS LOAD-BEARING. Docker's `registry-mirrors` redirects DOCKER HUB
+PULLS ONLY and does not intercept `public.ecr.aws`, so `daemon_registry_mirror`
+on any registry but `docker.io` is REFUSED at load time — believing it reports a
+clean verdict for a host that still reaches Amazon on first Lambda invoke.
+Re-host those two images and declare `repository_rewrite`.
+
+A CREDENTIAL IS A REFERENCE, NEVER A LITERAL: `username_ref` / `password_ref`
+must start with `env:`, `vault:`, `aws:` or `file:` — the same prefixes
+`seed_connections.py` enforces, pinned equal by a test — and a literal is
+REFUSED, not warned about, because a warning still lands the secret in git and
+this repository is public. `plain:` is not accepted even though
+`tools/rag/secret_ref.py` resolves it; that prefix exists to carry a literal.
+`floci_registry` never RESOLVES a reference and an AST test proves it imports no
+`subprocess`, `socket`, `requests`, `urllib` or `httpx`.
+
+`basis` IS REPORTED BESIDE `state`, NEVER FOLDED INTO IT: `local_cache` |
+`internal_mirror` | `cache_and_mirror` | `external_pull_required`. MIRROR
+COMPLETENESS IS NOT VERIFIED and the report says so — nothing here contacts a
+registry, so what is established is that the pull is INTERNAL, never that the
+mirror holds the image; that is a different question with a different repair
+(load the vendored bundle into the mirror). `absent_from_cache` is reported under
+EVERY posture and never folded into `missing`: "would be pulled from outside" and
+"is not on this disk" are different facts and only the first is an air-gap
+finding. An unreadable cache stays `unmeasured` under any posture — a mirror
+cannot answer what is on the disk — and a MALFORMED declaration is not "no
+mirror": it reads external and names itself in `registry_posture.basis`, because
+the fail-closed direction for an air-gap gate is to surface the blocker.
+
+`args/floci_registry.yaml` ships `enabled: false`, so the default verdict is
+byte-identical to the flx-airgap-02 posture. Procedure: §12.6 of
+[docs/ops/airgap-runbook.md](../ops/airgap-runbook.md).
+
+LEAVE `FLOCI_ENDPOINT` UNSET UNLESS YOU MEAN IT. An endpoint declared while the
+switch is off is a CONTRADICTION, and `detect_mode()` answers `dry_run` rather
+than fall through to `aws` — so a stray endpoint downgrades every real
+`terraform apply` to plan-only.
+
+NEVER source a performance, cost or capacity claim from emulator timings: an
+emulator reproduces the AWS **API contract**, not its performance characteristics
+(the standing guard from `docs/spikes/twx-spk-01-localstack-go-no-go.md`).
+
+### The opt-in floci IaC gate (flx-ci-01)
+
+```bash
+python tools/ci/floci_iac_gate.py --json
+python tools/ci/floci_iac_gate.py --fixture flocigate_ok
+python tools/ci/floci_iac_gate.py --no-start            # an emulator is already up
+python tools/ci/floci_iac_gate.py --artifacts .tmp/floci-gate --out report.json
+python tools/ci/floci_iac_gate.py --image floci/floci:2.0.1
+```
+
+Does `tools/infra_canvas/preapply_gate.py`'s verdict on a Terraform plan match
+what a real AWS API surface ACCEPTS? plan -> gate -> apply (through the existing
+`tools/studio/executors/terraform_apply.py`) over two fixture canvases, against
+a pinned floci container. twx-spk-01 rated this pattern GO (conditional,
+cloud-CI only) and the only thing blocking it was LocalStack's paid
+subscription; floci removes that, so this SUPERSEDES the spike on the air-gap
+question **only**.
+
+Workflow: `.github/workflows/floci-iac-gate.yml` — `workflow_dispatch`, a weekly
+schedule, and a `floci-gate` label. **NEVER one of the four required checks**
+(Lint, Test, Security Scan, Helm Lint): runners here are near-serial, so a job
+that stood up an emulator on every PR would sit in front of every merge on the
+board, and that is how a gate earns itself a bypass.
+
+FOUR CELLS, ONE FINDING. `gate pass + api accepted` = `agree_permitted`;
+`gate pass + api REJECTED` = `gate_missed_rejection` — **the finding**, the gate
+is wrong about what is buildable; `gate fail + api accepted` =
+`gate_stricter_than_api`, which is what a compliance gate IS and is NEVER a
+finding (AWS will happily build an untagged bucket); `gate fail + api rejected`
+= `agree_refused`. Either side unmeasured is `unmeasurable`, never agreement.
+
+TWO FIXTURES, because a run over the compliant one alone is green whether the
+gate discriminates or has silently stopped evaluating. `expect_gate` /
+`expect_api` are DECLARED in `args/floci_iac_gate.yaml` and a mismatch is its
+own finding.
+
+Exit 0 clean — or `not_configured` (an empty `image:`, an operator stand-down),
+which is stated in words and never presented as a clean gate. Exit 1 a finding.
+Exit **2 COULD NOT RUN, and it stays RED**: a gate that could not run is not a
+gate that found nothing.
+
+The image is PINNED (`floci/floci:2.0.1`, digest verified against Docker Hub
+2026-09-05), never `latest` or `nightly` — the job's whole output is a
+comparison against an API surface, and an unpinned surface makes a disagreement
+unattributable. Override for one run with `--image` or `FLOCI_CI_IMAGE`.
+
+The host docker socket is deliberately NOT mounted into the emulator, so
+container-backed services (Lambda, RDS, ElastiCache, OpenSearch, MSK,
+ECS/EC2/EKS) cannot be exercised; a fixture using one is REFUSED before
+planning, as is a resource `FLOCI_PROVIDER_OVERRIDE` does not redirect — an
+unredirected resource is sent to REAL AWS and the auth error looks exactly like
+a broken emulator.
+## Air-Gap Container-Image Vendor (flx-airgap-01)
+
+`tools/airgap/` vendored Python wheels, npm packages and browser drivers and had
+**nothing that saved or loaded a container image** (measured 2026-09-04), so
+"ship a pinned floci image to the high side" had no mechanism to fit into. This
+is that mechanism, built to the `wheel_vendor.py` precedent.
+
+```bash
+# low side — the image must ALREADY be in the local daemon's cache
+python tools/airgap/image_vendor.py --save --topic floci --json
+
+# transport vendor/images/floci/ to the high side, then
+python tools/airgap/image_vendor.py --verify --topic floci --json
+python tools/airgap/image_vendor.py --verify --topic floci --no-daemon-probe   # tars alone, no docker
+python tools/airgap/image_vendor.py --load --topic floci --json
+python tools/airgap/image_vendor.py --list --json
+```
+
+**A pin is a DIGEST, never a tag.** `vendor/images/images-<topic>.txt` holds
+`repo@sha256:<64 hex>`; `floci/floci:2.0.1` is refused, because a tag is mutable
+and a bundle built from one cannot be shown to contain what was intended.
+Resolve one with
+`docker image inspect <ref> --format '{{index .RepoDigests 0}}'`.
+
+**THE SOURCE IS THE LOCAL IMAGE CACHE AND NOTHING PULLS** (operator decision
+2026-09-05: locally hosted Docker). A pin absent from the cache is reported under
+`absent_from_local_cache` and fails the run — a vendor that fetched on demand
+could not run on the disconnected side it exists to serve. Enforced
+structurally: `ALLOWED_DOCKER_COMMANDS` is a frozenset of `version|image|save|
+load` with no `pull`, `run`, `tag` or `push`, `_docker()` refuses anything else,
+and `tests/airgap/test_image_vendor.py` reads the module's AST to prove
+`subprocess` is reached from nowhere but that one door.
+
+**What `--verify` proves, without a daemon.** `docker save` writes an OCI layout
+in which every blob under `blobs/sha256/` is named by its own sha256 and
+`index.json` records the manifest digest a `repo@sha256:…` reference names
+(measured, Docker 28.5.1). So verification re-hashes every blob against its
+filename *and* matches `index.json`'s digest to the pin — a cryptographic proof
+the tar holds the pinned image, needing no docker at all, which matters because
+media is verified before there is anywhere to load it. Measured 2026-09-05 on a
+real `alpine` bundle: one flipped byte is caught twice over (the recorded tar
+hash, and independently blob content-addressing, which names the offending
+layer) and `--load` refuses the bundle *before* importing it.
+
+**Three statuses, never merged.** `verified` (checked, passed) | `failed`
+(checked, FAILED — a real finding) | `unmeasured` (could not check: no docker
+CLI, no bucket, or a legacy `docker-v1` tar, which records no manifest digest
+and so reports `manifest_digest_verified: null` with a reason rather than
+passing). **`unmeasured` is never a clean bundle** — `--verify` exits **2**
+there, so a caller cannot read "could not measure" as "clean" the way exit 0
+would allow. Post-load digest verification is likewise three-valued: an engine
+whose image store does not index a digest-saved image by its manifest digest
+*cannot answer*, and cannot-answer is not wrong — the tar proof already
+established what the bytes are.
+
+Unlike `wheel_vendor.py`, this does **not** refuse to run under `is_airgap()`:
+`pip download` can only fail air-gapped, but `docker save` reads a local cache
+and touches no network, so the same refusal here would be fabricated and would
+block the one host most likely to need to re-cut a bundle.
+
+Convention and the reason no floci pin is committed yet: `vendor/images/README.md`.
+
+## Is a PINNED artifact still the newest one upstream? (xrv-pin-01)
+
+```bash
+python -m tools.airgap.artifact_freshness --survey --json
+python -m tools.airgap.artifact_freshness --survey                  # human table
+python -m tools.airgap.artifact_freshness --artifact floci --json   # one pin
+python -m tools.airgap.artifact_freshness --list                    # the manifest
+python -m tools.airgap.artifact_freshness --survey --offline        # force the air-gap verdict
+python tools/genesis/daemon.py --reflex artifact_freshness --json   # one cycle, through the daemon
+```
+
+The vendor above answers "does this bundle contain exactly what we pinned", and
+answers it cryptographically. It cannot answer, and nothing else asked, **"is
+what we pinned still the current release"**. The `floci/floci:2.0.1` pin is a
+2026-09-01 snapshot whose only ongoing assertion is a test that
+`vendor/images/images-floci.txt` and `args/floci_iac_gate.yaml` AGREE WITH EACH
+OTHER -- and two files can agree perfectly about a version that shipped a year
+ago. **AGREEMENT IS NOT CURRENCY.** The four `floci/*` compose tags and
+`testcontainers-floci` had no manifest at all, so there was not even a list to
+ask the question about.
+
+`args/pinned_artifacts.yaml` is that list -- 16 entries seeded from the two
+floci pin files, the four compose services and `testcontainers-floci`. It is a
+**DECLARATION and never a second copy of a pin**: each entry names the file the
+pin actually lives in (`pin_source`) and the survey reads it, through
+`image_vendor.parse_pin` for a digest line. A `pin_source` that disagrees with
+the manifest is `unmeasurable` rather than resolved in favour of one side --
+which one is right is the question, and answering it by preference is how the
+drift goes invisible.
+
+**THREE STATES, NEVER MERGED.** `current` (upstream's newest comparable release
+IS what we pin) | `behind` (a newer one exists, **NAMED**) | `unmeasurable` (we
+could not ask: an air-gapped host, a 4xx, an unparsable body, an exhausted
+budget). An air-gapped deployment -- the one `tools/airgap/` exists to serve --
+reports every artifact `unmeasurable` and **NEVER** `current`; a freshness check
+that read "I could not reach the registry" as "the pin is fine" would hand
+exactly the disconnected operator a fabricated clean bill. `current_pct` is
+`None`, never `100.0`, over an empty denominator, while a MEASURED `0.0` stays a
+real red bar.
+
+**TWO BASES FOR `behind`, and which one decided is recorded.**
+`version_tag` -- the pinned tag carries an ordering and a strictly greater tag
+of the **same SHAPE** exists. Shape is load-bearing: `16.4-alpine` supersedes
+`16.3-alpine` and `16.4` does not, because a different suffix is a different
+image line and crossing them reports a postgres pin as behind a variant nobody
+runs; a different component count is likewise not a successor.
+`digest` -- the pinned tag carries **no** ordering. `redpandadata/redpanda:latest`
+and `rancher/k3s:latest` are pinned by a MUTABLE tag (`args/floci_runtime_images.yaml`
+says so in as many words), so "newer" for them is knowable only as the tag having
+MOVED off the digest we recorded -- a real, measurable `behind`, and the one
+signal those two entries can give. `digest_drift` rides beside the status on
+every image and is `None` -- never `False` -- when it could not be compared.
+
+**ONE CODE PATH FOR EVERY REGISTRY.** The host comes from the `ref` and the
+bearer token from the registry's OWN 401 `WWW-Authenticate` challenge, so Docker
+Hub, `public.ecr.aws` and `ghcr.io` need no per-registry table and a fourth
+needs no edit. The declared `upstream:` is cross-checked against the host the
+ref implies, so a label can never disagree with the fetch it describes. The PyPI
+lane reuses the EXISTING seam, `dependency_scanner._check_pypi_latest` -- there
+is no second package-index client.
+
+**IT NEVER PULLS AND NEVER WRITES A PIN.** Structural, not a docstring promise:
+`subprocess`, `os` and `shutil` are unimportable in both modules, the one HTTP
+door is GET/HEAD only, and nothing opens `vendor/images/*`, `docker-compose.yml`
+or `requirements.txt` for writing. `tests/airgap/test_artifact_freshness.py`
+asserts all three against the **AST** and not the source text -- both modules
+explain in prose that they never touch `subprocess`, so a grep would flag their
+own explanation of themselves (the `model_id_gate` trap).
+
+**THE REFLEX** (`artifact_freshness`, 24h, green, registered in BOTH
+`daemon.REFLEX_NAMES` and `args/genesis_config.yaml`) files ONE card per
+`behind` artifact through `task_factory.create_tasks`, `idempotency_key=
+artifact-freshness:<name>:<newest>`, into `suggested` -- moving a digest pin is
+a supply-chain act and belongs in a reviewed diff, which is why the pins are
+digests. A further upstream release is a new key and a new card. Bounded by
+`max_cards_per_run` with deferred artifacts NAMED. A cycle that measures
+nothing reports `unmeasurable` with `metric_value 0`, never `ok`, while
+`success` stays True so the circuit breaker cannot make the reflex permanently
+inert on the very deployments it serves; an unreadable manifest is `error`,
+which is a third thing.
+
+**MEASURED on this host 2026-09-12, first live survey:** 16 declared, **10
+current, 6 behind, 0 unmeasurable**. `postgres` 16.3-alpine -> 18.6-alpine,
+`mysql` 8.0.36 -> 26.7.0, `valkey` 8 -> 9, `opensearch` 2.19.5 -> 3.8.0,
+`amazonlinux` 2023 -> 2027, `registry` 2 -> 3. THREE also carry digest drift
+(`lambda-python`, `elasticache-valkey`, `ec2-amazonlinux`): the pinned tag no
+longer serves the digest `vendor/images/images-floci-runtime.txt` names, so an
+air-gap bundle re-cut from the tag today would not contain what the pin file
+says. Both `:latest` pins were measured **unmoved** since 2026-09-05 -- the
+positive control for the digest lane. The four `floci/*` emulators and
+`testcontainers-floci` are current. Every one of the six is a card a human
+decides on; nothing here moved a pin.
+
+**Not declared, and named rather than implied:** browser drivers
+(`driver_vendor.py` pins to the LOCALLY INSTALLED browser's major version, so
+"is there a newer chromedriver" is a question about the host and answering it
+here would report every developer machine as behind its own Chrome), the ECS
+probe's own workload image, and the rest of `docker-compose.yml`. Each needs its
+own card.
+
+
+## Floci Cloud Emulator — the rest of the surface (flx-docs-01)
+
+`docs/features/phase-flx-floci-emulator.md` is the feature doc; ADRs D398–D401
+in `docs/reference/adrs.md` carry the decisions; and
+`docs/spikes/twx-spk-01-localstack-go-no-go.md` carries a **dated addendum**
+recording that its LocalStack NO-GO is superseded **on the licensing question
+only** — every other finding in it, including the two standing guards below,
+stands unchanged.
+
+The seam (`flx-seam-01/02`), the run-time images (`flx-airgap-02`), the registry
+posture (`flx-airgap-03`), the image vendor (`flx-airgap-01`) and the IaC gate
+(`flx-ci-01`) are documented in their own sections above. This one covers the
+`flx` surfaces that had no commands entry.
+
+### Turn it on — two deliberate acts (flx-compose-01, flx-compose-02)
+
+```bash
+icdev enable floci                          # writes FLOCI_ENABLED=true to .env
+icdev status                                # floci among the active toggles
+docker compose --profile floci up -d        # the pinned floci/floci:2.0.1 profile
+curl -s http://127.0.0.1:4566/_localstack/health
+icdev disable floci
+```
+
+`floci` is declared in `args/component_registry.yaml` as a **`core_extension`,
+not a `canvas`** — it has no page, no blueprint and no IQE collections, so a
+canvas entry would put it under the 8-point page-completeness gate for a surface
+that does not exist (precedent: `sag`). Its `env_flag` is **`FLOCI_ENABLED`**,
+not the loader's `ICDEV_<KEY>_ENABLED` default: an entry omitting that field
+would have `icdev enable floci` write a variable `tools/cloud/emulator.py` never
+reads, and `icdev status` would then report floci enabled on a deployment whose
+emulator is off — one fact, two derivations, disagreeing.
+
+It is **not** in the 24-service default set and `/start` does not launch it.
+Starting it is two acts on purpose: the profile mounts the **host Docker
+socket**, which is **root-equivalence on the host**, recorded with its
+mitigations and revisit conditions as Gap 65 in
+`docs/security/sandbox-coverage.md`. `LOCALSTACK_ENABLED` is deliberately NOT an
+`extra_env_flag` — it is a deprecated READ-fallback the seam still honours, and
+listing it would make the CLI author a deprecated name into `.env`.
+
+### The governed door — DataBridge (flx-bridge-01, flx-bridge-02)
+
+```bash
+python -m tools.databridge.seed_connections --dry-run --json   # validate, write nothing
+python -m tools.databridge.seed_connections --seed --json      # db_connections <- args/databridge_connections.yaml
+python -m tools.databridge.seed_connections --verify --json
+python -c "from icdev.tools.databridge import broker; print(broker.list_available('twin_observatory_analyst'))"
+```
+
+```python
+from tools.databridge import broker
+out = broker.fetch("twin_observatory_analyst", "floci", "s3_buckets")
+out.connector_status   # ok | disabled | unsupported_without_docker | error
+```
+
+Two files, on purpose: `args/databridge_connections.yaml` is the **endpoint**
+(`floci-emulator-local`, egress allowlist, classification LABEL `UNCLASSIFIED`,
+IL2) and `args/databridge_agent_access.yaml` is the **authorization** (connector
++ all seven declared tables, scoped to `twin_observatory_analyst`).
+
+`auth_method` is **`none`**, and that is the MEASURED answer rather than a
+convenience: `emulator.credentials()` is hard-wired to the dummy pair and
+deliberately does not read the ambient AWS environment, so there is no
+credential to reference. `auth_secret_ref: env:FLOCI_ACCESS_KEY_ID` would be
+three defects at once — the seeder REFUSES a ref under `none`; under any other
+`auth_method` the broker injects it as `api_key`, which this connector never
+reads; and `resolve_secret()` raises on an unset variable, so the shipped grant
+would refuse EVERY call on a deployment that had not exported it.
+
+The seven logical tables are `health`, `services`, `s3_buckets`,
+`dynamodb_tables`, `lambda_functions`, `sqs_queues`, `ecr_repositories`. Each
+declares `docker_backed`, and **a container-backed table on a socket-less host
+returns `unsupported_without_docker`, never `[]`** — an unanswerable question is
+not an empty answer, which is the `rmf-disc-02` defect exactly. The old
+`localstack` registry key is **GONE, not aliased**: the registry answers `None`
+for it, which is a loud failure, where two live names for one connector are two
+things to keep in step and a caller left on the old one never learns it is
+stale.
+
+### The twin — a library, no CLI (flx-twin-01)
+
+```python
+from tools.twin_core.registry import TwinRegistry
+
+twin = TwinRegistry.get("floci")
+snap = twin.take_snapshot("local", label="pre-apply")   # 7 BROKERED reads
+env  = twin.simulate_delta("local", {"services": ["lambda", "s3"]})
+twin.latest_status("local")   # newest PERSISTED verdict; probes nothing
+```
+
+Every read goes through `tools/databridge/broker.py::fetch` as
+`twin_observatory_analyst` — importing `FlociConnector` and calling `read()`
+would return the SAME rows with NO authorization check and NO audit row, the
+ungoverned side channel `cef-fnd-03` exists to close. Four verdicts, and
+**`unknown` is never `pass`**; `resource_count` is `None` — never 0 — when
+nothing was measured. Every snapshot carries provenance `emulated`. Table
+`floci_twin_snapshots`, migration `20260905070028`. Full detail in the CLAUDE.md
+`flx-twin-01` block and `tools/manifest/twin-core.md`.
+
+### Studio executors and the sim topologies (flx-studio-01/02, flx-sim-01)
+
+```bash
+python -c "from tools.studio.executors import _base; print(_base.detect_mode({}))"
+python -m tools.studio.executors.gns3_sim --canvas pdc --dry-run --json   # forces dry_run; starts NOTHING
+python -m pytest tests/cloud/test_workflow_template_modes.py -q
+```
+
+`detect_mode()` answers `floci | sam | aws | dry_run`, and that vocabulary is
+**data** in `args/workflow_templates/shared_iac_executors.yaml` and
+`ddc_workflow.yaml` (key `executor_modes`) rather than prose — `yaml.safe_load`
+discards comments, so the old block was structurally unreachable by any checker.
+`FLOCI_PROVIDER_OVERRIDE` and `emulator_docker_endpoint` replace the
+LocalStack-named pair; `tests/cloud/test_studio_provider_override.py` holds the
+provider block frozen so a rename can never smuggle a behaviour change — the
+failure mode there is GREEN, since a dropped `endpoints{}` entry or a flipped
+`skip_*` still parses and terraform simply talks to somewhere else.
+
+`gns3_sim.run_sim` used to start a canvas's declared containers **only** when
+`mode == "dry_run"` — the one mode meant to touch nothing — and in none of
+`dual`/`gns3_only`/`cloud_only`. Both halves are now right, and `--dry-run` is
+read BEFORE the reachability probes: a caller that wants to touch nothing must
+not have its answer decided by whether something happened to be listening.
+
+### ONE pre-apply gate (flx-ci-02)
+
+```bash
+python tools/infra_canvas/preapply_gate.py --gate plan.json
+```
+
+There were TWO. `pre_apply_gate.py` (74 lines, `check_plan`) had **zero runtime
+callers**, returned the IDENTICAL verdict for a compliant and a violating plan
+over the `flx-ci-01` fixtures, and was structurally incapable of passing any
+real incremental plan — its rules are estate-completeness questions ("is there a
+KMS service in this design?") asked of a plan **delta**. Deleted, not merged:
+folding estate rules into a delta gate would import the very defect that made
+them useless. Nothing was lost — the 13-rule rulebook
+(`infra_engine.assess_infra_design`) is consumed live by
+`tools/infra_canvas/blueprint.py` over the FULL design graph, which is the
+question those rules actually answer.
+
+### The two standing guards, carried forward UNCHANGED from twx-spk-01
+
+1. **NEVER source a performance, cost or capacity claim from emulator timings.**
+   An emulator reproduces the AWS **API contract**, not AWS's **performance
+   characteristics**. Twin cost/latency estimates stay sourced from the
+   catalog/estimate engines and stay labelled `estimate=True`.
+2. **The IAM policy sandbox stays NO-GO.** The PDP/PEP ABAC engine in
+   `tools/security/` already models IAM decisions offline and deterministically;
+   a partial emulation would be a second opinion with no rule for choosing
+   between them. The licence was never the objection here.
+
+### Worktree husk sweep — a .git-less, unregistered `.tmp/worktrees/<id>` on a clock of hours (mfx-own-04)
+
+```bash
+python -m tools.kanban.worktree_husks --survey              # every .git-less directory under the live roots, classified
+python -m tools.kanban.worktree_husks --survey --json
+python -m tools.kanban.worktree_husks --plan                # what a sweep would act on; acts on nothing
+python -m tools.kanban.worktree_husks --apply <task-id> --dry-run   # prove, audit nothing, act on nothing
+python -m tools.kanban.worktree_husks --apply <task-id>    # prove -> audit -> ONE rmtree -> confirm
+```
+
+A husk is a DIRECT child of `.tmp/worktrees` with no `.git` file or directory
+and no entry in a SUCCESSFUL `git worktree list`. A live worktree always carries
+`.git`, so the class cannot hold one; the questions the 7-day path asks of a
+registered worktree (uncommitted? unpushed?) cannot be asked of it, which is why
+it is safe and why it is NEVER widened to a `.git` carrier. Every guard is kept:
+the task must not be `in_progress`, must HAVE a board row, and the NEWEST mtime
+in the whole tree must be older than `husk_age_hours` (args/worktree_husk_sweep.yaml,
+default 6; `KANBAN_WORKTREE_HUSK_AGE_HOURS` overrides). Unreadable is `proven: None`
+and refuses. Bounded per run, oldest first, deferred by name. Consumed by
+`_sweep_old_worktrees`. Kill switch `KANBAN_WORKTREE_HUSK_SWEEP=0`.
+Survey: docs/audits/mfx-own-04-worktree-husk-survey.md
+
+### Canvas Reassessment Reflex — coverage, dry run, starvation (rmf-inert-03)
+```bash
+python -m tools.genesis.reflexes.canvas_reassess --coverage      # covered / uncovered BY NAME against the posture surface; no database
+python -m tools.genesis.reflexes.canvas_reassess --dry-run       # run the sweep against the live canvases and write nothing
+python -m tools.genesis.reflexes.canvas_reassess --starvation    # designs skipped over budget on EVERY recorded run (genesis_audit)
+python tools/genesis/daemon.py --reflex canvas_reassess --json   # one real cycle through the daemon
+```
+
+## Protected paths — the one rule, and the Actions auto-merge door (mfx-mrg-07)
+
+```bash
+python tools/ci/protected_paths.py --config-file args/pr_watcher_config.yaml --files tools/ci/pr_watcher.py docs/x.md   # exit 1: protected, hits printed
+python tools/ci/protected_paths.py --config-file args/pr_watcher_config.yaml --files docs/x.md                            # exit 0: clean
+python tools/ci/protected_paths.py --config-file args/pr_watcher_config.yaml --files-from changed.txt --expected-count 12 # exit 2 if the listing is shorter than the forge's count
+gh run list --workflow "PR Auto-Merge (Kanban)" --limit 5     # the cron door; a skipped protected PR names its hits in the log
+```
+
+`tools/ci/protected_paths.py` holds `protected_hits` (exact-or-directory-prefix,
+fail-closed on an unreadable file list); `tools/ci/merge_readiness.py` re-exports
+it, so the local watcher's two merge doors and `.github/workflows/pr-watcher.yml`
+run ONE implementation against ONE list. The module is stdlib-only because the
+workflow checks out exactly that file from the default branch and runs it on a
+bare runner, reading `protected_paths` from the PR's BASE branch and never its
+head. Exit 0 clean, 1 protected, 2 undecidable (fail-closed: the workflow skips).
+Measured 2026-09-07: 8 of the last 10 protected-path merges went through that
+workflow unattended. Survey: docs/audits/mfx-mrg-07-actions-auto-merge-door-survey.md
+
+### The handoff record a failed / timed-out / token-exhausted run leaves behind (xrv-run-02)
+
+```bash
+python -m tools.kanban.handoff_record --task <task-id> --json       # the stored schema-1 record
+python -m tools.kanban.handoff_record --task <task-id> --render     # the block the next prompt gets
+python -m tools.kanban.handoff_record --task <task-id> --render --max-tokens 600
+```
+
+`_get_retry_coaching` prepended ONLY `failure_count` plus a 500-char
+`last_failure_reason`, so every retry re-derived what the previous attempt had
+already learned. The scheduler now ALSO writes a schema-1 JSON record into the
+EXISTING `kanban_tasks.last_run_metadata` column (no migration) on all three
+non-completion paths -- verification failure, dispatch timeout, token
+exhaustion -- and renders it into the next prompt in `handoff_generator`'s
+section order, bounded at 1,200 tokens by `llm/context_budget.estimate_tokens`
+and shedding EVIDENCE before narrative, every shed item counted.
+
+EVERY UNREADABLE FIELD IS `null`, NEVER `[]` OR `0`, and the two render as
+different sentences -- "the worktree could not be read" against "the attempt
+changed no files". Collapsing them lets a wiped worktree read as an agent that
+wrote nothing, which is the phantom-completion reading the done-gate already
+refuses one layer up. `cost_usd` is `null` for BOTH an unreadable ledger and a
+task with no attributed row: neither is evidence the attempt was free.
+
+`validation` is the metrics dict `_run_post_task_validation` ALREADY returned
+for THAT attempt, captured once and consumed once. It is never re-run here --
+re-running costs the 30-60s the failure path exists to avoid, and it answers a
+different question (what the tree looks like NOW, not what the run saw), so a
+record with none says `null` and means it.
+
+`files_touched` is `git status --porcelain` unioned with `<base>...HEAD`, and
+NOT a bare `git diff --name-only`: its own positive control caught that a bare
+diff reports only UNSTAGED changes, so an attempt that had `git add`ed its work
+-- or written a new file and never added it, the commonest shape of an
+interrupted run -- reported an empty list.
+
+A task with NO record renders today's coaching byte-unchanged, so this is
+additive to every retry already on the board.
+
+---
+
+## Cards — the per-card incident records (xrv-docs-02)
+
+These 82 essays used to sit inline in CLAUDE.md's `### Essential Commands` block —
+297,635 of that file's 367,462 bytes, loaded into every session whether or not it
+touched one. They moved VERBATIM to `docs/reference/cards/`, one file per card, and
+CLAUDE.md now carries a one-line index. The essays are the record: what was MEASURED,
+what changed, and what deliberately did not.
+
+Below is the same entry point per card. The essay carries the rest of that card's
+commands, its measurements and its refusals.
+
+| Card | What it is | Entry point | Record |
+|---|---|---|---|
+| `xit-decl-01` | Which parent IS this checkout, and may it touch THIS database? | `python -m icdev.core.context --check` | [xit-decl-01.md](cards/xit-decl-01.md) |
+| `rmf-inert-03` | A reflex that is GREEN while it can reach 3 of 11 subjects | `python -m tools.genesis.reflexes.canvas_reassess --coverage` | [rmf-inert-03.md](cards/rmf-inert-03.md) |
+| `exa-live-01` | Capability consumption — is a DECLARED capability actually being used? | `python tools/awareness/capability_consumption.py --json` | [exa-live-01.md](cards/exa-live-01.md) |
+| `cef-ci-01` | The Cortex federation layer is UNDER that gate | `python tools/awareness/capability_consumption.py --class cortex_backend --json` | [cef-ci-01.md](cards/cef-ci-01.md) |
+| `rem-hyg-17` | Does the surface's CLAIM survive an INDEPENDENT re-derivation? | `python tools/awareness/claim_verifier.py --json` | [rem-hyg-17.md](cards/rem-hyg-17.md) |
+| `claim-verif-33c9f4cd11` | A service's session id is INHERITED by everything it spawns | `python tools/awareness/claim_verifier.py --claim scheduler_heartbeat_is_fresh` | [claim-verif-33c9f4cd11.md](cards/claim-verif-33c9f4cd11.md) |
+| `autonomy-id-06` | A daemon's reload watch set is what it EXECUTES, not what it had imported at start | `python -m pytest tests/genesis/test_code_reload.py -q` | [autonomy-id-06.md](cards/autonomy-id-06.md) |
+| `autonomy-lrn-02` | Is intervention actually FALLING? The AUTONOMY card held to its own standard | `python -m tools.awareness.autonomy_loop` | [autonomy-lrn-02.md](cards/autonomy-lrn-02.md) |
+| `autonomy-act-03, autonomy-dep-04` | The restore tier, ENUMERATED — four mechanical acts, and no fifth | `python tools/awareness/restore_acts.py --list` | [autonomy-act-03.md](cards/autonomy-act-03.md) |
+| `autonomy-lrn-01` | An INCIDENT becomes a STANDING CLAIM, and the claim cites it | `python tools/awareness/claim_verifier.py --incidents` | [autonomy-lrn-01.md](cards/autonomy-lrn-01.md) |
+| `trust-disc-04` | Substrate probe — does the thing you are about to design against HAVE ROWS? | `python tools/awareness/capability_consumption.py --probe-plan <plan.md> --substrate-gate` | [trust-disc-04.md](cards/trust-disc-04.md) |
+| `exa-audit-04` | Audit hash-chain integrity — is the audit_trail chain actually intact? | `python tools/audit/chain_sweep.py --json` | [exa-audit-04.md](cards/exa-audit-04.md) |
+| `cch-obs-01` | Per-provider prompt-cache effectiveness — not one aggregate number | `python tools/cache_savings/by_provider.py --json` | [cch-obs-01.md](cards/cch-obs-01.md) |
+| `dwr-fid-01` | The UPLOADED original is KEPT, content-addressed, before its temp file goes | `python -m tools.document_intelligence.originals --survey [--json] [--verify]` | [dwr-fid-01.md](cards/dwr-fid-01.md) |
+| `dwr-anchor-06` | A suggestion drafted against a TOKEN is retired, never back-filled | `python -m tools.document_intelligence.suggestion_redraft --census` | [dwr-anchor-06.md](cards/dwr-anchor-06.md) |
+| `dwr-fid-02` | Where on the page did each word SIT? The layer a left pane renders from | `python -m tools.document_intelligence.page_geometry --survey [--json]` | [dwr-fid-02.md](cards/dwr-fid-02.md) |
+| `dwr-fid-03` | A DEGRADED render SAYS it is degraded, and the ingest posture is REAL | `python -m tools.document_intelligence.reading_pane --survey [--json]` | [dwr-fid-03.md](cards/dwr-fid-03.md) |
+| `cef-di-01` | DocMod asks ONE governed seam instead of hand-querying tables | `from tools.doc_modernization.evidence import (` | [cef-di-01.md](cards/cef-di-01.md) |
+| `cef-di-03` | DocDrift's SSP evidence comes from ONE governed seam | `from icdev.tools.document_intelligence.ssp_evidence import resolve_evidence` | [cef-di-03.md](cards/cef-di-03.md) |
+| `cef-di-05` | DIC document generation asks ONE governed seam, and screens what it wrote | `from icdev.tools.document_intelligence.docgen_evidence import (` | [cef-di-05.md](cards/cef-di-05.md) |
+| `cef-di-04` | DIC grounded search asks ONE governed seam for its candidates | `from icdev.tools.document_intelligence.search_evidence import resolve_evidence` | [cef-di-04.md](cards/cef-di-04.md) |
+| `cef-ui-01` | DocDrift SHOWS the verdict — and shows an unknown as a finding | `from icdev.tools.document_intelligence.docdrift_evidence import (` | [cef-ui-01.md](cards/cef-ui-01.md) |
+| `cef-ui-03` | HITL approve/reject for a resolve-produced proposal — EXISTING routes | `POST /document-intelligence/api/modernization/findings/<id>/resolve` | [cef-ui-03.md](cards/cef-ui-03.md) |
+| `cef-ui-02` | A conflict/gap the request DIDN'T take with it, browsable on Explorer | `from tools.cortex.finding_store import list_findings, finding_stats` | [cef-ui-02.md](cards/cef-ui-02.md) |
+| `cef-fnd-04` | Is this entity still current? ONE store, any source, any domain | `python -m tools.currency.entity_currency --backfill --json` | [cef-fnd-04.md](cards/cef-fnd-04.md) |
+| `dwr-ev-01` | An AUTHOR's upload is a declared source, ranked top, and the catalog it contradicts survives | `python -m tools.currency.entity_currency --resolve "catalyst 6500" --entity-type hardware_model` | [dwr-ev-01.md](cards/dwr-ev-01.md) |
+| `dwr-ev-02` | A COMMENT is an instruction until a human promotes it; then it is CITED, and marked | `python -m tools.currency.entity_currency --resolve "tls 1.1" --entity-type crypto_protocol` | [dwr-ev-02.md](cards/dwr-ev-02.md) |
+| `dwr-ev-03` | Redraft with my comments — a button a human presses | `from tools.document_intelligence.redraft import redraft_change, run_stats` | [dwr-ev-03.md](cards/dwr-ev-03.md) |
+| `dwr-word-02` | A reviewer's Word revisions, read back in and RECONCILED | `python -m tools.document_intelligence.docx_review_import --file review.docx --version <version_id>` | [dwr-word-02.md](cards/dwr-word-02.md) |
+| `exa-bench-03` | Agent adapter capability matrix — DECLARED vs ACTUAL per adapter | `python tools/agents/capability_matrix.py --json` | [exa-bench-03.md](cards/exa-bench-03.md) |
+| `exa-bench-05` | PreToolUse hook enforcement — the hook's exit 2 now reaches the caller | `python tools/hooks/fire_rate_survey.py --json` | [exa-bench-05.md](cards/exa-bench-05.md) |
+| `kpr-rvfy-05` | A raw `gh pr merge` on a KANBAN-LINKED PR is refused | `python tools/hooks/fire_rate_survey.py --check gh_pr_merge_bypass --samples 10` | [kpr-rvfy-05.md](cards/kpr-rvfy-05.md) |
+| `mfx-mrg-04` | A protected-path PR lands through the DOOR, with an audited reason | `python tools/kanban/cli.py --set-status <id> done --merge --protected-ok --reason '<why>'` | [mfx-mrg-04.md](cards/mfx-mrg-04.md) |
+| `mfx-mrg-07` | The Actions auto-merge workflow is a FOURTH door, and it now honours protected_paths | `python tools/ci/protected_paths.py --config-file args/pr_watcher_config.yaml --files tools/ci/pr_watcher.py docs/x.md` | [mfx-mrg-07.md](cards/mfx-mrg-07.md) |
+| `mfx-mrg-08` | The union resolver DISCARDED a deletion: an empty side is not "nothing to say" | `python -m tools.kanban.union_deletion_survey` | [mfx-mrg-08.md](cards/mfx-mrg-08.md) |
+| `mfx-own-02` | A claim from a PLAIN SHELL now HOLDS -- `--claim` hands its lease to a keeper | `python tools/kanban/cli.py --claim <task-id> --intent "repairing its PR by hand" [--ttl 7200]` | [mfx-own-02.md](cards/mfx-own-02.md) |
+| `mfx-own-05` | A REPARK id extends a task id at the FRONT -- the matcher no longer binds it | `python -m tools.kanban.branch_match_survey --env-file C:/AI/ICDev/.env` | [mfx-own-05.md](cards/mfx-own-05.md) |
+| `kph-repark-kph-repark-mfx-ci-04` | The worktree-add budget is REAL, and the checkout is parallel | `python -m pytest tests/kanban/test_worktree_add_budget_is_real.py -q` | [kph-repark-kph-repark-mfx-ci-04.md](cards/kph-repark-kph-repark-mfx-ci-04.md) |
+| `mfx-own-04` | A worktree HUSK with no .git marker is provably dead -- swept on a clock of HOURS | `python -m tools.kanban.worktree_husks --survey [--json]` | [mfx-own-04.md](cards/mfx-own-04.md) |
+| `kpr-watch-15` | A `merge -s ours` supersede made the branch UNREBASABLE | `python -m tools.ci.rebase_merge_survey --classify` | [kpr-watch-15.md](cards/kpr-watch-15.md) |
+| `kpr-watch-13` | Did that resume REACH anything, or was a line just written? | `python -m tools.ci.resume_delivery --survey` | [kpr-watch-13.md](cards/kpr-watch-13.md) |
+| `kpr-watch-14` | CLAUDE.md is DECLARED for the union rung, and its generated copy is DERIVED | `python -m tools.kanban.claude_md_union_survey` | [kpr-watch-14.md](cards/kpr-watch-14.md) |
+| `kpr-watch-11` | Is a task's status OSCILLATING — two writers taking turns? | `python -m tools.kanban.status_churn --json` | [kpr-watch-11.md](cards/kpr-watch-11.md) |
+| `autonomy-act-05` | ONE statement of which pr_watcher actions are recovery evidence | `python -m tools.kanban.recovery_action_survey` | [autonomy-act-05.md](cards/autonomy-act-05.md) |
+| `autonomy-act-02` | Consume the detectors nobody runs — and file each finding ONCE, with its evidence | `python -m tools.kanban.detector_findings --json` | [autonomy-act-02.md](cards/autonomy-act-02.md) |
+| `kpr-fix-03` | Would that check have been RIGHT to refuse? Surveyed; answer is NO | `python -m tools.kanban.landed_dispatch_survey --json` | [kpr-fix-03.md](cards/kpr-fix-03.md) |
+| `kpr-rvfy-04` | A `done` task with NO artifact, and a comment mention read as a landing | `python -m tools.kanban.artifact_evidence --survey` | [kpr-rvfy-04.md](cards/kpr-rvfy-04.md) |
+| `trust-disc-05` | Is this task id ALREADY on main? task -> main, not task -> PR | `python -m tools.kanban.landed_check --task <task-id> --json` | [trust-disc-05.md](cards/trust-disc-05.md) |
+| `rem-hyg-03/04` | Does an epic CLAIM this task id? Surveyed, then armed to `report` | `python -m tools.kanban.identity_survey --json` | [rem-hyg-03-04.md](cards/rem-hyg-03-04.md) |
+| `tsg-iso-03` | An undeclared third-party import that fails SILENTLY | `python tools/ci/undeclared_import_census.py --check` | [tsg-iso-03.md](cards/tsg-iso-03.md) |
+| `xrv-route-03` | A CI reference that does NOT NAME THE BYTES it resolves to | `python tools/ci/pin_census.py --check` | [xrv-route-03.md](cards/xrv-route-03.md) |
+| `xit-leak-01` | This repo is PUBLIC: nothing from the trading domain comes back | `python tools/ci/domain_leak_gate.py --check` | [xit-leak-01.md](cards/xit-leak-01.md) |
+| `xit-decl-04` | Every table has ONE owner: core \| it \| ft | `python tools/db/schema_ownership.py --check` | [xit-decl-04.md](cards/xit-decl-04.md) |
+| `xit-decl-03` | A module that computes the REPO ROOT from its own location | `python tools/ci/self_root_census.py --check` | [xit-decl-03.md](cards/xit-decl-03.md) |
+| `rem-hyg-13` | A PERFECT SCORE returned when the denominator is empty | `python tools/ci/perfect_score_census.py --check` | [rem-hyg-13.md](cards/rem-hyg-13.md) |
+| `rem-tst-06` | Promote an ungated test module — but only if it is green BOTH WAYS | `python -m tools.ci.gate_promoter --plan --limit 10` | [rem-tst-06.md](cards/rem-tst-06.md) |
+| `rem-hyg-14` | An ungated test that is RED FROM BIRTH, not only one that regressed | `python tools/ci/born_red_survey.py` | [rem-hyg-14.md](cards/rem-hyg-14.md) |
+| `crx-test-05` | The gated pytest run is SHARDED across runners | `python tools/ci/gated_test_list.py --print --list core --shard 2/4` | [crx-test-05.md](cards/crx-test-05.md) |
+| `mfx-ci-02` | ONE ICDEV CI run per ref -- a newer push CANCELS the superseded run | `python -m pytest tests/ci/test_ci_concurrency.py -q` | [mfx-ci-02.md](cards/mfx-ci-02.md) |
+| `crx-test-07` | The shards are BIN-PACKED by measured duration, not file count | `python tools/ci/shard_timings.py --show` | [crx-test-07.md](cards/crx-test-07.md) |
+| `trust-disc-01` | Red-first proof — did the changed test actually go RED? | `python tools/ci/red_first_gate.py --gate` | [trust-disc-01.md](cards/trust-disc-01.md) |
+| `cef-ci-02` | A closed census may LOSE names and must never GAIN one | `python tools/ci/census_growth.py --check` | [cef-ci-02.md](cards/cef-ci-02.md) |
+| `mfx-ci-01` | A cheap static check that runs only on CI is a MANUAL FIX 20 minutes later | `python tools/dx/mirror_parity.py --files tools/db/storage.py --json` | [mfx-ci-01.md](cards/mfx-ci-01.md) |
+| `mfx-ci-04` | Editing CLAUDE.md without regenerating the packaged bootstrap is refused at COMMIT | `python tools/installer/prebuild_bootstrap.py` | [mfx-ci-04.md](cards/mfx-ci-04.md) |
+| `qa-fail-6a87916931be3793` | The E2E suite writes fixtures — point it at a THROWAWAY database | `python tools/db/bootstrap_pg.py` | [qa-fail-6a87916931be3793.md](cards/qa-fail-6a87916931be3793.md) |
+| `qa-fail-5cacee65f1d03c8c` | A sweep whose timeouts fell inside a HOST STALL can now say so | `python tools/testing/qa_agent_runner.py --run --json` | [qa-fail-5cacee65f1d03c8c.md](cards/qa-fail-5cacee65f1d03c8c.md) |
+| `kpr-watch-01` | Which open PRs are awaiting merge, and WHY is each one not merging? | `python -m tools.ci.merge_readiness --json` | [kpr-watch-01.md](cards/kpr-watch-01.md) |
+| `kpr-watch-02` | A PR that IS eligible and STILL open — the merger has stalled | `python -m tools.ci.merge_stall` | [kpr-watch-02.md](cards/kpr-watch-02.md) |
+| `rem-hyg-05` | Raw board writers — does this INSERT bypass the canonical seeder? | `python tools/kanban/raw_insert_census.py --check` | [rem-hyg-05.md](cards/rem-hyg-05.md) |
+| `cef-fnd-03` | DataBridge external rung — 33 connectors, now ONE authorized | `python -m tools.databridge.seed_connections --seed --json` | [cef-fnd-03.md](cards/cef-fnd-03.md) |
+| `crx-test-06` | Is `E2E (Playwright)` reliable enough to be REQUIRED? Surveyed; answer is NOT YET | `python tools/ci/e2e_flake_survey.py --json` | [crx-test-06.md](cards/crx-test-06.md) |
+| `rmf-disc-02` | The page was live, the five endpoints it called were DEFINED NOWHERE | `python -m tools.network.discovery_store` | [rmf-disc-02.md](cards/rmf-disc-02.md) |
+| `rmf-zt-01` | A ZT check with NO PROBE behind it says `unknown`, never `passed` | `SC_STORAGE_BACKEND=sqlite python -m tools.security_canvas.zt_verdict_survey` | [rmf-zt-01.md](cards/rmf-zt-01.md) |
+| `rmf-rail-01` | No rate in the RMF surfaces returns 0.0 or 100.0 over an empty denominator | `python -m pytest tests/test_rmf_honesty_rails.py -q` | [rmf-rail-01.md](cards/rmf-rail-01.md) |
+| `rmf-rail-02` | The Compliance Posture widget's TWO remaining perfect scores, refused | `python -m pytest tests/test_compliance_posture_rail_02.py -q` | [rmf-rail-02.md](cards/rmf-rail-02.md) |
+| `rmf-wp-02` | A DIC version leaves the canvas through ONE gated door, and CoT/CoD prose is redacted | `from tools.document_intelligence.exporter import export_version, export_gate, EXPORT_FORMATS` | [rmf-wp-02.md](cards/rmf-wp-02.md) |
+| `mfx-boot-02` | A crash-looping self-hosted CI runner is re-registered with a fresh token | `python tools/genesis/daemon.py --reflex ci_runner_health --json` | [mfx-boot-02.md](cards/mfx-boot-02.md) |
+| `gepa-optimizer` | GEPA Optimizer — Genome Evolution Pressure Analyzer | `python tools/skills/gepa_optimizer.py --json` | [gepa-optimizer.md](cards/gepa-optimizer.md) |
+| `rmf-cyc-01` | RMF cycle time: TWO clocks that are never merged | `python -m tools.compliance.rmf_cycle_time` | [rmf-cyc-01.md](cards/rmf-cyc-01.md) |
+| `rmf-wp-01` | WHITEPAPER document type, and template_id made LOAD-BEARING | `python -m tools.quality.outline_contract --artifact-type WHITEPAPER` | [rmf-wp-01.md](cards/rmf-wp-01.md) |
+| `rmf-rfp-01` | The RFP shredder is WIRED, and there is ONE compliance matrix | `python tools/govcon/compliance_matrix_builder.py --opportunity-id "opp-xxx" --ingest solicitation.pdf --json` | [rmf-rfp-01.md](cards/rmf-rfp-01.md) |
+| `flx-twin-01` | A twin over the EMULATOR, read through the broker, marked `emulated` | `from tools.twin_core.registry import TwinRegistry` | [flx-twin-01.md](cards/flx-twin-01.md) |
+| `xrv` | Nine external repos reviewed; eight gaps were OUR OWN unconsumed capabilities | `python -m tools.cost.session_cost --survey --by-verdict --json` | [xrv.md](cards/xrv.md) |
+| `mfx-own-09` | A WARM worktree, pre-created while the host is quiet, claimed in ~1.3s | `python -m tools.kanban.worktree_pool --status [--json]` | [mfx-own-09.md](cards/mfx-own-09.md) |
+| `kpr-watch-19` | The resume queue has a consumer on the executor that RUNS, and is ONE directory from every checkout | `python -m tools.ci.resume_delivery --survey` | [kpr-watch-19.md](cards/kpr-watch-19.md) |
+| `xrv-cost-05` | Every `tools/call` Claude Code makes leaves ONE audit row, counted apart from Studio's | `python -m tools.awareness.capability_consumption --class mcp_dispatch_tool --json` | [xrv-cost-05.md](cards/xrv-cost-05.md) |
+| `kpr-watch-21` | A refusal that names no remedy: the done-gate says what is wrong, not what clears it | `python tools/kanban/cli.py --reverify <task-id>` | [kpr-watch-21.md](cards/kpr-watch-21.md) |
+| `kpr-watch-22` | Nothing consumed `union_refused`: the rung had resolved 2 conflicts in its lifetime | `python -m tools.kanban.union_candidates` | [kpr-watch-22.md](cards/kpr-watch-22.md) |
+| `kpr-watch-20` | The artifact-pin pair is DECLARED, and the survey that armed it counts HUNKS | `python -m tools.kanban.artifact_pin_union_survey` | [kpr-watch-20.md](cards/kpr-watch-20.md) |

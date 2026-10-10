@@ -1,0 +1,115 @@
+# CUI // SP-CTI
+# Fixture Shape Gate (tsg-iso-04)
+#
+# THE POLICY THIS ENCODES
+# -----------------------
+# PR #2167 failed CI shard 2 with
+#
+#     sqlite3.OperationalError: table dic_documents has no column named status
+#
+# while the same file passed locally, ALONE, in its own directory, and in file
+# order. The mechanism, reproduced deterministically:
+#
+#     an earlier module in the process leaves dic_documents WITHOUT `status`
+#     -> the fixture's CREATE TABLE IF NOT EXISTS dic_documents (... status ...)
+#        silently NO-OPS, because IF NOT EXISTS means "if a table by this name
+#        exists, keep whatever shape it has"
+#     -> INSERT INTO dic_documents (... status ...) raises
+#
+# CLAUDE.md already states this rule for PRODUCTION code and
+# check_insert_schema_parity enforces it there. Nothing checked it in TEST
+# fixtures, where that statement is the standard way to set a table up.
+#
+# IT IS NOT STABLE DEBT. The fixture is correct until some OTHER module creates
+# the same table first, in the same process, with a narrower shape — so whether
+# it fails depends on which files share a pytest process, and crx-test-07
+# bin-packs shards by MEASURED DURATION (adding two test files moved ~50 of 442
+# between shards). The precondition appears and disappears with edits that have
+# nothing to do with the test, which is the shape a human diagnoses as "flaky"
+# and re-runs.
+#
+# WHAT IS AND IS NOT A FINDING
+# ----------------------------
+# NOT "CREATE TABLE IF NOT EXISTS in a test" — that is the correct way to set a
+# table up, and banning it would refuse routine work.
+#
+# The finding is the CONJUNCTION —
+#
+#     (a) a test DECLARES a table with CREATE TABLE IF NOT EXISTS, naming columns
+#     (b) the same test INSERTs into that table
+#     (c) naming at least one column that ONLY that declaration guarantees
+#
+# — because that is the only combination that can silently write against a shape
+# nobody guaranteed. A test writing only columns every definition of the table
+# already has cannot break this way and is not censused.
+#
+# A file that reaches the guarantee through tests/_schema_compat.py
+# (`ensure_table`) is NOT a finding: that helper creates the table and then
+# ALTERs in whatever the declaration names and the live table lacks — the
+# ingest_orchestrator._ensure_schema idiom.
+#
+# MEASURED BEFORE ARMING (whole tree, 2026-09-07)
+# -----------------------------------------------
+# Re-derived by the SHIPPED predicate, never a scratch script: 2,477 test
+# modules scanned; 273 (file, table) pairs across 194 distinct files — 7.83% of
+# all test modules. 7.83% is nearly FIVE TIMES the 1.63% this repo already calls
+# refusing routine work, so a blanket gate is not viable and was not built.
+#
+# An earlier hand-written survey of the same question reported 164 files /
+# 6.62% / 368 pairs. It is recorded here because it was WRONG in both
+# directions and the difference is instructive: its regex demanded a specific
+# quote terminator after the closing paren (missing files), and it counted one
+# entry per INSERT statement rather than per (file, table), so a file writing
+# one table twice counted twice. Quote the number the gate itself derives.
+#
+# The policy is a RATCHET, not a sweep:
+#
+#   1. A NEW site fails `python tools/ci/fixture_shape_census.py --check` by
+#      name. A new site is a commit's own doing, so the fire rate on routine
+#      work is ~0%.
+#   2. The sites that existed at adoption are grandfathered BY NAME in
+#      args/fixture_shape_census.txt. They are debt, enumerated so it is
+#      countable — and so the SET cannot churn behind a constant count, which is
+#      exactly how the ungated-test gap regrew behind a green gate.
+#   3. `fixture_shape_max` may ONLY go DOWN. Lower it when a site adopts
+#      ensure_table. Raising it is the visible, reviewable act of taking on more
+#      order-dependent test failure, and it belongs in a PR description — never
+#      in a drive-by edit to get a commit through.
+#
+# Gate:  python tools/ci/fixture_shape_census.py --check
+#        python tools/ci/fixture_shape_census.py --changed <files> --check
+#        python tools/ci/fixture_shape_census.py --staged --check
+
+fixture_shape_census:
+  # The enumerated census. Flat and line-oriented, so `merge=union` is safe for
+  # it the way it is for the manifest shards (see .gitattributes).
+  census_file: args/fixture_shape_census.txt
+
+  # Ceiling on REGISTERED sites. MAY ONLY GO DOWN.
+  #
+  # 2026-09-07 adoption: set to exactly today's measured count, not a round
+  # number above it — headroom is permission. The dwr-anchor-02 site this task
+  # fixed is NOT in it; it adopted `ensure_table` rather than being registered,
+  # which is why the count is 273 and not 274.
+  fixture_shape_max: 273
+
+  # tests/ only. Production DDL is already covered by
+  # coherence_checker.check_insert_schema_parity against the live schema; this
+  # census exists because that check reads ONE backend and the gated suite runs
+  # on the other.
+  scan_roots:
+    - tests
+
+  # An EXCLUSION asserts the pattern is CORRECT here — a different claim from a
+  # census entry, and it must not count against the ceiling we are driving down.
+  exclude:
+    - path: tests/test_schema_compat.py
+      reason: >-
+        this is the regression test for the defect itself. Its first case
+        asserts the RAW pattern still breaks, so it must contain the hazard
+        deliberately; censusing it would make the fix's own proof read as debt.
+    - path: tests/ci/test_fixture_shape_census.py
+      reason: >-
+        the census tool's own test constructs fixture sources carrying the
+        pattern as INPUT, so it would otherwise census itself — the same
+        reason perfect_score_census excludes its own explanation.

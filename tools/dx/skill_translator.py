@@ -305,6 +305,10 @@ def _translate_to_cursor_rule(skill_data):
 
 TRANSLATORS = {
     "codex": ("codex_skill", _translate_to_codex_skill, ".agents/skills/{name}/SKILL.md"),
+    # opencode and Pi both discover project .agents/skills (omx-spike-01), so
+    # they share Codex's translation and path rather than getting a copy each.
+    "opencode": ("codex_skill", _translate_to_codex_skill, ".agents/skills/{name}/SKILL.md"),
+    "pi": ("codex_skill", _translate_to_codex_skill, ".agents/skills/{name}/SKILL.md"),
     "copilot": ("copilot_prompt", _translate_to_copilot_prompt, ".github/prompts/{name}.prompt.md"),
     "cursor": ("cursor_mdc", _translate_to_cursor_rule, ".cursor/rules/{name}.mdc"),
 }

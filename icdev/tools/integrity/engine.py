@@ -57,10 +57,12 @@ from typing import Any, Optional
 
 import yaml
 
-# Path-form CLI bootstrap — see the note in the tools/ copy. parents[2] is
-# <repo>/icdev here, NOT the repo root: this mirror's imports resolve against the
-# icdev package root, and pointing at the repo root would import the OTHER copy
-# (kax-conflict-05).
+# This module is documented as a path-form CLI (`python tools/integrity/engine.py
+# --gate`), and started that way Python puts only `tools/integrity/` on sys.path —
+# so the first-party imports below raise ModuleNotFoundError before argparse is
+# ever reached. Running it as `python -m` or from a shell whose PYTHONPATH already
+# holds the repo root masks this, which is why the CLI appeared to work and only
+# ever complained about a missing `--source` (kax-conflict-05).
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))

@@ -241,7 +241,7 @@ This project has {{ mcp_server_count }} MCP servers available. Configure them in
 {% for name in mcp_server_names %}| `{{ name }}` | `python tools/mcp/{{ name.replace('icdev-', '').replace('-', '_') }}_server.py` |
 {% endfor %}
 
-See `.mcp.json` for full server definitions. Use `python tools/dx/mcp_config_generator.py --platform codex --json` to generate Codex-compatible MCP config.
+See `.mcp.json` for full server definitions. Generate your harness's own MCP config with `python tools/dx/mcp_config_generator.py --platform <codex|opencode|pi> --write` (Codex: `.codex/`, opencode: `opencode.json`, Pi: `.pi/mcp.json`).
 
 ## Coding Standards
 
@@ -776,6 +776,9 @@ python tools/workflow/coherence_checker.py --all --fix --gate      # Coherence
 
 TEMPLATES = {
     "codex": TEMPLATE_AGENTS_MD,
+    # AGENTS.md is the harness-neutral file: opencode and Pi read the same one.
+    "opencode": TEMPLATE_AGENTS_MD,
+    "pi": TEMPLATE_AGENTS_MD,
     "gemini": TEMPLATE_GEMINI_MD,
     "copilot": TEMPLATE_COPILOT_MD,
     "cursor": TEMPLATE_CURSOR_MDC,

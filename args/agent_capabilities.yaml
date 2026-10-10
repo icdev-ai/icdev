@@ -21,7 +21,7 @@
 # claim to silence the probe reproduces exactly the failure this card is about:
 # a parity table that agrees with itself and with nothing else.
 #
-# The seven capability names are fixed by CAPABILITIES in capability_matrix.py.
+# The capability names are fixed by CAPABILITIES in capability_matrix.py.
 # A name not in that set is ignored — there is no probe that could measure it.
 #
 # An adapter that would rather own its claim in code can expose a `CAPABILITIES`
@@ -29,16 +29,23 @@
 
 declared:
 
-  # Backed by the Claude Code CLI, which does all seven natively. This block is
+  # Backed by the Claude Code CLI, which does the first seven natively. This block is
   # the brochure claim — the probe scores the ADAPTER, not the product, because
   # a capability the CLI has and the adapter does not surface is unreachable by
   # everything routing through pick_default().
+  #
+  # omx-adapt-01 corrected three rows the probe had measured absent since
+  # exa-bench-03, which kept `capability_matrix.py --gate` exiting 1 on main:
+  # the CLI calls tools, runs sub-agents and takes permission modes, but the
+  # ADAPTER surfaces none of them -- parse_response() returns tool_calls=[],
+  # there is no delegation entry point, and the argv always carries
+  # --dangerously-skip-permissions. Fix the adapter, then flip these back.
   claude_cli:
     streaming: true            # spawn() hands back the live process
-    tool_calling: true         # the CLI runs tools every session
-    sub_agents: true           # the CLI has a Task tool
+    tool_calling: false        # CLI runs tools; parse_response() reports none
+    sub_agents: false          # CLI has a Task tool; the seam cannot reach it
     interruption: true         # the caller owns the spawned process
-    sandbox_passthrough: true  # the CLI takes permission modes
+    sandbox_passthrough: false # argv fixes --dangerously-skip-permissions
     context_budget: true       # --max-turns
     structured_output: true    # --output-format json
 
@@ -46,8 +53,10 @@ declared:
   # adapter parses into AgentResult.structured, and --sandbox is a real flag.
   # No spawn(): nothing dispatches Codex non-blocking yet, so there is nothing
   # to stream from and nothing to kill.
+  # omx-adapt-01: streaming corrected to false (measured absent) -- the CLI
+  # streams JSONL, but with no spawn() the caller only sees it after exit.
   codex_cli:
-    streaming: true            # the CLI emits a JSONL stream during the run
+    streaming: false           # JSONL arrives only in the returned result
     tool_calling: true
     sub_agents: false
     interruption: false
@@ -67,12 +76,16 @@ declared:
     structured_output: false
 
   # hgx-exec-02. The owned rubric-gated loop with the worktree toolset.
+  # omx-adapt-01 corrected two rows measured absent: the loop uses tools but
+  # parse_response() reports none, and the traversal guard is fixed by the
+  # adapter -- a caller cannot CHOOSE a sandbox mode, which is what the
+  # capability means.
   local_agent:
     streaming: false
-    tool_calling: true         # native tool use, or a recorded degrade
+    tool_calling: false        # tools run in the loop; the seam reports none
     sub_agents: false
     interruption: true         # metadata['stop_event']
-    sandbox_passthrough: true  # the toolset is traversal-guarded to the tree
+    sandbox_passthrough: false # traversal-guarded, but not caller-selectable
     context_budget: true       # max_iterations / max_tokens into the loop
     structured_output: true    # grades + verdict on AgentResult.structured
 
@@ -86,3 +99,30 @@ declared:
     sandbox_passthrough: false
     context_budget: false
     structured_output: false
+
+  # omx-adapt-01. Only what omx-spike-01 measured (docs/research/omx-spike-01/
+  # findings.md): `opencode run --format json` emits JSONL whose tool_use
+  # events and step_finish token counts parse_response() recovers. `run` has no
+  # sandbox, turn or token flag and the adapter has no spawn().
+  opencode_cli:
+    streaming: false           # no spawn(); JSONL arrives with the result
+    tool_calling: true         # tool_use events, incl. guard-refused ones
+    sub_agents: false
+    interruption: false
+    sandbox_passthrough: false # opencode run takes no sandbox flag
+    context_budget: false      # ...nor a turn/token budget
+    structured_output: true    # tokens, cost, stop reason, session id
+    guard_wired: true          # icdev-guard.ts plugin -> harness_guard bridge, live-probed (omx-guard-01)
+
+  # omx-adapt-02. Only what omx-spike-01 measured for Pi (findings.md, "Pi"):
+  # `pi --mode json` emits JSONL whose tool_execution_* records and per-message
+  # usage parse_response() recovers. No sandbox, turn or token flag, no spawn().
+  pi_cli:
+    streaming: false           # no spawn(); JSONL arrives with the result
+    tool_calling: true         # tool_execution_end, incl. guard-refused ones
+    sub_agents: false
+    interruption: false
+    sandbox_passthrough: false # pi --mode json takes no sandbox flag
+    context_budget: false      # ...nor a turn/token budget
+    structured_output: true    # usage, cost, stopReason, session id
+    guard_wired: false         # no -e guard extension passed yet

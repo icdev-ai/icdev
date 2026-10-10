@@ -1,0 +1,2 @@
+# omx-adapt-02 -- spawns a fake pi via a .cmd shim on Windows
+tests/agents/test_pi_cli_adapter.py

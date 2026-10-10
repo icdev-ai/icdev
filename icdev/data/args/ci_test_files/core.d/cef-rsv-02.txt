@@ -1,0 +1,9 @@
+# cef-rsv-02 — semantic entity resolution ACROSS backends, so a contradiction
+# between two sources stops being invisible.
+#
+# Gated in the PR that makes it pass, per docs/ci/test-gating-policy.md. It is
+# worth gating rather than merely running once: the file asserts FOUR outcomes
+# that used to render identically (agreement, conflict, gap, dead backend), and
+# a regression in any of them re-collapses two of the four into one clean-looking
+# result rather than into a failure anybody would notice.
+tests/cortex/test_entity_resolution.py

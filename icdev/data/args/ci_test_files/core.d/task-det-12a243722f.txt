@@ -1,0 +1,2 @@
+# task-det-12a243722f — migrate.py must name the database a PG run actually used.
+tests/db/test_migrate_db_label.py

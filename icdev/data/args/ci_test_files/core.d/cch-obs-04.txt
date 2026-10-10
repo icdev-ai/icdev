@@ -1,0 +1,2 @@
+# cch-obs-04 -- Claude Code prompt-cache counters survive the CLI bridge.
+tests/llm/test_cli_prompt_cache_counters.py

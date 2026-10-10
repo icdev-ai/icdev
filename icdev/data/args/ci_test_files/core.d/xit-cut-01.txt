@@ -1,0 +1,2 @@
+# xit-cut-01 - the read-only FathomDesk export: DDL-enumerated tables, manifest, verify.
+tests/db/test_export_ft_data.py

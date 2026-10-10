@@ -1,0 +1,315 @@
+{
+  "metadata": {
+    "task": "mvs-audit-03-d1",
+    "source": "args/migration_duplicate_versions.yaml",
+    "verified_against": "tools/db/migration_versions.py::shadowed_migrations() (live filesystem scan)",
+    "duplicated_versions": 48,
+    "total_entries_claiming_a_duplicated_version": 108,
+    "shadowed_migrations": 60,
+    "shadowing_rule": "MigrationRunner.get_pending_migrations dedupes by version, keeping the FIRST entry by sort order; every later same-version sibling is skipped permanently and silently.",
+    "note": "The header comment in args/migration_duplicate_versions.yaml on main claims '53 duplicated versions; 70 migrations shadowed'. That comment is STALE: the file's own data, and a live scan of tools/db/migrations, both yield 48 duplicated versions and 60 shadowed migrations.",
+    "prior_art": "PR #1296 (branch feat/mvs-audit-03-shadowed-audit, task mvs-audit-03) is OPEN and unmerged as of 2026-08-07. It rewrites the same 60 entries as name -> reason with per-entry verdicts (42 benign, 9 not-actually-shadowed, 3 no-DDL, 6 real gaps since fixed) and adds tools/db/shadowed_migration_audit.py. None of that is on main; this enumeration reflects main."
+  },
+  "shadowed": [
+    {
+      "shadowed_migration": "010_network_intelligence_schema",
+      "version": "10",
+      "shadowed_by": "010_kanban_executor_schema"
+    },
+    {
+      "shadowed_migration": "018_reflex_observations.py",
+      "version": "18",
+      "shadowed_by": "018_memory_db_consolidation"
+    },
+    {
+      "shadowed_migration": "019_kanban_verifications",
+      "version": "19",
+      "shadowed_by": "019_backlog_task_reassign.py"
+    },
+    {
+      "shadowed_migration": "020_nc_topologies_schema.py",
+      "version": "20",
+      "shadowed_by": "020_kanban_failure_count"
+    },
+    {
+      "shadowed_migration": "020_options_coach_events",
+      "version": "20",
+      "shadowed_by": "020_kanban_failure_count"
+    },
+    {
+      "shadowed_migration": "021_dispatch_source",
+      "version": "21",
+      "shadowed_by": "021_ad_macro_regimes"
+    },
+    {
+      "shadowed_migration": "021_sg_sigint_events.py",
+      "version": "21",
+      "shadowed_by": "021_ad_macro_regimes"
+    },
+    {
+      "shadowed_migration": "022_sg_eo_signals.py",
+      "version": "22",
+      "shadowed_by": "022_ad_event_stack_tables"
+    },
+    {
+      "shadowed_migration": "023_sg_socmint_signals.py",
+      "version": "23",
+      "shadowed_by": "023_ad_news_patterns"
+    },
+    {
+      "shadowed_migration": "024_telegram_inbox.py",
+      "version": "24",
+      "shadowed_by": "024_ad_news_catalysts"
+    },
+    {
+      "shadowed_migration": "027_compliance_snapshots",
+      "version": "27",
+      "shadowed_by": "027_ad_coach_alerts"
+    },
+    {
+      "shadowed_migration": "028_idc_infra_tables",
+      "version": "28",
+      "shadowed_by": "028_attack_graph"
+    },
+    {
+      "shadowed_migration": "031_network_twin_snapshots",
+      "version": "31",
+      "shadowed_by": "031_ddc_twin_tables"
+    },
+    {
+      "shadowed_migration": "043_memory_fingerprint",
+      "version": "43",
+      "shadowed_by": "043_memory_entity_relationships"
+    },
+    {
+      "shadowed_migration": "050_theater_supply_chain",
+      "version": "50",
+      "shadowed_by": "050_sg_sio_assessments"
+    },
+    {
+      "shadowed_migration": "052_sg_raw_signals",
+      "version": "52",
+      "shadowed_by": "052_sg_conflict_events"
+    },
+    {
+      "shadowed_migration": "055_sg_conflict_events_cyber_op",
+      "version": "55",
+      "shadowed_by": "055_cta_scores_cache.sql"
+    },
+    {
+      "shadowed_migration": "055_sg_information_signals",
+      "version": "55",
+      "shadowed_by": "055_cta_scores_cache.sql"
+    },
+    {
+      "shadowed_migration": "056_sg_prioritized_signals",
+      "version": "56",
+      "shadowed_by": "056_historical_cases"
+    },
+    {
+      "shadowed_migration": "056_win_loss_analysis_tables.sql",
+      "version": "56",
+      "shadowed_by": "056_historical_cases"
+    },
+    {
+      "shadowed_migration": "057_sg_raw_signals_processed",
+      "version": "57",
+      "shadowed_by": "057_ad_backtest_runs.sql"
+    },
+    {
+      "shadowed_migration": "057_sg_sc_graph",
+      "version": "57",
+      "shadowed_by": "057_ad_backtest_runs.sql"
+    },
+    {
+      "shadowed_migration": "057_sg_signals_actions",
+      "version": "57",
+      "shadowed_by": "057_ad_backtest_runs.sql"
+    },
+    {
+      "shadowed_migration": "064_sg_pattern_learner_log",
+      "version": "64",
+      "shadowed_by": "064_sg_hitl_items_type"
+    },
+    {
+      "shadowed_migration": "078_workflow_hitl",
+      "version": "78",
+      "shadowed_by": "078_ad_decision_audit"
+    },
+    {
+      "shadowed_migration": "083_sg_multidomain_tracks",
+      "version": "83",
+      "shadowed_by": "083_cyber_ext_columns"
+    },
+    {
+      "shadowed_migration": "084_wne_sessions",
+      "version": "84",
+      "shadowed_by": "084_aisg_wizard.sql"
+    },
+    {
+      "shadowed_migration": "085_aisg_learning_tracks",
+      "version": "85",
+      "shadowed_by": "085_aadc_versions.sql"
+    },
+    {
+      "shadowed_migration": "085_sg_ccir_trigger_events",
+      "version": "85",
+      "shadowed_by": "085_aadc_versions.sql"
+    },
+    {
+      "shadowed_migration": "086_sg_intsums",
+      "version": "86",
+      "shadowed_by": "086_aadc_events.sql"
+    },
+    {
+      "shadowed_migration": "107_sg_theaters",
+      "version": "107",
+      "shadowed_by": "107_aadc_phase5.sql"
+    },
+    {
+      "shadowed_migration": "108_sg_war_council_briefs",
+      "version": "108",
+      "shadowed_by": "108_aadc_phase6.sql"
+    },
+    {
+      "shadowed_migration": "113_kanban_vibe_tier1",
+      "version": "113",
+      "shadowed_by": "113_aadc_compliance.sql"
+    },
+    {
+      "shadowed_migration": "120_ops_hub",
+      "version": "120",
+      "shadowed_by": "120_kanban_alert_queue"
+    },
+    {
+      "shadowed_migration": "135_sdc_designs",
+      "version": "135",
+      "shadowed_by": "135_ohc_runbooks"
+    },
+    {
+      "shadowed_migration": "136_qdc_metrics",
+      "version": "136",
+      "shadowed_by": "136_gameday_ai_league"
+    },
+    {
+      "shadowed_migration": "139_govlift_map_assessment.sql",
+      "version": "139",
+      "shadowed_by": "139_fisma_ir"
+    },
+    {
+      "shadowed_migration": "139_govlift_rbac_roles",
+      "version": "139",
+      "shadowed_by": "139_fisma_ir"
+    },
+    {
+      "shadowed_migration": "139_mfa_enforcement",
+      "version": "139",
+      "shadowed_by": "139_fisma_ir"
+    },
+    {
+      "shadowed_migration": "139_qdc_metrics.sql",
+      "version": "139",
+      "shadowed_by": "139_fisma_ir"
+    },
+    {
+      "shadowed_migration": "158_sg_leadership_briefs",
+      "version": "158",
+      "shadowed_by": "158_conflict_predictions"
+    },
+    {
+      "shadowed_migration": "161_sdc_rag_stigs",
+      "version": "161",
+      "shadowed_by": "161_sdc_compliance_timeline"
+    },
+    {
+      "shadowed_migration": "163_groups_canvas_access.sql",
+      "version": "163",
+      "shadowed_by": "163_domain_coverage"
+    },
+    {
+      "shadowed_migration": "173_white_team_review_type.py",
+      "version": "173",
+      "shadowed_by": "173_cpmp_obligation_periods.py"
+    },
+    {
+      "shadowed_migration": "179_kanban_task_revivals.py",
+      "version": "179",
+      "shadowed_by": "179_integrity_tables.py"
+    },
+    {
+      "shadowed_migration": "184_creative_gap_innovation_signal.sql",
+      "version": "184",
+      "shadowed_by": "184_coworkers_canvas_tables.sql"
+    },
+    {
+      "shadowed_migration": "184_memory_fts5",
+      "version": "184",
+      "shadowed_by": "184_coworkers_canvas_tables.sql"
+    },
+    {
+      "shadowed_migration": "188_genesis_phase_log.sql",
+      "version": "188",
+      "shadowed_by": "188_genesis_outputs"
+    },
+    {
+      "shadowed_migration": "189_genesis_phase_log",
+      "version": "189",
+      "shadowed_by": "189_dd_pii_scans.sql"
+    },
+    {
+      "shadowed_migration": "207_tenant_component_overrides",
+      "version": "207",
+      "shadowed_by": "207_mcip_dat_tables.sql"
+    },
+    {
+      "shadowed_migration": "210_sso",
+      "version": "210",
+      "shadowed_by": "210_showcase_apps.sql"
+    },
+    {
+      "shadowed_migration": "212_idr_suggested_classification.sql",
+      "version": "212",
+      "shadowed_by": "212_data_residency"
+    },
+    {
+      "shadowed_migration": "215_user_preferences",
+      "version": "215",
+      "shadowed_by": "215_api_keys"
+    },
+    {
+      "shadowed_migration": "223_user_identity.sql",
+      "version": "223",
+      "shadowed_by": "223_agent_evals.sql"
+    },
+    {
+      "shadowed_migration": "223_wfc_doc_regen.sql",
+      "version": "223",
+      "shadowed_by": "223_agent_evals.sql"
+    },
+    {
+      "shadowed_migration": "236_rfi_workbench.sql",
+      "version": "236",
+      "shadowed_by": "236_personal_rag.sql"
+    },
+    {
+      "shadowed_migration": "247_dashboard_users_role_check",
+      "version": "247",
+      "shadowed_by": "247_cpmp_int_coverage_tenant_id.sql"
+    },
+    {
+      "shadowed_migration": "257_idr_dic_doc_link.sql",
+      "version": "257",
+      "shadowed_by": "257_doc_modernization.sql"
+    },
+    {
+      "shadowed_migration": "269_kg_empty_graph_counts.sql",
+      "version": "269",
+      "shadowed_by": "269_kg_embedding_vec_backfill"
+    },
+    {
+      "shadowed_migration": "282_insider_risk_uba.sql",
+      "version": "282",
+      "shadowed_by": "282_docmod_nist_pubs.sql"
+    }
+  ]
+}

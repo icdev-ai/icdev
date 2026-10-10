@@ -1,0 +1,6 @@
+# A request must not hang on the model. `generate_mop` runs inside
+# POST /api/noc/mops/generate and router.invoke has no deadline, so an
+# unreachable provider blocks rather than failing fast — ~0.2s locally, minutes
+# on CI. The existing `except Exception` was correct and never reached: a hang
+# is not an exception.
+tests/noc_canvas/test_mop_llm_timeout.py

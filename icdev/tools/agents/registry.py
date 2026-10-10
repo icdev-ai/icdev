@@ -51,6 +51,8 @@ def _ensure_loaded() -> None:
         ("codex_cli", "tools.agents.adapters.codex_cli"),
         ("copilot_cli", "tools.agents.adapters.copilot_cli"),
         ("goose_cli", "tools.agents.adapters.goose_cli"),
+        ("opencode_cli", "tools.agents.adapters.opencode_cli"),
+        ("pi_cli", "tools.agents.adapters.pi_cli"),
     ):
         try:
             mod = __import__(module, fromlist=["ADAPTER"])

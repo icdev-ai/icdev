@@ -76,10 +76,11 @@ def test_the_census_is_not_empty(report):
     that much keeps the guard doing its job — it still fails on a scanner that collapses to
     zero or near-zero — while not asserting a population this domain no longer has.
     aadc-ops-config converted ops_config_generator (tools/ + its icdev/ mirror) to the
-    seeder: 201 sites in 185 files, measured.
+    seeder: 201 sites in 185 files, measured. Release 1.2.43 converted
+    verify_board_stall_rule (tools/ + its new icdev/ mirror): 200 sites in 184 files, measured.
     """
     assert report["total_sites"] >= 200, report["total_sites"]
-    assert report["total_files"] >= 185, report["total_files"]
+    assert report["total_files"] >= 184, report["total_files"]
     assert report["registered"] == report["total_sites"]
 
 

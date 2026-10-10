@@ -1,0 +1,2 @@
+# omx-guard-01 -- opencode guard bridge (harness_guard -> run_pre_tool_check)
+tests/hooks/test_harness_guard.py

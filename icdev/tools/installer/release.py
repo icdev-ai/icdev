@@ -325,11 +325,57 @@ def scaffold_notes(version: str, *, dry_run: bool = False) -> list:
 # --------------------------------------------------------------------------- #
 
 
+def env_file_candidates() -> list:
+    """The .env paths twine_env() tries, in order.
+
+    .env is gitignored, so a linked worktree — where CLAUDE.md says releases
+    are cut — has none, and 1.2.43's --publish failed there for want of
+    credentials. When this checkout has no .env, fall back to the MAIN
+    worktree's, found through ``git rev-parse --git-common-dir``.
+    """
+    candidates = [ENV_FILE]
+    if ENV_FILE.is_file():
+        return candidates
+    root = ENV_FILE.parent
+    try:
+        r = subprocess.run(["git", "rev-parse", "--git-common-dir"], cwd=root,
+                           capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return candidates
+    if r.returncode != 0 or not r.stdout.strip():
+        return candidates
+    common = Path(r.stdout.strip())
+    if not common.is_absolute():
+        common = root / common
+    main_env = common.resolve().parent / ".env"
+    if main_env.resolve() != ENV_FILE.resolve():
+        candidates.append(main_env)
+    return candidates
+
+
+def resolve_env_file() -> Path | None:
+    """The first existing .env among env_file_candidates(), or None."""
+    return next((c for c in env_file_candidates() if c.is_file()), None)
+
+
+_SECRET_PATTERNS = (
+    re.compile(r"pypi-[A-Za-z0-9_-]+"),
+    re.compile(r"((?:TWINE_PASSWORD|PYPI_API_TOKEN)\s*[=:]\s*)\S+"),
+)
+
+
+def redact(text: str) -> str:
+    """Mask anything token-shaped before it reaches a terminal or a report."""
+    text = _SECRET_PATTERNS[0].sub("pypi-***", text or "")
+    return _SECRET_PATTERNS[1].sub(r"\1***", text)
+
+
 def twine_env() -> dict:
     """Build the upload environment from .env. Never logs the secret."""
     env = dict(os.environ)
-    if ENV_FILE.is_file():
-        for line in ENV_FILE.read_text(encoding="utf-8", errors="replace").splitlines():
+    env_file = resolve_env_file()
+    if env_file is not None:
+        for line in env_file.read_text(encoding="utf-8", errors="replace").splitlines():
             m = re.match(r"^\s*(TWINE_USERNAME|TWINE_PASSWORD|PYPI_API_TOKEN)\s*=\s*(.*)$", line)
             if m:
                 env[m.group(1)] = m.group(2).strip().strip('"').strip("'")
@@ -423,6 +469,7 @@ def _self_importing_modules(names, read) -> list:
     is a cheap, decisive, offline check for a defect that otherwise only shows up
     when a user imports the module.
     """
+    import ast as _ast
     import re as _re
 
     bad = []
@@ -436,7 +483,19 @@ def _self_importing_modules(names, read) -> list:
             text = read(name).decode("utf-8", "replace")
         except Exception:  # noqa: BLE001 - unreadable member is not this check's job
             continue
-        if _re.search(rf"^\s*from\s+{_re.escape(module)}\s+import\b", text, _re.M):
+        if not _re.search(rf"^\s*from\s+{_re.escape(module)}\s+import\b", text, _re.M):
+            continue
+        # The regex is only a cheap prefilter. A docstring "Usage:" example
+        # (`    from icdev.tools.audit.row_hash import ...`) matches it too, and
+        # flagged 14 healthy modules in 1.2.43 -- so confirm against REAL import
+        # statements. Unparseable source keeps the regex verdict (fail closed).
+        try:
+            tree = _ast.parse(text)
+        except SyntaxError:
+            bad.append(name)
+            continue
+        if any(isinstance(n, _ast.ImportFrom) and n.level == 0 and n.module == module
+               for n in _ast.walk(tree)):
             bad.append(name)
     return bad
 
@@ -560,6 +619,15 @@ def step_verify_payload(version: str) -> dict:
         ("icdev/tools/cli/setup_wizard.py", "guided setup wizard"),
         ("icdev/tools/cli/setup.py", "component setup TUI"),
         ("icdev/tools/cli/provision_db.py", "database + vector-store provisioner"),
+        # The wizard provisions by running this in a CHILD process. Absent from
+        # the wheel, `icdev setup --provision-db` and `icdev-init-db` both fail
+        # at the step that creates every table.
+        ("icdev/tools/db/init_icdev_db.py", "platform schema initialiser"),
+        # Resolves `tools.x` → `icdev.tools.x` for `-m` targets. The tools alias
+        # is a sys.modules entry in the PARENT, so without this a child process
+        # dies with ModuleNotFoundError and provisioning reports a generic
+        # failure — the 1.2.42 pip-install bug.
+        ("icdev/tools/compat/subprocess_utils.py", "child-process module resolver"),
     ):
         if mod not in names:
             problems.append(f"wheel carries no {label} ({mod})")
@@ -687,15 +755,17 @@ def step_publish(version: str) -> dict:
         return {"ok": False, "error": f"no artifacts for {version}"}
     env = twine_env()
     if not env.get("TWINE_PASSWORD"):
+        tried = ", ".join(str(c) for c in env_file_candidates())
         return {"ok": False,
-                "error": "no credentials — set TWINE_PASSWORD or PYPI_API_TOKEN in .env"}
+                "error": "no credentials — set TWINE_PASSWORD or PYPI_API_TOKEN in .env "
+                         f"(tried: {tried})"}
     r = _run([sys.executable, "-m", "twine", "upload", "--non-interactive",
               *[str(p) for p in files]], env=env, timeout=3600)
     return {
         "ok": r.returncode == 0,
         "files": [p.name for p in files],
         "url": f"https://pypi.org/project/icdev/{version}/" if r.returncode == 0 else "",
-        "tail": (r.stdout or r.stderr or "")[-600:],
+        "tail": redact((r.stdout or r.stderr or "")[-600:]),
     }
 
 
@@ -859,6 +929,8 @@ def _emit(report: dict, as_json: bool) -> None:
         step = report["steps"].get(report.get("failed_at"), {})
         for p in step.get("problems", []) or []:
             print(f"  - {p}")
+        if step.get("error"):
+            print(f"  - {redact(step['error'])}")
         if report.get("hint"):
             print(f"  {report['hint']}")
         if report.get("failed_at") == "notes":
@@ -866,7 +938,7 @@ def _emit(report: dict, as_json: bool) -> None:
             print(f"  README section: {'OK' if n['readme'] else 'MISSING'}")
             print(f"  CHANGELOG entry: {'OK' if n['changelog'] else 'MISSING'}")
         if step.get("tail"):
-            print(step["tail"])
+            print(redact(step["tail"]))
         return
     if report.get("published"):
         print(f"  PUBLISHED {v}")

@@ -1,0 +1,2 @@
+# task-det-295a9bb95e -- a NON-required failing check must not spend resumes, escalate, or hold a merge
+tests/ci/test_required_checks_only.py

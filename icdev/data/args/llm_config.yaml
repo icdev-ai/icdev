@@ -7,18 +7,29 @@
 # Provider Definitions
 # -----------------------------------------------------------------------
 providers:
+  # locality (omx-vllm-01) -- THE input to the CUI egress boundary
+  # (tools/llm/cli_bridge/activate.py::_is_local_only_provider):
+  #   local   -- runs on this machine; base_url must be loopback/RFC1918/link-local
+  #              (coherence_checker --check provider_locality flags one that is not).
+  #   private -- an on-prem/LAN server you control; counted as local ONLY when
+  #              ICDEV_PRIVATE_IS_LOCAL=1.
+  #   cloud   -- leaves your network.
+  # Undeclared fails closed (only an ollama-type provider with no api_key_env is local).
   bedrock:
     type: bedrock
+    locality: cloud
     region: ${AWS_DEFAULT_REGION:-us-gov-west-1}
     # Uses boto3 credentials (IAM role, env vars, or ~/.aws/credentials)
 
   anthropic:
     type: anthropic
+    locality: cloud
     api_key_env: ANTHROPIC_API_KEY
     base_url: https://api.anthropic.com
 
   openai:
     type: openai_compatible
+    locality: cloud
     api_key_env: OPENAI_API_KEY
     base_url: https://api.openai.com/v1
 
@@ -34,6 +45,7 @@ providers:
   # with virtual keys. This is THEIR infrastructure, and ICDEV is just a client.
   gateway:
     type: openai_compatible
+    locality: cloud
     # No default on purpose. A corporate gateway URL is site-specific, and any
     # value invented here would be wrong everywhere — :4000 in particular is
     # ICDEV's OWN LiteLLM proxy, a different service entirely. Unset means
@@ -44,14 +56,17 @@ providers:
 
   ollama:
     type: ollama
+    locality: local
     base_url: ${OLLAMA_BASE_URL:-http://localhost:11434}
 
   gemini:
     type: gemini
+    locality: cloud
     api_key_env: GOOGLE_API_KEY
 
   vllm:
     type: openai_compatible
+    locality: local
     base_url: ${VLLM_BASE_URL:-http://localhost:8000/v1}
     api_key_env: VLLM_API_KEY
 
@@ -61,11 +76,13 @@ providers:
   # selectable, not just probe-detectable.
   localai:
     type: openai_compatible
+    locality: local
     base_url: ${LOCALAI_BASE_URL:-http://localhost:8080/v1}
     api_key_env: LOCALAI_API_KEY
 
   ibm_watsonx:
     type: ibm_watsonx
+    locality: cloud
     api_key_env: IBM_CLOUD_API_KEY
     project_id: ${IBM_WATSONX_PROJECT_ID:-}
     url: ${IBM_WATSONX_URL:-https://us-south.ml.cloud.ibm.com}
@@ -75,6 +92,7 @@ providers:
   # Air-gapped: self-host via vLLM (see mistral_vllm provider below)
   mistral:
     type: openai_compatible
+    locality: cloud
     api_key_env: MISTRAL_API_KEY
     base_url: ${MISTRAL_BASE_URL:-https://api.mistral.ai/v1}
 
@@ -84,12 +102,14 @@ providers:
   #   --attention-backend FLASH_ATTN_MLA --tool-call-parser mistral
   mistral_vllm:
     type: openai_compatible
+    locality: local
     base_url: ${MISTRAL_VLLM_BASE_URL:-http://localhost:8100/v1}
     api_key_env: MISTRAL_VLLM_API_KEY
 
   # Ollama cloud endpoint — authenticated, falls back to local ollama
   ollama_cloud:
     type: ollama
+    locality: cloud
     base_url: ${OLLAMA_CLOUD_BASE_URL:-https://ollama.com}
     api_key_env: OLLAMA_API_KEY
 
@@ -97,6 +117,7 @@ providers:
   # session. Used when ANTHROPIC_API_KEY is absent (this environment).
   claude-cli:
     type: cli
+    locality: cloud
     cli_binary: claude
     backend: auto
     soft_wait_seconds: 360
@@ -110,6 +131,7 @@ providers:
   # Requires `claude` on PATH (installed via Claude Code).
   cli:
     type: cli
+    locality: cloud
     cli_binary: ${CLAUDE_CLI_BINARY:-claude}
 models:
   # -- Anthropic Claude --
@@ -311,6 +333,26 @@ models:
     disable_thinking: true
     supports_tools: true
     supports_structured_output: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  # Stable alias for whatever the operator's vLLM serves (omx-vllm-02). OPTIONAL:
+  # with VLLM_MODEL unset the id expands to "" and the router marks the alias
+  # unavailable, so every chain below falls straight through it. It always sits
+  # AFTER the ollama entries -- on the low-VRAM target boxes only a small quantized
+  # model fits under vLLM's KV-cache preallocation, and Ollama (GGUF + CPU offload)
+  # stays the default local path. The realistic production use is a remote vLLM on
+  # a bigger GPU: point VLLM_BASE_URL at it (a LAN host still counts as local; see
+  # providers.vllm.locality). context_window / supports_tools below are
+  # placeholders -- settings.vllm_discovery overwrites both from the server's
+  # max_model_len and a probed tools request.
+  vllm-local:
+    provider: vllm
+    model_id: "${VLLM_MODEL:-}"
+    context_window: 4096
+    max_output_tokens: 2048
+    supports_thinking: false
+    supports_tools: false
+    supports_structured_output: false
     pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
   # Primary Ollama cloud model — kimi-k2.6:cloud (vision-capable, 3s TTFT).
@@ -720,6 +762,15 @@ routing:
     chain: [kimi-cloud, qwen3-local, claude-opus, o3, gemini-2.5-pro, gpt-4o]
     effort: high
 
+  # Summarises a finished ACE co-worker team's artifacts for the chat reader
+  # who asked (tools/ace/chat_result.py). Deliberately a SEPARATE function from
+  # the workers': the team members can run on a cheap/local chain while the one
+  # synthesis call that a human actually reads runs on a stronger model. Change
+  # the split here, not in code — no model IDs are hardcoded anywhere.
+  ace_result_synthesis:
+    chain: [claude-sonnet, kimi-cloud, gpt-4o, qwen3-local, gemini-2.5-flash]
+    effort: medium
+
   collaboration:
     chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: medium
@@ -749,7 +800,7 @@ routing:
     effort: low
 
   code_generation:
-    chain: [qwen3-local, kimi-cloud, claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local]
+    chain: [qwen3-local, kimi-cloud, claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local, vllm-local]
     effort: high
 
   saas_proxy:
@@ -954,7 +1005,7 @@ routing:
   # REFUSED. The chain stays local-first so that even an enforcement bug cannot
   # leak — defence in depth, not a single flag.
   proposal_drafting:
-    chain: [qwen3-local, llama-local]
+    chain: [qwen3-local, llama-local, vllm-local]
     effort: medium
     force_local: true
 
@@ -974,12 +1025,12 @@ routing:
     effort: medium
 
   bid_scoring:
-    chain: [qwen3-local, llama-local]
+    chain: [qwen3-local, llama-local, vllm-local]
     effort: low
     force_local: true
 
   color_review:
-    chain: [qwen3-local, llama-local]
+    chain: [qwen3-local, llama-local, vllm-local]
     effort: medium
     force_local: true
 
@@ -991,27 +1042,27 @@ routing:
   # raw CUI and cannot be usefully masked (mask the program names and there is
   # nothing left to write about).
   rfi_writer_drafting:
-    chain: [qwen3-local, llama-local]
+    chain: [qwen3-local, llama-local, vllm-local]
     effort: low
     force_local: true
 
   rfi_editor_drafting:
-    chain: [qwen3-local, llama-local]
+    chain: [qwen3-local, llama-local, vllm-local]
     effort: medium
     force_local: true
 
   rfi_reviewer_review:
-    chain: [qwen3-local, llama-local]
+    chain: [qwen3-local, llama-local, vllm-local]
     effort: high
     force_local: true
 
   rfi_researcher_knowledge:
-    chain: [qwen3-local, llama-local]
+    chain: [qwen3-local, llama-local, vllm-local]
     effort: high
     force_local: true
 
   rfi_compliance_assessment:
-    chain: [qwen3-local, llama-local]
+    chain: [qwen3-local, llama-local, vllm-local]
     effort: high
     force_local: true
 
@@ -1345,6 +1396,19 @@ routing:
   gepa_skill_patch:
     chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.0-flash, llama-local]
     effort: low
+
+  # TRUST self-correction (tools/quality/self_correct.py, trust-self-01) — the
+  # targeted revision call inside the bounded monotone revise-and-recheck loop.
+  # The input is a CUI drafting artifact plus the source evidence it cites, so
+  # this is local-first with a local tail: an air-gapped deployment must be able
+  # to run the whole loop, and an UNDECLARED function silently falls through to
+  # the cloud-first `routing.default` — that is an egress violation, not a
+  # preference. Medium effort: rewriting a named span faithfully while leaving
+  # the rest of the document byte-identical is instruction-following work, and
+  # the loop's monotone check discards a round that gets it wrong anyway.
+  trust_self_correct:
+    chain: [qwen3-local, claude-sonnet, kimi-cloud, gpt-4o-mini, gemini-2.0-flash, llama-local]
+    effort: medium
 agent_effort_defaults:
   orchestrator-agent: high
   architect-agent: max
@@ -1462,6 +1526,22 @@ settings:
   ollama_discovery:
     enabled: true
     probe_providers: [ollama, ollama_cloud]
+    default_capabilities: [summarization, writing]
+    refresh_interval_seconds: 3600
+  # vLLM auto-discovery (omx-vllm-02): GET ${VLLM_BASE_URL}/models and register each
+  # served model as `vllm:<served-name>` with context_window = max_model_len and
+  # supports_tools from a ONE-SHOT tools probe (tool calling is a server flag,
+  # --enable-auto-tool-choice, that /v1/models does not expose). The probe verdict
+  # is cached per process; an inconclusive probe registers supports_tools: false.
+  # probe_only_if_env: vLLM is optional, so a router in a process that never set
+  # VLLM_BASE_URL does not dial localhost:8000 at all. Report the endpoint with
+  # `icdev llm doctor` (probes regardless of this gate).
+  vllm_discovery:
+    enabled: true
+    probe_providers: [vllm]
+    probe_only_if_env: VLLM_BASE_URL
+    probe_tools: true
+    timeout_seconds: 3
     default_capabilities: [summarization, writing]
     refresh_interval_seconds: 3600
 
@@ -1607,6 +1687,32 @@ rag:
       - ui_verification
 
 # -----------------------------------------------------------------------
+# Supplemental Prompt Layers (exa-refine-01)
+# -----------------------------------------------------------------------
+# The LLM router reads ACTIVE supplemental prompt layers from
+# `prompt_versions` (tools/llm/prompt_registry.py) and APPENDS them after the
+# base system prompt the call site supplied.
+#
+# The base system prompt is IMMUTABLE. The registry has no write path to it
+# (the reserved `base/` namespace is refused) and no read path from it (the
+# router only ever selects the `layer/` namespace). Self-modification can add
+# governed, versioned, rollback-able layers on top; it can never rewrite the
+# base. There is no toggle for that invariant — only for the feature.
+#
+# Registering a layer:
+#   python tools/llm/prompt_registry.py --register --name "layer/house-style" \
+#       --function code_generation --template-file hardprompts/house_style.md --json
+#   python tools/llm/prompt_registry.py --activate --name "layer/house-style" --version 1 --json
+#   python tools/llm/prompt_registry.py --layers --function code_generation --json
+#
+# A layer registered against function `*` applies to every llm_function.
+# With no layers registered (the default) this hook is a no-op.
+prompt_registry:
+  enabled: true
+  layer_separator: "\n\n"     # placed between the base prompt and each layer
+  max_layer_chars: 8000       # skip (and warn on) any single oversized layer; 0 = no cap
+
+# -----------------------------------------------------------------------
 # Token Budget Enforcement (Paperclip-inspired per-agent hard-stops)
 # -----------------------------------------------------------------------
 # Per-agent monthly USD caps. Warning fires at threshold; hard_stop blocks.
@@ -1664,6 +1770,37 @@ module_budgets:
   warning_threshold: 0.8
   hard_stop: true
 
+  # Which module a function is charged to. DATA, not a hardcoded name in the router.
+  #
+  # THE DEFECT THIS CLOSES. `router.invoke` charged EVERY call to
+  # `generative_intelligence`, so one monthly pool covered the whole platform and a
+  # "module budget" was a global cap wearing a module's name. Measured 2026-08-28 on the
+  # ICDEV[FT] board, 407,934 of 400,000 tokens spent and EVERY ROW at $0.00:
+  #
+  #     cortex_complete             165,111   40%
+  #     intaas_multiperspectivity   108,404   27%
+  #     fin_claim_extraction         50,429   12%
+  #     fin_idea_to_spec             37,653    9%
+  #     summarization                29,749    7%
+  #     judge_challenge               9,937
+  #     fin_research                  3,882
+  #     ace_persona_query             2,769
+  #
+  # The research/knowledge pipeline is 23% of that and was refused because two unrelated
+  # workloads had spent 67% of a pool it shared with them. Every LLM call in the parent
+  # was refused, including `code_generation` -- a block with no relationship to the
+  # workload that caused it.
+  #
+  # An unmapped function falls to `default_module`, so a deployment that declares nothing
+  # behaves exactly as it did before. A call is charged to exactly ONE module.
+  default_module: generative_intelligence
+  function_modules:
+    # The research -> knowledge -> strategy-draft pipeline (ICDEV[FT]).
+    fin_claim_extraction: research_knowledge
+    fin_idea_to_spec: research_knowledge
+    fin_intake: research_knowledge
+    fin_research: research_knowledge
+
   per_module:
     generative_intelligence:
       monthly_usd: 150.00         # LLM calls, embeddings, chain orchestration
@@ -1673,6 +1810,72 @@ module_budgets:
       monthly_usd: 50.00          # simulation runs, Monte Carlo, COA generation
       monthly_tokens: 100000       # LLM use inside simulations
       monthly_operations: 500      # simulation scenario runs
+    research_knowledge:
+      # Sized from the MEASURED workload above -- 91,964 tokens across the four functions
+      # in the month that filled the shared pool -- with headroom, not from a round number.
+      monthly_usd: 25.00
+      monthly_tokens: 150000
+      monthly_operations: 0
+
+# -----------------------------------------------------------------------
+# Cost Budget — the DOWNGRADE gate (exa-policy-04)
+# -----------------------------------------------------------------------
+# The four budget layers above all BLOCK: token_budgets (per agent),
+# module_budgets (per module), chain_orchestration.cost_cap_usd (per chain run)
+# and proxy budgets (per virtual key). A hard stop is the wrong shape for a long
+# autonomous run — hitting a ceiling unattended kills the run.
+#
+# This layer instead ASKs at soft thresholds and DOWNGRADES at the hard limit:
+# the expensive model is demoted to the tail of the function's declared chain
+# and work continues on the cheap tier. Enforced by tools/llm/cost_budget.py,
+# consumed in tools/llm/router.py::invoke.
+#
+# There is no model id anywhere in that module. The downgrade is computed from
+# routing.<function>.chain and the pricing: block declared on each model above,
+# which is what makes it air-gap correct: local Ollama models declare
+# input_per_1k/output_per_1k 0.0, so they sort under any ceiling and
+# prefer_local puts them ahead of an equally-priced cloud model.
+cost_budget:
+  enabled: true
+
+  # global = one budget across every function (matches how an autonomous run
+  # actually overspends). function = each function gets its own limit_usd.
+  scope: global
+  period: monthly               # monthly | daily
+  limit_usd: 200.00
+
+  # Fractions of limit_usd. Crossing one raises an ASK — once per threshold per
+  # period, deduped through agent_approval_log, NOT once per call.
+  soft_thresholds: [0.50, 0.80, 0.95]
+
+  # What reaching limit_usd does. 'downgrade' is the point of this layer;
+  # 'block' exists for operators who genuinely want the old hard stop.
+  hard_action: downgrade
+
+  downgrade:
+    # A model whose declared input_per_1k + output_per_1k exceeds this is
+    # demoted to the tail of the chain — never dropped, so a budget event can
+    # never become an outage when the cheap tier is down. 0.0 means "free and
+    # local tiers only" while the budget is exhausted.
+    max_blended_per_1k: 0.0
+    # Tie-break equally-priced models local-first. This is what guarantees the
+    # downgrade lands on Ollama rather than on a zero-priced cloud entry.
+    prefer_local: true
+
+  ask:
+    # record  — log + append to agent_approval_log, keep working (autonomous default)
+    # console — prompt the operator; denies on EOF
+    # deny    — fail closed; combine with on_denied to downgrade early
+    approver: record
+    # What a DENIED soft ASK does: downgrade early, or block.
+    on_denied: downgrade
+
+  # Optional per-function overrides; keys merge over the block above.
+  #   per_function:
+  #     code_generation:
+  #       limit_usd: 50.00
+  #       downgrade: { max_blended_per_1k: 0.005 }
+  per_function: {}
 
 # -----------------------------------------------------------------------
 # Chain Orchestration (CoT / CoD)
@@ -1859,6 +2062,38 @@ architectures:
 # (PostgreSQL-native with SQLite fallback); context_cache = provider-level
 # KV prefix reuse (cache_control: ephemeral on system prompt + last user msg).
 # -----------------------------------------------------------------------
+# -----------------------------------------------------------------------
+# CLI bridge — routing ICDEV's own LLM calls through the locally authenticated
+# Claude Code CLI, so they pass through LLMRouter and are MEASURED.
+# -----------------------------------------------------------------------
+# WHY THIS KEY EXISTS (cch-obs-06). `activate.should_enable()` is
+# `is_airgap() or not _has_cloud_key()` -- the bridge is a FALLBACK for a
+# keyless or air-gapped host, and there was no way to PREFER it. On a machine
+# holding any of the nine CLOUD_KEY_ENV_VARS the bridge is off, full stop, and
+# the only overrides were unsetting the key (which kills that provider's
+# routing) or a context-scoped per-request call. Neither is an operator
+# decision that survives a restart.
+#
+# Measured on this deployment 2026-08-27: OLLAMA_API_KEY is set, so
+# _has_cloud_key() is True, should_enable() is False, and every one of the last
+# 90 router calls went to ollama_cloud. `anthropic` has ZERO rows in 13,166
+# lifetime ai_telemetry rows and `claude-cli` last appeared 2026-07-09.
+#
+# `prefer` OVERRIDES the auto-detection; it does not disable it. `auto` (the
+# default) is exactly today's behaviour, so an absent key is a complete no-op.
+#
+#   auto    fallback only -- air-gapped, or no cloud key present (default)
+#   prefer  use the Claude CLI even when a cloud key exists
+#   never   never bridge, even air-gapped and keyless
+#
+# THIS BUYS TOKEN STATISTICS, NOT DOLLARS. The CLI is the SUBSCRIPTION path and
+# args/cache_effectiveness.yaml declares it `usd_basis: unpriced` -- there is no
+# per-token bill to save against, and pricing it at the API rate card would
+# invent spend that never happened. What it does buy is real prompt-cache
+# counters (cch-obs-04) and a real hit rate on the provider you actually use.
+cli_bridge:
+  mode: auto
+
 response_cache:
   enabled: true
   backend: postgresql
@@ -1947,6 +2182,50 @@ response_cache:
     ddc:
       ttl_seconds: 7200
       context_cache: true
+
+# ---------------------------------------------------------------------------
+# Managed-object prefix cache (cch-prov-02)
+# The third caching shape, alongside response_cache (ICDEV's own KV store) and
+# context_cache above (provider-level prefix reuse). Consumed by providers that
+# DECLARE PrefixCacheCapability(support="managed_object") — today Gemini's
+# cachedContents, via tools/llm/managed_cache.py.
+#
+# DEFAULT OFF, and that is the economics, not caution. A stored cache object is
+# billed per token PER HOUR of storage whether or not anything reads it, so an
+# object created for a prefix used once is strictly worse than no caching at
+# all. Measured on this platform (docs/research/prefix-caching-assessment.md
+# section 3), 95.5% of calls sit below even the 1024-token floor at which any
+# vendor's prefix cache can fire.
+#
+# Break-even, so it can be re-derived when vendor prices move: a cached read
+# costs ~0.25x normal input (saving ~0.75x), storage costs S per token-hour, so
+# over a TTL of h hours with R reads storing pays when
+#   (R - 1) > S * h / (0.75 * P).
+# At Gemini 2.5 Flash's published order of magnitude (P ~ $0.30/1M input,
+# S ~ $1.00/1M/hour) that is (R - 1) > 4.4 * h: ~6 reads inside an hour, but
+# only 2 inside five minutes. Hence ttl_seconds 300 paired with min_sightings 2
+# — the short TTL is what makes a twice-used prefix profitable, and it also
+# bounds the rent on an orphan left by a process that exits.
+#
+# Which surfaces participate is the existing per_canvas / per_function
+# `context_cache` list above: those are the surfaces that assert the neutral
+# `cache_prefix` intent. Size and repetition are then MEASURED per prefix at
+# runtime rather than declared, which is strictly stronger than a second list.
+# ---------------------------------------------------------------------------
+managed_object_cache:
+  enabled: false          # master switch; a standing per-hour cost is opted into
+  ttl_seconds: 300        # vendor TTL AND the width of the repetition window
+  min_prefix_tokens: 4096 # keep at or above the model's own floor (Gemini 2.5
+                          # Flash 1024 / Pro 2048); the floor is where the API
+                          # ACCEPTS the object, not where it pays for itself
+  min_sightings: 2        # never store a prefix seen only once — the one case
+                          # guaranteed to lose money
+  max_objects: 32         # ceiling on live objects per process; each is renting
+  chars_per_token: 4.0    # local size estimate; the exact count is a network
+                          # call, and paying for a call to decide whether to pay
+                          # for a cache is backwards
+  failure_cooldown_seconds: 600   # suppress a prefix whose create failed, so it
+                                  # cannot storm the API on every call
 
 # ---------------------------------------------------------------------------
 # Speculative Decoding (Ollama path only — auto-detected)

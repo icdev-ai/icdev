@@ -1,0 +1,1 @@
+tests/testing/test_claude_dir_shield_checks.py

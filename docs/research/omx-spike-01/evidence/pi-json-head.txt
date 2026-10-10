@@ -1,0 +1,3 @@
+{"type":"session","version":3,"id":"01a125d2-c01f-73dc-ba3b-ceb1830adf02","timestamp":"2026-10-10T12:38:51.168Z","cwd":"$TEMP\\omx-spike-01\\runs\\pi-literal\\work"}
+{"type":"agent_start"}
+{"type":"turn_start"}

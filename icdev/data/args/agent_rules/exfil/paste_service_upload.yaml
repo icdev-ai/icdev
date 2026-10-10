@@ -1,0 +1,26 @@
+# CUI // SP-CTI
+# Monitor-only. See args/agent_rules/README.md before changing `enforce`.
+id: exfil.paste_service_upload
+version: "1"
+title: Traffic to an anonymous paste, file-drop or tunnel service
+severity: high
+tags:
+  - T1567.002
+  - exfiltration
+enabled: true
+enforce: false
+deny_message: >-
+  Anonymous paste and tunnel services are not an approved destination. Nothing
+  leaving this platform may go somewhere with no owner and no retention policy.
+# No event_type key on purpose: this fires wherever a URL appears, whether the
+# normalizer classified it as a network.indicator or as the URL argument of a
+# parsed command. Keys AND together, so naming event_type here would silently
+# halve the coverage.
+expr:
+  url_matches:
+    - "(?i)https?://([a-z0-9-]+\\.)*pastebin\\.com"
+    - "(?i)https?://([a-z0-9-]+\\.)*(hastebin|dpaste|ghostbin|privatebin|termbin)\\."
+    - "(?i)https?://([a-z0-9-]+\\.)*(transfer\\.sh|file\\.io|0x0\\.st|anonfiles\\.com|gofile\\.io|bashupload\\.com)"
+    - "(?i)https?://([a-z0-9-]+\\.)*(webhook\\.site|requestbin\\.|pipedream\\.net|beeceptor\\.com)"
+    - "(?i)https?://([a-z0-9-]+\\.)*(ngrok\\.(io|app)|trycloudflare\\.com|localtunnel\\.me|serveo\\.net)"
+    - "(?i)https?://([a-z0-9-]+\\.)*(telegra\\.ph|catbox\\.moe|litterbox\\.catbox\\.moe)"

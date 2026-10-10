@@ -258,6 +258,77 @@ def test_publish_without_credentials_fails_closed(monkeypatch, tmp_path):
     assert "credentials" in out["error"]
 
 
+def test_a_failed_publish_prints_its_error_in_the_text_report(monkeypatch, tmp_path, capsys):
+    """1.2.43: `RELEASE X BLOCKED AT: publish` printed with no reason.
+
+    step_publish reports in `error`/`tail`, not `problems`, and _emit read
+    only `problems` — so the one line that said why was dropped.
+    """
+    (tmp_path / "icdev-1.2.43-py3-none-any.whl").write_bytes(b"stub")
+    monkeypatch.setattr(rel, "DIST_DIR", tmp_path)
+    monkeypatch.setattr(rel, "twine_env", lambda: {})
+    pub = rel.step_publish("1.2.43")
+    rel._emit({"target_version": "1.2.43", "ok": False, "failed_at": "publish",
+               "steps": {"publish": pub}}, as_json=False)
+    out = capsys.readouterr().out
+    assert "BLOCKED AT: publish" in out
+    assert "no credentials" in out
+
+
+def test_a_failed_publish_tail_is_redacted(capsys):
+    token = "pypi-" + "Z" * 40
+    rel._emit({"target_version": "1.2.43", "ok": False, "failed_at": "publish",
+               "steps": {"publish": {"ok": False,
+                                     "tail": f"403 Forbidden TWINE_PASSWORD={token}"}}},
+              as_json=False)
+    out = capsys.readouterr().out
+    assert "403 Forbidden" in out
+    assert token not in out
+
+
+def _git(cwd, *args):
+    import subprocess
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t",
+                    "-c", "commit.gpgsign=false", *args],
+                   cwd=cwd, check=True, capture_output=True, text=True)
+
+
+def test_twine_env_finds_the_main_checkout_env_from_a_linked_worktree(
+        monkeypatch, tmp_path, capsys):
+    """.env is gitignored, so a worktree has none; 1.2.43 --publish failed there."""
+    main = tmp_path / "main"
+    main.mkdir()
+    _git(main, "init", "-q")
+    (main / "README").write_text("x", encoding="utf-8")
+    _git(main, "add", "README")
+    _git(main, "commit", "-q", "-m", "init")
+    linked = tmp_path / "linked"
+    _git(main, "worktree", "add", "-q", "--detach", str(linked))
+    token = "pypi-" + "Q" * 40
+    (main / ".env").write_text(f'PYPI_API_TOKEN="{token}"\n', encoding="utf-8")
+    assert not (linked / ".env").exists()
+
+    monkeypatch.setattr(rel, "ENV_FILE", linked / ".env")
+    monkeypatch.delenv("TWINE_PASSWORD", raising=False)
+    monkeypatch.delenv("TWINE_USERNAME", raising=False)
+    monkeypatch.delenv("PYPI_API_TOKEN", raising=False)
+
+    assert rel.resolve_env_file().resolve() == (main / ".env").resolve()
+    env = rel.twine_env()
+    assert env["TWINE_USERNAME"] == "__token__"
+    assert env["TWINE_PASSWORD"] == token
+    assert token not in capsys.readouterr().out
+
+
+def test_no_credentials_error_names_the_paths_tried(monkeypatch, tmp_path):
+    (tmp_path / "icdev-1.2.43-py3-none-any.whl").write_bytes(b"stub")
+    monkeypatch.setattr(rel, "DIST_DIR", tmp_path)
+    monkeypatch.setattr(rel, "ENV_FILE", tmp_path / "nowhere" / ".env")
+    monkeypatch.setattr(rel, "twine_env", lambda: {})
+    out = rel.step_publish("1.2.43")
+    assert str(tmp_path / "nowhere" / ".env") in out["error"]
+
+
 def test_publish_refuses_when_no_artifact_matches_the_version(monkeypatch, tmp_path):
     """Guards against uploading a stale wheel left in dist/ from a previous build."""
     (tmp_path / "icdev-1.2.42-py3-none-any.whl").write_bytes(b"stub")
@@ -536,6 +607,28 @@ def test_detects_a_module_importing_from_itself(tmp_path):
     """
     hollow = _scan(tmp_path, {
         "icdev/tools/llm/agent_loop.py": b"from icdev.tools.llm.agent_loop import DONE\n",
+    })
+    assert hollow == ["icdev/tools/llm/agent_loop.py"]
+
+
+def test_a_docstring_usage_example_is_not_flagged(tmp_path):
+    """1.2.43: 14 healthy modules carried `Usage:` examples importing from
+    themselves inside a docstring; the line regex blocked the release on them."""
+    healthy = _scan(tmp_path, {
+        "icdev/tools/audit/row_hash.py": (
+            b'"""Recipe.\n\nUsage:\n'
+            b'    from icdev.tools.audit.row_hash import compute_audit_row_hash\n"""\n\n'
+            b"def compute_audit_row_hash():\n    return 1\n"
+        ),
+    })
+    assert healthy == []
+
+
+def test_a_shim_import_inside_a_function_is_still_flagged(tmp_path):
+    hollow = _scan(tmp_path, {
+        "icdev/tools/llm/agent_loop.py": (
+            b"def run():\n    from icdev.tools.llm.agent_loop import DONE\n    return DONE\n"
+        ),
     })
     assert hollow == ["icdev/tools/llm/agent_loop.py"]
 

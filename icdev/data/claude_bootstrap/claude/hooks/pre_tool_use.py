@@ -844,6 +844,11 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # immutability triggers (sc_audit_no_update/no_delete); non-repudiation trail
         # for ZIG capability/activity/evidence/assessment writes (cnr-zig-03)
         "sc_audit",
+        # AI Strategy Canvas audit trail (NIST AU-9) — DB-level immutability on
+        # both backends: SQLite RAISE(ABORT) triggers in tools/aisg/db/init_db.py,
+        # PostgreSQL aisg_audit_no_update/no_delete via init_db + migration
+        # 20261008003850_aisg_audit_pg_immutability.
+        "aisg_audit",
         # LPX LLM-proxy virtual-key lifecycle (lpx-keys-03, NIST AU) — issuance,
         # rotation, revocation, and expiry are immutable evidence; rows never
         # UPDATE/DELETE.

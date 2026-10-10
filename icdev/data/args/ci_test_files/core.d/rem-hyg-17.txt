@@ -1,0 +1,1 @@
+tests/awareness/test_claim_verifier.py

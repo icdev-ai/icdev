@@ -93,6 +93,35 @@ Key APIs:
 - `get_iqe_mapping()` — `{canvas_key: (adapter_module, collections)}`
 - `get_cli_toggles()`, `get_cli_descriptions()`
 - `validate_canvas_completeness(key)` — 8-point gate
+- `get_owner(key)`, `list_owned()`, `list_unowned()`, `get_ownership_map()`,
+  `get_ownership_summary()` — ownership (see below)
+
+## Ownership: `owner`, `owner_contact`, `on_call`
+
+Three **optional** per-component fields answer the first question any Internal
+Developer Portal has to answer — *who owns this?*
+
+```yaml
+- key: dic
+  kind: canvas
+  # ...
+  owner: "Document Intelligence Team"    # team or individual ACCOUNTABLE
+  owner_contact: dic-team@example.mil    # email, chat handle, list, or URL
+  on_call: dic-primary                   # rotation / escalation handle
+```
+
+`owner` is **not** `default_roles`. `default_roles` is an RBAC access list — who
+may *use* the canvas. `owner` is who answers for it when it breaks.
+
+They are optional by design: making one required would fail the *whole* registry
+load for every entry that has no owner yet. A component that omits `owner`, or
+carries a placeholder (`TBD`, `unassigned`, `none`, …), is reported as **unowned**
+by `list_unowned()` / `get_ownership_summary()` — never attributed to a fallback
+team, because a wrong owner routes an incident to nobody while reading as
+answered.
+
+Full rationale, API reference, and the deliberately-zero backfill decision:
+[idp-cat-01-component-ownership.md](idp-cat-01-component-ownership.md).
 
 ## Core profiles: `args/core_profiles.yaml`
 

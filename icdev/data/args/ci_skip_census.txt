@@ -1,0 +1,107 @@
+# CUI // SP-CTI
+# CI SKIP CENSUS (trust-disc-03) — enumerated, never counted
+#
+# A skipped test satisfies a coverage claim while asserting nothing. Every line
+# below is one place inside a CI-GATED test file where a test can decline to run,
+# together with the written reason that is acceptable.
+#
+# FORMAT
+#   <file>::<qualname>::<kind>[<ordinal>]  # <written reason>
+#
+# THE RULES
+#   * A skip site that is not on this list FAILS the `test` job by name.
+#   * A reason must be a reason. "flaky" and "TBD" are refused.
+#   * `skip_census.skip_max` in args/test_gating_gate.yaml is a ceiling on the
+#     number of lines here and MAY ONLY GO DOWN. Lower it when you delete a
+#     skip; never raise it to get a commit through.
+#   * The right fix is almost always to DELETE the skip and make the test run.
+#     Registering one is the fallback, and it is a debt you have written down.
+#
+# Enumerated rather than counted on purpose: a bare count can be held constant
+# while the set churns — delete one skip, add another, count unchanged, gate
+# green, and the thing the gate exists to notice has happened unobserved.
+#
+# Gate:   python tools/ci/skip_census.py --check
+# Policy: docs/ci/test-gating-policy.md
+
+tests/cortex/test_tenant_isolation.py::test_cortex_tenant_isolation_on_postgresql::pytest.skip[1]  # the cross-tenant leakage proof needs a LIVE PostgreSQL; the SQLite conftest cannot express RLS. Covered for real by the pg_tier job, not by core.txt
+tests/genesis/test_executor_parity.py::test_corpus_base_commits_resolve_in_this_clone::pytest.skip[1]  # seeded at adoption: git unavailable
+tests/genesis/test_executor_parity.py::test_corpus_base_commits_resolve_in_this_clone::pytest.skip[2]  # seeded at adoption: not a git checkout
+tests/genesis/test_executor_parity.py::test_corpus_base_commits_resolve_in_this_clone::pytest.skip[3]  # seeded at adoption: shallow clone (CI checkout depth 1) — corpus SHAs cannot resolve here
+tests/genesis/test_executor_parity.py::test_live_single_task_replay_produces_a_scored_run::pytest.mark.skipif[1]  # seeded at adoption: live executor replay costs real money and minutes; set ICDEV_PARITY_LIVE=1
+tests/genesis/test_rubric_build_tools.py::test_git_diff_reports_uncommitted_changes::pytest.skip[1]  # seeded at adoption: git unavailable
+tests/genesis/test_rubric_build_tools.py::test_patch_produces_a_one_line_git_diff::pytest.skip[1]  # seeded at adoption: git unavailable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_audit_log_event_exists::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_audit_log_event_invocation::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_classify_category_exists::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_classify_category_invocation::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_classify_category_signature::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_cluster_pain_points_exists::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_cluster_pain_points_invocation::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_cluster_pain_points_signature::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_constants::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_estimate_severity_exists::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_estimate_severity_invocation::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_estimate_severity_signature::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_extract_all_new_exists::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_extract_all_new_invocation::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_extract_from_signal_exists::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_extract_from_signal_invocation::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_extract_from_signal_signature::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_extract_keywords_exists::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_extract_keywords_invocation::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_extract_keywords_signature::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_extract_pain_points_from_signal_exists::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_extract_pain_points_from_signal_invocation::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_extract_pain_points_from_signal_signature::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_extract_sentiment_exists::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_extract_sentiment_invocation::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_extract_sentiment_signature::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_imports::pytest.skip[1]  # seeded at adoption: Import dependency missing: {...}
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_list_pain_points_exists::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_list_pain_points_invocation::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_main_exists::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_merge_with_existing_exists::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_merge_with_existing_invocation::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_pain_extractor.py::test_pain_extractor_merge_with_existing_signature::pytest.skip[1]  # seeded at adoption: Module not importable
+tests/genesis_auto/test_reflexion_agent.py::test_generate_rejects_artifact_with_no_lesson_evidence::pytest.skip[1]  # seeded at adoption: deployment has turned the evidence gate off (attach-only)
+tests/hooks/test_shared_checks.py::test_a_root_relative_windows_path_is_outside::pytest.mark.skipif[1]  # seeded at adoption: root-relative is a Windows concept
+tests/hooks/test_shared_checks.py::test_the_msys_spelling_of_this_worktree_is_inside_it::pytest.mark.skipif[1]  # seeded at adoption: MSYS drive spelling is Windows-only
+tests/kanban/test_one_task_one_pr.py::<module>::pytest.importorskip[1]  # seeded at adoption: tools.genesis.reflexes.kanban
+tests/pg_tier/test_cortex_rls_index_plan.py::<module>::pytest.mark.skipif[1]  # seeded at adoption: PG tier only — set ICDEV_PYTEST_PG=1 with a live PostgreSQL service
+tests/rag/test_toggle_harness.py::test_loader_patch_is_shim_aware::pytest.skip[1]  # seeded at adoption: icdev.tools.rag.retriever not importable here
+tests/rag/test_toggle_harness.py::test_loader_patch_is_shim_aware::pytest.skip[2]  # seeded at adoption: shim resolves to a single module object in this environment
+tests/studio/test_multi_angle_review_template.py::<module>::pytest.importorskip[1]  # pyyaml guard. It is a hard dependency in requirements.txt, so this never fires in CI and should simply be deleted
+tests/studio/test_multi_angle_review_template.py::test_governance_profiles_resolve::pytest.importorskip[1]  # seeded at adoption: tools.cortex.governance
+tests/test_agent_approval_gate.py::TestReversibleToolsAreNotEscalatedByTheirArguments.test_a_recoverable_tool_is_still_escalated::pytest.skip[1]  # seeded at adoption: no recoverable tools enumerated
+tests/test_agov_rule_pack.py::test_rules_load_through_the_loader_when_available::pytest.importorskip[1]  # seeded at adoption: tools.agent_detect.rules agov-det-03 loader not merged yet
+tests/test_agov_rule_pack.py::test_rules_load_through_the_loader_when_available::pytest.skip[1]  # seeded at adoption: tools.agent_detect.rules exposes no load_rules()
+tests/test_app.py::test_api_charts_overview_returns_compliance_canvases::pytest.skip[1]  # THE CASE THIS CENSUS WAS BUILT FROM. Swallows OperationalError from /api/charts/overview because MINIMAL_ICDEV_SCHEMA does not carry the platform tables, so the route has never been asserted in CI. Delete this skip and extend the fixture schema -- do not leave it registered
+tests/test_benchmark_report.py::test_the_rehearsal_would_have_caught_the_old_conflict::pytest.mark.skipif[1]  # seeded at adoption: git is not on PATH
+tests/test_benchmark_report.py::test_two_branches_that_each_add_a_module_both_merge_cleanly::pytest.mark.skipif[1]  # seeded at adoption: git is not on PATH
+tests/test_blockchain_transports.py::TestBlockchainStatusEndpoint._client::pytest.importorskip[1]  # flask guard on the status-endpoint client. Flask is a hard dependency, so this never fires in CI and should simply be deleted
+tests/test_component_registry_ownership.py::test_registry_yaml_and_loader_are_mirrored::pytest.skip[1]  # seeded at adoption: mirror not present in this checkout: {...}
+tests/test_documented_clis_have_a_bootstrap.py::test_no_first_party_import_above_the_bootstrap::pytest.skip[1]  # seeded at adoption: no mirror at {...}
+tests/test_documented_clis_have_a_bootstrap.py::test_the_separately_broken_clis_keep_their_bootstrap::pytest.skip[1]  # seeded at adoption: no mirror at {...}
+tests/test_dwo_agent_allowlist.py::<module>::pytest.importorskip[1]  # pyyaml guard. It is a hard dependency in requirements.txt, so this never fires in CI and should simply be deleted
+tests/test_exa_policy_05_saas_mcp_authz.py::test_authz_audit_insert_matches_the_live_schema::pytest.skip[1]  # the INSERT/live-schema parity check needs a reachable database; a worktree with no data/icdev.db has nothing to compare against
+tests/test_exa_policy_05_saas_mcp_authz.py::test_authz_audit_insert_matches_the_live_schema::pytest.skip[2]  # seeded at adoption: audit_platform not present in this database
+tests/test_genesis_test_reflex_policy.py::test_fresh_generation_across_several_real_modules::pytest.skip[1]  # seeded at adoption: module not present: {...}
+tests/test_genesis_test_reflex_policy.py::test_fresh_generation_across_several_real_modules::pytest.skip[2]  # seeded at adoption: extractor error: {...}
+tests/test_init_goals_and_selective.py::test_claude_md_references_goals_manifest::pytest.skip[1]  # seeded at adoption: running from an installed package, not a checkout
+tests/test_init_goals_and_selective.py::test_packaged_claude_md_is_not_a_stripped_template::pytest.skip[1]  # seeded at adoption: running from an installed package, not a checkout
+tests/test_kanban_startup_recovery.py::TestReflexSweepUsesTheSharedPolicy.reflex::pytest.importorskip[1]  # seeded at adoption: tools.genesis.reflexes.kanban
+tests/test_mfa.py::<module>::pytest.importorskip[1]  # seeded at adoption: pyotp pyotp not installed
+tests/test_migration_version_uniqueness.py::_git_migrations_repo::pytest.skip[1]  # seeded at adoption: git not available
+tests/test_prompt_registry_call_site_prompts.py::<module>::pytest.mark.skipif[1]  # seeded at adoption: tools.llm.prompt_registry not available
+tests/test_prompt_registry_supplemental_layers.py::<module>::pytest.mark.skipif[1]  # seeded at adoption: tools.llm.prompt_registry not available
+tests/test_sbom_dependency_graph.py::test_the_constraint_installs_and_enforces_on_postgresql::pytest.mark.skipif[1]  # seeded at adoption: no reachable PostgreSQL (ICDEV_DATABASE_URL)
+tests/test_scheduled_dispatch_reclaim.py::test_a_recycled_pid_reads_as_GONE_not_alive::pytest.skip[1]  # seeded at adoption: process start time unavailable on this host
+tests/test_ski_roles_lifecycle.py::TestSkillLibraryDeclaration.test_vendored_skill_has_valid_skill_md::pytest.skip[1]  # seeded at adoption: skill pack not vendored: .agents/skills/{...}/
+tests/test_ski_roles_lifecycle.py::TestSubPersonas.test_persona_source_frontmatter_valid::pytest.skip[1]  # seeded at adoption: persona source not vendored: {...}
+tests/test_skip_permissions_compensating_controls.py::TestTheFlagAndItsPath.test_the_mirror_carries_the_same_pointer::pytest.skip[1]  # seeded at adoption: icdev/ mirror not present in this checkout
+tests/test_skip_permissions_compensating_controls.py::TestWriteBoundaryIsEnforcedOnBothPaths.test_traversal_and_symlinks_are_resolved_before_the_comparison::pytest.skip[1]  # seeded at adoption: symlink creation not permitted on this host
+tests/workflow/test_playwright_gate.py::test_run_playwright_empty_results_is_not_run::pytest.importorskip[1]  # seeded at adoption: tools.testing.e2e_runner
+tests/workflow/test_playwright_gate.py::test_run_playwright_exception_is_not_run::pytest.importorskip[1]  # seeded at adoption: tools.testing.e2e_runner
+tests/workflow/test_playwright_gate.py::test_run_playwright_fail::pytest.importorskip[1]  # seeded at adoption: tools.testing.e2e_runner
+tests/workflow/test_playwright_gate.py::test_run_playwright_pass::pytest.importorskip[1]  # seeded at adoption: tools.testing.e2e_runner

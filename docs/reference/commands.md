@@ -43,6 +43,12 @@ python -c "from tools.llm.router import LLMRouter; r = LLMRouter(); print(r.get_
 # Set OLLAMA_BASE_URL=http://localhost:11434/v1 for local model support
 # Set prefer_local: true in llm_config.yaml for air-gapped environments
 
+# vLLM (optional local/LAN provider, omx-vllm-02) — discovery + status
+icdev llm doctor --json                                          # reachability, served models, max_model_len, tool support
+python tools/llm/vllm_discovery.py --status --json               # same report, no `icdev` entry point needed
+# Router auto-registers each served model as vllm:<served-name> when VLLM_BASE_URL is set;
+# VLLM_MODEL names the model behind the stable `vllm-local` alias (unset = skipped in every chain).
+
 # Ollama prefix cache — measured in LATENCY, never dollars (cch-prov-03)
 python tools/llm/ollama_prefix_latency.py --json                  # cold vs warm prompt-eval
 python tools/llm/ollama_prefix_latency.py --model qwen3:4b --repeats 7
@@ -173,6 +179,9 @@ icdev profile list                 # List available profiles
 icdev profile show [<name>]        # Show profile details (active profile by default)
 icdev profile apply <name>         # Append profile env overrides to .env
 icdev profile apply <name> --dry-run  # Preview overrides
+icdev skill install [--dirs auto|claude,codex,pi,gemini,hermes,opencode]  # ONE ICDEV skill -> ~/.agents/skills, linked into each existing harness skill dir (omx-dx-02)
+icdev skill uninstall              # Remove exactly what install created (manifest: ~/.icdev/skill-install-manifest.json)
+icdev skill status [--json]        # What install created, and whether it is still there
 
 # Scaffolding
 icdev scaffold canvas <key> --display-name "Name" [--flavor <flavor>] [--template <dir>] [--out <dir>]   # Generate a new canvas
@@ -4221,6 +4230,12 @@ python tools/hooks/fire_rate_survey.py --gate --max-fire-rate 0.01   # exit 1 ab
 # Enforcement switches (read by the hook, not by this tool):
 #   ICDEV_PRETOOLUSE_ENFORCE=0   all nine checks report but never refuse
 #   ICDEV_<CHECK>_GUARD=0        skip one check — see CHECK_KILL_SWITCHES
+
+# Harness guard (omx-guard-01) — ICDEV's PreToolUse checks inside opencode
+icdev harness install-guard opencode --project .     # writes ./.opencode/plugin/icdev-guard.ts
+icdev harness install-guard opencode --global        # writes $XDG_CONFIG_HOME/opencode/plugin/ (default ~/.config)
+python -m tools.hooks.harness_guard --harness opencode < call.json   # stdin {"tool","args"}, stdout JSON verdict
+# Same kill switches as the hook; fails open (logged) on a broken bridge.
 
 # MCP servers (stdio transport)
 python tools/mcp/unified_server.py                   # Start unified MCP gateway (251 tools, recommended)

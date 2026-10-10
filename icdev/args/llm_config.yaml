@@ -7,18 +7,29 @@
 # Provider Definitions
 # -----------------------------------------------------------------------
 providers:
+  # locality (omx-vllm-01) -- THE input to the CUI egress boundary
+  # (tools/llm/cli_bridge/activate.py::_is_local_only_provider):
+  #   local   -- runs on this machine; base_url must be loopback/RFC1918/link-local
+  #              (coherence_checker --check provider_locality flags one that is not).
+  #   private -- an on-prem/LAN server you control; counted as local ONLY when
+  #              ICDEV_PRIVATE_IS_LOCAL=1.
+  #   cloud   -- leaves your network.
+  # Undeclared fails closed (only an ollama-type provider with no api_key_env is local).
   bedrock:
     type: bedrock
+    locality: cloud
     region: ${AWS_DEFAULT_REGION:-us-gov-west-1}
     # Uses boto3 credentials (IAM role, env vars, or ~/.aws/credentials)
 
   anthropic:
     type: anthropic
+    locality: cloud
     api_key_env: ANTHROPIC_API_KEY
     base_url: https://api.anthropic.com
 
   openai:
     type: openai_compatible
+    locality: cloud
     api_key_env: OPENAI_API_KEY
     base_url: https://api.openai.com/v1
 
@@ -34,6 +45,7 @@ providers:
   # with virtual keys. This is THEIR infrastructure, and ICDEV is just a client.
   gateway:
     type: openai_compatible
+    locality: cloud
     # No default on purpose. A corporate gateway URL is site-specific, and any
     # value invented here would be wrong everywhere — :4000 in particular is
     # ICDEV's OWN LiteLLM proxy, a different service entirely. Unset means
@@ -44,14 +56,17 @@ providers:
 
   ollama:
     type: ollama
+    locality: local
     base_url: ${OLLAMA_BASE_URL:-http://localhost:11434}
 
   gemini:
     type: gemini
+    locality: cloud
     api_key_env: GOOGLE_API_KEY
 
   vllm:
     type: openai_compatible
+    locality: local
     base_url: ${VLLM_BASE_URL:-http://localhost:8000/v1}
     api_key_env: VLLM_API_KEY
 
@@ -61,11 +76,13 @@ providers:
   # selectable, not just probe-detectable.
   localai:
     type: openai_compatible
+    locality: local
     base_url: ${LOCALAI_BASE_URL:-http://localhost:8080/v1}
     api_key_env: LOCALAI_API_KEY
 
   ibm_watsonx:
     type: ibm_watsonx
+    locality: cloud
     api_key_env: IBM_CLOUD_API_KEY
     project_id: ${IBM_WATSONX_PROJECT_ID:-}
     url: ${IBM_WATSONX_URL:-https://us-south.ml.cloud.ibm.com}
@@ -75,6 +92,7 @@ providers:
   # Air-gapped: self-host via vLLM (see mistral_vllm provider below)
   mistral:
     type: openai_compatible
+    locality: cloud
     api_key_env: MISTRAL_API_KEY
     base_url: ${MISTRAL_BASE_URL:-https://api.mistral.ai/v1}
 
@@ -84,12 +102,14 @@ providers:
   #   --attention-backend FLASH_ATTN_MLA --tool-call-parser mistral
   mistral_vllm:
     type: openai_compatible
+    locality: local
     base_url: ${MISTRAL_VLLM_BASE_URL:-http://localhost:8100/v1}
     api_key_env: MISTRAL_VLLM_API_KEY
 
   # Ollama cloud endpoint — authenticated, falls back to local ollama
   ollama_cloud:
     type: ollama
+    locality: cloud
     base_url: ${OLLAMA_CLOUD_BASE_URL:-https://ollama.com}
     api_key_env: OLLAMA_API_KEY
 
@@ -97,6 +117,7 @@ providers:
   # session. Used when ANTHROPIC_API_KEY is absent (this environment).
   claude-cli:
     type: cli
+    locality: cloud
     cli_binary: claude
     backend: auto
     soft_wait_seconds: 360
@@ -110,6 +131,7 @@ providers:
   # Requires `claude` on PATH (installed via Claude Code).
   cli:
     type: cli
+    locality: cloud
     cli_binary: ${CLAUDE_CLI_BINARY:-claude}
 models:
   # -- Anthropic Claude --
@@ -311,6 +333,26 @@ models:
     disable_thinking: true
     supports_tools: true
     supports_structured_output: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  # Stable alias for whatever the operator's vLLM serves (omx-vllm-02). OPTIONAL:
+  # with VLLM_MODEL unset the id expands to "" and the router marks the alias
+  # unavailable, so every chain below falls straight through it. It always sits
+  # AFTER the ollama entries -- on the low-VRAM target boxes only a small quantized
+  # model fits under vLLM's KV-cache preallocation, and Ollama (GGUF + CPU offload)
+  # stays the default local path. The realistic production use is a remote vLLM on
+  # a bigger GPU: point VLLM_BASE_URL at it (a LAN host still counts as local; see
+  # providers.vllm.locality). context_window / supports_tools below are
+  # placeholders -- settings.vllm_discovery overwrites both from the server's
+  # max_model_len and a probed tools request.
+  vllm-local:
+    provider: vllm
+    model_id: "${VLLM_MODEL:-}"
+    context_window: 4096
+    max_output_tokens: 2048
+    supports_thinking: false
+    supports_tools: false
+    supports_structured_output: false
     pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
   # Primary Ollama cloud model — kimi-k2.6:cloud (vision-capable, 3s TTFT).
@@ -758,7 +800,7 @@ routing:
     effort: low
 
   code_generation:
-    chain: [qwen3-local, kimi-cloud, claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local]
+    chain: [qwen3-local, kimi-cloud, claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local, vllm-local]
     effort: high
 
   saas_proxy:
@@ -963,7 +1005,7 @@ routing:
   # REFUSED. The chain stays local-first so that even an enforcement bug cannot
   # leak — defence in depth, not a single flag.
   proposal_drafting:
-    chain: [qwen3-local, llama-local]
+    chain: [qwen3-local, llama-local, vllm-local]
     effort: medium
     force_local: true
 
@@ -983,12 +1025,12 @@ routing:
     effort: medium
 
   bid_scoring:
-    chain: [qwen3-local, llama-local]
+    chain: [qwen3-local, llama-local, vllm-local]
     effort: low
     force_local: true
 
   color_review:
-    chain: [qwen3-local, llama-local]
+    chain: [qwen3-local, llama-local, vllm-local]
     effort: medium
     force_local: true
 
@@ -1000,27 +1042,27 @@ routing:
   # raw CUI and cannot be usefully masked (mask the program names and there is
   # nothing left to write about).
   rfi_writer_drafting:
-    chain: [qwen3-local, llama-local]
+    chain: [qwen3-local, llama-local, vllm-local]
     effort: low
     force_local: true
 
   rfi_editor_drafting:
-    chain: [qwen3-local, llama-local]
+    chain: [qwen3-local, llama-local, vllm-local]
     effort: medium
     force_local: true
 
   rfi_reviewer_review:
-    chain: [qwen3-local, llama-local]
+    chain: [qwen3-local, llama-local, vllm-local]
     effort: high
     force_local: true
 
   rfi_researcher_knowledge:
-    chain: [qwen3-local, llama-local]
+    chain: [qwen3-local, llama-local, vllm-local]
     effort: high
     force_local: true
 
   rfi_compliance_assessment:
-    chain: [qwen3-local, llama-local]
+    chain: [qwen3-local, llama-local, vllm-local]
     effort: high
     force_local: true
 
@@ -1484,6 +1526,22 @@ settings:
   ollama_discovery:
     enabled: true
     probe_providers: [ollama, ollama_cloud]
+    default_capabilities: [summarization, writing]
+    refresh_interval_seconds: 3600
+  # vLLM auto-discovery (omx-vllm-02): GET ${VLLM_BASE_URL}/models and register each
+  # served model as `vllm:<served-name>` with context_window = max_model_len and
+  # supports_tools from a ONE-SHOT tools probe (tool calling is a server flag,
+  # --enable-auto-tool-choice, that /v1/models does not expose). The probe verdict
+  # is cached per process; an inconclusive probe registers supports_tools: false.
+  # probe_only_if_env: vLLM is optional, so a router in a process that never set
+  # VLLM_BASE_URL does not dial localhost:8000 at all. Report the endpoint with
+  # `icdev llm doctor` (probes regardless of this gate).
+  vllm_discovery:
+    enabled: true
+    probe_providers: [vllm]
+    probe_only_if_env: VLLM_BASE_URL
+    probe_tools: true
+    timeout_seconds: 3
     default_capabilities: [summarization, writing]
     refresh_interval_seconds: 3600
 

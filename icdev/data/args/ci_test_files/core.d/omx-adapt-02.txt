@@ -1,0 +1,2 @@
+# omx-adapt-02 -- the pi_cli adapter (fake binary on a temp PATH)
+tests/agents/test_pi_cli_adapter.py

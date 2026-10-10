@@ -1,0 +1,473 @@
+# CUI // SP-CTI
+# Which external DataBridge connectors an AGENT may read from.
+#
+# Consumed by tools/databridge/broker.py.
+#
+# ---------------------------------------------------------------------------
+# This file is an authorization boundary, not a convenience config.
+#
+# DataBridge connectors reach a customer's own systems — Splunk, ServiceNow,
+# SolarWinds, Tenable, GitHub. Before the broker existed, agents could not
+# reach them at all, and the only reason was that nobody had wired it up. That
+# was an accident. This file is the deliberate version.
+#
+# Deny-all by default, and a missing or unreadable file also denies: a config
+# mistake must not be indistinguishable from a grant.
+#
+# ---------------------------------------------------------------------------
+# READ-ONLY. The broker has no write path. An agent creating a ticket or
+# updating a CRM record is a much larger blast radius than reading one, it
+# lands in a system ICDEV does not own and cannot roll back, and it needs its
+# own approval design. Do not add a `write:` key here expecting it to work.
+#
+# ---------------------------------------------------------------------------
+# Grant shape:
+#
+#   - name: splunk                  # must match the registered connector name
+#     description: SIEM search      # shown to agents by list_available()
+#     connection_id: prod-splunk    # row in db_connections holding creds
+#     tables: [notable_events]      # ALLOWLIST — not a hint
+#     agents: [security_analyst]    # optional; empty means any agent
+#     classification_ceiling: UNCLASSIFIED
+#
+# `tables` is an allowlist because a connector typically exposes far more than
+# an agent needs, and "everything the API offers" is not a decision anyone
+# consciously made.
+#
+# `agents` is by role_id. Leaving it empty grants every agent, including
+# runtime-generated SMEs — reasonable for a low-sensitivity public data source,
+# rarely right for a customer system.
+#
+# `classification_ceiling` bounds what may be SENT as a query filter. Free-text
+# filter values are sanitized fail-closed regardless.
+
+version: databridge-agent-access-1.0
+
+# Master switch. On, for two grants — see below.
+#
+# What "on" is NOT allowed to mean: a shipped grant against a CUSTOMER system.
+# The rule this file has always stated is that an install must not silently
+# authorise agents against systems the operator never reviewed, and that rule is
+# unchanged. Both shipped grants are credential-free and read-only:
+#
+#   rss    a PUBLIC government publications feed — its entire content is
+#          already world-readable, so authorising it discloses nothing and its
+#          blast radius is the reading of a public web page.
+#   floci  a LOCAL service emulator on loopback, off by default, holding
+#          EMULATED state and reached with a hard-wired dummy credential pair.
+#          Its blast radius on a default install is nothing at all, because the
+#          connector returns `disabled` before opening a socket.
+#
+# THE COUNT IS NOT THE RULE, and reading it as one is how the rule gets waived
+# by arithmetic. The rule is the PROPERTIES: no credential, read-only, scoped to
+# named roles, ceiling at UNCLASSIFIED, and a connection whose destination is
+# bounded. Anything with credentials — Splunk, ServiceNow, SolarWinds, Tenable,
+# a private GitHub org — stays commented out, stays a per-deployment decision,
+# and belongs to the operator, not to this file. Enforced by
+# tests/test_databridge_first_grant.py, which fails on ANY shipped grant
+# carrying an auth_secret_ref.
+enabled: true
+
+connectors:
+  # -------------------------------------------------------------------------
+  # Federal Register — NIST documents. DOCUMENT CURRENCY.
+  #
+  # The question a currency backend has to answer is "is the document this one
+  # cites still the operative one?", and the Federal Register is the official
+  # daily journal of record for exactly that: what an agency has published,
+  # corrected, superseded or withdrawn, with a stable public API.
+  #
+  # Why this one is the right first grant:
+  #   * read-only in the strongest sense — the source has no write API at all;
+  #   * no credential exists, so there is no secret to leak and no
+  #     db_connections.auth_secret_ref to resolve;
+  #   * agency-scoped by the query string, so the grant is narrow by
+  #     construction rather than by convention;
+  #   * UNCLASSIFIED end to end, so the ceiling below is the true ceiling and
+  #     not a convenient one.
+  #
+  # NOT the NIST CSRC publications feed, which is what this grant was first
+  # written against. Measured 2026-08-17: every CSRC RSS path 404s
+  # (…/CSRC/media/feeds/rss/publications.xml and six variants) while
+  # csrc.nist.gov itself serves 200 — the feed has been retired. That URL is
+  # also tools/doc_modernization/nist_pubs_sync.py's DEFAULT_FEED_URL, whose
+  # live pull swallows every network error by design, so docmod_nist_pubs has
+  # been fed by its static seed alone; that is cef-fnd-02's to fix, not this
+  # grant's.
+  #
+  # `tables` is the FEED URL because that is what RSSConnector reads as its
+  # table name. That makes this allowlist an exact-URL allowlist: an agent
+  # cannot point the connector at another host or widen the agency filter,
+  # which matters more here than for a typical connector because feedparser
+  # follows redirects and the egress guard only validates the first hop.
+  - name: rss
+    description: >-
+      Federal Register documents published by NIST — the official record of
+      which agency documents are current, corrected or superseded. Read-only,
+      public, no credentials. Use it to decide whether a document cites a
+      superseded publication.
+    connection_id: federal-register-nist
+    tables:
+      - https://www.federalregister.gov/api/v1/documents.rss?conditions%5Bagencies%5D%5B%5D=national-institute-of-standards-and-technology
+    # Scoped, not empty. An empty list grants EVERY agent including
+    # runtime-generated SMEs; naming the roles that review documents for
+    # currency keeps the grant reviewable and keeps `databridge_sources`
+    # answering [] for everyone else.
+    agents:
+      - doc_reviewer
+      - docgen_analyst
+      - cortex_analyst
+    classification_ceiling: UNCLASSIFIED
+
+  # -------------------------------------------------------------------------
+  # floci AWS service emulator (flx-bridge-02) — THE LOCAL EMULATED ESTATE.
+  #
+  # This is the second shipped grant, and it is a deliberate reversal of what
+  # flx-bridge-01 wrote one card earlier ("floci must not ship as an agent
+  # grant; it is a per-deployment decision"). That position was right while
+  # nothing consumed the connector. flx-twin-01 is the consumer, and its whole
+  # design is that it reads THROUGH this broker rather than importing the
+  # connector — "a direct import is an ungoverned side channel that the whole
+  # cef-fnd-03 design exists to close". Leaving the grant out would not have
+  # kept the emulator unreachable; it would have pushed its one reader onto the
+  # ungoverned path. So the grant is the safer of the two options, not the
+  # laxer one.
+  #
+  # WHY SHIPPING THIS ON IS NOT AUTHORISING AN UNREVIEWED SYSTEM — the rule at
+  # the top of this file, applied rather than waived. Each leg is independently
+  # sufficient:
+  #   * the emulator is OFF by default (FLOCI_ENABLED, default false), and off
+  #     means the connector returns `disabled` before any socket opens, so a
+  #     default install's blast radius is nothing at all;
+  #   * it is LOOPBACK ONLY, bounded by the connection row's egress_allowlist,
+  #     which is enforced at the point the endpoint is chosen;
+  #   * it is CREDENTIAL-FREE in the strongest sense — emulator.credentials()
+  #     is hard-wired to the dummy pair and deliberately refuses to read the
+  #     ambient AWS environment, so there is no secret to leak and no
+  #     auth_secret_ref to resolve;
+  #   * it holds EMULATED state, which flx-twin-01 marks `emulated` provenance
+  #     precisely because it is not evidence of any real estate;
+  #   * read-only, like every grant here — the broker has no write path, and
+  #     the connector's write() is unreachable through it.
+  #
+  # ALL SEVEN LOGICAL TABLES, and that is the connector's whole declared
+  # surface rather than "everything the AWS API offers". flx-twin-01's verdict
+  # ladder needs every one of them: `pass` requires every declared table to
+  # answer, and `warn` is reachable ONLY through a container-backed table
+  # reporting `unsupported_without_docker` — today that is `lambda_functions`,
+  # derived from emulator.CONTAINER_BACKED_SERVICES. Dropping it would make one
+  # of the four verdicts structurally unreachable, which is the same defect as
+  # a check with no probe behind it. A table added to the connector later is a
+  # NEW authorization decision and must be added here by hand; the grant is
+  # pinned against floci_connector.TABLES (module level, not a class attribute)
+  # so that decision cannot be skipped.
+  - name: floci
+    description: >-
+      Local floci AWS service emulator (loopback, off by default, dummy
+      credentials). Read-only view of the EMULATED estate: emulator health and
+      service list, plus S3 buckets, DynamoDB tables, Lambda functions, SQS
+      queues and ECR repositories. Emulated state is never evidence about a
+      real estate — a reader must mark it as such.
+    connection_id: floci-emulator-local
+    tables:
+      - health
+      - services
+      - s3_buckets
+      - dynamodb_tables
+      - lambda_functions
+      - sqs_queues
+      - ecr_repositories
+    # Scoped to the twin observer role. An empty list grants EVERY agent
+    # including runtime-generated SMEs, and an emulator that can be handed a
+    # docker socket is not a source to hand to an unreviewed SME.
+    agents:
+      - twin_observatory_analyst
+    classification_ceiling: UNCLASSIFIED
+
+
+  # floci-az Azure service emulator (flx-az-01) — THE LOCAL EMULATED ESTATE.
+  #
+  # A SEPARATE GRANT from `floci` above, deliberately. They are different
+  # emulators, and an operator who authorized a read of the AWS emulated estate
+  # has said nothing about the Azure one. Granting both from one entry would
+  # make enabling the second a silent consequence of the first.
+  #
+  # READ ONLY BY CONSTRUCTION, not by convention: FlociAzConnector declares
+  # supports_write=False and its write() returns `unsupported` naming the absent
+  # Azure IaC executor. ICDEV has tools/cloud/aws_config_executor.py and no
+  # Azure analogue, so there is nothing here that could apply a change.
+  #
+  # The table list is pinned against floci_az_connector.TABLES (module level,
+  # not a class attribute) by a test, so a table added to the connector later is
+  # a NEW authorization decision that cannot be skipped.
+  - name: floci_az
+    description: >-
+      Local floci-az Azure service emulator (loopback, off by default, no
+      credentials). Read-only view of the EMULATED estate: emulator health,
+      subscriptions and resource groups, plus resources, virtual networks,
+      network security groups, storage accounts, key vaults and managed
+      identities — every resource-type table enumerated PER RESOURCE GROUP,
+      because a subscription-scoped ARM list returns empty for a populated
+      estate on this emulator (measured 2026-09-05). Emulated state is never
+      evidence about a real estate — a reader must mark it as such.
+    connection_id: floci-az-emulator-local
+    tables:
+      - health
+      - subscriptions
+      - resource_groups
+      - resources
+      - virtual_networks
+      - network_security_groups
+      - storage_accounts
+      - key_vaults
+      - managed_identities
+    # Scoped to the twin observer role, matching the `floci` grant. An empty
+    # list grants EVERY agent including runtime-generated SMEs, and an emulator
+    # that is handed a docker socket and issues its own IMDS tokens is not a
+    # source to hand to an unreviewed SME.
+    agents:
+      - twin_observatory_analyst
+    classification_ceiling: UNCLASSIFIED
+
+  # floci-gcp GCP service emulator (flx-gcp-01) — THE LOCAL EMULATED ESTATE.
+  #
+  # A THIRD SEPARATE GRANT. An operator who authorized reads of the AWS and
+  # Azure emulated estates has said nothing about the GCP one.
+  #
+  # READ ONLY BY CONSTRUCTION, not by convention: FlociGcpConnector declares
+  # supports_write=False and its write() returns `unsupported` naming the absent
+  # GCP IaC executor. ICDEV has tools/cloud/aws_config_executor.py and no GCP
+  # analogue, so there is nothing here that could apply a change.
+  #
+  # The table list is pinned against floci_gcp_connector.TABLES (module level,
+  # not a class attribute) by a test, so a table added to the connector later is
+  # a NEW authorization decision that cannot be skipped.
+  #
+  # `enabled_services` IS NOT A HEALTH TABLE and is granted knowing that. It
+  # returns the emulator's declared/compiled-in service names, MEASURED
+  # byte-identical on a deployment that cannot start a container — the connector
+  # strips the always-"running" status so no caller can render it as one.
+  - name: floci_gcp
+    description: >-
+      Local floci-gcp GCP service emulator (loopback, off by default, no
+      credentials). Read-only view of the EMULATED estate: emulator health and
+      declared-service enablement, the configured project, plus GCS buckets,
+      Pub/Sub topics, Secret Manager secrets, KMS key rings, IAM service
+      accounts, Cloud SQL instances, BigQuery datasets and GKE clusters — one
+      project-scoped request each, because project-scoped lists reflect writes
+      on this emulator (measured 2026-09-05), unlike the Azure sibling.
+      Firestore and Datastore are ABSENT: they answer gRPC only, so this
+      HTTP connector cannot read them at all. Emulated state is never evidence
+      about a real estate — a reader must mark it as such.
+    connection_id: floci-gcp-emulator-local
+    tables:
+      - health
+      - enabled_services
+      - project
+      - buckets
+      - topics
+      - secrets
+      - key_rings
+      - service_accounts
+      - sql_instances
+      - datasets
+      - gke_clusters
+    # Scoped to the twin observer role, matching the two grants above. An empty
+    # list grants EVERY agent including runtime-generated SMEs, and an emulator
+    # that is handed a docker socket — this one spawns Postgres, Redpanda, k3s
+    # and arbitrary caller-named images — is not a source to hand to an
+    # unreviewed SME.
+    agents:
+      - twin_observatory_analyst
+    classification_ceiling: UNCLASSIFIED
+
+  # floci-oci OCI service emulator (flx-oci-01) — THE LOCAL EMULATED ESTATE.
+  #
+  # A FOURTH SEPARATE GRANT. An operator who authorized reads of the AWS, Azure
+  # and GCP emulated estates has said nothing about the OCI one.
+  #
+  # READ ONLY BY CONSTRUCTION, not by convention, and for TWO reasons rather
+  # than one: FlociOciConnector declares supports_write=False and its write()
+  # returns `unsupported` naming BOTH the absent OCI IaC executor (ICDEV has
+  # tools/cloud/aws_config_executor.py and no OCI analogue) AND the stubbed OCI
+  # provider layer — OCIObjectStorageProvider.list_objects is `return []` and
+  # its siblings are the same shape, so no endpoint can reach them. See
+  # docs/spikes/flx-oci-parity.md §1.
+  #
+  # The table list is pinned against floci_oci_connector.TABLES (module level,
+  # not a class attribute) by a test, so a table added to the connector later is
+  # a NEW authorization decision that cannot be skipped.
+  #
+  # `enabled_services` IS NOT A HEALTH TABLE and is granted knowing that. It
+  # returns the emulator's declared/compiled-in service names, MEASURED
+  # byte-identical on a deployment that cannot start a container — the connector
+  # strips the always-"running" status so no caller can render it as one. It
+  # also carries `self_reports_disagree`, because this emulator's startup log
+  # names seven services and its /health map names eight.
+  - name: floci_oci
+    description: >-
+      Local floci-oci OCI service emulator (loopback, off by default, no
+      credentials). Read-only view of the EMULATED estate: emulator health and
+      declared-service enablement, plus Object Storage buckets, Identity
+      compartments/users/groups/policies, Vault vaults, KMS keys, Queue queues,
+      Streaming streams, Functions applications and OKE clusters — one
+      compartment-scoped request each, because compartmentId is honoured on this
+      emulator (measured 2026-09-05: a bogus compartment returns zero rows),
+      unlike the Azure sibling's subscription-scope trap. OKE rows carry
+      `lifecycle_is_unverified`: floci-oci sets ACTIVE once at create and never
+      re-checks it (through 0.4.1 k3s exited at once for lack of a --token; on
+      0.4.2 a stopped k3s still reads ACTIVE).
+      Emulated state is never evidence about a real estate — a reader must mark
+      it as such.
+    connection_id: floci-oci-emulator-local
+    tables:
+      - health
+      - enabled_services
+      - buckets
+      - compartments
+      - users
+      - groups
+      - policies
+      - vaults
+      - keys
+      - queues
+      - streams
+      - applications
+      - clusters
+    # Scoped to the twin observer role, matching the three grants above. An
+    # empty list grants EVERY agent including runtime-generated SMEs, and an
+    # emulator that is handed a docker socket — this one spawns k3s — is not a
+    # source to hand to an unreviewed SME.
+    agents:
+      - twin_observatory_analyst
+    classification_ceiling: UNCLASSIFIED
+
+  # -------------------------------------------------------------------------
+  # Author-supplied currency statements (dwr-ev-01) — THE LOCAL DIC TABLE.
+  #
+  # What an author declared at upload about the currency of the entities their
+  # document names (dic_author_assertions). A LOCAL-DATABASE connector in the
+  # icdev_demand shape: no endpoint, no credential, no socket. It is granted
+  # here for the same reason the floci grant above exists — the reader that
+  # wants these rows must come THROUGH the broker (authorization, ceiling,
+  # read-only, one access-log row per outcome) rather than through a private
+  # SELECT that skips all of it. Leaving it out would not keep the table
+  # unreachable; it would push its readers onto the ungoverned path.
+  #
+  # This is NOT how the drafter learns what an author asserted. The drafter
+  # asks cortex.resolve, whose `currency` rung reads the entity_currency store
+  # where the author's row is RANKED against the feeds and the catalog under
+  # args/entity_currency.yaml's one policy, disagreement preserved. This
+  # connector serves the statements AS MADE; the store serves them ranked.
+  - name: icdev_author_evidence
+    description: >-
+      Author-supplied currency statements recorded at DIC ingest
+      (dic_author_assertions): which entity, the author's status word, the
+      AUTHOR's as_of clock and its basis, who asserted it and the document it
+      came with. Read-only, local database, no credentials. One source's
+      statements, unranked — the ranked answer with its disagreements is
+      cortex.resolve / entity_currency.resolve.
+    connection_id: dic-author-evidence-local
+    tables:
+      - author_assertions
+    # Scoped to the two MACHINE readers: the drafter's role and the role Cortex
+    # presents to the broker for its `external` rung (args/cortex_config.yaml
+    # search.external.agent_id). A human reviewer adjudicates on the RESOLVED
+    # view, where the author's row sits beside the sources it contradicts, and
+    # has no business reading one side of that alone. An empty list grants
+    # EVERY agent including runtime-generated SMEs.
+    agents:
+      - docgen_analyst
+      - cortex_analyst
+    classification_ceiling: UNCLASSIFIED
+# ---------------------------------------------------------------------------
+# Further examples, left commented. These reach CUSTOMER systems and each needs
+# its own operator review, its own db_connections row and its own secret
+# reference — never a literal secret here.
+#
+#   - name: github
+#     description: Read-only repository and issue search.
+#     connection_id: corp-github
+#     tables: [issues, pull_requests]
+#     agents: []
+#     classification_ceiling: UNCLASSIFIED
+#
+#   - name: servicenow_itsm
+#     description: Incident records for operational context.
+#     connection_id: prod-snow
+#     tables: [incident]
+#     agents: [security_analyst, incident_responder]
+#     classification_ceiling: CUI
+
+  # ═════════════════════════════════════════════════════════════════════════
+  # THE OPERATOR'S OWN CONTENT — TEMPLATES, DELIBERATELY COMMENTED OUT
+  # (dic-bridge-01)
+  #
+  # SharePoint, Confluence, Jira and an operator-owned SQL database all reached
+  # DataBridge with this card. NONE of them ships as a grant, and that is the
+  # rule at the top of this file applied rather than an oversight: every one
+  # carries a credential, so every one is a per-deployment decision.
+  # tests/test_databridge_first_grant.py fails the build on any shipped grant
+  # whose connection descriptor carries an auth_secret_ref, so uncommenting a
+  # block below without also reviewing it is not something that can happen
+  # quietly.
+  #
+  # These are the shapes an operator should START from, not shapes they should
+  # accept. Two things need a real decision in each:
+  #
+  #   `tables`  — an allowlist, not a hint. `pages` and `page` mean "any page
+  #               this credential can see". If that is broader than intended,
+  #               narrow the CREDENTIAL (a service account scoped to one space
+  #               or one project), because this list cannot express "only the
+  #               Ops space" for a Confluence connector.
+  #
+  #   `agents`  — an empty list grants EVERY agent, including runtime-generated
+  #               SMEs. Name the roles.
+  #
+  # The classification ceilings below are CUI because that is what an internal
+  # wiki and an internal tracker typically hold. If the site holds MNPI, export-
+  # controlled material or PII, the ceiling is not the fix — the grant is wrong.
+  #
+  # - name: confluence
+  #   description: >-
+  #     The operator's Confluence site — the current text of internal policy and
+  #     procedure pages. Read-only. Use it to check whether a document's claim
+  #     matches the operative page before proposing a change.
+  #   connection_id: confluence-operator
+  #   tables: [spaces, pages, page, search]
+  #   agents: [doc_reviewer, docgen_analyst]
+  #   classification_ceiling: CUI
+  #
+  # - name: jira
+  #   description: >-
+  #     The operator's Jira site — issues, comments and the field-level
+  #     changelog. Read-only. The changelog is the citable part: "this moved
+  #     from X to Y on this date, by this person".
+  #   connection_id: jira-operator
+  #   tables: [projects, issues, issue, comments, changelog]
+  #   agents: [doc_reviewer, docgen_analyst]
+  #   classification_ceiling: CUI
+  #
+  # - name: sharepoint
+  #   description: >-
+  #     The operator's SharePoint tenant — sites, document libraries and the
+  #     TEXT of readable files. Read-only. A .docx or .pdf comes back as
+  #     `needs_extractor`, not as text; route those through document
+  #     intelligence's ingest path instead.
+  #   connection_id: sharepoint-operator
+  #   tables: [sites, site, drives, items, file_content, search]
+  #   agents: [doc_reviewer, docgen_analyst]
+  #   classification_ceiling: CUI
+  #
+  # - name: local_database
+  #   description: >-
+  #     An operator-owned SQL database — a policy register, a terminology table,
+  #     an asset inventory. Read-only over tables the operator declared on the
+  #     connection; there is no arbitrary-SQL surface.
+  #   connection_id: local-content-database
+  #   # These MUST match tables declared on the connection record. A name here
+  #   # that the connection does not declare grants nothing, which is the safe
+  #   # direction but is also a silently useless grant — keep the two in step.
+  #   tables: [policy_register]
+  #   agents: [doc_reviewer, docgen_analyst]
+  #   classification_ceiling: CUI

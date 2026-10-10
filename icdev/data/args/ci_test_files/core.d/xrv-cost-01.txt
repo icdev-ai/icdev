@@ -1,0 +1,2 @@
+# xrv-cost-01 -- transcript cost reader: per-session USD by model and task type.
+tests/cost/test_session_cost.py

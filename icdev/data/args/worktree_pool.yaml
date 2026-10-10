@@ -1,0 +1,54 @@
+# CUI // SP-CTI
+# Warm worktree pool (mfx-own-09).
+#
+# A pre-created checkout on a THROWAWAY branch that a dispatch renames and moves
+# onto `kanban/<task-id>` at claim time, so `git worktree add` leaves the
+# dispatch critical path. Measured on this host 2026-09-12: an add is 3.6s on a
+# quiet host and 23.0s median (15 of 37 KILLED) with self-hosted CI in flight,
+# while a claim is ~1.3s and does not scale with the tree.
+#
+# Kill switch: KANBAN_WORKTREE_POOL=0 (env wins over `enabled` here).
+enabled: true
+
+# HOW MANY WARM ENTRIES TO HOLD. Each is a full checkout -- 275 MB on this tree
+# after task-wt-20f94d17 untracked playwright-report/ and backups/ -- so this is
+# a DISK budget, not a throughput one. KANBAN_MAX_IN_PROGRESS is 3, and a cycle
+# dispatches at most that many; 2 covers the common 1-2 dispatch cycle and costs
+# ~550 MB steady state.
+target_size: 2
+
+# Hard ceiling. The pool may never hold more than this, whatever the target says
+# -- a pool that grows without bound is the accumulation mfx-own-04 exists for.
+max_size: 3
+
+# Entries created per refill run. One, deliberately: a refill is a real
+# `git worktree add` on the same disk a dispatch needs, so filling the pool
+# takes a few cycles rather than monopolising the disk for a minute.
+max_refills_per_run: 1
+
+# An entry older than this is REAPED rather than claimed. Not a correctness
+# bound -- a claim resets to origin/<default> whatever the entry's age, and a
+# 12h-stale entry (65 commits, 243 files) resets in 0.57s -- but an unclaimed
+# entry is 275 MB the board is not using.
+entry_max_age_hours: 24
+
+# Refuse to refill while `tools.kanban.host_io` reports the host slow. WAIT is
+# the only measured signal there and it is honoured; PROCEED and UNMEASURABLE
+# both refill, and which one is REPORTED as `quiet_basis`. See the module
+# docstring for why UNMEASURABLE must not block a refill.
+refill_requires_quiet: true
+
+# Seconds a refill waits for the cross-process worktree-add lock before giving
+# up for this run. SHORT on purpose: the lock being held means a DISPATCH is
+# adding right now, and the pool must yield to real work rather than queue
+# behind it.
+refill_lock_wait_seconds: 5
+
+# Seconds of silence after a refill add FAILS. A refill add is killed at the same
+# 30s budget a dispatch add is, and the host is slow for MINUTES at a time -- on
+# an IDLE board `host_io` reports UNMEASURABLE (no dispatch add was recorded,
+# because no dispatch happened), so without this the pool would burn 30s of disk
+# per cycle for the whole CI window, competing with the runs that are slowing it
+# down. NOT a retry budget and NOT a backoff ladder: the next attempt after the
+# cooldown is an ordinary attempt.
+refill_failure_cooldown_seconds: 600

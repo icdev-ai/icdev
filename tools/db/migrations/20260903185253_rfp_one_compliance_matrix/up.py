@@ -22,7 +22,7 @@ This migration makes proposal_compliance_matrix the ONE table:
   2. WIDEN the requirement_type CHECK from (L, M, N, other) to the union with
      the builder's source sections (C, attachment, amendment). The constraint
      is regenerated from REQUIREMENT_TYPES in
-     tools/govcon/compliance_matrix_schema.py — the same tuple
+     tools/db/compliance_matrix_schema.py — the same tuple
      init_icdev_db.py derives the fresh-database DDL from. PostgreSQL only:
      SQLite cannot ALTER a CHECK, and a fresh SQLite database picks the new
      vocabulary up from init_icdev_db.py (the same shape as 20260902235404).
@@ -45,7 +45,7 @@ import uuid
 from datetime import datetime, timezone
 
 from tools.db.storage import is_pg, table_exists
-from tools.govcon.compliance_matrix_schema import (
+from tools.db.compliance_matrix_schema import (
     ADDED_COLUMNS,
     LEGACY_STATUS_MAP,
     MATRIX_TABLE,

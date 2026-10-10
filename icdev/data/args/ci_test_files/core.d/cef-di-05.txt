@@ -1,0 +1,39 @@
+# cef-di-05 — DIC document generation (doc_generator + the two /api/generate
+# routes) through the governed cortex.resolve() seam, behind a toggle.
+#
+# Gated in the PR that makes it pass, per docs/ci/test-gating-policy.md, and in
+# its own fragment so it cannot collide with a sibling's append (tsg-policy-03).
+#
+# What is gated here fails SILENTLY, which is why it gates rather than merely
+# running once:
+#
+#   * the currency guard is the only thing in this pipeline that can catch a
+#     draft reintroducing a deprecated entity, and it catches it by ASSERTING
+#     something no other gate asserts. verifier.verify asks whether a claim is
+#     SUPPORTED by the retrieved evidence, and a 2019 runbook fully supports
+#     "configure the enclave to use TLS 1.1" — so the verifier passes it, the
+#     attribution score passes it, the confabulation detector passes it, and
+#     the document ships. A regression here looks exactly like a clean draft.
+#   * `screened: false` vs `findings: []`. "Never checked" and "checked,
+#     nothing wrong" are one field apart on a persisted section, and if the
+#     guard silently stops running every draft reads as screened and clean.
+#   * cortex.resolve() RUNS the domain packs to derive its verdict, so the
+#     screen — which passes DRAFTED TEXT back through resolve — recurses
+#     without bound if the thread-local re-entrancy guard regresses.
+#     test_a_re_entrant_ask_returns_none_instead_of_recursing is its only
+#     observer, and it covers both entry points (evidence AND screen).
+#   * the guard must not manufacture the defect it prevents. A pack's evidence
+#     ref (`entity_currency:nist`) is a synthetic key, not a retrievable chunk
+#     id, so emitting it as a `[source: chunk ...]` tag would be a hallucinated
+#     citation created by the trust guard itself.
+#   * the rollback contract. With `cortex.enabled` false in
+#     args/dic_docgen_config.yaml the seam is never consulted and the legacy
+#     DICSearchEngine chain runs unchanged, which is what makes "flip the flag"
+#     a real alternative to reverting a merge. The toggle-off test asserts
+#     resolve() is NOT CALLED rather than that its result was ignored — a seam
+#     that resolves and discards still costs the fan-out and still fails closed
+#     on a refusal, so "we ignored it" is not the same rollback.
+#   * the Chain-of-Debate paths. They needed no change, and "we did not touch
+#     it" is not evidence that they still run — both ChainOrchestrator entry
+#     points are asserted reached, on the governed evidence.
+tests/test_docgen_cortex_evidence.py

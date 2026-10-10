@@ -8,6 +8,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.2.43] - 2026-10-08
+
+### Changed
+- **`icdev.core` now ships as its own distribution, `icdev-core`, and `pip install icdev` pulls it in.** The shared core (`icdev.core.paths`, `.context`, `.domain`, `.sensitivity`) moved out of this package so ICDEV[IT] and ICDEV[FT] install ONE copy. `icdev` declares `icdev-core>=0.2.0`; `icdev-core` 0.2.1 is the first release on PyPI, so a plain `pip install icdev` resolves both with no git access. `import icdev.core...` is unchanged. **Air-gapped installs:** `pip download icdev` now fetches `icdev-core` too — include it in your wheelhouse.
+- **The release workflow refuses to publish an `icdev` whose `icdev-core` cannot be resolved from PyPI,** and asserts `icdev.core` imports from the installed wheels.
+- `requirements.txt` installs `icdev-core==0.2.1` from PyPI instead of a git URL.
+
+### Fixed
+- **Gap Analysis on the Boundary canvas failed with `TypeError: gapList.slice is not a function`.** The boundary assessment returns gaps grouped by category plus uncovered NIST controls; the shared canvas panel expected a flat list. It now flattens the groups. Canvases that already return a flat list are unchanged.
+
 ### Removed
 - **Four extension points that nothing dispatched: `memory_save_before`, `memory_save_after`, `compliance_check_before`, `compliance_check_after`.** They were declared in `ExtensionPoint` from the beginning and never wired to a dispatcher — public names with no behaviour behind them. `ExtensionPoint` now declares six points, and `tools/extensions/liveness.py` reports a dead count of 0.
 

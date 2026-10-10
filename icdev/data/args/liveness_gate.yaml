@@ -1,0 +1,349 @@
+# CUI // SP-CTI
+# ---------------------------------------------------------------------------
+# Capability liveness gate  (exa-live-02)
+# ---------------------------------------------------------------------------
+# Consumed by: tools/workflow/coherence_checker.py :: _load_liveness_gate
+# Gate source: tools/workflow/coherence_checker.py :: check_capability_liveness
+# Measurement:  tools/awareness/capability_consumption.py :: collect
+#
+# ICDEV's signature defect is not a capability that breaks. It is one that is
+# registered, importable, catalogued, enabled — and never consumed, while
+# nothing goes red. The reflex version of it shipped three times (xbm-wake-01,
+# xbm-wake-02, hgx-obs-02) before it got a check of its own; the audit hash
+# chain, MCPToolAuthorizer, the prompt registry and GEPA are the same defect
+# wearing different clothes. This gate generalises the reflex-shaped check to
+# every capability class capability_consumption.py can measure.
+#
+# WHAT FAILS THE GATE
+#   A declared capability unit with ZERO consumption over the telemetry's whole
+#   LIFETIME — never dispatched, never decided, never registered, never run.
+#   Per class, the number of such units may not exceed the count below.
+#
+# WHAT DOES NOT FAIL THE GATE
+#   A unit consumed at some point but idle inside the recent window. A reflex on
+#   a quarterly schedule is not the same defect as a reflex that has never run,
+#   and conflating the two makes the gate cry wolf until someone silences it.
+#   Those units are reported as `idle_this_window` and counted separately.
+#
+#   A database with no operating history. Counts here are evidence only when the
+#   platform has actually been running: on a fresh worktree, an ephemeral CI
+#   database or an unreachable backend, every declared unit looks inert because
+#   NOTHING has been recorded, not because nothing is wired. The check reports
+#   `warn` in that case rather than a fabricated failure — the same rule
+#   capability_consumption.py applies to an absent telemetry table ("unmeasurable
+#   is never reported as zero"). `evidence_anchor` is what draws that line.
+#
+# THE COUNTS ARE A RATCHET
+#   Lower a count when you wire a capability up. NEVER raise one to get a commit
+#   through — raising it is how the backlog this gate exists to drain grows
+#   instead. If a new capability genuinely cannot be consumed yet, that is a
+#   reason to not declare it yet.
+#
+#   A capability class absent from `grandfathered` gets a budget of 0. That is
+#   deliberate: a NEW class of declared-but-unconsumed capability is exactly the
+#   thing this gate is for, and it should have to argue its way in.
+#
+# THE ONE SANCTIONED EXCEPTION (ctx-reach-02)
+#   A module can have zero in-repo consumers ON PURPOSE: an SDK surface whose
+#   callers live in other git repositories, where the only available in-repo
+#   caller would be a loopback into the process already holding the callee.
+#   tools/cortex/client.py is the case that forced the question.
+#
+#   That does NOT belong here as a raised budget. It is declared in
+#   args/external_only_surfaces.yaml and enforced by a check of its own,
+#   coherence_checker.py::check_external_only_surfaces, which makes the
+#   exception carry obligations rather than an allowance: a decision doc the
+#   module's own docstring names, ZERO production importers (checked in both
+#   directions — an importer appearing means DELETE the declaration, because the
+#   module is an ordinary capability now and belongs back under this gate), a
+#   vendor_parity pin, and a test in args/ci_test_files/core.txt. There is no
+#   number in that file to raise. If you are about to add a budget here for a
+#   module nothing calls, check whether it is that shape first — and if it is
+#   not, wire it up.
+# ---------------------------------------------------------------------------
+
+classification: CUI // SP-CTI
+
+# Recent-activity window, in days. Only used to split never-consumed units from
+# consumed-but-idle ones; the pass/fail decision reads the lifetime pass.
+window_days: 30
+
+# The "lifetime" lookback. Large enough to predate any row in this platform's
+# telemetry — a unit inert across this window has genuinely never been consumed.
+lifetime_days: 36500
+
+# Proof that the database being measured has an operating history at all.
+# Below `min_rows` the whole check degrades to `warn`, because a count of zero
+# from an empty database says nothing about the tree.
+evidence_anchor:
+  table: audit_trail
+  min_rows: 1000
+
+# Allowed count of declared-but-never-consumed units, per capability class.
+#
+# Backlog re-measured 2026-08-12 (exa-live-03) against the live PostgreSQL
+# platform database — audit_trail: 82,355 rows, well clear of the evidence
+# anchor — with `python tools/awareness/capability_consumption.py --json`.
+# 628 declared units across the seven measurable classes, 534 never consumed.
+#
+# Three classes were DRAINED and are therefore ABSENT rather than pinned at 0
+# (an absent class already gets a budget of 0; keeping a 0 entry only invites a
+# future session to edit it upward). They are recorded here so the next session
+# reads "fixed" instead of rediscovering them:
+#
+#   reflex          74 declared, 74 consumed. Drained by the reflex-specific
+#                   checks that predate this gate — check_reflex_registry and
+#                   tests/test_reflex_dispatch_parity.py — after the same bug
+#                   shipped three times (xbm-wake-01/02, hgx-obs-02).
+#   audit_chain     1 declared, consumed. The migration-149 hash chain is now
+#                   written by audit_logger.log_event (#1549) and swept by
+#                   tools/audit/chain_sweep.py (exa-audit-04). Unit-level it is
+#                   live; per-row CHAIN COVERAGE is a different question and is
+#                   reported in the check's detail lines, not gated here.
+#   prompt_template 14 templates under hardprompts/, 14 consumed — 17 rows in
+#                   prompt_versions. Drained by exa-refine-01 (LLMRouter reads
+#                   the registry as a supplemental prompt layer) and
+#                   exa-refine-02 (--import-hardprompts / --seed-call-sites gave
+#                   it rows). Note the class is still listed in
+#                   args/capability_consumption.yaml::known_inert_cases on
+#                   purpose: a wired read path against an UNSEEDED registry is
+#                   still a no-op, so a fresh install must be able to see it.
+#
+# What remains below is the real backlog.
+grandfathered:
+  # 471 tools in TOOL_REGISTRY; 4 ever dispatched through the Studio MCP tool
+  # gate (health_check, nist_lookup, studio_run_start, studio_run_status) across
+  # 19 recorded dispatches. The bulk of the registry is reachable only from
+  # surfaces that do not route through that gate, so the honest reading is "the
+  # dispatch audit does not see most of the registry" as much as "the registry
+  # is inert" — both are the same class of finding: a declared capability
+  # nothing can prove is used. Draining this means routing the other MCP entry
+  # points through the same audit, not dispatching 467 tools by hand.
+  #
+  # 466 -> 467 is a BASELINE CORRECTION, not an accommodation. TOOL_REGISTRY has
+  # held 471 entries since before c83261305 (the exa-live-02 commit that wrote
+  # 466) and `git diff c83261305..HEAD -- tools/mcp/` is empty, so the declared
+  # set has not grown; the 470 in the previous comment was simply one short and
+  # the gate has been red on main ever since. Verified 2026-08-12:
+  # `python -c "from tools.mcp.tool_registry import TOOL_REGISTRY; print(len(TOOL_REGISTRY))"` -> 471.
+  #
+  # Consequence to know before you register a new MCP tool: this budget is
+  # coupled to the registry SIZE, so a tool added without a gated dispatch trips
+  # the check by +1. That is the gate working — a newly declared tool nothing
+  # dispatches is precisely the defect. Wire it, or do not register it yet.
+  #
+  # 467 -> 460 (xrv-cost-05). "Draining this means routing the other MCP entry
+  # points through the same audit" -- the paragraph above -- is exactly what
+  # happened. `tools/mcp/base_server.py::_handle_tools_call`, the ONE choke
+  # point every MCP server in this tree dispatches through, now appends a row
+  # with `caller_source = 'mcp_server:<name>'`. Before this card the table had
+  # exactly two writers, both Studio-internal, so the figure described ONE
+  # CALLER while wearing the name of all callers: 468 inert lifetime against
+  # a transcript-derived count showing Claude Code invoking `kanban_get_task`
+  # and `kanban_update_task` fifteen times in thirty days (tools/cost/
+  # waste_survey.py, xrv-cost-03) with not one of them visible here.
+  # MEASURED on the live PostgreSQL board 2026-09-12, lifetime, through the
+  # shipped probe: declared 472, consumed 4 -> 12, inert 468 -> 460, and the
+  # new `extra.by_caller_source` keeps the two callers APART -- 4 tools via
+  # the Studio gate, 9 via `mcp_server:icdev-unified`, one (`health_check`)
+  # shared, which is why the union is 12 and not 13.
+  # docs/audits/xrv-cost-05-mcp-dispatch-audit.md records both readings, the
+  # measured added latency, and what the 9 are.
+  mcp_dispatch_tool: 460
+
+  # agent_approval_log holds not one gate decision — 0 rows with a tier
+  # classify() can emit, whole table, whole lifetime. A gate whose decision log
+  # is empty has never gated anything. The policy file is read; nothing writes
+  # the verdict.
+  #
+  # 62 -> 25 is a DENOMINATOR CORRECTION, not an accommodation: nothing was
+  # wired, and no tool moved tier. args/agent_approval_policy.yaml enumerates 62
+  # tools, but only the 25 in require_approval_tiers (irreversible; unknown
+  # enumerates none) can ever produce a row — build_approval_hook auto-allows the
+  # other 37 without writing one, deliberately, because an audit trail of every
+  # read_file is noise. Counting those 37 as declared-and-inert pinned this
+  # budget at >= 37 no matter how well the gate were wired, so whoever wires it
+  # would watch the number refuse to move and conclude the wiring failed
+  # (rem-cap-05; docs/security/approval-gate-reachability.md §5). The probe now
+  # scopes `declared` to require_approval_tiers and enumerates the excluded 37 in
+  # extra.not_measurable_by_design, so the exclusion is visible rather than a
+  # quietly shrunken denominator. Widening require_approval_tiers RAISES the
+  # declared count; wire the gate before that lands, do not raise this.
+  #
+  # WHY IT IS STILL 25 AFTER rem-cap-04 WIRED IT, measured 2026-08-21 — read
+  # this before "wiring" it again. The gate is wired AND reachable. What it
+  # lacks is TRAFFIC, and that is a property of this deployment rather than a
+  # defect in the gate:
+  #
+  #   runtime_invocations surface='agent'   1,489 rows
+  #   ...of which are TOOL CALLS                0
+  #
+  # Every one of those 1,489 is a whole TASK RUN — `name` holds a kanban task
+  # id (autonomy-lrn-01, ctx-trust-01), `arg_keys` is NULL and `duration_ms`
+  # runs to twenty minutes. They are claude-CLI subprocess dispatches, and D394
+  # spawns that CLI with `--dangerously-skip-permissions`: a separate process,
+  # into which no in-process Python gate can be inserted. The surface the
+  # approval gate actually guards — the SAG in-process tool loop through
+  # tools/agent_runtime/dispatch.py — carries essentially no traffic here, which
+  # is the reachability doc's Finding 1 and Finding 3 confirmed on live data.
+  #
+  # So the count cannot move by improving the gate. It moves when the SAG tool
+  # loop is used, or not at all. Do NOT lower this by widening
+  # require_approval_tiers, and do NOT "fix" it by touching the adapter flag —
+  # that is a separately argued decision (D394) which the reachability doc
+  # explicitly puts out of scope.
+  agent_approval_rule: 25
+
+  # 5 RBAC roles in the D261 role_tool_matrix, 1 seen in an MCPToolAuthorizer
+  # verdict. exa-policy-05 landed the enforcement seam MONITOR-ONLY by design,
+  # so the other 4 roles cannot appear in a verdict until it flips to blocking
+  # and real traffic arrives under those roles. Expect this to drain on its own
+  # once enforcement is on; lower it then rather than waiting for a task.
+  mcp_tool_authorization: 4
+
+  # Extension hook points. 10 declared, 10 never consumed — re-measured
+  # 2026-08-17 against the live PostgreSQL board with
+  # `python tools/awareness/capability_consumption.py --class extension_hook_point --json`
+  # (telemetry_available: true — the class is MEASURABLE, which is the thing
+  # hcx-live-02 changed; the zero is a measured zero, not a missing counter).
+  #
+  # This class is ARGUING ITS WAY IN, as the note above requires of a new one,
+  # and the argument is that the 10 is a measurement artefact of its own first
+  # day rather than an accommodation. hcx-live-02 is the commit that made a
+  # dispatch countable at all: before it, `ExtensionManager.dispatch` wrote
+  # nothing anywhere, so every point's lifetime count is necessarily zero on the
+  # day the counter lands, however busy the seam is.
+  #
+  # Static call sites, per `python -m tools.extensions.liveness` against the
+  # merged tree (this is the DECLARED half — a dispatcher in the source, not a
+  # recorded dispatch in the database, and only the latter drains a unit):
+  #
+  #   live (6)           tool_execute_before (hcx-live-01, agent_runtime/dispatch.py),
+  #                      tool_execute_after (.claude/hooks/post_tool_use.py),
+  #                      chat_message_before / chat_message_after
+  #                      (dashboard/chat_manager.py, nine builtin handlers),
+  #                      agent_start / agent_end (hcx-live-03, agent_runtime/
+  #                      runtime.py + chat_manager.py)
+  #   (RESOLVED hcx-live-gate-01, 2026-08-18: all four removed.)
+  #   handlers_only (2)  memory_save_before / memory_save_after — a handler can
+  #                      register, nothing dispatches
+  #   dead (2)           compliance_check_before / compliance_check_after —
+  #                      enumerated with written reasons in
+  #                      args/extension_liveness.yaml
+  #
+  # So six of the ten drain on the first chat message, tool call or agent turn
+  # the platform serves after this lands, and the remaining four are the finding
+  # the class exists to keep visible. tool_execute_after was the sharpest case:
+  # tools/awareness/hooks.py registers a handler on it at process start and for
+  # a long time nothing dispatched it — the "no handlers ever fired" incident.
+  #
+  # Lower this as they drain; 4 is the floor the static picture supports today.
+  # Do NOT raise it: a new hook point added to the enum without a dispatch call
+  # site is precisely the defect, and it should trip the check.
+  # LOWERED 10 -> 4 (autonomy-wire-01, 2026-08-21), a ratchet DOWN on measured
+  # evidence, never an accommodation. Two changes, both in that card:
+  #   * `TOOL_EXECUTE_AFTER` now has a DISPATCHER. `tools/awareness/hooks.py`
+  #     had subscribed a handler at process start since Phase 1e and nothing
+  #     ever dispatched the point, so the auto-reindex was silently dead — the
+  #     "no handlers ever fired" case this file's own note called the sharpest.
+  #     tools/agent_runtime/dispatch.py dispatches it after every executed tool
+  #     call, so it drains on the next SAG tool call the platform serves.
+  #   * `chat_message_before` / `chat_message_after` are DISABLED in
+  #     args/extension_config.yaml. They had ZERO call sites in the tree — no
+  #     dispatch and not even a handler — so they were two permanently inert
+  #     units that no amount of traffic could drain. Declaring a point nothing
+  #     can reach is the defect, not the budget.
+  # 4 is now the whole enabled set, measured with
+  # `python tools/awareness/capability_consumption.py --class extension_hook_point`.
+  # Lower it as they drain. Do NOT raise it: a point added to the enum without a
+  # dispatch call site is exactly what this class exists to catch.
+  extension_hook_point: 4
+
+  # ── Cortex federation layer (cef-ci-01) ──────────────────────────────────
+  # Two NEW classes, arguing their way in as the note at the top of this file
+  # requires. Neither number was CHOSEN to pass a commit: both are the count
+  # measured on the live PostgreSQL board on 2026-08-19 (audit_trail: 114,287
+  # rows, well clear of the evidence anchor) with
+  # `python tools/awareness/capability_consumption.py --json --window-days 36500`.
+  #
+  # 7 rungs in CORTEX_BACKENDS, 1 that has ever ANSWERED. Consumption is
+  # gates_json.backends.used on a cortex_audit row — a rung that RETURNED A HIT
+  # — and never `consulted`, which is a read of resolve.backends in
+  # args/cortex_config.yaml and would have reported 5 of the 7 live on a
+  # deployment where 4 of those 5 die on every call.
+  #
+  # The 6 are two different defects and the probe keeps them apart, because the
+  # repair is different:
+  #
+  #   rag, dic, graph, kb   ROUTED AND FAILING. All four are in
+  #                         resolve.backends and all four raised on the
+  #                         resolution measured here — the embedding provider
+  #                         answers 401 on this host, and `kb` carries the
+  #                         known `column "use_count" does not exist` defect.
+  #                         They appear in extra.consulted_never_used AND
+  #                         extra.failed_events, which is the shape that says
+  #                         "wired, reached, broken" rather than "never wired".
+  #                         Repair: fix the backend. Lower this to 2 when they
+  #                         answer.
+  #   external, sme         NEVER ROUTED. Absent from resolve.backends and from
+  #                         search.fan_out.backends ON PURPOSE — `external`
+  #                         opens a socket to a host ICDEV does not run, so an
+  #                         automated sweep must not be the trigger for an
+  #                         outbound call, and `sme` returns an LLM's opinion,
+  #                         which base_pack TRUST rule 1 forbids from
+  #                         outranking evidence. They are reported in
+  #                         extra.opt_in_only and COUNTED anyway: a caller
+  #                         naming strategy="external" produces a real event, so
+  #                         these are measurable, merely un-asked-for. Do NOT
+  #                         "fix" this by adding either to fan_out — that is an
+  #                         egress decision and an evidence-ranking decision
+  #                         respectively, not a tuning knob. Repair: a caller.
+  #
+  # Before cef-ci-01 nothing recorded which rung a governed call reached, so
+  # every backend's lifetime count was necessarily zero on the day the counter
+  # landed — the same first-day artefact extension_hook_point above documents.
+  # This budget is the count measured AFTER the writer landed and after a real
+  # governed resolve exercised it, not that artefact.
+  #
+  # Consequence to know before you add a rung: this budget is coupled to
+  # CORTEX_BACKENDS, so a backend registered without a route and without a
+  # caller trips the check by +1. That is the gate working — a newly declared
+  # rung nothing reaches is precisely the defect this card exists to prevent.
+  cortex_backend: 6
+
+  # 9 verbs in CORTEX_FACADES, 5 with a recorded governed call:
+  # cortex.resolve (127), cortex.classify (65), cortex.complete (37),
+  # cortex.search (26), cortex.extract (22). The 4 below have never been
+  # invoked through the governed door on this deployment:
+  #
+  #   cortex.ask      the grounded-answer verb
+  #   cortex.reason   the reasoning verb
+  #   cortex.govern   gate-only (the identity operation), so a zero here means
+  #                   nothing has asked for governance WITHOUT an operation
+  #   cortex.agent    the agent-launch verb
+  #
+  # This is a real finding, not a first-day artefact: cortex_audit has recorded
+  # every governed call since ctx-govern-03 and holds 307 rows.
+  #
+  # The probe also reports `cortex.verify` under extra.undeclared_units_observed
+  # — 29 rows written under an operation name CORTEX_FACADES does not declare.
+  # Left as a report rather than folded into either count: the declaration
+  # source and the telemetry disagreeing about what exists is worth a human
+  # look, and silently widening `declared` to match whatever the audit happens
+  # to contain would make this class unable to detect the thing it is for.
+  #
+  # Lower this as each verb gains a caller. Never raise it: a facade declared
+  # and never invoked is the defect, and the resolve facade this card was
+  # opened for is exactly the one that must never read inert.
+  cortex_facade: 4
+
+  # GEPA — RESOLVED by rem-cap-01, budget lowered 1 -> 0. It was dispatched
+  # every 24h with 7 successful runs and recorded nothing, because the only
+  # outcome it could write was status='applied': an artifact it declined stayed
+  # 'pending' forever, so the queue could only grow and a correct decline was
+  # indistinguishable from never having run. GEPA now records a decision
+  # (applied or declined, terminal or retryable) against every artifact it
+  # evaluates, which drained the 132-row permanently-unselectable backlog left
+  # behind by the pre-exa-refine writers. Never raise this back to pass a
+  # commit — if it fails, GEPA has stopped deciding.
+  skill_optimizer: 0

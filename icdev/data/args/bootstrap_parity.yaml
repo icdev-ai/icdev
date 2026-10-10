@@ -1,0 +1,131 @@
+# CUI // SP-CTI
+#
+# Which `icdev init` bootstrap sources must be BYTE-IDENTICAL to the repo file
+# they scaffold. Read by tools/workflow/coherence_checker.py::check_bootstrap_parity.
+#
+# THE BUG THIS EXISTS FOR
+# =======================
+# `icdev init` does not copy the repo's CLAUDE.md. It copies
+# icdev/data/claude_bootstrap/CLAUDE.md (BOOTSTRAP_MAP, tools/cli/init.py). Edit
+# one without the other and a scaffolded project receives DIFFERENT instructions
+# than the project develops against.
+#
+# On 2026-08-12 that shipped twice in one night:
+#   * PR #1552 edited CLAUDE.md and not its packaged copy. The only thing that
+#     noticed was test_packaged_claude_md_is_not_a_stripped_template, in CI,
+#     AFTER the push, reporting a raw `assert b'...' == b'...'` over two 40 KB
+#     blobs whose `?  ++++++` offset markers read exactly like CRLF drift. It
+#     cost a full investigation to find one stale file.
+#   * AGENTS.md had drifted silently and nothing checked it at all: the packaged
+#     copy was missing the "Project Cards - Mandatory for Every Multi-Task Build"
+#     section, so every scaffolded project got a weaker guardrail doc than this
+#     repo runs on. Same defect the CLAUDE.md test was written to prevent, one
+#     file over, with no test.
+#
+# So: identity is declared HERE, once, and checked before the push rather than
+# discovered from a byte diff after it.
+#
+# THE FIX IS NEVER A HAND-COPY. `python tools/installer/prebuild_bootstrap.py`
+# regenerates the whole of icdev/data/claude_bootstrap/ from the repo root and
+# is what the PyPI deploy pipeline runs. Copying one file green-lights this gate
+# while leaving the rest stale - when the check was written, a prebuild run also
+# refreshed 10 other packaged files, including .claude/hooks/ and
+# .claude/commands/start.md, so `icdev init` had been shipping stale hooks.
+# The same trap shipped before as #960.
+#
+# WHY THIS IS AN ALLOWLIST AND NOT "EVERYTHING IN BOOTSTRAP_MAP"
+# ==============================================================
+# Most bootstrap sources are TEMPLATES and are supposed to differ. Asserting
+# parity across the whole map would fail on three files that are correct, and a
+# gate that cries wolf gets switched off. The excluded ones are listed below
+# with the reason, so the next person does not "fix" a difference that is the
+# design.
+#
+# THE SECOND RULE: PAYLOAD COMPLETENESS (exa-bench-10) - NOT DECLARED HERE
+# =======================================================================
+# `check_bootstrap_parity` also asserts that every module a PACKAGED HOOK loads
+# by path ships beside it, and is not stale. That rule has NO entry in this file
+# on purpose: it is derived from the hooks themselves, each of which declares a
+# module-level `PAYLOAD_MODULES` tuple that its own loader iterates. A list here
+# would be a second place to keep in sync, and this whole file exists because a
+# second copy goes stale.
+#
+# It exists because `claude/hooks/pre_tool_use.py` resolved its implementation
+# as <root>/tools/hooks/shared_checks.py and the payload shipped no tools/ tree
+# at all - so the hook raised FileNotFoundError on EVERY tool call in EVERY
+# project `icdev init` created, while the generated settings.json's `|| true`
+# turned the non-zero exit into a 0. A guard that fails loudly, wrapped in a
+# thing that swallows the noise, is a guard that is not there. There is no
+# grandfather list for this rule; there is nothing to grandfather.
+version: 1
+
+# Byte-identical, both directions. The repo file is the authority; reconcile by
+# copying repo -> packaged.
+must_match:
+  - target: CLAUDE.md
+    source: data/claude_bootstrap/CLAUDE.md
+    why: >-
+      The master instruction file. A scaffolder that hands users a stripped or
+      stale CLAUDE.md gives them weaker rules than the project develops against
+      - which is the whole premise of shipping it. Also asserted by
+      tests/test_init_goals_and_selective.py::test_packaged_claude_md_is_not_a_stripped_template.
+  - target: AGENTS.md
+    source: data/claude_bootstrap/platforms/AGENTS.md
+    why: >-
+      The same guardrails as CLAUDE.md, published for non-Claude tools. If it
+      may drift then the LLM-agnostic claim is false exactly where it matters -
+      in the user's project. NOTE: `companion.py --sync` regenerates AGENTS.md
+      and drops hand-authored sections, which is how this drifted; re-run this
+      check after any companion sync.
+
+# Deliberately NOT compared. Each is a template by design - a difference here is
+# correct, and asserting parity would produce a false failure.
+excluded:
+  - target: .env.template
+    source: data/claude_bootstrap/.env.template
+    why: >-
+      The packaged template is the full scaffold surface (22 KB) while the repo
+      copy is this checkout's own trimmed file (3 KB). Different artifacts.
+  - target: .claude/settings.json
+    source: data/claude_bootstrap/claude/settings.json.template
+    why: >-
+      Source is named `.template`. A live settings.json carries this machine's
+      permissions and hook wiring and must not be shipped verbatim.
+  - target: .mcp.json
+    source: data/claude_bootstrap/mcp.json
+    why: >-
+      The packaged copy is the project-scoped server set; the repo copy carries
+      this checkout's extra development servers.
+
+# ---------------------------------------------------------------------------
+# PAYLOAD COMPLETENESS (second rule of check_bootstrap_parity)
+# ---------------------------------------------------------------------------
+# Parity is not sufficiency. A packaged file can match the repo byte-for-byte
+# and still be unusable in a scaffolded project because the module it LOADS AND
+# EXECUTES was never shipped alongside it.
+#
+# Scope is deliberately narrow: only paths passed to spec_from_file_location and
+# then exec_module. The packaged hooks also construct `.env`, `.tmp/sessions`,
+# `.tmp/worktrees`, `.tmp/dashboard_unreachable` and `data/icdev.db`, all of
+# which are runtime artifacts created on demand and correctly absent. Gating
+# those would be five false positives against one real finding, and a gate that
+# cries wolf gets switched off.
+#
+# Entries here are ACCEPTED GAPS awaiting a fix, each named by the task that
+# owns it. DELETE an entry when its fix lands — never edit it to keep the gate
+# green.
+payload_grandfathered:
+  - path: tools/hooks/shared_checks.py
+    task: exa-bench-10
+    why: >-
+      claude/hooks/pre_tool_use.py resolves REPO_ROOT/tools/hooks/shared_checks.py
+      and exec_module()s it with no try/except - by design, since "a guard that
+      cannot load must fail loudly, not silently stop guarding". The payload
+      ships no tools/ directory at all, so in a generated project the hook
+      raises on every tool call and `|| true` in settings.json.template (10
+      occurrences) is the only thing hiding it. Fixing it means deciding what a
+      generated project should actually get - the full check set with its
+      transitive args/ data, a documented subset, or a hook that degrades to a
+      named no-op - which is why it is a card and not a one-line change. Fix the
+      packaging BEFORE removing `|| true` from the template, or generated
+      projects go from "hook does nothing" to "every tool call fails".

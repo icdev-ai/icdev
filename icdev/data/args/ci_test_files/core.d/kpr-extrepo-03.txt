@@ -1,0 +1,3 @@
+# kpr-extrepo-03 -- born-red since it landed; the guard was right, the test was measuring
+# the distance between a docstring sentence and a list. Gated in the PR that makes it pass.
+tests/test_aca_xp_ledger.py

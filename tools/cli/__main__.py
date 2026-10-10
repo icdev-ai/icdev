@@ -44,9 +44,15 @@ Subcommands:
                            List / export (JSONL) / full-text search conversations.
   skills list|search|install|update
                            Manage skills via the local registry + marketplace.
+  skill install|uninstall|status [--dirs auto|claude,codex,...]
+                           Install the ONE cross-harness ICDEV skill into
+                           ~/.agents/skills and link it into each harness.
   cron create|list|pause|resume|remove|run|runs
                            Schedule standalone-agent prompts or allowlisted
                            scripts (interval or 5-field cron).
+  harness install-guard opencode [--project DIR|--global]
+                           Install ICDEV's PreToolUse guard as an opencode
+                           plugin (same checks as the Claude Code hook).
   audit export             Export SOC 2 (and future framework) evidence reports.
   audit tail [--follow]    Tail the audit feed (audit_trail + hook_events), or
                            --source runtime_invocations for invocation rows.
@@ -54,6 +60,8 @@ Subcommands:
                            with error counts and avg/max duration.
   runtime trace <corr-id>  Show every span of one agent run, joined by the run's
                            correlation id (AgentLoopResult.trace_id).
+  llm doctor [--json]      vLLM endpoint status: reachability, served models,
+                           max_model_len, probed tool-call support.
   demo seed --tenant <slug> [--canvases <c1,c2,...>]
                            Provision a demo tenant with synthetic data and
                            ICDEV_DEMO_MODE enabled (read-only banner).
@@ -124,9 +132,17 @@ def main(argv: list[str] | None = None) -> int:
         from tools.cli.skills import main as skills_main
         return skills_main(rest)
 
+    if sub == "skill":
+        from icdev.tools.dx.skill_install import main as skill_main
+        return skill_main(rest)
+
     if sub == "cron":
         from tools.agent_runtime.cron import cron_main
         return cron_main(rest)
+
+    if sub == "harness":
+        from tools.cli.harness import main as harness_main
+        return harness_main(rest)
 
     if sub == "audit":
         from tools.cli.audit import main as audit_main
@@ -135,6 +151,13 @@ def main(argv: list[str] | None = None) -> int:
     if sub == "runtime":
         from tools.cli.runtime import main as runtime_main
         return runtime_main(rest)
+
+    if sub == "llm":
+        if rest[:1] == ["doctor"]:
+            from tools.llm.vllm_discovery import main as doctor_main
+            return doctor_main(rest[1:])
+        print("Usage: icdev llm doctor [--json] [--timeout SECONDS]", file=sys.stderr)
+        return 2
 
     if sub == "demo":
         return _demo_main(rest)

@@ -1,0 +1,3 @@
+# mfx-ci-04 -- the pre-commit bootstrap parity gate: editing CLAUDE.md without
+# regenerating icdev/data/claude_bootstrap/ is refused at commit, not in CI.
+tests/ci/test_precommit_bootstrap_parity.py

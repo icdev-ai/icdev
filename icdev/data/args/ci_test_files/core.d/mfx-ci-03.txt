@@ -1,0 +1,4 @@
+# mfx-ci-03 -- the fine-tune extractor ingestion-log row must actually LAND.
+# Reads the row BACK: extract_document returned success:True while the INSERT
+# raised into a warning and persisted nothing (0 of 2,004 live rows were its).
+tests/test_finetune_doc_extractor_ingestion_log.py

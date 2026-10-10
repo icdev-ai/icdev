@@ -996,7 +996,16 @@ document.addEventListener('DOMContentLoaded', () => {
       .then(r => r.json())
       .then(d => {
         const gaps = d.gaps || d.gap_analysis || (d.assessment||{}).gaps || [];
-        const gapList = gaps.gaps || gaps.recommendations || (Array.isArray(gaps) ? gaps : []);
+        // Canvases return gaps in different shapes: a flat array, or (BDC)
+        // {gaps: {missing_controls: [...], ...}, uncovered_nist_controls: [...]}.
+        let gapList;
+        if (Array.isArray(gaps)) {
+          gapList = gaps;
+        } else {
+          const inner = gaps.gaps || gaps.recommendations || [];
+          gapList = Array.isArray(inner) ? inner : Object.values(inner).filter(Array.isArray).flat();
+          if (Array.isArray(gaps.uncovered_nist_controls)) gapList = gapList.concat(gaps.uncovered_nist_controls);
+        }
         let html = '';
         if (gapList.length === 0) {
           html += '<div style="text-align:center;padding:20px;"><div style="font-size:24px;color:#27ae60;">\u2713</div><div style="color:#27ae60;font-weight:600;">No gaps detected</div><div style="color:#7a8cb0;font-size:11px;margin-top:4px;">Design is compliant</div></div>';
@@ -1004,7 +1013,7 @@ document.addEventListener('DOMContentLoaded', () => {
           html += _metric('Total Gaps', gapList.length);
           html += _section('Recommendations');
           gapList.slice(0, 20).forEach(g => {
-            const sev = g.severity || g.priority || 'info';
+            const sev = String(g.severity || g.priority || 'info');
             const sevColor = sev.includes('1') || sev === 'critical' ? '#e74c3c' : sev.includes('2') || sev === 'recommended' ? '#f39c12' : '#3498db';
             html += `<div style="padding:8px;background:#16213e;border-left:3px solid ${sevColor};border-radius:4px;margin-bottom:6px;">`;
             html += `<div style="font-weight:600;font-size:11px;">${g.action || g.recommendation || g.title || g.description || ''}</div>`;

@@ -1,0 +1,2 @@
+# xrv-mem-02 -- PostToolUse observation capture into the auto_capture buffer, <private> spans dropped.
+tests/hooks/test_post_tool_use_capture.py

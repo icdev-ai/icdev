@@ -1,0 +1,172 @@
+# Governed compliance routes — one per card (rmf-ui-01..16)
+
+## The defect
+
+About fifteen compliance pages were bare `@app.route` handlers in a 10,500-line
+`tools/dashboard/app.py`: no `args/component_registry.yaml` entry, **no RBAC
+guard**, no completeness gate, no IQE dispatch, no posture card. Each rendered a
+real template over a real API and each was reachable by anyone who could reach
+the dashboard.
+
+Two canvases already own that ground. The Boundary & Supply Chain Canvas (BDC,
+`/boundary`) owns ATO boundary, enclave and cross-domain with real data
+(`bd_*` tables, cATO readiness, the fabric posture roll-up). The Security Design
+Canvas (SDC, `/security`) owns the Zero Trust pillars and STIGs. So the routes
+move onto those two — RMF artifact surfaces to BDC, visibility surfaces to SDC —
+and **no fourth canvas is scaffolded**.
+
+## Why one route per card
+
+A fifteen-route move is unreviewable, and its failure mode is a silently dropped
+page: a template that stops being rendered anywhere produces no import error, no
+route-coverage finding and no test failure. One route per card gives each move
+its own red-first proof, its own browser verification and its own diff a reviewer
+can hold in their head. rmf-ui-01 is the exemplar; rmf-ui-03..16 each carry one
+of the remaining routes and depend on rmf-ui-01 so the exemplar lands first.
+
+## What a migrated route gets, by construction
+
+A route declared on a canvas blueprint inherits every governance property the
+bare handler lacked, without any per-route wiring:
+
+| Property | Where it comes from |
+|---|---|
+| Registry entry | the canvas's existing `args/component_registry.yaml` block |
+| RBAC guard | `app.py` attaches `guard_component_access(<key>, min_il)` as a `before_request` on every registered canvas blueprint (auth fail-closed, impact-level check, grant seeded from `default_roles`), plus the canvas's own `*_login_required` wrapper on the route |
+| Completeness gate | `new_page_completeness` (mirror parity for every template under the canvas directory) and `canvas_completeness` (the registry-driven 8-point gate) |
+| IQE dispatch | the registry's `url_prefix` + IQE adapter put `<prefix>/*` on the client-side path→canvas map; the template includes `includes/iqe_query_widget.html` |
+
+## The exemplar: `/ato-compliance` → `/boundary/ato-compliance`
+
+- **Route** — `bdc_ato_compliance_page` in `tools/boundary_canvas/blueprint.py`,
+  behind `bdc_login_required`, rendering `boundary_canvas/ato_compliance.html`.
+  The page drives the unchanged `/api/ato-compliance/*` blueprint; only the
+  page route moved.
+- **Old URL** — `@app.route("/ato-compliance")` stays in `app.py` as a
+  `301` redirect to the governed home. A bookmark, an e2e spec or a stale href
+  lands on the page, never a 404. The handler no longer calls
+  `render_template`, and a test walks its AST to keep it that way.
+- **Nav** — both `base.html` copies (`tools/` and `icdev/`) link the new path
+  and list it in the Compliance dropdown's active-path list; `compliance.html`
+  (the hub page that links its siblings) is repointed too.
+- **Mirror** — blueprint, `app.py`, `base.html`, the moved template and the
+  repointed hub template are byte-identical under `icdev/`; the old top-level
+  template is deleted from both trees.
+- **Tests** — `tests/test_bdc_ato_compliance_page.py` (gated via
+  `args/ci_test_files/core.d/rmf-ui-01.txt`) proves the render, the RBAC
+  refusal (both the wrapper and the registry guard), the redirect, the nav in
+  both copies, the mirror, and the IQE path→canvas dispatch. All three touched
+  test files are RED on the merge base per `red_first_gate.py`.
+
+## Landed so far
+
+| Card | Old URL | Governed home | Canvas | Test |
+|---|---|---|---|---|
+| rmf-ui-01 | `/ato-compliance` | `/boundary/ato-compliance` | BDC | `tests/test_bdc_ato_compliance_page.py` |
+| rmf-ui-14 | `/prod-audit` | `/security/prod-audit` | SDC | `tests/test_sdc_prod_audit_page.py` |
+| rmf-ui-15 | `/ai-transparency` | `/security/ai-transparency` | SDC | `tests/test_sdc_ai_transparency_page.py` |
+| rmf-ui-12 | `/stig-manager` | `/security/stig-manager` | SDC (owns STIGs) | `tests/test_sdc_stig_manager_page.py` |
+| rmf-ui-13 | `/sbd` | `/security/sbd` | SDC | `tests/test_sdc_sbd_page.py` |
+| rmf-ui-07 | `/poam` | `/boundary/poam` | BDC | `tests/test_bdc_poam_page.py` |
+| rmf-ui-11 | `/compliance` | `/boundary/compliance-hub` | BDC (the artifact hub, moved LAST) | `tests/test_bdc_compliance_hub_page.py` |
+| rmf-ui-16 | `/ai-accountability` | `/security/ai-accountability` | SDC | `tests/test_sdc_ai_accountability_page.py` |
+| rmf-ui-08 | `/control-inheritance` | `/boundary/control-inheritance` | BDC | `tests/test_bdc_control_inheritance_page.py` |
+
+`/prod-audit` is a visibility surface (production-readiness checks, read-only
+posture), which is SDC's ground; its `/api/prod-audit/*` blueprint
+(`tools/dashboard/api/prod_audit.py`) did not move. SDC's template directory is
+`tools/dashboard/templates/security_canvas/` (the registry's completeness
+template), and its wrapper is `sc_login_required`.
+
+`/ai-transparency` is likewise a visibility surface (OMB M-25-21 / M-26-04 /
+NIST AI 600-1 / GAO-21-519SP posture reporting: AI inventory, model cards,
+cross-framework gaps); its `/api/ai-transparency/*` routes in `app.py` did not
+move. No AI-governance canvas exists to prefer instead — `aimc` is the AI/ML
+design catalog, `aadc` the default-off agentic-AI design canvas and
+`ai_observatory` a telemetry adapter — so SDC, the card's named default, holds.
+
+`/ai-accountability` (rmf-ui-16) is the same kind of surface one door over:
+human oversight plans, appeals, CAIO designation, incident response and ethics
+reviews (Phase 49), read-only posture reporting. It follows rmf-ui-15 onto SDC
+for the same reason and with the same canvas check; its
+`/api/ai-accountability/*` blueprint (`tools/dashboard/api/ai_accountability.py`)
+did not move. The SaaS portal's own `/ai-accountability` page
+(`tools/saas/portal/app.py`, its own template folder) is a different surface
+and is untouched.
+
+rmf-ui-13 is an SDC move: the CISA Secure by Design 8-pillar assessment
+is hardening posture, a visibility surface, so it lands on the Security Design
+Canvas behind `sc_login_required`. Its IQE widget is wired to the canvas's own
+`/security/api/iqe-query` endpoint. The `/api/sbd/*` blueprint is unchanged.
+
+`/poam` (rmf-ui-07) is the findings approval workflow across the seven canvas
+DBs, an RMF artifact surface, so it lands on BDC. Its template already lived in
+a subdirectory (`poam/list.html`) and moved as `boundary_canvas/poam/list.html`;
+the `/api/poam/*` routes stay in `app.py`.
+`tests/test_history.py::test_poam_route_exists` was NOT touched: it GETs the
+NETWORK blueprint's own `/poam` (`/network/poam` at runtime), a different page
+that never went through `app.py`.
+
+`/control-inheritance` (rmf-ui-08) is the CSP vs customer responsibility
+mapping (inherited / shared / customer-owned controls per provider), which is
+boundary/inheritance content by definition, so it lands on BDC. The sweep saw
+no `/api/` prefix in its template because the script composes its URLs from
+`const API = '/api/control-inheritance'`; it calls `/csps`, `/summary`,
+`/model`, `/gap` and `/controls` on that prefix, all served by the unchanged
+`tools/dashboard/api/control_inheritance.py` blueprint.
+
+## The shape the follow-up cards copy
+
+1. Add the route next to the exemplar's block on the target blueprint; `git mv`
+   the template into the canvas's template directory; add the IQE widget include
+   and a breadcrumb back to the canvas root.
+2. Replace the `app.py` handler body with `redirect(<new>, code=301)`; keep the
+   decorator.
+3. Repoint the href in BOTH `base.html` copies, add the new path to the
+   dropdown's active list, `grep -rl 'href="<old>"'` the templates for other
+   links, and add the path to the `Pages:` line in `.claude/commands/start.md`
+   and to `tests/e2e/nav_intelligence_compliance.spec.ts`.
+4. Copy every touched file to `icdev/`; `git rm` the old `icdev/` template.
+5. Clone the exemplar test file; gate it with a `core.d/<task-id>.txt`
+   fragment; fix every existing test naming the old path
+   (`tests/compliance/test_compliance_surface_liveness.py::GOVERNED_HOME` is the
+   pattern for a migrated orphan); run `red_first_gate.py --gate`.
+6. `coherence_checker.py --check new_page_completeness --gate` and
+   `--check canvas_completeness --gate` both exit 0; `ruff check` the changed
+   set; verify in a browser.
+
+Every follow-up card touches `base.html` and `compliance.html`, so sibling PRs
+will report DIRTY against each other. Rebase; do not fight the verdict.
+
+## rmf-ui-05: `/cato` → `/boundary/cato-health`
+
+The second route to move, and the first with a fold-or-land decision. BDC
+already served `/boundary/cato` (the per-design "cATO Dashboard": a table of
+`bd_assessments` scores and the fabric posture roll-up, in the canvas's dark
+style). The top-level `/cato` was the OTHER cATO view: a fleet-wide health
+gauge, evidence stream, control-family heatmap, certifications and timeline over
+nine `/api/cato/*` calls, in the dashboard's light style. Folding a 530-line
+page with its own data model into a 250-line page with a different one would
+have produced one page with two themes and two ideas of what "a score" is, so
+it lands at `/boundary/cato-health` under a DISTINCT title ("Continuous ATO
+Health"), cross-linked to `/boundary/cato` from its lede.
+`tests/test_bdc_cato_health_page.py` pins that the two title blocks differ and
+that the new one is not "cATO Dashboard". Everything else copies the exemplar:
+`bdc_cato_health_page` on the blueprint, a 301 from `app.py`, both `base.html`
+copies plus `compliance.html` and `mosa.html` repointed, the template moved and
+mirrored, `core.d/rmf-ui-05.txt`.
+
+## rmf-ui-09: `/compliance-debt` → `/boundary/compliance-debt`
+
+An RMF artifact surface — POA&M, control and STIG debt burndown, ATO
+expirations and SLA compliance over the unchanged `/api/compliance-debt/*`
+blueprint — so it lands on BDC, the canvas that owns the ATO boundary. Copies
+the exemplar exactly: `bdc_compliance_debt_page` on the blueprint behind
+`bdc_login_required`, a 301 from `app.py`, both `base.html` copies plus
+`compliance.html` (the only other template linking it) repointed, the template
+moved and mirrored with the IQE widget and a breadcrumb, `core.d/rmf-ui-09.txt`
+gating `tests/test_bdc_compliance_debt_page.py`. The two ad-hoc e2e scripts
+naming the old path are repointed so their nav-href assertions describe the
+link that now exists.
+
+`core.d/rmf-ui-10.txt`.

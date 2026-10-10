@@ -49,6 +49,15 @@
 
 ---
 
+## What's New in 1.2.43 — `icdev-core` Is Its Own Package, and `pip install icdev` Pulls It In
+
+- **The shared core is a separate distribution.** `icdev.core` (paths, identity, domain, sensitivity) now ships as `icdev-core` on PyPI, so ICDEV[IT] and ICDEV[FT] share one copy. `pip install icdev` installs it automatically; your `import icdev.core...` lines do not change. **Air-gapped installs:** build the wheelhouse with `pip download icdev` so it includes `icdev-core`.
+- **A release can no longer reach PyPI with a dependency PyPI does not have.** The publish workflow installs the built wheel from PyPI alone and asserts `icdev.core` imports, before anything uploads.
+- **Boundary canvas Gap Analysis works again** — it failed with `gapList.slice is not a function` because boundary gaps arrive grouped by category.
+- **Four never-dispatched extension points were removed** (`memory_save_before/after`, `compliance_check_before/after`). If a site-local drop-in in your `extensions/` tree names one, it will stop loading — see `CHANGELOG.md`.
+
+---
+
 ## What's New in 1.2.42 — Packaging Fix: the Sync Overwrote Real Modules With Their Shims
 
 **If you installed 1.2.40 or 1.2.41 from PyPI, upgrade.**

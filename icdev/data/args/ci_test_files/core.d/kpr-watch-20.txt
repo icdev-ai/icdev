@@ -1,0 +1,7 @@
+# kpr-watch-20 -- the artifact-pin pair is DECLARED for the union rung.
+# Gated in the PR that adds it. The historical replay is NOT here: the gated
+# run checks out at depth 1, so a test replaying merge history would report
+# UNMEASURABLE and pass, which is a perfect score over an empty denominator.
+# Re-derive the replay with:
+#   python -m tools.kanban.artifact_pin_union_survey
+tests/kanban/test_artifact_pin_union_declaration.py

@@ -194,22 +194,32 @@ Enforce role-based access control at the individual MCP tool level, not just at 
 
 **Tool:** `tools/security/mcp_tool_authorizer.py`
 
-**Config:** `args/owasp_agentic_config.yaml` -> `mcp_authorization`
+**Declarations:** `tools/mcp/tool_registry.py` — `min_il` and `required_roles`,
+once per tool (exa-policy-07). The hand-written `role_tool_matrix` that used to
+live in `args/owasp_agentic_config.yaml` is retired; that file now carries only
+`enabled` and `default_policy`.
 
-**Role-to-tool matrix (extends D172 dashboard RBAC):**
+**Role-to-tool policy (extends D172 dashboard RBAC):**
 
-| Role | Allowed Tools | Denied Tools |
-|------|--------------|--------------|
-| admin | All tools | None |
-| pm | project_*, task_*, search_* | terraform_*, deploy_*, rollback |
-| developer | scaffold, generate_code, write_tests, run_tests, lint | terraform_apply, rollback, ssp_generate |
-| isso | ssp_generate, stig_check, sbom_generate, control_map | generate_code, terraform_apply |
-| co | project_status, search_knowledge | All write operations |
+| Role | May mutate | Always allowed | Never |
+|------|-----------|----------------|-------|
+| admin | everything | everything | — |
+| pm | project, portfolio, planning, canvas, MBSE, integration state | read-only tiers | infra, credentials, marketplace |
+| developer | build, test, data, model, observability state | read-only tiers | infra, credentials, marketplace |
+| isso | compliance, assurance, security-posture state | read-only tiers | infra, credentials, marketplace |
+| co | — | read-only tiers | every write tier |
 
 **How it works:**
-- Authorization matrix stored in YAML (D26 pattern)
-- Checked at MCP request dispatch before tool execution
-- Denied calls logged to audit trail with requester identity and denied tool
+- Roles are derived per tool from its `read_only` declaration, its
+  `mutating: true` bundle membership in `args/agent_toolsets.yaml`, and its
+  `category`, then corrected by `AUTHZ_OVERRIDES` where the derivation is wrong.
+- A tool with no declaration at all resolves restrictively (IL5, admin only).
+- Checked at MCP request dispatch before tool execution.
+- The same declaration is read by the Studio `mcp` and `agent` gates, so no
+  surface is a cheaper route to a tool than another.
+- Denied calls logged to audit trail with requester identity and denied tool.
+
+Full rationale: [docs/security/mcp-tool-authorization.md](../docs/security/mcp-tool-authorization.md)
 
 **CLI:**
 ```bash

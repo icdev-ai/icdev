@@ -1,0 +1,78 @@
+# CUI // SP-CTI
+# DocDrift (acoic) — governed evidence seam + behaviour toggles.
+#
+# tools/document_intelligence/acoic.py drafts cited SSP fragments. Its evidence
+# half used to be a bare `RAGRetriever.search(...)` returning chunk TEXTS with no
+# source identity at all: the `[SOURCE-N]` tags in a drafted fragment were
+# positional indices into a list nobody persisted, so a fragment could be replayed
+# by the CoD verifier and still name nothing a reader could go and look at.
+#
+# cef-di-03 routes that half through ONE call — `cortex.resolve(control_id)` —
+# which fans out over the currency store, RAG, DIC, the KG and the KB under the
+# 8-gate TRUST chain, writes a `cortex_audit` row and registers a
+# `source_citation_registry` row for the evidence set. What comes back is
+# index-aligned: `[SOURCE-N]` now points at a real citation with a source id, a
+# table and a provenance id.
+#
+# WHAT DOES NOT CHANGE
+# --------------------
+# The two air-gap-safe paths survive untouched and are NOT governed by this file:
+#   * the deterministic RICOAS / NIST 800-53 crosswalk (`map_changed_controls`),
+#     which is a pure JSON lookup and never went near retrieval;
+#   * the cited-template fallback in `_draft_fragment_text`, which is what runs
+#     when no LLM provider is reachable.
+# `cortex.resolve` itself makes no model call (it passes corrective=False, so even
+# the CRAG rewrite does not run), so turning this on does not put an LLM anywhere
+# it was not already.
+cortex:
+  # Master toggle — DEFAULT OFF (never remove).
+  #
+  # Off means the seam is NEVER consulted: `_retrieve_evidence` runs the original
+  # RAGRetriever call and acoic behaves exactly as before the migration. That is
+  # the rollback — flip this flag, do not revert a merge.
+  enabled: false
+
+  # Evidence citations requested per Cortex backend.
+  # 5 matches the legacy `_retrieve_evidence(..., k=5)` default so the two paths
+  # are asked for the same amount of evidence.
+  top_k: 5
+
+  # Outbound resolutions per run. Each one is a five-backend fan-out, and
+  # `process_regen_item` drafts one fragment PER CONTROL on a queue item, so an
+  # uncapped batch over the regen queue is an outage rather than a slow drafting
+  # pass. Controls are memoised per run, so this bounds DISTINCT controls, not
+  # mentions. Asks refused by the cap are counted and reported
+  # (`ssp_evidence.run_stats`), never silently dropped.
+  max_resolves_per_run: 100
+
+  # Fall back to the legacy retrieval when the governed resolution produced no
+  # usable evidence text at all. DEFAULT TRUE. Cases: a governance refusal, a
+  # fan-out where every rung failed, or a corpus that genuinely matched nothing.
+  #
+  # It does NOT catch a THIN answer, and that distinction is measured rather
+  # than assumed. On the live DIC canvas, 2026-08-18:
+  #
+  #   warm process  cortex.resolve("CM-12") answers in 4.8s with 5 cited texts
+  #                 from rag_compliance_corpus + dic_documents — the same
+  #                 evidence the legacy path found, now with source ids.
+  #   cold process  the SAME call spends 10.3s and abandons `rag`, `dic` and
+  #                 `graph` at the 10.0/10.0/8.0s budgets in
+  #                 args/cortex_config.yaml, answering from `currency` alone —
+  #                 4 catalog citations, none of them control text.
+  #
+  # The cold answer is thin, not empty, so this flag does not fire for it. What
+  # happens instead is that the abandoned backends are RECORDED on the fragment
+  # under `citation_report.evidence_detail.backend_errors`, so a thin drafting
+  # run is legible as an infrastructure event rather than as a statement about
+  # the corpus. Do not "fix" the cold case by raising the global Cortex
+  # timeouts — those are shared by every Cortex consumer.
+  #
+  # (`kb` errors on every resolution here with `column "use_count" does not
+  # exist`. That is a pre-existing Cortex backend defect, not this seam's, and
+  # it is reported the same way rather than swallowed.)
+  #
+  # Set it to false to see the governed path unvarnished. The path each fragment
+  # actually took is recorded as `citation_report.evidence_path` — `cortex`,
+  # `cortex_empty_fallback`, `legacy` or `caller` — so a drafting run is never
+  # ambiguous about which chain produced it.
+  fallback_on_empty: true

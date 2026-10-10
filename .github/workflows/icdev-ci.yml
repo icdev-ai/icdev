@@ -864,7 +864,7 @@ jobs:
       # job is deliberately fast, and the one package is what it actually needs.
       - run: pip install bandit pip-audit
       - name: Install the shared core (imported by tools/__init__)
-        run: pip install "icdev-core @ git+https://github.com/icdev-ai/icdev-core@v0.2.0"
+        run: pip install "icdev-core==0.2.1"
       - name: SAST (bandit) — 0 high+high findings
         run: bandit -r tools/ -q --severity-level high --confidence-level high
       # xit-leak-01 -- this repository is PUBLIC and the trading domain is moving
