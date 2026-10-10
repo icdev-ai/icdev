@@ -4249,6 +4249,12 @@ icdev harness install-guard pi --project .           # writes ./.pi/extensions/i
 icdev harness install-guard pi --global              # writes $PI_CODING_AGENT_DIR/extensions/ (default ~/.pi/agent)
 python -m tools.hooks.harness_guard --harness pi < call.json         # Pi spelling: path, edits[], powershell
 
+# omx-setup-01 — fresh Omarchy / plain Arch host to a running ICDEV, idempotent
+icdev omarchy setup --dry-run        # print the step plan; change nothing
+icdev omarchy setup --yes --start    # run it: --yes allows the sudo PostgreSQL steps, --start enables the genesis timer
+icdev omarchy status [--json]        # per-step state: ok / missing / n/a
+icdev omarchy uninstall [--dry-run]  # reverse MCP, skill, guards, systemd units (never the database or .env)
+
 # MCP servers (stdio transport)
 python tools/mcp/unified_server.py                   # Start unified MCP gateway (251 tools, recommended)
 python tools/mcp/core_server.py                     # Start core MCP server
