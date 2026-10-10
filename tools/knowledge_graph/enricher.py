@@ -314,15 +314,24 @@ def compute_embeddings(
     pg = is_pg(conn)
     embedded_count = 0
     errors = 0
+    # omx-vllm-03: refuse a vector whose dimension differs from the store's.
+    from tools.llm.embedding_dimension import DimensionGuard, EmbeddingDimensionMismatch, recorded_dimension
+
+    guard = DimensionGuard("kg_nodes", recorded_dimension(conn, "kg_nodes"))
+    refused = ""
 
     # Process in batches
     for i in range(0, len(nodes), batch_size):
+        if refused:
+            break
         batch = nodes[i : i + batch_size]
+        batch_start = embedded_count
         for node in batch:
             text = f"{node['entity_type']}: {node['label']}"
             try:
                 embedding = provider.embed(text)
                 if embedding and isinstance(embedding, list):
+                    guard.check(embedding)
                     blob = _float_list_to_blob(embedding)
                     if pg:
                         # PG: also populate the pgvector column so graph_rag can
@@ -339,6 +348,13 @@ def compute_embeddings(
                             (blob, node["id"]),
                         )
                     embedded_count += 1
+            except EmbeddingDimensionMismatch as exc:
+                if embedded_count > batch_start:
+                    conn.rollback()  # nothing from the refused batch persists
+                    embedded_count = batch_start
+                refused = str(exc)
+                logger.error("KG embedding refused for graph %s: %s", graph_id, exc)
+                break
             except Exception as exc:
                 logger.debug("Embedding failed for %s: %s", node["label"], exc)
                 errors += 1
@@ -348,13 +364,16 @@ def compute_embeddings(
     if close_conn:
         conn.close()
 
-    return {
-        "status": "ok",
+    result = {
+        "status": "refused" if refused else "ok",
         "graph_id": graph_id,
         "nodes_embedded": embedded_count,
         "errors": errors,
         "total_nodes": len(nodes),
     }
+    if refused:
+        result["error"] = refused
+    return result
 
 
 # ---------------------------------------------------------------------------

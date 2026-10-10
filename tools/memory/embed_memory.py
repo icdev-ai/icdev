@@ -107,17 +107,24 @@ def embed_all(user_id=None, json_output=False):
     batch_size = 20
     total = 0
     errors = 0
+    # omx-vllm-03: refuse a vector whose dimension differs from the store's.
+    from tools.llm.embedding_dimension import DimensionGuard, EmbeddingDimensionMismatch, recorded_dimension
+
+    guard = DimensionGuard("memory_entries", recorded_dimension(conn, "memory_entries"))
+    refused = ""
 
     for i in range(0, len(rows), batch_size):
         batch = rows[i : i + batch_size]
         texts = [row[1] for row in batch]
         ids = [row[0] for row in batch]
+        committed = total
 
         try:
             if hasattr(client, "embed"):
                 # LLM provider interface (D72)
                 for j, text in enumerate(texts):
                     emb = client.embed(text)
+                    guard.check(emb)
                     blob = embedding_to_blob(emb)
                     c.execute(
                         "UPDATE memory_entries SET embedding = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
@@ -128,6 +135,7 @@ def embed_all(user_id=None, json_output=False):
                 # Direct OpenAI client (fallback)
                 response = client.embeddings.create(input=texts, model="text-embedding-3-small")
                 for j, emb_data in enumerate(response.data):
+                    guard.check(emb_data.embedding)
                     blob = embedding_to_blob(emb_data.embedding)
                     c.execute(
                         "UPDATE memory_entries SET embedding = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
@@ -141,6 +149,10 @@ def embed_all(user_id=None, json_output=False):
 
         except Exception as e:
             errors += 1
+            if isinstance(e, EmbeddingDimensionMismatch):
+                conn.rollback()  # nothing from the refused batch persists
+                total = committed
+                refused = str(e)
             if not json_output:
                 print(f"Error embedding batch starting at index {i}: {e}")
             break
@@ -156,6 +168,7 @@ def embed_all(user_id=None, json_output=False):
                     "errors": errors,
                     "total_unembedded": len(rows),
                     "provider": provider_name,
+                    **({"refused": refused} if refused else {}),
                 },
                 indent=2,
             )

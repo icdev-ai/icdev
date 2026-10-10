@@ -3,7 +3,8 @@ from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Embedding provider implementations.
 
-Supports OpenAI (including Ollama/vLLM via base_url), AWS Bedrock Titan,
+Supports OpenAI (including Ollama/vLLM via base_url -- vLLM is `vllm-embed` in
+args/llm_config.yaml, omx-vllm-03), AWS Bedrock Titan,
 and Google Gemini embeddings through a unified EmbeddingProvider interface.
 """
 
@@ -103,22 +104,50 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         base_url: str = "https://api.openai.com/v1",
         model_id: str = "text-embedding-3-small",
         dims: int = 1536,
+        local: Optional[bool] = None,
     ):
         self._api_key = api_key
         self._base_url = base_url
         self._model_id = model_id
+        # 0 = not known in advance (a vLLM pooling instance serves whatever model
+        # the operator started): the first vector this provider returns fixes it.
         self._dims = dims
+        self._observed_dims = 0
+        # Locality as judged by the router through THE one definition
+        # (omx-vllm-01); None keeps the historical host-substring guess.
+        self._local = local
         self._client = None
 
     @property
     def provider_name(self) -> str:
+        if self._local is not None:
+            return "local" if self._local else "openai"
         if "localhost" in self._base_url or "127.0.0.1" in self._base_url:
             return "local"
         return "openai"
 
     @property
     def dimensions(self) -> int:
-        return self._dims
+        """The dimension this embedder ACTUALLY returns, probing once if unknown."""
+        if not self._observed_dims and not self._dims:
+            self.embed("dimension probe")
+        return self._observed_dims or self._dims
+
+    def _observe(self, vector: List[float]) -> List[float]:
+        """Record the dimension of the first vector returned (omx-vllm-03).
+
+        A declared ``dimensions`` that disagrees is logged, never trusted: the
+        vector stores refuse on the OBSERVED dimension (tools/llm/embedding_dimension.py).
+        """
+        if vector and not self._observed_dims:
+            self._observed_dims = len(vector)
+            if self._dims and self._dims != self._observed_dims:
+                logger.warning(
+                    "embedding model %s declares %d dimensions but returned %d -- "
+                    "fix `dimensions` in args/llm_config.yaml",
+                    self._model_id, self._dims, self._observed_dims,
+                )
+        return vector
 
     def _get_client(self):
         if self._client is None:
@@ -136,7 +165,7 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         """Generate embedding for a single text."""
         client = self._get_client()
         response = client.embeddings.create(input=text, model=self._model_id)
-        return response.data[0].embedding
+        return self._observe(response.data[0].embedding)
 
     def embed_batch(self, texts: List[str]) -> List[List[float]]:
         """Generate embeddings for multiple texts in one API call."""
@@ -146,7 +175,10 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         response = client.embeddings.create(input=texts, model=self._model_id)
         # Sort by index to preserve order
         sorted_data = sorted(response.data, key=lambda x: x.index)
-        return [item.embedding for item in sorted_data]
+        vectors = [item.embedding for item in sorted_data]
+        if vectors:
+            self._observe(vectors[0])
+        return vectors
 
     def check_availability(self) -> bool:
         """Check if embedding endpoint is reachable.
@@ -171,7 +203,8 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
                 "max_retries": 0,
             }
             probe_client = openai_sdk.OpenAI(**kwargs)
-            probe_client.embeddings.create(input="test", model=self._model_id)
+            response = probe_client.embeddings.create(input="test", model=self._model_id)
+            self._observe(response.data[0].embedding)
             return True
         except Exception:
             return False
