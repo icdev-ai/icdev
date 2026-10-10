@@ -443,6 +443,17 @@ class SQLiteVectorStore(VectorStoreProvider):
             return 0
         conn = self._get_conn()
         inserted = 0
+        # omx-vllm-03: refuse a vector whose dimension differs from the store's.
+        from tools.llm.embedding_dimension import DimensionGuard, recorded_dimension
+
+        # The whole batch is checked BEFORE the first INSERT, so nothing is written.
+        try:
+            DimensionGuard("rag_chunks", recorded_dimension(conn, "rag_chunks")).check_all(
+                c.embedding for c in chunks if c.embedding is not None
+            )
+        except ValueError:
+            conn.close()
+            raise
         for chunk in chunks:
             if not chunk.content_hash:
                 chunk.compute_content_hash()
