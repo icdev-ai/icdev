@@ -241,10 +241,39 @@ _FIXTURE_OPENCODE_JSONL = "\n".join(
     )
 )
 
+# omx-adapt-02. The ``pi --mode json`` record shape recorded in
+# docs/research/omx-spike-01/evidence/pi-icdev.txt -- one completed and one
+# guard-refused tool call, then a final ``stop`` message and ``agent_settled``.
+_FIXTURE_PI_JSONL = "\n".join(
+    json.dumps(event)
+    for event in (
+        {"type": "session", "version": 3, "id": "pi_probe", "cwd": "."},
+        {"type": "agent_start"},
+        {"type": "tool_execution_start", "toolCallId": "call_1",
+         "toolName": "bash", "args": {"command": "ls"}},
+        {"type": "tool_execution_end", "toolCallId": "call_1",
+         "toolName": "bash", "isError": False,
+         "result": {"content": [{"type": "text", "text": "a.py"}]}},
+        {"type": "tool_execution_start", "toolCallId": "call_2",
+         "toolName": "bash", "args": {"command": "rm ../victim/a"}},
+        {"type": "tool_execution_end", "toolCallId": "call_2",
+         "toolName": "bash", "isError": True,
+         "result": {"content": [{"type": "text", "text": "ICDEV guard: BLOCKED"}]}},
+        {"type": "message_end", "message": {
+            "role": "assistant", "stopReason": "stop",
+            "content": [{"type": "text",
+                         "text": "Task completed by the probe fixture."}],
+            "usage": {"input": 50, "output": 10, "totalTokens": 60,
+                      "cost": {"total": 0}}}},
+        {"type": "agent_settled", "aborted": False},
+    )
+)
+
 _FIXTURES: Dict[str, str] = {
     "claude_json_envelope": _FIXTURE_CLAUDE_ENVELOPE,
     "codex_jsonl": _FIXTURE_CODEX_JSONL,
     "opencode_jsonl": _FIXTURE_OPENCODE_JSONL,
+    "pi_jsonl": _FIXTURE_PI_JSONL,
     "plain_text": _FIXTURE_PLAIN_TEXT,
 }
 
