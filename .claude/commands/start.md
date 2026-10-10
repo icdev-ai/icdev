@@ -17,6 +17,15 @@ PORTAL_PORT: 8443
 
 > **Windows PowerShell note:** All commands below use PowerShell syntax. Set `$env:PYTHONPATH = "C:\AI\ICDev"` before any `python` call that imports `tools.*` or `icdev.*`. Use `2>$null` (not `2>/dev/null`), `Start-Sleep -Seconds N` (not `sleep N`), `Start-Process` (not `nohup`), and `Stop-Process` (not `pkill`).
 
+> **Linux / macOS note:** run from the checkout root with `export PYTHONPATH="$PWD"`.
+> The `python` commands are the same on every OS (use `python3` if that is your
+> interpreter's name). Where a step shows a PowerShell block, its `bash` block
+> follows it; a PowerShell here-string (`@'...'@ | Set-Content x.py`) becomes
+> `python - <<'EOF' ... EOF` with the same body. `2>$null` is `2>/dev/null`.
+> Background starts use `nohup ... &` and RECORD the pid; stops are by that
+> verified pid (`kill <pid>`), never `pkill`/`killall` by name. To start the
+> supervisor at logon, see `python -m tools.genesis.install_units --platform linux`.
+
 0. **Check what is already running before killing anything** (autonomy-id-03):
    ```powershell
    $env:PYTHONPATH = "C:\AI\ICDev"
@@ -32,6 +41,8 @@ PORTAL_PORT: 8443
    > supervisor. If a specific process must go, confirm its exact command line
    > with `Get-CimInstance Win32_Process -Filter "ProcessId=<id>"` first, then
    > `Stop-Process -Id <that exact PID> -Force`. Never by name, never by filter.
+   > On Linux/macOS the same rule: no `pkill python` / `killall python`; read
+   > `ps -o pid=,args= -p <id>` first, then `kill <that exact PID>`.
 
    Only if the supervisor is **DOWN** and you need a clean slate, stop its
    children by verified PID:
@@ -40,6 +51,11 @@ PORTAL_PORT: 8443
      ForEach-Object { $_.children } | ForEach-Object { $_.pids } |
      ForEach-Object { Get-CimInstance Win32_Process -Filter "ProcessId=$_" } |
      Format-Table ProcessId, CommandLine -AutoSize
+   ```
+   ```bash
+   python tools/genesis/supervisor_status.py --json |
+     python -c "import json,sys; [print(p) for c in json.load(sys.stdin).get('children', []) for p in c.get('pids', [])]" |
+     xargs -r -n1 ps -o pid=,args= -p
    ```
    Review that list, then stop only the PIDs you intend to.
 
@@ -150,6 +166,14 @@ with get_connection() as conn:
    $proc = Start-Process python -ArgumentList "tools/dashboard/app.py" -RedirectStandardOutput ".tmp/dashboard.log" -RedirectStandardError ".tmp/dashboard_err.log" -WindowStyle Hidden -PassThru
    echo "Dashboard PID: $($proc.Id)"
    ```
+   ```bash
+   export PYTHONPATH="$PWD"
+   python tools/db/init_icdev_db.py 2>/dev/null
+   nohup python tools/dashboard/app.py > .tmp/dashboard.log 2> .tmp/dashboard_err.log < /dev/null &
+   echo "Dashboard PID: $!"
+   sleep 3
+   python -c "import os; from dotenv import load_dotenv; load_dotenv(); p=os.getenv('ICDEV_DASHBOARD_PORT','5050'); import webbrowser; webbrowser.open(f'http://localhost:{p}')"
+   ```
    ```powershell
    Start-Sleep -Seconds 3
    ```
@@ -170,24 +194,25 @@ with get_connection() as conn:
    $env:PYTHONPATH = "C:\AI\ICDev"
    python tools/saas/platform_db.py --init 2>$null
    ```
-   ```powershell
-   $env:PYTHONPATH = "C:\AI\ICDev"
-   $gw = Start-Process python -ArgumentList "tools/saas/api_gateway.py", "--port", "8443", "--debug" -RedirectStandardOutput ".tmp/api_gateway.log" -RedirectStandardError ".tmp/api_gateway_err.log" -WindowStyle Hidden -PassThru
-   echo "API Gateway PID: $($gw.Id)"
-   Start-Sleep -Seconds 3
+   Start it through the pidfile helper — the same command on every OS. It
+   launches `tools/saas/api_gateway.py --port 8443 --debug` detached, logs to
+   `.tmp/api_gateway.log`, records the pid in `.tmp/services/portal.pid` (which
+   `/stop` verifies before stopping), and ADOPTS an instance already running
+   instead of starting a second:
+   ```bash
+   python -m tools.genesis.unsupervised_services --start --only portal
    ```
 
 6. Open the portal in the browser:
-   ```powershell
-   Start-Process "http://localhost:8443/portal/"
+   ```bash
+   python -c "import webbrowser; webbrowser.open('http://localhost:8443/portal/')"
    ```
 
 7. Start the CI/CD poll trigger (polls GitHub/GitLab issues every 20s for ICDEV™-BOT automation):
-   ```powershell
-   $env:PYTHONPATH = "C:\AI\ICDev"
-   $pt = Start-Process python -ArgumentList "tools/ci/triggers/poll_trigger.py" -RedirectStandardOutput ".tmp/poll_trigger.log" -RedirectStandardError ".tmp/poll_trigger_err.log" -WindowStyle Hidden -PassThru
-   echo "Poll trigger PID: $($pt.Id)"
+   ```bash
+   python -m tools.genesis.unsupervised_services --start --only poll_trigger
    ```
+   (Logs to `.tmp/poll_trigger.log`; pid in `.tmp/services/poll_trigger.pid`.)
 
 8. **Kanban Scheduler, PR Watcher and Genesis Daemon — defer to the supervisor** (autonomy-id-03).
 
@@ -216,7 +241,8 @@ with get_connection() as conn:
 
 8b. **ICDEV[FT] and ICDEV[RT] — each under ITS OWN supervisor, never beside a live one.**
 
-   `C:\ai\icdev_ft\supervise_ft.py` serves `launch_ft.py` on 127.0.0.1:5200 and
+   **Windows-host only today:** on a Linux/macOS host with no FT/RT checkout,
+   skip this step. `C:\ai\icdev_ft\supervise_ft.py` serves `launch_ft.py` on 127.0.0.1:5200 and
    `C:\ai\icdev_rt\supervise_rt.py` serves `launch_rt.py` on 127.0.0.1:5300. Each
    polls origin/main, redeploys fast-forward only, and rolls back on a failed
    deep-health probe — the same shape as step 8, in a different checkout. Both
@@ -268,7 +294,7 @@ with get_connection() as conn:
 
 10. Report to the user:
    > **Note:** The Kanban Scheduler is always explicitly restarted by `/start` using `python -m tools.genesis.kanban_scheduler`.
-   > **Note:** The Genesis Daemon auto-starts at logon via Windows Task Scheduler (ICDEV-Genesis-Daemon task). Manual override: `python tools/genesis/daemon.py`
+   > **Note:** The Genesis supervisor auto-starts at logon via Windows Task Scheduler (ICDEV-Genesis-Daemon task) or, on Linux, the systemd `--user` timer written by `python -m tools.genesis.install_units --platform linux` (`systemctl --user enable --now icdev-genesis.timer`). Manual override: `python tools/genesis/daemon.py`
    - **Dashboard**: `http://localhost:DASHBOARD_PORT`
 <!-- Derived from the app url_map by tools/dashboard/nav_paths.py.
      Regenerate: python tools/dashboard/nav_paths.py --write  (mfx-sib-02) -->
@@ -285,9 +311,10 @@ with get_connection() as conn:
    - **ICDEV[RT]**: `http://127.0.0.1:5300` under `C:\ai\icdev_rt\supervise_rt.py` — log `C:\ai\icdev_rt\.tmp\supervisor.log`
    - **Kanban Scheduler**: `.tmp/kanban_scheduler.log` (promotes backlog → in_progress, dispatches to Claude CLI every 60s)
    - **Genesis Daemon**: `.tmp/genesis_daemon.log` (heal every 5m, awareness every 3h, scout every 2h, 90+ reflexes in `daemon.REFLEX_NAMES`)
-   - To stop dashboard: `Get-Process python | Where-Object { $_.CommandLine -like "*dashboard/app*" } | Stop-Process -Force`
-   - To stop portal: `Get-Process python | Where-Object { $_.CommandLine -like "*api_gateway*" } | Stop-Process -Force`
-   - To stop poll trigger: `Get-Process python | Where-Object { $_.CommandLine -like "*poll_trigger*" } | Stop-Process -Force`
+   - To stop the portal and poll trigger: `python -m tools.genesis.unsupervised_services --stop`
+     (by verified pidfile pid, every OS; `--only portal` for one).
+   - The dashboard is a supervised child once the supervisor is up — stop it
+     with `/stop`, never by a command-line filter.
    - To stop kanban scheduler / pr watcher / genesis daemon: they are SUPERVISED —
      stopping one by name just makes the supervisor restart it, and a name filter
      is what produced three concurrent pr_watchers. Stop the supervisor instead.
@@ -300,7 +327,7 @@ with get_connection() as conn:
      5050/5200/5300 afterwards (`--keep-ft` / `--keep-rt` keep one). Agent
      workers mid-build are reported and left running unless `--include-workers`.
      `--pause` also sets Manual Build for the next start.
-     Never `taskkill /f /im python.exe` — see step 0.
+     Never `taskkill /f /im python.exe` (or `pkill python`) — see step 0.
 
 ## Kanban Auto-Pickup
 

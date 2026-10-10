@@ -6,7 +6,7 @@ Usage:
     python tools/launch_dashboard.py [--no-kill] [--wait 30]
 
 Steps:
-    1. Kill all python.exe processes (stale dashboard, scheduler, daemon, etc.).
+    1. Stop the running ICDEV stack by verified pid (tools/genesis/shutdown_dashboard.py).
     2. Verify PostgreSQL is reachable (required by kanban scheduler).
     3. Start Dashboard (tools/dashboard/app.py) on ICDEV_DASHBOARD_PORT.
     4. Poll /health until the dashboard is responding.
@@ -59,26 +59,24 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _is_windows() -> bool:
-    return sys.platform == "win32"
+def _stop_stack() -> None:
+    """Stop the running ICDEV stack by VERIFIED pid, never by process name.
 
-
-def _kill_all_python() -> None:
-    """Terminate every python.exe process. Uses OS-native commands."""
-    if _is_windows():
-        cmd = ["taskkill", "/f", "/im", "python.exe"]
-    else:
-        cmd = ["pkill", "-9", "python"]
-    print(f"[launch] Killing all Python processes: {' '.join(cmd)}")
-    try:
-        subprocess.run(cmd, capture_output=True, check=False)
-    except FileNotFoundError:
-        # pkill might not exist; fall back to killall
-        if not _is_windows():
-            try:
-                subprocess.run(["killall", "-9", "python"], capture_output=True, check=False)
-            except FileNotFoundError:
-                pass
+    This used to run ``taskkill /f /im python.exe`` (Windows) or
+    ``pkill -9 python`` (POSIX): every Python process the user owned, including
+    unrelated tooling and -- on a Linux desktop -- the session's own Python
+    services (omx-linux-01). ``shutdown_dashboard`` stops the supervisor from
+    its pid lock and then its recorded children, on every OS. ICDEV[FT]/[RT]
+    and agent workers mid-build are left running, as `/stop` does by default.
+    """
+    # A subprocess, not an import: this script keeps the repo off sys.path (above).
+    cmd = [sys.executable, str(BASE_DIR / "tools" / "genesis" / "shutdown_dashboard.py"),
+           "--keep-ft", "--keep-rt"]
+    print("[launch] Stopping the running stack by verified pid: shutdown_dashboard.py")
+    env = dict(os.environ, PYTHONPATH=str(BASE_DIR))
+    done = subprocess.run(cmd, cwd=str(BASE_DIR), env=env, check=False)  # nosec B603 - fixed argv
+    if done.returncode != 0:
+        print(f"[launch] shutdown_dashboard exit {done.returncode} -- read its report above")
     # Allow processes to release ports/files
     time.sleep(2)
 
@@ -166,7 +164,7 @@ def _cleanup_stale_lockfiles() -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Launch ICDEV Dashboard + Kanban Scheduler")
-    parser.add_argument("--no-kill", action="store_true", help="Skip killing existing Python processes")
+    parser.add_argument("--no-kill", action="store_true", help="Skip stopping the running ICDEV stack")
     parser.add_argument("--wait", type=int, default=30, help="Seconds to wait for dashboard health (default: 30)")
     parser.add_argument("--json", action="store_true", help="Emit JSON status output")
     args = parser.parse_args()
@@ -175,7 +173,7 @@ def main() -> int:
 
     # 1. Kill
     if not args.no_kill:
-        _kill_all_python()
+        _stop_stack()
     else:
         print("[launch] --no-kill set; skipping process termination")
 

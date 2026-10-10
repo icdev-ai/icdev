@@ -2488,6 +2488,14 @@ python tools/genesis/shutdown_dashboard.py --keep-ft --keep-rt --json   # leave 
 # produced three concurrent pr_watchers. Agent workers (grandchildren) are reported
 # and left running unless --include-workers. Exit 0 stopped/already down, 1 a
 # survivor or listener on 5050/5200/5300 remains, 2 the tree could not be measured.
+# The two services /start runs OUTSIDE the supervisor (portal :8443, poll trigger), by verified pidfile
+python -m tools.genesis.unsupervised_services --status
+python -m tools.genesis.unsupervised_services --start                 # adopts a running instance
+python -m tools.genesis.unsupervised_services --stop --dry-run        # pids it would stop; touches nothing
+# Start the Genesis supervisor at logon (omx-linux-01): systemd --user units on Linux, Task Scheduler on Windows
+python -m tools.genesis.install_units --platform linux --dry-run
+python -m tools.genesis.install_units --platform linux --enable       # write units + systemctl --user enable --now icdev-genesis.timer
+python -m tools.genesis.install_units --platform linux --uninstall
 python tools/genesis/daemon.py --reflex audit --json          # Self-scan (code quality + SAST)
 python tools/genesis/daemon.py --reflex comply --json         # cATO evidence + crosswalk + SbD
 python tools/genesis/daemon.py --reflex ingest --json         # RSS → innovation_signals

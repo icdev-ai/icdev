@@ -1,0 +1,20 @@
+# CUI // SP-CTI
+# ICDEV(tm) Genesis supervisor -- logon trigger (omx-linux-01).
+#
+# The Task Scheduler "At logon" trigger, as a systemd --user timer: the user
+# manager starts at logon, and OnStartupSec counts from then. Enable with
+#   systemctl --user enable --now icdev-genesis.timer
+# To start at BOOT without a logon session: loginctl enable-linger "$USER".
+# A second activation while the service runs is a no-op, and launch.py's own
+# pid lock refuses a second supervisor regardless.
+
+[Unit]
+Description=Start the ICDEV(tm) Genesis supervisor after logon
+Documentation=https://github.com/icdev-ai/icdev
+
+[Timer]
+OnStartupSec=30s
+Unit=icdev-genesis.service
+
+[Install]
+WantedBy=timers.target

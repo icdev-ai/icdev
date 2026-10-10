@@ -143,6 +143,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from icdev.core.paths import repo_root  # noqa: E402
+from tools.compat.platform_utils import path_key  # noqa: E402
 from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 logger = get_logger(__name__)
@@ -289,7 +290,9 @@ def _git(args: List[str], cwd: Path, timeout: int = 60) -> Tuple[int, str, str]:
 
 
 def _norm(p: Any) -> str:
-    return str(p).replace("\\", "/").rstrip("/").lower()
+    # Host case rules (omx-linux-01): lowering unconditionally made two Linux
+    # paths that differ only in case read as one registered worktree.
+    return path_key(p)
 
 
 def worktree_listing(root: Path) -> Optional[Dict[str, str]]:
