@@ -113,3 +113,16 @@ declared:
     context_budget: false      # ...nor a turn/token budget
     structured_output: true    # tokens, cost, stop reason, session id
     guard_wired: false         # plugin not installed yet -- omx-guard-01
+
+  # omx-adapt-02. Only what omx-spike-01 measured for Pi (findings.md, "Pi"):
+  # `pi --mode json` emits JSONL whose tool_execution_* records and per-message
+  # usage parse_response() recovers. No sandbox, turn or token flag, no spawn().
+  pi_cli:
+    streaming: false           # no spawn(); JSONL arrives with the result
+    tool_calling: true         # tool_execution_end, incl. guard-refused ones
+    sub_agents: false
+    interruption: false
+    sandbox_passthrough: false # pi --mode json takes no sandbox flag
+    context_budget: false      # ...nor a turn/token budget
+    structured_output: true    # usage, cost, stopReason, session id
+    guard_wired: false         # no -e guard extension passed yet

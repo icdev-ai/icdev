@@ -43,6 +43,12 @@ enabled_adapters:
   # moving the default is omx-select-01, and autonomous dispatch to it waits on
   # the guard (omx-guard-01/02) -- its guard_wired capability measures absent.
   - opencode_cli
+  # omx-adapt-02 -- Pi (`pi`, shipped by Omarchy), a fully supported peer of
+  # opencode_cli, not a fallback. Same posture: reachable via
+  # ICDEV_AGENT_ADAPTER=pi_cli, absent from fallback_order and
+  # per_task_type_preference until omx-select-01, and its guard_wired
+  # capability measures absent until the Pi guard extension lands.
+  - pi_cli
 
 # Prefer claude_cli for anything that actually needs to edit files; use
 # local_llm_router for research/plan tasks that only need a written
