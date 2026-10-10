@@ -1,19 +1,24 @@
 # CUI // SP-CTI
 # ICDEV™ systemd service unit template for Linux bare-metal deployment.
 #
-# Installation:
-#   1. Copy to ~/.config/systemd/user/icdev.service (user-level) or
-#      /etc/systemd/system/icdev.service (system-level, requires root).
-#   2. Replace %h with your home directory if using user-level systemd.
-#   3. systemctl --user daemon-reload
-#   4. systemctl --user enable --now icdev
+# A systemd --user unit. %h is a systemd specifier (the user's home), expanded
+# by systemd itself -- do not edit it by hand. The file is valid as-is for a
+# checkout at ~/icdev; for any other location install it with
+#   python -m tools.genesis.install_units --platform linux --production
+# which rewrites %h/icdev to the real checkout root and writes
+# ~/.config/systemd/user/icdev.service, then:
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now icdev
+# To start at boot without a logon session: loginctl enable-linger "$USER".
 #
-# Or use the installer helper:
-#   python tools/filesync/service_manager.py --install --platform linux
+# Install EITHER this unit OR scripts/systemd/icdev-genesis.{service,timer}:
+# both run tools/genesis/launch.py, and its pid lock refuses the second one.
+# A system-level unit (/etc/systemd/system) also needs a User= line naming the
+# account that owns the checkout; a --user unit must not carry one.
 
 [Unit]
 Description=ICDEV™ — Intelligent Certified Development Services
-Documentation=https://github.com/your-org/icdev
+Documentation=https://github.com/icdev-ai/icdev
 After=network.target
 # If Ollama is managed by systemd on this machine, uncomment:
 # After=ollama.service
@@ -21,8 +26,6 @@ After=network.target
 
 [Service]
 Type=simple
-# Change to the user that owns the ICDEV™ installation
-User=icdev
 WorkingDirectory=%h/icdev
 ExecStart=%h/icdev/scripts/start-production.sh
 Restart=on-failure

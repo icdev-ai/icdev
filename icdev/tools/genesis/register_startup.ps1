@@ -11,7 +11,8 @@
 #   powershell -ExecutionPolicy Bypass -File tools\genesis\unregister_startup.ps1
 
 $TaskName  = "ICDEV-Genesis-Daemon"
-$Project   = "C:\Users\schuo\Downloads\ICDev"
+# Derived from this script's own location (omx-linux-01) -- never a fixed path.
+$Project   = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $Script    = "$Project\tools\genesis\start_daemon.ps1"
 $User      = $env:USERNAME
 
