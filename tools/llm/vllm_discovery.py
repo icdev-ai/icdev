@@ -36,14 +36,16 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from icdev.core.paths import repo_root
+# kax-conflict-05: run by path, sys.path[0] is this file's own directory -- never
+# the import root. Bootstrap it before the first first-party import.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
-if __name__ == "__main__":  # direct `python tools/llm/vllm_discovery.py`
-    sys.path.insert(0, str(repo_root(__file__)))
-
-from tools.logging.icdev_logger import get_logger
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 logger = get_logger("icdev.llm.vllm_discovery")
 
