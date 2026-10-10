@@ -150,6 +150,9 @@ def test_ensure_defers_when_a_supervisor_is_running(tmp_path, monkeypatch):
     (tmp_path / ".tmp" / "genesis" / "launcher.pid").write_text("77", encoding="utf-8")
     import tools.compat.platform_utils as pu
     monkeypatch.setattr(pu, "pid_exists", lambda _p: True)
+    # A live pid is a supervisor only if it RUNS launch.py -- otherwise it is a
+    # reused pid and the lock is stale. Pin the command line, never the host's pid 77.
+    monkeypatch.setattr(ss, "_cmdline", lambda _p: "python tools/genesis/launch.py")
 
     started = []
     result = ss.ensure(runner=lambda argv: started.append(argv), root=tmp_path)
