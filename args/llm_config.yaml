@@ -335,6 +335,26 @@ models:
     supports_structured_output: true
     pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
+  # Stable alias for whatever the operator's vLLM serves (omx-vllm-02). OPTIONAL:
+  # with VLLM_MODEL unset the id expands to "" and the router marks the alias
+  # unavailable, so every chain below falls straight through it. It always sits
+  # AFTER the ollama entries -- on the low-VRAM target boxes only a small quantized
+  # model fits under vLLM's KV-cache preallocation, and Ollama (GGUF + CPU offload)
+  # stays the default local path. The realistic production use is a remote vLLM on
+  # a bigger GPU: point VLLM_BASE_URL at it (a LAN host still counts as local; see
+  # providers.vllm.locality). context_window / supports_tools below are
+  # placeholders -- settings.vllm_discovery overwrites both from the server's
+  # max_model_len and a probed tools request.
+  vllm-local:
+    provider: vllm
+    model_id: "${VLLM_MODEL:-}"
+    context_window: 4096
+    max_output_tokens: 2048
+    supports_thinking: false
+    supports_tools: false
+    supports_structured_output: false
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
   # Primary Ollama cloud model — kimi-k2.6:cloud (vision-capable, 3s TTFT).
   # Tag corrected 2026-07-10: `kimi-k2.7-code` is not published; `ollama list`
   # shows kimi-k2.6:cloud. Requires OLLAMA_API_KEY.
@@ -780,7 +800,7 @@ routing:
     effort: low
 
   code_generation:
-    chain: [qwen3-local, kimi-cloud, claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local]
+    chain: [qwen3-local, kimi-cloud, claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local, vllm-local]
     effort: high
 
   saas_proxy:
@@ -985,7 +1005,7 @@ routing:
   # REFUSED. The chain stays local-first so that even an enforcement bug cannot
   # leak — defence in depth, not a single flag.
   proposal_drafting:
-    chain: [qwen3-local, llama-local]
+    chain: [qwen3-local, llama-local, vllm-local]
     effort: medium
     force_local: true
 
@@ -1005,12 +1025,12 @@ routing:
     effort: medium
 
   bid_scoring:
-    chain: [qwen3-local, llama-local]
+    chain: [qwen3-local, llama-local, vllm-local]
     effort: low
     force_local: true
 
   color_review:
-    chain: [qwen3-local, llama-local]
+    chain: [qwen3-local, llama-local, vllm-local]
     effort: medium
     force_local: true
 
@@ -1022,27 +1042,27 @@ routing:
   # raw CUI and cannot be usefully masked (mask the program names and there is
   # nothing left to write about).
   rfi_writer_drafting:
-    chain: [qwen3-local, llama-local]
+    chain: [qwen3-local, llama-local, vllm-local]
     effort: low
     force_local: true
 
   rfi_editor_drafting:
-    chain: [qwen3-local, llama-local]
+    chain: [qwen3-local, llama-local, vllm-local]
     effort: medium
     force_local: true
 
   rfi_reviewer_review:
-    chain: [qwen3-local, llama-local]
+    chain: [qwen3-local, llama-local, vllm-local]
     effort: high
     force_local: true
 
   rfi_researcher_knowledge:
-    chain: [qwen3-local, llama-local]
+    chain: [qwen3-local, llama-local, vllm-local]
     effort: high
     force_local: true
 
   rfi_compliance_assessment:
-    chain: [qwen3-local, llama-local]
+    chain: [qwen3-local, llama-local, vllm-local]
     effort: high
     force_local: true
 
@@ -1506,6 +1526,22 @@ settings:
   ollama_discovery:
     enabled: true
     probe_providers: [ollama, ollama_cloud]
+    default_capabilities: [summarization, writing]
+    refresh_interval_seconds: 3600
+  # vLLM auto-discovery (omx-vllm-02): GET ${VLLM_BASE_URL}/models and register each
+  # served model as `vllm:<served-name>` with context_window = max_model_len and
+  # supports_tools from a ONE-SHOT tools probe (tool calling is a server flag,
+  # --enable-auto-tool-choice, that /v1/models does not expose). The probe verdict
+  # is cached per process; an inconclusive probe registers supports_tools: false.
+  # probe_only_if_env: vLLM is optional, so a router in a process that never set
+  # VLLM_BASE_URL does not dial localhost:8000 at all. Report the endpoint with
+  # `icdev llm doctor` (probes regardless of this gate).
+  vllm_discovery:
+    enabled: true
+    probe_providers: [vllm]
+    probe_only_if_env: VLLM_BASE_URL
+    probe_tools: true
+    timeout_seconds: 3
     default_capabilities: [summarization, writing]
     refresh_interval_seconds: 3600
 
