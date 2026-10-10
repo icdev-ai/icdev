@@ -65,6 +65,5 @@ grandfathered:
   # bound at import time rather than at the call.
   tools/ai_augmentation/nlp_extractor.py: 1
   tools/ai_augmentation/agent_readiness/pillars/stig_nlp_extractor.py: 1
-  tools/genesis/reflexes/fathomdesk_openbb_refresh.py: 1
   tools/genesis/reflexes/nocc_alarm_triage.py: 1
   tools/genesis/reflexes/pdc_pipeline_stale.py: 1

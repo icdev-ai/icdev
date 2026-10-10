@@ -169,6 +169,13 @@ CAPABILITIES: Dict[str, str] = {
         "Machine-readable fields are recovered from a raw backend response "
         "through parse_response(), not just the text echoed back."
     ),
+    # omx-adapt-01. Measured through the adapter's own verify_guard()
+    # self-test; an adapter without one is unconfirmed, never present.
+    "guard_wired": (
+        "ICDEV's PreToolUse guard (tools/airgap/hook_compat.run_pre_tool_check) "
+        "sees the backend's tool calls and can refuse them, as reported by the "
+        "adapter's verify_guard() self-test."
+    ),
 }
 
 # ── probe fixtures ──────────────────────────────────────────────────────────
@@ -208,9 +215,36 @@ _FIXTURE_PLAIN_TEXT = (
     "--- a/a.py\n+++ b/a.py\n+probe\n\nTask completed.\n"
 )
 
+# omx-adapt-01. The ``opencode run --format json`` stream shape recorded in
+# docs/research/omx-spike-01/evidence/ -- one completed and one guard-refused
+# tool call, then the final text and a ``stop`` step.
+_FIXTURE_OPENCODE_JSONL = "\n".join(
+    json.dumps(event)
+    for event in (
+        {"type": "step_start", "sessionID": "ses_probe", "part": {"type": "step-start"}},
+        {"type": "tool_use", "sessionID": "ses_probe", "part": {
+            "tool": "bash", "callID": "call_1",
+            "state": {"status": "completed", "input": {"command": "ls"},
+                      "output": "a.py"}}},
+        {"type": "tool_use", "sessionID": "ses_probe", "part": {
+            "tool": "bash", "callID": "call_2",
+            "state": {"status": "error", "input": {"command": "rm ../victim/a"},
+                      "error": "ICDEV guard: BLOCKED"}}},
+        {"type": "step_finish", "sessionID": "ses_probe", "part": {
+            "reason": "tool-calls", "tokens": {"total": 120, "input": 100,
+                                              "output": 20}, "cost": 0}},
+        {"type": "text", "sessionID": "ses_probe", "part": {
+            "type": "text", "text": "Task completed by the probe fixture."}},
+        {"type": "step_finish", "sessionID": "ses_probe", "part": {
+            "reason": "stop", "tokens": {"total": 60, "input": 50,
+                                        "output": 10}, "cost": 0}},
+    )
+)
+
 _FIXTURES: Dict[str, str] = {
     "claude_json_envelope": _FIXTURE_CLAUDE_ENVELOPE,
     "codex_jsonl": _FIXTURE_CODEX_JSONL,
+    "opencode_jsonl": _FIXTURE_OPENCODE_JSONL,
     "plain_text": _FIXTURE_PLAIN_TEXT,
 }
 
@@ -397,7 +431,7 @@ def _reported_tool_calls(parsed: Dict[str, Any]) -> int:
     return 0
 
 
-# ── the seven probes ────────────────────────────────────────────────────────
+# ── the probes ────────────────────────────────────────────────────────
 def _probe_streaming(adapter: Any) -> ProbeOutcome:
     for name in _STREAMING_ENTRY_POINTS:
         if _public_callable(adapter, name):
@@ -645,6 +679,47 @@ def _probe_structured_output(adapter: Any) -> ProbeOutcome:
     )
 
 
+def _probe_guard_wired(adapter: Any) -> ProbeOutcome:
+    """Ask the adapter's own guard self-test, never its source.
+
+    A plugin file existing is not the guard working (omx-spike-01: ``--pure``
+    loaded no plugin while the file sat on disk), so the only thing that may
+    assert ``present`` is a ``verify_guard()`` that reports ``wired`` -- and
+    omx-guard-01 makes that a live refusal of a known-bad input through the
+    adapter's own invocation. No self-test is ``unconfirmed``: claude_cli's
+    guard lives in .claude/settings.json, outside the seam.
+    """
+    if not _public_callable(adapter, "verify_guard"):
+        return _unconfirmed(
+            "no verify_guard() self-test on the adapter; whether ICDEV's guard "
+            "sees the backend's tool calls can only be shown by a live run",
+        )
+    try:
+        report = adapter.verify_guard()
+    except Exception as exc:  # noqa: BLE001 -- a raising self-test is a finding
+        return _unconfirmed(
+            f"verify_guard() raised: {type(exc).__name__}: {exc}",
+            method=BEHAVIORAL,
+        )
+    if not isinstance(report, dict) or not isinstance(report.get("wired"), bool):
+        return _unconfirmed(
+            "verify_guard() returned no boolean 'wired' field",
+            method=BEHAVIORAL,
+        )
+    reason = str(report.get("reason") or "")
+    suffix = f": {reason}" if reason else ""
+    if report["wired"]:
+        return ProbeOutcome(
+            PRESENT, BEHAVIORAL,
+            "verify_guard() reports the guard refusing a known-bad tool call"
+            + suffix,
+        )
+    return ProbeOutcome(
+        ABSENT, BEHAVIORAL,
+        "verify_guard() reports the guard is not wired" + suffix,
+    )
+
+
 _PROBES = {
     "streaming": _probe_streaming,
     "tool_calling": _probe_tool_calling,
@@ -653,6 +728,7 @@ _PROBES = {
     "sandbox_passthrough": _probe_sandbox_passthrough,
     "context_budget": _probe_context_budget,
     "structured_output": _probe_structured_output,
+    "guard_wired": _probe_guard_wired,
 }
 
 

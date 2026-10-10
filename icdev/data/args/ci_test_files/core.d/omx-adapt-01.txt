@@ -1,0 +1,2 @@
+# omx-adapt-01 -- the opencode_cli adapter (fake binary on a temp PATH)
+tests/agents/test_opencode_cli_adapter.py
