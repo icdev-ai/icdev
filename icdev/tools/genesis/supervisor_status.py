@@ -61,6 +61,13 @@ if str(ROOT) not in sys.path:
 PID_FILE = ROOT / ".tmp" / "genesis" / "launcher.pid"
 #: What `launch.py` runs. `ensure()` starts THIS, never a child.
 SUPERVISOR_SCRIPT = "tools/genesis/launch.py"
+#: The only command lines the lock's pid may carry. A live pid running anything
+#: else is a REUSED pid: measured 2026-10-08, after a reboot launcher.pid named
+#: 11044, Windows had handed 11044 to `svchost.exe -k UnistackSvcGroup`, and the
+#: logon launcher read "alive" as "another launcher is running" and exited --
+#: leaving the whole stack down for a day while this tool reported UP.
+SUPERVISOR_FRAGMENTS = ("tools/genesis/launch.py", "tools\\genesis\\launch.py",
+                        "tools/genesis/launcher.py", "tools\\genesis\\launcher.py")
 
 
 @dataclass(frozen=True)
@@ -115,10 +122,28 @@ def supervisor(pid_file: Optional[Path] = None) -> Dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         return {"state": "unknown", "pid": pid,
                 "reason": f"could not test pid {pid}: {exc}"}
-    if alive:
-        return {"state": "up", "pid": pid, "reason": None}
-    return {"state": "down", "pid": pid,
-            "reason": f"launcher.pid names pid {pid}, which is not running (stale lock)"}
+    if not alive:
+        return {"state": "down", "pid": pid,
+                "reason": f"launcher.pid names pid {pid}, which is not running (stale lock)"}
+    cmd = _cmdline(pid)
+    if cmd is None:
+        return {"state": "unknown", "pid": pid,
+                "reason": f"pid {pid} is alive but its command line cannot be read"}
+    if not any(f in cmd for f in SUPERVISOR_FRAGMENTS):
+        return {"state": "down", "pid": pid,
+                "reason": (f"launcher.pid names pid {pid}, which is alive but does not run "
+                           f"launch.py ({cmd[:80]!r}) -- a reused pid (stale lock)")}
+    return {"state": "up", "pid": pid, "reason": None}
+
+
+def _cmdline(pid: int) -> Optional[str]:
+    """The joined command line of ``pid``, or None when it cannot be read."""
+    try:
+        import psutil
+
+        return " ".join(psutil.Process(pid).cmdline())
+    except Exception:  # noqa: BLE001 -- no psutil, gone, or access denied
+        return None
 
 
 def _identity_rows() -> Dict[str, Dict[str, Any]]:

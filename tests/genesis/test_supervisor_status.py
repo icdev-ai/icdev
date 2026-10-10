@@ -49,8 +49,67 @@ def test_a_live_pid_is_up(pid_file, monkeypatch):
     pid_file.write_text("4242", encoding="utf-8")
     import tools.compat.platform_utils as pu
     monkeypatch.setattr(pu, "pid_exists", lambda _p: True)
+    monkeypatch.setattr(ss, "_cmdline", lambda _p: "C:\\Python314\\python.exe tools/genesis/launch.py")
     got = ss.supervisor(pid_file)
     assert got["state"] == "up" and got["pid"] == 4242
+
+
+def test_a_reused_pid_is_down_not_up(pid_file, monkeypatch):
+    """Measured 2026-10-08: after a reboot the lock named a pid Windows had
+    reused for svchost.exe. Alive is not the same as OURS -- reading it as `up`
+    made the logon launcher exit and kept the whole stack down for a day."""
+    pid_file.write_text("11044", encoding="utf-8")
+    import tools.compat.platform_utils as pu
+    monkeypatch.setattr(pu, "pid_exists", lambda _p: True)
+    monkeypatch.setattr(ss, "_cmdline",
+                        lambda _p: "C:\\WINDOWS\\system32\\svchost.exe -k UnistackSvcGroup")
+    got = ss.supervisor(pid_file)
+    assert got["state"] == "down", "a reused pid was reported as a live supervisor"
+    assert "reused pid" in got["reason"]
+
+
+def test_a_backslash_launch_path_is_up(pid_file, monkeypatch):
+    """start_daemon.ps1 / .bat run `python tools\\genesis\\launch.py`."""
+    pid_file.write_text("4242", encoding="utf-8")
+    import tools.compat.platform_utils as pu
+    monkeypatch.setattr(pu, "pid_exists", lambda _p: True)
+    monkeypatch.setattr(ss, "_cmdline", lambda _p: "python tools\\genesis\\launch.py")
+    assert ss.supervisor(pid_file)["state"] == "up"
+
+
+def test_an_unreadable_command_line_is_unknown_never_up_or_down(pid_file, monkeypatch):
+    pid_file.write_text("4242", encoding="utf-8")
+    import tools.compat.platform_utils as pu
+    monkeypatch.setattr(pu, "pid_exists", lambda _p: True)
+    monkeypatch.setattr(ss, "_cmdline", lambda _p: None)
+    assert ss.supervisor(pid_file)["state"] == "unknown"
+
+
+def test_the_launcher_lock_is_taken_over_a_reused_pid(tmp_path, monkeypatch):
+    """The logon launcher must not exit on a reused pid -- and must still refuse
+    when the pid really is a launcher. Both go through supervisor()."""
+    import os
+    # launcher.py chdirs and loads .env into os.environ at import; undo both.
+    monkeypatch.chdir(os.getcwd())
+    saved_env = dict(os.environ)
+    try:
+        from tools.genesis import launcher
+    finally:
+        os.environ.clear()
+        os.environ.update(saved_env)
+    import tools.compat.platform_utils as pu
+    lock = tmp_path / "launcher.pid"
+    lock.write_text("11044", encoding="utf-8")
+    monkeypatch.setattr(launcher, "_PID_FILE", str(lock))
+    monkeypatch.setattr(pu, "pid_exists", lambda _p: True)
+
+    monkeypatch.setattr(ss, "_cmdline", lambda _p: "python tools/genesis/launch.py")
+    assert launcher._acquire_pid_lock() is False, "a live launcher must keep the lock"
+    assert lock.read_text(encoding="utf-8").strip() == "11044"
+
+    monkeypatch.setattr(ss, "_cmdline", lambda _p: "C:\\WINDOWS\\system32\\svchost.exe -k X")
+    assert launcher._acquire_pid_lock() is True, "a reused pid kept the stack down"
+    assert lock.read_text(encoding="utf-8").strip() == str(__import__("os").getpid())
 
 
 def test_a_stale_lock_is_down_and_says_so(pid_file, monkeypatch):
@@ -91,6 +150,9 @@ def test_ensure_defers_when_a_supervisor_is_running(tmp_path, monkeypatch):
     (tmp_path / ".tmp" / "genesis" / "launcher.pid").write_text("77", encoding="utf-8")
     import tools.compat.platform_utils as pu
     monkeypatch.setattr(pu, "pid_exists", lambda _p: True)
+    # A live pid is a supervisor only if it RUNS launch.py -- otherwise it is a
+    # reused pid and the lock is stale. Pin the command line, never the host's pid 77.
+    monkeypatch.setattr(ss, "_cmdline", lambda _p: "python tools/genesis/launch.py")
 
     started = []
     result = ss.ensure(runner=lambda argv: started.append(argv), root=tmp_path)
