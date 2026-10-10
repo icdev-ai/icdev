@@ -1400,6 +1400,68 @@ jobs:
           fi
           echo "E2E: every shard green."
 
+  # ── Arch Linux package smoke (omx-ci-01) — NON-REQUIRED ──────────────────
+  # Builds the AUR package from the wheel THIS run builds, runs
+  # `icdev omarchy setup` (plain-Arch path: no omarchy binary) against a
+  # throwaway postgres, and probes the opencode + pi adapters with both
+  # binaries installed. Every phase lives in tools/ci/arch_package_smoke.sh so
+  # a workstation reproduces it with one `docker run`.
+  #
+  # NOT a required check, and SCOPED: it runs only when the diff touches what
+  # it exercises. Branch protection would let a red run through, but
+  # tools/kanban/land.py::ci_green refuses ANY failed check — so an unscoped
+  # job that leans on pacman -Syu + npm + PyPI would put a network flake in
+  # every kanban PR's merge door. A skipped job is not a failed one. If the
+  # diff cannot be computed the scope says RUN, never skip.
+  arch-scope:
+    name: Arch Package Smoke (scope)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: scope
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            files=$(git diff --name-only "origin/$BASE_REF...HEAD") || files="<diff-failed>"
+          else
+            files=$(git diff --name-only HEAD^1 HEAD) || files="<diff-failed>"
+          fi
+          echo "$files"
+          pattern='^(<diff-failed>$|deploy/aur/|tools/ci/arch_package_smoke\.sh$|\.github/workflows/icdev-ci\.yml$'
+          pattern+='|pyproject\.toml$|requirements\.txt$|icdev/_version\.py$|args/agent_capabilities\.yaml$'
+          pattern+='|(icdev/)?tools/(agents/|cli/omarchy\.py$|cli/__main__\.py$|installer/release\.py$'
+          pattern+='|hooks/harness_guard\.py$|hooks/shared_checks\.py$|airgap/hook_compat\.py$|db/init_icdev_db\.py$))'
+          if echo "$files" | grep -Eq "$pattern"; then run=true; else run=false; fi
+          echo "run=$run" | tee -a "$GITHUB_OUTPUT"
+
+  arch-package:
+    name: Arch Package Smoke
+    needs: [arch-scope]
+    if: needs.arch-scope.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Digest-pinned (pin_census): the tag is for the reader, the digest decides.
+    container: archlinux:base-devel@sha256:996c3a1d6b0d87b01242f6fcd8cfa3ad3eece1a67ab5c8f108e20af1d7b97bdd
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies (pacman -Syu)
+        run: bash tools/ci/arch_package_smoke.sh deps
+      - name: Build the wheel from this checkout
+        run: bash tools/ci/arch_package_smoke.sh wheel
+      - name: makepkg + namcap + pacman -U
+        run: bash tools/ci/arch_package_smoke.sh package
+      - name: icdev omarchy setup (--dry-run, --yes, idempotent re-run)
+        run: bash tools/ci/arch_package_smoke.sh setup
+      - name: opencode + pi capability gate
+        run: bash tools/ci/arch_package_smoke.sh agents
+
   docker-build:
     name: Docker Build
     runs-on: ubuntu-latest
