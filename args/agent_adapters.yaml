@@ -65,6 +65,27 @@ per_task_type_preference:
   run: claude_cli
 
 # Fallback walked in order when no task-type match is found.
+# omx-select-01 -- opencode_cli leads: it is the OSS default harness on
+# Omarchy. It is skipped wherever it is not installed, so on a host without
+# `opencode` this resolves exactly as before. per_task_type_preference above
+# still points build/fix/deploy/test/run at claude_cli on purpose: guard-02's
+# survey shows opencode_cli guarded but NOT installed on the dev host.
+# The kanban runner is unaffected either way -- it hands pick_default its
+# own config derived from the executor chain.
 fallback_order:
+  - opencode_cli
   - claude_cli
   - local_llm_router
+
+# omx-select-01 -- on an Omarchy desktop, `omarchy default agent` (rung 2 of
+# pick_default, after ICDEV_AGENT_ADAPTER) names the agent the user chose.
+# Map Omarchy's canonical names (bin/omarchy-default-agent) to adapters.
+# A name with no entry here -- omp, ori, grok, crush, ... -- falls through
+# to per_task_type_preference, as does a mapped adapter that is disabled or
+# not installed.
+omarchy_agent_map:
+  opencode: opencode_cli
+  claude: claude_cli
+  codex: codex_cli
+  pi: pi_cli
+  copilot: copilot_cli

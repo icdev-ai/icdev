@@ -6,8 +6,12 @@ OPT-71 registry pattern inspired by jonwiggins/optio (MIT).
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
+import functools
 import os
 import pathlib
+import shutil
+import subprocess
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence
 
 import yaml
@@ -26,7 +30,7 @@ def _load_config() -> dict:
             "default_adapter": "auto",
             "enabled_adapters": ["claude_cli", "local_llm_router"],
             "per_task_type_preference": {},
-            "fallback_order": ["claude_cli", "local_llm_router"],
+            "fallback_order": ["opencode_cli", "claude_cli", "local_llm_router"],
         }
     try:
         with open(_CONFIG_PATH, "r", encoding="utf-8") as fh:
@@ -71,6 +75,7 @@ def reset() -> None:
     the kind of stale-but-plausible answer this seam keeps producing.
     """
     _REGISTRY.clear()
+    _omarchy_default_agent.cache_clear()
     try:
         from tools.agents import capability_matrix  # noqa: PLC0415 — cycle
 
@@ -137,19 +142,67 @@ def _capability_filter(require: Optional[Sequence[str]]):
     return _ok
 
 
-def pick_default(
+# omx-select-01 -- where a selection came from, for logs.
+SOURCE_ENV = "env"
+SOURCE_OMARCHY = "omarchy"
+SOURCE_PREFERENCE = "preference"
+SOURCE_FALLBACK = "fallback"
+
+
+@dataclass(frozen=True)
+class AdapterSelection:
+    """The adapter ``select_adapter`` chose, and which rung chose it."""
+
+    adapter: AgentAdapter
+    source: str  # env | omarchy | preference | fallback
+
+
+@functools.lru_cache(maxsize=1)
+def _omarchy_default_agent() -> str:
+    """The Omarchy desktop's default coding agent, or "" when there is none.
+
+    Read through ``omarchy default agent`` with no argument, which prints the
+    name stored in ``~/.config/omarchy/defaults/agent`` and prints NOTHING when
+    no default is set (Omarchy picks none for you). Off Omarchy -- no
+    ``omarchy`` on PATH, or any failure running it -- this is "" and never an
+    error. Cached for the process lifetime; ``reset()`` clears it.
+    """
+    exe = shutil.which("omarchy")
+    if not exe:
+        return ""
+    try:
+        proc = subprocess.run(
+            [exe, "default", "agent"],
+            capture_output=True, text=True, encoding="utf-8",
+            timeout=5, check=False,
+        )
+    except Exception as exc:  # noqa: BLE001 -- not on a working Omarchy
+        logger.debug("omarchy default agent read failed: %s", exc)
+        return ""
+    if proc.returncode != 0:
+        return ""
+    lines = (proc.stdout or "").strip().splitlines()
+    return lines[0].strip() if lines else ""
+
+
+def select_adapter(
     task_type: Optional[str] = None,
     config: Optional[dict] = None,
     require: Optional[Sequence[str]] = None,
-) -> AgentAdapter:
-    """Pick the best available adapter for the given task type.
+) -> AdapterSelection:
+    """Pick the best available adapter and say which rung picked it.
 
     Precedence:
-        1. Env var ICDEV_AGENT_ADAPTER — explicit forced choice
-        2. config['per_task_type_preference'][task_type] if available
-        3. config['fallback_order'] walked in order — first that is
-           available() + enabled
-        4. First adapter in `detect_available()` as a last resort
+        1. Env var ICDEV_AGENT_ADAPTER — explicit forced choice   (``env``)
+        2. The Omarchy desktop default (``omarchy default agent``), mapped
+           to an adapter through config['omarchy_agent_map'] — an unmapped,
+           disabled or unavailable name falls through          (``omarchy``)
+        3. config['per_task_type_preference'][task_type] if available
+                                                              (``preference``)
+        4. config['fallback_order'] walked in order — first that is
+           available() + enabled                                (``fallback``)
+        5. First adapter in `detect_available()` as a last resort
+                                                                (``fallback``)
 
     ``require`` is an optional list of capability names from
     ``tools.agents.capability_matrix.CAPABILITIES``. When given, a candidate is
@@ -164,12 +217,23 @@ def pick_default(
     silently overriding them is the "control that looks like it worked" failure
     this codebase keeps producing. The mismatch is logged at WARNING instead.
 
+    A ``config`` without ``omarchy_agent_map`` skips rung 2 entirely — that is
+    how the kanban runner keeps its executor chain authoritative.
+
     Raises NotInstalledError if nothing is available.
     """
     _ensure_loaded()
     cfg = config or _load_config()
     enabled = set(cfg.get("enabled_adapters") or list(_REGISTRY.keys()))
     meets = _capability_filter(require)
+
+    def _usable(name: str) -> bool:
+        if name not in _REGISTRY or name not in enabled or not meets(name):
+            return False
+        try:
+            return bool(_REGISTRY[name].available())
+        except Exception:  # noqa: BLE001 — a failing probe is "not available"
+            return False
 
     forced = os.environ.get("ICDEV_AGENT_ADAPTER", "").strip()
     if forced:
@@ -183,30 +247,34 @@ def pick_default(
                 "required capability %s — honouring the override anyway",
                 forced, list(require),
             )
-        return _REGISTRY[forced]
+        return AdapterSelection(_REGISTRY[forced], SOURCE_ENV)
+
+    omarchy_map = cfg.get("omarchy_agent_map") or {}
+    if omarchy_map:
+        desktop = _omarchy_default_agent()
+        candidate = omarchy_map.get(desktop) if desktop else None
+        if candidate and _usable(candidate):
+            return AdapterSelection(_REGISTRY[candidate], SOURCE_OMARCHY)
+        if desktop:
+            logger.debug(
+                "omarchy default agent %r -> %r is not usable here; falling "
+                "through", desktop, candidate,
+            )
 
     per_task = cfg.get("per_task_type_preference") or {}
     if task_type and task_type in per_task:
         candidate = per_task[task_type]
-        if (candidate in _REGISTRY
-                and candidate in enabled
-                and meets(candidate)
-                and _REGISTRY[candidate].available()):
-            return _REGISTRY[candidate]
+        if _usable(candidate):
+            return AdapterSelection(_REGISTRY[candidate], SOURCE_PREFERENCE)
 
     for name in cfg.get("fallback_order") or []:
-        if name not in _REGISTRY or name not in enabled or not meets(name):
-            continue
-        try:
-            if _REGISTRY[name].available():
-                return _REGISTRY[name]
-        except Exception:
-            continue
+        if _usable(name):
+            return AdapterSelection(_REGISTRY[name], SOURCE_FALLBACK)
 
     available_names = detect_available()
     for name in available_names:
         if name in enabled and meets(name):
-            return _REGISTRY[name]
+            return AdapterSelection(_REGISTRY[name], SOURCE_FALLBACK)
 
     if require:
         raise NotInstalledError(
@@ -219,3 +287,21 @@ def pick_default(
         "No agent adapter is available on this host. Install Claude "
         "Code CLI or configure LLMRouter."
     )
+
+
+def pick_default(
+    task_type: Optional[str] = None,
+    config: Optional[dict] = None,
+    require: Optional[Sequence[str]] = None,
+) -> AgentAdapter:
+    """``select_adapter(...).adapter`` — see there for the precedence.
+
+    Kept as the adapter-returning entry point every existing caller uses; the
+    selection's ``source`` is logged here.
+    """
+    selection = select_adapter(task_type, config=config, require=require)
+    logger.debug(
+        "agent adapter selected: %s (source=%s, task_type=%s)",
+        getattr(selection.adapter, "name", "?"), selection.source, task_type,
+    )
+    return selection.adapter
