@@ -152,11 +152,13 @@ def test_forced_adapter_env_selects_it(monkeypatch):
     assert registry.pick_default("build").name == "opencode_cli"
 
 
-def test_enabled_but_not_yet_the_default():
+def test_enabled_and_first_in_fallback_but_not_a_task_type_preference():
+    # omx-select-01 moved opencode_cli to the head of fallback_order; build/fix
+    # stay on claude_cli until opencode is guarded AND installed on the host.
     config = yaml.safe_load(
         Path(registry._CONFIG_PATH).read_text(encoding="utf-8"))  # noqa: SLF001
     assert "opencode_cli" in config["enabled_adapters"]
-    assert "opencode_cli" not in (config.get("fallback_order") or [])
+    assert (config.get("fallback_order") or [None])[0] == "opencode_cli"
     assert "opencode_cli" not in (config.get("per_task_type_preference") or {}).values()
 
 
