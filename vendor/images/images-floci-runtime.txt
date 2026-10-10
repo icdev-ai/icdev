@@ -46,7 +46,11 @@
 #   Python 3.12.15, awslambdaric 4.1.0 and boto3 1.42.97 in all three. floci
 #   2.0.1 re-driven against the fresh pull. See
 #   docs/audits/artifact-fresh-1bc0da203d-lambda-python-pin.md.
-public.ecr.aws/lambda/python@sha256:517bcc7dc1a3ba62e324961c1563cc54a2bd6dc1060188f9d376211ecb7b2926
+#   RE-VENDORED 2026-10-10 (artifact-fresh-7d807fd882): rebuilt twice more
+#   (517bcc7d... -> b02e44f3... -> the digest below), again with NO observed
+#   content change. floci 2.0.1 re-driven against the fresh pull. See
+#   docs/audits/artifact-fresh-7d807fd882-lambda-python-pin.md.
+public.ecr.aws/lambda/python@sha256:719d7d69d6e946b2ddd2d039723dc9415d0bcf1eecb6e12fa35dac58e23cebc6
 
 # lambda/nodejs20.x -- public.ecr.aws/lambda/nodejs:20
 #   KEPT at 20 (artifact-fresh-333eeead1d): nothing in this tree declares a Node
