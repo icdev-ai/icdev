@@ -417,8 +417,8 @@ def test_capability_matrix_confirms_every_declaration():
     assert verdicts["tool_calling"] == cm.CONFIRMED
     assert verdicts["structured_output"] == cm.CONFIRMED
     guard = entry["capabilities"]["guard_wired"]
-    assert guard["declared"] is False and guard["declared_explicitly"] is True
-    assert guard["actual"] == cm.ABSENT        # measured, not merely undeclared
+    assert guard["declared"] is True and guard["declared_explicitly"] is True
+    assert guard["actual"] == cm.PRESENT       # live bridge probe (omx-guard-03)
 
 
 def test_gate_passes_with_pi_included(capsys):
