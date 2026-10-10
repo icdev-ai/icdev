@@ -6,7 +6,8 @@ ADR D196: MCP is the primary integration protocol — tools with MCP support
 get full ICDEV™ capability through the same 14 MCP servers.
 
 Reads .mcp.json (Claude Code format, source of truth) and generates
-tool-specific MCP config formats for Codex, Gemini, Amazon Q, Cline, etc.
+tool-specific MCP config formats for Codex, Gemini, Amazon Q, Cline,
+opencode, Pi, etc.
 
 Usage:
     python tools/dx/mcp_config_generator.py --all --write --json
@@ -94,6 +95,61 @@ def _generate_cline_json(servers):
     return json.dumps({"mcpServers": cline_servers}, indent=2)
 
 
+OPENCODE_SCHEMA = "https://opencode.ai/config.json"
+
+
+def _to_opencode_server(cfg):
+    """One .mcp.json server -> opencode's ``mcp`` entry (omx-spike-01 measured).
+
+    opencode does not take ``command`` + ``args``: ``command`` is ONE argv list,
+    and ``env`` is spelled ``environment``. A server with a ``url`` is remote.
+    """
+    if cfg.get("url"):
+        entry = {"type": "remote", "url": cfg["url"], "enabled": True}
+        if cfg.get("headers"):
+            entry["headers"] = cfg["headers"]
+        return entry
+    entry = {
+        "type": "local",
+        "command": [cfg.get("command", "python"), *cfg.get("args", [])],
+        "enabled": True,
+    }
+    if cfg.get("env"):
+        entry["environment"] = cfg["env"]
+    return entry
+
+
+def _generate_opencode_json(servers, existing=None):
+    """Generate project ``opencode.json`` — the file opencode itself reads.
+
+    Unlike the staging files other platforms get, this IS the live config, and
+    it usually also carries ``provider`` / ``permission`` blocks the operator
+    wrote. So only the ``mcp`` key is replaced; every other key survives.
+    """
+    config = dict(existing) if isinstance(existing, dict) else {}
+    config.setdefault("$schema", OPENCODE_SCHEMA)
+    config["mcp"] = {name: _to_opencode_server(cfg) for name, cfg in servers.items()}
+    return json.dumps(config, indent=2)
+
+
+def _generate_pi_json(servers):
+    """Generate ``.pi/mcp.json`` — Pi uses the standard ``mcpServers`` shape.
+
+    Pi ignores a PROJECT mcp.json until the project is trusted (``--approve``);
+    the user-level twin is ``~/.pi/agent/mcp.json``. We write the project file
+    only — the companion never writes into a home directory.
+    """
+    return json.dumps({"mcpServers": servers}, indent=2)
+
+
+def _read_json(path):
+    """Existing JSON at ``path`` or None (absent or unparseable)."""
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
 def _generate_setup_instructions(platform, servers):
     """Generate IDE-specific MCP setup instructions for Cursor/Windsurf/JetBrains."""
     server_list = "\n".join(
@@ -159,6 +215,8 @@ FORMAT_GENERATORS = {
     "amazon_q": ("amazon_q", _generate_amazon_q_json, ".amazonq/mcp.json"),
     "gemini": ("gemini", _generate_gemini_json, ".gemini/settings.json"),
     "cline": ("cline", _generate_cline_json, ".cline/mcp_settings.json"),
+    "opencode_json": ("opencode", _generate_opencode_json, "opencode.json"),
+    "pi_json": ("pi", _generate_pi_json, ".pi/mcp.json"),
 }
 
 IDE_PLATFORMS = {"cursor", "windsurf", "junie"}
@@ -180,7 +238,7 @@ def generate_mcp_config(directory=None, platforms=None, write=False, dry_run=Fal
     companions = registry.get("companions", {})
 
     # Resolve platforms
-    all_mcp_platforms = ["codex", "amazon_q", "gemini", "cline", "cursor", "windsurf", "junie"]
+    all_mcp_platforms = ["codex", "amazon_q", "gemini", "cline", "cursor", "windsurf", "junie", "opencode", "pi"]
     if platforms is None or platforms == ["all"]:
         platforms = all_mcp_platforms
     elif isinstance(platforms, str):
@@ -211,6 +269,12 @@ def generate_mcp_config(directory=None, platforms=None, write=False, dry_run=Fal
         elif platform == "cline":
             content = _generate_cline_json(servers)
             output_path = ".cline/mcp_settings.json"
+        elif platform == "opencode":
+            output_path = "opencode.json"
+            content = _generate_opencode_json(servers, _read_json(directory / output_path))
+        elif platform == "pi":
+            content = _generate_pi_json(servers)
+            output_path = ".pi/mcp.json"
         else:
             content = json.dumps({"mcpServers": servers}, indent=2)
             output_path = f".{platform}/mcp.json"

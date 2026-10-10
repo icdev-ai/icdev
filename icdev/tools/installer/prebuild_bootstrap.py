@@ -4,10 +4,11 @@
 
 Run BEFORE `python -m build` to copy the orchestration layer into the
 package so `pip install icdev` ships everything a user needs to drive
-Claude Code:
+ICDEV from any AI coding harness:
 
     icdev/data/claude_bootstrap/
-    ├── CLAUDE.md              (master instruction file)
+    ├── platforms/AGENTS.md    (PRIMARY, harness-neutral instruction file)
+    ├── CLAUDE.md              (master instruction file for Claude Code)
     ├── mcp.json               (MCP server configuration)
     ├── .env.template          (env var template)
     ├── claude/                (was .claude/ — dots in package dirs are finicky)
@@ -81,6 +82,11 @@ from tools.dx.ai_platforms import (  # noqa: E402
 SOURCES.extend(
     (rel, bootstrap_name(rel), "file") for _platform, rel in AI_PLATFORM_FILES
 )
+
+# AGENTS.md (codex in the list above) is the PRIMARY, harness-neutral
+# instruction file (omx-dx-01): opencode, Pi and Codex all read it, and
+# `icdev init` maps it as REQUIRED. It is deliberately not in OPTIONAL_SOURCES,
+# so a checkout without it fails this step instead of shipping a broken wheel.
 
 # Sources that may legitimately not exist yet. A missing OPTIONAL source is
 # recorded under `skipped_optional` and does NOT go to `errors`, so the
@@ -202,7 +208,9 @@ def run(clean: bool = False) -> dict:
     readme.write_text(
         "# ICDEV™ Claude Bootstrap\n\n"
         "This directory ships with the `icdev` PyPI package. It contains the\n"
-        "FORGE orchestration layer that makes Claude Code work with ICDEV™:\n\n"
+        "FORGE orchestration layer that makes any AI coding harness work with ICDEV™:\n\n"
+        "- **platforms/AGENTS.md** — PRIMARY, harness-neutral instruction file\n"
+        "  (opencode, Pi, Codex, ...); `icdev init` writes it as `AGENTS.md`\n"
         "- **CLAUDE.md** — master instruction file for Claude Code\n"
         "- **mcp.json** — MCP server configuration\n"
         "- **.env.template** — environment variable template\n"
@@ -216,8 +224,9 @@ def run(clean: bool = False) -> dict:
         "icdev-init-db         # initializes the databases\n"
         "icdev-dashboard       # starts the dashboard on :5050\n"
         "```\n\n"
-        "After `icdev init`, the project is ready — open it in Claude Code\n"
-        "and the agent will follow CLAUDE.md.\n",
+        "After `icdev init`, the project is ready — open it in your harness:\n"
+        "AGENTS.md guides opencode, Pi, Codex and the rest; CLAUDE.md guides\n"
+        "Claude Code.\n",
         encoding="utf-8", newline="",
     )
 
