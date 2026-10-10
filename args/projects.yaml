@@ -10335,8 +10335,8 @@ projects:
     .claude/settings.json, and there is no opencode or pi adapter. Omarchy ships 13 agent
     CLIs as mise stubs, a default-agent setting (`omarchy default agent`), cross-harness
     skill dirs (~/.agents/skills etc.) and an agents-panel collector contract. Decisions
-    (operator, 2026-10-10): the default must be OSS -> opencode (Pi is the fallback if the
-    spike fails); on Omarchy ICDEV FOLLOWS `omarchy default agent`; cloud models are fine;
+    (operator, 2026-10-10): the default must be OSS -> opencode, with Pi FULLY supported as
+    a peer (default only if opencode is NO-GO); on Omarchy ICDEV FOLLOWS `omarchy default agent`; cloud models are fine;
     guard parity gates AUTONOMOUS dispatch only; PostgreSQL stays required; ship an AUR
     package; design everything PR-ready for upstream Omarchy; the Omarchy box on the LAN
     becomes the acceptance environment and later a second executor (manual, behind gate-00).
@@ -10345,7 +10345,7 @@ projects:
   briefs:
   - 'spike: prove opencode plugin tool.execute.before can BLOCK and capture `opencode run --format json` -- go/no-go for the default -- omx-spike-01'
   - 'adapt: opencode_cli and pi_cli AgentAdapters + capability entries, probe-verified -- omx-adapt-01..02'
-  - 'guard: opencode plugin calling tools/airgap/hook_compat.run_pre_tool_check (no second copy of the checks), fire-rate surveyed; runner refuses autonomous dispatch to an adapter whose guard_wired is not verified -- omx-guard-01..02'
+  - 'guard: opencode plugin calling tools/airgap/hook_compat.run_pre_tool_check (no second copy of the checks), fire-rate surveyed; the same bridge for Pi; runner refuses autonomous dispatch to an adapter whose guard_wired is not verified -- omx-guard-01..03'
   - 'select: pick_default follows `omarchy default agent`; opencode_cli first in fallback_order -- omx-select-01'
   - 'dx: opencode + pi in companion_registry; AGENTS.md primary in icdev init; one cross-harness ICDEV SKILL.md symlinked into every harness skill dir -- omx-dx-01..02'
   - 'linux: Linux equivalents for /start /stop and the genesis Task Scheduler scripts; case-sensitive path guards -- omx-linux-01'

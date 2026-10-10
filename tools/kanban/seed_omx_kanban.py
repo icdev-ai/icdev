@@ -6,7 +6,8 @@ Backs the 2026-10-10 architecture plan (registered as ``omx`` in ``args/projects
 ICDEV is the governed control plane; harnesses (opencode, Claude Code, Codex, Pi, ...) are
 interchangeable executors. On Omarchy, ICDEV follows ``omarchy default agent``.
 
-Operator decisions: OSS default (opencode; Pi if the spike fails); follow the desktop default;
+Operator decisions: OSS default opencode, Pi FULLY supported as a peer (Pi becomes the default only
+if opencode is NO-GO); follow the desktop default;
 cloud models OK; guard parity gates AUTONOMOUS dispatch only; PostgreSQL required; AUR package;
 upstream-ready; the Omarchy box is the acceptance env and later a second LAN executor (manual).
 vLLM is a first-class, provably-local provider for both the router and the harnesses.
@@ -108,10 +109,11 @@ TASKS: list[dict] = [
     # ----------------------------------------------------------------- spike
     _t(
         "omx-spike-01",
-        "Spike: can opencode carry ICDEV's guard? (go/no-go for the OSS default)",
+        "Spike: can opencode AND Pi each carry ICDEV's guard? (both are fully supported; picks the default)",
         """
-opencode (sst/opencode, MIT) is the proposed OSS default harness. Before any adapter is
-built, PROVE the two properties the plan depends on. Scratch work goes under
+opencode (sst/opencode, MIT) is the proposed OSS default harness and Pi (`pi` coding agent,
+shipped by Omarchy) is a FULLY SUPPORTED peer (operator, 2026-10-10) -- not a fallback. Before
+any adapter is built, PROVE the two properties the plan depends on FOR BOTH HARNESSES. Scratch work goes under
 `docs/research/omx-spike-01/` (a findings .md plus the minimal plugin/script used);
 no production code in this task.
 
@@ -130,16 +132,21 @@ DO:
    exit codes. Note the flags for non-interactive/auto-approve mode and model selection
    (`--model provider/model`).
 5. Note opencode's MCP config location/format and its AGENTS.md / skills discovery.
-6. If ANY of (2) or (3) fails, repeat steps 2-4 for Pi (`pi` coding agent) and record that
-   the default falls back to Pi.
+6. ALWAYS repeat steps 1-5 for Pi, using its extension/hook mechanism for intercepting
+   tool calls, its non-interactive + JSON output mode, its model/provider config (incl. an
+   OpenAI-compatible base URL for vLLM), MCP support (or its absence) and skills discovery
+   (~/.pi/agent/skills).
+7. Verdict: GO/NO-GO per harness. Default = opencode if GO, else Pi. A NO-GO for either one
+   means its guard task must find another blocking seam -- record the candidate seam.
 
-DONE WHEN: `docs/research/omx-spike-01/findings.md` states GO or NO-GO for opencode with
-evidence (command, output excerpt, file-still-exists proof) for each property.
+DONE WHEN: `docs/research/omx-spike-01/findings.md` states GO or NO-GO for opencode AND for
+Pi, with evidence (command, output excerpt, file-still-exists proof) for each property.
 """,
         "findings.md exists and records, with reproduced command output: (a) whether an opencode "
         "tool.execute.before plugin PREVENTS a tool call (file survives), (b) a working bridge to "
         "hook_compat.run_pre_tool_check with the input-shape mapping, (c) the run --format json "
-        "schema for success and failure, (d) a GO/NO-GO verdict; on NO-GO, the same for Pi.",
+        "schema for success and failure, (d) a GO/NO-GO verdict -- (a)-(d) recorded for opencode AND "
+        "for Pi, plus the resulting default choice.",
         priority="critical",
         task_type="research",
     ),
@@ -176,11 +183,11 @@ timeout handling, `available()` False when absent.
     ),
     _t(
         "omx-adapt-02",
-        "pi_cli AgentAdapter (second OSS harness) + capability declaration",
+        "pi_cli AgentAdapter (fully supported OSS peer) + capability declaration",
         """
-Same shape as omx-adapt-01 for the Pi coding agent (`pi`, shipped by Omarchy; skills dir
-~/.pi/agent/skills). Use the spike's Pi notes if it recorded them; otherwise discover
-Pi's non-interactive/JSON mode first and record it in the adapter docstring.
+Pi is FULLY SUPPORTED, a peer of opencode (operator, 2026-10-10). Same shape and the same
+bar as omx-adapt-01 for the Pi coding agent (`pi`, shipped by Omarchy; skills dir
+~/.pi/agent/skills), using the Pi section of `docs/research/omx-spike-01/findings.md`.
 
 - `tools/agents/adapters/pi_cli.py`, registry entry, `args/agent_adapters.yaml` entry
   (enabled), honest `args/agent_capabilities.yaml` declaration incl. `guard_wired: false`,
@@ -189,8 +196,8 @@ Pi's non-interactive/JSON mode first and record it in the adapter docstring.
 """,
         "pi_cli adapter registered and selectable via ICDEV_AGENT_ADAPTER=pi_cli; capability_matrix "
         "--gate exits 0; tests green alone + in-suite, gated via core.d/omx-adapt-02.txt.",
-        priority="medium",
-        depends_on="omx-select-01",
+        priority="high",
+        depends_on="omx-adapt-01",
     ),
     # ----------------------------------------------------------------- guard
     _t(
@@ -224,14 +231,15 @@ dangerous-rm / .env-read / append-only-UPDATE fixtures and allow for a benign co
         "capability_matrix reports opencode_cli guard_wired=present via a live probe; fire-rate "
         "survey result recorded in docs/features/phase-omx-guard.md; tests gated in core.d.",
         priority="critical",
-        depends_on="omx-adapt-01",
+        depends_on="omx-adapt-02",
     ),
     _t(
         "omx-guard-02",
         "Runner refuses AUTONOMOUS dispatch to an adapter whose guard is not verified",
         """
 Operator decision: guard parity gates autonomous dispatch only; interactive use is
-unaffected.
+unaffected. Both OSS harnesses (opencode_cli via omx-guard-01, pi_cli via omx-guard-03) are
+guarded before this lands.
 
 - In the kanban dispatch path (`tools/genesis/reflexes/kanban.py`, where `pick_default` /
   `ICDEV_AGENT_ADAPTER` is consumed, ~line 5744), before spawning: consult the
@@ -252,6 +260,33 @@ reported in report mode, fallback picks a guarded adapter.
         "In enforce mode an unguarded adapter is never spawned by the runner and the refusal "
         "reason is recorded on the task; report mode logs without refusing; guard_parity "
         "--survey lists every adapter's verdict; tests gated in core.d.",
+        priority="critical",
+        depends_on="omx-guard-03",
+    ),
+    _t(
+        "omx-guard-03",
+        "Pi guard extension -> the SAME harness_guard bridge (fire-rate surveyed)",
+        """
+Pi is FULLY SUPPORTED (operator, 2026-10-10), so it gets guard parity with opencode before the
+autonomous-dispatch gate (omx-guard-02) lands.
+- Pi extension in `icdev/data/harness_plugins/pi/` using the tool-call interception seam the
+  spike recorded (`docs/research/omx-spike-01/findings.md`, Pi section). It calls the SAME
+  `python -m tools.hooks.harness_guard --harness pi` bridge omx-guard-01 built -- add only a
+  Pi input-shape mapping there, never a second copy of any check. Fail open on a broken
+  bridge, logged; same kill-switch env names.
+- `icdev harness install-guard pi [--project DIR|--global]`.
+- Fire-rate: the checks are shared, so cite guard-01's survey and add a Pi-shape replay of
+  the fixtures; record it in `docs/features/phase-omx-guard.md`.
+- Flip `guard_wired` to true for pi_cli in `args/agent_capabilities.yaml` with a live
+  capability_matrix probe (known-bad input -> deny).
+If the spike recorded NO-GO for Pi's interception seam, implement the recorded candidate seam
+(e.g. a wrapped shell tool) and state the residual gap in the feature doc.
+
+TESTS: `tests/hooks/test_harness_guard_pi.py` -- Pi-shaped fixtures deny/allow through the bridge.
+""",
+        "Pi-shaped dangerous fixtures are denied and a benign one allowed through the shared "
+        "harness_guard bridge; capability_matrix reports pi_cli guard_wired=present via a live "
+        "probe; no check logic duplicated; tests gated in core.d/omx-guard-03.txt.",
         priority="critical",
         depends_on="omx-guard-01",
     ),
@@ -385,8 +420,8 @@ Steps:
 4. MCP: register `icdev-unified` with each installed harness (reuse omx-dx-01 generators,
    user-level configs).
 5. Skill: call `icdev skill install` (omx-dx-02).
-6. Guard: `icdev harness install-guard opencode --global` if opencode present (omx-guard-01;
-   skip with a note if that command is not on main yet).
+6. Guard: `icdev harness install-guard <opencode|pi> --global` for each of opencode / pi that is
+   installed (omx-guard-01 / omx-guard-03; skip with a note if not on main yet).
 7. systemd `--user` unit for `tools/genesis/launch.py` (reuse omx-linux-01 unit writer);
    enable + start only with `--start`.
 `status` reports each step's state; `uninstall` reverses 4-7 (never drops the database).
@@ -461,8 +496,8 @@ container image by digest -- `tools/ci/pin_census.py --check`):
   wheel built in this run; `namcap PKGBUILD`.
 - Run `icdev omarchy setup --dry-run` and `icdev omarchy setup --yes` against a throwaway
   postgres in the container (no omarchy binary -> plain-Arch path).
-- `python tools/agents/capability_matrix.py --gate` (adapters without binaries must report
-  absent, not fail).
+- Install opencode AND pi in the container; `python tools/agents/capability_matrix.py --gate`
+  must show both with guard_wired present (other adapters without binaries report absent, not fail).
 Run it 5x on the PR before marking ready (flake survey, per CLAUDE.md crx-test-06 spirit).
 """,
         "Arch job green on 5 consecutive PR runs; image pinned by digest (pin_census passes); "
