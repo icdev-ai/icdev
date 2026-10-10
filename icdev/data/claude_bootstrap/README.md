@@ -1,8 +1,10 @@
 # ICDEV™ Claude Bootstrap
 
 This directory ships with the `icdev` PyPI package. It contains the
-FORGE orchestration layer that makes Claude Code work with ICDEV™:
+FORGE orchestration layer that makes any AI coding harness work with ICDEV™:
 
+- **platforms/AGENTS.md** — PRIMARY, harness-neutral instruction file
+  (opencode, Pi, Codex, ...); `icdev init` writes it as `AGENTS.md`
 - **CLAUDE.md** — master instruction file for Claude Code
 - **mcp.json** — MCP server configuration
 - **.env.template** — environment variable template
@@ -19,5 +21,6 @@ icdev-init-db         # initializes the databases
 icdev-dashboard       # starts the dashboard on :5050
 ```
 
-After `icdev init`, the project is ready — open it in Claude Code
-and the agent will follow CLAUDE.md.
+After `icdev init`, the project is ready — open it in your harness:
+AGENTS.md guides opencode, Pi, Codex and the rest; CLAUDE.md guides
+Claude Code.

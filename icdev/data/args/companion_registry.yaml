@@ -196,6 +196,59 @@ companions:
       custom_distributions: true
     notes: "Rust-native MCP agent by Block. Apache 2.0. Supports headless autonomous mode, ACP multi-agent, and custom distributions."
 
+  opencode:
+    display_name: "opencode"
+    vendor: "Anomaly (sst)"
+    instruction_file: "AGENTS.md"
+    mcp_support: true
+    mcp_config_file: "opencode.json"
+    mcp_config_format: "opencode_json"
+    skill_format: "codex_skill"
+    skill_directory: ".agents/skills"
+    env_detection:
+      env_vars: []
+      config_dirs: [".opencode"]
+      config_files: ["opencode.json", "opencode.jsonc"]
+      process_names: ["opencode"]
+    capabilities:
+      custom_commands: true
+      hooks: true
+      mcp_tools: true
+      inline_completion: false
+    notes: >-
+      OMX default harness. Measured in omx-spike-01: reads project AGENTS.md;
+      MCP lives under the "mcp" key of project opencode.json (global:
+      ~/.config/opencode/); skills discovered from .agents/skills,
+      .claude/skills and .opencode/skills. The companion replaces only the
+      "mcp" key of an existing opencode.json. The ICDEV guard is a plugin
+      (docs/research/omx-spike-01), not a hooks file the companion writes.
+
+  pi:
+    display_name: "Pi"
+    vendor: "Mario Zechner (pi-mono)"
+    instruction_file: "AGENTS.md"
+    mcp_support: true
+    mcp_config_file: ".pi/mcp.json"
+    mcp_config_format: "pi_json"
+    skill_format: "codex_skill"
+    skill_directory: ".agents/skills"
+    env_detection:
+      env_vars: []
+      config_dirs: [".pi"]
+      process_names: ["pi"]
+    capabilities:
+      custom_commands: true
+      hooks: true
+      mcp_tools: true
+      inline_completion: false
+    notes: >-
+      Fully supported OMX peer of opencode. Measured in omx-spike-01: reads
+      AGENTS.md; MCP in the standard mcpServers shape at .pi/mcp.json (project)
+      or ~/.pi/agent/mcp.json (user) -- a PROJECT mcp.json is ignored until the
+      project is trusted (--approve). Skills from .agents/skills and
+      .pi/skills (global ~/.pi/agent/skills, ~/.agents/skills); project
+      .claude/skills is NOT read, so .agents/skills is the shared seam.
+
   aider:
     display_name: "Aider"
     vendor: "Aider-AI"
