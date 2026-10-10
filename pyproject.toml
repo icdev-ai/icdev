@@ -303,7 +303,10 @@ exclude = [
     "static/**/*.css", "static/**/*.js",
     "static/vendor/**/*.js", "static/vendor/**/*.css",
 ]
-"icdev.tools.db" = ["migrations/**/*.sql", "migrations/**/*.py", "migrations/**/*.json"]
+# schema/: the consolidated PG snapshot bootstrap_pg loads -- `icdev omarchy setup`
+# builds a package install's database from it (omx-setup-02).
+"icdev.tools.db" = ["migrations/**/*.sql", "migrations/**/*.py", "migrations/**/*.json",
+                    "schema/*.sql", "schema/*.json"]
 
 [tool.setuptools.exclude-package-data]
 "*" = ["__pycache__/*", "*.pyc", "*.pyo"]

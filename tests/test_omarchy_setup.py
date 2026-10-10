@@ -26,7 +26,9 @@ class FakeWorld:
             self.bins.add("omarchy")
         if pg_ready:
             self.bins.add("psql")
-        self.pg_ready = pg_ready
+        self.pg_ready = pg_ready          # extension present
+        self.schema = pg_ready            # bootstrap_pg finished
+        self.schema_fails = False
         self.pg_running = pg_ready
         self.mcp = set()
         self.timers: set = set()
@@ -44,7 +46,9 @@ class FakeWorld:
         self.calls.append(argv)
         joined = " ".join(argv)
         if argv[0] == "psql" and "pg_extension" in joined:
-            return Result(0, "1\n") if self.pg_ready else Result(2, "", "connection refused")
+            if not self.pg_running:
+                return Result(2, "", "connection refused")
+            return Result(0, "1\n" if self.pg_ready and self.schema else "")
         if argv[0] == "pg_isready":
             return Result(0 if self.pg_running else 2)
         if argv[:3] == ["sudo", "pacman", "-S"]:
@@ -58,6 +62,9 @@ class FakeWorld:
         if "CREATE EXTENSION" in joined:
             self.pg_ready = True
             return Result(0)
+        if "icdev.tools.db.bootstrap_pg" in joined:
+            self.schema = not self.schema_fails
+            return Result(1, "", "snapshot load failed in batch 3") if self.schema_fails else Result(0)
         if argv[0] in ("claude", "codex") and argv[1] == "mcp":
             if argv[2] == "get":
                 return Result(0 if argv[0] in self.mcp else 1)
@@ -74,7 +81,7 @@ class FakeWorld:
             if argv[2:4] == ["disable", "--now"]:
                 self.timers.discard(argv[-1])
             return Result(0)
-        return Result(0)  # sudo -u postgres psql/createdb, icdev-init-db
+        return Result(0)  # sudo -u postgres psql/createdb
 
 
 @pytest.fixture
@@ -132,7 +139,7 @@ def test_dry_run_plan_for_each_omarchy_pg_combination(make_host, omarchy_on, pg_
         assert "sudo pacman -S --needed --noconfirm postgresql pgvector" in cmds
         assert "initdb" in cmds and "createdb -O icdev icdev" in cmds
         assert "CREATE EXTENSION IF NOT EXISTS vector" in cmds
-        assert "icdev.tools.db.init_icdev_db" in cmds
+        assert "icdev.tools.db.bootstrap_pg" in cmds
     # A dry run executes no mutating command and writes nothing.
     assert not [c for c in world.calls if any(m in " ".join(c) for m in MUTATING)
                 and c[2:3] != ["get"] and "is-" not in " ".join(c)]
@@ -213,6 +220,103 @@ def test_systemd_not_applicable_on_a_package_install(make_host):
     # --start asked for something that cannot happen here: that IS a failure.
     started = omarchy.run("setup", host, yes=True, start=True)
     assert _states(started)["systemd"] == "failed" and started["exit"] == 1
+
+
+def test_systemd_start_refusal_on_a_package_install_says_why(make_host):
+    """--start refuses with the documented reason, the one deploy/aur/icdev.install prints."""
+    world = FakeWorld(omarchy_on=False, pg_ready=True)
+    host = make_host(world)
+    for unit in (host.root / "scripts" / "systemd").iterdir():
+        unit.unlink()
+    (host.root / "scripts" / "systemd").rmdir()
+    step = next(s for s in omarchy.run("setup", host, yes=True, start=True)["steps"] if s["step"] == "systemd")
+    assert omarchy.GENESIS_NEEDS_CHECKOUT in step["detail"]
+    hook = (REPO / "deploy" / "aur" / "icdev.install").read_text(encoding="utf-8")
+    assert "needs a source checkout" in hook and "--yes --start" not in hook.split("git clone")[0]
+
+
+# --------------------------------------------------------------------------- #
+# omx-setup-02: a failed schema load is retried, never `skipped`
+# --------------------------------------------------------------------------- #
+
+def test_failed_schema_load_is_not_reported_skipped_on_rerun(make_host):
+    world = FakeWorld(omarchy_on=False, pg_ready=False)
+    world.schema_fails = True
+    host = make_host(world)
+    first = omarchy.run("setup", host, yes=True)
+    assert _states(first)["postgres"] == "failed" and first["exit"] == 1
+    assert world.pg_ready and not world.schema  # the extension landed, the schema did not
+
+    again = omarchy.run("setup", host, yes=True)
+    assert _states(again)["postgres"] == "failed", "a half-built database must never read as skipped"
+
+    world.schema_fails = False
+    assert _states(omarchy.run("setup", host, yes=True))["postgres"] == "done"
+    assert _states(omarchy.run("setup", host, yes=True))["postgres"] == "skipped"
+
+
+def test_ready_probe_requires_the_schema_not_only_the_extension():
+    sql = omarchy.READY_SQL
+    assert "extname = 'vector'" in sql
+    assert "to_regclass('public.schema_migrations') IS NOT NULL" in sql
+    assert "to_regclass('public.schema_bootstrap_partial') IS NULL" in sql
+    from tools.db.bootstrap_pg import PARTIAL_SENTINEL
+    assert PARTIAL_SENTINEL == "schema_bootstrap_partial"
+
+
+def test_the_schema_snapshot_ships_in_the_wheel():
+    """bootstrap_pg reads tools/db/schema/pg_consolidated.sql; package-data must carry it."""
+    import fnmatch
+    import tomllib
+    cfg = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))
+    globs = cfg["tool"]["setuptools"]["package-data"]["icdev.tools.db"]
+    for name in ("schema/pg_consolidated.sql", "schema/pg_consolidated.meta.json"):
+        assert (REPO / "icdev" / "tools" / "db" / name).is_file(), name
+        assert any(fnmatch.fnmatch(name, g) for g in globs), name
+
+
+# --------------------------------------------------------------------------- #
+# omx-setup-02: where .env lives on a PACKAGE install
+# --------------------------------------------------------------------------- #
+
+def test_project_root_of_a_source_checkout_is_the_checkout(tmp_path):
+    root = tmp_path / "icdev"
+    (root / ".git").mkdir(parents=True)
+    assert omarchy.project_root(root, {}, tmp_path / "home", tmp_path) == root
+
+
+def test_project_root_of_a_package_install(tmp_path):
+    pkg = tmp_path / "site-packages" / "icdev"          # no source markers
+    pkg.mkdir(parents=True)
+    home = tmp_path / "home"
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    # Nothing declared, cwd is no project: the user's config dir, never the package.
+    assert omarchy.project_root(pkg, {}, home, elsewhere) == home / ".config" / "icdev"
+    assert omarchy.project_root(pkg, {"XDG_CONFIG_HOME": str(tmp_path / "xdg")}, home, elsewhere) \
+        == tmp_path / "xdg" / "icdev"
+    # Inside an `icdev init` project (or below it): that project.
+    proj = tmp_path / "proj"
+    (proj / "src").mkdir(parents=True)
+    for m in omarchy.INIT_PROJECT_MARKERS:
+        (proj / m).write_text("x", encoding="utf-8")
+    assert omarchy.project_root(pkg, {}, home, proj / "src") == proj
+    # $ICDEV_PROJECT_ROOT beats both.
+    declared = tmp_path / "declared"
+    assert omarchy.project_root(pkg, {"ICDEV_PROJECT_ROOT": str(declared)}, home, proj) == declared.resolve()
+
+
+def test_package_install_writes_env_to_the_project_not_the_package(make_host):
+    world = FakeWorld(omarchy_on=False, pg_ready=True)
+    host = make_host(world)
+    host.project = host.home / ".config" / "icdev"
+    report = omarchy.run("setup", host, yes=True)
+    assert report["exit"] == 0, report
+    env_step = next(s for s in report["steps"] if s["step"] == "env")
+    assert env_step["state"] == "done" and "package install" in env_step["detail"]
+    assert "ICDEV_STORAGE_BACKEND=postgresql" in (host.project / ".env").read_text(encoding="utf-8")
+    assert not (host.root / ".env").exists()
+    assert _states(omarchy.run("setup", host, yes=True))["env"] == "skipped"
 
 
 def test_uninstall_reverses_4_to_7_and_never_the_database(make_host):

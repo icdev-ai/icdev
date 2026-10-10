@@ -118,30 +118,53 @@ setup)
   fi
   pg_isready -q || sudo -u postgres pg_ctl -D "$PG_DATA" -l /tmp/pg.log -w start || { cat /tmp/pg.log; exit 1; }
 
-  PROJECT="$WORK/project"
-  mkdir -p "$PROJECT"
-  export ICDEV_PROJECT_ROOT="$PROJECT"     # .env lands here, not in /opt/icdev
+  # As a NON-root user with no ICDEV_PROJECT_ROOT (omx-setup-02): the package
+  # root /opt/icdev/.../icdev is root-owned, so .env must land in the user's
+  # ~/.config/icdev. sudo is how setup reaches the postgres user, as on a desktop.
+  echo "$BUILDER ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/90-arch-smoke
+  chmod 0440 /etc/sudoers.d/90-arch-smoke
+  PROJECT="$WORK/project"                  # a plain directory: no `icdev init` markers
+  rm -rf "$PROJECT" && install -d -o "$BUILDER" -g "$BUILDER" "$PROJECT"
+  USER_HOME="$(getent passwd "$BUILDER" | cut -d: -f6)"
+  USER_ENV="$USER_HOME/.config/icdev/.env"
+  PKG_ENV="$(/opt/icdev/bin/python -c 'import icdev, pathlib; print(pathlib.Path(icdev.__file__).parent / ".env")')"
+  rm -f "$USER_ENV"
   # Run from the project like a user would: from the checkout, `python -m icdev...`
   # (the schema step) would import the CHECKOUT's icdev, not the installed one.
   cd "$PROJECT"
   command -v omarchy >/dev/null && { echo "omarchy must be absent for the plain-Arch path"; exit 1; }
+  as_user() { sudo -u "$BUILDER" -H env -u ICDEV_PROJECT_ROOT LANG="$LANG" LC_ALL="$LC_ALL" "$@"; }
 
-  log "icdev omarchy setup --dry-run"
-  icdev omarchy setup --dry-run --json > "$WORK/dry.json"
+  log "icdev omarchy setup --dry-run (as $BUILDER)"
+  as_user icdev omarchy setup --dry-run --json > "$WORK/dry.json"
   assert_report "$WORK/dry.json" "report['exit'] == 0; report['omarchy'] is False;
     'not on Omarchy' in report['host']; steps['postgres']['state'] == 'planned';
-    not os.path.exists('$PROJECT/.env')"
+    '$USER_ENV' in ' '.join(steps['env']['actions']); not os.path.exists('$USER_ENV')"
 
-  log "icdev omarchy setup --yes"
-  icdev omarchy setup --yes --json > "$WORK/yes.json"
+  log "icdev omarchy setup --yes (as $BUILDER)"
+  as_user icdev omarchy setup --yes --json > "$WORK/yes.json"
   assert_report "$WORK/yes.json" "report['exit'] == 0; steps['postgres']['state'] == 'done';
-    steps['env']['state'] in ('done', 'skipped')"
-  grep -q '^ICDEV_STORAGE_BACKEND=postgresql' "$PROJECT/.env"
+    steps['env']['state'] == 'done'; steps['systemd']['state'] == 'n/a'"
+  grep -q '^ICDEV_STORAGE_BACKEND=postgresql' "$USER_ENV"
+  test "$(stat -c %U "$USER_ENV")" = "$BUILDER"
+  if [ -e "$PKG_ENV" ]; then echo "setup wrote into the package dir: $PKG_ENV"; exit 1; fi
 
   log "icdev omarchy setup --yes again: idempotent"
-  icdev omarchy setup --yes --json > "$WORK/yes2.json"
+  as_user icdev omarchy setup --yes --json > "$WORK/yes2.json"
   assert_report "$WORK/yes2.json" "report['exit'] == 0; steps['postgres']['state'] == 'skipped';
     steps['env']['state'] == 'skipped'"
+
+  log "--start on a package install refuses, and says why"
+  rc=0; as_user icdev omarchy setup --yes --start --json > "$WORK/start.json" || rc=$?
+  test "$rc" = 1 || { echo "--start exited $rc, expected 1 (refused)"; exit 1; }
+  assert_report "$WORK/start.json" "report['exit'] == 1; steps['systemd']['state'] == 'failed';
+    'needs a source checkout' in steps['systemd']['detail']"
+
+  log "a schema load that died part-way is retried, never reported skipped"
+  sudo -u postgres psql -v ON_ERROR_STOP=1 -d icdev -c 'CREATE TABLE public.schema_bootstrap_partial (started_at timestamptz)'
+  as_user icdev omarchy setup --dry-run --json > "$WORK/partial.json"
+  assert_report "$WORK/partial.json" "steps['postgres']['state'] == 'planned'"
+  sudo -u postgres psql -v ON_ERROR_STOP=1 -d icdev -c 'DROP TABLE public.schema_bootstrap_partial'
   ;;
 
 agents)
