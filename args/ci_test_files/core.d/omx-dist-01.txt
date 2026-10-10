@@ -1,0 +1,1 @@
+tests/installer/test_aur_pkgbuild.py

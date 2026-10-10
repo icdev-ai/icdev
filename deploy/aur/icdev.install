@@ -1,0 +1,18 @@
+# pacman install hooks for the `icdev` AUR package (omx-dist-01).
+# ICDEV lives in its own venv at /opt/icdev; /usr/bin/icdev* are symlinks into it.
+
+post_install() {
+  echo ">>> ICDEV is installed in /opt/icdev."
+  echo ">>> Finish the host setup (PostgreSQL, MCP, skills, guards, systemd units):"
+  echo ">>>   icdev omarchy setup --dry-run    # see the plan"
+  echo ">>>   icdev omarchy setup --yes --start"
+}
+
+post_upgrade() {
+  echo ">>> ICDEV upgraded. Re-run 'icdev omarchy setup' to apply new setup steps (idempotent)."
+}
+
+post_remove() {
+  echo ">>> /opt/icdev removed. Host state is untouched; 'icdev omarchy uninstall' reverses it"
+  echo ">>> (run it BEFORE removing the package next time). Your database and .env are kept."
+}
