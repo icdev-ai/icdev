@@ -10350,6 +10350,7 @@ projects:
   - 'dx: opencode + pi in companion_registry; AGENTS.md primary in icdev init; one cross-harness ICDEV SKILL.md symlinked into every harness skill dir -- omx-dx-01..02'
   - 'linux: Linux equivalents for /start /stop and the genesis Task Scheduler scripts; case-sensitive path guards -- omx-linux-01'
   - 'setup/panel/dist/ci: `icdev omarchy setup` (pacman postgresql+pgvector, MCP registration, systemd --user), agents-panel collector, AUR PKGBUILD, archlinux CI job -- omx-setup-01, omx-panel-01, omx-dist-01, omx-ci-01'
+  - 'vllm (operator requirement 2026-10-10): ONE declared locality definition (vLLM can be local for CUI/air-gap; closes prefer_local treating cloud Mistral as local); vLLM model discovery from /v1/models with context + tool-call capability; vLLM embeddings; harnesses (opencode/pi/codex) pointed at the same vLLM endpoint; a pinned serving recipe -- omx-vllm-01..05'
   - 'up/host (MANUAL, behind omx-gate-00): upstream Omarchy PR; Omarchy box as a second LAN executor on the shared board -- omx-up-01, omx-host-01'
   epics:
   - {key: spike, title: "CAN OPENCODE CARRY THE GUARD", priority: critical}
@@ -10362,6 +10363,7 @@ projects:
   - {key: panel, title: "AGENTS-PANEL RECORD", priority: low}
   - {key: dist, title: "AUR PACKAGE", priority: medium}
   - {key: ci, title: "ARCH LINUX CI", priority: medium}
+  - {key: vllm, title: "VLLM IS A FIRST-CLASS, PROVABLY-LOCAL PROVIDER", priority: high}
   - {key: up, title: "UPSTREAM OMARCHY PR (manual)", priority: low}
   - {key: host, title: "OMARCHY BOX AS SECOND EXECUTOR (manual)", priority: low}
   - {key: gate, title: "MANUAL GATE (sentinel only)", priority: low}

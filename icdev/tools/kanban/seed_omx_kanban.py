@@ -9,6 +9,7 @@ interchangeable executors. On Omarchy, ICDEV follows ``omarchy default agent``.
 Operator decisions: OSS default (opencode; Pi if the spike fails); follow the desktop default;
 cloud models OK; guard parity gates AUTONOMOUS dispatch only; PostgreSQL required; AUR package;
 upstream-ready; the Omarchy box is the acceptance env and later a second LAN executor (manual).
+vLLM is a first-class, provably-local provider for both the router and the harnesses.
 
 Usage::
 
@@ -22,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime, timezone
 
 # The dispatcher hands the description verbatim to a worker with no other context,
 # so the invariants for this surface travel with every task.
@@ -468,6 +470,140 @@ Run it 5x on the PR before marking ready (flake survey, per CLAUDE.md crx-test-0
         priority="medium",
         depends_on="omx-dist-01",
     ),
+    # ------------------------------------------------------------------ vllm
+    _t(
+        "omx-vllm-01",
+        "ONE declared locality definition -- vLLM can be local; cloud Mistral stops counting as local",
+        """
+MEASURED 2026-10-10: ICDEV has TWO definitions of "local" and both are wrong for vLLM.
+- The CUI egress boundary (`tools/llm/cli_bridge/activate.py::_is_local_only_provider`, used by
+  `is_local_only_model`, the router's force_local and `tools/llm/routing_policy.py`) is
+  `type == "ollama" and not api_key_env` -> every vLLM model is classified CLOUD, so LOCAL-ONLY
+  chains (GovCon CUI) and air-gap mode can never use vLLM.
+- The router's `prefer_local` (`tools/llm/router.py` ~line 876) admits ANY `openai_compatible`
+  provider -> the cloud `mistral` provider (api.mistral.ai) is treated as local. An egress hole.
+
+DO:
+- Add a declared `locality: local | private | cloud` key to every provider in
+  `args/llm_config.yaml` (vllm, localai, mistral_vllm: local; mistral, openai, anthropic, gemini,
+  bedrock, ollama_cloud, gateway: cloud; `private` = on-prem/LAN server you control, treated as
+  local for egress ONLY when `ICDEV_PRIVATE_IS_LOCAL=1`).
+- `_is_local_only_provider` reads `locality`; when absent keep today's Ollama rule and otherwise
+  FAIL CLOSED (unknown = not local). A provider declared `local` whose base_url host is not
+  loopback/RFC1918/link-local is reported by `coherence_checker` -- a declaration must not be
+  able to launder a public endpoint.
+- Router `prefer_local` calls the SAME function -- delete the inline type check.
+- This is the CUI egress boundary: read the docstrings in activate.py first; keep ONE definition.
+
+TESTS: tests/llm/test_provider_locality.py -- vllm local, mistral cloud, undeclared
+openai_compatible not local, prefer_local excludes mistral, public-host-declared-local flagged.
+""",
+        "is_local_only_model returns True for a vllm/localai/mistral_vllm model and False for the "
+        "cloud mistral provider; prefer_local uses the same function (inline check removed); an "
+        "undeclared openai_compatible provider is not local; a 'local' provider with a public host "
+        "is flagged; tests gated in core.d/omx-vllm-01.txt.",
+        priority="critical",
+    ),
+    _t(
+        "omx-vllm-02",
+        "vLLM discovery: models from /v1/models, context window + tool-call capability, wired into chains",
+        """
+The generic `vllm` provider is DECLARED in `args/llm_config.yaml` but NO model entry uses it --
+it is unreachable by every routing chain (declared-but-unconsumed). Fix by discovery, mirroring
+the existing `settings.ollama_discovery` path in `tools/llm/router.py`.
+
+DO:
+- `settings.vllm_discovery` (enabled, probe_providers: [vllm], refresh_interval_seconds):
+  GET `${VLLM_BASE_URL}/models`; register each served model as router model
+  `vllm:<served-name>` with provider `vllm`, `context_window` from `max_model_len`, and
+  capabilities. Tool calling is a SERVER flag (`--enable-auto-tool-choice --tool-call-parser`)
+  that /v1/models does not expose -> probe once with a 1-token tools request and cache the
+  result; never assume it.
+- Add a stable alias model `vllm-local` (model_id from `${VLLM_MODEL:-}`; unavailable when
+  unset) and place it in local chains AFTER the existing ollama entries: the LOCAL-ONLY GovCon
+  chains, the two_tier local tier candidates, code_generation fallback. No model ids in Python.
+- Reuse the existing vllm prefix-cache capability entry in `tools/llm/openai_provider.py`.
+- Provider status: extend the existing provider status/health tool (grep `tools/manifest/`
+  first) or add `icdev llm doctor`: vLLM reachability, served models, max_model_len, tool support.
+
+TESTS: fake /v1/models server (http.server on a free port) -> models registered with the right
+context window; tool probe cached; VLLM_MODEL unset -> vllm-local unavailable, chain falls through.
+""",
+        "With a fake vLLM server, the router lists vllm:<name> models with max_model_len as the "
+        "context window and a probed tool-call flag; vllm-local appears in the local chains and is "
+        "skipped cleanly when VLLM_MODEL is unset; the status tool shows the endpoint; tests gated.",
+        priority="high",
+        depends_on="omx-vllm-01",
+    ),
+    _t(
+        "omx-vllm-03",
+        "vLLM embeddings in the embedding chain (RAG / KG / memory)",
+        """
+`tools/llm/embedding_provider.py` already speaks the OpenAI embeddings API and its docstring
+names vLLM, but `args/llm_config.yaml` `embeddings.default_chain` has no vLLM entry.
+- Add an embedding model on provider `vllm` using `${VLLM_EMBED_BASE_URL:-${VLLM_BASE_URL}}` and
+  `${VLLM_EMBED_MODEL:-}` (vLLM serves embeddings from a separate instance run as a pooling /
+  embed model -- document it), placed after the local Ollama embedder.
+- DIMENSION SAFETY: switching embedder silently corrupts a vector store if dimensions differ.
+  Probe the dimension on first use and refuse (clear error) to write into a store whose
+  recorded dimension differs.
+- Locality comes from omx-vllm-01's single definition.
+
+TESTS: fake embeddings endpoint -> vectors returned; dimension mismatch refused.
+""",
+        "A configured vLLM embedder is used by the embedding chain; a dimension mismatch against an "
+        "existing store is refused, not written; unset env skips it; tests gated in core.d.",
+        priority="medium",
+        depends_on="omx-vllm-02",
+    ),
+    _t(
+        "omx-vllm-04",
+        "Harnesses run on the same vLLM endpoint (opencode / pi / codex), set by icdev omarchy setup",
+        """
+"Seamless" = ONE endpoint configured once, used by ICDEV's router AND by the harness executing
+the task. Today each harness would need hand config.
+- Extend the companion generators (omx-dx-01) and `icdev omarchy setup` (omx-setup-01) with
+  `--llm vllm` (auto when VLLM_BASE_URL is reachable): write opencode's provider config (custom
+  OpenAI-compatible provider with baseURL + the discovered models from omx-vllm-02), Pi's model
+  config, and Codex's `model_providers` entry. Claude Code is NOT pointed at vLLM by default
+  (Anthropic API shape); if vLLM's Anthropic-compatible endpoint proves usable, document it as
+  optional only.
+- Adapters: `opencode_cli` / `pi_cli` / `codex_cli` pass the routed model (`vllm/<served-name>`)
+  when the router's choice for the task's llm_function is a vLLM model, so the runner honours
+  the same routing as the rest of ICDEV.
+- Warn when the served model lacks tool calling (omx-vllm-02 probe) -- agentic harnesses
+  degrade badly without it.
+
+TESTS: generated opencode/codex/pi configs contain the vLLM provider + models; adapter command
+line carries the routed vllm model.
+""",
+        "One VLLM_BASE_URL yields working opencode, pi and codex configs (asserted on generated "
+        "files) and the adapters pass the routed vllm model on the command line; a no-tool-call "
+        "model produces a warning; tests gated in core.d.",
+        priority="high",
+        depends_on="omx-setup-01",
+    ),
+    _t(
+        "omx-vllm-05",
+        "vLLM serving recipe: pinned compose service, Arch/Omarchy + WSL notes, air-gap bundle",
+        """
+- `docker-compose.yml`: optional `vllm` service under a `vllm` profile, image PINNED BY DIGEST
+  (`tools/ci/pin_census.py --check`), GPU reservation, `--enable-auto-tool-choice
+  --tool-call-parser <per model>`, healthcheck on /v1/models; optional `vllm-embed` service.
+- `docs/install/vllm.md`: Omarchy/Arch with NVIDIA (nvidia-container-toolkit), Windows via WSL2
+  Docker, CPU-only caveats, choosing tool-call parsers, max_model_len vs VRAM, and how the rest
+  of OMX picks it up (VLLM_BASE_URL / VLLM_MODEL).
+- Air gap: add the vLLM image + a model-weights tarball step to `deploy/offline/`, consistent
+  with how the floci image cache is handled.
+- Never state a performance or capacity number that was not measured on the target hardware;
+  the doc says "measured on <hw>, <date>" or nothing.
+""",
+        "`docker compose --profile vllm config` validates with a digest-pinned image and passes "
+        "pin_census; docs/install/vllm.md covers Arch+NVIDIA, WSL2 and air-gap; the offline bundle "
+        "includes the image step.",
+        priority="medium",
+        depends_on="omx-vllm-03",
+    ),
     # --------------------------------------------------------------- manual
     _t(
         "omx-up-01",
@@ -513,6 +649,48 @@ RISK: opens this host's database to the network.
     ),
 ]
 
+# Extra gating edges beyond each task's single depends_on_task_id. omx-vllm-04 extends the
+# companion generators AND `icdev omarchy setup` with the discovered vLLM models, so it needs
+# both lanes merged.
+EDGES: list[tuple[str, str]] = [
+    ("omx-vllm-04", "omx-vllm-02"),
+]
+
+
+def seed_edges(dry_run: bool = False) -> dict:
+    """Insert missing kanban_task_deps rows. Existing edges are left alone."""
+    from tools.db.storage import get_connection
+    from tools.kanban.init_db import init_kanban_tables
+
+    init_kanban_tables()
+    now = datetime.now(timezone.utc).isoformat()
+    added: list[str] = []
+    existing: list[str] = []
+    conn = get_connection()
+    try:
+        for task_id, dep_id in EDGES:
+            label = f"{task_id}<-{dep_id}"
+            found = conn.execute(
+                "SELECT 1 FROM kanban_task_deps WHERE task_id = %s AND depends_on_id = %s",
+                (task_id, dep_id),
+            ).fetchone()
+            if found:
+                existing.append(label)
+                continue
+            if not dry_run:
+                conn.execute(
+                    "INSERT INTO kanban_task_deps "
+                    "(task_id, depends_on_id, created_at, classification) "
+                    "VALUES (%s,%s,%s,%s)",
+                    (task_id, dep_id, now, "CUI"),
+                )
+            added.append(label)
+        if not dry_run:
+            conn.commit()
+    finally:
+        conn.close()
+    return {"declared": len(EDGES), "added": added, "already_present": existing}
+
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Seed OMX (ICDEV on Omarchy) tasks")
@@ -532,7 +710,9 @@ def main(argv: list[str] | None = None) -> int:
     from tools.kanban.task_factory import create_tasks
 
     created = create_tasks(TASKS)
+    edges = seed_edges()
     report = {
+        "edges": edges,
         "created": created,
         "created_count": len(created),
         "submitted_count": len(TASKS),
@@ -541,7 +721,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         print(json.dumps(report, indent=2))
     else:
-        print(f"Seeded {len(created)}/{len(TASKS)} OMX tasks")
+        print(f"Seeded {len(created)}/{len(TASKS)} OMX tasks; extra edges added: {edges['added']}")
         for tid in created:
             print(f"  + {tid}")
         if report["skipped_existing"]:
