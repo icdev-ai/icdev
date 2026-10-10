@@ -47,6 +47,9 @@ Subcommands:
   cron create|list|pause|resume|remove|run|runs
                            Schedule standalone-agent prompts or allowlisted
                            scripts (interval or 5-field cron).
+  harness install-guard opencode [--project DIR|--global]
+                           Install ICDEV's PreToolUse guard as an opencode
+                           plugin (same checks as the Claude Code hook).
   audit export             Export SOC 2 (and future framework) evidence reports.
   audit tail [--follow]    Tail the audit feed (audit_trail + hook_events), or
                            --source runtime_invocations for invocation rows.
@@ -54,9 +57,6 @@ Subcommands:
                            with error counts and avg/max duration.
   runtime trace <corr-id>  Show every span of one agent run, joined by the run's
                            correlation id (AgentLoopResult.trace_id).
-  harness install-guard opencode [--project DIR|--global]
-                           Install ICDEV's PreToolUse guard as an opencode
-                           plugin (same checks as the Claude Code hook).
   demo seed --tenant <slug> [--canvases <c1,c2,...>]
                            Provision a demo tenant with synthetic data and
                            ICDEV_DEMO_MODE enabled (read-only banner).
@@ -131,6 +131,10 @@ def main(argv: list[str] | None = None) -> int:
         from tools.agent_runtime.cron import cron_main
         return cron_main(rest)
 
+    if sub == "harness":
+        from tools.cli.harness import main as harness_main
+        return harness_main(rest)
+
     if sub == "audit":
         from tools.cli.audit import main as audit_main
         return audit_main(rest)
@@ -138,10 +142,6 @@ def main(argv: list[str] | None = None) -> int:
     if sub == "runtime":
         from tools.cli.runtime import main as runtime_main
         return runtime_main(rest)
-
-    if sub == "harness":
-        from tools.cli.harness import main as harness_main
-        return harness_main(rest)
 
     if sub == "demo":
         return _demo_main(rest)
