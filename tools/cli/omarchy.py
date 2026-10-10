@@ -414,6 +414,14 @@ def plan_systemd(host: Host, start: bool = False, remove: bool = False) -> Plan:
                                   ["systemctl", "--user", "daemon-reload"]))
         return Plan(done=not actions, actions=actions)
 
+    # The genesis units run tools/genesis/launch.py from a SOURCE CHECKOUT; the
+    # wheel/AUR package ships neither the templates nor a launch.py at the root,
+    # so a unit written there would crash-loop. Measured by the Arch Package
+    # Smoke job (omx-ci-01): this step reported `failed` on every package install.
+    if not (host.root / "scripts" / "systemd").is_dir():
+        detail = (f"the genesis units need a source checkout; {host.root} is not one "
+                  "(package install) -- no units written")
+        return Plan(done=not start, state="failed" if start else "n/a", detail=detail)
     try:
         units = unit_plan(host.root, host.python)
     except (OSError, ValueError) as exc:

@@ -33,8 +33,9 @@ package() {
   "${_venv}/bin/python" -m pip install --no-cache-dir --no-compile \
     --disable-pip-version-check "${srcdir}/${_whl}"
 
-  # venv scripts record the build-time path in their shebangs; point them at /opt.
-  grep -rlI --null "${pkgdir}" "${_venv}/bin" | xargs -0 -r sed -i "s|${pkgdir}||g"
+  # venv scripts (shebangs) and pyvenv.cfg (`command =`) record the build-time
+  # path; point them at /opt. makepkg warns "reference to $pkgdir" otherwise.
+  grep -rlI --null "${pkgdir}" "${_venv}/bin" "${_venv}/pyvenv.cfg" | xargs -0 -r sed -i "s|${pkgdir}||g"
   "${_venv}/bin/python" -m compileall -q -s "${pkgdir}" -p / "${_venv}/lib"
 
   install -dm755 "${pkgdir}/usr/bin"
