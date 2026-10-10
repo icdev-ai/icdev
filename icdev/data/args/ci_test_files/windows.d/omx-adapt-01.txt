@@ -1,0 +1,2 @@
+# omx-adapt-01 -- spawns a fake opencode via a .cmd shim on Windows
+tests/agents/test_opencode_cli_adapter.py

@@ -160,6 +160,8 @@ agents/
 # of failure as the /logs/ one documented above.
 !tools/agents/
 !icdev/tools/agents/
+# omx-adapt-01: and tests/agents/ is those adapters' test suite.
+!tests/agents/
 
 # Claude Code output
 claude-max-output.json

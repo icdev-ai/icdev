@@ -33,7 +33,6 @@ being costed.
 """
 from __future__ import annotations
 
-import logging
 import re
 import zipfile
 from dataclasses import dataclass, field
@@ -41,7 +40,9 @@ from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
 
-logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger(__name__)
 
 # Namespaces, spelled out once. OOXML is a swamp of these.
 _NS = {

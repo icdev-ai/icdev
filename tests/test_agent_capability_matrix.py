@@ -109,10 +109,11 @@ def _register(monkeypatch, **adapters):
 # ── 1. shape of the probe ───────────────────────────────────────────────────
 def test_every_capability_has_a_probe_and_vice_versa():
     assert set(cm.CAPABILITIES) == set(cm._PROBES)
-    assert len(cm.CAPABILITIES) == 7
+    assert len(cm.CAPABILITIES) == 8
     assert set(cm.CAPABILITIES) == {
         "streaming", "tool_calling", "sub_agents", "interruption",
         "sandbox_passthrough", "context_budget", "structured_output",
+        "guard_wired",
     }
 
 
@@ -243,11 +244,14 @@ def test_argv_probes_do_not_depend_on_the_backend_being_installed():
 
 # ── 4. real findings this probe exists to surface ───────────────────────────
 def test_claude_cli_tool_calls_are_not_visible_through_the_seam():
-    """parse_response() returns tool_calls=[] unconditionally — declared true."""
+    """parse_response() returns tool_calls=[] unconditionally.
+
+    Declared true until omx-adapt-01 corrected the claim to match.
+    """
     caps = cm.probe_adapter("claude_cli")["capabilities"]
     assert caps["tool_calling"]["actual"] == cm.ABSENT
     assert caps["tool_calling"]["method"] == cm.BEHAVIORAL
-    assert caps["tool_calling"]["verdict"] == cm.OVERCLAIMED
+    assert caps["tool_calling"]["verdict"] == cm.AGREED_ABSENT
 
 
 def test_claude_cli_permission_posture_is_fixed_by_the_adapter():
@@ -364,6 +368,12 @@ def test_cli_capability_filter_narrows_the_matrix(capsys):
 def test_cli_rejects_unknown_names(capsys):
     assert cm.main(["--adapter", "nope"]) == 2
     assert cm.main(["--capability", "telepathy"]) == 2
+
+
+def test_the_shipped_declarations_pass_the_gate(capsys):
+    """omx-adapt-01: --gate exited 1 on main for six stale claims."""
+    assert cm.main(["--gate", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["overclaimed"] == []
 
 
 def test_cli_gate_exits_nonzero_only_on_an_overclaim(capsys):
