@@ -217,6 +217,14 @@ def build_checks(repo_root: Path, live_git: bool = False) -> List[Check]:
     def _git_danger(tool: str, ti: dict) -> Optional[str]:
         return hook.check_git_danger(tool, ti) or None
 
+    def _default_push(tool: str, ti: dict, anchor: Path) -> Optional[str]:
+        # The verdict reads the branch state of the directory the push ran in.
+        # With no checkout containing the cwd the anchor falls back to THIS
+        # checkout, whose branches say nothing about the call, so judge the argv
+        # alone: an explicit `origin main` still refuses, a bare push cannot.
+        where = str(anchor) if anchor != repo_root else str(repo_root / ".no-such-dir")
+        return sc.check_default_branch_push(tool, ti, cwd=where) or None
+
     def _egress(tool: str, ti: dict) -> Optional[str]:
         # Forced into its ENFORCING mode for the replay. Left at the shipped
         # default it returns None for everything and the survey would report a
@@ -241,6 +249,14 @@ def build_checks(repo_root: Path, live_git: bool = False) -> List[Check]:
         Check("git_danger", predicate=_git_danger,
               blocks_when="a Bash command matches GIT_DANGER_PATTERNS "
                           "(reset --hard, clean -fdx, push --force, branch -D, rebase -i)"),
+        Check("default_branch_push", predicate=_default_push, needs_cwd=True,
+              blocks_when="a `git push` writes the repo's default branch: an explicit "
+                          "refspec, --all/--mirror, or a bare push from (or tracking) it",
+              note="explicit refspecs are judged from the argv; a bare `git push` "
+                   "and `origin HEAD` are judged against TODAY's branch of the "
+                   "checkout containing the transcript's cwd. A removed worktree "
+                   "resolves to the enclosing main checkout, which is on the default "
+                   "branch, so this is an UPPER bound"),
         Check("append_only_write", predicate=_append_only,
               blocks_when="a Bash command UPDATE/DELETE/DROP/TRUNCATEs a protected table"),
         Check("direct_sqlite_usage", predicate=_sqlite,

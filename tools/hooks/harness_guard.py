@@ -185,9 +185,18 @@ def enforcement_enabled() -> bool:
     return os.environ.get(ENFORCEMENT_ENV, "1").strip().lower() not in _OFF_VALUES
 
 
-def decide(harness: str, tool: str, args: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    """The verdict for one harness tool call. Never raises: fails OPEN, logged."""
+def decide(harness: str, tool: str, args: Optional[Dict[str, Any]],
+           cwd: Optional[str] = None) -> Dict[str, Any]:
+    """The verdict for one harness tool call. Never raises: fails OPEN, logged.
+
+    *cwd* is the harness's working directory, sent by the plugin. The bridge
+    itself runs from the ICDEV root, so without it a check that acts on the
+    repository a command runs in (``check_default_branch_push``) would read
+    ICDEV's branches instead of the run's.
+    """
     tool_name, tool_input = to_icdev(harness, tool, args)
+    if cwd and tool_name == "Bash" and isinstance(tool_input, dict)             and not tool_input.get("cwd"):
+        tool_input = {**tool_input, "cwd": cwd}
     base = {"tool_name": tool_name, "tool_input": tool_input, "advisory": False}
     try:
         from tools.airgap.hook_compat import run_pre_tool_check
@@ -335,7 +344,8 @@ def main(argv: Optional[list] = None) -> int:
                           "reason": f"ICDEV guard bridge got an unreadable request, "
                                     f"failed open: {exc}"}))
         return 0
-    verdict = decide(opts.harness, request.get("tool", ""), request.get("args") or {})
+    verdict = decide(opts.harness, request.get("tool", ""), request.get("args") or {},
+                     cwd=request.get("cwd") or None)
     print(json.dumps(verdict, default=str))
     return 0
 
