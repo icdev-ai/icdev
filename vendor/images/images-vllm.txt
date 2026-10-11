@@ -1,0 +1,20 @@
+# CUI // SP-CTI
+#
+# vLLM -- the OpenAI-compatible inference server behind the optional `vllm` and
+# `vllm-embed` compose profiles (omx-vllm-05). Bundle it for the high side with:
+#     python deploy/offline/vllm_bundle.py save --model <hf-repo-id>
+# which runs `python tools/airgap/image_vendor.py --save --topic vllm` and
+# tars the model weights alongside it.
+#
+# A DIGEST, NEVER A TAG. This is the multi-arch INDEX digest of
+# vllm/vllm-openai:v0.31.0 (published 2026-10-04), resolved 2026-10-10 with
+# `docker buildx imagetools inspect vllm/vllm-openai:v0.31.0` -- a registry
+# manifest read, NO pull. docker-compose.yml's default `image:` for both vLLM
+# services names this same digest; tests/test_omx_vllm_05_compose_recipe.py
+# asserts the two agree, so one fact cannot come to be spelled two ways.
+#
+# NOT MEASURED HERE, and said so: this host has not pulled the image, so
+# `--save` here reports
+# `absent_from_local_cache` until it is pulled on a connected host. That is the
+# designed refusal, not a defect.
+vllm/vllm-openai@sha256:c1c9f6fd5c109ba7f0546a59f5b2f15fb87f64c77782e90a27b648b42a8e67c3

@@ -337,9 +337,16 @@ def test_verify_task_no_file_evidence_rejected():
 
 
 def test_verify_task_phantom_guard_runs_before_git():
-    """Phantom detection must run BEFORE git check, so hallucinated
-    file paths are caught even if git commands would have returned
-    success."""
+    """Phantom detection must run BEFORE the git COMMIT check (check 5), so
+    hallucinated file paths are caught on a branch that delivered nothing.
+
+    kpr-watch-25: this used to fake EVERY git call as "has commits" and assert
+    `git log` never ran. That held only because the test set no dispatch
+    baseline, which skipped the git-first arm (check 0) -- in production
+    check 0 runs `git log` before the phantom guard for every dispatched task,
+    and now for an adopted one too. So the branch here has NO commits (an
+    empty `git log`) and the assertion is on the verdict: PHANTOM, not the
+    later "no git commits" rejection."""
     phantom_output = (
         "Created tools/llm/fake_file_xyz123.py and tests/llm/test_fake.py. "
         "All checks pass, tests green. "
@@ -354,9 +361,9 @@ def test_verify_task_phantom_guard_runs_before_git():
             result.stdout = ""
             result.returncode = 1
         else:
-            # A git-commit check, if reached, WOULD wrongly report commits —
-            # it must never run because the phantom guard short-circuits first.
-            result.stdout = "abc1234 phantom commit\n"
+            # The branch carries no commits: `git log` (and everything else)
+            # answers empty.
+            result.stdout = ""
             result.returncode = 0
         result.stderr = ""
         return result
@@ -365,9 +372,6 @@ def test_verify_task_phantom_guard_runs_before_git():
         verified, reason = kanban._verify_task_completed("t-phantom2", phantom_output)
 
     assert verified is False
-    assert "PHANTOM COMPLETION" in reason
-    # The git COMMIT check (git log) must never run — the phantom guard rejects
-    # first. (The guard itself may run fetch + cat-file to consult origin/main.)
-    assert not any(len(a) >= 2 and a[1] == "log" for a in calls), (
-        "phantom guard should short-circuit before the git commit check"
+    assert "PHANTOM COMPLETION" in reason, (
+        "phantom guard should reject before the git commit check (check 5)"
     )

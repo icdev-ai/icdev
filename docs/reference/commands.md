@@ -49,6 +49,12 @@ python tools/llm/vllm_discovery.py --status --json               # same report, 
 # Router auto-registers each served model as vllm:<served-name> when VLLM_BASE_URL is set;
 # VLLM_MODEL names the model behind the stable `vllm-local` alias (unset = skipped in every chain).
 
+# Harnesses on the SAME vLLM endpoint (omx-vllm-04) — opencode / Pi / Codex configs from VLLM_BASE_URL
+icdev llm harnesses --llm vllm                                   # dry run: which files, which served models, tool-call warnings
+python tools/llm/harness_llm_config.py --llm vllm --write        # write opencode.json provider, ~/.pi/agent/models.json, ~/.codex/config.toml block
+python tools/dx/companion.py --sync --write --llm auto           # same, opencode in the PROJECT opencode.json; auto = only when reachable
+# ICDEV_HARNESS_LLM=vllm (opt-in) makes opencode_cli/pi_cli/codex_cli pass the router's vLLM choice as --model.
+
 # Ollama prefix cache — measured in LATENCY, never dollars (cch-prov-03)
 python tools/llm/ollama_prefix_latency.py --json                  # cold vs warm prompt-eval
 python tools/llm/ollama_prefix_latency.py --model qwen3:4b --repeats 7
@@ -9122,6 +9128,18 @@ all documented with their defaults in `.env.example`. `LOCALSTACK_ENABLED`,
 There is deliberately no credential setting: `credentials()` always returns the
 dummy `("test", "test")` pair, because these values reach `docker run -e` and a
 Terraform provider block aimed at localhost.
+
+### vLLM air-gap bundle — pinned image + model weights (omx-vllm-05)
+
+```bash
+docker compose --profile vllm config --quiet                     # validate the optional service
+python deploy/offline/vllm_bundle.py save --model Qwen/Qwen2.5-1.5B-Instruct-AWQ   # low side
+python deploy/offline/vllm_bundle.py verify                      # re-hash weights + image
+python deploy/offline/vllm_bundle.py load                        # high side; prints VLLM_IMAGE line
+python tools/airgap/image_vendor.py --save --topic vllm --json   # image half only
+```
+
+Walkthrough: [docs/install/vllm.md](../install/vllm.md).
 
 ### floci runtime base images — what the emulator PULLS at run time (flx-airgap-02)
 

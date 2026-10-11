@@ -29,8 +29,8 @@ def _load(path: Path):
 def _db(tmp_path):
     conn = sqlite3.connect(str(tmp_path / "pkg.db"))
     conn.row_factory = sqlite3.Row
-    conn.execute("CREATE TABLE fa_missions (id INTEGER PRIMARY KEY, slug TEXT)")
-    conn.execute("INSERT INTO fa_missions (slug) VALUES ('first-mission')")
+    conn.execute("CREATE TABLE fa_missions (id INTEGER PRIMARY KEY, slug TEXT NOT NULL, title TEXT NOT NULL)")
+    conn.execute("INSERT INTO fa_missions (slug, title) VALUES ('first-mission', 'First mission')")
     conn.commit()
     return conn
 
