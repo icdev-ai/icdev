@@ -560,11 +560,23 @@ def panel_usage_record(host: Host) -> Path:
     return usage_dir(host.environ, host.home) / f"{AGENT_ID}.json"
 
 
+def _writable(path: Path) -> bool:
+    return os.access(path, os.W_OK)
+
+
+def _marks_skipped(host: Host) -> bool:
+    """A packaged Omarchy keeps the agents plugin under root-owned /usr/share/omarchy
+    (omx-panel-02): the mark is optional, so it is skipped there -- never sudo-written."""
+    assets = panel_assets_dir(host)
+    return assets.is_dir() and not _writable(assets)
+
+
 def _panel_files(host: Host) -> List[tuple]:
     """(target, content, executable) for everything the panel step writes."""
     files = [(host.home / ".local" / "bin" / PANEL_BIN, render_collector(host), True)]
     assets = panel_assets_dir(host)
-    if assets.is_dir():  # the mark is optional: no agents plugin, no mark
+    # The mark is optional: no agents plugin, or one the user cannot write, means no mark.
+    if assets.is_dir() and not _marks_skipped(host):
         files += [(assets / m, _data_file(host, f"omarchy/{m}").read_text(encoding="utf-8"), False)
                   for m in PANEL_MARKS]
     if host.platform == "linux":
@@ -615,6 +627,8 @@ def plan_panel(host: Host, det: Detected, remove: bool = False) -> Plan:
         actions.append(Action(f"enable + start {PANEL_TIMER}",
                               ["systemctl", "--user", "enable", "--now", PANEL_TIMER]))
     detail = f"record: {panel_usage_record(host)}"
+    if _marks_skipped(host):
+        detail += f"; mark skipped: {panel_assets_dir(host)} is not writable"
     if not systemctl:
         detail += f"; no systemd --user: run `{PANEL_BIN} --write` to refresh it"
     return Plan(done=not actions, actions=actions, detail=detail)

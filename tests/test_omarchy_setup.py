@@ -404,6 +404,25 @@ def test_panel_without_agents_plugin_skips_the_mark(make_host):
     assert not _assets(host).exists()
 
 
+def test_panel_skips_the_mark_when_the_assets_dir_is_root_owned(make_host, monkeypatch):
+    """omx-panel-02: a packaged Omarchy keeps the agents plugin under root-owned
+    /usr/share/omarchy. The optional mark is skipped there; the step still lands."""
+    world = FakeWorld(omarchy_on=True, pg_ready=True)
+    host = make_host(world)
+    _assets(host).mkdir(parents=True)
+    real_access = omarchy.os.access
+    monkeypatch.setattr(omarchy.os, "access",
+                        lambda p, mode: False if Path(p) == _assets(host) else real_access(p, mode))
+    report = omarchy.run("setup", host)
+    panel = next(s for s in report["steps"] if s["step"] == "panel")
+    assert panel["state"] == "done", report
+    assert f"mark skipped: {_assets(host)} is not writable" in panel["detail"]
+    assert (host.home / ".local" / "bin" / omarchy.PANEL_BIN).is_file()
+    assert omarchy.PANEL_TIMER in world.timers
+    assert not any(_assets(host).iterdir())
+    assert _states(omarchy.run("setup", host))["panel"] == "skipped"
+
+
 def test_panel_is_not_applicable_off_omarchy(make_host):
     world = FakeWorld(omarchy_on=False, pg_ready=True)
     host = make_host(world)
