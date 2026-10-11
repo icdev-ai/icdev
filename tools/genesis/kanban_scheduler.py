@@ -497,9 +497,19 @@ def main():
 
         # AFTER the cycle's work, before the sleep: a restart mid-dispatch would
         # abandon a task it had just claimed. Does not return if it re-execs.
+        #
+        # ...and not while workers are in flight either (kpr-watch-24): they live
+        # only in the reflex's `_running` dict, so a re-exec orphans them and
+        # their verification never runs. Drain instead -- the reflex stops
+        # dispatching while `code_reload.is_draining()` -- then re-exec idle.
         try:
+            import tools.genesis.reflexes.kanban as _kanban_mod
+
             code_reload.restart_if_code_changed(
-                _code_baseline, started_at=_started_at)
+                _code_baseline, started_at=_started_at,
+                busy=lambda: bool(_kanban_mod._running),
+                max_defer=float(os.environ.get(
+                    "KANBAN_RESTART_MAX_DEFER_SECONDS", "7200")))
         except Exception as _cr_exc:  # noqa: BLE001 — watching must not kill it
             logger.warning("scheduler: code-change check failed: %s", _cr_exc)
 
