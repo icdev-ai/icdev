@@ -1,0 +1,1 @@
+tests/genesis/test_omx_adapt_03_adapter_verification.py

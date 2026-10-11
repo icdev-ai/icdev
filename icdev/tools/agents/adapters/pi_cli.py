@@ -438,7 +438,9 @@ class PiCliAdapter:
             output=text,
             error=error,
             duration_ms=int((time.time() - t0) * 1000),
-            structured={**envelope, "stderr": stderr},
+            # omx-adapt-03: the raw stream, so the kanban verifier can read the
+            # run's tool calls through parse_response rather than its prose.
+            structured={**envelope, "stderr": stderr, "raw_output": proc.stdout or ""},
         )
 
     # ── guard self-report (consumed by capability_matrix: guard_wired) ───────
