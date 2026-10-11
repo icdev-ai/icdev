@@ -1,0 +1,1 @@
+tests/kanban/test_runner_follows_omarchy_default.py
