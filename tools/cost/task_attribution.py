@@ -287,13 +287,13 @@ def cost_basis(priced_rows: int, unpriced_rows: int) -> Optional[str]:
     return None
 
 
-def attributed_totals(*, db_path: Optional[Path] = None,
-                      window_days: Optional[float] = None) -> Optional[Dict[str, Dict[str, Any]]]:
-    """``{task_id: {rows, cost_usd, ...}}`` over every attributed row; None if unreadable."""
+def attributed_rows(*, db_path: Optional[Path] = None,
+                    window_days: Optional[float] = None) -> Optional[List[Dict[str, Any]]]:
+    """Every attributed ``agent_token_usage`` row -- one per reaped dispatch; None if unreadable."""
     try:
         with _connect(db_path) as conn:
             if not _table_exists(conn, "agent_token_usage"):
-                return {}
+                return []
             sql = ("SELECT task_id, model_id, input_tokens, output_tokens, "
                    "cost_estimate_usd, created_at FROM agent_token_usage "
                    "WHERE task_id IS NOT NULL AND task_id <> ''")
@@ -304,11 +304,19 @@ def attributed_totals(*, db_path: Optional[Path] = None,
                 params.append(since.isoformat())
             rows = conn.execute(sql, tuple(params)).fetchall()
     except Exception as exc:  # noqa: BLE001
-        logger.warning("task_attribution: attributed totals unreadable: %s", exc)
+        logger.warning("task_attribution: attributed rows unreadable: %s", exc)
+        return None
+    return [dict(r) for r in rows]
+
+
+def attributed_totals(*, db_path: Optional[Path] = None,
+                      window_days: Optional[float] = None) -> Optional[Dict[str, Dict[str, Any]]]:
+    """``{task_id: {rows, cost_usd, ...}}`` over every attributed row; None if unreadable."""
+    rows = attributed_rows(db_path=db_path, window_days=window_days)
+    if rows is None:
         return None
     totals: Dict[str, Dict[str, Any]] = {}
     for r in rows:
-        r = dict(r)
         bucket = totals.setdefault(str(r["task_id"]), {
             "rows": 0, "cost_usd": 0.0, "input_tokens": 0, "output_tokens": 0,
             "models": set(), "last_at": "", "priced_rows": 0, "unpriced_rows": 0,

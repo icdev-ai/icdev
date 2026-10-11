@@ -43,8 +43,26 @@ def _down(*_a, **_k):
     raise ConnectionError("could not connect to server")
 
 
+def _row(day, hour, model, inp, out, task="t-01"):
+    return {"task_id": task, "model_id": model, "input_tokens": inp, "output_tokens": out,
+            "cost_estimate_usd": 0.5, "created_at": f"2026-10-{day:02d} {hour:02d}:00:00"}
+
+
+#: Five dispatches over three days and two models. NOW is 2026-10-10 15:00 UTC.
+LEDGER = [
+    _row(1, 9, "claude-opus", 900, 100),            # outside the 7-day window
+    _row(9, 10, "claude-opus", 1000, 200),
+    {**_row(9, 11, "qwen3-coder", 400, 100), "created_at": "2026-10-09T11:00:00+00:00"},
+    _row(10, 8, "claude-opus", 2000, 500),
+    # The other timestamp spelling, and a PG-style datetime -- both naive UTC.
+    {"task_id": "t-02", "model_id": "qwen3-coder", "input_tokens": 300, "output_tokens": 50,
+     "cost_estimate_usd": 0.0, "created_at": datetime(2026, 10, 10, 12, 30)},
+]
+
+
 def _collect(**over):
-    kw = dict(summary_fn=_summary, totals_fn=_totals, pick_fn=_pick, verdict_fn=_verdict)
+    kw = dict(summary_fn=_summary, totals_fn=_totals, pick_fn=_pick, verdict_fn=_verdict,
+              rows_fn=lambda: LEDGER, tz=timezone.utc)
     kw.update(over)
     return panel.collect(NOW, **kw)
 
@@ -133,3 +151,76 @@ def test_main_prints_one_json_record_and_writes(monkeypatch, tmp_path, capsys):
     printed = json.loads(capsys.readouterr().out)
     assert printed["id"] == "icdev"
     assert json.loads((tmp_path / "icdev.json").read_text(encoding="utf-8")) == printed
+
+
+# --------------------------------------------------------------------------- #
+# The local-stats block (omx-panel-04) -- what the panel's providerHasData reads.
+# --------------------------------------------------------------------------- #
+
+def _provider_has_data(p):
+    """Omarchy 4 ``shell/plugins/agents/Main.qml::providerHasData``, transcribed."""
+    def n(v):
+        return v or 0
+    return (n(p.get("totalPrompts")) > 0 or n(p.get("totalSessions")) > 0
+            or n(p.get("activeDays")) > 0 or n(p.get("todayPrompts")) > 0
+            or n(p.get("todaySessions")) > 0 or bool(p.get("limits")) or bool(p.get("balance")))
+
+
+def test_dispatch_history_fills_the_local_stats_block():
+    rec = _collect()
+    assert _provider_has_data(rec)  # the panel admits the record
+    assert rec["hasLocalStats"] is True and rec["hasPromptStats"] is False
+    assert rec["stale"] is False
+    assert rec["totalSessions"] == 5 and rec["todaySessions"] == 2
+    assert rec["totalPrompts"] == 0 and rec["todayPrompts"] == 0  # no per-call rows
+    assert rec["activeDays"] == 3
+    assert rec["activeDates"] == ["2026-10-01", "2026-10-09", "2026-10-10"]
+    assert rec["todayTotalTokens"] == 2500 + 350
+    assert rec["todayTokensByModel"] == {"claude-opus": 2500, "qwen3-coder": 350}
+    # Upstream shape: seven {date, messageCount} entries, oldest first, tokens.
+    assert [d["date"] for d in rec["recentDays"]] == [f"2026-10-{d:02d}" for d in range(4, 11)]
+    assert all(set(d) == {"date", "messageCount"} for d in rec["recentDays"])
+    assert rec["recentDays"][-2]["messageCount"] == 1700
+    assert rec["recentDays"][-1]["messageCount"] == 2850
+    assert rec["modelUsage"] == {
+        "claude-opus": {"inputTokens": 3900, "outputTokens": 800,
+                        "cacheReadInputTokens": 0, "cacheCreationInputTokens": 0},
+        "qwen3-coder": {"inputTokens": 700, "outputTokens": 150,
+                        "cacheReadInputTokens": 0, "cacheCreationInputTokens": 0},
+    }
+    assert rec["limits"] == [] and "balance" not in rec  # nothing invented
+    json.dumps(rec)
+
+
+def test_today_is_counted_in_the_given_zone():
+    """08:00 UTC on the 10th is still the 9th in UTC-10."""
+    from datetime import timedelta
+    rec = _collect(tz=timezone(timedelta(hours=-10)))
+    # NOW 15:00Z = 05:00 on the 10th; 08:00Z = 22:00 on the 9th, 12:30Z = 02:30 on the 10th.
+    assert rec["recentDays"][-1] == {"date": "2026-10-10", "messageCount": 350}
+    assert rec["recentDays"][-2] == {"date": "2026-10-09", "messageCount": 1700 + 2500}
+    assert rec["todaySessions"] == 1
+    assert rec["todayTokensByModel"] == {"qwen3-coder": 350}
+    assert rec["activeDates"] == ["2026-09-30", "2026-10-09", "2026-10-10"]
+
+
+def test_empty_ledger_is_zeros_and_stays_hidden():
+    rec = _collect(rows_fn=lambda: [])
+    assert rec["stale"] is False and rec["hasLocalStats"] is True
+    for key in ("todayPrompts", "todaySessions", "todayTotalTokens", "totalPrompts",
+                "totalSessions", "activeDays"):
+        assert rec[key] == 0, key
+    assert rec["activeDates"] == [] and rec["modelUsage"] == {}
+    assert rec["todayTokensByModel"] == {}
+    assert len(rec["recentDays"]) == 7 and {d["messageCount"] for d in rec["recentDays"]} == {0}
+    # Never dispatched here -> hidden. Omarchy's design, not forced visible.
+    assert not _provider_has_data(rec)
+
+
+def test_unreadable_ledger_is_stale_and_null():
+    for rows_fn in (_down, lambda: None):
+        rec = _collect(rows_fn=rows_fn)
+        assert rec["stale"] is True and rec["hasLocalStats"] is False
+        for key in panel.UNREADABLE_LOCAL_STATS:
+            assert rec[key] is None, key
+        assert rec["usageStatusText"] == panel.STALE_TEXT
