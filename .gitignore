@@ -97,6 +97,11 @@ data/floci-gcp/
 # floci-az and floci-gcp, a different directory from floci).
 data/floci-oci/
 
+# vLLM model weights (omx-vllm-05). docker-compose.yml mounts ./data/vllm/hf-cache
+# as the Hugging Face cache for the optional `vllm` / `vllm-embed` services;
+# gigabytes of per-machine weights that must never land in this PUBLIC repo.
+data/vllm/
+
 # Alert spool and failed-audit dead-letter file — per-machine runtime state.
 data/alerts/
 data/failed_audit_entries.jsonl
