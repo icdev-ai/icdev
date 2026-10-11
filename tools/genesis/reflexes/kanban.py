@@ -6392,6 +6392,23 @@ def _agent_session(task: dict, instruction: str, work_dir: str,
         logger.info("kanban: dispatching %s on model %s (%s)",
                     task_id, _model["name"], _model["model_id"])
 
+    # omx-guard-04 (L2): put the guarded shell in front of $SHELL / PATH for
+    # whatever harness this is -- every adapter merges metadata["env"] into its
+    # spawn env, so no per-harness code. Where it cannot be wired (Windows), the
+    # reason is logged on every dispatch: never a silent pass.
+    try:
+        from tools.hooks import guard_shell as _guard_shell  # noqa: PLC0415
+
+        _wiring = _guard_shell.wiring()
+        if _wiring["supported"]:
+            metadata["env"] = _wiring["env"]
+        else:
+            logger.warning("kanban: guarded shell (L2) NOT wired for %s: %s",
+                           task_id, _wiring["reason"])
+    except Exception as exc:  # noqa: BLE001 -- a broken L2 must not stop a dispatch
+        logger.warning("kanban: guarded shell (L2) wiring failed for %s (%s: %s); "
+                       "dispatching WITHOUT it", task_id, type(exc).__name__, exc)
+
     # The SAME budget the reaper uses to kill this task, so a blocking adapter
     # stops itself just before the kill timer rather than being killed from
     # outside with no result. An unreachable board must not stop a dispatch.

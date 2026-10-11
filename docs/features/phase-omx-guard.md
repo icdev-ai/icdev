@@ -186,3 +186,168 @@ no operands.
 
 * Before dispatching autonomously, the runner should refuse any adapter whose
   `guard_wired` is not `present` (omx-guard-02).
+
+## Guarded shell -- layer 2 (omx-guard-04)
+
+L1 is a native pre-tool hook, so it covers only a harness that has one. L2
+guards what every coding agent does through the OS rather than through a
+plugin API: it **runs a shell**. The kanban runner puts a directory of shims in
+front of `$SHELL` and `PATH` for every spawned harness. A `bash -c <cmd>` the
+harness spawns lands on the shim, which asks the **same bridge**
+(`harness_guard.decide` -> `run_pre_tool_check` -> `shared_checks`) and then
+either execs the real shell with the argv unchanged or exits **126** with the
+BLOCKED reason on stderr. No check was copied.
+
+| Piece | Path | Role |
+|---|---|---|
+| Shim | `tools/hooks/guard_shell.py` (mirrored to `icdev/tools/hooks/`) | `shim_main()`: reads the command (`-c` in any option cluster such as `-lc`, `-ic`, `-euc`; a script path; or stdin), decides, then `os.execv`s the real shell or refuses |
+| Shims on disk | `~/.cache/icdev/guard-shell/<hash>/{bash,sh,dash,zsh,login/<shell>}` | `#!/bin/sh` one-liners that exec `guard_shell_entry.py`. Per-user and per-(interpreter, root), never a shared plantable `/tmp` path. A shim is written only for a shell that exists |
+| Runner wiring | `tools/genesis/reflexes/kanban.py::_agent_session` | `metadata["env"] = guard_shell.wiring()["env"]`: `PATH` prefixed, `SHELL` -> `login/<shell>`, the real shells recorded. Every adapter already merges `metadata["env"]` into its spawn env, so there is **no per-harness code** |
+| Measurement | `args/guard_shell_resolution.yaml`, `python -m tools.hooks.guard_shell --measure -- <harness argv>` | how each harness finds its shell, from a live run |
+| Capability | `guard_shell` in `capability_matrix.py` + `args/agent_capabilities.yaml` | probe-measured per adapter (below) |
+
+### What it reads as "the command"
+
+* `-c <text>` -- the text exactly as given, with backslash-newline removed
+  first, the way the shell removes it (`cat \<newline>.env` is `cat .env`).
+* **`eval` payloads.** Measured, not hypothetical. Claude Code sends
+  `bash -c "source <snapshot> ... && eval 'cat .env' < /dev/null && pwd -P >| <tmp>"`.
+  `check_env_file_access` reads `'cat .env'` as **one quoted token**. The first
+  real end-to-end run on 2026-10-11 was **allowed**: Claude printed the fixture
+  `.env`. `eval` is a builtin, so unlike a nested `bash -c` it never comes back
+  through a PATH shim. The shim therefore also decides each `eval` argument,
+  nested ones included, using `shared_checks`' own `command_segments` and
+  `shell_tokens`. That is input extraction, not a second check. L1 never had
+  this gap, because Claude's own hook sees `cat .env` before Claude wraps it.
+* A script path: the file's contents.
+* stdin, **line by line**. A harness may hold a persistent shell open on a pipe
+  and wait for each command's output, so reading to EOF would deadlock it.
+  Each line (continuations joined) is checked, then forwarded. A refused line
+  is dropped with its reason on stderr and the next line still runs, so a
+  completion sentinel keeps working. Exit is 126 if anything was refused.
+* An interactive shell on a TTY cannot be pre-read. It is passed through, and
+  the gap is logged.
+
+### Which harnesses L2 actually covers (measured 2026-10-11)
+
+Live run of each real harness on the Omarchy (Linux) host, with a recording
+shim behind `$SHELL` and recording shims PATH-prefixed for bash/sh/dash/zsh,
+asked to run `echo <marker>`:
+
+| Adapter | Harness | Finds its shell via | `guard_shell` |
+|---|---|---|---|
+| `claude_cli` | Claude Code 2.1.296 | `$SHELL` | **present** (confirmed) |
+| `opencode_cli` | opencode 1.18.35 | `$SHELL` (re-measured with `--measure`: `shell_env`, 1 shim call) | **present** (confirmed) |
+| `codex_cli` | codex-cli 0.162.1 | **absolute path**: the marker ran, 0 shim calls | absent: **not covered by L2** |
+| `pi_cli` | pi 1.1.0 | **`/bin/bash` absolute**: Pi's RPC `bash` (same executable as the model's tool, per Pi's docs) ran with 0 shim calls | absent: **not covered by L2** (L1 extension covers it) |
+| `copilot_cli` | Copilot CLI 1.0.95 | not measured: not logged in on the probe host | unconfirmed |
+| `goose_cli` | -- | not installed on Linux; Windows is unsupported | unconfirmed |
+| `local_agent`, `local_llm_router` | -- | not harnesses (in-process allowlist / no commands) | unconfirmed |
+
+`present` requires **both** measurements: the recorded live resolution, and a
+behavioural self-test. The self-test passes the runner's wiring through the
+adapter's own `build_env()`, resolves the shell the way the harness was
+measured to, and requires `echo` to come back byte-identical and `cat .env`
+(run in an empty temp dir, so harmless if it ever ran) to be refused with 126.
+`absolute` is a measured **absence**: no PATH or `$SHELL` shim can see a shell
+exec'd by absolute path. `python tools/agents/capability_matrix.py --gate`
+exits 0 on Linux and Windows, with 0 overclaimed. On Windows, claude/opencode
+are `unverified` (declared, cannot be wired there).
+
+### Windows: unsupported, explicitly
+
+`wiring()` returns `supported: false` with the reason, and the runner logs
+`guarded shell (L2) NOT wired` on **every** dispatch. CreateProcess finds
+`cmd.exe` in System32 before `PATH`, and harnesses spawn
+`bash`/`powershell` as `.exe` (libuv and Rust append only `.exe`). A script
+shim cannot stand in for either. `cmd /c` and `powershell -Command` are
+therefore not covered by L2 on Windows. It is reported, never a silent pass.
+The live runner on the Windows host gains nothing from L2. claude and pi stay
+guarded by L1 there.
+
+### Behaviour
+
+* **Fail open, logged**, like `harness_guard`: a bridge that raises allows the
+  command, and the reason says so. A wiring failure in the runner logs
+  `dispatching WITHOUT it` and does not stop the dispatch.
+* **Kill switches** are the hook's own, applied by `decide`:
+  `ICDEV_PRETOOLUSE_ENFORCE=0` makes a refusal advisory (the command runs and
+  `ADVISORY` goes to stderr), and `ICDEV_<CHECK>_GUARD=0` skips one check.
+  No new switch was added.
+* `ICDEV_GUARD_SHELL_LOG=<file>` appends every shim decision as JSONL. That
+  is how `--measure` sees which route a harness took.
+* Each decision writes a `hook_events` audit row through `run_pre_tool_check`,
+  the same as L1.
+
+### Fire-rate survey (before arming)
+
+`python tools/hooks/fire_rate_survey.py`'s own transcript reader
+(`iter_transcripts(since_days=30)` + `iter_tool_calls`), run 2026-10-11 against
+this branch: **4,292 transcripts, 20,703 Bash calls, 943 s**. Every call was
+decided three ways: by the bridge as L1 sees it (`harness_guard.decide`), by
+the shim on the raw text (`guard_shell.decide_text`), and by the shim on the
+text **wrapped exactly as Claude Code sends it to `$SHELL`**
+(`source <snapshot> ... && eval '<cmd>' < /dev/null && pwd -P >| <tmp>`).
+
+| Decision | Refused | Rate | Sessions |
+|---|---:|---:|---:|
+| L1 bridge, raw command | 256 | 1.24% | 70 |
+| L2 shim, raw command | 256 | 1.24% | 70 |
+| L2 shim, Claude-wrapped command | 255 | 1.23% | 70 |
+
+* **L2 adds no refusal L1 does not already make: 0 calls** were refused by the
+  shim and allowed by the bridge, raw or wrapped. The checks are the same
+  checks, already enforcing in every Claude Code session on this host, so L2
+  is armed at its defaults.
+* An earlier run of the same replay found **209 extra refusals** when the shim
+  checked the quoted `eval '...'` segment whole: `dangerous_rm` read a quoted
+  `docker` container removal as an rm with no target. The shim now checks an
+  eval's argument *instead of* the quoted segment (only when `eval` is the
+  command word), which brought the extra count to 0.
+* **1 call** refused by L1 is allowed when wrapped: a `python - <<'PYEOF'`
+  heredoc whose BODY `write_outside_worktree` read as a write target (a known
+  L1 false positive, not a real write). The eval unwrap re-joins tokens, so the
+  body no longer looks like a path. L2 is not stricter than L1 anywhere.
+* The replay surveys Claude Code commands because that is the corpus that
+  exists; opencode commands pass the same `decide_text`, and the codex/pi
+  absolute-`/bin/bash` paths are not covered by L2 at all (see the matrix).
+
+### Verification
+
+* `tests/hooks/test_guard_shell.py`, gated in
+  `args/ci_test_files/core.d/omx-guard-04.txt`, covers:
+  * argv parsing for `-c`, `-lc`, `-ic`, `-euc`, `--login`, `-o`, `-eo`,
+    `--rcfile`, `--`, a script and stdin;
+  * **benign commands byte-identical** to the real shell (argv incl. `$0`,
+    spaces and quotes, exit code, stdout, stderr, unicode, multi-line, script,
+    stdin);
+  * **known-bad refused** with 126, the real shell never running it (a `RAN`
+    sentinel stays absent): via `-c`, `-lc`, `-ic`, an append-only `UPDATE`, a
+    script, stdin (refused line dropped, later lines still run), a
+    backslash-continuation split, and Claude's exact `eval` wrapper;
+  * the kill switches, fail-open, the real shell never resolving to the shim;
+  * wiring (POSIX env, explicit Windows refusal), the runner session carrying
+    the wiring and logging when it is unsupported;
+  * the `guard_shell` probe per adapter, and no adapter overclaiming.
+* Linux (Omarchy, Python 3.14, throwaway clone): `tests/hooks/` +
+  `test_agent_capability_matrix.py` gave 482 passed, 2 skipped (pre-existing).
+  Windows: the new file gave 41 passed.
+* End to end, Linux, **real Claude Code 2.1.296** in a hookless temp dir with a
+  fixture `.env`, wired exactly as `_agent_session` wires it. Asked to run
+  `cat .env` then `echo SECOND_OK`, the first was refused:
+  `Exit code 126 / ICDEV guard: BLOCKED: Access to .env files is prohibited`,
+  "The file was never read". `SECOND_OK` printed normally.
+
+### Not changed, and residual gaps
+
+* **`guard_parity` is unchanged.** It still requires `guard_wired` (L1) for
+  autonomous dispatch. L2 sees shell commands only, not a harness's file
+  edits (L3, omx-guard-05). Of the adapters guard_parity refuses, L2 measured
+  codex as **not coverable** and could not measure copilot or goose, so
+  accepting `guard_shell` as "guarded" would admit nothing today.
+* The positional arguments after `-c <text>` (`$0`, `$1`, ...) are not part of
+  the checked text.
+* `source`/`.` files are not read: Claude sources its own snapshot on every
+  call.
+* A command split across lines **inside quotes** on a persistent stdin shell
+  is checked line by line; only backslash continuations are joined.

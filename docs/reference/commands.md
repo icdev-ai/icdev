@@ -4254,6 +4254,10 @@ python -m tools.hooks.harness_guard --harness opencode < call.json   # stdin {"t
 icdev harness install-guard pi --project .           # writes ./.pi/extensions/icdev-guard.ts
 icdev harness install-guard pi --global              # writes $PI_CODING_AGENT_DIR/extensions/ (default ~/.pi/agent)
 python -m tools.hooks.harness_guard --harness pi < call.json         # Pi spelling: path, edits[], powershell
+# omx-guard-04 (L2) — guarded shell: the runner fronts $SHELL / PATH so ANY harness's `bash -c` passes the same checks
+python -m tools.hooks.guard_shell --wiring           # install the shims, print the spawn env (exit 1 + reason where unsupported, e.g. Windows)
+python -m tools.hooks.guard_shell --measure -- opencode run "Use your shell tool to run exactly: echo {marker}"   # how a harness finds its shell
+python tools/agents/capability_matrix.py --capability guard_shell --json   # per-adapter guard_shell, probe-measured
 
 # omx-setup-01 — fresh Omarchy / plain Arch host to a running ICDEV, idempotent
 icdev omarchy setup --dry-run        # print the step plan; change nothing
