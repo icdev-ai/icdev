@@ -92,7 +92,7 @@ def test_every_cli_adapter_declares_its_state():
 
 
 def test_bwrap_prefix_binds_only_the_roots_and_keeps_the_network(monkeypatch):
-    monkeypatch.setattr(ws, "writable_roots", lambda *a, **k: ["/w", "/tmp"])
+    monkeypatch.setattr(ws, "writable_roots", lambda *a, **k: ["/w", "/tmp"])  # nosec B108 — fake roots for argv shape; nothing is opened
     argv = ws.prefix("/w", which=ws.BWRAP)
     assert argv[1:5] == ["--ro-bind", "/", "/", "--dev-bind"]
     assert argv[-1] == "--"
