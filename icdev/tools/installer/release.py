@@ -874,8 +874,9 @@ package() {{
   "${{_venv}}/bin/python" -m pip install --no-cache-dir --no-compile \\
     --disable-pip-version-check "${{srcdir}}/${{_whl}}"
 
-  # venv scripts record the build-time path in their shebangs; point them at /opt.
-  grep -rlI --null "${{pkgdir}}" "${{_venv}}/bin" | xargs -0 -r sed -i "s|${{pkgdir}}||g"
+  # venv scripts (shebangs) and pyvenv.cfg (`command =`) record the build-time
+  # path; point them at /opt. makepkg warns "reference to $pkgdir" otherwise.
+  grep -rlI --null "${{pkgdir}}" "${{_venv}}/bin" "${{_venv}}/pyvenv.cfg" | xargs -0 -r sed -i "s|${{pkgdir}}||g"
   "${{_venv}}/bin/python" -m compileall -q -s "${{pkgdir}}" -p / "${{_venv}}/lib"
 
   install -dm755 "${{pkgdir}}/usr/bin"
@@ -901,9 +902,11 @@ def render_srcinfo(version: str, wheel_tag: str, sha256: str, pkgrel: int = 1) -
         *(f"\tlicense = {lic}" for lic in AUR_LICENSE),
         *(f"\tdepends = {d}" for d in AUR_DEPENDS),
         *(f"\toptdepends = {name}: {why}" for name, why in AUR_OPTDEPENDS),
+        # makepkg's own key order -- noextract BEFORE options -- as measured
+        # against `makepkg --printsrcinfo` by the Arch Package Smoke job (omx-ci-01).
+        f"\tnoextract = {whl}",
         *(f"\toptions = {o}" for o in AUR_OPTIONS),
         f"\tsource = {whl}::https://files.pythonhosted.org/packages/py3/i/{AUR_PKGNAME}/{whl}",
-        f"\tnoextract = {whl}",
         f"\tsha256sums = {sha256}",
         "",
         f"pkgname = {AUR_PKGNAME}",

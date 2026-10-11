@@ -59,6 +59,19 @@ def test_pkgbuild_pkgver_and_sha_match_the_fixture_wheel(tmp_path):
             "/packages/py3/i/icdev/icdev-9.8.7-py3-none-any.whl\n") in srcinfo
 
 
+def test_srcinfo_keys_follow_makepkg_printsrcinfo_order():
+    """`makepkg --printsrcinfo` emits noextract BEFORE options and source (omx-ci-01).
+
+    Measured in the Arch Package Smoke job: the renderer put noextract after
+    source, so the committed .SRCINFO differed from what makepkg would write.
+    """
+    keys = [line.split(" = ", 1)[0].strip()
+            for line in rel.render_srcinfo("9.8.7", "py3-none-any", "0" * 64).splitlines()
+            if line.startswith("\t")]
+    tail = [k for k in keys if k in ("noextract", "options", "source", "sha256sums")]
+    assert tail == ["noextract", "options", "options", "source", "sha256sums"]
+
+
 def test_symlinks_come_from_the_wheels_console_scripts(tmp_path):
     whl = _fixture_wheel(tmp_path)
     rel.emit_aur(whl, tmp_path / "aur")
