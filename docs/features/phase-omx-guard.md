@@ -281,7 +281,36 @@ guarded by L1 there.
 
 ### Fire-rate survey (before arming)
 
-FIRE_RATE_PLACEHOLDER
+`python tools/hooks/fire_rate_survey.py`'s own transcript reader
+(`iter_transcripts(since_days=30)` + `iter_tool_calls`), run 2026-10-11 against
+this branch: **4,292 transcripts, 20,703 Bash calls, 943 s**. Every call was
+decided three ways: by the bridge as L1 sees it (`harness_guard.decide`), by
+the shim on the raw text (`guard_shell.decide_text`), and by the shim on the
+text **wrapped exactly as Claude Code sends it to `$SHELL`**
+(`source <snapshot> ... && eval '<cmd>' < /dev/null && pwd -P >| <tmp>`).
+
+| Decision | Refused | Rate | Sessions |
+|---|---:|---:|---:|
+| L1 bridge, raw command | 256 | 1.24% | 70 |
+| L2 shim, raw command | 256 | 1.24% | 70 |
+| L2 shim, Claude-wrapped command | 255 | 1.23% | 70 |
+
+* **L2 adds no refusal L1 does not already make: 0 calls** were refused by the
+  shim and allowed by the bridge, raw or wrapped. The checks are the same
+  checks, already enforcing in every Claude Code session on this host, so L2
+  is armed at its defaults.
+* An earlier run of the same replay found **209 extra refusals** when the shim
+  checked the quoted `eval '...'` segment whole: `dangerous_rm` read a quoted
+  `docker` container removal as an rm with no target. The shim now checks an
+  eval's argument *instead of* the quoted segment (only when `eval` is the
+  command word), which brought the extra count to 0.
+* **1 call** refused by L1 is allowed when wrapped: a `python - <<'PYEOF'`
+  heredoc whose BODY `write_outside_worktree` read as a write target (a known
+  L1 false positive, not a real write). The eval unwrap re-joins tokens, so the
+  body no longer looks like a path. L2 is not stricter than L1 anywhere.
+* The replay surveys Claude Code commands because that is the corpus that
+  exists; opencode commands pass the same `decide_text`, and the codex/pi
+  absolute-`/bin/bash` paths are not covered by L2 at all (see the matrix).
 
 ### Verification
 
