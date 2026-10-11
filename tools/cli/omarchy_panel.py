@@ -275,7 +275,8 @@ def _status_text(kanban: Optional[Dict[str, int]], spend: Optional[Dict[str, Any
 
 def build_record(*, kanban: Optional[Dict[str, int]], spend: Optional[Dict[str, Any]],
                  adapter: Dict[str, Any], now: datetime,
-                 history: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                 history: Optional[Dict[str, Any]] = None,
+                 exhaustion: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """The contract-shaped record. ``stale`` is true when any DB figure is missing."""
     stale = kanban is None or spend is None or history is None
     record = {
@@ -301,6 +302,9 @@ def build_record(*, kanban: Optional[Dict[str, int]], spend: Optional[Dict[str, 
             "spendToday": spend or {"cost_usd": None, "tasks": None, "dispatches": None,
                                     "unpriced_dispatches": None, "tokens": None},
             "adapter": adapter,
+            # omx-adapt-06: provider families exhausted now, and their resume
+            # times. null = could not be read.
+            "providerExhaustion": exhaustion,
         },
     }
     # The upstream local-stats block -- what the panel's providerHasData reads.
@@ -308,13 +312,26 @@ def build_record(*, kanban: Optional[Dict[str, int]], spend: Optional[Dict[str, 
     return record
 
 
+def provider_exhaustion(snapshot_fn: Optional[Callable[[], Dict[str, Any]]] = None
+                        ) -> Optional[Dict[str, Any]]:
+    """omx-adapt-06 state per provider family; None when it cannot be read."""
+    if snapshot_fn is None:
+        from icdev.tools.llm.provider_exhaustion import snapshot as snapshot_fn
+    try:
+        return snapshot_fn()
+    except Exception:  # noqa: BLE001 -- null, never a guess
+        return None
+
+
 def collect(now: Optional[datetime] = None, *, summary_fn=None, totals_fn=None,
-            pick_fn=None, verdict_fn=None, rows_fn=None, tz=None) -> Dict[str, Any]:
+            pick_fn=None, verdict_fn=None, rows_fn=None, tz=None,
+            exhaustion_fn=None) -> Dict[str, Any]:
     now = now or datetime.now(timezone.utc)
     return build_record(kanban=kanban_counts(summary_fn),
                         spend=today_spend(now, totals_fn),
                         adapter=adapter_status(pick_fn, verdict_fn), now=now,
-                        history=dispatch_history(now, rows_fn, tz))
+                        history=dispatch_history(now, rows_fn, tz),
+                        exhaustion=provider_exhaustion(exhaustion_fn))
 
 
 def write_record(record: Dict[str, Any], directory: Path) -> Path:

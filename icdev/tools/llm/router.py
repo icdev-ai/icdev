@@ -450,11 +450,32 @@ class LLMRouter:
         self._persist_degraded_tier2_state()
 
     def _is_tier2_degraded(self, model_name: str) -> bool:
-        """Check if a tier2 model is currently degraded."""
-        return model_name in LLMRouter._degraded_tier2_models
+        """Check if a tier2 model is currently degraded.
+
+        omx-adapt-06: also True while the model's provider FAMILY is exhausted
+        (``provider:<family>`` in the same state), so two-tier stops planning on
+        an exhausted Claude subscription exactly as it would on a degraded model.
+        """
+        return (model_name in LLMRouter._degraded_tier2_models
+                or self._model_family_exhausted(model_name))
+
+    def _model_family_exhausted(self, model_name: str) -> bool:
+        try:
+            from tools.llm import provider_exhaustion as _pe
+
+            policy = _pe.load_policy(self._config)
+            provider = self._get_model_config(model_name).get("provider", "")
+            fam = _pe.family_for_router_provider(provider, policy)
+            return bool(fam) and _pe.exhausted_until(fam) is not None
+        except Exception:  # noqa: BLE001 -- exhaustion state is advisory
+            return False
 
     def _should_probe_degraded(self, model_name: str) -> bool:
         """Check if enough time has passed since last probe (or resume_at) to try again."""
+        if self._model_family_exhausted(model_name):
+            # Probing an exhausted subscription before its resume time only
+            # spends a request to learn what the body already said.
+            return False
         last_probe = LLMRouter._degraded_tier2_probed_at.get(model_name, 0.0)
         # If resume_at was parsed from error message, use it directly
         if last_probe > time.time():
@@ -498,10 +519,30 @@ class LLMRouter:
     def _persist_degraded_tier2_state(self) -> None:
         """Persist degraded tier2 state to a lightweight JSON file."""
         try:
-            state_path = BASE_DIR / "data" / "llm_degraded_tier2.json"
+            from tools.llm import provider_exhaustion as _pe
+
+            state_path = _pe.state_path()
+            # omx-adapt-06: the same file carries `provider:<family>` exhaustion
+            # entries written by OTHER processes. Rewriting it from this
+            # process's model set alone would erase them, so they are kept from
+            # disk and never managed here.
+            on_disk = {}
+            if state_path.exists():
+                with open(state_path, "r", encoding="utf-8") as f:
+                    on_disk = json.load(f) or {}
+            kept = [k for k in on_disk.get("degraded") or [] if str(k).startswith("provider:")]
+            kept_at = {k: v for k, v in (on_disk.get("probed_at") or {}).items()
+                       if str(k).startswith("provider:")}
+            models = [m for m in LLMRouter._degraded_tier2_models
+                      if not str(m).startswith("provider:")]
             state = {
-                "degraded": sorted(list(LLMRouter._degraded_tier2_models)),
-                "probed_at": {k: v for k, v in LLMRouter._degraded_tier2_probed_at.items()},
+                **on_disk,
+                "degraded": sorted(set(models) | set(kept)),
+                "probed_at": {
+                    **{k: v for k, v in LLMRouter._degraded_tier2_probed_at.items()
+                       if not str(k).startswith("provider:")},
+                    **kept_at,
+                },
             }
             with open(state_path, "w", encoding="utf-8") as f:
                 json.dump(state, f, indent=2)
@@ -576,7 +617,9 @@ class LLMRouter:
     def _load_degraded_tier2_state(self) -> None:
         """Load degraded tier2 state from persistent JSON file."""
         try:
-            state_path = BASE_DIR / "data" / "llm_degraded_tier2.json"
+            from tools.llm import provider_exhaustion as _pe
+
+            state_path = _pe.state_path()
             if state_path.exists():
                 with open(state_path, "r", encoding="utf-8") as f:
                     state = json.load(f)
@@ -909,7 +952,7 @@ class LLMRouter:
         """
         routing = self._config.get("routing", {})
         route = routing.get(function, routing.get("default", {}))
-        chain = route.get("chain", [])
+        chain = self._apply_provider_failover(route.get("chain", []), function)
 
         if not chain:
             logger.warning("No routing chain for function '%s'", function)
@@ -992,6 +1035,10 @@ class LLMRouter:
             logger.debug("CLI bridge override skipped: %s", exc)
             chain = list(chain)
 
+        # omx-adapt-06: AFTER the bridge override (which may prepend claude-cli)
+        # and BEFORE force_local (which then drops any cloud failover model).
+        chain = self._apply_provider_failover(chain, function)
+
         if not (route or {}).get("force_local", False):
             return chain
 
@@ -1029,6 +1076,33 @@ class LLMRouter:
                 rule="force_local",
             )
         return local_chain
+
+    def _apply_provider_failover(self, chain: list, function: str = "") -> list:
+        """Skip an exhausted provider family; use its declared failover models.
+
+        omx-adapt-06. The families, their router providers and the failover
+        models are declared in ``provider_failover`` (args/llm_config.yaml);
+        the exhaustion state is shared with every other process. Fails open:
+        any error returns the chain unchanged.
+        """
+        try:
+            from tools.llm import provider_exhaustion as _pe
+
+            policy = _pe.load_policy(self._config)
+            if not policy:
+                return list(chain)
+            out = _pe.apply_to_chain(list(chain), self._config.get("models", {}), policy)
+            if out != list(chain):
+                logger.info(
+                    "provider failover[%s]: %s -> %s (exhausted: %s)",
+                    function or "?", list(chain), out,
+                    {f: st["resume_at"] for f, st in _pe.snapshot(policy=policy).items()
+                     if st["exhausted"]},
+                )
+            return out
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("provider failover skipped: %s", exc)
+            return list(chain)
 
     def _log_telemetry(
         self,
@@ -2529,7 +2603,28 @@ class LLMRouter:
             mp, pmin, pmax,
             lease_backend=lease_backend, lease_name=lease_name, lease_timeout=lease_timeout,
         ):
-            return provider.invoke(request, model_id, model_cfg)
+            try:
+                return provider.invoke(request, model_id, model_cfg)
+            except Exception as exc:
+                # omx-adapt-06: classify the error BODY; an exhausted provider is
+                # recorded for every process, and the next chain walk skips it.
+                self._observe_provider_error(model_cfg, exc)
+                raise
+
+    def _observe_provider_error(self, model_cfg, exc) -> None:
+        try:
+            from tools.llm import provider_exhaustion as _pe
+
+            policy = _pe.load_policy(self._config)
+            exh = _pe.observe_router_error((model_cfg or {}).get("provider", ""), exc, policy)
+            if exh is not None:
+                logger.warning(
+                    "provider exhaustion: %s %s (resume_at=%s) -- failing over to %s",
+                    exh.provider, exh.kind, _pe.exhausted_until(exh.provider),
+                    _pe.failover_target(exh.provider, policy),
+                )
+        except Exception:  # noqa: BLE001 -- observation must never mask the real error
+            pass
 
     def _provider_invoke_streaming(self, provider, request, model_id, model_cfg, function: str = ""):
         """Streaming counterpart of :meth:`_provider_invoke`.

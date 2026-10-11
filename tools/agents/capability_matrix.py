@@ -966,6 +966,9 @@ def build_matrix(
             ),
         },
         "adapters": results,
+        # omx-adapt-06: which LLM provider families are exhausted right now,
+        # until when, and what each fails over to -- a dispatch reads the same.
+        "provider_exhaustion": _provider_exhaustion_state(),
         "summary": {
             "adapters": len(results),
             "capabilities": len(probed),
@@ -987,6 +990,15 @@ def build_matrix(
     if use_cache and adapters is None and config is None:
         _MATRIX_CACHE = matrix
     return matrix
+
+
+def _provider_exhaustion_state() -> Dict[str, Any]:
+    try:
+        from tools.llm import provider_exhaustion  # noqa: PLC0415
+
+        return provider_exhaustion.snapshot()
+    except Exception as exc:  # noqa: BLE001 -- unreadable state is reported, not hidden
+        return {"error": f"{type(exc).__name__}: {exc}"}
 
 
 def reset_cache() -> None:
@@ -1062,6 +1074,14 @@ def _render_text(matrix: Dict[str, Any]) -> str:
         f"{s.get(OVERCLAIMED, 0)} OVERCLAIMED, {s.get(UNVERIFIED, 0)} unverified, "
         f"{s.get(UNDECLARED_PRESENT, 0)} undeclared-but-present"
     )
+    for family, st in sorted((matrix.get("provider_exhaustion") or {}).items()):
+        if isinstance(st, dict):
+            lines.append(
+                f"provider {family}: "
+                + (f"EXHAUSTED ({st.get('kind')}) until {st.get('resume_at')}"
+                   if st.get("exhausted") else "available")
+                + f" -> fails over to {st.get('failover_to')}"
+            )
     return "\n".join(lines)
 
 
