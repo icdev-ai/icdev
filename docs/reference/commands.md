@@ -7989,6 +7989,9 @@ python tools/agents/capability_matrix.py --gate
 The kanban runner refuses to AUTONOMOUSLY spawn an adapter whose PreToolUse
 guard is not verified (`claude_cli`: an un-neutralised all-tools hook in
 `.claude/settings.json`; every other adapter: `guard_wired` measured `present`).
+Since omx-guard-06 "verified" is guard COVERAGE from `args/guard_coverage.yaml`:
+L1 native hook, or L2 guarded shell + L3 write sandbox (L2 alone only with
+`l2_only_opt_in: true`); the survey names each adapter's live layers.
 `ICDEV_GUARD_PARITY_GATE=enforce` (default) falls back to the next guarded
 adapter and records the refusal in `last_failure_reason`; `=report` logs only.
 Interactive use is unaffected.

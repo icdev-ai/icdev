@@ -340,7 +340,7 @@ text **wrapped exactly as Claude Code sends it to `$SHELL`**
 
 ### Not changed, and residual gaps
 
-* **`guard_parity` is unchanged.** It still requires `guard_wired` (L1) for
+* **`guard_parity` was unchanged by this card** (see omx-guard-06 below). It still required `guard_wired` (L1) for
   autonomous dispatch. L2 sees shell commands only, not a harness's file
   edits (L3, omx-guard-05). Of the adapters guard_parity refuses, L2 measured
   codex as **not coverable** and could not measure copilot or goose, so
@@ -631,6 +631,54 @@ fails **loudly**, on that path; the fix is to declare it in
   allows it too, and git needs its common dir). That includes its `.git/hooks`
   and `.claude/`. Narrowing it is a change to `sanctioned_write_roots`, for L1
   and L3 together, not an L3-only carve-out.
-* **`guard_parity` is unchanged.** It still requires `guard_wired` (L1).
+* **`guard_parity` was unchanged by this card** -- omx-guard-06 below made it coverage-based.
 * Landlock cannot carve a read-only hole inside a writable tree; bubblewrap
   could. The two backends deliberately share one writable set.
+
+## The gate admits by coverage (omx-guard-06)
+
+`tools/agents/guard_parity.py` used to admit an adapter for AUTONOMOUS dispatch
+only when `guard_wired` (L1) was probe-verified, so any harness without a native
+hook was refused even when L2 and L3 covered it. It now reads the three layer
+cells and admits when the layers measured `present` satisfy an entry of
+`args/guard_coverage.yaml`:
+
+| Default entry | Meaning |
+|---|---|
+| `[L1]` | native hook: commands AND built-in file edits |
+| `[L2, L3]` | guarded shell for every command + write sandbox for every write |
+| `[L2]` | refused unless `l2_only_opt_in: true` -- L2 cannot see a built-in file edit |
+
+The loader drops an entry with neither L1 nor L2 (it checks no command), and
+`[L2]` listed without the opt-in flag. An unreadable file falls back to the
+default and logs that it did. `unconfirmed` is never `present`, so an OS where a
+layer is unsupported (Windows: L2 and L3) is reported in the verdict, not passed.
+
+The verdict names the live layers per adapter:
+
+* `python -m tools.agents.guard_parity --survey`: `ADMITTED`/`REFUSED`, `live=`, and
+  each layer's evidence;
+* `python tools/agents/capability_matrix.py --json`: `guard_coverage` per adapter
+  (`layers`, `live`, `admitted`, `reason`), and one line per adapter in text mode;
+* the Omarchy agents-panel record: `icdev.adapter.coverage` and a `tierLabel` such
+  as `codex_cli · guard wired (L2+L3)`.
+
+### Survey (2026-10-11, Windows host)
+
+Admitted set unchanged: `claude_cli`, `opencode_cli` and `pi_cli` via L1. Codex is
+still REFUSED: its L2 is measured **absent** (`codex-cli 0.162.1` execs
+`/bin/bash` by absolute path), so it has L3 at most. The gate admits codex as soon
+as both layers measure `present`, and the runner then dispatches it with no
+code change. `copilot_cli` and `goose_cli` have L2 unmeasured.
+
+This card only widens admission: an adapter admitted before (L1) is still
+admitted. No refusal is newly armed, so no hook fire-rate survey applies. The
+survey above is the before/after measurement.
+
+### Verification
+
+`tests/agents/test_guard_coverage.py` (gated via `core.d/omx-guard-06.txt`):
+codex-shaped L2+L3 is admitted and dispatched by `_guard_parity_screen`; L2-only
+is refused by default (and when `[L2]` is listed without the opt-in) and
+admitted with `l2_only_opt_in`; L1 alone is unchanged; L3 alone is refused; a failed probe
+admits nothing; the matrix and panel show the live layers.

@@ -29,8 +29,10 @@ WHAT IT REPORTS, AND WHERE EACH FIGURE COMES FROM -- nothing is recomputed:
   ``/cache-savings`` spend panel and ``session_cost --by-verdict`` read, with
   its unpriced-is-not-zero rule (a task with no priced row has NO cost).
 * the active adapter -- ``tools.agents.registry.pick_default()`` (which follows
-  ``omarchy default agent``), and whether its guard is wired --
-  ``tools.agents.guard_parity.verdict_for()``, MEASURED, not declared.
+  ``omarchy default agent``), and whether its guard COVERAGE admits it --
+  ``tools.agents.guard_parity.verdict_for()``, MEASURED, not declared. The
+  live layers (L1 hook, L2 guarded shell, L3 write sandbox) are named
+  (omx-guard-06).
 * the contract's local-stats block -- ``tools.cost.task_attribution.attributed_rows``,
   the same ledger, all time. A SESSION is one kanban dispatch (one attributed
   row, written at reap); ``todaySessions``/``totalSessions``/``activeDays``/
@@ -157,12 +159,18 @@ def adapter_status(pick_fn: Optional[Callable[[], Any]] = None,
         adapter = pick_fn()
         name = str(getattr(adapter, "name", "") or adapter)
     except Exception as exc:  # noqa: BLE001 -- NotInstalledError and friends
-        return {"name": None, "guard_wired": None, "reason": f"{type(exc).__name__}: {exc}"}
+        return {"name": None, "guard_wired": None, "coverage": None,
+                "reason": f"{type(exc).__name__}: {exc}"}
     try:
         verdict = verdict_fn(name)
-        return {"name": name, "guard_wired": bool(verdict.guarded), "reason": str(verdict.reason)}
+        live = getattr(verdict, "live", None)
+        # guard_wired is the gate's verdict: ADMITTED by the coverage policy.
+        return {"name": name, "guard_wired": bool(verdict.guarded),
+                "coverage": list(live) if live is not None else None,
+                "reason": str(verdict.reason)}
     except Exception as exc:  # noqa: BLE001 -- an unprobed guard is not a wired one
-        return {"name": name, "guard_wired": None, "reason": f"guard probe failed: {exc}"}
+        return {"name": name, "guard_wired": None, "coverage": None,
+                "reason": f"guard probe failed: {exc}"}
 
 
 def _row_local_date(created_at: Any, tz) -> Optional[str]:
@@ -256,6 +264,9 @@ def _tier_label(adapter: Dict[str, Any]) -> str:
         return "no harness"
     guard = {True: "guard wired", False: "guard NOT wired"}.get(adapter.get("guard_wired"),
                                                                 "guard unverified")
+    live = adapter.get("coverage")
+    if live is not None and adapter.get("guard_wired") is not None:
+        guard += f" ({'+'.join(live) or 'no layer live'})"
     return f"{adapter['name']} · {guard}"
 
 

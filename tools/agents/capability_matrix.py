@@ -948,6 +948,10 @@ def build_matrix(
             results[name] = probe_adapter(name, cfg, only=probed)
         except KeyError as exc:
             results[name] = {"adapter": name, "error": str(exc)}
+            continue
+        coverage = _guard_coverage(name, results[name])
+        if coverage is not None:
+            results[name]["guard_coverage"] = coverage
 
     totals: Dict[str, int] = {}
     for entry in results.values():
@@ -990,6 +994,28 @@ def build_matrix(
     if use_cache and adapters is None and config is None:
         _MATRIX_CACHE = matrix
     return matrix
+
+
+def _guard_coverage(name: str, entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """omx-guard-06: the guard layers live for this adapter, and the gate's verdict.
+
+    Read from the cells just probed -- the autonomous-dispatch gate
+    (tools/agents/guard_parity.py) measures the same three. claude_cli's L1 is
+    its settings.json hook, which the adapter seam cannot see.
+    """
+    from tools.agents import guard_parity  # noqa: PLC0415 -- it imports this module
+
+    cells = entry.get("capabilities") or {}
+    caps = guard_parity.LAYER_CAPABILITY
+    if not all(cap in cells for cap in caps.values()):
+        return None
+    layers = {layer: cells[cap]["actual"] for layer, cap in caps.items()}
+    if name == "claude_cli":
+        settings = guard_parity.claude_settings_verdict()
+        layers[guard_parity.L1] = PRESENT if settings.guarded else ABSENT
+    verdict = guard_parity.coverage_verdict(name, layers)
+    return {"layers": layers, "live": verdict.live,
+            "admitted": verdict.guarded, "reason": verdict.reason}
 
 
 def _provider_exhaustion_state() -> Dict[str, Any]:
@@ -1063,6 +1089,11 @@ def _render_text(matrix: Dict[str, Any]) -> str:
                 f"[{cell['method']}]"
             )
             lines.append(f"        {cell['evidence']}")
+        coverage = entry.get("guard_coverage")
+        if coverage:
+            tag = "ADMITTED" if coverage["admitted"] else "REFUSED"
+            lines.append(f"    guard coverage: {tag} for autonomous dispatch -- "
+                         f"{coverage['reason']}")
         lines.append("")
     s = matrix["summary"]
     lines.append(

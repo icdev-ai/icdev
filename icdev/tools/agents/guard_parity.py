@@ -20,6 +20,18 @@ ONE QUESTION, MEASURED, NOT DECLARED:
   only ``verify_guard()`` reporting a live refusal can make ``present``.
   ``unconfirmed`` is NOT guarded: fail-closed, like ``pick_default(require=)``.
 
+COVERAGE, NOT "HAS A NATIVE PLUGIN" (omx-guard-06). The same shared checks
+reach a harness through three layers, each measured by its own matrix cell:
+
+* L1 native hook   -- ``guard_wired`` (commands AND file edits),
+* L2 guarded shell -- ``guard_shell`` (every shell command, any harness),
+* L3 write sandbox -- ``sandboxed`` (writes outside the task worktree).
+
+An adapter is admitted when the layers measured ``present`` satisfy one of the
+combinations in ``args/guard_coverage.yaml`` -- by default L1, or L2+L3. L2
+alone needs ``l2_only_opt_in: true`` there, because L2 cannot see a harness's
+built-in file-edit tool. The verdict names the live layers either way.
+
 Scope: AUTONOMOUS dispatch only. Interactive use never consults this module.
 
 Modes (``ICDEV_GUARD_PARITY_GATE``): ``enforce`` (default) refuses an unguarded
@@ -59,6 +71,13 @@ DEFAULT_MODE = ENFORCE
 _MODES = (REPORT, ENFORCE)
 
 SETTINGS_PATH = _BASE / ".claude" / "settings.json"
+COVERAGE_POLICY_PATH = _BASE / "args" / "guard_coverage.yaml"
+
+# Each layer is one capability-matrix cell; claude_cli's L1 is settings.json.
+L1, L2, L3 = "L1", "L2", "L3"
+LAYERS = (L1, L2, L3)
+LAYER_CAPABILITY = {L1: "guard_wired", L2: "guard_shell", L3: "sandboxed"}
+DEFAULT_ADMIT = ((L1,), (L2, L3))
 _HOOK_SCRIPT = "pre_tool_use.py"
 # A shell operator that makes the hook's exit 2 unreachable (D394).
 _NEUTRALISER = re.compile(r"(\|\|\s*(true\b|:|exit\s+0\b))|(;\s*(true|exit\s+0)\s*$)")
@@ -71,12 +90,21 @@ _cache_at: Dict[str, float] = {}
 
 @dataclass
 class GuardVerdict:
+    """``guarded`` means ADMITTED by the coverage policy, not "has a hook"."""
     adapter: str
     guarded: bool
     reason: str
+    # layer -> present | absent | unconfirmed; empty when nothing was probed.
+    layers: Dict[str, str] = field(default_factory=dict)
+
+    @property
+    def live(self) -> List[str]:
+        return [layer for layer in LAYERS if self.layers.get(layer) == "present"]
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        out = asdict(self)
+        out["live"] = self.live
+        return out
 
 
 @dataclass
@@ -143,30 +171,103 @@ def claude_settings_verdict(settings_path: Optional[pathlib.Path] = None) -> Gua
                         f"no all-tools PreToolUse entry runs {_HOOK_SCRIPT} in {path.name}")
 
 
-def _matrix_verdict(adapter_name: str) -> GuardVerdict:
+def load_policy(path: Optional[pathlib.Path] = None) -> Dict[str, Any]:
+    """The admitted layer combinations from ``args/guard_coverage.yaml``.
+
+    A combination with neither L1 nor L2 checks no command at all and is
+    dropped; L2 alone is admitted only with ``l2_only_opt_in: true``. An
+    unreadable file or no valid entry falls back to the default (L1, or L2+L3)
+    and says so.
+    """
+    path = path or COVERAGE_POLICY_PATH
+    warnings: List[str] = []
+    data: Dict[str, Any] = {}
+    try:
+        import yaml  # noqa: PLC0415
+
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception as exc:  # noqa: BLE001 -- the default is the documented policy
+        warnings.append(f"{path.name} unreadable ({type(exc).__name__}); using the default")
+    opt_in = data.get("l2_only_opt_in") is True
+    admit: List[tuple] = []
+    for combo in data.get("admit") or []:
+        layers = tuple(sorted({str(x).strip().upper() for x in (combo or [])}))
+        if not layers or any(x not in LAYERS for x in layers):
+            warnings.append(f"ignored admit entry {combo!r}: layers are {list(LAYERS)}")
+        elif L1 not in layers and L2 not in layers:
+            warnings.append(f"ignored admit entry {combo!r}: without L1 or L2 "
+                            "no shell command is checked")
+        elif layers == (L2,) and not opt_in:
+            warnings.append("ignored admit entry [L2]: L2 alone needs "
+                            "l2_only_opt_in: true (it cannot see built-in file edits)")
+        elif layers not in admit:
+            admit.append(layers)
+    if opt_in and (L2,) not in admit:
+        admit.append((L2,))
+    if not admit:
+        if data:
+            warnings.append("no valid admit entry; using the default")
+        admit = [tuple(c) for c in DEFAULT_ADMIT]
+    for warning in warnings:
+        logger.warning("guard coverage policy: %s", warning)
+    return {"admit": admit, "l2_only_opt_in": opt_in, "warnings": warnings}
+
+
+def coverage_verdict(adapter_name: str, layers: Dict[str, str],
+                     policy: Optional[Dict[str, Any]] = None,
+                     evidence: Optional[Dict[str, str]] = None) -> GuardVerdict:
+    """Admit iff the layers measured ``present`` cover an admitted combination."""
+    policy = policy or load_policy()
+    live = {layer for layer in LAYERS if layers.get(layer) == "present"}
+    met = [c for c in policy["admit"] if set(c) <= live]
+    shown = "+".join(sorted(live)) or "none"
+    if met:
+        reason = f"coverage {'+'.join(met[0])} (live: {shown})"
+    else:
+        wanted = " or ".join("+".join(c) for c in policy["admit"])
+        cells = "; ".join(
+            f"{layer}={layers.get(layer, 'unconfirmed')}"
+            + (f" ({evidence[layer]})" if evidence and evidence.get(layer) else "")
+            for layer in LAYERS)
+        reason = f"coverage live: {shown}, policy needs {wanted} -- {cells}"
+    return GuardVerdict(adapter_name, bool(met), reason, dict(layers))
+
+
+def layer_status(adapter_name: str) -> tuple:
+    """(layer -> status, layer -> evidence) -- each layer MEASURED, never declared."""
     from tools.agents import capability_matrix  # noqa: PLC0415 -- imports registry
 
+    layers: Dict[str, str] = {}
+    evidence: Dict[str, str] = {}
+    wanted = [LAYER_CAPABILITY[layer] for layer in LAYERS]
+    if adapter_name == "claude_cli":
+        settings = claude_settings_verdict()
+        layers[L1] = capability_matrix.PRESENT if settings.guarded else capability_matrix.ABSENT
+        evidence[L1] = settings.reason
+        wanted.remove(LAYER_CAPABILITY[L1])
     try:
-        entry = capability_matrix.probe_adapter(adapter_name, only=["guard_wired"])
-        cell = (entry.get("capabilities") or {}).get("guard_wired") or {}
+        entry = capability_matrix.probe_adapter(adapter_name, only=wanted)
+        cells = entry.get("capabilities") or {}
     except Exception as exc:  # noqa: BLE001 -- a failed probe never promotes
-        return GuardVerdict(adapter_name, False,
-                            f"guard_wired probe failed: {type(exc).__name__}: {exc}")
-    actual = cell.get("actual", capability_matrix.UNCONFIRMED)
-    evidence = str(cell.get("evidence") or "")
-    return GuardVerdict(adapter_name, actual == capability_matrix.PRESENT,
-                        f"guard_wired={actual}" + (f" ({evidence})" if evidence else ""))
+        cells = {}
+        for layer in LAYERS:
+            evidence.setdefault(layer, f"probe failed: {type(exc).__name__}: {exc}")
+    for layer in LAYERS:
+        if layer in layers:
+            continue
+        cell = cells.get(LAYER_CAPABILITY[layer]) or {}
+        layers[layer] = cell.get("actual", capability_matrix.UNCONFIRMED)
+        evidence.setdefault(layer, str(cell.get("evidence") or ""))
+    return layers, evidence
 
 
 def verdict_for(adapter_name: str, *, use_cache: bool = True) -> GuardVerdict:
-    """Is ICDEV's guard verified for this adapter's tool calls?"""
+    """Do this adapter's MEASURED guard layers meet the coverage policy?"""
     now = time.monotonic()
     if use_cache and adapter_name in _cache and now - _cache_at[adapter_name] < _CACHE_TTL_SECONDS:
         return _cache[adapter_name]
-    if adapter_name == "claude_cli":
-        verdict = claude_settings_verdict()
-    else:
-        verdict = _matrix_verdict(adapter_name)
+    layers, evidence = layer_status(adapter_name)
+    verdict = coverage_verdict(adapter_name, layers, evidence=evidence)
     _cache[adapter_name] = verdict
     _cache_at[adapter_name] = now
     return verdict
@@ -234,6 +335,7 @@ def survey(adapters: Optional[Sequence[str]] = None) -> Dict[str, Any]:
     forced = os.environ.get("ICDEV_AGENT_ADAPTER", "").strip()
     return {
         "mode": mode(),
+        "policy": load_policy(),
         "live_default_adapter": forced or "claude_cli",
         "adapters": rows,
         "refused": sorted(r["adapter"] for r in rows if r["would_refuse_in_enforce"]),
@@ -255,12 +357,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if opts.json:
         print(json.dumps(result, indent=2))
         return 0
+    admit = " or ".join("+".join(c) for c in result["policy"]["admit"])
     print(f"guard parity gate: mode={result['mode']} "
-          f"live default={result['live_default_adapter']}")
+          f"live default={result['live_default_adapter']} admits={admit}")
     for row in result["adapters"]:
-        tag = "GUARDED " if row["guarded"] else "REFUSED "
+        tag = "ADMITTED" if row["guarded"] else "REFUSED "
         avail = "available" if row["available"] else "not installed"
-        print(f"  {tag} {row['adapter']:<18} [{avail}] {row['reason']}")
+        live = "+".join(row["live"]) or "-"
+        print(f"  {tag} {row['adapter']:<18} [{avail}] live={live:<9} {row['reason']}")
     return 0
 
 
