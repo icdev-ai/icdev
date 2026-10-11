@@ -1,0 +1,71 @@
+# CUI // SP-CTI
+# omx-guard-05 (L3) -- the per-harness STATE a sandboxed worker may still write.
+#
+# Consumed by: tools/hooks/write_sandbox.py :: declared_state
+#
+# The writable set of a sandboxed autonomous worker is:
+#   1. the write-boundary roots L1 already enforces --
+#      tools/hooks/shared_checks.py :: sanctioned_write_roots(<task worktree>)
+#      (the worktree, the main checkout it is linked to -- git writes its
+#      objects and refs there -- the temp dirs, the ~/.claude session dirs,
+#      $ICDEV_WORKTREE_ROOT and $ICDEV_WRITE_BOUNDARY_EXTRA_ROOTS). Read from
+#      there, never restated here, so L1 and L3 cannot disagree.
+#   2. the entries below for the adapter being spawned -- its own config,
+#      session and cache state, without which the harness cannot run at all.
+# Everything else is read-only. Reads and the network are untouched.
+#
+# `~` is the spawning user's home. A missing directory is created before the
+# sandbox starts (a write that needs to CREATE ~/.codex would otherwise fail);
+# a missing file is skipped. Keep entries narrow: ~/.cache as a whole would
+# hand the worker the L2 guarded-shell shims (~/.cache/icdev/guard-shell),
+# which is how a guard gets rewritten from inside the thing it guards.
+#
+# These are DECLARED from each harness's documentation, not measured per
+# harness: `python -m tools.hooks.write_sandbox --self-test` measures the
+# mechanism (inside writable, outside refused, state writable), and a harness
+# that needs one more path fails LOUDLY (EROFS/EACCES on that path) rather
+# than writing somewhere it should not. Add the path here, with its reason.
+
+adapters:
+  # The ~/.claude session dirs (projects, plans, todos, jobs, shell-snapshots)
+  # already come from sanctioned_write_roots. ~/.claude ITSELF stays read-only:
+  # settings.json there wires the L1 hook. NOT measured on Linux under L3 (no
+  # claude on the probe host): the CLI rewrites ~/.claude.json via a temp file
+  # + rename in $HOME, which a file bind cannot permit -- if that is fatal the
+  # dispatch fails loudly; ICDEV_WRITE_BOUNDARY_GUARD=0 stands L3 down.
+  claude_cli:
+    state_dirs:
+      - ~/.claude/backups
+      - ~/.claude/cache
+      - ~/.claude/debug
+      - ~/.claude/file-history
+      - ~/.claude/session-env
+      - ~/.claude/sessions
+      - ~/.claude/state
+      - ~/.claude/statsig
+      - ~/.cache/claude
+      - ~/.local/state/claude
+    state_files:
+      - ~/.claude.json               # per-user CLI state
+      - ~/.claude/.credentials.json  # OAuth token refresh
+      - ~/.claude/history.jsonl
+  codex_cli:
+    state_dirs:
+      - ~/.codex                     # CODEX_HOME: sessions, auth, history
+  copilot_cli:
+    state_dirs:
+      - ~/.copilot                   # session state, logs
+      - ~/.config/github-copilot     # auth
+  goose_cli:
+    state_dirs:
+      - ~/.config/goose
+      - ~/.local/share/goose         # sessions
+      - ~/.local/state/goose         # logs
+  opencode_cli:
+    state_dirs:
+      - ~/.local/share/opencode      # sessions, storage, logs
+      - ~/.local/state/opencode
+      - ~/.cache/opencode            # plugin/npm cache
+  pi_cli:
+    state_dirs:
+      - ~/.pi                        # agent sessions, settings

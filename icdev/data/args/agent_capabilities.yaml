@@ -49,6 +49,7 @@ declared:
     context_budget: true       # --max-turns
     structured_output: true    # --output-format json
     guard_shell: true          # measured: Claude Code runs commands via $SHELL (omx-guard-04, Linux)
+    sandboxed: true            # L3 write sandbox via wrap_argv; probed by real writes (omx-guard-05, Linux)
 
   # exa-bench-01. `codex exec --json` emits a JSONL event stream that the
   # adapter parses into AgentResult.structured, and --sandbox is a real flag.
@@ -65,6 +66,7 @@ declared:
     context_budget: false      # the CLI takes no turn/token flag
     structured_output: true
     guard_shell: false         # measured: codex execs its shell by absolute path, L2 cannot see it (omx-guard-04)
+    sandboxed: true            # L3 write sandbox via wrap_argv; probed by real writes (omx-guard-05, Linux)
 
   # OPT-71. A single-shot router completion. It produces prose: no tools, no
   # files, no stream.
@@ -77,6 +79,7 @@ declared:
     context_budget: true       # LLMRequest(max_tokens=session.max_tokens)
     structured_output: false
     guard_shell: false         # runs no commands
+    sandboxed: false           # runs in-process: no OS process to sandbox (omx-guard-05)
 
   # hgx-exec-02. The owned rubric-gated loop with the worktree toolset.
   # omx-adapt-01 corrected two rows measured absent: the loop uses tools but
@@ -92,6 +95,7 @@ declared:
     context_budget: true       # max_iterations / max_tokens into the loop
     structured_output: true    # grades + verdict on AgentResult.structured
     guard_shell: false         # run_command is an in-process allowlist, not a shell
+    sandboxed: false           # runs in-process: no OS process to sandbox (omx-guard-05)
 
   # exa-bench-02 will implement this. A stub claims nothing; every row below is
   # false so the probe's "absent" findings agree rather than reading as gaps.
@@ -104,6 +108,7 @@ declared:
     context_budget: false
     structured_output: false
     guard_shell: false         # not measured: copilot was not logged in on the probe host
+    sandboxed: true            # L3 write sandbox via wrap_argv; probed by real writes (omx-guard-05, Linux)
 
   # omx-adapt-01. Only what omx-spike-01 measured (docs/research/omx-spike-01/
   # findings.md): `opencode run --format json` emits JSONL whose tool_use
@@ -119,6 +124,7 @@ declared:
     structured_output: true    # tokens, cost, stop reason, session id
     guard_wired: true          # icdev-guard.ts plugin -> harness_guard bridge, live-probed (omx-guard-01)
     guard_shell: true          # measured: opencode runs commands via $SHELL (omx-guard-04, Linux)
+    sandboxed: true            # L3 write sandbox via wrap_argv; probed by real writes (omx-guard-05, Linux)
 
   # omx-adapt-02. Only what omx-spike-01 measured for Pi (findings.md, "Pi"):
   # `pi --mode json` emits JSONL whose tool_execution_* records and per-message
@@ -133,3 +139,4 @@ declared:
     structured_output: true    # usage, cost, stopReason, session id
     guard_wired: true          # -e icdev-guard.ts extension -> harness_guard bridge, live-probed (omx-guard-03)
     guard_shell: false         # measured: pi execs /bin/bash by absolute path (omx-guard-04)
+    sandboxed: true            # L3 write sandbox via wrap_argv; probed by real writes (omx-guard-05, Linux)

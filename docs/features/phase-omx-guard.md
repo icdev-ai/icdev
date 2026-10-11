@@ -351,3 +351,139 @@ text **wrapped exactly as Claude Code sends it to `$SHELL`**
   call.
 * A command split across lines **inside quotes** on a persistent stdin shell
   is checked line by line; only backslash continuations are joined.
+
+## Write sandbox -- layer 3 (omx-guard-05)
+
+L1 and L2 judge a tool call by **reading** it. Neither sees a harness's
+built-in file-edit tool when the harness has no hook (codex, copilot, goose).
+Those writes go straight to disk. L3 reads nothing. It starts the harness
+inside an OS sandbox where only the task's writable set is writable.
+
+### What shipped
+
+| Piece | Path | Role |
+|---|---|---|
+| Sandbox | `tools/hooks/write_sandbox.py` | `status()` (backend + mode, measured), `prefix()` (the sandbox argv), `wrap_argv()` (what adapters call), `probe()` (real writes) |
+| Landlock helper | `tools/hooks/landlock_exec.py` | stdlib-only, run as `python -I`: confines itself (every write right handled, `--rw` trees get them back), then `execvp`s the harness. **Fails closed**: if confinement fails, the harness does not run (exit 125) |
+| Declared state | `args/write_sandbox.yaml` | per adapter, the config/session/cache dirs and files the harness needs |
+| Adapters | `tools/agents/adapters/{claude,codex,copilot,goose,opencode,pi}_cli.py` | `build_argv` ends in `wrap_argv(argv, session, self.name)`: a no-op unless the runner asked |
+| Runner | `tools/genesis/reflexes/kanban.py::_agent_session` | sets `metadata["write_sandbox"]` when `status()` is supported, otherwise logs the reason on **every** dispatch |
+| Capability | `capability_matrix` `sandboxed` | measured, not declared: see below |
+
+**The writable set is not a second definition.** It is
+`shared_checks.sanctioned_write_roots(<worktree>)`, the exact roots L1's
+`check_write_outside_worktree` enforces: the worktree, the main checkout it is
+linked to (git writes the objects and refs of a commit there), the temp dirs,
+the `~/.claude` session dirs, `$ICDEV_WORKTREE_ROOT` and
+`$ICDEV_WRITE_BOUNDARY_EXTRA_ROOTS`. Only the spawned adapter's declared state
+is added. Everything else is read-only. Reads, execution and the network are
+untouched, because LLM providers are remote.
+
+### Per OS
+
+* **Linux, bubblewrap** is used when `bwrap` is installed and can actually
+  create its namespace. An AppArmor userns restriction makes an installed
+  bwrap fail, so it is probed with a real run. The argv is
+  `--ro-bind / / --dev-bind /dev /dev --die-with-parent` plus
+  `--bind-try <root> <root>` for each root. No `--unshare-*`.
+* **Linux, Landlock** is the fallback (kernel 5.13 or later). Rights follow the
+  ABI: `REFER` from 2, `TRUNCATE` from 3. `/dev` is added for `/dev/null` and
+  ttys.
+* **Linux with neither** reports `no Linux write sandbox available: … writes
+  are NOT confined`.
+* **Windows is explicitly unsupported, after evaluation:**
+  * AppContainer also denies **reads** outside its ACL'd paths, so the harness
+    could not load its own install or the repo without re-ACLing the user's
+    tree.
+  * A low-integrity token needs the worktree, the main checkout and every state
+    dir relabelled low. That is a persistent host change that lets *every*
+    low-IL process write them.
+  * Windows Sandbox is a VM that cannot see the host worktree, and it is absent
+    on Home editions.
+
+  `status()` gives that reason and the runner logs it on every dispatch.
+* **Any other OS (macOS)** is explicitly unsupported and reported.
+
+Kill switches are the existing ones for this boundary.
+`ICDEV_WRITE_BOUNDARY_GUARD=0` turns L3 off. `=monitor` also leaves the harness
+unsandboxed and says so, because an OS sandbox cannot merely record.
+`ICDEV_PRETOOLUSE_ENFORCE=0` also turns it off. A sandbox that cannot be
+*built* is logged and the dispatch runs unconfined, like a broken L2 bridge. A
+Landlock confinement that fails at exec time refuses to run.
+
+### The `sandboxed` capability
+
+The probe takes the sandbox from the **adapter's own** `build_argv`, so an
+adapter that forgot `wrap_argv` measures `absent`. It then makes real writes,
+each by `sh -c` inside that sandbox:
+
+* into the worktree, which must land;
+* into the adapter's first declared state dir, which must land;
+* into `<worktree>-outside`, which must not land.
+
+The worktree and the outside target are siblings under
+`~/.cache/icdev/l3-probe/`. That puts them outside every shared root, and the
+`-outside` name also catches a containment check done by string prefix.
+In-process adapters (`local_agent`, `local_llm_router`) are `absent`, because
+there is no OS process to wrap. On Windows the cell is `unconfirmed`, with the
+reason.
+
+### Verification
+
+* `tests/hooks/test_write_sandbox.py`, gated in
+  `args/ci_test_files/core.d/omx-guard-05.txt`, covers:
+  * the writable set is shared roots plus declared state;
+  * the bwrap and Landlock argv shapes, with the network open;
+  * per-OS reporting (Windows, macOS, Linux with neither), backend preference
+    and override;
+  * the three kill switches;
+  * `wrap_argv` is a no-op without the runner's key, and a sandbox that cannot
+    be built fails open and is logged;
+  * all six CLI adapters apply it;
+  * the Landlock helper refuses to run unconfined;
+  * the runner sets the key or logs why not;
+  * the capability mapping;
+  * **live writes on Linux**: inside and state land, outside is refused,
+    through the host's backend and through Landlock explicitly, with a control
+    showing the same write *does* land without the prefix;
+  * the live `sandboxed` probe through `codex_cli`'s own argv.
+* Linux (WSL2 Ubuntu, kernel 6.6, Landlock ABI 3, Python 3.12): 33 passed with
+  Landlock only, and 33 passed again with bubblewrap 0.9 on `PATH` (unprivileged
+  userns). `capability_matrix --capability sandboxed`: `claude_cli`,
+  `codex_cli`, `copilot_cli`, `opencode_cli` and `pi_cli` are `confirmed`;
+  `goose_cli` is present but has no declaration block; both in-process adapters
+  are `agreed_absent`. Windows: 33 passed, and `--gate` reports 0 overclaimed.
+
+### Fire-rate survey (before arming)
+
+`python tools/hooks/fire_rate_survey.py --check write_outside_worktree
+--since-days 7 --samples 8` was run on 2026-10-11. That check enforces the
+**same roots** L3 now enforces in the OS. It fired 16 times in about 6,790
+tool calls (0.236%), across 8 sessions. Every sample was an **interactive**
+session writing into a sibling repo (`C:\AI\icdev_ft_ew15\…`, `../omarchy.new`)
+or a heredoc body naming `/etc/sudoers.d/…` or `~/.config/opencode/plugin/`.
+None was a kanban worker writing its own task.
+
+What the survey **cannot** see: writes that never appear in tool-call text,
+which is the whole reason L3 exists. Examples are a harness's built-in edit
+tool, `pip install --user`, `npm i -g` and `git config --global`. Under L3 these
+now fail with EROFS or EACCES instead of changing the host. That change is
+intended for an autonomous worker. A harness that needs one more state path
+fails **loudly**, on that path; the fix is to declare it in
+`args/write_sandbox.yaml`, with its reason.
+
+### Not changed, and residual gaps
+
+* **No real harness was run end to end under L3**, because none was installed
+  on the Linux probe host and the Omarchy laptop was offline. The mechanism is
+  measured; harness tolerance is not. The known risk is `claude_cli`, which
+  rewrites `~/.claude.json` through a temp file plus rename in `$HOME`, and a
+  file bind cannot permit that. If that is fatal, the dispatch fails visibly.
+  Stand it down with `ICDEV_WRITE_BOUNDARY_GUARD=0`.
+* **The main checkout is writable**, because the shared roots sanction it (L1
+  allows it too, and git needs its common dir). That includes its `.git/hooks`
+  and `.claude/`. Narrowing it is a change to `sanctioned_write_roots`, for L1
+  and L3 together, not an L3-only carve-out.
+* **`guard_parity` is unchanged.** It still requires `guard_wired` (L1).
+* Landlock cannot carve a read-only hole inside a writable tree; bubblewrap
+  could. The two backends deliberately share one writable set.
