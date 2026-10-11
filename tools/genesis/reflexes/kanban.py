@@ -8227,27 +8227,40 @@ def _git_worktree_has_real_changes(task_id: str,
     # tree. Excluding what is already on the default branch leaves exactly the
     # commits this task contributed; work that has since MERGED stops matching
     # here and is picked up by arm 3 below, which is the case that arm is for.
-    if dispatch_baseline:
-        try:
-            r = _sp.run(
-                ["git", "log", f"{dispatch_baseline}..{branch_name}",
-                 "--not", f"origin/{default_branch_for_task}",
-                 "--name-only", "--pretty=format:"],
-                capture_output=True, text=True,
-                encoding="utf-8", errors="replace",
-                cwd=str(_task_repo_root(task_id)), timeout=10,
+    #
+    # With NO baseline the arm still runs, as `<branch> --not origin/<default>`
+    # (kpr-watch-25). `_dispatch_main_heads` is in-memory and empties on every
+    # scheduler re-exec, and a task adopted by `_verify_adopted_pr_tasks` is by
+    # definition one whose dispatching process is gone -- so gating this arm on
+    # the baseline skipped it for EVERY adopted task, and verification fell
+    # through to the output-length check against a 0-byte log (a worker killed
+    # by timeout writes no stdout). omx-setup-02 was failed "Output too short"
+    # that way with its PR open. `--not origin/<default>` alone already yields
+    # exactly what the branch carries that main does not; the baseline only
+    # narrowed it further. Arm 3 keeps requiring the REAL baseline: a
+    # reconstructed one would let "main advanced" pass any task.
+    _arm1_range = (f"{dispatch_baseline}..{branch_name}" if dispatch_baseline
+                   else branch_name)
+    try:
+        r = _sp.run(
+            ["git", "log", _arm1_range,
+             "--not", f"origin/{default_branch_for_task}",
+             "--name-only", "--pretty=format:"],
+            capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
+            cwd=str(_task_repo_root(task_id)), timeout=10,
+        )
+        files = [
+            ln.strip() for ln in (r.stdout or "").splitlines() if ln.strip()
+        ]
+        if files:
+            preview = ", ".join(sorted(set(files))[:3])
+            return True, (
+                f"{len(set(files))} file(s) changed on {branch_name} "
+                f"(e.g. {preview})"
             )
-            files = [
-                ln.strip() for ln in (r.stdout or "").splitlines() if ln.strip()
-            ]
-            if files:
-                preview = ", ".join(sorted(set(files))[:3])
-                return True, (
-                    f"{len(set(files))} file(s) changed on {branch_name} "
-                    f"(e.g. {preview})"
-                )
-        except Exception:
-            pass
+    except Exception:
+        pass
 
     # 2. uncommitted changes in the worktree — only valid when the task has
     # an actual registered worktree; checking BASE_DIR's dirty state would
