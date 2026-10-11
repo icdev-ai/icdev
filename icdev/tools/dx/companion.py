@@ -175,6 +175,9 @@ def main():
     parser.add_argument("--write", action="store_true", help="Write files")
     parser.add_argument("--dry-run", action="store_true", help="Preview")
     parser.add_argument("--json", action="store_true", help="Output JSON")
+    parser.add_argument("--llm", choices=("none", "auto", "vllm"), default="none",
+                        help="also point opencode/pi/codex at the vLLM endpoint (omx-vllm-04); "
+                             "auto = only when VLLM_BASE_URL is set and reachable")
     args = parser.parse_args()
 
     if args.list:
@@ -224,6 +227,17 @@ def main():
             write=args.write,
             dry_run=args.dry_run,
         )
+        harness_llm = None
+        if args.llm != "none":
+            from tools.llm.harness_llm_config import configure_harnesses
+
+            harness_llm = configure_harnesses(args.llm, write=args.write,
+                                              project=Path(args.dir) if args.dir else Path.cwd())
+            harness_llm["files"] = [{k: v for k, v in f.items() if k != "content"}
+                                    for f in harness_llm["files"]]
+            result["harness_llm"] = harness_llm
+            for warning in harness_llm["warnings"]:
+                print(warning, file=sys.stderr)
 
         if args.json:
             print(json.dumps(result, indent=2))
@@ -242,6 +256,11 @@ def main():
                 if isinstance(info, dict) and "path" in info:
                     status = "WRITTEN" if info.get("written") else "PREVIEW"
                     print(f"  [{status}] {info.get('display_name', platform)}: {info['path']}")
+
+            if harness_llm is not None:
+                from tools.llm.harness_llm_config import _format_text
+
+                print("\n" + _format_text(harness_llm))
 
             if not args.write and not args.dry_run:
                 print("\nUse --write to save files to disk.")
